@@ -25,10 +25,16 @@ from hausbuch.schemas.api import (
     PaymentProofBody,
     RelatedDocument,
 )
-from hausbuch.schemas.bank import ImportStoredStatementBody, StatementImport
+from hausbuch.schemas.bank import (
+    ImportStoredStatementBody,
+    StatementAccountBody,
+    StatementAccountCreated,
+    StatementImport,
+)
 from hausbuch.schemas.document import Document, DocumentLink, RetentionResult
 from hausbuch.schemas.enums import DocumentSource, EntityType, LinkTarget
 from hausbuch.schemas.proposal import Proposal
+from hausbuch.services.accounts import create_account_from_statement
 from hausbuch.services.context import CommandContext
 from hausbuch.services.depot_explain import document_explanation
 from hausbuch.services.documents import (
@@ -312,6 +318,34 @@ async def document_import_statement(
     if not created:
         response.status_code = 200
     return imported
+
+
+@router.post("/documents/{document_id}/statement-account", status_code=201)
+async def document_statement_account(
+    document_id: UUID,
+    body: StatementAccountBody,
+    cmd: Cmd,
+    store: StoreDep,
+    settings: SettingsDep,
+) -> StatementAccountCreated:
+    """„Konto anlegen und einlesen“ (phase 6, 13 Nov 2026, amends D176 (3) and D165 (b)): for
+    a statement file stored through Dokumente with no account for it yet (its
+    `statement_offer.new_account`), the account is created from the file and the file imported
+    onto it, in one transaction. The kind, the IBAN or number and the opening balance are read
+    from the stored original on the server; the body carries only what the person sets (label,
+    bank, provider, purpose, owner shares). 201 with the account and the import; 404 for an
+    unknown document; 409 when an account already holds the file's IBAN or number (import onto
+    it with „Auf Konto importieren“); 422 rule_violation statement.no_account_offer for a
+    document without such an offer, or another statement.* code when the import refuses the
+    file (nothing is written then)."""
+    return await run_in_threadpool(
+        cmd.run,
+        create_account_from_statement,
+        store,
+        document_id,
+        body,
+        iban_key=settings.iban_hmac_key,
+    )
 
 
 @router.delete("/documents/{document_id}/links/{target_type}/{target_id}", status_code=204)

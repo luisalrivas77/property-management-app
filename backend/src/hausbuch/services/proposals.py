@@ -75,7 +75,6 @@ from hausbuch.schemas.api import (
     TenantPatch,
     UnitPatch,
 )
-from hausbuch.schemas.bank import StatementFormat
 from hausbuch.schemas.common import Schema, TaxYear
 from hausbuch.schemas.document import (
     Document,
@@ -275,15 +274,13 @@ def _is_exchange_original(conn: Connection, document: Document) -> bool:
 
 
 def _is_card_statement(conn: Connection, document_id: UUID) -> bool:
-    """The document is the original of a card statement import (phase 6 D176 (3)) or of a
-    depot's cash statement import (step 4): both read by code only."""
+    """The document is the original of a statement import: a card statement (phase 6
+    D176 (3)), a depot's cash statement (step 4) or, since 13 Nov 2026, a bank's own export
+    (camt, Sparkasse CSV, DKB CSV): all read by code only."""
     return (
         conn.execute(
             select(statement_import_table.c.id).where(
-                statement_import_table.c.document_id == document_id,
-                statement_import_table.c.format.in_(
-                    (StatementFormat.CARD_PDF.value, StatementFormat.DEPOT_PDF.value)
-                ),
+                statement_import_table.c.document_id == document_id
             )
         ).first()
         is not None
@@ -307,9 +304,10 @@ def request_read(
     never read by the model: refused with proposal.bank_file_not_read, so neither the
     document page's button nor a direct call sends a statement that names every tenant and
     IBAN in clear. A credit card's PDF statement (phase 6 D176) is read by code only, so it
-    is refused the same way. An exchange export already imported on its account (phase 6
-    D166: it holds Binance's User ID and addresses) is refused with
-    proposal.exchange_export_not_read."""
+    is refused the same way, as is the original of any statement import (a bank's export
+    imported on its account, 13 Nov 2026); one not imported yet is stopped by the job. An
+    exchange export already imported on its account (phase 6 D166: it holds Binance's User ID
+    and addresses) is refused with proposal.exchange_export_not_read."""
     document = documents.get_document(ctx.conn, document_id)
     if document is None:
         raise NotFoundError(EntityType.DOCUMENT, document_id)

@@ -65,6 +65,18 @@ def test_the_offer_then_the_import_201_then_200(client_a, app_engine, auth_a):
         "account_kind": "credit_card",
         "candidates": [],
         "suggested_account_id": None,
+        # „Konto anlegen und einlesen“ (13 Nov 2026): no account holds the card's number yet.
+        "new_account": {
+            "kind": "credit_card",
+            "label": "Kreditkarte",
+            "bank": None,
+            "provider": None,
+            "iban_masked": None,
+            "external_ref_masked": "**** 4567",
+            "opening_balance": "-1250.40",
+            "opening_balance_on": "2026-01-15",
+            "opening_from_file": True,
+        },
     }
     inbox = [i for i in ok(client_a.get("/api/inbox")) if i["kind"] == "read_failed"]
     assert [i["error_code"] for i in inbox] == [PROPOSAL_BANK_FILE_NOT_READ]

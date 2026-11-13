@@ -290,8 +290,8 @@ _PROPOSAL_TEXTS = {
 # Phase 6 D176 (3), step 4: a card or depot statement uploaded through Dokumente is read by
 # code on its account; the card offers „Auf Konto importieren“ instead of a new read.
 _BANK_FILE_TEXTS = (
-    "Eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos: Hausbuch "
-    "liest sie selbst, ohne KI, auf ihrem Konto ein.",
+    "Ein Kontoauszug oder Umsatz-Export einer Bank, eine Kreditkartenabrechnung oder ein "
+    "Kontoauszug eines Depots: Hausbuch liest sie selbst, ohne KI, auf ihrem Konto ein.",
     "Auf welches Konto soll sie importiert werden?",
 )
 # Phase 6 D166, step 5a: an exchange export uploaded through Dokumente.

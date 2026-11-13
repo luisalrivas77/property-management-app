@@ -5,11 +5,13 @@
 // and the "linked documents" panel of an entity page (on a property or unit page it also lists
 // the documents of its units, tenancies and loans).
 import Link from "next/link";
-import { useCallback, useId, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
+import { ApiError } from "@/api/errors";
 import type {
   AccountKind,
+  AccountPurpose,
   Document,
   DocumentDetail,
   DocumentExplanation,
@@ -17,15 +19,19 @@ import type {
   DocumentUploadResult,
   LinkTarget,
   LinkTargetRef,
+  Owner,
   ProposalStatus,
   RelatedDocument,
   StatementFileImport,
+  StatementNewAccount,
   UploadBody,
 } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-import { formatDate, shortId } from "./format";
-import { DOCUMENT_TYPE, LINK_TARGET } from "./labels";
+import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
+import { formatDate, formatMoney, shortId } from "./format";
+import { ACCOUNT_KIND, ACCOUNT_PURPOSE, DOCUMENT_TYPE, LINK_TARGET } from "./labels";
+import { collectShares, initialShares, OwnerShareInputs } from "./ownershipShares";
 import { Loading, Notice } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -685,17 +691,24 @@ export function StatementImportsNotice({ imports }: { imports: StatementFileImpo
   );
 }
 
-const STATEMENT_KIND: Partial<Record<AccountKind, { file: string; account: string }>> = {
-  credit_card: { file: "Kreditkartenabrechnung", account: "Kreditkarte" },
-  depot: { file: "Kontoauszug des Depot-Verrechnungskontos", account: "Depot" },
+/** What the file is (with its article), the kind of account it goes to, and the name of the
+ * number that tells its account apart. */
+const STATEMENT_KIND: Partial<Record<AccountKind, { file: string; account: string; number: string }>> = {
+  bank_current: { file: "ein Kontoauszug oder Umsatz-Export einer Bank", account: "Girokonto", number: "IBAN" },
+  bank_savings: { file: "ein Kontoauszug oder Umsatz-Export einer Bank", account: "Sparkonto oder Tagesgeld", number: "IBAN" },
+  credit_card: { file: "eine Kreditkartenabrechnung", account: "Kreditkarte", number: "Kundennummer" },
+  depot: { file: "ein Kontoauszug des Depot-Verrechnungskontos", account: "Depot", number: "Kontonummer" },
 };
+const STATEMENT_WORDS = { file: "ein Kontoauszug", account: "Konto", number: "Nummer" };
 
-/** „Auf Konto importieren“ (phase 6 D176 (3), step 4): a card statement or a depot's cash
- * statement uploaded through Dokumente is never read by the model; it is imported onto its
- * account from the stored file, with no second upload. The accounts it can go to come from
- * GET /documents/{id} (`statement_offer`): the one whose number the file prints, else the only
- * one, is pre-selected; with none of its kind the person is sent to „Konto anlegen“ with the
- * kind chosen. Pass `detail` when the page has it already; without it the detail is loaded. */
+/** „Auf Konto importieren“ (phase 6 D176 (3), step 4): a bank's export (camt, CSV), a card
+ * statement or a depot's cash statement uploaded through Dokumente is never read by the model;
+ * it is imported onto its account from the stored file, with no second upload. The accounts it
+ * can go to come from GET /documents/{id} (`statement_offer`): the one whose IBAN or number the
+ * file prints, else the only one, is pre-selected. When no account holds the file's IBAN or
+ * number, „Konto anlegen und einlesen“ creates the account from the file and imports it in one
+ * step (13 Nov 2026); „Konto von Hand anlegen“ stays as the fallback. Pass `detail` when the
+ * page has it already; without it the detail is loaded. */
 export function ImportStoredStatement({
   documentId,
   detail,
@@ -720,19 +733,42 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [imported, setImported] = useState<StatementFileImport | null>(null);
+  const [creating, setCreating] = useState(false);
   const selectId = useId();
 
   if (imported) return <StatementImportsNotice imports={[imported]} />;
   if (detail.statement_imports?.length) return <StatementImportsNotice imports={detail.statement_imports} />;
   if (!offer) return null;
-  const words = STATEMENT_KIND[offer.account_kind] ?? { file: "Kontoauszug", account: "Konto" };
+  const words = STATEMENT_KIND[offer.account_kind] ?? STATEMENT_WORDS;
   const only = candidates.length === 1 ? candidates[0] : undefined;
+  const created = (result: StatementFileImport) => {
+    setImported(result);
+    onImported?.();
+  };
+  const byHand = (
+    <p className="muted">
+      Lieber alles selbst eintragen: <Link href={`/accounts/new?kind=${offer.account_kind}`}>Konto von Hand anlegen</Link> und danach hier „Auf
+      Konto importieren“ wählen.
+    </p>
+  );
 
   if (candidates.length === 0) {
+    if (offer.new_account) {
+      return (
+        <div className="stack">
+          <p>
+            Das ist {words.file}. Hausbuch liest die Datei selbst, ohne KI, auf ihrem Konto ein; dieses Konto gibt es in Hausbuch noch nicht.
+            Hausbuch legt es aus der Datei an und liest sie gleich ein.
+          </p>
+          <CreateStatementAccount documentId={detail.document.id} newAccount={offer.new_account} words={words} onCreated={created} />
+          {byHand}
+        </div>
+      );
+    }
     return (
       <div className="notice notice-info" role="status">
         <p>
-          Das ist eine {words.file}. Hausbuch liest sie selbst, ohne KI, auf ihrem Konto ein; dafür gibt es noch kein passendes Konto der Art „
+          Das ist {words.file}. Hausbuch liest die Datei selbst, ohne KI, auf ihrem Konto ein; dafür gibt es noch kein passendes Konto der Art „
           {words.account}“.
         </p>
         <p>
@@ -754,8 +790,7 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
         }),
       );
       const account = candidates.find((c) => c.account_id === accountId);
-      setImported({ import_id: result.id, account_id: result.account_id, account_label: account?.label ?? "Konto", status: result.status });
-      onImported?.();
+      created({ import_id: result.id, account_id: result.account_id, account_label: account?.label ?? "Konto", status: result.status });
     } catch (caught) {
       setError(caught);
     } finally {
@@ -766,8 +801,8 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
   return (
     <div className="stack">
       <p>
-        Das ist eine {words.file}. Hausbuch liest sie selbst, ohne KI, und importiert sie direkt aus der gespeicherten Datei; ein zweites Hochladen ist
-        nicht nötig.
+        Das ist {words.file}. Hausbuch liest die Datei selbst, ohne KI, und importiert sie direkt aus der gespeicherten Datei; ein zweites Hochladen
+        ist nicht nötig.
       </p>
       <div className="row">
         {only ? (
@@ -793,6 +828,205 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
         </button>
       </div>
       <ErrorNotice error={error} />
+      {offer.new_account ? (
+        creating ? (
+          <div className="stack">
+            <p>
+              Gehört die Datei zu keinem dieser Konten (ihre {words.number} steht bei keinem), legt Hausbuch das Konto aus der Datei an und liest sie
+              gleich ein.
+            </p>
+            <CreateStatementAccount documentId={detail.document.id} newAccount={offer.new_account} words={words} onCreated={created} />
+          </div>
+        ) : (
+          <p>
+            <button type="button" className="secondary" onClick={() => setCreating(true)} disabled={busy}>
+              Stattdessen neues Konto anlegen
+            </button>
+          </p>
+        )
+      ) : null}
     </div>
+  );
+}
+
+const CREATE_KEYS = ["label", "bank", "provider", "purpose", "shares"] as const;
+const CREATE_CODE_FIELDS = { "ownership.": "shares" };
+const loadOwners = () => ok(api.GET("/api/owners"));
+
+/** „Konto anlegen und einlesen“ (13 Nov 2026, amends D176 (3) and D165 (b)): no account holds
+ * the file's IBAN or number, so the account is created from the file and the file imported onto
+ * it in one step (POST /documents/{id}/statement-account). The kind, the IBAN or number and the
+ * starting balance come from the stored file on the server and are shown read-only (D132: every
+ * value the button saves is shown first; a CSV's 0,00 is named as a placeholder until its
+ * closing balance is typed and „Anfangssaldo daraus übernehmen“ sets it); the person checks the name and the
+ * bank, says what the account is for and whose it is. The number is shown masked only. */
+function CreateStatementAccount({
+  documentId,
+  newAccount,
+  words,
+  onCreated,
+}: {
+  documentId: string;
+  newAccount: StatementNewAccount;
+  words: { account: string; number: string };
+  onCreated: (result: StatementFileImport) => void;
+}) {
+  const owners = useLoad(loadOwners);
+  return (
+    <Loading state={owners}>
+      {(list) => <CreateStatementAccountForm documentId={documentId} newAccount={newAccount} words={words} owners={list} onCreated={onCreated} />}
+    </Loading>
+  );
+}
+
+function CreateStatementAccountForm({
+  documentId,
+  newAccount,
+  words,
+  owners,
+  onCreated,
+}: {
+  documentId: string;
+  newAccount: StatementNewAccount;
+  words: { account: string; number: string };
+  owners: Owner[];
+  onCreated: (result: StatementFileImport) => void;
+}) {
+  const [label, setLabel] = useState(newAccount.label);
+  const [bank, setBank] = useState(newAccount.bank ?? "");
+  const [provider, setProvider] = useState(newAccount.provider ?? "");
+  const [purpose, setPurpose] = useState<AccountPurpose>("private");
+  const [shares, setShares] = useState<Record<string, string>>(() => initialShares(null, owners));
+  const [busy, setBusy] = useState(false);
+  const [taken, setTaken] = useState(false);
+  const form = useFormErrors(CREATE_KEYS, CREATE_CODE_FIELDS);
+  const id = useId();
+  const bankKind = newAccount.kind === "bank_current" || newAccount.kind === "bank_savings";
+  const number = newAccount.iban_masked ?? newAccount.external_ref_masked;
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = collector();
+    const body = collectShares(values, owners, shares, { required: false });
+    if (!label.trim()) values.messages.label = ["Bitte eine Bezeichnung eingeben."];
+    if (!bank.trim()) values.messages.bank = ["Bitte die Bank eingeben."];
+    if (!values.ok) return form.invalid(values.messages);
+    setBusy(true);
+    setTaken(false);
+    form.clear();
+    try {
+      const result = await ok(
+        api.POST("/api/documents/{document_id}/statement-account", {
+          params: { path: { document_id: documentId } },
+          body: {
+            label: label.trim(),
+            bank: bank.trim(),
+            provider: provider.trim() || null,
+            purpose: bankKind ? purpose : "private",
+            shares: body,
+          },
+        }),
+      );
+      onCreated({
+        import_id: result.statement_import.id,
+        account_id: result.account.id,
+        account_label: result.account.label,
+        status: result.statement_import.status,
+      });
+    } catch (caught) {
+      // 409: meanwhile an account with this IBAN or number was created (another tab, or the
+      // account page); the file then goes onto it with „Auf Konto importieren“.
+      if (caught instanceof ApiError && caught.status === 409) setTaken(true);
+      else form.fail(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack card" onSubmit={submit} noValidate>
+      <h3>Konto anlegen und einlesen</h3>
+      <p>
+        Kontoart: <strong>{ACCOUNT_KIND[newAccount.kind]}</strong>
+        {number ? (
+          <>
+            {" "}
+            · {words.number}: <strong>{number}</strong> (aus der Datei)
+          </>
+        ) : null}{" "}
+        · Anfangssaldo: <strong>{formatMoney(newAccount.opening_balance)}</strong> am {formatDate(newAccount.opening_balance_on)}
+        {newAccount.opening_from_file ? " (aus der Datei)" : null}
+      </p>
+      {newAccount.opening_from_file ? null : (
+        <p className="muted">
+          Die Datei nennt keinen Anfangssaldo. 0,00 € ist deshalb nur ein Platzhalter: Nach dem Anlegen auf der Seite des Kontos unter
+          „Kontoauszüge“ mit „Endsaldo eingeben“ den Kontostand nach dem letzten Umsatz der Datei eintragen, wie ihn das Online-Banking zeigt.
+          „Anfangssaldo daraus übernehmen“ setzt dann den richtigen Anfangssaldo.
+        </p>
+      )}
+      <div className="grid">
+        <Field
+          id={`${id}-label`}
+          label="Bezeichnung"
+          description="Ein frei wählbarer Name, unter dem Sie das Konto in Hausbuch wiederfinden."
+          errors={form.of("label")}
+        >
+          <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={100} autoComplete="off" />
+        </Field>
+        <Field
+          id={`${id}-bank`}
+          label="Bank"
+          description="Die Bank, bei der das Konto geführt wird, wie auf dem Kontoauszug."
+          errors={form.of("bank")}
+        >
+          <input type="text" value={bank} onChange={(e) => setBank(e.target.value)} required autoComplete="off" />
+        </Field>
+        <Field
+          id={`${id}-provider`}
+          label="Anbieter (optional)"
+          description="Der Name, unter dem das Konto auftritt, wenn er von der Bank abweicht, z. B. der Markenname einer Karte."
+          errors={form.of("provider")}
+        >
+          <input type="text" value={provider} onChange={(e) => setProvider(e.target.value)} maxLength={100} autoComplete="off" />
+        </Field>
+        {bankKind ? (
+          <Field
+            id={`${id}-purpose`}
+            label="Wofür"
+            description="Das Mietkonto ist das Konto, über das die Wohnung läuft: seine Umsätze gehen in die Anlage V. Ein Privatkonto bekommt Haushaltskategorien und zählt nie in die Anlage V."
+            errors={form.of("purpose")}
+          >
+            <select value={purpose} onChange={(e) => setPurpose(e.target.value as AccountPurpose)}>
+              {(Object.keys(ACCOUNT_PURPOSE) as AccountPurpose[]).map((value) => (
+                <option key={value} value={value}>
+                  {ACCOUNT_PURPOSE[value]}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+      </div>
+      {owners.length > 0 ? (
+        <OwnerShareInputs owners={owners} shares={shares} onChange={setShares} form={form} errorId={`${id}-shares-error`} idPrefix={`${id}-`} />
+      ) : (
+        <p className="muted">
+          Noch keine Eigentümer erfasst. Wem das Konto gehört, lässt sich später auf seiner Seite festlegen („Eigentümer festlegen“).
+        </p>
+      )}
+      {taken ? (
+        <div className="notice notice-warn" role="alert">
+          <p>
+            Inzwischen gibt es schon ein Konto mit dieser {words.number}. Bitte die Seite neu laden und die Datei mit „Auf Konto importieren“ darauf
+            einlesen.
+          </p>
+        </div>
+      ) : null}
+      <div className="row">
+        <Submit busy={busy} busyLabel="Legt an und liest ein …">
+          Konto anlegen und einlesen
+        </Submit>
+      </div>
+      <FormBanner errors={form.errors} />
+    </form>
   );
 }

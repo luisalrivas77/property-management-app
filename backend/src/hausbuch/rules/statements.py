@@ -54,6 +54,10 @@ DUPLICATE_EXCLUDES_BOTH = "statement.duplicate_excludes_both"
 # The account's opening balance cannot be derived from this import (no longer its earliest
 # unreconciled import with a typed closing, or another import already reconciles).
 OPENING_NOT_DERIVABLE = "statement.opening_not_derivable"
+# „Konto anlegen und einlesen“ (phase 6, 13 Nov 2026): the document is not a statement file
+# waiting for its account (never refused for the model, already imported, or a file whose
+# account cannot be told from its content).
+NO_ACCOUNT_OFFER = "statement.no_account_offer"
 
 # Unit separator between the hashed fields (line_hash.yaml).
 _SEP = "\x1f"

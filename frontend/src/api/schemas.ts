@@ -157,6 +157,10 @@ export type ImportStoredStatementBody = Schemas["ImportStoredStatementBody"];
 export type StatementFileImport = Schemas["StatementFileImport"];
 export type StatementFileOffer = Schemas["StatementFileOffer"];
 export type StatementFileCandidate = Schemas["StatementFileCandidate"];
+// „Konto anlegen und einlesen“: a stored statement with no account creates it (13 Nov 2026)
+export type StatementNewAccount = Schemas["StatementNewAccount"];
+export type StatementAccountBody = Schemas["StatementAccountBody"];
+export type StatementAccountCreated = Schemas["StatementAccountCreated"];
 
 // the FinTS sync of an account (phase 5 step 1, §10)
 export type BankConnection = Schemas["BankConnection"];

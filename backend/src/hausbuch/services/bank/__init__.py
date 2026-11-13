@@ -25,11 +25,24 @@ from hausbuch.schemas.bank import BankSource, ParsedStatement, StatementFormat
 
 from . import camt, card_pdf, csv_camt, depot_pdf, dkb_csv
 
-__all__ = ["BankSource", "ParseOutcome", "detect_format", "parse_statement"]
+__all__ = [
+    "BANK_EXPORT_FORMATS",
+    "BankSource",
+    "ParseOutcome",
+    "detect_format",
+    "is_bank_export",
+    "parse_statement",
+]
 
 _ZIP_MAGIC = b"PK\x03\x04"
 _SNIFF_BYTES = 64 * 1024
 _CAMT_ROOTS = (b"BkToCstmrAcctRpt", b"BkToCstmrStmt")
+# A bank's own exports (phase 6, D176 (3) amended 13 Nov 2026): a Sparkasse camt ZIP or XML, the
+# Sparkasse CSV-CAMT and DKB's CSV. Uploaded through Dokumente, they are never sent to the model;
+# they are imported onto their account from the stored original.
+BANK_EXPORT_FORMATS = frozenset(
+    {StatementFormat.CAMT, StatementFormat.CSV_CAMT, StatementFormat.DKB_CSV}
+)
 
 
 @dataclass(frozen=True)
@@ -87,3 +100,17 @@ def parse_statement(data: bytes, media_type: str | None = None) -> ParseOutcome:
         return ParseOutcome(depot.statement, depot.balance_error)
     # Only a card or depot statement is read from a PDF; a bank's PDF statement is not.
     raise RuleError(UNKNOWN_FORMAT, "PDF statements are not imported yet; use camt or CSV-CAMT")
+
+
+def is_bank_export(data: bytes, media_type: str | None = None) -> bool:
+    """Whether parse_statement accepts the bytes as a bank export (BANK_EXPORT_FORMATS). A
+    PDF is never one (a card or depot statement is told apart by its own layout); anything
+    the parsers refuse is not one either."""
+    try:
+        fmt = detect_format(data, media_type)
+        if fmt not in BANK_EXPORT_FORMATS:
+            return False
+        parse_statement(data, media_type)
+    except Exception:  # noqa: BLE001 - a file the readers refuse is simply not a bank export
+        return False
+    return True

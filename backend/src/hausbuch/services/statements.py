@@ -59,6 +59,7 @@ from hausbuch.schemas.bank import (
     StatementFormat,
     StatementImport,
     StatementLine,
+    StatementNewAccount,
     StoredLine,
     Transaction,
     TransactionAllocationStatus,
@@ -67,6 +68,7 @@ from hausbuch.schemas.bank_sync import SyncPreview
 from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import (
+    BANK_ACCOUNT_KINDS,
     AccountKind,
     AllocationStatus,
     BalanceSource,
@@ -86,7 +88,7 @@ from hausbuch.schemas.events import (
 )
 from hausbuch.storage import BlobStore
 
-from .bank import parse_statement
+from .bank import BANK_EXPORT_FORMATS, parse_statement
 from .context import CommandContext
 from .documents import (
     document_media_type,
@@ -321,21 +323,28 @@ _OFFER_KINDS = {
     StatementFormat.CARD_PDF: AccountKind.CREDIT_CARD,
     StatementFormat.DEPOT_PDF: AccountKind.DEPOT,
 }
+# „Konto anlegen und einlesen“: what each format says about its account, as suggestions the
+# person edits (label, bank, provider). A camt file names no bank by its format.
+_NEW_ACCOUNT_WORDS: dict[StatementFormat, tuple[str, str | None, str | None]] = {
+    StatementFormat.CAMT: ("Girokonto", None, None),
+    StatementFormat.CSV_CAMT: ("Girokonto Sparkasse", "Sparkasse", "Sparkasse"),
+    StatementFormat.DKB_CSV: ("Girokonto DKB", "DKB", "DKB"),
+    # The card statement names no issuer the reader keeps, so the person types the bank: an
+    # institution's name is never guessed (13 Nov 2026).
+    StatementFormat.CARD_PDF: ("Kreditkarte", None, None),
+    StatementFormat.DEPOT_PDF: ("quirion Depot", "quirion", "quirion"),
+}
 
 
-def statement_offer(
-    conn: Connection, store: BlobStore, document_id: UUID, *, iban_key: bytes
-) -> StatementFileOffer | None:
-    """For „Auf Konto importieren“ (phase 6 D176 (3), step 4): the accounts a card or depot
-    statement stored as a document can be imported onto. Only for a document whose read
-    failed with proposal.bank_file_not_read (still failed, not superseded) and that no
-    import holds yet, so only such a document's original is read and parsed here.
-
-    The file's printed number (the card's customer number, the depot's account number)
-    decides: an account of the kind whose stored number is it is the suggestion; an account
-    with another number is left out (the import would refuse it); one without a number may
-    take it (its first statement sets the number) and is the suggestion when it is the only
-    candidate. None when the file is no longer one of these statements."""
+def refused_statement_file(
+    conn: Connection, store: BlobStore, document_id: UUID
+) -> ParsedStatement | None:
+    """The statement a document stored through Dokumente holds, for „Auf Konto importieren“
+    and „Konto anlegen und einlesen“: only for a document whose read failed with
+    proposal.bank_file_not_read (still failed, not superseded) and that no import holds yet,
+    so only such a document's original is read and parsed here. None for any other document,
+    for a file the import would refuse and for an original the store cannot give back (the
+    import itself then reports the reason)."""
     from .proposals import PROPOSAL_BANK_FILE_NOT_READ  # proposals imports matching
 
     p = proposal_table.c
@@ -351,33 +360,134 @@ def statement_offer(
     if media_type is None:
         return None
     try:
-        statement = parse_statement(read_original(conn, store, document_id), media_type).statement
+        return parse_statement(read_original(conn, store, document_id), media_type).statement
     except Exception:  # noqa: BLE001 - an offer is never worth an unreachable document page
-        # A file the import would refuse, or an original the store cannot give back: no offer
-        # here; „Auf Konto importieren“ itself reports the reason.
         return None
-    kind = _OFFER_KINDS.get(statement.format)
-    if kind is None or statement.account_ref is None:
+
+
+def statement_file_kind(statement: ParsedStatement) -> AccountKind | None:
+    """The kind of account a statement file goes onto: a bank's export onto a bank account
+    (a new one is a Girokonto), a card statement onto a card, a depot's onto a depot."""
+    if statement.format in BANK_EXPORT_FORMATS:
+        return AccountKind.BANK_CURRENT
+    return _OFFER_KINDS.get(statement.format)
+
+
+def statement_file_identity(statement: ParsedStatement, key: bytes) -> ProtectedIban | None:
+    """The file's own account identifier, masked + HMAC'd: a bank export's account IBAN, a
+    card's customer number or a depot's account number (D164). None when the file names
+    none that can be protected."""
+    try:
+        if statement.format in BANK_EXPORT_FORMATS:
+            return protect_iban(statement.account_iban, key) if statement.account_iban else None
+        if statement.account_ref is None:
+            return None
+        ref = protect_ref(statement.account_ref, key)
+    except RuleError:
         return None
-    theirs = protect_ref(statement.account_ref, iban_key).hmac
+    return ProtectedIban(masked=ref.masked, hmac=ref.hmac)
+
+
+def statement_file_anchor(statement: ParsedStatement) -> tuple[Decimal, date, bool]:
+    """The anchor an account created from a statement file starts with („Konto anlegen und
+    einlesen“): the file's own opening balance, else 0,00 for a CSV, which states none; dated
+    the day before the file's first booking; and whether the file printed it. The file must
+    hold at least one booked line."""
+    first = min(line.booking_date for line in statement.lines)
+    printed = statement.opening_balance is not None
+    opening = statement.opening_balance if printed else Decimal("0.00")
+    return opening, first - timedelta(days=1), printed
+
+
+def statement_file_held(conn: Connection, statement: ParsedStatement, digest: bytes) -> bool:
+    """Whether any account of the workspace already holds the file's IBAN or number."""
     a = account_table.c
-    rows = conn.execute(
-        select(a.id, a.label, a.bank, a.external_ref_masked, a.external_ref_hmac)
-        .where(a.kind == kind.value)
-        .order_by(a.label, a.id)
-    ).all()
-    matching = [
-        r
-        for r in rows
-        if r.external_ref_hmac is not None and hmac.compare_digest(r.external_ref_hmac, theirs)
-    ]
-    held_elsewhere = (
-        not matching
-        and conn.execute(select(a.id).where(a.external_ref_hmac == theirs)).first() is not None
-    )
-    unnumbered = [] if held_elsewhere else [r for r in rows if r.external_ref_hmac is None]
-    candidates = matching or unnumbered
+    column = a.iban_hmac if statement.format in BANK_EXPORT_FORMATS else a.external_ref_hmac
+    return conn.execute(select(a.id).where(column == digest)).first() is not None
+
+
+def statement_offer(
+    conn: Connection, store: BlobStore, document_id: UUID, *, iban_key: bytes
+) -> StatementFileOffer | None:
+    """For „Auf Konto importieren“ (phase 6 D176 (3), step 4): the accounts a statement file
+    stored as a document can be imported onto (refused_statement_file says which documents).
+
+    A card or depot statement: the file's printed number (the card's customer number, the
+    depot's account number) decides: an account of the kind whose stored number is it is the
+    suggestion; an account with another number is left out (the import would refuse it); one
+    without a number may take it (its first statement sets the number) and is the suggestion
+    when it is the only candidate. A bank's export (camt, Sparkasse CSV, DKB CSV; 13 Nov 2026):
+    the bank account whose IBAN is the file's own, pre-selected; no other (the import would
+    refuse it). `new_account` (13 Nov 2026) whenever no account holds the file's IBAN or
+    number and the file holds a booked line: „Konto anlegen und einlesen“, with the starting
+    balance the account gets (statement_file_anchor). None when the file is no longer one of
+    these statements."""
+    statement = refused_statement_file(conn, store, document_id)
+    if statement is None:
+        return None
+    kind = statement_file_kind(statement)
+    if kind is None:
+        return None
+    identity = statement_file_identity(statement, iban_key)
+    a = account_table.c
+    if statement.format in BANK_EXPORT_FORMATS:
+        rows = conn.execute(
+            select(a.id, a.label, a.bank, a.kind, a.external_ref_masked, a.iban_hmac)
+            .where(a.kind.in_([k.value for k in BANK_ACCOUNT_KINDS]))
+            .order_by(a.label, a.id)
+        ).all()
+        if identity is None:
+            # A file naming no IBAN of its own is taken by any bank account (_route).
+            candidates = list(rows)
+        else:
+            candidates = [
+                r
+                for r in rows
+                if r.iban_hmac is not None and hmac.compare_digest(r.iban_hmac, identity.hmac)
+            ]
+        matched = bool(candidates)
+        if len(candidates) == 1:
+            kind = AccountKind(candidates[0].kind)
+    else:
+        if statement.account_ref is None or identity is None:
+            return None
+        rows = conn.execute(
+            select(a.id, a.label, a.bank, a.external_ref_masked, a.external_ref_hmac)
+            .where(a.kind == kind.value)
+            .order_by(a.label, a.id)
+        ).all()
+        matching = [
+            r
+            for r in rows
+            if r.external_ref_hmac is not None
+            and hmac.compare_digest(r.external_ref_hmac, identity.hmac)
+        ]
+        held_elsewhere = not matching and statement_file_held(conn, statement, identity.hmac)
+        unnumbered = [] if held_elsewhere else [r for r in rows if r.external_ref_hmac is None]
+        candidates = matching or unnumbered
+        matched = bool(matching)
     suggested = candidates[0].id if len(candidates) == 1 else None
+    new_account = None
+    if (
+        identity is not None
+        and statement.lines  # an empty export would only be refused (statement.empty)
+        and not matched
+        and not statement_file_held(conn, statement, identity.hmac)
+    ):
+        label, bank, provider = _NEW_ACCOUNT_WORDS[statement.format]
+        bank_file = statement.format in BANK_EXPORT_FORMATS
+        opening, opening_on, from_file = statement_file_anchor(statement)
+        new_account = StatementNewAccount(
+            kind=statement_file_kind(statement) or kind,
+            label=label,
+            bank=bank,
+            provider=provider,
+            iban_masked=identity.masked if bank_file else None,
+            external_ref_masked=None if bank_file else identity.masked,
+            opening_balance=opening,
+            opening_balance_on=opening_on,
+            opening_from_file=from_file,
+        )
     return StatementFileOffer(
         format=statement.format,
         account_kind=kind,
@@ -391,6 +501,7 @@ def statement_offer(
             for r in candidates
         ],
         suggested_account_id=suggested,
+        new_account=new_account,
     )
 
 

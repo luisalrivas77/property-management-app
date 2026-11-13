@@ -126,14 +126,15 @@ test("a line without an IBAN offers no rule box, only a purpose pattern", async 
   await importSample(page);
   await openInbox(page);
 
-  // The Rechnungsabschluss lines name no counterparty and no IBAN in camt.
+  // The Rechnungsabschluss lines name no counterparty and no IBAN in camt; such a line is
+  // labelled by its booking text instead of „Ohne Gegenseite“.
   const queue = page.getByRole("list", { name: "Zahlungen zuordnen" });
   const line = queue.getByRole("button").filter({ hasText: /Verwendungszweck 5\b/ });
-  await expect(line).toContainText("Ohne Gegenseite");
+  await expect(line).toContainText("ABSCHLUSS");
   await line.click();
 
   const panel = page.getByRole("complementary", { name: "Zuordnung" });
-  await expect(panel.getByRole("heading", { name: /Ohne Gegenseite/ })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: /ABSCHLUSS/ })).toBeVisible();
   await expect(panel.getByLabel("Künftig immer so zuordnen")).toHaveCount(0);
   const pattern = panel.getByLabel("Muster im Verwendungszweck (optional)");
   await expect(pattern).toBeVisible();
