@@ -54,7 +54,7 @@ import { ErrorNotice } from "@/lib/ErrorNotice";
 import { notifyInboxChanged } from "@/lib/inboxCount";
 
 import { BalanceForm, DuplicateCard, OpeningFromClosing } from "./accounts";
-import { documentLabel, UploadControl } from "./documents";
+import { documentLabel, ImportStoredStatement, UploadControl } from "./documents";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { ALLOCATION_CATEGORY, INBOX_ITEM_KIND } from "./labels";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
@@ -514,8 +514,20 @@ function BankApprovalStart({ accountId }: { accountId: string }) {
 
 function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxData; onChanged: () => void }) {
   switch (item.kind) {
-    case "proposal":
     case "read_failed":
+      // Phase 6 D176 (3), step 4: a card or depot statement uploaded through Dokumente goes onto
+      // its account from the stored file. The card stays with „Importiert auf <Konto>“ until
+      // the list is next loaded; the sidebar count drops at once.
+      if (item.error_code === "proposal.bank_file_not_read" && item.document_id) {
+        return (
+          <>
+            <ImportStoredStatement documentId={item.document_id} onImported={() => notifyInboxChanged()} />
+            <Link href={`/documents/${item.document_id}`}>Dokument öffnen</Link>
+          </>
+        );
+      }
+      return item.document_id ? <Link href={`/documents/${item.document_id}`}>Dokument öffnen</Link> : null;
+    case "proposal":
     case "blocked_tenant_data":
       return item.document_id ? (
         <Link href={`/documents/${item.document_id}`}>{item.kind === "proposal" ? "Vorschlag prüfen" : "Dokument öffnen"}</Link>

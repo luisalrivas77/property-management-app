@@ -69,7 +69,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "proposal.other_notice_without_patch":
     "Der zweite Eintrag passt nur, wenn der Betrag der Grunderwerbsteuer oben auf diesen Bescheid gesenkt wird. Bitte beides übernehmen oder den zweiten Eintrag überspringen.",
   "proposal.bank_file_not_read":
-    "Diese Datei wird nicht mit KI ausgelesen: Hausbuch hat sie beim Bankabruf von der Bank geholt, oder sie ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos, die direkt auf ihrem Konto importiert werden.",
+    "Diese Datei wird nicht mit KI ausgelesen: Hausbuch hat sie beim Bankabruf von der Bank geholt, oder sie ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Solche Dateien liest Hausbuch selbst, ohne KI, auf ihrem Konto ein; steht sie dort noch nicht, auf der Seite des Dokuments „Auf Konto importieren“ wählen.",
   "document.extraction_stale": "Das Dokument wurde inzwischen neu ausgelesen. Bitte die Seite neu laden und die Felder prüfen.",
   "document.extraction_kind_mismatch": "Für diese Dokumentart gibt es eines der Felder von Hand nicht; es kann nicht gespeichert werden.",
   // bank statements (phase-2.md §12 and the step 3 additions, rules/statements.py)
@@ -239,7 +239,7 @@ export const AI_ERROR_TEXT: Record<string, string> = {
   // Phase 6 D176 (3) and step 4: a credit card statement or the depot's cash statement uploaded
   // as a document is never sent to the model.
   "proposal.bank_file_not_read":
-    "Das ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Hausbuch liest sie selbst, ohne KI: Bitte unter Konten auf der Seite der Karte mit „Kreditkartenabrechnung hochladen“ bzw. auf der Seite des Verrechnungskontos mit „Kontoauszug hochladen“ importieren.",
+    "Das ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Hausbuch liest sie selbst, ohne KI, auf ihrem Konto ein: mit „Auf Konto importieren“ auf der Seite dieses Dokuments oder unter Zu prüfen, direkt aus der gespeicherten Datei, ohne sie noch einmal hochzuladen.",
 };
 
 /** The German sentence for a proposal's error code; unknown codes get a generic one. */

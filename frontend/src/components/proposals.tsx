@@ -51,7 +51,7 @@ import type {
 } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-import { DocumentExplanationBox, NO_TAX_YEAR } from "./documents";
+import { DocumentExplanationBox, ImportStoredStatement, NO_TAX_YEAR } from "./documents";
 import type { Directory } from "./entities";
 import { targets, tenantName } from "./entities";
 import { FieldDescription, FormBanner, InfoToggle, useFormErrors, type FieldMessages } from "./form";
@@ -1335,6 +1335,28 @@ export function ProposalSection({
             />
           </>
         ) : null}
+      </div>
+    );
+  } else if (proposal.status === "failed" && proposal.error_code === "proposal.bank_file_not_read") {
+    // Phase 6 D176 (3), step 4: a card or depot statement is read by code on its account; a new
+    // read would fail the same way, and nothing is typed by hand. „Auf Konto importieren“ takes
+    // the stored file there, with no second upload.
+    body = (
+      <div className="stack">
+        {/* The form explains itself; the code's sentence only when it has nothing to offer. */}
+        {detail.statement_offer || detail.statement_imports?.length ? null : (
+          <div className="notice notice-info" role="status">
+            <p>{aiErrorText(proposal.error_code)}</p>
+          </div>
+        )}
+        <ImportStoredStatement
+          documentId={documentId}
+          detail={detail}
+          onImported={() => {
+            reload();
+            onApplied();
+          }}
+        />
       </div>
     );
   } else if (proposal.status === "failed") {

@@ -19,7 +19,7 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .allocation import Allocation, AllocationCategory, AllocationSet, MatchingRule
-from .bank import Transaction
+from .bank import StatementFileImport, StatementFileOffer, Transaction
 from .common import (
     Area,
     Fraction,
@@ -360,6 +360,11 @@ class DocumentDetail(Schema):
     # Phase 6 D177: a depot document in plain words (what it is, what it means for the
     # account, what Hausbuch does with it); None for any other document.
     explanation: DocumentExplanation | None = None
+    # Phase 6 D176 (3), step 4: the statement imports this document is the original of (the
+    # account it went to), and, for a card or depot statement uploaded through Dokumente that
+    # no account holds yet, the accounts „Auf Konto importieren“ offers.
+    statement_imports: list[StatementFileImport] = Field(default_factory=list)
+    statement_offer: StatementFileOffer | None = None
 
 
 class LinkTargetRef(Schema):
@@ -580,6 +585,9 @@ class InboxItem(Schema):
     property_id: UUID | None = None  # phase 6: the property_cost_* kinds
     transfer: OpenTransfer | None = None  # phase 6: the transfer_* kinds
     private_costs: list[TaxInputCreate] = Field(default_factory=list)  # property_cost_row
+    # read_failed: the proposal's error code; proposal.bank_file_not_read (a card or depot
+    # statement) is answered with „Auf Konto importieren“, not a new read (phase 6 D176 (3))
+    error_code: str | None = None
 
 
 class AiRetryResult(Schema):

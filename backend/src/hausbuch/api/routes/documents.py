@@ -25,6 +25,7 @@ from hausbuch.schemas.api import (
     PaymentProofBody,
     RelatedDocument,
 )
+from hausbuch.schemas.bank import ImportStoredStatementBody, StatementImport
 from hausbuch.schemas.document import Document, DocumentLink, RetentionResult
 from hausbuch.schemas.enums import DocumentSource, EntityType, LinkTarget
 from hausbuch.schemas.proposal import Proposal
@@ -48,6 +49,11 @@ from hausbuch.services.documents import (
     upload_document,
 )
 from hausbuch.services.proposals import attach_stored_proof, proposal_for_upload
+from hausbuch.services.statements import (
+    document_statement_imports,
+    import_stored_statement,
+    statement_offer,
+)
 from hausbuch.storage import BlobStore
 
 from ..deps import Cmd, SettingsDep, StoreDep, domain_router, found, require
@@ -203,7 +209,9 @@ def documents_list(
     return cmd.read(list_documents, target_type=target_type, target_id=target_id)
 
 
-def _detail(conn: Connection, document_id: UUID) -> DocumentDetail:
+def _detail(
+    conn: Connection, document_id: UUID, store: BlobStore, iban_key: bytes
+) -> DocumentDetail:
     document = found(get_document(conn, document_id), EntityType.DOCUMENT, document_id)
     media_type = found(document_media_type(conn, document_id), EntityType.DOCUMENT, document_id)
     extraction = current_extraction(conn, document_id)
@@ -216,14 +224,20 @@ def _detail(conn: Connection, document_id: UUID) -> DocumentDetail:
         media_type=media_type,
         opens_inline=media_type in INLINE_MEDIA_TYPES,
         explanation=document_explanation(conn, document_id),
+        statement_imports=document_statement_imports(conn, document_id),
+        statement_offer=statement_offer(conn, store, document_id, iban_key=iban_key),
     )
 
 
 @router.get("/documents/{document_id}")
-def document_get(document_id: UUID, cmd: Cmd) -> DocumentDetail:
+def document_get(
+    document_id: UUID, cmd: Cmd, store: StoreDep, settings: SettingsDep
+) -> DocumentDetail:
     """The document, its links, its current extraction and its retention, read in one
-    transaction."""
-    return cmd.read(_detail, document_id)
+    transaction; the statement imports it is the original of, and for a card or depot
+    statement whose read was refused and which no account holds yet, the accounts
+    „Auf Konto importieren“ offers (phase 6 D176 (3), step 4)."""
+    return cmd.read(_detail, document_id, store, settings.iban_hmac_key)
 
 
 @router.put("/documents/{document_id}/typing")
@@ -262,6 +276,42 @@ def document_payment_proof(document_id: UUID, body: PaymentProofBody, cmd: Cmd) 
     an unknown document or bill, 422 when it is the bill itself, is not typed as a payment
     proof (an untyped document too)."""
     return cmd.run(attach_stored_proof, document_id, body.bill_id)
+
+
+def _import_stored(
+    ctx: CommandContext, store: BlobStore, document_id: UUID, account_id: UUID, iban_key: bytes
+) -> tuple[StatementImport, bool]:
+    """import_stored_statement, and whether it created the import."""
+    imported = import_stored_statement(ctx, store, document_id, account_id, iban_key=iban_key)
+    return imported, imported.created_at == ctx.now
+
+
+@router.post(
+    "/documents/{document_id}/import-statement",
+    status_code=201,
+    responses={200: {"model": StatementImport, "description": "Already imported on this account"}},
+)
+async def document_import_statement(
+    document_id: UUID,
+    body: ImportStoredStatementBody,
+    cmd: Cmd,
+    store: StoreDep,
+    settings: SettingsDep,
+    response: Response,
+) -> StatementImport:
+    """„Auf Konto importieren“ (phase 6 D176 (3), step 4): the stored document (a card or
+    depot statement uploaded through Dokumente) imported as a statement of `account_id` from
+    its original, exactly as POST /accounts/{id}/imports would import the same file. 201 with
+    the new import; 200 with the existing one when this document is already imported on
+    that account (idempotent); 404 for an unknown document or account; 422 rule_violation with
+    a statement.* code when the file is not this account's (statement.account_mismatch) or
+    cannot be imported (nothing is written then)."""
+    imported, created = await run_in_threadpool(
+        cmd.run, _import_stored, store, document_id, body.account_id, settings.iban_hmac_key
+    )
+    if not created:
+        response.status_code = 200
+    return imported
 
 
 @router.delete("/documents/{document_id}/links/{target_type}/{target_id}", status_code=204)

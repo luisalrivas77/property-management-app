@@ -136,6 +136,11 @@ export type ImportStatus = Schemas["ImportStatus"];
 export type BalanceSource = Schemas["BalanceSource"];
 export type DeclareBalanceBody = Schemas["DeclareBalanceBody"];
 export type Transaction = Schemas["Transaction"];
+// a card or depot statement stored as a document, imported onto its account (phase 6 D176 (3))
+export type ImportStoredStatementBody = Schemas["ImportStoredStatementBody"];
+export type StatementFileImport = Schemas["StatementFileImport"];
+export type StatementFileOffer = Schemas["StatementFileOffer"];
+export type StatementFileCandidate = Schemas["StatementFileCandidate"];
 
 // the FinTS sync of an account (phase 5 step 1, §10)
 export type BankConnection = Schemas["BankConnection"];

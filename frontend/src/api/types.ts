@@ -1173,7 +1173,9 @@ export interface paths {
         /**
          * Document Get
          * @description The document, its links, its current extraction and its retention, read in one
-         *     transaction.
+         *     transaction; the statement imports it is the original of, and for a card or depot
+         *     statement whose read was refused and which no account holds yet, the accounts
+         *     „Auf Konto importieren“ offers (phase 6 D176 (3), step 4).
          */
         get: operations["document_get_api_documents__document_id__get"];
         put?: never;
@@ -1247,6 +1249,32 @@ export interface paths {
          *     proof (an untyped document too).
          */
         post: operations["document_payment_proof_api_documents__document_id__payment_proof_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/documents/{document_id}/import-statement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Document Import Statement
+         * @description „Auf Konto importieren“ (phase 6 D176 (3), step 4): the stored document (a card or
+         *     depot statement uploaded through Dokumente) imported as a statement of `account_id` from
+         *     its original, exactly as POST /accounts/{id}/imports would import the same file. 201 with
+         *     the new import; 200 with the existing one when this document is already imported on
+         *     that account (idempotent); 404 for an unknown document or account; 422 rule_violation with
+         *     a statement.* code when the file is not this account's (statement.account_mismatch) or
+         *     cannot be imported (nothing is written then).
+         */
+        post: operations["document_import_statement_api_documents__document_id__import_statement_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4604,6 +4632,9 @@ export interface components {
             /** Opens Inline */
             opens_inline: boolean;
             explanation?: components["schemas"]["DocumentExplanation"] | null;
+            /** Statement Imports */
+            statement_imports?: components["schemas"]["StatementFileImport"][];
+            statement_offer?: components["schemas"]["StatementFileOffer"] | null;
         };
         /**
          * DocumentExplanation
@@ -5626,6 +5657,17 @@ export interface components {
          */
         ImportStatus: "imported" | "reconciled" | "unreconciled" | "failed";
         /**
+         * ImportStoredStatementBody
+         * @description POST /documents/{id}/import-statement: the account the stored file is a statement of.
+         */
+        ImportStoredStatementBody: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+        };
+        /**
          * InboundDecision
          * @description inbound_mail.decision (migration 0019). accepted and rejected are final at once; a
          *     message is final after three failed rows (MAX_ATTEMPTS).
@@ -5723,6 +5765,8 @@ export interface components {
             transfer?: components["schemas"]["OpenTransfer"] | null;
             /** Private Costs */
             private_costs?: components["schemas"]["TaxInputCreate"][];
+            /** Error Code */
+            error_code?: string | null;
         };
         /**
          * InboxItemKind
@@ -8631,6 +8675,61 @@ export interface components {
             closing_balance?: components["schemas"]["ExtractedValue"];
             /** @description the booking lines */
             lines?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * StatementFileCandidate
+         * @description An account of the kind the file imports onto that may take it: its number is the one
+         *     the file prints, or it has none yet (its first statement sets it).
+         */
+        StatementFileCandidate: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Label */
+            label: string;
+            /** Bank */
+            bank: string;
+            /** External Ref Masked */
+            external_ref_masked?: string | null;
+        };
+        /**
+         * StatementFileImport
+         * @description One import of a stored document: the account it went to (GET /documents/{id}).
+         */
+        StatementFileImport: {
+            /**
+             * Import Id
+             * Format: uuid
+             */
+            import_id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Account Label */
+            account_label: string;
+            status: components["schemas"]["ImportStatus"];
+        };
+        /**
+         * StatementFileOffer
+         * @description A credit card's PDF statement or a depot's cash statement uploaded through Dokumente,
+         *     whose read failed with proposal.bank_file_not_read and which no account holds yet: the
+         *     accounts it can be imported onto with „Auf Konto importieren“ (principle 7: the app
+         *     proposes, the person confirms). `suggested_account_id` is the account whose stored number
+         *     is the one the file prints, else the only candidate; none when there is no candidate or
+         *     several without a number. No candidate means no account of this kind takes it yet
+         *     (`account_kind` names the kind to create).
+         */
+        StatementFileOffer: {
+            format: components["schemas"]["StatementFormat"];
+            account_kind: components["schemas"]["AccountKind"];
+            /** Candidates */
+            candidates?: components["schemas"]["StatementFileCandidate"][];
+            /** Suggested Account Id */
+            suggested_account_id?: string | null;
         };
         /**
          * StatementFormat
@@ -12882,6 +12981,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Document"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    document_import_statement_api_documents__document_id__import_statement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportStoredStatementBody"];
+            };
+        };
+        responses: {
+            /** @description Already imported on this account */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementImport"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementImport"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
