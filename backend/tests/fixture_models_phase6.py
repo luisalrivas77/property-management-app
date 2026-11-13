@@ -1513,6 +1513,99 @@ class CardFixture(_Fixture):
         return pages
 
 
+# --- card_pdf_consors.yaml: services.bank.consors_pdf and its import (D176 (3), (4)) --------
+
+# A Consors Finanz card number as printed: its first and last four digits visible.
+_CONSORS_CARD = re.compile(r"\d{4} X{4} X{4} \d{4}")
+# The issuer's word for the payment received (rules.household.card).
+CONSORS_PAYMENT = "EINGEGANGENE ZAHLUNG"
+
+
+class ConsorsExpect(Schema):
+    """CardExpect for the second issuer: no reference per row (D22's position path)."""
+
+    format: Literal["card_pdf"]
+    account_iban: None = None
+    account_ref: str = Field(pattern=r"^[0-9]+$")
+    card_last4: str | None = Field(default=None, pattern=r"^[0-9]{4}$")
+    payment_iban: str | None = None
+    opening_balance: Money
+    closing_balance: Money
+    balance_error: str | None = None  # statement.report_unbalanced
+    line_count: int = Field(ge=1)
+    total: Money
+    first_booking_on: date
+    last_booking_on: date
+    warnings: list[str] = Field(default_factory=list)
+    lines: list[phase2.PinnedLine] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        if self.payment_iban is not None:
+            iban = normalize_iban(self.payment_iban)  # a checksum-valid IBAN
+            if not iban.endswith(self.account_ref.zfill(10)):
+                raise ValueError("the card account's IBAN ends with its Kontonummer")
+        if self.balance_error is None and self.opening_balance + self.total != self.closing_balance:
+            raise ValueError("opening + total must equal closing when nothing breaks")
+        if self.balance_error not in (None, statements.REPORT_UNBALANCED):
+            raise ValueError("a card statement's only file error is statement.report_unbalanced")
+        if any(p.index >= self.line_count for p in self.lines):
+            raise ValueError("a pinned line index is past line_count")
+        for pinned in self.lines:
+            line = pinned.line
+            if line.bank_reference is not None or line.counterparty_iban is not None:
+                raise ValueError("a Consors line names no reference and no IBAN")
+            issuer = line.booking_text is not None
+            if issuer != (line.counterparty_name is None):
+                raise ValueError("an issuer's own line has no merchant, a purchase no kind word")
+            if line.counterparty_name not in (None, line.purpose):
+                raise ValueError("a purchase's merchant is its text")
+            text = " ".join([line.purpose, line.counterparty_name or ""])
+            if _CONSORS_CARD.search(text) or _CARD_DIGITS.search(text):
+                raise ValueError("no part of a card number in a line")
+        return self
+
+
+class ConsorsCase(_Case):
+    input: CardInput
+    expect: ConsorsExpect
+    import_: CardImportExpect = Field(alias="import")
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        expect, outcome = self.expect, self.import_
+        if outcome.status is not None:
+            if outcome.lines_new + outcome.lines_skipped != expect.line_count:
+                raise ValueError(f"{self.id}: every line is new or skipped")
+            if outcome.error_code != expect.balance_error:
+                raise ValueError(f"{self.id}: a file error is stored exactly when the file breaks")
+            broken = outcome.error_code is not None
+            if broken != (outcome.status is ImportStatus.UNRECONCILED) or broken != (
+                outcome.none_matched
+            ):
+                raise ValueError(f"{self.id}: a broken file is unreconciled and never matched")
+        if outcome.account_ref_masked not in (None, f"**** {expect.account_ref[-4:]}"):
+            raise ValueError(f"{self.id}: the reference is masked to its last four")
+        if outcome.payment_iban_masked is not None:
+            if expect.payment_iban is None:
+                raise ValueError(f"{self.id}: only a printed payment IBAN is proposed")
+            if outcome.payment_iban_masked != mask_iban(normalize_iban(expect.payment_iban)):
+                raise ValueError(f"{self.id}: the proposed payment IBAN is masked")
+        by_index = {p.index: p.line for p in expect.lines}
+        for booking in outcome.booked:
+            line = by_index.get(booking.index)
+            if line is None or line.counterparty_name is not None:
+                raise ValueError(f"{self.id}: code books a pinned line without a merchant")
+            payment = line.amount > 0 and line.booking_text == CONSORS_PAYMENT
+            if payment != (booking.category == "internal_transfer_in") or line.amount == 0:
+                raise ValueError(f"{self.id}: a credit booked by code is the payment, a transfer")
+        return self
+
+
+class ConsorsFixture(CardFixture):
+    cases: list[ConsorsCase] = Field(min_length=1)  # type: ignore[assignment]
+
+
 # --- valuation.yaml: rules.valuation.price_on / value (D167 revised) ------------------------
 
 _CENT, _PRICE_PLACES = Decimal("0.01"), Decimal("0.00000001")
@@ -1898,6 +1991,7 @@ MODELS: dict[str, type[Schema]] = {
     "binance_csv": BinanceFixture,
     "dkb_csv": DkbFixture,
     "card_pdf": CardFixture,
+    "card_pdf_consors": ConsorsFixture,
     "valuation": ValuationFixture,
     "issuer_nav": IssuerNavFixture,
     "net_worth": NetWorthFixture,

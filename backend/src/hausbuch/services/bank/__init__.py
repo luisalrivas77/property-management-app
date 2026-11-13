@@ -11,6 +11,9 @@ hausbuch.rules.errors.RuleError with a statement.* code; messages never quote fi
   stated balance that only pre-fills the typed closing.
 - card_pdf.py: the credit card's monthly PDF statement (phase 6 D176 (3)), read by code from
   its text layer; balances from the file.
+- consors_pdf.py: a second issuer's card statement (Consors Finanz), the same format card_pdf,
+  told apart by its text and read from pypdf's layout text; its closing balance is the opening
+  plus the printed totals.
 - depot_pdf.py: a depot's cash statement (phase 6 step 4, D165 (1) amended), read by code from
   its text layer; balances from the file.
 - Any other PDF Kontoauszug: not imported (phase 2 built only the extraction schema), refused
@@ -23,7 +26,7 @@ from hausbuch.rules.errors import RuleError
 from hausbuch.rules.statements import UNKNOWN_FORMAT
 from hausbuch.schemas.bank import BankSource, ParsedStatement, StatementFormat
 
-from . import camt, card_pdf, csv_camt, depot_pdf, dkb_csv
+from . import camt, card_pdf, consors_pdf, csv_camt, depot_pdf, dkb_csv
 
 __all__ = [
     "BANK_EXPORT_FORMATS",
@@ -31,6 +34,8 @@ __all__ = [
     "ParseOutcome",
     "detect_format",
     "is_bank_export",
+    "is_card_statement",
+    "parse_card_statement",
     "parse_statement",
 ]
 
@@ -69,9 +74,10 @@ def detect_format(data: bytes, media_type: str | None = None) -> StatementFormat
     if dkb_csv.looks_like(head):
         return StatementFormat.DKB_CSV
     if body.startswith(b"%PDF") or media_type == "application/pdf":
-        # D176 (3): a PDF whose text layer is a card statement is one; any other is not read.
+        # D176 (3): a PDF whose text layer is a card statement of an issuer the readers know
+        # (card_pdf, consors_pdf) is one; any other is not read.
         pages = card_pdf.pdf_pages(data)
-        if pages is not None and card_pdf.looks_like(pages):
+        if pages is not None and is_card_statement(pages):
             return StatementFormat.CARD_PDF
         # Phase 6 step 4: a depot's cash statement, by its own layout.
         if pages is not None and depot_pdf.looks_like(pages):
@@ -93,13 +99,28 @@ def parse_statement(data: bytes, media_type: str | None = None) -> ParseOutcome:
     if fmt is StatementFormat.DKB_CSV:
         return ParseOutcome(dkb_csv.parse_dkb_csv(data))
     if fmt is StatementFormat.CARD_PDF:
-        result = card_pdf.parse_card_pdf(data)
+        result = parse_card_statement(data)
         return ParseOutcome(result.statement, result.balance_error)
     if fmt is StatementFormat.DEPOT_PDF:
         depot = depot_pdf.parse_depot_pdf(data)
         return ParseOutcome(depot.statement, depot.balance_error)
     # Only a card or depot statement is read from a PDF; a bank's PDF statement is not.
     raise RuleError(UNKNOWN_FORMAT, "PDF statements are not imported yet; use camt or CSV-CAMT")
+
+
+def is_card_statement(pages: list[str]) -> bool:
+    """A card statement of either issuer the readers know, by its text layer (plain
+    extraction, card_pdf.pdf_pages)."""
+    return consors_pdf.looks_like(pages) or card_pdf.looks_like(pages)
+
+
+def parse_card_statement(data: bytes) -> card_pdf.CardParse:
+    """A card statement by its issuer's reader: Consors Finanz by its layout, any other by
+    the first issuer's (card_pdf), which refuses what it does not know."""
+    pages = card_pdf.pdf_pages(data)
+    if pages is not None and consors_pdf.looks_like(pages):
+        return consors_pdf.parse_consors_pdf(data)
+    return card_pdf.parse_card_pdf(data)
 
 
 def is_bank_export(data: bytes, media_type: str | None = None) -> bool:

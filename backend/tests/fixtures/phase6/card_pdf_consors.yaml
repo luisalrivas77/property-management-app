@@ -1,0 +1,273 @@
+# Parser and import fixture: a second card issuer's monthly PDF statement, Consors Finanz
+# (services.bank.consors_pdf through services.bank.parse_statement and
+# services.statements.import_statement; docs/phases/phase-6.md D176 (3), (4)).
+#
+# The input is the statement's text layer as pypdf's LAYOUT mode extracts it, one string per
+# page: the real PDF draws its table column by column, so the plain extraction (card_pdf.yaml's
+# input) loses the rows, and the reader takes the layout text, where each printed row is one
+# line. The tests draw each line into a PDF (reportlab) and check pypdf gives it back in both
+# modes, so the bytes path and the format sniff are replayed too. The statements are INVENTED
+# in the layout of one real statement read on Luis's computer (never committed): nothing here
+# is from it.
+#
+# The layout the cases pin:
+#   - page 1: „Kundennummer:“ and „Kontonummer:“ (digit groups split by spaces), „IBAN:“ with
+#     „Für Überweisungen auf das Kartenkonto …“ (the card account's own IBAN, which ends with
+#     the Kontonummer), the heading „Kontoauszug zu Consors Finanz Mastercard® Nr.: dddd XXXX
+#     XXXX dddd“ and „… alle Umsätze vom dd.mm.yyyy bis einschl. dd.mm.yyyy“ (the period)
+#   - page 2: the column header „Umsatzdatum Buchungsdatum Verwendungszweck Soll/Haben in
+#     EUR“, „ALTER SALDO VOM dd.mm.yy“ with its amount, one row per line (dates dd.mm.yy), an
+#     amount alone in the amount column and „GESAMTUMSÄTZE“ with the other total; amounts
+#     signed („-“ debit or owed, „+“ credit), a point as thousands separator, a comma as
+#     decimal mark; a sign alone is an empty total; no Neuer Saldo, no reference per row
+#   - seen on the real statement: the payment row „EINGEGANGENE ZAHLUNG“ with its
+#     Buchungsdatum only, the empty debit total „-“ above GESAMTUMSÄTZE. Inferred from the
+#     column header, not seen: a purchase row with both dates and its merchant as the text
+#     (the real statement held no purchase)
+#
+# Reading rules the cases pin (D176 (3), (4) as amended for a second issuer):
+#   - format card_pdf, told apart from the first issuer by its text; account_iban null; the
+#     Kontonummer (digits only) is the account's reference (`account_ref`), stored as its
+#     external_ref, masked („**** “ + its last four) and HMAC'd, never in clear; the printed
+#     IBAN must end with it
+#   - of the card number only the last four digits (`card_last4`)
+#   - opening balance = ALTER SALDO; closing balance = opening + the printed totals; the lines
+#     must equal the totals (debits and credits each when two are printed), else
+#     statement.report_unbalanced: the file is stored, unreconciled as a whole, and none of
+#     its lines is matched (phase 2 D34)
+#   - each line: no bank_reference (D22's position path, so a re-downloaded statement still
+#     adds nothing), booking_date = Buchungsdatum, value_date = Umsatzdatum when printed; the
+#     payment „EINGEGANGENE ZAHLUNG“ is its own booking_text with no counterparty and is
+#     booked by code as internal_transfer_in (rules.household.card); any other row's text is
+#     its merchant (counterparty_name) and purpose, with no booking_text
+#   - the printed IBAN is returned as `payment_iban`; the import only proposes it, masked
+#   - `import.after` lists the cases imported onto the same account before this one, in order;
+#     the account's anchor is `bases.account` (the first statement's ALTER SALDO, its day)
+#
+# Invented names, numbers and amounts; the IBANs are checksum-valid synthetic IBANs under the
+# Bundesbank test BLZ 10000000, none under a real bank. Owner A stands for the card holder.
+
+ids:
+  account: 0000006c-0000-4000-8000-000000000002
+
+bases:
+  account:
+    kind: credit_card
+    provider: Beispielbank Karte
+    opening_balance: "-312.75"
+    opening_balance_on: 2026-01-13
+
+cases:
+  - id: plain_month
+    description: >-
+      purchases and the payment of the last balance; the first import sets the account's
+      reference
+    pending: "phase 6 step 2b (the second card issuer, D176 (3))"
+    input:
+      pages:
+        - |
+          Consors Finanz, Postfach 10 00 00, 12345 Musterstadt
+                                                                                                                       Mehr Infos zu Ihrem Kontoauszug finden Sie unter:
+          Owner A                                                                                                      Oder per Telefon (Mo - Fr)
+          Beispielstraße 1
+          12345 Musterstadt
+                                                                                                                  Kundennummer:                    9876 543 210
+                                                                                                                  Kontonummer:                     12 345 678 90
+                                                                                                                  für Ihre Online Banking Anmeldung
+                                                                                                                  IBAN:       DE23 1000 0000 1234 5678 90
+                                                                                                                  Für Überweisungen auf das Kartenkonto nur
+                                                                                                                  aus dem Inland!
+                                                                                                                  Ihr Verfügungsrahmen:                           3.000,00 EUR
+                                                                                                                  Noch frei verfügbar:                            2.865,45 EUR
+          Kontoauszug zu Consors Finanz Mastercard® Nr.: 5100 XXXX XXXX 4321
+          Guten Tag Owner A,
+          nachfolgend finden Sie Ihre monatliche Abrechnung:
+          Diese Abrechnung enthält alle Umsätze vom 13.01.2026 bis einschl. 12.02.2026. (Bitte beachten Sie:  Umsätze nach
+           diesem Datum werden erst im nächsten Kontoauszug angezeigt).
+                                                                            Saldo                                              Rate                            Abbuchungsdatum
+          Einmalzahlung vierteljährlich                                                                         vorläufig: ----.EUR
+          Ihr Kontoauszug ist zugleich der Rechnungsabschluss des aktuellen Monats.
+          Consors Finanz, Postfach 10 00 00, 12345 Musterstadt                                                                                          1 / 2
+        - |
+          Einmalzahlung vierteljährlich
+          Umsatzdatum Buchungsdatum                 Verwendungszweck                                                                 Soll/Haben in EUR
+                                                    ALTER SALDO VOM 13.01.26                                                                   -312,75
+                15.01.26    16.01.26                BEISPIEL MARKT MUSTERSTADT                                                                  -45,10
+                            02.02.26                EINGEGANGENE ZAHLUNG                                                                       +312,75
+                06.02.26    09.02.26                BUCHLADEN AM MARKT                                                                          -89,45
+                                                                                                                                                     -134,55
+                                                    GESAMTUMSÄTZE                                                                              +312,75
+                                                                                                                                                           2 / 2
+          Für Umsatzsteuerzwecke: USt-ID-Nr.: DE 000 000 000
+    expect:
+      format: card_pdf
+      account_ref: "1234567890"
+      card_last4: "4321"
+      payment_iban: DE23100000001234567890
+      opening_balance: "-312.75"
+      closing_balance: "-134.55"
+      line_count: 3
+      total: "178.20"
+      first_booking_on: 2026-01-16
+      last_booking_on: 2026-02-09
+      lines:
+        - index: 0
+          description: a purchase, both dates, the merchant as its text (inferred, not seen)
+          line: {booking_date: 2026-01-16, value_date: 2026-01-15, amount: "-45.10", counterparty_name: BEISPIEL MARKT MUSTERSTADT, purpose: BEISPIEL MARKT MUSTERSTADT}
+        - index: 1
+          description: the payment to the card, its Buchungsdatum only, no merchant
+          line: {booking_date: 2026-02-02, amount: "312.75", purpose: EINGEGANGENE ZAHLUNG, booking_text: EINGEGANGENE ZAHLUNG}
+        - index: 2
+          line: {booking_date: 2026-02-09, value_date: 2026-02-06, amount: "-89.45", counterparty_name: BUCHLADEN AM MARKT, purpose: BUCHLADEN AM MARKT}
+    import:
+      after: []
+      status: reconciled
+      lines_new: 3
+      lines_skipped: 0
+      account_ref_masked: "**** 7890"
+      payment_iban_masked: "DE23 **** 7890"
+      booked:
+        - {index: 1, category: internal_transfer_in}
+
+  - id: payment_only
+    description: >-
+      the next month holds only the payment, as the real statement did: the debit total is a
+      sign alone, and the new balance is zero
+    pending: "phase 6 step 2b (the second card issuer, D176 (3))"
+    input:
+      pages:
+        - |
+          Consors Finanz, Postfach 10 00 00, 12345 Musterstadt
+                                                                                                                       Mehr Infos zu Ihrem Kontoauszug finden Sie unter:
+          Owner A                                                                                                      Oder per Telefon (Mo - Fr)
+          Beispielstraße 1
+          12345 Musterstadt
+                                                                                                                  Kundennummer:                    9876 543 210
+                                                                                                                  Kontonummer:                     12 345 678 90
+                                                                                                                  für Ihre Online Banking Anmeldung
+                                                                                                                  IBAN:       DE23 1000 0000 1234 5678 90
+                                                                                                                  Für Überweisungen auf das Kartenkonto nur
+                                                                                                                  aus dem Inland!
+                                                                                                                  Ihr Verfügungsrahmen:                           3.000,00 EUR
+                                                                                                                  Noch frei verfügbar:                            2.865,45 EUR
+          Kontoauszug zu Consors Finanz Mastercard® Nr.: 5100 XXXX XXXX 4321
+          Guten Tag Owner A,
+          nachfolgend finden Sie Ihre monatliche Abrechnung:
+          Diese Abrechnung enthält alle Umsätze vom 13.02.2026 bis einschl. 12.03.2026. (Bitte beachten Sie:  Umsätze nach
+           diesem Datum werden erst im nächsten Kontoauszug angezeigt).
+                                                                            Saldo                                              Rate                            Abbuchungsdatum
+          Einmalzahlung vierteljährlich                                                                         vorläufig: ----.EUR
+          Ihr Kontoauszug ist zugleich der Rechnungsabschluss des aktuellen Monats.
+          Consors Finanz, Postfach 10 00 00, 12345 Musterstadt                                                                                          1 / 2
+        - |
+          Einmalzahlung vierteljährlich
+          Umsatzdatum Buchungsdatum                 Verwendungszweck                                                                 Soll/Haben in EUR
+                                                    ALTER SALDO VOM 13.02.26                                                                   -134,55
+                            02.03.26                EINGEGANGENE ZAHLUNG                                                                       +134,55
+                                                                                                                                                           -
+                                                    GESAMTUMSÄTZE                                                                              +134,55
+                                                                                                                                                           2 / 2
+          Für Umsatzsteuerzwecke: USt-ID-Nr.: DE 000 000 000
+    expect:
+      format: card_pdf
+      account_ref: "1234567890"
+      card_last4: "4321"
+      payment_iban: DE23100000001234567890
+      opening_balance: "-134.55"
+      closing_balance: "0.00"
+      line_count: 1
+      total: "134.55"
+      first_booking_on: 2026-03-02
+      last_booking_on: 2026-03-02
+      lines:
+        - index: 0
+          line: {booking_date: 2026-03-02, amount: "134.55", purpose: EINGEGANGENE ZAHLUNG, booking_text: EINGEGANGENE ZAHLUNG}
+    import:
+      after: [plain_month]
+      status: reconciled
+      lines_new: 1
+      lines_skipped: 0
+      account_ref_masked: "**** 7890"
+      booked:
+        - {index: 0, category: internal_transfer_in}
+
+  - id: unbalanced
+    description: >-
+      a misread amount: the lines no longer equal the printed totals, so the file is stored,
+      unreconciled as a whole, and none of its lines is matched
+    pending: "phase 6 step 2b (the second card issuer, D176 (3))"
+    input:
+      same_as: plain_month
+      replace:
+        - ["-89,45", "-98,45"]
+    expect:
+      format: card_pdf
+      account_ref: "1234567890"
+      card_last4: "4321"
+      payment_iban: DE23100000001234567890
+      opening_balance: "-312.75"
+      closing_balance: "-134.55"
+      balance_error: statement.report_unbalanced
+      line_count: 3
+      total: "169.20"
+      first_booking_on: 2026-01-16
+      last_booking_on: 2026-02-09
+      lines:
+        - index: 2
+          line: {booking_date: 2026-02-09, value_date: 2026-02-06, amount: "-98.45", counterparty_name: BUCHLADEN AM MARKT, purpose: BUCHLADEN AM MARKT}
+    import:
+      after: []
+      status: unreconciled
+      error_code: statement.report_unbalanced
+      lines_new: 3
+      lines_skipped: 0
+      none_matched: true
+
+  - id: same_statement_twice
+    description: >-
+      the same statement downloaded again (a new file, the same lines): with no reference per
+      row, every line is known by its position among identical lines, nothing new
+    pending: "phase 6 step 2b (the second card issuer, D176 (3))"
+    input:
+      same_as: plain_month
+      fresh_file: true
+    expect:
+      format: card_pdf
+      account_ref: "1234567890"
+      card_last4: "4321"
+      payment_iban: DE23100000001234567890
+      opening_balance: "-312.75"
+      closing_balance: "-134.55"
+      line_count: 3
+      total: "178.20"
+      first_booking_on: 2026-01-16
+      last_booking_on: 2026-02-09
+    import:
+      after: [plain_month]
+      status: reconciled
+      lines_new: 0
+      lines_skipped: 3
+      account_ref_masked: "**** 7890"
+
+  - id: other_account
+    description: a statement of another card account, refused before anything is written
+    pending: "phase 6 step 2b (the second card issuer, D176 (3))"
+    input:
+      same_as: payment_only
+      replace:
+        - ["12 345 678 90", "12 345 678 09"]
+        - ["DE23 1000 0000 1234 5678 90", "DE76 1000 0000 1234 5678 09"]
+    expect:
+      format: card_pdf
+      account_ref: "1234567809"
+      card_last4: "4321"
+      payment_iban: DE76100000001234567809
+      opening_balance: "-134.55"
+      closing_balance: "0.00"
+      line_count: 1
+      total: "134.55"
+      first_booking_on: 2026-03-02
+      last_booking_on: 2026-03-02
+    import:
+      after: [plain_month]
+      error: statement.account_mismatch

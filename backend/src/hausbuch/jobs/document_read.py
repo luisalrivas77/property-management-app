@@ -71,7 +71,7 @@ from hausbuch.schemas.enums import ActorType, DocumentSubtype, ExtractionKind, P
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
 from hausbuch.services import documents as document_service
 from hausbuch.services import proposals
-from hausbuch.services.bank import card_pdf, depot_pdf, is_bank_export
+from hausbuch.services.bank import card_pdf, depot_pdf, is_bank_export, is_card_statement
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.exchange import is_exchange_export
 from hausbuch.services.workspace_settings import private_ai_allowed
@@ -377,10 +377,10 @@ def _text_pages(original: _Original) -> list[str]:
 
 
 def _is_card_statement(pages: list[str]) -> bool:
-    """A card statement (services.bank.card_pdf) or, since phase 6 step 4, a depot's cash
-    statement (services.bank.depot_pdf) by its printed layout: both are read by code on their
-    account only."""
-    return bool(pages) and (card_pdf.looks_like(pages) or depot_pdf.looks_like(pages))
+    """A card statement (services.bank.card_pdf, consors_pdf) or, since phase 6 step 4, a
+    depot's cash statement (services.bank.depot_pdf) by its printed layout: both are read by
+    code on their account only."""
+    return bool(pages) and (is_card_statement(pages) or depot_pdf.looks_like(pages))
 
 
 def _is_exchange_export(original: _Original) -> bool:
