@@ -160,10 +160,14 @@ def test_rows_the_reader_misses_are_the_files_error():
 
 
 def _tx(**overrides) -> MatchTransaction:
-    case = next(c for c in BUILT if c.import_.booked)
-    line = card_pdf.parse_card_pages(CARD.pages(case.id)).statement.lines[
-        case.import_.booked[0].index
-    ]
+    """The fixture's interest line (the first line code books to hh_interest_fees)."""
+    case, booking = next(
+        (c, b)
+        for c in BUILT
+        for b in c.import_.booked
+        if b.category == AllocationCategory.HH_INTEREST_FEES.value
+    )
+    line = card_pdf.parse_card_pages(CARD.pages(case.id)).statement.lines[booking.index]
     values = {
         "id": uuid4(),
         "booking_date": line.booking_date,

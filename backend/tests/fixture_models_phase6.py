@@ -1244,8 +1244,13 @@ class CardCase(_Case):
         by_index = {p.index: p.line for p in expect.lines}
         for booking in outcome.booked:
             line = by_index.get(booking.index)
-            if line is None or line.amount >= 0 or line.counterparty_name is not None:
-                raise ValueError(f"{self.id}: code books a pinned debit without a merchant")
+            if line is None or line.counterparty_name is not None:
+                raise ValueError(f"{self.id}: code books a pinned line without a merchant")
+            # D176 (4) as amended (review of step 2b): the payment „Bezahlung“, a credit, is
+            # the card's transfer leg; any other line code books is a debit (interest, fee).
+            payment = line.amount > 0 and line.booking_text == "Bezahlung"
+            if payment != (booking.category == "internal_transfer_in") or line.amount == 0:
+                raise ValueError(f"{self.id}: a credit booked by code is the payment, a transfer")
         return self
 
 

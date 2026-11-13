@@ -161,15 +161,6 @@ def test_a_card_statement_imports_as_the_fixture_says(
     pinned = {p.index: p.line for p in case.expect.lines}
     booked = {pinned[b.index].bank_reference: b.category for b in outcome.booked}
     statement = statements.parse_statement(case_bytes(case), "application/pdf").statement
-    # D176 (4), not in the fixture's `booked` (written before the settlement link): the payment
-    # line „Bezahlung“ is the card's transfer leg, booked by code as internal_transfer_in.
-    for parsed in statement.lines:
-        if (
-            imported.lines_new
-            and parsed.booking_text == "Bezahlung"
-            and parsed.counterparty_name is None
-        ):
-            booked.setdefault(parsed.bank_reference, "internal_transfer_in")
     for parsed in statement.lines:
         line = lines[parsed.bank_reference]
         if outcome.none_matched:
