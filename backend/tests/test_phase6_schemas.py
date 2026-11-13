@@ -193,8 +193,9 @@ def test_a_valuation_has_a_value_or_a_reason():
 
 def test_every_price_source_has_a_place_in_the_precedence():
     assert set(valuation.SOURCE_PRECEDENCE) == set(PriceSourceKind)
-    assert valuation.SOURCE_PRECEDENCE[0] is PriceSourceKind.TRADE
-    assert valuation.SOURCE_PRECEDENCE[-2:] == (PriceSourceKind.USER, PriceSourceKind.ECB_FX)
+    # D167 amended 13 Nov 2026: a typed price wins on its day, then a trade.
+    assert valuation.SOURCE_PRECEDENCE[:2] == (PriceSourceKind.USER, PriceSourceKind.TRADE)
+    assert valuation.SOURCE_PRECEDENCE[-1] is PriceSourceKind.ECB_FX
 
 
 # --- The later steps' rules are stubs ----------------------------------------------------

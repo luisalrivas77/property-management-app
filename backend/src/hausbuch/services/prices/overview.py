@@ -283,8 +283,9 @@ def update_asset(ctx: CommandContext, asset_id: UUID, body: AssetPatch) -> Asset
 
 
 def record_price(ctx: CommandContext, asset_id: UUID, body: TypedPriceBody) -> AssetPriceRow:
-    """„Kurs eintragen“: a `user` price, the lowest precedence of its day (D174 (4)); a
-    later fetched price, report or trade on the same or a later day wins over it."""
+    """„Kurs eintragen“: a `user` price, which wins on its own day (D167 amended 13 Nov
+    2026: it replaces that day's fetched price, report or trade value, which the append-only
+    table never corrects); a price of a later day wins over it."""
     current = require_row(ctx.conn, asset_table, EntityType.ASSET, asset_id)
     if _is_euro(current):
         raise RuleError(E.ASSET_IS_EURO, "the euro is 1.0")

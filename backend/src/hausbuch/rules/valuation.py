@@ -5,8 +5,10 @@ sums the valuations into the net worth.
 - `price_on(prices, on)`: the price an asset is valued at on a day, date first: the latest
   day on or before `on` that has a price, and among that day's rows the source highest in
   SOURCE_PRECEDENCE (D167 revised: a trade beats a CoinGecko price on the same day, a NAV
-  beats a report value, but yesterday's NAV beats last quarter's trade price), then the
-  latest `fetched_at` within one source. Older than STALE_AFTER_DAYS -> stale.
+  beats a report value, but yesterday's NAV beats last quarter's trade price; D167 amended
+  13 Nov 2026: a typed user price wins on its own day, the one way to correct a fetched
+  price, which is unique per day in an append-only table), then the latest `fetched_at`
+  within one source. Older than STALE_AFTER_DAYS -> stale.
 - `to_eur(amount, on, rates)`: a figure in another currency, divided by the ECB rate (units
   of the currency per euro) of the latest ECB day on or before the figure's day (a Saturday
   NAV by Friday's rate), 8 places half up.
@@ -37,15 +39,16 @@ from hausbuch.schemas.prices import FxRate, NavRow
 
 from . import errors as E
 
-# One day's rows, best first (D167 (2) revised, D174 (3)). ecb_fx prices a currency, never
-# a security, so it is last.
+# One day's rows, best first (D167 (2) revised, D174 (3)). A person's typed price first
+# (D167 amended 13 Nov 2026: it corrects that day's fetched price); ecb_fx prices a
+# currency, never a security, so it is last.
 SOURCE_PRECEDENCE: tuple[PriceSourceKind, ...] = (
+    PriceSourceKind.USER,
     PriceSourceKind.TRADE,
     PriceSourceKind.ISSUER_NAV,
     PriceSourceKind.STATEMENT,
     PriceSourceKind.KRAKEN_DAILY,
     PriceSourceKind.COINGECKO_DAILY,
-    PriceSourceKind.USER,
     PriceSourceKind.ECB_FX,
 )
 STALE_AFTER_DAYS = 7

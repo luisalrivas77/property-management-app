@@ -27,7 +27,9 @@
 #   row, never before;
 # - a held ISIN with no adapter in the registry is valued from its latest report value
 #   (source statement), labelled „Kurs aus dem letzten Bericht“, with no card;
-# - a typed user price ranks below every fetched source on the same day (SOURCE_PRECEDENCE).
+# - a typed user price wins over every fetched source on its own day (SOURCE_PRECEDENCE,
+#   D167 amended 13 Nov 2026: it is how a person corrects a wrong fetched price, which the
+#   append-only, one-per-day table never replaces); the next day's NAV wins again.
 #
 # The key "on" is quoted: YAML 1.1 reads a bare on as true.
 # Invented ISINs, NAVs and rates.
@@ -107,7 +109,7 @@ cases:
       label: „Kurs aus dem letzten Bericht“
       card: null
 
-  - id: typed_price_below_every_fetched_one
+  - id: typed_price_wins_its_day
     first_movement_on: 2026-01-15
     navs:
       - {"on": 2026-06-30, nav: "82.10000000", currency: EUR}
@@ -116,7 +118,7 @@ cases:
     expect:
       stored:
         - {"on": 2026-06-30, price_eur: "82.10000000"}
-      valued_by: issuer_nav
+      valued_by: user
 
 parse_cases:
   - id: spdr_navhist

@@ -48,5 +48,5 @@ def asset_update(asset_id: UUID, body: AssetPatch, cmd: Cmd) -> AssetRow:
 
 @router.post("/assets/{asset_id}/prices", status_code=201)
 def asset_price_record(asset_id: UUID, body: TypedPriceBody, cmd: Cmd) -> AssetPriceRow:
-    """„Kurs eintragen“: the lowest precedence of its day (D174 (4))."""
+    """„Kurs eintragen“: wins on its own day (D167 amended 13 Nov 2026)."""
     return cmd.run(overview.record_price, asset_id, body)

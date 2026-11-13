@@ -4,8 +4,10 @@
 # Recomputed on load (tests/fixture_models_phase6.py) by the rule written once more, from
 # rules/valuation.SOURCE_PRECEDENCE and STALE_AFTER_DAYS:
 # - date first: the latest day on or before `on` that has a price; among that day's rows the
-#   source earliest in SOURCE_PRECEDENCE (trade, issuer_nav, statement, kraken_daily,
-#   coingecko_daily, user, ecb_fx);
+#   source earliest in SOURCE_PRECEDENCE (user, trade, issuer_nav, statement, kraken_daily,
+#   coingecko_daily, ecb_fx); a typed user price wins on its own day (D167 amended 13 Nov
+#   2026: a fetched daily price is unique per day and the table append-only, so a person's
+#   price is the only way to correct a wrong one), never over a newer day's price;
 # - stale when `on` − the price's day > STALE_AFTER_DAYS (7): the value is still shown, with
 #   valuation.stale_price;
 # - value = units × price_eur, rounded to the cent half up; a cash asset (EUR) is valued at
@@ -41,6 +43,22 @@ cases:
       - {"on": 2026-06-30, price_eur: "55120.00", source: trade}
     position: {units: "0.02500000", reconciled_through: 2026-06-30}
     expect: {price: {"on": 2026-06-30, source: trade}, stale: false, value_eur: "1378.00"}
+
+  - id: typed_price_beats_a_trade_on_its_day
+    "on": 2026-06-30
+    prices:
+      - {"on": 2026-06-30, price_eur: "55120.00", source: trade}
+      - {"on": 2026-06-30, price_eur: "55100.00", source: user}
+    position: {units: "0.02500000", reconciled_through: 2026-06-30}
+    expect: {price: {"on": 2026-06-30, source: user}, stale: false, value_eur: "1377.50"}
+
+  - id: next_days_nav_beats_a_typed_price
+    "on": 2026-07-01
+    prices:
+      - {"on": 2026-06-30, price_eur: "85.00", source: user}
+      - {"on": 2026-07-01, price_eur: "82.20", source: issuer_nav}
+    position: {units: "20.000000", reconciled_through: 2026-07-01}
+    expect: {price: {"on": 2026-07-01, source: issuer_nav}, stale: false, value_eur: "1644.00"}
 
   - id: nav_beats_report_value_on_one_day
     "on": 2026-06-30

@@ -128,8 +128,8 @@ class AssetRow(Schema):
 
 
 class TypedPriceBody(Schema):
-    """POST /assets/{id}/prices: a price typed by a person („Kurs eintragen“, source user,
-    the lowest precedence, D174 (4))."""
+    """POST /assets/{id}/prices: a price typed by a person („Kurs eintragen“, source user;
+    it wins on its own day, D167 amended 13 Nov 2026)."""
 
     on: date
     price_eur: PriceEur
