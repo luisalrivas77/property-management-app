@@ -2677,8 +2677,8 @@ _DEPOT_WARNINGS = {
     ),
 }
 _NO_DEPOT_NOTE = (
-    "Es gibt noch kein Depot unter Konten. Bitte zuerst das Depot anlegen (Konten › Konto "
-    "hinzufügen, Art „Depot“), dann hier das Depot wählen."
+    "Es gibt noch kein Depot unter Konten. Bitte zuerst das Depot anlegen (Konten › „Konto "
+    "anlegen“, Kontoart „Depot“), dann hier das Depot wählen."
 )
 
 
