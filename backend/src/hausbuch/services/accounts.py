@@ -433,9 +433,11 @@ def _account(conn: Connection, account_id: UUID) -> Account:
 
 
 def _rematch_waiting(ctx: CommandContext, account_id: UUID) -> None:
-    """Queue rematch_waiting: transfers from a new owner account wait in the inbox, and the
-    owner-transfer matcher books them now (phase-2.md §8.1). An account's IBAN never changes
-    after creation, so only becoming an owner account counts."""
+    """Queue rematch_waiting for the lines naming this account's IBAN that wait in the inbox
+    (phase-2.md §8.1). Two triggers: an account becoming an owner account (the owner-transfer
+    matcher books its transfers now; an account's IBAN never changes after creation), and a
+    credit card's payment IBAN being confirmed (D176 (4): the debits to it are transfers now;
+    matching.waiting_lines reads the payment IBAN for a card)."""
     enqueue.enqueue_rematch_waiting(
         ctx.conn, workspace_id=ctx.workspace_id, kind=enqueue.TRIGGER_ACCOUNT, entity_id=account_id
     )
