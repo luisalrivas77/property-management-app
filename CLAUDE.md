@@ -55,7 +55,8 @@ German; their numbers are sample data, never fixtures.
 - From `backend/`:
   - `uv sync --python 3.12`
   - `uv run ruff check . && uv run ruff format --check .`
-  - `uv run pytest -q -rs` (db tests need `HAUSBUCH_TEST_ADMIN_URL`, a superuser URL)
+  - `uv run pytest -q -rs -n auto` (parallel with pytest-xdist, one throwaway database per
+    worker; drop `-n auto` to run serially; db tests need `HAUSBUCH_TEST_ADMIN_URL`, a superuser URL)
   - `uv run alembic upgrade head` (needs `HAUSBUCH_DATABASE_URL`; run as the schema owner,
     not a superuser)
 
