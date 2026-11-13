@@ -339,6 +339,22 @@ def test_a_dkb_csv_creates_its_account_and_waits_for_its_closing(
     assert _read_failed(read, ws) == []
 
 
+def test_an_export_without_a_booked_line_offers_no_account_to_create(
+    run, read, app_engine, blob_store, fresh_workspaces, tmp_path
+):
+    """A DKB export of a period with no booking: creating its account would only be refused
+    (statement.empty), so no „Konto anlegen und einlesen“ is offered at all."""
+    ws, _ = fresh_workspaces
+    header_only = b"\n".join(DKB_BYTES.split(b"\n")[:5]) + b"\n"
+    assert parse_statement(header_only, "text/csv").statement.lines == []
+    doc, _ = _uploaded_and_refused(app_engine, blob_store, ws, tmp_path, header_only, "text/csv")
+    offer = _offer(read, blob_store, ws, doc.id)
+    assert offer is not None and offer.new_account is None
+    with pytest.raises(RuleError) as caught:
+        _create(run, blob_store, ws, doc.id)
+    assert caught.value.code == rules.EMPTY
+
+
 @pytest.mark.parametrize("kind", ["card", "depot"])
 def test_a_card_or_depot_statement_creates_its_account_and_imports(
     kind, run, read, app_engine, blob_store, fresh_workspaces, tmp_path, hook_calls
