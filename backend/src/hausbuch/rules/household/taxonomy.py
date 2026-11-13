@@ -15,6 +15,12 @@ Readings of the spec (named in the fixture's header too):
 - The depot's codes (D165 (1)) are group depot: a purchase or sale swaps cash for units
   (transfer), a distribution is income, the capital income tax is tax and the fee is
   spending.
+- D159 amended 13 Nov 2026 (migration 0029, Luis): fifteen finer codes so „Sonstiges“ stops
+  holding haircuts, clothes, restaurants and software; each a spending group of its own, as
+  mockup 10's groups are one per code. hh_refund (money back for a purchase) is spending, so
+  its credit lowers the spending total and shows as a negative group, never as income.
+  hh_investment (a payment to an investment platform the app holds no account of) is a
+  transfer: neither income nor spending, and the Haushalt month counts it as saved.
 - `allowed_categories(purpose)` (D159): a private account takes the household codes, the
   transfer codes, the depot codes, bank_fees and uncategorized; the rental account takes
   every other code (phases 2-4), bank_fees and uncategorized included.
@@ -56,6 +62,22 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_HEALTH, G.HEALTH, R.SPENDING),
             _code(C.HH_OTHER, G.OTHER, R.SPENDING),
             _code(C.HH_INTEREST_FEES, G.OTHER, R.SPENDING),  # a card's interest, D176 (3)
+            # D159 amended 13 Nov 2026 (migration 0029): finer spending, one group each
+            _code(C.HH_PERSONAL_CARE, G.PERSONAL_CARE, R.SPENDING),
+            _code(C.HH_CLOTHING, G.CLOTHING, R.SPENDING),
+            _code(C.HH_DINING, G.DINING, R.SPENDING),
+            _code(C.HH_HOME, G.HOME, R.SPENDING),
+            _code(C.HH_ELECTRONICS, G.ELECTRONICS, R.SPENDING),
+            _code(C.HH_ONLINE_SHOPPING, G.ONLINE_SHOPPING, R.SPENDING),
+            _code(C.HH_FEES, G.FEES, R.SPENDING),
+            _code(C.HH_GIFTS, G.GIFTS, R.SPENDING),
+            _code(C.HH_FAMILY_TRANSFERS, G.FAMILY_TRANSFERS, R.SPENDING),
+            _code(C.HH_TELECOM, G.TELECOM, R.SPENDING),
+            _code(C.HH_WORK_EDUCATION, G.WORK_EDUCATION, R.SPENDING),
+            _code(C.HH_SPORT, G.SPORT, R.SPENDING),
+            _code(C.HH_TRAVEL, G.TRAVEL, R.SPENDING),
+            _code(C.HH_REFUND, G.REFUND, R.SPENDING),  # a negative amount among spending
+            _code(C.HH_INVESTMENT, G.INVESTMENT, R.TRANSFER),  # saved, not spent
             # Tax-relevant spending: each proposes the input its form already reads
             _code(C.HH_DONATION, G.TAX, R.TAX, P.RETURN_SPECIAL_EXPENSE),
             _code(C.HH_HOUSEHOLD_SERVICES, G.TAX, R.TAX, P.RETURN_HOUSEHOLD_SERVICES),
@@ -94,6 +116,20 @@ TAX_RELEVANT = frozenset(c for c, row in TAXONOMY.items() if row.relevance is R.
 
 if set(TAXONOMY) != PRIVATE_ONLY:  # pragma: no cover - a code without its row
     raise RuntimeError("every household, transfer and depot code needs a taxonomy row")
+
+# „Alle bestätigen“ in Zu prüfen (D159 amended 13 Nov 2026): the plain income and spending
+# codes whose waiting proposals a person may confirm as a group (POST /inbox/confirm-category).
+# Never a tax-relevant code, a movement or depot code, uncategorized, nor three codes that may
+# matter for a return later and are confirmed one by one: capital income (phase 8's KAP), a
+# tax refund (a church-tax refund lowers the Sonderausgaben), money to family (Unterhalt) and
+# work costs (Werbungskosten on Anlage N).
+BULK_CONFIRMABLE = frozenset(
+    c
+    for c, row in TAXONOMY.items()
+    if c in HOUSEHOLD_CODES
+    and row.relevance in (R.INCOME, R.SPENDING)
+    and row.group not in (G.TAX, G.MOVEMENTS, G.DEPOT)
+) - {C.HH_CAPITAL_INCOME, C.HH_TAX_REFUND, C.HH_FAMILY_TRANSFERS, C.HH_WORK_EDUCATION}
 
 _ALLOWED = MappingProxyType(
     {

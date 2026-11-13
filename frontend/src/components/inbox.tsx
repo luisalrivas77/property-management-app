@@ -271,6 +271,7 @@ export function InboxList({
               <span className="inbox-section-count">{items.length}</span>
             </h3>
             {section === "lines" && items.some((item) => item.kind === "unmatched") ? <AiSuggestions onChanged={onChanged} /> : null}
+            {section === "lines" ? <BulkConfirm items={items} data={data} onChanged={onChanged} /> : null}
             <ul className="inbox-list" aria-label={title}>
               {items.map((item) => {
                 // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
@@ -354,6 +355,136 @@ function AiSuggestions({ onChanged }: { onChanged: () => void }) {
       ) : null}
       <ErrorNotice error={error} />
     </div>
+  );
+}
+
+type AllocationCategory = components["schemas"]["AllocationCategory"];
+type ConfirmCategoryResult = components["schemas"]["ConfirmCategoryResult"];
+
+/** „Alle bestätigen“ (phase 6 D159 amended 13 Nov 2026): the private lines' plain proposals
+ * (one part, no question, a household code that is not tax-relevant; the API's
+ * bulk_confirmable), grouped by category with a count. A group of two or more gets „Alle N
+ * bestätigen“, which lists exactly those lines; „Bestätigen“ sends their ids, never the
+ * category alone (POST /inbox/confirm-category). A line that changed meanwhile is skipped. */
+function BulkConfirm({ items, data, onChanged }: { items: InboxItem[]; data: InboxData; onChanged: () => void }) {
+  const [result, setResult] = useState<ConfirmCategoryResult | null>(null);
+  const groups = new Map<AllocationCategory, InboxItem[]>();
+  for (const item of items) {
+    if (item.kind !== "allocation_proposed" || !item.bulk_confirmable || !item.category || !item.transaction_id) continue;
+    groups.set(item.category, [...(groups.get(item.category) ?? []), item]);
+  }
+  const listed = [...groups.entries()]
+    .filter(([, group]) => group.length >= 2)
+    .sort(([a, x], [b, y]) => y.length - x.length || ALLOCATION_CATEGORY[a].localeCompare(ALLOCATION_CATEGORY[b], "de"));
+  if (listed.length === 0 && result === null) return null;
+  return (
+    <div className="inbox-section-action stack">
+      {listed.length > 0 ? (
+        <>
+          <p className="muted">Vorschläge für private Konten, nach Kategorie: eine ganze Gruppe lässt sich auf einmal bestätigen.</p>
+          <ul className="inbox-bulk" aria-label="Vorschläge privater Konten nach Kategorie">
+            {listed.map(([category, group]) => (
+              <li key={category} className="row">
+                <span>{ALLOCATION_CATEGORY[category]}</span> <span className="inbox-section-count">{group.length}</span>
+                <span className="spacer" />
+                <ActionDialog
+                  label={`Alle ${group.length} bestätigen`}
+                  title={`${ALLOCATION_CATEGORY[category]}: ${group.length} Zahlungen bestätigen`}
+                >
+                  {(close) => (
+                    <BulkConfirmList
+                      category={category}
+                      items={group}
+                      data={data}
+                      onDone={(done) => {
+                        close();
+                        setResult(done);
+                        notifyInboxChanged();
+                        onChanged();
+                      }}
+                    />
+                  )}
+                </ActionDialog>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {result ? (
+        <Notice>
+          {result.confirmed === 1 ? "1 Zahlung" : `${result.confirmed} Zahlungen`} bestätigt.
+          {result.skipped.length > 0
+            ? ` ${result.skipped.length === 1 ? "1 Zahlung wurde" : `${result.skipped.length} Zahlungen wurden`} übersprungen, weil sich ihr Vorschlag inzwischen geändert hat; sie stehen weiter in der Liste.`
+            : null}
+        </Notice>
+      ) : null}
+    </div>
+  );
+}
+
+function BulkConfirmList({
+  category,
+  items,
+  data,
+  onDone,
+}: {
+  category: AllocationCategory;
+  items: InboxItem[];
+  data: InboxData;
+  onDone: (result: ConfirmCategoryResult) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const ids = items.flatMap((item) => (item.transaction_id ? [item.transaction_id] : []));
+
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      onDone(await ok(api.POST("/api/inbox/confirm-category", { body: { category, transaction_ids: ids } })));
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <p>
+        Diese {ids.length} Zahlungen werden als „{ALLOCATION_CATEGORY[category]}“ bestätigt, jede wie mit ihrem eigenen
+        „Bestätigen“. Es wird keine Regel gelernt; jede Zahlung lässt sich danach einzeln ändern.
+      </p>
+      <div className="table-wrap">
+        <table aria-label="Zahlungen, die bestätigt werden">
+          <thead>
+            <tr>
+              <th>Datum</th>
+              <th>Empfänger oder Zahler</th>
+              <th className="num">Betrag</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ids.map((id) => {
+              const line = data.transactions.get(id);
+              return (
+                <tr key={id}>
+                  <td>{line ? formatDate(line.booking_date) : "–"}</td>
+                  <td>{line?.counterparty_name ?? line?.booking_text ?? "Ohne Gegenseite"}</td>
+                  <td className="num">{line ? signedMoney(line.amount) : "–"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="row">
+        <button type="button" disabled={busy} onClick={() => void confirm()}>
+          Bestätigen
+        </button>
+      </div>
+      <ErrorNotice error={error} />
+    </>
   );
 }
 

@@ -911,6 +911,20 @@ button.source-badge:not(:disabled):hover {
   padding: 0 20px 12px;
 }
 
+/* „Alle N bestätigen“: the private lines' proposals by category, one row per group. */
+.inbox-bulk {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inbox-bulk li {
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  flex-wrap: wrap;
+}
+
 /* One item: date | what it is | amount, then the kind, reasoning and question under it. */
 .inbox-entry {
   display: grid;

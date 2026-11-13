@@ -65,6 +65,22 @@ categories:
   - {category: hh_cash, treatment: private}
   - {category: hh_credit_card, treatment: private}
   - {category: hh_interest_fees, treatment: private}  # phase 6 D176 (3), step 2b
+  # phase 6 D159 amended 13 Nov 2026 (migration 0029): the finer spending codes
+  - {category: hh_personal_care, treatment: private}
+  - {category: hh_clothing, treatment: private}
+  - {category: hh_dining, treatment: private}
+  - {category: hh_home, treatment: private}
+  - {category: hh_electronics, treatment: private}
+  - {category: hh_online_shopping, treatment: private}
+  - {category: hh_fees, treatment: private}
+  - {category: hh_gifts, treatment: private}
+  - {category: hh_family_transfers, treatment: private}
+  - {category: hh_telecom, treatment: private}
+  - {category: hh_work_education, treatment: private}
+  - {category: hh_sport, treatment: private}
+  - {category: hh_travel, treatment: private}
+  - {category: hh_investment, treatment: private}
+  - {category: hh_refund, treatment: private}
   - {category: security_purchase, treatment: private}
   - {category: security_sale, treatment: private}
   - {category: distribution, treatment: private}

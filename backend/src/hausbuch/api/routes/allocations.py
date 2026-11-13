@@ -6,6 +6,10 @@
   or none).
 - POST /inbox/ai-retry: send every line listed as unmatched to the model again (D50). 422
   ai.disabled when HAUSBUCH_AI_ENABLED is off.
+- POST /inbox/confirm-category: „Alle bestätigen“ (phase 6 D159 amended 13 Nov 2026), the
+  listed private lines' proposals of one plain household category confirmed as single
+  confirmations are; the count and the lines skipped because they changed. 422
+  inbox.category_not_bulk, inbox.line_not_private; 404 for a line of another workspace.
 - GET /transactions/{id}/allocations: the line, its current allocations, and whether the
   answer may become a rule (`can_learn_rule`, false for a counterparty a matcher owns,
   D38) with the checkbox's default (`learn_rule_default`, off for categories that never
@@ -24,6 +28,8 @@ from uuid import UUID
 from hausbuch.schemas.api import (
     AiRetryResult,
     ConfirmAllocationsBody,
+    ConfirmCategoryBody,
+    ConfirmCategoryResult,
     InboxItem,
     TransactionAllocations,
 )
@@ -48,6 +54,13 @@ def inbox_list(cmd: Cmd) -> list[InboxItem]:
 def inbox_ai_retry(cmd: Cmd, settings: SettingsDep) -> AiRetryResult:
     """Queue the model for every unmatched line; the suggestions arrive as the jobs run."""
     return cmd.run(review.request_ai_suggestions, ai_enabled=settings.ai_enabled)
+
+
+@router.post("/inbox/confirm-category")
+def inbox_confirm_category(body: ConfirmCategoryBody, cmd: Cmd) -> ConfirmCategoryResult:
+    """„Alle bestätigen“: the listed private lines' proposals of one category, in one
+    transaction; lines that changed meanwhile come back as skipped."""
+    return cmd.run(review.confirm_category, body)
 
 
 @router.get("/transactions/{transaction_id}/allocations")

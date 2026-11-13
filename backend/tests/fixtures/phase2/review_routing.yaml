@@ -90,6 +90,22 @@ per_category:
   - {category: hh_cash, decision: review}
   - {category: hh_credit_card, decision: review}
   - {category: hh_interest_fees, decision: review}  # D176 (3), step 2b
+  # D159 amended 13 Nov 2026 (migration 0029)
+  - {category: hh_personal_care, decision: auto_confirm}
+  - {category: hh_clothing, decision: auto_confirm}
+  - {category: hh_dining, decision: auto_confirm}
+  - {category: hh_home, decision: auto_confirm}
+  - {category: hh_electronics, decision: auto_confirm}
+  - {category: hh_online_shopping, decision: auto_confirm}
+  - {category: hh_fees, decision: auto_confirm}
+  - {category: hh_gifts, decision: auto_confirm}
+  - {category: hh_family_transfers, decision: review}
+  - {category: hh_telecom, decision: auto_confirm}
+  - {category: hh_work_education, decision: review}
+  - {category: hh_sport, decision: auto_confirm}
+  - {category: hh_travel, decision: auto_confirm}
+  - {category: hh_investment, decision: review}
+  - {category: hh_refund, decision: review}
   - {category: security_purchase, decision: review}
   - {category: security_sale, decision: review}
   - {category: distribution, decision: review}

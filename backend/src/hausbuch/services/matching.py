@@ -57,9 +57,11 @@ from functools import partial
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import Connection, Row, and_, exists, func, or_, select
+from sqlalchemy import Connection, Row, Select, and_, exists, func, or_, select
 
+from hausbuch.ai.requests import load_prompt
 from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import document_extraction as extraction_table
@@ -68,6 +70,7 @@ from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import matching_rule as rule_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import property_ as property_table
+from hausbuch.db.tables import property_acquisition_cost as acquisition_cost_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import tenancy_tenant as party_table
@@ -84,7 +87,7 @@ from hausbuch.rules.iban import iban_hmac, normalize_iban
 from hausbuch.rules.periods import service_period
 from hausbuch.rules.prefill import names_financing, sort_reading
 from hausbuch.rules.review import no_match_reason, route
-from hausbuch.schemas.ai import ExtractedValue
+from hausbuch.schemas.ai import AiJob, ExtractedValue
 from hausbuch.schemas.allocation import (
     Allocation,
     AllocationCategory,
@@ -205,6 +208,11 @@ class Line:
         if statuses == {AllocationStatus.PROPOSED}:
             return True
         return all(a.method is AllocationMethod.RULE for a in self.current)
+
+    def open_for_reask(self) -> bool:
+        """A one-off re-ask of the model (reask_household): a line that is open but for its
+        current rows, and those are all proposed. Never a line with a confirmed row."""
+        return bool(self.current) and self.waiting and self.open_for(rematch=True)
 
     @property
     def waiting(self) -> bool:
@@ -994,17 +1002,25 @@ def match_line(
     iban_key: bytes,
     ai_available: bool,
     rematch: bool = False,
+    reask: bool = False,
+    skip_if_asked: bool = True,
 ) -> MatchPlan:
     """Run the deterministic order on one line and write what it can. With `ai_available`,
     a line nothing matched comes back as `categorize`, and a matcher's set bound for review
     as `explain`; without, the matcher's set is written with its template text and an
     unmatched line stays without rows (inbox "Nicht zugeordnet"). A re-match never calls
-    the model."""
+    the model. A re-ask (`reask`, reask_household) takes a line whose rows are all proposed
+    and runs the order as for a new line: the model is asked again when nothing else
+    answers, and its set supersedes the proposal (finish_line). `skip_if_asked` makes a
+    second queued re-ask a no-op; a retry of the same job passes False, since its own
+    model call succeeded but writing the answer failed, and the answer must not be lost."""
     line = load_line(ctx.conn, transaction_id, lock=True)
     if line is None:
         return MatchPlan("skipped", "matching.not_found")
-    if not line.open_for(rematch=rematch):
+    if not (line.open_for_reask() if reask else line.open_for(rematch=rematch)):
         return MatchPlan("skipped", _closed_reason(line))
+    if reask and skip_if_asked and asked_with_current_prompt(ctx.conn, transaction_id):
+        return MatchPlan("skipped", "matching.asked_already")  # a re-ask queued twice
     context = build_context(
         ctx.conn,
         iban_key=iban_key,
@@ -1079,10 +1095,14 @@ def _copies_a_split(conn: Connection, found: AllocationSet) -> bool:
     return method == SplitMethod.AS_LAST_SPLIT.value
 
 
-def write(ctx: CommandContext, line: Line, found: AllocationSet) -> MatchPlan:
-    """Route the set and write it, unless the line already holds the same answer."""
+def write(
+    ctx: CommandContext, line: Line, found: AllocationSet, *, propose_only: bool = False
+) -> MatchPlan:
+    """Route the set and write it, unless the line already holds the same answer.
+    `propose_only` (a re-ask's model answer, reask_household): never auto-confirmed, so the
+    one-off re-ask only replaces proposals and the person confirms every new answer."""
     decision = _route(line, found)
-    auto = decision is RoutingDecision.AUTO_CONFIRM
+    auto = decision is RoutingDecision.AUTO_CONFIRM and not propose_only
     # The same split as the current rows changes nothing, except a proposed set the order
     # now auto-confirms (a new rule or evidence books it): that is written as a confirmed set
     # superseding the proposal, so it leaves the inbox with the rule's or matcher's
@@ -1098,17 +1118,23 @@ def write(ctx: CommandContext, line: Line, found: AllocationSet) -> MatchPlan:
     )
 
 
-def finish_line(ctx: CommandContext, transaction_id: UUID, found: AllocationSet) -> MatchPlan:
+def finish_line(
+    ctx: CommandContext, transaction_id: UUID, found: AllocationSet, *, reask: bool = False
+) -> MatchPlan:
     """After a model call: write the set if the line is still open and still has no rows
-    (a person may have answered meanwhile)."""
+    (a person may have answered meanwhile). After a re-ask, also while its rows are still all
+    proposed: a person's confirmation in between is never replaced."""
     line = load_line(ctx.conn, transaction_id, lock=True)
-    if line is None or not line.open_for(rematch=False):
+    still_open = line is not None and (
+        line.open_for(rematch=False) or (reask and line.open_for_reask())
+    )
+    if line is None or not still_open:
         return MatchPlan("skipped", "matching.answered_meanwhile")
     if not allocations.categories_allowed(line.account_purpose, found.allocations):
         # D159: never booked; the line stays unmatched in Zu prüfen (the request's schema
         # makes this unreachable, so a model answer here is a bug, not a retry).
         return MatchPlan("skipped", ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT)
-    return write(ctx, line, _llm_guarded(line, found))
+    return write(ctx, line, _llm_guarded(line, found), propose_only=reask)
 
 
 def _route(line: Line, found: AllocationSet) -> RoutingDecision:
@@ -1129,6 +1155,141 @@ def _closed_reason(line: Line) -> str:
     if line.import_status is not ImportStatus.RECONCILED:
         return "routing.import_unreconciled"
     return "matching.already_allocated"
+
+
+# --- The one-off re-ask of household lines (D159 amended 13 Nov 2026) -------------------------
+
+# The codes a household line was parked under before the finer codes existed (migration 0029).
+REASK_CATEGORIES = frozenset(
+    {C.HH_OTHER, C.UNCATEGORIZED, C.HH_LEISURE_TRAVEL, C.HH_SUBSCRIPTIONS, C.HH_HOUSING}
+)
+# Words that may name a cost of buying or financing the flat, paid from a private account
+# (phase 2 D135, phase 3 D143, phase 4b D134): such a line is left as it is, since re-sorting
+# it is a tax question for a person, never a one-off batch. rules.prefill's purchase and
+# financing terms, plus the payees of those bills.
+_PURCHASE_COST_WORDS = (
+    "grunderwerb",
+    "notar",
+    "grundbuch",
+    "makler",
+    "justizkasse",
+    "amtsgericht",
+    "kaufpreis",
+    "kaufvertrag",
+    "auflassung",
+    "eigentumsumschreibung",
+    "grundschuld",
+    "grundpfand",
+    "hypothek",
+    "darlehen",
+)
+
+
+@dataclass(frozen=True)
+class ReaskResult:
+    queued: int  # a match_transaction job each, with reask
+    held_back: int  # `ai_private_accounts` is off: nothing sent, nothing queued
+    purchase_costs: int  # left alone: may be a privately paid cost of buying the flat
+    already_asked: int  # asked with the current household prompt already
+
+
+def household_prompt_version() -> str:
+    return load_prompt("categorize_household").version
+
+
+def _asked_with(version: str) -> Select:
+    """The lines a categorize call with this prompt answered (an ai_call without an error)."""
+    c = ai_call_table.c
+    return select(c.transaction_id).where(
+        c.job == AiJob.MATCH.value,
+        c.prompt_version == version,
+        c.error_code.is_(None),
+        c.transaction_id.is_not(None),
+    )
+
+
+def asked_with_current_prompt(conn: Connection, transaction_id: UUID) -> bool:
+    """Whether the line was answered with the current household prompt (a re-ask job queued
+    twice asks once)."""
+    asked = _asked_with(household_prompt_version())
+    return conn.execute(
+        select(exists(asked.where(ai_call_table.c.transaction_id == transaction_id)))
+    ).scalar_one()
+
+
+def reask_household(
+    ctx: CommandContext, categories: frozenset[AllocationCategory] = REASK_CATEGORIES
+) -> ReaskResult:
+    """Ask the model again for every private-account line whose current set is all proposed
+    and all in `categories` (by default the codes the finer ones of migration 0029 split up),
+    so a line parked in „Sonstiges“ gets one of the new codes. One-off, run by the operator
+    after the deploy; no endpoint.
+
+    Each line gets a match_transaction job with `reask`: the job runs the whole order as for a
+    new line (a learned rule or matcher answers first) and asks the model last; its set
+    supersedes the proposal (append-only, allocations.record_set), routed as any model answer
+    (a private account's first import never auto-confirms). A line with a confirmed row is
+    never taken, here or in the job (Line.open_for_reask, under the line's lock).
+
+    Left alone: a line whose text names a cost of buying or financing the flat, or whose
+    amount equals a Nebenkosten row's (property_acquisition_cost) to the cent; and a line
+    already answered with the current household prompt, so a second run asks nothing again.
+    Nothing is queued while `ai_private_accounts` is off (D168); the lines are counted.
+    Writes no event: the jobs write the sets, and each model call its ai_call row."""
+    codes = [c.value for c in categories]
+    a = allocation_table.c
+    t = transaction_table.c
+
+    def has_row(*where: Any) -> Any:
+        return exists().where(
+            a.transaction_id == t.id, a.status != AllocationStatus.SUPERSEDED.value, *where
+        )
+
+    awaiting = exists().where(
+        duplicate_table.c.other_transaction_id == t.id,
+        duplicate_table.c.status == DuplicateStatus.OPEN.value,
+    )
+    lines = ctx.conn.execute(
+        select(t.id, t.amount, t.counterparty_name, t.purpose, t.booking_text)
+        .join(import_table, import_table.c.id == t.import_id)
+        .join(account_table, account_table.c.id == t.account_id)
+        .where(
+            account_table.c.purpose == AccountPurpose.PRIVATE.value,
+            import_table.c.status == ImportStatus.RECONCILED.value,
+            t.excluded_as_duplicate_of.is_(None),
+            ~awaiting,
+            has_row(a.category.in_(codes)),
+            ~has_row(or_(a.status != AllocationStatus.PROPOSED.value, a.category.not_in(codes))),
+        )
+        .order_by(t.booking_date, t.id)
+    ).all()
+    costs = {
+        abs(amount)
+        for amount in ctx.conn.execute(select(acquisition_cost_table.c.amount)).scalars()
+        if amount is not None
+    }
+    asked = set(ctx.conn.execute(_asked_with(household_prompt_version())).scalars())
+    purchase = already = 0
+    candidates: list[UUID] = []
+    for line in lines:
+        text = " ".join(
+            filter(None, (line.counterparty_name, line.purpose, line.booking_text))
+        ).casefold()
+        if any(word in text for word in _PURCHASE_COST_WORDS) or any(
+            abs(abs(line.amount) - cost) <= _CENT for cost in costs
+        ):
+            purchase += 1
+        elif line.id in asked:
+            already += 1
+        else:
+            candidates.append(line.id)
+    if not workspace_settings.private_ai_allowed(ctx.conn):
+        return ReaskResult(0, len(candidates), purchase, already)
+    for transaction_id in candidates:
+        enqueue.enqueue_match_transaction(
+            ctx.conn, workspace_id=ctx.workspace_id, transaction_id=transaction_id, reask=True
+        )
+    return ReaskResult(len(candidates), 0, purchase, already)
 
 
 # --- Which lines a new document affects ---------------------------------------------------

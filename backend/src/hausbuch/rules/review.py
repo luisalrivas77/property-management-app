@@ -109,6 +109,24 @@ THRESHOLDS = MappingProxyType(
         C.HH_CASH: None,  # not named by D159; the conservative reading
         # D176 (3): a card's interest and fee lines are booked by code, never by a threshold.
         C.HH_INTEREST_FEES: None,
+        # D159 amended 13 Nov 2026: the finer spending codes at 0.9 like their groups; None
+        # for money to family (Unterhalt may matter later), work costs (maybe Werbungskosten),
+        # an investment and a refund, which a person confirms.
+        C.HH_PERSONAL_CARE: _RECURRING,
+        C.HH_CLOTHING: _RECURRING,
+        C.HH_DINING: _RECURRING,
+        C.HH_HOME: _RECURRING,
+        C.HH_ELECTRONICS: _RECURRING,
+        C.HH_ONLINE_SHOPPING: _RECURRING,
+        C.HH_FEES: _RECURRING,
+        C.HH_GIFTS: _RECURRING,
+        C.HH_FAMILY_TRANSFERS: None,
+        C.HH_TELECOM: _RECURRING,
+        C.HH_WORK_EDUCATION: None,
+        C.HH_SPORT: _RECURRING,
+        C.HH_TRAVEL: _RECURRING,
+        C.HH_INVESTMENT: None,
+        C.HH_REFUND: None,
         # D162: only the transfer matcher books a transfer, never a model or a threshold.
         C.INTERNAL_TRANSFER_IN: None,
         C.INTERNAL_TRANSFER_OUT: None,

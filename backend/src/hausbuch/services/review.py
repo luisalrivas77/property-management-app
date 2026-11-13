@@ -30,7 +30,7 @@ from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import AI_DISABLED, RULE_CONFLICTS, RuleError
-from hausbuch.rules.household.taxonomy import allowed_categories
+from hausbuch.rules.household.taxonomy import BULK_CONFIRMABLE, allowed_categories
 from hausbuch.rules.review import THRESHOLDS
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import (
@@ -46,6 +46,9 @@ from hausbuch.schemas.allocation import (
 from hausbuch.schemas.api import (
     AiRetryResult,
     ConfirmAllocationsBody,
+    ConfirmCategoryBody,
+    ConfirmCategoryResult,
+    ConfirmCategorySkip,
     InboxItem,
     InboxItemKind,
     TransactionAllocations,
@@ -69,6 +72,8 @@ from .statements import _to_transaction, import_inbox_items, transaction_select
 TRANSACTION_MISMATCH = "allocation.transaction_mismatch"
 IMPORT_NOT_RECONCILED = "allocation.import_not_reconciled"
 NOT_OPEN = "allocation.line_not_open"
+BULK_CATEGORY_REFUSED = "inbox.category_not_bulk"  # „Alle bestätigen“ (D159 amended)
+BULK_NOT_PRIVATE = "inbox.line_not_private"
 USER_CONFIDENCE = "1.000"
 
 
@@ -450,7 +455,7 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
     private_ai = workspace_settings.private_ai_allowed(conn)
     current: dict[UUID, list] = {}
     for row in conn.execute(
-        select(a.transaction_id, a.status, a.reasoning, a.question, a.recorded_at)
+        select(a.transaction_id, a.status, a.category, a.reasoning, a.question, a.recorded_at)
         .where(a.status != AllocationStatus.SUPERSEDED.value)
         .order_by(a.recorded_at, a.id)
     ):
@@ -477,6 +482,7 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
                 )
             )
         elif rows[0].status == AllocationStatus.PROPOSED.value:
+            category = AllocationCategory(rows[0].category) if len(rows) == 1 else None
             items.append(
                 InboxItem(
                     kind=InboxItemKind.ALLOCATION_PROPOSED,
@@ -485,9 +491,68 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
                     question=rows[0].question or _PROPOSED_QUESTION,
                     transaction_id=line.id,
                     account_id=line.account_id if private else None,
+                    category=category,
+                    bulk_confirmable=private
+                    and category in BULK_CONFIRMABLE
+                    and rows[0].question is None,
                 )
             )
     return items
+
+
+# --- POST /inbox/confirm-category -----------------------------------------------------------
+
+
+def confirm_category(ctx: CommandContext, body: ConfirmCategoryBody) -> ConfirmCategoryResult:
+    """„Alle bestätigen“ (phase 6 D159 amended 13 Nov 2026): the person confirms the listed
+    private lines' proposals of one plain household category, each exactly as a single
+    confirmation does (allocations.confirm_proposed: the rows move to confirmed by the person,
+    one transaction.allocated event per line), in this one transaction. No rule is learned.
+
+    Only the lines named in the body, never the category's other lines. A listed line whose
+    proposal changed since the list was shown (confirmed or answered meanwhile, re-proposed
+    in another category or split, given a question) or that no longer counts is skipped and
+    named. Refused, nothing confirmed: a category „Alle bestätigen“ does not offer
+    (inbox.category_not_bulk: a tax-relevant, transfer, depot or uncategorized code, money to
+    family, work costs, capital income), a line of the rental account (inbox.line_not_private),
+    a line of no account of this workspace (404). Lines are locked in id order, so two
+    requests never wait on each other crosswise."""
+    if body.category not in BULK_CONFIRMABLE:
+        raise RuleViolationError([BULK_CATEGORY_REFUSED], "this category is confirmed line by line")
+    confirmed = 0
+    skipped = []
+    for transaction_id in sorted(set(body.transaction_ids)):
+        line = matching.load_line(ctx.conn, transaction_id, lock=True)
+        if line is None:
+            raise NotFoundError(EntityType.TRANSACTION, transaction_id)
+        if not line.private:
+            raise RuleViolationError([BULK_NOT_PRIVATE], "only private lines are confirmed so")
+        reason = _bulk_skip(line, body.category)
+        if reason is not None:
+            skipped.append(ConfirmCategorySkip(transaction_id=transaction_id, reason=reason))
+            continue
+        allocations.confirm_proposed(ctx, transaction_id)
+        confirmed += 1
+    return ConfirmCategoryResult(confirmed=confirmed, skipped=skipped)
+
+
+def _bulk_skip(line: matching.Line, category: AllocationCategory) -> str | None:
+    """Why a listed line is not confirmed with the others, or None (the inbox's
+    bulk_confirmable, read again under the line's lock)."""
+    if line.excluded or line.awaiting_duplicate:
+        return "not_open"
+    if line.import_status is not ImportStatus.RECONCILED:
+        return "not_open"
+    if not line.current or not line.waiting:
+        return "not_waiting"
+    if len(line.current) != 1:
+        return "split"
+    (row,) = line.current
+    if row.category is not category:
+        return "category_changed"
+    if row.question is not None:
+        return "question"
+    return None
 
 
 # --- POST /inbox/ai-retry ----------------------------------------------------------------

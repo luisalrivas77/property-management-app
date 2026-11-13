@@ -1960,6 +1960,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/confirm-category": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inbox Confirm Category
+         * @description „Alle bestätigen“: the listed private lines' proposals of one category, in one
+         *     transaction; lines that changed meanwhile come back as skipped.
+         */
+        post: operations["inbox_confirm_category_api_inbox_confirm_category_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transactions/{transaction_id}/allocations": {
         parameters: {
             query?: never;
@@ -3398,7 +3419,7 @@ export interface components {
          * @description §8.2. Default tax treatment in the comment (rules/categories.py is the source).
          * @enum {string}
          */
-        AllocationCategory: "rent_cold" | "operating_costs_prepayment" | "operating_costs_settlement" | "deposit_in" | "deposit_out" | "owner_transfer_in" | "owner_transfer_out" | "loan_interest" | "loan_principal" | "loan_fees" | "loan_disbursement" | "hausgeld_umlagefaehig" | "hausgeld_verwaltung" | "hausgeld_ruecklage" | "property_management" | "grundsteuer" | "insurance" | "electricity" | "repairs" | "renovation" | "purchase_price" | "acquisition_cost" | "professional_fees" | "bank_fees" | "other_income" | "other_expense" | "uncategorized" | "hh_salary" | "hh_child_benefit" | "hh_tax_refund" | "hh_capital_income" | "hh_other_income" | "hh_housing" | "hh_groceries" | "hh_family_child" | "hh_mobility" | "hh_insurance" | "hh_subscriptions" | "hh_leisure_travel" | "hh_health" | "hh_other" | "hh_donation" | "hh_household_services" | "hh_childcare" | "hh_property_cost" | "hh_tax_payment" | "internal_transfer_in" | "internal_transfer_out" | "hh_cash" | "hh_credit_card" | "hh_interest_fees" | "security_purchase" | "security_sale" | "distribution" | "capital_income_tax" | "depot_fee";
+        AllocationCategory: "rent_cold" | "operating_costs_prepayment" | "operating_costs_settlement" | "deposit_in" | "deposit_out" | "owner_transfer_in" | "owner_transfer_out" | "loan_interest" | "loan_principal" | "loan_fees" | "loan_disbursement" | "hausgeld_umlagefaehig" | "hausgeld_verwaltung" | "hausgeld_ruecklage" | "property_management" | "grundsteuer" | "insurance" | "electricity" | "repairs" | "renovation" | "purchase_price" | "acquisition_cost" | "professional_fees" | "bank_fees" | "other_income" | "other_expense" | "uncategorized" | "hh_salary" | "hh_child_benefit" | "hh_tax_refund" | "hh_capital_income" | "hh_other_income" | "hh_housing" | "hh_groceries" | "hh_family_child" | "hh_mobility" | "hh_insurance" | "hh_subscriptions" | "hh_leisure_travel" | "hh_health" | "hh_other" | "hh_donation" | "hh_household_services" | "hh_childcare" | "hh_property_cost" | "hh_tax_payment" | "internal_transfer_in" | "internal_transfer_out" | "hh_cash" | "hh_credit_card" | "hh_interest_fees" | "hh_personal_care" | "hh_clothing" | "hh_dining" | "hh_home" | "hh_electronics" | "hh_online_shopping" | "hh_fees" | "hh_gifts" | "hh_family_transfers" | "hh_telecom" | "hh_work_education" | "hh_sport" | "hh_travel" | "hh_investment" | "hh_refund" | "security_purchase" | "security_sale" | "distribution" | "capital_income_tax" | "depot_fee";
         /**
          * AllocationDraft
          * @description What a matcher, a rule, the model or the user proposes for part of a transaction.
@@ -4570,6 +4591,42 @@ export interface components {
              * @default false
              */
             same_amount_only: boolean;
+        };
+        /**
+         * ConfirmCategoryBody
+         * @description POST /inbox/confirm-category (phase 6 D159 amended 13 Nov 2026, „Alle bestätigen“):
+         *     the lines the person saw in the list, and the category they were listed under. Never a
+         *     category alone: only these lines are confirmed.
+         */
+        ConfirmCategoryBody: {
+            category: components["schemas"]["AllocationCategory"];
+            /** Transaction Ids */
+            transaction_ids: string[];
+        };
+        /** ConfirmCategoryResult */
+        ConfirmCategoryResult: {
+            /** Confirmed */
+            confirmed: number;
+            /** Skipped */
+            skipped: components["schemas"]["ConfirmCategorySkip"][];
+        };
+        /**
+         * ConfirmCategorySkip
+         * @description A listed line left as it is: its proposal is no longer a waiting one-part proposal of
+         *     the category without a question (it changed since the list was shown), or the line no
+         *     longer counts (merged as a duplicate, its import not reconciled).
+         */
+        ConfirmCategorySkip: {
+            /**
+             * Transaction Id
+             * Format: uuid
+             */
+            transaction_id: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "not_open" | "not_waiting" | "split" | "category_changed" | "question";
         };
         /** ConfirmPaymentIbanBody */
         ConfirmPaymentIbanBody: {
@@ -6189,7 +6246,7 @@ export interface components {
          *     others; rules/household/taxonomy.py).
          * @enum {string}
          */
-        HouseholdGroup: "income" | "housing" | "groceries" | "family_child" | "mobility" | "insurance" | "subscriptions" | "leisure_travel" | "health" | "other" | "tax" | "movements" | "depot";
+        HouseholdGroup: "income" | "housing" | "groceries" | "family_child" | "mobility" | "insurance" | "subscriptions" | "leisure_travel" | "health" | "other" | "tax" | "movements" | "depot" | "personal_care" | "clothing" | "dining" | "home" | "electronics" | "online_shopping" | "fees" | "gifts" | "family_transfers" | "telecom" | "work_education" | "sport" | "travel" | "investment" | "refund";
         /** HouseholdServicesFact */
         HouseholdServicesFact: {
             /**
@@ -6389,6 +6446,12 @@ export interface components {
             private_costs?: components["schemas"]["TaxInputCreate"][];
             /** Error Code */
             error_code?: string | null;
+            category?: components["schemas"]["AllocationCategory"] | null;
+            /**
+             * Bulk Confirmable
+             * @default false
+             */
+            bulk_confirmable: boolean;
         };
         /**
          * InboxItemKind
@@ -15203,6 +15266,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiRetryResult"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    inbox_confirm_category_api_inbox_confirm_category_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmCategoryBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmCategoryResult"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

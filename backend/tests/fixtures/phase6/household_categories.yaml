@@ -42,7 +42,7 @@ codes:
   - {category: hh_mobility, label: Mobilität, group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_insurance, label: Versicherungen, group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_subscriptions, label: Abos und Verträge, group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_leisure_travel, label: Freizeit und Reisen, group: leisure_travel, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_leisure_travel, label: "Freizeit & Hobbys", group: leisure_travel, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_health, label: Gesundheit, group: health, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_other, label: Sonstiges, group: other, relevance: spending, treatment: private, threshold: null}
   # Tax-relevant spending: each proposes the input its form already reads
@@ -58,6 +58,26 @@ codes:
   - {category: hh_credit_card, group: movements, relevance: spending, treatment: private, threshold: null}
   # D176 (3), step 2b: a card's interest and fee lines, booked by code; shown under Sonstiges
   - {category: hh_interest_fees, label: Zinsen und Gebühren, group: other, relevance: spending, treatment: private, threshold: null}
+  # D159 amended 13 Nov 2026 (migration 0029): the finer spending codes with Luis's labels,
+  # one group each; hh_leisure_travel relabelled „Freizeit & Hobbys“ above (code unchanged).
+  # hh_investment: relevance transfer (the money goes to the household's own investment, so
+  # it is saved, not spent: the Haushalt screen adds it to „Gespart“). hh_refund: relevance
+  # spending (money back for a purchase lowers spending, never income).
+  - {category: hh_personal_care, label: "Friseur & Körperpflege", group: personal_care, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_clothing, label: "Kleidung & Schuhe", group: clothing, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_dining, label: "Restaurant & Lieferdienst", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_home, label: "Haushalt & Einrichtung", group: home, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_electronics, label: "Elektronik & Technik", group: electronics, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_online_shopping, label: "Online-Einkäufe", group: online_shopping, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_fees, label: "Behörden & Gebühren", group: fees, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_gifts, label: "Geschenke & Feiern", group: gifts, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_family_transfers, label: "Geld an Familie / ins Ausland", group: family_transfers, relevance: spending, treatment: private, threshold: null}
+  - {category: hh_telecom, label: "Telefon & Internet", group: telecom, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_work_education, label: "Arbeitsmittel & Fortbildung", group: work_education, relevance: spending, treatment: private, threshold: null}
+  - {category: hh_sport, label: "Sport & Fitness", group: sport, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_travel, label: "Reisen", group: travel, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_investment, label: "Geldanlage", group: investment, relevance: transfer, treatment: private, threshold: null}
+  - {category: hh_refund, label: "Erstattung", group: refund, relevance: spending, treatment: private, threshold: null}
   # The depot's own bookings (D165 (1))
   - {category: security_purchase, group: depot, relevance: transfer, treatment: private, threshold: null}
   - {category: security_sale, group: depot, relevance: transfer, treatment: private, threshold: null}

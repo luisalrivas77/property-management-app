@@ -117,6 +117,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "rule.invalid_pattern":
     "Das Muster ist kein gültiger Suchausdruck (regulärer Ausdruck, höchstens 200 Zeichen).",
   // every account of the household (phase-6.md D156-D160, D168)
+  // „Alle bestätigen“ in Zu prüfen (phase-6.md D159 amended 13 Nov 2026)
+  "inbox.category_not_bulk": "Zahlungen dieser Kategorie werden einzeln bestätigt, nicht als Gruppe.",
+  "inbox.line_not_private": "Nur Zahlungen privater Konten lassen sich als Gruppe bestätigen. Bitte die Seite neu laden.",
   "allocation.category_not_for_account":
     "Diese Kategorie passt nicht zu diesem Konto: ein Privatkonto nimmt nur Haushaltskategorien, das Mietkonto nur die der Immobilie. Für ein Konto mit Buchungen der anderen Art bitte erst diese Buchungen umbuchen.",
   "account.kind_not_available": "Diese Kontoart kann noch nicht angelegt werden.",

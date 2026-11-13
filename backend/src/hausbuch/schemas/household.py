@@ -772,6 +772,23 @@ class HouseholdGroup(StrEnum):
     TAX = "tax"
     MOVEMENTS = "movements"
     DEPOT = "depot"
+    # D159 amended 13 Nov 2026 (migration 0029): one group per new code, as mockup 10's
+    # groups are one per spending code.
+    PERSONAL_CARE = "personal_care"
+    CLOTHING = "clothing"
+    DINING = "dining"
+    HOME = "home"
+    ELECTRONICS = "electronics"
+    ONLINE_SHOPPING = "online_shopping"
+    FEES = "fees"
+    GIFTS = "gifts"
+    FAMILY_TRANSFERS = "family_transfers"
+    TELECOM = "telecom"
+    WORK_EDUCATION = "work_education"
+    SPORT = "sport"
+    TRAVEL = "travel"
+    INVESTMENT = "investment"
+    REFUND = "refund"
 
 
 class Relevance(StrEnum):

@@ -180,14 +180,26 @@ def run_match_transaction(
     transaction_id: UUID,
     attempt: int,
     rematch: bool = False,
+    reask: bool = False,
 ) -> matching.MatchPlan:
-    """One attempt for one line; returns what was done (for tests and the log)."""
+    """One attempt for one line; returns what was done (for tests and the log). `reask`:
+    the line's proposed set is asked of the model again (services.matching.reask_household)."""
     log = {"event": MATCH_TRANSACTION_TASK, "transaction_id": str(transaction_id)}
     log["attempt"] = attempt
+    if reask:
+        log["reask"] = True
     kind = None
     plan = matching.MatchPlan("skipped", "matching.failed")
     try:
-        plan = _match(deps, workspace_id, transaction_id, rematch=rematch, log=log)
+        plan = _match(
+            deps,
+            workspace_id,
+            transaction_id,
+            rematch=rematch,
+            reask=reask,
+            first_attempt=attempt == 0,
+            log=log,
+        )
     except _Retry as retry:
         kind = retry.kind
     except _GiveUp as stop:  # no usable answer: the line stays unmatched (inbox item)
@@ -204,14 +216,29 @@ def run_match_transaction(
 
 
 def _match(
-    deps: JobDeps, workspace_id: UUID, transaction_id: UUID, *, rematch: bool, log: dict
+    deps: JobDeps,
+    workspace_id: UUID,
+    transaction_id: UUID,
+    *,
+    rematch: bool,
+    log: dict,
+    reask: bool = False,
+    first_attempt: bool = True,
 ) -> matching.MatchPlan:
     key = deps.settings.iban_hmac_key
     ai = _ai_on(deps) and not rematch
     with workspace_transaction(deps.engine, workspace_id) as conn:
         ctx = new_command(conn, workspace_id, SYSTEM_ACTOR, now=deps.clock())
+        # A retried re-ask asks again: its first attempt may have called the model and then
+        # failed to write the answer (the ai_call row commits on its own).
         plan = matching.match_line(
-            ctx, transaction_id, iban_key=key, ai_available=ai, rematch=rematch
+            ctx,
+            transaction_id,
+            iban_key=key,
+            ai_available=ai,
+            rematch=rematch,
+            reask=reask,
+            skip_if_asked=first_attempt,
         )
         prepared = _Prepared(plan)
         if plan.outcome == "categorize":
@@ -243,7 +270,8 @@ def _match(
                 )
     if plan.outcome == "categorize":
         found, model = _categorize(deps, workspace_id, transaction_id, prepared, log)
-        return _finish(deps, workspace_id, transaction_id, found, Actor(ActorType.AI, model))
+        actor = Actor(ActorType.AI, model)
+        return _finish(deps, workspace_id, transaction_id, found, actor, reask=reask)
     if plan.outcome == "explain":
         assert plan.allocation_set is not None
         found = _explain(deps, workspace_id, transaction_id, plan.allocation_set, log)
@@ -252,11 +280,17 @@ def _match(
 
 
 def _finish(
-    deps: JobDeps, workspace_id: UUID, transaction_id: UUID, found: AllocationSet, actor: Actor
+    deps: JobDeps,
+    workspace_id: UUID,
+    transaction_id: UUID,
+    found: AllocationSet,
+    actor: Actor,
+    *,
+    reask: bool = False,
 ) -> matching.MatchPlan:
     with workspace_transaction(deps.engine, workspace_id) as conn:
         ctx = new_command(conn, workspace_id, actor, now=deps.clock())
-        return matching.finish_line(ctx, transaction_id, found)
+        return matching.finish_line(ctx, transaction_id, found, reask=reask)
 
 
 def _payload(data: matching.CategorizeInput) -> dict[str, Any]:
