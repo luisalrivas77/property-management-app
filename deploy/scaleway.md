@@ -1069,6 +1069,29 @@ reads; add the new variable first.
 then remove its variable and redeploy: every start of those accounts is refused with
 `bank.pin_missing`, and the bank is never contacted. The other logins go on.
 
+## Step 18: The CoinGecko key for coin prices (phase 6, D167)
+
+From phase 6 step 5b the app fetches a price for every held fund and coin each morning at
+07:00 UTC. The ETF issuers, Kraken and the ECB need no key. CoinGecko, which covers the
+coins Kraken does not list and the days before Kraken's 720-day reach, needs a free **Demo
+key**. Without it CoinGecko is skipped and nothing fails; a coin with no other source then
+shows the to-do „Kursquelle wählen“ (choose a price source) on the Anlagen page.
+
+1. **CoinGecko website** (coingecko.com → „Developers“ / API → **Demo** plan, free): create
+   an account and a Demo API key. Do not pick a paid plan; the Demo tier (10,000 calls a
+   month, 365 days back) is far more than one household needs. CoinGecko asks for
+   attribution; the Anlagen page names it in the line „Kurse: CoinGecko, Kraken, EZB, NAV der Fondsgesellschaften.“
+2. **Scaleway console** (console.scaleway.com, project of step 1): Serverless → Containers
+   → namespace `hausbuch` → container `hausbuch-api` → **Settings** tab, environment
+   variables. Add `HAUSBUCH_COINGECKO_KEY` as a **secret** (not a plain variable), with the
+   Demo key as its value, then **Deploy**/redeploy the container.
+3. **Hausbuch app** (Anlagen › Übersicht), the next morning after 07:00 UTC: every held coin
+   shows a price with its source. A card „Kursquelle gestört“ (price source disrupted) under „Zu prüfen“ names
+   the source that failed.
+
+The key is sent in a request header only and never logged; redirects are not followed, so
+it never reaches another host.
+
 ## Checks to run at the first deploy, and record here
 
 These are open questions from the spec (§13) that only the real platform can answer. Fill
