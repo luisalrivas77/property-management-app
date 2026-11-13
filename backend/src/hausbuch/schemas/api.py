@@ -563,6 +563,11 @@ class InboxItemKind(StrEnum):
     # movements to its date, re-checked on every read; `account_id` is the depot,
     # `document_id` the report.
     HOLDINGS_MISMATCH = "holdings_mismatch"
+    # Phase 6 step 5b (D174 (4), D167 (1)), computed on read; `asset_id` is the asset:
+    # an ETF whose issuer's NAV file failed on seven daily runs in a row („Kurs
+    # eintragen“), and a held asset nothing can price („Kursquelle wählen“).
+    PRICE_SOURCE_FAILED = "price_source_failed"
+    PRICE_NO_SOURCE = "price_no_source"
 
 
 class InboxItem(Schema):
@@ -584,6 +589,7 @@ class InboxItem(Schema):
     reminder_id: str | None = Field(default=None, max_length=160)  # phase 5: reminder
     property_id: UUID | None = None  # phase 6: the property_cost_* kinds
     transfer: OpenTransfer | None = None  # phase 6: the transfer_* kinds
+    asset_id: UUID | None = None  # phase 6 step 5b: the price_* kinds
     private_costs: list[TaxInputCreate] = Field(default_factory=list)  # property_cost_row
     # read_failed: the proposal's error code; proposal.bank_file_not_read (a card or depot
     # statement) is answered with „Auf Konto importieren“, not a new read (phase 6 D176 (3))

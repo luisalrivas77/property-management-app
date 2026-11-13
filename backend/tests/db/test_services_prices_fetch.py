@@ -26,6 +26,7 @@ from hausbuch.schemas.events import EventType
 from hausbuch.services.accounts import create_account
 from hausbuch.services.context import Actor
 from hausbuch.services.prices import fetch as prices_fetch
+from hausbuch.services.prices import overview as prices_overview
 from hausbuch.services.prices.coingecko import KEY_HEADER, CoinGeckoDaily
 from hausbuch.services.prices.fetch import Sources, run_workspace
 from hausbuch.settings import Settings
@@ -79,7 +80,12 @@ class Fake:
 @pytest.fixture
 def funds(monkeypatch):
     by_isin = {EUR_FUND.isin: EUR_FUND, USD_FUND.isin: USD_FUND}
-    monkeypatch.setattr(prices_fetch, "fund_source", lambda isin: by_isin.get(isin or ""))
+
+    def fund(isin):
+        return by_isin.get(isin or "")
+
+    monkeypatch.setattr(prices_fetch, "fund_source", fund)
+    monkeypatch.setattr(prices_overview, "fund_source", fund)
 
 
 def _asset(ctx, **values):

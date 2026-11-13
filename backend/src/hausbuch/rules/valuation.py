@@ -97,7 +97,10 @@ def value(
         )
     if cash:
         return Valuation(
-            position=position, on=on, price=None, value_eur=position.units.quantize(CENT)
+            position=position,
+            on=on,
+            price=None,
+            value_eur=position.units.quantize(CENT, ROUND_HALF_UP),
         )
     if price is None:
         return Valuation(position=position, on=on, not_valued_reason=E.PRICE_NO_SOURCE)
