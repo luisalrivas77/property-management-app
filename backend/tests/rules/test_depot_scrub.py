@@ -127,6 +127,9 @@ def test_the_four_kinds_are_typed_by_their_text(text, subtype, type_):
         "Jahressteuerbescheinigung\nQuirin Privatbank AG",
         "Kosteninformation\n1234567890 Depot",
         "Depot-Nr. 1234567890",
+        # A cost statement refers to the trade notes in its prose; it is none of them.
+        "Kostenübersicht\nquirion\nDie Kosten je Kauf können Sie der entsprechenden "
+        "Wertpapierabrechnung entnehmen.",
     ],
 )
 def test_any_other_depot_document_is_recognised(text):

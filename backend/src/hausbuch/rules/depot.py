@@ -154,11 +154,13 @@ def reconciled_through(as_of: date, checks: Sequence[PositionCheck]) -> date | N
 # before any model call, so the ai_private_accounts switch (D168) is checked before the model
 # sees one; the type each subtype is filed under is the catalogue's (D131). Checked in order:
 # a transfer's Hinweistext and a report's trade list can name „Kauf“ or „Wertpapier“ too.
+# The two notes are matched by their heading, at the start of a line: a cost statement's prose
+# refers the reader to „der entsprechenden Wertpapierabrechnung“ and is none.
 DOCUMENT_MARKERS: tuple[tuple[re.Pattern[str], DocumentSubtype], ...] = (
     (re.compile(r"(?:Ein|Aus)buchung von Wertpapieren"), DocumentSubtype.SECURITIES_TRANSFER),
     (re.compile(r"Wertpapierumsätze|Detailreport"), DocumentSubtype.DEPOT_REPORT),
-    (re.compile(r"Erträgnisabrechnung"), DocumentSubtype.DISTRIBUTION_NOTE),
-    (re.compile(r"Wertpapierabrechnung"), DocumentSubtype.TRADE_CONFIRMATION),
+    (re.compile(r"(?m)^[ \t]*Erträgnisabrechnung\b"), DocumentSubtype.DISTRIBUTION_NOTE),
+    (re.compile(r"(?m)^[ \t]*Wertpapierabrechnung\b"), DocumentSubtype.TRADE_CONFIRMATION),
 )
 DOCUMENT_TYPES = {
     DocumentSubtype.SECURITIES_TRANSFER: DocumentType.LETTER,
