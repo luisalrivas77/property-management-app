@@ -264,7 +264,9 @@ function IncomeCard({ month }: { month: HouseholdCashflow }) {
 }
 
 /** „Gespart, nicht ausgegeben“ (D162): what went to own savings, depot or exchange accounts,
- * from the transfer links, and what of the surplus stayed on the current accounts. */
+ * from the transfer links, plus payments booked „Geldanlage“ to an investment the app holds no
+ * account of (D159 amended 13 Nov 2026, in `saved` from the API), and what of the surplus
+ * stayed on the current accounts. */
 function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: TransferLinkView[] }) {
   const stayed = fromCents(toCents(month.surplus) - toCents(month.saved));
   return (
@@ -272,7 +274,7 @@ function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: T
       <h2 id="saved-title">Gespart, nicht ausgegeben</h2>
       <p>
         Überweisungen an eigene Konten zählen nicht als Ausgaben.
-        {toCents(month.saved) > 0n ? ` Auf Spar-, Depot- und Börsenkonten gingen ${formatMoney(month.saved)}.` : ""}
+        {toCents(month.saved) > 0n ? ` Auf Spar-, Depot- und Börsenkonten und in Geldanlagen gingen ${formatMoney(month.saved)}.` : ""}
       </p>
       {transfers.length > 0 ? (
         <ul className="household-rows">

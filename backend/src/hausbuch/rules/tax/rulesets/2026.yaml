@@ -210,6 +210,22 @@ form:
     hh_cash: null
     hh_credit_card: null
     hh_interest_fees: null  # phase 6 D176 (3): private, on no form
+    # phase 6 D159 amended 13 Nov 2026 (migration 0029): private, on no form
+    hh_personal_care: null
+    hh_clothing: null
+    hh_dining: null
+    hh_home: null
+    hh_electronics: null
+    hh_online_shopping: null
+    hh_fees: null
+    hh_gifts: null
+    hh_family_transfers: null
+    hh_telecom: null
+    hh_work_education: null
+    hh_sport: null
+    hh_travel: null
+    hh_investment: null
+    hh_refund: null
     security_purchase: null
     security_sale: null
     distribution: null

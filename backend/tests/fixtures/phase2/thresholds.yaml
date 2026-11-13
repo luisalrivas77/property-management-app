@@ -77,6 +77,23 @@ thresholds:
   - {category: hh_cash, threshold: null}
   - {category: hh_credit_card, threshold: null}
   - {category: hh_interest_fees, threshold: null}  # D176 (3): booked by code, step 2b
+  # D159 amended 13 Nov 2026 (migration 0029): 0.9 like the spending groups; null for money
+  # to family, work costs, an investment and a refund (a person confirms them)
+  - {category: hh_personal_care, threshold: "0.900"}
+  - {category: hh_clothing, threshold: "0.900"}
+  - {category: hh_dining, threshold: "0.900"}
+  - {category: hh_home, threshold: "0.900"}
+  - {category: hh_electronics, threshold: "0.900"}
+  - {category: hh_online_shopping, threshold: "0.900"}
+  - {category: hh_fees, threshold: "0.900"}
+  - {category: hh_gifts, threshold: "0.900"}
+  - {category: hh_family_transfers, threshold: null}
+  - {category: hh_telecom, threshold: "0.900"}
+  - {category: hh_work_education, threshold: null}
+  - {category: hh_sport, threshold: "0.900"}
+  - {category: hh_travel, threshold: "0.900"}
+  - {category: hh_investment, threshold: null}
+  - {category: hh_refund, threshold: null}
   - {category: security_purchase, threshold: null}
   - {category: security_sale, threshold: null}
   - {category: distribution, threshold: null}

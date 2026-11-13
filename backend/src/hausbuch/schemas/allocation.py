@@ -95,6 +95,23 @@ class AllocationCategory(StrEnum):
     HH_CREDIT_CARD = "hh_credit_card"  # private (a card's monthly settlement)
     # Phase 6 D176 (3) (migration 0026): a card's interest and fee lines, booked by code.
     HH_INTEREST_FEES = "hh_interest_fees"  # private (Zinsen und Gebühren)
+    # Phase 6 D159 amended 13 Nov 2026 (migration 0029): finer spending codes so „Sonstiges“
+    # stops holding haircuts, clothes, restaurants and software. All private, on no form.
+    HH_PERSONAL_CARE = "hh_personal_care"  # private (Friseur & Körperpflege)
+    HH_CLOTHING = "hh_clothing"  # private (Kleidung & Schuhe)
+    HH_DINING = "hh_dining"  # private (Restaurant & Lieferdienst)
+    HH_HOME = "hh_home"  # private (Haushalt & Einrichtung)
+    HH_ELECTRONICS = "hh_electronics"  # private (Elektronik & Technik)
+    HH_ONLINE_SHOPPING = "hh_online_shopping"  # private (content of the order unknown)
+    HH_FEES = "hh_fees"  # private (Behörden & Gebühren)
+    HH_GIFTS = "hh_gifts"  # private (Geschenke & Feiern)
+    HH_FAMILY_TRANSFERS = "hh_family_transfers"  # private (kept apart: Unterhalt, later)
+    HH_TELECOM = "hh_telecom"  # private (Telefon & Internet)
+    HH_WORK_EDUCATION = "hh_work_education"  # private (maybe Werbungskosten later, Anlage N)
+    HH_SPORT = "hh_sport"  # private (Sport & Fitness)
+    HH_TRAVEL = "hh_travel"  # private (Reisen; hh_leisure_travel is now Freizeit & Hobbys)
+    HH_INVESTMENT = "hh_investment"  # private (Geldanlage on a platform the app does not hold)
+    HH_REFUND = "hh_refund"  # private (Erstattung: lowers spending, never income)
     # --- Phase 6 D165: the depot's own cash bookings, by booking text in code (rules.depot);
     # not hh_* because phase 8's KAP rules read distribution and capital_income_tax.
     SECURITY_PURCHASE = "security_purchase"  # private

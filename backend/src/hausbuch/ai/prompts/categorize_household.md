@@ -16,14 +16,29 @@ quarterly, yearly), false for a one-off payment.
 - `hh_tax_refund`: a refund from the Finanzamt
 - `hh_capital_income`: interest or dividends credited to this account
 - `hh_other_income`: any other money received
-- `hh_housing`: the household's own home: its rent or Hausgeld, energy, water, internet, broadcasting fee
+- `hh_housing`: the household's own home: its rent or Hausgeld, energy, water, broadcasting fee
 - `hh_groceries`: supermarket, bakery, drugstore (Lebensmittel und Drogerie)
 - `hh_family_child`: children's clothing, school, toys, family costs
 - `hh_mobility`: fuel, public transport, car costs, taxi, bicycle
 - `hh_insurance`: an insurance premium of the household
-- `hh_subscriptions`: a subscription or contract: streaming, phone, software, memberships
-- `hh_leisure_travel`: restaurants, leisure, holidays and travel
+- `hh_subscriptions`: a subscription or contract not named below: streaming, newspapers, memberships, apps for private use
+- `hh_leisure_travel`: leisure and hobbies: cinema, concerts, museums, games, hobby supplies
 - `hh_health`: pharmacy, doctor, therapy, glasses
+- `hh_personal_care`: hairdresser, barber, cosmetics, beauty and body care services
+- `hh_clothing`: clothes and shoes
+- `hh_dining`: restaurants, cafés, bars, takeaway and food delivery
+- `hh_home`: furniture, household goods, home and garden supplies, DIY store
+- `hh_electronics`: electronics and technology: devices, computers, accessories
+- `hh_online_shopping`: an online purchase whose content the line does not show (Amazon, PayPal or a similar marketplace or payment service)
+- `hh_fees`: fees of an authority or office: passport, registration, licences, court or official fees
+- `hh_gifts`: gifts, flowers, celebrations and parties
+- `hh_family_transfers`: money sent to relatives or abroad (support for family members)
+- `hh_telecom`: phone, mobile and internet contracts
+- `hh_work_education`: work equipment, professional literature, courses and further training
+- `hh_sport`: gym, sports club, sports equipment and courses
+- `hh_travel`: holidays and trips: flights, trains for a journey, hotels, holiday rentals
+- `hh_refund`: money back for a purchase: a return, a merchant's refund, a cancelled order (never income)
+- `hh_investment`: a payment to an investment or savings platform that is not one of the household's own accounts here
 - `hh_other`: any other spending
 - `hh_donation`: a donation to a charity, a church or a party
 - `hh_household_services`: a service in the household's own home (cleaner, gardener, craftsman's labour)
