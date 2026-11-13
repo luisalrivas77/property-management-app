@@ -352,7 +352,9 @@ def statement_offer(
         return None
     try:
         statement = parse_statement(read_original(conn, store, document_id), media_type).statement
-    except RuleError:
+    except Exception:  # noqa: BLE001 - an offer is never worth an unreachable document page
+        # A file the import would refuse, or an original the store cannot give back: no offer
+        # here; „Auf Konto importieren“ itself reports the reason.
         return None
     kind = _OFFER_KINDS.get(statement.format)
     if kind is None or statement.account_ref is None:
