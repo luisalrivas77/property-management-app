@@ -181,6 +181,21 @@ STATEMENT_IBAN_UNREAD = "statement.iban_unread"  # a PDF whose extraction has no
 DEPOT_HOLDINGS_MISMATCH = "depot.holdings_mismatch"  # report units != Σ movements (D165)
 EXCHANGE_UNRECONCILED = "exchange.unreconciled"  # typed balance != Σ movements (D166)
 EXCHANGE_DEPOSIT_QUESTION = "exchange.deposit_question"  # a crypto Deposit: a bonus? (D166)
+# Phase 6 step 5a (the exchanges' exports, D166 amended, D178)
+EXCHANGE_UNREADABLE = "exchange.unreadable"  # not BISON's or Binance's export, or a bad cell
+EXCHANGE_BINANCE_SPOT_HISTORY = "exchange.binance_spot_history"  # the third file, not needed
+EXCHANGE_BINANCE_AMBIGUOUS_TRADE = "exchange.binance_ambiguous_trade"  # two pairs in a second
+EXCHANGE_WITHDRAWAL_HISTORY_MISSING = "exchange.withdrawal_history_missing"  # a to-do (D178 (4))
+# The history uploaded after every open withdrawal fits none of them (the to-do's reason)
+EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH = "exchange.withdrawal_history_no_match"
+EXCHANGE_TRANSACTIONS_FIRST = "exchange.transactions_first"  # a history before any transaction
+EXCHANGE_ACCOUNT_MISMATCH = "exchange.account_mismatch"  # BISON's file on Binance's account
+EXCHANGE_NOT_AN_EXCHANGE = "exchange.not_an_exchange"  # the account is no exchange account
+EXCHANGE_BALANCE_UNKNOWN_ASSET = "exchange.balance_unknown_asset"  # typed for no asset of it
+EXCHANGE_PROVIDER_UNKNOWN = "exchange.provider_unknown"  # an exchange other than Binance, BISON
+EXCHANGE_ANSWER_INVALID = "exchange.answer_invalid"  # a kind that does not fit the movement
+EXCHANGE_MOVEMENT_DONE = "exchange.movement_done"  # confirmed or corrected already
+EXCHANGE_BALANCE_MISSING = "exchange.balance_missing"  # an asset held but not typed
 PRICE_NO_SOURCE = "price.no_source"  # an asset not in the registry (D167)
 PRICE_SOURCE_FAILED = "price.source_failed"  # an issuer's NAV missing seven days (D174)
 VALUATION_STALE_PRICE = "valuation.stale_price"  # the price is older than 7 days (D167)

@@ -21,8 +21,10 @@ step 0 report as a spec finding.
 
 from __future__ import annotations
 
+import csv
+import io
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from fractions import Fraction
 from functools import cache
@@ -959,6 +961,7 @@ _INWARD = {
     MovementKind.CASHBACK_REWARD,
     MovementKind.UNCATEGORIZED,
 }
+_TRADE = {MovementKind.ACQUISITION, MovementKind.DISPOSAL}
 
 
 def _exchange_kind(line: MovementLine) -> tuple[MovementKind, MovementStatus]:
@@ -974,7 +977,7 @@ def _exchange_kind(line: MovementLine) -> tuple[MovementKind, MovementStatus]:
             if eur
             else (MovementKind.CASHBACK_REWARD, proposed)
         )
-    if kind == "withdrawal":
+    if kind in ("withdraw", "withdrawal"):  # the real export writes Withdraw (D166 amended)
         return MovementKind.INTERNAL_TRANSFER_OUT, confirmed if eur else proposed
     if kind.startswith(("staking", "reward")):
         return MovementKind.STAKING_REWARD, confirmed
@@ -1065,6 +1068,11 @@ class ExchangeCase(_Case):
             held = self.held_before.get(asset, Decimal(0)) + sum(
                 (m.quantity for m in movements if self.rows[m.row].asset == asset), Decimal(0)
             )
+            if asset == "EUR":  # a trade's EUR leg is its eur_amount (D166 amended, D178 (6))
+                held += sum(
+                    (m.eur_amount for m in movements if m.kind in _TRADE and m.eur_amount),
+                    Decimal(0),
+                )
             difference = units - held
             assets.append(
                 AssetBalanceExpect(
@@ -1089,8 +1097,188 @@ class ExchangeCase(_Case):
         return self
 
 
+class ExchangeParseExpect(Schema):
+    lines: list[MovementLine] = Field(min_length=1)
+
+
+class ExchangeParseCase(Lenient):
+    """An export's text and what the parser reads from it (services/exchange/*_csv.parse);
+    `wrap` replays the same text inside a ZIP, behind a BOM or with CRLF line ends."""
+
+    text: str = Field(min_length=1)
+    wrap: list[Literal["zip", "bom", "crlf"]] = Field(default_factory=list)
+    expect: ExchangeParseExpect | None = None
+    error: str | None = None
+
+    @model_validator(mode="after")
+    def _one_outcome(self) -> Self:
+        if (self.expect is None) == (self.error is None):
+            raise ValueError(f"{self.id}: exactly one of expect/error")
+        if self.error is not None and not self.error.startswith("exchange."):
+            raise ValueError(f"{self.id}: errors are exchange.* codes")
+        return self
+
+
 class ExchangeFixture(_Fixture):
+    parse_cases: list[ExchangeParseCase] = Field(default_factory=list)
     cases: list[ExchangeCase] = Field(min_length=1)
+
+
+# --- binance_csv.yaml: services.exchange.binance_csv and its import (D178) ------------------
+
+
+class BinanceMovementExpect(Schema):
+    occurred_at: datetime
+    asset: AssetSymbol
+    kind: MovementKind
+    status: MovementStatus
+    quantity: Quantity
+    eur_amount: Money | None = None
+    fee_quantity: NonNegativeQuantity | None = None
+    network: str | None = None
+    tx_hash: str | None = None
+    external_ref: str | None = None
+    question: str | None = None
+    position: int | None = Field(default=None, ge=0)  # among identical rows, where it matters
+
+
+class BinanceExpect(Schema):
+    rows_total: int = Field(ge=0)
+    rows_new: int = Field(ge=0)
+    rows_skipped: int = Field(ge=0)
+    superseded: int = Field(default=0, ge=0)  # withdrawals completed by a later history
+    movements: list[BinanceMovementExpect]
+    todo: str | None = None  # exchange.withdrawal_history_missing
+    status: ImportStatus | None = None  # with `typed`
+    assets: list[AssetBalanceExpect] | None = None
+
+
+def _binance_rows(text: str | None) -> list[dict[str, str]]:
+    if text is None:
+        return []
+    rows = list(csv.DictReader(io.StringIO(text)))
+    return rows if rows and "Change" in rows[0] else []
+
+
+class BinanceCase(_Case):
+    transactions: str = Field(min_length=1)
+    withdrawals: str | None = None
+    withdrawals_later: bool = False
+    stored: str | None = None
+    typed: dict[AssetSymbol, NonNegativeQuantity] | None = None
+    expect: BinanceExpect | None = None
+    error: str | None = None
+
+    def positions(self) -> dict[str, Decimal]:
+        """D178 (6): Σ movements per coin; EUR adds Σ eur_amount of the trade legs."""
+        held: dict[str, Decimal] = {}
+        for m in self.expect.movements:
+            held[m.asset] = held.get(m.asset, Decimal(0)) + m.quantity
+            if m.kind in _TRADE and m.eur_amount is not None:
+                held["EUR"] = held.get("EUR", Decimal(0)) + m.eur_amount
+        return held
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        if (self.expect is None) == (self.error is None):
+            raise ValueError(f"{self.id}: exactly one of expect/error")
+        if self.error is not None:
+            if not self.error.startswith("exchange."):
+                raise ValueError(f"{self.id}: errors are exchange.* codes")
+            return self
+        expect, moves = self.expect, self.expect.movements
+        if expect.rows_new != len(moves) or expect.rows_new + expect.rows_skipped != (
+            expect.rows_total
+        ):
+            raise ValueError(f"{self.id}: rows_new counts the movements, + skipped = total")
+        if expect.superseded and not self.withdrawals_later:
+            raise ValueError(f"{self.id}: only a later history supersedes")
+        if [m.occurred_at for m in moves] != sorted(m.occurred_at for m in moves):
+            raise ValueError(f"{self.id}: movements oldest first")
+        open_withdrawal = False
+        for m in moves:
+            confirmed = (
+                m.kind in _TRADE
+                or m.kind is MovementKind.FEE
+                or (m.kind is MovementKind.INTERNAL_TRANSFER_IN and m.asset == "EUR")
+            )
+            if (m.status is MovementStatus.CONFIRMED) != confirmed:
+                raise ValueError(f"{self.id}: trade legs and EUR deposits alone are confirmed")
+            if (m.question is not None) != (m.kind is MovementKind.CASHBACK_REWARD):
+                raise ValueError(f"{self.id}: a crypto deposit carries the deposit question")
+            if m.kind is MovementKind.FEE and m.fee_quantity != -m.quantity:
+                raise ValueError(f"{self.id}: a fee's fee_quantity is its amount")
+            if m.asset == "EUR" and m.eur_amount != m.quantity.quantize(
+                Decimal("0.01"), ROUND_HALF_UP
+            ):
+                raise ValueError(f"{self.id}: an EUR movement's eur_amount is its quantity")
+            if m.kind is MovementKind.INTERNAL_TRANSFER_OUT:
+                filled = {m.network is None, m.tx_hash is None, m.fee_quantity is None}
+                if len(filled) != 1 or m.external_ref != m.tx_hash:
+                    raise ValueError(f"{self.id}: a withdrawal is completed all at once")
+                open_withdrawal |= m.tx_hash is None
+        if (expect.todo == E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING) != open_withdrawal:
+            raise ValueError(f"{self.id}: the to-do shows exactly while a withdrawal is open")
+        if self.stored is None:
+            # Conservation: every coin's rows sum to its movements; EUR to the cent per trade.
+            change: dict[str, Decimal] = {}
+            for row in _binance_rows(self.transactions):
+                change[row["Coin"]] = change.get(row["Coin"], Decimal(0)) + Decimal(row["Change"])
+            held = self.positions()
+            legs = sum(1 for m in moves if m.kind in _TRADE and m.eur_amount is not None)
+            for coin, total in change.items():
+                gap = abs(held.get(coin, Decimal(0)) - total)
+                if gap > (Decimal("0.005") * legs if coin == "EUR" else 0):
+                    raise ValueError(f"{self.id}: {coin}'s rows sum to {total}")
+        if self.typed is None:
+            if expect.status is not None or expect.assets is not None:
+                raise ValueError(f"{self.id}: a status needs typed balances")
+            return self
+        held = self.positions()
+        # D178 (6) as amended: a coin exactly; EUR within half a cent per rounded EUR leg
+        # (every trade leg with an eur_amount) plus half a cent for Binance's own display.
+        legs = sum(1 for m in moves if m.kind in _TRADE and m.eur_amount is not None)
+        bound = Decimal("0.005") * (legs + 1)
+        assets = []
+        for asset, units in self.typed.items():
+            difference = units - held.get(asset, Decimal(0))
+            agrees = abs(difference) <= bound if asset == "EUR" else difference == 0
+            assets.append(
+                AssetBalanceExpect(
+                    asset=asset,
+                    reconciled=agrees,
+                    difference_units=difference,
+                    error=None if agrees else E.EXCHANGE_UNRECONCILED,
+                )
+            )
+        status = (
+            ImportStatus.RECONCILED
+            if all(a.reconciled for a in assets)
+            else ImportStatus.UNRECONCILED
+        )
+        if (expect.status, expect.assets) != (status, assets):
+            raise ValueError(f"{self.id}: the typed balances give {status} {assets}")
+        return self
+
+
+class NeverStored(Schema):
+    user_id: str = Field(min_length=1)
+    address: str = Field(min_length=1)
+
+
+class BinanceFixture(_Fixture):
+    never_stored: NeverStored
+    cases: list[BinanceCase] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _sentinels(self) -> Self:
+        texts = [c.transactions + (c.withdrawals or "") + (c.stored or "") for c in self.cases]
+        for value in (self.never_stored.user_id, self.never_stored.address):
+            if not any(value in t for t in texts):
+                raise ValueError(f"no case carries {value}, so the never-stored test is empty")
+            if any(c.expect and value in c.expect.model_dump_json() for c in self.cases):
+                raise ValueError(f"{value} is never in an expected movement")
+        return self
 
 
 # --- dkb_csv.yaml: services.bank.dkb_csv.parse and its import (D173 (3), D164) --------------
@@ -1707,6 +1895,7 @@ MODELS: dict[str, type[Schema]] = {
     "holdings_reconcile": HoldingsFixture,
     "quirion_documents": QuirionFixture,
     "bison_csv": ExchangeFixture,
+    "binance_csv": BinanceFixture,
     "dkb_csv": DkbFixture,
     "card_pdf": CardFixture,
     "valuation": ValuationFixture,

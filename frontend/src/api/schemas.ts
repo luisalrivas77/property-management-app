@@ -130,6 +130,22 @@ export type SetOwnershipBody = Schemas["SetOwnershipBody"];
 // the credit card (phase 6 D176)
 export type PaymentIbanProposal = Schemas["PaymentIbanProposal"];
 export type ConfirmPaymentIbanBody = Schemas["ConfirmPaymentIbanBody"];
+// an exchange account's exports, typed balances and answers (phase 6 step 5a, D166, D178)
+export type MovementKind = Schemas["MovementKind"];
+export type MovementStatus = Schemas["MovementStatus"];
+export type MovementImport = Schemas["MovementImport"];
+export type ExchangeImport = Schemas["ExchangeImport"];
+export type ImportBalance = Schemas["ImportBalance"];
+export type ExchangeUpload = Schemas["ExchangeUpload"];
+export type ExchangePosition = Schemas["ExchangePosition"];
+export type ExchangeOverview = Schemas["ExchangeOverview"];
+export type ExchangeMovementRow = Schemas["ExchangeMovementRow"];
+export type DeclareHoldingsBody = Schemas["DeclareHoldingsBody"];
+export type HoldingBalance = Schemas["HoldingBalance"];
+export type AnswerMovementBody = Schemas["AnswerMovementBody"];
+export type MovementAnswered = Schemas["MovementAnswered"];
+export type WithdrawalsConfirmed = Schemas["WithdrawalsConfirmed"];
+export type MovementImportBody = Schemas["Body_movement_import_create_api_accounts__account_id__movement_imports_post"];
 export type StatementImport = Schemas["StatementImport"];
 export type StatementFormat = Schemas["StatementFormat"];
 export type ImportStatus = Schemas["ImportStatus"];

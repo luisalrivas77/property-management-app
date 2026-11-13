@@ -70,6 +70,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Der zweite Eintrag passt nur, wenn der Betrag der Grunderwerbsteuer oben auf diesen Bescheid gesenkt wird. Bitte beides übernehmen oder den zweiten Eintrag überspringen.",
   "proposal.bank_file_not_read":
     "Diese Datei wird nicht mit KI ausgelesen: Hausbuch hat sie beim Bankabruf von der Bank geholt, oder sie ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Solche Dateien liest Hausbuch selbst, ohne KI, auf ihrem Konto ein; steht sie dort noch nicht, auf der Seite des Dokuments „Auf Konto importieren“ wählen.",
+  // Phase 6 D166, step 5a: an exchange export is never sent to the model.
+  "proposal.exchange_export_not_read":
+    "Das ist ein Export einer Börse (BISON oder Binance). Hausbuch liest ihn selbst, ohne KI, auf dem Konto der Börse ein: unter Konten das Konto der Börse öffnen und den Export dort mit „Export der Börse hochladen“ hochladen; gibt es noch keins, ein Konto der Art „Börse (Krypto)“ anlegen.",
   "document.extraction_stale": "Das Dokument wurde inzwischen neu ausgelesen. Bitte die Seite neu laden und die Felder prüfen.",
   "document.extraction_kind_mismatch": "Für diese Dokumentart gibt es eines der Felder von Hand nicht; es kann nicht gespeichert werden.",
   // bank statements (phase-2.md §12 and the step 3 additions, rules/statements.py)
@@ -220,6 +223,31 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "asset.not_crypto":
     "Eine CoinGecko-ID oder ein Kraken-Paar gibt es nur für Kryptowährungen. Für einen Fonds bitte „Kurs eintragen“ nutzen.",
   "asset.is_euro": "Der Euro hat immer den Kurs 1; dafür wird kein Kurs eingetragen.",
+  // Phase 6 step 5a: an exchange's exports (services/exchange/imports.py, D166, D178)
+  "exchange.unreadable":
+    "Diese Datei ist kein Export von BISON oder Binance, oder eine Zeile darin ist unlesbar. Bitte den Transaktions-Export der Börse unverändert hochladen (CSV oder die ZIP-Datei, in der er kommt).",
+  "exchange.binance_spot_history":
+    "Das ist Binances Spot-Handelsverlauf. Hausbuch braucht ihn nicht: bitte den Transaktionsverlauf („Transaction History“) und den Auszahlungsverlauf hochladen.",
+  "exchange.binance_ambiguous_trade":
+    "In derselben Sekunde stehen zwei Tauschgeschäfte, die sich nicht eindeutig zuordnen lassen. Bitte den Export für einen kürzeren Zeitraum erneut herunterladen.",
+  "exchange.transactions_first":
+    "Das ist der Auszahlungsverlauf. Bitte zuerst den Transaktionsverlauf hochladen, dann den Auszahlungsverlauf.",
+  "exchange.account_mismatch":
+    "Diese Datei stammt von einer anderen Börse als dieses Konto. Bitte beim richtigen Börsenkonto hochladen.",
+  "exchange.not_an_exchange": "Dieses Konto ist kein Börsenkonto.",
+  "exchange.balance_unknown_asset":
+    "Für einen der Coins gibt es in diesem Export keine Bewegung. Bitte nur die Coins eintragen, die das Formular zeigt.",
+  "exchange.balance_missing": "Bitte für jeden Coin, den der Export als Bestand ergibt, den Bestand laut Börse eintragen.",
+  "exchange.provider_unknown": "Bitte als Börse BISON oder Binance wählen.",
+  "exchange.answer_invalid": "Diese Antwort passt nicht zu dieser Bewegung (Eingang oder Ausgang).",
+  "exchange.movement_done": "Diese Bewegung ist schon bestätigt oder beantwortet.",
+  "exchange.unreconciled":
+    "Der Bestand laut Börse weicht von den eingelesenen Bewegungen ab. Fehlt ein Teil des Exports, oder wurde ein Bestand falsch abgelesen?",
+  "exchange.withdrawal_history_missing":
+    "Binance nennt Netzwerk und Transaktions-Hash einer Auszahlung nur im Auszahlungsverlauf. Bitte ihn hochladen.",
+  "exchange.withdrawal_history_no_match":
+    "Im Auszahlungsverlauf steht keine abgeschlossene Auszahlung desselben Coins, deren Betrag plus Gebühr dem gesendeten Betrag entspricht, innerhalb einer Stunde davor.",
+  "exchange.deposit_question": "Ist dieser Eingang ein Bonus, eine Belohnung oder kam er von einer eigenen Wallet?",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was
@@ -244,6 +272,9 @@ export const AI_ERROR_TEXT: Record<string, string> = {
   // as a document is never sent to the model.
   "proposal.bank_file_not_read":
     "Das ist eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Hausbuch liest sie selbst, ohne KI, auf ihrem Konto ein: mit „Auf Konto importieren“ auf der Seite dieses Dokuments oder unter Zu prüfen, direkt aus der gespeicherten Datei, ohne sie noch einmal hochzuladen.",
+  // Phase 6 D166, step 5a: a BISON or Binance export uploaded through Dokumente.
+  "proposal.exchange_export_not_read":
+    "Das ist ein Export einer Börse (BISON oder Binance). Hausbuch liest ihn selbst, ohne KI, auf dem Konto der Börse ein: unter Konten das Konto der Börse öffnen und den Export dort mit „Export der Börse hochladen“ hochladen; gibt es noch keins, ein Konto der Art „Börse (Krypto)“ anlegen.",
 };
 
 /** The German sentence for a proposal's error code; unknown codes get a generic one. */

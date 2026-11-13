@@ -63,7 +63,7 @@ from hausbuch.schemas.enums import (
 from . import allocations, matching, rules_learned, workspace_settings
 from .context import CommandContext
 from .errors import NotFoundError, RuleViolationError
-from .proposals import PROPOSAL_BANK_FILE_NOT_READ
+from .proposals import PROPOSAL_BANK_FILE_NOT_READ, PROPOSAL_EXCHANGE_EXPORT_NOT_READ
 from .statements import _to_transaction, import_inbox_items, transaction_select
 
 TRANSACTION_MISMATCH = "allocation.transaction_mismatch"
@@ -294,6 +294,13 @@ _BANK_FILE_TEXTS = (
     "liest sie selbst, ohne KI, auf ihrem Konto ein.",
     "Auf welches Konto soll sie importiert werden?",
 )
+# Phase 6 D166, step 5a: an exchange export uploaded through Dokumente.
+_EXCHANGE_EXPORT_TEXTS = (
+    "Ein Export einer Börse (BISON oder Binance): Hausbuch liest ihn selbst, ohne KI, auf dem "
+    "Konto der Börse ein, nicht unter Dokumente.",
+    "Unter Konten das Konto der Börse öffnen und den Export dort mit „Export der Börse hochladen“ "
+    "hochladen; gibt es noch keins, unter Konten ein Konto der Art „Börse (Krypto)“ anlegen.",
+)
 _UNMATCHED_REASON = "Nicht zugeordnet: keine Regel, kein Abgleich und kein Beleg passen."
 _AI_FAILED_REASON = "Die KI konnte diese Zahlung nicht einordnen (Anfrage fehlgeschlagen)."
 # Phase 6 D168: a private line nothing explains, while the model may not see private lines.
@@ -322,6 +329,9 @@ def inbox(
     from .depot import holdings_inbox_items  # it imports the asset services
 
     items += holdings_inbox_items(conn)
+    from .exchange.imports import exchange_inbox_items  # it imports the transfer services
+
+    items += exchange_inbox_items(conn)
     if today is not None:
         items += _questionnaire_items(conn, today)
         from .transfers import transfer_inbox_items
@@ -381,6 +391,11 @@ def _proposal_items(conn: Connection) -> list[InboxItem]:
         kind, reasoning, question = _PROPOSAL_TEXTS[ProposalStatus(row.status)]
         if kind is InboxItemKind.READ_FAILED and row.error_code == PROPOSAL_BANK_FILE_NOT_READ:
             reasoning, question = _BANK_FILE_TEXTS
+        if (
+            kind is InboxItemKind.READ_FAILED
+            and row.error_code == PROPOSAL_EXCHANGE_EXPORT_NOT_READ
+        ):
+            reasoning, question = _EXCHANGE_EXPORT_TEXTS
         items.append(
             InboxItem(
                 kind=kind,

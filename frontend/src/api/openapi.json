@@ -5779,6 +5779,330 @@
         }
       }
     },
+    "/api/accounts/{account_id}/movement-imports": {
+      "post": {
+        "summary": "Movement Import Create",
+        "description": "An exchange's export, the CSV or the ZIP holding it, recognised by its header: BISON's\ntransaction export, Binance's transaction history (201 with its import; 200 with the\nstored one for the same bytes), or Binance's withdrawal history (200: how many\nwithdrawals it completed). 422 rule_violation with exchange.unreadable,\nexchange.binance_spot_history, exchange.account_mismatch, exchange.not_an_exchange,\nor exchange.transactions_first (nothing is stored then);\n413 / 415 as for POST /documents.",
+        "operationId": "movement_import_create_api_accounts__account_id__movement_imports_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_movement_import_create_api_accounts__account_id__movement_imports_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExchangeUpload"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "These bytes were imported already, or a withdrawal history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExchangeUpload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}/exchange": {
+      "get": {
+        "summary": "Exchange Overview",
+        "description": "The exchange account's page: positions per coin, imports with their balances, the\nto-dos. 422 exchange.not_an_exchange for another kind of account.",
+        "operationId": "exchange_overview_api_accounts__account_id__exchange_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExchangeOverview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}/movements": {
+      "get": {
+        "summary": "Exchange Movements",
+        "description": "The exchange account's current movements, newest first.",
+        "operationId": "exchange_movements_api_accounts__account_id__movements_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExchangeMovementRow"
+                  },
+                  "title": "Response Exchange Movements Api Accounts  Account Id  Movements Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/movement-imports/{import_id}/holdings": {
+      "post": {
+        "summary": "Movement Import Holdings",
+        "description": "„Bestand laut Börse eingeben“: the balance per coin the exchange shows; may be sent\nagain to correct it. 422 exchange.balance_missing, exchange.balance_unknown_asset.",
+        "operationId": "movement_import_holdings_api_movement_imports__import_id__holdings_post",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeclareHoldingsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExchangeImport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/movement-imports/{import_id}/withdrawals/confirm": {
+      "post": {
+        "summary": "Movement Import Withdrawals",
+        "description": "„Alle Auszahlungen gingen an eigene Wallets“ (D178 (4)).",
+        "operationId": "movement_import_withdrawals_api_movement_imports__import_id__withdrawals_confirm_post",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithdrawalsConfirmed"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/movements/{movement_id}/confirm": {
+      "post": {
+        "summary": "Movement Confirm",
+        "description": "The proposed movement is right as it stands. 422 exchange.movement_done.",
+        "operationId": "movement_confirm_api_movements__movement_id__confirm_post",
+        "parameters": [
+          {
+            "name": "movement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Movement Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/movements/{movement_id}/answer": {
+      "post": {
+        "summary": "Movement Answer",
+        "description": "What the proposed movement really was, and the id of the movement that now stands for\nit. 422 exchange.answer_invalid, exchange.movement_done.",
+        "operationId": "movement_answer_api_movements__movement_id__answer_post",
+        "parameters": [
+          {
+            "name": "movement_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Movement Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerMovementBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MovementAnswered"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/anlage-v": {
       "get": {
         "summary": "Property Anlage V",
@@ -9800,6 +10124,20 @@
         ],
         "title": "AnlageVDraft"
       },
+      "AnswerMovementBody": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/MovementKind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "AnswerMovementBody",
+        "description": "POST /movements/{id}/answer: what the movement really was. The movement is replaced\nby a confirmed row of that kind (the old one kept, superseded_by)."
+      },
       "AppUser": {
         "properties": {
           "id": {
@@ -10977,6 +11315,20 @@
           "file"
         ],
         "title": "Body_document_upload_api_documents_post"
+      },
+      "Body_movement_import_create_api_accounts__account_id__movement_imports_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_movement_import_create_api_accounts__account_id__movement_imports_post"
       },
       "BridgeRow": {
         "properties": {
@@ -12173,6 +12525,25 @@
         ],
         "title": "DeclareBalanceBody",
         "description": "POST /imports/{id}/balances: the closing balance Luis reads in online banking."
+      },
+      "DeclareHoldingsBody": {
+        "properties": {
+          "balances": {
+            "items": {
+              "$ref": "#/components/schemas/HoldingBalance"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Balances"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "balances"
+        ],
+        "title": "DeclareHoldingsBody",
+        "description": "POST /movement-imports/{id}/holdings: the balance per asset the exchange shows, typed\nonce per import (the pending_balance precedent of D21)."
       },
       "DeductionsOverride": {
         "properties": {
@@ -14431,6 +14802,7 @@
           "account.movements_imported",
           "account.movements_reconciled",
           "account.movements_unreconciled",
+          "account.withdrawal_history_checked",
           "account.holdings_confirmed",
           "account.holdings_reconciled",
           "account.holdings_mismatch",
@@ -14454,6 +14826,516 @@
           "rule.disabled"
         ],
         "title": "EventType"
+      },
+      "ExchangeImport": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "format": {
+            "$ref": "#/components/schemas/MovementImportFormat"
+          },
+          "rows_total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rows Total"
+          },
+          "rows_new": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rows New"
+          },
+          "rows_skipped": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rows Skipped"
+          },
+          "first_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First At"
+          },
+          "last_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ImportStatus"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "balances": {
+            "items": {
+              "$ref": "#/components/schemas/ImportBalance"
+            },
+            "type": "array",
+            "title": "Balances"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "updated_at",
+          "account_id",
+          "document_id",
+          "format",
+          "rows_total",
+          "rows_new",
+          "rows_skipped",
+          "status"
+        ],
+        "title": "ExchangeImport",
+        "description": "An import on the exchange account's page, with its balances per asset."
+      },
+      "ExchangeMovementRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MovementKind"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$",
+            "title": "Quantity"
+          },
+          "eur_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Amount"
+          },
+          "fee_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fee Eur"
+          },
+          "fee_quantity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,10})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fee Quantity"
+          },
+          "tax_withheld_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Withheld Eur"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
+          "network": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Network"
+          },
+          "tx_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tx Hash"
+          },
+          "source": {
+            "$ref": "#/components/schemas/MovementSource"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "transaction_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Id"
+          },
+          "movement_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Movement Hash"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MovementStatus"
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/MovementKind"
+            },
+            "type": "array",
+            "title": "Answers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "account_id",
+          "asset_id",
+          "kind",
+          "quantity",
+          "occurred_at",
+          "source",
+          "status",
+          "symbol"
+        ],
+        "title": "ExchangeMovementRow",
+        "description": "GET /accounts/{id}/movements: a current movement with its asset's symbol and, while it\nwaits, its question (an error code) and the kinds a person may answer."
+      },
+      "ExchangeOverview": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/ExchangePosition"
+            },
+            "type": "array",
+            "title": "Positions"
+          },
+          "imports": {
+            "items": {
+              "$ref": "#/components/schemas/ExchangeImport"
+            },
+            "type": "array",
+            "title": "Imports"
+          },
+          "withdrawals_open": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Withdrawals Open",
+            "default": 0
+          },
+          "movements_to_answer": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Movements To Answer",
+            "default": 0
+          },
+          "todos": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "provider"
+        ],
+        "title": "ExchangeOverview",
+        "description": "GET /accounts/{id}/exchange: the exchange account's page. `withdrawals_open` counts\nthe crypto withdrawals without network and hash; on Binance they are the to-do\n„Auszahlungsverlauf hochladen“ (D178 (4)), named by `todos`."
+      },
+      "ExchangePosition": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$",
+            "title": "Units"
+          },
+          "typed_units": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,10})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Typed Units"
+          },
+          "typed_as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Typed As Of"
+          },
+          "reconciled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconciled"
+          },
+          "difference_units": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difference Units"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "symbol",
+          "name",
+          "units"
+        ],
+        "title": "ExchangePosition",
+        "description": "Σ current movements of one asset on the exchange account (EUR with the trades' EUR\nlegs, D178 (6)), and its last typed balance."
+      },
+      "ExchangeUpload": {
+        "properties": {
+          "movement_import": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovementImport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "withdrawals_completed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Withdrawals Completed",
+            "default": 0
+          },
+          "withdrawals_open": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Withdrawals Open",
+            "default": 0
+          },
+          "withdrawals_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withdrawals Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExchangeUpload",
+        "description": "POST /accounts/{id}/movement-imports. A transaction export gives its import (the same\nfile again returns the stored one); Binance's withdrawal history gives no import, only\nhow many withdrawals it completed and how many still have no network and hash."
       },
       "ExcludeFrom15Pct": {
         "properties": {
@@ -15272,6 +16154,27 @@
         "title": "HausgeldabrechnungExtraction",
         "description": "Hausgeldabrechnung: the year's settlement (read by phase 3's Hausgeld rule)."
       },
+      "HoldingBalance": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,10})?$",
+            "title": "Units"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "units"
+        ],
+        "title": "HoldingBalance"
+      },
       "HomeOfficeComponent": {
         "properties": {
           "amount": {
@@ -15535,6 +16438,68 @@
         "type": "object",
         "title": "HouseholdTaxContext",
         "description": "What the assessed tax needs beyond the zvE (phase 4b D98, D109, D112), built by\nhousehold_context: the children, the Lohnersatzleistungen after the §32b Abs. 2 reduction,\nchurch tax paid, the donations within the cap, childcare within the cap, and the §35a\ncredit. Without it, the assessed tax is the plain tariff (total_tax)."
+      },
+      "ImportBalance": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "held": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$",
+            "title": "Held"
+          },
+          "typed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,10})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Typed"
+          },
+          "reconciled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconciled"
+          },
+          "difference_units": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difference Units"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "symbol",
+          "held"
+        ],
+        "title": "ImportBalance",
+        "description": "One asset of an exchange import: what the movements to its last row add up to (held)\nand, once typed, what the exchange showed and whether they agree."
       },
       "ImportStatus": {
         "type": "string",
@@ -15864,6 +16829,18 @@
             ],
             "title": "Property Id"
           },
+          "movement_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Movement Id"
+          },
           "transfer": {
             "anyOf": [
               {
@@ -15941,7 +16918,11 @@
           "property_cost_document",
           "holdings_mismatch",
           "price_source_failed",
-          "price_no_source"
+          "price_no_source",
+          "exchange_pending_balance",
+          "exchange_unreconciled",
+          "exchange_withdrawals",
+          "exchange_movement"
         ],
         "title": "InboxItemKind",
         "description": "GET /inbox (§8.3): one list, newest first."
@@ -17958,6 +18939,177 @@
         ],
         "title": "MovedPayment",
         "description": "A payment booked in the draft's year that §5.1 counts in another year (or vice versa)."
+      },
+      "MovementAnswered": {
+        "properties": {
+          "movement_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Movement Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "movement_id"
+        ],
+        "title": "MovementAnswered",
+        "description": "POST /movements/{id}/answer: the movement that now stands for the answered one."
+      },
+      "MovementImport": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "format": {
+            "$ref": "#/components/schemas/MovementImportFormat"
+          },
+          "rows_total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rows Total"
+          },
+          "rows_new": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rows New"
+          },
+          "rows_skipped": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rows Skipped"
+          },
+          "first_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First At"
+          },
+          "last_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ImportStatus"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "updated_at",
+          "account_id",
+          "document_id",
+          "format",
+          "rows_total",
+          "rows_new",
+          "rows_skipped",
+          "status"
+        ],
+        "title": "MovementImport",
+        "description": "movement_import row: the statement_import of an exchange export (D166). status reuses\nImportStatus's four values (imported = waiting for the typed balances)."
+      },
+      "MovementImportFormat": {
+        "type": "string",
+        "enum": [
+          "bison_csv",
+          "binance_csv"
+        ],
+        "title": "MovementImportFormat",
+        "description": "movement_import.format (migration 0025; binance_csv since 0028)."
+      },
+      "MovementKind": {
+        "type": "string",
+        "enum": [
+          "acquisition",
+          "disposal",
+          "internal_transfer_in",
+          "internal_transfer_out",
+          "fee",
+          "staking_reward",
+          "cashback_reward",
+          "distribution",
+          "capital_income_tax",
+          "uncategorized"
+        ],
+        "title": "MovementKind",
+        "description": "asset_movement.kind (migration 0025, §8). Phase 7 widens the CHECK with the chain\nkinds of the design's §2.2."
+      },
+      "MovementSource": {
+        "type": "string",
+        "enum": [
+          "csv",
+          "trade_confirmation",
+          "distribution_note",
+          "report",
+          "user",
+          "securities_transfer"
+        ],
+        "title": "MovementSource",
+        "description": "asset_movement.source: where the row was read from."
+      },
+      "MovementStatus": {
+        "type": "string",
+        "enum": [
+          "proposed",
+          "confirmed"
+        ],
+        "title": "MovementStatus",
+        "description": "asset_movement.status: only proposed -> confirmed moves (the trigger of 0025); a\ncorrection is a new row and the old one's superseded_by."
       },
       "NotarizedOnCorrection": {
         "properties": {
@@ -27085,6 +28237,22 @@
         "type": "object",
         "title": "WirtschaftsplanExtraction",
         "description": "Wirtschaftsplan: the monthly Hausgeld split the by_wirtschaftsplan rule reads (§8.1)."
+      },
+      "WithdrawalsConfirmed": {
+        "properties": {
+          "confirmed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Confirmed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confirmed"
+        ],
+        "title": "WithdrawalsConfirmed",
+        "description": "POST /movement-imports/{id}/withdrawals/confirm: „Alle Auszahlungen gingen an eigene\nWallets“ (D178 (4)); how many proposed withdrawals of the import it confirmed."
       },
       "Withheld": {
         "properties": {

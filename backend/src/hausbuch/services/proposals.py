@@ -29,7 +29,10 @@ from uuid import UUID
 from pydantic import BaseModel, JsonValue, ValidationError
 from sqlalchemy import Connection, exists, insert, null, select, update
 
+from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import document_extraction as extraction_table
+from hausbuch.db.tables import movement_import as movement_import_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import return_input as return_input_table
@@ -88,6 +91,7 @@ from hausbuch.schemas.employment import (
     ReturnInputEvidenceValue,
 )
 from hausbuch.schemas.enums import (
+    AccountKind,
     ActorType,
     DocumentSource,
     DocumentSubtype,
@@ -167,6 +171,9 @@ PROPOSAL_OTHER_NOTICE_WITHOUT_PATCH = "proposal.other_notice_without_patch"
 
 # Phase 5 D154: a file the bank sync fetched is never sent to the model.
 PROPOSAL_BANK_FILE_NOT_READ = "proposal.bank_file_not_read"
+# Phase 6 D166: an exchange's export (BISON, Binance) is never classified or sent to the
+# model; it is uploaded on its exchange account and read by code there.
+PROPOSAL_EXCHANGE_EXPORT_NOT_READ = "proposal.exchange_export_not_read"
 
 # Undecided and still in the job's hands: a re-run supersedes these, the job may write them.
 _IN_FLIGHT = (ProposalStatus.QUEUED, ProposalStatus.RUNNING)
@@ -240,6 +247,33 @@ _JSONB_COLUMNS = ("targets", "fields", "decisions", "applied_entities")
 # --- Creating proposals ------------------------------------------------------------------
 
 
+def _is_exchange_original(conn: Connection, document: Document) -> bool:
+    """The document is an exchange export read on its account (phase 6 D166, step 5a): typed
+    as one by the import (a statement of subtype exchange_export; this is how a withdrawal
+    history is known, since the movement it completes keeps its import's document), the
+    original of a movement import, or a document a movement of an exchange account points
+    to. A depot's note is no exchange original: it is read by the model (step 4)."""
+    typing = document.typing
+    if (
+        typing is not None
+        and typing.type is DocumentType.STATEMENT
+        and typing.subtype is DocumentSubtype.EXCHANGE_EXPORT
+    ):
+        return True
+    imported = select(movement_import_table.c.id).where(
+        movement_import_table.c.document_id == document.id
+    )
+    moved = (
+        select(movement_table.c.id)
+        .join(account_table, account_table.c.id == movement_table.c.account_id)
+        .where(
+            movement_table.c.document_id == document.id,
+            account_table.c.kind == AccountKind.EXCHANGE.value,
+        )
+    )
+    return conn.execute(imported.union_all(moved).limit(1)).first() is not None
+
+
 def _is_card_statement(conn: Connection, document_id: UUID) -> bool:
     """The document is the original of a card statement import (phase 6 D176 (3)) or of a
     depot's cash statement import (step 4): both read by code only."""
@@ -273,7 +307,9 @@ def request_read(
     never read by the model: refused with proposal.bank_file_not_read, so neither the
     document page's button nor a direct call sends a statement that names every tenant and
     IBAN in clear. A credit card's PDF statement (phase 6 D176) is read by code only, so it
-    is refused the same way."""
+    is refused the same way. An exchange export already imported on its account (phase 6
+    D166: it holds Binance's User ID and addresses) is refused with
+    proposal.exchange_export_not_read."""
     document = documents.get_document(ctx.conn, document_id)
     if document is None:
         raise NotFoundError(EntityType.DOCUMENT, document_id)
@@ -282,6 +318,11 @@ def request_read(
     if _is_card_statement(ctx.conn, document_id):
         raise RuleViolationError(
             [PROPOSAL_BANK_FILE_NOT_READ], "a card statement is read by code, never by the model"
+        )
+    if _is_exchange_original(ctx.conn, document):
+        raise RuleViolationError(
+            [PROPOSAL_EXCHANGE_EXPORT_NOT_READ],
+            "an exchange export is read by code on its account, never by the model",
         )
     contains_tenant_data = contains_tenant_data or any(
         p.contains_tenant_data for p in list_document_proposals(ctx.conn, document_id)
@@ -371,17 +412,20 @@ def rerun_proposal(
     return request_read(ctx, document_id, contains_tenant_data=contains_tenant_data)
 
 
-def supersede_bank_file_refusals(ctx: CommandContext, document_id: UUID) -> int:
+def supersede_bank_file_refusals(
+    ctx: CommandContext, document_id: UUID, code: str = PROPOSAL_BANK_FILE_NOT_READ
+) -> int:
     """Phase 6 step 2b (review): a card statement uploaded through Dokumente fails its read
     with proposal.bank_file_not_read („couldn't read this“, telling the person to import it on
     the card's page). Once it is imported as a statement, those failed proposals are
     superseded (proposal.superseded), so the stale card leaves Zu prüfen; a failure with any
-    other code stays. The number superseded."""
+    other code stays. An exchange export passes proposal.exchange_export_not_read (step 5a).
+    The number superseded."""
     failed = ctx.conn.execute(
         select(proposal_table)
         .where(proposal_table.c.document_id == document_id)
         .where(proposal_table.c.status == ProposalStatus.FAILED.value)
-        .where(proposal_table.c.error_code == PROPOSAL_BANK_FILE_NOT_READ)
+        .where(proposal_table.c.error_code == code)
         .order_by(proposal_table.c.created_at, proposal_table.c.id)
         .with_for_update()
     ).all()

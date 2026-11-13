@@ -1359,6 +1359,19 @@ export function ProposalSection({
         />
       </div>
     );
+  } else if (proposal.status === "failed" && proposal.error_code === "proposal.exchange_export_not_read") {
+    // Phase 6 D166, step 5a: an exchange export is read by code on its exchange account; a new
+    // read would stop the same way, and nothing is typed by hand here.
+    body = (
+      <div className="stack">
+        <div className="notice notice-info" role="status">
+          <p>{aiErrorText(proposal.error_code)}</p>
+        </div>
+        <div className="row">
+          <Link href="/accounts">Konten öffnen</Link>
+        </div>
+      </div>
+    );
   } else if (proposal.status === "failed") {
     body = (
       <div className="stack">

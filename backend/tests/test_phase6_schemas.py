@@ -1,7 +1,7 @@
 """Phase 6 step 0 schema guards (docs/phases/phase-6.md §11, D157, D165–D167, D175): shares
 sum to exactly one, a security is named by its ISIN, a read movement names its document, a
 quantity is a string to 10 places, a transfer has one leg each way, a valuation has a value
-or a reason, and every rule of the later steps is still a stub."""
+or a reason. (The later steps' rule stubs are all built: exchange in 5a, valuation in 5b.)"""
 
 import uuid
 from datetime import UTC, date, datetime
@@ -10,7 +10,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from hausbuch.rules import exchange, valuation
+from hausbuch.rules import valuation
 from hausbuch.schemas.allocation import TransferLeg, TransferLegSource
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.household import (
@@ -196,19 +196,3 @@ def test_every_price_source_has_a_place_in_the_precedence():
     # D167 amended 13 Nov 2026: a typed price wins on its day, then a trade.
     assert valuation.SOURCE_PRECEDENCE[:2] == (PriceSourceKind.USER, PriceSourceKind.TRADE)
     assert valuation.SOURCE_PRECEDENCE[-1] is PriceSourceKind.ECB_FX
-
-
-# --- The later steps' rules are stubs ----------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "call",
-    [
-        lambda: exchange.classify(None),
-        lambda: exchange.movement_hash(uuid.uuid4(), None, 0),
-    ],
-    ids=["classify", "movement_hash"],
-)
-def test_stub_until_its_step(call):
-    with pytest.raises(NotImplementedError, match="phase 6 step"):
-        call()

@@ -2061,6 +2061,155 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/{account_id}/movement-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Movement Import Create
+         * @description An exchange's export, the CSV or the ZIP holding it, recognised by its header: BISON's
+         *     transaction export, Binance's transaction history (201 with its import; 200 with the
+         *     stored one for the same bytes), or Binance's withdrawal history (200: how many
+         *     withdrawals it completed). 422 rule_violation with exchange.unreadable,
+         *     exchange.binance_spot_history, exchange.account_mismatch, exchange.not_an_exchange,
+         *     or exchange.transactions_first (nothing is stored then);
+         *     413 / 415 as for POST /documents.
+         */
+        post: operations["movement_import_create_api_accounts__account_id__movement_imports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{account_id}/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Exchange Overview
+         * @description The exchange account's page: positions per coin, imports with their balances, the
+         *     to-dos. 422 exchange.not_an_exchange for another kind of account.
+         */
+        get: operations["exchange_overview_api_accounts__account_id__exchange_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{account_id}/movements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Exchange Movements
+         * @description The exchange account's current movements, newest first.
+         */
+        get: operations["exchange_movements_api_accounts__account_id__movements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/movement-imports/{import_id}/holdings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Movement Import Holdings
+         * @description „Bestand laut Börse eingeben“: the balance per coin the exchange shows; may be sent
+         *     again to correct it. 422 exchange.balance_missing, exchange.balance_unknown_asset.
+         */
+        post: operations["movement_import_holdings_api_movement_imports__import_id__holdings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/movement-imports/{import_id}/withdrawals/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Movement Import Withdrawals
+         * @description „Alle Auszahlungen gingen an eigene Wallets“ (D178 (4)).
+         */
+        post: operations["movement_import_withdrawals_api_movement_imports__import_id__withdrawals_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/movements/{movement_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Movement Confirm
+         * @description The proposed movement is right as it stands. 422 exchange.movement_done.
+         */
+        post: operations["movement_confirm_api_movements__movement_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/movements/{movement_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Movement Answer
+         * @description What the proposed movement really was, and the id of the movement that now stands for
+         *     it. 422 exchange.answer_invalid, exchange.movement_done.
+         */
+        post: operations["movement_answer_api_movements__movement_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/anlage-v": {
         parameters: {
             query?: never;
@@ -3466,6 +3615,14 @@ export interface components {
             tax_free_from?: string | null;
         };
         /**
+         * AnswerMovementBody
+         * @description POST /movements/{id}/answer: what the movement really was. The movement is replaced
+         *     by a confirmed row of that kind (the old one kept, superseded_by).
+         */
+        AnswerMovementBody: {
+            kind: components["schemas"]["MovementKind"];
+        };
+        /**
          * AppUser
          * @description A person who can sign in. Auth credentials (passkey / TOTP) land with the API PR.
          */
@@ -3988,6 +4145,11 @@ export interface components {
             /** Proof For */
             proof_for?: string | null;
         };
+        /** Body_movement_import_create_api_accounts__account_id__movement_imports_post */
+        Body_movement_import_create_api_accounts__account_id__movement_imports_post: {
+            /** File */
+            file: string;
+        };
         /** BridgeRow */
         BridgeRow: {
             /**
@@ -4506,6 +4668,15 @@ export interface components {
             closing_balance: string;
             /** Opening Balance */
             opening_balance?: string | null;
+        };
+        /**
+         * DeclareHoldingsBody
+         * @description POST /movement-imports/{id}/holdings: the balance per asset the exchange shows, typed
+         *     once per import (the pending_balance precedent of D21).
+         */
+        DeclareHoldingsBody: {
+            /** Balances */
+            balances: components["schemas"]["HoldingBalance"][];
         };
         /** DeductionsOverride */
         DeductionsOverride: {
@@ -5318,7 +5489,207 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "rule.created" | "rule.disabled";
+        /**
+         * ExchangeImport
+         * @description An import on the exchange account's page, with its balances per asset.
+         */
+        ExchangeImport: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            format: components["schemas"]["MovementImportFormat"];
+            /** Rows Total */
+            rows_total: number;
+            /** Rows New */
+            rows_new: number;
+            /** Rows Skipped */
+            rows_skipped: number;
+            /** First At */
+            first_at?: string | null;
+            /** Last At */
+            last_at?: string | null;
+            status: components["schemas"]["ImportStatus"];
+            /** Error Code */
+            error_code?: string | null;
+            /** Balances */
+            balances?: components["schemas"]["ImportBalance"][];
+        };
+        /**
+         * ExchangeMovementRow
+         * @description GET /accounts/{id}/movements: a current movement with its asset's symbol and, while it
+         *     waits, its question (an error code) and the kinds a person may answer.
+         */
+        ExchangeMovementRow: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            kind: components["schemas"]["MovementKind"];
+            /** Quantity */
+            quantity: string;
+            /** Eur Amount */
+            eur_amount?: string | null;
+            /** Fee Eur */
+            fee_eur?: string | null;
+            /** Fee Quantity */
+            fee_quantity?: string | null;
+            /** Tax Withheld Eur */
+            tax_withheld_eur?: string | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** External Ref */
+            external_ref?: string | null;
+            /** Network */
+            network?: string | null;
+            /** Tx Hash */
+            tx_hash?: string | null;
+            source: components["schemas"]["MovementSource"];
+            /** Document Id */
+            document_id?: string | null;
+            /** Transaction Id */
+            transaction_id?: string | null;
+            /** Movement Hash */
+            movement_hash?: string | null;
+            status: components["schemas"]["MovementStatus"];
+            /** Superseded By */
+            superseded_by?: string | null;
+            /** Symbol */
+            symbol: string;
+            /** Question */
+            question?: string | null;
+            /** Answers */
+            answers?: components["schemas"]["MovementKind"][];
+        };
+        /**
+         * ExchangeOverview
+         * @description GET /accounts/{id}/exchange: the exchange account's page. `withdrawals_open` counts
+         *     the crypto withdrawals without network and hash; on Binance they are the to-do
+         *     „Auszahlungsverlauf hochladen“ (D178 (4)), named by `todos`.
+         */
+        ExchangeOverview: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Provider */
+            provider: string;
+            /** Positions */
+            positions?: components["schemas"]["ExchangePosition"][];
+            /** Imports */
+            imports?: components["schemas"]["ExchangeImport"][];
+            /**
+             * Withdrawals Open
+             * @default 0
+             */
+            withdrawals_open: number;
+            /**
+             * Movements To Answer
+             * @default 0
+             */
+            movements_to_answer: number;
+            /** Todos */
+            todos?: string[];
+        };
+        /**
+         * ExchangePosition
+         * @description Σ current movements of one asset on the exchange account (EUR with the trades' EUR
+         *     legs, D178 (6)), and its last typed balance.
+         */
+        ExchangePosition: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol: string;
+            /** Name */
+            name: string;
+            /** Units */
+            units: string;
+            /** Typed Units */
+            typed_units?: string | null;
+            /** Typed As Of */
+            typed_as_of?: string | null;
+            /** Reconciled */
+            reconciled?: boolean | null;
+            /** Difference Units */
+            difference_units?: string | null;
+        };
+        /**
+         * ExchangeUpload
+         * @description POST /accounts/{id}/movement-imports. A transaction export gives its import (the same
+         *     file again returns the stored one); Binance's withdrawal history gives no import, only
+         *     how many withdrawals it completed and how many still have no network and hash.
+         */
+        ExchangeUpload: {
+            movement_import?: components["schemas"]["MovementImport"] | null;
+            /**
+             * Withdrawals Completed
+             * @default 0
+             */
+            withdrawals_completed: number;
+            /**
+             * Withdrawals Open
+             * @default 0
+             */
+            withdrawals_open: number;
+            /** Withdrawals Reason */
+            withdrawals_reason?: string | null;
+        };
         /** ExcludeFrom15Pct */
         ExcludeFrom15Pct: {
             /**
@@ -5706,6 +6077,16 @@ export interface components {
             /** @description Entnahme aus der Rücklage */
             ruecklage_spent?: components["schemas"]["ExtractedValue"];
         };
+        /** HoldingBalance */
+        HoldingBalance: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Units */
+            units: string;
+        };
         /**
          * HomeOfficeComponent
          * @description §5.3: (days_other_workplace + days_no_other_workplace) × day_rate, at most cap.
@@ -5836,6 +6217,28 @@ export interface components {
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
+         * ImportBalance
+         * @description One asset of an exchange import: what the movements to its last row add up to (held)
+         *     and, once typed, what the exchange showed and whether they agree.
+         */
+        ImportBalance: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol: string;
+            /** Held */
+            held: string;
+            /** Typed */
+            typed?: string | null;
+            /** Reconciled */
+            reconciled?: boolean | null;
+            /** Difference Units */
+            difference_units?: string | null;
+        };
+        /**
          * ImportStatus
          * @description statement_import.status. `imported` with no declared closing balance is what the
          *     inbox shows as "pending balance" (reconcile's pending_balance).
@@ -5948,6 +6351,8 @@ export interface components {
             reminder_id?: string | null;
             /** Property Id */
             property_id?: string | null;
+            /** Movement Id */
+            movement_id?: string | null;
             transfer?: components["schemas"]["OpenTransfer"] | null;
             /** Asset Id */
             asset_id?: string | null;
@@ -5961,7 +6366,7 @@ export interface components {
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).
@@ -6794,6 +7199,94 @@ export interface components {
              */
             rule: "paid" | "short_period_shift";
         };
+        /**
+         * MovementAnswered
+         * @description POST /movements/{id}/answer: the movement that now stands for the answered one.
+         */
+        MovementAnswered: {
+            /**
+             * Movement Id
+             * Format: uuid
+             */
+            movement_id: string;
+        };
+        /**
+         * MovementImport
+         * @description movement_import row: the statement_import of an exchange export (D166). status reuses
+         *     ImportStatus's four values (imported = waiting for the typed balances).
+         */
+        MovementImport: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            format: components["schemas"]["MovementImportFormat"];
+            /** Rows Total */
+            rows_total: number;
+            /** Rows New */
+            rows_new: number;
+            /** Rows Skipped */
+            rows_skipped: number;
+            /** First At */
+            first_at?: string | null;
+            /** Last At */
+            last_at?: string | null;
+            status: components["schemas"]["ImportStatus"];
+            /** Error Code */
+            error_code?: string | null;
+        };
+        /**
+         * MovementImportFormat
+         * @description movement_import.format (migration 0025; binance_csv since 0028).
+         * @enum {string}
+         */
+        MovementImportFormat: "bison_csv" | "binance_csv";
+        /**
+         * MovementKind
+         * @description asset_movement.kind (migration 0025, §8). Phase 7 widens the CHECK with the chain
+         *     kinds of the design's §2.2.
+         * @enum {string}
+         */
+        MovementKind: "acquisition" | "disposal" | "internal_transfer_in" | "internal_transfer_out" | "fee" | "staking_reward" | "cashback_reward" | "distribution" | "capital_income_tax" | "uncategorized";
+        /**
+         * MovementSource
+         * @description asset_movement.source: where the row was read from.
+         * @enum {string}
+         */
+        MovementSource: "csv" | "trade_confirmation" | "distribution_note" | "report" | "user" | "securities_transfer";
+        /**
+         * MovementStatus
+         * @description asset_movement.status: only proposed -> confirmed moves (the trigger of 0025); a
+         *     correction is a new row and the old one's superseded_by.
+         * @enum {string}
+         */
+        MovementStatus: "proposed" | "confirmed";
         /** NotarizedOnCorrection */
         NotarizedOnCorrection: {
             /**
@@ -10416,6 +10909,15 @@ export interface components {
             hausgeld_ruecklage_monthly?: components["schemas"]["ExtractedValue"];
             /** @description the WEG account the Hausgeld is paid to */
             iban?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * WithdrawalsConfirmed
+         * @description POST /movement-imports/{id}/withdrawals/confirm: „Alle Auszahlungen gingen an eigene
+         *     Wallets“ (D178 (4)); how many proposed withdrawals of the import it confirmed.
+         */
+        WithdrawalsConfirmed: {
+            /** Confirmed */
+            confirmed: number;
         };
         /** Withheld */
         Withheld: {
@@ -14860,6 +15362,242 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaxInput"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    movement_import_create_api_accounts__account_id__movement_imports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_movement_import_create_api_accounts__account_id__movement_imports_post"];
+            };
+        };
+        responses: {
+            /** @description These bytes were imported already, or a withdrawal history */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExchangeUpload"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExchangeUpload"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exchange_overview_api_accounts__account_id__exchange_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExchangeOverview"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exchange_movements_api_accounts__account_id__movements_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExchangeMovementRow"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    movement_import_holdings_api_movement_imports__import_id__holdings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeclareHoldingsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExchangeImport"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    movement_import_withdrawals_api_movement_imports__import_id__withdrawals_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WithdrawalsConfirmed"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    movement_confirm_api_movements__movement_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                movement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    movement_answer_api_movements__movement_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                movement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerMovementBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MovementAnswered"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

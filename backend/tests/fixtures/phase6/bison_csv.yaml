@@ -1,74 +1,141 @@
-# Rule fixture: the exchange export's rows to asset movements, their dedup and the typed
-# balance (hausbuch.rules.exchange.classify / movement_hash, services/exchange/bison_csv;
-# docs/phases/phase-6.md D166, D175, §8, §14)
+# Rule fixture: BISON's transaction export to asset movements, their dedup and the typed
+# balance (hausbuch.services.exchange.bison_csv.parse, hausbuch.rules.exchange; docs/phases/
+# phase-6.md D166 as amended 13 Nov 2026, D175, D178 (6), §8, §14)
 #
-# The rows are written as the parser's output (schemas.household.MovementLine), not as CSV
-# text: the export's columns and row shape are not re-verifiable today (§3, Q-O59) and are
-# settled on the anonymised real export in step 5, which adds the CSV text and its parse
-# cases here (as phase 2 did for the camt). The mapping, the dedup and the reconciliation
-# below do not depend on the layout.
+# Two parts:
+# - `parse_cases`: the CSV text as BISON writes it, and the rows the parser reads from it
+#   (schemas.household.MovementLine), or the error code it refuses with. `wrap` replays the
+#   same text as the upload may bring it: `zip` (a ZIP with the one CSV inside), `bom` (a
+#   UTF-8 BOM in front), `crlf` (CRLF line ends).
+# - `cases`: parsed rows to movements, dedup and the typed balance. The mapping, the dedup and
+#   the reconciliation do not depend on the layout, so the rows are written as the parser's
+#   output.
+#
+# The layout (D166 amended, read on the real export on Luis's computer 13 Nov 2026, never
+# committed): nine columns separated by „; “ (every cell after the first, header included,
+# starts with a space), no BOM, no quoting, LF line ends; one row per trade with both legs;
+# amounts unsigned with a point as decimal mark (EUR to 2 places, the asset to 8, its market
+# price and the fee to 10); the asset written capitalised (Btc) and read upper-case; the date
+# YYYY-MM-DD HH:MM:SS in UTC. An EUR Deposit has Currency Eur and no Asset; a Buy has Currency
+# Eur, its EUR amount and its asset amount and Fee 0; a crypto Deposit and a Withdraw have an
+# Asset, its amount, its market price and a Fee, and no Currency and no EUR amount. Every value
+# below is invented.
+#
+# Parser readings (step 5, listed in the report):
+# - The EUR asset is written `EUR`; an EUR row's quantity and eur_amount are both its EUR
+#   amount. A coin row's eur_amount is the EUR amount, empty when the row has none.
+# - The Fee is in the units of the row's own asset (the coin, or EUR on an EUR row) and goes
+#   to fee_quantity; a fee of zero (0 or 0.0000000000) is no fee. On the real export every fee
+#   is zero, so this reading rests on D166's text, not on a real value; whether a Withdraw's
+#   amount includes its fee is not printed either (Q-O80): the quantity below is the amount as
+#   printed, and the typed balance tells.
+# - The market price is not kept (a crypto Deposit's EUR value is valued by phase 7 and 8 from
+#   the price table, as a stablecoin trade's is, D178 (3)); raw stays empty.
+# - The Transaction ID is the external_ref, trimmed and otherwise verbatim (a UUID or a hex
+#   string).
+# - A file whose header is not this one is refused with exchange.unreadable, as is a row with
+#   the wrong number of cells, an unreadable date or amount, or a row with neither an Asset nor
+#   Currency Eur.
 #
 # Recomputed on load (tests/fixture_models_phase6.py), from the rule written once more:
 # - kind by `type` (case-insensitive) and whether the asset is EUR: Buy -> acquisition,
-#   Sell -> disposal, EUR Deposit -> internal_transfer_in, EUR Withdrawal ->
+#   Sell -> disposal, EUR Deposit -> internal_transfer_in, EUR Withdraw (or Withdrawal) ->
 #   internal_transfer_out, a type starting with Staking or Reward -> staking_reward, a crypto
-#   Deposit -> cashback_reward PROPOSED with exchange.deposit_question, a crypto Withdrawal ->
+#   Deposit -> cashback_reward PROPOSED with exchange.deposit_question, a crypto Withdraw ->
 #   internal_transfer_out PROPOSED (destination unknown, an open leg until phase 7), anything
 #   else -> uncategorized PROPOSED; every other row is confirmed by code;
 # - the signs: quantity positive in (acquisition, internal_transfer_in, staking_reward,
 #   cashback_reward), negative out (disposal, internal_transfer_out); eur_amount negative on a
-#   buy, positive on a sell, equal to the quantity on an EUR row;
+#   buy, positive on a sell, equal to the signed quantity on an EUR row;
 # - dedup: a row whose Transaction ID is already stored, or appeared earlier in the same file,
 #   is skipped (movement_hash is keyed by the ID); a row without an ID is kept, its position
 #   among identical rows (0, 1, ...) making its hash unique;
 # - reconciliation: per typed asset, held_before + Σ signed quantity of the import's new rows
-#   = the typed units -> reconciled, else exchange.unreconciled for that asset.
+#   of that asset = the typed units -> reconciled, else exchange.unreconciled for that asset;
+#   for EUR the position also counts Σ eur_amount of the acquisitions and disposals (a trade's
+#   EUR leg is its eur_amount, never its own movement; D166 amended, D178 (6)).
 #
-# Step 0 readings (listed in the step 0 report):
-# - The export's amount is unsigned and its type gives the direction (the design of 6 Nov
-#   2026 lists `amount` and `type`, no sign).
-# - eur_amount is the export's EUR amount, the fee kept apart in fee_eur; whether the export's
-#   EUR amount already includes the fee is settled on the real export (Q-O59).
+# Earlier readings kept from step 0:
 # - A reward keeps the export's EUR value at receipt as a positive eur_amount (the §22 Nr. 3
-#   value phase 8 needs), though no cash moves.
-# - A crypto withdrawal's quantity is the amount sent including the network fee, and
-#   fee_quantity that fee (D175's phase 7 match is quantity − fee_quantity against the
-#   deposit), so the balance moves by the quantity alone.
+#   value phase 8 needs), though no cash moves. No real row shows one yet.
 # - The typed balance counts proposed rows too: a CSV row is a fact of the export, only its
 #   category waits (unlike a depot reading, whose values wait for „Übernehmen“).
-# - The EUR balance at the exchange is not reconciled in step 0's cases: how a trade's EUR leg
-#   and fee reach it depends on the row shape (Q-O59).
 # - "a duplicate Transaction ID skipped" covers both a re-upload and a repeat inside one file.
 
 ids:
   account: 0000006b-0000-4000-8000-000000000001
 
+parse_cases:
+  - id: real_layout
+    description: a Buy, an EUR Deposit, a crypto Deposit and a Withdraw as BISON writes them
+    text: |
+      Transaction ID; Transaction type; Currency; Asset; Eur (amount); Asset (amount); Asset (market price); Fee; Date (UTC - Coordinated Universal Time)
+      0d4b7e21-9c3a-4f85-a6e0-5b1c8d2f7a46; Deposit; Eur; ; 500.00; ; ; 0.0000000000; 2026-03-01 09:00:12
+      e51f0a8c-3b7d-4e29-9c64-7a2d1b8f0e93; Buy; Eur; Btc; 250.00; 0.00398765; 62694.3500000000; 0; 2026-03-02 10:15:31
+      B4F19C7E2A6D3058E1C9A7B4D2F60E8135; Deposit; ; Btc; ; 0.00001200; 60150.5000000000; 0.0000000000; 2026-03-10 07:00:00
+      7c2e9b14-5a3d-4f60-8b21-0d9e6c4a1f35; Withdraw; ; Btc; ; 0.00390000; 61200.0000000000; 0.0000000000; 2026-03-20 18:42:07
+    expect:
+      lines:
+        - {occurred_at: "2026-03-01T09:00:12Z", type: Deposit, asset: EUR, quantity: "500.00", eur_amount: "500.00", external_ref: 0d4b7e21-9c3a-4f85-a6e0-5b1c8d2f7a46}
+        - {occurred_at: "2026-03-02T10:15:31Z", type: Buy, asset: BTC, quantity: "0.00398765", eur_amount: "250.00", external_ref: e51f0a8c-3b7d-4e29-9c64-7a2d1b8f0e93}
+        - {occurred_at: "2026-03-10T07:00:00Z", type: Deposit, asset: BTC, quantity: "0.00001200", external_ref: B4F19C7E2A6D3058E1C9A7B4D2F60E8135}
+        - {occurred_at: "2026-03-20T18:42:07Z", type: Withdraw, asset: BTC, quantity: "0.00390000", external_ref: 7c2e9b14-5a3d-4f60-8b21-0d9e6c4a1f35}
+
+  - id: zip_bom_crlf
+    description: the same file inside a ZIP, with a BOM and CRLF line ends, reads the same
+    wrap: [zip, bom, crlf]
+    text: |
+      Transaction ID; Transaction type; Currency; Asset; Eur (amount); Asset (amount); Asset (market price); Fee; Date (UTC - Coordinated Universal Time)
+      e51f0a8c-3b7d-4e29-9c64-7a2d1b8f0e93; Buy; Eur; Btc; 250.00; 0.00398765; 62694.3500000000; 0; 2026-03-02 10:15:31
+    expect:
+      lines:
+        - {occurred_at: "2026-03-02T10:15:31Z", type: Buy, asset: BTC, quantity: "0.00398765", eur_amount: "250.00", external_ref: e51f0a8c-3b7d-4e29-9c64-7a2d1b8f0e93}
+
+  - id: fee_in_the_asset
+    description: a non-zero fee is kept in the asset's units, never as a euro fee
+    text: |
+      Transaction ID; Transaction type; Currency; Asset; Eur (amount); Asset (amount); Asset (market price); Fee; Date (UTC - Coordinated Universal Time)
+      5e8a1c3f-0b7d-4a92-8e64-1f2d3c4b5a69; Withdraw; ; Eth; ; 0.25000000; 2410.0000000000; 0.0012000000; 2026-04-02 12:00:00
+    expect:
+      lines:
+        - {occurred_at: "2026-04-02T12:00:00Z", type: Withdraw, asset: ETH, quantity: "0.25000000", fee_quantity: "0.0012000000", external_ref: 5e8a1c3f-0b7d-4a92-8e64-1f2d3c4b5a69}
+
+  - id: not_a_bison_export
+    description: another file (here Binance's transaction history) is not read as BISON's
+    text: |
+      User ID,Time,Account,Operation,Coin,Change,Remark
+      100000001,2026-03-02 10:15:31,Spot,Deposit,EUR,500,
+    error: exchange.unreadable
+
+  - id: unreadable_amount
+    text: |
+      Transaction ID; Transaction type; Currency; Asset; Eur (amount); Asset (amount); Asset (market price); Fee; Date (UTC - Coordinated Universal Time)
+      e51f0a8c-3b7d-4e29-9c64-7a2d1b8f0e93; Buy; Eur; Btc; 250,00; 0.00398765; 62694.3500000000; 0; 2026-03-02 10:15:31
+    error: exchange.unreadable
+
 cases:
   - id: buy
-    pending: "phase 6 step 5 (the exchange)"
     rows:
-      - {occurred_at: "2026-03-02T10:15:00Z", type: Buy, asset: BTC, quantity: "0.01000000", eur_amount: "600.00", fee_eur: "1.50", external_ref: BX-0001}
+      - {occurred_at: "2026-03-02T10:15:00Z", type: Buy, asset: BTC, quantity: "0.01000000", eur_amount: "600.00", external_ref: BX-0001}
     expect:
       rows_new: 1
       rows_skipped: 0
       movements:
-        - {row: 0, kind: acquisition, status: confirmed, quantity: "0.01000000", eur_amount: "-600.00", fee_eur: "1.50", external_ref: BX-0001}
+        - {row: 0, kind: acquisition, status: confirmed, quantity: "0.01000000", eur_amount: "-600.00", external_ref: BX-0001}
 
   - id: sell
-    pending: "phase 6 step 5 (the exchange)"
     rows:
-      - {occurred_at: "2026-04-10T08:00:00Z", type: Sell, asset: ETH, quantity: "0.20000000", eur_amount: "500.00", fee_eur: "1.25", external_ref: BX-0002}
+      - {occurred_at: "2026-04-10T08:00:00Z", type: Sell, asset: ETH, quantity: "0.20000000", eur_amount: "500.00", external_ref: BX-0002}
     expect:
       rows_new: 1
       rows_skipped: 0
       movements:
-        - {row: 0, kind: disposal, status: confirmed, quantity: "-0.20000000", eur_amount: "500.00", fee_eur: "1.25", external_ref: BX-0002}
+        - {row: 0, kind: disposal, status: confirmed, quantity: "-0.20000000", eur_amount: "500.00", external_ref: BX-0002}
 
   - id: eur_deposit
     description: the EUR deposit the transfer matcher links to the bank leg (transfers.yaml, D162)
-    pending: "phase 6 step 5 (the exchange)"
     rows:
-      - {occurred_at: "2026-03-01T09:00:00Z", type: Deposit, asset: EUR, quantity: "1000.00", external_ref: BX-0003}
+      - {occurred_at: "2026-03-01T09:00:00Z", type: Deposit, asset: EUR, quantity: "1000.00", eur_amount: "1000.00", external_ref: BX-0003}
     expect:
       rows_new: 1
       rows_skipped: 0
@@ -76,9 +143,8 @@ cases:
         - {row: 0, kind: internal_transfer_in, status: confirmed, quantity: "1000.00", eur_amount: "1000.00", external_ref: BX-0003}
 
   - id: eur_withdrawal
-    pending: "phase 6 step 5 (the exchange)"
     rows:
-      - {occurred_at: "2026-05-20T09:00:00Z", type: Withdrawal, asset: EUR, quantity: "250.00", external_ref: BX-0009}
+      - {occurred_at: "2026-05-20T09:00:00Z", type: Withdraw, asset: EUR, quantity: "250.00", eur_amount: "250.00", external_ref: BX-0009}
     expect:
       rows_new: 1
       rows_skipped: 0
@@ -86,18 +152,26 @@ cases:
         - {row: 0, kind: internal_transfer_out, status: confirmed, quantity: "-250.00", eur_amount: "-250.00", external_ref: BX-0009}
 
   - id: crypto_withdrawal
-    description: an open leg keeping the network, the fee in units and the exchange's id, no hash (D175)
-    pending: "phase 6 step 5 (the exchange)"
+    description: an open leg keeping the fee in units and the exchange's id; BISON's export prints no network and no hash (D175)
     rows:
-      - {occurred_at: "2026-06-01T12:30:00Z", type: Withdrawal, asset: BTC, quantity: "0.00500000", fee_quantity: "0.00002000", external_ref: BX-0004, network: Bitcoin}
+      - {occurred_at: "2026-06-01T12:30:00Z", type: Withdraw, asset: BTC, quantity: "0.00500000", fee_quantity: "0.00002000", external_ref: BX-0004}
     expect:
       rows_new: 1
       rows_skipped: 0
       movements:
-        - {row: 0, kind: internal_transfer_out, status: proposed, quantity: "-0.00500000", fee_quantity: "0.00002000", external_ref: BX-0004, network: Bitcoin, tx_hash: null}
+        - {row: 0, kind: internal_transfer_out, status: proposed, quantity: "-0.00500000", fee_quantity: "0.00002000", external_ref: BX-0004, network: null, tx_hash: null}
+
+  - id: withdrawal_spelled_out
+    description: the step 0 spelling Withdrawal maps as Withdraw does
+    rows:
+      - {occurred_at: "2026-06-02T12:30:00Z", type: Withdrawal, asset: BTC, quantity: "0.00100000", external_ref: BX-0013}
+    expect:
+      rows_new: 1
+      rows_skipped: 0
+      movements:
+        - {row: 0, kind: internal_transfer_out, status: proposed, quantity: "-0.00100000", external_ref: BX-0013}
 
   - id: staking_reward
-    pending: "phase 6 step 5 (the exchange)"
     rows:
       - {occurred_at: "2026-06-30T00:00:00Z", type: Staking Reward, asset: ETH, quantity: "0.00150000", eur_amount: "3.75", external_ref: BX-0005}
     expect:
@@ -107,18 +181,16 @@ cases:
         - {row: 0, kind: staking_reward, status: confirmed, quantity: "0.00150000", eur_amount: "3.75", external_ref: BX-0005}
 
   - id: crypto_deposit_is_a_proposed_bonus
-    description: BISON receives from no foreign address, so a crypto Deposit is asked about as a bonus, never booked
-    pending: "phase 6 step 5 (the exchange)"
+    description: BISON receives from no foreign address, so a crypto Deposit is asked about as a bonus, never booked; the export prints no EUR amount for it
     rows:
-      - {occurred_at: "2026-07-03T15:00:00Z", type: Deposit, asset: BTC, quantity: "0.00010000", eur_amount: "6.00", external_ref: BX-0006}
+      - {occurred_at: "2026-07-03T15:00:00Z", type: Deposit, asset: BTC, quantity: "0.00010000", external_ref: BX-0006}
     expect:
       rows_new: 1
       rows_skipped: 0
       movements:
-        - {row: 0, kind: cashback_reward, status: proposed, quantity: "0.00010000", eur_amount: "6.00", external_ref: BX-0006, question: exchange.deposit_question}
+        - {row: 0, kind: cashback_reward, status: proposed, quantity: "0.00010000", external_ref: BX-0006, question: exchange.deposit_question}
 
   - id: unknown_type
-    pending: "phase 6 step 5 (the exchange)"
     rows:
       - {occurred_at: "2026-07-04T15:00:00Z", type: Airdrop, asset: ETH, quantity: "0.01000000", external_ref: BX-0010}
     expect:
@@ -129,20 +201,18 @@ cases:
 
   - id: duplicate_transaction_id_skipped
     description: a re-upload overlapping the last import, and an ID repeated inside the file
-    pending: "phase 6 step 5 (the exchange)"
     stored_refs: [BX-0001]
     rows:
-      - {occurred_at: "2026-03-02T10:15:00Z", type: Buy, asset: BTC, quantity: "0.01000000", eur_amount: "600.00", fee_eur: "1.50", external_ref: BX-0001}
-      - {occurred_at: "2026-08-02T10:15:00Z", type: Buy, asset: BTC, quantity: "0.00200000", eur_amount: "130.00", fee_eur: "0.33", external_ref: BX-0007}
-      - {occurred_at: "2026-08-02T10:15:00Z", type: Buy, asset: BTC, quantity: "0.00200000", eur_amount: "130.00", fee_eur: "0.33", external_ref: BX-0007}
+      - {occurred_at: "2026-03-02T10:15:00Z", type: Buy, asset: BTC, quantity: "0.01000000", eur_amount: "600.00", external_ref: BX-0001}
+      - {occurred_at: "2026-08-02T10:15:00Z", type: Buy, asset: BTC, quantity: "0.00200000", eur_amount: "130.00", external_ref: BX-0007}
+      - {occurred_at: "2026-08-02T10:15:00Z", type: Buy, asset: BTC, quantity: "0.00200000", eur_amount: "130.00", external_ref: BX-0007}
     expect:
       rows_new: 1
       rows_skipped: 2
       movements:
-        - {row: 1, kind: acquisition, status: confirmed, quantity: "0.00200000", eur_amount: "-130.00", fee_eur: "0.33", external_ref: BX-0007}
+        - {row: 1, kind: acquisition, status: confirmed, quantity: "0.00200000", eur_amount: "-130.00", external_ref: BX-0007}
 
   - id: identical_rows_without_id_kept_by_position
-    pending: "phase 6 step 5 (the exchange)"
     rows:
       - {occurred_at: "2026-08-31T00:00:00Z", type: Staking Reward, asset: ETH, quantity: "0.00010000", eur_amount: "0.25"}
       - {occurred_at: "2026-08-31T00:00:00Z", type: Staking Reward, asset: ETH, quantity: "0.00010000", eur_amount: "0.25"}
@@ -154,32 +224,48 @@ cases:
         - {row: 1, kind: staking_reward, status: confirmed, quantity: "0.00010000", eur_amount: "0.25", position: 1}
 
   - id: typed_balance_matches
-    pending: "phase 6 step 5 (the exchange)"
     held_before: {BTC: "0.02000000"}
     rows:
-      - {occurred_at: "2026-09-01T10:00:00Z", type: Buy, asset: BTC, quantity: "0.01000000", eur_amount: "620.00", fee_eur: "1.55", external_ref: BX-0011}
-      - {occurred_at: "2026-09-05T10:00:00Z", type: Withdrawal, asset: BTC, quantity: "0.00500000", fee_quantity: "0.00002000", external_ref: BX-0012, network: Bitcoin}
+      - {occurred_at: "2026-09-01T10:00:00Z", type: Buy, asset: BTC, quantity: "0.01000000", eur_amount: "620.00", external_ref: BX-0011}
+      - {occurred_at: "2026-09-05T10:00:00Z", type: Withdraw, asset: BTC, quantity: "0.00500000", fee_quantity: "0.00002000", external_ref: BX-0012}
     typed: {BTC: "0.02500000"}
     expect:
       rows_new: 2
       rows_skipped: 0
       movements:
-        - {row: 0, kind: acquisition, status: confirmed, quantity: "0.01000000", eur_amount: "-620.00", fee_eur: "1.55", external_ref: BX-0011}
-        - {row: 1, kind: internal_transfer_out, status: proposed, quantity: "-0.00500000", fee_quantity: "0.00002000", external_ref: BX-0012, network: Bitcoin}
+        - {row: 0, kind: acquisition, status: confirmed, quantity: "0.01000000", eur_amount: "-620.00", external_ref: BX-0011}
+        - {row: 1, kind: internal_transfer_out, status: proposed, quantity: "-0.00500000", fee_quantity: "0.00002000", external_ref: BX-0012}
       status: reconciled
       assets: [{asset: BTC, reconciled: true, difference_units: "0"}]
 
   - id: typed_balance_does_not_match
     description: nothing after the last reconciled import is valued for BTC
-    pending: "phase 6 step 5 (the exchange)"
     held_before: {BTC: "0.02000000"}
     rows:
-      - {occurred_at: "2026-09-01T10:00:00Z", type: Buy, asset: BTC, quantity: "0.01000000", eur_amount: "620.00", fee_eur: "1.55", external_ref: BX-0011}
+      - {occurred_at: "2026-09-01T10:00:00Z", type: Buy, asset: BTC, quantity: "0.01000000", eur_amount: "620.00", external_ref: BX-0011}
     typed: {BTC: "0.03010000"}
     expect:
       rows_new: 1
       rows_skipped: 0
       movements:
-        - {row: 0, kind: acquisition, status: confirmed, quantity: "0.01000000", eur_amount: "-620.00", fee_eur: "1.55", external_ref: BX-0011}
+        - {row: 0, kind: acquisition, status: confirmed, quantity: "0.01000000", eur_amount: "-620.00", external_ref: BX-0011}
       status: unreconciled
       assets: [{asset: BTC, reconciled: false, difference_units: "0.00010000", error: exchange.unreconciled}]
+
+  - id: typed_eur_balance_counts_the_trades
+    description: the EUR position is the EUR rows plus every trade's EUR leg (D178 (6)); the deposit and a buy leave 350.00
+    held_before: {EUR: "100.00"}
+    rows:
+      - {occurred_at: "2026-10-01T09:00:00Z", type: Deposit, asset: EUR, quantity: "500.00", eur_amount: "500.00", external_ref: BX-0014}
+      - {occurred_at: "2026-10-01T10:00:00Z", type: Buy, asset: BTC, quantity: "0.00400000", eur_amount: "250.00", external_ref: BX-0015}
+    typed: {EUR: "350.00", BTC: "0.00400000"}
+    expect:
+      rows_new: 2
+      rows_skipped: 0
+      movements:
+        - {row: 0, kind: internal_transfer_in, status: confirmed, quantity: "500.00", eur_amount: "500.00", external_ref: BX-0014}
+        - {row: 1, kind: acquisition, status: confirmed, quantity: "0.00400000", eur_amount: "-250.00", external_ref: BX-0015}
+      status: reconciled
+      assets:
+        - {asset: EUR, reconciled: true, difference_units: "0"}
+        - {asset: BTC, reconciled: true, difference_units: "0"}

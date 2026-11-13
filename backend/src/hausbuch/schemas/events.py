@@ -941,6 +941,15 @@ class MovementImportRecorded(Schema):
     rows_skipped: int = Field(ge=0)
 
 
+class WithdrawalHistoryChecked(Schema):
+    """account.withdrawal_history_checked (D178 (4)): Binance's withdrawal history checked
+    against the account's open withdrawals; counts only, nothing read from the file."""
+
+    document_id: UUID
+    withdrawals_completed: int = Field(ge=0)
+    withdrawals_open: int = Field(ge=0)
+
+
 class MovementImportChecked(Schema):
     """account.movements_reconciled and account.movements_unreconciled (D166)."""
 
@@ -982,9 +991,11 @@ class MovementRecorded(Schema):
 
 
 class MovementSuperseded(Schema):
-    """movement.superseded: the row that replaces it (D23 pattern)."""
+    """movement.superseded: the row that replaces it (D23 pattern); `document_id` the file
+    that corrected it, when one did (Binance's withdrawal history, D178 (4))."""
 
     superseded_by: UUID
+    document_id: UUID | None = None
 
 
 class TransferLinked(Schema):
@@ -1169,6 +1180,7 @@ class EventType(StrEnum):
     ACCOUNT_MOVEMENTS_IMPORTED = "account.movements_imported"
     ACCOUNT_MOVEMENTS_RECONCILED = "account.movements_reconciled"
     ACCOUNT_MOVEMENTS_UNRECONCILED = "account.movements_unreconciled"
+    ACCOUNT_WITHDRAWAL_HISTORY_CHECKED = "account.withdrawal_history_checked"  # step 5a
     ACCOUNT_HOLDINGS_CONFIRMED = "account.holdings_confirmed"
     ACCOUNT_HOLDINGS_RECONCILED = "account.holdings_reconciled"
     ACCOUNT_HOLDINGS_MISMATCH = "account.holdings_mismatch"
@@ -1353,6 +1365,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.ACCOUNT_MOVEMENTS_UNRECONCILED: EventSpec(
         MovementImportChecked, "forbidden", "Exchange export does not match its balances"
+    ),
+    E.ACCOUNT_WITHDRAWAL_HISTORY_CHECKED: EventSpec(
+        WithdrawalHistoryChecked, "forbidden", "Withdrawal history checked (Binance)"
     ),
     E.ACCOUNT_HOLDINGS_CONFIRMED: EventSpec(
         HoldingsChecked, "optional", "Holdings confirmed (date = as of)"

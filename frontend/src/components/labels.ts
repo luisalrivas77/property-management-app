@@ -16,6 +16,7 @@ import type {
   ExtractionKind,
   ImportStatus,
   LinkTarget,
+  MovementKind,
   PriceSourceKind,
   PriceSplitSource,
   PropertyKind,
@@ -323,6 +324,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "account.ownership_set": "Kontoinhaber und Anteile festgelegt",
   "account.movements_imported": "Börsen-Export importiert",
   "account.movements_reconciled": "Börsen-Export abgestimmt",
+  "account.withdrawal_history_checked": "Auszahlungsverlauf abgeglichen",
   "account.movements_unreconciled": "Börsen-Export nicht abgestimmt",
   "account.holdings_confirmed": "Bestände bestätigt",
   "account.holdings_reconciled": "Bestände abgestimmt",
@@ -705,6 +707,25 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   // phase 6 step 5b (D167, D174)
   price_source_failed: "Kursquelle gestört",
   price_no_source: "Kursquelle fehlt",
+  // phase 6 step 5a (D166, D178)
+  exchange_pending_balance: "Bestand fehlt",
+  exchange_unreconciled: "Bestand weicht ab",
+  exchange_withdrawals: "Auszahlungen",
+  exchange_movement: "Eingang prüfen",
+};
+
+/** asset_movement.kind (phase 6 D165, D166): what a coin or fund movement was, in plain words. */
+export const MOVEMENT_KIND: Record<MovementKind, string> = {
+  acquisition: "Kauf",
+  disposal: "Verkauf",
+  internal_transfer_in: "Von eigener Wallet",
+  internal_transfer_out: "An eigene Wallet",
+  fee: "Gebühr",
+  staking_reward: "Staking-Belohnung",
+  cashback_reward: "Bonus oder Prämie",
+  distribution: "Ausschüttung",
+  capital_income_tax: "Kapitalertragsteuer",
+  uncategorized: "Unbekannt",
 };
 
 /** The Haushalt screen's groups (phase 6 §13, mockup 10; rules/household/taxonomy.py). */
