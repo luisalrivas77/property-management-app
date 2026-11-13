@@ -3152,7 +3152,7 @@ export interface components {
          * @description allocation.method (migration 0007): who proposed the allocation set.
          * @enum {string}
          */
-        AllocationMethod: "rule" | "matcher_rent" | "matcher_loan" | "matcher_owner" | "matcher_hausgeld" | "document_match" | "llm" | "user" | "matcher_transfer" | "matcher_card";
+        AllocationMethod: "rule" | "matcher_rent" | "matcher_loan" | "matcher_owner" | "matcher_hausgeld" | "document_match" | "llm" | "user" | "matcher_transfer" | "matcher_card" | "matcher_depot";
         /**
          * AllocationSet
          * @description One transaction's proposal. Σ amount must equal the transaction amount: checked by
@@ -4304,8 +4304,9 @@ export interface components {
         };
         /**
          * DepotReportExtraction
-         * @description Quartalsbericht (depot_report, D165 (3)): the positions on a date and the period's
-         *     trades, from which code proposes holding_statement rows.
+         * @description Quartalsbericht (depot_report, D165 (3)): the positions on a date and the trades the
+         *     report lists, from which code proposes holding_statement rows. The list of trades runs
+         *     from the mandate's start, so a later report repeats the earlier ones.
          */
         DepotReportExtraction: {
             /** @description a short German title, two to six words naming what the document is */
@@ -4314,9 +4315,9 @@ export interface components {
             document_date?: components["schemas"]["ExtractedValue"];
             /** @description the date the positions are stated for (Stichtag) */
             report_date?: components["schemas"]["ExtractedValue"];
-            /** @description every position the report lists, one item per security, each written `ISIN | name | units | price | value | currency`, as printed; never a subtotal or the total row */
+            /** @description every position the report lists, one item per security, each written `ISIN | name | units | price | value | currency`, as printed (the units without ST, the price the Kurs, the value the Kurswert); never a subtotal, the total row, an account's cash or the Kaufpreis */
             positions?: components["schemas"]["ExtractedValue"];
-            /** @description every trade of the report's Wertpapierumsätze list, one item per trade, each written `ISIN | trade date | units | amount | reference`, as printed; unbekannt for a part the row does not state */
+            /** @description every trade of the report's Wertpapierumsätze list, one item per trade, each written `ISIN | trade date | units | amount | reference`, as printed: the trade date the Schlußtag, the units signed (a sale negative), the amount the Ausmachender Betrag with its sign (a purchase negative), the reference the Referenz; unbekannt for a part the row does not state; never the Depot-Nr. */
             trades?: components["schemas"]["ExtractedValue"];
         };
         /**
@@ -4332,7 +4333,9 @@ export interface components {
         };
         /**
          * DistributionNoteExtraction
-         * @description Ertragsabrechnung / Ausschüttung (distribution_note, D165 (2)).
+         * @description Erträgnisabrechnung / Ausschüttung (distribution_note, D165 (2)). A note in a fund's
+         *     currency states its euro side separately: the rate, the gross in the tax section and the
+         *     amount credited in euro.
          */
         DistributionNoteExtraction: {
             /** @description a short German title, two to six words naming what the document is */
@@ -4341,26 +4344,34 @@ export interface components {
             document_date?: components["schemas"]["ExtractedValue"];
             /** @description the security's ISIN, twelve characters */
             isin?: components["schemas"]["ExtractedValue"];
-            /** @description the security's name as printed */
+            /** @description the security's name (Wertpapierbezeichnung) */
             security_name?: components["schemas"]["ExtractedValue"];
             /** @description the record date (Ex-Tag or Stichtag) */
             record_date?: components["schemas"]["ExtractedValue"];
-            /** @description the payment date (Zahltag, Valuta) */
+            /** @description the payment date (Zahlungstag, Zahltag) */
             payment_date?: components["schemas"]["ExtractedValue"];
-            /** @description the units (Stück, Anteile) held on the record date */
+            /** @description the units held (Nominal / Stück) */
             units?: components["schemas"]["ExtractedValue"];
-            /** @description the distribution per unit, before taxes */
+            /** @description the distribution per unit before taxes, in the note's currency */
             gross_per_unit?: components["schemas"]["ExtractedValue"];
-            /** @description the gross distribution, before taxes */
+            /** @description the gross distribution before taxes, in the note's currency (Betrag) */
             gross_amount?: components["schemas"]["ExtractedValue"];
-            /** @description foreign withholding tax (Quellensteuer) deducted, if any */
+            /** @description foreign withholding tax (Quellensteuer) deducted, without sign, in the note's currency; 0,00 when none */
             withholding_tax?: components["schemas"]["ExtractedValue"];
-            /** @description German taxes deducted: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer, summed */
+            /** @description German taxes deducted in the note's currency, summed without sign: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer */
             german_taxes?: components["schemas"]["ExtractedValue"];
-            /** @description the amount credited to the cash account */
+            /** @description the amount credited, in the note's currency (Ausmachender Betrag) */
             net_amount?: components["schemas"]["ExtractedValue"];
-            /** @description the currency of the amounts, as a three-letter code */
+            /** @description the currency of the note's amounts, as a three-letter code */
             currency?: components["schemas"]["ExtractedValue"];
+            /** @description the exchange rate (Devisenkurs) as printed, units of the note's currency per euro; unbekannt when the note is in EUR */
+            fx_rate?: components["schemas"]["ExtractedValue"];
+            /** @description the gross distribution in euro (Ausschüttungsbetrag in the tax section); the gross amount when the note is in EUR */
+            gross_amount_eur?: components["schemas"]["ExtractedValue"];
+            /** @description the German taxes in euro from the tax section, summed without sign: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer */
+            german_taxes_eur?: components["schemas"]["ExtractedValue"];
+            /** @description the amount credited in euro (Ausmachender Betrag in EUR) */
+            net_amount_eur?: components["schemas"]["ExtractedValue"];
         };
         /**
          * Document
@@ -4534,7 +4545,7 @@ export interface components {
          * @description Finer typing where retention or the AfA basis depends on it.
          * @enum {string}
          */
-        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid" | "einkommensteuerbescheid" | "land_register_extract" | "declaration_of_division" | "land_charge_deed" | "energy_certificate" | "building_records" | "insurance_policy" | "management_contract" | "service_contract" | "weg_minutes" | "weg_invitation" | "special_levy" | "repayment_schedule" | "loan_terms_change" | "loan_statement" | "financing_invoice" | "lease_amendment" | "rent_increase" | "termination_notice" | "tenant_self_disclosure" | "landlord_confirmation" | "operating_costs_statement" | "tenant_correspondence" | "utility_bill" | "quote" | "chimney_sweep_notice" | "payment_proof" | "prepayment_notice" | "tax_return_copy" | "donation_receipt" | "childcare_invoice" | "household_services_invoice" | "insurance_contribution_certificate" | "pension_contribution_certificate" | "benefit_notice" | "child_benefit_notice" | "employment_contract" | "employer_certificate" | "work_expense_invoice" | "depot_statement" | "depot_report" | "trade_confirmation" | "capital_income_tax_certificate" | "exchange_export" | "distribution_note";
+        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid" | "einkommensteuerbescheid" | "land_register_extract" | "declaration_of_division" | "land_charge_deed" | "energy_certificate" | "building_records" | "insurance_policy" | "management_contract" | "service_contract" | "weg_minutes" | "weg_invitation" | "special_levy" | "repayment_schedule" | "loan_terms_change" | "loan_statement" | "financing_invoice" | "lease_amendment" | "rent_increase" | "termination_notice" | "tenant_self_disclosure" | "landlord_confirmation" | "operating_costs_statement" | "tenant_correspondence" | "utility_bill" | "quote" | "chimney_sweep_notice" | "payment_proof" | "prepayment_notice" | "tax_return_copy" | "donation_receipt" | "childcare_invoice" | "household_services_invoice" | "insurance_contribution_certificate" | "pension_contribution_certificate" | "benefit_notice" | "child_benefit_notice" | "employment_contract" | "employer_certificate" | "work_expense_invoice" | "depot_statement" | "depot_report" | "trade_confirmation" | "capital_income_tax_certificate" | "exchange_export" | "distribution_note" | "securities_transfer";
         /**
          * DocumentType
          * @description The classifier's output set (AI layer). Phase 1 sets it by hand.
@@ -4963,7 +4974,7 @@ export interface components {
          *     models in schemas/extraction.py.
          * @enum {string}
          */
-        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement" | "lohnsteuerbescheinigung" | "gehaltsabrechnung" | "einkommensteuerbescheid" | "general" | "management_contract" | "payment_proof" | "trade_confirmation" | "distribution_note" | "depot_report";
+        ExtractionKind: "manual" | "purchase_contract" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "invoice" | "bescheid" | "grundsteuerbescheid" | "wirtschaftsplan" | "hausgeldabrechnung" | "zinsbescheinigung" | "statement" | "lohnsteuerbescheinigung" | "gehaltsabrechnung" | "einkommensteuerbescheid" | "general" | "management_contract" | "payment_proof" | "trade_confirmation" | "distribution_note" | "depot_report" | "securities_transfer";
         /**
          * ExtractionSource
          * @enum {string}
@@ -8433,7 +8444,7 @@ export interface components {
          * @description statement_import.format (migration 0006).
          * @enum {string}
          */
-        StatementFormat: "csv_camt" | "camt" | "pdf" | "dkb_csv" | "card_pdf";
+        StatementFormat: "csv_camt" | "camt" | "pdf" | "dkb_csv" | "card_pdf" | "depot_pdf";
         /** StatementImport */
         StatementImport: {
             /**
@@ -9159,27 +9170,29 @@ export interface components {
             document_date?: components["schemas"]["ExtractedValue"];
             /** @description the security's ISIN, twelve characters */
             isin?: components["schemas"]["ExtractedValue"];
-            /** @description the security's name as printed */
+            /** @description the security's name (Wertpapierbezeichnung) */
             security_name?: components["schemas"]["ExtractedValue"];
-            /** @description the trade date (Handelstag, Schlusstag) */
+            /** @description the trade date (Handelstag, Schlusstag), without the time */
             trade_date?: components["schemas"]["ExtractedValue"];
-            /** @description the settlement date (Valuta) */
+            /** @description the settlement date (Valuta), from the sentence on the booking */
             settlement_date?: components["schemas"]["ExtractedValue"];
-            /** @description Kauf or Verkauf, as printed */
+            /** @description Kauf or Verkauf, as printed in the heading under Wertpapierabrechnung */
             side?: components["schemas"]["ExtractedValue"];
-            /** @description the units (Stück, Anteile) traded */
+            /** @description the units traded (Nominal / Stück) */
             units?: components["schemas"]["ExtractedValue"];
             /** @description the price per unit (Kurs) */
             price_per_unit?: components["schemas"]["ExtractedValue"];
             /** @description the gross amount (Kurswert) */
             gross_amount?: components["schemas"]["ExtractedValue"];
-            /** @description the fees and costs charged on this trade, summed */
+            /** @description the fees charged on this trade, summed without sign: Bank-Provision, Courtage, Spesen and Gebühren */
             fees?: components["schemas"]["ExtractedValue"];
-            /** @description the amount debited or credited to the cash account (Ausmachender Betrag) */
+            /** @description the German taxes deducted on this trade, summed without sign: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer from the tax section; 0,00 when none */
+            taxes?: components["schemas"]["ExtractedValue"];
+            /** @description the amount debited or credited to the cash account, without sign (Ausmachender Betrag; on a sale after the taxes) */
             net_amount?: components["schemas"]["ExtractedValue"];
             /** @description the currency of the amounts, as a three-letter code */
             currency?: components["schemas"]["ExtractedValue"];
-            /** @description the order or transaction reference (Auftragsnummer, Referenz) */
+            /** @description the document's reference number (Referenz-Nr.); never a depot or account number */
             order_reference?: components["schemas"]["ExtractedValue"];
         };
         /** TrainingFact */

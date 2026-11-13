@@ -9044,7 +9044,8 @@
           "llm",
           "user",
           "matcher_transfer",
-          "matcher_card"
+          "matcher_card",
+          "matcher_depot"
         ],
         "title": "AllocationMethod",
         "description": "allocation.method (migration 0007): who proposed the allocation set."
@@ -11710,19 +11711,19 @@
           },
           "positions": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "every position the report lists, one item per security, each written `ISIN | name | units | price | value | currency`, as printed; never a subtotal or the total row",
+            "description": "every position the report lists, one item per security, each written `ISIN | name | units | price | value | currency`, as printed (the units without ST, the price the Kurs, the value the Kurswert); never a subtotal, the total row, an account's cash or the Kaufpreis",
             "value_kind": "text_list"
           },
           "trades": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "every trade of the report's Wertpapierumsätze list, one item per trade, each written `ISIN | trade date | units | amount | reference`, as printed; unbekannt for a part the row does not state",
+            "description": "every trade of the report's Wertpapierumsätze list, one item per trade, each written `ISIN | trade date | units | amount | reference`, as printed: the trade date the Schlußtag, the units signed (a sale negative), the amount the Ausmachender Betrag with its sign (a purchase negative), the reference the Referenz; unbekannt for a part the row does not state; never the Depot-Nr.",
             "value_kind": "text_list"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "DepotReportExtraction",
-        "description": "Quartalsbericht (depot_report, D165 (3)): the positions on a date and the period's\ntrades, from which code proposes holding_statement rows."
+        "description": "Quartalsbericht (depot_report, D165 (3)): the positions on a date and the trades the\nreport lists, from which code proposes holding_statement rows. The list of trades runs\nfrom the mandate's start, so a later report repeats the earlier ones."
       },
       "DisbursementCorrection": {
         "properties": {
@@ -11775,7 +11776,7 @@
           },
           "security_name": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the security's name as printed",
+            "description": "the security's name (Wertpapierbezeichnung)",
             "value_kind": "text"
           },
           "record_date": {
@@ -11785,49 +11786,69 @@
           },
           "payment_date": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the payment date (Zahltag, Valuta)",
+            "description": "the payment date (Zahlungstag, Zahltag)",
             "value_kind": "date"
           },
           "units": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the units (Stück, Anteile) held on the record date",
+            "description": "the units held (Nominal / Stück)",
             "value_kind": "decimal"
           },
           "gross_per_unit": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the distribution per unit, before taxes",
-            "value_kind": "money"
+            "description": "the distribution per unit before taxes, in the note's currency",
+            "value_kind": "decimal"
           },
           "gross_amount": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the gross distribution, before taxes",
+            "description": "the gross distribution before taxes, in the note's currency (Betrag)",
             "value_kind": "money"
           },
           "withholding_tax": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "foreign withholding tax (Quellensteuer) deducted, if any",
+            "description": "foreign withholding tax (Quellensteuer) deducted, without sign, in the note's currency; 0,00 when none",
             "value_kind": "money"
           },
           "german_taxes": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "German taxes deducted: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer, summed",
+            "description": "German taxes deducted in the note's currency, summed without sign: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer",
             "value_kind": "money"
           },
           "net_amount": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the amount credited to the cash account",
+            "description": "the amount credited, in the note's currency (Ausmachender Betrag)",
             "value_kind": "money"
           },
           "currency": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the currency of the amounts, as a three-letter code",
+            "description": "the currency of the note's amounts, as a three-letter code",
             "value_kind": "text"
+          },
+          "fx_rate": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the exchange rate (Devisenkurs) as printed, units of the note's currency per euro; unbekannt when the note is in EUR",
+            "value_kind": "decimal"
+          },
+          "gross_amount_eur": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the gross distribution in euro (Ausschüttungsbetrag in the tax section); the gross amount when the note is in EUR",
+            "value_kind": "money"
+          },
+          "german_taxes_eur": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the German taxes in euro from the tax section, summed without sign: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer",
+            "value_kind": "money"
+          },
+          "net_amount_eur": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the amount credited in euro (Ausmachender Betrag in EUR)",
+            "value_kind": "money"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "DistributionNoteExtraction",
-        "description": "Ertragsabrechnung / Ausschüttung (distribution_note, D165 (2))."
+        "description": "Erträgnisabrechnung / Ausschüttung (distribution_note, D165 (2)). A note in a fund's\ncurrency states its euro side separately: the rate, the gross in the tax section and the\namount credited in euro."
       },
       "Document": {
         "properties": {
@@ -12295,7 +12316,8 @@
           "trade_confirmation",
           "capital_income_tax_certificate",
           "exchange_export",
-          "distribution_note"
+          "distribution_note",
+          "securities_transfer"
         ],
         "title": "DocumentSubtype",
         "description": "Finer typing where retention or the AfA basis depends on it."
@@ -13624,7 +13646,8 @@
           "payment_proof",
           "trade_confirmation",
           "distribution_note",
-          "depot_report"
+          "depot_report",
+          "securities_transfer"
         ],
         "title": "ExtractionKind",
         "description": "document_extraction.kind and proposal.kind (migration 0005): which field set an\nextraction holds. `manual` is phase 1's ManualDocumentFields; the others are the per-type\nmodels in schemas/extraction.py."
@@ -22131,7 +22154,8 @@
           "camt",
           "pdf",
           "dkb_csv",
-          "card_pdf"
+          "card_pdf",
+          "depot_pdf"
         ],
         "title": "StatementFormat",
         "description": "statement_import.format (migration 0006)."
@@ -24157,27 +24181,27 @@
           },
           "security_name": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the security's name as printed",
+            "description": "the security's name (Wertpapierbezeichnung)",
             "value_kind": "text"
           },
           "trade_date": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the trade date (Handelstag, Schlusstag)",
+            "description": "the trade date (Handelstag, Schlusstag), without the time",
             "value_kind": "date"
           },
           "settlement_date": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the settlement date (Valuta)",
+            "description": "the settlement date (Valuta), from the sentence on the booking",
             "value_kind": "date"
           },
           "side": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "Kauf or Verkauf, as printed",
+            "description": "Kauf or Verkauf, as printed in the heading under Wertpapierabrechnung",
             "value_kind": "text"
           },
           "units": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the units (Stück, Anteile) traded",
+            "description": "the units traded (Nominal / Stück)",
             "value_kind": "decimal"
           },
           "price_per_unit": {
@@ -24192,12 +24216,17 @@
           },
           "fees": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the fees and costs charged on this trade, summed",
+            "description": "the fees charged on this trade, summed without sign: Bank-Provision, Courtage, Spesen and Gebühren",
+            "value_kind": "money"
+          },
+          "taxes": {
+            "$ref": "#/components/schemas/ExtractedValue",
+            "description": "the German taxes deducted on this trade, summed without sign: Kapitalertragsteuer, Solidaritätszuschlag and Kirchensteuer from the tax section; 0,00 when none",
             "value_kind": "money"
           },
           "net_amount": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the amount debited or credited to the cash account (Ausmachender Betrag)",
+            "description": "the amount debited or credited to the cash account, without sign (Ausmachender Betrag; on a sale after the taxes)",
             "value_kind": "money"
           },
           "currency": {
@@ -24207,7 +24236,7 @@
           },
           "order_reference": {
             "$ref": "#/components/schemas/ExtractedValue",
-            "description": "the order or transaction reference (Auftragsnummer, Referenz)",
+            "description": "the document's reference number (Referenz-Nr.); never a depot or account number",
             "value_kind": "text"
           }
         },

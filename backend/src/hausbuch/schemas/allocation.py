@@ -132,6 +132,9 @@ class AllocationMethod(StrEnum):
     # Phase 6 D176 (3) (migration 0026): a card statement's interest or fee line, booked by
     # code to hh_interest_fees (rules/household/card.py).
     MATCHER_CARD = "matcher_card"
+    # Phase 6 step 4 (migration 0027): a depot cash line booked by code from its booking text
+    # (rules/depot.py categorise, D165 (1)).
+    MATCHER_DEPOT = "matcher_depot"
 
 
 class SplitMethod(StrEnum):

@@ -145,6 +145,10 @@ class StatementFormat(StrEnum):
     # Phase 6 D176 (migration 0026): the credit card's monthly PDF statement, read by code
     # from its text layer (services/bank/card_pdf.py); balances from the file.
     CARD_PDF = "card_pdf"
+    # Phase 6 step 4 (migration 0027): a quirion cash statement (Kontoauszug of the
+    # Verrechnungskonto or a strategy's Vermögensverwaltungskonto), read by code from its text
+    # layer (services/bank/depot_pdf.py); balances from the file (D165 (1) amended).
+    DEPOT_PDF = "depot_pdf"
 
 
 class StatementLine(Schema):
