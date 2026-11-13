@@ -73,6 +73,7 @@ export type YearTotals = Schemas["YearTotals"];
 // documents
 export type Document = Schemas["Document"];
 export type DocumentDetail = Schemas["DocumentDetail"];
+export type DocumentExplanation = Schemas["DocumentExplanation"];
 export type DocumentTyping = Schemas["DocumentTyping"];
 export type DocumentType = Schemas["DocumentType"];
 export type DocumentSubtype = Schemas["DocumentSubtype"];

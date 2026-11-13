@@ -51,7 +51,7 @@ import type {
 } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-import { NO_TAX_YEAR } from "./documents";
+import { DocumentExplanationBox, NO_TAX_YEAR } from "./documents";
 import type { Directory } from "./entities";
 import { targets, tenantName } from "./entities";
 import { FieldDescription, FormBanner, InfoToggle, useFormErrors, type FieldMessages } from "./form";
@@ -1646,6 +1646,7 @@ function ProposalReview({
 
   return (
     <form className="stack proposal" onSubmit={apply} noValidate aria-label="Vorschlag prüfen">
+      <DocumentExplanationBox explanation={proposal.explanation} />
       <p className="muted">
         Bitte jeden Wert mit der Fundstelle vergleichen. Gespeichert wird erst mit „Übernehmen“; jeder Eintrag läuft dabei durch dieselben Prüfungen
         wie beim Eingeben von Hand.

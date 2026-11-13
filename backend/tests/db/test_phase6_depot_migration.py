@@ -1,7 +1,7 @@
 """Migration 0027 (docs/phases/phase-6.md D156 and D165 as amended in step 4): a depot account
 may carry an IBAN, the format depot_pdf, the method matcher_depot, the subtype, reading kind,
 proposal kind and movement source securities_transfer, a holding statement corrected once by
-a row of the same position, and the downgrade guard. The enum CHECKs
+a row of the same position, a document's depot_kind (D177), and the downgrade guard. The enum CHECKs
 against the schemas are test_schema_consistency.py's. Synthetic data only: invented
 references."""
 
@@ -134,6 +134,20 @@ def test_a_holding_statement_is_corrected_once_by_a_row_of_the_same_position(con
             conn.execute("DELETE FROM holding_statement WHERE id = %s", (row,))
 
 
+def test_a_documents_depot_kind_is_one_of_the_catalogues_or_none(connect, workspaces):
+    """D177: the values themselves are test_schema_consistency's; the app writes the column."""
+    a, _ = workspaces
+    with connect(APP, a) as conn:
+        document = _document(conn, a, type="letter", depot_kind="wertpapierabrechnung_kauf")
+        _document(conn, a, type="letter")  # none: any other document
+        conn.execute(
+            "UPDATE document SET depot_kind = 'kontoauszug' WHERE id = %s AND depot_kind IS NULL",
+            (document,),
+        )
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            _document(conn, a, type="letter", depot_kind="brief")
+
+
 def test_0027_runs_up_down_and_up_on_an_empty_database():
     name = create_database()
     try:
@@ -150,6 +164,10 @@ def test_0027_runs_up_down_and_up_on_an_empty_database():
                 " WHERE table_name = 'holding_statement'"
             ).fetchall()
             assert ("superseded_by",) not in columns
+            assert not conn.execute(
+                "SELECT 1 FROM information_schema.columns"
+                " WHERE table_name = 'document' AND column_name = 'depot_kind'"
+            ).fetchall()
             triggers = conn.execute(
                 "SELECT tgname FROM pg_trigger"
                 " WHERE tgrelid = 'holding_statement'::regclass AND NOT tgisinternal"

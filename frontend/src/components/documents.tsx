@@ -10,6 +10,7 @@ import { useCallback, useId, useRef, useState, type ChangeEvent } from "react";
 import { api, ok } from "@/api/client";
 import type {
   Document,
+  DocumentExplanation,
   DocumentSubtype,
   DocumentUploadResult,
   LinkTarget,
@@ -639,5 +640,27 @@ export function LinkedDocuments({
         <ErrorNotice error={error} />
       </fieldset>
     </div>
+  );
+}
+
+// A depot document in plain words (phase-6.md D177): what it is, what it means for the
+// account (filled by code from the document's own figures), and what the app does with it.
+// The same box on the document page and on its suggestion card, never both at once.
+export function DocumentExplanationBox({ explanation }: { explanation: DocumentExplanation | null | undefined }) {
+  if (!explanation) return null;
+  return (
+    <aside className="notice notice-info explanation" aria-label="Was ist dieses Dokument?">
+      <p>
+        <strong>Was ist das?</strong> {explanation.was}
+      </p>
+      {explanation.bedeutung ? (
+        <p>
+          <strong>Was es für das Konto heißt:</strong> {explanation.bedeutung}
+        </p>
+      ) : null}
+      <p>
+        <strong>Was die App damit tut:</strong> {explanation.aktion}
+      </p>
+    </aside>
   );
 }

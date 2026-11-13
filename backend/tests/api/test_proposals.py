@@ -80,7 +80,9 @@ def enqueued(monkeypatch):
     return calls
 
 
-def _read_by_job(engine, ws, proposal_id, document_id):
+def _read_by_job(
+    engine, ws, proposal_id, document_id, classification=INVOICE, values=INVOICE_VALUES
+):
     """What document_read does on success, as the AI actor, in its own transaction."""
     with workspace_transaction(engine, ws) as conn:
         ctx = new_command(conn, ws, Actor(ActorType.AI, "claude-test-model"))
@@ -102,9 +104,9 @@ def _read_by_job(engine, ws, proposal_id, document_id):
         return proposals.record_read_result(
             ctx,
             proposal_id,
-            classification=INVOICE,
+            classification=classification,
             classify_call_id=call_ids[0],
-            values=INVOICE_VALUES,
+            values=values,
             extract_call_id=call_ids[1],
         )
 
@@ -241,3 +243,50 @@ def test_unknown_ids_are_404(client_a, client_b):
     assert client_a.get(f"/api/documents/{missing}/proposals").status_code == 404
     doc = ok(upload(client_a, b"%PDF mine"), 201)
     assert client_b.get(f"/api/documents/{doc['id']}/proposals").status_code == 404
+
+
+# --- Phase 6 D177: a depot document explains itself ----------------------------------------
+
+TRADE = ClassifyOutput(
+    type=DocumentType.LETTER,
+    subtype=DocumentSubtype.TRADE_CONFIRMATION,
+    contains_tenant_data=False,
+    language="de",
+    confidence="high",
+)
+# Invented: a fund, an ISIN and figures no real document holds.
+TRADE_VALUES = {
+    "isin": _v("IE00BEISPL01"),
+    "security_name": _v("Beispiel Welt UCITS ETF"),
+    "trade_date": _v("2026-05-14"),
+    "side": _v("Kauf"),
+    "units": _v("4.8"),
+    "net_amount": _v("1234.56"),
+    "fees": _v("1.00"),
+}
+
+
+def test_a_depot_document_and_its_card_explain_it_in_plain_words(client_a, app_engine, enqueued):
+    from test_card_pdf import draw
+
+    pdf = draw(["Quirin Privatbank AG\nWertpapierabrechnung\nKauf\nIE00BEISPL01ISIN"])
+    body = ok(upload(client_a, pdf, ai="true"), 201)
+    document_id, proposal_id = body["document"]["id"], body["proposal_id"]
+    ws = UUID(body["document"]["workspace_id"])
+    _read_by_job(app_engine, ws, UUID(proposal_id), UUID(document_id), TRADE, TRADE_VALUES)
+
+    explanation = ok(client_a.get(f"/api/documents/{document_id}"))["explanation"]
+    assert explanation["was"].startswith("Wertpapierabrechnung (Kauf): die Bestätigung")
+    # The figures of the reading; no sentence names the account: the workspace has none.
+    assert explanation["bedeutung"] == (
+        "4,8 Anteile des Fonds Beispiel Welt UCITS ETF wurden gekauft. Handelstag: 14.05.2026. "
+        "Bezahlt (Ausmachender Betrag): 1.234,56 €. Darin Gebühren: 1,00 €."
+    )
+    assert "„Übernehmen“" in explanation["aktion"]
+    assert ok(client_a.get(f"/api/proposals/{proposal_id}"))["explanation"] == explanation
+    [listed] = ok(client_a.get(f"/api/documents/{document_id}/proposals"))
+    assert listed["explanation"] == explanation
+
+    other = ok(upload(client_a, b"%PDF-1.7 Notarrechnung", ai="true"), 201)
+    assert ok(client_a.get(f"/api/documents/{other['document']['id']}"))["explanation"] is None
+    assert ok(client_a.get(f"/api/proposals/{other['proposal_id']}"))["explanation"] is None

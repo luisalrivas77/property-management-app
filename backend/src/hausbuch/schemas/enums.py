@@ -188,6 +188,31 @@ class DocumentSubtype(StrEnum):
     SECURITIES_TRANSFER = "securities_transfer"
 
 
+class DepotDocumentKind(StrEnum):
+    """Which of the depot's documents a file is, by its text layer's heading (phase 6 D177,
+    rules/depot_explain.yaml, migration 0027): finer than the subtype, which the classifier
+    or the readers set, and only for the plain-words explanation. Set by code at upload."""
+
+    EINBUCHUNG = "einbuchung"
+    AUSBUCHUNG = "ausbuchung"
+    FINANZREPORT = "finanzreport"
+    JAHRESSTEUERBESCHEINIGUNG = "jahressteuerbescheinigung"
+    PM_REPORTING = "pm_reporting"
+    ERTRAEGNISABRECHNUNG = "ertraegnisabrechnung"
+    WERTPAPIERABRECHNUNG_KAUF = "wertpapierabrechnung_kauf"
+    WERTPAPIERABRECHNUNG_VERKAUF = "wertpapierabrechnung_verkauf"
+    WERTPAPIERABRECHNUNG = "wertpapierabrechnung"  # its heading names no side
+    ERTRAGSUEBERSICHT = "ertragsuebersicht"
+    KOSTENINFORMATION = "kosteninformation"
+    KOSTENAUSWEIS = "kostenausweis"
+    RECHNUNGSABSCHLUSS = "rechnungsabschluss"
+    KONTOAUSZUG = "kontoauszug"
+    DEPOTAUSZUG = "depotauszug"
+    QUARTALSBERICHT = "quartalsbericht"
+    REBALANCING = "rebalancing"
+    ZINSAENDERUNG = "zinsaenderung"
+
+
 class ExtractionSource(StrEnum):
     MANUAL = "manual"
     AI = "ai"  # phase 2; provenance columns arrive with it

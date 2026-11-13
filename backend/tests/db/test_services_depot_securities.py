@@ -12,12 +12,14 @@ from db.db_support import TEST_IBAN_KEY
 from db.test_services_proposals import _accept_all, _ai_call, _read_ready, _v
 from db.test_services_proposals import enqueued as enqueued  # noqa: F401 (a fixture)
 from db.test_services_proposals import job as job  # noqa: F401 (a fixture)
-from sqlalchemy import select
+from sqlalchemy import select, update
 from test_card_pdf import draw
 from test_depot_pdf import page
 
+from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
+from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import holding_statement as holding_table
 from hausbuch.db.tables import price as price_table
@@ -30,6 +32,7 @@ from hausbuch.schemas.events import EventType
 from hausbuch.schemas.proposal import ProposalApplyBody, ProposalApplyRecord
 from hausbuch.services import depot, proposals, review
 from hausbuch.services.accounts import create_account
+from hausbuch.services.depot_explain import document_explanation
 from hausbuch.services.statements import import_statement, list_transactions
 
 pytestmark = pytest.mark.db
@@ -312,6 +315,52 @@ def test_an_ausbuchung_and_its_einbuchung_are_one_transfer_that_keeps_the_units(
     pair = read(ws, depot.transfer_pair, rows["internal_transfer_out"].id)
     assert pair == rows["internal_transfer_in"].id
     assert read(ws, depot.transfer_pair, pair) == rows["internal_transfer_out"].id
+
+
+def test_a_transfer_names_its_depot_in_its_explanation_once_it_is_booked_there(
+    run,
+    read,
+    app_engine,
+    fresh_workspaces,
+    blob_store,
+    job,
+    enqueued,  # noqa: F811
+):
+    """Phase 6 D177: with two depot accounts the card cannot know which one before the
+    person picks it, so no sentence names one; once booked, the movement's account is named."""
+    ws, _ = fresh_workspaces
+    giving = _account(run, ws, label="Depot A")
+    _account(run, ws, label="Depot B")
+    out = _read(
+        run,
+        job,
+        ws,
+        blob_store,
+        enqueued,
+        DocumentSubtype.SECURITIES_TRANSFER,
+        {
+            "direction": _v("Ausbuchung"),
+            "transfer_date": _v("2026-04-02"),
+            "reference": _v("UMB0002"),
+            "positions": _v([f"{ISIN_WORLD} | Beispiel Welt ETF | 3,0000"]),
+        },
+    )
+    # The test's bytes have no text layer: the kind code would have read from the heading.
+    with workspace_transaction(app_engine, ws) as conn:
+        conn.execute(
+            update(document_table)
+            .where(document_table.c.id == out.document_id)
+            .values(depot_kind="ausbuchung")
+        )
+    before = read(ws, document_explanation, out.document_id)
+    assert before.was.startswith("Ausbuchung von Wertpapieren")
+    assert before.bedeutung == (
+        "3 Anteile des Fonds Beispiel Welt ETF sind abgegangen. Tag der Ausbuchung: 02.04.2026."
+    )
+
+    _apply(run, ws, out, **{"movement:1": {"account_id": str(giving.id)}})
+    after = read(ws, document_explanation, out.document_id)
+    assert after.bedeutung.endswith("Tag der Ausbuchung: 02.04.2026. Depot: Depot A.")
 
 
 def _report(*positions, on="2026-06-30"):

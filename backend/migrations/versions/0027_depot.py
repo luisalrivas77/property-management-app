@@ -21,6 +21,10 @@ What 0025's tables lack, found on quirion's real documents:
   `superseded_by` (the row of the same account, asset and date that replaced it), set once
   by the superseded_once() trigger of 0025 instead of its append-only trigger, so the app
   role gains UPDATE on it; a delete stays refused.
+- document gains `depot_kind` (D177): which of the depot's documents a file is by its text
+  layer's heading (rules/depot_explain.yaml), finer than its subtype and only for the
+  plain-words explanation on its page. Set by code at upload, or by its next reading for a
+  file uploaded before; derived from the immutable original, so the downgrade drops it.
 
 The downgrade is refused while it would leave a row the old CHECKs refuse (the 0025 guard): a
 depot account with an IBAN, a depot_pdf import, a matcher_depot allocation, a
@@ -272,6 +276,35 @@ COMMENT ON TABLE holding_statement IS
     'report read again with other figures).';
 """
 
+DEPOT_KINDS = (
+    "einbuchung",
+    "ausbuchung",
+    "finanzreport",
+    "jahressteuerbescheinigung",
+    "pm_reporting",
+    "ertraegnisabrechnung",
+    "wertpapierabrechnung_kauf",
+    "wertpapierabrechnung_verkauf",
+    "wertpapierabrechnung",
+    "ertragsuebersicht",
+    "kosteninformation",
+    "kostenausweis",
+    "rechnungsabschluss",
+    "kontoauszug",
+    "depotauszug",
+    "quartalsbericht",
+    "rebalancing",
+    "zinsaenderung",
+)
+DOCUMENT_DEPOT_KIND = f"""
+ALTER TABLE document
+    ADD COLUMN depot_kind text,
+    ADD CONSTRAINT document_depot_kind_check CHECK (depot_kind IN ({_sql_list(DEPOT_KINDS)}));
+COMMENT ON COLUMN document.depot_kind IS
+    'D177 (0027): which depot document the file is by its text layer''s heading, for its '
+    'plain-words explanation; set by code, derived from the original.';
+"""
+
 HOLDING_APPEND_ONLY = """
 DROP TRIGGER holding_statement_superseded_once ON holding_statement;
 DROP TRIGGER holding_statement_no_delete ON holding_statement;
@@ -296,10 +329,12 @@ def upgrade() -> None:
     )
     op.execute(HOLDING_CORRECTIONS)
     op.execute(_app_role(f"GRANT UPDATE ON holding_statement TO {APP_ROLE};"))
+    op.execute(DOCUMENT_DEPOT_KIND)
 
 
 def downgrade() -> None:
     op.execute(REFUSE_IF_DATA)
+    op.execute("ALTER TABLE document DROP COLUMN depot_kind;")
     op.execute(_app_role(f"REVOKE UPDATE ON holding_statement FROM {APP_ROLE};"))
     op.execute(HOLDING_APPEND_ONLY)
     _set_checks(new=False)

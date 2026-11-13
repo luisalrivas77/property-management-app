@@ -4603,6 +4603,21 @@ export interface components {
             media_type: string;
             /** Opens Inline */
             opens_inline: boolean;
+            explanation?: components["schemas"]["DocumentExplanation"] | null;
+        };
+        /**
+         * DocumentExplanation
+         * @description A depot document in plain words (phase 6 D177): what it is, what it means for the
+         *     account (its own figures filled in by code), and what Hausbuch does with it. Rule data
+         *     filled by code (rules/depot_explain.yaml), never by the model.
+         */
+        DocumentExplanation: {
+            /** Was */
+            was: string;
+            /** Bedeutung */
+            bedeutung?: string | null;
+            /** Aktion */
+            aktion: string;
         };
         /**
          * DocumentExtraction
@@ -7400,6 +7415,7 @@ export interface components {
             ai_call_id: string | null;
             /** Decided At */
             decided_at: string | null;
+            explanation?: components["schemas"]["DocumentExplanation"] | null;
         };
         /**
          * ProposalApplyBody

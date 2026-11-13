@@ -12399,6 +12399,16 @@
           "opens_inline": {
             "type": "boolean",
             "title": "Opens Inline"
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentExplanation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -12414,6 +12424,37 @@
         ],
         "title": "DocumentDetail",
         "description": "GET /documents/{id}: one read transaction over the document and its layers."
+      },
+      "DocumentExplanation": {
+        "properties": {
+          "was": {
+            "type": "string",
+            "title": "Was"
+          },
+          "bedeutung": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bedeutung"
+          },
+          "aktion": {
+            "type": "string",
+            "title": "Aktion"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "was",
+          "aktion"
+        ],
+        "title": "DocumentExplanation",
+        "description": "A depot document in plain words (phase 6 D177): what it is, what it means for the\naccount (its own figures filled in by code), and what Hausbuch does with it. Rule data\nfilled by code (rules/depot_explain.yaml), never by the model."
       },
       "DocumentExtraction": {
         "properties": {
@@ -19249,6 +19290,16 @@
               }
             ],
             "title": "Decided At"
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentExplanation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,

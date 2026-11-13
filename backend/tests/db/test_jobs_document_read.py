@@ -29,6 +29,7 @@ from hausbuch.ai.client import ModelCallError
 from hausbuch.ai.fake import FakeModelClient, cited_response, text_response
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import ai_call as ai_call_table
+from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import document_read as job
@@ -812,6 +813,35 @@ def test_a_depot_document_is_blocked_before_any_call_while_the_switch_is_off(
     assert proposal_id == proposal
     assert kw["error_code"] == job.BLOCKED_PRIVATE_DATA == "ai.blocked_private_data"
     assert kw["ai_call_id"] is None
+
+
+def _depot_kind(engine, ws, doc):
+    with workspace_transaction(engine, ws) as conn:
+        return conn.execute(
+            select(document_table.c.depot_kind).where(document_table.c.id == doc)
+        ).scalar_one()
+
+
+def test_a_depot_documents_kind_is_recorded_at_upload_and_by_its_next_reading(
+    setup, recorder, app_engine, private_switch
+):
+    """Phase 6 D177: the kind of its plain-words explanation, read by code from the heading;
+    a document uploaded before the kind was recorded gets it from its next reading, even one
+    the switch stops before the model."""
+    client = FakeModelClient([])
+    deps, ws, doc, proposal = setup(_text_pdf(TRADE_TEXT), client)
+    assert _depot_kind(app_engine, ws, doc) == "wertpapierabrechnung_kauf"
+    with workspace_transaction(app_engine, ws) as conn:
+        conn.execute(
+            update(document_table).where(document_table.c.id == doc).values(depot_kind=None)
+        )
+    _run(deps, ws, doc, proposal)
+    assert [kw["error_code"] for _, _, kw in recorder.failures] == [job.BLOCKED_PRIVATE_DATA]
+    assert client.requests == []
+    assert _depot_kind(app_engine, ws, doc) == "wertpapierabrechnung_kauf"
+
+    _, other_ws, other, _ = setup(_pdf(1), FakeModelClient([]))
+    assert _depot_kind(app_engine, other_ws, other) is None  # no depot document
 
 
 def test_a_depot_document_named_by_its_text_is_typed_by_code_when_the_switch_is_on(

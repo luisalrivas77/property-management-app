@@ -34,7 +34,7 @@ from functools import partial
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from hausbuch.ai import documents
 from hausbuch.ai.client import ModelCallError, ModelClient, ModelRequest, ModelResponse
@@ -46,10 +46,12 @@ from hausbuch.ai.requests import (
     parse_classification,
 )
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.rules import depot as depot_rules
+from hausbuch.rules import depot_explain
 from hausbuch.rules.errors import AI_BLOCKED_PRIVATE_DATA
 from hausbuch.rules.extraction_parse import (
     GENERAL_SCRUBBED_KINDS,
@@ -375,6 +377,22 @@ def _is_card_statement(pages: list[str]) -> bool:
     return bool(pages) and (card_pdf.looks_like(pages) or depot_pdf.looks_like(pages))
 
 
+def _note_depot_kind(deps: JobDeps, workspace_id: UUID, document_id: UUID, text: str) -> None:
+    """Phase 6 D177: a depot document uploaded before its kind was recorded at upload
+    (services.documents.depot_kind_of) gets it at its next reading; code only, before the
+    D168 gate, so a document the switch keeps from the model is explained too."""
+    kind = depot_explain.document_kind(text)
+    if kind is None:
+        return
+    d = document_table.c
+    with workspace_transaction(deps.engine, workspace_id) as conn:
+        conn.execute(
+            update(document_table)
+            .where(d.id == document_id, d.depot_kind.is_(None))
+            .values(depot_kind=kind.value)
+        )
+
+
 def _read(
     deps: JobDeps,
     workspace_id: UUID,
@@ -392,6 +410,7 @@ def _read(
         if original.media_type == documents.PDF and documents.is_adobe_only_form(original.data):
             raise _Stop(ADOBE_FORM)  # D43: the model would see only Adobe's placeholder page
         text_pages = _text_pages(original)
+        _note_depot_kind(deps, workspace_id, document_id, "\n".join(text_pages))
         if _is_card_statement(text_pages):
             raise _Stop(CARD_STATEMENT)  # D176 (3), step 4: read by code on its account only
         text = "\n".join(text_pages)

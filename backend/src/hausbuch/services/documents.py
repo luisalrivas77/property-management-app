@@ -221,6 +221,7 @@ def upload_document(
             received_at=ctx.now,
             created_at=ctx.now,
             updated_at=ctx.now,
+            depot_kind=depot_kind_of(data, media_type),
         )
         .on_conflict_do_nothing()
         .returning(*document_table.c)
@@ -238,6 +239,22 @@ def upload_document(
         ),
     )
     return uploaded
+
+
+def depot_kind_of(data: bytes, media_type: str) -> str | None:
+    """Phase 6 D177: which of the depot's documents a PDF is by its text layer's heading
+    (rules.depot_explain), for the plain-words explanation on its page; None for any other
+    file. Code only, nothing leaves the process; a PDF that cannot be read has none."""
+    if media_type != "application/pdf":
+        return None
+    from hausbuch.rules.depot_explain import document_kind
+    from hausbuch.services.bank.card_pdf import pdf_pages  # it imports the bank services
+
+    try:
+        kind = document_kind("\n".join(pdf_pages(data) or []))
+    except Exception:  # noqa: BLE001 - an explanation is never worth a failed upload
+        return None
+    return None if kind is None else kind.value
 
 
 def type_document(

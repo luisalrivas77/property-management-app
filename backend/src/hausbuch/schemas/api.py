@@ -35,6 +35,7 @@ from .common import (
 )
 from .document import (
     Document,
+    DocumentExplanation,
     DocumentExtraction,
     DocumentLink,
     DocumentTyping,
@@ -356,6 +357,9 @@ class DocumentDetail(Schema):
     # Whether GET /documents/{id}/original?disposition=inline shows it in the browser (§4.7:
     # PDF and raster images only); otherwise the original is always a download.
     opens_inline: bool
+    # Phase 6 D177: a depot document in plain words (what it is, what it means for the
+    # account, what Hausbuch does with it); None for any other document.
+    explanation: DocumentExplanation | None = None
 
 
 class LinkTargetRef(Schema):

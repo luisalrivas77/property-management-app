@@ -25,7 +25,7 @@ from .common import (
     Schema,
     Year,
 )
-from .document import HandField, HandFields
+from .document import DocumentExplanation, HandField, HandFields
 from .enums import (
     AcquisitionCostKind,
     EntityType,
@@ -131,6 +131,9 @@ class Proposal(MutableRecord):
     extraction_id: UUID | None
     ai_call_id: UUID | None
     decided_at: datetime | None
+    # Phase 6 D177: a depot document in plain words, on the reads that show the card (GET
+    # /proposals/{id}, GET /documents/{id}/proposals); None for any other document.
+    explanation: DocumentExplanation | None = None
 
 
 class FieldDecision(StrEnum):

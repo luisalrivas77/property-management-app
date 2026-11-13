@@ -14,7 +14,7 @@ import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { DocumentDetail, DocumentSubtype, DocumentType, HandFields, LinkTarget, ManualDocumentFields } from "@/api/schemas";
-import { documentLabel, NO_TAX_YEAR } from "@/components/documents";
+import { DocumentExplanationBox, documentLabel, NO_TAX_YEAR } from "@/components/documents";
 import { loadDirectory, targets, type Target } from "@/components/entities";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { formatDate, formatDateTime, shortId } from "@/components/format";
@@ -46,6 +46,8 @@ export default function DocumentPage() {
             <Breadcrumbs items={[{ href: "/documents", label: "Dokumente" }, { label: documentLabel(data.document) }]} />
             <h1>{documentLabel(data.document)}</h1>
             <Original detail={data} />
+            {/* D177: while a suggestion waits, its card carries the same box. */}
+            {proposalPending === false ? <DocumentExplanationBox explanation={data.explanation} /> : null}
             <ProposalSection
               detail={data}
               directory={directory.data ?? null}
