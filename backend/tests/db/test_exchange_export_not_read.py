@@ -6,16 +6,18 @@ proposal.exchange_export_not_read, whose Zu prüfen card names the exchange acco
 importing the same file there supersedes that card, and the imported original is refused by
 request_read. Invented files only (tests/fixtures/phase6/)."""
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 import fixture_models_phase6 as fixtures
 import pytest
 from db.test_jobs_document_read import _settings as _test_settings
 from db.test_services_exchange_import import _exchange, _upload, _zip
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from hausbuch.ai.fake import FakeModelClient
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import document as document_table
 from hausbuch.jobs.document_read import JobDeps, run_document_read
 from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.enums import ActorType, DocumentSource, ProposalStatus
@@ -145,4 +147,29 @@ def test_importing_it_on_the_exchange_account_ends_the_card_and_refuses_a_new_re
     # „Neu auslesen“ on the imported original: refused before anything is queued.
     with pytest.raises(RuleViolationError) as refused:
         run(ws, proposals.request_read, doc.id, now=T0 + timedelta(minutes=5))
+    assert refused.value.codes == (proposals.PROPOSAL_EXCHANGE_EXPORT_NOT_READ,)
+
+
+def test_the_withdrawal_history_stored_on_the_account_is_refused_too(
+    run, read, blob_store, fresh_workspaces
+):
+    """The withdrawal history has no movement import, and the movement it completes keeps its
+    import's document, so request_read knows it by the typing the import gave it (a
+    statement of subtype exchange_export); it holds the withdrawal addresses."""
+    ws, _ = fresh_workspaces
+    case = _case(BINANCE.cases, "withdrawal_history_uploaded_later")
+    account = _exchange(run, ws, provider="Binance")
+    _upload(run, blob_store, ws, account.id, _zip(case.transactions))
+    history = _zip(case.withdrawals)
+    completed = _upload(run, blob_store, ws, account.id, history, n=1)
+    assert completed.withdrawals_completed == 1
+    digest = hashlib.sha256(history).digest()
+    history_doc = read(
+        ws,
+        lambda c: c.execute(
+            select(document_table.c.id).where(document_table.c.file_sha256 == digest)
+        ).scalar_one(),
+    )
+    with pytest.raises(RuleViolationError) as refused:
+        run(ws, proposals.request_read, history_doc, now=T0 + timedelta(minutes=5))
     assert refused.value.codes == (proposals.PROPOSAL_EXCHANGE_EXPORT_NOT_READ,)

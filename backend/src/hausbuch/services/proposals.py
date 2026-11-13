@@ -245,13 +245,22 @@ _JSONB_COLUMNS = ("targets", "fields", "decisions", "applied_entities")
 # --- Creating proposals ------------------------------------------------------------------
 
 
-def _is_exchange_original(conn: Connection, document_id: UUID) -> bool:
-    """The document is an exchange export read on its account (phase 6 D166, step 5a): the
-    original of a movement import, or the withdrawal history that completed a movement."""
+def _is_exchange_original(conn: Connection, document: Document) -> bool:
+    """The document is an exchange export read on its account (phase 6 D166, step 5a): typed
+    as one by the import (a statement of subtype exchange_export; this is how a withdrawal
+    history is known, since the movement it completes keeps its import's document), the
+    original of a movement import, or a document a movement points to."""
+    typing = document.typing
+    if (
+        typing is not None
+        and typing.type is DocumentType.STATEMENT
+        and typing.subtype is DocumentSubtype.EXCHANGE_EXPORT
+    ):
+        return True
     imported = select(movement_import_table.c.id).where(
-        movement_import_table.c.document_id == document_id
+        movement_import_table.c.document_id == document.id
     )
-    moved = select(movement_table.c.id).where(movement_table.c.document_id == document_id)
+    moved = select(movement_table.c.id).where(movement_table.c.document_id == document.id)
     return conn.execute(imported.union_all(moved).limit(1)).first() is not None
 
 
@@ -300,7 +309,7 @@ def request_read(
         raise RuleViolationError(
             [PROPOSAL_BANK_FILE_NOT_READ], "a card statement is read by code, never by the model"
         )
-    if _is_exchange_original(ctx.conn, document_id):
+    if _is_exchange_original(ctx.conn, document):
         raise RuleViolationError(
             [PROPOSAL_EXCHANGE_EXPORT_NOT_READ],
             "an exchange export is read by code on its account, never by the model",
