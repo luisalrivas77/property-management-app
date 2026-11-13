@@ -186,6 +186,8 @@ EXCHANGE_UNREADABLE = "exchange.unreadable"  # not BISON's or Binance's export, 
 EXCHANGE_BINANCE_SPOT_HISTORY = "exchange.binance_spot_history"  # the third file, not needed
 EXCHANGE_BINANCE_AMBIGUOUS_TRADE = "exchange.binance_ambiguous_trade"  # two pairs in a second
 EXCHANGE_WITHDRAWAL_HISTORY_MISSING = "exchange.withdrawal_history_missing"  # a to-do (D178 (4))
+# The history uploaded after every open withdrawal fits none of them (the to-do's reason)
+EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH = "exchange.withdrawal_history_no_match"
 EXCHANGE_TRANSACTIONS_FIRST = "exchange.transactions_first"  # a history before any transaction
 EXCHANGE_ACCOUNT_MISMATCH = "exchange.account_mismatch"  # BISON's file on Binance's account
 EXCHANGE_NOT_AN_EXCHANGE = "exchange.not_an_exchange"  # the account is no exchange account

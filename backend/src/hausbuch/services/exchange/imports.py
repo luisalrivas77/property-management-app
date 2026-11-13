@@ -31,6 +31,7 @@ from sqlalchemy import Connection, Row, func, insert, select, update
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import holding_statement as holding_table
 from hausbuch.db.tables import movement_import as import_table
 from hausbuch.rules import errors as E
@@ -55,6 +56,7 @@ from hausbuch.schemas.events import (
     MovementImportRecorded,
     MovementRecorded,
     MovementSuperseded,
+    WithdrawalHistoryChecked,
 )
 from hausbuch.schemas.household import (
     AnswerMovementBody,
@@ -121,6 +123,7 @@ class _Stored:
     occurred_at: datetime
     tx_hash: str | None
     document_id: UUID | None
+    created_at: datetime
 
 
 def _current(conn: Connection, account_id: UUID, *where) -> list[_Stored]:  # noqa: ANN002
@@ -137,6 +140,7 @@ def _current(conn: Connection, account_id: UUID, *where) -> list[_Stored]:  # no
             m.occurred_at,
             m.tx_hash,
             m.document_id,
+            m.created_at,
         )
         .join(asset_table, a.id == m.asset_id)
         .where(m.account_id == account_id, m.superseded_by.is_(None), *where)
@@ -154,6 +158,7 @@ def _current(conn: Connection, account_id: UUID, *where) -> list[_Stored]:  # no
             occurred_at=r.occurred_at,
             tx_hash=r.tx_hash,
             document_id=r.document_id,
+            created_at=r.created_at,
         )
         for r in rows
     ]
@@ -521,9 +526,38 @@ def _complete_withdrawals(
             },
             document_id=document.id,
         )
-    return ExchangeUpload(
-        withdrawals_completed=len(found), withdrawals_open=len(open_rows) - len(found)
+    still_open = len(open_rows) - len(found)
+    append_event(
+        ctx,
+        EventType.ACCOUNT_WITHDRAWAL_HISTORY_CHECKED,
+        account_id,
+        WithdrawalHistoryChecked(
+            document_id=document.id,
+            withdrawals_completed=len(found),
+            withdrawals_open=still_open,
+        ),
     )
+    return ExchangeUpload(
+        withdrawals_completed=len(found),
+        withdrawals_open=still_open,
+        withdrawals_reason=E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH if still_open else None,
+    )
+
+
+def _history_todo(conn: Connection, account_id: UUID, open_rows: list[_Stored]) -> str:
+    """The to-do for open withdrawals: the reason none fits when a withdrawal history was
+    checked after every one of them was read (uploading the same history again cannot help),
+    else the request to upload one (a later export brought a withdrawal no history covered)."""
+    ev = event_table.c
+    checked = conn.execute(
+        select(func.max(ev.recorded_at)).where(
+            ev.entity_id == account_id,
+            ev.type == EventType.ACCOUNT_WITHDRAWAL_HISTORY_CHECKED.value,
+        )
+    ).scalar_one()
+    if checked is not None and all(row.created_at <= checked for row in open_rows):
+        return E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH
+    return E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING
 
 
 # --- Typed balances (D166, D178 (6)) ---------------------------------------------------------
@@ -804,10 +838,11 @@ def exchange_overview(conn: Connection, account_id: UUID) -> ExchangeOverview:
         .where(import_table.c.account_id == account_id)
         .order_by(import_table.c.last_at.desc(), import_table.c.created_at.desc())
     ).all()
-    open_count = len(_open_withdrawals(stored))
+    open_rows = _open_withdrawals(stored)
+    open_count = len(open_rows)
     todos = []
     if account.provider == rules.BINANCE and open_count:
-        todos.append(E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING)
+        todos.append(_history_todo(conn, account_id, open_rows))
     return ExchangeOverview(
         account_id=account_id,
         provider=account.provider or "",

@@ -31,6 +31,8 @@ import { useLoad } from "./useLoad";
 export const EXCHANGE_EXPORT_ACCEPT = ".csv,.zip,text/csv,application/zip,application/x-zip-compressed";
 
 const HISTORY_MISSING = "exchange.withdrawal_history_missing";
+// A history was checked after every open withdrawal and fits none: say why, not "upload it".
+const HISTORY_NO_MATCH = "exchange.withdrawal_history_no_match";
 
 /** A quantity as the API sends it ("0.0000996500") without its trailing zeros, in German:
  * "0,00009965". */
@@ -172,7 +174,7 @@ function UploadResult({ result }: { result: Uploaded }) {
           Auszahlungsverlauf {fileName}: {done === 1 ? "1 Auszahlung ergänzt" : `${done} Auszahlungen ergänzt`} (Netzwerk und
           Transaktions-Hash).
           {upload.withdrawals_open > 0
-            ? ` ${upload.withdrawals_open === 1 ? "1 Auszahlung hat" : `${upload.withdrawals_open} Auszahlungen haben`} noch keinen Eintrag im Verlauf: bitte einen Verlauf hochladen, der ihren Zeitraum abdeckt.`
+            ? ` ${upload.withdrawals_open === 1 ? "1 Auszahlung passt" : `${upload.withdrawals_open} Auszahlungen passen`} zu keinem Eintrag: ${ruleCodeText(upload.withdrawals_reason ?? HISTORY_NO_MATCH)}`
             : null}
         </p>
       </div>
@@ -231,8 +233,9 @@ export function ExchangeSection({ accountId }: { accountId: string }) {
 /** Every gap of the account as a to-do with its button (principle 7). */
 function ExchangeTodos({ overview, accountId, onChanged }: { overview: ExchangeOverview; accountId: string; onChanged: () => void }) {
   const historyMissing = (overview.todos ?? []).includes(HISTORY_MISSING);
+  const historyNoMatch = (overview.todos ?? []).includes(HISTORY_NO_MATCH);
   const waiting = (overview.imports ?? []).filter((imp) => imp.status === "imported");
-  if (!historyMissing && waiting.length === 0 && overview.movements_to_answer === 0) return null;
+  if (!historyMissing && !historyNoMatch && waiting.length === 0 && overview.movements_to_answer === 0) return null;
   return (
     <ol className="todo-list">
       {historyMissing ? (
@@ -248,6 +251,21 @@ function ExchangeTodos({ overview, accountId, onChanged }: { overview: ExchangeO
             Coins auf eine eigene Wallet gingen und wann sie gekauft wurden.
           </p>
           <ExchangeExportUpload accountId={accountId} provider={overview.provider} label="Auszahlungsverlauf hochladen" onImported={onChanged} />
+        </li>
+      ) : null}
+      {historyNoMatch ? (
+        <li className="todo-item">
+          <p className="todo-title">
+            <strong>Auszahlung nicht im Auszahlungsverlauf gefunden</strong>
+          </p>
+          <p className="todo-text">
+            {overview.withdrawals_open === 1
+              ? "1 Auszahlung von Coins hat noch kein Netzwerk und keinen Transaktions-Hash."
+              : `${overview.withdrawals_open} Auszahlungen von Coins haben noch kein Netzwerk und keinen Transaktions-Hash.`}{" "}
+            {ruleCodeText(HISTORY_NO_MATCH)} Fehlt die Auszahlung im Verlauf (anderer Zeitraum, noch nicht abgeschlossen), bitte
+            einen Verlauf hochladen, der sie enthält.
+          </p>
+          <ExchangeExportUpload accountId={accountId} provider={overview.provider} label="Anderen Auszahlungsverlauf hochladen" onImported={onChanged} />
         </li>
       ) : null}
       {waiting.map((imp) => (

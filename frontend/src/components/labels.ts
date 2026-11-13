@@ -324,6 +324,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "account.ownership_set": "Kontoinhaber und Anteile festgelegt",
   "account.movements_imported": "Börsen-Export importiert",
   "account.movements_reconciled": "Börsen-Export abgestimmt",
+  "account.withdrawal_history_checked": "Auszahlungsverlauf abgeglichen",
   "account.movements_unreconciled": "Börsen-Export nicht abgestimmt",
   "account.holdings_confirmed": "Bestände bestätigt",
   "account.holdings_reconciled": "Bestände abgestimmt",

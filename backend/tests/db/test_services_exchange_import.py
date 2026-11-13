@@ -450,6 +450,63 @@ def test_binance_withdrawals_completed_by_the_history_uploaded_later(
     assert len(superseded) == 1 and superseded[0]["document_id"] is not None
 
 
+def test_a_withdrawal_history_that_fits_no_withdrawal_names_why(
+    run, read, blob_store, fresh_workspaces
+):
+    """D178 (4): a history checked after every open withdrawal that completes none of them
+    names the reason (no completed withdrawal of the same coin whose amount plus fee is the
+    amount sent, within the hour before) instead of asking for the history again; a later
+    export that brings a withdrawal no history was checked against asks again."""
+    ws, _ = fresh_workspaces
+    account = _exchange(run, ws, provider="Binance")
+    case = next(c for c in BINANCE.cases if c.id == "withdrawal_history_uploaded_later")
+    _upload(run, blob_store, ws, account.id, _zip(case.transactions))
+    other_coin = (
+        "Time,Coin,Network,Amount,Fee,Address,TXID,Status\n"
+        f"2026-03-05 12:05:00,SOL,SOL,1.5,0.01,{BINANCE.never_stored.address},"
+        "5Kinventedsolanasignature9x2v5c8n4w6e0r1t3y5u7i9o0p,Completed\n"
+    )
+    checked = _upload(run, blob_store, ws, account.id, _zip(other_coin), n=1)
+    assert (checked.withdrawals_completed, checked.withdrawals_open) == (0, 1)
+    assert checked.withdrawals_reason == E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH
+    overview = read(ws, imports.exchange_overview, account.id)
+    assert overview.todos == [E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH]
+    [current] = read(ws, imports.exchange_movements, account.id)
+    assert current.tx_hash is None  # the matching rule is unchanged: nothing is guessed
+    payloads = read(
+        ws,
+        lambda c: (
+            c.execute(
+                select(event_table.c.payload).where(
+                    event_table.c.type == "account.withdrawal_history_checked"
+                )
+            )
+            .scalars()
+            .all()
+        ),
+    )
+    assert [(p["withdrawals_completed"], p["withdrawals_open"]) for p in payloads] == [(0, 1)]
+    assert BINANCE.never_stored.address not in str(payloads)
+
+    # A longer export brings a second withdrawal no history was checked against: upload one.
+    longer = case.transactions + (
+        f"{BINANCE.never_stored.user_id},2026-04-01 09:00:00,Spot,Withdraw,BTC,-0.0020,"
+        "Withdraw fee is included\n"
+    )
+    _upload(run, blob_store, ws, account.id, _zip(longer), n=2)
+    overview = read(ws, imports.exchange_overview, account.id)
+    assert (overview.withdrawals_open, overview.todos) == (
+        2,
+        [E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING],
+    )
+    # The fixture's history completes the first; the second still fits no row of it.
+    partial = _upload(run, blob_store, ws, account.id, _zip(case.withdrawals), n=3)
+    assert (partial.withdrawals_completed, partial.withdrawals_open) == (1, 1)
+    assert partial.withdrawals_reason == E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH
+    overview = read(ws, imports.exchange_overview, account.id)
+    assert overview.todos == [E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH]
+
+
 TYPED_BINANCE = [
     c for c in BINANCE.cases if c.typed is not None and c.stored is None and c.withdrawals is None
 ]

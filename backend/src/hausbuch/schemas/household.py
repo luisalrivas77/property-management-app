@@ -432,6 +432,9 @@ class ExchangeUpload(Schema):
     movement_import: MovementImport | None = None
     withdrawals_completed: int = Field(default=0, ge=0)
     withdrawals_open: int = Field(default=0, ge=0)
+    # Why a withdrawal history left withdrawals open: exchange.withdrawal_history_no_match,
+    # the code the overview's `todos` then shows; None when nothing stays open.
+    withdrawals_reason: str | None = None
 
 
 class ExchangePosition(Schema):
