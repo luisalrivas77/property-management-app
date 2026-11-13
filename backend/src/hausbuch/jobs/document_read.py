@@ -71,7 +71,7 @@ from hausbuch.schemas.enums import ActorType, DocumentSubtype, ExtractionKind, P
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
 from hausbuch.services import documents as document_service
 from hausbuch.services import proposals
-from hausbuch.services.bank import card_pdf, depot_pdf
+from hausbuch.services.bank import card_pdf, depot_pdf, is_bank_export
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.exchange import is_exchange_export
 from hausbuch.services.workspace_settings import private_ai_allowed
@@ -93,7 +93,8 @@ ADOBE_FORM = documents.ADOBE_FORM  # D43, not retried
 INTERNAL_ERROR = "ai.internal_error"  # not a model error: a bug or the database, retried out
 # Phase 6 D176 (3): a credit card statement uploaded as a document (Dokumente, the capture)
 # has no import yet, so request_read's check cannot see it; it is never sent to the model and
-# is imported on its card account instead. Not retried.
+# is imported on its card account instead. Not retried. Since 13 Nov 2026 a bank's own export
+# (camt ZIP or XML, Sparkasse CSV, DKB CSV) is stopped with the same code.
 CARD_STATEMENT = proposals.PROPOSAL_BANK_FILE_NOT_READ
 # Phase 6 D166, step 5a: an exchange's export (BISON's, or one of Binance's three) uploaded
 # through Dokumente, recognised by its header before anything else; never classified or sent
@@ -390,6 +391,14 @@ def _is_exchange_export(original: _Original) -> bool:
     return is_exchange_export(original.data)
 
 
+def _is_bank_export(original: _Original) -> bool:
+    """A bank's export that parse_statement reads (camt, Sparkasse CSV, DKB CSV; phase 6,
+    D176 (3) amended 13 Nov 2026); a PDF or an image never is one."""
+    if original.media_type == documents.PDF or original.media_type in documents.IMAGE_TYPES:
+        return False
+    return is_bank_export(original.data, original.media_type)
+
+
 def _note_depot_kind(deps: JobDeps, workspace_id: UUID, document_id: UUID, text: str) -> None:
     """Phase 6 D177: a depot document uploaded before its kind was recorded at upload
     (services.documents.depot_kind_of) gets it at its next reading; code only, before the
@@ -420,6 +429,8 @@ def _read(
     try:
         if _is_exchange_export(original):
             raise _Stop(EXCHANGE_EXPORT)  # D166: read by code on its exchange account only
+        if _is_bank_export(original):
+            raise _Stop(CARD_STATEMENT)  # a bank export: imported on its account, by code only
         documents.check_media_type(original.media_type)
         pages = documents.page_count(original.data) if original.media_type == documents.PDF else 1
         if original.media_type == documents.PDF and documents.is_adobe_only_form(original.data):

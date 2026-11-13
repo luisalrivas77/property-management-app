@@ -21,13 +21,13 @@
 
 import hmac
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from fractions import Fraction
 from typing import Any
 from uuid import UUID
 
-from pydantic import create_model
+from pydantic import ValidationError, create_model
 from sqlalchemy import Connection, Row, and_, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -48,7 +48,12 @@ from hausbuch.rules.errors import (
 from hausbuch.rules.exchange import EXCHANGE_PROVIDERS
 from hausbuch.rules.household import ownership as ownership_rules
 from hausbuch.rules.household.taxonomy import allowed_categories
-from hausbuch.rules.statements import NO_PAYMENT_IBAN, OPENING_NOT_DERIVABLE
+from hausbuch.rules.statements import (
+    EMPTY,
+    NO_ACCOUNT_OFFER,
+    NO_PAYMENT_IBAN,
+    OPENING_NOT_DERIVABLE,
+)
 from hausbuch.schemas.bank import (
     Account,
     AccountCreate,
@@ -56,6 +61,8 @@ from hausbuch.schemas.bank import (
     DepotIbanProposal,
     PaymentIbanConfirmed,
     PaymentIbanProposal,
+    StatementAccountBody,
+    StatementAccountCreated,
     StatementFormat,
     StatementImport,
 )
@@ -78,16 +85,25 @@ from hausbuch.schemas.events import (
 from hausbuch.schemas.household import AccountOwnership, OwnershipShare, SetOwnershipBody
 from hausbuch.storage import BlobStore
 
-from .bank import card_pdf, depot_pdf
+from .bank import BANK_EXPORT_FORMATS, card_pdf, depot_pdf
 from .context import CommandContext
-from .documents import read_original
+from .documents import get_document, read_original
 from .errors import ConflictError, NotFoundError, RuleViolationError, violated_constraint
 from .events import append_event, diff_changes
 from .iban import protect_iban, protect_ref
 from .lookup import require_row
 from .owners import UNSET, Unset
 from .rules_learned import disable_rule, enabled_rules
-from .statements import derived_opening, get_import, recheck_account
+from .statements import (
+    derived_opening,
+    get_import,
+    import_stored_statement,
+    recheck_account,
+    refused_statement_file,
+    statement_file_held,
+    statement_file_identity,
+    statement_file_kind,
+)
 
 # Every column the Account read shape has; the HMACs are for matching and never leave.
 _HMAC_COLUMNS = {"iban_hmac", "external_ref_hmac", "payment_iban_hmac"}
@@ -311,6 +327,76 @@ def opening_from_closing(ctx: CommandContext, import_id: UUID) -> StatementImpor
     result = get_import(ctx.conn, import_id)
     assert result is not None  # read in this transaction
     return result
+
+
+def create_account_from_statement(
+    ctx: CommandContext,
+    store: BlobStore,
+    document_id: UUID,
+    body: StatementAccountBody,
+    *,
+    iban_key: bytes,
+) -> StatementAccountCreated:
+    """POST /documents/{id}/statement-account, „Konto anlegen und einlesen“ (phase 6,
+    13 Nov 2026, amends D176 (3) and D165 (b); Luis: "If I upload a statement and there's no
+    account for it could the app suggest to create an account?"). For a statement file stored
+    through Dokumente whose read was refused (proposal.bank_file_not_read) and that no account
+    holds yet: the account its content implies is created and the file imported onto it, in
+    the caller's one transaction, so a refused import leaves no account behind.
+
+    Read from the stored original on the server, never from the browser (the D176 (4)
+    pattern): the kind (a bank's export makes a Girokonto, a card statement a card, a depot's
+    cash statement a depot), the identifier (the account IBAN of a bank export; the printed
+    customer or account number of a card or depot, as its external_ref) and the anchor (the
+    file's own opening balance, else 0,00 for a CSV, which states none: the import then waits
+    for its closing balance and offers „Anfangssaldo daraus übernehmen“), dated the day before
+    the file's first booking. The person sets label, bank, provider, purpose and the owner
+    shares (D157; none leaves „Eigentümer festlegen“). Events as create_account,
+    set_account_ownership and the import write them.
+
+    404 for an unknown document; 422 statement.no_account_offer for a document with no such
+    offer (never refused, already imported, or a file naming no account of its own); 409 when
+    an account already holds the file's IBAN or number („Auf Konto importieren“ instead)."""
+    if get_document(ctx.conn, document_id) is None:
+        raise NotFoundError(EntityType.DOCUMENT, document_id)
+    statement = refused_statement_file(ctx.conn, store, document_id)
+    kind = statement_file_kind(statement) if statement is not None else None
+    identity = statement_file_identity(statement, iban_key) if statement is not None else None
+    if statement is None or kind is None or identity is None:
+        raise RuleError(NO_ACCOUNT_OFFER, "the document is no statement waiting for an account")
+    if statement_file_held(ctx.conn, statement, identity.hmac):
+        raise ConflictError("the workspace already has an account with that IBAN or number")
+    if not statement.lines:
+        raise RuleError(EMPTY, "the file holds no booked line")
+    bank_file = statement.format in BANK_EXPORT_FORMATS
+    first = min(line.booking_date for line in statement.lines)
+    try:
+        data = AccountCreate(
+            label=body.label,
+            bank=body.bank,
+            iban=statement.account_iban if bank_file else None,
+            external_ref=None if bank_file else statement.account_ref,
+            opening_balance=(
+                statement.opening_balance
+                if statement.opening_balance is not None
+                else Decimal("0.00")
+            ),
+            opening_balance_on=first - timedelta(days=1),
+            is_owner_account=True,
+            kind=kind,
+            purpose=body.purpose,
+            provider=body.provider,
+        )
+    except ValidationError:
+        # The file's own identifier does not fit the account record; never echoed.
+        raise RuleError(NO_ACCOUNT_OFFER, "the file's account cannot be created") from None
+    account = create_account(ctx, data, iban_key=iban_key)
+    if body.shares:
+        set_account_ownership(ctx, account.id, SetOwnershipBody(shares=body.shares))
+    imported = import_stored_statement(ctx, store, document_id, account.id, iban_key=iban_key)
+    return StatementAccountCreated(
+        account=_account(ctx.conn, account.id), statement_import=imported
+    )
 
 
 def _require_bookings_fit(conn: Connection, account_id: UUID, purpose: AccountPurpose) -> None:

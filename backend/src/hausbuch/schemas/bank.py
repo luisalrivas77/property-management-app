@@ -25,7 +25,7 @@ from .enums import (
     DuplicateStatus,
     ImportStatus,
 )
-from .household import OwnershipShare
+from .household import OwnershipShare, SetOwnershipBody
 
 # Phase 6 D156: a depot or exchange's own number (a depot or customer number), masked to its
 # last four characters like an IBAN's tail and HMAC'd for the statement routing of D164.
@@ -280,19 +280,69 @@ class StatementFileCandidate(Schema):
     external_ref_masked: MaskedRef | None = None
 
 
+class StatementNewAccount(Schema):
+    """„Konto anlegen und einlesen“ (phase 6, 13 Nov 2026, amends D176 (3) and D165 (b)): the
+    account the file's own content implies, offered when no account holds the file's IBAN or
+    number yet. The kind comes from the format; `bank`, `provider` and `label` are suggestions
+    the person edits (None where the format does not tell, e.g. a camt file); the identifier is
+    shown masked only (an IBAN as „DE89 **** 3000“, a number as „**** 4567“) and never travels
+    back from the browser: POST /documents/{id}/statement-account reads it from the original."""
+
+    kind: AccountKind
+    label: str
+    bank: str | None = None
+    provider: str | None = None
+    iban_masked: MaskedIban | None = None
+    external_ref_masked: MaskedRef | None = None
+
+
 class StatementFileOffer(Schema):
-    """A credit card's PDF statement or a depot's cash statement uploaded through Dokumente,
+    """A statement file uploaded through Dokumente (a credit card's PDF statement, a depot's
+    cash statement or, since 13 Nov 2026, a bank's own export: camt, Sparkasse CSV, DKB CSV),
     whose read failed with proposal.bank_file_not_read and which no account holds yet: the
     accounts it can be imported onto with „Auf Konto importieren“ (principle 7: the app
     proposes, the person confirms). `suggested_account_id` is the account whose stored number
-    is the one the file prints, else the only candidate; none when there is no candidate or
-    several without a number. No candidate means no account of this kind takes it yet
-    (`account_kind` names the kind to create)."""
+    or IBAN is the one the file prints, else the only candidate; none when there is no
+    candidate or several without a number. No candidate means no account of this kind takes
+    it yet (`account_kind` names the kind to create). `new_account` is set whenever no account
+    holds the file's own IBAN or number, also beside candidates without a number (a second
+    depot), for „Konto anlegen und einlesen“."""
 
     format: StatementFormat
     account_kind: AccountKind
     candidates: list[StatementFileCandidate] = Field(default_factory=list)
     suggested_account_id: UUID | None = None
+    new_account: StatementNewAccount | None = None
+
+
+class StatementAccountBody(Schema):
+    """POST /documents/{id}/statement-account, „Konto anlegen und einlesen“: what the person
+    sets for the new account. The kind, the IBAN or number and the opening balance come from
+    the stored file on the server, never from the browser (the D176 (4) pattern). `shares`
+    as POST /accounts/{id}/ownership takes them (D157); empty leaves the to-do „Eigentümer
+    festlegen“."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    label: str = Field(min_length=1, max_length=100)
+    bank: str = Field(min_length=1)
+    provider: str | None = Field(default=None, min_length=1, max_length=100)
+    purpose: AccountPurpose = AccountPurpose.PRIVATE
+    shares: list[OwnershipShare] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _shares(self) -> Self:
+        if self.shares:
+            SetOwnershipBody(shares=self.shares)  # Σ = 1, each owner once
+        return self
+
+
+class StatementAccountCreated(Schema):
+    """The account „Konto anlegen und einlesen“ created and the file's import onto it, both
+    written in one transaction."""
+
+    account: Account
+    statement_import: StatementImport
 
 
 class TransactionAllocationStatus(StrEnum):
