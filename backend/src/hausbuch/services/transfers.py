@@ -18,6 +18,9 @@ links and computes the cards on read.
 - open_transfers: computed on read, never written. A leg inside its window has no card; after
   it transfer.unmatched_leg; two fitting counterparts transfer.ambiguous; a counterpart that
   fits but was not linked (a movement, or a leg booked before the other) transfer.proposed.
+  A candidate booked otherwise but tied to the leg by an own IBAN (a card bill answered
+  hh_credit_card before the card account existed) is marked rebook_on_link: the card's
+  button re-books it as a transfer, then links (link_by_hand with rebook, D176 (4)).
 
 Every link and every replacement writes its event (transfer.linked, transfer.unlinked). Reads
 and writes run under the workspace's row-level security."""
@@ -27,7 +30,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Connection, Row, func, insert, select, update
+from sqlalchemy import Connection, Row, func, insert, or_, select, update
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
@@ -44,8 +47,14 @@ from hausbuch.rules.matching import (
     transfer_link_kind,
     transfer_window_end,
 )
-from hausbuch.schemas.allocation import AllocationCategory, MatchContext
-from hausbuch.schemas.api import InboxItem, InboxItemKind
+from hausbuch.schemas.allocation import (
+    AllocationCategory,
+    AllocationDraft,
+    AllocationMethod,
+    AllocationSet,
+    MatchContext,
+)
+from hausbuch.schemas.api import ConfirmAllocationsBody, InboxItem, InboxItemKind
 from hausbuch.schemas.enums import AccountKind, AccountPurpose, AllocationStatus, ImportStatus
 from hausbuch.schemas.events import EventType, TransferLinked, TransferUnlinked
 from hausbuch.schemas.household import (
@@ -86,7 +95,7 @@ _MOVEMENT_KINDS = {
 class _Leg:
     """A leg with what the screens show of it (kept apart from the rule's TransferLeg)."""
 
-    __slots__ = ("leg", "label", "name", "purpose", "booked")
+    __slots__ = ("leg", "label", "name", "purpose", "booked", "category")
 
     def __init__(
         self,
@@ -95,14 +104,16 @@ class _Leg:
         name: str | None,
         purpose: AccountPurpose,
         booked: AllocationCategory | None,
+        category: AllocationCategory | None = None,
     ) -> None:
         self.leg = leg
         self.label = label
         self.name = name
         self.purpose = purpose
         self.booked = booked  # the line's current transfer category, None when booked otherwise
+        self.category = booked or category  # its one live category of any kind, None for a split
 
-    def view(self) -> TransferLegView:
+    def view(self, *, rebook_on_link: bool = False) -> TransferLegView:
         return TransferLegView(
             source=self.leg.source,
             id=self.leg.id,
@@ -111,6 +122,10 @@ class _Leg:
             booked_on=self.leg.booked_on,
             amount=self.leg.amount,
             counterparty_name=self.name,
+            account_kind=self.leg.account_kind,
+            booked_category=self.category,
+            booked_as_transfer=self.booked is not None,
+            rebook_on_link=rebook_on_link,
         )
 
 
@@ -178,8 +193,8 @@ def _linked_ids(conn: Connection) -> set[UUID]:
     return {i for r in _current_links(conn) for i in _leg_ids(r)}
 
 
-def _transfer_booked(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, AllocationCategory]:
-    """The lines among `ids` whose live rows are one transfer category."""
+def _one_category(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, AllocationCategory]:
+    """The lines among `ids` whose live rows are one category, with that category."""
     if not ids:
         return {}
     a = allocation_table.c
@@ -193,7 +208,16 @@ def _transfer_booked(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, Alloca
     return {
         tx_id: AllocationCategory(next(iter(found)))
         for tx_id, found in cats.items()
-        if len(found) == 1 and AllocationCategory(next(iter(found))) in TRANSFER_CATEGORIES
+        if len(found) == 1
+    }
+
+
+def _transfer_booked(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, AllocationCategory]:
+    """The lines among `ids` whose live rows are one transfer category."""
+    return {
+        tx_id: category
+        for tx_id, category in _one_category(conn, ids).items()
+        if category in TRANSFER_CATEGORIES
     }
 
 
@@ -211,6 +235,7 @@ def _line_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
             acc.purpose,
             acc.label,
             acc.iban_hmac,
+            acc.payment_iban_hmac,
         )
         .join(account_table, acc.id == t.account_id)
         .join(import_table, import_table.c.id == t.import_id)
@@ -222,7 +247,8 @@ def _line_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
         )
         .order_by(t.booking_date, t.id)
     ).all()
-    booked = _transfer_booked(conn, [r.id for r in rows])
+    categories = _one_category(conn, [r.id for r in rows])
+    booked = {i: c for i, c in categories.items() if c in TRANSFER_CATEGORIES}
     return [
         _Leg(
             TransferLeg(
@@ -230,7 +256,10 @@ def _line_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
                 id=r.id,
                 account_id=r.account_id,
                 account_kind=AccountKind(r.kind),
-                account_iban_hmac=_hex(r.iban_hmac),
+                # D176 (4): a card account is paid to its confirmed payment IBAN, which
+                # stands for its account IBAN here, so the paying debit names it (ibans_agree,
+                # match_transfer's counterpart filter).
+                account_iban_hmac=_hex(r.iban_hmac or r.payment_iban_hmac),
                 booked_on=r.booking_date,
                 amount=r.amount,
                 counterparty_iban_hmac=_hex(r.counterparty_iban_hmac),
@@ -240,6 +269,7 @@ def _line_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
             r.counterparty_name,
             AccountPurpose(r.purpose),
             booked.get(r.id),
+            categories.get(r.id),
         )
         for r in rows
     ]
@@ -316,20 +346,22 @@ def _one_leg(conn: Connection, source: TransferLegSource, leg_id: UUID) -> _Leg 
     return found[0] if found else None
 
 
-def _iban_hmacs(conn: Connection, *, except_account: UUID) -> list[str]:
+def own_account_hmacs(conn: Connection, *, except_account: UUID | None = None) -> list[str]:
+    """D162 with D176 (4): the IBAN of every own account and the confirmed payment IBAN of every
+    card account, hex, except those of `except_account`, without repeats."""
     acc = account_table.c
-    return sorted(
-        bytes(h).hex()
-        for h in conn.execute(
-            select(acc.iban_hmac).where(acc.iban_hmac.is_not(None), acc.id != except_account)
-        ).scalars()
+    query = select(func.coalesce(acc.iban_hmac, acc.payment_iban_hmac)).where(
+        or_(acc.iban_hmac.is_not(None), acc.payment_iban_hmac.is_not(None))
     )
+    if except_account is not None:
+        query = query.where(acc.id != except_account)
+    return sorted({bytes(h).hex() for h in conn.execute(query).scalars()})
 
 
 def _context(conn: Connection, leg: _Leg, others: Iterable[_Leg]) -> MatchContext:
     return MatchContext(
         account_purpose=leg.purpose,
-        own_account_hmacs=_iban_hmacs(conn, except_account=leg.leg.account_id),
+        own_account_hmacs=own_account_hmacs(conn, except_account=leg.leg.account_id),
         open_legs=[o.leg for o in others],
     )
 
@@ -513,15 +545,93 @@ def _pair(conn: Connection, body: TransferLinkCreate) -> tuple[_Leg, _Leg]:
     return out, in_
 
 
-def link_by_hand(ctx: CommandContext, body: TransferLinkCreate) -> TransferLink:
+def _tied(a: TransferLeg, b: TransferLeg) -> bool:
+    """Whether one leg names the other's own IBAN as its counterparty (for a card, its
+    confirmed payment IBAN stands as its account IBAN, _line_legs): the pair is a transfer
+    by an own IBAN, not only by its amount and date."""
+    return (
+        a.counterparty_iban_hmac is not None and a.counterparty_iban_hmac == b.account_iban_hmac
+    ) or (b.counterparty_iban_hmac is not None and b.counterparty_iban_hmac == a.account_iban_hmac)
+
+
+def _rebook_on_link(leg: _Leg, other: _Leg) -> bool:
+    """D176 (4), review of step 2b: `leg` is a bank line booked as something other than a
+    transfer (or not yet booked) and tied to `other` by an own IBAN, so linking them re-books
+    it as a transfer first (TransferLinkRequest.rebook)."""
+    return (
+        leg.booked is None
+        and leg.leg.source is TransferLegSource.TRANSACTION
+        and _tied(leg.leg, other.leg)
+    )
+
+
+def link_by_hand(
+    ctx: CommandContext, body: TransferLinkCreate, *, iban_key: bytes | None = None
+) -> TransferLink:
     """POST /transfers: the user links two legs (matched_by user). 409 when either leg is
-    linked already; 422 transfer.legs_invalid for two legs that are no transfer."""
+    linked already; 422 transfer.legs_invalid for two legs that are no transfer.
+
+    With rebook (TransferLinkRequest, D176 (4)) each leg not booked as a transfer is first
+    re-booked as internal_transfer_out or _in through the person's answer
+    (review.allocate_transaction: method user, the old rows superseded, its events), so a card
+    bill answered hh_credit_card no longer counts as spending beside the card's own purchases;
+    422 transfer.legs_invalid when such a leg is not tied to the other by an own IBAN. The
+    re-booking may let the matcher link the pair itself (allocations.record_set's hook): that
+    link is returned; a link of either leg to another counterpart is a 409 and nothing is
+    written."""
     _lock(ctx)
     out, in_ = _pair(ctx.conn, body)
     linked = _linked_ids(ctx.conn)
     if out.leg.id in linked or in_.leg.id in linked:
         raise ConflictError("a leg of this transfer is linked already")
+    if getattr(body, "rebook", False):
+        legs = [(leg, other) for leg, other in ((out, in_), (in_, out)) if leg.booked is None]
+        if any(not _rebook_on_link(leg, other) for leg, other in legs):
+            raise RuleViolationError(
+                [TRANSFER_LEGS_INVALID], "only a leg tied to the other by an own IBAN is re-booked"
+            )
+        if legs and iban_key is None:
+            raise ValueError("re-booking a leg needs the IBAN key")
+        for leg, _ in legs:
+            _rebook(ctx, leg, iban_key)  # type: ignore[arg-type]
+        found = _link_of(ctx.conn, out.leg.id, in_.leg.id)
+        if found is not None:
+            return found
+        linked = _linked_ids(ctx.conn)
+        if out.leg.id in linked or in_.leg.id in linked:
+            raise ConflictError("a leg of this transfer is linked already")
     return _write(ctx, out.leg, in_.leg, body.kind, TransferMatchedBy.USER)
+
+
+def _rebook(ctx: CommandContext, leg: _Leg, iban_key: bytes) -> None:
+    """The person's answer booking the whole line as one transfer part (no rule learned)."""
+    from . import review  # imports services.matching, which imports this module
+
+    category = (
+        AllocationCategory.INTERNAL_TRANSFER_OUT
+        if leg.leg.amount < 0
+        else AllocationCategory.INTERNAL_TRANSFER_IN
+    )
+    answer = AllocationSet(
+        transaction_id=leg.leg.id,
+        allocations=[AllocationDraft(amount=leg.leg.amount, category=category)],
+        method=AllocationMethod.USER,
+        confidence=Decimal(1),
+    )
+    review.allocate_transaction(
+        ctx,
+        leg.leg.id,
+        ConfirmAllocationsBody(allocation_set=answer, learn_rule=False),
+        iban_key=iban_key,
+    )
+
+
+def _link_of(conn: Connection, out_id: UUID, in_id: UUID) -> TransferLink | None:
+    """The current link joining exactly these two legs, if any."""
+    for row in _current_links(conn):
+        if {out_id, in_id} == set(_leg_ids(row)):
+            return TransferLink.model_validate(row._asdict())
+    return None
 
 
 def unlink(ctx: CommandContext, link_id: UUID, replacement: TransferLinkCreate) -> TransferLink:
@@ -627,7 +737,7 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
             OpenTransfer(
                 code=code,
                 leg=leg.view(),
-                candidates=[c.view() for c in candidates],
+                candidates=[c.view(rebook_on_link=_rebook_on_link(c, leg)) for c in candidates],
                 window_end=transfer_window_end(leg.leg.booked_on),
             )
         )
@@ -703,6 +813,7 @@ def _kinds(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, AccountKind]:
 
 __all__ = [
     "after_booking",
+    "own_account_hmacs",
     "link_by_hand",
     "link_leg",
     "list_links",

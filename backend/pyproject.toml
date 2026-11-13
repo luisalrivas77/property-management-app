@@ -19,7 +19,7 @@ dependencies = [
     # Procrastinate is pinned to one minor version: migration 0005 applies its schema.sql.
     "procrastinate>=3.10.0,<3.11",  # job queue (psycopg connector) on the same Postgres (§5.1)
     "anthropic>=2.6.0,<3",  # Claude API client (§5.3)
-    "pypdf>=7.0.0,<8",  # page count and splitting only (§5.2)
+    "pypdf>=7.0.0,<8",  # page count and splitting (§5.2); the card statement's text (D176)
     "lxml>=6.1.3,<7",  # camt.052 / camt.053 XML (§7.1)
     # Phase 3 (docs/phases/phase-3.md §4, §12): added in the spec PR, as phase 2 did.
     "pyyaml>=6.0,<7",  # the per-year rule sets in rules/tax/rulesets/ (was dev-only)

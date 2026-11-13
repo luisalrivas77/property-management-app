@@ -46,6 +46,9 @@
 #   - the payment IBAN is returned as `payment_iban`; the import only proposes it, masked, and
 #     the user confirms it (principle 3)
 #   - an interest or fee line is booked by code to hh_interest_fees, confirmed without review
+#   - the payment line „Bezahlung“ (a credit without a merchant) is booked by code as
+#     internal_transfer_in, confirmed without review: the card's leg of the settlement,
+#     linked to the paying debit by D162 (spec amendment to D176 (4), review of step 2b)
 #
 # Step 2b readings (listed in the step 2b report):
 #   - a refund's kind word is „Gutschrift“ (the real statement holds none) and it carries the
@@ -164,6 +167,8 @@ cases:
       lines_skipped: 0
       account_ref_masked: "**** 4567"
       payment_iban_masked: "DE34 **** 3005"
+      booked:
+        - {index: 0, category: internal_transfer_in}
 
   - id: foreign_currency
     description: >-
@@ -240,6 +245,8 @@ cases:
       lines_new: 3
       lines_skipped: 0
       account_ref_masked: "**** 4567"
+      booked:
+        - {index: 0, category: internal_transfer_in}
 
   - id: refund
     description: a purchase and its refund, a credit with the merchant
@@ -306,6 +313,8 @@ cases:
       lines_new: 4
       lines_skipped: 0
       account_ref_masked: "**** 4567"
+      booked:
+        - {index: 0, category: internal_transfer_in}
 
   - id: wrapped_description
     description: a description wrapping onto a second line, joined with one space; a thousands separator
@@ -363,6 +372,8 @@ cases:
       lines_new: 2
       lines_skipped: 0
       account_ref_masked: "**** 4567"
+      booked:
+        - {index: 0, category: internal_transfer_in}
 
   - id: interest
     description: a partial payment and the interest on the rest, booked by code to hh_interest_fees
@@ -419,6 +430,7 @@ cases:
       lines_skipped: 0
       account_ref_masked: "**** 4567"
       booked:
+        - {index: 0, category: internal_transfer_in}
         - {index: 1, category: hh_interest_fees}
 
   - id: unbalanced

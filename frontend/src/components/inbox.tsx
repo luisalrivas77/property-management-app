@@ -56,7 +56,7 @@ import { notifyInboxChanged } from "@/lib/inboxCount";
 import { BalanceForm, DuplicateCard, OpeningFromClosing } from "./accounts";
 import { documentLabel, UploadControl } from "./documents";
 import { formatDate, formatDateTime, formatMoney } from "./format";
-import { INBOX_ITEM_KIND } from "./labels";
+import { ALLOCATION_CATEGORY, INBOX_ITEM_KIND } from "./labels";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
 import { reminderTodo } from "./todos";
 import { ActionDialog, Notice } from "./ui";
@@ -606,7 +606,7 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
 
 type OpenTransfer = components["schemas"]["OpenTransfer"];
 type TransferLegView = components["schemas"]["TransferLegView"];
-type TransferLinkCreate = components["schemas"]["TransferLinkCreate"];
+type TransferLinkRequest = components["schemas"]["TransferLinkRequest"];
 type TransferLinkKind = components["schemas"]["TransferLinkKind"];
 type TaxInputCreate = components["schemas"]["TaxInputCreate"];
 type PrivateCostValue = components["schemas"]["PrivateCostValue"];
@@ -620,9 +620,10 @@ function linkKind(accounts: Map<string, Account>, a: TransferLegView, b: Transfe
 }
 
 /** POST /transfers' body: the leg paid out is the out leg, each by its table (D162). */
-function linkBody(accounts: Map<string, Account>, leg: TransferLegView, other: TransferLegView): TransferLinkCreate {
+function linkBody(accounts: Map<string, Account>, leg: TransferLegView, other: TransferLegView): TransferLinkRequest {
   const [out, in_] = leg.amount.startsWith("-") ? [leg, other] : [other, leg];
   return {
+    rebook: other.rebook_on_link,
     kind: linkKind(accounts, out, in_),
     out_transaction_id: out.source === "transaction" ? out.id : null,
     out_movement_id: out.source === "movement" ? out.id : null,
@@ -635,13 +636,33 @@ function legText(leg: TransferLegView): string {
   return [leg.account_label, formatDate(leg.booked_on), signedMoney(leg.amount), leg.counterparty_name ?? ""].filter(Boolean).join(" · ");
 }
 
+/** D176 (4), review of step 2b: why a candidate booked as something else (a card bill answered
+ * „Kreditkarte“ before the card account existed) is booked as a transfer when it is linked. */
+function rebookText(candidate: TransferLegView, leg: TransferLegView): string {
+  const debit = candidate.amount.startsWith("-");
+  const what = debit ? "Die Abbuchung" : "Die Gutschrift";
+  const counted = debit ? "Ausgabe" : "Einnahme";
+  const booked = candidate.booked_category
+    ? `ist bisher als „${ALLOCATION_CATEGORY[candidate.booked_category]}“ gebucht und zählt damit als ${counted}`
+    : "ist noch nicht gebucht";
+  const why =
+    leg.account_kind === "credit_card" || candidate.account_kind === "credit_card"
+      ? "weil die Kartenumsätze selbst schon gezählt werden"
+      : "weil das Geld nur zwischen zwei eigenen Konten wechselt";
+  return `${what} vom ${formatDate(candidate.booked_on)} ${booked}; sie wird als Übertrag gebucht, ${why}.`;
+}
+
 /** The counterpart's picker of a transfer card: one candidate is pre-selected, several are
- * listed for the person to choose; „Verknüpfen“ posts the link (matched_by user). */
+ * listed for the person to choose; „Verknüpfen“ posts the link (matched_by user). A candidate
+ * booked otherwise but tied to the leg by an own IBAN (rebook_on_link) is re-booked as a
+ * transfer first: the button says so, with one line why. */
 function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accounts: Map<string, Account>; onLinked: () => void }) {
   const [choice, setChoice] = useState(open.candidates.length === 1 ? (open.candidates[0]?.id ?? "") : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const name = `transfer-${open.leg.id}`;
+  const chosen = open.candidates.find((candidate) => candidate.id === choice);
+  const rebook = chosen?.rebook_on_link === true;
 
   async function link() {
     const other = open.candidates.find((candidate) => candidate.id === choice);
@@ -666,8 +687,9 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
           {legText(candidate)}
         </label>
       ))}
+      {rebook && chosen ? <p className="muted">{rebookText(chosen, open.leg)}</p> : null}
       <button type="button" onClick={() => void link()} disabled={busy || choice === ""}>
-        {busy ? "Verknüpft …" : "Verknüpfen"}
+        {busy ? "Verknüpft …" : rebook ? "Als Übertrag buchen und verknüpfen" : "Verknüpfen"}
       </button>
       <ErrorNotice error={error} />
     </fieldset>

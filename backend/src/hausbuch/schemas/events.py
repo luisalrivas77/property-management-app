@@ -445,6 +445,8 @@ class AccountCreated(Schema):
     kind: AccountKind = AccountKind.BANK_CURRENT
     purpose: AccountPurpose | None = None
     provider: str | None = None
+    # Phase 6 D176: a credit card's customer number, masked, when typed at creation
+    external_ref_masked: str | None = None
 
 
 class StatementImported(Schema):
@@ -461,6 +463,11 @@ class StatementImported(Schema):
     # vom“), the pre-fill of the closing the user confirms; absent for every other format.
     stated_closing: Money | None = None
     stated_closing_on: date | None = None
+    # Phase 6 D176: a card statement's card (its last four digits only, never more of the
+    # number) and the payment IBAN it prints, masked: the proposal the account page offers to
+    # confirm (D176 (4)); absent for every other format.
+    card_last4: str | None = Field(default=None, pattern=r"^[0-9]{4}$")
+    payment_iban_masked: MaskedIban | None = None
 
 
 class StatementBalanceChecked(Schema):

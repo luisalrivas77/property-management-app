@@ -9,8 +9,10 @@ hausbuch.rules.errors.RuleError with a statement.* code; messages never quote fi
 - csv_camt.py: Sparkasse CSV-CAMT (V2). No balances.
 - dkb_csv.py: DKB's CSV export (phase 6 D173 (3)). No balances; its „Kontostand vom“ is a
   stated balance that only pre-fills the typed closing.
-- PDF Kontoauszug: read by the extraction job (step 1's StatementExtraction); not built in
-  step 3, so a PDF is refused with statement.unknown_format for now.
+- card_pdf.py: the credit card's monthly PDF statement (phase 6 D176 (3)), read by code from
+  its text layer; balances from the file.
+- Any other PDF Kontoauszug: not imported (phase 2 built only the extraction schema), refused
+  with statement.unknown_format.
 """
 
 from dataclasses import dataclass
@@ -19,7 +21,7 @@ from hausbuch.rules.errors import RuleError
 from hausbuch.rules.statements import UNKNOWN_FORMAT
 from hausbuch.schemas.bank import BankSource, ParsedStatement, StatementFormat
 
-from . import camt, csv_camt, dkb_csv
+from . import camt, card_pdf, csv_camt, dkb_csv
 
 __all__ = ["BankSource", "ParseOutcome", "detect_format", "parse_statement"]
 
@@ -52,6 +54,10 @@ def detect_format(data: bytes, media_type: str | None = None) -> StatementFormat
     if dkb_csv.looks_like(head):
         return StatementFormat.DKB_CSV
     if body.startswith(b"%PDF") or media_type == "application/pdf":
+        # D176 (3): a PDF whose text layer is a card statement is one; any other is not read.
+        pages = card_pdf.pdf_pages(data)
+        if pages is not None and card_pdf.looks_like(pages):
+            return StatementFormat.CARD_PDF
         return StatementFormat.PDF
     raise RuleError(
         UNKNOWN_FORMAT, "not a camt.052/053 file, camt ZIP, Sparkasse CSV-CAMT or DKB CSV"
@@ -68,5 +74,8 @@ def parse_statement(data: bytes, media_type: str | None = None) -> ParseOutcome:
         return ParseOutcome(csv_camt.parse_csv_camt(data))
     if fmt is StatementFormat.DKB_CSV:
         return ParseOutcome(dkb_csv.parse_dkb_csv(data))
-    # Step 1's extraction job reads PDF statements; the import path for them is not built.
+    if fmt is StatementFormat.CARD_PDF:
+        result = card_pdf.parse_card_pdf(data)
+        return ParseOutcome(result.statement, result.balance_error)
+    # Only a card statement is read from a PDF (D176 (3)); a bank's PDF statement is not.
     raise RuleError(UNKNOWN_FORMAT, "PDF statements are not imported yet; use camt or CSV-CAMT")

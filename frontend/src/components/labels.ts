@@ -420,6 +420,7 @@ export const ACCOUNT_KIND: Record<AccountKind, string> = {
   depot: "Depot",
   exchange: "Börse (Krypto)",
   wallet: "Wallet",
+  credit_card: "Kreditkarte",
 };
 
 /** account.purpose (D156): the rental account feeds the Anlage V, a private one never does. */
@@ -433,6 +434,7 @@ export const STATEMENT_FORMAT: Record<StatementFormat, string> = {
   csv_camt: "CSV-CAMT",
   pdf: "PDF-Kontoauszug",
   dkb_csv: "DKB-CSV",
+  card_pdf: "Kreditkartenabrechnung (PDF)",
 };
 
 /** The pill of an import. `imported` is an import whose closing balance is still missing
@@ -529,6 +531,7 @@ export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
   internal_transfer_out: "Übertrag auf eigenes Konto",
   hh_cash: "Bargeldabhebung",
   hh_credit_card: "Kreditkartenabrechnung",
+  hh_interest_fees: "Zinsen und Gebühren",
   security_purchase: "Wertpapierkauf",
   security_sale: "Wertpapierverkauf",
   distribution: "Ausschüttung oder Dividende",
@@ -563,6 +566,7 @@ export const PRIVATE_ONLY_CATEGORIES: ReadonlySet<AllocationCategory> = new Set<
   "internal_transfer_out",
   "hh_cash",
   "hh_credit_card",
+  "hh_interest_fees",
   "security_purchase",
   "security_sale",
   "distribution",
@@ -597,6 +601,7 @@ const HOUSEHOLD_GROUPS: { label: string; categories: AllocationCategory[] }[] = 
       "hh_leisure_travel",
       "hh_health",
       "hh_other",
+      "hh_interest_fees",
     ],
   },
   {
@@ -637,6 +642,7 @@ export const ALLOCATION_METHOD: Record<AllocationMethod, string> = {
   matcher_owner: "Überweisung eines Eigentümers",
   matcher_hausgeld: "Wirtschaftsplan",
   matcher_transfer: "Übertrag zwischen eigenen Konten",
+  matcher_card: "Kreditkartenabrechnung (Zinsen und Gebühren)",
   document_match: "passender Beleg",
   llm: "KI",
   user: "von Hand",

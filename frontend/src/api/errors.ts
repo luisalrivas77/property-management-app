@@ -69,7 +69,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "proposal.other_notice_without_patch":
     "Der zweite Eintrag passt nur, wenn der Betrag der Grunderwerbsteuer oben auf diesen Bescheid gesenkt wird. Bitte beides übernehmen oder den zweiten Eintrag überspringen.",
   "proposal.bank_file_not_read":
-    "Diese Datei hat Hausbuch beim Bankabruf von der Bank geholt; sie wird nicht automatisch ausgelesen.",
+    "Diese Datei wird nicht mit KI ausgelesen: Hausbuch hat sie beim Bankabruf von der Bank geholt, oder sie ist eine Kreditkartenabrechnung, die direkt auf ihrem Kartenkonto importiert wird.",
   "document.extraction_stale": "Das Dokument wurde inzwischen neu ausgelesen. Bitte die Seite neu laden und die Felder prüfen.",
   "document.extraction_kind_mismatch": "Für diese Dokumentart gibt es eines der Felder von Hand nicht; es kann nicht gespeichert werden.",
   // bank statements (phase-2.md §12 and the step 3 additions, rules/statements.py)
@@ -78,14 +78,16 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "statement.before_anchor":
     "Der Auszug enthält Umsätze am oder vor dem Datum des Anfangssaldos. Den Anfangssaldo auf einen früheren Tag legen.",
   "statement.unknown_format":
-    "Dateiformat nicht erkannt. Erwartet: camt (XML oder ZIP), Sparkasse CSV-CAMT oder der CSV-Export der DKB.",
+    "Dateiformat nicht erkannt. Erwartet: camt (XML oder ZIP), Sparkasse CSV-CAMT, der CSV-Export der DKB oder die PDF-Abrechnung einer Kreditkarte.",
   "statement.unparsable": "Die Datei ist beschädigt oder unvollständig und konnte nicht gelesen werden.",
   "statement.archive_rejected":
     "Das ZIP-Archiv wurde abgelehnt: nur XML-Dateien ohne Ordner, höchstens 400 Dateien und 20 MiB, keine ZIPs im ZIP.",
   "statement.entity_declared": "Die XML-Datei enthält eine DTD oder Entity-Deklaration und wird aus Sicherheitsgründen abgelehnt.",
   "statement.report_unbalanced": "In einem Tagesbericht ergeben Anfangssaldo und Umsätze nicht den Endsaldo.",
   "statement.chain_break": "Ein Tagesbericht beginnt nicht mit dem Endsaldo des vorherigen; vermutlich fehlt ein Tag.",
-  "statement.account_mismatch": "Der Auszug gehört zu einem anderen Konto: die IBAN in der Datei passt nicht.",
+  "statement.account_mismatch":
+    "Der Auszug gehört zu einem anderen Konto: die IBAN oder Kundennummer in der Datei passt nicht, oder die Datei ist keine Abrechnung dieser Kontoart (eine Kreditkartenabrechnung nur auf eine Kreditkarte, ein Kontoauszug nur auf ein Bankkonto).",
+  "statement.no_payment_iban": "Diese Abrechnung nennt keine IBAN für Einzahlungen.",
   "statement.unsupported_currency": "Es werden nur Umsätze in Euro unterstützt.",
   "statement.empty": "Die Datei enthält keine gebuchten Umsätze.",
   "statement.owner_account": "Auf ein Privatkonto der Eigentümer werden keine Kontoauszüge importiert.",
@@ -223,6 +225,9 @@ export const AI_ERROR_TEXT: Record<string, string> = {
   "ai.internal_error": "Beim Auslesen ist ein interner Fehler aufgetreten.",
   "document.adobe_form":
     "Dieses PDF ist ein Adobe-Formular und lässt sich nur in Adobe Reader anzeigen. Öffnen Sie es dort, drucken Sie es als PDF und laden Sie die Kopie hoch.",
+  // Phase 6 D176 (3): a credit card statement uploaded as a document is never sent to the model.
+  "proposal.bank_file_not_read":
+    "Das ist eine Kreditkartenabrechnung. Hausbuch liest sie selbst, ohne KI: Bitte unter Konten auf der Seite der Karte mit „Kreditkartenabrechnung hochladen“ importieren.",
 };
 
 /** The German sentence for a proposal's error code; unknown codes get a generic one. */

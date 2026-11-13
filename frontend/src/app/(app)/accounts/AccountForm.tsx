@@ -1,13 +1,15 @@
 "use client";
 
 // Konto form (phase-2.md §7, D21): Bezeichnung, Bank, IBAN, Anfangssaldo and its date (the
-// balance anchor every import is reconciled against), its Kontoart (Girokonto or Sparkonto) and
-// whether it is the rental account or a private one (phase 6 D156: both import statements; the
-// rental account's lines feed the Anlage V, a private account's never do). Editing
-// (AccountPatch) cannot change the IBAN: a different IBAN is another account. Moving the anchor
-// makes the API re-check every import of the account; a new purpose is refused while the
-// account holds bookings the new purpose does not take (D159). Depots, exchanges and wallets
-// come with their own steps.
+// balance anchor every import is reconciled against), its Kontoart (Girokonto, Sparkonto or
+// Kreditkarte) and whether it is the rental account or a private one (phase 6 D156: both import
+// statements; the rental account's lines feed the Anlage V, a private account's never do).
+// Editing (AccountPatch) cannot change the IBAN: a different IBAN is another account. Moving the
+// anchor makes the API re-check every import of the account; a new purpose is refused while the
+// account holds bookings the new purpose does not take (D159). A credit card (phase 6 D176) has
+// no IBAN and is always private: its customer number comes with its first PDF statement, and its
+// anchor is the first statement's „Alter Saldo“ (an owed amount negative); a bank account stays
+// a bank account and a card a card. Depots, exchanges and wallets come with their own steps.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -21,12 +23,14 @@ import { ACCOUNT_KIND, ACCOUNT_PURPOSE } from "@/components/labels";
 import { Facts } from "@/components/ui";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-const KEYS = ["label", "bank", "iban", "opening_balance", "opening_balance_on", "kind", "purpose"] as const;
+const KEYS = ["label", "bank", "iban", "opening_balance", "opening_balance_on", "kind", "purpose", "provider"] as const;
 
 const CODE_FIELDS = { "iban.": "iban", "allocation.category_not_for_account": "purpose" };
 
-/** The kinds this form offers: the bank kinds (D156); the others come with steps 4, 5 and phase 7. */
+/** The kinds this form offers: the bank kinds (D156) and the credit card (D176); the others come
+ * with steps 4, 5 and phase 7. */
 const BANK_KINDS: AccountKind[] = ["bank_current", "bank_savings"];
+const NEW_KINDS: AccountKind[] = [...BANK_KINDS, "credit_card"];
 
 export function AccountForm({ account }: { account?: Account }) {
   const router = useRouter();
@@ -40,13 +44,19 @@ export function AccountForm({ account }: { account?: Account }) {
   // unless the person picks the rental purpose.
   const [kind, setKind] = useState<AccountKind>(account?.kind ?? "bank_current");
   const [purpose, setPurpose] = useState<AccountPurpose>(account?.purpose ?? "private");
+  const [provider, setProvider] = useState(account?.provider ?? "");
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(KEYS, CODE_FIELDS);
+  const card = kind === "credit_card";
+  // An existing card stays a card, an existing bank account a bank account.
+  const kinds: AccountKind[] = account ? (account.kind === "credit_card" ? ["credit_card"] : BANK_KINDS) : NEW_KINDS;
 
   // A 409 on create means the IBAN is taken; the generic conflict sentence would not say so.
   const conflictText = (error: unknown) =>
     error instanceof ApiError && error.status === 409 && !account
-      ? "Ein Konto mit dieser IBAN gibt es in diesem Haushalt schon."
+      ? card
+        ? "Eine Karte mit dieser Kundennummer gibt es in diesem Haushalt schon."
+        : "Ein Konto mit dieser IBAN gibt es in diesem Haushalt schon."
       : null;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -54,7 +64,7 @@ export function AccountForm({ account }: { account?: Account }) {
     const values = collector();
     const openingBalance = values.take("opening_balance", toSignedMoneyString(opening));
     if (!openingOn) values.messages.opening_balance_on = ["Bitte das Datum des Anfangssaldos eingeben."];
-    if (!account && iban.trim() === "") values.messages.iban = ["Bitte die IBAN des Kontos eingeben."];
+    if (!account && !card && iban.trim() === "") values.messages.iban = ["Bitte die IBAN des Kontos eingeben."];
     if (!values.ok || openingBalance === undefined) return form.invalid(values.messages);
     const common = {
       label: label.trim(),
@@ -66,16 +76,20 @@ export function AccountForm({ account }: { account?: Account }) {
     form.clear();
     try {
       if (account) {
-        // Kind and purpose only when the person changed them, so saving the other fields never
-        // records an account.kind_set event.
+        // Kind, purpose and provider only when the person changed them, so saving the other
+        // fields never records an account.kind_set event.
         const body: AccountPatch = { ...common };
         if (kind !== account.kind) body.kind = kind;
         if (purpose !== account.purpose) body.purpose = purpose;
+        if (card && provider.trim() !== (account.provider ?? "")) body.provider = provider.trim() || null;
         await ok(api.PATCH("/api/accounts/{account_id}", { params: { path: { account_id: account.id } }, body }));
         router.push(`/accounts/${account.id}`);
       } else {
-        // Every own account is recognised by its IBAN (is_owner_account, D156); its purpose is sent.
-        const body = { ...common, iban: iban.trim(), is_owner_account: true, kind, purpose };
+        // Every own account is recognised by its IBAN (is_owner_account, D156); its purpose is
+        // sent. A credit card has no IBAN and is always private (D176): its statements name it.
+        const body = card
+          ? { ...common, is_owner_account: true, kind, purpose: "private" as const, provider: provider.trim() || null }
+          : { ...common, iban: iban.trim(), is_owner_account: true, kind, purpose };
         const created = await ok(api.POST("/api/accounts", { body }));
         router.push(`/accounts/${created.id}`);
       }
@@ -90,9 +104,41 @@ export function AccountForm({ account }: { account?: Account }) {
     <form className="stack" onSubmit={submit} noValidate>
       <div className="grid">
         <Field
+          id="account-kind"
+          label="Kontoart"
+          description="Girokonto, Sparkonto (auch Tagesgeld) oder Kreditkarte. Eine Kreditkarte wird aus ihren monatlichen Abrechnungen (PDF) gefüllt. Depots und Börsenkonten kommen später dazu."
+          errors={form.of("kind")}
+        >
+          <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)} disabled={kinds.length === 1}>
+            {kinds.map((value) => (
+              <option key={value} value={value}>
+                {ACCOUNT_KIND[value]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {card ? null : (
+          <Field
+            id="account-purpose"
+            label="Wofür"
+            description="Das Mietkonto ist das Konto, über das die Wohnung läuft: seine Umsätze gehen in die Anlage V. Ein Privatkonto bekommt Haushaltskategorien und zählt nie in die Anlage V; Überweisungen zwischen dem Mietkonto und einem Privatkonto sind Privateinlagen und -entnahmen."
+            errors={form.of("purpose")}
+          >
+            <select value={purpose} onChange={(e) => setPurpose(e.target.value as AccountPurpose)}>
+              {(Object.keys(ACCOUNT_PURPOSE) as AccountPurpose[]).map((value) => (
+                <option key={value} value={value}>
+                  {ACCOUNT_PURPOSE[value]}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+      </div>
+      <div className="grid">
+        <Field
           id="account-label"
           label="Bezeichnung"
-          hint="z. B. Mietkonto Musterstraße"
+          hint={card ? "z. B. Kreditkarte" : "z. B. Mietkonto Musterstraße"}
           description="Ein frei wählbarer Name, unter dem Sie das Konto in Hausbuch wiederfinden."
           errors={form.of("label")}
         >
@@ -101,12 +147,27 @@ export function AccountForm({ account }: { account?: Account }) {
         <Field
           id="account-bank"
           label="Bank"
-          description="Die Bank, bei der das Konto geführt wird, wie auf dem Kontoauszug."
+          description={
+            card
+              ? "Die Bank, die die Karte herausgibt, wie auf der Abrechnung."
+              : "Die Bank, bei der das Konto geführt wird, wie auf dem Kontoauszug."
+          }
           errors={form.of("bank")}
         >
           <input type="text" value={bank} onChange={(e) => setBank(e.target.value)} required autoComplete="off" />
         </Field>
-        {account ? null : (
+        {card ? (
+          <Field
+            id="account-provider"
+            label="Anbieter"
+            hint="Optional, z. B. der Markenname der Karte."
+            description="Der Name, unter dem die Karte auftritt, wenn er von der Bank abweicht. Die Karte hat keine eigene IBAN: Hausbuch erkennt ihre Abrechnungen an der Kundennummer, die die erste Abrechnung mitbringt."
+            errors={form.of("provider")}
+          >
+            <input type="text" value={provider} onChange={(e) => setProvider(e.target.value)} maxLength={100} autoComplete="off" />
+          </Field>
+        ) : null}
+        {account || card ? null : (
           <Field
             id="account-iban"
             label="IBAN"
@@ -120,7 +181,11 @@ export function AccountForm({ account }: { account?: Account }) {
         <Field
           id="account-opening"
           label="Anfangssaldo (€)"
-          hint="Der Kontostand am Ende des Tages unten, laut Bank. Bei einem neuen Konto 0,00; negativ mit Minus."
+          hint={
+            card
+              ? "Der „Alte Saldo“ der ersten Abrechnung, die Sie hochladen; ein offener Betrag mit Minus."
+              : "Der Kontostand am Ende des Tages unten, laut Bank. Bei einem neuen Konto 0,00; negativ mit Minus."
+          }
           description="Der Kontostand laut Bank am Ende des Tages, den Sie darunter angeben. Von ihm aus prüft Hausbuch, ob jeder importierte Kontoauszug aufgeht: Anfangssaldo plus Umsätze gleich Endsaldo."
           errors={form.of("opening_balance")}
         >
@@ -129,44 +194,24 @@ export function AccountForm({ account }: { account?: Account }) {
         <Field
           id="account-opening-on"
           label="Anfangssaldo am"
-          hint="Ein Tag vor dem ersten Umsatz, der importiert wird: Umsätze an oder vor diesem Tag passen nicht zum Anfangssaldo."
+          hint={
+            card
+              ? "Ein Tag vor der ersten Buchung dieser Abrechnung, z. B. der letzte Tag des Vormonats."
+              : "Ein Tag vor dem ersten Umsatz, der importiert wird: Umsätze an oder vor diesem Tag passen nicht zum Anfangssaldo."
+          }
           description="Der Tag, an dem dieser Kontostand galt, laut Kontoauszug oder Online-Banking."
           errors={form.of("opening_balance_on")}
         >
           <input type="date" value={openingOn} onChange={(e) => setOpeningOn(e.target.value)} required />
         </Field>
       </div>
-      <div className="grid">
-        <Field
-          id="account-kind"
-          label="Kontoart"
-          description="Girokonto oder Sparkonto (auch Tagesgeld). Depots und Börsenkonten kommen später dazu."
-          errors={form.of("kind")}
-        >
-          <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)}>
-            {BANK_KINDS.map((value) => (
-              <option key={value} value={value}>
-                {ACCOUNT_KIND[value]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field
-          id="account-purpose"
-          label="Wofür"
-          description="Das Mietkonto ist das Konto, über das die Wohnung läuft: seine Umsätze gehen in die Anlage V. Ein Privatkonto bekommt Haushaltskategorien und zählt nie in die Anlage V; Überweisungen zwischen dem Mietkonto und einem Privatkonto sind Privateinlagen und -entnahmen."
-          errors={form.of("purpose")}
-        >
-          <select value={purpose} onChange={(e) => setPurpose(e.target.value as AccountPurpose)}>
-            {(Object.keys(ACCOUNT_PURPOSE) as AccountPurpose[]).map((value) => (
-              <option key={value} value={value}>
-                {ACCOUNT_PURPOSE[value]}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-      {account ? (
+      {card ? (
+        <p className="muted">
+          Eine Kreditkarte ist immer ein Privatkonto: ihre Umsätze bekommen Haushaltskategorien, Zinsen und Gebühren der Karte
+          ordnet Hausbuch selbst zu. Wem die Karte gehört, legen Sie nach dem Anlegen auf ihrer Seite fest.
+        </p>
+      ) : null}
+      {account && !card ? (
         <>
           <Facts rows={[["IBAN", account.iban_masked ?? "–"]]} />
           <p className="muted">

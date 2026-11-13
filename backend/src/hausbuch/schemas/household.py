@@ -401,6 +401,17 @@ class TransferLinkCreate(Schema):
         return self
 
 
+class TransferLinkRequest(TransferLinkCreate):
+    """POST /transfers' body. rebook (D176 (4), review of step 2b): a leg booked as something
+    other than a transfer (typically a card bill answered hh_credit_card before the card
+    account existed) is first re-booked as internal_transfer_out or _in by the person's answer
+    (method user: the click is the confirmation), then the two are linked. Allowed only for a
+    bank line tied to the other leg by an own IBAN (one leg names the other's account IBAN or
+    the card's confirmed payment IBAN); otherwise transfer.legs_invalid."""
+
+    rebook: bool = False
+
+
 class TransferLink(TransferLinkCreate, Record):
     matched_by: TransferMatchedBy
     superseded_by: UUID | None = None
@@ -416,6 +427,14 @@ class TransferLegView(Schema):
     booked_on: date
     amount: Money
     counterparty_name: str | None = None
+    account_kind: AccountKind | None = None
+    # The line's one live category (None for a split or an unbooked line) and whether it is a
+    # transfer category. A candidate of GET /transfers/open with rebook_on_link is booked
+    # otherwise but tied to the waiting leg by an own IBAN, so its card's button re-books it as
+    # a transfer before linking (TransferLinkRequest.rebook, D176 (4)).
+    booked_category: AllocationCategory | None = None
+    booked_as_transfer: bool = False
+    rebook_on_link: bool = False
 
 
 class TransferLinkView(Schema):

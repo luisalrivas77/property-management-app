@@ -78,6 +78,7 @@ from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT, RuleError
+from hausbuch.rules.household import card as card_rules
 from hausbuch.rules.iban import iban_hmac, normalize_iban
 from hausbuch.rules.periods import service_period
 from hausbuch.rules.prefill import names_financing, sort_reading
@@ -108,6 +109,7 @@ from hausbuch.schemas.allocation import (
 from hausbuch.schemas.api import WaitingAmount
 from hausbuch.schemas.document import DocumentExtraction
 from hausbuch.schemas.enums import (
+    AccountKind,
     AccountPurpose,
     AllocationStatus,
     DocumentSubtype,
@@ -121,6 +123,7 @@ from . import allocations, rules_learned, workspace_settings
 from .context import CommandContext
 from .documents import DOCUMENT_EVIDENCE_KINDS, EVIDENCE_KINDS, current_extraction
 from .tenancies import _rows_in_force, rent_on  # rent rows no correction supersedes
+from .transfers import own_account_hmacs
 
 C = AllocationCategory
 
@@ -304,15 +307,14 @@ def build_context(
     line being matched (a Beleg its own rows reference stays a candidate); `account_purpose`:
     its account's purpose, which picks the order (phase 6 D158); `account_id`: its account,
     whose own IBAN is no other own account's (D162: own_account_hmacs is every account with
-    an IBAN except the line's own)."""
-    own = select(account_table.c.iban_hmac).where(account_table.c.iban_hmac.is_not(None))
-    if account_id is not None:
-        own = own.where(account_table.c.id != account_id)
-    owners = conn.execute(own).scalars()
+    an IBAN except the line's own, and every card account's confirmed payment IBAN, D176 (4),
+    so the debit that settles a card is a transfer by that IBAN alone; two cards printing the
+    same payment IBAN give it once, and the link decides by amount)."""
+    owners = own_account_hmacs(conn, except_account=account_id)
     plans, documents = _evidence(conn, iban_key=iban_key, today=today, exclude_for=for_transaction)
     return MatchContext(
         account_purpose=account_purpose,
-        own_account_hmacs=sorted({bytes(h).hex() for h in owners}),
+        own_account_hmacs=owners,
         tenancies=_tenancies(conn),
         loans=_loans(conn),
         documents=documents,
@@ -1009,7 +1011,7 @@ def match_line(
         account_purpose=line.account_purpose,
         account_id=line.account_id,
     )
-    found = deterministic_set(ctx.conn, line.tx, context)
+    found = _card_charge(line) or deterministic_set(ctx.conn, line.tx, context)
     if rematch and not line.waiting and found is not None and _copies_a_split(ctx.conn, found):
         # D51, review F1: an as_last_split copy reads the ledger, it is no new evidence, so a
         # re-match never replaces confirmed rows with it (a waiting line is still booked).
@@ -1031,6 +1033,16 @@ def match_line(
         if found.method in _MATCHERS and ai_available and not rematch and not line.private:
             return MatchPlan("explain", "routing.below_threshold", allocation_set=found)
     return write(ctx, line, found)
+
+
+def _card_charge(line: Line) -> AllocationSet | None:
+    """Phase 6 D176 (3): a card statement's interest or fee line, booked by code to
+    hh_interest_fees before any rule or model (it has no payee to learn); D176 (4): its payment
+    line, booked by code as internal_transfer_in (the card's leg of the settlement, linked by
+    services.transfers). Card accounts only."""
+    if line.account_kind != AccountKind.CREDIT_CARD.value:
+        return None
+    return card_rules.interest_fee_set(line.tx) or card_rules.payment_set(line.tx)
 
 
 def _copies_a_split(conn: Connection, found: AllocationSet) -> bool:
@@ -1211,11 +1223,14 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
             return []
         query = query.where(t.counterparty_iban_hmac.in_(found_hmacs), t.amount > 0)
     elif kind == enqueue.TRIGGER_ACCOUNT:
+        # A card account's confirmed payment IBAN counts as its own (D176 (4)): confirming
+        # it re-checks the debits to it that wait.
+        own_iban = func.coalesce(account_table.c.iban_hmac, account_table.c.payment_iban_hmac)
         owner = conn.execute(
-            select(account_table.c.iban_hmac).where(
+            select(own_iban).where(
                 account_table.c.id == entity_id,
                 account_table.c.purpose == AccountPurpose.PRIVATE.value,
-                account_table.c.iban_hmac.is_not(None),
+                own_iban.is_not(None),
             )
         ).scalar_one_or_none()
         if owner is None:
