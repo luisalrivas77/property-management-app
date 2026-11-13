@@ -920,12 +920,13 @@ CATALOGUE_SUBTYPES = frozenset(set(DocumentSubtype) - _BEFORE_CATALOGUE)
 # Phase 6 (migration 0025): an exchange export is typed by its upload button and never sent
 # to the model (D166); a distribution note joins the classifier with the depot readers in
 # step 4 (D165 (2)), so until then the classify request, and every recorded eval hash, stays
-# as it was.
+# as it was; so does the Einbuchung/Ausbuchung (securities_transfer, migration 0027).
 CODE_ONLY_SUBTYPES = frozenset(
     {
         DocumentSubtype.FINANCING_INVOICE,
         DocumentSubtype.EXCHANGE_EXPORT,
         DocumentSubtype.DISTRIBUTION_NOTE,
+        DocumentSubtype.SECURITIES_TRANSFER,
     }
 )
 # The types with a reader of their own that no catalogue subtype overrides (D131, decided 10

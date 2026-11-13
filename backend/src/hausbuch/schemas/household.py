@@ -208,6 +208,9 @@ class MovementSource(StrEnum):
     DISTRIBUTION_NOTE = "distribution_note"  # D165 (2)
     REPORT = "report"  # a report's Umsätze list, no confirmation stored (D165 (3))
     USER = "user"  # typed by hand
+    # Phase 6 step 4 (migration 0027): an Einbuchung or Ausbuchung, units moved between two
+    # own depots that keep their acquisition date (D165 amended).
+    SECURITIES_TRANSFER = "securities_transfer"
 
 
 class MovementStatus(StrEnum):
@@ -244,6 +247,7 @@ class AssetMovementDraft(Schema):
             MovementSource.TRADE_CONFIRMATION,
             MovementSource.DISTRIBUTION_NOTE,
             MovementSource.REPORT,
+            MovementSource.SECURITIES_TRANSFER,
         }
         if self.source in documented and self.document_id is None:
             raise ValueError(f"a movement read from a {self.source} names its document")

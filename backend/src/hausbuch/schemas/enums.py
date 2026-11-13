@@ -182,6 +182,10 @@ class DocumentSubtype(StrEnum):
     # distribution_note reader, until then left out of the classify schema like the other
     # code-only subtypes; retention tax_records (D169).
     DISTRIBUTION_NOTE = "distribution_note"
+    # Phase 6 step 4 (migration 0027): a depot's Einbuchung or Ausbuchung of units moved
+    # between two own depots (letter); read by the securities_transfer reader; retention
+    # holding_records (the acquisition date travels with the units).
+    SECURITIES_TRANSFER = "securities_transfer"
 
 
 class ExtractionSource(StrEnum):

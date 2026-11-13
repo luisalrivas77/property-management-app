@@ -7,7 +7,8 @@ Class from (subtype, type), subtype first:
 - lease, handover_protocol, deposit_record -> tenancy_records;
 - the document catalogue (phase-2.md §6.2.1): its O subtypes -> ownership_records, its M
   subtypes (the tenancy group) -> tenancy_records;
-- phase 6 D169: trade_confirmation and exchange_export -> holding_records (held while any
+- phase 6 D169: trade_confirmation, exchange_export and (step 4) securities_transfer, which
+  carries the units' acquisition date to the receiving depot, -> holding_records (held while any
   position it carries a movement for is held, then N years after the year it reached zero);
   depot_statement, depot_report, distribution_note and capital_income_tax_certificate are tax
   records, the default;
@@ -65,6 +66,7 @@ _CLASS_BY_SUBTYPE: dict[DocumentSubtype, RetentionClass] = {
     # however old, so it is kept while the position is held.
     DocumentSubtype.TRADE_CONFIRMATION: RetentionClass.HOLDING_RECORDS,
     DocumentSubtype.EXCHANGE_EXPORT: RetentionClass.HOLDING_RECORDS,
+    DocumentSubtype.SECURITIES_TRANSFER: RetentionClass.HOLDING_RECORDS,
 }
 
 
