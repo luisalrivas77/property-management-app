@@ -91,28 +91,17 @@ _PROVIDER = {
     ExportKind.BINANCE_TRANSACTIONS: rules.BINANCE,
     ExportKind.BINANCE_WITHDRAWALS: rules.BINANCE,
 }
-# The movement_import.format each transaction export is stored as. Binance's needs its own
-# value in the format CHECK of migration 0025, which allows bison_csv only: until the
-# migration that adds it, a Binance transaction history is refused with
-# exchange.format_not_available before anything is written.
-_FORMAT_VALUE = {ExportKind.BISON: "bison_csv", ExportKind.BINANCE_TRANSACTIONS: "binance_csv"}
+# The movement_import.format each transaction export is stored as (binance_csv since 0028).
+_FORMAT = {
+    ExportKind.BISON: MovementImportFormat.BISON_CSV,
+    ExportKind.BINANCE_TRANSACTIONS: MovementImportFormat.BINANCE_CSV,
+}
 _INWARD_ANSWERS = (
     MovementKind.CASHBACK_REWARD,
     MovementKind.STAKING_REWARD,
     MovementKind.INTERNAL_TRANSFER_IN,
 )
 _OUTWARD_ANSWERS = (MovementKind.INTERNAL_TRANSFER_OUT, MovementKind.DISPOSAL, MovementKind.FEE)
-
-
-def _format(kind: ExportKind) -> MovementImportFormat:
-    value = _FORMAT_VALUE[kind]
-    try:
-        return MovementImportFormat(value)
-    except ValueError:
-        raise RuleError(
-            E.EXCHANGE_FORMAT_NOT_AVAILABLE,
-            "this export can be imported once its database migration is applied",
-        ) from None
 
 
 # --- Reading the account's movements ---------------------------------------------------------
@@ -339,7 +328,7 @@ def import_export(
         return _complete_withdrawals(
             ctx, store, account_id, data, export.text, media_type, original_filename
         )
-    fmt = _format(export.kind)
+    fmt = _FORMAT[export.kind]
     if export.kind is ExportKind.BISON:
         movements = rules.bison_movements(bison_csv.parse_text(export.text))
     else:

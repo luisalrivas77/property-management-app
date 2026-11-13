@@ -61,7 +61,7 @@ async def movement_import_create(
     stored one for the same bytes), or Binance's withdrawal history (200: how many
     withdrawals it completed). 422 rule_violation with exchange.unreadable,
     exchange.binance_spot_history, exchange.account_mismatch, exchange.not_an_exchange,
-    exchange.transactions_first or exchange.format_not_available (nothing is stored then);
+    or exchange.transactions_first (nothing is stored then);
     413 / 415 as for POST /documents."""
     media_type = upload_media_type(file.content_type, settings.upload_media_types)
     data = await file.read(settings.max_upload_bytes + 1)

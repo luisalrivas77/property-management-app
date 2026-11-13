@@ -189,7 +189,6 @@ EXCHANGE_WITHDRAWAL_HISTORY_MISSING = "exchange.withdrawal_history_missing"  # a
 EXCHANGE_TRANSACTIONS_FIRST = "exchange.transactions_first"  # a history before any transaction
 EXCHANGE_ACCOUNT_MISMATCH = "exchange.account_mismatch"  # BISON's file on Binance's account
 EXCHANGE_NOT_AN_EXCHANGE = "exchange.not_an_exchange"  # the account is no exchange account
-EXCHANGE_FORMAT_NOT_AVAILABLE = "exchange.format_not_available"  # awaits its migration
 EXCHANGE_BALANCE_UNKNOWN_ASSET = "exchange.balance_unknown_asset"  # typed for no asset of it
 EXCHANGE_PROVIDER_UNKNOWN = "exchange.provider_unknown"  # an exchange other than Binance, BISON
 EXCHANGE_ANSWER_INVALID = "exchange.answer_invalid"  # a kind that does not fit the movement

@@ -2,9 +2,7 @@
 amended, D175, D178). The texts are the fixtures' invented ones (bison_csv.yaml,
 binance_csv.yaml); the pure halves are tests/test_phase6_exchange.py.
 
-Binance's transaction history needs `binance_csv` in movement_import.format, which migration
-0025's CHECK does not allow yet: until the migration that adds it, its upload is refused with
-exchange.format_not_available before anything is written, and the Binance tests here skip.
+Binance's transaction history is stored as `binance_csv` (migration 0028).
 """
 
 import io
@@ -51,10 +49,6 @@ T0 = datetime(2026, 11, 13, 8, 0, tzinfo=UTC)
 BISON = fixtures.load("bison_csv")
 BINANCE = fixtures.load("binance_csv")
 REAL_LAYOUT = next(c for c in BISON.parse_cases if c.id == "real_layout").text
-BINANCE_READY = "binance_csv" in {f.value for f in MovementImportFormat}
-needs_binance_format = pytest.mark.skipif(
-    not BINANCE_READY, reason="movement_import.format has no binance_csv yet (needs migration)"
-)
 
 
 def _zip(text: str, *, bom: bool = True) -> bytes:
@@ -357,8 +351,6 @@ def test_what_does_not_belong_on_the_account_is_refused_before_anything_is_writt
     binance = _exchange(run, ws, provider="Binance")
     history = next(c for c in BINANCE.cases if c.id == "withdrawal_history_uploaded_later")
     cases.append((binance.id, _zip(history.withdrawals), E.EXCHANGE_TRANSACTIONS_FIRST))
-    if not BINANCE_READY:
-        cases.append((binance.id, _zip(binance_text), E.EXCHANGE_FORMAT_NOT_AVAILABLE))
     for account_id, data, code in cases:
         with pytest.raises(RuleError) as caught:
             _upload(run, blob_store, ws, account_id, data, media_type="application/zip")
@@ -370,7 +362,6 @@ def test_what_does_not_belong_on_the_account_is_refused_before_anything_is_writt
 # --- Binance (D178), once its format is in the CHECK ---------------------------------------
 
 
-@needs_binance_format
 def test_binance_withdrawals_completed_by_the_history_uploaded_later(
     run, read, blob_store, fresh_workspaces
 ):
@@ -412,7 +403,6 @@ def test_binance_withdrawals_completed_by_the_history_uploaded_later(
     assert len(superseded) == 1 and superseded[0]["document_id"] is not None
 
 
-@needs_binance_format
 def test_binance_typed_balances_and_a_longer_export(run, read, blob_store, fresh_workspaces):
     ws, _ = fresh_workspaces
     account = _exchange(run, ws, provider="Binance")
@@ -426,7 +416,6 @@ def test_binance_typed_balances_and_a_longer_export(run, read, blob_store, fresh
     assert first.id != second.movement_import.id
 
 
-@needs_binance_format
 def test_the_user_id_and_the_address_are_never_stored(
     run, read, blob_store, fresh_workspaces, caplog
 ):

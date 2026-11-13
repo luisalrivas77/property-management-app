@@ -232,8 +232,6 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "exchange.account_mismatch":
     "Diese Datei stammt von einer anderen Börse als dieses Konto. Bitte beim richtigen Börsenkonto hochladen.",
   "exchange.not_an_exchange": "Dieses Konto ist kein Börsenkonto.",
-  "exchange.format_not_available":
-    "Exporte dieser Börse kann Hausbuch noch nicht speichern: die Datenbank braucht dafür noch eine Erweiterung. Es wurde nichts gespeichert.",
   "exchange.balance_unknown_asset":
     "Für einen der Coins gibt es in diesem Export keine Bewegung. Bitte nur die Coins eintragen, die das Formular zeigt.",
   "exchange.balance_missing": "Bitte für jeden Coin, den der Export als Bestand ergibt, den Bestand laut Börse eintragen.",

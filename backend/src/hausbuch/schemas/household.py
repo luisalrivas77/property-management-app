@@ -339,9 +339,10 @@ class AssetCheck(Schema):
 
 
 class MovementImportFormat(StrEnum):
-    """movement_import.format (migration 0025)."""
+    """movement_import.format (migration 0025; binance_csv since 0028)."""
 
     BISON_CSV = "bison_csv"
+    BINANCE_CSV = "binance_csv"
 
 
 class MovementImport(MutableRecord):
