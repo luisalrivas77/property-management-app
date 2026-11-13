@@ -82,16 +82,16 @@ CATALOGUE = [
     (S.WORK_EXPENSE_INVOICE, T.INVOICE, TAX, None, K.INVOICE),
     # household finances
     (S.DEPOT_STATEMENT, T.STATEMENT, TAX, None, K.GENERAL),
-    (S.DEPOT_REPORT, T.OTHER, TAX, None, K.GENERAL),
-    (S.TRADE_CONFIRMATION, T.LETTER, HOLD, None, K.GENERAL),  # phase 6 D169
+    (S.DEPOT_REPORT, T.OTHER, TAX, None, K.DEPOT_REPORT),  # phase 6 step 4
+    (S.TRADE_CONFIRMATION, T.LETTER, HOLD, None, K.TRADE_CONFIRMATION),  # D169, step 4
     (S.CAPITAL_INCOME_TAX_CERTIFICATE, T.LETTER, TAX, None, K.GENERAL),
-    # phase 6 (migration 0025): typed by code only until the readers of steps 4 and 5 (D165,
-    # D166), so the general reading routes them until then; retention by D169
+    # phase 6 (migration 0025): typed by code only (D165, D166); the exchange export is read by
+    # code in step 5, the distribution note by its own reader since step 4; retention by D169
     (S.EXCHANGE_EXPORT, T.OTHER, HOLD, None, K.GENERAL),
-    (S.DISTRIBUTION_NOTE, T.LETTER, TAX, None, K.GENERAL),
+    (S.DISTRIBUTION_NOTE, T.LETTER, TAX, None, K.DISTRIBUTION_NOTE),
     # phase 6 step 4 (migration 0027): units moved between two own depots; kept like a trade
     # confirmation, since the acquisition date travels with the units
-    (S.SECURITIES_TRANSFER, T.LETTER, HOLD, None, K.GENERAL),
+    (S.SECURITIES_TRANSFER, T.LETTER, HOLD, None, K.SECURITIES_TRANSFER),
 ]
 # The subtypes before the catalogue: (subtype, type, reader).
 EXISTING = [

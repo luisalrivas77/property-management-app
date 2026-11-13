@@ -225,6 +225,9 @@ export const AI_ERROR_TEXT: Record<string, string> = {
   "ai.internal_error": "Beim Auslesen ist ein interner Fehler aufgetreten.",
   "document.adobe_form":
     "Dieses PDF ist ein Adobe-Formular und lässt sich nur in Adobe Reader anzeigen. Öffnen Sie es dort, drucken Sie es als PDF und laden Sie die Kopie hoch.",
+  // Phase 6 step 4 (D168): a depot document while the private-accounts switch is off.
+  "ai.blocked_private_data":
+    "Das ist ein Dokument Ihres Depots. Es geht erst an die KI, wenn unter Einstellungen „Private Konten mit KI zuordnen“ eingeschaltet ist; danach hier „Neu auslesen“ drücken.",
   // Phase 6 D176 (3): a credit card statement uploaded as a document is never sent to the model.
   "proposal.bank_file_not_read":
     "Das ist eine Kreditkartenabrechnung. Hausbuch liest sie selbst, ohne KI: Bitte unter Konten auf der Seite der Karte mit „Kreditkartenabrechnung hochladen“ importieren.",

@@ -430,6 +430,19 @@ def _iban(raw: str) -> str:
 
 # --- The identifier scrub of the owners' own tax documents (phase-4b.md D96, D103, D129) ---
 
+# The depot's four readers (D165 (2), (3), step 4's securities_transfer). Their quotes and
+# lines are scrubbed of the depot number, the customer and mandate numbers, the cash account's
+# number, the IBAN, an IdNr and the holders' names and address before anything is stored.
+DEPOT_KINDS = frozenset(
+    {
+        ExtractionKind.TRADE_CONFIRMATION,
+        ExtractionKind.DISTRIBUTION_NOTE,
+        ExtractionKind.DEPOT_REPORT,
+        ExtractionKind.SECURITIES_TRANSFER,
+    }
+)
+
+
 # The kinds whose lines and quotes are scrubbed before anything is stored: an owner's
 # Lohnsteuerbescheinigung and payslip (D103) and the household's Einkommensteuerbescheid
 # (D129). The model sees the whole page; a quote it cites can span a neighbouring field, and a
@@ -441,6 +454,8 @@ SCRUBBED_KINDS = frozenset(
         ExtractionKind.EINKOMMENSTEUERBESCHEID,
         # Phase 3 D143: a payment proof from a private account (scrub_payment_proof).
         ExtractionKind.PAYMENT_PROOF,
+        # Phase 6 D168: the depot's documents (scrub_depot).
+        *DEPOT_KINDS,
     }
 )
 SCRUBBED = "…"
@@ -603,10 +618,169 @@ def _under_payer_labels(text: str) -> str:
 
 
 def scrubber(kind: ExtractionKind, *, reference_year: int | None) -> Callable[[str], str]:
-    """The identifier scrub of a SCRUBBED_KINDS kind: a payment proof's own (D143), else
-    scrub_identifiers (D103, D129)."""
+    """The identifier scrub of a SCRUBBED_KINDS kind: the depot's own (phase 6 D168,
+    scrub_depot), a payment proof's own (D143), else scrub_identifiers (D103, D129)."""
+    if kind in DEPOT_KINDS:
+        return scrub_depot
     scrub = scrub_payment_proof if kind is ExtractionKind.PAYMENT_PROOF else scrub_identifiers
     return partial(scrub, reference_year=reference_year)
+
+
+# --- The depot documents' scrub (phase 6 D168, step 4) ------------------------------------
+
+
+# quirion's documents print a value before its label („9900000120Depot“, „99000001Kunde“) or
+# after it („Depot-Nr. 9900000120“, „über Ihr Konto 9900000120 EUR“). The Referenz-Nr. (nine
+# digits on every confirmation, transfer and report row) is kept: it pairs a confirmation with
+# the report's list and the two sides of a transfer.
+_DEPOT_NUMBER_LABEL = (
+    r"depot-?(?:nummer|nr\.?)|kunden-?(?:nummer|nr\.?)|konto-?(?:nummer|nr\.?)|kto\.?-?nr\.?"
+    r"|mandats?-?(?:nummer|nr\.?)|depot|kunde|konto|mandat"
+)
+_NUMBER_AFTER_LABEL = re.compile(
+    rf"{_LABEL_START}(?P<label>{_DEPOT_NUMBER_LABEL}){_LABEL_END}(?P<sep>{_H}*:?{_H}*)"
+    r"(?P<value>[0-9]{6,})(?![0-9])",
+    re.IGNORECASE,
+)
+_NUMBER_BEFORE_LABEL = re.compile(
+    rf"(?<![0-9.,])[0-9]{{6,}}(?P<sep>{_H}*(?:EUR{_H}*)?)(?=(?:{_DEPOT_NUMBER_LABEL})"
+    rf"(?![a-zäöüß]))",
+    re.IGNORECASE,
+)
+# A cash account's number printed right after its currency (the report's account rows).
+_NUMBER_AFTER_CURRENCY = re.compile(r"(?<=EUR)[0-9]{7,}(?![0-9])")
+# A number of seven or eight digits (a customer or mandate number), or of ten or more (a depot
+# or account number), standing alone: never glued to a letter (an ISIN's digits) or to an
+# amount's separators, and never the Referenz-Nr. A nine-digit run is a reference.
+_LONE_NUMBER = re.compile(
+    r"(?<![0-9A-Za-z.,/])(?<!Ref\.: )(?<!reference: )(?:[0-9]{7,8}|[0-9]{10,})"
+    r"(?![0-9.,])(?!(?:[ \t]*Referenz))"
+)
+# An IBAN: a German one grouped or not (22 characters, 20 digits), or any other grouped by
+# four. An ISIN printed against its label („IE00BEISPL01ISIN“) is no IBAN: too few digits.
+_DEPOT_IBAN = re.compile(
+    r"(?<![0-9])DE[0-9]{2}(?:[ \t]?[0-9]){18}(?![0-9])"
+    r"|(?<![A-Za-z0-9])[A-Z]{2}[0-9]{2}(?:[ \t][A-Z0-9]{4}){2,7}(?:[ \t][A-Z0-9]{1,3})?"
+    r"(?![A-Za-z0-9])"
+)
+_IDNR = _PATTERNS[0]
+_STREET, _POSTAL = _PATTERNS[-2], _PATTERNS[-1]
+# The Hinweistext of an Einbuchung/Ausbuchung names the other depot's customer number, its
+# holders and its depot number, from the heading to the line „Hinweistext“.
+_TRANSFER_NOTE = re.compile(r"(?P<head>(?:Ein|Aus)buchung von Wertpapieren (?:von|an))\b.*$")
+_NOTE_END = re.compile(r"^[ \t]*Hinweistext[ \t]*$")
+_NOTE_MAX_LINES = 6
+_SALUTATION = re.compile(
+    r"^(?P<head>[ \t]*(?:Herrn|Herr|Frau|Herrn und Frau|Frau und Herrn|Eheleute|Familie))"
+    r"(?P<rest>[ \t]+\S.*)?$"
+)
+_ADDRESS_MAX_LINES = 5
+_NAME_WORD = r"[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'-]+"
+# A name token of a holders' line: any letters (a name may carry ç or é), a capital first.
+_HOLDER_TOKEN = re.compile(r"[^\W\d_](?:[^\W\d_]|['.-])*,?")
+# A name on its own line right above a street with its number.
+_NAME_LINE = re.compile(rf"^[ \t]*{_NAME_WORD}(?:[ \t]+{_NAME_WORD}){{1,3}}[ \t]*$")
+# A letter's greeting names the holder („Sehr geehrter Herr …,“).
+_GREETING = re.compile(r"^(?P<head>[ \t]*(?:Sehr geehrte[rs]?|Liebe[rs]?|Guten Tag))\b.*$")
+_POSTAL_LINE = re.compile(r"^[ \t]*[0-9]{5}[ \t]+\S")
+
+
+def _is_holder_line(line: str) -> bool:
+    """The holders as the documents list them: „Beispiel, Anna oder“, „Anna Beispiel oder“,
+    „Beispiel Beispiel, Anna oder Bernd Beispiel“: capitalised names only, joined by commas
+    and „oder“, with at least one of the two."""
+    tokens = line.split()
+    names = [t for t in tokens if t != "oder"]
+    return (
+        2 <= len(names) <= 10
+        and ("oder" in tokens or any(t.endswith(",") for t in names))
+        and all(_HOLDER_TOKEN.fullmatch(t) and t[0].isupper() for t in names)
+    )
+
+
+def scrub_depot(text: str) -> str:
+    """A depot document's text scrubbed (phase 6 D168): the depot, customer, mandate and
+    account numbers (by their labels, before or after the value, and any lone run of 7-8 or
+    10+ digits), an IBAN, an IdNr, the Hinweistext of a transfer (the other depot's customer
+    number, holders and depot number), the address block under a salutation, the holders'
+    lines („Name, Vorname oder“, „Vorname Name oder“ and the line after it), a letter's
+    greeting, a name above a street, the line above a postal line, a street with its number
+    and a postal code with its town. The ISINs, the
+    Referenz-Nr., the amounts, units and dates stay. Pure and idempotent; lines are kept."""
+    lines = text.split("\n")
+    out = list(lines)
+    skip_to = -1
+    for index, line in enumerate(lines):
+        if index <= skip_to:
+            continue
+        if note := _TRANSFER_NOTE.search(line):
+            out[index] = line[: note.start()] + f"{note.group('head')} {SCRUBBED}"
+            skip_to = _scrub_block(lines, out, index, _NOTE_END.match, _NOTE_MAX_LINES)
+        elif salutation := _SALUTATION.match(line):
+            if salutation.group("rest"):
+                out[index] = f"{salutation.group('head')} {SCRUBBED}"
+            skip_to = _scrub_block(lines, out, index, _is_after_address, _ADDRESS_MAX_LINES)
+        elif greeting := _GREETING.match(line):
+            out[index] = f"{greeting.group('head')} {SCRUBBED}"
+        elif _is_holder_line(line):
+            out[index] = SCRUBBED
+            # The second holder after „oder“, or the rest of a name the line breaks („-“).
+            continued = line.split()[-1] == "oder" or line.rstrip().endswith("-")
+            if continued and index + 1 < len(lines) and lines[index + 1].strip():
+                out[index + 1] = SCRUBBED
+                skip_to = index + 1
+        elif (
+            index + 1 < len(lines)
+            and _POSTAL_LINE.match(lines[index + 1])
+            and re.search(r"[0-9]", line)
+            and len(line.split()) <= 6
+        ):
+            out[index] = SCRUBBED  # the street above the postal line, however it is named
+        elif (
+            _NAME_LINE.match(line)
+            and index + 1 < len(lines)
+            and _STREET.search(lines[index + 1])
+            and not _NAME_LINE.match(lines[index + 1])
+        ):
+            out[index] = SCRUBBED
+    return "\n".join(_scrub_depot_line(line) for line in out)
+
+
+def _scrub_block(
+    lines: list[str], out: list[str], start: int, ends: Callable[[str], object], limit: int
+) -> int:
+    """The lines after `start` scrubbed whole up to the first line `ends` matches (for the
+    address: up to and including the postal line; for a note: before „Hinweistext“), at most
+    `limit`; with no such line within the limit only the next non-blank line is scrubbed.
+    Returns the last index scrubbed."""
+    window = range(start + 1, min(len(lines), start + 1 + limit))
+    end = next((i for i in window if ends(lines[i])), None)
+    if end is None:
+        nxt = next((i for i in window if lines[i].strip()), None)
+        if nxt is not None:
+            out[nxt] = SCRUBBED
+        return start if nxt is None else nxt
+    last = end if ends is _is_after_address else end - 1
+    for i in range(start + 1, last + 1):
+        if lines[i].strip():
+            out[i] = SCRUBBED
+    return last
+
+
+def _is_after_address(line: str) -> bool:
+    """The postal line ends an address block."""
+    return _POSTAL.search(line) is not None
+
+
+def _scrub_depot_line(line: str) -> str:
+    line = _DEPOT_IBAN.sub(SCRUBBED, line)
+    line = _NUMBER_AFTER_LABEL.sub(lambda m: f"{m.group('label')}{m.group('sep')}{SCRUBBED}", line)
+    line = _NUMBER_BEFORE_LABEL.sub(lambda m: f"{SCRUBBED}{m.group('sep')}", line)
+    line = _NUMBER_AFTER_CURRENCY.sub(SCRUBBED, line)
+    line = _LONE_NUMBER.sub(SCRUBBED, line)
+    line = _IDNR.sub(SCRUBBED, line)
+    line = _STREET.sub(SCRUBBED, line)
+    return _POSTAL.sub(SCRUBBED, line)
 
 
 def _under_labels(text: str) -> str:
@@ -864,7 +1038,28 @@ _BY_SUBTYPE: dict[DocumentSubtype, ExtractionKind] = {
     DocumentSubtype.EINKOMMENSTEUERBESCHEID: ExtractionKind.EINKOMMENSTEUERBESCHEID,
     DocumentSubtype.MANAGEMENT_CONTRACT: ExtractionKind.MANAGEMENT_CONTRACT,  # D130
     DocumentSubtype.PAYMENT_PROOF: ExtractionKind.PAYMENT_PROOF,  # phase 3 D143
+    # Phase 6 D165 (2), (3), step 4: the depot's readers, behind ai_private_accounts (D168).
+    DocumentSubtype.TRADE_CONFIRMATION: ExtractionKind.TRADE_CONFIRMATION,
+    DocumentSubtype.DISTRIBUTION_NOTE: ExtractionKind.DISTRIBUTION_NOTE,
+    DocumentSubtype.DEPOT_REPORT: ExtractionKind.DEPOT_REPORT,
+    DocumentSubtype.SECURITIES_TRANSFER: ExtractionKind.SECURITIES_TRANSFER,
     **dict.fromkeys(_CATALOGUE_INVOICES, ExtractionKind.INVOICE),
+}
+# The subtypes a depot reader reads: never sent to the model while ai_private_accounts is off.
+DEPOT_SUBTYPES = frozenset(
+    {
+        DocumentSubtype.TRADE_CONFIRMATION,
+        DocumentSubtype.DISTRIBUTION_NOTE,
+        DocumentSubtype.DEPOT_REPORT,
+        DocumentSubtype.SECURITIES_TRANSFER,
+    }
+)
+# The depot's documents the switch guards (D168, "the depot's documents"): the four a reader
+# reads, plus a Depotauszug and a capital-income tax certificate, which the general reading
+# reads for their title and date and which name the depot and its holders just the same.
+PRIVATE_SUBTYPES = DEPOT_SUBTYPES | {
+    DocumentSubtype.DEPOT_STATEMENT,
+    DocumentSubtype.CAPITAL_INCOME_TAX_CERTIFICATE,
 }
 # Every other subtype of the catalogue (§6.2.1) is read by the general reading, whatever its
 # type: a depot_statement is never read as the rental account's statement, a
@@ -918,9 +1113,11 @@ CATALOGUE_SUBTYPES = frozenset(set(DocumentSubtype) - _BEFORE_CATALOGUE)
 # A payment proof (phase 3 D143) was code-only until D149 (11 Nov 2026): one uploaded through
 # the normal upload is classified too, so it can be proposed for the bill it pays.
 # Phase 6 (migration 0025): an exchange export is typed by its upload button and never sent
-# to the model (D166); a distribution note joins the classifier with the depot readers in
-# step 4 (D165 (2)), so until then the classify request, and every recorded eval hash, stays
-# as it was; so does the Einbuchung/Ausbuchung (securities_transfer, migration 0027).
+# to the model (D166). A distribution note and an Einbuchung/Ausbuchung (securities_transfer,
+# migration 0027) stay code-only in step 4 (§14.1): quirion's documents are digital PDFs that
+# code types from their text layer (rules.depot.document_subtype) before any model call, so
+# the switch ai_private_accounts (D168) is checked before the model sees one, and the
+# classify request, and every recorded eval hash, stays as it was.
 CODE_ONLY_SUBTYPES = frozenset(
     {
         DocumentSubtype.FINANCING_INVOICE,
