@@ -24,7 +24,7 @@ from hausbuch.rules.errors import ACCOUNT_KIND_NOT_AVAILABLE, RuleError
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.bank import AccountCreate, ConfirmPaymentIbanBody, TransactionAllocationStatus
 from hausbuch.schemas.enums import AccountKind, AccountPurpose, ImportStatus
-from hausbuch.services import statements
+from hausbuch.services import documents, statements
 from hausbuch.services.accounts import confirm_depot_iban, create_account, get_account
 from hausbuch.services.errors import ConflictError, NotFoundError
 from hausbuch.services.statements import import_statement, list_transactions
@@ -71,9 +71,12 @@ def _import(run, blob_store, ws, account_id, pages=None, n=0):
 
 
 def test_a_cash_statement_imports_and_its_lines_are_booked_by_their_headline(
-    run, read, blob_store, fresh_workspaces, hook_calls, app_engine, tmp_path
+    run, read, blob_store, fresh_workspaces, hook_calls, app_engine, tmp_path, monkeypatch
 ):
     ws, _ = fresh_workspaces
+    # D177: a statement is never read by the document job, so its import asks the upload for
+    # its depot kind (the synthetic page carries no quirion marker, so the parse is stubbed).
+    monkeypatch.setattr(documents, "depot_kind_of", lambda data, media_type: "kontoauszug")
     account = _depot(run, ws)
     assert account.purpose is AccountPurpose.PRIVATE
     assert (account.iban_masked, account.external_ref_masked) == (None, None)
@@ -85,6 +88,12 @@ def test_a_cash_statement_imports_and_its_lines_are_booked_by_their_headline(
     assert after.iban_masked is None  # only proposed (principle 3)
     assert after.iban_proposal.import_id == imported.id
     assert after.iban_proposal.iban_masked == "DE89 **** 3000"
+    with app_engine.begin() as conn:
+        conn.execute(text("SELECT set_config('app.workspace_id', :ws, true)"), {"ws": str(ws)})
+        kind = conn.execute(
+            text("SELECT depot_kind FROM document WHERE id = :id"), {"id": imported.document_id}
+        ).scalar_one()
+    assert kind == "kontoauszug"
 
     deps = _deps(app_engine, tmp_path)
     for line in read(ws, list_transactions, account.id):

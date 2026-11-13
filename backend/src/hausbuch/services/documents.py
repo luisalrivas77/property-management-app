@@ -171,9 +171,14 @@ def upload_document(
     media_type: str,
     source: DocumentSource,
     original_filename: str | None = None,
+    detect_depot_kind: bool = False,
 ) -> Document:
     """Store an original and register it, or return the workspace's existing document for the
     same bytes (one document per file per workspace, D9).
+
+    `detect_depot_kind` (phase 6 D177) parses the PDF's text layer for its depot kind at upload;
+    only a statement import asks for it, since a statement is never read by the document job.
+    Any other upload gets its kind from that job, so a large PDF costs no extra parse here.
 
     A re-upload writes no rows and no event, but it does put the blob again: that restores an
     original lost from the store, and fails with BlobConflictError if different bytes sit
@@ -221,7 +226,7 @@ def upload_document(
             received_at=ctx.now,
             created_at=ctx.now,
             updated_at=ctx.now,
-            depot_kind=depot_kind_of(data, media_type),
+            depot_kind=depot_kind_of(data, media_type) if detect_depot_kind else None,
         )
         .on_conflict_do_nothing()
         .returning(*document_table.c)

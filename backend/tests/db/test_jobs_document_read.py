@@ -822,19 +822,15 @@ def _depot_kind(engine, ws, doc):
         ).scalar_one()
 
 
-def test_a_depot_documents_kind_is_recorded_at_upload_and_by_its_next_reading(
+def test_a_depot_documents_kind_is_recorded_by_its_reading(
     setup, recorder, app_engine, private_switch
 ):
-    """Phase 6 D177: the kind of its plain-words explanation, read by code from the heading;
-    a document uploaded before the kind was recorded gets it from its next reading, even one
-    the switch stops before the model."""
+    """Phase 6 D177: the kind of its plain-words explanation, read by code from the heading
+    by the document's reading (a plain upload parses nothing), even a reading the switch
+    stops before the model."""
     client = FakeModelClient([])
     deps, ws, doc, proposal = setup(_text_pdf(TRADE_TEXT), client)
-    assert _depot_kind(app_engine, ws, doc) == "wertpapierabrechnung_kauf"
-    with workspace_transaction(app_engine, ws) as conn:
-        conn.execute(
-            update(document_table).where(document_table.c.id == doc).values(depot_kind=None)
-        )
+    assert _depot_kind(app_engine, ws, doc) is None
     _run(deps, ws, doc, proposal)
     assert [kw["error_code"] for _, _, kw in recorder.failures] == [job.BLOCKED_PRIVATE_DATA]
     assert client.requests == []

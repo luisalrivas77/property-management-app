@@ -139,6 +139,7 @@ def import_statement(
         media_type=media_type,
         source=DocumentSource.UPLOAD,
         original_filename=original_filename,
+        detect_depot_kind=True,
     )
     existing = ctx.conn.execute(
         select(*_IMPORT_COLUMNS).where(
