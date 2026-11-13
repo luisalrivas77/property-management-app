@@ -8,10 +8,11 @@ without a merchant whose kind word, or else its text, names interest or a fee; a
 always carries its merchant (services/bank/card_pdf.py), so a shop with „Gebühr“ in its name
 is never one.
 
-The payment received („Bezahlung“, a credit without a merchant) is the card's leg of its
-monthly settlement: booked by code as internal_transfer_in, so services.transfers links it to
-the paying account's debit (D162). The kind word alone decides: a refund („Gutschrift“)
-carries its merchant and stays a purchase category.
+The payment received („Bezahlung“, a credit without a merchant; „EINGEGANGENE ZAHLUNG“ on a
+Consors Finanz statement, services/bank/consors_pdf.py) is the card's leg of its monthly
+settlement: booked by code as internal_transfer_in, so services.transfers links it to the
+paying account's debit (D162). The kind word alone decides: a refund („Gutschrift“) carries
+its merchant and stays a purchase category.
 """
 
 from decimal import Decimal
@@ -27,7 +28,8 @@ from hausbuch.schemas.allocation import (
 _CATEGORY = AllocationCategory.HH_INTEREST_FEES
 _INTEREST = "zins"
 _FEE = "gebühr"
-_PAYMENT = "bezahlung"
+# The payment's kind word per issuer (card_pdf, consors_pdf), casefolded.
+_PAYMENTS = frozenset({"bezahlung", "eingegangene zahlung"})
 REASONING = "Zinsen oder Gebühren der Kreditkarte, aus der Abrechnung gelesen."
 PAYMENT_REASONING = (
     "Zahlung auf die Kreditkarte laut Abrechnung: eine Überweisung zwischen zwei eigenen Konten."
@@ -58,11 +60,12 @@ def interest_fee_set(tx: MatchTransaction) -> AllocationSet | None:
 
 
 def is_payment(tx: MatchTransaction) -> bool:
-    """The statement's payment received: a credit without a merchant, kind word Bezahlung."""
+    """The statement's payment received: a credit without a merchant, its kind word the
+    issuer's word for it (Bezahlung, EINGEGANGENE ZAHLUNG)."""
     return (
         tx.amount > 0
         and tx.counterparty_name is None
-        and (tx.booking_text or "").strip().casefold() == _PAYMENT
+        and " ".join((tx.booking_text or "").casefold().split()) in _PAYMENTS
     )
 
 

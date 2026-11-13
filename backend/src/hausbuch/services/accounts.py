@@ -85,7 +85,7 @@ from hausbuch.schemas.events import (
 from hausbuch.schemas.household import AccountOwnership, OwnershipShare, SetOwnershipBody
 from hausbuch.storage import BlobStore
 
-from .bank import BANK_EXPORT_FORMATS, card_pdf, depot_pdf
+from .bank import BANK_EXPORT_FORMATS, depot_pdf, parse_card_statement
 from .context import CommandContext
 from .documents import get_document, read_original
 from .errors import ConflictError, NotFoundError, RuleViolationError, violated_constraint
@@ -626,7 +626,7 @@ def confirm_payment_iban(
     payment = None
     if imported.format == StatementFormat.CARD_PDF.value:
         data = read_original(ctx.conn, store, imported.document_id)
-        payment = card_pdf.parse_card_pdf(data).statement.payment_iban
+        payment = parse_card_statement(data).statement.payment_iban
     if payment is None:
         raise RuleError(NO_PAYMENT_IBAN, "the statement prints no payment IBAN")
     iban = protect_iban(payment, iban_key)
