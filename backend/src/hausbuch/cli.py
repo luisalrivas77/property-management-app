@@ -1,4 +1,5 @@
-"""`hausbuch bootstrap | invite | openapi | evals` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41).
+"""`hausbuch bootstrap | invite | openapi | evals | household-reask` (phase 1 step 3, §5, §6.5,
+§6.7; phase 2 D41; phase 6 D159 amended 13 Nov 2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -13,6 +14,10 @@ committed as frontend/src/api/openapi.json.
 prints pre-fill accuracy (hausbuch.evals.report). `evals run` sends the documents in
 HAUSBUCH_EVAL_DIR to the model, live, and compares each reading with its golden file
 (hausbuch.evals.run). Neither prints the connection URL or the API key, also not on an error.
+
+`household-reask` runs services.matching.reask_household once for a workspace, with the same
+owner URL: it queues a re-ask job per private line parked in a coarse household code, which the
+API container's worker runs (the model key stays there). --dry-run counts and queues nothing.
 """
 
 import argparse
@@ -203,6 +208,49 @@ def evals_run(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     return run.main(args, environ)
 
 
+# --- household-reask ------------------------------------------------------------------
+
+
+class _DryRun(Exception):
+    """Rolls the reask's transaction back: the counts are printed, no job is queued."""
+
+
+def household_reask(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.matching import reask_household
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:household-reask")
+                result = reask_household(new_command(conn, args.workspace, actor))
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    verb = "would queue" if args.dry_run else "queued"
+    print(f"{verb} {result.queued} line(s) for the model")
+    if result.held_back:
+        print(
+            f"held back {result.held_back} line(s): „Private Konten mit KI zuordnen“ is off "
+            "(Einstellungen); switch it on and run this again"
+        )
+    print(f"left alone {result.purchase_costs} line(s) that may be a cost of buying the flat")
+    print(f"skipped {result.already_asked} line(s) already asked with the current prompt")
+    return EXIT_OK
+
+
 # --- Helpers --------------------------------------------------------------------------
 
 
@@ -274,6 +322,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     inv.add_argument("--origin", help="web origin for the URL (default: HAUSBUCH_ORIGIN)")
     inv.set_defaults(command=invite, command_name="invite")
+
+    reask = commands.add_parser(
+        "household-reask",
+        help="ask the model again for private lines parked in a coarse household category "
+        "(once, after migration 0029)",
+    )
+    reask.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    reask.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
+    reask.set_defaults(command=household_reask, command_name="household-reask")
 
     api = commands.add_parser("openapi", help="print the API's OpenAPI document")
     api.set_defaults(command=openapi, command_name="openapi")

@@ -92,15 +92,18 @@ def enqueue_match_import(conn: Connection, *, workspace_id: UUID, import_id: UUI
 
 
 def enqueue_match_transaction(
-    conn: Connection, *, workspace_id: UUID, transaction_id: UUID
+    conn: Connection, *, workspace_id: UUID, transaction_id: UUID, reask: bool = False
 ) -> None:
-    """Queue `match_transaction` for one line. Locked by `tx:{id}`."""
+    """Queue `match_transaction` for one line. Locked by `tx:{id}`. `reask`: ask the model
+    again for a line whose rows are all proposed (services.matching.reask_household)."""
+    extra = {"reask": "1"} if reask else {}
     _defer(
         conn,
         MATCH_TRANSACTION_TASK,
         transaction_lock(transaction_id),
         workspace_id=str(workspace_id),
         transaction_id=str(transaction_id),
+        **extra,
     )
 
 

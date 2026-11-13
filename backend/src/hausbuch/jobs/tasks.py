@@ -92,7 +92,11 @@ def match_import(context: JobContext, *, workspace_id: str, import_id: str) -> N
     )
 
 
-def match_transaction(context: JobContext, *, workspace_id: str, transaction_id: str) -> None:
+def match_transaction(
+    context: JobContext, *, workspace_id: str, transaction_id: str, reask: str = ""
+) -> None:
+    """`reask` ("1"): the one-off re-ask of a proposed private line (reask_household); a job
+    queued before it existed carries none."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
     assert context.job is not None
     run_match_transaction(
@@ -100,6 +104,7 @@ def match_transaction(context: JobContext, *, workspace_id: str, transaction_id:
         workspace_id=UUID(workspace_id),
         transaction_id=UUID(transaction_id),
         attempt=context.job.attempts,
+        reask=reask == "1",
     )
 
 
