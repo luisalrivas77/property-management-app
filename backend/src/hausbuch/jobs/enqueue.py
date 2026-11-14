@@ -92,11 +92,20 @@ def enqueue_match_import(conn: Connection, *, workspace_id: UUID, import_id: UUI
 
 
 def enqueue_match_transaction(
-    conn: Connection, *, workspace_id: UUID, transaction_id: UUID, reask: bool = False
+    conn: Connection,
+    *,
+    workspace_id: UUID,
+    transaction_id: UUID,
+    reask: bool = False,
+    resort: bool = False,
 ) -> None:
     """Queue `match_transaction` for one line. Locked by `tx:{id}`. `reask`: ask the model
-    again for a line whose rows are all proposed (services.matching.reask_household)."""
+    again for a line whose rows are all proposed (services.matching.reask_household).
+    `resort`: re-sort a line booked in a group's fallback into the subcategories
+    (services.household_resort)."""
     extra = {"reask": "1"} if reask else {}
+    if resort:
+        extra["resort"] = "1"
     _defer(
         conn,
         MATCH_TRANSACTION_TASK,

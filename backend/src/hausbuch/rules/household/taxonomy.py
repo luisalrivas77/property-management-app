@@ -79,6 +79,49 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_REFUND, G.REFUND, R.SPENDING),  # a negative amount among spending
             # D159 amended 14 Nov 2026 (migration 0031): fuel, inside the Mobilität group
             _code(C.HH_FUEL, G.MOBILITY, R.SPENDING),
+            # D159 amended 14 Nov 2026 (migration 0032): subcategories inside their parent's group
+            _code(C.HH_STREAMING, G.SUBSCRIPTIONS, R.SPENDING),
+            _code(C.HH_MUSIC_AUDIO, G.SUBSCRIPTIONS, R.SPENDING),
+            _code(C.HH_SOFTWARE, G.SUBSCRIPTIONS, R.SPENDING),
+            _code(C.HH_CLOUD, G.SUBSCRIPTIONS, R.SPENDING),
+            _code(C.HH_GAMING, G.SUBSCRIPTIONS, R.SPENDING),
+            _code(C.HH_NEWS, G.SUBSCRIPTIONS, R.SPENDING),
+            _code(C.HH_MEMBERSHIPS, G.SUBSCRIPTIONS, R.SPENDING),
+            _code(C.HH_PUBLIC_TRANSPORT, G.MOBILITY, R.SPENDING),
+            _code(C.HH_TAXI, G.MOBILITY, R.SPENDING),
+            _code(C.HH_PARKING, G.MOBILITY, R.SPENDING),
+            _code(C.HH_CAR_SERVICE, G.MOBILITY, R.SPENDING),
+            _code(C.HH_CAR_TAX, G.MOBILITY, R.SPENDING),
+            _code(C.HH_SUPERMARKET, G.GROCERIES, R.SPENDING),
+            _code(C.HH_DRUGSTORE, G.GROCERIES, R.SPENDING),
+            _code(C.HH_BAKERY, G.GROCERIES, R.SPENDING),
+            _code(C.HH_RESTAURANT, G.DINING, R.SPENDING),
+            _code(C.HH_CAFE, G.DINING, R.SPENDING),
+            _code(C.HH_SWEETS, G.DINING, R.SPENDING),
+            _code(C.HH_FAST_FOOD, G.DINING, R.SPENDING),
+            _code(C.HH_DELIVERY, G.DINING, R.SPENDING),
+            _code(C.HH_RENT, G.HOUSING, R.SPENDING),
+            _code(C.HH_ENERGY, G.HOUSING, R.SPENDING),
+            _code(C.HH_BROADCAST_FEE, G.HOUSING, R.SPENDING),
+            _code(C.HH_FLAT_SEARCH, G.HOUSING, R.SPENDING),
+            _code(C.HH_INS_CAR, G.INSURANCE, R.SPENDING),
+            _code(C.HH_INS_LIABILITY_CONTENTS, G.INSURANCE, R.SPENDING),
+            _code(C.HH_INS_HEALTH, G.INSURANCE, R.SPENDING),
+            _code(C.HH_INS_LIFE, G.INSURANCE, R.SPENDING),
+            _code(C.HH_PHARMACY, G.HEALTH, R.SPENDING),
+            _code(C.HH_DOCTOR, G.HEALTH, R.SPENDING),
+            _code(C.HH_DENTAL_OPTICAL, G.HEALTH, R.SPENDING),
+            _code(C.HH_OUTINGS, G.LEISURE_TRAVEL, R.SPENDING),
+            _code(C.HH_BOOKS_MEDIA, G.LEISURE_TRAVEL, R.SPENDING),
+            _code(C.HH_HOBBIES, G.LEISURE_TRAVEL, R.SPENDING),
+            _code(C.HH_LODGING, G.TRAVEL, R.SPENDING),
+            _code(C.HH_FLIGHTS, G.TRAVEL, R.SPENDING),
+            _code(C.HH_KIDS_GEAR, G.FAMILY_CHILD, R.SPENDING),
+            _code(C.HH_TOYS, G.FAMILY_CHILD, R.SPENDING),
+            _code(C.HH_PREGNANCY_BIRTH, G.FAMILY_CHILD, R.SPENDING),
+            _code(C.HH_MOBILE_PHONE, G.TELECOM, R.SPENDING),
+            _code(C.HH_INTERNET, G.TELECOM, R.SPENDING),
+            _code(C.HH_POSTAGE, G.OTHER, R.SPENDING),
             _code(C.HH_INVESTMENT, G.INVESTMENT, R.TRANSFER),  # saved, not spent
             # Tax-relevant spending: each proposes the input its form already reads
             _code(C.HH_DONATION, G.TAX, R.TAX, P.RETURN_SPECIAL_EXPENSE),
@@ -132,6 +175,56 @@ BULK_CONFIRMABLE = frozenset(
     and row.relevance in (R.INCOME, R.SPENDING)
     and row.group not in (G.TAX, G.MOVEMENTS, G.DEPOT)
 ) - {C.HH_CAPITAL_INCOME, C.HH_TAX_REFUND, C.HH_FAMILY_TRANSFERS, C.HH_WORK_EDUCATION}
+
+# D159 amended 14 Nov 2026 (migration 0032, Luis: „I want to be as detailed as possible“): a
+# spending group with subcategories keeps its old code as the fallback, „Sonstige …“, for what
+# fits no subcategory. Per group, that code; hh_fuel, the codes 0029 made a group of their own
+# and hh_interest_fees (a card's charges, booked by code) are no fallback.
+FALLBACK = MappingProxyType(
+    {
+        G.SUBSCRIPTIONS: C.HH_SUBSCRIPTIONS,
+        G.MOBILITY: C.HH_MOBILITY,
+        G.GROCERIES: C.HH_GROCERIES,
+        G.DINING: C.HH_DINING,
+        G.HOUSING: C.HH_HOUSING,
+        G.INSURANCE: C.HH_INSURANCE,
+        G.HEALTH: C.HH_HEALTH,
+        G.LEISURE_TRAVEL: C.HH_LEISURE_TRAVEL,
+        G.TRAVEL: C.HH_TRAVEL,
+        G.FAMILY_CHILD: C.HH_FAMILY_CHILD,
+        G.TELECOM: C.HH_TELECOM,
+        G.OTHER: C.HH_OTHER,
+    }
+)
+FALLBACK_CODES = frozenset(FALLBACK.values())
+# The household spending codes a confirmed line may be re-sorted into (the one-off re-sort,
+# services.household_resort): spending outside the movement and depot groups (a refund too),
+# never a card's charges, never a tax-relevant code nor a payment to an investment.
+HOUSEHOLD_SPENDING = frozenset(
+    c
+    for c, row in TAXONOMY.items()
+    if c in HOUSEHOLD_CODES
+    and row.relevance is R.SPENDING
+    and row.group not in (G.MOVEMENTS, G.DEPOT)
+    and c not in CARD_CODES
+)
+
+if any(TAXONOMY[c].group is not g for g, c in FALLBACK.items()):  # pragma: no cover
+    raise RuntimeError("a fallback code sits in another group")
+
+
+def fallback_of(category: C) -> C | None:
+    """The fallback code of the group a subcategory sits in (hh_supermarket → hh_groceries);
+    None for a fallback itself, for a code of a group without subcategories and for any code
+    outside the household spending groups."""
+    row = TAXONOMY.get(category)
+    if row is None or category in FALLBACK_CODES:
+        return None
+    fallback = FALLBACK.get(row.group)
+    if fallback is None or category in CARD_CODES:
+        return None
+    return fallback
+
 
 _ALLOWED = MappingProxyType(
     {

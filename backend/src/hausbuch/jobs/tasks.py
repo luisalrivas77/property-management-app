@@ -93,10 +93,16 @@ def match_import(context: JobContext, *, workspace_id: str, import_id: str) -> N
 
 
 def match_transaction(
-    context: JobContext, *, workspace_id: str, transaction_id: str, reask: str = ""
+    context: JobContext,
+    *,
+    workspace_id: str,
+    transaction_id: str,
+    reask: str = "",
+    resort: str = "",
 ) -> None:
     """`reask` ("1"): the one-off re-ask of a proposed private line (reask_household); a job
-    queued before it existed carries none."""
+    queued before it existed carries none. `resort` ("1"): the one-off re-sort of a line in a
+    group's fallback into the subcategories (services.household_resort)."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
     assert context.job is not None
     run_match_transaction(
@@ -105,6 +111,7 @@ def match_transaction(
         transaction_id=UUID(transaction_id),
         attempt=context.job.attempts,
         reask=reask == "1",
+        resort=resort == "1",
     )
 
 

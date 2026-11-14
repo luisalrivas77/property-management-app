@@ -82,6 +82,49 @@ categories:
   - {category: hh_investment, treatment: private}
   - {category: hh_refund, treatment: private}
   - {category: hh_fuel, treatment: private}  # phase 6 D159 amended 14 Nov 2026 (migration 0031)
+  # phase 6 D159 amended 14 Nov 2026 (migration 0032): the subcategories
+  - {category: hh_streaming, treatment: private}
+  - {category: hh_music_audio, treatment: private}
+  - {category: hh_software, treatment: private}
+  - {category: hh_cloud, treatment: private}
+  - {category: hh_gaming, treatment: private}
+  - {category: hh_news, treatment: private}
+  - {category: hh_memberships, treatment: private}
+  - {category: hh_public_transport, treatment: private}
+  - {category: hh_taxi, treatment: private}
+  - {category: hh_parking, treatment: private}
+  - {category: hh_car_service, treatment: private}
+  - {category: hh_car_tax, treatment: private}
+  - {category: hh_supermarket, treatment: private}
+  - {category: hh_drugstore, treatment: private}
+  - {category: hh_bakery, treatment: private}
+  - {category: hh_restaurant, treatment: private}
+  - {category: hh_cafe, treatment: private}
+  - {category: hh_sweets, treatment: private}
+  - {category: hh_fast_food, treatment: private}
+  - {category: hh_delivery, treatment: private}
+  - {category: hh_rent, treatment: private}
+  - {category: hh_energy, treatment: private}
+  - {category: hh_broadcast_fee, treatment: private}
+  - {category: hh_flat_search, treatment: private}
+  - {category: hh_ins_car, treatment: private}
+  - {category: hh_ins_liability_contents, treatment: private}
+  - {category: hh_ins_health, treatment: private}
+  - {category: hh_ins_life, treatment: private}
+  - {category: hh_pharmacy, treatment: private}
+  - {category: hh_doctor, treatment: private}
+  - {category: hh_dental_optical, treatment: private}
+  - {category: hh_outings, treatment: private}
+  - {category: hh_books_media, treatment: private}
+  - {category: hh_hobbies, treatment: private}
+  - {category: hh_lodging, treatment: private}
+  - {category: hh_flights, treatment: private}
+  - {category: hh_kids_gear, treatment: private}
+  - {category: hh_toys, treatment: private}
+  - {category: hh_pregnancy_birth, treatment: private}
+  - {category: hh_mobile_phone, treatment: private}
+  - {category: hh_internet, treatment: private}
+  - {category: hh_postage, treatment: private}
   - {category: security_purchase, treatment: private}
   - {category: security_sale, treatment: private}
   - {category: distribution, treatment: private}

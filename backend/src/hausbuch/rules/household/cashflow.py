@@ -10,7 +10,12 @@ lines paid to an investment the app holds no account of (D159 amended 13 Nov 202
 spent; a payout back lowers it), surplus is income less
 spending, and the savings rate is surplus / income, (income - spending) / income as the
 household design defines it (docs/design/household-finances.md, Sparquote; mockup 10), None for
-a month without income."""
+a month without income.
+
+spending_by_category (D159 amended 14 Nov 2026, migration 0032) splits each group's figure by
+its codes, keyed by the group and signed as the group's (a refund negative), so the Haushalt
+screen can list a group's subcategories under it; the codes of one group sum to that group's
+figure."""
 
 from collections.abc import Iterable
 from decimal import ROUND_HALF_UP, Decimal
@@ -35,6 +40,7 @@ def month_cashflow(
     income = Decimal("0.00")
     by_income: dict[AllocationCategory, Decimal] = {}
     spending: dict[HouseholdGroup, Decimal] = {}
+    by_spending: dict[HouseholdGroup, dict[AllocationCategory, Decimal]] = {}
     invested = Decimal("0.00")
     for category, amount in rows:
         if category is AllocationCategory.HH_INVESTMENT:
@@ -44,20 +50,37 @@ def month_cashflow(
         if code is None:  # bank_fees, uncategorized
             other = spending.get(HouseholdGroup.OTHER, Decimal("0.00"))
             spending[HouseholdGroup.OTHER] = other - amount
+            _add(by_spending, HouseholdGroup.OTHER, category, -amount)
         elif code.relevance is Relevance.INCOME:
             income += amount
             by_income[category] = by_income.get(category, Decimal("0.00")) + amount
         elif code.relevance in _SPENT:
             spending[code.group] = spending.get(code.group, Decimal("0.00")) - amount
+            _add(by_spending, code.group, category, -amount)
     spent = sum(spending.values(), Decimal("0.00"))
     rate = ((income - spent) / income).quantize(_RATE, ROUND_HALF_UP) if income > 0 else None
     return HouseholdCashflow(
         month=month,
         income=income,
         spending_by_group={g: v for g, v in spending.items() if v},
+        spending_by_category={
+            g: {c: v for c, v in codes.items() if v}
+            for g, codes in by_spending.items()
+            if spending.get(g)
+        },
         saved=saved + invested,
         surplus=income - spent,
         savings_rate=rate,
         income_by_category={c: v for c, v in by_income.items() if v},
         open_lines=open_lines,
     )
+
+
+def _add(
+    into: dict[HouseholdGroup, dict[AllocationCategory, Decimal]],
+    group: HouseholdGroup,
+    category: AllocationCategory,
+    amount: Decimal,
+) -> None:
+    codes = into.setdefault(group, {})
+    codes[category] = codes.get(category, Decimal("0.00")) + amount

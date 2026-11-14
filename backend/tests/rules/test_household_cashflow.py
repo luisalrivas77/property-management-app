@@ -80,3 +80,46 @@ def test_an_investment_is_saved_not_spent():
     assert got.spending_by_group == {G.DINING: D("60.00")}
     assert got.saved == D("350.00")
     assert got.surplus == D("1940.00")
+
+
+def test_each_group_is_split_by_its_codes():
+    """D159 amended 14 Nov 2026 (migration 0032): spending_by_category gives each group's
+    figure by its subcategories and its fallback, keyed by the group and signed as the
+    group's; the codes of a group sum to the group, bank fees and uncategorized sit under their
+    own codes inside „Sonstiges“, and a code that nets to zero is left out."""
+    rows = [
+        (C.HH_SALARY, D("3000.00")),
+        (C.HH_SUPERMARKET, D("-80.00")),
+        (C.HH_SUPERMARKET, D("-20.00")),
+        (C.HH_DRUGSTORE, D("-15.50")),
+        (C.HH_GROCERIES, D("-4.50")),  # the group's fallback
+        (C.HH_STREAMING, D("-12.99")),
+        (C.HH_MUSIC_AUDIO, D("-9.99")),
+        (C.HH_MUSIC_AUDIO, D("9.99")),  # refunded: nets to zero
+        (C.HH_POSTAGE, D("-3.70")),
+        (C.BANK_FEES, D("-4.90")),
+        (C.INTERNAL_TRANSFER_OUT, D("-500.00")),
+    ]
+    got = month_cashflow("2026-10", rows, saved=D("0"))
+    assert got.spending_by_group == {
+        G.GROCERIES: D("120.00"),
+        G.SUBSCRIPTIONS: D("12.99"),
+        G.OTHER: D("8.60"),
+    }
+    assert got.spending_by_category == {
+        G.GROCERIES: {
+            C.HH_SUPERMARKET: D("100.00"),
+            C.HH_DRUGSTORE: D("15.50"),
+            C.HH_GROCERIES: D("4.50"),
+        },
+        G.SUBSCRIPTIONS: {C.HH_STREAMING: D("12.99")},
+        G.OTHER: {C.HH_POSTAGE: D("3.70"), C.BANK_FEES: D("4.90")},
+    }
+    for group, codes in got.spending_by_category.items():
+        assert sum(codes.values()) == got.spending_by_group[group]
+
+
+def test_a_group_that_nets_to_zero_has_no_codes_either():
+    rows = [(C.HH_SUPERMARKET, D("-30.00")), (C.HH_GROCERIES, D("30.00"))]
+    got = month_cashflow("2026-03", rows, saved=D("0"))
+    assert (got.spending_by_group, got.spending_by_category) == ({}, {})

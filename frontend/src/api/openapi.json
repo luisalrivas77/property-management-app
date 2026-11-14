@@ -9557,6 +9557,48 @@
           "hh_investment",
           "hh_refund",
           "hh_fuel",
+          "hh_streaming",
+          "hh_music_audio",
+          "hh_software",
+          "hh_cloud",
+          "hh_gaming",
+          "hh_news",
+          "hh_memberships",
+          "hh_public_transport",
+          "hh_taxi",
+          "hh_parking",
+          "hh_car_service",
+          "hh_car_tax",
+          "hh_supermarket",
+          "hh_drugstore",
+          "hh_bakery",
+          "hh_restaurant",
+          "hh_cafe",
+          "hh_sweets",
+          "hh_fast_food",
+          "hh_delivery",
+          "hh_rent",
+          "hh_energy",
+          "hh_broadcast_fee",
+          "hh_flat_search",
+          "hh_ins_car",
+          "hh_ins_liability_contents",
+          "hh_ins_health",
+          "hh_ins_life",
+          "hh_pharmacy",
+          "hh_doctor",
+          "hh_dental_optical",
+          "hh_outings",
+          "hh_books_media",
+          "hh_hobbies",
+          "hh_lodging",
+          "hh_flights",
+          "hh_kids_gear",
+          "hh_toys",
+          "hh_pregnancy_birth",
+          "hh_mobile_phone",
+          "hh_internet",
+          "hh_postage",
           "security_purchase",
           "security_sale",
           "distribution",
@@ -15095,6 +15137,7 @@
           "statement.duplicate_resolved",
           "transaction.allocated",
           "transaction.reallocated",
+          "transaction.resort_proposed",
           "rule.created",
           "rule.disabled"
         ],
@@ -16600,6 +16643,23 @@
             "minimum": 0.0,
             "title": "Open Lines",
             "default": 0
+          },
+          "spending_by_category": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              "propertyNames": {
+                "$ref": "#/components/schemas/AllocationCategory"
+              },
+              "type": "object"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/HouseholdGroup"
+            },
+            "type": "object",
+            "title": "Spending By Category"
           }
         },
         "additionalProperties": false,

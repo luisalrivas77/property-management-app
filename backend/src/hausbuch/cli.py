@@ -1,6 +1,6 @@
-"""`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills` (phase 1
-step 3, §5, §6.5, §6.7; phase 2 D41; phase 6 D159 amended 13 Nov 2026, D161 widened 14 Nov
-2026).
+"""`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills |
+household-resort` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41; phase 6 D159 amended 13 and
+14 Nov 2026, D161 widened 14 Nov 2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -26,6 +26,11 @@ fuel off), by default the codes migration 0029 split up.
 same owner URL: it queues a rematch per bill recorded as a Nebenkosten or private_cost row, so
 the private lines already waiting that pay one are proposed as its payment (never the model,
 never a confirmed line). --dry-run counts and queues nothing.
+
+`household-resort` runs services.household_resort.resort_household the same way: it queues a
+job per private line booked in a spending group's fallback, proposed or confirmed, so the
+model sorts it into one of migration 0032's subcategories; a finer answer goes back to Zu
+prüfen as a proposal. --dry-run prints what it would take and what it leaves alone, by reason.
 """
 
 import argparse
@@ -309,6 +314,61 @@ def rematch_bills(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     return EXIT_OK
 
 
+# --- household-resort -----------------------------------------------------------------
+
+
+def household_resort(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.household_resort.resort_household once for a workspace (phase 6 D159
+    amended 14 Nov 2026, migration 0032); `--dry-run` prints the counts and queues nothing.
+    Each queued line is one categorization per run (a retry or the hard-model escalation
+    may add a call, as jobs.matching._categorize does)."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.household_resort import resort_household
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:household-resort")
+                ctx = new_command(conn, args.workspace, actor)
+                result = resort_household(ctx)
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    taken = result.proposed + result.confirmed
+    print(
+        f"taken {taken} line(s) in a group's fallback: {result.proposed} proposed, "
+        f"{result.confirmed} confirmed"
+    )
+    verb = "would queue" if args.dry_run else "queued"
+    print(
+        f"{verb} {result.queued} line(s) for the model: one categorization per line per run "
+        "(a retry or the hard-model escalation may add a call)"
+    )
+    if result.held_back:
+        print(
+            f"held back {result.held_back} line(s): „Private Konten mit KI zuordnen“ is off "
+            "(Einstellungen); switch it on and run this again"
+        )
+    print("left alone:")
+    print(f"  {result.split} split line(s) (more than one row)")
+    print(f"  {result.linked} line(s) with a property, Beleg, transfer link or depot movement")
+    print(f"  {result.purchase_costs} line(s) that may be a cost of buying the flat")
+    print(f"  {result.already_asked} line(s) already asked with the current prompt")
+    return EXIT_OK
+
+
 # --- Helpers --------------------------------------------------------------------------
 
 
@@ -406,6 +466,16 @@ def _parser() -> argparse.ArgumentParser:
     bills.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     bills.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
     bills.set_defaults(command=rematch_bills, command_name="rematch-bills")
+
+    resort = commands.add_parser(
+        "household-resort",
+        help="re-sort the private lines booked in a group's fallback („Sonstige …“), proposed "
+        "or confirmed, into the subcategories of migration 0032; each finer answer goes back "
+        "to Zu prüfen as a proposal",
+    )
+    resort.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    resort.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
+    resort.set_defaults(command=household_resort, command_name="household-resort")
 
     api = commands.add_parser("openapi", help="print the API's OpenAPI document")
     api.set_defaults(command=openapi, command_name="openapi")

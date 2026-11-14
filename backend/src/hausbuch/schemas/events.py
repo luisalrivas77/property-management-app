@@ -528,6 +528,17 @@ class TransactionReallocated(TransactionAllocated):
     supersedes: list[UUID] = Field(min_length=1)
 
 
+class TransactionResortProposed(TransactionReallocated):
+    """transaction.resort_proposed (phase 6 D159 amended 14 Nov 2026, migration 0032): the
+    one-off re-sort into the subcategories proposed a finer code for a line booked in its
+    group's fallback, and the proposal superseded the confirmed rows (`supersedes`); a person
+    confirms it (transaction.allocated) or answers otherwise in Zu prüfen. `auto` is always
+    false: the re-sort never books. `prompt_version`: the household prompt the run asked
+    with, None when a learned rule or a matcher answered."""
+
+    prompt_version: str | None = None
+
+
 class RuleRecorded(Schema):
     """rule.created / .disabled. Never an amount (D25), and never a pattern: a pattern is
     free text the user typed or the model inferred (it can name a person), and events are
@@ -1241,6 +1252,7 @@ class EventType(StrEnum):
 
     TRANSACTION_ALLOCATED = "transaction.allocated"
     TRANSACTION_REALLOCATED = "transaction.reallocated"
+    TRANSACTION_RESORT_PROPOSED = "transaction.resort_proposed"
 
     RULE_CREATED = "rule.created"
     RULE_DISABLED = "rule.disabled"
@@ -1454,6 +1466,11 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.TRANSACTION_REALLOCATED: EventSpec(
         TransactionReallocated, "required", "Allocation corrected (date = booking date)"
+    ),
+    E.TRANSACTION_RESORT_PROPOSED: EventSpec(
+        TransactionResortProposed,
+        "required",
+        "Finer category proposed by the re-sort (date = booking date)",
     ),
     E.RULE_CREATED: EventSpec(RuleRecorded, "forbidden", "Matching rule learned"),
     E.RULE_DISABLED: EventSpec(RuleRecorded, "forbidden", "Matching rule disabled"),

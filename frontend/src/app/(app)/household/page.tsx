@@ -26,7 +26,7 @@ import {
   toCents,
 } from "@/components/cashflow";
 import { formatMoney, formatMonth, formatPercent, todayIso } from "@/components/format";
-import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP } from "@/components/labels";
+import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -176,8 +176,11 @@ function SurplusBars({ months }: { months: HouseholdCashflow[] }) {
 }
 
 /** Ausgaben nach Kategorie: the chosen month's groups, largest first, with their share of the
- * month's spending and their 12-month average. */
+ * month's spending and their 12-month average. A group booked under more than one code, or
+ * under a subcategory (D159 amended 14 Nov 2026, migration 0032), opens to its codes, indented
+ * under it, largest first and the group's fallback („Sonstige …“) last. */
 function SpendingTable({ months }: { months: HouseholdCashflow[] }) {
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const month = months[months.length - 1];
   if (!month) return null;
   const total = toCents(spent(month));
@@ -187,6 +190,17 @@ function SpendingTable({ months }: { months: HouseholdCashflow[] }) {
     const diff = toCents(now(b)) - toCents(now(a));
     return diff > 0n ? 1 : diff < 0n ? -1 : groupLabel(a).localeCompare(groupLabel(b));
   });
+  const share = (amount: string) => {
+    const value = toCents(amount);
+    return total > 0n && value > 0n ? Number((value * 1000n) / total) / 10 : 0;
+  };
+  const toggle = (group: string) =>
+    setOpen((current) => {
+      const next = new Set(current);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
   return (
     <section className="card household-spending" aria-labelledby="spending-title">
       <h2 id="spending-title">Ausgaben nach Kategorie</h2>
@@ -208,21 +222,61 @@ function SpendingTable({ months }: { months: HouseholdCashflow[] }) {
               </tr>
             </thead>
             <tbody>
-              {groups.map((group) => {
-                const value = toCents(now(group));
-                const share = total > 0n && value > 0n ? Number((value * 1000n) / total) / 10 : 0;
-                return (
+              {groups.flatMap((group) => {
+                const codes = groupCodes(months, group);
+                const expanded = open.has(group);
+                const rowId = `spending-${group}`;
+                const rows = [
                   <tr key={group}>
-                    <th scope="row">{groupLabel(group)}</th>
+                    <th scope="row">
+                      {codes.length > 0 ? (
+                        <button
+                          type="button"
+                          className="household-toggle"
+                          aria-expanded={expanded}
+                          aria-controls={codes.map((code) => `${rowId}-${code}`).join(" ")}
+                          onClick={() => toggle(group)}
+                        >
+                          <span aria-hidden="true">{expanded ? "▾" : "▸"}</span> {groupLabel(group)}
+                        </button>
+                      ) : (
+                        groupLabel(group)
+                      )}
+                    </th>
                     <td>
                       <span className="household-share" aria-hidden="true">
-                        <span style={{ width: `${share}%` }} />
+                        <span style={{ width: `${share(now(group))}%` }} />
                       </span>
                     </td>
                     <td className="num">{formatMoney(now(group))}</td>
                     <td className="num muted">{formatMoney(averageMoney(months.map((m) => m.spending_by_group[group] ?? "0.00")))}</td>
-                  </tr>
-                );
+                  </tr>,
+                ];
+                if (!expanded) return rows;
+                const codeNow = (code: string) => month.spending_by_category?.[group]?.[code] ?? "0.00";
+                const fallback = fallbackOf(group);
+                const ordered = [...codes].sort((a, b) => {
+                  if (a === fallback || b === fallback) return a === fallback ? 1 : -1;
+                  const diff = toCents(codeNow(b)) - toCents(codeNow(a));
+                  return diff > 0n ? 1 : diff < 0n ? -1 : categoryLabel(a).localeCompare(categoryLabel(b));
+                });
+                for (const code of ordered) {
+                  rows.push(
+                    <tr key={`${group}-${code}`} id={`${rowId}-${code}`} className="household-subrow">
+                      <th scope="row">{categoryLabel(code)}</th>
+                      <td>
+                        <span className="household-share" aria-hidden="true">
+                          <span style={{ width: `${share(codeNow(code))}%` }} />
+                        </span>
+                      </td>
+                      <td className="num">{formatMoney(codeNow(code))}</td>
+                      <td className="num muted">
+                        {formatMoney(averageMoney(months.map((m) => m.spending_by_category?.[group]?.[code] ?? "0.00")))}
+                      </td>
+                    </tr>,
+                  );
+                }
+                return rows;
               })}
             </tbody>
             <tfoot>
@@ -240,6 +294,23 @@ function SpendingTable({ months }: { months: HouseholdCashflow[] }) {
       )}
     </section>
   );
+}
+
+/** The group's fallback code (the last of its codes in HOUSEHOLD_SPENDING_GROUPS), or null for
+ * a group without subcategories. */
+function fallbackOf(group: string): string | null {
+  const categories = HOUSEHOLD_SPENDING_GROUPS.find((entry) => entry.group === group)?.categories;
+  return categories ? (categories[categories.length - 1] ?? null) : null;
+}
+
+/** The codes a group was booked under in the twelve months, when they say more than the group
+ * row does: two or more codes, or one that is not the group's fallback inside a group with
+ * subcategories. Otherwise none, and the row does not open. */
+function groupCodes(months: HouseholdCashflow[], group: string): string[] {
+  const codes = [...new Set(months.flatMap((m) => Object.keys(m.spending_by_category?.[group] ?? {})))];
+  if (codes.length > 1) return codes;
+  const fallback = fallbackOf(group);
+  return codes.length === 1 && fallback !== null && codes[0] !== fallback ? codes : [];
 }
 
 function IncomeCard({ month }: { month: HouseholdCashflow }) {

@@ -1415,6 +1415,38 @@ a.button-link.capture-review {
   background: var(--accent);
 }
 
+/* Haushalt › Ausgaben nach Kategorie: a group row opens to its codes (D159 amended 14 Nov
+   2026), indented under it in a lighter type. */
+button.household-toggle {
+  min-height: 44px;
+  margin: -12px 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+}
+
+button.household-toggle:not(:disabled):hover {
+  background: none;
+  color: var(--accent-strong);
+}
+
+.household-subrow th {
+  padding-left: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.household-subrow td {
+  font-size: 13px;
+}
+
 .household-rows {
   margin: 0;
   padding: 0;

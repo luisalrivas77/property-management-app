@@ -36,14 +36,14 @@ codes:
   - {category: hh_capital_income, group: income, relevance: income, treatment: private, threshold: null}
   - {category: hh_other_income, group: income, relevance: income, treatment: private, threshold: null}
   # Spending, the groups of mockup 10
-  - {category: hh_housing, label: Wohnen, group: housing, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_groceries, label: Lebensmittel und Drogerie, group: groceries, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_family_child, label: Familie und Kind, group: family_child, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_mobility, label: Mobilität, group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_insurance, label: Versicherungen, group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_subscriptions, label: Abos und Verträge, group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_leisure_travel, label: "Freizeit & Hobbys", group: leisure_travel, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_health, label: Gesundheit, group: health, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_housing, label: "Sonstiges Wohnen", group: housing, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_groceries, label: "Sonstige Lebensmittel", group: groceries, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_family_child, label: "Sonstiges Familie und Kind", group: family_child, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_mobility, label: "Sonstige Mobilität", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_insurance, label: "Sonstige Versicherungen", group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_subscriptions, label: "Sonstige Abos & Verträge", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_leisure_travel, label: "Sonstige Freizeit & Hobbys", group: leisure_travel, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_health, label: "Sonstige Gesundheit", group: health, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_other, label: Sonstiges, group: other, relevance: spending, treatment: private, threshold: null}
   # Tax-relevant spending: each proposes the input its form already reads
   - {category: hh_donation, group: tax, relevance: tax, treatment: pass_through, threshold: null, proposes: "return_input:special_expense"}
@@ -65,22 +65,67 @@ codes:
   # spending (money back for a purchase lowers spending, never income).
   - {category: hh_personal_care, label: "Friseur & Körperpflege", group: personal_care, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_clothing, label: "Kleidung & Schuhe", group: clothing, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_dining, label: "Restaurant & Lieferdienst", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_dining, label: "Sonstiges Essen gehen", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_home, label: "Haushalt & Einrichtung", group: home, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_electronics, label: "Elektronik & Technik", group: electronics, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_online_shopping, label: "Online-Einkäufe", group: online_shopping, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_fees, label: "Behörden & Gebühren", group: fees, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_gifts, label: "Geschenke & Feiern", group: gifts, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_family_transfers, label: "Geld an Familie / ins Ausland", group: family_transfers, relevance: spending, treatment: private, threshold: null}
-  - {category: hh_telecom, label: "Telefon & Internet", group: telecom, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_telecom, label: "Sonstiges Telefon & Internet", group: telecom, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_work_education, label: "Arbeitsmittel & Fortbildung", group: work_education, relevance: spending, treatment: private, threshold: null}
   - {category: hh_sport, label: "Sport & Fitness", group: sport, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_travel, label: "Reisen", group: travel, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_travel, label: "Sonstiges Reisen", group: travel, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_investment, label: "Geldanlage", group: investment, relevance: transfer, treatment: private, threshold: null}
   - {category: hh_refund, label: "Erstattung", group: refund, relevance: spending, treatment: private, threshold: null}
   # D159 amended 14 Nov 2026 (migration 0031, Luis: "I want to add Gas (car) category"): fuel
   # apart from hh_mobility, inside the same Mobilität group (no group of its own).
   - {category: hh_fuel, label: "Tanken (Auto)", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
+  # D159 amended 14 Nov 2026 (migration 0032), Luis: „I want to be as detailed as possible“): subcategories inside the
+  # existing spending groups; each group's old code stays as its fallback, relabelled
+  # „Sonstige …“ above (codes unchanged, so no row or rule changes meaning).
+  - {category: hh_streaming, label: "Streaming (Video)", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_music_audio, label: "Musik & Hörbücher", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_software, label: "Software & KI", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_cloud, label: "Cloud & Server", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_gaming, label: "Gaming", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_news, label: "Zeitungen & Zeitschriften", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_memberships, label: "Mitgliedschaften & Vereine", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_public_transport, label: "Bahn, Bus & ÖPNV", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_taxi, label: "Taxi & Fahrdienste", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_parking, label: "Parken & Maut", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_car_service, label: "Auto: Werkstatt & Wartung", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_car_tax, label: "Auto: Kfz-Steuer & Zulassung", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_supermarket, label: "Supermarkt", group: groceries, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_drugstore, label: "Drogerie & Kosmetik", group: groceries, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_bakery, label: "Bäckerei, Kiosk & Markt", group: groceries, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_restaurant, label: "Restaurant", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_cafe, label: "Café", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_sweets, label: "Eis & Süßes", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_fast_food, label: "Imbiss & Fast Food", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_delivery, label: "Lieferdienst", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_rent, label: "Miete", group: housing, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_energy, label: "Strom, Gas & Heizung", group: housing, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_broadcast_fee, label: "Rundfunkbeitrag", group: housing, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_flat_search, label: "Wohnungssuche & Umzug", group: housing, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_ins_car, label: "Kfz-Versicherung", group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_ins_liability_contents, label: "Haftpflicht & Hausrat", group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_ins_health, label: "Kranken & Pflege", group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_ins_life, label: "Leben, Berufsunfähigkeit & Rente", group: insurance, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_pharmacy, label: "Apotheke", group: health, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_doctor, label: "Arzt & Labor", group: health, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_dental_optical, label: "Zahnarzt & Brille", group: health, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_outings, label: "Ausflüge & Kultur", group: leisure_travel, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_books_media, label: "Bücher & Medien", group: leisure_travel, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_hobbies, label: "Hobbys", group: leisure_travel, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_lodging, label: "Unterkunft", group: travel, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_flights, label: "Flüge", group: travel, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_kids_gear, label: "Baby- & Kinderausstattung", group: family_child, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_toys, label: "Spielzeug", group: family_child, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_pregnancy_birth, label: "Schwangerschaft & Geburt", group: family_child, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_mobile_phone, label: "Mobilfunk", group: telecom, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_internet, label: "Internet & Festnetz", group: telecom, relevance: spending, treatment: private, threshold: "0.900"}
+  - {category: hh_postage, label: "Porto & Versand", group: other, relevance: spending, treatment: private, threshold: "0.900"}
   # The depot's own bookings (D165 (1))
   - {category: security_purchase, group: depot, relevance: transfer, treatment: private, threshold: null}
   - {category: security_sale, group: depot, relevance: transfer, treatment: private, threshold: null}

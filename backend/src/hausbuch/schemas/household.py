@@ -846,6 +846,13 @@ class HouseholdCashflow(Schema):
     # explains yet (the „Ohne Kategorie“ card, linked to Zu prüfen).
     income_by_category: dict[AllocationCategory, Money] = Field(default_factory=dict)
     open_lines: int = Field(default=0, ge=0)
+    # D159 amended 14 Nov 2026 (migration 0032): each spending group's figure by its codes
+    # (subcategories and the group's fallback), keyed by the group, so a group row can list
+    # them; bank_fees and uncategorized under their own codes in „Sonstiges“ as in
+    # spending_by_group. A group of spending_by_group is here exactly when it is there.
+    spending_by_category: dict[HouseholdGroup, dict[AllocationCategory, Money]] = Field(
+        default_factory=dict
+    )
 
 
 # --- The Anlagen ETF tab (phase 6 step 4, §13, mockup 09b) ------------------------------

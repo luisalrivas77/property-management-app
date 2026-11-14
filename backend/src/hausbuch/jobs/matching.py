@@ -72,7 +72,7 @@ from hausbuch.schemas.allocation import (
     LlmMatchOutput,
 )
 from hausbuch.schemas.enums import ActorType, ImportStatus
-from hausbuch.services import matching
+from hausbuch.services import household_resort, matching
 from hausbuch.services.context import Actor, new_command
 
 from .document_read import MAX_RETRIES, RETRY_WAITS_S, JobDeps, RetryLater
@@ -171,6 +171,8 @@ class _Prepared:
     loan_id: UUID | None = None  # the one loan, for a loan category (D51)
     loan_contract_id: UUID | None = None  # its one Darlehensvertrag, for a payout (D51)
     private: bool = False  # a private account's line: the household request (D168)
+    # The re-sort (services.household_resort): the line's rows as the first step saw them.
+    seen: tuple = ()
 
 
 def run_match_transaction(
@@ -181,13 +183,18 @@ def run_match_transaction(
     attempt: int,
     rematch: bool = False,
     reask: bool = False,
+    resort: bool = False,
 ) -> matching.MatchPlan:
     """One attempt for one line; returns what was done (for tests and the log). `reask`:
-    the line's proposed set is asked of the model again (services.matching.reask_household)."""
+    the line's proposed set is asked of the model again (services.matching.reask_household).
+    `resort`: a line in a group's fallback is re-sorted into the subcategories
+    (services.household_resort)."""
     log = {"event": MATCH_TRANSACTION_TASK, "transaction_id": str(transaction_id)}
     log["attempt"] = attempt
     if reask:
         log["reask"] = True
+    if resort:
+        log["resort"] = True
     kind = None
     plan = matching.MatchPlan("skipped", "matching.failed")
     try:
@@ -197,6 +204,7 @@ def run_match_transaction(
             transaction_id,
             rematch=rematch,
             reask=reask,
+            resort=resort,
             first_attempt=attempt == 0,
             log=log,
         )
@@ -223,6 +231,7 @@ def _match(
     rematch: bool,
     log: dict,
     reask: bool = False,
+    resort: bool = False,
     first_attempt: bool = True,
 ) -> matching.MatchPlan:
     key = deps.settings.iban_hmac_key
@@ -231,15 +240,20 @@ def _match(
         ctx = new_command(conn, workspace_id, SYSTEM_ACTOR, now=deps.clock())
         # A retried re-ask asks again: its first attempt may have called the model and then
         # failed to write the answer (the ai_call row commits on its own).
-        plan = matching.match_line(
-            ctx,
-            transaction_id,
-            iban_key=key,
-            ai_available=ai,
-            rematch=rematch,
-            reask=reask,
-            skip_if_asked=first_attempt,
-        )
+        if resort:
+            plan = household_resort.resort_line(
+                ctx, transaction_id, iban_key=key, ai_available=ai, skip_if_asked=first_attempt
+            )
+        else:
+            plan = matching.match_line(
+                ctx,
+                transaction_id,
+                iban_key=key,
+                ai_available=ai,
+                rematch=rematch,
+                reask=reask,
+                skip_if_asked=first_attempt,
+            )
         prepared = _Prepared(plan)
         if plan.outcome == "categorize":
             line = matching.load_line(conn, transaction_id)
@@ -254,6 +268,7 @@ def _match(
                     tx=line.tx,
                     property_id=matching.only_property(conn),
                     private=True,
+                    seen=household_resort.seen(line),
                 )
             else:
                 data = matching.categorize_input(conn, line)
@@ -271,6 +286,8 @@ def _match(
     if plan.outcome == "categorize":
         found, model = _categorize(deps, workspace_id, transaction_id, prepared, log)
         actor = Actor(ActorType.AI, model)
+        if resort:
+            return _finish_resort(deps, workspace_id, transaction_id, found, actor, prepared.seen)
         return _finish(deps, workspace_id, transaction_id, found, actor, reask=reask)
     if plan.outcome == "explain":
         assert plan.allocation_set is not None
@@ -291,6 +308,19 @@ def _finish(
     with workspace_transaction(deps.engine, workspace_id) as conn:
         ctx = new_command(conn, workspace_id, actor, now=deps.clock())
         return matching.finish_line(ctx, transaction_id, found, reask=reask)
+
+
+def _finish_resort(
+    deps: JobDeps,
+    workspace_id: UUID,
+    transaction_id: UUID,
+    found: AllocationSet,
+    actor: Actor,
+    seen: tuple,
+) -> matching.MatchPlan:
+    with workspace_transaction(deps.engine, workspace_id) as conn:
+        ctx = new_command(conn, workspace_id, actor, now=deps.clock())
+        return household_resort.finish_resort(ctx, transaction_id, found, seen)
 
 
 def _payload(data: matching.CategorizeInput) -> dict[str, Any]:
