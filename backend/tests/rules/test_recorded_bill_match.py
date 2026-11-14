@@ -124,3 +124,14 @@ def test_the_card_never_proposes_a_part_a_nebenkosten_row_records():
     assert proposed_private_costs(booked, D("-600.00"), bill, [D("600.00")]) == []
     whole = _facts([])
     assert proposed_private_costs(booked, D("-600.00"), whole, [D("600.00")]) == []
+    # Review of D161 widened: a recorded purchase row never cancels a deductible part of the
+    # same amount, whichever order the parts come in.
+    for order in (
+        [("loan_fees", "500.00"), ("acquisition_cost", "500.00")],
+        [("acquisition_cost", "500.00"), ("loan_fees", "500.00")],
+    ):
+        equal = _facts(order)
+        assert [
+            (p.category, p.amount)
+            for p in proposed_private_costs(booked, D("-1000.00"), equal, [D("500.00")])
+        ] == [(C.LOAN_FEES, D("500.00"))]

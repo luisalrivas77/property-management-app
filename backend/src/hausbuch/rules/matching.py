@@ -255,12 +255,6 @@ PURCHASE_COST_WORDS = (
 _RECORDED_PAYEE_WORDS = PURCHASE_COST_WORDS + ("finanzamt", "landeshauptkasse", "gerichtskasse")
 
 
-def names_purchase_cost(*texts: str | None) -> bool:
-    """Whether the texts name a cost of buying or financing the flat (case-insensitive)."""
-    text = " ".join(filter(None, texts)).casefold()
-    return any(word in text for word in PURCHASE_COST_WORDS)
-
-
 def recorded_amounts(bill: RecordedBill) -> list[Decimal]:
     """The magnitudes a payment of a recorded bill may have (rules.proof_match: the bill's
     combined total, its private part alone when it also has Nebenkosten rows, one Nebenkosten

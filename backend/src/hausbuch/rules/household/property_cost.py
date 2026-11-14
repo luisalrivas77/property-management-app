@@ -44,7 +44,9 @@ def proposed_private_costs(
     widened, 14 Nov 2026; closes the gap D159 amended named): a cost already recorded is never
     proposed a second time. A bill booked whole with such a row proposes nothing (its one part
     is that row); a part equal to a row's amount within 0.01 is that row (each row stands for
-    one part); nothing when the rows cover the bill's total."""
+    one part, matched to the purchase parts first); nothing when the rows cover the bill's
+    total. Known gap: a bill booked whole with a partial row proposes nothing for the
+    remainder (§14.1)."""
     if bill.property_id is None:
         return []
     if recorded and not bill.parts:
@@ -54,13 +56,20 @@ def proposed_private_costs(
         return []
     rows = list(recorded)
     parts = [(p.category, p.amount) for p in bill.parts] or [(bill.category, abs(amount))]
-    kept = []
-    for category, part in parts:
-        same = next((r for r in rows if abs(r - part) <= TOLERANCE), None)
-        if same is not None:
-            rows.remove(same)
-            continue
-        kept.append((category, part))
+    # A Nebenkosten row is by definition a capitalised purchase cost, so the rows are matched
+    # to the parts that are not private_cost categories first, and only the rows left over to
+    # the deductible parts: a deductible part of the same amount as a recorded purchase part is
+    # never dropped in its place (review of D161 widened, 14 Nov 2026).
+    taken: set[int] = set()
+    for deductible in (False, True):
+        for i, (category, part) in enumerate(parts):
+            if i in taken or (category in PRIVATE_COST_CATEGORIES) != deductible:
+                continue
+            same = next((r for r in rows if abs(r - part) <= TOLERANCE), None)
+            if same is not None:
+                rows.remove(same)
+                taken.add(i)
+    kept = [cp for i, cp in enumerate(parts) if i not in taken]
     return [
         ProposedPrivateCost(
             property_id=bill.property_id,
