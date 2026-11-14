@@ -497,3 +497,54 @@ def test_a_stored_proof_is_linked_to_its_bill_from_the_to_do(client_a):
     )
     draft = ok(client_a.get(f"/api/properties/{prop['id']}/anlage-v", params={"tax_year": 2026}))
     assert [w for w in draft["warnings"] if w["code"] == "payment_proof.missing"] == []
+
+
+def test_a_document_nothing_depends_on_is_deleted(client_a, blob_store):
+    """D193: the detail says it can go, DELETE answers 204, the file goes with it, and the
+    same bytes can be uploaded again afterwards."""
+    data = b"%PDF-1.7 falscher Depotauszug"
+    document = ok(upload(client_a, data, filename="depot.pdf"), 201)
+    detail = ok(client_a.get(f"/api/documents/{document['id']}"))
+    assert (detail["deletable"], detail["delete_blocked_by"]) == (True, [])
+    key = f"{document['workspace_id']}/sha256/{hashlib.sha256(data).hexdigest()}"
+    assert blob_store.exists(key)
+
+    assert client_a.delete(f"/api/documents/{document['id']}").status_code == 204
+
+    assert client_a.get(f"/api/documents/{document['id']}").status_code == 404
+    assert not blob_store.exists(key)
+    assert document["id"] not in {d["id"] for d in ok(client_a.get("/api/documents"))}
+    events = ok(
+        client_a.get("/api/events", params={"entity_type": "document", "entity_id": document["id"]})
+    )
+    assert [e["type"] for e in events] == ["document.uploaded", "document.deleted"]
+    assert events[-1]["payload"] == {"type": None, "subtype": None}
+    again = ok(upload(client_a, data, filename="depot.pdf"), 201)
+    assert again["id"] != document["id"]
+    assert blob_store.exists(key)
+    assert client_a.delete(f"/api/documents/{uuid4()}").status_code == 404
+
+
+def test_a_linked_document_is_not_deleted(client_a):
+    """D193: a link is a dependency; the detail and the 409 name it by code."""
+    prop = new_property(client_a)
+    document = ok(upload(client_a, b"%PDF-1.7 verknuepft"), 201)
+    create(
+        client_a,
+        f"/api/documents/{document['id']}/links",
+        {"target_type": "property", "target_id": prop["id"]},
+    )
+    detail = ok(client_a.get(f"/api/documents/{document['id']}"))
+    assert (detail["deletable"], detail["delete_blocked_by"]) == (
+        False,
+        ["document.delete_blocked.link"],
+    )
+
+    body = ok(client_a.delete(f"/api/documents/{document['id']}"), 409)
+
+    assert body["error"] == "conflict"
+    assert (body["code"], body["codes"]) == (
+        "document.delete_blocked.link",
+        ["document.delete_blocked.link"],
+    )
+    assert client_a.get(f"/api/documents/{document['id']}").status_code == 200

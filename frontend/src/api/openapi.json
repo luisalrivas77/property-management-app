@@ -3374,6 +3374,38 @@
             }
           }
         }
+      },
+      "delete": {
+        "summary": "Document Delete",
+        "description": "„Dokument löschen“ (D193): 204 when deleted with its readings and unapplied\nsuggestions; 409 conflict with `codes` (`document.delete_blocked.<kind>`, the same as the\ndetail's `delete_blocked_by`) when something depends on it; 404 for an unknown id. The\noriginal's blob is removed after the commit, when no row refers to the bytes any more; a\nfailure there is logged (class only) and never fails the request, since the rows are\nalready gone and a later upload of the same bytes stores the file again.",
+        "operationId": "document_delete_api_documents__document_id__delete",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/documents/{document_id}/typing": {
@@ -13607,6 +13639,17 @@
                 "type": "null"
               }
             ]
+          },
+          "deletable": {
+            "type": "boolean",
+            "title": "Deletable"
+          },
+          "delete_blocked_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Delete Blocked By"
           }
         },
         "additionalProperties": false,
@@ -13618,7 +13661,9 @@
           "hand_fields",
           "retention",
           "media_type",
-          "opens_inline"
+          "opens_inline",
+          "deletable",
+          "delete_blocked_by"
         ],
         "title": "DocumentDetail",
         "description": "GET /documents/{id}: one read transaction over the document and its layers."
@@ -15072,6 +15117,7 @@
           "document.typed",
           "document.linked",
           "document.unlinked",
+          "document.deleted",
           "document.classified",
           "document.extracted",
           "document.read_failed",

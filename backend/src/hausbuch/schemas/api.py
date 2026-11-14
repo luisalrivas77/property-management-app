@@ -365,6 +365,10 @@ class DocumentDetail(Schema):
     # no account holds yet, the accounts „Auf Konto importieren“ offers.
     statement_imports: list[StatementFileImport] = Field(default_factory=list)
     statement_offer: StatementFileOffer | None = None
+    # D193, „Dokument löschen“: whether DELETE /documents/{id} would delete it, and if not, why
+    # (one `document.delete_blocked.<kind>` code per kind of row that depends on it).
+    deletable: bool
+    delete_blocked_by: list[str]
 
 
 class LinkTargetRef(Schema):

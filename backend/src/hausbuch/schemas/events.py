@@ -328,6 +328,16 @@ class DocumentLinked(Schema):
     target_id: UUID
 
 
+class DocumentDeleted(Schema):
+    """„Dokument löschen“ (D193, 14 Nov 2026): a document nothing depended on was deleted with
+    its own readings and suggestions. Only its typing at deletion is kept: no file name, title,
+    SHA-256 or content, so the event says that a document was deleted, not which one. The
+    document's earlier events stay (principle 4)."""
+
+    type: DocumentType | None = None
+    subtype: DocumentSubtype | None = None
+
+
 # --- Phase 2 payloads (docs/phases/phase-2.md §3.5) ------------------------------
 
 
@@ -1172,6 +1182,7 @@ class EventType(StrEnum):
     DOCUMENT_TYPED = "document.typed"
     DOCUMENT_LINKED = "document.linked"
     DOCUMENT_UNLINKED = "document.unlinked"
+    DOCUMENT_DELETED = "document.deleted"  # D193
     # Phase 2
     DOCUMENT_CLASSIFIED = "document.classified"
     DOCUMENT_EXTRACTED = "document.extracted"
@@ -1326,6 +1337,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.DOCUMENT_TYPED: EventSpec(DocumentTyped, "forbidden", "Type and fields set"),
     E.DOCUMENT_LINKED: EventSpec(DocumentLinked, "forbidden", "Linked to an entity"),
     E.DOCUMENT_UNLINKED: EventSpec(DocumentLinked, "forbidden", "Link removed"),
+    E.DOCUMENT_DELETED: EventSpec(
+        DocumentDeleted, "forbidden", "Deleted by a person; nothing depended on it (D193)"
+    ),
     # Phase 2
     E.DOCUMENT_CLASSIFIED: EventSpec(DocumentClassified, "forbidden", "Classified by the model"),
     E.DOCUMENT_EXTRACTED: EventSpec(DocumentExtracted, "forbidden", "Fields read by the model"),

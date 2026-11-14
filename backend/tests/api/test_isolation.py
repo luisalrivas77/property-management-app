@@ -162,6 +162,7 @@ WRITES = [
         {"target_type": "property", "target_id": "{property}"},
     ),
     ("DELETE", "/api/documents/{document}/links/property/{property}", None),
+    ("DELETE", "/api/documents/{document}", None),  # D193
 ]
 
 

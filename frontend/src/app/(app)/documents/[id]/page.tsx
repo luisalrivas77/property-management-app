@@ -9,10 +9,11 @@
 // card carries these same fields and the typing form is replaced by a one-line pointer; when
 // the proposal proposes a link, the links are shown read-only (no form, no remove) the same way.
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
+import { ruleCodeText } from "@/api/errors";
 import type { DocumentDetail, DocumentSubtype, DocumentType, HandFields, LinkTarget, ManualDocumentFields } from "@/api/schemas";
 import { DocumentExplanationBox, documentLabel, NO_TAX_YEAR, StatementImportsNotice } from "@/components/documents";
 import { loadDirectory, targets, type Target } from "@/components/entities";
@@ -89,6 +90,8 @@ export default function DocumentPage() {
             {directory.error ? <ErrorNotice error={directory.error} /> : null}
             <h2>Aufbewahrung</h2>
             <Retention detail={data} />
+            <h2>Löschen</h2>
+            <DeleteDocument detail={data} />
           </>
         )}
       </Loading>
@@ -548,5 +551,54 @@ function Retention({ detail }: { detail: DocumentDetail }) {
         ],
       ]}
     />
+  );
+}
+
+/** D193: delete a document nothing depends on; otherwise say what still depends on it. */
+function DeleteDocument({ detail }: { detail: DocumentDetail }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const reasons = detail.delete_blocked_by.map((code) => ruleCodeText(code) ?? code);
+
+  async function remove() {
+    if (!window.confirm("Dokument endgültig löschen? Die Datei wird entfernt.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.DELETE("/api/documents/{document_id}", { params: { path: { document_id: detail.document.id } } }));
+      router.push("/documents");
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  if (!detail.deletable) {
+    return reasons.length === 1 ? (
+      <p className="muted" role="note">
+        Kann nicht gelöscht werden: {reasons[0]}
+      </p>
+    ) : (
+      <div className="stack" role="note">
+        <p className="muted">Kann nicht gelöscht werden:</p>
+        <ul className="muted">
+          {reasons.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+  return (
+    <div className="stack">
+      <p className="muted">Nichts hängt an diesem Dokument. Wurde es versehentlich hochgeladen, kann es gelöscht werden.</p>
+      <div>
+        <button type="button" className="danger" onClick={remove} disabled={busy}>
+          {busy ? "Löscht …" : "Dokument löschen"}
+        </button>
+      </div>
+      {error ? <ErrorNotice error={error} /> : null}
+    </div>
   );
 }

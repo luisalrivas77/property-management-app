@@ -2,10 +2,11 @@
 
 Endpoints: docs/phases/phase-1-step-3.md §4.7. Originals are immutable (principle 6): the
 upload goes through upload_document, the download through read_original, which checks the
-SHA-256 of what the store returns. There is deliberately no DELETE /documents/{id}: retention
-deletion is not exposed in phase 1.
+SHA-256 of what the store returns. DELETE /documents/{id} (D193, „Dokument löschen“) deletes
+a document nothing depends on, e.g. a wrong upload; retention deletion is still not exposed.
 """
 
+import logging
 import re
 from collections.abc import Callable
 from typing import Annotated, Any
@@ -40,6 +41,9 @@ from hausbuch.services.depot_explain import document_explanation
 from hausbuch.services.documents import (
     attach_payment_proof,
     current_extraction,
+    delete_document,
+    deletion_blockers,
+    discard_original,
     document_media_type,
     document_retention,
     download_filename,
@@ -67,6 +71,7 @@ from ..errors import ApiError
 from ..limits import too_large
 
 router = domain_router()
+log = logging.getLogger(__name__)
 
 # The service's (and the document_file CHECK's) media type form.
 _MEDIA_TYPE = re.compile(r"[a-z]+/[a-z0-9.+-]+")
@@ -221,6 +226,7 @@ def _detail(
     document = found(get_document(conn, document_id), EntityType.DOCUMENT, document_id)
     media_type = found(document_media_type(conn, document_id), EntityType.DOCUMENT, document_id)
     extraction = current_extraction(conn, document_id)
+    blockers = deletion_blockers(conn, document_id)
     return DocumentDetail(
         document=document,
         links=list_links(conn, document_id),
@@ -232,6 +238,8 @@ def _detail(
         explanation=document_explanation(conn, document_id),
         statement_imports=document_statement_imports(conn, document_id),
         statement_offer=statement_offer(conn, store, document_id, iban_key=iban_key),
+        deletable=not blockers,
+        delete_blocked_by=blockers,
     )
 
 
@@ -346,6 +354,26 @@ async def document_statement_account(
         body,
         iban_key=settings.iban_hmac_key,
     )
+
+
+@router.delete("/documents/{document_id}", status_code=204)
+def document_delete(document_id: UUID, cmd: Cmd, store: StoreDep) -> Response:
+    """„Dokument löschen“ (D193): 204 when deleted with its readings and unapplied
+    suggestions; 409 conflict with `codes` (`document.delete_blocked.<kind>`, the same as the
+    detail's `delete_blocked_by`) when something depends on it; 404 for an unknown id. The
+    original's blob is removed after the commit, when no row refers to the bytes any more; a
+    failure there is logged (class only) and never fails the request, since the rows are
+    already gone and a later upload of the same bytes stores the file again."""
+    removed = cmd.run(delete_document, document_id)
+    if removed is not None:
+        try:
+            cmd.read(discard_original, store, removed)
+        except Exception as exc:  # noqa: BLE001 - the deletion itself has committed
+            log.warning(
+                "original not removed after a document deletion",
+                extra={"fields": {"document_id": str(document_id), "exc_type": type(exc).__name__}},
+            )
+    return Response(status_code=204)
 
 
 @router.delete("/documents/{document_id}/links/{target_type}/{target_id}", status_code=204)
