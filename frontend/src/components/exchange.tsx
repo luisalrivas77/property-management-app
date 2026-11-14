@@ -50,14 +50,14 @@ export function formatUnits(value: string | null | undefined): string {
 function plainDecimal(value: string): string {
   const match = /^(-?)(\d*)(?:\.(\d*))?[eE]([+-]?\d+)$/.exec(value.trim());
   if (!match) return value;
-  const [, sign, whole, fraction = "", exponent] = match;
+  const [, sign = "", whole = "", fraction = "", exponent = "0"] = match;
   const digits = whole + fraction;
   const point = whole.length + Number(exponent);
   let text: string;
   if (point <= 0) text = `0.${"0".repeat(-point)}${digits}`;
   else if (point >= digits.length) text = digits + "0".repeat(point - digits.length);
   else text = `${digits.slice(0, point)}.${digits.slice(point)}`;
-  const [integer, rest] = text.split(".");
+  const [integer = "", rest] = text.split(".");
   const cleaned = (integer.replace(/^0+(?=\d)/, "") || "0") + (rest !== undefined ? `.${rest}` : "");
   return sign + cleaned;
 }
