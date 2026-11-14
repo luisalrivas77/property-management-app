@@ -555,9 +555,15 @@ def _suggested_pattern(
     purpose's first word (rules.matching.suggested_purpose_pattern); the rule is the one the
     PUT would create with it (rules_learned.proposed_rule_or_refusal: one row of a category a
     typed pattern learns on this account), and it must be safe on the workspace's lines
-    (rules.matching.pattern_waiting: none it hits has an IBAN or is confirmed otherwise)."""
+    (rules.matching.pattern_waiting: none it hits has an IBAN or is confirmed otherwise).
+    Never for a category a deterministic matcher owns (D40's floor: rent, prepayment, loan,
+    Hausgeld, owner transfers; without an IBAN no amount check would guard such a rule) nor
+    for one that never auto-confirms (no threshold); a hand-typed pattern (D38) still may."""
     tx = line.tx
     if tx.counterparty_iban_hmac is not None or len(current.allocations) != 1:
+        return None
+    category = current.allocations[0].category
+    if category in matching._MATCHER_CATEGORIES or THRESHOLDS[category] is None:
         return None
     candidate = matchers.suggested_purpose_pattern(tx.purpose)
     word = matchers.purpose_word(tx.purpose)

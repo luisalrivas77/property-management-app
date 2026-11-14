@@ -1105,6 +1105,29 @@ def test_a_rental_fee_line_without_an_iban_gets_one_too(world, private):
     assert view.suggested_pattern_waiting == 1
 
 
+@pytest.mark.parametrize(
+    ("purpose", "category", "amount"),
+    [
+        ("Bareinzahlung Filiale", "owner_transfer_in", "500.00"),  # a matcher's (D40)
+        ("Darlehenszinsen 10/2026", "loan_interest", "-310.00"),  # a matcher's (D40)
+        ("Handwerkerrechnung 17", "repairs", "-310.00"),  # never auto-confirmed
+    ],
+)
+def test_no_suggestion_for_a_matchers_category_or_one_without_a_threshold(
+    world, private, purpose, category, amount
+):
+    """Without an IBAN no amount check guards the rule, so a one-click rule booking any
+    „Bareinzahlung …“ as an owner transfer is never offered; a typed pattern still may."""
+    scope = {"loan_id": world.loan()} if category == "loan_interest" else {}
+    tx = world.line(date(2026, 10, 28), amount, purpose=purpose)
+    _propose(world, tx, amount, category, property_id=world.property_id, **scope)
+    view = _view(world, tx)
+    assert view.can_learn_rule is False
+    assert view.suggested_purpose_pattern is None
+    assert view.suggested_pattern_waiting == 0
+    assert view.learn_rule_default is False
+
+
 def test_answering_with_the_suggested_pattern_books_the_waiting_lines(
     world, private, app_engine, tmp_path
 ):
