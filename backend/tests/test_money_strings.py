@@ -104,6 +104,10 @@ def test_plain_notation_inside_a_model_and_an_optional_field():
 
     assert Holding(units=Decimal("0E-10")).model_dump_json() == '{"units":"0.0000000000"}'
     assert Holding().model_dump_json() == '{"units":null}'
+    # A patch's unset sentinel (a non-nullable decimal defaulting to None) still dumps as null.
+    from hausbuch.schemas.api import AccountPatch
+
+    assert '"opening_balance":null' in AccountPatch(label="x").model_dump_json()
 
 
 def test_the_bounds_still_apply_to_strings():

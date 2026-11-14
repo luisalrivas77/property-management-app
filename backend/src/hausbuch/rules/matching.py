@@ -984,7 +984,7 @@ def _name_found(pattern: str, name: str | None) -> bool:
 # IBAN hash can carry dozens of payees. An IBAN whose private lines carry this many distinct
 # payee names (payee_key) names no payee: no rule on it alone, and everything else keyed by
 # the IBAN (the D49 history and question, the similar answers) is keyed by IBAN and name.
-SHARED_IBAN_MIN_NAMES = 3
+SHARED_IBAN_MIN_NAMES = 2
 
 
 def payee_key(name: str | None) -> str:

@@ -60,7 +60,7 @@ class _DecimalString(WithJsonSchema):
     ) -> CoreSchema:
         schema = handler(source)
         schema["serialization"] = core_schema.plain_serializer_function_ser_schema(
-            plain_decimal, return_schema=core_schema.str_schema(), when_used="json"
+            plain_decimal, return_schema=core_schema.str_schema(), when_used="json-unless-none"
         )
         return schema
 

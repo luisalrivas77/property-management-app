@@ -669,7 +669,14 @@ def test_a_single_payee_iban_behaves_as_before(world, private, app_engine, tmp_p
     assert result.rule is not None
     assert result.rule.matcher.counterparty_name_pattern is None
     assert result.rule.matcher.counterparty_iban_hmac is not None
-    later = private.line(date(2026, 10, 3), "-29.99", name="Anderer Name", iban=SINGLE_IBAN)
+    later = private.line(
+        date(2026, 10, 3), "-29.99", name="FITNESSSTUDIO BEISPIEL", iban=SINGLE_IBAN
+    )
     _rematch(app_engine, tmp_path, world, later)
     (row,) = _rows(world, later)
     assert (row.category, row.method, row.status) == ("hh_sport", "rule", "confirmed")
+    # A second payee on the IBAN makes it shared (D160 amended, two names): the rule on the
+    # IBAN alone stops, so the other payee's line is never booked by it and is asked again.
+    other = private.line(date(2026, 10, 4), "-29.99", name="Anderer Name", iban=SINGLE_IBAN)
+    plan = _rematch(app_engine, tmp_path, world, other)
+    assert plan.reason == "routing.no_match" and _rows(world, other) == []

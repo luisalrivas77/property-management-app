@@ -72,17 +72,18 @@ def _rule(matcher: dict, category: C = C.HH_DINING) -> MatchingRule:
     ("names", "shared"),
     [
         (["Lieferdienst Beispiel", "Supermarkt Beispiel", "Drogerie Beispiel"], True),
-        (["Lieferdienst Beispiel", "Supermarkt Beispiel"], False),  # two names: not shared
+        (["Lieferdienst Beispiel", "Supermarkt Beispiel"], True),  # two payees: shared
+        (["Lieferdienst Beispiel"], False),  # one payee
         # one payee, spelled three ways: case, spacing, dots and digits are one payee
         (["Lieferdienst Beispiel", "LIEFERDIENST  BEISPIEL", "Lieferdienst.Beispiel 42"], False),
         # a branch's //<Ort>/<Land> token is no other payee
         (["Bäckerei Muster//Stadt A/DE", "Bäckerei Muster//Stadt B/DE", "Bäckerei Muster"], False),
-        ([None, "", "Lieferdienst Beispiel", "Supermarkt Beispiel"], False),  # no name, no payee
+        ([None, "", "Lieferdienst Beispiel"], False),  # no name, no payee
         ([], False),
     ],
 )
-def test_an_iban_is_shared_from_three_distinct_payee_names(names, shared):
-    assert matching.SHARED_IBAN_MIN_NAMES == 3
+def test_an_iban_is_shared_from_two_distinct_payee_names(names, shared):
+    assert matching.SHARED_IBAN_MIN_NAMES == 2
     assert matching.shared_iban(names) is shared
 
 
