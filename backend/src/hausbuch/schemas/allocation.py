@@ -531,11 +531,14 @@ class NameHistory(Schema):
     """A line confirmed earlier on the same account, by its counterparty name and the one
     category it was confirmed under (phase 6 D160): what a name-pattern rule is checked
     against before it is learned. The caller passes the account's confirmed single-category
-    lines of the same sign; rules.matching keeps those the pattern hits."""
+    lines of the same sign; rules.matching keeps those the pattern hits. `amount`: the line's
+    signed amount, so a line of the other sign (a refund of the same merchant) never counts
+    against a rule; None = the caller filtered by sign already."""
 
     transaction_id: UUID
     counterparty_name: str
     category: AllocationCategory
+    amount: Money | None = None
 
 
 # --- Review routing (rules.review.route) ----------------------------------------------
