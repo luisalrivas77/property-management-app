@@ -300,8 +300,38 @@ _LOCATION = re.compile(r"//[^/]*/[A-Za-z]{2}\s*$")  # the trailing //<Ort>/<Land
 _DROPPED = re.compile(r"[0-9/.]")
 
 
+def _cut(text: str) -> str:
+    """D160 amended (4): the raw tokens up to the first per-purchase one (the fixture header's
+    1a-1c), written once more."""
+    out: list[str] = []
+    tokens = text.split()
+    merchant_named = False
+    for n, tok in enumerate(tokens):
+        digit = re.search(r"\d", tok) is not None
+        if merchant_named and digit:
+            break
+        before, _, after = tok.partition("*")
+        if re.search(r"\d", before) and re.search(r"[^\W\d_]", before):
+            letters = re.split(r"\d", before, maxsplit=1)[0]
+            if re.search(r"[^\W\d_]{4,}", letters):
+                out.append(letters)
+            break
+        if "*" not in tok:
+            out.append(tok)
+            continue
+        follows = after if after else (tokens[n + 1] if n + 1 < len(tokens) else "")
+        if follows == "" or re.search(r"\d", follows.split("*")[0]):
+            if before:
+                out.append(before)
+            break
+        out.append(tok)
+        merchant_named = True
+    joined = " ".join(out)
+    return joined if re.search(r"[^\W\d_]{4,}", joined) else text
+
+
 def _merchant_pattern(name: str) -> str:
-    text = _LOCATION.sub("", name).upper()
+    text = _cut(_LOCATION.sub("", name)).upper()
     text = " ".join(_DROPPED.sub(" ", text).split())
     return "^" + re.escape(text).replace("\\ ", " ")
 

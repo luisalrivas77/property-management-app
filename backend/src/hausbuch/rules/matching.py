@@ -1179,17 +1179,88 @@ _NAME_DROPPED = re.compile(r"[0-9/.]")
 
 def merchant_pattern(name: str) -> str:
     """D160: a card line's counterparty name to an anchored rule pattern: the trailing
-    location token (`//<Ort>/<Land>`) removed, upper-cased, digits, slashes and dots replaced by
+    location token (`//<Ort>/<Land>`) removed, the name cut before its first per-purchase
+    token (_merchant_cut, D160 amended (4)), upper-cased, digits, slashes and dots replaced by
     a space, whitespace collapsed, regex-escaped with a space left plain, anchored at the start
     (fixture merchant_pattern.yaml: "S.C.A." keeps "S C A", so a dropped character is a space)."""
-    return "^" + re.escape(_merchant_text(name)).replace("\\ ", " ")
+    return _as_pattern(_payee_text(name))
+
+
+def _as_pattern(text: str) -> str:
+    return "^" + re.escape(text).replace("\\ ", " ")
 
 
 def _merchant_text(name: str) -> str:
-    """The name as merchant_pattern reads it, unescaped: what a name pattern is matched on
-    besides the collapsed name, since "S.C.A." becomes "S C A" in the pattern."""
-    text = _LOCATION.sub("", name).upper()
-    return " ".join(_NAME_DROPPED.sub(" ", text).split())
+    """The whole name normalised as merchant_pattern normalises it, unescaped: what a name
+    pattern is matched on besides the collapsed name, since "S.C.A." becomes "S C A" in the
+    pattern."""
+    return _normalised(_LOCATION.sub("", name))
+
+
+def _normalised(text: str) -> str:
+    return " ".join(_NAME_DROPPED.sub(" ", text.upper()).split())
+
+
+def _payee_text(name: str) -> str:
+    """The name as a learned name rule reads it: _merchant_cut, normalised."""
+    return _normalised(_merchant_cut(name))
+
+
+_LETTER = re.compile(r"[^\W\d_]")
+_WORD_MIN = re.compile(r"[^\W\d_]{4,}")  # a word of at least 4 letters
+_BEFORE_DIGIT = re.compile(r"^\D*")
+
+
+def _has_digit(token: str) -> bool:
+    return any(c.isdigit() for c in token)
+
+
+def _mixed(token: str) -> bool:
+    """A token mixing letters and digits: an order code ("ZD2HG0G54", "B9WNACJA") or a date
+    glued to a name ("21MAY", "GLOVO24MAY")."""
+    return _has_digit(token) and _LETTER.search(token) is not None
+
+
+def _merchant_cut(name: str) -> str:
+    """D160 amended (4), 14 Nov 2026: the raw name (location token removed) up to its first
+    per-purchase token, so a card name that carries an order code or a date repeats:
+
+    - a `*` followed by a token with a digit ("AMZN Mktp DE*ZD2HG0G54") ends the name at the
+      `*`; a `*` followed by a word is the merchant a payment facilitator names ("PAYPAL
+      *DISNEYPLUS", "SUMUP *CAFE …"), kept, and then the first token with a digit (the
+      facilitator's phone number or the merchant's address) ends the name;
+    - a token mixing letters and digits ("21MAY", "B9WNACJA", "GLOVO24MAY") ends the name;
+      its letters before the first digit stay when they hold a word of 4 letters or more
+      ("GLOVO" of "GLOVO24MAY").
+
+    Digits-only tokens ("4421", "0815/2026", "22-24") are no per-purchase code: they are
+    dropped by the normalisation as before. When the cut keeps no word of 4 letters or more,
+    the whole name is read as before (an "O2 GmbH" stays "O GMBH")."""
+    text = _LOCATION.sub("", name)
+    tokens = text.split()
+    kept: list[str] = []
+    starred = False
+    for i, token in enumerate(tokens):
+        if starred and _has_digit(token):
+            break
+        head, star, tail = token.partition("*")
+        if _mixed(head):
+            lead = _BEFORE_DIGIT.match(head).group()  # type: ignore[union-attr]
+            if _WORD_MIN.search(lead):
+                kept.append(lead)
+            break
+        if not star:
+            kept.append(token)
+            continue
+        after = tail or (tokens[i + 1] if i + 1 < len(tokens) else "")
+        if not after or _has_digit(after.partition("*")[0]):
+            if head:
+                kept.append(head)
+            break
+        kept.append(token)
+        starred = True
+    cut = " ".join(kept)
+    return cut if _WORD_MIN.search(cut) else text
 
 
 def _name_found(pattern: str, name: str | None) -> bool:
