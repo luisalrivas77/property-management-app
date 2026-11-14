@@ -67,7 +67,13 @@ from hausbuch.rules.extraction_parse import (
 )
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
 from hausbuch.schemas.document import DocumentTyping
-from hausbuch.schemas.enums import ActorType, DocumentSubtype, ExtractionKind, ProposalStatus
+from hausbuch.schemas.enums import (
+    ActorType,
+    DocumentSubtype,
+    DocumentType,
+    ExtractionKind,
+    ProposalStatus,
+)
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
 from hausbuch.services import documents as document_service
 from hausbuch.services import proposals
@@ -399,6 +405,27 @@ def _is_bank_export(original: _Original) -> bool:
     return is_bank_export(original.data, original.media_type)
 
 
+def _type_statement(
+    deps: JobDeps, workspace_id: UUID, document_id: UUID, subtype: DocumentSubtype | None
+) -> None:
+    """A statement read by code on its account (a bank export, a card statement, a depot's
+    cash statement) is typed by code when it is stopped before the model, so Dokumente shows
+    what it is before it is imported (Luis, 14 Nov 2026: „The type of the depot document is
+    not suggested“). Only an untyped document: a person's typing stays, as import_statement
+    does. A failure is logged and never changes the stop: the import types it later."""
+    try:
+        with workspace_transaction(deps.engine, workspace_id) as conn:
+            current = document_service.get_document(conn, document_id)
+            if current is None or current.typing is not None:
+                return
+            ctx = new_command(conn, workspace_id, SYSTEM_ACTOR, now=deps.clock())
+            document_service.type_document(
+                ctx, document_id, DocumentTyping(type=DocumentType.STATEMENT, subtype=subtype)
+            )
+    except Exception as exc:  # the class name only, never a value
+        logger.warning("statement not typed", extra={"fields": {"exc_type": type(exc).__name__}})
+
+
 def _note_depot_kind(deps: JobDeps, workspace_id: UUID, document_id: UUID, text: str) -> None:
     """Phase 6 D177: a depot document uploaded before its kind was recorded at upload
     (services.documents.depot_kind_of) gets it at its next reading; code only, before the
@@ -430,6 +457,7 @@ def _read(
         if _is_exchange_export(original):
             raise _Stop(EXCHANGE_EXPORT)  # D166: read by code on its exchange account only
         if _is_bank_export(original):
+            _type_statement(deps, workspace_id, document_id, None)
             raise _Stop(CARD_STATEMENT)  # a bank export: imported on its account, by code only
         documents.check_media_type(original.media_type)
         pages = documents.page_count(original.data) if original.media_type == documents.PDF else 1
@@ -438,6 +466,10 @@ def _read(
         text_pages = _text_pages(original)
         _note_depot_kind(deps, workspace_id, document_id, "\n".join(text_pages))
         if _is_card_statement(text_pages):
+            depot = depot_pdf.looks_like(text_pages)
+            _type_statement(
+                deps, workspace_id, document_id, DocumentSubtype.DEPOT_STATEMENT if depot else None
+            )
             raise _Stop(CARD_STATEMENT)  # D176 (3), step 4: read by code on its account only
         text = "\n".join(text_pages)
         # D168, step 4: a depot document never reaches the model, not even the classifier,

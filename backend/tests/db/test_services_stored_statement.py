@@ -29,6 +29,7 @@ from hausbuch.schemas.enums import (
     AccountPurpose,
     ActorType,
     DocumentSource,
+    DocumentSubtype,
     DocumentType,
     ImportStatus,
     ProposalStatus,
@@ -163,6 +164,10 @@ def test_a_refused_statement_is_imported_from_its_stored_original(
     (card,) = _read_failed(read, ws)
     assert card.error_code == proposals.PROPOSAL_BANK_FILE_NOT_READ
     assert card.question == "Auf welches Konto soll sie importiert werden?"
+    # Typed by code when refused, so Dokumente shows what it is before the import.
+    typing = read(ws, documents.get_document, doc.id).typing
+    assert typing is not None and typing.type is DocumentType.STATEMENT
+    assert typing.subtype is (None if kind == "card" else DocumentSubtype.DEPOT_STATEMENT)
 
     account = _card(run, ws) if kind == "card" else _depot(run, ws)
     offer = _offer(read, blob_store, ws, doc.id)
