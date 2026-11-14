@@ -10,25 +10,39 @@ import contextlib
 import hashlib
 import mimetypes
 import re
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Connection, delete, exists, func, insert, or_, select, update
+from sqlalchemy import Connection, Text, cast, delete, exists, func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
+from hausbuch.db.tables import ai_call as ai_call_table
+from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import asset_movement as asset_movement_table
+from hausbuch.db.tables import bank_statement as bank_statement_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import document_extraction as extraction_table
 from hausbuch.db.tables import document_file as file_table
 from hausbuch.db.tables import document_link as link_table
+from hausbuch.db.tables import holding_statement as holding_statement_table
+from hausbuch.db.tables import inbound_mail_attachment as inbound_mail_table
+from hausbuch.db.tables import income_input as income_input_table
 from hausbuch.db.tables import loan as loan_table
+from hausbuch.db.tables import movement_import as movement_import_table
+from hausbuch.db.tables import price as price_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import proposal as proposal_table
+from hausbuch.db.tables import rent_schedule as rent_schedule_table
+from hausbuch.db.tables import return_input as return_input_table
+from hausbuch.db.tables import statement_import as statement_import_table
+from hausbuch.db.tables import tax_export as tax_export_table
 from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import unit as unit_table
@@ -60,6 +74,7 @@ from hausbuch.schemas.enums import (
     ProposalStatus,
 )
 from hausbuch.schemas.events import (
+    DocumentDeleted,
     DocumentField,
     DocumentLinked,
     DocumentTyped,
@@ -70,7 +85,7 @@ from hausbuch.schemas.extraction import EXTRACTION_MODELS, AnyExtraction, value_
 from hausbuch.storage import BlobStore, blob_key
 
 from .context import CommandContext
-from .errors import NotFoundError
+from .errors import ConflictError, NotFoundError
 from .events import append_event
 from .parties import tenancies_ever_of
 
@@ -632,6 +647,195 @@ def unlink_document(
         document_id,
         DocumentLinked(target_type=target_type, target_id=target_id),
     )
+
+
+# --- Deletion (D193) -----------------------------------------------------------------
+#
+# „Dokument löschen“: a person deletes a document nothing depends on, e.g. a wrong upload.
+# Every foreign key to document.id is classified: a row that carries meaning beyond the
+# document's own reading blocks deletion with its own code (deletion_blockers). What goes with
+# the document is its own derived data, which the foreign keys cascade: its extraction
+# versions, its ai_call rows and its proposals that were never applied. A queued read job stays
+# in the queue and finds no pending proposal, so it reads nothing (jobs.document_read._load).
+
+DELETE_BLOCKED = "document.delete_blocked"
+# One code per kind of dependent row, `document.delete_blocked.<kind>`, in the order checked.
+BLOCK_STATEMENT_IMPORT = f"{DELETE_BLOCKED}.statement_import"
+BLOCK_BANK_STATEMENT = f"{DELETE_BLOCKED}.bank_statement"
+BLOCK_MOVEMENT_IMPORT = f"{DELETE_BLOCKED}.movement_import"
+BLOCK_ASSET_MOVEMENT = f"{DELETE_BLOCKED}.asset_movement"
+BLOCK_HOLDING_STATEMENT = f"{DELETE_BLOCKED}.holding_statement"
+BLOCK_PRICE = f"{DELETE_BLOCKED}.price"
+BLOCK_ALLOCATION = f"{DELETE_BLOCKED}.allocation"
+BLOCK_APPLIED_PROPOSAL = f"{DELETE_BLOCKED}.applied_proposal"
+BLOCK_LINK = f"{DELETE_BLOCKED}.link"
+BLOCK_LINKED_FROM_DOCUMENT = f"{DELETE_BLOCKED}.linked_from_document"
+BLOCK_ACQUISITION_COST = f"{DELETE_BLOCKED}.acquisition_cost"
+BLOCK_PRICE_SPLIT = f"{DELETE_BLOCKED}.price_split"
+BLOCK_RENT_SCHEDULE = f"{DELETE_BLOCKED}.rent_schedule"
+BLOCK_TAX_INPUT = f"{DELETE_BLOCKED}.tax_input"
+BLOCK_INCOME_INPUT = f"{DELETE_BLOCKED}.income_input"
+BLOCK_RETURN_INPUT = f"{DELETE_BLOCKED}.return_input"
+BLOCK_TAX_EXPORT = f"{DELETE_BLOCKED}.tax_export"
+BLOCK_INBOUND_MAIL = f"{DELETE_BLOCKED}.inbound_mail"
+BLOCK_OTHER_PROPOSAL = f"{DELETE_BLOCKED}.other_proposal"
+BLOCK_AI_CALL = f"{DELETE_BLOCKED}.ai_call"
+
+# A proposal of another document that may still be applied (it may name this one as a target).
+_LIVE_PROPOSAL = (
+    ProposalStatus.QUEUED.value,
+    ProposalStatus.RUNNING.value,
+    ProposalStatus.READY.value,
+    ProposalStatus.BLOCKED_TENANT_DATA.value,
+)
+
+
+class DocumentInUseError(ConflictError):
+    """Something depends on the document, so it cannot be deleted (D193); nothing was written.
+    `codes` names every kind of dependent row, `document.delete_blocked.<kind>`."""
+
+    def __init__(self, document_id: UUID, codes: list[str]) -> None:
+        super().__init__(f"document {document_id} cannot be deleted: {', '.join(codes)}")
+        self.codes = tuple(codes)
+
+
+@dataclass(frozen=True)
+class RemovedOriginal:
+    """The original a deletion left without any row: its blob is removed after the commit
+    (discard_original), never inside the transaction, so a rollback never loses a file."""
+
+    sha256: bytes
+    storage_key: str
+
+
+def _refers(table, column: str, document_id: UUID):
+    return exists().where(table.c[column] == document_id)
+
+
+def _mentions(column, document_id: UUID):
+    """A JSONB column whose text names the document's id (ids are stored lowercase)."""
+    return cast(column, Text).contains(str(document_id))
+
+
+def deletion_blockers(conn: Connection, document_id: UUID) -> list[str]:
+    """Why the document cannot be deleted (D193): one code per kind of row that depends on it,
+    empty when it can be. Read by the document page (`deletable`) and by delete_document, so
+    the button and the command never disagree."""
+    own_calls = select(ai_call_table.c.id).where(ai_call_table.c.document_id == document_id)
+    checks = [
+        (BLOCK_STATEMENT_IMPORT, _refers(statement_import_table, "document_id", document_id)),
+        (BLOCK_BANK_STATEMENT, _refers(bank_statement_table, "document_id", document_id)),
+        (BLOCK_MOVEMENT_IMPORT, _refers(movement_import_table, "document_id", document_id)),
+        (BLOCK_ASSET_MOVEMENT, _refers(asset_movement_table, "document_id", document_id)),
+        (BLOCK_HOLDING_STATEMENT, _refers(holding_statement_table, "document_id", document_id)),
+        (BLOCK_PRICE, _refers(price_table, "document_id", document_id)),
+        (BLOCK_ALLOCATION, _refers(allocation_table, "document_id", document_id)),
+        (
+            BLOCK_APPLIED_PROPOSAL,
+            exists().where(
+                proposal_table.c.document_id == document_id,
+                proposal_table.c.status == ProposalStatus.APPLIED.value,
+            ),
+        ),
+        (BLOCK_LINK, _refers(link_table, "document_id", document_id)),
+        (BLOCK_LINKED_FROM_DOCUMENT, _refers(link_table, "target_document_id", document_id)),
+        (BLOCK_ACQUISITION_COST, _refers(cost_table, "document_id", document_id)),
+        (BLOCK_PRICE_SPLIT, _refers(split_table, "evidence_document_id", document_id)),
+        (BLOCK_RENT_SCHEDULE, _refers(rent_schedule_table, "document_id", document_id)),
+        (
+            BLOCK_TAX_INPUT,
+            exists().where(
+                or_(
+                    tax_input_table.c.document_id == document_id,
+                    _mentions(tax_input_table.c.value, document_id),
+                )
+            ),
+        ),
+        (BLOCK_INCOME_INPUT, _refers(income_input_table, "document_id", document_id)),
+        (BLOCK_RETURN_INPUT, _refers(return_input_table, "document_id", document_id)),
+        # A snapshot of a yearly archive or a field sheet has no foreign key: its draft names
+        # the documents it cites (and an archive carries them as files).
+        (BLOCK_TAX_EXPORT, exists().where(_mentions(tax_export_table.c.draft, document_id))),
+        # Append-only (migration 0019's trigger): the record of a forwarded mail's attachment.
+        (BLOCK_INBOUND_MAIL, _refers(inbound_mail_table, "document_id", document_id)),
+        (
+            BLOCK_OTHER_PROPOSAL,
+            exists().where(
+                proposal_table.c.document_id != document_id,
+                proposal_table.c.status.in_(_LIVE_PROPOSAL),
+                or_(
+                    _mentions(proposal_table.c.targets, document_id),
+                    _mentions(proposal_table.c.fields, document_id),
+                    _mentions(proposal_table.c.decisions, document_id),
+                ),
+            ),
+        ),
+        # A model call about this document that something else cites: its cascade would fail.
+        (
+            BLOCK_AI_CALL,
+            or_(
+                exists().where(allocation_table.c.ai_call_id.in_(own_calls)),
+                exists().where(statement_import_table.c.ai_call_id.in_(own_calls)),
+                exists().where(
+                    extraction_table.c.ai_call_id.in_(own_calls),
+                    extraction_table.c.document_id != document_id,
+                ),
+                exists().where(
+                    proposal_table.c.ai_call_id.in_(own_calls),
+                    proposal_table.c.document_id != document_id,
+                ),
+            ),
+        ),
+    ]
+    row = conn.execute(select(*(check.label(code) for code, check in checks))).one()
+    return [code for code, _ in checks if row._mapping[code]]
+
+
+def delete_document(ctx: CommandContext, document_id: UUID) -> RemovedOriginal | None:
+    """„Dokument löschen“ (D193): delete a document nothing depends on, with its readings,
+    model calls and unapplied proposals (the foreign keys cascade them). DocumentInUseError
+    (409) with every blocking code otherwise, NotFoundError (404) for an unknown id.
+
+    Writes document.deleted with the typing only (no file name, title or SHA-256); the
+    document's earlier events stay (principle 4). The file's row goes too unless a tax export
+    is the same bytes. The blob is not touched here: the RemovedOriginal returned names it for
+    discard_original after the commit; None when the file stays."""
+    # FOR UPDATE: a read job's extraction write takes the same lock, so none slips in.
+    document = _select_document(ctx.conn, document_id, for_update=True)
+    if document is None:
+        raise NotFoundError(EntityType.DOCUMENT, document_id)
+    blockers = deletion_blockers(ctx.conn, document_id)
+    if blockers:
+        raise DocumentInUseError(document_id, blockers)
+    typing = document.typing
+    append_event(
+        ctx,
+        EventType.DOCUMENT_DELETED,
+        document_id,
+        DocumentDeleted(
+            type=None if typing is None else typing.type,
+            subtype=None if typing is None else typing.subtype,
+        ),
+    )
+    sha = bytes.fromhex(document.file_sha256)
+    ctx.conn.execute(delete(document_table).where(document_table.c.id == document_id))
+    # document is UNIQUE (workspace_id, file_sha256), so no other document holds these bytes;
+    # a tax export may (its file is a document_file row too), and then the file stays.
+    if ctx.conn.scalar(select(exists().where(tax_export_table.c.file_sha256 == sha))):
+        return None
+    key = ctx.conn.execute(
+        delete(file_table).where(file_table.c.sha256 == sha).returning(file_table.c.storage_key)
+    ).scalar_one_or_none()
+    return None if key is None else RemovedOriginal(sha256=sha, storage_key=key)
+
+
+def discard_original(conn: Connection, store: BlobStore, removed: RemovedOriginal) -> bool:
+    """After delete_document committed: remove the blob, unless the same bytes were stored
+    again since (an upload in between wrote a new document_file row). Whether it removed it."""
+    if conn.scalar(select(exists().where(file_table.c.sha256 == removed.sha256))):
+        return False
+    store.delete(removed.storage_key)
+    return True
 
 
 # --- Queries -----------------------------------------------------------------

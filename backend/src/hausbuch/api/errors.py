@@ -36,7 +36,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.api import ErrorKind, ErrorResponse, FieldError
-from hausbuch.services.documents import DuplicateLinkError, LinkNotFoundError
+from hausbuch.services.documents import DocumentInUseError, DuplicateLinkError, LinkNotFoundError
 from hausbuch.services.errors import (
     ConflictError,
     NotFoundError,
@@ -173,6 +173,11 @@ def _classify(exc: BaseException) -> Rendered:
             return Rendered(409, body)
         case RetentionHoldError():
             body = ErrorResponse(error=kind.RETENTION_HOLD, message=str(exc), result=exc.result)
+            return Rendered(409, body)
+        case DocumentInUseError():  # D193: every reason, as codes the UI words in German
+            body = ErrorResponse(
+                error=kind.CONFLICT, codes=list(exc.codes), code=exc.codes[0], message=str(exc)
+            )
             return Rendered(409, body)
         case ConflictError():
             body = ErrorResponse(error=kind.CONFLICT, message=str(exc), constraint=exc.constraint)
