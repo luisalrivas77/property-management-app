@@ -40,6 +40,7 @@ from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import (
     AI_DISABLED,
     RULE_CONFLICTS,
+    RULE_NO_MERCHANT,
     RULE_REBOOK_BLOCKED,
     RULE_TOO_BROAD,
     RuleError,
@@ -212,7 +213,7 @@ def _rebook_earlier(
             for hit in matching.name_lines(ctx.conn, tx)
             if hit.confirmed
             and not _already(hit.rows, only.category)
-            and matchers.same_payee(tx.counterparty_name, hit.counterparty_name)
+            and matchers.rule_name_hits(tx, hit.counterparty_name, hit.purpose)
         ),
         key=str,
     )
@@ -346,7 +347,7 @@ def _rebook_blockers(conn: Connection, tx: MatchTransaction) -> list[RebookBlock
     lines = [
         hit
         for hit in matching.name_lines(conn, tx)
-        if hit.confirmed and matchers.same_payee(tx.counterparty_name, hit.counterparty_name)
+        if hit.confirmed and matchers.rule_name_hits(tx, hit.counterparty_name, hit.purpose)
     ]
     if not lines:
         return []
@@ -506,6 +507,7 @@ def _response(
             current,
         )
     history = _name_history(line, context, names)
+    found = matchers.payee(tx.counterparty_name, tx.purpose)
     waiting = (
         matching.waiting_amount_counts(
             conn, tx, shared=tx.counterparty_iban_hmac in context.shared_iban_hmacs
@@ -529,6 +531,8 @@ def _response(
         rebooked=rebooked,
         suggested_purpose_pattern=None if suggestion is None else suggestion.pattern,
         suggested_pattern_waiting=0 if suggestion is None else suggestion.waiting,
+        payee_label=found.label if line.private else None,
+        no_merchant=line.private and refusal == RULE_NO_MERCHANT,
     )
 
 
@@ -595,8 +599,9 @@ def _name_history(
     if not line.private:
         return []
     hmac = tx.counterparty_iban_hmac
-    if hmac is not None and hmac not in context.shared_iban_hmacs:
-        return []
+    service = matchers.payee(tx.counterparty_name, tx.purpose).service is not None
+    if hmac is not None and hmac not in context.shared_iban_hmacs and not service:
+        return []  # a rule on the IBAN alone (a payment service's line is on its name)
     counts = Counter(h.category for h in matchers.name_hits(tx, names))
     order = list(AllocationCategory)
     return [

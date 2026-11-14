@@ -629,12 +629,15 @@ class NameHistory(Schema):
     against before it is learned. The caller passes the account's confirmed single-category
     lines of the same sign; rules.matching keeps those the pattern hits. `amount`: the line's
     signed amount, so a line of the other sign (a refund of the same merchant) never counts
-    against a rule; None = the caller filtered by sign already."""
+    against a rule; None = the caller filtered by sign already. `purpose`: the line's purpose,
+    which names the merchant of a payment service's line (D160 amended (4)); None = not known,
+    and such a line then counts as a hit of every merchant of its service."""
 
     transaction_id: UUID
     counterparty_name: str
     category: AllocationCategory
     amount: Money | None = None
+    purpose: str | None = None
 
 
 # --- Review routing (rules.review.route) ----------------------------------------------

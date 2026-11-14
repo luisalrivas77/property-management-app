@@ -1,0 +1,369 @@
+# Rule fixture: when two private lines have one payee (hausbuch.rules.matching.payee,
+# same_payee, shared_iban)
+#
+# docs/phases/phase-6.md D160 amended (4), 14 Nov 2026 (Luis: „There are some repeated disney
+# plus from PayPal …“; „Please check for all these repetitions“, after eprimo's two spellings on
+# one IBAN had made it a shared IBAN). The payee is decided by code, not by a pattern:
+#   1. the name cut before a per-purchase token (merchant_pattern.yaml, steps 1-1c);
+#   2. its words: upper-case, Ä/Ö/Ü/ß written out (OE, SS), accents dropped, every other
+#      character that is not a letter (digits, '-', '*', '.', '/') a word break;
+#   2b. a reference code before the name (one token of 6 or more letters and digits with
+#      at least two digits, "G0A3LMSE", "375be52e", "R0131347") is dropped, and a web
+#      address's parts name no payee: a leading "www." and a ".com", ".de", ".net" glued to a
+#      word (and, on a learned pattern's text, a leading WWW and a COM, NET or ORG after the
+#      first word);
+#   3. a card processor's own short name first (SPC, UZR, SQ, SUMUP, ZETTLE) is dropped: the
+#      payee is what follows;
+#   4. a payment service (PayPal, Klarna, Google) carries many merchants: its line's payee
+#      is the merchant, read from the card form "… PAYPAL *<MERCHANT> …" (Google's
+#      "GOOGLE *<Merchant> g.co/helppay#", the help page's web address dropped), the debit
+#      card form
+#      "<Merchant> - PayPal", or a direct debit's purpose after „Ihr Einkauf bei“ (PayPal) or
+#      "Purchase at" (Klarna); a service line whose merchant is not read has no payee;
+#   5. one payee, both ways: either line's words start the other's (one generic word alone,
+#      "HOTEL", is no payee); or the first two words are the same (not with a linking second
+#      word, "HOTEL AT …", nor fewer than 5 letters in the two, "G A …"); or the first word is,
+#      when it has 5 letters or more and is not a generic first word (DEUTSCHE, HOTEL, CAFE,
+#      GRUPO, HAUS, PRAXIS, SHOP, CITY, PARKPLATZ, BAHNHOF and the like).
+#   6. how surely (review F2, 14 Nov 2026, `strengths`): STRONG for the same words, a word
+#      prefix whose shorter side has two words or more, the same first two words, or
+#      Booking's first three; WEAK for a one-word prefix ("ALDI", "ALDI TALK") or only the
+#      same first word. Both are one payee for same_payee and shared_iban; a learned rule that
+#      hits a line only weakly proposes it with a question, it never books it unseen.
+# An IBAN is shared when its lines hold two payees that are not one payee (shared_iban).
+#
+# `same: null` is a pair the rules may read either way (two booking.com hotels; Amazon's two
+# companies); the case records what the code does today in `today`.
+# Well-known merchant brands as they print on statements; no private person, IBAN or amount.
+
+same:
+  - id: eprimo_street_appended
+    note: one IBAN; the street must not make it a shared IBAN
+    a: {name: "EPRIMO GMBH"}
+    b: {name: "EPRIMO GMBH FLUGHAFENSTRASE 20"}
+    same: true
+  - id: insurer_abbreviated
+    a: {name: "VOLKSWAGEN AUTOVERSICHERUNG AG"}
+    b: {name: "VOLKSWAGEN AUTOVERS AG"}
+    same: true
+  - id: telecom_same_name
+    note: the same name on two IBANs
+    a: {name: "TELEFONICA GERMANY GMBH + CO OHG"}
+    b: {name: "TELEFONICA GERMANY GMBH + CO OHG"}
+    same: true
+  - id: savings_bank_same_name
+    a: {name: "STADTSPARKASSE DUESSELDORF"}
+    b: {name: "STADTSPARKASSE DUESSELDORF"}
+    same: true
+  - id: drugstore_city_appended
+    a: {name: "ROSSMANN"}
+    b: {name: "ROSSMANN DUESSELDORF"}
+    same: true
+  - id: supermarket_bank_and_card
+    note: the shared DKB IBAN's spelling and the credit card's
+    a: {name: "KAUFLAND"}
+    b: {name: "KAUFLAND DUESSELDORF PROFESSOR- NEYSES-PLA"}
+    same: true
+  - id: coffee_station_appended
+    a: {name: "TCHIBO"}
+    b: {name: "TCHIBO KONRAD-ADENAUER-PLATZ HBF"}
+    same: true
+  - id: drugstore_hyphen_branch
+    a: {name: "DM-DROGERIE"}
+    b: {name: "DM-DROGERIE MARKT HAUPTBAHNHOF"}
+    same: true
+  - id: drugstore_card_line
+    a: {name: "DM-DROGERIE MARKT HAUPTBAHNHOF"}
+    b: {name: "DM DROGERIE SAGT DANKE 4421"}
+    same: true
+  - id: discounter_two_branches
+    a: {name: "NETTO MARKEN-DISCOUNT CARL-EULER STR"}
+    b: {name: "NETTO MARKEN-DISCOUNT ZOLLAMTSTR"}
+    same: true
+  - id: burger_two_branches
+    a: {name: "BURGER KING WILLY-BRANDT-PLATZ"}
+    b: {name: "BURGER KING IN DEN LOHBALKEN"}
+    same: true
+  - id: hotel_group_two_branches
+    a: {name: "GRUPO PALAS SALOU"}
+    b: {name: "GRUPO PALAS C CL MUNTANYALS"}
+    same: true
+  - id: umlaut_written_out
+    a: {name: "HAUS DES DÖNERS"}
+    b: {name: "HAUS DES DOENERS MUENSTERSTR"}
+    same: true
+  - id: subscription_after_star
+    a: {name: "G A LMSE ANTHROPIC* CLAUDE SUB 4412"}
+    b: {name: "G A LMSE ANTHROPIC"}
+    same: true
+  - id: delivery_bank_and_card
+    a: {name: "Lieferando"}
+    b: {name: "Lieferando.de lieferse Oosterdoksstraat 80"}
+    same: true
+  - id: reference_code_before_the_name
+    note: the code differs on every purchase; it is no word of the payee
+    a: {name: "K7B2QXNE ANTHROPIC 548 Market Street PMB 1234"}
+    b: {name: "P4M9WZTA ANTHROPIC* CLAUDE SUB 548 Market Str"}
+    same: true
+  - id: reference_code_and_processor
+    note: the code dropped, then SQ as a card processor
+    a: {name: "4f1c09ad SQ *ATARIGUA, S.L. Carrer Marina 100"}
+    b: {name: "9d2e417b SQ *ATARIGUA SL | LA C Carrer Marina"}
+    same: true
+  - id: reference_code_and_domain
+    a: {name: "R0555123 curiara.com Avenue Louise 10"}
+    b: {name: "Curiara Financial Services INC"}
+    same: true
+  - id: web_address
+    a: {name: "WWW.DAZN.COM Huidekoperstraat 10"}
+    b: {name: "DAZN"}
+    same: true
+  - id: processor_one_grill_two_terminals
+    a: {name: "61700001 UZR*KBKC Frischgrill G Beispielweg 7"}
+    b: {name: "61700002 UZR*KBKC Frischgrill G Beispielweg 7"}
+    same: true
+  - id: paypal_long_and_short_name
+    a: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: "1041234567890 PP.1234.PP . DisneyPlus, Ihr Einkauf bei DisneyPlus"}
+    b: {name: "PAYPAL EUROPE S A R L ET CIE S C A - BOULEVARD ROYAL", purpose: "1041234567891 PP.1234.PP . DisneyPlus, Ihr Einkauf bei DisneyPlus"}
+    same: true
+  - id: paypal_third_iban_spelling
+    a: {name: "PayPal (Europe) S.a r.l. et Cie, S.C.A.", purpose: "1041234567892 PP.1234.PP . DisneyPlus, Ihr Einkauf bei DisneyPlus"}
+    b: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: "Ihr Einkauf bei DisneyPlus Gläubiger-ID: LU96ZZZ0000000000000000058"}
+    same: true
+  - id: paypal_card_and_direct_debit
+    a: {name: "4029357733 PAYPAL *DISNEYPLUS 35314369001 LU"}
+    b: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: ", Ihr Einkauf bei DisneyPlus, "}
+    same: true
+  - id: paypal_debit_card_form
+    a: {name: "DisneyPlus - PayPal"}
+    b: {name: "4029357733 PAYPAL *DISNEYPLUS 35314369001 LU"}
+    same: true
+
+  - id: two_hotels_charged_by_booking  # Luis 14 Nov 2026: one company, Booking.com
+    a: {name: "Hotel at Booking.com Kanaalstraat 12"}
+    b: {name: "Hotel at Booking.com Parkweg 7"}
+    same: true
+  - id: google_merchant_two_spellings  # review F1: Google Pay's card form
+    a: {name: "GOOGLE *Netflix g.co/helppay#"}
+    b: {name: "GOOGLE*Netflix"}
+    same: true
+different:
+  - id: two_restaurants_at_the
+    a: {name: "RESTAURANT AT THE PARK"}
+    b: {name: "RESTAURANT AT THE STATION"}
+    same: false
+  - id: two_german_companies
+    a: {name: "DEUTSCHE POST"}
+    b: {name: "DEUTSCHE BAHN"}
+    same: false
+  - id: two_cafes_one_through_a_processor
+    a: {name: "CAFE ELUA DUSSELDORF"}
+    b: {name: "ZETTLE CAFE NANE DUSSELDORF"}
+    same: false
+  - id: hotel_and_booking_hotel
+    a: {name: "HOTEL PALAS PINEDA"}
+    b: {name: "HOTEL AT BOOKING COM 8812"}
+    same: false
+  - id: one_processor_two_merchants_star
+    a: {name: "SPC*CAMPUS HAIR"}
+    b: {name: "SPC*TEPE MARKET"}
+    same: false
+  - id: one_processor_two_merchants_space
+    a: {name: "UZR*KBKC FRISCHGRILL"}
+    b: {name: "UZR SPANISCHER GARTEN"}
+    same: false
+  - id: processor_grill_and_garden
+    a: {name: "61700001 UZR*KBKC Frischgrill G Beispielweg 7"}
+    b: {name: "UZR.Spanischer.Garten.I/Dusseldorf"}
+    same: false
+  - id: two_german_companies_mixed_case
+    a: {name: "Deutsche Bahn"}
+    b: {name: "Deutsche Post"}
+    same: false
+  - id: one_processor_two_merchants_mixed_case
+    a: {name: "SPC*Tepe market"}
+    b: {name: "SPC*Campus Hair"}
+    same: false
+  - id: two_streaming_services
+    a: {name: "Sky Deutschland Fernsehen GmbH Co. KG"}
+    b: {name: "DAZN"}
+    same: false
+  - id: paypal_two_merchants
+    a: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: ", Ihr Einkauf bei DisneyPlus, "}
+    b: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: ", Ihr Einkauf bei MicrosoftPay, "}
+    same: false
+  - id: paypal_railway_and_streaming
+    a: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: ", Ihr Einkauf bei DB Vertrieb GmbH, "}
+    b: {name: "PayPal (Europe) S.a r.l. et Cie, S.C.A.", purpose: ", Ihr Einkauf bei DisneyPlus, "}
+    same: false
+  - id: paypal_merchant_not_read
+    note: a PayPal line whose purpose names no merchant has no payee
+    a: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: "1041234567893 PP.1234.PP"}
+    b: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: "1041234567894 PP.1234.PP"}
+    same: false
+  - id: google_two_merchants
+    note: review F1, two merchants paid through Google Pay; a Netflix rule never books Supercell
+    a: {name: "GOOGLE *Netflix g.co/helppay#"}
+    b: {name: "GOOGLE *Supercell g.co/helppay#"}
+    same: false
+
+either:
+  - id: two_booking_hotels
+    a: {name: "HOTEL AT BOOKING COM 8812"}
+    b: {name: "HOTEL AT BOOKING COM 9915"}
+    same: null
+    today: true
+  - id: amazon_two_companies
+    a: {name: "AMAZON PAYMENTS EUROPE S C A"}
+    b: {name: "AMAZON EU S A R L NIEDERLASSUNG"}
+    same: null
+    today: true
+
+# What the panel shows for a payment service's line, and the rule a line learns.
+payees:
+  - id: paypal_direct_debit
+    name: "PayPal Europe S.a.r.l. et Cie S.C.A"
+    purpose: "1041234567890 PP.1234.PP . DisneyPlus, Ihr Einkauf bei DisneyPlus"
+    label: "PayPal: DisneyPlus"
+    name_pattern: '^PAYPAL\b'
+    purpose_pattern: 'Ihr Einkauf bei DisneyPlus(?!\w)'
+  - id: paypal_direct_debit_creditor_id
+    name: "PayPal Europe S.a.r.l. et Cie S.C.A 22-24 Boulevard Royal"
+    purpose: "Ihr Einkauf bei DisneyPlus Gläubiger-ID: LU96ZZZ0000000000000000058"
+    label: "PayPal: DisneyPlus"
+    name_pattern: '^PAYPAL\b'
+    purpose_pattern: 'Ihr Einkauf bei DisneyPlus(?!\w)'
+  - id: paypal_card
+    name: "4029357733 PAYPAL *DISNEYPLUS 35314369001 LU"
+    label: "PayPal: DISNEYPLUS"
+    name_pattern: '^PAYPAL \*DISNEYPLUS'
+  - id: paypal_debit_card
+    name: "DisneyPlus - PayPal"
+    label: "PayPal: DisneyPlus"
+    name_pattern: '^DISNEYPLUS \- PAYPAL'
+  - id: klarna_direct_debit
+    name: "Klarna Bank AB"
+    purpose: "Purchase at H&M Gläubiger-ID: SE00ZZZ0000000000000000001"
+    label: "Klarna: H&M"
+    name_pattern: '^KLARNA\b'
+    purpose_pattern: 'Purchase at H\&M(?!\w)'
+  - id: paypal_merchant_not_read
+    name: "PayPal Europe S.a.r.l. et Cie S.C.A"
+    purpose: "1041234567893 PP.1234.PP"
+    label: null
+    unreadable: true
+  - id: plain_name
+    name: "EPRIMO GMBH FLUGHAFENSTRASE 20"
+    label: null
+    name_pattern: '^EPRIMO GMBH FLUGHAFENSTRASE'
+  - id: reference_code_dropped
+    name: "K7B2QXNE ANTHROPIC 548 Market Street PMB 1234"
+    label: null
+    name_pattern: '^ANTHROPIC MARKET STREET PMB'
+    words: [ANTHROPIC, MARKET, STREET, PMB]
+  - id: reference_code_then_processor
+    name: "4f1c09ad SQ *ATARIGUA, S.L. Carrer Marina 100"
+    label: null
+    name_pattern: '^SQ \*ATARIGUA, S L CARRER MARINA'
+    words: [ATARIGUA, S, L, CARRER, MARINA]
+  - id: reference_code_then_domain
+    name: "R0555123 curiara.com Avenue Louise 10"
+    label: null
+    name_pattern: '^CURIARA COM AVENUE LOUISE'
+    words: [CURIARA, AVENUE, LOUISE]
+  - id: web_address_pattern_unchanged
+    # merchant_pattern.yaml's pattern stays; only the payee's words drop WWW and COM
+    name: "WWW.DAZN.COM Huidekoperstraat 10"
+    label: null
+    name_pattern: '^WWW DAZN COM HUIDEKOPERSTRAAT'
+    words: [DAZN, HUIDEKOPERSTRAAT]
+  - id: processor_dropped_for_the_payee_not_the_pattern
+    name: "SPC*CAMPUS HAIR"
+    label: null
+    name_pattern: '^SPC\*CAMPUS HAIR'
+  - id: google_merchant_cut
+    # review F1: the merchant after the star, the help page's address dropped
+    name: "GOOGLE *Netflix g.co/helppay#"
+    label: "Google: Netflix"
+    name_pattern: '^GOOGLE \*NETFLIX'
+    words: [NETFLIX]
+  - id: google_without_merchant
+    # review F1: Google's company name names no merchant, so no payee and no rule
+    name: "Google Payment Ie Ltd"
+    purpose: "GOOGLE PLAY 4711-0815-2233"
+    label: null
+    unreadable: true
+
+# How surely two names are one payee (review F2, step 6 above): a rule that hits a line only
+# through a WEAK identity proposes it with „Gleicher Empfänger wie „…“? Bitte bestätigen.“
+strengths:
+  - id: two_shops_one_first_word
+    a: {name: "ADLER MODEMARKT"}
+    b: {name: "ADLER APOTHEKE"}
+    strength: weak
+  - id: one_word_prefix
+    a: {name: "ALDI"}
+    b: {name: "ALDI TALK"}
+    strength: weak
+  - id: insurer_abbreviated_weak_but_one_payee
+    note: still one payee for same_payee (same/insurer_abbreviated), but a rule only proposes
+    a: {name: "VOLKSWAGEN AUTOVERSICHERUNG AG"}
+    b: {name: "VOLKSWAGEN AUTOVERS AG"}
+    strength: weak
+  - id: delivery_city_appended_one_word  # a long one-word brand (BRAND_WORD_MIN), Luis 14 Nov 2026
+    a: {name: "LIEFERANDO"}
+    b: {name: "LIEFERANDO DE BERLIN"}
+    strength: strong
+  - id: supermarket_branch_appended
+    a: {name: "KAUFLAND"}
+    b: {name: "KAUFLAND DUESSELDORF HAUPTSTR"}
+    strength: strong
+  - id: short_brand_another_company
+    a: {name: "MUELLER"}
+    b: {name: "MUELLER BROT GMBH"}
+    strength: weak
+  - id: discounter_two_branches
+    a: {name: "NETTO MARKEN-DISCOUNT CARL-EULER STR"}
+    b: {name: "NETTO MARKEN-DISCOUNT ZOLLAMTSTR"}
+    strength: strong
+  - id: two_hotels_charged_by_booking
+    a: {name: "Hotel at Booking.com Kanaalstraat 12"}
+    b: {name: "Hotel at Booking.com Parkweg 7"}
+    strength: strong
+  - id: street_appended_two_words
+    a: {name: "EPRIMO GMBH"}
+    b: {name: "EPRIMO GMBH FLUGHAFENSTRASE 20"}
+    strength: strong
+  - id: google_merchant_two_spellings
+    a: {name: "GOOGLE *Netflix g.co/helppay#"}
+    b: {name: "GOOGLE*Netflix"}
+    strength: strong
+  - id: paypal_merchant_two_spellings
+    a: {name: "PayPal Europe S.a.r.l. et Cie S.C.A", purpose: ", Ihr Einkauf bei DisneyPlus, "}
+    b: {name: "4029357733 PAYPAL *DISNEYPLUS 35314369001 LU"}
+    strength: strong
+
+# Whether an IBAN hash is shared (two payees that are not one payee on its private lines).
+shared_ibans:
+  - id: eprimo_two_spellings_one_iban
+    lines:
+      - {name: "EPRIMO GMBH"}
+      - {name: "EPRIMO GMBH FLUGHAFENSTRASE 20"}
+    shared: false
+  - id: dkb_clearing_iban
+    lines:
+      - {name: "Lieferando"}
+      - {name: "KAUFLAND"}
+      - {name: "ROSSMANN"}
+    shared: true
+  - id: paypal_iban_two_merchants
+    lines:
+      - {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: ", Ihr Einkauf bei DisneyPlus, "}
+      - {name: "PAYPAL EUROPE S A R L ET CIE S C A - BOULEVARD ROYAL", purpose: ", Ihr Einkauf bei DisneyPlus, "}
+      - {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: ", Ihr Einkauf bei MicrosoftPay, "}
+    shared: true
+  - id: paypal_iban_one_merchant_two_spellings
+    lines:
+      - {name: "PayPal Europe S.a.r.l. et Cie S.C.A", purpose: ", Ihr Einkauf bei DisneyPlus, "}
+      - {name: "PayPal Europe S.a.r.l. et Cie S.C.A 22-24 Boulevard Royal", purpose: ", Ihr Einkauf bei DisneyPlus, "}
+    shared: false

@@ -141,8 +141,17 @@ TRIGGER_LOAN = "loan"
 TRIGGER_TENANT = "tenant"
 TRIGGER_TENANCY = "tenancy"
 TRIGGER_ACCOUNT = "account"
+# Every waiting line of one private account (`hausbuch rematch-waiting`, D160 amended (4)).
+TRIGGER_PRIVATE_LINES = "private_lines"
 TRIGGER_KINDS = frozenset(
-    {TRIGGER_RULE, TRIGGER_LOAN, TRIGGER_TENANT, TRIGGER_TENANCY, TRIGGER_ACCOUNT}
+    {
+        TRIGGER_RULE,
+        TRIGGER_LOAN,
+        TRIGGER_TENANT,
+        TRIGGER_TENANCY,
+        TRIGGER_ACCOUNT,
+        TRIGGER_PRIVATE_LINES,
+    }
 )
 
 

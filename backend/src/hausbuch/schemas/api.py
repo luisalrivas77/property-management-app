@@ -574,7 +574,12 @@ class TransactionAllocations(Schema):
     panel then offers the rule box with this pattern, and learn_rule_default is computed with
     it. None otherwise. suggested_pattern_waiting: how many waiting lines (as in
     waiting_amount_counts, this line excluded, on accounts of its purpose) that rule would
-    book."""
+    book.
+    payee_label (phase 6 D160 amended (4), 14 Nov 2026): for a payment service's line
+    (PayPal, Klarna) the service and the merchant it names („PayPal: DisneyPlus“), whose
+    lines the rule books; None for any other line. no_merchant: a payment service's line
+    whose merchant cannot be read, so no rule is learned from it (rule.no_merchant) and the
+    panel greys the box with that reason."""
 
     transaction: Transaction
     allocations: list[Allocation]
@@ -591,6 +596,8 @@ class TransactionAllocations(Schema):
     rebooked: int = 0
     suggested_purpose_pattern: str | None = None
     suggested_pattern_waiting: int = Field(default=0, ge=0)
+    payee_label: str | None = None
+    no_merchant: bool = False
 
 
 class InboxItemKind(StrEnum):

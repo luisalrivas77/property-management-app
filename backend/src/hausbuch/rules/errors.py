@@ -173,6 +173,8 @@ ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT = "allocation.category_not_for_account"  # D
 ROUTING_AI_DISABLED = "routing.ai_disabled"  # a private line with ai_private_accounts off (D168)
 RULE_CONFLICTS = "rule.conflicts"  # a name pattern hits a line confirmed otherwise (D160)
 RULE_TOO_BROAD = "rule.too_broad"  # one name confirmed under two categories (D160, PayPal)
+# D160 amended (4): a payment service's line (PayPal, Klarna) whose merchant cannot be read
+RULE_NO_MERCHANT = "rule.no_merchant"
 # „Diese auch auf … umbuchen“ (D160, 14 Nov 2026): an earlier line of the name cannot be re-booked
 RULE_REBOOK_BLOCKED = "rule.rebook_blocked"
 TRANSFER_AMBIGUOUS = "transfer.ambiguous"  # several candidate legs (D162)

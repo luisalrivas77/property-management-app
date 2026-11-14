@@ -108,11 +108,18 @@ def test_rematch_waiting_is_registered_and_locked_per_trigger():
     app = tasks.register_tasks(procrastinate.App(connector=procrastinate.SyncPsycopgConnector()))
     assert REMATCH_WAITING_TASK == "rematch_waiting" and REMATCH_WAITING_TASK in app.tasks
     entity_id = uuid4()
-    for kind in ("rule", "loan", "tenant", "tenancy", "account"):
+    for kind in ("rule", "loan", "tenant", "tenancy", "account", "private_lines"):
         trigger = waiting_trigger(kind, entity_id)
         assert trigger == f"{kind}:{entity_id}"
         assert waiting_lock(trigger) == f"waiting:{kind}:{entity_id}"
-    assert {"rule", "loan", "tenant", "tenancy", "account"} == enqueue.TRIGGER_KINDS
+    assert {
+        "rule",
+        "loan",
+        "tenant",
+        "tenancy",
+        "account",
+        "private_lines",
+    } == enqueue.TRIGGER_KINDS
     with pytest.raises(ValueError):
         waiting_trigger("iban", entity_id)  # no trigger names an IBAN
 

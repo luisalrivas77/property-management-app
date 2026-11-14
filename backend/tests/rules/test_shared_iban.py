@@ -106,13 +106,14 @@ def test_iban_only_means_no_pattern_narrows_it():
 # --- What a confirmed answer becomes -----------------------------------------------------
 
 
-def test_a_shared_iban_learns_the_iban_and_the_payees_name():
+def test_a_shared_iban_learns_the_payees_name_without_the_iban():
+    # D160 amended (4), 14 Nov 2026: the rule is name and sign, so it also books the payee's
+    # lines on a card statement (no IBAN) and on another account's clearing IBAN.
     tx = _tx("LIEFERDIENST BEISPIEL 4711")
     rule = matching.infer_rule(tx, _answer(tx, C.HH_DINING), SHARED)
     assert rule is not None
     assert rule.split_method is SplitMethod.SINGLE_CATEGORY and rule.category is C.HH_DINING
     assert rule.matcher == RuleMatcher(
-        counterparty_iban_hmac=CLEARING,
         counterparty_name_pattern="^LIEFERDIENST BEISPIEL",
         amount_sign="debit",
     )
