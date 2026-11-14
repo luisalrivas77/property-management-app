@@ -254,10 +254,11 @@ def test_lieferando_learned_on_either_account_hits_the_other():
     assert booked is not None
     assert booked.confidence == matching.EXACT  # "^LIEFERANDO" matches the card's name
     on_card = _learned(card, C.HH_DINING)
-    proposed = matching.apply_rule(on_card, bank, MatchContext(**shared, account_purpose="private"))
-    # review F2: the card's longer name names "Lieferando" by its first word only (weak)
-    assert proposed is not None
-    assert matching.weak_proposal(proposed)
+    back = matching.apply_rule(on_card, bank, MatchContext(**shared, account_purpose="private"))
+    # "LIEFERANDO" starts the card's name and has BRAND_WORD_MIN letters: a strong match
+    assert back is not None
+    assert back.confidence == matching.EXACT
+    assert not matching.weak_proposal(back)
     # another payee on the clearing IBAN is not hit
     other = _tx("KAUFLAND", iban=CLEARING, n=3)
     assert matching.apply_rule(on_bank, other, PRIVATE) is None

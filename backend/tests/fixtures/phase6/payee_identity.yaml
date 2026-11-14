@@ -310,9 +310,17 @@ strengths:
     a: {name: "VOLKSWAGEN AUTOVERSICHERUNG AG"}
     b: {name: "VOLKSWAGEN AUTOVERS AG"}
     strength: weak
-  - id: delivery_city_appended_one_word
+  - id: delivery_city_appended_one_word  # a long one-word brand (BRAND_WORD_MIN), Luis 14 Nov 2026
     a: {name: "LIEFERANDO"}
     b: {name: "LIEFERANDO DE BERLIN"}
+    strength: strong
+  - id: supermarket_branch_appended
+    a: {name: "KAUFLAND"}
+    b: {name: "KAUFLAND DUESSELDORF HAUPTSTR"}
+    strength: strong
+  - id: short_brand_another_company
+    a: {name: "MUELLER"}
+    b: {name: "MUELLER BROT GMBH"}
     strength: weak
   - id: discounter_two_branches
     a: {name: "NETTO MARKEN-DISCOUNT CARL-EULER STR"}

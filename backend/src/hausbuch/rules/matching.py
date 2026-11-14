@@ -1402,6 +1402,7 @@ _LINKING_WORDS = frozenset(
     {"AM", "AN", "AT", "C", "DAS", "DE", "DEL", "DER", "DES", "DI", "DIE", "EL", "IM", "IN"}
     | {"LA", "LE", "OF", "THE", "UND", "VON", "ZUM", "ZUR"}
 )
+BRAND_WORD_MIN = 8  # a one-word prefix of this many letters is a strong match (_identity)
 FIRST_WORD_MIN = 5  # a shared non-generic first word of this many letters names one payee
 # Where a merchant named in the purpose ends: a comma, the creditor id, a SEPA field tag.
 _MERCHANT_END = r"(?:,|;|\s+Gl(?:ä|ae)ubiger-?ID\b|\s+(?:EREF|MREF|CRED|SVWZ)\b|$)"
@@ -1554,8 +1555,9 @@ def _same_words(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
 def _identity(a: tuple[str, ...], b: tuple[str, ...]) -> str | None:
     """How surely two payees' words are one payee, both ways (review F2, 14 Nov 2026,
     principle 3): STRONG for the same words, a word prefix whose shorter side has two words or
-    more, the same first two words, or Booking's first three; WEAK for a one-word prefix ("ALDI"
-    and "ALDI TALK") or only the same first word ("ADLER MODEMARKT" and "ADLER APOTHEKE",
+    more, a one-word prefix of BRAND_WORD_MIN letters or more ("KAUFLAND …"), the same first two
+    words, or Booking's first three; WEAK for a shorter one-word prefix ("ALDI" and "ALDI
+    TALK") or only the same first word ("ADLER MODEMARKT" and "ADLER APOTHEKE",
     "VOLKSWAGEN AUTOVERSICHERUNG AG" and "VOLKSWAGEN AUTOVERS AG"); None for two payees. Both
     are one payee for an IBAN's lines (shared_iban, the D49 history); a rule that hits a line
     only weakly proposes, it never books unseen (apply_rule).
@@ -1573,7 +1575,13 @@ def _identity(a: tuple[str, ...], b: tuple[str, ...]) -> str | None:
         return None
     short, long = sorted((a, b), key=len)
     if long[: len(short)] == short and not (len(short) == 1 and short[0] in GENERIC_FIRST_WORDS):
-        return STRONG if len(short) >= 2 or len(long) == 1 else WEAK
+        if len(short) >= 2 or len(long) == 1:
+            return STRONG
+        # A one-word brand of BRAND_WORD_MIN letters with an address or branch after it
+        # ("KAUFLAND" and "KAUFLAND DUESSELDORF …", "DISNEYPLUS" and "DISNEYPLUS TAURUSAVENUE"):
+        # long brand names are rarely another company's first word (Luis's real lines, 14 Nov
+        # 2026); a short one ("ALDI" and "ALDI TALK", "MUELLER" and "MUELLER BROT") stays weak.
+        return STRONG if len(short[0]) >= BRAND_WORD_MIN else WEAK
     if (
         len(short) >= 2
         and a[:2] == b[:2]
