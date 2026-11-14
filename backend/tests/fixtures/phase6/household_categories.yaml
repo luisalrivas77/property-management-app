@@ -86,6 +86,9 @@ codes:
   # existing spending groups; each group's old code stays as its fallback, relabelled
   # „Sonstige …“ above (codes unchanged, so no row or rule changes meaning).
   - {category: hh_streaming, label: "Streaming (Video)", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
+  # D159 amended (4) 14 Nov 2026 (migration 0033, Luis: "We're missing a Cable category for Sky.
+  # It's not streaming."): cable, satellite and pay TV beside hh_streaming, same group.
+  - {category: hh_pay_tv, label: "Kabel- & Pay-TV", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_music_audio, label: "Musik & Hörbücher", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_software, label: "Software & KI", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_cloud, label: "Cloud & Server", group: subscriptions, relevance: spending, treatment: private, threshold: "0.900"}

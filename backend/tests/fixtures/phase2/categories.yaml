@@ -84,6 +84,7 @@ categories:
   - {category: hh_fuel, treatment: private}  # phase 6 D159 amended 14 Nov 2026 (migration 0031)
   # phase 6 D159 amended 14 Nov 2026 (migration 0032): the subcategories
   - {category: hh_streaming, treatment: private}
+  - {category: hh_pay_tv, treatment: private}  # phase 6 D159 amended (4) 14 Nov 2026 (migration 0033)
   - {category: hh_music_audio, treatment: private}
   - {category: hh_software, treatment: private}
   - {category: hh_cloud, treatment: private}

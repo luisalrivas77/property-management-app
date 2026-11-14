@@ -120,6 +120,9 @@ class AllocationCategory(StrEnum):
     # stays as its fallback („Sonstige …“).
     # group subscriptions
     HH_STREAMING = "hh_streaming"  # private (Streaming (Video))
+    # Phase 6 D159 amended (4) 14 Nov 2026 (migration 0033, Luis): cable, satellite and pay TV
+    # (Sky) apart from hh_streaming.
+    HH_PAY_TV = "hh_pay_tv"  # private (Kabel- & Pay-TV)
     HH_MUSIC_AUDIO = "hh_music_audio"  # private (Musik & Hörbücher)
     HH_SOFTWARE = "hh_software"  # private (Software & KI)
     HH_CLOUD = "hh_cloud"  # private (Cloud & Server)

@@ -109,6 +109,7 @@ per_category:
   - {category: hh_fuel, decision: auto_confirm}  # D159 amended 14 Nov 2026 (migration 0031)
   # D159 amended 14 Nov 2026 (migration 0032): the subcategories, as their groups' codes
   - {category: hh_streaming, decision: auto_confirm}
+  - {category: hh_pay_tv, decision: auto_confirm}  # D159 amended (4) 14 Nov 2026 (migration 0033)
   - {category: hh_music_audio, decision: auto_confirm}
   - {category: hh_software, decision: auto_confirm}
   - {category: hh_cloud, decision: auto_confirm}
