@@ -475,12 +475,14 @@ def purchase_payees(conn: Connection) -> list[PurchasePayee]:
 
 def is_shared_iban(conn: Connection, hmac: bytes | None) -> bool:
     """D160 amended: whether the lines of the workspace's private accounts with this IBAN hash
-    carry rules.matching.SHARED_IBAN_MIN_NAMES or more distinct payee names (computed on read,
-    nothing stored). False for no IBAN."""
+    carry two payees that are not one payee (rules.matching.shared_iban; computed on read,
+    nothing stored). False for no IBAN. D160 amended (4): a payment service's direct debit is
+    read with its purpose, which names its merchant (PayPal's IBAN carries many merchants);
+    every other line by its name alone."""
     if hmac is None:
         return False
     t = transaction_table.c
-    names = conn.execute(
+    private_lines = (
         select(t.counterparty_name)
         .distinct()
         .join(account_table, account_table.c.id == t.account_id)
@@ -489,8 +491,19 @@ def is_shared_iban(conn: Connection, hmac: bytes | None) -> bool:
             t.counterparty_iban_hmac == hmac,
             t.counterparty_name.is_not(None),
         )
-    ).scalars()
-    return matchers.shared_iban(names)
+    )
+    lines: list[str | None | tuple[str | None, str | None]] = []
+    services: list[str] = []
+    for name in conn.execute(private_lines).scalars():
+        found = matchers.payee(name)
+        if found.service is not None and not found.known:
+            services.append(name)
+        else:
+            lines.append(name)
+    if services:
+        with_purpose = private_lines.add_columns(t.purpose).where(t.counterparty_name.in_(services))
+        lines += [(row.counterparty_name, row.purpose) for row in conn.execute(with_purpose)]
+    return matchers.shared_iban(lines)
 
 
 def _tenancies(conn: Connection) -> list[TenancyFacts]:
@@ -995,12 +1008,18 @@ def deterministic_set(
     ]
     shared = tx.counterparty_iban_hmac in context.shared_iban_hmacs
     history = (
-        rule_history(conn, tx, context.account_purpose, shared=shared)
+        rule_history(conn, tx, context.account_purpose, shared=shared or _service_line(tx))
         if _any_hit(rules, tx)
         else []
     )
     found = matchers.deterministic_answer(rules, tx, context, history)
     return None if found is None else _guarded(conn, found)
+
+
+def _service_line(tx: MatchTransaction) -> bool:
+    """A payment service's line (PayPal, Klarna; D160 amended (4)): its IBAN names the
+    service, so what is keyed by the IBAN is keyed by IBAN and payee, as on a shared IBAN."""
+    return matchers.payee(tx.counterparty_name, tx.purpose).service is not None
 
 
 def _any_hit(rules: list[MatchingRule], tx: MatchTransaction) -> bool:
@@ -1024,7 +1043,8 @@ def rule_history(
     amount, scope and recurring flag, which an as_last_split rule copies (D51). Empty for a line
     without an IBAN hash or of amount 0. `shared` (D160 amended: the IBAN is shared): only the
     lines of the line's own payee (rules.matching.same_payee) count, so the other payees of a
-    clearing IBAN are not "another kind" of this payee's payments."""
+    clearing IBAN are not "another kind" of this payee's payments; so for a payment service's
+    line (D160 amended (4), the caller passes shared), whose merchants share the service's IBAN."""
     if tx.counterparty_iban_hmac is None or tx.amount == 0:
         return []
     t = transaction_table.c
@@ -1035,6 +1055,7 @@ def rule_history(
             t.booking_date,
             t.amount,
             t.counterparty_name,
+            t.purpose,
             a.category,
             a.status,
             a.amount.label("part_amount"),
@@ -1058,7 +1079,9 @@ def rule_history(
     ).all()
     lines: dict[UUID, tuple[Row, list[HistoryRow]]] = {}
     for row in rows:
-        if shared and not matchers.same_payee(tx.counterparty_name, row.counterparty_name):
+        if shared and not matchers.same_payee(
+            tx.counterparty_name, row.counterparty_name, tx.purpose, row.purpose
+        ):
             continue
         _, parts = lines.setdefault(row.id, (row, []))
         parts.append(
@@ -1095,6 +1118,7 @@ class NameLine:
     counterparty_name: str
     amount: Decimal
     rows: tuple[Row, ...]
+    purpose: str = ""  # names a payment service's merchant (D160 amended (4))
 
     @property
     def single_confirmed(self) -> Row | None:
@@ -1115,8 +1139,8 @@ def name_lines(conn: Connection, tx: MatchTransaction) -> list[NameLine]:
     """D160: the other lines of every private account with the line's sign and a counterparty
     name, each with its current rows (none superseded), oldest first. Every private account,
     since a name rule hits the lines of all of them. Lines merged away as a duplicate are left
-    out; whether the line's name pattern hits one is the caller's (rules.matching.name_hits,
-    same_payee)."""
+    out; whether the line's name rule hits one is the caller's (rules.matching.name_hits,
+    rule_name_hits)."""
     if not tx.counterparty_name or tx.amount == 0:
         return []
     t = transaction_table.c
@@ -1125,6 +1149,7 @@ def name_lines(conn: Connection, tx: MatchTransaction) -> list[NameLine]:
         select(
             t.id,
             t.counterparty_name,
+            t.purpose,
             t.amount,
             a.id.label("allocation_id"),
             a.category,
@@ -1160,6 +1185,7 @@ def name_lines(conn: Connection, tx: MatchTransaction) -> list[NameLine]:
             counterparty_name=parts[0].counterparty_name,
             amount=parts[0].amount,
             rows=tuple(parts),
+            purpose=parts[0].purpose or "",
         )
         for line_id, parts in lines.items()
     ]
@@ -1176,6 +1202,7 @@ def name_history(conn: Connection, tx: MatchTransaction) -> list[NameHistory]:
             counterparty_name=line.counterparty_name,
             category=only.category,
             amount=line.amount,
+            purpose=line.purpose,
         )
         for line in name_lines(conn, tx)
         if (only := line.single_confirmed) is not None
@@ -1874,7 +1901,12 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
     rows = conn.execute(query.order_by(t.booking_date, t.id)).all()
     if rule is None:
         return [r.id for r in rows]
-    return [r.id for r in rows if matchers.rule_hits(rule.matcher, match_transaction(r))]
+    return [
+        r.id
+        for r in rows
+        if matchers.rule_hits(rule.matcher, tx := match_transaction(r))
+        and not matchers.service_blind(rule.matcher, tx)  # never applied (apply_rule)
+    ]
 
 
 WAITING_AMOUNTS_LIMIT = 5
@@ -1887,13 +1919,15 @@ def waiting_amount_counts(
     line's own amount included and the line itself excluded (waiting as in waiting_lines: a
     reconciled import, not excluded, no confirmed row). Empty for a line without an IBAN
     hash. `shared` (D160 amended: the line's IBAN is shared): only the lines of the line's
-    own payee count (rules.matching.same_payee, the lines the IBAN-and-name rule would
-    book); empty for a line without a name. Uncapped: the panel says how many lines a rule
+    own payee count (rules.matching.rule_name_hits, the lines the line's name rule would
+    book), and so for a payment service's line (D160 amended (4)); empty for such a line
+    without a payee. Uncapped: the panel says how many lines a rule
     would book (14 Nov 2026: 111 waiting grocery lines of one payee, nearly every one a
     different amount, showed as five amounts of 1x or 2x)."""
     if tx.counterparty_iban_hmac is None or tx.amount == 0:
         return {}
-    if shared and matchers.merchant_pattern(tx.counterparty_name or "") == "^":
+    shared = shared or _service_line(tx)
+    if shared and matchers.payee(tx.counterparty_name, tx.purpose).name_pattern is None:
         return {}
     t = transaction_table.c
     a = allocation_table.c
@@ -1901,7 +1935,7 @@ def waiting_amount_counts(
         a.transaction_id == t.id, a.status == AllocationStatus.CONFIRMED.value
     )
     waiting = (
-        select(t.amount, t.counterparty_name)
+        select(t.amount, t.counterparty_name, t.purpose)
         .join(import_table, import_table.c.id == t.import_id)
         .where(
             import_table.c.status == ImportStatus.RECONCILED.value,
@@ -1915,7 +1949,7 @@ def waiting_amount_counts(
     if shared:
         counts: dict[Decimal, int] = {}
         for row in conn.execute(waiting).all():
-            if matchers.same_payee(tx.counterparty_name, row.counterparty_name):
+            if matchers.rule_name_hits(tx, row.counterparty_name, row.purpose):
                 counts[row.amount] = counts.get(row.amount, 0) + 1
         return counts
     sub = waiting.subquery()
@@ -2077,8 +2111,8 @@ def _similar_private(conn: Connection, line: Line, limit: int = 5) -> list[tuple
     and payee (rules.matching.same_payee), so another payee's answer is never shown as this
     one's; none for such a line without a name."""
     t = transaction_table.c
-    shared = is_shared_iban(conn, line.counterparty_iban_hmac)
-    if shared and matchers.merchant_pattern(line.tx.counterparty_name or "") == "^":
+    shared = is_shared_iban(conn, line.counterparty_iban_hmac) or _service_line(line.tx)
+    if shared and matchers.payee(line.tx.counterparty_name, line.tx.purpose).name_pattern is None:
         return []
     if line.counterparty_iban_hmac is not None:
         same = t.counterparty_iban_hmac == line.counterparty_iban_hmac
@@ -2087,7 +2121,7 @@ def _similar_private(conn: Connection, line: Line, limit: int = 5) -> list[tuple
     else:
         return []
     rows = conn.execute(
-        select(t.id, t.counterparty_name, allocation_table.c.category)
+        select(t.id, t.counterparty_name, t.purpose, allocation_table.c.category)
         .join(allocation_table, allocation_table.c.transaction_id == t.id)
         .join(account_table, account_table.c.id == t.account_id)
         .where(
@@ -2100,7 +2134,9 @@ def _similar_private(conn: Connection, line: Line, limit: int = 5) -> list[tuple
     ).all()
     by_tx: dict[UUID, tuple[str, list[str]]] = {}
     for row in rows:
-        if shared and not matchers.same_payee(line.tx.counterparty_name, row.counterparty_name):
+        if shared and not matchers.same_payee(
+            line.tx.counterparty_name, row.counterparty_name, line.tx.purpose, row.purpose
+        ):
             continue
         if row.id not in by_tx:
             if len(by_tx) == limit:
