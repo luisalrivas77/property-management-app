@@ -561,8 +561,8 @@ def _suggested_pattern(
         return None
     candidate = matchers.suggested_purpose_pattern(tx.purpose)
     word = matchers.purpose_word(tx.purpose)
-    if candidate is None or word is None:
-        return None
+    if candidate is None or word is None or len(candidate) > rules_learned.PATTERN_MAX_LENGTH:
+        return None  # a longer one would be refused (rule.invalid_pattern), never a GET error
     rule, _ = rules_learned.proposed_rule_or_refusal(
         tx, current, context, purpose_pattern=candidate, names=names
     )

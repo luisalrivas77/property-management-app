@@ -1078,6 +1078,7 @@ def test_an_iban_line_never_gets_a_suggested_pattern(world, private):
         ("Karte 10/26", None),
         ("10/2026 Entgeltabrechnung", None),
         ("Entgelt Kontoführung 10/2026", "^Entgelt"),  # seven letters
+        ("A" * 250, None),  # longer than a rule's pattern may be: no suggestion, no error
     ],
 )
 def test_the_suggestion_needs_a_long_first_word(world, private, purpose, expected):
