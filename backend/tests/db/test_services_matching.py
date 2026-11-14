@@ -857,6 +857,24 @@ def test_a_rules_near_miss_does_not_preempt_a_matcher(world):
     assert rule is not None
 
 
+def test_the_waiting_totals_count_every_line_beyond_the_five_amounts_listed(world):
+    """The list names at most five amounts; the totals count every waiting line, so a payee
+    whose lines are nearly all different amounts shows how many a rule would cover (14 Nov
+    2026: 111 grocery lines shown as five amounts of 1x)."""
+    first = _hv(world, date(2026, 2, 3), "-10.00")
+    _hv(world, date(2026, 2, 4), "-10.00")
+    for day, amount in enumerate(
+        ("-11.00", "-12.00", "-13.00", "-14.00", "-15.00", "-16.00", "-17.00")
+    ):
+        _hv(world, date(2026, 3, day + 1), amount)
+    view = world.query(
+        review.transaction_allocations, first, iban_key=TEST_IBAN_KEY, today=date(2026, 11, 8)
+    )
+    assert view.can_learn_rule
+    assert len(view.waiting_other_amounts) == 5
+    assert (view.waiting_other_count, view.waiting_same_amount_count) == (7, 1)
+
+
 def test_the_box_asks_about_other_waiting_amounts_and_the_flag_books_only_this_one(world):
     """D49 (8): the panel lists the other amounts waiting from the IBAN; answering "Nein,
     nur Zahlungen über 35,70 €" learns a same_amount_only rule, which books that amount
@@ -880,6 +898,8 @@ def test_the_box_asks_about_other_waiting_amounts_and_the_flag_books_only_this_o
         (Decimal("-380.00"), 2),
         (Decimal("-12.00"), 1),
     ]
+    # Uncapped totals the panel names: three lines of other amounts, one of the same.
+    assert (view.waiting_other_count, view.waiting_same_amount_count) == (3, 1)
     result = _put(
         world,
         fee,

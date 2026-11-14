@@ -494,6 +494,13 @@ def _response(
             rules_learned.proposed_rule(tx, current, context, names=names), current
         )
     history = _name_history(line, context, names)
+    waiting = (
+        matching.waiting_amount_counts(
+            conn, tx, shared=tx.counterparty_iban_hmac in context.shared_iban_hmacs
+        )
+        if can_learn
+        else {}
+    )
     return TransactionAllocations(
         transaction=_transaction(conn, transaction_id),
         allocations=rows,
@@ -501,13 +508,9 @@ def _response(
         learn_rule_default=default,
         no_default_rule_categories=[c for c in AllocationCategory if THRESHOLDS[c] is None],
         unlearnable_categories=_unlearnable(line),
-        waiting_other_amounts=(
-            matching.waiting_other_amounts(
-                conn, tx, shared=tx.counterparty_iban_hmac in context.shared_iban_hmacs
-            )
-            if can_learn
-            else []
-        ),
+        waiting_other_amounts=matching.other_amounts(waiting, tx.amount),
+        waiting_other_count=sum(n for value, n in waiting.items() if value != tx.amount),
+        waiting_same_amount_count=waiting.get(tx.amount, 0),
         rule=rule,
         name_history=history,
         rebook_blockers=_rebook_blockers(conn, tx) if history else [],
