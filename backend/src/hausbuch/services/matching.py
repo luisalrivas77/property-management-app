@@ -1440,6 +1440,16 @@ def match_line(
             # members' consent; until then it waits in Zu prüfen for a person.
             return MatchPlan("skipped", no_match_reason(line.account_purpose, False))
         return MatchPlan("categorize", "routing.no_match")
+    if (
+        rematch
+        and line.current
+        and matchers.weak_proposal(found)
+        and not allocations.same_answer(found.allocations, line.current)
+    ):
+        # Review F2 (D160 amended (4)): a rule that names the payee only loosely proposes on
+        # a line without rows; it never replaces another answer already waiting (a model's
+        # proposal of another category stays for the person).
+        return MatchPlan("skipped", "matching.keeps_proposal")
     decision = _route(line, found)
     if decision is not RoutingDecision.AUTO_CONFIRM:
         if any(a.status is AllocationStatus.CONFIRMED for a in line.current):

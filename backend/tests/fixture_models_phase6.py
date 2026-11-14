@@ -399,12 +399,21 @@ class SharedIbanCase(_Case):
     shared: bool
 
 
+class PayeeStrength(_Case):
+    id: str
+    a: PayeeLine
+    b: PayeeLine
+    strength: Literal["strong", "weak"]  # review F2: identity_strength of the pair
+    note: str | None = None
+
+
 class PayeeIdentityFixture(_Fixture):
     same: list[PayeePair] = Field(min_length=10)
     different: list[PayeePair] = Field(min_length=5)
     either: list[PayeePair] = Field(default_factory=list)
     payees: list[PayeeCase] = Field(min_length=5)
     shared_ibans: list[SharedIbanCase] = Field(min_length=3)
+    strengths: list[PayeeStrength] = Field(min_length=5)
 
     @model_validator(mode="after")
     def _sections(self) -> Self:

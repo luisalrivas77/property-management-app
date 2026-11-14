@@ -115,6 +115,14 @@ def test_payee_label_and_patterns(case):
         assert list(found.words) == case.words
 
 
+@pytest.mark.parametrize("case", FIXTURE.strengths, ids=lambda c: c.id)
+def test_identity_strength_reads_the_fixture(case):
+    a, b = case.a, case.b
+    assert matching.identity_strength(a.name, b.name, a.purpose, b.purpose) == case.strength
+    assert matching.identity_strength(b.name, a.name, b.purpose, a.purpose) == case.strength
+    assert matching.same_payee(a.name, b.name, a.purpose, b.purpose)  # weak is one payee too
+
+
 @pytest.mark.parametrize("case", FIXTURE.shared_ibans, ids=lambda c: c.id)
 def test_shared_iban_counts_payees(case):
     lines = [(line.name, line.purpose) for line in case.lines]
@@ -242,9 +250,14 @@ def test_lieferando_learned_on_either_account_hits_the_other():
     card = _tx("Lieferando.de lieferse Oosterdoksstraat 80", iban=None, amount="-31.00", n=2)
     on_bank = _learned(bank, C.HH_DINING, **shared)
     assert on_bank.matcher.counterparty_iban_hmac is None
-    assert matching.apply_rule(on_bank, card, PRIVATE) is not None
+    booked = matching.apply_rule(on_bank, card, PRIVATE)
+    assert booked is not None
+    assert booked.confidence == matching.EXACT  # "^LIEFERANDO" matches the card's name
     on_card = _learned(card, C.HH_DINING)
-    assert matching.apply_rule(on_card, bank, MatchContext(**shared, account_purpose="private"))
+    proposed = matching.apply_rule(on_card, bank, MatchContext(**shared, account_purpose="private"))
+    # review F2: the card's longer name names "Lieferando" by its first word only (weak)
+    assert proposed is not None
+    assert matching.weak_proposal(proposed)
     # another payee on the clearing IBAN is not hit
     other = _tx("KAUFLAND", iban=CLEARING, n=3)
     assert matching.apply_rule(on_bank, other, PRIVATE) is None
@@ -254,31 +267,106 @@ def test_lieferando_learned_on_either_account_hits_the_other():
 
 
 @pytest.mark.parametrize(
-    ("learned_on", "line", "category"),
+    ("learned_on", "line", "category", "weak"),
     [
         (
             "K7B2QXNE ANTHROPIC 548 Market Street PMB 1234",
             "P4M9WZTA ANTHROPIC* CLAUDE SUB 548 Market Str",
             C.HH_SUBSCRIPTIONS,
+            True,
         ),
         (
             "9d2e417b SQ *ATARIGUA SL | LA C Carrer Marina",
             "4f1c09ad SQ *ATARIGUA, S.L. Carrer Marina 100",
             C.HH_DINING,
+            True,
         ),
         (
             "R0555123 curiara.com Avenue Louise 10",
             "Curiara Financial Services INC",
             C.HH_SUBSCRIPTIONS,
+            True,
         ),
-        ("WWW.DAZN.COM Huidekoperstraat 10", "DAZN", C.HH_STREAMING),
-        ("DAZN", "WWW.DAZN.COM Huidekoperstraat 10", C.HH_STREAMING),
+        ("WWW.DAZN.COM Huidekoperstraat 10", "DAZN", C.HH_STREAMING, True),
+        ("DAZN", "WWW.DAZN.COM Huidekoperstraat 10", C.HH_STREAMING, True),
     ],
 )
 def test_a_rule_learned_behind_a_reference_code_or_web_address_hits_the_payee(
-    learned_on, line, category
+    learned_on, line, category, weak
 ):
+    """Each pair is one payee; review F2: where only the first word or a one-word prefix
+    names it (all five here), the rule proposes the line with a question instead of booking
+    it."""
     rule = _learned(_tx(learned_on, iban=None), category)
-    assert matching.apply_rule(rule, _tx(line, iban=None, n=2), PRIVATE) is not None
+    found = matching.apply_rule(rule, _tx(line, iban=None, n=2), PRIVATE)
+    assert found is not None
+    assert found.allocations[0].category == category
+    assert matching.weak_proposal(found) is weak
+    assert (found.confidence == matching.EXACT) is not weak
     sky = _tx("Sky Deutschland Fernsehen GmbH Co. KG", iban=None, n=3)
     assert matching.apply_rule(rule, sky, PRIVATE) is None
+
+
+# --- Review F1: Google Pay's card form names its merchant ----------------------------------
+
+
+def test_a_google_netflix_rule_does_not_book_supercell():
+    rule = _learned(_tx("GOOGLE *Netflix g.co/helppay#", iban=None))
+    again = matching.apply_rule(rule, _tx("GOOGLE*Netflix", iban=None, n=2), PRIVATE)
+    assert again is not None
+    assert again.confidence == matching.EXACT
+    supercell = _tx("GOOGLE *Supercell g.co/helppay#", iban=None, n=3)
+    assert matching.apply_rule(rule, supercell, PRIVATE) is None
+
+
+def test_a_google_line_without_a_merchant_learns_nothing():
+    tx = _tx("Google Payment Ie Ltd", "GOOGLE PLAY 4711-0815-2233", iban=OTHER_IBAN)
+    with pytest.raises(RuleError) as caught:
+        matching.infer_rule(tx, _answer(tx, C.HH_STREAMING), PRIVATE)
+    assert caught.value.code == RULE_NO_MERCHANT
+
+
+# --- Review F2: a weak hit proposes, a strong one books ------------------------------------
+
+
+def test_a_rule_on_one_shop_proposes_another_with_its_first_word():
+    rule = _learned(_tx("ADLER MODEMARKT", iban=None), C.HH_CLOTHING)
+    found = matching.apply_rule(rule, _tx("ADLER APOTHEKE", iban=None, n=2), PRIVATE)
+    assert found is not None
+    assert found.confidence == matching.GUARDED_CONFIDENCE
+    assert found.question == "Gleicher Empfänger wie „ADLER MODEMARKT“? Bitte bestätigen."
+    assert found.allocations[0].category == C.HH_CLOTHING
+    # its own name is booked
+    same = matching.apply_rule(rule, _tx("ADLER MODEMARKT", iban=None, n=3), PRIVATE)
+    assert same is not None and same.confidence == matching.EXACT
+
+
+def test_a_strong_hit_wins_over_a_weak_one():
+    weak = _learned(_tx("ADLER APOTHEKE", iban=None), C.HH_HEALTH)
+    strong = _learned(_tx("ADLER MODEMARKT", iban=None), C.HH_CLOTHING)
+    tx = _tx("ADLER MODEMARKT FILIALE 12", iban=None, n=2)
+    found = matching.rule_answer([weak, strong], tx, PRIVATE, [])
+    assert found is not None
+    assert found.confidence == matching.EXACT
+    assert found.allocations[0].category == C.HH_CLOTHING
+
+
+def test_an_iban_rule_is_not_weakened():
+    rule = _rule(RuleMatcher(counterparty_iban_hmac=OTHER_IBAN, amount_sign="debit"))
+    found = matching.apply_rule(rule, _tx("ANYTHING", iban=OTHER_IBAN), PRIVATE)
+    assert found is not None and found.confidence == matching.EXACT
+
+
+# --- Review F4: a typed bare service pattern keeps working ---------------------------------
+
+
+def test_a_typed_paypal_pattern_is_no_service_only_rule():
+    typed = RuleMatcher(counterparty_name_pattern="^PAYPAL", amount_sign="debit")
+    assert not matching.service_only(typed)
+    tx = _tx(SHORT, DISNEY)
+    assert matching.apply_rule(_rule(typed), tx, PRIVATE) is not None
+    learned = RuleMatcher(
+        counterparty_name_pattern="^PAYPAL EUROPE S A R L ET CIE S C A", amount_sign="debit"
+    )
+    assert matching.service_only(learned)
+    assert matching.apply_rule(_rule(learned), tx, PRIVATE) is None

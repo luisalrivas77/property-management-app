@@ -439,7 +439,11 @@ def apply_rule(
     D160 amended (4), 14 Nov 2026: a rule that names no merchant never applies to a payment
     service's line (service_blind: an IBAN-only rule on PayPal's IBAN, or one learned on PayPal's
     name alone before that day), on any account: it is disabled on read, not deleted, since it
-    would book every merchant's payment through the service as the one it was learned on."""
+    would book every merchant's payment through the service as the one it was learned on.
+
+    Review F2 (14 Nov 2026): a rule whose name pattern hits the line only through a WEAK
+    identity (weak_hit) gives its set as a proposal (GUARDED_CONFIDENCE and WEAK_QUESTION),
+    never an auto-confirm; rule_answer prefers a strong hit."""
     if not rule.enabled or not rule_hits(rule.matcher, tx):
         return None
     if iban_only(rule.matcher) and rule.matcher.counterparty_iban_hmac in context.shared_iban_hmacs:
@@ -452,7 +456,14 @@ def apply_rule(
         split = _RULE_SPLITS[rule.split_method](rule, tx, context)
     if split is None or split.confidence != EXACT:
         return None
-    return _as_set(tx, split, AllocationMethod.RULE, rule_id=rule.id)
+    found = _as_set(tx, split, AllocationMethod.RULE, rule_id=rule.id)
+    if weak_hit(rule.matcher, tx):
+        # Review F2 (principle 3): the rule names this payee only loosely ("ADLER MODEMARKT"
+        # and "ADLER APOTHEKE"), so a person confirms it.
+        return found.model_copy(
+            update={"confidence": GUARDED_CONFIDENCE, "question": weak_question(rule.matcher)}
+        )
+    return found
 
 
 # Split methods that check the amount against a record (apply_rule returns None for any
@@ -506,14 +517,19 @@ def rule_answer(
     line's account does not take (a household rule on a rental card line, a rental rule on a
     private line) is no hit."""
     allowed = allowed_categories(context.account_purpose)
-    hits = [
+    found_hits = [
         (rule, s)
         for rule in rules
         if (s := apply_rule(rule, tx, context, history)) is not None
         and all(a.category in allowed for a in s.allocations)
     ]
+    # Review F2: a weak hit (weak_hit) is a proposal; it counts only when no rule hits strongly.
+    hits = [(rule, s) for rule, s in found_hits if not weak_proposal(s)]
     if not hits:
-        return None
+        weak = [s for _, s in found_hits]
+        if not weak or any(not same_split(weak[0], other) for other in weak[1:]):
+            return None
+        return weak[0]
     booked = _booked(tx, history)
     standing: list[AllocationSet] = []
     near: list[_NearMiss] = []
@@ -1344,6 +1360,9 @@ class PaymentService:
 PAYMENT_SERVICES = (
     PaymentService("PayPal", "PAYPAL", ("Ihr Einkauf bei",)),
     PaymentService("Klarna", "KLARNA", ("Purchase at", "Ihr Einkauf bei")),
+    # Google Pay's card form "GOOGLE *<Merchant> g.co/helppay#" (review F1, 14 Nov 2026): the
+    # merchant after the star; a Google line without one ("Google Payment Ie Ltd") names none.
+    PaymentService("Google", "GOOGLE", ()),
 )
 # Card processors whose own short name comes first and the merchant after it ("SPC*CAMPUS
 # HAIR", "UZR SPANISCHER GARTEN", "ZETTLE CAFE NANE"): the payee is what follows.
@@ -1454,9 +1473,9 @@ def payee(name: str | None, purpose: str | None = None) -> Payee:
             return _service_payee(service, merchant, merchant_pattern(name))
         if re.match(rf"{service.word}\b", full) is None:
             continue
-        cut = _merchant_cut(name)
+        cut = _help_cut(_merchant_cut(name))
         if "*" in cut:
-            return _service_payee(service, cut.partition("*")[2], merchant_pattern(name))
+            return _service_payee(service, cut.partition("*")[2], _as_pattern(_normalised(cut)))
         return _purpose_payee(service, purpose)
     words = _web_words(payee_words(_DOMAIN.sub("", _merchant_cut(name))))
     if len(words) > 1 and words[0] in CARD_PROCESSORS:
@@ -1479,6 +1498,13 @@ def _web_words(words: tuple[str, ...]) -> tuple[str, ...]:
     if len(words) > 2 and words[1] in _WEB_SUFFIXES:
         words = (words[0], *words[2:])
     return words
+
+
+def _help_cut(cut: str) -> str:
+    """A service's card form up to its merchant: a trailing web address after the merchant
+    ("GOOGLE *Netflix g.co/helppay#") names the service's help page, not the merchant. Without
+    one (PayPal's card form) the cut is unchanged, so its pattern stays merchant_pattern's."""
+    return re.split(r"\s+\S*[/#]\S*", cut, maxsplit=1)[0]
 
 
 def _service_payee(service: PaymentService, merchant: str, name_pattern: str) -> Payee:
@@ -1516,8 +1542,25 @@ def _purpose_payee(service: PaymentService, purpose: str | None) -> Payee:
     return Payee((), None, service=service)
 
 
+STRONG = "strong"
+WEAK = "weak"
+
+
 def _same_words(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
-    """One payee (D160 amended (4)), both ways: either name's words start the other's ("EPRIMO
+    """One payee (D160 amended (4)), strong or weak (_identity)."""
+    return _identity(a, b) is not None
+
+
+def _identity(a: tuple[str, ...], b: tuple[str, ...]) -> str | None:
+    """How surely two payees' words are one payee, both ways (review F2, 14 Nov 2026,
+    principle 3): STRONG for the same words, a word prefix whose shorter side has two words or
+    more, the same first two words, or Booking's first three; WEAK for a one-word prefix ("ALDI"
+    and "ALDI TALK") or only the same first word ("ADLER MODEMARKT" and "ADLER APOTHEKE",
+    "VOLKSWAGEN AUTOVERSICHERUNG AG" and "VOLKSWAGEN AUTOVERS AG"); None for two payees. Both
+    are one payee for an IBAN's lines (shared_iban, the D49 history); a rule that hits a line
+    only weakly proposes, it never books unseen (apply_rule).
+
+    One payee, both ways: either name's words start the other's ("EPRIMO
     GMBH" and "EPRIMO GMBH FLUGHAFENSTRASE"; one generic word alone, "HOTEL", is no payee), or
     the first two words are the same ("NETTO MARKEN DISCOUNT …", "BURGER KING …"; not with a
     linking second word, "HOTEL AT …", nor fewer than FIRST_WORD_MIN letters, "G A …"), or,
@@ -1527,17 +1570,17 @@ def _same_words(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
     first word is, when it is not generic and has FIRST_WORD_MIN letters or more
     ("VOLKSWAGEN AUTOVERSICHERUNG AG" and "VOLKSWAGEN AUTOVERS AG"). Never for no payee."""
     if not a or not b:
-        return False
+        return None
     short, long = sorted((a, b), key=len)
     if long[: len(short)] == short and not (len(short) == 1 and short[0] in GENERIC_FIRST_WORDS):
-        return True
+        return STRONG if len(short) >= 2 or len(long) == 1 else WEAK
     if (
         len(short) >= 2
         and a[:2] == b[:2]
         and a[1] not in _LINKING_WORDS
         and len(a[0]) + len(a[1]) >= FIRST_WORD_MIN
     ):
-        return True
+        return STRONG
     if (
         len(short) >= 3
         and a[:3] == b[:3]
@@ -1545,8 +1588,21 @@ def _same_words(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
         and a[2] not in _LINKING_WORDS
         and len(a[2]) >= FIRST_WORD_MIN
     ):
-        return True  # "HOTEL AT BOOKING …": the collector named after the linking word (Luis)
-    return a[0] == b[0] and len(a[0]) >= FIRST_WORD_MIN and a[0] not in GENERIC_FIRST_WORDS
+        return STRONG  # "HOTEL AT BOOKING …": the collector named after the linking word (Luis)
+    if a[0] == b[0] and len(a[0]) >= FIRST_WORD_MIN and a[0] not in GENERIC_FIRST_WORDS:
+        return WEAK
+    return None
+
+
+def identity_strength(
+    name: str | None,
+    other: str | None,
+    purpose: str | None = None,
+    other_purpose: str | None = None,
+) -> str | None:
+    """_identity of two lines' payees (STRONG, WEAK or None): fixture payee_identity.yaml's
+    `strengths`."""
+    return _identity(payee(name, purpose).words, payee(other, other_purpose).words)
 
 
 def payee_key(name: str | None, purpose: str | None = None) -> str:
@@ -1594,32 +1650,75 @@ def _learned_text(pattern: str) -> str | None:
     return text if _as_pattern(_normalised(text)) == pattern and text else None
 
 
-def _payee_hit(pattern: str, name: str | None, purpose: str | None) -> bool:
-    """Whether a learned name pattern (_learned_text) names the line's payee (same_payee): a
-    rule learned on one spelling hits the others. A pattern naming a payment service without
-    its merchant hits nothing this way."""
+def _payee_hit(pattern: str, name: str | None, purpose: str | None) -> str | None:
+    """How a learned name pattern (_learned_text) names the line's payee (_identity: STRONG,
+    WEAK, or None for no hit): a rule learned on one spelling hits the others. A pattern naming
+    a payment service without its merchant hits nothing this way."""
     text = _learned_text(pattern)
     if text is None or name is None:
-        return False
+        return None
     learned = payee(text)
     if learned.service is not None and learned.merchant is None:
-        return False
-    return _same_words(learned.words, payee(name, purpose).words)
+        return None
+    return _identity(learned.words, payee(name, purpose).words)
 
 
 def _names_hit(
     name_pattern: str, purpose_pattern: str | None, name: str | None, purpose: str | None
 ) -> bool:
+    """Whether a rule's name pattern (and purpose pattern) hits a line (_names_strength)."""
+    return _names_strength(name_pattern, purpose_pattern, name, purpose) is not None
+
+
+def _names_strength(
+    name_pattern: str, purpose_pattern: str | None, name: str | None, purpose: str | None
+) -> str | None:
     """A rule's name pattern (and purpose pattern) on a line: the patterns as regular
-    expressions (_name_found, _found), or, for a learned name pattern without a purpose
-    pattern, the line's payee (_payee_hit). A purpose of None is not known (a caller that has
-    only the name): the purpose pattern then counts as a hit, so a check never passes on
-    missing evidence."""
+    expressions (_name_found, _found), a STRONG hit, or, for a learned name pattern without a
+    purpose pattern, the line's payee (_payee_hit, STRONG or WEAK). None for no hit. A purpose
+    of None is not known (a caller that has only the name): the purpose pattern then counts as
+    a hit, so a check never passes on missing evidence."""
     if purpose_pattern is not None:
         if purpose is not None and not _found(purpose_pattern, purpose):
-            return False
-        return _name_found(name_pattern, name)
-    return _name_found(name_pattern, name) or _payee_hit(name_pattern, name, purpose)
+            return None
+        return STRONG if _name_found(name_pattern, name) else None
+    if _name_found(name_pattern, name):
+        return STRONG
+    return _payee_hit(name_pattern, name, purpose)
+
+
+WEAK_QUESTION = "Gleicher Empfänger wie „{label}“? Bitte bestätigen."
+
+
+def weak_hit(matcher: RuleMatcher, tx: MatchTransaction) -> bool:
+    """Whether the rule hits the line only through a WEAK identity (review F2, principle 3):
+    its name pattern neither matches as a regular expression nor names the line's payee
+    strongly. Such a hit is a proposal with WEAK_QUESTION, never an auto-confirm (apply_rule).
+    False for a miss, a rule without a name pattern (an IBAN or purpose rule) and a strong hit."""
+    pattern = matcher.counterparty_name_pattern
+    if pattern is None or not rule_hits(matcher, tx):
+        return False
+    strength = _names_strength(pattern, matcher.purpose_pattern, tx.counterparty_name, tx.purpose)
+    return strength == WEAK
+
+
+def weak_question(matcher: RuleMatcher) -> str:
+    """WEAK_QUESTION naming the payee the rule was learned on: a payment service's merchant
+    („PayPal: DisneyPlus“) or the learned name ("ADLER MODEMARKT")."""
+    pattern = matcher.counterparty_name_pattern or ""
+    text = _learned_text(pattern) or pattern.removeprefix("^")
+    learned = payee(text)
+    return WEAK_QUESTION.format(label=learned.label or text)
+
+
+def weak_proposal(found: AllocationSet) -> bool:
+    """Whether a rule's set is a weak hit's proposal (apply_rule): services.matching never
+    lets one replace another proposal of a different answer on a re-match."""
+    return (
+        found.method is AllocationMethod.RULE
+        and found.confidence == GUARDED_CONFIDENCE
+        and (found.question or "").startswith(WEAK_QUESTION.split("{", 1)[0])
+    )
 
 
 def rule_name_hits(tx: MatchTransaction, name: str | None, purpose: str | None) -> bool:
@@ -1634,14 +1733,17 @@ def rule_name_hits(tx: MatchTransaction, name: str | None, purpose: str | None) 
 
 def service_only(matcher: RuleMatcher) -> bool:
     """D160 amended (4): a rule on a payment service without its merchant: no purpose
-    pattern, and its name pattern names the service but no merchant, like the rule learned on
-    "^PAYPAL EUROPE S A R L ET CIE S C A" before 14 Nov 2026 (it booked every PayPal payment
-    of its amount as one merchant's)."""
+    pattern, and its name pattern names the service's legal name, two words or more, but no
+    merchant, like the rule learned on "^PAYPAL EUROPE S A R L ET CIE S C A" before 14 Nov 2026
+    (it booked every PayPal payment of its amount as one merchant's). A typed "^PAYPAL" is no
+    such rule (review F4): it keeps working."""
     pattern = matcher.counterparty_name_pattern
     if matcher.purpose_pattern is not None or pattern is None:
         return False
     text = _learned_text(pattern)
-    if text is None:
+    if text is None or len(payee_words(text)) < 2:
+        # Review F4: a pattern of the service's word alone ("^PAYPAL") is a person's own
+        # rule for every payment through it, not a legal name learned by infer_rule.
         return False
     learned = payee(text)  # no purpose: a service's name form has no merchant here
     return learned.service is not None and learned.merchant is None

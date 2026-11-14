@@ -14,8 +14,10 @@
 #      first word);
 #   3. a card processor's own short name first (SPC, UZR, SQ, SUMUP, ZETTLE) is dropped: the
 #      payee is what follows;
-#   4. a payment service (PayPal, Klarna) carries many merchants: its line's payee is the
-#      merchant, read from the card form "… PAYPAL *<MERCHANT> …", the debit card form
+#   4. a payment service (PayPal, Klarna, Google) carries many merchants: its line's payee
+#      is the merchant, read from the card form "… PAYPAL *<MERCHANT> …" (Google's
+#      "GOOGLE *<Merchant> g.co/helppay#", the help page's web address dropped), the debit
+#      card form
 #      "<Merchant> - PayPal", or a direct debit's purpose after „Ihr Einkauf bei“ (PayPal) or
 #      "Purchase at" (Klarna); a service line whose merchant is not read has no payee;
 #   5. one payee, both ways: either line's words start the other's (one generic word alone,
@@ -23,6 +25,11 @@
 #      word, "HOTEL AT …", nor fewer than 5 letters in the two, "G A …"); or the first word is,
 #      when it has 5 letters or more and is not a generic first word (DEUTSCHE, HOTEL, CAFE,
 #      GRUPO, HAUS, PRAXIS, SHOP, CITY, PARKPLATZ, BAHNHOF and the like).
+#   6. how surely (review F2, 14 Nov 2026, `strengths`): STRONG for the same words, a word
+#      prefix whose shorter side has two words or more, the same first two words, or
+#      Booking's first three; WEAK for a one-word prefix ("ALDI", "ALDI TALK") or only the
+#      same first word. Both are one payee for same_payee and shared_iban; a learned rule that
+#      hits a line only weakly proposes it with a question, it never books it unseen.
 # An IBAN is shared when its lines hold two payees that are not one payee (shared_iban).
 #
 # `same: null` is a pair the rules may read either way (two booking.com hotels; Amazon's two
@@ -136,6 +143,10 @@ same:
     a: {name: "Hotel at Booking.com Kanaalstraat 12"}
     b: {name: "Hotel at Booking.com Parkweg 7"}
     same: true
+  - id: google_merchant_two_spellings  # review F1: Google Pay's card form
+    a: {name: "GOOGLE *Netflix g.co/helppay#"}
+    b: {name: "GOOGLE*Netflix"}
+    same: true
 different:
   - id: two_restaurants_at_the
     a: {name: "RESTAURANT AT THE PARK"}
@@ -189,6 +200,11 @@ different:
     note: a PayPal line whose purpose names no merchant has no payee
     a: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: "1041234567893 PP.1234.PP"}
     b: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: "1041234567894 PP.1234.PP"}
+    same: false
+  - id: google_two_merchants
+    note: review F1, two merchants paid through Google Pay; a Netflix rule never books Supercell
+    a: {name: "GOOGLE *Netflix g.co/helppay#"}
+    b: {name: "GOOGLE *Supercell g.co/helppay#"}
     same: false
 
 either:
@@ -265,6 +281,59 @@ payees:
     name: "SPC*CAMPUS HAIR"
     label: null
     name_pattern: '^SPC\*CAMPUS HAIR'
+  - id: google_merchant_cut
+    # review F1: the merchant after the star, the help page's address dropped
+    name: "GOOGLE *Netflix g.co/helppay#"
+    label: "Google: Netflix"
+    name_pattern: '^GOOGLE \*NETFLIX'
+    words: [NETFLIX]
+  - id: google_without_merchant
+    # review F1: Google's company name names no merchant, so no payee and no rule
+    name: "Google Payment Ie Ltd"
+    purpose: "GOOGLE PLAY 4711-0815-2233"
+    label: null
+    unreadable: true
+
+# How surely two names are one payee (review F2, step 6 above): a rule that hits a line only
+# through a WEAK identity proposes it with „Gleicher Empfänger wie „…“? Bitte bestätigen.“
+strengths:
+  - id: two_shops_one_first_word
+    a: {name: "ADLER MODEMARKT"}
+    b: {name: "ADLER APOTHEKE"}
+    strength: weak
+  - id: one_word_prefix
+    a: {name: "ALDI"}
+    b: {name: "ALDI TALK"}
+    strength: weak
+  - id: insurer_abbreviated_weak_but_one_payee
+    note: still one payee for same_payee (same/insurer_abbreviated), but a rule only proposes
+    a: {name: "VOLKSWAGEN AUTOVERSICHERUNG AG"}
+    b: {name: "VOLKSWAGEN AUTOVERS AG"}
+    strength: weak
+  - id: delivery_city_appended_one_word
+    a: {name: "LIEFERANDO"}
+    b: {name: "LIEFERANDO DE BERLIN"}
+    strength: weak
+  - id: discounter_two_branches
+    a: {name: "NETTO MARKEN-DISCOUNT CARL-EULER STR"}
+    b: {name: "NETTO MARKEN-DISCOUNT ZOLLAMTSTR"}
+    strength: strong
+  - id: two_hotels_charged_by_booking
+    a: {name: "Hotel at Booking.com Kanaalstraat 12"}
+    b: {name: "Hotel at Booking.com Parkweg 7"}
+    strength: strong
+  - id: street_appended_two_words
+    a: {name: "EPRIMO GMBH"}
+    b: {name: "EPRIMO GMBH FLUGHAFENSTRASE 20"}
+    strength: strong
+  - id: google_merchant_two_spellings
+    a: {name: "GOOGLE *Netflix g.co/helppay#"}
+    b: {name: "GOOGLE*Netflix"}
+    strength: strong
+  - id: paypal_merchant_two_spellings
+    a: {name: "PayPal Europe S.a.r.l. et Cie S.C.A", purpose: ", Ihr Einkauf bei DisneyPlus, "}
+    b: {name: "4029357733 PAYPAL *DISNEYPLUS 35314369001 LU"}
+    strength: strong
 
 # Whether an IBAN hash is shared (two payees that are not one payee on its private lines).
 shared_ibans:
