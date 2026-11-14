@@ -137,6 +137,17 @@ class BankConnectionPatch(Patch):
         return _https_only(value)
 
 
+class StatementsRefusal(Schema):
+    """The bank's latest unresolved refusal of the PDF statement fetch because the access may
+    not fetch statements at all (account.statements_refused, 14 Nov 2026): its answer code,
+    the statement asked and when. Ends once a later run's HKEKP is answered without it."""
+
+    code: str = Field(pattern=r"^[0-9]{4}$")
+    year: int = Field(ge=1000, le=9999)
+    number: int = Field(ge=1, le=99999)
+    at: datetime
+
+
 class BankConnection(MutableRecord):
     """GET /accounts/{id}/bank-connection: the login masked, the client state only as a flag
     (client_data and its MAC never leave the database)."""
@@ -164,6 +175,10 @@ class BankConnection(MutableRecord):
     bank_name: str | None = Field(default=None, max_length=60)
     approval_text: str = Field(default="In der S-pushTAN-App freigeben", max_length=100)
     auto_sync_allowed: bool = True
+    # 14 Nov 2026: set while `fetch_statements` is on and the bank's latest answer to the
+    # statement fetch was a refusal for lack of permission (e.g. 9370); the card says how to
+    # get it unlocked.
+    statements_refusal: StatementsRefusal | None = None
 
 
 class BankParameters(Schema):

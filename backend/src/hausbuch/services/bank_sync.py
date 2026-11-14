@@ -79,6 +79,7 @@ from hausbuch.schemas.bank_sync import (
     BankStatement,
     BankSync,
     StatementKey,
+    StatementsRefusal,
     SyncEvent,
     SyncStatus,
     SyncTrigger,
@@ -101,6 +102,8 @@ from hausbuch.schemas.events import (
     BankConnectionRecorded,
     BankParametersRead,
     BankStatementFetched,
+    BankStatementsAnswered,
+    BankStatementsRefused,
     BankSyncApprovalNeeded,
     BankSyncCompleted,
     BankSyncFailed,
@@ -299,6 +302,10 @@ def _to_connection(conn: Connection, row: Row) -> BankConnection:
             "bank_name": bank_name,
             "approval_text": rules.approval_text(bank_name) or PHASE5_APPROVAL_TEXT,
             "auto_sync_allowed": _auto_sync_allowed(conn, row, bank_name=bank_name),
+            # only while the switch is on: switched off, nothing is asked and nothing to fix
+            "statements_refusal": (
+                statements_refusal(conn, row.id) if row.fetch_statements else None
+            ),
         }
     )
 
@@ -941,6 +948,53 @@ APPROVAL_NEEDED_QUESTION = (
 )
 
 
+# 14 Nov 2026: what a permission refusal of the PDF statement fetch means, by its code.
+_STATEMENTS_REFUSAL_MEANING = {"9370": "keine Auftragsberechtigung"}
+
+
+def statements_refused_text(refusal: StatementsRefusal, bank_name: str | None) -> tuple[str, str]:
+    """The bank_statements_refused card's reasoning and question (the Bankabruf card's notice
+    in one sentence each; principle 7: what it means and what to do)."""
+    meaning = _STATEMENTS_REFUSAL_MEANING.get(refusal.code)
+    code = f"Code {refusal.code}: {meaning}" if meaning else f"Code {refusal.code}"
+    bank = f"Die {bank_name}" if bank_name else "Die Bank"
+    reasoning = (
+        f"{bank} erlaubt diesem Online-Banking-Zugang den Abruf der Kontoauszüge als PDF nicht"
+        f" ({code})."
+    )
+    question = (
+        "Im Online-Banking die Kontoauszüge dieses Kontos auf das elektronische Postfach"
+        " umstellen oder die Bank bitten, den Abruf elektronischer Kontoauszüge über"
+        " FinTS/HBCI für diesen Zugang freizuschalten; Hausbuch fragt bei jedem Abruf erneut."
+    )
+    return reasoning, question
+
+
+def _statements_refused_items(conn: Connection, names: dict[UUID, str | None]) -> list[InboxItem]:
+    """One bank_statements_refused card per connection whose switch „Kontoauszüge als PDF
+    abrufen“ is on and whose latest statement answer is a permission refusal."""
+    items = []
+    for row in conn.execute(
+        select(connection_table.c.id, connection_table.c.account_id).where(
+            connection_table.c.fetch_statements.is_(True)
+        )
+    ):
+        refusal = statements_refusal(conn, row.id)
+        if refusal is None:
+            continue
+        reasoning, question = statements_refused_text(refusal, names.get(row.id))
+        items.append(
+            InboxItem(
+                kind=InboxItemKind.BANK_STATEMENTS_REFUSED,
+                created_at=refusal.at,
+                reasoning=reasoning,
+                question=question,
+                account_id=row.account_id,
+            )
+        )
+    return items
+
+
 def bank_sync_items(conn: Connection) -> list[InboxItem]:
     """The Zu prüfen cards of §4.6, D117 and D120, computed on read:
 
@@ -949,7 +1003,10 @@ def bank_sync_items(conn: Connection) -> list[InboxItem]:
       manual run, which ends the card;
     - from each account's latest finished run: bank_sync_failed while it failed,
       bank_balance_drift while it brought nothing new and HKSAL differed from the last
-      reconciled closing. A later good run ends either card.
+      reconciled closing. A later good run ends either card;
+    - bank_statements_refused while the PDF statement fetch is switched on and the bank's
+      latest answer to it refused it for lack of permission (14 Nov 2026). A later run whose
+      statement request is answered without that refusal ends it.
 
     The texts name the connection's bank's approval app and a missing slot's variable
     (phase 6 D163, D173 (1))."""
@@ -1028,6 +1085,8 @@ def bank_sync_items(conn: Connection) -> list[InboxItem]:
                     sync_id=row.id,
                 )
             )
+    names = {connection_id: name for connection_id, (_, name) in connections.items()}
+    items.extend(_statements_refused_items(conn, names))
     return items
 
 
@@ -1539,6 +1598,82 @@ def store_statement(
         ),
     )
     return document.id
+
+
+_STATEMENT_ANSWER_EVENTS = (
+    EventType.ACCOUNT_STATEMENTS_REFUSED.value,
+    EventType.ACCOUNT_STATEMENTS_ANSWERED.value,
+)
+
+
+def _last_statement_answer(conn: Connection, connection_id: UUID) -> Row | None:
+    """The connection's latest account.statements_refused or account.statements_answered."""
+    e = event_table.c
+    return conn.execute(
+        select(e.type, e.payload, e.recorded_at)
+        .where(
+            e.type.in_(_STATEMENT_ANSWER_EVENTS),
+            e.payload["connection_id"].astext == str(connection_id),
+        )
+        .order_by(e.recorded_at.desc(), e.id.desc())
+        .limit(1)
+    ).first()
+
+
+def statements_refusal(conn: Connection, connection_id: UUID) -> StatementsRefusal | None:
+    """The connection's unresolved permission refusal of the statement fetch: its latest
+    statement answer event is account.statements_refused (14 Nov 2026)."""
+    last = _last_statement_answer(conn, connection_id)
+    if last is None or last.type != EventType.ACCOUNT_STATEMENTS_REFUSED.value:
+        return None
+    refused = BankStatementsRefused.model_validate(last.payload)
+    return StatementsRefusal(
+        code=refused.code, year=refused.year, number=refused.number, at=last.recorded_at
+    )
+
+
+def record_statements_answer(
+    ctx: CommandContext, plan: RunPlan, refusal: tuple[str, StatementKey] | None
+) -> bool:
+    """What a run's statement fetch said about the access (14 Nov 2026), on the account:
+
+    - `refusal` (the code and the statement asked) when the bank refused the fetch because
+      the access may not fetch statements (rules.bank_statements NOT_PERMITTED): an
+      account.statements_refused, unless the connection's latest statement answer already is
+      a refusal with that code (the daily run adds no duplicate);
+    - None when an HKEKP was answered without such a refusal: an account.statements_answered,
+      only when the latest statement answer is a refusal (it resolves it).
+
+    A connection fact, not the run's: written whether or not the run still owns its row.
+    True when an event was written."""
+    last = _last_statement_answer(ctx.conn, plan.connection_id)
+    refused_last = last is not None and last.type == EventType.ACCOUNT_STATEMENTS_REFUSED.value
+    if refusal is None:
+        if not refused_last:
+            return False
+        append_event(
+            ctx,
+            EventType.ACCOUNT_STATEMENTS_ANSWERED,
+            plan.account_id,
+            BankStatementsAnswered(connection_id=plan.connection_id, sync_id=plan.sync_id),
+        )
+        return True
+    code, key = refusal
+    if refused_last and last is not None and last.payload.get("code") == code:
+        return False
+    append_event(
+        ctx,
+        EventType.ACCOUNT_STATEMENTS_REFUSED,
+        plan.account_id,
+        BankStatementsRefused(
+            connection_id=plan.connection_id,
+            sync_id=plan.sync_id,
+            code=code,
+            year=key.year,
+            number=key.number,
+        ),
+    )
+    return True
 
 
 def list_statements(

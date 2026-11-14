@@ -971,3 +971,109 @@ def test_a_lock_code_on_a_statement_fails_the_run_as_d151_says(bank):
     (failed,) = bank.events(EventType.ACCOUNT_SYNC_FAILED)
     assert failed["response_code"] == "9930"
     assert bank.rows(import_table, import_table.c.account_id == bank.account.id) == []
+
+
+# --- 14 Nov 2026: the bank refuses the statement fetch for lack of permission (9370) --------
+
+NOT_PERMITTED = "m9050,9010,9370"  # the first real fetch's answer, as the trace logged it
+
+
+def _refusing(**overrides) -> Script:
+    return _with_statements(**({"statements": {}, "statement_refusal": NOT_PERMITTED} | overrides))
+
+
+def _refused_cards(bank, at):
+    return [
+        i
+        for i in bank.read(bank.ws, review.inbox, now=at)
+        if i.kind is InboxItemKind.BANK_STATEMENTS_REFUSED
+    ]
+
+
+def _refusal(bank):
+    return bank.read(bank.ws, service.get_connection, bank.account.id).statements_refusal
+
+
+def _sync_at(bank, script, at):
+    sync = bank.start(now=at)
+    outcome = bank.job(sync.id, script, at=at)
+    return sync, outcome
+
+
+def test_a_permission_refusal_is_recorded_once_shown_and_never_fails_the_run(bank):
+    _fetch_statements(bank)
+    first, outcome = _sync_at(bank, _refusing(), T1)
+    assert outcome == "done"  # the camt part decides the run
+    assert bank.sync(first.id).lines_new == 22
+    assert bank.events(EventType.ACCOUNT_SYNC_FAILED) == []
+    assert bank.clients[0].statement_requests == [(2026, 1, None)]
+
+    later = T1 + timedelta(days=1)
+    _, outcome = _sync_at(bank, _refusing(), later)
+    assert outcome == "nothing_new"
+    assert bank.clients[1].statement_requests == [(2026, 1, None)]  # asked again
+
+    (refused,) = bank.events(EventType.ACCOUNT_STATEMENTS_REFUSED)  # no daily duplicate
+    assert refused == {
+        "connection_id": str(bank.connection.id),
+        "sync_id": str(first.id),
+        "code": "9370",
+        "year": 2026,
+        "number": 1,
+    }
+    refusal = _refusal(bank)
+    assert (refusal.code, refusal.year, refusal.number, refusal.at) == ("9370", 2026, 1, T1)
+    (card,) = _refused_cards(bank, later)
+    assert card.account_id == bank.account.id and card.sync_id is None
+    assert card.reasoning == (
+        "Die Testbank erlaubt diesem Online-Banking-Zugang den Abruf der Kontoauszüge als PDF"
+        " nicht (Code 9370: keine Auftragsberechtigung)."
+    )
+    assert "elektronische Postfach" in card.question
+    assert bank.rows(statement_table) == []
+
+
+def test_a_later_answer_ends_the_refusal_and_a_new_refusal_is_recorded_again(bank):
+    _fetch_statements(bank)
+    _sync_at(bank, _refusing(), T1)
+    second = T1 + timedelta(days=1)
+    sync, outcome = _sync_at(bank, _with_statements(), second)
+    assert outcome == "nothing_new"
+    assert len(bank.rows(statement_table)) == 2
+    assert _refusal(bank) is None
+    assert _refused_cards(bank, second) == []
+    (answered,) = bank.events(EventType.ACCOUNT_STATEMENTS_ANSWERED)
+    assert answered == {"connection_id": str(bank.connection.id), "sync_id": str(sync.id)}
+
+    third = second + timedelta(days=1)
+    _sync_at(bank, _refusing(), third)
+    assert len(bank.events(EventType.ACCOUNT_STATEMENTS_REFUSED)) == 2
+    assert _refusal(bank).number == 3  # 1 and 2 are stored
+    assert len(_refused_cards(bank, third)) == 1
+
+
+def test_a_missing_number_after_a_refusal_ends_it_too(bank):
+    """Once permitted, the bank may still have no statement for the number asked (3010): it
+    answered the order, so the notice that it is not permitted ends."""
+    _fetch_statements(bank)
+    _sync_at(bank, _refusing(), T1)
+    later = T1 + timedelta(days=1)
+    _sync_at(bank, _refusing(statement_refusal="3010"), later)
+    assert _refusal(bank) is None
+    assert len(bank.events(EventType.ACCOUNT_STATEMENTS_ANSWERED)) == 1
+
+
+def test_no_answer_event_without_an_earlier_refusal(bank):
+    _fetch_statements(bank)
+    _sync_at(bank, _with_statements(), T1)
+    assert bank.events(EventType.ACCOUNT_STATEMENTS_ANSWERED) == []
+    assert bank.events(EventType.ACCOUNT_STATEMENTS_REFUSED) == []
+
+
+def test_switching_the_fetch_off_hides_the_refusal(bank):
+    _fetch_statements(bank)
+    _sync_at(bank, _refusing(), T1)
+    assert _refusal(bank) is not None
+    _fetch_statements(bank, on=False)
+    assert _refusal(bank) is None
+    assert _refused_cards(bank, T1 + timedelta(minutes=1)) == []
