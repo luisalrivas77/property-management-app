@@ -29,13 +29,26 @@ def _admin(dbname: str | None = None) -> psycopg.Connection:
     return conn
 
 
+# Arbitrary key of the session-level advisory lock that serialises role setup (below).
+_ROLE_SETUP_LOCK = 7_310_420_016
+
+
 def create_database() -> str:
     name = f"hausbuch_test_{uuid.uuid4().hex[:10]}"
     with _admin() as conn:
-        for role in (OWNER, APP):
-            exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
-            if not exists:
-                conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
+        # Roles are cluster-wide, so parallel pytest-xdist workers would race on CREATE ROLE
+        # (the check-then-create is not atomic). The advisory lock serialises the check; it is
+        # taken on the admin database, which every worker connects to, and released at once.
+        conn.execute("SELECT pg_advisory_lock(%s)", (_ROLE_SETUP_LOCK,))
+        try:
+            for role in (OWNER, APP):
+                exists = conn.execute(
+                    "SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)
+                ).fetchone()
+                if not exists:
+                    conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
+        finally:
+            conn.execute("SELECT pg_advisory_unlock(%s)", (_ROLE_SETUP_LOCK,))
         conn.execute(
             sql.SQL("CREATE DATABASE {} OWNER {}").format(
                 sql.Identifier(name), sql.Identifier(OWNER)

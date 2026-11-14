@@ -32,4 +32,4 @@ jobs:
       - run: uv sync --locked --python 3.12
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest -q -rs
+      - run: uv run pytest -q -rs -n auto

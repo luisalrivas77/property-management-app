@@ -39,6 +39,7 @@ dev = [
     # The software authenticator in tests/auth/ (both are also py_webauthn dependencies).
     "cbor2>=6.2.0,<7",
     "cryptography>=50.0.2,<51",
+    "pytest-xdist>=3.8.0",
 ]
 
 [build-system]
