@@ -38,7 +38,8 @@
 //   Verwendungszwecks“ pre-filled with the word (without `^`), editable, plus one hint line saying
 //   which lines the rule books and, while the field still shows the suggestion, how many wait
 //   (suggested_pattern_waiting). Ticked: learn_rule true and purpose_pattern the suggestion as sent,
-//   or the edited text anchored with `^`; unticked: learn_rule false and no pattern. The suggestion
+//   or the edited text as plain text (regex-escaped, anchored with `^`, at most 200 characters in
+//   all, else a message on the field); unticked: learn_rule false and no pattern. The suggestion
 //   holds for the row's category it was checked for: another category, or a second row, falls
 //   back to the plain pattern field below, whose own state stays empty. Without a suggestion the
 //   panel is unchanged.
@@ -453,21 +454,21 @@ function AllocationEditor({
       });
     });
     const kept = suggestedText.trim();
-    if (suggestion !== null && learn && kept === "") {
-      (messages.purpose_pattern ??= []).push("Bitte einen Anfang eintragen oder „Künftig immer so zuordnen“ abwählen.");
-    }
-    if (!values.ok || Object.keys(messages).length > 0) return form.invalid({ ...values.messages, ...messages });
-    const typed = pattern.trim();
-    // The suggestion as the server sent it while the field still shows it; an edited text
-    // is anchored at the start, as the field's label says.
+    // The suggestion as the server sent it while the field still shows it; an edited text is
+    // plain text, so it is escaped and anchored at the start, as the field's label says.
     const suggested =
       suggestion === null || !learn
         ? null
         : kept === readablePattern(suggestion)
           ? suggestion
-          : kept.startsWith("^")
-            ? kept
-            : `^${kept}`;
+          : `^${escapeRegExp(kept.replace(/^\^/, ""))}`;
+    if (suggestion !== null && learn && kept.replace(/^\^/, "") === "") {
+      (messages.purpose_pattern ??= []).push("Bitte einen Anfang eintragen oder „Künftig immer so zuordnen“ abwählen.");
+    } else if (suggested !== null && suggested.length > PATTERN_MAX_LENGTH) {
+      (messages.purpose_pattern ??= []).push("Der Anfang ist zu lang; bitte kürzen.");
+    }
+    if (!values.ok || Object.keys(messages).length > 0) return form.invalid({ ...values.messages, ...messages });
+    const typed = pattern.trim();
     const body: ConfirmAllocationsBody = {
       // The server reads only the rows: method, confidence and provenance become the person's.
       allocation_set: { transaction_id: line.id, allocations: drafts, method: "user", confidence: "1" },
@@ -662,7 +663,7 @@ function AllocationEditor({
               onChange={(e) => setSuggestedText(e.target.value)}
               disabled={!learn}
               autoComplete="off"
-              maxLength={200}
+              maxLength={PATTERN_MAX_LENGTH - 1}
             />
           </Field>
         </div>
@@ -704,6 +705,14 @@ function AllocationEditor({
 /** „17 wartende Zahlungen“: how many waiting lines the rule learned with this answer covers. */
 function countText(count: number): string {
   return count === 1 ? "1 wartende Zahlung" : `${count} wartende Zahlungen`;
+}
+
+/** The longest pattern a rule may have (services.rules_learned.PATTERN_MAX_LENGTH). */
+const PATTERN_MAX_LENGTH = 200;
+
+/** Plain text as a regular expression matching it literally (an edited suggestion is text). */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** A suggested purpose pattern as the person reads it: `^Entgeltabrechnung` → „Entgeltabrechnung“.
