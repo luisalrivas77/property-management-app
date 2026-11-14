@@ -210,6 +210,52 @@ def test_a_card_paypal_rule_hits_the_merchant_through_paypal_only():
     assert matching.apply_rule(rule, _tx(SHORT, MICROSOFT, n=4), PRIVATE) is None
 
 
+# 14 Nov 2026: the merchant rule learned on a direct debit names the merchant, whatever form
+# the service's line comes in (Luis's DisneyPlus card line stayed waiting after PR #299).
+CARD_DISNEY = "12345678 PAYPAL *DISNEYPLUS Taurusavenue 9 2132LS Hoofddorp"
+
+
+def test_a_direct_debit_merchant_rule_hits_the_card_form_and_back():
+    on_debit = _learned(_tx(SHORT, DISNEY))
+    card = _tx(CARD_DISNEY, CARD_DISNEY, iban=None, n=2)
+    assert "Ihr Einkauf bei" not in (card.purpose or "")  # the regular expression misses it
+    found = matching.apply_rule(on_debit, card, PRIVATE)
+    assert found is not None and found.confidence == matching.EXACT
+    assert found.allocations[0].category is C.HH_STREAMING
+    other = "12345678 PAYPAL *MICROSOFT Taurusavenue 9 2132LS Hoofddorp"
+    assert matching.apply_rule(on_debit, _tx(other, other, iban=None, n=3), PRIVATE) is None
+
+    on_card = _learned(card)
+    assert on_card.matcher.counterparty_name_pattern == r"^PAYPAL \*DISNEYPLUS TAURUSAVENUE"
+    back = matching.apply_rule(on_card, _tx(LONG, DISNEY, n=4), PRIVATE)
+    assert back is not None and back.confidence == matching.EXACT
+    assert matching.apply_rule(on_card, _tx(LONG, MICROSOFT, n=5), PRIVATE) is None
+
+
+def test_a_klarna_merchant_rule_hits_only_klarnas_lines_of_the_merchant():
+    rule = _learned(_tx("Klarna Bank AB", "Purchase at DisneyPlus Gläubiger-ID: SE00"))
+    # the same merchant through another service is not the rule's
+    assert matching.apply_rule(rule, _tx(CARD_DISNEY, CARD_DISNEY, iban=None, n=2), PRIVATE) is None
+    assert matching.apply_rule(rule, _tx(SHORT, DISNEY, n=3), PRIVATE) is None
+
+
+def test_a_typed_purpose_pattern_on_a_service_keeps_its_regular_expression_meaning():
+    typed = _rule(
+        RuleMatcher(counterparty_name_pattern=r"^PAYPAL\b", purpose_pattern="Einkauf bei Disney")
+    )
+    assert matching.apply_rule(typed, _tx(SHORT, DISNEY), PRIVATE) is not None
+    card = _tx(CARD_DISNEY, CARD_DISNEY, iban=None, n=2)
+    assert matching.apply_rule(typed, card, PRIVATE) is None
+
+
+def test_a_weak_service_merchant_hit_names_the_merchant_in_its_question():
+    rule = _learned(_tx(SHORT, ", Ihr Einkauf bei Adler Modemarkt, "), C.HH_CLOTHING)
+    card = "12345678 PAYPAL *ADLER APOTHEKE 4029357733"
+    found = matching.apply_rule(rule, _tx(card, card, iban=None, n=2), PRIVATE)
+    assert found is not None and matching.weak_proposal(found)
+    assert found.question == "Gleicher Empfänger wie „PayPal: Adler Modemarkt“? Bitte bestätigen."
+
+
 def test_a_paypal_history_without_purposes_is_still_too_broad():
     # NameHistory without a purpose: the merchant is not known, so the line counts
     tx = _tx(SHORT, DISNEY)

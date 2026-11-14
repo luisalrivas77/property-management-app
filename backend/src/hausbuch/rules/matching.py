@@ -1685,14 +1685,52 @@ def _names_strength(
     expressions (_name_found, _found), a STRONG hit, or, for a learned name pattern without a
     purpose pattern, the line's payee (_payee_hit, STRONG or WEAK). None for no hit. A purpose
     of None is not known (a caller that has only the name): the purpose pattern then counts as
-    a hit, so a check never passes on missing evidence."""
+    a hit, so a check never passes on missing evidence.
+
+    14 Nov 2026 (D160 amended (4)): a payment service's merchant rule in its learned shape
+    (_learned_service_payee: the service's word and the merchant's purpose phrase, as
+    _purpose_payee builds them) also hits a line of the same service whose merchant is the
+    rule's (_identity, STRONG or WEAK), in whatever form the line names it: the card form
+    "<digits> PAYPAL *DISNEYPLUS …" has no „Ihr Einkauf bei“ in its purpose and its name does
+    not start with the service's word. A purpose pattern a person typed keeps its plain
+    regular-expression meaning."""
     if purpose_pattern is not None:
-        if purpose is not None and not _found(purpose_pattern, purpose):
+        known = purpose is None or _found(purpose_pattern, purpose)
+        if known and _name_found(name_pattern, name):
+            return STRONG
+        learned = _learned_service_payee(name_pattern, purpose_pattern)
+        if learned is None:
             return None
-        return STRONG if _name_found(name_pattern, name) else None
+        line = payee(name, purpose)
+        if line.service is not learned.service:
+            return None
+        return _identity(learned.words, line.words)
     if _name_found(name_pattern, name):
         return STRONG
     return _payee_hit(name_pattern, name, purpose)
+
+
+def _learned_service_payee(name_pattern: str | None, purpose_pattern: str | None) -> Payee | None:
+    """The merchant a payment service's rule names when it is in the learned shape (D160
+    amended (4)): the name pattern is the service's word (^PAYPAL\\b) and the purpose pattern
+    the service's phrase and the merchant, exactly as _purpose_payee builds them from a direct
+    debit („Ihr Einkauf bei DisneyPlus(?!\\w)“). None for any other pair of patterns, a
+    person's own included, which keep their plain regular-expression meaning."""
+    if name_pattern is None or purpose_pattern is None:
+        return None
+    tail = r"(?!\w)"
+    for service in PAYMENT_SERVICES:
+        if name_pattern != rf"^{service.word}\b" or not purpose_pattern.endswith(tail):
+            continue
+        for phrase in service.purpose_phrases:
+            head = _as_pattern(phrase).removeprefix("^") + " "
+            if not purpose_pattern.startswith(head):
+                continue
+            merchant = re.sub(r"\\(.)", r"\1", purpose_pattern[len(head) : -len(tail)])
+            found = _purpose_payee(service, f"{phrase} {merchant}")
+            if (found.name_pattern, found.purpose_pattern) == (name_pattern, purpose_pattern):
+                return found  # the exact round trip: what a direct debit's rule is learned as
+    return None
 
 
 WEAK_QUESTION = "Gleicher Empfänger wie „{label}“? Bitte bestätigen."
@@ -1714,6 +1752,9 @@ def weak_question(matcher: RuleMatcher) -> str:
     """WEAK_QUESTION naming the payee the rule was learned on: a payment service's merchant
     („PayPal: DisneyPlus“) or the learned name ("ADLER MODEMARKT")."""
     pattern = matcher.counterparty_name_pattern or ""
+    service = _learned_service_payee(pattern, matcher.purpose_pattern)
+    if service is not None:
+        return WEAK_QUESTION.format(label=service.label)
     text = _learned_text(pattern) or pattern.removeprefix("^")
     learned = payee(text)
     return WEAK_QUESTION.format(label=learned.label or text)

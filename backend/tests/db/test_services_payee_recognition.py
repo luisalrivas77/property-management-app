@@ -151,6 +151,40 @@ def test_disney_learned_on_the_short_name_books_the_long_names_waiting_lines(
     assert _booked(world, later) == ("hh_subscriptions", "rule", "confirmed")
 
 
+CARD_DISNEY = "12345678 PAYPAL *DISNEYPLUS Taurusavenue 9 2132LS Hoofddorp"
+
+
+def test_the_direct_debit_merchant_rule_books_the_card_form_and_back(
+    world, private, app_engine, tmp_path
+):
+    # 14 Nov 2026: the card line has no „Ihr Einkauf bei“ and its name starts with digits, so
+    # the direct debit's rule missed it after PR #299, though both are one payee.
+    card = SecondPrivate(world, CARD_ACCOUNT_IBAN)
+    card_waiting = card.line(date(2026, 9, 5), "-9.99", name=CARD_DISNEY, purpose=CARD_DISNEY)
+    other = "12345678 PAYPAL *MICROSOFT Taurusavenue 9 2132LS Hoofddorp"
+    card_other = card.line(date(2026, 9, 6), "-7.00", name=other, purpose=other)
+    debit = private.line(
+        date(2026, 10, 5), "-9.99", name=SHORT, iban=PAYPAL_IBAN, purpose=_paypal("DisneyPlus", 1)
+    )
+    rule = _learn(world, debit, "-9.99", "hh_streaming")
+    assert rule.matcher.purpose_pattern == r"Ihr Einkauf bei DisneyPlus(?!\w)"
+    assert world.query(matching.waiting_lines, "rule", rule.id) == [card_waiting]
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    assert _booked(world, card_waiting) == ("hh_streaming", "rule", "confirmed")
+    assert _rows(world, card_other) == []
+
+    # The reverse: a rule learned on the card form books the direct debit.
+    debit_waiting = private.line(
+        date(2026, 11, 5), "-9.99", name=LONG, iban=PAYPAL_IBAN, purpose=_paypal("DisneyPlus", 2)
+    )
+    later_card = card.line(date(2026, 11, 6), "-9.99", name=CARD_DISNEY, purpose=CARD_DISNEY)
+    on_card = _learn(world, later_card, "-9.99", "hh_streaming")
+    assert on_card.matcher.counterparty_name_pattern == r"^PAYPAL \*DISNEYPLUS TAURUSAVENUE"
+    assert debit_waiting in world.query(matching.waiting_lines, "rule", on_card.id)
+    _recheck(app_engine, tmp_path, world, f"rule:{on_card.id}")
+    assert _booked(world, debit_waiting) == ("hh_streaming", "rule", "confirmed")
+
+
 def test_a_paypal_line_without_a_merchant_offers_no_rule(world, private):
     tx = private.line(
         date(2026, 10, 5), "-12.00", name=SHORT, iban=PAYPAL_IBAN, purpose="1041234567 PP.1234.PP"
