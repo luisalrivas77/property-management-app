@@ -381,11 +381,15 @@ def test_a_name_rule_books_the_next_line_of_the_merchant_on_a_private_account_on
 
 
 def test_a_name_confirmed_under_two_categories_is_too_broad(world, private):
-    one = private.line(date(2026, 10, 6), "-9.99", name="PayPal Europe S.a.r.l. et Cie S.C.A")
-    two = private.line(date(2026, 10, 7), "-54.00", name="PayPal Europe S.a.r.l. et Cie S.C.A")
+    # D160 amended (4): a PayPal line's payee is its merchant, so the three lines name one
+    # merchant here (a PayPal line naming none learns no rule at all, rule.no_merchant).
+    paypal = "PayPal Europe S.a.r.l. et Cie S.C.A"
+    shop = ", Ihr Einkauf bei Beispiel Markt, "
+    one = private.line(date(2026, 10, 6), "-9.99", name=paypal, purpose=shop)
+    two = private.line(date(2026, 10, 7), "-54.00", name=paypal, purpose=shop)
     _answer_line(world, one, "-9.99", "hh_subscriptions", learn=False)
     _answer_line(world, two, "-54.00", "hh_leisure_travel", learn=False)
-    third = private.line(date(2026, 10, 8), "-20.00", name="PayPal Europe S.a.r.l. et Cie S.C.A")
+    third = private.line(date(2026, 10, 8), "-20.00", name=paypal, purpose=shop)
     with pytest.raises(RuleViolationError) as refused:
         _answer_line(world, third, "-20.00", "hh_groceries", learn=True)
     assert refused.value.code == "rule.too_broad"
@@ -579,7 +583,7 @@ def _shared_world(private: Private) -> dict[str, uuid.UUID]:
     }
 
 
-def test_a_shared_iban_learns_the_iban_and_the_name_and_books_that_payee_only(
+def test_a_shared_iban_learns_the_name_and_books_that_payee_only(
     world, private, app_engine, tmp_path
 ):
     lines = _shared_world(private)
@@ -592,7 +596,8 @@ def test_a_shared_iban_learns_the_iban_and_the_name_and_books_that_payee_only(
     result = _answer_line(world, lines[DELIVERY], "-23.40", "hh_dining", learn=True)
     assert result.rule is not None
     matcher = result.rule.matcher
-    assert matcher.counterparty_iban_hmac == protect_iban(CLEARING_IBAN, TEST_IBAN_KEY).hmac.hex()
+    # D160 amended (4): name and sign, without the IBAN (it names no payee)
+    assert matcher.counterparty_iban_hmac is None
     assert matcher.counterparty_name_pattern == "^LIEFERDIENST BEISPIEL"
 
     # The same payee at another amount: booked by the rule at once.
@@ -961,7 +966,7 @@ def test_on_a_shared_iban_the_payees_lines_are_re_booked(world, private):
     result = _answer_rebook(world, now, "-27.50", "hh_dining")
     assert result.rebooked == 2
     assert result.rule is not None
-    assert result.rule.matcher.counterparty_iban_hmac is not None
+    assert result.rule.matcher.counterparty_iban_hmac is None  # D160 amended (4)
     assert result.rule.matcher.counterparty_name_pattern == "^LIEFERDIENST BEISPIEL"
     assert all(_rows(world, tx)[0].category == "hh_dining" for tx in earlier)
     assert [r.category for r in _rows(world, lines[GROCER])] == ["hh_groceries"]

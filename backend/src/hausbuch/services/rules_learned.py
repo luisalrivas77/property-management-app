@@ -301,7 +301,8 @@ def create_rule(
     may now book. Disabled first: an enabled rule with the same matcher and the same split
     method and category, and `corrects` (the rules whose bookings this answer replaced with
     another split, review.allocate_transaction: the line's own, and those of the earlier
-    lines it re-booked with rebook_earlier) when one has the same matcher (D49). Also
+    lines it re-booked with rebook_earlier) when one has the same matcher (D49), or the same
+    matcher with a counterparty IBAN the new name rule dropped (_iban_dropped). Also
     disabled: a same-matcher rule on the group's fallback of the new rule's subcategory
     (phase 6 D159 amended 14 Nov 2026, migration 0032: hh_groceries when hh_supermarket is
     learned), since the finer answer replaces the coarse one rather than adding a second kind
@@ -314,7 +315,11 @@ def create_rule(
         check_pattern(pattern)
     new_origin = _allocation_purpose(ctx.conn, data.created_from_allocation_id)
     for old, old_origin in _enabled_with_origin(ctx.conn):
-        same_matcher = old.matcher.model_dump(mode="json", exclude_none=True) == matcher
+        old_matcher = old.matcher.model_dump(mode="json", exclude_none=True)
+        same_matcher = old_matcher == matcher
+        if not same_matcher and old.id in corrects and _iban_dropped(old_matcher, matcher):
+            disable_rule(ctx, old.id)  # review F3: the rule that booked the corrected line
+            continue
         if not same_matcher:
             continue
         if (
@@ -343,6 +348,15 @@ def create_rule(
         ctx.conn, workspace_id=ctx.workspace_id, kind=enqueue.TRIGGER_RULE, entity_id=rule.id
     )
     return rule
+
+
+def _iban_dropped(old: dict[str, Any], new: dict[str, Any]) -> bool:
+    """Whether the new matcher is the old one without its counterparty IBAN (phase 6 D160
+    amended (4), review F3): a name rule learned on a shared IBAN no longer carries the IBAN,
+    so the IBAN+name rule that booked the corrected line is the same matcher for `corrects`."""
+    if "counterparty_iban_hmac" in new or "counterparty_iban_hmac" not in old:
+        return False
+    return {k: v for k, v in old.items() if k != "counterparty_iban_hmac"} == new
 
 
 def disable_rule(ctx: CommandContext, rule_id: UUID) -> MatchingRule:

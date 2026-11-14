@@ -1,6 +1,6 @@
 """`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills |
-household-resort` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41; phase 6 D159 amended 13 and
-14 Nov 2026, D161 widened 14 Nov 2026).
+rematch-waiting | household-resort` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41; phase 6 D159
+amended 13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended (4) 14 Nov 2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -26,6 +26,12 @@ fuel off), by default the codes migration 0029 split up.
 same owner URL: it queues a rematch per bill recorded as a Nebenkosten or private_cost row, so
 the private lines already waiting that pay one are proposed as its payment (never the model,
 never a confirmed line). --dry-run counts and queues nothing.
+
+`rematch-waiting` runs services.matching.rematch_private_lines once for a workspace, with the
+same owner URL: it queues a rematch per private account, so every line of it still waiting in
+Zu prüfen is checked again against the learned rules and the matchers (never the model, never
+a confirmed line), once after the deploy of D160 amended (4). --dry-run counts and queues
+nothing.
 
 `household-resort` runs services.household_resort.resort_household the same way: it queues a
 job per private line booked in a spending group's fallback, proposed or confirmed, so the
@@ -314,6 +320,39 @@ def rematch_bills(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     return EXIT_OK
 
 
+# --- rematch-waiting ------------------------------------------------------------------
+
+
+def rematch_waiting(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.matching import rematch_private_lines
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:rematch-waiting")
+                result = rematch_private_lines(new_command(conn, args.workspace, actor))
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    verb = "would queue" if args.dry_run else "queued"
+    print(f"{verb} a rematch for {result.accounts} private account(s)")
+    print(f"{result.waiting} private line(s) are waiting and will be checked against the rules")
+    return EXIT_OK
+
+
 # --- household-resort -----------------------------------------------------------------
 
 
@@ -466,6 +505,15 @@ def _parser() -> argparse.ArgumentParser:
     bills.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     bills.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
     bills.set_defaults(command=rematch_bills, command_name="rematch-bills")
+
+    waiting = commands.add_parser(
+        "rematch-waiting",
+        help="check every waiting line of the private accounts again against the learned "
+        "rules and the matchers, never the model (once, after the deploy of D160 amended (4))",
+    )
+    waiting.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    waiting.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
+    waiting.set_defaults(command=rematch_waiting, command_name="rematch-waiting")
 
     resort = commands.add_parser(
         "household-resort",

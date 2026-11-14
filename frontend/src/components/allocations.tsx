@@ -65,6 +65,12 @@
 //   Beleg, a property or loan, a transfer or depot link, an open import or duplicate): the
 //   panel then names that line by date and amount, says why and what to do, and links to it
 //   (/inbox?umsatz=…), so it is changed by hand first; rule.rebook_blocked is the backstop.
+// - Phase 6 D160 amended (4) (14 Nov 2026): a payment service (PayPal, Klarna) pays many
+//   merchants, so on a private line the payee is the merchant the line names. The server sends
+//   payee_label („PayPal: DisneyPlus“); the panel names it under the title and uses it wherever
+//   it names the payee. A service's line whose merchant cannot be read (no_merchant) learns no
+//   rule: the box is shown greyed and unticked with one line saying why, no pattern field, and
+//   learn_rule is sent false (rule.no_merchant is the backstop).
 // - Phase 3 (§11 "Inputs"): under a confirmed line, its repairs and renovation rows get their
 //   tax questions (components/taxInputs.tsx), in their own form beside this one.
 import Link from "next/link";
@@ -373,6 +379,7 @@ function AllocationEditor({
     "rule.invalid_pattern": "purpose_pattern",
     "rule.not_learnable": ruleField,
     "rule.rebook_blocked": ruleField,
+    "rule.no_merchant": ruleField,
   });
 
   const rest = restOf(line.amount, rows);
@@ -410,7 +417,9 @@ function AllocationEditor({
     earlier.length > 0 ? (view.rebook_blockers ?? []).filter((blocker) => blocker.category !== askedCategory) : [];
   const canRebook =
     earlier.length > 0 && blockers.length === 0 && earlier.every((entry) => !unlearnable.has(entry.category));
-  const payee = line.counterparty_name?.trim() || "dieser Gegenseite";
+  const payeeLabel = view.payee_label ?? null;
+  const noMerchant = view.no_merchant ?? false;
+  const payee = payeeLabel || line.counterparty_name?.trim() || "dieser Gegenseite";
 
   function update(key: number, patch: Partial<Row>) {
     setRowsEdited(true);
@@ -472,9 +481,18 @@ function AllocationEditor({
     const body: ConfirmAllocationsBody = {
       // The server reads only the rows: method, confidence and provenance become the person's.
       allocation_set: { transaction_id: line.id, allocations: drafts, method: "user", confidence: "1" },
-      learn_rule: view.can_learn_rule || suggestion !== null ? learn : typed !== "" && blocked === null,
-      purpose_pattern:
-        suggestion !== null ? suggested : view.can_learn_rule || typed === "" || blocked !== null ? null : typed,
+      learn_rule: noMerchant
+        ? false
+        : view.can_learn_rule || suggestion !== null
+          ? learn
+          : typed !== "" && blocked === null,
+      purpose_pattern: noMerchant
+        ? null
+        : suggestion !== null
+          ? suggested
+          : view.can_learn_rule || typed === "" || blocked !== null
+            ? null
+            : typed,
       same_amount_only: asked !== null && sameAmountOnly === true,
       rebook_earlier: canRebook && rebook,
     };
@@ -516,6 +534,7 @@ function AllocationEditor({
           {line.value_date && line.value_date !== line.booking_date ? ` · Wert ${formatDate(line.value_date)}` : ""}
           {line.counterparty_iban_masked ? ` · ${line.counterparty_iban_masked}` : ""}
         </p>
+        {payeeLabel ? <p className="cell-detail">Empfänger: {payeeLabel}</p> : null}
         <p className="allocation-purpose">{line.purpose || "Kein Verwendungszweck"}</p>
         {line.booking_text ? <p className="cell-detail">{line.booking_text}</p> : null}
       </div>
@@ -559,7 +578,16 @@ function AllocationEditor({
         <p className="muted">Die Zeilen müssen zusammen genau den Betrag der Buchung ergeben ({formatMoney(line.amount)}).</p>
       ) : null}
 
-      {view.can_learn_rule ? (
+      {noMerchant ? (
+        <div className={form.of("learn_rule").length > 0 ? "field field-invalid" : "field"}>
+          <label className="inline" htmlFor={learnId}>
+            <input id={learnId} type="checkbox" checked={false} disabled />
+            Künftig immer so zuordnen
+          </label>
+          <p className="muted hint">{NO_MERCHANT_REASON}</p>
+          <FieldErrors messages={form.of("learn_rule")} />
+        </div>
+      ) : view.can_learn_rule ? (
         <div className={form.of("learn_rule").length > 0 ? "field field-invalid" : "field"}>
           <label className="inline" htmlFor={learnId}>
             <input
@@ -572,7 +600,11 @@ function AllocationEditor({
             Künftig immer so zuordnen
           </label>
           <p className="muted hint">
-            {blocked !== null ? unlearnableReason(blocked) : "Weitere Buchungen dieser Gegenseite werden dann ohne Rückfrage so zugeordnet."}
+            {blocked !== null
+              ? unlearnableReason(blocked)
+              : payeeLabel
+                ? `Weitere Zahlungen an ${payeeLabel} werden dann ohne Rückfrage so zugeordnet, andere Händler über denselben Zahlungsdienst nicht.`
+                : "Weitere Buchungen dieser Gegenseite werden dann ohne Rückfrage so zugeordnet."}
             {blocked === null && asked === null && sameCount > 0 ? ` ${waitingText(sameCount, line.amount)}` : null}
           </p>
           <FieldErrors messages={form.of("learn_rule")} />
@@ -605,7 +637,7 @@ function AllocationEditor({
           {asked !== null ? (
             <fieldset className="allocation-same-amount">
               <legend>
-                Von {line.counterparty_name?.trim() || "dieser Bankverbindung"} warten noch{" "}
+                Von {payeeLabel || line.counterparty_name?.trim() || "dieser Bankverbindung"} warten noch{" "}
                 {otherCount === 1 ? "1 Zahlung mit einem anderen Betrag" : `${otherCount} Zahlungen mit anderen Beträgen`}
                 {otherCount > listed ? ", am häufigsten " : ": "}
                 {others.map((other) => `${formatMoney(unsigned(other.amount))} (${other.count}×)`).join(", ")}. Gehören die
@@ -741,6 +773,10 @@ function waitingText(count: number, amount: string): string {
 }
 
 /** Why a one-row answer of this category never becomes a rule (D160), by kind. */
+/** D160 amended (4): a payment service's line that names no merchant. */
+const NO_MERCHANT_REASON =
+  "Diese Zahlung läuft über einen Zahlungsdienst wie PayPal, Klarna oder Google Pay, der für viele Händler zahlt, und nennt keinen Händler. Eine Regel würde jede Zahlung über diesen Dienst so zuordnen, darum lernt Hausbuch hier keine. Bitte diese Zahlung ohne Regel bestätigen.";
+
 function unlearnableReason(category: AllocationCategory): string {
   if (category === "internal_transfer_in" || category === "internal_transfer_out") {
     return "Überträge zwischen eigenen Konten erkennt Hausbuch selbst an der Kontonummer.";

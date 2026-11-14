@@ -8,6 +8,15 @@
 #   3. digits, slashes and dots replaced by a space;
 #   4. whitespace collapsed to one space, trimmed;
 #   5. regex-escaped (a space stays a space), anchored with ^.
+# D160 amended (4) (14 Nov 2026) adds a cut between 1 and 2, on the raw tokens (before digits
+# become spaces), so a card name carrying a per-purchase code repeats:
+#   1a. a `*` followed by a token with a digit (an order code) ends the name at the `*`; a `*`
+#       followed by a word is the merchant a payment facilitator names (PAYPAL *DISNEYPLUS),
+#       kept, and then the first token with a digit (its phone number, an address) ends it;
+#   1b. a token mixing letters and digits (21MAY, B9WNACJA, GLOVO24MAY) ends the name; its
+#       letters before the first digit stay when they hold a word of 4 or more letters;
+#   1c. a cut that keeps no word of 4 or more letters is dropped: the whole name is read.
+#   Digits-only tokens (4421, 0815/2026, 22-24) are no code; step 3 drops them as before.
 # The pattern comes from the counterparty name only, never from a booking text such as
 # KARTENZAHLUNG: a DKB line carries the merchant in its payee column and the booking kind in
 # Umsatztyp. rule_hits (unchanged) matches it case-insensitively on the collapsed name.
@@ -71,3 +80,35 @@ cases:
     pending: "phase 6 step 1 (name-pattern rules, D160)"
     name: "  Spotify   AB  "
     pattern: "^SPOTIFY AB"
+  - id: order_code_after_star
+    description: "an Amazon card line: the code after * changes with every purchase"
+    name: "AMZN Mktp DE*ZD2HG0G54 5 rue plaetis"
+    pattern: "^AMZN MKTP DE"
+  - id: order_code_after_star_dotted_name
+    name: "Amazon.de*AB12CD34E"
+    pattern: "^AMAZON DE"
+  - id: date_and_order_code_tokens
+    description: "a delivery service's card line: a date token, then an order code"
+    name: "Glovo 21MAY B9WNACJA CALLE PALLARS 190"
+    pattern: "^GLOVO"
+  - id: date_glued_to_the_name
+    description: "the same merchant with the date glued to its name: the letters before it stay"
+    name: "GLOVO24MAY BLR94QWT CALLE PALLARS 190"
+    pattern: "^GLOVO"
+  - id: paypal_card_merchant_after_star
+    description: "PayPal on a credit card: the merchant after *, up to the phone number"
+    name: "4029357733 PAYPAL *DISNEYPLUS 35314369001 LU"
+    pattern: "^PAYPAL \\*DISNEYPLUS"
+  - id: facilitator_merchant_after_star
+    name: "SumUp *Cafe Beispiel 0123"
+    pattern: "^SUMUP \\*CAFE BEISPIEL"
+  - id: digits_only_tokens_kept_as_before
+    name: "METRO BARCELONA C. NUMERO 21 23"
+    pattern: "^METRO BARCELONA C NUMERO"
+  - id: domain_and_street_kept_as_before
+    name: "WWW.DAZN.COM Huidekoperstraat 26"
+    pattern: "^WWW DAZN COM HUIDEKOPERSTRAAT"
+  - id: short_mixed_name_falls_back
+    description: "the cut keeps no word of 4 letters: the whole name, as before"
+    name: "O2 GmbH"
+    pattern: "^O GMBH"

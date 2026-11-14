@@ -300,8 +300,38 @@ _LOCATION = re.compile(r"//[^/]*/[A-Za-z]{2}\s*$")  # the trailing //<Ort>/<Land
 _DROPPED = re.compile(r"[0-9/.]")
 
 
+def _cut(text: str) -> str:
+    """D160 amended (4): the raw tokens up to the first per-purchase one (the fixture header's
+    1a-1c), written once more."""
+    out: list[str] = []
+    tokens = text.split()
+    merchant_named = False
+    for n, tok in enumerate(tokens):
+        digit = re.search(r"\d", tok) is not None
+        if merchant_named and digit:
+            break
+        before, _, after = tok.partition("*")
+        if re.search(r"\d", before) and re.search(r"[^\W\d_]", before):
+            letters = re.split(r"\d", before, maxsplit=1)[0]
+            if re.search(r"[^\W\d_]{4,}", letters):
+                out.append(letters)
+            break
+        if "*" not in tok:
+            out.append(tok)
+            continue
+        follows = after if after else (tokens[n + 1] if n + 1 < len(tokens) else "")
+        if follows == "" or re.search(r"\d", follows.split("*")[0]):
+            if before:
+                out.append(before)
+            break
+        out.append(tok)
+        merchant_named = True
+    joined = " ".join(out)
+    return joined if re.search(r"[^\W\d_]{4,}", joined) else text
+
+
 def _merchant_pattern(name: str) -> str:
-    text = _LOCATION.sub("", name).upper()
+    text = _cut(_LOCATION.sub("", name)).upper()
     text = " ".join(_DROPPED.sub(" ", text).split())
     return "^" + re.escape(text).replace("\\ ", " ")
 
@@ -320,6 +350,80 @@ class MerchantCase(_Case):
 
 class MerchantPatternFixture(_Fixture):
     cases: list[MerchantCase] = Field(min_length=10)
+
+
+# --- payee_identity.yaml: rules.matching.payee, same_payee, shared_iban (D160 amended (4)) --
+# Checked on load for shape only; tests/rules/test_payee_identity.py replays it on the code.
+
+
+class PayeeLine(Schema):
+    name: str
+    purpose: str | None = None
+
+
+class PayeePair(_Case):
+    id: str
+    a: PayeeLine
+    b: PayeeLine
+    same: bool | None
+    today: bool | None = None  # what the code reads a `same: null` pair as
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _either_has_today(self) -> Self:
+        if (self.same is None) != (self.today is not None):
+            raise ValueError(f"{self.id}: `today` is given exactly for a `same: null` pair")
+        return self
+
+
+class PayeeCase(_Case):
+    id: str
+    name: str
+    purpose: str | None = None
+    label: str | None
+    name_pattern: str | None = None
+    purpose_pattern: str | None = None
+    unreadable: bool = False
+    words: list[str] | None = None  # the payee's words, in order, when the case pins them
+
+    @model_validator(mode="after")
+    def _a_pattern_or_unreadable(self) -> Self:
+        if self.unreadable == (self.name_pattern is not None):
+            raise ValueError(f"{self.id}: a readable payee has a name pattern, else none")
+        return self
+
+
+class SharedIbanCase(_Case):
+    id: str
+    lines: list[PayeeLine] = Field(min_length=1)
+    shared: bool
+
+
+class PayeeStrength(_Case):
+    id: str
+    a: PayeeLine
+    b: PayeeLine
+    strength: Literal["strong", "weak"]  # review F2: identity_strength of the pair
+    note: str | None = None
+
+
+class PayeeIdentityFixture(_Fixture):
+    same: list[PayeePair] = Field(min_length=10)
+    different: list[PayeePair] = Field(min_length=5)
+    either: list[PayeePair] = Field(default_factory=list)
+    payees: list[PayeeCase] = Field(min_length=5)
+    shared_ibans: list[SharedIbanCase] = Field(min_length=3)
+    strengths: list[PayeeStrength] = Field(min_length=5)
+
+    @model_validator(mode="after")
+    def _sections(self) -> Self:
+        if any(p.same is not True for p in self.same):
+            raise ValueError("every pair under `same` is same: true")
+        if any(p.same is not False for p in self.different):
+            raise ValueError("every pair under `different` is same: false")
+        if any(p.same is not None for p in self.either):
+            raise ValueError("every pair under `either` is same: null")
+        return self
 
 
 # --- matching_order.yaml: the matching order per account purpose (D158) -------------------
@@ -1981,6 +2085,7 @@ MODELS: dict[str, type[Schema]] = {
     "household_categories": HouseholdCategoriesFixture,
     "fints_slots": FintsSlotsFixture,
     "merchant_pattern": MerchantPatternFixture,
+    "payee_identity": PayeeIdentityFixture,
     "matching_order": MatchingOrderFixture,
     "transfers": TransfersFixture,
     "private_cost_link": PrivateCostLinkFixture,
