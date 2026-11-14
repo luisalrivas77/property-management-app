@@ -83,6 +83,7 @@ from hausbuch.rules import depot as depot_rules
 from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT, RuleError
 from hausbuch.rules.household import card as card_rules
+from hausbuch.rules.household.taxonomy import BULK_CONFIRMABLE
 from hausbuch.rules.iban import iban_hmac, normalize_iban
 from hausbuch.rules.periods import service_period
 from hausbuch.rules.prefill import names_financing, sort_reading
@@ -1324,6 +1325,11 @@ def _closed_reason(line: Line) -> str:
 REASK_CATEGORIES = frozenset(
     {C.HH_OTHER, C.UNCATEGORIZED, C.HH_LEISURE_TRAVEL, C.HH_SUBSCRIPTIONS, C.HH_HOUSING}
 )
+# The codes a re-ask may be pointed at (`household-reask --category`, D159 amended 14 Nov 2026:
+# hh_mobility once hh_fuel split fuel off, migration 0031): the parked codes above and the
+# plain household income and spending codes „Alle bestätigen“ may confirm as a group. Never a
+# tax-relevant, movement or depot code, nor one a person confirms line by line.
+REASKABLE_CATEGORIES = REASK_CATEGORIES | BULK_CONFIRMABLE
 # Words that may name a cost of buying or financing the flat, paid from a private account
 # (phase 2 D135, phase 3 D143, phase 4b D134): such a line is left as it is, since re-sorting
 # it is a tax question for a person, never a one-off batch. rules.prefill's purchase and
@@ -1383,8 +1389,9 @@ def reask_household(
 ) -> ReaskResult:
     """Ask the model again for every private-account line whose current set is all proposed
     and all in `categories` (by default the codes the finer ones of migration 0029 split up),
-    so a line parked in „Sonstiges“ gets one of the new codes. One-off, run by the operator
-    after the deploy; no endpoint.
+    so a line parked in „Sonstiges“ gets one of the new codes; a later code that splits one
+    up is re-asked by naming it (hh_mobility after hh_fuel, migration 0031), only codes of
+    REASKABLE_CATEGORIES. Run by the operator after the deploy; no endpoint.
 
     Each line gets a match_transaction job with `reask`: the job runs the whole order as for a
     new line (a learned rule or matcher answers first) and asks the model last; its set
@@ -1397,7 +1404,9 @@ def reask_household(
     already answered with the current household prompt, so a second run asks nothing again.
     Nothing is queued while `ai_private_accounts` is off (D168); the lines are counted.
     Writes no event: the jobs write the sets, and each model call its ai_call row."""
-    codes = [c.value for c in categories]
+    if not categories or not categories <= REASKABLE_CATEGORIES:
+        raise ValueError("a re-ask takes parked or plain household codes only")
+    codes = sorted(c.value for c in categories)
     a = allocation_table.c
     t = transaction_table.c
 

@@ -31,7 +31,12 @@ from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import property_acquisition_cost as acquisition_cost_table
 from hausbuch.jobs.matching import run_match_transaction
-from hausbuch.schemas.allocation import AllocationDraft, AllocationMethod, AllocationSet
+from hausbuch.schemas.allocation import (
+    AllocationCategory,
+    AllocationDraft,
+    AllocationMethod,
+    AllocationSet,
+)
 from hausbuch.services import allocations, matching, workspace_settings
 from hausbuch.services.matching import ReaskResult, reask_household
 
@@ -302,3 +307,72 @@ def test_a_retried_job_writes_the_answer_its_first_attempt_lost(
     (row,) = _rows(world, tx)
     assert (row.category, row.status) == ("hh_personal_care", "proposed")
     assert len(client.requests) == 2
+
+
+# --- A named code (D159 amended 14 Nov 2026, migration 0031: hh_fuel splits hh_mobility) ---
+
+
+def test_a_mobility_line_is_asked_again_only_when_its_code_is_named(
+    world, private, app_engine, tmp_path
+):
+    """The default run leaves hh_mobility alone; naming it re-asks the line, and the model's
+    hh_fuel stays a proposal although hh_fuel's threshold would auto-confirm it."""
+    _consent_both(world)
+    tx = private.line(date(2026, 10, 17), "-64.20", name="Tankstelle Beispiel", purpose="Karte")
+    _propose(world, tx, "-64.20", "hh_mobility")
+    taxi = private.line(date(2026, 10, 18), "-18.00", name="Taxi Beispiel")
+    _propose(world, taxi, "-18.00", "hh_mobility")
+    confirmed = private.line(date(2026, 10, 19), "-50.00", name="Tankstelle Beispiel")
+    _propose(world, confirmed, "-50.00", "hh_mobility")
+    world.cmd(allocations.confirm_proposed, confirmed)
+
+    assert world.cmd(reask_household) == ReaskResult(0, 0, 0, 0)
+    mobility = frozenset({AllocationCategory.HH_MOBILITY})
+    assert world.cmd(reask_household, mobility) == ReaskResult(2, 0, 0, 0)
+    queued = {uuid.UUID(job.args["transaction_id"]) for job in _jobs(world)}
+    assert queued == {tx, taxi}
+
+    client = FakeModelClient([text_response(_answer("hh_fuel", "-64.20"))])
+    plan = _reask(world, tx, _deps(app_engine, tmp_path, client))
+    assert plan.outcome == "written"
+    (row,) = _rows(world, tx)
+    assert (row.category, row.method, row.status) == ("hh_fuel", "llm", "proposed")
+    (row,) = _rows(world, confirmed)
+    assert (row.category, row.status) == ("hh_mobility", "confirmed")
+
+
+@pytest.mark.parametrize(
+    "categories",
+    [
+        frozenset(),
+        frozenset({AllocationCategory.HH_DONATION}),  # tax-relevant
+        frozenset({AllocationCategory.HH_WORK_EDUCATION}),  # confirmed line by line
+        frozenset({AllocationCategory.INTERNAL_TRANSFER_OUT}),
+        frozenset({AllocationCategory.REPAIRS}),  # the rental account's
+    ],
+)
+def test_only_parked_or_plain_household_codes_can_be_named(world, categories):
+    with pytest.raises(ValueError, match="parked or plain household codes"):
+        world.cmd(reask_household, categories)
+
+
+def test_the_command_takes_a_named_code_and_refuses_another(dbname, world, private, capsys):
+    _consent_both(world)
+    tx = private.line(date(2026, 10, 20), "-41.00", name="Tankstelle Beispiel")
+    _propose(world, tx, "-41.00", "hh_mobility")
+    environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}
+    argv = ["household-reask", "--workspace", str(world.ws)]
+
+    assert cli.main([*argv, "--dry-run"], environ) == cli.EXIT_OK
+    assert "would queue 0 line(s)" in capsys.readouterr().out
+    assert cli.main([*argv, "--category", "hh_mobility", "--dry-run"], environ) == cli.EXIT_OK
+    assert "would queue 1 line(s)" in capsys.readouterr().out
+    assert _jobs(world) == []
+
+    assert cli.main([*argv, "--category", "hh_donation"], environ) == cli.EXIT_ERROR
+    assert "cannot re-ask hh_donation" in capsys.readouterr().err
+    assert _jobs(world) == []
+
+    assert cli.main([*argv, "--category", "hh_mobility"], environ) == cli.EXIT_OK
+    assert "queued 1 line(s)" in capsys.readouterr().out
+    assert [uuid.UUID(job.args["transaction_id"]) for job in _jobs(world)] == [tx]
