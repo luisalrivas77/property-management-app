@@ -12,6 +12,7 @@ Learned rules store a matcher and a split method, never an amount (D25).
 """
 
 from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Literal, Self
 from uuid import UUID
@@ -431,6 +432,35 @@ class DocumentFacts(Schema):
     parts: list[DocumentPart] = Field(default_factory=list)
 
 
+class RecordedBill(Schema):
+    """A bill of a property already recorded as a cost (phase 6 D161 widened, 14 Nov 2026):
+    the Nebenkosten rows (property_acquisition_cost) and the private_cost rows in force that
+    carry it as Beleg, as rules.matching.match_recorded_bill reads it for a private line.
+    acquisition and private: the rows' amounts; lines: the cost lines its reading states (phase
+    3 D150, signed as read); issued_on and due_on: its reading's document and due dates; paid:
+    the magnitudes of the live private lines on other transactions already booked
+    hh_property_cost with it (a line never pays more than the bill)."""
+
+    document_id: UUID
+    property_id: UUID
+    acquisition: list[PositiveMoney] = Field(default_factory=list)
+    private: list[PositiveMoney] = Field(default_factory=list)
+    lines: list[Money] = Field(default_factory=list)
+    issued_on: date | None = None
+    due_on: date | None = None
+    iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
+    reference: str | None = None
+    paid: Money = Decimal("0.00")
+
+
+class PurchasePayee(Schema):
+    """The seller's account (phase 6, 14 Nov 2026): the counterparty IBAN hash of a rental line
+    confirmed as purchase_price, with its property when the rows name exactly one."""
+
+    iban_hmac: HmacHex = Field(pattern=HMAC_PATTERN)
+    property_id: UUID | None = None
+
+
 class WirtschaftsplanFacts(Schema):
     """A Wirtschaftsplan extraction's monthly Hausgeld split (§8.1, by_wirtschaftsplan)."""
 
@@ -500,6 +530,10 @@ class MatchContext(Schema):
     wirtschaftsplaene: list[WirtschaftsplanFacts] = Field(default_factory=list)
     account_purpose: AccountPurpose = AccountPurpose.RENTAL
     open_legs: list[TransferLeg] = Field(default_factory=list)
+    # Phase 6 D161 widened (14 Nov 2026), private lines only (empty on a rental line): the
+    # bills already recorded as Nebenkosten or private_cost rows, and the seller's accounts.
+    recorded_bills: list[RecordedBill] = Field(default_factory=list)
+    purchase_payees: list[PurchasePayee] = Field(default_factory=list)
 
 
 class HistoryRow(Schema):

@@ -75,6 +75,7 @@ from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import property_price_split as split_table
 from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.db.tables import unit as unit_table
+from hausbuch.jobs import enqueue
 from hausbuch.rules.errors import (
     RETURN_INPUT_CARRIED_FROM_INVALID,
     TAX_INPUT_EXTENSION_NEEDS_HERSTELLUNG,
@@ -285,6 +286,16 @@ def create_tax_input(ctx: CommandContext, property_id: UUID, data: TaxInputCreat
         property_id=property_id,
         unit_id=created.unit_id,
     )
+    if (
+        created.kind is TaxInputKind.PRIVATE_COST
+        and created.document_id is not None
+        and not created.withdrawn
+    ):
+        # Phase 6 D161 widened: the bill is now a recorded one, so the private lines waiting
+        # in Zu prüfen that may pay it are matched again (never the model).
+        enqueue.enqueue_rematch_on_evidence(
+            ctx.conn, workspace_id=ctx.workspace_id, document_id=created.document_id
+        )
     return created
 
 

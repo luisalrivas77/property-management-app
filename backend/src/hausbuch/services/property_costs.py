@@ -6,7 +6,10 @@ hh_property_cost (services.matching) and, once confirmed, is the row's proof in 
 proposes moving it to the year paid (D143's rule, review F2: property_cost_year); the move is
 count_in_year_paid, applied only when the user confirms. Path 2: the bill has no private_cost
 row yet, so the card carries the rows rules.household.property_cost proposes; „Übernehmen“
-is record_proposed, which records them unless the bill's rows exist already (review F6).
+is record_proposed, which records them unless the bill's rows exist already (review F6); a
+part the bill's Nebenkosten rows already record is never proposed again (D161 widened, 14 Nov
+2026), and a private line paying a bill that is recorded by its rows is path 1
+(rules.matching.match_recorded_bill).
 Path 3: a line booked hh_property_cost without a bill gets „Beleg hochladen“; once a bill is
 attached that yields no rows, a card says why and links the document (review F4:
 property_cost_document). Computed on read, so a card ends as soon as its row or bill
@@ -21,6 +24,7 @@ from sqlalchemy import Connection, select
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import property_acquisition_cost as acquisition_cost_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules.household.property_cost import proposed_private_costs
 from hausbuch.schemas.allocation import AllocationCategory
@@ -198,7 +202,8 @@ def _proposed(
     """D161 (2): the bill's parts as private_cost rows for the year paid, with the bill as
     evidence; class financing for loan_fees, other for the rest (D135's convention). Without
     rows, why (review F4), or None when the bill was read and has no deductible part (a
-    purchase cost is not a private_cost row: nothing to do here)."""
+    purchase cost is not a private_cost row: nothing to do here) or its Nebenkosten rows
+    record every part (D161 widened: never a second row for a recorded cost)."""
     extraction = current_extraction(conn, document_id)
     if extraction is None:
         return [], _DOC_NOT_READ
@@ -213,6 +218,13 @@ def _proposed(
     if bill is None:
         return [], _DOC_NO_AMOUNT
     label = (evidence.row.title or "Rechnung")[:120]
+    recorded = list(
+        conn.execute(
+            select(acquisition_cost_table.c.amount).where(
+                acquisition_cost_table.c.document_id == document_id
+            )
+        ).scalars()
+    )
     return [
         TaxInputCreate(
             property_id=row.property_id,
@@ -227,7 +239,7 @@ def _proposed(
                 category=row.category,
             ),
         )
-        for row in proposed_private_costs(booked_on, amount, bill)
+        for row in proposed_private_costs(booked_on, amount, bill, recorded)
     ], None
 
 

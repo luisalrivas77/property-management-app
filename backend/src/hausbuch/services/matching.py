@@ -72,6 +72,7 @@ from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import property_acquisition_cost as acquisition_cost_table
 from hausbuch.db.tables import statement_import as import_table
+from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import tenancy_tenant as party_table
 from hausbuch.db.tables import tenant as tenant_table
@@ -82,6 +83,7 @@ from hausbuch.jobs import enqueue
 from hausbuch.rules import depot as depot_rules
 from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT, RuleError
+from hausbuch.rules.extraction_parse import cost_lines as parse_cost_lines
 from hausbuch.rules.household import card as card_rules
 from hausbuch.rules.household.taxonomy import BULK_CONFIRMABLE
 from hausbuch.rules.iban import iban_hmac, normalize_iban
@@ -105,6 +107,8 @@ from hausbuch.schemas.allocation import (
     MatchingRule,
     MatchTransaction,
     NameHistory,
+    PurchasePayee,
+    RecordedBill,
     RentInForce,
     RoutingDecision,
     RoutingInput,
@@ -124,6 +128,7 @@ from hausbuch.schemas.enums import (
     ImportStatus,
 )
 from hausbuch.schemas.loan import LoanTerms
+from hausbuch.schemas.tax import TaxInputKind
 
 from . import allocations, rules_learned, workspace_settings
 from .context import CommandContext
@@ -334,7 +339,12 @@ def build_context(
         ).scalar_one_or_none()
         if hmac is not None and is_shared_iban(conn, bytes(hmac)):
             shared = [bytes(hmac).hex()]
+    private = account_purpose is AccountPurpose.PRIVATE
     return MatchContext(
+        recorded_bills=recorded_bills(conn, iban_key=iban_key, for_transaction=for_transaction)
+        if private
+        else [],
+        purchase_payees=purchase_payees(conn) if private else [],
         account_purpose=account_purpose,
         own_account_hmacs=owners,
         shared_iban_hmacs=shared,
@@ -343,6 +353,124 @@ def build_context(
         documents=documents,
         wirtschaftsplaene=plans,
     )
+
+
+def recorded_bills(
+    conn: Connection,
+    *,
+    iban_key: bytes | None,
+    for_transaction: UUID | None = None,
+    document_ids: list[UUID] | None = None,
+) -> list[RecordedBill]:
+    """Phase 6 D161 widened (14 Nov 2026): every bill a property already counts through its
+    rows, as rules.matching.match_recorded_bill reads it for a private line. A bill is a
+    document that a Nebenkosten row (property_acquisition_cost) or a private_cost row in force
+    carries as Beleg, all of one property, with an evidence reading. Left out: a bill a live
+    rental-account line already carries (it was paid from the rental account, D135). `paid`:
+    the live private hh_property_cost rows of other lines that carry it. In a fixed number of
+    queries; `document_ids` narrows it to those bills; without `iban_key` no bill has its
+    IBAN hash (a count from the operator's computer, where the key is not)."""
+    c, ti = acquisition_cost_table.c, tax_input_table.c
+    acquisition: dict[UUID, list[tuple[UUID, Decimal]]] = {}
+    query = select(c.document_id, c.property_id, c.amount).where(c.document_id.is_not(None))
+    if document_ids is not None:
+        query = query.where(c.document_id.in_(document_ids))
+    for doc, prop, amount in conn.execute(query.order_by(c.created_at, c.id)):
+        acquisition.setdefault(doc, []).append((prop, amount))
+    later = tax_input_table.alias("later")
+    query = select(ti.document_id, ti.property_id, ti.value).where(
+        ti.kind == TaxInputKind.PRIVATE_COST.value,
+        ti.document_id.is_not(None),
+        ti.withdrawn.is_(False),
+        ~exists().where(later.c.supersedes_id == ti.id),
+    )
+    if document_ids is not None:
+        query = query.where(ti.document_id.in_(document_ids))
+    private: dict[UUID, list[tuple[UUID, Decimal | None]]] = {}
+    for doc, prop, value in conn.execute(query.order_by(ti.recorded_at, ti.id)):
+        amount = _money((value or {}).get("amount"))
+        private.setdefault(doc, []).append((prop, amount))
+    ids = sorted(set(acquisition) | set(private), key=str)
+    if not ids:
+        return []
+    a, t = allocation_table.c, transaction_table.c
+    live = conn.execute(
+        select(a.document_id, a.amount, a.category, account_table.c.purpose)
+        .select_from(allocation_table.join(transaction_table, t.id == a.transaction_id))
+        .join(account_table, account_table.c.id == t.account_id)
+        .where(
+            a.document_id.in_(ids),
+            a.status != AllocationStatus.SUPERSEDED.value,
+            t.excluded_as_duplicate_of.is_(None),
+            *([] if for_transaction is None else [a.transaction_id != for_transaction]),
+        )
+    ).all()
+    rental_paid = {r.document_id for r in live if r.purpose == AccountPurpose.RENTAL.value}
+    paid: dict[UUID, Decimal] = {}
+    for r in live:
+        if r.purpose == AccountPurpose.PRIVATE.value and r.category == C.HH_PROPERTY_COST.value:
+            paid[r.document_id] = paid.get(r.document_id, Decimal("0.00")) + abs(r.amount)
+    evidence = evidence_of_many(conn, ids)
+    out: list[RecordedBill] = []
+    for doc in ids:
+        e = evidence.get(doc)
+        if e is None or doc in rental_paid:
+            continue
+        rows_a, rows_p = acquisition.get(doc, []), private.get(doc, [])
+        properties = {p for p, _ in rows_a} | {p for p, _ in rows_p}
+        if len(properties) != 1 or any(amount is None for _, amount in rows_p):
+            continue  # two properties, or a private row without an amount (a trip)
+        x = e.extraction
+        out.append(
+            RecordedBill(
+                document_id=doc,
+                property_id=next(iter(properties)),
+                acquisition=[amount for _, amount in rows_a],
+                private=[amount for _, amount in rows_p if amount is not None],
+                lines=_cost_line_amounts(x),
+                issued_on=_date(_value(x, "document_date")),
+                due_on=_date(_value(x, "due_on")),
+                iban_hmac=None if iban_key is None else _hmac(_value(x, "iban"), iban_key),
+                reference=_value(x, "reference") or None,
+                paid=paid.get(doc, Decimal("0.00")),
+            )
+        )
+    return out
+
+
+def _cost_line_amounts(extraction: DocumentExtraction) -> list[Decimal]:
+    """The cost lines an invoice's or Bescheid's reading states (phase 3 D150, as
+    services.tax.bill_lines reads them), from the extraction in hand."""
+    if extraction.kind not in (ExtractionKind.INVOICE, ExtractionKind.BESCHEID):
+        return []
+    read = getattr(extraction.fields, "cost_lines", None)
+    lines = None if read is None else parse_cost_lines(read.value)
+    return [] if lines is None else [line.amount.quantize(_CENT) for line in lines]
+
+
+def purchase_payees(conn: Connection) -> list[PurchasePayee]:
+    """The seller's accounts: the counterparty IBAN hash of every rental line with a confirmed
+    purchase_price row, with the property its rows name (None when they name none or two)."""
+    a, t = allocation_table.c, transaction_table.c
+    rows = conn.execute(
+        select(t.counterparty_iban_hmac, a.property_id)
+        .select_from(allocation_table.join(transaction_table, t.id == a.transaction_id))
+        .join(account_table, account_table.c.id == t.account_id)
+        .where(
+            a.category == C.PURCHASE_PRICE.value,
+            a.status == AllocationStatus.CONFIRMED.value,
+            t.counterparty_iban_hmac.is_not(None),
+            t.excluded_as_duplicate_of.is_(None),
+            account_table.c.purpose == AccountPurpose.RENTAL.value,
+        )
+    ).all()
+    by_iban: dict[str, set[UUID | None]] = {}
+    for hmac, property_id in rows:
+        by_iban.setdefault(bytes(hmac).hex(), set()).add(property_id)
+    return [
+        PurchasePayee(iban_hmac=hmac, property_id=next(iter(props)) if len(props) == 1 else None)
+        for hmac, props in sorted(by_iban.items())
+    ]
 
 
 def is_shared_iban(conn: Connection, hmac: bytes | None) -> bool:
@@ -1399,24 +1527,9 @@ REASK_CATEGORIES = frozenset(
 REASKABLE_CATEGORIES = REASK_CATEGORIES | BULK_CONFIRMABLE
 # Words that may name a cost of buying or financing the flat, paid from a private account
 # (phase 2 D135, phase 3 D143, phase 4b D134): such a line is left as it is, since re-sorting
-# it is a tax question for a person, never a one-off batch. rules.prefill's purchase and
-# financing terms, plus the payees of those bills.
-_PURCHASE_COST_WORDS = (
-    "grunderwerb",
-    "notar",
-    "grundbuch",
-    "makler",
-    "justizkasse",
-    "amtsgericht",
-    "kaufpreis",
-    "kaufvertrag",
-    "auflassung",
-    "eigentumsumschreibung",
-    "grundschuld",
-    "grundpfand",
-    "hypothek",
-    "darlehen",
-)
+# it is a tax question for a person, never a one-off batch (rules.matching's list, which the
+# recorded-bill match reads too).
+_PURCHASE_COST_WORDS = matchers.PURCHASE_COST_WORDS
 
 
 @dataclass(frozen=True)
@@ -1536,7 +1649,9 @@ def lines_for_evidence(
     conn: Connection, document_id: UUID, *, iban_key: bytes, today: date
 ) -> list[UUID]:
     """Lines a new reading of this document may change (rematch_on_evidence): for an invoice
-    or Bescheid, lines within its payments' amount and date window; for a Wirtschaftsplan,
+    or Bescheid, lines within its payments' amount and date window, and, for a bill already
+    recorded as a Nebenkosten or private_cost row, the private debits that may pay it
+    (_recorded_bill_lines, D161 widened); for a Wirtschaftsplan,
     Hausgeld-sized debits from its first month on, and lines a by_wirtschaftsplan rule of its
     property split. Whether each is open is decided by match_line(rematch=True)."""
     e = evidence_of(conn, document_id)
@@ -1578,7 +1693,66 @@ def lines_for_evidence(
             func.abs(t.amount).between(p.amount - tolerance, p.amount + tolerance),
         )
         ids.extend(conn.execute(query.order_by(t.booking_date, t.id)).scalars())
+    ids.extend(_recorded_bill_lines(conn, document_id, iban_key=iban_key))
     return list(dict.fromkeys(ids))
+
+
+def _recorded_bill_lines(conn: Connection, document_id: UUID, *, iban_key: bytes) -> list[UUID]:
+    """D161 widened: the private debits a recorded bill may be paid by (rules.matching.
+    recorded_amounts within 0.01, booked in recorded_window), the candidates of
+    match_recorded_bill; none for a document that is no recorded bill."""
+    bills = recorded_bills(conn, iban_key=iban_key, document_ids=[document_id])
+    return [tx for bill in bills for tx in _paying_candidates(conn, bill)]
+
+
+def _paying_candidates(conn: Connection, bill: RecordedBill) -> list[UUID]:
+    window = matchers.recorded_window(bill)
+    if window is None:
+        return []
+    t = transaction_table.c
+    tolerance = matchers.DOCUMENT_AMOUNT_TOLERANCE
+    near = [
+        func.abs(t.amount).between(amount - tolerance, amount + tolerance)
+        for amount in matchers.recorded_amounts(bill)
+    ]
+    query = (
+        select(t.id)
+        .join(account_table, account_table.c.id == t.account_id)
+        .where(
+            account_table.c.purpose == AccountPurpose.PRIVATE.value,
+            t.amount < 0,
+            t.booking_date.between(*window),
+            or_(*near),
+        )
+    )
+    return list(conn.execute(query.order_by(t.booking_date, t.id)).scalars())
+
+
+@dataclass(frozen=True)
+class RecordedBillsRematch:
+    bills: int  # recorded bills, a rematch_on_evidence job each
+    waiting: int  # private debits of their amount and window still waiting for an answer
+
+
+def rematch_recorded_bills(ctx: CommandContext) -> RecordedBillsRematch:
+    """One-off after the deploy of D161 widened (14 Nov 2026), run by the operator (`hausbuch
+    rematch-bills`): queue rematch_on_evidence for every bill recorded as a Nebenkosten or
+    private_cost row, so the private lines already waiting in Zu prüfen that pay one get the
+    hh_property_cost proposal. The job runs the deterministic order only, never the model,
+    and never replaces a confirmed row (Line.open_for). New rows queue the same job
+    themselves (services.properties, services.tax_inputs). The IBAN key stays in the API
+    container: the bills are read here without it, which changes only the count."""
+    bills = recorded_bills(ctx.conn, iban_key=None)
+    waiting = set()
+    for bill in bills:
+        for tx in _paying_candidates(ctx.conn, bill):
+            line = load_line(ctx.conn, tx)
+            if line is not None and line.waiting and line.open_for(rematch=True):
+                waiting.add(tx)
+        enqueue.enqueue_rematch_on_evidence(
+            ctx.conn, workspace_id=ctx.workspace_id, document_id=bill.document_id
+        )
+    return RecordedBillsRematch(bills=len(bills), waiting=len(waiting))
 
 
 # --- Which waiting lines a change may book -------------------------------------------------

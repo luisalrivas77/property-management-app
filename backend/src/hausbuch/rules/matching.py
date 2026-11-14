@@ -62,6 +62,7 @@ from hausbuch.schemas.allocation import (
     MatchingRuleCreate,
     MatchTransaction,
     NameHistory,
+    RecordedBill,
     RentInForce,
     RuleMatcher,
     ServicePeriod,
@@ -74,6 +75,7 @@ from hausbuch.schemas.enums import AccountKind, AccountPurpose, AllocationStatus
 from hausbuch.schemas.household import TransferCandidate, TransferLinkKind, TransferMatch
 from hausbuch.schemas.loan import ScheduleEntry
 
+from . import proof_match
 from .categories import CATEGORY_LABEL
 from .errors import (
     RULE_CONFLICTS,
@@ -216,6 +218,170 @@ def match_private_document(tx: MatchTransaction, context: MatchContext) -> Alloc
         question="Ist das die Zahlung dieser Rechnung des Mietobjekts?",
     )
     return _as_set(tx, split, AllocationMethod.DOCUMENT_MATCH)
+
+
+# --- A private line paying a bill already recorded (D161 widened, 14 Nov 2026) --------------
+
+# The window around a recorded bill: from RECORDED_BEFORE_DAYS before its issue date to
+# RECORDED_AFTER_DAYS after the later of its issue and due dates. Wider than the document
+# match's ± 10 days: a Grunderwerbsteuerbescheid is due a month after its notice
+# (§ 15 GrEStG) and a notary's or the Grundbuchamt's bill is often paid weeks after its date;
+# the evidence here is the amount equal to a recorded row or cost line plus the payee, so the
+# window only bounds it.
+RECORDED_BEFORE_DAYS = 10
+RECORDED_AFTER_DAYS = 60
+# Words that may name a cost of buying or financing the flat (rules.prefill's purchase and
+# financing terms, and the payees of those bills). Also what the one-off household re-ask
+# leaves alone (services.matching.reask_household, D159 amended).
+PURCHASE_COST_WORDS = (
+    "grunderwerb",
+    "notar",
+    "grundbuch",
+    "makler",
+    "justizkasse",
+    "amtsgericht",
+    "kaufpreis",
+    "kaufvertrag",
+    "auflassung",
+    "eigentumsumschreibung",
+    "grundschuld",
+    "grundpfand",
+    "hypothek",
+    "darlehen",
+)
+# The payees of such a bill whose name says nothing of the purchase (the Finanzamt collects
+# the Grunderwerbsteuer, a Landes- or Gerichtskasse the Grundbuch fees): corroboration for a
+# line whose amount already equals a recorded row, never a reason on their own.
+_RECORDED_PAYEE_WORDS = PURCHASE_COST_WORDS + ("finanzamt", "landeshauptkasse", "gerichtskasse")
+
+
+def recorded_amounts(bill: RecordedBill) -> list[Decimal]:
+    """The magnitudes a payment of a recorded bill may have (rules.proof_match: the bill's
+    combined total, its private part alone when it also has Nebenkosten rows, one Nebenkosten
+    row, or one of its cost lines when they sum to the total), each once."""
+    whole = [proof_match.bill_total(bill.acquisition, bill.private)]
+    if bill.acquisition and bill.private:
+        whole.append(sum(bill.private, Decimal(0)))
+    parts = proof_match.bill_parts(bill.lines, bill.acquisition, bill.private)
+    return list(dict.fromkeys([*whole, *bill.acquisition, *parts]))
+
+
+def recorded_window(bill: RecordedBill) -> tuple[date, date] | None:
+    """The booking dates a payment of the bill may have; None for a bill with no date read."""
+    dates = [d for d in (bill.issued_on, bill.due_on) if d is not None]
+    if not dates:
+        return None
+    first = bill.issued_on or bill.due_on
+    assert first is not None
+    return (
+        date.fromordinal(first.toordinal() - RECORDED_BEFORE_DAYS),
+        date.fromordinal(max(dates).toordinal() + RECORDED_AFTER_DAYS),
+    )
+
+
+def recorded_hit(tx: MatchTransaction, bill: RecordedBill) -> proof_match.Fit | None:
+    """How a private debit pays a recorded bill, or None: its amount fits the bill
+    (rules.proof_match.proof_fit, within 0.01), it pays no more than what other lines left
+    open, it was booked in the bill's window (recorded_window), and its payee is the bill's:
+    the bill's IBAN, its reference in the purpose, or a purchase-cost word in the line's name
+    or purpose (the Finanzamt, a Justizkasse, a notary)."""
+    if tx.amount >= 0:
+        return None
+    paid = abs(tx.amount)
+    fit = proof_match.proof_fit(paid, bill.acquisition, bill.private, parts=bill.lines)
+    if fit is None:
+        return None
+    total = proof_match.bill_total(bill.acquisition, bill.private)
+    if bill.paid + paid > total + DOCUMENT_AMOUNT_TOLERANCE:
+        return None
+    window = recorded_window(bill)
+    if window is None or not window[0] <= tx.booking_date <= window[1]:
+        return None
+    if bill.iban_hmac is not None and bill.iban_hmac == tx.counterparty_iban_hmac:
+        return fit
+    if _reference_in(bill.reference, tx.purpose):
+        return fit
+    text = " ".join(filter(None, (tx.counterparty_name, tx.purpose, tx.booking_text))).casefold()
+    return fit if any(word in text for word in _RECORDED_PAYEE_WORDS) else None
+
+
+RECORDED_WHOLE_QUESTION = "Ist das die Zahlung dieser Rechnung des Mietobjekts?"
+RECORDED_PART_QUESTION = (
+    "Ist das die Zahlung eines Teils dieser Rechnung des Mietobjekts (etwa der Anteil eines "
+    "Käufers)?"
+)
+
+
+def match_recorded_bill(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:
+    """D161 widened (14 Nov 2026): a private line paying a bill already recorded as a
+    Nebenkosten row or a private_cost row (context.recorded_bills, recorded_hit) is booked
+    hh_property_cost with the bill's property and the bill, so it becomes that record's proof
+    of payment (phase 3 D143) and never a second record: the Anlage V reads the bill through
+    its rows only (hh_property_cost is pass_through, never summed). One bill must fit; two
+    that fit equally are no answer. Always to review: hh_property_cost has no threshold."""
+    hits = {b.document_id: (b, fit) for b in context.recorded_bills if (fit := recorded_hit(tx, b))}
+    if len(hits) != 1:
+        return None
+    ((bill, fit),) = hits.values()
+    draft = _draft(
+        tx.amount,
+        C.HH_PROPERTY_COST,
+        service_period(tx.purpose, tx.booking_date, False),
+        False,
+        property_id=bill.property_id,
+        document_id=bill.document_id,
+    )
+    whole = fit is proof_match.Fit.WHOLE
+    split = _Split(
+        [draft],
+        "Der Betrag passt zu einer schon erfassten Rechnung des Mietobjekts "
+        f"({'ganz' if whole else 'zu einem Teil'}), bezahlt von einem privaten Konto; die "
+        "Zahlung wird ihr Zahlungsnachweis, die Kosten zählen nur einmal.",
+        confidence=DOCUMENT_CONFIDENCE,
+        question=RECORDED_WHOLE_QUESTION if whole else RECORDED_PART_QUESTION,
+    )
+    return _as_set(tx, split, AllocationMethod.DOCUMENT_MATCH)
+
+
+# --- A private line paying the seller (14 Nov 2026) ----------------------------------------
+
+DOWN_PAYMENT_QUESTION = "Anzahlung auf den Kaufpreis der Wohnung an den Verkäufer?"
+
+
+def match_down_payment(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:
+    """A private debit to the seller's account (context.purchase_payees: the IBAN of a rental
+    line confirmed as purchase_price) is a payment on the purchase price, so it is proposed as
+    hh_investment („Geldanlage“: neither income nor spending, the money went into the flat)
+    with the property when one is known. Never a Nebenkosten or private_cost row and never
+    anything the Anlage V reads: the AfA basis comes from the property record only (phase 3
+    D55). Always to review (hh_investment has no threshold)."""
+    hmac = tx.counterparty_iban_hmac
+    if hmac is None or tx.amount >= 0:
+        return None
+    properties = {p.property_id for p in context.purchase_payees if p.iban_hmac == hmac}
+    if not properties:
+        return None
+    property_id = next(iter(properties)) if len(properties) == 1 else None
+    draft = _draft(
+        tx.amount,
+        C.HH_INVESTMENT,
+        service_period(tx.purpose, tx.booking_date, False),
+        False,
+        property_id=property_id,
+    )
+    return AllocationSet(
+        transaction_id=tx.id,
+        method=AllocationMethod.DOCUMENT_MATCH,
+        confidence=GUARDED_CONFIDENCE,
+        allocations=[draft],
+        reasoning=(
+            "Anzahlung auf den Kaufpreis der Wohnung an den Verkäufer: das Gegenkonto hat auf "
+            "dem Mietkonto den Kaufpreis erhalten. Die Zahlung ist weder Einnahme noch Ausgabe "
+            "und zählt nicht in der Anlage V (die AfA-Basis kommt aus dem Kaufpreis der "
+            "Immobilie)."
+        ),
+        question=DOWN_PAYMENT_QUESTION,
+    )
 
 
 def _bill_split(tx: MatchTransaction, doc: DocumentFacts) -> _Split:
@@ -1213,10 +1379,14 @@ _RENTAL_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | 
     match_loan,
     match_document,
 )
-# D158 on a private account: the transfer by an own IBAN (D162), the document match (a bill
-# of the property becomes hh_property_cost, D161), then the tenant / lender question.
+# D158 on a private account: the transfer by an own IBAN (D162), a payment to the seller
+# (14 Nov 2026), a bill already recorded as a Nebenkosten or private_cost row (D161 widened),
+# the document match (a bill of the property becomes hh_property_cost, D161), then the
+# tenant / lender question.
 _PRIVATE_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...] = (
     lambda tx, context: match_transfer_line(tx, context),  # defined below
+    match_down_payment,
+    match_recorded_bill,
     match_private_document,
     rental_counterparty_question,
 )
@@ -1231,7 +1401,8 @@ def deterministic_answer(
     """The deterministic order per account purpose (D158; fixture matching_order.yaml), before
     the model. Rental: learned rules -> owner transfer -> rent -> loan -> document (Hausgeld is
     a by_wirtschaftsplan rule), as in phase 2. Private: learned rules -> transfer by an own
-    IBAN (D162) -> a property bill (D161) -> D158's question; the rent, loan, Hausgeld and
+    IBAN (D162) -> a payment to the seller -> a recorded bill -> a property bill (D161) ->
+    D158's question; the rent, loan, Hausgeld and
     owner-transfer matchers never run there. A standing rule hit (confidence 1) wins at once;
     a rule's near-miss proposal (D49) only when no matcher answers. Every answer is one the
     account's purpose takes (D159)."""
