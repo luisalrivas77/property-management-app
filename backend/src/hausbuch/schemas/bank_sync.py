@@ -293,6 +293,9 @@ class StatementOutcome(StrEnum):
 
     STATEMENT = "statement"  # the PDF is complete and valid: store it
     NOT_AVAILABLE = "not_available"  # refused (3010, 9xxx on HKEKP): ends that year's walk
+    # 9370 on HKEKP: this access may not fetch statements at all; the fetch stops for the run
+    # and the refusal is recorded on the account (account.statements_refused)
+    NOT_PERMITTED = "not_permitted"
     CONTINUE = "continue"  # 3040 with an Aufsetzpunkt: ask for the next part
     INVALID = "invalid"  # delivered, but not a valid PDF: nothing stored, the year's walk ends
     STOPPED = "stopped"  # the message failed (9800, another 9xxx): the fetch stops for the run

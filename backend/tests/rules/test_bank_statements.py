@@ -139,3 +139,62 @@ def test_parts_encoded_one_by_one_are_decoded_one_by_one():
     reading = rules.read_answer(OK, parts)
     assert reading.outcome is StatementOutcome.STATEMENT
     assert reading.pdf == PDF
+
+
+# --- 14 Nov 2026: a refusal that says the access may not fetch statements (NOT_PERMITTED) ---
+
+
+def test_the_first_real_refusal_is_not_permitted_not_a_missing_number():
+    """The first real fetch's answer, as the trace logged it: the message's 9050, then the
+    segment's general 9010 before its reason 9370 „keine Auftragsberechtigung“. The 9010 in
+    front must not turn it into "this number does not exist yet"."""
+    answers = [
+        BankAnswer("message", "9050"),
+        BankAnswer("segment", "9010", "HKEKP:3"),
+        BankAnswer("segment", "9370", "HKEKP:3"),
+    ]
+    reading = rules.read_answer(answers, [])
+    assert (reading.outcome, reading.code, reading.dialog_ended) == (
+        StatementOutcome.NOT_PERMITTED,
+        "9370",
+        False,
+    )
+    assert reading.pdf is None
+
+
+def test_9370_alone_on_the_segment_is_not_permitted():
+    reading = rules.read_answer([BankAnswer("segment", "9370", "HKEKP:3")], [])
+    assert (reading.outcome, reading.code) == (StatementOutcome.NOT_PERMITTED, "9370")
+
+
+def test_a_not_permitted_answer_that_ends_the_dialog_says_so():
+    answers = [BankAnswer("message", "9800"), BankAnswer("segment", "9370", "HKEKP:3")]
+    reading = rules.read_answer(answers, [])
+    assert (reading.outcome, reading.dialog_ended) == (StatementOutcome.NOT_PERMITTED, True)
+
+
+def test_a_lock_still_decides_over_not_permitted():
+    answers = [BankAnswer("message", "9930"), BankAnswer("segment", "9370", "HKEKP:3")]
+    assert rules.read_answer(answers, []).outcome is StatementOutcome.LOCKED
+
+
+def test_9370_on_another_segment_is_not_a_statement_refusal():
+    reading = rules.read_answer([BankAnswer("segment", "9370", "HKCAZ:3")], [])
+    assert (reading.outcome, reading.code) == (StatementOutcome.STOPPED, "9370")
+
+
+@pytest.mark.parametrize(
+    "codes, code",
+    [
+        (["3010"], "3010"),
+        (["9210"], "9210"),
+        (["9010", "9210"], "9010"),
+        (["9380"], "9380"),
+        (["9999"], "9999"),
+    ],
+)
+def test_other_refusals_on_the_segment_stay_not_available(codes, code):
+    answers = [BankAnswer("message", "9050")]
+    answers += [BankAnswer("segment", c, "HKEKP:3") for c in codes]
+    reading = rules.read_answer(answers, [])
+    assert (reading.outcome, reading.code) == (StatementOutcome.NOT_AVAILABLE, code)
