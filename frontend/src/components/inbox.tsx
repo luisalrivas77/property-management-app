@@ -57,6 +57,17 @@
 // lines shown, so „Ausgewählte bestätigen“ sends exactly the lines shown and ticked. In a
 // group's list („Zahlungen ansehen“ or the dialog), the payee is a button that opens that line
 // in the allocation panel, like a click on the line itself; the dialog closes first.
+//
+// Each section folds from its heading row (14 Nov 2026, Luis: "so I don't have to scroll all
+// the way down for the next section"): the heading is one button (aria-expanded) with the
+// title, the count and a chevron; „Alle aufklappen“ / „Alle zuklappen“ sit above the sections
+// when there are two or more. The first section with items is open, the others closed, until
+// the person chooses: each choice is remembered in this browser (localStorage, SECTIONS_KEY),
+// and the page works the same without it. A folded section's body stays mounted (hidden), so
+// a group's ticks and a pending KI reload survive folding. While „Empfänger suchen“ holds
+// text, Zahlungen zuordnen stays open (folding it clears the search), and a selected line
+// (?umsatz=…, a deep link or a click) opens its section once. A section without items is not
+// shown, as before.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
@@ -265,6 +276,35 @@ function lineMatches(line: Transaction | undefined, query: string): boolean {
   return [line.counterparty_name, line.booking_text, line.purpose].some((text) => !!text && text.toLocaleLowerCase("de").includes(needle));
 }
 
+/** The sections' open/closed choices in this browser; a section without one follows the
+ * default (the first section with items open). */
+const SECTIONS_KEY = "hausbuch.inbox.sections";
+
+type SectionChoices = Partial<Record<SectionKey, boolean>>;
+
+function rememberedSections(): SectionChoices {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(SECTIONS_KEY) ?? "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const choices: SectionChoices = {};
+    for (const { key } of SECTIONS) {
+      const value = (parsed as Record<string, unknown>)[key];
+      if (typeof value === "boolean") choices[key] = value;
+    }
+    return choices;
+  } catch {
+    return {};
+  }
+}
+
+function rememberSections(choices: SectionChoices): void {
+  try {
+    window.localStorage.setItem(SECTIONS_KEY, JSON.stringify(choices));
+  } catch {
+    // Storage blocked (private window, site data off): the choice holds until the page reloads.
+  }
+}
+
 export function InboxList({
   data,
   selected,
@@ -280,66 +320,115 @@ export function InboxList({
   const [query, setQuery] = useState("");
   const searchId = useId();
   const needle = query.trim();
+  // Folding: the person's choices (remembered), else the first section with items open.
+  // InboxList mounts only once the queue has loaded in the browser, so the initial read never
+  // runs on the server.
+  const [choices, setChoices] = useState<SectionChoices>(() => (typeof window === "undefined" ? {} : rememberedSections()));
+  const shown = SECTIONS.filter(({ key }) => data.items.some((item) => sectionOf(item) === key));
+  const first = shown[0]?.key;
+  const isOpen = (section: SectionKey) => choices[section] ?? section === first;
+
+  function choose(next: SectionChoices) {
+    const merged = { ...choices, ...next };
+    setChoices(merged);
+    rememberSections(merged);
+  }
+
+  function setAll(open: boolean) {
+    choose(Object.fromEntries(shown.map(({ key }) => [key, open])));
+  }
+
+  // A selected line (a click, or a deep link ?umsatz=…) opens its section once; the person may
+  // fold it again. Not remembered: it was not the person's choice of how the list looks. Set
+  // while rendering, when the selection changes (React's pattern for state that follows a prop).
+  const selectedItem = selected ? data.items.find((item) => isLineItem(item) && item.transaction_id === selected) : undefined;
+  const selectedSection = selectedItem ? sectionOf(selectedItem) : undefined;
+  const [openedFor, setOpenedFor] = useState<string | null>(null);
+  if (selected && selectedSection && openedFor !== selected) {
+    setOpenedFor(selected);
+    if (!choices[selectedSection]) setChoices({ ...choices, [selectedSection]: true });
+  }
+
   return (
     <div className="inbox-sections">
-      {SECTIONS.map(({ key: section, title }) => {
+      {shown.length > 1 ? (
+        <div className="inbox-fold-all">
+          <button type="button" className="link" onClick={() => setAll(true)}>
+            Alle aufklappen
+          </button>
+          <button type="button" className="link" onClick={() => setAll(false)}>
+            Alle zuklappen
+          </button>
+        </div>
+      ) : null}
+      {shown.map(({ key: section, title }) => {
         const all = data.items.filter((item) => sectionOf(item) === section);
-        if (all.length === 0) return null;
         const filtering = section === "lines" && needle !== "";
         const items = filtering ? all.filter((item) => lineMatches(data.transactions.get(item.transaction_id ?? ""), needle)) : all;
         const headingId = `inbox-section-${section}`;
+        const bodyId = `inbox-section-${section}-body`;
+        // While the search holds text its section stays open; folding it clears the search.
+        const open = filtering || isOpen(section);
+        function toggle() {
+          if (open && filtering) setQuery("");
+          choose({ [section]: !open });
+        }
         return (
           <section key={section} className="inbox-section" aria-labelledby={headingId}>
             <h3 className="inbox-section-head">
-              <span id={headingId}>{title}</span>{" "}
-              <span className="inbox-section-count">{all.length}</span>
+              <button type="button" className="inbox-section-toggle" aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
+                <span id={headingId}>{title}</span> <span className="inbox-section-count">{all.length}</span>
+                <span className="inbox-section-chevron" aria-hidden="true" />
+              </button>
             </h3>
-            {section === "lines" ? (
-              <div className="inbox-section-action inbox-search">
-                <label htmlFor={searchId}>Empfänger suchen</label>
-                <input
-                  id={searchId}
-                  type="search"
-                  value={query}
-                  autoComplete="off"
-                  placeholder="Name oder Verwendungszweck"
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-                {filtering ? (
-                  <p className="muted" role="status">
-                    {items.length} von {all.length}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-            {section === "lines" && all.some((item) => item.kind === "unmatched") ? <AiSuggestions onChanged={onChanged} /> : null}
-            {section === "lines" ? <BulkConfirm items={items} data={data} onChanged={onChanged} onSelect={onSelect} /> : null}
-            {filtering && items.length === 0 ? (
-              <p className="muted inbox-empty">Keine Zahlung passt zu „{needle}“.</p>
-            ) : (
-              <ul className="inbox-list" aria-label={title}>
-                {items.map((item) => {
-                  // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
-                  // A forwarded document can arrive in two mails, and a failed mail names no id: the time tells them apart.
-                  const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id ?? item.reminder_id ?? item.movement_id}:${item.created_at}`;
-                  return (
-                    <li key={key}>
-                      {isLineItem(item) ? (
-                        <LineEntry
-                          item={item}
-                          line={data.transactions.get(item.transaction_id ?? "")}
-                          account={privateAccount(data.accounts, item.account_id)}
-                          pressed={selected === item.transaction_id}
-                          onSelect={onSelect}
-                        />
-                      ) : (
-                        <OtherEntry item={item} data={data} onChanged={onChanged} />
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+            <div id={bodyId} hidden={!open}>
+              {section === "lines" ? (
+                <div className="inbox-section-action inbox-search">
+                  <label htmlFor={searchId}>Empfänger suchen</label>
+                  <input
+                    id={searchId}
+                    type="search"
+                    value={query}
+                    autoComplete="off"
+                    placeholder="Name oder Verwendungszweck"
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                  {filtering ? (
+                    <p className="muted" role="status">
+                      {items.length} von {all.length}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              {section === "lines" && all.some((item) => item.kind === "unmatched") ? <AiSuggestions onChanged={onChanged} /> : null}
+              {section === "lines" ? <BulkConfirm items={items} data={data} onChanged={onChanged} onSelect={onSelect} /> : null}
+              {filtering && items.length === 0 ? (
+                <p className="muted inbox-empty">Keine Zahlung passt zu „{needle}“.</p>
+              ) : (
+                <ul className="inbox-list" aria-label={title}>
+                  {items.map((item) => {
+                    // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
+                    // A forwarded document can arrive in two mails, and a failed mail names no id: the time tells them apart.
+                    const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id ?? item.reminder_id ?? item.movement_id}:${item.created_at}`;
+                    return (
+                      <li key={key}>
+                        {isLineItem(item) ? (
+                          <LineEntry
+                            item={item}
+                            line={data.transactions.get(item.transaction_id ?? "")}
+                            account={privateAccount(data.accounts, item.account_id)}
+                            pressed={selected === item.transaction_id}
+                            onSelect={onSelect}
+                          />
+                        ) : (
+                          <OtherEntry item={item} data={data} onChanged={onChanged} />
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
           </section>
         );
       })}
