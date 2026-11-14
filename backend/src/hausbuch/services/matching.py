@@ -319,17 +319,49 @@ def build_context(
     whose own IBAN is no other own account's (D162: own_account_hmacs is every account with
     an IBAN except the line's own, and every card account's confirmed payment IBAN, D176 (4),
     so the debit that settles a card is a transfer by that IBAN alone; two cards printing the
-    same payment IBAN give it once, and the link decides by amount)."""
+    same payment IBAN give it once, and the link decides by amount). For a private line,
+    shared_iban_hmacs holds its counterparty IBAN hash when that IBAN is shared (D160 amended);
+    a rental line never gets one, so the rental account's IBAN logic is unchanged."""
     owners = own_account_hmacs(conn, except_account=account_id)
     plans, documents = _evidence(conn, iban_key=iban_key, today=today, exclude_for=for_transaction)
+    shared: list[str] = []
+    if account_purpose is AccountPurpose.PRIVATE and for_transaction is not None:
+        hmac = conn.execute(
+            select(transaction_table.c.counterparty_iban_hmac).where(
+                transaction_table.c.id == for_transaction
+            )
+        ).scalar_one_or_none()
+        if hmac is not None and is_shared_iban(conn, bytes(hmac)):
+            shared = [bytes(hmac).hex()]
     return MatchContext(
         account_purpose=account_purpose,
         own_account_hmacs=owners,
+        shared_iban_hmacs=shared,
         tenancies=_tenancies(conn),
         loans=_loans(conn),
         documents=documents,
         wirtschaftsplaene=plans,
     )
+
+
+def is_shared_iban(conn: Connection, hmac: bytes | None) -> bool:
+    """D160 amended: whether the lines of the workspace's private accounts with this IBAN hash
+    carry rules.matching.SHARED_IBAN_MIN_NAMES or more distinct payee names (computed on read,
+    nothing stored). False for no IBAN."""
+    if hmac is None:
+        return False
+    t = transaction_table.c
+    names = conn.execute(
+        select(t.counterparty_name)
+        .distinct()
+        .join(account_table, account_table.c.id == t.account_id)
+        .where(
+            account_table.c.purpose == AccountPurpose.PRIVATE.value,
+            t.counterparty_iban_hmac == hmac,
+            t.counterparty_name.is_not(None),
+        )
+    ).scalars()
+    return matchers.shared_iban(names)
 
 
 def _tenancies(conn: Connection) -> list[TenancyFacts]:
@@ -765,7 +797,12 @@ def deterministic_set(
     (D49), which the matchers come before: an exact rent, loan, owner or document match wins
     over it. Private: learned rules, the document match, then the tenant / lender question."""
     rules = rules_learned.rules_for_purpose(conn, context.account_purpose)
-    history = rule_history(conn, tx, context.account_purpose) if _any_hit(rules, tx) else []
+    shared = tx.counterparty_iban_hmac in context.shared_iban_hmacs
+    history = (
+        rule_history(conn, tx, context.account_purpose, shared=shared)
+        if _any_hit(rules, tx)
+        else []
+    )
     found = matchers.deterministic_answer(rules, tx, context, history)
     return None if found is None else _guarded(conn, found)
 
@@ -777,7 +814,11 @@ def _any_hit(rules: list[MatchingRule], tx: MatchTransaction) -> bool:
 
 
 def rule_history(
-    conn: Connection, tx: MatchTransaction, purpose: AccountPurpose = AccountPurpose.RENTAL
+    conn: Connection,
+    tx: MatchTransaction,
+    purpose: AccountPurpose = AccountPurpose.RENTAL,
+    *,
+    shared: bool = False,
 ) -> list[HistoryLine]:
     """The other lines from the line's IBAN hash with the same sign on accounts of the line's
     purpose (phase 6 D158: a private line of the same payee is not a kind of the rental
@@ -785,7 +826,9 @@ def rule_history(
     duplicate, with their current (not superseded) allocation rows, for rules.matching.
     rule_answer (D49), which keeps those whose rows are all confirmed. Each row carries its
     amount, scope and recurring flag, which an as_last_split rule copies (D51). Empty for a line
-    without an IBAN hash or of amount 0."""
+    without an IBAN hash or of amount 0. `shared` (D160 amended: the IBAN is shared): only the
+    lines of the line's own payee (rules.matching.same_payee) count, so the other payees of a
+    clearing IBAN are not "another kind" of this payee's payments."""
     if tx.counterparty_iban_hmac is None or tx.amount == 0:
         return []
     t = transaction_table.c
@@ -795,6 +838,7 @@ def rule_history(
             t.id,
             t.booking_date,
             t.amount,
+            t.counterparty_name,
             a.category,
             a.status,
             a.amount.label("part_amount"),
@@ -818,6 +862,8 @@ def rule_history(
     ).all()
     lines: dict[UUID, tuple[Row, list[HistoryRow]]] = {}
     for row in rows:
+        if shared and not matchers.same_payee(tx.counterparty_name, row.counterparty_name):
+            continue
         _, parts = lines.setdefault(row.id, (row, []))
         parts.append(
             HistoryRow(
@@ -1386,6 +1432,12 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
         if rule.matcher.counterparty_iban_hmac is not None:
             hmac = bytes.fromhex(rule.matcher.counterparty_iban_hmac)
             query = query.where(t.counterparty_iban_hmac == hmac)
+            if matchers.iban_only(rule.matcher) and is_shared_iban(conn, hmac):
+                # D160 amended: such a rule never applies to a private line of a shared IBAN
+                # (rules.matching.apply_rule), so none is re-checked; a rental line still is.
+                query = query.join(account_table, account_table.c.id == t.account_id).where(
+                    account_table.c.purpose != AccountPurpose.PRIVATE.value
+                )
         if rule.matcher.amount_sign == "credit":
             query = query.where(t.amount > 0)
         elif rule.matcher.amount_sign == "debit":
@@ -1432,21 +1484,26 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
 WAITING_AMOUNTS_LIMIT = 5
 
 
-def waiting_other_amounts(conn: Connection, tx: MatchTransaction) -> list[WaitingAmount]:
+def waiting_other_amounts(
+    conn: Connection, tx: MatchTransaction, *, shared: bool = False
+) -> list[WaitingAmount]:
     """D49: the amounts other than this line's that lines still waiting from its IBAN hash
     and sign carry (waiting as in waiting_lines: a reconciled import, not excluded, no
     confirmed row), each with its count, most frequent first (then the larger amount), at
-    most five. Empty for a line without an IBAN hash."""
+    most five. Empty for a line without an IBAN hash. `shared` (D160 amended: the line's
+    IBAN is shared): only the lines of the line's own payee count (rules.matching.same_payee,
+    the lines the IBAN-and-name rule would book); empty for a line without a name."""
     if tx.counterparty_iban_hmac is None or tx.amount == 0:
+        return []
+    if shared and matchers.merchant_pattern(tx.counterparty_name or "") == "^":
         return []
     t = transaction_table.c
     a = allocation_table.c
     confirmed = exists().where(
         a.transaction_id == t.id, a.status == AllocationStatus.CONFIRMED.value
     )
-    count = func.count().label("count")
-    rows = conn.execute(
-        select(t.amount, count)
+    waiting = (
+        select(t.amount, t.counterparty_name)
         .join(import_table, import_table.c.id == t.import_id)
         .where(
             import_table.c.status == ImportStatus.RECONCILED.value,
@@ -1457,8 +1514,22 @@ def waiting_other_amounts(conn: Connection, tx: MatchTransaction) -> list[Waitin
             t.id != tx.id,
             t.amount != tx.amount,
         )
-        .group_by(t.amount)
-        .order_by(count.desc(), func.abs(t.amount).desc())
+    )
+    if shared:
+        counts: dict[Decimal, int] = {}
+        for row in conn.execute(waiting).all():
+            if matchers.same_payee(tx.counterparty_name, row.counterparty_name):
+                counts[row.amount] = counts.get(row.amount, 0) + 1
+        ranked = sorted(counts.items(), key=lambda item: (-item[1], -abs(item[0])))
+        return [WaitingAmount(amount=amount, count=n) for amount, n in ranked][
+            :WAITING_AMOUNTS_LIMIT
+        ]
+    count = func.count().label("count")
+    sub = waiting.subquery()
+    rows = conn.execute(
+        select(sub.c.amount, count)
+        .group_by(sub.c.amount)
+        .order_by(count.desc(), func.abs(sub.c.amount).desc())
         .limit(WAITING_AMOUNTS_LIMIT)
     ).all()
     return [WaitingAmount(amount=r.amount, count=r.count) for r in rows]
@@ -1602,8 +1673,13 @@ def household_categorize_input(conn: Connection, line: Line) -> HouseholdCategor
 
 def _similar_private(conn: Connection, line: Line, limit: int = 5) -> list[tuple[str, list[str]]]:
     """The newest confirmed answers of private accounts for the same counterparty (by IBAN
-    hash, else by name), as (name, categories)."""
+    hash, else by name), as (name, categories). On a shared IBAN (D160 amended) by IBAN hash
+    and payee (rules.matching.same_payee), so another payee's answer is never shown as this
+    one's; none for such a line without a name."""
     t = transaction_table.c
+    shared = is_shared_iban(conn, line.counterparty_iban_hmac)
+    if shared and matchers.merchant_pattern(line.tx.counterparty_name or "") == "^":
+        return []
     if line.counterparty_iban_hmac is not None:
         same = t.counterparty_iban_hmac == line.counterparty_iban_hmac
     elif line.tx.counterparty_name:
@@ -1624,6 +1700,8 @@ def _similar_private(conn: Connection, line: Line, limit: int = 5) -> list[tuple
     ).all()
     by_tx: dict[UUID, tuple[str, list[str]]] = {}
     for row in rows:
+        if shared and not matchers.same_payee(line.tx.counterparty_name, row.counterparty_name):
+            continue
         if row.id not in by_tx:
             if len(by_tx) == limit:
                 break

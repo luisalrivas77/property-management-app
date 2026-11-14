@@ -484,9 +484,14 @@ class MatchContext(Schema):
     the line's own (services.matching.build_context).
     account_purpose: the purpose of the line's account (D158); rental unless stated, so every
     phase 2-5 caller and fixture keeps its meaning. open_legs: the other own accounts' unlinked
-    legs (D162), filled by services.transfers when it links a leg."""
+    legs (D162), filled by services.transfers when it links a leg. shared_iban_hmacs: the
+    line's own counterparty IBAN hash when it is a shared one (D160 amended 13 Nov 2026: on
+    the private accounts' lines it carries rules.matching.SHARED_IBAN_MIN_NAMES or more
+    payee names, like the clearing IBAN DKB's export puts on every card payment); filled by
+    services.matching.build_context for a private line only, empty otherwise."""
 
     own_account_hmacs: list[HmacHex] = Field(default_factory=list)
+    shared_iban_hmacs: list[HmacHex] = Field(default_factory=list)
     tenancies: list[TenancyFacts] = Field(default_factory=list)
     loans: list[LoanFacts] = Field(default_factory=list)
     documents: list[DocumentFacts] = Field(default_factory=list)

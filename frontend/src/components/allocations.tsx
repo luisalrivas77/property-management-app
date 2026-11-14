@@ -478,7 +478,7 @@ function AllocationEditor({
           {asked !== null ? (
             <fieldset className="allocation-same-amount">
               <legend>
-                Von dieser Bankverbindung warten auch Zahlungen über{" "}
+                Von {line.counterparty_name?.trim() || "dieser Bankverbindung"} warten auch Zahlungen über{" "}
                 {others.map((other) => `${formatMoney(unsigned(other.amount))} (${other.count}×)`).join(", ")}. Gehören die
                 auch zu {ALLOCATION_CATEGORY[asked]}?
               </legend>

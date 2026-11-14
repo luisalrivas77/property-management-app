@@ -36,10 +36,13 @@ amount itself stands only at the latest amount of its kind, read from the ledger
 An as_last_split rule (D51) copies the parts of the latest confirmed line of its category set
 from that history when the amount is the same; it never computes a part, so any other amount
 is no hit (and never a near-miss proposal).
+A shared IBAN (phase 6 D160 amended: a private account's clearing IBAN that carries many
+payees, shared_iban) names no payee: a rule on it alone never applies there, and a rule learned
+there is the IBAN plus the payee's name.
 """
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -259,8 +262,14 @@ def apply_rule(
 ) -> AllocationSet | None:
     """The rule's set for the line, or None when the rule is disabled, misses, or its split
     method does not fit the line exactly (it is then left to the matchers and review).
-    `history` (as for rule_answer) is read by as_last_split only, which copies from it."""
+    `history` (as for rule_answer) is read by as_last_split only, which copies from it.
+
+    D160 amended: a rule on the IBAN alone never applies to a line whose IBAN is shared
+    (context.shared_iban_hmacs), however it was learned (before the IBAN became shared, or on
+    another account): the IBAN does not name the payee there."""
     if not rule.enabled or not rule_hits(rule.matcher, tx):
+        return None
+    if iban_only(rule.matcher) and rule.matcher.counterparty_iban_hmac in context.shared_iban_hmacs:
         return None
     if rule.split_method is SplitMethod.AS_LAST_SPLIT:
         split = _as_last_split(rule, tx, history)
@@ -440,12 +449,18 @@ def infer_rule(
     rule.too_broad or rule.conflicts). A private line with an IBAN learns the same one-category
     rule on its IBAN, under the same limits; a tenant's or a lender's IBAN included, since a
     household rule never hits a rental line (rule_answer drops a hit its account does not take)
-    and that rule is D158's "the counterparty is also a private one"."""
+    and that rule is D158's "the counterparty is also a private one". D160 amended: on a
+    shared IBAN (context.shared_iban_hmacs) it is the IBAN plus the name pattern of _name_rule,
+    under _name_rule's checks."""
     if tx.amount == 0:
         return None
     if context.account_purpose is AccountPurpose.PRIVATE:
         if tx.counterparty_iban_hmac is None:
             return _name_rule(tx, confirmed, names)
+        if tx.counterparty_iban_hmac in context.shared_iban_hmacs:
+            # D160 amended: a shared IBAN names no payee, so the rule is the IBAN and the
+            # payee's name, checked like a name rule; None for a line without a name.
+            return _name_rule(tx, confirmed, names, iban_hmac=tx.counterparty_iban_hmac)
         if len(confirmed.allocations) != 1:
             return None
         (only,) = confirmed.allocations
@@ -963,6 +978,45 @@ def _name_found(pattern: str, name: str | None) -> bool:
     return _found(pattern, name) or _found(pattern, _merchant_text(name))
 
 
+# --- A shared counterparty IBAN (D160 amended 13 Nov 2026) ---------------------------------
+
+# DKB's CSV export puts one clearing IBAN on every card payment, so on a private account one
+# IBAN hash can carry dozens of payees. An IBAN whose private lines carry this many distinct
+# payee names (payee_key) names no payee: no rule on it alone, and everything else keyed by
+# the IBAN (the D49 history and question, the similar answers) is keyed by IBAN and name.
+SHARED_IBAN_MIN_NAMES = 2
+
+
+def payee_key(name: str | None) -> str:
+    """A payee name as merchant_pattern reads it (upper-cased, the //<Ort>/<Land> token,
+    digits, slashes and dots dropped, whitespace collapsed): two spellings of one merchant
+    ("Lieferdienst Beispiel" and "LIEFERDIENST BEISPIEL") are one payee."""
+    return _merchant_text(name or "")
+
+
+def shared_iban(names: Iterable[str | None]) -> bool:
+    """Whether an IBAN hash is shared: the counterparty names of its private lines hold at
+    least SHARED_IBAN_MIN_NAMES distinct payees (payee_key; no name is no payee)."""
+    return len({payee_key(n) for n in names} - {""}) >= SHARED_IBAN_MIN_NAMES
+
+
+def same_payee(name: str | None, other: str | None) -> bool:
+    """Whether `other` is a line of the payee `name`, on a shared IBAN: the name rule learned
+    from `name` (merchant_pattern) hits it, so the lines counted as the payee's are exactly
+    the lines its rule books. False when `name` holds nothing to match on."""
+    pattern = merchant_pattern(name or "")
+    return pattern != "^" and _name_found(pattern, other)
+
+
+def iban_only(matcher: RuleMatcher) -> bool:
+    """A rule on the IBAN hash alone (and the sign): no name or purpose pattern narrows it."""
+    return (
+        matcher.counterparty_iban_hmac is not None
+        and matcher.counterparty_name_pattern is None
+        and matcher.purpose_pattern is None
+    )
+
+
 def learnable_household(category: AllocationCategory) -> bool:
     """D160: a household code with a threshold that is not tax-relevant, or bank_fees (the
     shared code a private account's own fee lines take; they carry no counterparty, so their
@@ -980,12 +1034,16 @@ def _name_rule(
     tx: MatchTransaction,
     confirmed: AllocationSet,
     names: Sequence[NameHistory],
+    *,
+    iban_hmac: str | None = None,
 ) -> MatchingRuleCreate | None:
     """D160: on a private account, a single-category answer of a learnable household code for
     a line without an IBAN becomes a rule on the merchant's name. Not for a split. Refused when
     the account's confirmed lines the pattern hits carry two or more categories (rule.too_broad:
     the name does not tell the kind, so the card asks for a purpose pattern) or one category
-    other than the answer's (rule.conflicts); too_broad is checked first."""
+    other than the answer's (rule.conflicts); too_broad is checked first. D160 amended: with
+    `iban_hmac` (a shared IBAN) the rule matches the IBAN and the name, both; the checks run
+    on the name over every private line, as without it (stricter than the IBAN's lines)."""
     if len(confirmed.allocations) != 1:
         return None
     (only,) = confirmed.allocations
@@ -1005,6 +1063,7 @@ def _name_rule(
         raise RuleError(RULE_CONFLICTS, "the pattern hits a line confirmed otherwise")
     return MatchingRuleCreate(
         matcher=RuleMatcher(
+            counterparty_iban_hmac=iban_hmac,
             counterparty_name_pattern=pattern,
             amount_sign="credit" if tx.amount > 0 else "debit",
         ),

@@ -38,8 +38,28 @@ const HISTORY_NO_MATCH = "exchange.withdrawal_history_no_match";
  * "0,00009965". */
 export function formatUnits(value: string | null | undefined): string {
   if (value == null || value === "") return "–";
-  const trimmed = value.includes(".") ? value.replace(/0+$/, "").replace(/\.$/, "") : value;
+  const plain = plainDecimal(value);
+  const trimmed = plain.includes(".") ? plain.replace(/0+$/, "").replace(/\.$/, "") : plain;
   return formatDecimal(trimmed === "-0" ? "0" : trimmed);
+}
+
+/** A decimal string in plain notation: "0E-10" → "0.0000000000", "1E+2" → "100". The API
+ * writes plain notation since 13 Nov 2026; this only guards against an exponent string, by
+ * moving the decimal point in the text (never through a float). Anything else is returned as
+ * it is. */
+function plainDecimal(value: string): string {
+  const match = /^(-?)(\d*)(?:\.(\d*))?[eE]([+-]?\d+)$/.exec(value.trim());
+  if (!match) return value;
+  const [, sign = "", whole = "", fraction = "", exponent = "0"] = match;
+  const digits = whole + fraction;
+  const point = whole.length + Number(exponent);
+  let text: string;
+  if (point <= 0) text = `0.${"0".repeat(-point)}${digits}`;
+  else if (point >= digits.length) text = digits + "0".repeat(point - digits.length);
+  else text = `${digits.slice(0, point)}.${digits.slice(point)}`;
+  const [integer = "", rest] = text.split(".");
+  const cleaned = (integer.replace(/^0+(?=\d)/, "") || "0") + (rest !== undefined ? `.${rest}` : "");
+  return sign + cleaned;
 }
 
 /** The UTC day of a timestamp the API sends ("2026-03-04T10:00:00Z" → "04.03.2026"), as the
@@ -476,7 +496,7 @@ function HoldingsForm({ statementImport: imp, onDone }: { statementImport: Excha
     Object.fromEntries(
       (imp.balances ?? []).map((balance) => [
         balance.asset_id,
-        balance.typed != null ? formatUnits(balance.typed).replace(/\./g, "") : /^-?0*\.?0*$/.test(balance.held) ? "0" : "",
+        balance.typed != null ? formatUnits(balance.typed).replace(/\./g, "") : /^-?0*\.?0*$/.test(plainDecimal(balance.held)) ? "0" : "",
       ]),
     ),
   );

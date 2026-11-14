@@ -252,7 +252,13 @@ def _response(
         learn_rule_default=default,
         no_default_rule_categories=[c for c in AllocationCategory if THRESHOLDS[c] is None],
         unlearnable_categories=_unlearnable(line),
-        waiting_other_amounts=matching.waiting_other_amounts(conn, tx) if can_learn else [],
+        waiting_other_amounts=(
+            matching.waiting_other_amounts(
+                conn, tx, shared=tx.counterparty_iban_hmac in context.shared_iban_hmacs
+            )
+            if can_learn
+            else []
+        ),
         rule=rule,
     )
 
