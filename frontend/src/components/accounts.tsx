@@ -22,7 +22,7 @@ import type {
 } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-import { documentLabel } from "./documents";
+import { documentLabel, storeAsDocument, StoredAsDocument, UPLOAD_ACCEPT, type Uploaded } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatDate, formatDateTime, formatMoney, formatSharePercent } from "./format";
 import { decimalInput, toSignedMoneyString } from "./input";
@@ -100,16 +100,25 @@ export function StatementUpload({
   const [over, setOver] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [results, setResults] = useState<Imported[]>([]);
+  const [stored, setStored] = useState<Uploaded[]>([]);
 
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return;
     setBusy(true);
     setError(null);
     setResults([]);
+    setStored([]);
     try {
       for (const file of Array.from(files)) {
-        const result = await importStatement(accountId, file);
-        setResults((previous) => [...previous, result]);
+        try {
+          const result = await importStatement(accountId, file);
+          setResults((previous) => [...previous, result]);
+        } catch (caught) {
+          // Not a statement this account reads: any other document is kept and read by the AI.
+          if (!isUnknownFormat(caught)) throw caught;
+          const result = await storeAsDocument(file);
+          setStored((previous) => [...previous, result]);
+        }
       }
     } catch (caught) {
       setError(caught);
@@ -142,7 +151,7 @@ export function StatementUpload({
           ref={input}
           id={inputId}
           type="file"
-          accept={card || depot ? CARD_STATEMENT_ACCEPT : STATEMENT_ACCEPT}
+          accept={`${card || depot ? CARD_STATEMENT_ACCEPT : STATEMENT_ACCEPT},${UPLOAD_ACCEPT}`}
           multiple
           disabled={busy}
           onChange={(event: ChangeEvent<HTMLInputElement>) => void upload(event.target.files)}
@@ -150,38 +159,31 @@ export function StatementUpload({
         {card ? (
           <p className="muted hint">
             Die monatliche Abrechnung als PDF, so wie sie im Kundenportal der Karte steht. Hausbuch liest sie selbst, ohne KI,
-            und prüft, dass Alter Saldo und Umsätze den Neuen Saldo ergeben. Datei hierher ziehen oder auswählen.
+            und prüft, dass Alter Saldo und Umsätze den Neuen Saldo ergeben. Jedes andere Dokument kommt unter Dokumente, und die KI
+            liest es. Datei hierher ziehen oder auswählen.
           </p>
         ) : depot ? (
           <p className="muted hint">
             Der Kontoauszug des Depots als PDF, so wie er im Postfach der Bank steht. Hausbuch liest ihn selbst, ohne KI, und
-            prüft, dass Anfangssaldo und Buchungen den Endsaldo ergeben. Wertpapierabrechnungen und Berichte gehören unter
-            Dokumente. Datei hierher ziehen oder auswählen.
+            prüft, dass Anfangssaldo und Buchungen den Endsaldo ergeben. Jedes andere Dokument des Depots (Abrechnung, Bericht,
+            Vertrag) kann auch hier hochgeladen werden: es kommt unter Dokumente, und die KI liest es. Datei hierher ziehen oder
+            auswählen.
           </p>
         ) : (
           <p className="muted hint">
             Sparkasse „Umsätze exportieren“: camt als ZIP (bevorzugt, mit Salden) oder CSV-CAMT; auch eine einzelne camt-XML.
-            DKB: der CSV-Export der Umsätze aus dem Online-Banking. Datei hierher ziehen oder auswählen.
+            DKB: der CSV-Export der Umsätze aus dem Online-Banking. Jedes andere Dokument kommt unter Dokumente, und die KI liest es.
+            Datei hierher ziehen oder auswählen.
           </p>
         )}
       </div>
       {results.map((result, index) => (
         <ImportResult key={index} result={result} />
       ))}
-      {(card || depot) && isUnknownFormat(error) ? (
-        <div className="notice notice-warn" role="status">
-          <p>
-            {depot
-              ? "Das ist kein Kontoauszug des Depots. Hier wird nur der Kontoauszug (die Liste der Buchungen mit Anfangs- und Endsaldo) eingelesen."
-              : "Das ist keine Kreditkartenabrechnung, die Hausbuch lesen kann."}{" "}
-            Andere Unterlagen – zum Beispiel Wertpapierabrechnungen, Ein- und Ausbuchungen, Quartals- und Steuerberichte oder
-            Verträge – unter <Link href="/documents">Dokumente</Link> mit „Dokumente hochladen“ hochladen: dort liest die KI sie
-            und schlägt vor, was daraus übernommen wird.
-          </p>
-        </div>
-      ) : (
-        <ErrorNotice error={error} />
-      )}
+      {stored.map((result, index) => (
+        <StoredAsDocument key={index} result={result} what={card ? "keine Kreditkartenabrechnung, als Dokument übernommen." : "kein Kontoauszug, als Dokument übernommen."} />
+      ))}
+      <ErrorNotice error={error} />
     </div>
   );
 }

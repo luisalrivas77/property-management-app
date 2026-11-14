@@ -22,6 +22,7 @@ import type {
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { statementMediaType } from "./accounts";
+import { storeAsDocument, StoredAsDocument, UPLOAD_ACCEPT, type Uploaded as StoredUpload } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatDate, formatDateTime, formatDecimal, formatMoney } from "./format";
 import { toDecimalString } from "./input";
@@ -97,6 +98,11 @@ async function uploadExport(accountId: string, file: File): Promise<Uploaded> {
   return { upload, existed: response.status === 200 && upload.movement_import != null, fileName: file.name };
 }
 
+/** An exchange export is a CSV or a ZIP (Binance); a PDF, image or anything else is a document. */
+function isExportFile(file: File): boolean {
+  return /\.(csv|zip)$/i.test(file.name) || /csv|zip/.test(file.type);
+}
+
 /** The drop zone for an exchange's export; one notice per file afterwards. */
 export function ExchangeExportUpload({
   accountId,
@@ -115,16 +121,24 @@ export function ExchangeExportUpload({
   const [over, setOver] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [results, setResults] = useState<Uploaded[]>([]);
+  const [stored, setStored] = useState<StoredUpload[]>([]);
 
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return;
     setBusy(true);
     setError(null);
     setResults([]);
+    setStored([]);
     try {
       // One at a time, in the order chosen: Binance's transaction history must come before its
       // withdrawal history (exchange.transactions_first).
       for (const file of Array.from(files)) {
+        if (!isExportFile(file)) {
+          // Not a CSV or ZIP export: any other document of the exchange is kept and read by the AI.
+          const result = await storeAsDocument(file);
+          setStored((previous) => [...previous, result]);
+          continue;
+        }
         const result = await uploadExport(accountId, file);
         setResults((previous) => [...previous, result]);
       }
@@ -157,7 +171,7 @@ export function ExchangeExportUpload({
           ref={input}
           id={inputId}
           type="file"
-          accept={EXCHANGE_EXPORT_ACCEPT}
+          accept={`${EXCHANGE_EXPORT_ACCEPT},${UPLOAD_ACCEPT}`}
           multiple
           disabled={busy}
           onChange={(event: ChangeEvent<HTMLInputElement>) => void upload(event.target.files)}
@@ -167,17 +181,21 @@ export function ExchangeExportUpload({
             Binance: zuerst den Transaktionsverlauf („Transaction History“), danach den Auszahlungsverlauf („Withdrawal
             History“), beide als CSV oder als die ZIP-Datei, in der Binance sie schickt. Den Spot-Handelsverlauf braucht Hausbuch
             nicht. Hausbuch liest die Dateien selbst, ohne KI; die Nutzer-ID und die Zieladressen der Auszahlungen speichert es
-            nicht. Datei hierher ziehen oder auswählen.
+            nicht. Jedes andere Dokument kommt unter Dokumente, und die KI liest es. Datei hierher ziehen oder auswählen.
           </p>
         ) : (
           <p className="muted hint">
             BISON: der Export der Transaktionen als CSV aus der App (Einstellungen, Steuern und Exporte). Hausbuch liest ihn
-            selbst, ohne KI. Datei hierher ziehen oder auswählen.
+            selbst, ohne KI. Jedes andere Dokument kommt unter Dokumente, und die KI liest es. Datei hierher ziehen oder
+            auswählen.
           </p>
         )}
       </div>
       {results.map((result, index) => (
         <UploadResult key={index} result={result} />
+      ))}
+      {stored.map((result, index) => (
+        <StoredAsDocument key={index} result={result} what="kein Export der Börse, als Dokument übernommen." />
       ))}
       <ErrorNotice error={error} />
     </div>
