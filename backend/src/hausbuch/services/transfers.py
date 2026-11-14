@@ -30,7 +30,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Connection, Row, func, insert, or_, select, update
+from sqlalchemy import Connection, Row, Select, func, insert, or_, select, update
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
@@ -219,6 +219,18 @@ def _transfer_booked(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, Alloca
         for tx_id, category in _one_category(conn, ids).items()
         if category in TRANSFER_CATEGORIES
     }
+
+
+def _with_transfer_row() -> Select:
+    """The lines with a live, non-zero row of a transfer category: the only lines whose leg
+    can be booked as a transfer (_one_category, _transfer_booked), so open_transfers reads
+    those instead of every line and its rows (14 Nov 2026: most of GET /inbox's time)."""
+    a = allocation_table.c
+    return select(a.transaction_id).where(
+        a.status.in_(_LIVE),
+        a.amount != 0,
+        a.category.in_([c.value for c in TRANSFER_CATEGORIES]),
+    )
 
 
 def _line_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
@@ -712,7 +724,8 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
     linked = _linked_ids(conn)
     waiting = [
         leg
-        for leg in _line_legs(conn) + _movement_legs(conn)
+        for leg in _line_legs(conn, transaction_table.c.id.in_(_with_transfer_row()))
+        + _movement_legs(conn)
         if leg.booked is not None and leg.leg.id not in linked
     ]
     items = []
