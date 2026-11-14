@@ -355,6 +355,35 @@ def _legs_between(
     return lines + moves
 
 
+class _Window:
+    """Every leg booked between two dates, read once, so open_transfers can take each card's
+    window from memory instead of reading it again per card (14 Nov 2026: 38 cards, each
+    reading two months of every account twice, were 1.6–1.9 s of GET /inbox's 2 s).
+    between() returns what _legs_between would for a sub-window: both reads are ordered by a
+    unique key (booking date and id, occurred_at and id), so a date filter keeps that order,
+    and a movement's booked_on is its occurred_at date as the database's func.date gives it
+    (the driver returns timestamptz in the session's time zone). It also keeps own_account_
+    hmacs per account, which _context asks for once per leg."""
+
+    def __init__(self, conn: Connection, start: date, end: date) -> None:
+        legs = _legs_between(conn, start, end)
+        self.lines = [leg for leg in legs if leg.leg.source is TransferLegSource.TRANSACTION]
+        self.moves = [leg for leg in legs if leg.leg.source is not TransferLegSource.TRANSACTION]
+        self.start, self.end = start, end
+        self._hmacs: dict[UUID, list[str]] = {}
+
+    def between(self, start: date, end: date) -> list[_Leg]:
+        assert self.start <= start and end <= self.end, "window outside the read span"
+        return [leg for leg in self.lines if start <= leg.leg.booked_on <= end] + [
+            leg for leg in self.moves if start <= leg.leg.booked_on <= end
+        ]
+
+    def hmacs(self, conn: Connection, account_id: UUID) -> list[str]:
+        if account_id not in self._hmacs:
+            self._hmacs[account_id] = own_account_hmacs(conn, except_account=account_id)
+        return self._hmacs[account_id]
+
+
 def _one_leg(conn: Connection, source: TransferLegSource, leg_id: UUID) -> _Leg | None:
     if source is TransferLegSource.TRANSACTION:
         found = _line_legs(conn, transaction_table.c.id == leg_id)
@@ -375,10 +404,16 @@ def own_account_hmacs(conn: Connection, *, except_account: UUID | None = None) -
     return sorted({bytes(h).hex() for h in conn.execute(query).scalars()})
 
 
-def _context(conn: Connection, leg: _Leg, others: Iterable[_Leg]) -> MatchContext:
+def _context(
+    conn: Connection, leg: _Leg, others: Iterable[_Leg], window: _Window | None = None
+) -> MatchContext:
     return MatchContext(
         account_purpose=leg.purpose,
-        own_account_hmacs=own_account_hmacs(conn, except_account=leg.leg.account_id),
+        own_account_hmacs=(
+            window.hmacs(conn, leg.leg.account_id)
+            if window is not None
+            else own_account_hmacs(conn, except_account=leg.leg.account_id)
+        ),
         open_legs=[o.leg for o in others],
     )
 
@@ -434,17 +469,23 @@ def _write(
 
 
 def _both_ways(
-    conn: Connection, leg: _Leg, pair: TransferCandidate, linked: set[UUID], today: date
+    conn: Connection,
+    leg: _Leg,
+    pair: TransferCandidate,
+    linked: set[UUID],
+    today: date,
+    window: _Window | None = None,
 ) -> bool:
     """D162 from the counterpart's side too: it must see this leg as its only fit, so one of
     two equal legs is never linked while the other's card asks which (transfer.ambiguous)."""
     other_id = pair.in_leg.id if pair.out_leg.id == leg.leg.id else pair.out_leg.id
-    near = _legs_between(conn, leg.leg.booked_on - 2 * _AROUND, leg.leg.booked_on + 2 * _AROUND)
+    start, end = leg.leg.booked_on - 2 * _AROUND, leg.leg.booked_on + 2 * _AROUND
+    near = window.between(start, end) if window is not None else _legs_between(conn, start, end)
     counter = next((o for o in near if o.leg.id == other_id), None)
     if counter is None:
         return False
     rest = [o for o in near if o.leg.id not in linked and o.leg.id != other_id]
-    back = match_transfer(counter.leg, _context(conn, counter, rest), today=today)
+    back = match_transfer(counter.leg, _context(conn, counter, rest, window), today=today)
     if back.category is not None:
         return back.link is not None and leg.leg.id in (back.link.out_leg.id, back.link.in_leg.id)
     fits = [
@@ -740,17 +781,25 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
         if leg.booked is not None and leg.leg.id not in linked
     ]
     items = []
+    if not waiting:
+        return items
+    # One read for every card's window (±_BY_HAND, which covers _both_ways' ±2·_AROUND).
+    window = _Window(
+        conn,
+        min(leg.leg.booked_on for leg in waiting) - _BY_HAND,
+        max(leg.leg.booked_on for leg in waiting) + _BY_HAND,
+    )
     for leg in waiting:
         start, end = leg.leg.booked_on - _BY_HAND, leg.leg.booked_on + _BY_HAND
         others = [
             o
-            for o in _legs_between(conn, start, end)
+            for o in window.between(start, end)
             if o.leg.id not in linked and o.leg.account_id != leg.leg.account_id
         ]
         near = [o for o in others if abs(o.leg.booked_on - leg.leg.booked_on) <= _AROUND]
-        found = match_transfer(leg.leg, _context(conn, leg, near), today=today)
+        found = match_transfer(leg.leg, _context(conn, leg, near, window), today=today)
         by_id = {o.leg.id: o for o in others}
-        if found.link is not None and not _both_ways(conn, leg, found.link, linked, today):
+        if found.link is not None and not _both_ways(conn, leg, found.link, linked, today, window):
             continue  # one of several equal legs: the counterpart's card asks which
         if found.link is not None or found.proposed_link is not None:
             pair = found.link or found.proposed_link
