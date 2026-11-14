@@ -68,7 +68,8 @@ from .iban import protect_iban, protect_ref
 
 # Codes of this service (frontend/src/api/errors.ts has their German text).
 DEPOT_ACCOUNT_REQUIRED = "depot.account_required"  # the account picked is no depot
-DEPOT_MOVEMENT_EXISTS = "depot.movement_exists"  # same reference, or same day and amount
+# Same reference and fund, or (no reference) same fund, day and amount.
+DEPOT_MOVEMENT_EXISTS = "depot.movement_exists"
 DEPOT_HOLDING_EXISTS = "depot.holding_exists"  # a report of that date is applied already
 
 # The cash line of a trade or a distribution is booked on the Valuta, a few bank days after
@@ -262,19 +263,21 @@ def _cash_line(conn: Connection, values: DepotMovementValues) -> UUID | None:
 def record_movement(ctx: CommandContext, values: DepotMovementValues, document_id: UUID) -> UUID:
     """One confirmed movement read from a depot document, with its cash line when exactly one
     fits. Refused when the account is no depot, and when the document was applied already: a
-    current movement of the account carries the same reference and kind, or, for a movement
-    without a reference (a distribution note names none), the same fund, kind, day and
-    amount."""
+    current movement of the account carries the same reference, fund and kind (an Einbuchung
+    names one reference for all its positions, so the fund tells them apart; 14 Nov 2026), or,
+    for a movement without a reference (a distribution note names none), the same fund, kind,
+    day and amount."""
     _require_depot(ctx.conn, values.account_id)
     m = movement_table.c
+    known = ctx.conn.execute(
+        select(asset_table.c.id).where(asset_table.c.isin == values.isin)
+    ).all()
+    same_fund = m.asset_id.in_([r.id for r in known])
     if values.external_ref is not None:
-        same = [m.external_ref == values.external_ref]
+        same = [m.external_ref == values.external_ref, same_fund]
     else:
-        known = ctx.conn.execute(
-            select(asset_table.c.id).where(asset_table.c.isin == values.isin)
-        ).all()
         same = [
-            m.asset_id.in_([r.id for r in known]),
+            same_fund,
             m.occurred_at >= _at(values.occurred_on),
             m.occurred_at < _at(values.occurred_on + timedelta(days=1)),
             m.eur_amount.is_(None)

@@ -317,6 +317,50 @@ def test_an_ausbuchung_and_its_einbuchung_are_one_transfer_that_keeps_the_units(
     assert read(ws, depot.transfer_pair, pair) == rows["internal_transfer_out"].id
 
 
+def test_an_einbuchung_of_several_funds_under_one_reference_books_every_position(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    job,
+    enqueued,  # noqa: F811
+):
+    """An Einbuchung names one reference for all its positions, so the twin check tells them
+    apart by the fund (14 Nov 2026: a real Einbuchung of several ETFs booked its first position
+    and refused the second as already booked). A second upload is still refused."""
+    ws, _ = fresh_workspaces
+    taking = _account(run, ws, label="Depot B")
+    fields = {
+        "direction": _v("Einbuchung"),
+        "transfer_date": _v("2026-04-02"),
+        "reference": _v("UMB0002"),
+        "positions": _v(
+            [
+                f"{ISIN_WORLD} | Beispiel Welt ETF | 3,0000",
+                f"{ISIN_CASH} | Beispiel Euro Geldmarkt | 1,5000",
+            ]
+        ),
+    }
+    first = _read(run, job, ws, blob_store, enqueued, DocumentSubtype.SECURITIES_TRANSFER, fields)
+    keys = sorted(r.key for r in first.records if r.key.startswith("movement:"))
+    assert keys == ["movement:1", "movement:2"]
+    _apply(run, ws, first, **{k: {"account_id": str(taking.id)} for k in keys})
+
+    rows = _rows(read, ws, movement_table)
+    assets = {r.id: r.isin for r in _rows(read, ws, asset_table)}
+    booked = sorted((assets[r.asset_id], r.kind, r.quantity) for r in rows)
+    assert booked == [
+        (ISIN_WORLD, "internal_transfer_in", Decimal("3.0000")),
+        (ISIN_CASH, "internal_transfer_in", Decimal("1.5000")),
+    ]
+
+    second = _read(run, job, ws, blob_store, enqueued, DocumentSubtype.SECURITIES_TRANSFER, fields)
+    with pytest.raises(RuleError) as refused:
+        _apply(run, ws, second, **{k: {"account_id": str(taking.id)} for k in keys})
+    assert refused.value.code == depot.DEPOT_MOVEMENT_EXISTS
+    assert len(_rows(read, ws, movement_table)) == 2
+
+
 def test_a_transfer_names_its_depot_in_its_explanation_once_it_is_booked_there(
     run,
     read,
