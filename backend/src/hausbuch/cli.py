@@ -18,6 +18,8 @@ HAUSBUCH_EVAL_DIR to the model, live, and compares each reading with its golden 
 `household-reask` runs services.matching.reask_household once for a workspace, with the same
 owner URL: it queues a re-ask job per private line parked in a coarse household code, which the
 API container's worker runs (the model key stays there). --dry-run counts and queues nothing.
+--category names the codes to re-ask (repeatable; e.g. hh_mobility after migration 0031 split
+fuel off), by default the codes migration 0029 split up.
 """
 
 import argparse
@@ -217,16 +219,33 @@ class _DryRun(Exception):
 
 def household_reask(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.allocation import AllocationCategory
     from hausbuch.schemas.enums import ActorType
     from hausbuch.services.context import Actor, new_command
-    from hausbuch.services.matching import reask_household
+    from hausbuch.services.matching import (
+        REASK_CATEGORIES,
+        REASKABLE_CATEGORIES,
+        reask_household,
+    )
+
+    categories = REASK_CATEGORIES
+    if args.category:
+        allowed = {c.value for c in REASKABLE_CATEGORIES}
+        unknown = sorted(set(args.category) - allowed)
+        if unknown:
+            raise CliError(
+                f"cannot re-ask {', '.join(unknown)}; --category takes one of "
+                f"{', '.join(sorted(allowed))}"
+            )
+        categories = frozenset(AllocationCategory(c) for c in args.category)
 
     engine = owner_engine(environ)
     try:
         try:
             with workspace_transaction(engine, args.workspace) as conn:
                 actor = Actor(ActorType.SYSTEM, "cli:household-reask")
-                result = reask_household(new_command(conn, args.workspace, actor))
+                ctx = new_command(conn, args.workspace, actor)
+                result = reask_household(ctx, categories)
                 if args.dry_run:
                     raise _DryRun
         except _DryRun:
@@ -325,10 +344,18 @@ def _parser() -> argparse.ArgumentParser:
 
     reask = commands.add_parser(
         "household-reask",
-        help="ask the model again for private lines parked in a coarse household category "
-        "(once, after migration 0029)",
+        help="ask the model again for private lines still proposed in a coarse household "
+        "category (after a migration that adds finer ones: 0029, 0031)",
     )
     reask.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    reask.add_argument(
+        "--category",
+        action="append",
+        metavar="CODE",
+        help="re-ask the lines proposed in this code, repeatable (e.g. hh_mobility after 0031); "
+        "default: the codes 0029 split up (hh_other, uncategorized, hh_leisure_travel, "
+        "hh_subscriptions, hh_housing)",
+    )
     reask.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
     reask.set_defaults(command=household_reask, command_name="household-reask")
 

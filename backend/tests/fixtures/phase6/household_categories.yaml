@@ -78,6 +78,9 @@ codes:
   - {category: hh_travel, label: "Reisen", group: travel, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_investment, label: "Geldanlage", group: investment, relevance: transfer, treatment: private, threshold: null}
   - {category: hh_refund, label: "Erstattung", group: refund, relevance: spending, treatment: private, threshold: null}
+  # D159 amended 14 Nov 2026 (migration 0031, Luis: "I want to add Gas (car) category"): fuel
+  # apart from hh_mobility, inside the same Mobilität group (no group of its own).
+  - {category: hh_fuel, label: "Tanken (Auto)", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
   # The depot's own bookings (D165 (1))
   - {category: security_purchase, group: depot, relevance: transfer, treatment: private, threshold: null}
   - {category: security_sale, group: depot, relevance: transfer, treatment: private, threshold: null}

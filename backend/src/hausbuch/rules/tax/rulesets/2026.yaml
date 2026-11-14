@@ -226,6 +226,7 @@ form:
     hh_travel: null
     hh_investment: null
     hh_refund: null
+    hh_fuel: null  # phase 6 D159 amended 14 Nov 2026 (migration 0031): private, on no form
     security_purchase: null
     security_sale: null
     distribution: null

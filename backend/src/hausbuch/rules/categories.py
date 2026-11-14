@@ -94,6 +94,7 @@ TAX_TREATMENT = MappingProxyType(
         C.HH_TRAVEL: T.PRIVATE,
         C.HH_INVESTMENT: T.PRIVATE,
         C.HH_REFUND: T.PRIVATE,
+        C.HH_FUEL: T.PRIVATE,  # D159 amended 14 Nov 2026 (migration 0031)
         # The depot's own bookings (D165 (1)); phase 8 reads distribution and
         # capital_income_tax.
         C.SECURITY_PURCHASE: T.PRIVATE,
@@ -185,6 +186,7 @@ CATEGORY_LABEL = MappingProxyType(
         C.HH_TRAVEL: "Reisen",
         C.HH_INVESTMENT: "Geldanlage",
         C.HH_REFUND: "Erstattung",
+        C.HH_FUEL: "Tanken (Auto)",  # D159 amended 14 Nov 2026 (migration 0031)
         C.SECURITY_PURCHASE: "Wertpapierkauf",
         C.SECURITY_SALE: "Wertpapierverkauf",
         C.DISTRIBUTION: "Ausschüttung oder Dividende",

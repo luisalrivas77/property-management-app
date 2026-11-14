@@ -19,7 +19,8 @@ quarterly, yearly), false for a one-off payment.
 - `hh_housing`: the household's own home: its rent or Hausgeld, energy, water, broadcasting fee
 - `hh_groceries`: supermarket, bakery, drugstore (Lebensmittel und Drogerie)
 - `hh_family_child`: children's clothing, school, toys, family costs
-- `hh_mobility`: fuel, public transport, car costs, taxi, bicycle
+- `hh_mobility`: public transport, taxi, parking, car repairs and other car costs, bicycle (not fuel)
+- `hh_fuel`: petrol stations, fuel, charging an electric car
 - `hh_insurance`: an insurance premium of the household
 - `hh_subscriptions`: a subscription or contract not named below: streaming, newspapers, memberships, apps for private use
 - `hh_leisure_travel`: leisure and hobbies: cinema, concerts, museums, games, hobby supplies

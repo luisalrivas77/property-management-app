@@ -9556,6 +9556,7 @@
           "hh_travel",
           "hh_investment",
           "hh_refund",
+          "hh_fuel",
           "security_purchase",
           "security_sale",
           "distribution",

@@ -112,6 +112,8 @@ class AllocationCategory(StrEnum):
     HH_TRAVEL = "hh_travel"  # private (Reisen; hh_leisure_travel is now Freizeit & Hobbys)
     HH_INVESTMENT = "hh_investment"  # private (Geldanlage on a platform the app does not hold)
     HH_REFUND = "hh_refund"  # private (Erstattung: lowers spending, never income)
+    # Phase 6 D159 amended 14 Nov 2026 (migration 0031, Luis): fuel apart from hh_mobility.
+    HH_FUEL = "hh_fuel"  # private (Tanken (Auto); group mobility)
     # --- Phase 6 D165: the depot's own cash bookings, by booking text in code (rules.depot);
     # not hh_* because phase 8's KAP rules read distribution and capital_income_tax.
     SECURITY_PURCHASE = "security_purchase"  # private
