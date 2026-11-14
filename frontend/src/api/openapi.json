@@ -10972,6 +10972,16 @@
             "type": "boolean",
             "title": "Auto Sync Allowed",
             "default": true
+          },
+          "statements_refusal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatementsRefusal"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -15050,6 +15060,8 @@
           "account.sync_completed",
           "account.sync_failed",
           "account.statement_fetched",
+          "account.statements_refused",
+          "account.statements_answered",
           "account.bank_parameters_read",
           "account.kind_set",
           "account.ownership_set",
@@ -17204,6 +17216,7 @@
           "bank_approval_needed",
           "bank_sync_failed",
           "bank_balance_drift",
+          "bank_statements_refused",
           "email_received",
           "email_failed",
           "email_inbox_failed",
@@ -25303,6 +25316,42 @@
         ],
         "title": "StatementNewAccount",
         "description": "„Konto anlegen und einlesen“ (phase 6, 13 Nov 2026, amends D176 (3) and D165 (b)): the\naccount the file's own content implies, offered when no account holds the file's IBAN or\nnumber yet. The kind comes from the format; `bank`, `provider` and `label` are suggestions\nthe person edits (None where the format does not tell, e.g. a camt file); the identifier is\nshown masked only (an IBAN as „DE89 **** 3000“, a number as „**** 4567“) and never travels\nback from the browser: POST /documents/{id}/statement-account reads it from the original."
+      },
+      "StatementsRefusal": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{4}$",
+            "title": "Code"
+          },
+          "year": {
+            "type": "integer",
+            "maximum": 9999.0,
+            "minimum": 1000.0,
+            "title": "Year"
+          },
+          "number": {
+            "type": "integer",
+            "maximum": 99999.0,
+            "minimum": 1.0,
+            "title": "Number"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "year",
+          "number",
+          "at"
+        ],
+        "title": "StatementsRefusal",
+        "description": "The bank's latest unresolved refusal of the PDF statement fetch because the access may\nnot fetch statements at all (account.statements_refused, 14 Nov 2026): its answer code,\nthe statement asked and when. Ends once a later run's HKEKP is answered without it."
       },
       "SumComponent": {
         "properties": {

@@ -38,7 +38,7 @@ import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodeText } from "@/api/errors";
-import type { Account, BankConnection, BankStatement, BankSync, SyncStatus } from "@/api/schemas";
+import type { Account, BankConnection, BankStatement, BankSync, StatementsRefusal, SyncStatus } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { Field, FormBanner, Submit, useFormErrors } from "./form";
@@ -237,6 +237,12 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
             hint={FETCH_STATEMENTS_HINT}
             onSaved={reload}
           />
+          {state.data.connection.statements_refusal ? (
+            <StatementsRefused
+              refusal={state.data.connection.statements_refusal}
+              bankName={state.data.connection.bank_name ?? null}
+            />
+          ) : null}
           <div className="row">
             <button type="button" onClick={() => void start()} disabled={starting || busy}>
               {starting ? "Startet …" : busy ? "Abruf läuft …" : expired ? "Erneut abrufen" : "Jetzt abrufen"}
@@ -357,6 +363,29 @@ const FETCH_STATEMENTS_HINT = (
     Auszügen, die die Bank schon erstellt hat, und fordert nie einen neuen an.
   </>
 );
+
+/** What a permission refusal code of the PDF statement fetch means (14 Nov 2026). */
+const STATEMENTS_REFUSAL_MEANING: Record<string, string> = {
+  "9370": "Signaturberechtigung reicht nicht aus",
+  "9380": "keine Auftragsberechtigung",
+};
+
+/** The bank refuses this access the PDF statements (14 Nov 2026: 9370 on HKEKP): what it
+ * means and how to get it unlocked. Shown while the switch is on and no later run's request
+ * was answered without that refusal. */
+function StatementsRefused({ refusal, bankName }: { refusal: StatementsRefusal; bankName: string | null }) {
+  const meaning = STATEMENTS_REFUSAL_MEANING[refusal.code];
+  const code = meaning ? `Code ${refusal.code}: ${meaning}` : `Code ${refusal.code}`;
+  const bank = bankName ?? "Bank";
+  return (
+    <p className="notice notice-warn" role="status">
+      Die {bank} erlaubt diesem Online-Banking-Zugang den Abruf der Kontoauszüge als PDF nicht ({code}). Freischalten kann
+      das nur die {bank}: sie bitten, für diesen Zugang den Abruf elektronischer Kontoauszüge als PDF über FinTS/HBCI (HKEKP)
+      für dieses Konto freizuschalten. Das elektronische Postfach allein genügt nicht. Bis dahin diesen Schalter ausschalten;
+      die Zahlungsnachweise im Jahresarchiv erstellt Hausbuch ohnehin. Sobald der Abruf klappt, verschwindet dieser Hinweis.
+    </p>
+  );
+}
 
 /** A switch of the connection (the daily fetch, D120; the PDF statements, D154), saved as
  * soon as it is ticked. */

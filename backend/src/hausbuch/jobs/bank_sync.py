@@ -263,6 +263,13 @@ class _StatementWalk:
     code: str | None = None
     reason: str | None = None
     failure: str | None = None
+    # The statement the bank refused because the access may not fetch statements at all
+    # (NOT_PERMITTED, 14 Nov 2026), and whether any HKEKP was answered without such a
+    # refusal: what record_statements_answer writes on the account.
+    refused: StatementKey | None = None
+    answered: bool = False
+    recorded: bool = False
+    record_failure: str | None = None
 
 
 class _Locked(Exception):
@@ -303,7 +310,23 @@ def _fetch_statements(
         raise
     except Exception as exc:  # never the run's failure: its class name only
         walk.end, walk.failure = "error", type(exc).__name__
+    _record_answer(run, walk, write)
     _log_statements(run, walk)
+
+
+def _record_answer(run: _Run, walk: _StatementWalk, write: Callable[..., Any]) -> None:
+    """A NOT_PERMITTED refusal, or an HKEKP answered without one after such a refusal, is
+    recorded on the account (service.record_statements_answer), so the Bankabruf card and Zu
+    prüfen can say what to do. Nothing when the bank never answered an HKEKP (not offered, a
+    stop before the first answer). Never the run's failure: a failed write is logged by
+    class name."""
+    if walk.refused is None and not walk.answered:
+        return
+    refusal = None if walk.refused is None else (walk.code or "", walk.refused)
+    try:
+        walk.recorded = bool(write(service.record_statements_answer, run.plan, refusal))
+    except Exception as exc:
+        walk.record_failure = type(exc).__name__
 
 
 def _log_statements(run: _Run, walk: _StatementWalk) -> None:
@@ -313,8 +336,15 @@ def _log_statements(run: _Run, walk: _StatementWalk) -> None:
         "statements_requests": walk.requests,
         "statements_stored": walk.stored,
     }
-    extra = (("code", walk.code), ("reason", walk.reason), ("exc_chain", walk.failure))
+    extra = (
+        ("code", walk.code),
+        ("reason", walk.reason),
+        ("exc_chain", walk.failure),
+        ("record_error", walk.record_failure),
+    )
     fields |= {f"statements_{name}": value for name, value in extra if value is not None}
+    if walk.recorded:
+        fields["statements_recorded"] = True
     logger.info("bank statements", extra={"fields": fields})
 
 
@@ -346,6 +376,14 @@ def _walk_statements(
             walk.end = _REQUEST_CAP if reading.reason == _REQUEST_CAP else "stopped"
             walk.code = reading.code
             return
+        if reading.outcome is _SO.NOT_PERMITTED:
+            # The access may not fetch statements at all: no other number or year is asked
+            # this run; the refusal is recorded on the account and the next run asks again.
+            walk.end, walk.code, walk.refused = "not_permitted", reading.code, key
+            return
+        walk.answered = True
+        if reading.outcome is _SO.NOT_AVAILABLE and reading.code is not None:
+            walk.code = reading.code  # logged: why the year's walk ended
         delivered = reading.outcome is _SO.STATEMENT
         if delivered:
             if write(service.store_statement, deps.blob_store, plan, key, reading.pdf):
@@ -391,7 +429,10 @@ def _one_statement(
         if reading.outcome is _SO.LOCKED:
             raise _Locked(answer.answers)
         if answer.failure is not None:
-            refused = reading.outcome is _SO.NOT_AVAILABLE and reading.code is not None
+            refused = (
+                reading.outcome in (_SO.NOT_AVAILABLE, _SO.NOT_PERMITTED)
+                and reading.code is not None
+            )
             if not refused:  # a transport error, a pushTAN demand, an unreadable answer
                 walk.failure = answer.failure
                 return StatementReading(

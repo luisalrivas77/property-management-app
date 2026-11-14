@@ -73,6 +73,7 @@ class Walk:
         self.client = made[0]
         self.stored: list[tuple[StatementKey, bytes]] = []
         self.store_error: Exception | None = None
+        self.recorded: list = []
 
         @contextmanager
         def no_database(engine, workspace_id):
@@ -84,6 +85,10 @@ class Walk:
         monkeypatch.setattr(service, "still_owned", lambda conn, plan: owned)
 
     def write(self, step, *args, **kwargs):
+        if step is service.record_statements_answer:  # 14 Nov 2026: what the account records
+            _plan_, refusal = args
+            self.recorded.append(refusal)
+            return True
         assert step is service.store_statement
         _store, _plan_, key, pdf = args
         if self.store_error is not None:
@@ -330,6 +335,73 @@ def test_a_restarted_run_stops_before_asking(monkeypatch):
     with pytest.raises(service.Superseded):
         walk.run()
     assert walk.asked() == []
+
+
+# --- 14 Nov 2026: the access may not fetch statements (9370) ----------------------------------
+
+PRODUCTION_9370 = "m9050,9010,9370"  # the first real fetch's answer, as the trace logged it
+
+
+def test_a_permission_refusal_ends_the_fetch_logs_its_code_and_is_recorded(monkeypatch, caplog):
+    walk = Walk(monkeypatch, Script(statements_offered=True, statement_refusal=PRODUCTION_9370))
+    with caplog.at_level(logging.INFO, logger="hausbuch.jobs.bank_sync"):
+        walk.run()  # never the run's failure
+    assert walk.asked() == [(2026, 1)]
+    assert walk.stored == []
+    assert walk.recorded == [("9370", _key(2026, 1))]
+    fields = _record(caplog)
+    assert (fields["statements_end"], fields["statements_code"]) == ("not_permitted", "9370")
+    assert fields["statements_recorded"] is True
+
+
+def test_a_permission_refusal_asks_no_other_year(monkeypatch):
+    """January: the previous year's refusal for lack of permission also ends the current
+    year's walk, and no new dialog is opened."""
+    stored = [_key(2026, n) for n in range(1, 12)]
+    script = Script(
+        statements_offered=True,
+        statements={(2027, 1): [TEXT]},
+        statement_codes={(2026, 12): "m9800,9370"},
+    )
+    walk = Walk(monkeypatch, script, stored=stored)
+    walk.run(at=JANUARY)
+    assert walk.asked() == [(2026, 12)]
+    assert "reopen" not in walk.client.calls
+    assert walk.recorded == [("9370", _key(2026, 12))]
+
+
+def test_a_missing_number_is_logged_with_its_code_and_recorded_as_answered(monkeypatch, caplog):
+    script = Script(statements_offered=True, statements={(2026, 1): [TEXT]})
+    walk = Walk(monkeypatch, script)
+    with caplog.at_level(logging.INFO, logger="hausbuch.jobs.bank_sync"):
+        walk.run()
+    assert walk.asked() == [(2026, 1), (2026, 2)]
+    fields = _record(caplog)
+    assert (fields["statements_end"], fields["statements_code"]) == ("done", "3010")
+    assert walk.recorded == [None]  # the bank answered the order: a refusal would end
+
+
+def test_nothing_is_recorded_when_the_bank_never_answered_an_order(monkeypatch):
+    walk = Walk(monkeypatch, Script(statements_offered=False))
+    walk.run()
+    walk_stopped = Walk(monkeypatch, Script(statements_offered=True, statement_refusal="m9010"))
+    walk_stopped.run()
+    assert walk.recorded == walk_stopped.recorded == []
+
+
+def test_a_failed_record_is_logged_and_never_the_runs_failure(monkeypatch, caplog):
+    walk = Walk(monkeypatch, Script(statements_offered=True, statement_refusal=PRODUCTION_9370))
+
+    def failing(step, *args, **kwargs):
+        raise RuntimeError("database gone")
+
+    walk.write = failing
+    with caplog.at_level(logging.INFO, logger="hausbuch.jobs.bank_sync"):
+        walk.run()
+    fields = _record(caplog)
+    assert fields["statements_end"] == "not_permitted"
+    assert fields["statements_record_error"] == "RuntimeError"
+    assert "statements_recorded" not in fields
 
 
 def test_a_write_refusal_is_a_bug_and_still_raises(monkeypatch):

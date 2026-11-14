@@ -540,6 +540,8 @@ class InboxItemKind(StrEnum):
     BANK_APPROVAL_NEEDED = "bank_approval_needed"  # a scheduled sync met a pushTAN demand
     BANK_SYNC_FAILED = "bank_sync_failed"  # a run failed and waits for a person
     BANK_BALANCE_DRIFT = "bank_balance_drift"  # HKSAL differs from the last reconciled closing
+    # 14 Nov 2026: the bank refuses the PDF statement fetch for lack of permission (9370)
+    BANK_STATEMENTS_REFUSED = "bank_statements_refused"
     EMAIL_RECEIVED = "email_received"  # attachments of forwarded mails, last 24 h
     EMAIL_FAILED = "email_failed"  # a forwarded mail failed three times
     EMAIL_INBOX_FAILED = "email_inbox_failed"  # the poll cannot log in, open its label or connect

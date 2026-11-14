@@ -168,6 +168,7 @@ export type BankConnectionCreate = Schemas["BankConnectionCreate"];
 export type BankConnectionPatch = Schemas["BankConnectionPatch"];
 export type BankSync = Schemas["BankSync"];
 export type BankStatement = Schemas["BankStatement"];
+export type StatementsRefusal = Schemas["StatementsRefusal"]; // 14 Nov 2026: 9370 on HKEKP
 export type SyncStatus = Schemas["SyncStatus"];
 export type SyncTrigger = Schemas["SyncTrigger"];
 export type TransactionAllocationStatus = Schemas["TransactionAllocationStatus"];

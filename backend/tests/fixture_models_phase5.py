@@ -946,6 +946,9 @@ def _read(
     if lock is not None:
         return AnswerExpect(outcome=StatementOutcome.LOCKED, code=lock, dialog_ended=ended)
     own = [a for a in answers if a.level == "segment" and (a.segment or "").startswith("HKEKP")]
+    denied = next((a.code for a in own if a.code in ("9370", "9380")), None)
+    if denied is not None:
+        return AnswerExpect(outcome=StatementOutcome.NOT_PERMITTED, code=denied, dialog_ended=ended)
     refusal = next((a.code for a in own if a.code == "3010" or a.code.startswith("9")), None)
     if refusal is not None:
         return AnswerExpect(

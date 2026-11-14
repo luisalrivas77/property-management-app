@@ -9,8 +9,11 @@ No I/O, no network, no database, no logging. Fixture: tests/fixtures/phase5/bank
 - `read_answer(answers, parts, touchdown, earlier)`: one HKEKP answer, never read by D151's
   `deciding_code` (a refused number is not a failed sync).
 
-A refusal is never remembered: the next run asks the same number again, since a statement the
-bank has not cut yet is refused today and delivered tomorrow.
+A refused number is never remembered: the next run asks the same number again, since a
+statement the bank has not cut yet is refused today and delivered tomorrow. A refusal that says
+the access may not fetch statements at all (NOT_PERMITTED, 14 Nov 2026) ends the fetch for the
+run; the job records it on the account so the Bankabruf card can say what to do, and the next
+run asks again.
 """
 
 import base64
@@ -34,6 +37,14 @@ NO_DATA = "3010"  # Keine Einträge vorhanden (DK Rückmeldungscodes)
 TOUCHDOWN = "3040"  # Es liegen weitere Informationen vor (an Aufsetzpunkt follows)
 DIALOG_ENDED = "9800"  # Dialog abgebrochen
 STATEMENT_SEGMENT = "HKEKP"
+# Codes on the HKEKP segment that say this access may not fetch statements at all, rather
+# than that one number does not exist (14 Nov 2026, the first real fetch: 9050, then 9010 and
+# 9370 „Es liegt keine Auftragsberechtigung im Institut vor.“ on HKEKP). Checked against the
+# DK's Rückmeldungscodes (version of 3 Feb 2026, read from fints.org, not committed): on an
+# order, 9370 is „Signaturberechtigung reicht nicht aus“ and 9380 „Benutzer hat keine
+# Auftragsberechtigung“; 9380's other meanings (TAN or signature procedure not allowed) are
+# answers to the whole message, never to the HKEKP segment, which is all this set is read on.
+NOT_PERMITTED_CODES = frozenset({"9370", "9380"})
 
 # Why a delivered file is not stored (StatementReading.reason; logged, never the bytes).
 TOO_MANY_PARTS = "too_many_parts"
@@ -134,11 +145,13 @@ def read_answer(
     this order:
 
     1. a lock code anywhere → LOCKED (the run fails as D151 says);
-    2. 3010 or any 9xxx on the HKEKP segment → NOT_AVAILABLE;
-    3. 3040 with an Aufsetzpunkt → CONTINUE (INVALID once a 11th part would be needed);
-    4. HIEKP data → STATEMENT with the file, else INVALID with the reason;
-    5. a 9xxx at the message level or on another segment → STOPPED;
-    6. otherwise NOT_AVAILABLE.
+    2. a NOT_PERMITTED_CODES code on the HKEKP segment, wherever it stands among the
+       segment's answers (the bank sends the general 9010 before it) → NOT_PERMITTED;
+    3. 3010 or any other 9xxx on the HKEKP segment → NOT_AVAILABLE;
+    4. 3040 with an Aufsetzpunkt → CONTINUE (INVALID once a 11th part would be needed);
+    5. HIEKP data → STATEMENT with the file, else INVALID with the reason;
+    6. a 9xxx at the message level or on another segment → STOPPED;
+    7. otherwise NOT_AVAILABLE.
 
     `dialog_ended` is set whenever the message carries 9800."""
     ended = any(a.level == MESSAGE_LEVEL and a.code == DIALOG_ENDED for a in answers)
@@ -150,6 +163,11 @@ def read_answer(
         for a in answers
         if a.level == SEGMENT_LEVEL and (a.segment or "").startswith(STATEMENT_SEGMENT)
     ]
+    denied = next((a.code for a in own if a.code in NOT_PERMITTED_CODES), None)
+    if denied is not None:
+        return StatementReading(
+            outcome=StatementOutcome.NOT_PERMITTED, code=denied, dialog_ended=ended
+        )
     refusal = next((a.code for a in own if a.code == NO_DATA or _refuses(a.code)), None)
     if refusal is not None:
         return StatementReading(

@@ -795,6 +795,29 @@ class BankStatementFetched(Schema):
     number: int = Field(ge=1, le=99999)
 
 
+class BankStatementsRefused(Schema):
+    """account.statements_refused (14 Nov 2026): the bank refused an HKEKP because this access
+    may not fetch PDF statements at all (rules.bank_statements.NOT_PERMITTED_CODES, e.g. 9370
+    „keine Auftragsberechtigung“), with the number and year asked. Written when the
+    connection's latest statement answer was not already this refusal, so a daily run adds
+    no duplicate. Never the bank's text, the login or an IBAN."""
+
+    connection_id: UUID
+    sync_id: UUID
+    code: str = Field(pattern=r"^[0-9]{4}$")
+    year: int = Field(ge=1000, le=9999)
+    number: int = Field(ge=1, le=99999)
+
+
+class BankStatementsAnswered(Schema):
+    """account.statements_answered (14 Nov 2026): after an account.statements_refused, a run's
+    HKEKP was answered without that refusal (a statement delivered, or a number not there
+    yet): the refusal is resolved and the Bankabruf card's notice ends."""
+
+    connection_id: UUID
+    sync_id: UUID
+
+
 class BankParametersRead(BankParameters):
     """account.bank_parameters_read (phase 6 D173 (7)): what the bank's parameters said in a
     run, recorded when they differ from the connection's last record. The bank's public
@@ -1183,6 +1206,8 @@ class EventType(StrEnum):
     ACCOUNT_SYNC_COMPLETED = "account.sync_completed"
     ACCOUNT_SYNC_FAILED = "account.sync_failed"
     ACCOUNT_STATEMENT_FETCHED = "account.statement_fetched"  # D154, step 2b
+    ACCOUNT_STATEMENTS_REFUSED = "account.statements_refused"  # 14 Nov 2026 (9370)
+    ACCOUNT_STATEMENTS_ANSWERED = "account.statements_answered"  # 14 Nov 2026
     ACCOUNT_BANK_PARAMETERS_READ = "account.bank_parameters_read"  # phase 6 D173 (7), step 3
     # Phase 6
     ACCOUNT_KIND_SET = "account.kind_set"
@@ -1359,6 +1384,12 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.ACCOUNT_SYNC_FAILED: EventSpec(BankSyncFailed, "forbidden", "Bank sync failed"),
     E.ACCOUNT_STATEMENT_FETCHED: EventSpec(
         BankStatementFetched, "forbidden", "Bank PDF statement fetched (FinTS)"
+    ),
+    E.ACCOUNT_STATEMENTS_REFUSED: EventSpec(
+        BankStatementsRefused, "forbidden", "Bank refused the PDF statement fetch (no permission)"
+    ),
+    E.ACCOUNT_STATEMENTS_ANSWERED: EventSpec(
+        BankStatementsAnswered, "forbidden", "Bank answered the PDF statement fetch again"
     ),
     E.ACCOUNT_BANK_PARAMETERS_READ: EventSpec(
         BankParametersRead, "forbidden", "Bank parameters read (FinTS)"

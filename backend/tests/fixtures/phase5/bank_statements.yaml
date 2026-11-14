@@ -27,8 +27,10 @@
 #     answer, as the bytes on the wire (written below as their ASCII text); touchdown: the
 #     answer's 3040 carried an Aufsetzpunkt; earlier: the parts of the previous answers of the
 #     same statement (a 3040 continuation).
-#   - in this order: a lock code (9930, 9931, 3938) anywhere -> locked; 3010 or any 9xxx on
-#     the HKEKP segment -> not_available (that code); 3040 with an Aufsetzpunkt on HKEKP ->
+#   - in this order: a lock code (9930, 9931, 3938) anywhere -> locked; 9370 or 9380 on the
+#     HKEKP segment, wherever it stands among its answers -> not_permitted (that code; this
+#     access may not fetch statements at all, D154 amended 14 Nov 2026); 3010 or any other
+#     9xxx on the HKEKP segment -> not_available (that code); 3040 with an Aufsetzpunkt on HKEKP ->
 #     continue (invalid "too_many_parts" when the next part would be the 11th); HIEKP data ->
 #     the file, else invalid; a 9xxx at the message level or on another segment -> stopped;
 #     nothing of these -> not_available.
@@ -196,6 +198,35 @@ answer_cases:
       - {level: message, code: "9050"}
       - {level: segment, code: "9210", segment: "HKEKP:3"}
     expect: {outcome: not_available, code: "9210"}
+
+  - id: not_permitted_9370_behind_9010
+    description: >-
+      the real answer of 14 Nov 2026: the message partly faulty, the segment's general 9010
+      first and its reason 9370 behind it; this access may not fetch statements at all
+    answers:
+      - {level: message, code: "9050"}
+      - {level: segment, code: "9010", segment: "HKEKP:3"}
+      - {level: segment, code: "9370", segment: "HKEKP:3"}
+    expect: {outcome: not_permitted, code: "9370"}
+
+  - id: not_permitted_9380
+    description: the DK's „Benutzer hat keine Auftragsberechtigung“ on the HKEKP
+    answers:
+      - {level: segment, code: "9380", segment: "HKEKP:3"}
+    expect: {outcome: not_permitted, code: "9380"}
+
+  - id: lock_over_not_permitted
+    description: a lock decides even when the segment also says the access is not permitted
+    answers:
+      - {level: message, code: "9930"}
+      - {level: segment, code: "9370", segment: "HKEKP:3"}
+    expect: {outcome: locked, code: "9930"}
+
+  - id: not_permitted_code_on_another_segment
+    description: 9370 on the camt request is no statement refusal; the fetch stops
+    answers:
+      - {level: segment, code: "9370", segment: "HKCAZ:3"}
+    expect: {outcome: stopped, code: "9370"}
 
   - id: dialog_ended_9800
     description: the bank ended the dialog without a reason on the HKEKP; the fetch stops

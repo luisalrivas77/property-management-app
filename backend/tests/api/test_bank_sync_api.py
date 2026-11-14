@@ -2,6 +2,8 @@
 refusals and its 202, the run list and one run, isolation between workspaces. The job itself
 is covered in tests/db/test_jobs_bank_sync.py. Synthetic values only."""
 
+from datetime import UTC, datetime
+
 import pytest
 from api_support import (
     TOKEN_A,
@@ -182,3 +184,45 @@ def test_the_fetched_statements_are_listed_newest_first_per_workspace(client_a, 
         "fetched_at",
     }
     assert client_b.get(path).status_code == 404
+
+
+def test_a_permission_refusal_is_on_the_connection_and_in_zu_pruefen(client_a, client_b, dbname):
+    """14 Nov 2026: the bank refused the PDF statement fetch with 9370 (keine
+    Auftragsberechtigung). The event is written directly (the FinTS run is covered in
+    tests/db/test_jobs_bank_sync.py); the connection read carries it and Zu prüfen shows one
+    card, while the switch „Kontoauszüge als PDF abrufen“ is on."""
+    account = create(client_a, "/api/accounts", ACCOUNT)
+    path = f"/api/accounts/{account['id']}/bank-connection"
+    connection = create(client_a, path, _connection(account["id"]))
+    assert connection["statements_refusal"] is None
+    with _admin(dbname) as conn:
+        ws = conn.execute(
+            "SELECT workspace_id FROM account WHERE id = %s", (account["id"],)
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO event (workspace_id, type, entity_type, entity_id, recorded_at,"
+            " actor_type, actor_id, correlation_id, payload) VALUES (%s,"
+            " 'account.statements_refused', 'account', %s, '2026-11-14T06:30:02+00:00',"
+            " 'system', 'system', gen_random_uuid(), jsonb_build_object('connection_id', %s::text,"
+            " 'sync_id', gen_random_uuid()::text, 'code', '9370', 'year', 2026, 'number', 1))",
+            (ws, account["id"], connection["id"]),
+        )
+
+    def cards(client):
+        items = ok(client.get("/api/inbox"))
+        return [i for i in items if i["kind"] == "bank_statements_refused"]
+
+    assert ok(client_a.get(path))["statements_refusal"] is None  # the switch is off
+    assert cards(client_a) == []
+    patched = ok(client_a.patch(path, json={"fetch_statements": True}))
+    refusal = patched["statements_refusal"]
+    assert datetime.fromisoformat(refusal.pop("at")) == datetime(2026, 11, 14, 6, 30, 2, tzinfo=UTC)
+    assert refusal == {"code": "9370", "year": 2026, "number": 1}
+    (card,) = cards(client_a)
+    assert card["account_id"] == account["id"]
+    assert "Code 9370: Signaturberechtigung reicht nicht aus" in card["reasoning"]
+    assert cards(client_b) == []
+    # Switching the fetch off is the person's answer to the refusal: no notice, no card.
+    assert ok(client_a.patch(path, json={"fetch_statements": False}))["statements_refusal"] is None
+    assert ok(client_a.get(path))["statements_refusal"] is None
+    assert cards(client_a) == []
