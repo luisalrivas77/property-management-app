@@ -775,7 +775,7 @@ function waitingText(count: number, amount: string): string {
 /** Why a one-row answer of this category never becomes a rule (D160), by kind. */
 /** D160 amended (4): a payment service's line that names no merchant. */
 const NO_MERCHANT_REASON =
-  "Diese Zahlung läuft über einen Zahlungsdienst wie PayPal oder Klarna, der für viele Händler zahlt, und nennt keinen Händler. Eine Regel würde jede Zahlung über diesen Dienst so zuordnen, darum lernt Hausbuch hier keine. Bitte diese Zahlung ohne Regel bestätigen.";
+  "Diese Zahlung läuft über einen Zahlungsdienst wie PayPal, Klarna oder Google Pay, der für viele Händler zahlt, und nennt keinen Händler. Eine Regel würde jede Zahlung über diesen Dienst so zuordnen, darum lernt Hausbuch hier keine. Bitte diese Zahlung ohne Regel bestätigen.";
 
 function unlearnableReason(category: AllocationCategory): string {
   if (category === "internal_transfer_in" || category === "internal_transfer_out") {

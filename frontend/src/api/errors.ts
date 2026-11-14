@@ -134,7 +134,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Nichts wurde umgebucht: eine frühere Zahlung dieses Empfängers lässt sich nicht automatisch umbuchen (sie ist aufgeteilt, hat einen Beleg, ist mit einer Immobilie, einer Überweisung oder dem Depot verknüpft, oder ihr Kontoauszug ist nicht abgestimmt). Bitte die Seite neu laden: die Zahlung wird dann hier genannt und lässt sich öffnen und von Hand ändern. Oder ohne „Künftig immer so zuordnen“ bestätigen.",
   // a payment service's line without a merchant (phase-6.md D160 amended (4), 14 Nov 2026)
   "rule.no_merchant":
-    "Diese Zahlung über einen Zahlungsdienst (PayPal, Klarna) nennt keinen Händler, darum lernt Hausbuch für sie keine Regel. Bitte ohne „Künftig immer so zuordnen“ bestätigen.",
+    "Diese Zahlung über einen Zahlungsdienst (PayPal, Klarna, Google Pay) nennt keinen Händler, darum lernt Hausbuch für sie keine Regel. Bitte ohne „Künftig immer so zuordnen“ bestätigen.",
   "settings.consent_switch_off": "Erst „Private Konten mit KI zuordnen“ einschalten, dann zustimmen.",
   "settings.consent_already_recorded": "Ihre Zustimmung ist schon gespeichert.",
   // POST /inbox/ai-retry (D50); a proposal's ai.disabled has its own text in AI_ERROR_TEXT.
