@@ -111,6 +111,7 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   bank_approval_needed: "automatic",
   bank_sync_failed: "automatic",
   bank_balance_drift: "automatic",
+  bank_statements_refused: "automatic",
   email_received: "automatic",
   email_failed: "automatic",
   email_inbox_failed: "automatic",
@@ -155,6 +156,7 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   bank_approval_needed: "badge badge-warn",
   bank_sync_failed: "badge badge-danger",
   bank_balance_drift: "badge badge-warn",
+  bank_statements_refused: "badge badge-warn",
   email_received: "badge badge-info",
   email_failed: "badge badge-danger",
   email_inbox_failed: "badge badge-danger",
@@ -670,7 +672,12 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
   if (item.kind === "price_source_failed" || item.kind === "price_no_source") {
     return <strong>Kurs einer Anlage</strong>;
   }
-  if (item.kind === "bank_sync_failed" || item.kind === "bank_balance_drift" || item.kind === "bank_approval_needed") {
+  if (
+    item.kind === "bank_sync_failed" ||
+    item.kind === "bank_balance_drift" ||
+    item.kind === "bank_approval_needed" ||
+    item.kind === "bank_statements_refused"
+  ) {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
     return <strong>Bankabruf{account ? ` · ${account.label}` : ""}</strong>;
   }
@@ -852,6 +859,7 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
     }
     case "bank_sync_failed":
     case "bank_balance_drift":
+    case "bank_statements_refused":
       return item.account_id ? <Link href={`/accounts/${item.account_id}?tab=kontoauszuege`}>Zum Bankabruf</Link> : null;
     case "bank_approval_needed":
       return item.account_id ? <BankApprovalStart accountId={item.account_id} /> : null;
