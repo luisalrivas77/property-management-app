@@ -17,6 +17,7 @@ from hausbuch.ai.client import (
     AnthropicModelClient,
     ModelCallError,
     ModelRequest,
+    cached,
 )
 from hausbuch.schemas.ai import AiJob
 
@@ -177,7 +178,13 @@ def test_response_keeps_text_blocks_and_page_citations():
     client._client = SimpleNamespace(messages=SimpleNamespace(create=create))
     response = client.send(_request(inference_geo="us"))
 
-    assert seen == _request(inference_geo="us").body()
+    body = _request(inference_geo="us").body()
+    assert seen == {
+        **body,
+        "system": [
+            {"type": "text", "text": body["system"], "cache_control": {"type": "ephemeral"}}
+        ],
+    }
     assert response.text == "price: 325.000,00 EUR"
     assert len(response.blocks) == 2
     citation = response.blocks[1].citations[0]
@@ -189,3 +196,17 @@ def test_response_keeps_text_blocks_and_page_citations():
         0,
     )
     assert response.stop_reason == "end_turn"
+
+
+def test_the_system_prompt_is_sent_cached_and_the_hash_ignores_the_marker():
+    """D194: the system prompt goes out as one block marked for prompt caching; the stored
+    input hash is still over body(), so recorded evals keep matching."""
+    request = _request()
+    sent = cached(request.body())
+    assert sent["system"] == [
+        {"type": "text", "text": request.system, "cache_control": {"type": "ephemeral"}}
+    ]
+    assert request.body()["system"] == request.system
+    assert {k: v for k, v in sent.items() if k != "system"} == {
+        k: v for k, v in request.body().items() if k != "system"
+    }

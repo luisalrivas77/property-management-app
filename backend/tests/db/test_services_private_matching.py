@@ -158,7 +158,7 @@ def _consent_both(world: World) -> None:
     world.cmd(workspace_settings.record_ai_consent, actor=OWNER_B)
 
 
-def _answer(category: str, amount: str) -> str:
+def _answer(category: str, amount: str, *, ambiguous: bool = False) -> str:
     return json.dumps(
         {
             "allocations": [
@@ -167,7 +167,7 @@ def _answer(category: str, amount: str) -> str:
             "confidence": "high",
             "reasoning": "Einkauf im Supermarkt.",
             "question": None,
-            "ambiguous": False,
+            "ambiguous": ambiguous,
         }
     )
 
@@ -1162,3 +1162,31 @@ def test_answering_with_the_suggested_pattern_books_the_waiting_lines(
             rule.id,
         )
     assert client.requests == []
+
+
+def test_a_private_line_is_answered_by_haiku_and_an_unsure_answer_by_sonnet(
+    world, private, app_engine, tmp_path
+):
+    """D194: a private line's pair is one tier down: the classify model (Haiku) answers, and
+    only an answer it marks ambiguous is asked again of the extract model (Sonnet)."""
+    _consent_both(world)
+    client = FakeModelClient(
+        [
+            text_response(_answer("hh_groceries", "-42.17")),
+            text_response(_answer("hh_other", "-9.99", ambiguous=True)),
+            text_response(_answer("hh_streaming", "-9.99")),
+        ]
+    )
+    deps = _deps(app_engine, tmp_path, client)
+    sure = private.line(date(2026, 10, 2), "-42.17", name="Supermarkt Beispiel")
+    _run(deps, world, sure)
+    unsure = private.line(date(2026, 10, 3), "-9.99", name="Dienst Beispiel")
+    _run(deps, world, unsure)
+    settings = deps.settings
+    assert [r.model for r in client.requests] == [
+        settings.ai_model_classify,
+        settings.ai_model_classify,
+        settings.ai_model_extract,
+    ]
+    (row,) = _rows(world, unsure)
+    assert row.category == "hh_streaming"

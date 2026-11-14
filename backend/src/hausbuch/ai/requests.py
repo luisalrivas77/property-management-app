@@ -12,7 +12,8 @@ anyone remembering to bump a number.
 - Extract: Sonnet, citations on, no structured output (the API refuses the combination, D15);
   the answer is `field: value` lines that rules.extraction_parse reads.
 - Categorize (step 4): Sonnet, or the hard model (Opus) for the one retry of an answer marked
-  ambiguous (D17); structured output LlmMatchOutput. The line travels as fenced JSON data
+  ambiguous (D17); a private account's line one tier down, Haiku then Sonnet (D194);
+  structured output LlmMatchOutput. The line travels as fenced JSON data
   that the job has already minimized (services.matching.categorize_input: no IBAN beyond
   the last four characters, no tenant name). No `thinking` field (the model's default,
   adaptive thinking) and effort low, max_tokens 4000 since thinking counts against it (D50):
@@ -256,11 +257,13 @@ def categorize_household_request(
 ) -> ModelRequest:
     """A private account's line (D168): the household prompt over services.matching's
     household input (no tenant name, no property, no other account's lines, no amounts of
-    the similar answers); the same models, limits and parsing as the rental request."""
+    the similar answers); the same limits and parsing as the rental request. The pair is one
+    tier down (D194, Luis 14 Nov 2026): Haiku answers, Sonnet is asked when Haiku is unsure; a
+    household category decides no tax figure, and these lines are most of the calls."""
     prompt = load_prompt("categorize_household")
     return ModelRequest(
         job=AiJob.MATCH,
-        model=settings.ai_model_hard if hard else settings.ai_model_extract,
+        model=settings.ai_model_extract if hard else settings.ai_model_classify,
         prompt_version=prompt.version,
         system=prompt.text,
         content=[{"type": "text", "text": fenced(data)}],

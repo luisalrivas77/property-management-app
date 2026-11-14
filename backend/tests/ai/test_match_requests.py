@@ -180,7 +180,8 @@ def test_the_household_request_is_the_rental_one_with_its_own_prompt(settings):
     assert household.prompt_version == load_prompt("categorize_household").version
     assert household.prompt_version != rental.prompt_version
     assert household.output_schema == household_match_schema()
-    assert (household.model, hard.model) == (settings.ai_model_extract, settings.ai_model_hard)
+    # D194: one tier down, Haiku then Sonnet.
+    assert (household.model, hard.model) == (settings.ai_model_classify, settings.ai_model_extract)
     body = household.body()
     assert "thinking" not in body and body["output_config"]["effort"] == "low"
     assert body["max_tokens"] == rental.body()["max_tokens"]
