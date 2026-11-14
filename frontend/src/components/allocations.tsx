@@ -363,7 +363,8 @@ function AllocationEditor({
   const learn = blocked !== null ? false : (learnChoice ?? (current.length === 0 || rowsEdited ? suggested : view.learn_rule_default));
 
   const others = view.waiting_other_amounts ?? [];
-  const otherCount = view.waiting_other_count ?? others.reduce((sum, other) => sum + other.count, 0);
+  const listed = others.reduce((sum, other) => sum + other.count, 0);
+  const otherCount = view.waiting_other_count ?? listed;
   const sameCount = view.waiting_same_amount_count ?? 0;
   const askedCategory = rows.length === 1 ? (rows[0]?.category ?? "") : "";
   const asked = view.can_learn_rule && learn && others.length > 0 && askedCategory !== "" ? askedCategory : null;
@@ -562,7 +563,7 @@ function AllocationEditor({
               <legend>
                 Von {line.counterparty_name?.trim() || "dieser Bankverbindung"} warten noch{" "}
                 {otherCount === 1 ? "1 Zahlung mit einem anderen Betrag" : `${otherCount} Zahlungen mit anderen Beträgen`}
-                {otherCount > others.length ? ", am häufigsten " : ": "}
+                {otherCount > listed ? ", am häufigsten " : ": "}
                 {others.map((other) => `${formatMoney(unsigned(other.amount))} (${other.count}×)`).join(", ")}. Gehören die
                 auch zu {ALLOCATION_CATEGORY[asked]}?
               </legend>
