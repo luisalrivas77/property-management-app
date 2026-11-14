@@ -12,7 +12,8 @@ import { Suspense, useEffect, useRef, useState } from "react";
 
 import { AllocationPanel, type TransactionAllocations } from "@/components/allocations";
 import { documentLabel, UploadControl, type Uploaded } from "@/components/documents";
-import { inboxSummary, InboxList, isLineItem, loadInbox } from "@/components/inbox";
+import { api, ok } from "@/api/client";
+import { inboxSummary, InboxList, isLineItem, loadInbox, type InboxItem } from "@/components/inbox";
 import { ALLOCATION_CATEGORY } from "@/components/labels";
 import { Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -53,14 +54,44 @@ function Inbox() {
   }
 
   // A learned rule re-checks the waiting lines it names in the background (rematch_waiting):
-  // reload the list a few more times, so the lines it booked leave the queue without a page
-  // reload. The re-check takes about a second per line (14 Nov 2026: 39 lines of one payee in
-  // 27 s, after the two reloads at 3 and 10 s had passed), so the reloads run for two minutes.
+  // look at the list a few more times, so the lines it booked leave the queue without a page
+  // reload. The re-check took about a second per line (14 Nov 2026: 39 lines of one payee in
+  // 27 s), so the checks run for up to two minutes. Each check fetches GET /inbox only; the
+  // whole page (every account's lines and imports) is reloaded only when the list changed,
+  // and the checks stop at the first one that finds no change after one that did: the
+  // re-check has finished. A check that finds no change before any change keeps going, since
+  // the job may start late.
   const reload = inbox.reload;
+  const shown = useRef("");
+  useEffect(() => {
+    if (items) shown.current = listKey(items);
+  }, [items]);
   useEffect(() => {
     if (!saved?.rule) return;
-    const timers = [3000, 10000, 20000, 35000, 60000, 90000, 120000].map((ms) => window.setTimeout(reload, ms));
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
+    let cancelled = false;
+    let changed = false;
+    let done = false;
+    async function check() {
+      if (cancelled || done) return;
+      try {
+        const fresh = await ok(api.GET("/api/inbox"));
+        if (cancelled) return;
+        if (listKey(fresh) !== shown.current) {
+          changed = true;
+          shown.current = listKey(fresh);
+          reload();
+        } else if (changed) {
+          done = true;
+        }
+      } catch {
+        // the next check tries again
+      }
+    }
+    const timers = [3000, 10000, 20000, 35000, 60000, 90000, 120000].map((ms) => window.setTimeout(check, ms));
+    return () => {
+      cancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
   }, [saved, reload]);
 
   function onSaved(result: TransactionAllocations) {
@@ -150,6 +181,14 @@ function Inbox() {
 
 /** „4 frühere Zahlungen auf Restaurant & Lieferdienst umgebucht.“ (phase 6 D160): the earlier
  * lines of the payee the answer re-booked before its rule was learned. */
+/** What the list holds, item by item (kind, what it is about, a proposal's category), so a
+ * rule's background check can tell whether its lines left the list. */
+function listKey(items: InboxItem[]): string {
+  return items
+    .map((item) => [item.kind, item.transaction_id, item.proposal_id, item.document_id, item.account_id, item.category].join(":"))
+    .join("|");
+}
+
 function rebookedText(saved: TransactionAllocations): string {
   const category = saved.rule?.category ?? saved.allocations[0]?.category;
   const label = category ? ALLOCATION_CATEGORY[category] : "dieselbe Kategorie";
