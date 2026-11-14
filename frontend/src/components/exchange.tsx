@@ -5,6 +5,7 @@
 // their answers. Every figure is shown as the API returns it (principle 1): the positions are
 // the API's sums of the movements, nothing is added up here. No page shows a withdrawal's
 // address or transaction hash, and none is stored for the address (D178 (2)).
+import Link from "next/link";
 import { useCallback, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
@@ -14,6 +15,7 @@ import type {
   ExchangeMovementRow,
   ExchangeOverview,
   ExchangeUpload,
+  ImportBalance,
   MovementImportBody,
   MovementKind,
 } from "@/api/schemas";
@@ -447,6 +449,19 @@ function ExchangeImportsTable({
                     onDone={onChanged}
                     label={imp.status === "imported" ? "Bestand laut Börse eingeben" : "Bestand neu eingeben"}
                   />
+                  {imp.id === latestImportId(imports)
+                    ? wrong
+                        .filter((balance) => balance.symbol !== "EUR")
+                        .map((balance) => (
+                          <CorrectionDialog
+                            key={balance.asset_id}
+                            statementImport={imp}
+                            balance={balance}
+                            onDone={onChanged}
+                            label={wrong.length > 1 ? `${balance.symbol}: Differenz als Korrektur buchen` : undefined}
+                          />
+                        ))
+                    : null}
                   {withdrawals > 0 ? <ConfirmWithdrawals importId={imp.id} count={withdrawals} onDone={onChanged} /> : null}
                 </td>
               </tr>
@@ -567,6 +582,152 @@ function HoldingsForm({ statementImport: imp, onDone }: { statementImport: Excha
   );
 }
 
+// --- „Differenz als Korrektur buchen“ (D178 amended, migration 0030) --------------------------
+
+/** The account's newest import (by its last row): only there may a correction be booked
+ * (exchange.correction_not_latest). The API sends the imports newest first. */
+function latestImportId(imports: ExchangeImport[]): string | undefined {
+  return imports[0]?.id;
+}
+
+/** A signed quantity in German, "+" on an increase. */
+function signedUnits(value: string | null | undefined): string {
+  const text = formatUnits(value);
+  return value != null && !value.startsWith("-") && text !== "0" ? `+${text}` : text;
+}
+
+/** „Differenz als Korrektur buchen“ in a dialog, for one coin whose typed balance differs. */
+export function CorrectionDialog({
+  statementImport,
+  balance,
+  onDone,
+  label = "Differenz als Korrektur buchen",
+  buttonClass = "secondary",
+}: {
+  statementImport: ExchangeImport;
+  balance: ImportBalance;
+  onDone: () => void;
+  label?: string;
+  buttonClass?: string;
+}) {
+  return (
+    <ActionDialog label={label} title={`${balance.symbol}: Differenz als Korrektur buchen`} buttonClass={buttonClass}>
+      {(close) => (
+        <CorrectionForm
+          statementImport={statementImport}
+          balance={balance}
+          onDone={() => {
+            close();
+            onDone();
+          }}
+        />
+      )}
+    </ActionDialog>
+  );
+}
+
+const CORRECTION_KEYS: readonly string[] = ["reason"];
+
+/** POST /movement-imports/{id}/corrections. The person writes only the reason: the amount is
+ * the difference the API computed when the balance was typed (principle 1), shown here as
+ * the API sent it. */
+function CorrectionForm({
+  statementImport: imp,
+  balance,
+  onDone,
+}: {
+  statementImport: ExchangeImport;
+  balance: ImportBalance;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const form = useFormErrors(CORRECTION_KEYS);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const text = reason.trim();
+    if (text.length < 3) return form.invalid({ reason: ["Bitte in ein paar Worten den Grund eintragen (mindestens 3 Zeichen)."] });
+    setBusy(true);
+    form.clear();
+    try {
+      await ok(
+        api.POST("/api/movement-imports/{import_id}/corrections", {
+          params: { path: { import_id: imp.id } },
+          body: { asset_id: balance.asset_id, reason: text },
+        }),
+      );
+      onDone();
+    } catch (error) {
+      form.fail(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const difference = signedUnits(balance.difference_units);
+  return (
+    <form className="stack" onSubmit={submit} noValidate>
+      <p>
+        <strong>{balance.symbol}</strong>: laut Börse {formatUnits(balance.typed)}, laut Export {formatUnits(balance.held)},
+        Differenz {difference} {balance.symbol}.
+      </p>
+      <p className="muted">
+        Das passt, wenn im Export der Börse eine Bewegung fehlt, die die Börse selbst in keinem Export aufführt (zum Beispiel
+        eine kleine Gutschrift), und der Bestand richtig abgelesen ist. Fehlt dagegen ein Teil des Exports oder wurde der Bestand
+        falsch abgelesen, bitte den vollständigen Export hochladen oder den Bestand neu eingeben.
+      </p>
+      <p className="muted">
+        Hausbuch bucht die Differenz einmal als Korrektur von {difference} {balance.symbol} zum {day(imp.last_at)}, mit dem
+        Grund, den Sie hier eintragen. Sie steht danach unter „Bewegungen“ als „Korrektur (von Hand)“. Rückgängig machen lässt
+        sie sich nur durch eine Gegenkorrektur: den Bestand neu eingeben und die neue Differenz buchen.
+      </p>
+      <Field
+        id={`correction-${imp.id}-${balance.asset_id}`}
+        label="Grund"
+        hint="z. B. Gutschrift fehlt im Export"
+        errors={form.of("reason")}
+      >
+        <textarea rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} autoComplete="off" />
+      </Field>
+      <div className="row">
+        <Submit busy={busy}>Korrektur buchen</Submit>
+      </div>
+      <FormBanner errors={form.errors} />
+    </form>
+  );
+}
+
+/** The Zu prüfen card's action for an unreconciled export: the same dialog when exactly one
+ * coin (not EUR) differs on the account's newest import, always the link to the account. */
+export function ExchangeUnreconciledActions({
+  accountId,
+  importId,
+  onDone,
+}: {
+  accountId: string;
+  importId: string | null | undefined;
+  onDone: () => void;
+}) {
+  const load = useCallback(
+    () => ok(api.GET("/api/accounts/{account_id}/exchange", { params: { path: { account_id: accountId } } })),
+    [accountId],
+  );
+  const state = useLoad(load);
+  const imports = state.data?.imports ?? [];
+  const imp = imports.find((candidate) => candidate.id === importId);
+  const wrong = (imp?.balances ?? []).filter((balance) => balance.reconciled === false);
+  const [first] = wrong;
+  const only = imp && imp.id === latestImportId(imports) && wrong.length === 1 && first && first.symbol !== "EUR" ? first : null;
+  return (
+    <>
+      {imp && only ? <CorrectionDialog statementImport={imp} balance={only} onDone={onDone} buttonClass="" /> : null}
+      <Link href={`/accounts/${accountId}`}>Export oder Bestand prüfen</Link>
+    </>
+  );
+}
+
 /** „Alle Auszahlungen gingen an eigene Wallets“ (D178 (4)): every proposed withdrawal of one
  * import confirmed as a transfer to an own wallet. */
 export function ConfirmWithdrawals({ importId, count, onDone }: { importId: string; count?: number; onDone: () => void }) {
@@ -675,6 +836,7 @@ function MovementsTable({ movements, onChanged }: { movements: ExchangeMovementR
               <td>
                 {MOVEMENT_KIND[movement.kind]}
                 {movement.network ? <p className="cell-detail">Netzwerk {movement.network}</p> : null}
+                {movement.note ? <p className="cell-detail">Grund: {movement.note}</p> : null}
               </td>
               <td className="num">
                 {formatUnits(movement.quantity)} {movement.symbol}

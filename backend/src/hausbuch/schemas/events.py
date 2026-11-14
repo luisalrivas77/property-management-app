@@ -958,6 +958,16 @@ class MovementImportChecked(Schema):
     assets_mismatched: int = Field(ge=0)
 
 
+class BalanceCorrected(Schema):
+    """account.balance_corrected (D178 amended, 0030): a person booked one coin's difference
+    of an import's typed balance as a correction. Ids only: the quantity is the movement's,
+    and the reason the person wrote stays on the movement."""
+
+    import_id: UUID
+    movement_id: UUID
+    asset_id: UUID
+
+
 class HoldingsChecked(Schema):
     """account.holdings_confirmed, account.holdings_reconciled, account.holdings_mismatch
     (D165 (3)): ids and counts; the units stay in holding_statement."""
@@ -1181,6 +1191,7 @@ class EventType(StrEnum):
     ACCOUNT_MOVEMENTS_RECONCILED = "account.movements_reconciled"
     ACCOUNT_MOVEMENTS_UNRECONCILED = "account.movements_unreconciled"
     ACCOUNT_WITHDRAWAL_HISTORY_CHECKED = "account.withdrawal_history_checked"  # step 5a
+    ACCOUNT_BALANCE_CORRECTED = "account.balance_corrected"  # D178 amended (0030)
     ACCOUNT_HOLDINGS_CONFIRMED = "account.holdings_confirmed"
     ACCOUNT_HOLDINGS_RECONCILED = "account.holdings_reconciled"
     ACCOUNT_HOLDINGS_MISMATCH = "account.holdings_mismatch"
@@ -1368,6 +1379,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.ACCOUNT_WITHDRAWAL_HISTORY_CHECKED: EventSpec(
         WithdrawalHistoryChecked, "forbidden", "Withdrawal history checked (Binance)"
+    ),
+    E.ACCOUNT_BALANCE_CORRECTED: EventSpec(
+        BalanceCorrected, "forbidden", "Exchange balance difference booked as a correction"
     ),
     E.ACCOUNT_HOLDINGS_CONFIRMED: EventSpec(
         HoldingsChecked, "optional", "Holdings confirmed (date = as of)"

@@ -6067,6 +6067,57 @@
         }
       }
     },
+    "/api/movement-imports/{import_id}/corrections": {
+      "post": {
+        "summary": "Movement Import Correction",
+        "description": "„Differenz als Korrektur buchen“ (D178 amended): one coin's difference between the\ntyped balance and the export, booked once as a correction with the person's reason\n(the amount is the stored difference, never typed), then the import checked again.\n422 exchange.correction_not_unreconciled, exchange.correction_not_latest,\nexchange.correction_eur, exchange.correction_no_difference, exchange.correction_stale.",
+        "operationId": "movement_import_correction_api_movement_imports__import_id__corrections_post",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BalanceCorrectionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExchangeImport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/movement-imports/{import_id}/withdrawals/confirm": {
       "post": {
         "summary": "Movement Import Withdrawals",
@@ -10747,6 +10798,29 @@
         "title": "Assumption",
         "description": "A stated assumption of the projection, as data; the frontend holds the German text."
       },
+      "BalanceCorrectionBody": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "reason"
+        ],
+        "title": "BalanceCorrectionBody",
+        "description": "POST /movement-imports/{id}/corrections: „Differenz als Korrektur buchen“ (D178\namended, 0030). The coin whose typed balance differs, and why, in the person's words\n(stored on the movement, never sent to a model). The person types no amount: code books\nthe typed balance's difference."
+      },
       "BalanceSource": {
         "type": "string",
         "enum": [
@@ -14983,6 +15057,7 @@
           "account.movements_reconciled",
           "account.movements_unreconciled",
           "account.withdrawal_history_checked",
+          "account.balance_corrected",
           "account.holdings_confirmed",
           "account.holdings_reconciled",
           "account.holdings_mismatch",
@@ -15274,6 +15349,19 @@
               }
             ],
             "title": "Transaction Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
           },
           "movement_hash": {
             "anyOf": [
@@ -19294,7 +19382,8 @@
           "cashback_reward",
           "distribution",
           "capital_income_tax",
-          "uncategorized"
+          "uncategorized",
+          "balance_correction"
         ],
         "title": "MovementKind",
         "description": "asset_movement.kind (migration 0025, §8). Phase 7 widens the CHECK with the chain\nkinds of the design's §2.2."

@@ -61,7 +61,7 @@ import { notifyInboxChanged } from "@/lib/inboxCount";
 
 import { BalanceForm, DuplicateCard, OpeningFromClosing } from "./accounts";
 import { documentLabel, ImportStoredStatement, UploadControl } from "./documents";
-import { ConfirmWithdrawals, formatUnits, MovementAnswers } from "./exchange";
+import { ConfirmWithdrawals, ExchangeUnreconciledActions, formatUnits, MovementAnswers } from "./exchange";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { ALLOCATION_CATEGORY, INBOX_ITEM_KIND } from "./labels";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
@@ -893,7 +893,9 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
     case "exchange_pending_balance":
       return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Bestand laut Börse eingeben</Link> : null;
     case "exchange_unreconciled":
-      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Export oder Bestand prüfen</Link> : null;
+      return item.account_id ? (
+        <ExchangeUnreconciledActions accountId={item.account_id} importId={item.import_id} onDone={onChanged} />
+      ) : null;
     case "exchange_withdrawals":
       return item.import_id ? (
         <>
