@@ -6,10 +6,12 @@ official `anthropic` SDK. Everything above the client (prompts, gating, parsing,
 is shared, so swapping the route changes this file only.
 
 A request is the Messages API body itself (ModelRequest.body()), so its SHA-256 is what
-ai_call.input_sha256 stores. The API key travels in a header, never in the body: the hash, the
-ai_call row and every log line are free of it by construction. Errors are mapped to
-ModelCallError carrying only the status, a retryable flag and the request id; the SDK's own
-exception (whose message quotes the response body) is never chained, logged or stored.
+ai_call.input_sha256 stores; it is sent with its system prompt marked for prompt caching
+(`cached`, D194), which changes the price, not the input. The API key travels in a header,
+never in the body: the hash, the ai_call row and every log line are free of it by
+construction. Errors are mapped to ModelCallError carrying only the status, a retryable flag
+and the request id; the SDK's own exception (whose message quotes the response body) is
+never chained, logged or stored.
 """
 
 import hashlib
@@ -141,7 +143,7 @@ class AnthropicModelClient:
     def send(self, request: ModelRequest) -> ModelResponse:
         started = time.monotonic()
         try:
-            message = self._client.messages.create(**request.body())
+            message = self._client.messages.create(**cached(request.body()))
         except (anthropic.RateLimitError, anthropic.InternalServerError) as exc:
             # 429, and every 5xx including 529 overloaded.
             raise ModelCallError(
@@ -163,6 +165,22 @@ class AnthropicModelClient:
                 retryable=True, status=None, duration_ms=_elapsed_ms(started)
             ) from None
         return message_to_response(message, _elapsed_ms(started))
+
+
+def cached(body: dict[str, Any]) -> dict[str, Any]:
+    """The body as sent: the system prompt as one text block marked for prompt caching (D194).
+    The prompt is the same for every call of a job, so a run of many lines reads it from the
+    cache at a tenth of the input price instead of paying for it each time; a prompt shorter
+    than the model's minimum is simply not cached. The marker is a transport detail, not
+    input: ai_call.input_sha256 stays the hash of body(), so recorded evals and replays keep
+    matching."""
+    system = body.get("system")
+    if not isinstance(system, str) or not system:
+        return body
+    return {
+        **body,
+        "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+    }
 
 
 def message_to_response(message: Any, duration_ms: int) -> ModelResponse:
