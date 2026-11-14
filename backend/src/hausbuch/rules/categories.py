@@ -97,6 +97,7 @@ TAX_TREATMENT = MappingProxyType(
         C.HH_FUEL: T.PRIVATE,  # D159 amended 14 Nov 2026 (migration 0031)
         # D159 amended 14 Nov 2026 (migration 0032): the subcategories, private like their groups
         C.HH_STREAMING: T.PRIVATE,
+        C.HH_PAY_TV: T.PRIVATE,  # D159 amended (4) 14 Nov 2026 (migration 0033)
         C.HH_MUSIC_AUDIO: T.PRIVATE,
         C.HH_SOFTWARE: T.PRIVATE,
         C.HH_CLOUD: T.PRIVATE,
@@ -232,6 +233,7 @@ CATEGORY_LABEL = MappingProxyType(
         C.HH_FUEL: "Tanken (Auto)",  # D159 amended 14 Nov 2026 (migration 0031)
         # D159 amended 14 Nov 2026 (migration 0032); Luis's labels
         C.HH_STREAMING: "Streaming (Video)",
+        C.HH_PAY_TV: "Kabel- & Pay-TV",  # D159 amended (4) 14 Nov 2026 (migration 0033)
         C.HH_MUSIC_AUDIO: "Musik & Hörbücher",
         C.HH_SOFTWARE: "Software & KI",
         C.HH_CLOUD: "Cloud & Server",

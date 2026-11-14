@@ -39,6 +39,7 @@ def test_the_plain_household_income_and_spending_codes():
         "hh_refund",
         "hh_fuel",
         "hh_streaming",
+        "hh_pay_tv",
         "hh_music_audio",
         "hh_software",
         "hh_cloud",

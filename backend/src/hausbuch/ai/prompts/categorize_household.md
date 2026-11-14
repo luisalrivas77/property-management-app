@@ -54,7 +54,8 @@ leisure.
   - `hh_ins_life`: life, disability or pension insurance (Lebensversicherung, Berufsunfähigkeit, Rentenversicherung)
   - `hh_insurance`: (fallback) any other insurance premium of the household (legal expenses, travel, pet)
 - Subscriptions and contracts (Abos & Verträge):
-  - `hh_streaming`: video streaming (Netflix, Sky, DAZN, Disney+, Prime Video, YouTube Premium)
+  - `hh_streaming`: video streaming (Netflix, DAZN, Disney+, Prime Video, YouTube Premium); a DAZN subscription stays here even when a Sky company collects it (the purpose text names DAZN)
+  - `hh_pay_tv`: TV by cable or satellite and pay TV: a Sky subscription (Sky Deutschland, „Ihr Sky Abo“), a cable TV connection (Kabelanschluss, Vodafone Kabel/GigaTV, PŸUR TV) or satellite TV (HD+); internet or phone over cable is `hh_internet`, and the broadcasting fee is `hh_broadcast_fee`
   - `hh_music_audio`: music, audiobooks and podcasts (Spotify, Audible, Deezer, Apple Music)
   - `hh_software`: software, apps and AI services for private use (Microsoft 365, Anthropic, OpenAI, Adobe, GitHub)
   - `hh_cloud`: cloud storage, servers and hosting (iCloud, Google One, Dropbox, Vultr, Hetzner)

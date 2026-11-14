@@ -81,6 +81,8 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_FUEL, G.MOBILITY, R.SPENDING),
             # D159 amended 14 Nov 2026 (migration 0032): subcategories inside their parent's group
             _code(C.HH_STREAMING, G.SUBSCRIPTIONS, R.SPENDING),
+            # D159 amended (4) 14 Nov 2026 (migration 0033): cable and pay TV beside streaming
+            _code(C.HH_PAY_TV, G.SUBSCRIPTIONS, R.SPENDING),
             _code(C.HH_MUSIC_AUDIO, G.SUBSCRIPTIONS, R.SPENDING),
             _code(C.HH_SOFTWARE, G.SUBSCRIPTIONS, R.SPENDING),
             _code(C.HH_CLOUD, G.SUBSCRIPTIONS, R.SPENDING),

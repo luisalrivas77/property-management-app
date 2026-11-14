@@ -584,6 +584,8 @@ export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
   hh_fuel: "Tanken (Auto)",
   // D159 amended 14 Nov 2026 (migration 0032)
   hh_streaming: "Streaming (Video)",
+  // D159 amended (4) 14 Nov 2026 (migration 0033)
+  hh_pay_tv: "Kabel- & Pay-TV",
   hh_music_audio: "Musik & Hörbücher",
   hh_software: "Software & KI",
   hh_cloud: "Cloud & Server",
@@ -709,6 +711,7 @@ export const HOUSEHOLD_SPENDING_GROUPS: { group: HouseholdGroup; categories: All
     group: "subscriptions",
     categories: [
       "hh_streaming",
+      "hh_pay_tv",
       "hh_music_audio",
       "hh_software",
       "hh_cloud",

@@ -98,6 +98,7 @@ thresholds:
   - {category: hh_fuel, threshold: "0.900"}  # D159 amended 14 Nov 2026 (0031), as hh_mobility
   # D159 amended 14 Nov 2026 (migration 0032): the subcategories at 0.9
   - {category: hh_streaming, threshold: "0.900"}
+  - {category: hh_pay_tv, threshold: "0.900"}  # D159 amended (4) 14 Nov 2026 (0033), as hh_streaming
   - {category: hh_music_audio, threshold: "0.900"}
   - {category: hh_software, threshold: "0.900"}
   - {category: hh_cloud, threshold: "0.900"}
