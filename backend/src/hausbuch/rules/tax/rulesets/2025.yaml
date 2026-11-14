@@ -227,6 +227,48 @@ form:
     hh_investment: null
     hh_refund: null
     hh_fuel: null  # phase 6 D159 amended 14 Nov 2026 (migration 0031): private, on no form
+    hh_streaming: null  # phase 6 D159 amended 14 Nov 2026 (migration 0032): private, on no form
+    hh_music_audio: null
+    hh_software: null
+    hh_cloud: null
+    hh_gaming: null
+    hh_news: null
+    hh_memberships: null
+    hh_public_transport: null
+    hh_taxi: null
+    hh_parking: null
+    hh_car_service: null
+    hh_car_tax: null
+    hh_supermarket: null
+    hh_drugstore: null
+    hh_bakery: null
+    hh_restaurant: null
+    hh_cafe: null
+    hh_sweets: null
+    hh_fast_food: null
+    hh_delivery: null
+    hh_rent: null
+    hh_energy: null
+    hh_broadcast_fee: null
+    hh_flat_search: null
+    hh_ins_car: null
+    hh_ins_liability_contents: null
+    hh_ins_health: null
+    hh_ins_life: null
+    hh_pharmacy: null
+    hh_doctor: null
+    hh_dental_optical: null
+    hh_outings: null
+    hh_books_media: null
+    hh_hobbies: null
+    hh_lodging: null
+    hh_flights: null
+    hh_kids_gear: null
+    hh_toys: null
+    hh_pregnancy_birth: null
+    hh_mobile_phone: null
+    hh_internet: null
+    hh_postage: null
     security_purchase: null
     security_sale: null
     distribution: null

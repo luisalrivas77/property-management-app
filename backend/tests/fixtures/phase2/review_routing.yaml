@@ -107,6 +107,49 @@ per_category:
   - {category: hh_investment, decision: review}
   - {category: hh_refund, decision: review}
   - {category: hh_fuel, decision: auto_confirm}  # D159 amended 14 Nov 2026 (migration 0031)
+  # D159 amended 14 Nov 2026 (migration 0032): the subcategories, as their groups' codes
+  - {category: hh_streaming, decision: auto_confirm}
+  - {category: hh_music_audio, decision: auto_confirm}
+  - {category: hh_software, decision: auto_confirm}
+  - {category: hh_cloud, decision: auto_confirm}
+  - {category: hh_gaming, decision: auto_confirm}
+  - {category: hh_news, decision: auto_confirm}
+  - {category: hh_memberships, decision: auto_confirm}
+  - {category: hh_public_transport, decision: auto_confirm}
+  - {category: hh_taxi, decision: auto_confirm}
+  - {category: hh_parking, decision: auto_confirm}
+  - {category: hh_car_service, decision: auto_confirm}
+  - {category: hh_car_tax, decision: auto_confirm}
+  - {category: hh_supermarket, decision: auto_confirm}
+  - {category: hh_drugstore, decision: auto_confirm}
+  - {category: hh_bakery, decision: auto_confirm}
+  - {category: hh_restaurant, decision: auto_confirm}
+  - {category: hh_cafe, decision: auto_confirm}
+  - {category: hh_sweets, decision: auto_confirm}
+  - {category: hh_fast_food, decision: auto_confirm}
+  - {category: hh_delivery, decision: auto_confirm}
+  - {category: hh_rent, decision: auto_confirm}
+  - {category: hh_energy, decision: auto_confirm}
+  - {category: hh_broadcast_fee, decision: auto_confirm}
+  - {category: hh_flat_search, decision: auto_confirm}
+  - {category: hh_ins_car, decision: auto_confirm}
+  - {category: hh_ins_liability_contents, decision: auto_confirm}
+  - {category: hh_ins_health, decision: auto_confirm}
+  - {category: hh_ins_life, decision: auto_confirm}
+  - {category: hh_pharmacy, decision: auto_confirm}
+  - {category: hh_doctor, decision: auto_confirm}
+  - {category: hh_dental_optical, decision: auto_confirm}
+  - {category: hh_outings, decision: auto_confirm}
+  - {category: hh_books_media, decision: auto_confirm}
+  - {category: hh_hobbies, decision: auto_confirm}
+  - {category: hh_lodging, decision: auto_confirm}
+  - {category: hh_flights, decision: auto_confirm}
+  - {category: hh_kids_gear, decision: auto_confirm}
+  - {category: hh_toys, decision: auto_confirm}
+  - {category: hh_pregnancy_birth, decision: auto_confirm}
+  - {category: hh_mobile_phone, decision: auto_confirm}
+  - {category: hh_internet, decision: auto_confirm}
+  - {category: hh_postage, decision: auto_confirm}
   - {category: security_purchase, decision: review}
   - {category: security_sale, decision: review}
   - {category: distribution, decision: review}

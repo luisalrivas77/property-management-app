@@ -159,6 +159,7 @@ def test_the_haushalt_month(client_a, client_b, world, private):
         "savings_rate": "0.8594",
         "income_by_category": {"hh_salary": "3200.00"},
         "open_lines": 1,
+        "spending_by_category": {"groceries": {"hh_groceries": "450.00"}},
     }
     other = ok(client_b.get("/api/household/cashflow", params={"month": "2026-10"}))
     assert (other["income"], other["open_lines"], other["savings_rate"]) == ("0.00", 0, None)

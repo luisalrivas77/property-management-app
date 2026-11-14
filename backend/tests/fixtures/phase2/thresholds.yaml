@@ -95,6 +95,49 @@ thresholds:
   - {category: hh_investment, threshold: null}
   - {category: hh_refund, threshold: null}
   - {category: hh_fuel, threshold: "0.900"}  # D159 amended 14 Nov 2026 (0031), as hh_mobility
+  # D159 amended 14 Nov 2026 (migration 0032): the subcategories at 0.9
+  - {category: hh_streaming, threshold: "0.900"}
+  - {category: hh_music_audio, threshold: "0.900"}
+  - {category: hh_software, threshold: "0.900"}
+  - {category: hh_cloud, threshold: "0.900"}
+  - {category: hh_gaming, threshold: "0.900"}
+  - {category: hh_news, threshold: "0.900"}
+  - {category: hh_memberships, threshold: "0.900"}
+  - {category: hh_public_transport, threshold: "0.900"}
+  - {category: hh_taxi, threshold: "0.900"}
+  - {category: hh_parking, threshold: "0.900"}
+  - {category: hh_car_service, threshold: "0.900"}
+  - {category: hh_car_tax, threshold: "0.900"}
+  - {category: hh_supermarket, threshold: "0.900"}
+  - {category: hh_drugstore, threshold: "0.900"}
+  - {category: hh_bakery, threshold: "0.900"}
+  - {category: hh_restaurant, threshold: "0.900"}
+  - {category: hh_cafe, threshold: "0.900"}
+  - {category: hh_sweets, threshold: "0.900"}
+  - {category: hh_fast_food, threshold: "0.900"}
+  - {category: hh_delivery, threshold: "0.900"}
+  - {category: hh_rent, threshold: "0.900"}
+  - {category: hh_energy, threshold: "0.900"}
+  - {category: hh_broadcast_fee, threshold: "0.900"}
+  - {category: hh_flat_search, threshold: "0.900"}
+  - {category: hh_ins_car, threshold: "0.900"}
+  - {category: hh_ins_liability_contents, threshold: "0.900"}
+  - {category: hh_ins_health, threshold: "0.900"}
+  - {category: hh_ins_life, threshold: "0.900"}
+  - {category: hh_pharmacy, threshold: "0.900"}
+  - {category: hh_doctor, threshold: "0.900"}
+  - {category: hh_dental_optical, threshold: "0.900"}
+  - {category: hh_outings, threshold: "0.900"}
+  - {category: hh_books_media, threshold: "0.900"}
+  - {category: hh_hobbies, threshold: "0.900"}
+  - {category: hh_lodging, threshold: "0.900"}
+  - {category: hh_flights, threshold: "0.900"}
+  - {category: hh_kids_gear, threshold: "0.900"}
+  - {category: hh_toys, threshold: "0.900"}
+  - {category: hh_pregnancy_birth, threshold: "0.900"}
+  - {category: hh_mobile_phone, threshold: "0.900"}
+  - {category: hh_internet, threshold: "0.900"}
+  - {category: hh_postage, threshold: "0.900"}
   - {category: security_purchase, threshold: null}
   - {category: security_sale, threshold: null}
   - {category: distribution, threshold: null}

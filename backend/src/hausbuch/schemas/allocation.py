@@ -115,6 +115,63 @@ class AllocationCategory(StrEnum):
     HH_REFUND = "hh_refund"  # private (Erstattung: lowers spending, never income)
     # Phase 6 D159 amended 14 Nov 2026 (migration 0031, Luis): fuel apart from hh_mobility.
     HH_FUEL = "hh_fuel"  # private (Tanken (Auto); group mobility)
+    # Phase 6 D159 amended 14 Nov 2026 (migration 0032, Luis: „I want to be as detailed as
+    # possible“): subcategories inside the existing spending groups; each group's old code
+    # stays as its fallback („Sonstige …“).
+    # group subscriptions
+    HH_STREAMING = "hh_streaming"  # private (Streaming (Video))
+    HH_MUSIC_AUDIO = "hh_music_audio"  # private (Musik & Hörbücher)
+    HH_SOFTWARE = "hh_software"  # private (Software & KI)
+    HH_CLOUD = "hh_cloud"  # private (Cloud & Server)
+    HH_GAMING = "hh_gaming"  # private (Gaming)
+    HH_NEWS = "hh_news"  # private (Zeitungen & Zeitschriften)
+    HH_MEMBERSHIPS = "hh_memberships"  # private (Mitgliedschaften & Vereine)
+    # group mobility
+    HH_PUBLIC_TRANSPORT = "hh_public_transport"  # private (Bahn, Bus & ÖPNV)
+    HH_TAXI = "hh_taxi"  # private (Taxi & Fahrdienste)
+    HH_PARKING = "hh_parking"  # private (Parken & Maut)
+    HH_CAR_SERVICE = "hh_car_service"  # private (Auto: Werkstatt & Wartung)
+    HH_CAR_TAX = "hh_car_tax"  # private (Auto: Kfz-Steuer & Zulassung)
+    # group groceries
+    HH_SUPERMARKET = "hh_supermarket"  # private (Supermarkt)
+    HH_DRUGSTORE = "hh_drugstore"  # private (Drogerie & Kosmetik)
+    HH_BAKERY = "hh_bakery"  # private (Bäckerei, Kiosk & Markt)
+    # group dining
+    HH_RESTAURANT = "hh_restaurant"  # private (Restaurant)
+    HH_CAFE = "hh_cafe"  # private (Café)
+    HH_SWEETS = "hh_sweets"  # private (Eis & Süßes)
+    HH_FAST_FOOD = "hh_fast_food"  # private (Imbiss & Fast Food)
+    HH_DELIVERY = "hh_delivery"  # private (Lieferdienst)
+    # group housing
+    HH_RENT = "hh_rent"  # private (Miete)
+    HH_ENERGY = "hh_energy"  # private (Strom, Gas & Heizung)
+    HH_BROADCAST_FEE = "hh_broadcast_fee"  # private (Rundfunkbeitrag)
+    HH_FLAT_SEARCH = "hh_flat_search"  # private (Wohnungssuche & Umzug)
+    # group insurance
+    HH_INS_CAR = "hh_ins_car"  # private (Kfz-Versicherung)
+    HH_INS_LIABILITY_CONTENTS = "hh_ins_liability_contents"  # private (Haftpflicht & Hausrat)
+    HH_INS_HEALTH = "hh_ins_health"  # private (Kranken & Pflege)
+    HH_INS_LIFE = "hh_ins_life"  # private (Leben, Berufsunfähigkeit & Rente)
+    # group health
+    HH_PHARMACY = "hh_pharmacy"  # private (Apotheke)
+    HH_DOCTOR = "hh_doctor"  # private (Arzt & Labor)
+    HH_DENTAL_OPTICAL = "hh_dental_optical"  # private (Zahnarzt & Brille)
+    # group leisure_travel
+    HH_OUTINGS = "hh_outings"  # private (Ausflüge & Kultur)
+    HH_BOOKS_MEDIA = "hh_books_media"  # private (Bücher & Medien)
+    HH_HOBBIES = "hh_hobbies"  # private (Hobbys)
+    # group travel
+    HH_LODGING = "hh_lodging"  # private (Unterkunft)
+    HH_FLIGHTS = "hh_flights"  # private (Flüge)
+    # group family_child
+    HH_KIDS_GEAR = "hh_kids_gear"  # private (Baby- & Kinderausstattung)
+    HH_TOYS = "hh_toys"  # private (Spielzeug)
+    HH_PREGNANCY_BIRTH = "hh_pregnancy_birth"  # private (Schwangerschaft & Geburt)
+    # group telecom
+    HH_MOBILE_PHONE = "hh_mobile_phone"  # private (Mobilfunk)
+    HH_INTERNET = "hh_internet"  # private (Internet & Festnetz)
+    # group other
+    HH_POSTAGE = "hh_postage"  # private (Porto & Versand)
     # --- Phase 6 D165: the depot's own cash bookings, by booking text in code (rules.depot);
     # not hh_* because phase 8's KAP rules read distribution and capital_income_tax.
     SECURITY_PURCHASE = "security_purchase"  # private
