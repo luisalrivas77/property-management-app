@@ -2,6 +2,7 @@
 and suggestions; anything that depends on it blocks with a code. Services under hausbuch_app
 and RLS, with a LocalBlobStore; the dependent rows are seeded as the superuser."""
 
+import contextlib
 import hashlib
 import json
 import uuid
@@ -9,6 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 from db.db_support import _admin, insert_property
+from sqlalchemy.exc import OperationalError
 
 from hausbuch.schemas.document import DocumentTyping, ManualDocumentFields
 from hausbuch.schemas.enums import DocumentSource, DocumentType, EntityType, LinkTarget
@@ -321,3 +323,110 @@ def test_another_workspaces_document_is_not_found(run, read, upload, fresh_works
         read(a, list_events, entity_type=EntityType.DOCUMENT, entity_id=document.id)[-1].type
         is EventType.DOCUMENT_UPLOADED
     )
+
+
+def test_a_model_call_cited_elsewhere_blocks(run, upload, admin, ws):
+    document = upload()
+    call = _ai_call(admin, ws, document.id)
+    account = admin.execute(
+        "INSERT INTO account (workspace_id, label, bank, opening_balance, opening_balance_on,"
+        " iban_masked, iban_hmac) VALUES (%s, 'Giro', 'Bank', 0, '2026-01-01',"
+        " 'DE00 **** 0003', %s) RETURNING id",
+        (ws, bytes(32)),
+    ).fetchone()[0]
+    statement = upload()
+    import_id = admin.execute(
+        "INSERT INTO statement_import (workspace_id, account_id, document_id, format)"
+        " VALUES (%s, %s, %s, 'pdf') RETURNING id",
+        (ws, account, statement.id),
+    ).fetchone()[0]
+    tx = admin.execute(
+        "INSERT INTO transaction (workspace_id, account_id, import_id, line_hash, booking_date,"
+        " amount) VALUES (%s, %s, %s, %s, '2026-03-01', -100.00) RETURNING id",
+        (ws, account, import_id, hashlib.sha256(b"line ai").digest()),
+    ).fetchone()[0]
+    admin.execute(
+        "INSERT INTO allocation (workspace_id, transaction_id, amount, category, method,"
+        " confidence, ai_call_id) VALUES (%s, %s, -100.00, 'repairs', 'llm', 0.9, %s)",
+        (ws, tx, call),
+    )
+    assert _blocked(run, ws, document.id) == [svc.BLOCK_AI_CALL]
+    assert _count(admin, "ai_call", "id", call) == 1
+
+
+# --- The blob and a concurrent upload of the same bytes (review F1) -------------------
+#
+# Each test holds one transaction open and runs the competing step on a second connection with
+# a short lock_timeout: it must wait (and so time out) instead of interleaving.
+
+
+@pytest.fixture
+def tx(app_engine):
+    """tx(ws): an open workspace transaction as a test user, as a context manager yielding a
+    CommandContext; leaving the block commits it."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+
+    @contextlib.contextmanager
+    def _tx(ws, *, lock_timeout: str | None = None):
+        with workspace_transaction(app_engine, ws) as conn:
+            if lock_timeout is not None:
+                conn.exec_driver_sql(f"SET LOCAL lock_timeout = '{lock_timeout}'")
+            yield new_command(conn, ws, Actor(ActorType.USER, "user:test"), now=NOW)
+
+    return _tx
+
+
+def _upload_in(ctx, store, data):
+    return svc.upload_document(
+        ctx, store, data, media_type=PDF, source=DocumentSource.UPLOAD, original_filename="x.pdf"
+    )
+
+
+def test_discard_waits_for_an_upload_of_the_same_bytes(run, read, upload, ws, blob_store, tx):
+    data = _bytes("race upload first")
+    removed = _delete(run, ws, upload(data).id)
+    with tx(ws) as uploading:
+        again = _upload_in(uploading, blob_store, data)
+        with (
+            pytest.raises(OperationalError, match="lock timeout"),
+            tx(ws, lock_timeout="200ms") as other,
+        ):
+            svc.discard_original(other.conn, blob_store, removed)
+    # The upload committed its row, so the blob it relies on stays.
+    assert read(ws, svc.discard_original, blob_store, removed) is False
+    assert blob_store.exists(removed.storage_key)
+    assert read(ws, svc.get_document, again.id) == again
+
+
+def test_an_upload_waits_for_a_discard_in_flight(run, read, upload, ws, blob_store, tx):
+    data = _bytes("race discard first")
+    removed = _delete(run, ws, upload(data).id)
+    with tx(ws) as discarding:
+        assert svc.discard_original(discarding.conn, blob_store, removed) is True
+        with (
+            pytest.raises(OperationalError, match="lock timeout"),
+            tx(ws, lock_timeout="200ms") as other,
+        ):
+            _upload_in(other, blob_store, data)
+    # After the discard, the upload puts the blob anew.
+    again = upload(data)
+    assert blob_store.exists(removed.storage_key)
+    assert read(ws, svc.get_document, again.id) == again
+
+
+def test_a_re_upload_waits_for_a_deletion_in_flight(run, read, upload, ws, blob_store, tx):
+    data = _bytes("race delete")
+    document = upload(data)
+    with tx(ws) as deleting:
+        svc.delete_document(deleting, document.id)
+        with (
+            pytest.raises(OperationalError, match="lock timeout"),
+            tx(ws, lock_timeout="200ms") as other,
+        ):
+            _upload_in(other, blob_store, data)
+    # Once the deletion committed, the same bytes are a new document, not the deleted one.
+    again = upload(data)
+    assert again.id != document.id
+    assert read(ws, svc.get_document, again.id) == again

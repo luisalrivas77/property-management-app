@@ -208,11 +208,16 @@ def upload_document(
     digest = hashlib.sha256(data)
     sha_bytes, sha_hex = digest.digest(), digest.hexdigest()
     key = blob_key(ctx.workspace_id, sha_hex)
+    # D193: held to the commit, so discard_original never removes the blob between this put
+    # and this transaction's document_file row.
+    _file_lock(ctx.conn, key)
     # Blob first, rows second, and on every upload: put is idempotent, so a re-upload heals a
     # lost blob. If the transaction later rolls back, the blob stays behind unreferenced; that
     # is harmless: the key is content-addressed, so a retry reuses it.
     store.put(key, data, media_type)
-    existing = _select_document_by_sha(ctx.conn, sha_bytes)
+    # FOR KEY SHARE waits for a deletion of this document in flight (D193): once it commits,
+    # the row is gone and this upload registers the bytes anew instead of returning it.
+    existing = _select_document_by_sha(ctx.conn, sha_bytes, lock=True)
     if existing is not None:
         return existing
 
@@ -247,7 +252,7 @@ def upload_document(
         .returning(*document_table.c)
     ).one_or_none()
     if row is None:  # lost the race: the other upload registered it and wrote the event
-        return _select_document_by_sha(ctx.conn, sha_bytes)
+        return _select_document_by_sha(ctx.conn, sha_bytes, lock=True)
 
     uploaded = _to_document(row)
     append_event(
@@ -657,6 +662,8 @@ def unlink_document(
 # the document is its own derived data, which the foreign keys cascade: its extraction
 # versions, its ai_call rows and its proposals that were never applied. A queued read job stays
 # in the queue and finds no pending proposal, so it reads nothing (jobs.document_read._load).
+# A read job already calling the model when the document goes fails to insert its ai_call on
+# the foreign key, is retried, and is then skipped the same way.
 
 DELETE_BLOCKED = "document.delete_blocked"
 # One code per kind of dependent row, `document.delete_blocked.<kind>`, in the order checked.
@@ -831,7 +838,12 @@ def delete_document(ctx: CommandContext, document_id: UUID) -> RemovedOriginal |
 
 def discard_original(conn: Connection, store: BlobStore, removed: RemovedOriginal) -> bool:
     """After delete_document committed: remove the blob, unless the same bytes were stored
-    again since (an upload in between wrote a new document_file row). Whether it removed it."""
+    again since (an upload in between wrote a new document_file row). Whether it removed it.
+
+    The upload of the same bytes takes the same lock before it puts the blob and holds it to
+    its commit, so the check and the delete here cannot fall between that put and its row: an
+    upload either finished first (the row is seen, the blob stays) or waits and puts it anew."""
+    _file_lock(conn, removed.storage_key)
     if conn.scalar(select(exists().where(file_table.c.sha256 == removed.sha256))):
         return False
     store.delete(removed.storage_key)
@@ -1121,10 +1133,20 @@ def _select_document(conn: Connection, document_id: UUID, *, for_update: bool) -
     return None if row is None else _to_document(row)
 
 
-def _select_document_by_sha(conn: Connection, sha256: bytes) -> Document | None:
-    row = conn.execute(
-        select(document_table).where(document_table.c.file_sha256 == sha256)
-    ).one_or_none()
+def _file_lock(conn: Connection, storage_key: str) -> None:
+    """D193: pg_advisory_xact_lock on one original's blob key (workspace and SHA-256), released
+    at commit or rollback; serialises an upload of the bytes with discard_original."""
+    lock_key = func.hashtextextended(f"document_file:{storage_key}", 0)
+    conn.execute(select(func.pg_advisory_xact_lock(lock_key)))
+
+
+def _select_document_by_sha(
+    conn: Connection, sha256: bytes, *, lock: bool = False
+) -> Document | None:
+    query = select(document_table).where(document_table.c.file_sha256 == sha256)
+    if lock:
+        query = query.with_for_update(read=True, key_share=True)
+    row = conn.execute(query).one_or_none()
     return None if row is None else _to_document(row)
 
 
