@@ -15137,6 +15137,7 @@
           "statement.duplicate_resolved",
           "transaction.allocated",
           "transaction.reallocated",
+          "transaction.resort_proposed",
           "rule.created",
           "rule.disabled"
         ],

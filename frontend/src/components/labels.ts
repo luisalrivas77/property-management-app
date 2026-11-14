@@ -348,6 +348,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "statement.duplicate_resolved": "Mögliche Doppelbuchung entschieden",
   "transaction.allocated": "Umsatz zugeordnet",
   "transaction.reallocated": "Zuordnung korrigiert",
+  "transaction.resort_proposed": "Feinere Kategorie vorgeschlagen",
   "rule.created": "Regel angelegt",
   "rule.disabled": "Regel deaktiviert",
 };

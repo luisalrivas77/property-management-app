@@ -197,9 +197,9 @@ FALLBACK = MappingProxyType(
     }
 )
 FALLBACK_CODES = frozenset(FALLBACK.values())
-# The household spending codes a line may be sorted into (the one-off re-sort's targets,
-# services.matching.resort_household): spending outside the movement and depot groups, never
-# a card's charges, never a tax-relevant code.
+# The household spending codes a confirmed line may be re-sorted into (the one-off re-sort,
+# services.household_resort): spending outside the movement and depot groups (a refund too),
+# never a card's charges, never a tax-relevant code nor a payment to an investment.
 HOUSEHOLD_SPENDING = frozenset(
     c
     for c, row in TAXONOMY.items()

@@ -972,15 +972,27 @@ def _part(value: Any) -> Decimal | None:
 
 
 def deterministic_set(
-    conn: Connection, tx: MatchTransaction, context: MatchContext
+    conn: Connection,
+    tx: MatchTransaction,
+    context: MatchContext,
+    *,
+    skip_rule_categories: frozenset[AllocationCategory] = frozenset(),
 ) -> AllocationSet | None:
     """The deterministic order of the line's account purpose (rules.matching.
     deterministic_answer, phase 6 D158), with the service-side guards (F3, D39) applied.
     Rental: learned rules, then the matchers, then the document match (§8.1); the rules'
     answer is either a standing hit (confidence 1, used at once) or a near-miss proposal
     (D49), which the matchers come before: an exact rent, loan, owner or document match wins
-    over it. Private: learned rules, the document match, then the tenant / lender question."""
-    rules = rules_learned.rules_for_purpose(conn, context.account_purpose)
+    over it. Private: learned rules, the document match, then the tenant / lender question.
+    `skip_rule_categories`: a rule booking one of these codes is left out (the re-sort into
+    the subcategories, services.household_resort: a rule learned on a group's fallback would
+    only book the line back where it is)."""
+    rules = [
+        rule
+        for rule in rules_learned.rules_for_purpose(conn, context.account_purpose)
+        if rule.category not in skip_rule_categories
+        and not set(rule.categories or ()) & skip_rule_categories
+    ]
     shared = tx.counterparty_iban_hmac in context.shared_iban_hmacs
     history = (
         rule_history(conn, tx, context.account_purpose, shared=shared)
@@ -1555,6 +1567,34 @@ def _asked_with(version: str) -> Select:
     )
 
 
+def lines_asked_with_current_prompt(conn: Connection) -> set[UUID]:
+    """Every line answered with the current household prompt (asked_with_current_prompt for
+    a whole run at once)."""
+    return set(conn.execute(_asked_with(household_prompt_version())).scalars())
+
+
+def acquisition_cost_amounts(conn: Connection) -> set[Decimal]:
+    """The Nebenkosten rows' amounts (property_acquisition_cost), for may_be_purchase_cost."""
+    return {
+        abs(amount)
+        for amount in conn.execute(select(acquisition_cost_table.c.amount)).scalars()
+        if amount is not None
+    }
+
+
+def may_be_purchase_cost(line: Row, costs: set[Decimal]) -> bool:
+    """Whether a private line may be a cost of buying or financing the flat: its payee,
+    purpose or booking text names one (_PURCHASE_COST_WORDS), or its amount equals a
+    Nebenkosten row's to the cent. A one-off batch (the re-ask, the re-sort) leaves such a
+    line to a person. `line` has amount, counterparty_name, purpose and booking_text."""
+    text = " ".join(
+        filter(None, (line.counterparty_name, line.purpose, line.booking_text))
+    ).casefold()
+    return any(word in text for word in _PURCHASE_COST_WORDS) or any(
+        abs(abs(line.amount) - cost) <= _CENT for cost in costs
+    )
+
+
 def asked_with_current_prompt(conn: Connection, transaction_id: UUID) -> bool:
     """Whether the line was answered with the current household prompt (a re-ask job queued
     twice asks once)."""
@@ -1613,21 +1653,12 @@ def reask_household(
         )
         .order_by(t.booking_date, t.id)
     ).all()
-    costs = {
-        abs(amount)
-        for amount in ctx.conn.execute(select(acquisition_cost_table.c.amount)).scalars()
-        if amount is not None
-    }
-    asked = set(ctx.conn.execute(_asked_with(household_prompt_version())).scalars())
+    costs = acquisition_cost_amounts(ctx.conn)
+    asked = lines_asked_with_current_prompt(ctx.conn)
     purchase = already = 0
     candidates: list[UUID] = []
     for line in lines:
-        text = " ".join(
-            filter(None, (line.counterparty_name, line.purpose, line.booking_text))
-        ).casefold()
-        if any(word in text for word in _PURCHASE_COST_WORDS) or any(
-            abs(abs(line.amount) - cost) <= _CENT for cost in costs
-        ):
+        if may_be_purchase_cost(line, costs):
             purchase += 1
         elif line.id in asked:
             already += 1

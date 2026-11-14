@@ -45,7 +45,7 @@ from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import RuleError
-from hausbuch.rules.household.taxonomy import SHARED
+from hausbuch.rules.household.taxonomy import SHARED, fallback_of
 from hausbuch.rules.review import THRESHOLDS
 from hausbuch.schemas.allocation import (
     AllocationSet,
@@ -301,9 +301,14 @@ def create_rule(
     may now book. Disabled first: an enabled rule with the same matcher and the same split
     method and category, and `corrects` (the rules whose bookings this answer replaced with
     another split, review.allocate_transaction: the line's own, and those of the earlier
-    lines it re-booked with rebook_earlier) when one has the same matcher (D49). A
-    shared-code rule learned on an account of the other purpose stays (rules_for_purpose):
-    the rental and a private account may each learn their fees on „Entgelt“."""
+    lines it re-booked with rebook_earlier) when one has the same matcher (D49). Also
+    disabled: a same-matcher rule on the group's fallback of the new rule's subcategory
+    (phase 6 D159 amended 14 Nov 2026, migration 0032: hh_groceries when hh_supermarket is
+    learned), since the finer answer replaces the coarse one rather than adding a second kind
+    beside it; a proposal the re-sort made has no rule booking to correct, so `corrects`
+    misses it. A shared-code rule learned on an account of the other purpose stays
+    (rules_for_purpose): the rental and a private account may each learn their fees on
+    „Entgelt“."""
     matcher = data.matcher.model_dump(mode="json", exclude_none=True)
     for pattern in (data.matcher.counterparty_name_pattern, data.matcher.purpose_pattern):
         check_pattern(pattern)
@@ -312,8 +317,10 @@ def create_rule(
         same_matcher = old.matcher.model_dump(mode="json", exclude_none=True) == matcher
         if not same_matcher:
             continue
-        if old.id in corrects or (
-            _split(old) == _split(data) and not _other_purpose(old, old_origin, new_origin)
+        if (
+            old.id in corrects
+            or _refined(old, data)
+            or (_split(old) == _split(data) and not _other_purpose(old, old_origin, new_origin))
         ):
             disable_rule(ctx, old.id)
     values = data.model_dump(mode="json", exclude={"matcher"})
@@ -369,6 +376,15 @@ def record_hit(ctx: CommandContext, rule_id: UUID) -> None:
 
 _CREATE = set(MatchingRuleCreate.model_fields)
 _SPLIT = {"split_method", "category", "categories"}  # categories: as_last_split's kind (D51)
+
+
+def _refined(old: MatchingRuleCreate, new: MatchingRuleCreate) -> bool:
+    """`old` books one code, the group's fallback of the one code `new` books (create_rule)."""
+    single = SplitMethod.SINGLE_CATEGORY
+    if old.split_method is not single or new.split_method is not single:
+        return False
+    fallback = None if new.category is None else fallback_of(new.category)
+    return fallback is not None and old.category is fallback
 
 
 def _split(rule: MatchingRuleCreate) -> dict[str, Any]:
