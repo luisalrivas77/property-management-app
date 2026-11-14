@@ -83,7 +83,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "statement.before_anchor":
     "Der Auszug enthält Umsätze am oder vor dem Datum des Anfangssaldos. Den Anfangssaldo auf einen früheren Tag legen.",
   "statement.unknown_format":
-    "Dateiformat nicht erkannt. Erwartet: camt (XML oder ZIP), Sparkasse CSV-CAMT, der CSV-Export der DKB oder die PDF-Abrechnung einer Kreditkarte.",
+    "Dateiformat nicht erkannt. Erwartet: camt (XML oder ZIP), Sparkasse CSV-CAMT, der CSV-Export der DKB, die PDF-Abrechnung einer Kreditkarte oder der PDF-Kontoauszug eines Depots. Andere Unterlagen unter Dokumente hochladen.",
   "statement.unparsable": "Die Datei ist beschädigt oder unvollständig und konnte nicht gelesen werden.",
   "statement.archive_rejected":
     "Das ZIP-Archiv wurde abgelehnt: nur XML-Dateien ohne Ordner, höchstens 400 Dateien und 20 MiB, keine ZIPs im ZIP.",
