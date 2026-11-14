@@ -15,8 +15,10 @@
   re-asks the model: rematch_waiting and rematch_on_evidence never call it.
 """
 
+import logging
+import time
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
@@ -90,6 +92,8 @@ NOT_OPEN = "allocation.line_not_open"
 BULK_CATEGORY_REFUSED = "inbox.category_not_bulk"  # „Alle bestätigen“ (D159 amended)
 BULK_NOT_PRIVATE = "inbox.line_not_private"
 USER_CONFIDENCE = "1.000"
+
+logger = logging.getLogger("hausbuch.services.review")
 
 
 # --- PUT / GET /transactions/{id}/allocations --------------------------------------------
@@ -607,36 +611,66 @@ def inbox(
     open Jahresfragen (phase 4b D110, `questionnaire_open`), the reminders visible today
     (phase 5 §6, `reminder`) and the transfer cards (phase 6 D162); with `now`, the email-in
     cards (phase 5 §5.4: email_received, email_failed) and the bank sync's (phase 5 §4.6,
-    D117: bank_sync_failed, bank_balance_drift)."""
-    items = _proposal_items(conn) + import_inbox_items(conn) + _allocation_items(conn)
+    D117: bank_sync_failed, bank_balance_drift).
+
+    Logs one line, `inbox sections`, with each section's milliseconds and item count (field
+    names and numbers only, never an item's content), so a slow queue can be traced to its
+    section in the production log."""
+    from .depot import holdings_inbox_items  # it imports the asset services
+    from .exchange.imports import exchange_inbox_items  # it imports the transfer services
     from .property_costs import property_cost_items  # it imports the matching services
 
-    items += property_cost_items(conn)
-    from .depot import holdings_inbox_items  # it imports the asset services
-
-    items += holdings_inbox_items(conn)
-    from .exchange.imports import exchange_inbox_items  # it imports the transfer services
-
-    items += exchange_inbox_items(conn)
+    sections: list[tuple[str, Callable[[], list[InboxItem]]]] = [
+        ("proposals", lambda: _proposal_items(conn)),
+        ("imports", lambda: import_inbox_items(conn)),
+        ("allocations", lambda: _allocation_items(conn)),
+        ("property_costs", lambda: property_cost_items(conn)),
+        ("holdings", lambda: holdings_inbox_items(conn)),
+        ("exchange", lambda: exchange_inbox_items(conn)),
+    ]
     if today is not None:
-        items += _questionnaire_items(conn, today)
+        from .reminders import reminder_inbox_items  # it imports the checklist services
         from .transfers import transfer_inbox_items
 
-        items += transfer_inbox_items(conn, today)
-        from .reminders import reminder_inbox_items  # it imports the checklist services
-
-        items += reminder_inbox_items(conn, today)
+        sections += [
+            ("questionnaire", lambda: _questionnaire_items(conn, today)),
+            ("transfers", lambda: transfer_inbox_items(conn, today)),
+            ("reminders", lambda: reminder_inbox_items(conn, today)),
+        ]
     if now is not None:
-        from .inbound_mail import inbound_mail_items  # it imports the statement services
-
-        items += inbound_mail_items(conn, now)
         from .bank_sync import bank_sync_items  # it imports the statement services
-
-        items += bank_sync_items(conn)
+        from .inbound_mail import inbound_mail_items  # it imports the statement services
         from .prices.overview import price_inbox_items  # phase 6 step 5b
 
-        items += price_inbox_items(conn, now)
-    return sorted(items, key=lambda item: item.created_at, reverse=True)
+        sections += [
+            ("inbound_mail", lambda: inbound_mail_items(conn, now)),
+            ("bank_sync", lambda: bank_sync_items(conn)),
+            ("prices", lambda: price_inbox_items(conn, now)),
+        ]
+    items: list[InboxItem] = []
+    section_ms: dict[str, float] = {}
+    section_items: dict[str, int] = {}
+    started = time.perf_counter()
+    for name, build in sections:
+        began = time.perf_counter()
+        found = build()
+        section_ms[name] = round((time.perf_counter() - began) * 1000, 1)
+        section_items[name] = len(found)
+        items += found
+    result = sorted(items, key=lambda item: item.created_at, reverse=True)
+    logger.info(
+        "inbox sections",
+        extra={
+            "fields": {
+                "event": "inbox_sections",
+                "total_ms": round((time.perf_counter() - started) * 1000, 1),
+                "items": len(result),
+                "section_ms": section_ms,
+                "section_items": section_items,
+            }
+        },
+    )
+    return result
 
 
 def _questionnaire_items(conn: Connection, today: date) -> list[InboxItem]:
