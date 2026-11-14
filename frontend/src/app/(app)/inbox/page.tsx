@@ -53,11 +53,13 @@ function Inbox() {
   }
 
   // A learned rule re-checks the waiting lines it names in the background (rematch_waiting):
-  // reload the list twice more, so the lines it booked leave the queue without a page reload.
+  // reload the list a few more times, so the lines it booked leave the queue without a page
+  // reload. The re-check takes about a second per line (14 Nov 2026: 39 lines of one payee in
+  // 27 s, after the two reloads at 3 and 10 s had passed), so the reloads run for two minutes.
   const reload = inbox.reload;
   useEffect(() => {
     if (!saved?.rule) return;
-    const timers = [3000, 10000].map((ms) => window.setTimeout(reload, ms));
+    const timers = [3000, 10000, 20000, 35000, 60000, 90000, 120000].map((ms) => window.setTimeout(reload, ms));
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [saved, reload]);
 
@@ -104,7 +106,7 @@ function Inbox() {
             Zuordnung bestätigt.
             {saved.rebooked > 0 ? ` ${rebookedText(saved)}` : null}
             {saved.rule
-              ? " Regel gespeichert: künftige Buchungen dieser Art werden automatisch so zugeordnet. Wartende Zahlungen, auf die sie passt, werden jetzt neu geprüft."
+              ? " Regel gespeichert: künftige Buchungen dieser Art werden automatisch so zugeordnet. Wartende Zahlungen, auf die sie passt, werden jetzt im Hintergrund neu geprüft; die Liste aktualisiert sich in den nächsten zwei Minuten von selbst."
               : null}
           </Notice>
         ) : null}
