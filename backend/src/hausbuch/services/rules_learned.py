@@ -125,6 +125,7 @@ def _with_origin(conn: Connection, where: Any) -> list[tuple[MatchingRule, str |
             acc.purpose.label("origin_purpose"),
             t.counterparty_name.label("origin_name"),
             t.purpose.label("origin_text"),
+            t.amount.label("origin_amount"),
         )
         .select_from(
             rule_table.outerjoin(allocation_table, a.id == rule_table.c.created_from_allocation_id)
@@ -139,9 +140,10 @@ def _with_origin(conn: Connection, where: Any) -> list[tuple[MatchingRule, str |
         fields = row._asdict()
         origin = fields.pop("origin_purpose")
         name, text = fields.pop("origin_name"), fields.pop("origin_text")
+        amount = fields.pop("origin_amount")
         rule = MatchingRule.model_validate(fields)
         if origin == AccountPurpose.PRIVATE.value and name is not None:
-            rule = rule.with_learned_from(name, text)
+            rule = rule.with_learned_from(name, text, amount)
         out.append((rule, origin))
     return out
 

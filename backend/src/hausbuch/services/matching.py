@@ -1013,8 +1013,30 @@ def deterministic_set(
         if _any_hit(rules, tx, context)
         else []
     )
+    history = [*history, *_cross_rule_history(conn, rules, tx, context)]
     found = matchers.deterministic_answer(rules, tx, context, history)
     return None if found is None else _guarded(conn, found)
+
+
+def _cross_rule_history(
+    conn: Connection, rules: list[MatchingRule], tx: MatchTransaction, context: MatchContext
+) -> list[HistoryLine]:
+    """Review F1 (Luis, 14 Nov 2026): a cross-IBAN STRONG hit books only at the amount of
+    the rule's latest confirmed line on its own IBAN (rules.matching.cross_iban_reference),
+    so that IBAN's history is read, once per IBAN, for the rules that could book this line
+    that way (a WEAK or same_amount_only hit is a proposal whatever the amount)."""
+    out: list[HistoryLine] = []
+    read: set[str] = set()
+    for rule in rules:
+        hmac = rule.matcher.counterparty_iban_hmac
+        if hmac is None or hmac in read or rule.same_amount_only:
+            continue
+        if matchers.cross_iban_hit(rule, tx, context) != matchers.STRONG:
+            continue
+        read.add(hmac)
+        probe = tx.model_copy(update={"counterparty_iban_hmac": hmac})
+        out.extend(rule_history(conn, probe, context.account_purpose))
+    return out
 
 
 def _shared_rule_ibans(

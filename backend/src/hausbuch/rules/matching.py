@@ -448,7 +448,11 @@ def apply_rule(
     D160 amended (4), 14 Nov 2026: an IBAN rule learned on a private line also reaches that
     line's payee on another IBAN (cross_iban_hit): a STRONG identity books as the rule would,
     a WEAK one, or any such hit of a same_amount_only rule (whose amount kind the other IBAN's
-    history may not show), is a proposal with WEAK_QUESTION naming the payee."""
+    history may not show), is a proposal with WEAK_QUESTION naming the payee. Review F1
+    (Luis, 14 Nov 2026): a STRONG one books only at the amount of the rule's latest
+    confirmed line (cross_iban_reference, read from `history`, which then holds the rule's
+    IBAN's lines too), else it is that proposal: one company's other product on another
+    IBAN (Kfz-Versicherung and Hausrat) is never booked as the first."""
     if not rule.enabled:
         return None
     cross = None
@@ -467,7 +471,11 @@ def apply_rule(
     if split is None or split.confidence != EXACT:
         return None
     found = _as_set(tx, split, AllocationMethod.RULE, rule_id=rule.id)
-    if cross is not None and (cross == WEAK or rule.same_amount_only):
+    if cross is not None and (
+        cross == WEAK
+        or rule.same_amount_only
+        or cross_iban_reference(rule, tx, history) != tx.amount
+    ):
         return found.model_copy(
             update={"confidence": GUARDED_CONFIDENCE, "question": _cross_question(rule)}
         )
@@ -1851,7 +1859,8 @@ def iban_only(matcher: RuleMatcher) -> bool:
 # rule learned on the second IBAN left the first one's lines waiting. An IBAN rule learned on
 # a private line knows that line's payee (MatchingRule.learned_from, read by the rules loader
 # from the rule's created_from_allocation_id, never stored on the rule), so it also reaches a
-# private line on another IBAN whose payee is the same (_identity): STRONG books, WEAK proposes
+# private line on another IBAN whose payee is the same (_identity): STRONG books at the
+# amount of the rule's latest confirmed line (cross_iban_reference, review F1), WEAK proposes
 # (apply_rule). Not on a shared IBAN, the rental account, a matcher's counterparty (an own
 # account, a tenant, a lender), a payment service's line, or for a split.
 
@@ -1908,6 +1917,37 @@ def cross_iban_hit(rule: MatchingRule, tx: MatchTransaction, context: MatchConte
     if matcher_owns(own, context) or matcher_owns(line, context):
         return None
     return cross_iban_candidate(rule, tx)
+
+
+def cross_iban_reference(
+    rule: MatchingRule, tx: MatchTransaction, history: Sequence[HistoryLine]
+) -> Decimal | None:
+    """Review F1 (Luis, 14 Nov 2026): the amount a cross-IBAN hit must equal to be booked.
+    The amount of the rule's latest confirmed line on its own IBAN: of the line's sign, whose
+    current rows are one confirmed row of the rule's category, the newest booked on or before
+    the line's date, else the newest of all (by booking date, then transaction id). Without
+    one, the amount of the line the rule was learned from (MatchingRule.learned_amount);
+    None when neither is known, so the hit is a proposal. `history` may hold any lines; the
+    service adds the rule's IBAN's (services.matching.deterministic_set)."""
+    own = rule.matcher.counterparty_iban_hmac
+    if own is None:
+        return None
+    lines = []
+    for line in history:
+        if line.counterparty_iban_hmac != own or line.transaction_id == tx.id:
+            continue
+        if line.amount == 0 or (line.amount > 0) != (tx.amount > 0):
+            continue
+        current = [r for r in line.rows if r.status is not AllocationStatus.SUPERSEDED]
+        if len(current) != 1:
+            continue
+        (only,) = current
+        if only.status is AllocationStatus.CONFIRMED and only.category is rule.category:
+            lines.append(line)
+    if not lines:
+        return rule.learned_amount
+    earlier = [line for line in lines if line.booking_date <= tx.booking_date] or lines
+    return max(earlier, key=lambda line: (line.booking_date, str(line.transaction_id))).amount
 
 
 def rule_reaches(rule: MatchingRule, tx: MatchTransaction, context: MatchContext) -> bool:

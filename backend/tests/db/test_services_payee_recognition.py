@@ -374,6 +374,54 @@ def test_a_weak_cross_iban_hit_is_proposed_with_a_question(world, private, app_e
     assert row.question == "Gleicher Empfänger wie „ADLER MODEMARKT“? Bitte bestätigen."
 
 
+@pytest.mark.parametrize(
+    ("amount", "status"), [("-59.00", "confirmed"), ("-39.00", "proposed")], ids=["same", "other"]
+)
+def test_a_cross_iban_hit_books_only_at_the_rules_latest_amount(
+    world, private, app_engine, tmp_path, amount, status
+):
+    """Review F1 (Luis, 14 Nov 2026): the rule's latest confirmed amount on its own IBAN
+    decides; another amount is proposed with the question."""
+    waiting = private.line(
+        date(2026, 3, 1), amount, name=SKY, iban=SKY_OLD_IBAN, purpose=_sky_old(3)
+    )
+    # the price went up: the latest confirmed line on the rule's IBAN is -59.00, newer than
+    # the -30.00 line the rule is learned from
+    raised = private.line(date(2026, 5, 1), "-59.00", name=SKY, iban=SKY_NEW_IBAN)
+    _answer_line(world, raised, "-59.00", "hh_pay_tv", learn=False)
+    first = private.line(date(2026, 4, 1), "-30.00", name=SKY, iban=SKY_NEW_IBAN)
+    rule = _learn(world, first, "-30.00", "hh_pay_tv")
+    assert world.query(matching.waiting_lines, "rule", rule.id) == [waiting]
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    (row,) = _rows(world, waiting)
+    assert (row.category, row.method, row.status, row.rule_id) == (
+        "hh_pay_tv",
+        "rule",
+        status,
+        rule.id,
+    )
+    if status == "proposed":
+        assert row.question == f"Gleicher Empfänger wie „{SKY}“? Bitte bestätigen."
+
+
+def test_one_insurers_other_product_on_another_iban_is_only_proposed(
+    world, private, app_engine, tmp_path
+):
+    """Review F1: the Kfz-Versicherung rule on one IBAN never books the same insurer's
+    Hausrat on another IBAN, whose amount differs."""
+    insurer = "Allianz Versicherungs-AG"
+    home = private.line(
+        date(2026, 9, 1), "-12.50", name=insurer, iban=OTHER_COMPANY_IBAN, purpose="Hausrat"
+    )
+    car = private.line(date(2026, 10, 1), "-89.00", name=insurer, iban=SKY_NEW_IBAN, purpose="Kfz")
+    rule = _learn(world, car, "-89.00", "hh_ins_car")
+    assert rule.matcher.counterparty_name_pattern is None  # an IBAN rule
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    (row,) = _rows(world, home)
+    assert (row.category, row.status) == ("hh_ins_car", "proposed")
+    assert row.question == f"Gleicher Empfänger wie „{insurer}“? Bitte bestätigen."
+
+
 # --- `hausbuch rematch-waiting` --------------------------------------------------------------
 
 

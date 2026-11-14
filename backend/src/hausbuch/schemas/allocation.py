@@ -387,6 +387,10 @@ class MatchingRule(MatchingRuleCreate, MutableRecord):
     # payee on another IBAN (rules.matching.cross_iban_hit). Never stored on the rule, never
     # serialised and not in the API's schema: a private attribute, None when not loaded.
     _learned_from: tuple[str | None, str | None] | None = PrivateAttr(default=None)
+    # Review F1 (14 Nov 2026): that line's signed amount, what a cross-IBAN hit is compared
+    # with when the rule's IBAN holds no confirmed line of its category (rules.matching.
+    # cross_iban_reference). Private for the same reasons.
+    _learned_amount: Decimal | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def _matcher(self) -> Self:  # replaces MatchingRuleCreate's: erased rules are empty
@@ -400,10 +404,18 @@ class MatchingRule(MatchingRuleCreate, MutableRecord):
         the loader read it; None otherwise (a typed rule, an erased origin, a rental one)."""
         return self._learned_from
 
-    def with_learned_from(self, name: str | None, purpose: str | None) -> Self:
-        """A copy carrying the line it was learned from (learned_from)."""
+    @property
+    def learned_amount(self) -> Decimal | None:
+        """The signed amount of the line the rule was learned from, when the loader read it."""
+        return self._learned_amount
+
+    def with_learned_from(
+        self, name: str | None, purpose: str | None, amount: Decimal | None = None
+    ) -> Self:
+        """A copy carrying the line it was learned from (learned_from, learned_amount)."""
         copy = self.model_copy()
         copy._learned_from = (name, purpose)
+        copy._learned_amount = amount
         return copy
 
 
