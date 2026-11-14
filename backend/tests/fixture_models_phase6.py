@@ -384,6 +384,7 @@ class PayeeCase(_Case):
     name_pattern: str | None = None
     purpose_pattern: str | None = None
     unreadable: bool = False
+    words: list[str] | None = None  # the payee's words, in order, when the case pins them
 
     @model_validator(mode="after")
     def _a_pattern_or_unreadable(self) -> Self:

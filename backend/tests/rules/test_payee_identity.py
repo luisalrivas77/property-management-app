@@ -111,6 +111,8 @@ def test_payee_label_and_patterns(case):
     assert found.unreadable is case.unreadable
     assert found.name_pattern == case.name_pattern
     assert found.purpose_pattern == case.purpose_pattern
+    if case.words is not None:
+        assert list(found.words) == case.words
 
 
 @pytest.mark.parametrize("case", FIXTURE.shared_ibans, ids=lambda c: c.id)
@@ -246,3 +248,37 @@ def test_lieferando_learned_on_either_account_hits_the_other():
     # another payee on the clearing IBAN is not hit
     other = _tx("KAUFLAND", iban=CLEARING, n=3)
     assert matching.apply_rule(on_bank, other, PRIVATE) is None
+
+
+# --- A reference code before the name, a web address ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("learned_on", "line", "category"),
+    [
+        (
+            "K7B2QXNE ANTHROPIC 548 Market Street PMB 1234",
+            "P4M9WZTA ANTHROPIC* CLAUDE SUB 548 Market Str",
+            C.HH_SUBSCRIPTIONS,
+        ),
+        (
+            "9d2e417b SQ *ATARIGUA SL | LA C Carrer Marina",
+            "4f1c09ad SQ *ATARIGUA, S.L. Carrer Marina 100",
+            C.HH_DINING,
+        ),
+        (
+            "R0555123 curiara.com Avenue Louise 10",
+            "Curiara Financial Services INC",
+            C.HH_SUBSCRIPTIONS,
+        ),
+        ("WWW.DAZN.COM Huidekoperstraat 10", "DAZN", C.HH_STREAMING),
+        ("DAZN", "WWW.DAZN.COM Huidekoperstraat 10", C.HH_STREAMING),
+    ],
+)
+def test_a_rule_learned_behind_a_reference_code_or_web_address_hits_the_payee(
+    learned_on, line, category
+):
+    rule = _learned(_tx(learned_on, iban=None), category)
+    assert matching.apply_rule(rule, _tx(line, iban=None, n=2), PRIVATE) is not None
+    sky = _tx("Sky Deutschland Fernsehen GmbH Co. KG", iban=None, n=3)
+    assert matching.apply_rule(rule, sky, PRIVATE) is None

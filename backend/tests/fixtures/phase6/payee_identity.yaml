@@ -7,6 +7,11 @@
 #   1. the name cut before a per-purchase token (merchant_pattern.yaml, steps 1-1c);
 #   2. its words: upper-case, Ä/Ö/Ü/ß written out (OE, SS), accents dropped, every other
 #      character that is not a letter (digits, '-', '*', '.', '/') a word break;
+#   2b. a reference code before the name (one token of 6 or more letters and digits with
+#      at least two digits, "G0A3LMSE", "375be52e", "R0131347") is dropped, and a web
+#      address's parts name no payee: a leading "www." and a ".com", ".de", ".net" glued to a
+#      word (and, on a learned pattern's text, a leading WWW and a COM, NET or ORG after the
+#      first word);
 #   3. a card processor's own short name first (SPC, UZR, SQ, SUMUP, ZETTLE) is dropped: the
 #      payee is what follows;
 #   4. a payment service (PayPal, Klarna) carries many merchants: its line's payee is the
@@ -88,6 +93,28 @@ same:
     a: {name: "Lieferando"}
     b: {name: "Lieferando.de lieferse Oosterdoksstraat 80"}
     same: true
+  - id: reference_code_before_the_name
+    note: the code differs on every purchase; it is no word of the payee
+    a: {name: "K7B2QXNE ANTHROPIC 548 Market Street PMB 1234"}
+    b: {name: "P4M9WZTA ANTHROPIC* CLAUDE SUB 548 Market Str"}
+    same: true
+  - id: reference_code_and_processor
+    note: the code dropped, then SQ as a card processor
+    a: {name: "4f1c09ad SQ *ATARIGUA, S.L. Carrer Marina 100"}
+    b: {name: "9d2e417b SQ *ATARIGUA SL | LA C Carrer Marina"}
+    same: true
+  - id: reference_code_and_domain
+    a: {name: "R0555123 curiara.com Avenue Louise 10"}
+    b: {name: "Curiara Financial Services INC"}
+    same: true
+  - id: web_address
+    a: {name: "WWW.DAZN.COM Huidekoperstraat 10"}
+    b: {name: "DAZN"}
+    same: true
+  - id: processor_one_grill_two_terminals
+    a: {name: "61700001 UZR*KBKC Frischgrill G Beispielweg 7"}
+    b: {name: "61700002 UZR*KBKC Frischgrill G Beispielweg 7"}
+    same: true
   - id: paypal_long_and_short_name
     a: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: "1041234567890 PP.1234.PP . DisneyPlus, Ihr Einkauf bei DisneyPlus"}
     b: {name: "PAYPAL EUROPE S A R L ET CIE S C A - BOULEVARD ROYAL", purpose: "1041234567891 PP.1234.PP . DisneyPlus, Ihr Einkauf bei DisneyPlus"}
@@ -125,6 +152,22 @@ different:
   - id: one_processor_two_merchants_space
     a: {name: "UZR*KBKC FRISCHGRILL"}
     b: {name: "UZR SPANISCHER GARTEN"}
+    same: false
+  - id: processor_grill_and_garden
+    a: {name: "61700001 UZR*KBKC Frischgrill G Beispielweg 7"}
+    b: {name: "UZR.Spanischer.Garten.I/Dusseldorf"}
+    same: false
+  - id: two_german_companies_mixed_case
+    a: {name: "Deutsche Bahn"}
+    b: {name: "Deutsche Post"}
+    same: false
+  - id: one_processor_two_merchants_mixed_case
+    a: {name: "SPC*Tepe market"}
+    b: {name: "SPC*Campus Hair"}
+    same: false
+  - id: two_streaming_services
+    a: {name: "Sky Deutschland Fernsehen GmbH Co. KG"}
+    b: {name: "DAZN"}
     same: false
   - id: paypal_two_merchants
     a: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: ", Ihr Einkauf bei DisneyPlus, "}
@@ -189,6 +232,27 @@ payees:
     name: "EPRIMO GMBH FLUGHAFENSTRASE 20"
     label: null
     name_pattern: '^EPRIMO GMBH FLUGHAFENSTRASE'
+  - id: reference_code_dropped
+    name: "K7B2QXNE ANTHROPIC 548 Market Street PMB 1234"
+    label: null
+    name_pattern: '^ANTHROPIC MARKET STREET PMB'
+    words: [ANTHROPIC, MARKET, STREET, PMB]
+  - id: reference_code_then_processor
+    name: "4f1c09ad SQ *ATARIGUA, S.L. Carrer Marina 100"
+    label: null
+    name_pattern: '^SQ \*ATARIGUA, S L CARRER MARINA'
+    words: [ATARIGUA, S, L, CARRER, MARINA]
+  - id: reference_code_then_domain
+    name: "R0555123 curiara.com Avenue Louise 10"
+    label: null
+    name_pattern: '^CURIARA COM AVENUE LOUISE'
+    words: [CURIARA, AVENUE, LOUISE]
+  - id: web_address_pattern_unchanged
+    # merchant_pattern.yaml's pattern stays; only the payee's words drop WWW and COM
+    name: "WWW.DAZN.COM Huidekoperstraat 10"
+    label: null
+    name_pattern: '^WWW DAZN COM HUIDEKOPERSTRAAT'
+    words: [DAZN, HUIDEKOPERSTRAAT]
   - id: processor_dropped_for_the_payee_not_the_pattern
     name: "SPC*CAMPUS HAIR"
     label: null

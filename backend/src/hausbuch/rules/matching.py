@@ -1234,6 +1234,22 @@ def _mixed(token: str) -> bool:
     return _has_digit(token) and _LETTER.search(token) is not None
 
 
+_REFERENCE = re.compile(r"[A-Za-z0-9]{6,}")
+
+
+def _reference(token: str) -> bool:
+    """A leading reference code (D160 amended (4), from Luis's real card lines): one token of
+    6 or more letters and digits with at least two digits ("G0A3LMSE", "375be52e", "R0131347"),
+    printed before the merchant's name and different on every purchase. Not a name with a date
+    glued to it ("GLOVO24MAY": a word of 4 letters before the first digit), which _merchant_cut
+    reads as its name."""
+    return (
+        _REFERENCE.fullmatch(token) is not None
+        and sum(c.isdigit() for c in token) >= 2
+        and not _WORD_MIN.search(_BEFORE_DIGIT.match(token).group())  # type: ignore[union-attr]
+    )
+
+
 def _merchant_cut(name: str) -> str:
     """D160 amended (4), 14 Nov 2026: the raw name (location token removed) up to its first
     per-purchase token, so a card name that carries an order code or a date repeats:
@@ -1247,7 +1263,9 @@ def _merchant_cut(name: str) -> str:
       ("GLOVO" of "GLOVO24MAY").
 
     Digits-only tokens ("4421", "0815/2026", "22-24") are no per-purchase code: they are
-    dropped by the normalisation as before. When the cut keeps no word of 4 letters or more,
+    dropped by the normalisation as before. A reference code before the merchant's name
+    (_reference: "G0A3LMSE ANTHROPIC …", "375be52e SQ *ATARIGUA …") is dropped and the name
+    read on after it. When the cut keeps no word of 4 letters or more,
     the whole name is read as before (an "O2 GmbH" stays "O GMBH")."""
     text = _LOCATION.sub("", name)
     tokens = text.split()
@@ -1256,6 +1274,8 @@ def _merchant_cut(name: str) -> str:
     for i, token in enumerate(tokens):
         if starred and _has_digit(token):
             break
+        if i + 1 < len(tokens) and _reference(token) and not any(map(_LETTER.search, kept)):
+            continue  # a reference code before the name
         head, star, tail = token.partition("*")
         if _mixed(head):
             lead = _BEFORE_DIGIT.match(head).group()  # type: ignore[union-attr]
@@ -1283,7 +1303,11 @@ def _name_found(pattern: str, name: str | None) -> bool:
     B.V.")."""
     if name is None:
         return False
-    return _found(pattern, name) or _found(pattern, _merchant_text(name))
+    return (
+        _found(pattern, name)
+        or _found(pattern, _merchant_text(name))
+        or _found(pattern, _payee_text(name))  # a reference code before the name dropped
+    )
 
 
 # --- A shared counterparty IBAN (D160 amended 13 Nov 2026) ---------------------------------
@@ -1434,11 +1458,27 @@ def payee(name: str | None, purpose: str | None = None) -> Payee:
         if "*" in cut:
             return _service_payee(service, cut.partition("*")[2], merchant_pattern(name))
         return _purpose_payee(service, purpose)
-    words = payee_words(_merchant_cut(name))
+    words = _web_words(payee_words(_DOMAIN.sub("", _merchant_cut(name))))
     if len(words) > 1 and words[0] in CARD_PROCESSORS:
         words = words[1:]
     pattern = merchant_pattern(name)
     return Payee(words, pattern) if words and pattern != "^" else _NO_PAYEE
+
+
+# A web address's parts that name no payee (D160 amended (4)): "WWW.DAZN.COM Huidekoper…" is
+# DAZN. On the raw name a suffix glued to a word by its dot is dropped (".de" too); on a learned
+# pattern's text, whose dots are spaces, a leading WWW and a COM/NET/ORG right after the first
+# word ("DE" there is too often a word of the name).
+_DOMAIN = re.compile(r"(?<=[A-Za-z0-9])\.(?:com|de|net|org|eu|io)\b|^\s*www\.", re.IGNORECASE)
+_WEB_SUFFIXES = frozenset({"COM", "NET", "ORG"})
+
+
+def _web_words(words: tuple[str, ...]) -> tuple[str, ...]:
+    if len(words) > 1 and words[0] == "WWW":
+        words = words[1:]
+    if len(words) > 2 and words[1] in _WEB_SUFFIXES:
+        words = (words[0], *words[2:])
+    return words
 
 
 def _service_payee(service: PaymentService, merchant: str, name_pattern: str) -> Payee:
