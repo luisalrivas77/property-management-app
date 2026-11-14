@@ -212,9 +212,11 @@ test("a payer with other waiting amounts is asked whether the rule covers them (
   await expect(learn).toBeChecked();
   const question = panel.getByRole("group", { name: /Gehören die auch zu/ });
   await expect(question).toHaveAccessibleName(
-    "Von Partei C warten auch Zahlungen über 1.073,89 € (2×), 862,15 € (1×). Gehören die auch zu Kontoführung und Bankgebühren?",
+    "Von Partei C warten noch 3 Zahlungen mit anderen Beträgen: 1.073,89 € (2×), 862,15 € (1×). Gehören die auch zu Kontoführung und Bankgebühren?",
   );
   const all = question.getByLabel("Ja, alle so zuordnen");
+  // Each answer says how many waiting payments its rule covers; none waits at 573,79 €.
+  await expect(all).toHaveAccessibleName("Ja, alle so zuordnen: die Regel gilt dann auch für 3 wartende Zahlungen");
   const only = question.getByLabel("Nein, nur Zahlungen über 573,79 €");
   // No answer is preselected, and Bestätigen waits for one.
   await expect(all).not.toBeChecked();
