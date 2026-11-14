@@ -10634,6 +10634,15 @@ export interface components {
          *     name_history, the payee's earlier confirmed lines rebook_earlier would refuse to re-book
          *     (rule.rebook_blocked), oldest first, so the panel names them instead of offering it.
          *     rebooked: how many earlier lines this PUT re-booked.
+         *     suggested_purpose_pattern (14 Nov 2026, principle 7): for a line without an IBAN whose
+         *     answer cannot become a rule on its own (can_learn_rule false) and whose current rows are
+         *     one row of a category a typed pattern learns on this account, `^` + the purpose's first
+         *     word of at least six letters, regex-escaped, when the rule a PUT with it would create
+         *     hits no line with an IBAN and none confirmed under another category or as a split; the
+         *     panel then offers the rule box with this pattern, and learn_rule_default is computed with
+         *     it. None otherwise. suggested_pattern_waiting: how many waiting lines (as in
+         *     waiting_amount_counts, this line excluded, on accounts of its purpose) that rule would
+         *     book.
          */
         TransactionAllocations: {
             transaction: components["schemas"]["Transaction"];
@@ -10669,6 +10678,13 @@ export interface components {
              * @default 0
              */
             rebooked: number;
+            /** Suggested Purpose Pattern */
+            suggested_purpose_pattern?: string | null;
+            /**
+             * Suggested Pattern Waiting
+             * @default 0
+             */
+            suggested_pattern_waiting: number;
         };
         /**
          * TransferLegSource
