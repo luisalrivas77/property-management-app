@@ -8,8 +8,9 @@ is tested with a fake model client and no queue.
   match_transaction per line, in one transaction.
 - match_transaction: services.matching.match_line runs the deterministic order (rules,
   matchers, documents) and writes what it can. When nothing matched and the AI layer is on,
-  the line is categorized by the model (Sonnet; one retry on the hard model when the answer
-  is marked ambiguous, D17), the set is checked by code (rules.allocations.check_sum) and
+  the line is categorized by the model (Sonnet, a private line Haiku; one retry on the next
+  model up, Opus or Sonnet, when the answer is marked ambiguous, D17, D194), the set is checked
+  by code (rules.allocations.check_sum) and
   written as an `llm` set, auto-confirmed only when the workspace's auto_accept_llm is on and
   the category's threshold is met (rules.review.route). Code scopes the model's parts: the
   one property, and for a loan category the one loan, a payout with that loan's one
@@ -336,7 +337,8 @@ def _categorize(
     deps: JobDeps, workspace_id: UUID, transaction_id: UUID, prepared: _Prepared, log: dict
 ) -> tuple[AllocationSet, str]:
     """The model's set (method llm), or _GiveUp. The ambiguous answer is asked once more of
-    the hard model; when that one is unusable, the first answer stands."""
+    the next model up (D17; a private line's pair is Haiku then Sonnet, D194); when that one is
+    unusable, the first answer stands."""
     assert prepared.data is not None
 
     def parse(response: ModelResponse) -> tuple[Any, Any, str | None]:
