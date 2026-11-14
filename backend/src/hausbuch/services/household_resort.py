@@ -24,8 +24,9 @@ standing rule hit is only proposed.
 Left alone (never queued): a line with more than one row (a split), a row with a property,
 unit, tenancy, loan or Beleg, a leg of a transfer link or a line with a depot movement, a
 possible cost of buying or financing the flat (matching.may_be_purchase_cost), a rental line,
-and a line already answered with the current household prompt, so a second run asks nothing
-again. Nothing is queued while `ai_private_accounts` is off (D168). `uncategorized` is not a
+a line already answered with the current household prompt, and a line re-sorted before
+(it has a transaction.resort_proposed event, whichever path answered), so a second run asks
+nothing again. Nothing is queued while `ai_private_accounts` is off (D168). `uncategorized` is not a
 fallback: `hausbuch household-reask` re-asks those lines."""
 
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ from sqlalchemy import Connection, exists, or_, select
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import asset_movement as movement_table
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
@@ -44,6 +46,7 @@ from hausbuch.db.tables import transfer_link as transfer_link_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules.errors import ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT
 from hausbuch.rules.household.taxonomy import FALLBACK_CODES, HOUSEHOLD_SPENDING
+from hausbuch.rules.matching import EXACT
 from hausbuch.rules.review import no_match_reason
 from hausbuch.schemas.allocation import Allocation, AllocationSet
 from hausbuch.schemas.enums import (
@@ -76,10 +79,20 @@ class ResortResult:
     split: int  # left alone: more than one row
     linked: int  # left alone: scoped, a Beleg, a transfer link or a depot movement
     purchase_costs: int  # left alone: may be a privately paid cost of buying the flat
-    already_asked: int  # left alone: asked with the current household prompt already
+    already_asked: int  # left alone: asked with the current prompt, or re-sorted before
 
 
 # --- Which lines --------------------------------------------------------------------------
+
+
+def _resorted(conn: Connection, transaction_ids: list[UUID] | None = None) -> set[UUID]:
+    """The lines with a transaction.resort_proposed event: re-sorted once, whichever path
+    answered (the model, or a rule without an ai_call), so never taken again."""
+    e = event_table.c
+    query = select(e.entity_id).where(e.type == EventType.TRANSACTION_RESORT_PROPOSED.value)
+    if transaction_ids is not None:
+        query = query.where(e.entity_id.in_(transaction_ids))
+    return set(conn.execute(query.distinct()).scalars())
 
 
 def _scoped(row: Any) -> bool:
@@ -120,7 +133,7 @@ def resort_household(ctx: CommandContext) -> ResortResult:
     """Queue the re-sort of every private-account line booked in a group's fallback (module
     docstring). Run once by the operator after the deploy of migration 0032; no endpoint.
     Writes no event: the jobs write the proposals (and transaction.resort_proposed), and each
-    model call its ai_call row."""
+    categorization its ai_call row(s)."""
     codes = sorted(c.value for c in RESORT_CATEGORIES)
     t = transaction_table.c
     a = allocation_table.c
@@ -167,7 +180,7 @@ def resort_household(ctx: CommandContext) -> ResortResult:
         by_line.setdefault(row.id, []).append(row)
     linked = _linked(ctx.conn, list(by_line))
     costs = matching.acquisition_cost_amounts(ctx.conn)
-    asked = matching.lines_asked_with_current_prompt(ctx.conn)
+    asked = matching.lines_asked_with_current_prompt(ctx.conn) | _resorted(ctx.conn)
     split = scoped = purchase = already = 0
     taken: list[tuple[UUID, bool]] = []  # (line, its row is confirmed)
     for transaction_id, parts in by_line.items():
@@ -242,7 +255,10 @@ def resort_line(
         return matching.MatchPlan("skipped", "matching.not_found")
     if not open_for_resort(ctx.conn, line):
         return matching.MatchPlan("skipped", NOT_RESORTABLE)
-    if skip_if_asked and matching.asked_with_current_prompt(ctx.conn, transaction_id):
+    if skip_if_asked and (
+        matching.asked_with_current_prompt(ctx.conn, transaction_id)
+        or _resorted(ctx.conn, [transaction_id])
+    ):
         return matching.MatchPlan("skipped", "matching.asked_already")
     context = matching.build_context(
         ctx.conn,
@@ -255,10 +271,12 @@ def resort_line(
     found = matching.deterministic_set(
         ctx.conn, line.tx, context, skip_rule_categories=RESORT_CATEGORIES
     )
-    if found is not None:
-        if line.waiting:
-            return matching.write(ctx, line, found)
+    if found is not None and line.waiting:
+        return matching.write(ctx, line, found)
+    if found is not None and found.confidence == EXACT:
         return _propose_over_confirmed(ctx, line, found)
+    # A confirmed line and a near miss (D49: a payee's rule of another kind guessed at a
+    # different amount) is no answer: the model is asked instead.
     if not ai_available or not line.private_ai:
         # D168: without the switch the line stays as it is, for a person.
         return matching.MatchPlan("skipped", no_match_reason(line.account_purpose, line.private_ai))

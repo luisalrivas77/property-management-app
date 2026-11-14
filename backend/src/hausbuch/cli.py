@@ -320,7 +320,8 @@ def rematch_bills(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
 def household_resort(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     """services.household_resort.resort_household once for a workspace (phase 6 D159
     amended 14 Nov 2026, migration 0032); `--dry-run` prints the counts and queues nothing.
-    Each queued line is one model call at most."""
+    Each queued line is one categorization per run (a retry or the hard-model escalation
+    may add a call, as jobs.matching._categorize does)."""
     from hausbuch.db.session import workspace_transaction
     from hausbuch.schemas.enums import ActorType
     from hausbuch.services.context import Actor, new_command
@@ -351,7 +352,10 @@ def household_resort(args: argparse.Namespace, environ: Mapping[str, str]) -> in
         f"{result.confirmed} confirmed"
     )
     verb = "would queue" if args.dry_run else "queued"
-    print(f"{verb} {result.queued} line(s) for the model (at most one call each)")
+    print(
+        f"{verb} {result.queued} line(s) for the model: one categorization per line per run "
+        "(a retry or the hard-model escalation may add a call)"
+    )
     if result.held_back:
         print(
             f"held back {result.held_back} line(s): „Private Konten mit KI zuordnen“ is off "

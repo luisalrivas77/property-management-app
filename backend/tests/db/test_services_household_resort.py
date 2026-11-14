@@ -379,6 +379,75 @@ def test_another_rule_still_answers_first_and_only_proposes(world, private, app_
     assert client.requests == []
 
 
+def test_a_near_miss_on_a_confirmed_line_asks_the_model(world, private, app_engine, tmp_path):
+    """D49's near miss („Der Betrag weicht … ab“, a rule of another kind guessed at 0.5) is no
+    answer for a confirmed line: the model is asked, and no rule proposal is written."""
+    _consent_both(world)
+    iban = GROCER_IBAN
+    one = private.line(date(2026, 10, 1), "-50.00", name="Kaufhaus Beispiel", iban=iban)
+    assert _answer_line(world, one, "-50.00", "hh_groceries", learn=True).rule is not None
+    two = private.line(date(2026, 10, 2), "-120.00", name="Kaufhaus Beispiel", iban=iban)
+    assert _answer_line(world, two, "-120.00", "hh_home", learn=True).rule is not None
+    third = private.line(date(2026, 10, 3), "-110.00", name="Kaufhaus Beispiel", iban=iban)
+    _confirmed(world, third, "-110.00", "hh_groceries")
+    world.cmd(resort_household)
+
+    client = _client(("hh_supermarket", "-110.00"))
+    plan = _resort(world, third, _deps(app_engine, tmp_path, client))
+    assert plan.outcome == "written"
+    assert len(client.requests) == 1
+    (row,) = _rows(world, third)
+    assert (row.category, row.method, row.status) == ("hh_supermarket", "llm", "proposed")
+    assert row.rule_id is None
+    payloads = world.query(
+        lambda c: (
+            c.execute(
+                text("SELECT payload FROM event WHERE entity_id = :id AND type = :t"),
+                {"id": third, "t": "transaction.resort_proposed"},
+            )
+            .scalars()
+            .all()
+        )
+    )
+    assert [(p["method"], p["rule_id"]) for p in payloads] == [("llm", None)]
+
+
+def test_a_line_re_sorted_once_is_left_alone_after_a_person_answers(
+    world, private, app_engine, tmp_path
+):
+    """A rule answered the re-sort (no ai_call); the person keeps hh_groceries. Later runs
+    count the line as already asked and queue nothing, and a stale job asks nothing."""
+    _consent_both(world)
+    learned = private.line(
+        date(2026, 10, 1), "-30.00", name="Supermarkt Beispiel", iban=GROCER_IBAN
+    )
+    assert _answer_line(world, learned, "-30.00", "hh_supermarket", learn=True).rule is not None
+    tx = private.line(date(2026, 10, 2), "-30.00", name="Supermarkt Beispiel", iban=GROCER_IBAN)
+    _confirmed(world, tx, "-30.00", "hh_groceries")
+
+    assert world.cmd(resort_household) == _result(confirmed=1, queued=1)
+    client = FakeModelClient()  # any request fails the test
+    deps = _deps(app_engine, tmp_path, client)
+    assert _resort(world, tx, deps).outcome == "written"
+    (row,) = _rows(world, tx)
+    assert (row.category, row.method, row.status) == ("hh_supermarket", "rule", "proposed")
+    _confirmed(world, tx, "-30.00", "hh_groceries")
+    (row,) = _rows(world, tx)
+    assert (row.category, row.status) == ("hh_groceries", "confirmed")
+
+    for _ in range(2):
+        assert world.cmd(resort_household) == _result(already_asked=1)
+    assert _resort(world, tx, deps).reason == "matching.asked_already"
+    count = world.query(
+        lambda c: c.execute(
+            text("SELECT count(*) FROM event WHERE entity_id = :id AND type = :t"),
+            {"id": tx, "t": "transaction.resort_proposed"},
+        ).scalar_one()
+    )
+    assert count == 1
+    assert client.requests == []
+
+
 def test_confirming_a_re_sorted_line_with_a_rule_replaces_the_fallback_rule(
     world, private, app_engine, tmp_path
 ):
