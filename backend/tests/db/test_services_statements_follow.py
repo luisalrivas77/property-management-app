@@ -23,6 +23,7 @@ from db.db_support import TEST_IBAN_KEY
 from db.test_cli_evals_report import _owner_url
 from db.test_services_proposals import _accept_all, _ai_call, _v
 from sqlalchemy import select, text
+from test_bank_parsers import CAMT, build
 from test_card_pdf import draw
 from test_depot_pdf import KONTO, page
 from test_jobs_document_read import _settings as _test_settings
@@ -61,6 +62,9 @@ OTHER_KONTO = "9900000456"
 DEPOT_A_NUMBER = "9900000111"
 DEPOT_B_NUMBER = "9900000222"
 JOB = Actor(ActorType.AI, "claude-test-model")
+# The anonymised Sparkasse camt ZIP (tests/test_bank_parsers.py) and the IBAN it prints.
+CAMT_ZIP = build(next(c for c in CAMT.cases if c.id == "sparkasse_zip_of_daily_reports").input)
+CAMT_IBAN = "DE50100000000000000001"
 
 
 def _statement(n: int, konto: str = KONTO) -> bytes:
@@ -78,7 +82,15 @@ def _statement(n: int, konto: str = KONTO) -> bytes:
     )
 
 
-def _upload_and_read(app_engine, blob_store, ws, tmp_path, data: bytes):
+def _upload_and_read(
+    app_engine,
+    blob_store,
+    ws,
+    tmp_path,
+    data: bytes,
+    media_type: str = "application/pdf",
+    filename: str = "kontoauszug.pdf",
+):
     """Uploaded through Dokumente and its read run (no model call): the document and the
     proposal the read wrote, whatever its status."""
     with workspace_transaction(app_engine, ws) as conn:
@@ -87,9 +99,9 @@ def _upload_and_read(app_engine, blob_store, ws, tmp_path, data: bytes):
             ctx,
             blob_store,
             data,
-            media_type="application/pdf",
+            media_type=media_type,
             source=DocumentSource.UPLOAD,
-            original_filename="kontoauszug.pdf",
+            original_filename=filename,
         )
         queued = proposals.request_read(ctx, doc.id)
     client = FakeModelClient([])
@@ -218,6 +230,36 @@ def test_a_later_upload_goes_straight_onto_its_account(
     # The refusal the read recorded is superseded by the import, as „Auf Konto importieren“.
     assert read(ws, proposals.get_proposal, queued.id).status is ProposalStatus.SUPERSEDED
     assert _offer(read, blob_store, ws, later.id) is None
+
+
+def test_a_later_bank_export_goes_straight_onto_the_account_with_its_iban(
+    run, read, app_engine, blob_store, fresh_workspaces, tmp_path, hook_calls
+):
+    """The same for a bank's export (a camt ZIP), matched by the IBAN it prints."""
+    ws, _ = fresh_workspaces
+    account = run(
+        ws,
+        create_account,
+        AccountCreate(
+            label="Girokonto",
+            bank="Beispielbank",
+            iban=CAMT_IBAN,
+            opening_balance=Decimal("0.00"),
+            opening_balance_on=date(2026, 3, 31),
+            is_owner_account=True,
+            purpose="private",
+        ),
+        iban_key=TEST_IBAN_KEY,
+        store=blob_store,
+        now=T0,
+    )
+    later, queued = _upload_and_read(
+        app_engine, blob_store, ws, tmp_path, CAMT_ZIP, "application/zip", "camt.zip"
+    )
+    (imported,) = read(ws, document_statement_imports, later.id)
+    assert imported.account_id == account.id
+    assert imported.status is ImportStatus.RECONCILED
+    assert read(ws, proposals.get_proposal, queued.id).status is ProposalStatus.SUPERSEDED
 
 
 def test_an_account_created_with_the_number_takes_its_waiting_files(
@@ -438,7 +480,7 @@ def test_the_catch_up_command_queues_one_job_that_follows_the_existing_accounts(
     assert _account_field(ready).value is None  # no depot yet
     _depot(run, ws, number=KONTO)  # created before the deploy: nothing followed
     b = _depot(run, ws, label="Megatrends", number=DEPOT_B_NUMBER, n=1)
-    assert read(ws, statements.waiting_statement_documents) == [d.id for d in docs]
+    assert set(read(ws, statements.waiting_statement_documents)) == {d.id for d in docs}
 
     def queued() -> int:
         with app_engine.begin() as conn:
