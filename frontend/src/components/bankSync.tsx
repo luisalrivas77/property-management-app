@@ -365,7 +365,10 @@ const FETCH_STATEMENTS_HINT = (
 );
 
 /** What a permission refusal code of the PDF statement fetch means (14 Nov 2026). */
-const STATEMENTS_REFUSAL_MEANING: Record<string, string> = { "9370": "keine Auftragsberechtigung" };
+const STATEMENTS_REFUSAL_MEANING: Record<string, string> = {
+  "9370": "Signaturberechtigung reicht nicht aus",
+  "9380": "keine Auftragsberechtigung",
+};
 
 /** The bank refuses this access the PDF statements (14 Nov 2026: 9370 on HKEKP): what it
  * means and how to get it unlocked. Shown while the switch is on and no later run's request
@@ -376,11 +379,10 @@ function StatementsRefused({ refusal, bankName }: { refusal: StatementsRefusal; 
   const bank = bankName ?? "Bank";
   return (
     <p className="notice notice-warn" role="status">
-      Die {bank} erlaubt diesem Online-Banking-Zugang den Abruf der Kontoauszüge als PDF nicht ({code}). So lässt es sich
-      freischalten: im Online-Banking der {bank} die Kontoauszüge dieses Kontos auf das elektronische Postfach umstellen,
-      oder die {bank} bitten, den Abruf elektronischer
-      Kontoauszüge über FinTS/HBCI für diesen Zugang freizuschalten. Hausbuch fragt bei jedem Abruf erneut; sobald es klappt,
-      verschwindet dieser Hinweis.
+      Die {bank} erlaubt diesem Online-Banking-Zugang den Abruf der Kontoauszüge als PDF nicht ({code}). Freischalten kann
+      das nur die {bank}: sie bitten, für diesen Zugang den Abruf elektronischer Kontoauszüge als PDF über FinTS/HBCI (HKEKP)
+      für dieses Konto freizuschalten. Das elektronische Postfach allein genügt nicht. Bis dahin diesen Schalter ausschalten;
+      die Zahlungsnachweise im Jahresarchiv erstellt Hausbuch ohnehin. Sobald der Abruf klappt, verschwindet dieser Hinweis.
     </p>
   );
 }

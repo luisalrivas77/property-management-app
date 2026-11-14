@@ -162,9 +162,10 @@ def test_the_first_real_refusal_is_not_permitted_not_a_missing_number():
     assert reading.pdf is None
 
 
-def test_9370_alone_on_the_segment_is_not_permitted():
-    reading = rules.read_answer([BankAnswer("segment", "9370", "HKEKP:3")], [])
-    assert (reading.outcome, reading.code) == (StatementOutcome.NOT_PERMITTED, "9370")
+@pytest.mark.parametrize("code", ["9370", "9380"])
+def test_a_permission_code_alone_on_the_segment_is_not_permitted(code):
+    reading = rules.read_answer([BankAnswer("segment", code, "HKEKP:3")], [])
+    assert (reading.outcome, reading.code) == (StatementOutcome.NOT_PERMITTED, code)
 
 
 def test_a_not_permitted_answer_that_ends_the_dialog_says_so():
@@ -189,7 +190,6 @@ def test_9370_on_another_segment_is_not_a_statement_refusal():
         (["3010"], "3010"),
         (["9210"], "9210"),
         (["9010", "9210"], "9010"),
-        (["9380"], "9380"),
         (["9999"], "9999"),
     ],
 )

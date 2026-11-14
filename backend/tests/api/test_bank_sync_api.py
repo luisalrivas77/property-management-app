@@ -220,7 +220,7 @@ def test_a_permission_refusal_is_on_the_connection_and_in_zu_pruefen(client_a, c
     assert refusal == {"code": "9370", "year": 2026, "number": 1}
     (card,) = cards(client_a)
     assert card["account_id"] == account["id"]
-    assert "Code 9370: keine Auftragsberechtigung" in card["reasoning"]
+    assert "Code 9370: Signaturberechtigung reicht nicht aus" in card["reasoning"]
     assert cards(client_b) == []
     # Switching the fetch off is the person's answer to the refusal: no notice, no card.
     assert ok(client_a.patch(path, json={"fetch_statements": False}))["statements_refusal"] is None

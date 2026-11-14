@@ -949,7 +949,10 @@ APPROVAL_NEEDED_QUESTION = (
 
 
 # 14 Nov 2026: what a permission refusal of the PDF statement fetch means, by its code.
-_STATEMENTS_REFUSAL_MEANING = {"9370": "keine Auftragsberechtigung"}
+_STATEMENTS_REFUSAL_MEANING = {
+    "9370": "Signaturberechtigung reicht nicht aus",
+    "9380": "keine Auftragsberechtigung",
+}
 
 
 def statements_refused_text(refusal: StatementsRefusal, bank_name: str | None) -> tuple[str, str]:
@@ -963,9 +966,11 @@ def statements_refused_text(refusal: StatementsRefusal, bank_name: str | None) -
         f" ({code})."
     )
     question = (
-        "Im Online-Banking die Kontoauszüge dieses Kontos auf das elektronische Postfach"
-        " umstellen oder die Bank bitten, den Abruf elektronischer Kontoauszüge über"
-        " FinTS/HBCI für diesen Zugang freizuschalten; Hausbuch fragt bei jedem Abruf erneut."
+        "Die Bank bitten, für diesen Online-Banking-Zugang den Abruf elektronischer"
+        " Kontoauszüge als PDF über FinTS/HBCI (HKEKP) für dieses Konto freizuschalten; das"
+        " elektronische Postfach allein genügt nicht, und über FinTS lässt es sich nicht"
+        " beantragen. Bis dahin „Kontoauszüge als PDF abrufen“ ausschalten: die"
+        " Zahlungsnachweise im Jahresarchiv erstellt Hausbuch ohnehin."
     )
     return reasoning, question
 

@@ -1027,9 +1027,10 @@ def test_a_permission_refusal_is_recorded_once_shown_and_never_fails_the_run(ban
     assert card.account_id == bank.account.id and card.sync_id is None
     assert card.reasoning == (
         "Die Testbank erlaubt diesem Online-Banking-Zugang den Abruf der Kontoauszüge als PDF"
-        " nicht (Code 9370: keine Auftragsberechtigung)."
+        " nicht (Code 9370: Signaturberechtigung reicht nicht aus)."
     )
-    assert "elektronische Postfach" in card.question
+    assert "(HKEKP)" in card.question
+    assert "„Kontoauszüge als PDF abrufen“ ausschalten" in card.question
     assert bank.rows(statement_table) == []
 
 

@@ -39,9 +39,12 @@ DIALOG_ENDED = "9800"  # Dialog abgebrochen
 STATEMENT_SEGMENT = "HKEKP"
 # Codes on the HKEKP segment that say this access may not fetch statements at all, rather
 # than that one number does not exist (14 Nov 2026, the first real fetch: 9050, then 9010 and
-# 9370 „Es liegt keine Auftragsberechtigung im Institut vor.“ on HKEKP). Only 9370, the code
-# the bank sent with that text: the DK's list of answer codes was not at hand to check others.
-NOT_PERMITTED_CODES = frozenset({"9370"})
+# 9370 „Es liegt keine Auftragsberechtigung im Institut vor.“ on HKEKP). Checked against the
+# DK's Rückmeldungscodes (version of 3 Feb 2026, read from fints.org, not committed): on an
+# order, 9370 is „Signaturberechtigung reicht nicht aus“ and 9380 „Benutzer hat keine
+# Auftragsberechtigung“; 9380's other meanings (TAN or signature procedure not allowed) are
+# answers to the whole message, never to the HKEKP segment, which is all this set is read on.
+NOT_PERMITTED_CODES = frozenset({"9370", "9380"})
 
 # Why a delivered file is not stored (StatementReading.reason; logged, never the bytes).
 TOO_MANY_PARTS = "too_many_parts"
