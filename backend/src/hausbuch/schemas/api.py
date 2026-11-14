@@ -685,7 +685,8 @@ class InboxItem(Schema):
     error_code: str | None = None
     # allocation_proposed (phase 6 D159 amended 13 Nov 2026): the proposal's category when it
     # has one part, and whether „Alle bestätigen“ may confirm it with the others of that
-    # category (a private line, one part, a plain household code, no question).
+    # category (a private line, one part, a plain household code; a model question no longer
+    # keeps it out, the list shows it, Luis 14 Nov 2026).
     category: AllocationCategory | None = None
     bulk_confirmable: bool = False
 
@@ -708,11 +709,11 @@ class ConfirmCategoryBody(Schema):
 
 class ConfirmCategorySkip(Schema):
     """A listed line left as it is: its proposal is no longer a waiting one-part proposal of
-    the category without a question (it changed since the list was shown), or the line no
-    longer counts (merged as a duplicate, its import not reconciled)."""
+    the category (it changed since the list was shown), or the line no longer counts (merged
+    as a duplicate, its import not reconciled). A model question is no reason (14 Nov 2026)."""
 
     transaction_id: UUID
-    reason: Literal["not_open", "not_waiting", "split", "category_changed", "question"]
+    reason: Literal["not_open", "not_waiting", "split", "category_changed"]
 
 
 class ConfirmCategoryResult(Schema):

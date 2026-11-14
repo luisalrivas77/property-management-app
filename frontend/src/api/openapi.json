@@ -12575,8 +12575,7 @@
               "not_open",
               "not_waiting",
               "split",
-              "category_changed",
-              "question"
+              "category_changed"
             ],
             "title": "Reason"
           }
@@ -12588,7 +12587,7 @@
           "reason"
         ],
         "title": "ConfirmCategorySkip",
-        "description": "A listed line left as it is: its proposal is no longer a waiting one-part proposal of\nthe category without a question (it changed since the list was shown), or the line no\nlonger counts (merged as a duplicate, its import not reconciled)."
+        "description": "A listed line left as it is: its proposal is no longer a waiting one-part proposal of\nthe category (it changed since the list was shown), or the line no longer counts (merged\nas a duplicate, its import not reconciled). A model question is no reason (14 Nov 2026)."
       },
       "ConfirmPaymentIbanBody": {
         "properties": {
