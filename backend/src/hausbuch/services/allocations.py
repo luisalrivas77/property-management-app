@@ -297,7 +297,9 @@ def _confirmed(
         ctx, event_type, tx.id, payload, property_id=property_id, effective_date=tx.booking_date
     )
     for a in rows:
-        if a.category is AllocationCategory.ACQUISITION_COST and a.document_id is not None:
+        # Phase 6 D161 widened: a private line booked hh_property_cost with the bill pays its
+        # Nebenkosten row as a rental line booked acquisition_cost does.
+        if a.category in _PAYS_COST_ROW and a.document_id is not None:
             _set_paid_on(ctx, a.document_id, a.property_id, tx.booking_date)
 
 
@@ -314,6 +316,9 @@ def _part(a: Allocation) -> AllocatedPart:
         service_period_end=a.service_period_end,
         recurring=a.recurring,
     )
+
+
+_PAYS_COST_ROW = (AllocationCategory.ACQUISITION_COST, AllocationCategory.HH_PROPERTY_COST)
 
 
 def _set_paid_on(

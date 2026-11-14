@@ -18,6 +18,7 @@ from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import property_ownership as ownership_table
 from hausbuch.db.tables import property_price_split as split_table
+from hausbuch.jobs import enqueue
 from hausbuch.rules.validation import check_ownership_shares
 from hausbuch.schemas.common import Fraction
 from hausbuch.schemas.enums import AcquisitionCostKind, EntityType, PropertyKind
@@ -321,7 +322,18 @@ def add_acquisition_cost(ctx: CommandContext, data: AcquisitionCostCreate) -> Ac
         property_id=cost.property_id,
         effective_date=cost.paid_on,
     )
+    _rematch_bill(ctx, cost.document_id)
     return cost
+
+
+def _rematch_bill(ctx: CommandContext, document_id: UUID | None) -> None:
+    """Phase 6 D161 widened: a Nebenkosten row with its Beleg makes the bill a recorded one,
+    so the private lines waiting in Zu prüfen that may pay it are matched again
+    (rematch_on_evidence, never the model)."""
+    if document_id is not None:
+        enqueue.enqueue_rematch_on_evidence(
+            ctx.conn, workspace_id=ctx.workspace_id, document_id=document_id
+        )
 
 
 def update_acquisition_cost(
@@ -395,6 +407,8 @@ def update_acquisition_cost(
             effective_date=updated.paid_on,
             corrects_event_id=latest_in_chain(ctx.conn, root.id).id,
         )
+        if {"amount", "document_id"} & set(changes):
+            _rematch_bill(ctx, updated.document_id)
     if note_changed:
         append_event(
             ctx,

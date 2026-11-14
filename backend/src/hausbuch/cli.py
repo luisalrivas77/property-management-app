@@ -1,5 +1,6 @@
-"""`hausbuch bootstrap | invite | openapi | evals | household-reask` (phase 1 step 3, §5, §6.5,
-§6.7; phase 2 D41; phase 6 D159 amended 13 Nov 2026).
+"""`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills` (phase 1
+step 3, §5, §6.5, §6.7; phase 2 D41; phase 6 D159 amended 13 Nov 2026, D161 widened 14 Nov
+2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -20,6 +21,11 @@ owner URL: it queues a re-ask job per private line parked in a coarse household 
 API container's worker runs (the model key stays there). --dry-run counts and queues nothing.
 --category names the codes to re-ask (repeatable; e.g. hh_mobility after migration 0031 split
 fuel off), by default the codes migration 0029 split up.
+
+`rematch-bills` runs services.matching.rematch_recorded_bills once for a workspace, with the
+same owner URL: it queues a rematch per bill recorded as a Nebenkosten or private_cost row, so
+the private lines already waiting that pay one are proposed as its payment (never the model,
+never a confirmed line). --dry-run counts and queues nothing.
 """
 
 import argparse
@@ -270,6 +276,39 @@ def household_reask(args: argparse.Namespace, environ: Mapping[str, str]) -> int
     return EXIT_OK
 
 
+# --- rematch-bills --------------------------------------------------------------------
+
+
+def rematch_bills(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.matching import rematch_recorded_bills
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:rematch-bills")
+                result = rematch_recorded_bills(new_command(conn, args.workspace, actor))
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    verb = "would queue" if args.dry_run else "queued"
+    print(f"{verb} a rematch for {result.bills} recorded bill(s)")
+    print(f"{result.waiting} waiting private line(s) have the amount and date of one of them")
+    return EXIT_OK
+
+
 # --- Helpers --------------------------------------------------------------------------
 
 
@@ -358,6 +397,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     reask.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
     reask.set_defaults(command=household_reask, command_name="household-reask")
+
+    bills = commands.add_parser(
+        "rematch-bills",
+        help="match the waiting private lines again against the bills recorded as Nebenkosten "
+        "or private_cost rows (once, after the deploy of D161 widened)",
+    )
+    bills.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    bills.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
+    bills.set_defaults(command=rematch_bills, command_name="rematch-bills")
 
     api = commands.add_parser("openapi", help="print the API's OpenAPI document")
     api.set_defaults(command=openapi, command_name="openapi")
