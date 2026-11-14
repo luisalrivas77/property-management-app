@@ -87,7 +87,7 @@ per_category:
   - {category: hh_tax_payment, decision: review}
   - {category: internal_transfer_in, decision: review}
   - {category: internal_transfer_out, decision: review}
-  - {category: hh_cash, decision: review}
+  - {category: hh_cash, decision: auto_confirm}  # D159 amended 14 Nov 2026
   - {category: hh_credit_card, decision: review}
   - {category: hh_interest_fees, decision: review}  # D176 (3), step 2b
   # D159 amended 13 Nov 2026 (migration 0029)

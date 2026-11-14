@@ -25,7 +25,8 @@
 # - The transfer codes are pass_through (neither income nor cost, like owner transfers), the
 #   depot codes private (phase 8 reads distribution and capital_income_tax by category).
 # - Thresholds: D159's 0.9 list and its None list; hh_cash is named in neither, read as None
-#   (a cash withdrawal is a movement a person confirms); the depot codes are None (D165 (1):
+#   until D159 amended 14 Nov 2026 set it to 0.9 (a rule may be learned for an ATM
+#   withdrawal); the depot codes are None (D165 (1):
 #   categorised by code from the booking text, never by a model's confidence).
 
 codes:
@@ -54,7 +55,7 @@ codes:
   # Movements
   - {category: internal_transfer_in, group: movements, relevance: transfer, treatment: pass_through, threshold: null}
   - {category: internal_transfer_out, group: movements, relevance: transfer, treatment: pass_through, threshold: null}
-  - {category: hh_cash, label: Bargeldabhebung, group: movements, relevance: spending, treatment: private, threshold: null}
+  - {category: hh_cash, label: Bargeldabhebung, group: movements, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_credit_card, group: movements, relevance: spending, treatment: private, threshold: null}
   # D176 (3), step 2b: a card's interest and fee lines, booked by code; shown under Sonstiges
   - {category: hh_interest_fees, label: Zinsen und Gebühren, group: other, relevance: spending, treatment: private, threshold: null}
