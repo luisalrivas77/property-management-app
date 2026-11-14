@@ -373,11 +373,12 @@ const STATEMENTS_REFUSAL_MEANING: Record<string, string> = { "9370": "keine Auft
 function StatementsRefused({ refusal, bankName }: { refusal: StatementsRefusal; bankName: string | null }) {
   const meaning = STATEMENTS_REFUSAL_MEANING[refusal.code];
   const code = meaning ? `Code ${refusal.code}: ${meaning}` : `Code ${refusal.code}`;
+  const bank = bankName ?? "Bank";
   return (
     <p className="notice notice-warn" role="status">
-      {bankName ? `Die ${bankName}` : "Die Bank"} erlaubt diesem Online-Banking-Zugang den Abruf der Kontoauszüge als PDF
-      nicht ({code}). So lässt es sich freischalten: im Online-Banking {bankName ? `der ${bankName}` : "der Bank"} die
-      Kontoauszüge dieses Kontos auf das elektronische Postfach umstellen, oder die Bank bitten, den Abruf elektronischer
+      Die {bank} erlaubt diesem Online-Banking-Zugang den Abruf der Kontoauszüge als PDF nicht ({code}). So lässt es sich
+      freischalten: im Online-Banking der {bank} die Kontoauszüge dieses Kontos auf das elektronische Postfach umstellen,
+      oder die {bank} bitten, den Abruf elektronischer
       Kontoauszüge über FinTS/HBCI für diesen Zugang freizuschalten. Hausbuch fragt bei jedem Abruf erneut; sobald es klappt,
       verschwindet dieser Hinweis.
     </p>
