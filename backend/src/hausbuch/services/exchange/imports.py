@@ -720,7 +720,10 @@ def book_correction(
     since the typing, so the difference shown is no longer the one booked
     (exchange.correction_stale)."""
     imported = require_row(ctx.conn, import_table, MOVEMENT_IMPORT, import_id, for_update=True)
-    _require_exchange(ctx.conn, imported.account_id)
+    # The account row too: an upload locks it while it inserts its lines, so the checks below
+    # never run on a sum a concurrent upload is about to change (lock order import → account;
+    # no command takes the account and then an import).
+    _require_exchange(ctx.conn, imported.account_id, for_update=True)
     if imported.status != ImportStatus.UNRECONCILED.value:
         raise RuleViolationError(
             [E.EXCHANGE_CORRECTION_NOT_UNRECONCILED], "this import's balances do not differ"
