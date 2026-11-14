@@ -25021,6 +25021,18 @@
           },
           "statement_import": {
             "$ref": "#/components/schemas/StatementImport"
+          },
+          "other_imported": {
+            "type": "integer",
+            "title": "Other Imported",
+            "default": 0
+          },
+          "other_refused": {
+            "items": {
+              "$ref": "#/components/schemas/StatementRefusal"
+            },
+            "type": "array",
+            "title": "Other Refused"
           }
         },
         "additionalProperties": false,
@@ -25030,7 +25042,7 @@
           "statement_import"
         ],
         "title": "StatementAccountCreated",
-        "description": "The account „Konto anlegen und einlesen“ created and the file's import onto it, both\nwritten in one transaction."
+        "description": "The account „Konto anlegen und einlesen“ created and the file's import onto it, both\nwritten in one transaction. Since 14 Nov 2026 the other statement files waiting under\nDokumente that print the same IBAN or number are imported with it, in statement order\n(`other_imported`); one whose import refuses keeps its offer (`other_refused`)."
       },
       "StatementExtraction": {
         "properties": {
@@ -25490,6 +25502,11 @@
           "opening_from_file": {
             "type": "boolean",
             "title": "Opening From File"
+          },
+          "other_statements": {
+            "type": "integer",
+            "title": "Other Statements",
+            "default": 0
           }
         },
         "additionalProperties": false,
@@ -25503,6 +25520,27 @@
         ],
         "title": "StatementNewAccount",
         "description": "„Konto anlegen und einlesen“ (phase 6, 13 Nov 2026, amends D176 (3) and D165 (b)): the\naccount the file's own content implies, offered when no account holds the file's IBAN or\nnumber yet. The kind comes from the format; `bank`, `provider` and `label` are suggestions\nthe person edits (None where the format does not tell, e.g. a camt file); the identifier is\nshown masked only (an IBAN as „DE89 **** 3000“, a number as „**** 4567“) and never travels\nback from the browser: POST /documents/{id}/statement-account reads it from the original."
+      },
+      "StatementRefusal": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document_id",
+          "code"
+        ],
+        "title": "StatementRefusal",
+        "description": "A statement file the app tried to import onto its account by itself and the import\nrefused (phase 6, 14 Nov 2026): the document keeps its „Auf Konto importieren“ offer, and\n`code` is the import's statement.* (or other rule) code, which says why."
       },
       "StatementsRefusal": {
         "properties": {

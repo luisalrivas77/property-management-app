@@ -161,6 +161,8 @@ export type StatementFileCandidate = Schemas["StatementFileCandidate"];
 export type StatementNewAccount = Schemas["StatementNewAccount"];
 export type StatementAccountBody = Schemas["StatementAccountBody"];
 export type StatementAccountCreated = Schemas["StatementAccountCreated"];
+// a waiting file of the same account whose import refused (14 Nov 2026); it keeps its offer
+export type StatementRefusal = Schemas["StatementRefusal"];
 
 // the FinTS sync of an account (phase 5 step 1, §10)
 export type BankConnection = Schemas["BankConnection"];

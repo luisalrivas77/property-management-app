@@ -9641,11 +9641,20 @@ export interface components {
         /**
          * StatementAccountCreated
          * @description The account „Konto anlegen und einlesen“ created and the file's import onto it, both
-         *     written in one transaction.
+         *     written in one transaction. Since 14 Nov 2026 the other statement files waiting under
+         *     Dokumente that print the same IBAN or number are imported with it, in statement order
+         *     (`other_imported`); one whose import refuses keeps its offer (`other_refused`).
          */
         StatementAccountCreated: {
             account: components["schemas"]["Account"];
             statement_import: components["schemas"]["StatementImport"];
+            /**
+             * Other Imported
+             * @default 0
+             */
+            other_imported: number;
+            /** Other Refused */
+            other_refused?: components["schemas"]["StatementRefusal"][];
         };
         /**
          * StatementExtraction
@@ -9830,6 +9839,26 @@ export interface components {
             opening_balance_on: string;
             /** Opening From File */
             opening_from_file: boolean;
+            /**
+             * Other Statements
+             * @default 0
+             */
+            other_statements: number;
+        };
+        /**
+         * StatementRefusal
+         * @description A statement file the app tried to import onto its account by itself and the import
+         *     refused (phase 6, 14 Nov 2026): the document keeps its „Auf Konto importieren“ offer, and
+         *     `code` is the import's statement.* (or other rule) code, which says why.
+         */
+        StatementRefusal: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Code */
+            code: string;
         };
         /**
          * StatementsRefusal
