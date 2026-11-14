@@ -16,20 +16,24 @@ from db.matching_support import World
 from db.test_cli_evals_report import _owner_url
 from db.test_services_private_matching import (
     CLEARING_IBAN,
+    DELIVERY,
     NOW,
     Private,
     _answer_line,
     _deps,
+    _events,
     _propose,
     _rematch,
     _rows,
+    _shared_world,
     _view,
 )
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from hausbuch import cli
 from hausbuch.ai.fake import FakeModelClient
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import matching_rule as rule_table
 from hausbuch.jobs import enqueue
 from hausbuch.jobs.matching import run_rematch_waiting
 from hausbuch.schemas.allocation import MatchingRuleCreate, RuleMatcher, SplitMethod
@@ -344,3 +348,91 @@ def test_rematch_waiting_keeps_the_models_proposal_and_books_what_a_rule_now_hit
     (after,) = _rows(world, asked)  # no rule hits: the proposal stays as it was
     assert (after.id, after.status, after.method) == (before.id, "proposed", "llm")
     assert _booked(world, longer) == ("hh_energy", "rule", "confirmed")
+
+
+# --- Review F1: Google Pay's card form names its merchant ----------------------------------
+
+
+def test_a_google_netflix_rule_books_netflix_and_leaves_supercell(
+    world, private, app_engine, tmp_path
+):
+    netflix = private.line(date(2026, 9, 5), "-13.99", name="GOOGLE*Netflix")
+    supercell = private.line(date(2026, 9, 6), "-4.99", name="GOOGLE *Supercell g.co/helppay#")
+    first = private.line(date(2026, 10, 5), "-13.99", name="GOOGLE *Netflix g.co/helppay#")
+    assert _view(world, first).payee_label == "Google: Netflix"
+    rule = _learn(world, first, "-13.99", "hh_streaming")
+    assert rule.matcher.counterparty_name_pattern == r"^GOOGLE \*NETFLIX"
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    assert _booked(world, netflix) == ("hh_streaming", "rule", "confirmed")
+    assert _rows(world, supercell) == []
+
+
+# --- Review F2: a loose name match proposes, it does not book -------------------------------
+
+
+def test_a_rule_on_one_shop_proposes_another_shop_of_the_same_first_word(
+    world, private, app_engine, tmp_path
+):
+    apotheke = private.line(date(2026, 9, 3), "-19.90", name="ADLER APOTHEKE")
+    asked = private.line(date(2026, 9, 4), "-8.40", name="ADLER APOTHEKE")
+    _propose(world, asked, "-8.40", "hh_health")  # the model's answer of another category
+    (before,) = _rows(world, asked)
+    first = private.line(date(2026, 10, 3), "-59.90", name="ADLER MODEMARKT")
+    rule = _learn(world, first, "-59.90", "hh_clothing")
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+
+    (row,) = _rows(world, apotheke)
+    assert (row.category, row.method, row.status, row.rule_id) == (
+        "hh_clothing",
+        "rule",
+        "proposed",
+        rule.id,
+    )
+    assert row.question == "Gleicher Empfänger wie „ADLER MODEMARKT“? Bitte bestätigen."
+    (after,) = _rows(world, asked)  # the model's proposal stays for the person
+    assert (after.id, after.category, after.method) == (before.id, "hh_health", "llm")
+
+
+# --- Review F3: a correction disables the IBAN+name rule that booked the line ---------------
+
+
+def test_correcting_a_line_disables_the_iban_and_name_rule_that_booked_it(
+    world, private, app_engine, tmp_path
+):
+    lines = _shared_world(private)
+    hmac = protect_iban(CLEARING_IBAN, TEST_IBAN_KEY).hmac.hex()
+    old = world.cmd(
+        rules_learned.create_rule,
+        MatchingRuleCreate(
+            matcher=RuleMatcher(
+                counterparty_iban_hmac=hmac,
+                counterparty_name_pattern="^LIEFERDIENST BEISPIEL",
+                amount_sign="debit",
+            ),
+            split_method=SplitMethod.SINGLE_CATEGORY,
+            category="hh_dining",
+        ),
+    )
+    tx = lines[DELIVERY]
+    _rematch(app_engine, tmp_path, world, tx)
+    assert _booked(world, tx) == ("hh_dining", "rule", "confirmed")
+
+    new = _answer_line(world, tx, "-23.40", "hh_groceries", learn=True).rule
+    assert new is not None
+    assert new.matcher.counterparty_iban_hmac is None  # a name rule on a shared IBAN
+    assert new.matcher.counterparty_name_pattern == old.matcher.counterparty_name_pattern
+    enabled = world.query(
+        lambda c: dict(c.execute(select(rule_table.c.id, rule_table.c.enabled)).all())
+    )
+    assert enabled == {old.id: False, new.id: True}
+    assert ("rule.disabled", "user") in _events(world, old.id)
+
+    later = private.line(date(2026, 11, 3), "-21.00", name=DELIVERY, iban=CLEARING_IBAN)
+    _rematch(app_engine, tmp_path, world, later)
+    (row,) = _rows(world, later)
+    assert (row.category, row.method, row.status, row.rule_id) == (
+        "hh_groceries",
+        "rule",
+        "confirmed",
+        new.id,
+    )
