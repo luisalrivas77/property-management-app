@@ -102,22 +102,47 @@ def rules_for_purpose(conn: Connection, purpose: AccountPurpose) -> list[Matchin
 def _enabled_with_origin(conn: Connection) -> list[tuple[MatchingRule, str | None]]:
     """Enabled rules, oldest first, each with the purpose of the account whose answer it was
     learned from (None when unknown)."""
+    return _with_origin(conn, rule_table.c.enabled.is_(True))
+
+
+def load_rule(conn: Connection, rule_id: UUID) -> MatchingRule | None:
+    """One rule, enabled or not, read as rules_for_purpose reads it (MatchingRule.
+    learned_from included); None when there is none."""
+    found = _with_origin(conn, rule_table.c.id == rule_id)
+    return found[0][0] if found else None
+
+
+def _with_origin(conn: Connection, where: Any) -> list[tuple[MatchingRule, str | None]]:
+    """The rules `where` selects, oldest first, each with the purpose of the account whose
+    answer it was learned from (None when unknown). A rule learned on a private line carries
+    that line's name and purpose (MatchingRule.learned_from, phase 6 D160 amended (4), 14 Nov
+    2026: an IBAN rule then reaches its payee on another IBAN), read here and never stored on
+    the rule; a rule without a known origin line carries none and keeps its old behaviour."""
     a, t, acc = allocation_table.c, transaction_table.c, account_table.c
     rows = conn.execute(
-        select(rule_table, acc.purpose.label("origin_purpose"))
+        select(
+            rule_table,
+            acc.purpose.label("origin_purpose"),
+            t.counterparty_name.label("origin_name"),
+            t.purpose.label("origin_text"),
+        )
         .select_from(
             rule_table.outerjoin(allocation_table, a.id == rule_table.c.created_from_allocation_id)
             .outerjoin(transaction_table, t.id == a.transaction_id)
             .outerjoin(account_table, acc.id == t.account_id)
         )
-        .where(rule_table.c.enabled.is_(True))
+        .where(where)
         .order_by(rule_table.c.created_at, rule_table.c.id)
     ).all()
     out: list[tuple[MatchingRule, str | None]] = []
     for row in rows:
         fields = row._asdict()
         origin = fields.pop("origin_purpose")
-        out.append((MatchingRule.model_validate(fields), origin))
+        name, text = fields.pop("origin_name"), fields.pop("origin_text")
+        rule = MatchingRule.model_validate(fields)
+        if origin == AccountPurpose.PRIVATE.value and name is not None:
+            rule = rule.with_learned_from(name, text)
+        out.append((rule, origin))
     return out
 
 

@@ -296,6 +296,84 @@ def test_one_tick_books_lieferando_on_both_accounts(world, private, app_engine, 
     assert _rows(world, grocer) == []
 
 
+# --- An IBAN rule reaches its payee on another IBAN (14 Nov 2026) ----------------------------
+
+SKY = "Sky Deutschland Fernsehen GmbH Co. KG"
+SKY_OLD_IBAN = "DE04100000000000000441"  # until March
+SKY_NEW_IBAN = "DE74100000000000000442"  # from April
+OTHER_COMPANY_IBAN = "DE47100000000000000443"
+
+
+def _sky_old(month: int) -> str:
+    return f"40123456 {month:02d}/26 SKY ABO - MEHR INFO AUF SKY.DE/KONTO"
+
+
+def test_an_iban_rule_books_the_same_company_on_its_earlier_iban(
+    world, private, app_engine, tmp_path
+):
+    waiting = [
+        private.line(date(2026, m, 1), "-30.00", name=SKY, iban=SKY_OLD_IBAN, purpose=_sky_old(m))
+        for m in (1, 2, 3)
+    ]
+    other = private.line(date(2026, 3, 2), "-30.00", name="EPRIMO GMBH", iban=OTHER_COMPANY_IBAN)
+    first = private.line(
+        date(2026, 4, 1),
+        "-30.00",
+        name="SKY DEUTSCHLAND FERNSEHEN GMBH + CO. KG",
+        iban=SKY_NEW_IBAN,
+        purpose="Ihr Sky Abo - 1234567890 - Zahlung 04/26",
+    )
+    rule = _learn(world, first, "-30.00", "hh_pay_tv")
+    hmac = protect_iban(SKY_NEW_IBAN, TEST_IBAN_KEY).hmac.hex()
+    assert (rule.matcher.counterparty_iban_hmac, rule.matcher.counterparty_name_pattern) == (
+        hmac,
+        None,
+    )
+    loaded = world.query(rules_learned.load_rule, rule.id)
+    assert loaded is not None and loaded.learned_from is not None
+    assert rule.learned_from is None  # the API's rule carries no origin line
+    assert world.query(matching.waiting_lines, "rule", rule.id) == waiting
+
+    plans = _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    assert [p.outcome for p in plans] == ["written"] * 3
+    for tx in waiting:
+        (row,) = _rows(world, tx)
+        assert (row.category, row.method, row.status, row.rule_id) == (
+            "hh_pay_tv",
+            "rule",
+            "confirmed",
+            rule.id,
+        )
+    assert _rows(world, other) == []  # another company, on its own IBAN
+
+
+def test_an_iban_rule_does_not_reach_a_shared_iban(world, private, app_engine, tmp_path):
+    # the earlier IBAN carries two payees: it names none, so the IBAN rule does not reach it
+    sky = private.line(date(2026, 3, 1), "-30.00", name=SKY, iban=SKY_OLD_IBAN, purpose="x")
+    private.line(date(2026, 3, 2), "-12.00", name="EPRIMO GMBH", iban=SKY_OLD_IBAN)
+    first = private.line(date(2026, 4, 1), "-30.00", name=SKY, iban=SKY_NEW_IBAN)
+    rule = _learn(world, first, "-30.00", "hh_pay_tv")
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    assert _rows(world, sky) == []
+
+
+def test_a_weak_cross_iban_hit_is_proposed_with_a_question(world, private, app_engine, tmp_path):
+    asked = private.line(date(2026, 9, 3), "-19.90", name="ADLER APOTHEKE", iban=OTHER_COMPANY_IBAN)
+    first = private.line(date(2026, 10, 3), "-59.90", name="ADLER MODEMARKT", iban=SKY_NEW_IBAN)
+    rule = _learn(world, first, "-59.90", "hh_clothing")
+    assert rule.matcher.counterparty_name_pattern is None  # an IBAN rule
+    assert world.query(matching.waiting_lines, "rule", rule.id) == [asked]
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    (row,) = _rows(world, asked)
+    assert (row.category, row.method, row.status, row.rule_id) == (
+        "hh_clothing",
+        "rule",
+        "proposed",
+        rule.id,
+    )
+    assert row.question == "Gleicher Empfänger wie „ADLER MODEMARKT“? Bitte bestätigen."
+
+
 # --- `hausbuch rematch-waiting` --------------------------------------------------------------
 
 

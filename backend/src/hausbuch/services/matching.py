@@ -1006,14 +1006,38 @@ def deterministic_set(
         if rule.category not in skip_rule_categories
         and not set(rule.categories or ()) & skip_rule_categories
     ]
+    context = _shared_rule_ibans(conn, rules, tx, context)
     shared = tx.counterparty_iban_hmac in context.shared_iban_hmacs
     history = (
         rule_history(conn, tx, context.account_purpose, shared=shared or _service_line(tx))
-        if _any_hit(rules, tx)
+        if _any_hit(rules, tx, context)
         else []
     )
     found = matchers.deterministic_answer(rules, tx, context, history)
     return None if found is None else _guarded(conn, found)
+
+
+def _shared_rule_ibans(
+    conn: Connection, rules: list[MatchingRule], tx: MatchTransaction, context: MatchContext
+) -> MatchContext:
+    """D160 amended (4), 14 Nov 2026: an IBAN rule reaches its payee on another IBAN
+    (rules.matching.cross_iban_hit) only while the rule's own IBAN is not shared, so the
+    context names it shared when it is. Read only for the rules whose payee is the line's
+    (cross_iban_candidate), which are few; the context is this line's alone."""
+    if context.account_purpose is not AccountPurpose.PRIVATE:
+        return context
+    checked: set[str] = set(context.shared_iban_hmacs)
+    shared: list[str] = []
+    for rule in rules:
+        hmac = rule.matcher.counterparty_iban_hmac
+        if hmac is None or hmac in checked or matchers.cross_iban_candidate(rule, tx) is None:
+            continue
+        checked.add(hmac)
+        if is_shared_iban(conn, bytes.fromhex(hmac)):
+            shared.append(hmac)
+    if not shared:
+        return context
+    return context.model_copy(update={"shared_iban_hmacs": [*context.shared_iban_hmacs, *shared]})
 
 
 def _service_line(tx: MatchTransaction) -> bool:
@@ -1022,9 +1046,12 @@ def _service_line(tx: MatchTransaction) -> bool:
     return matchers.payee(tx.counterparty_name, tx.purpose).service is not None
 
 
-def _any_hit(rules: list[MatchingRule], tx: MatchTransaction) -> bool:
+def _any_hit(rules: list[MatchingRule], tx: MatchTransaction, context: MatchContext) -> bool:
+    """Whether a rule names the line or reaches it from another IBAN (rules.matching.
+    rule_reaches), so its IBAN's history is read (D49: a cross-IBAN hit is read against the
+    line's own IBAN's history)."""
     return tx.counterparty_iban_hmac is not None and any(
-        r.enabled and matchers.rule_hits(r.matcher, tx) for r in rules
+        matchers.rule_reaches(r, tx, context) for r in rules
     )
 
 
@@ -1882,7 +1909,9 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
     a line a person, matcher or rule booked is never picked. Narrowed by what the change can
     reach:
     - rule: the rule's IBAN hash and sign, then its patterns (rules.matching.rule_hits);
-      none for a rule that is gone or disabled;
+      none for a rule that is gone or disabled; an IBAN rule learned on a private line also
+      picks the private lines on another IBAN whose payee is the one it was learned on
+      (rules.matching.cross_iban_candidate, D160 amended (4)), unless its IBAN is shared;
     - loan: every waiting debit (the loan matcher reads the account hash or the lender's
       name; a debit is cheap to re-match);
     - tenant: credits from the tenant's IBAN hash (rent); none without one;
@@ -1906,22 +1935,37 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
         )
     )
     rule = None
+    cross = False
     if kind == enqueue.TRIGGER_RULE:
-        row = conn.execute(select(rule_table).where(rule_table.c.id == entity_id)).one_or_none()
-        if row is None:
+        rule = rules_learned.load_rule(conn, entity_id)
+        if rule is None:
             return []
-        rule = rules_learned.to_rule(row)
         if not rule.enabled or not rule.matcher.matches_something:
             return []
         if rule.matcher.counterparty_iban_hmac is not None:
             hmac = bytes.fromhex(rule.matcher.counterparty_iban_hmac)
-            query = query.where(t.counterparty_iban_hmac == hmac)
-            if matchers.iban_only(rule.matcher) and is_shared_iban(conn, hmac):
+            shared = matchers.iban_only(rule.matcher) and is_shared_iban(conn, hmac)
+            cross = not shared and matchers.cross_iban_payee(rule) is not None
+            if shared:
                 # D160 amended: such a rule never applies to a private line of a shared IBAN
                 # (rules.matching.apply_rule), so none is re-checked; a rental line still is.
                 query = query.join(account_table, account_table.c.id == t.account_id).where(
-                    account_table.c.purpose != AccountPurpose.PRIVATE.value
+                    t.counterparty_iban_hmac == hmac,
+                    account_table.c.purpose != AccountPurpose.PRIVATE.value,
                 )
+            elif cross:
+                # D160 amended (4): also the payee's private lines on another IBAN.
+                query = query.join(account_table, account_table.c.id == t.account_id).where(
+                    or_(
+                        t.counterparty_iban_hmac == hmac,
+                        and_(
+                            account_table.c.purpose == AccountPurpose.PRIVATE.value,
+                            t.counterparty_iban_hmac.is_not(None),
+                        ),
+                    )
+                )
+            else:
+                query = query.where(t.counterparty_iban_hmac == hmac)
         if rule.matcher.amount_sign == "credit":
             query = query.where(t.amount > 0)
         elif rule.matcher.amount_sign == "debit":
@@ -1975,8 +2019,11 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
     return [
         r.id
         for r in rows
-        if matchers.rule_hits(rule.matcher, tx := match_transaction(r))
-        and not matchers.service_blind(rule.matcher, tx)  # never applied (apply_rule)
+        if (
+            matchers.rule_hits(rule.matcher, tx := match_transaction(r))
+            and not matchers.service_blind(rule.matcher, tx)  # never applied (apply_rule)
+        )
+        or (cross and matchers.cross_iban_candidate(rule, tx) is not None)
     ]
 
 

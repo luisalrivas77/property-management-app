@@ -17,7 +17,7 @@ from enum import StrEnum
 from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, PrivateAttr, model_validator
 
 from .ai import ConfidenceLevel
 from .common import Confidence, Money, MutableRecord, PositiveMoney, Record, Schema
@@ -381,12 +381,30 @@ class MatchingRuleCreate(Schema):
 class MatchingRule(MatchingRuleCreate, MutableRecord):
     enabled: bool = True
     hit_count: int = Field(default=0, ge=0)
+    # Phase 6 D160 amended (4), 14 Nov 2026: the counterparty name and purpose of the private
+    # line the rule was learned from (created_from_allocation_id's transaction), read by the
+    # rules loader (services.rules_learned.rules_for_purpose) so an IBAN rule also reaches its
+    # payee on another IBAN (rules.matching.cross_iban_hit). Never stored on the rule, never
+    # serialised and not in the API's schema: a private attribute, None when not loaded.
+    _learned_from: tuple[str | None, str | None] | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def _matcher(self) -> Self:  # replaces MatchingRuleCreate's: erased rules are empty
         if self.enabled and not self.matcher.matches_something:
             raise ValueError(_MATCHES_NOTHING)
         return self
+
+    @property
+    def learned_from(self) -> tuple[str | None, str | None] | None:
+        """(counterparty name, purpose) of the private line the rule was learned from, when
+        the loader read it; None otherwise (a typed rule, an erased origin, a rental one)."""
+        return self._learned_from
+
+    def with_learned_from(self, name: str | None, purpose: str | None) -> Self:
+        """A copy carrying the line it was learned from (learned_from)."""
+        copy = self.model_copy()
+        copy._learned_from = (name, purpose)
+        return copy
 
 
 # --- The categorize job's structured output (§5.3) ------------------------------------
