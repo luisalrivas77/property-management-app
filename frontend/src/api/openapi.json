@@ -22528,6 +22528,61 @@
         "title": "RateBasis",
         "description": "How a category's monthly rate was found (D155 (2))."
       },
+      "RebookBlockReason": {
+        "type": "string",
+        "enum": [
+          "not_open",
+          "split",
+          "scoped",
+          "document",
+          "category",
+          "linked"
+        ],
+        "title": "RebookBlockReason",
+        "description": "Why an earlier line of the payee cannot be re-booked by „Diese auch auf … umbuchen“\n(phase 6 D160, 14 Nov 2026), in the order the server checks: not_open (excluded, waiting\nfor a duplicate decision, or its import not reconciled), split (more than one row),\nscoped (a property, unit, tenancy or loan), document (a Beleg), category (a code no rule\nis learned for), linked (a leg of a transfer link or a depot movement)."
+      },
+      "RebookBlocker": {
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Transaction Id"
+          },
+          "booking_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Booking Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/RebookBlockReason"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllocationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "transaction_id",
+          "booking_date",
+          "amount",
+          "reason"
+        ],
+        "title": "RebookBlocker",
+        "description": "An earlier confirmed line of the payee that „Diese auch auf … umbuchen“ would refuse\nto re-book (phase 6 D160): it must be changed by hand first. category: its one row's\ncategory, or None for a split; a line already in the chosen category is not re-booked,\nso it blocks nothing for that answer."
+      },
       "ReducedRentCheck": {
         "properties": {
           "wohnung": {
@@ -27508,6 +27563,13 @@
             "type": "array",
             "title": "Name History"
           },
+          "rebook_blockers": {
+            "items": {
+              "$ref": "#/components/schemas/RebookBlocker"
+            },
+            "type": "array",
+            "title": "Rebook Blockers"
+          },
           "rebooked": {
             "type": "integer",
             "title": "Rebooked",
@@ -27524,7 +27586,7 @@
           "no_default_rule_categories"
         ],
         "title": "TransactionAllocations",
-        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nwaiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines\nstill waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no\nconfirmed row), each with its count, most frequent first, at most five; the panel then\nasks whether those belong to the same category (same_amount_only).\nunlearnable_categories: the categories the line's account takes for which a one-row\nanswer can never become a rule, with or without a typed pattern (phase 6 D160 on a\nprivate account: the transfer, depot and tax-relevant codes and those without a\nthreshold; empty on the rental account), in taxonomy order, so the UI greys the box and\nsays why instead of letting rule.not_learnable refuse the answer.\nrule: the rule this PUT created, if any.\nname_history (phase 6 D160): for a private line whose rule would be on its name (no\nIBAN, or a shared one), the payee's other confirmed lines of the same sign by category,\nmost frequent first: what rebook_earlier would re-book. rebooked: how many earlier lines\nthis PUT re-booked."
+        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nwaiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines\nstill waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no\nconfirmed row), each with its count, most frequent first, at most five; the panel then\nasks whether those belong to the same category (same_amount_only).\nunlearnable_categories: the categories the line's account takes for which a one-row\nanswer can never become a rule, with or without a typed pattern (phase 6 D160 on a\nprivate account: the transfer, depot and tax-relevant codes and those without a\nthreshold; empty on the rental account), in taxonomy order, so the UI greys the box and\nsays why instead of letting rule.not_learnable refuse the answer.\nrule: the rule this PUT created, if any.\nname_history (phase 6 D160): for a private line whose rule would be on its name (no\nIBAN, or a shared one), the payee's other confirmed lines of the same sign by category,\nmost frequent first: what rebook_earlier would re-book. rebook_blockers: with a\nname_history, the payee's earlier confirmed lines rebook_earlier would refuse to re-book\n(rule.rebook_blocked), oldest first, so the panel names them instead of offering it.\nrebooked: how many earlier lines this PUT re-booked."
       },
       "TransferLegSource": {
         "type": "string",

@@ -503,6 +503,34 @@ class NameCategoryCount(Schema):
     count: int = Field(ge=1)
 
 
+class RebookBlockReason(StrEnum):
+    """Why an earlier line of the payee cannot be re-booked by „Diese auch auf … umbuchen“
+    (phase 6 D160, 14 Nov 2026), in the order the server checks: not_open (excluded, waiting
+    for a duplicate decision, or its import not reconciled), split (more than one row),
+    scoped (a property, unit, tenancy or loan), document (a Beleg), category (a code no rule
+    is learned for), linked (a leg of a transfer link or a depot movement)."""
+
+    NOT_OPEN = "not_open"
+    SPLIT = "split"
+    SCOPED = "scoped"
+    DOCUMENT = "document"
+    CATEGORY = "category"
+    LINKED = "linked"
+
+
+class RebookBlocker(Schema):
+    """An earlier confirmed line of the payee that „Diese auch auf … umbuchen“ would refuse
+    to re-book (phase 6 D160): it must be changed by hand first. category: its one row's
+    category, or None for a split; a line already in the chosen category is not re-booked,
+    so it blocks nothing for that answer."""
+
+    transaction_id: UUID
+    booking_date: date
+    amount: Money
+    reason: RebookBlockReason
+    category: AllocationCategory | None = None
+
+
 class TransactionAllocations(Schema):
     """GET / PUT /transactions/{id}/allocations: the line, its current allocation rows
     (proposed or confirmed; none = not matched) and the rule checkbox.
@@ -526,8 +554,10 @@ class TransactionAllocations(Schema):
     rule: the rule this PUT created, if any.
     name_history (phase 6 D160): for a private line whose rule would be on its name (no
     IBAN, or a shared one), the payee's other confirmed lines of the same sign by category,
-    most frequent first: what rebook_earlier would re-book. rebooked: how many earlier lines
-    this PUT re-booked."""
+    most frequent first: what rebook_earlier would re-book. rebook_blockers: with a
+    name_history, the payee's earlier confirmed lines rebook_earlier would refuse to re-book
+    (rule.rebook_blocked), oldest first, so the panel names them instead of offering it.
+    rebooked: how many earlier lines this PUT re-booked."""
 
     transaction: Transaction
     allocations: list[Allocation]
@@ -538,6 +568,7 @@ class TransactionAllocations(Schema):
     unlearnable_categories: list[AllocationCategory] = Field(default_factory=list)
     rule: MatchingRule | None = None
     name_history: list[NameCategoryCount] = Field(default_factory=list)
+    rebook_blockers: list[RebookBlocker] = Field(default_factory=list)
     rebooked: int = 0
 
 

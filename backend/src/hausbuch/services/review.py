@@ -16,7 +16,9 @@
 """
 
 from collections import Counter
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Connection, Select, exists, or_, select
@@ -32,7 +34,13 @@ from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import transfer_link as transfer_link_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import matching as matchers
-from hausbuch.rules.errors import AI_DISABLED, RULE_CONFLICTS, RULE_TOO_BROAD, RuleError
+from hausbuch.rules.errors import (
+    AI_DISABLED,
+    RULE_CONFLICTS,
+    RULE_REBOOK_BLOCKED,
+    RULE_TOO_BROAD,
+    RuleError,
+)
 from hausbuch.rules.household.taxonomy import BULK_CONFIRMABLE, allowed_categories
 from hausbuch.rules.review import THRESHOLDS
 from hausbuch.schemas.ai import AiJob
@@ -44,6 +52,7 @@ from hausbuch.schemas.allocation import (
     AllocationSet,
     MatchContext,
     MatchingRuleCreate,
+    MatchTransaction,
     NameHistory,
 )
 from hausbuch.schemas.api import (
@@ -55,6 +64,8 @@ from hausbuch.schemas.api import (
     InboxItem,
     InboxItemKind,
     NameCategoryCount,
+    RebookBlocker,
+    RebookBlockReason,
     TransactionAllocations,
 )
 from hausbuch.schemas.bank import Transaction
@@ -174,9 +185,17 @@ def _rebook_earlier(
     transaction.reallocated), each keeping its own period and recurring flag. All or none:
     a hit line that is not one confirmed row of a learnable household code without a
     property, tenancy, loan or Beleg, or that is linked as a transfer or a depot movement,
-    or is no longer open, refuses the whole answer with `refusal`, before anything is
-    written. The lines are locked in id order. Returns the re-booked line ids and the rules
-    whose bookings were corrected (create_rule replaces one with the same matcher, D49)."""
+    or is no longer open, refuses the whole answer with rule.rebook_blocked, naming the kind
+    of block and that line's id, booking date and amount, before anything is written (the
+    GET names such lines beforehand in rebook_blockers, and the panel does not offer the box).
+
+    Lines whose rows are not all confirmed, or that are already one row of the answer's
+    category, are dropped from the unlocked read before any lock is taken; the rest are
+    locked in id order and checked again under the lock. Two re-books of the same payee at
+    once may still lock each other's lines in another order than a concurrent answer on one
+    of them: Postgres then aborts one request with a deadlock error, and that request writes
+    nothing. Returns the re-booked line ids and the rules whose bookings were corrected
+    (create_rule replaces one with the same matcher, D49)."""
     if len(confirmed.allocations) != 1:
         raise RuleViolationError([refusal], "no rule can be learned from this answer")
     (only,) = confirmed.allocations
@@ -185,7 +204,9 @@ def _rebook_earlier(
         (
             hit.transaction_id
             for hit in matching.name_lines(ctx.conn, tx)
-            if hit.rows and matchers.same_payee(tx.counterparty_name, hit.counterparty_name)
+            if hit.confirmed
+            and not _already(hit.rows, only.category)
+            and matchers.same_payee(tx.counterparty_name, hit.counterparty_name)
         ),
         key=str,
     )
@@ -196,13 +217,16 @@ def _rebook_earlier(
             continue
         if any(a.status is not AllocationStatus.CONFIRMED for a in hit.current):
             continue  # a waiting proposal is no earlier answer; the new rule re-checks it
-        if len(hit.current) == 1 and hit.current[0].category is only.category:
+        if _already(hit.current, only.category):
             continue
-        if not _rebookable(hit):
-            raise RuleViolationError([refusal], "an earlier line of the name cannot be re-booked")
+        reason = _block_of_line(hit)
+        if reason is not None:
+            raise _blocked(hit.tx, reason)
         targets.append((hit, hit.current[0]))
-    if _linked(ctx.conn, [hit.tx.id for hit, _ in targets]):
-        raise RuleViolationError([refusal], "an earlier line of the name is linked")
+    target_ids = [hit.tx.id for hit, _ in targets]
+    if _linked(ctx.conn, target_ids):
+        first = next(hit for hit, _ in targets if _linked(ctx.conn, [hit.tx.id]))
+        raise _blocked(first.tx, RebookBlockReason.LINKED)
     replaced: set[UUID] = set()
     for hit, row in targets:
         by_rule = _booked_by_rule(hit.current)
@@ -222,19 +246,66 @@ def _rebook_earlier(
             confidence=USER_CONFIDENCE,
         )
         allocations.record_set(ctx, answer, confirm=True, auto=False)
-    return [hit.tx.id for hit, _ in targets], replaced
+    return target_ids, replaced
+
+
+def _already(rows: Sequence[Any], category: AllocationCategory) -> bool:
+    """One row, already of the answer's category: nothing to re-book."""
+    return len(rows) == 1 and AllocationCategory(rows[0].category) is category
+
+
+def _blocked(tx: MatchTransaction, reason: RebookBlockReason) -> RuleViolationError:
+    """rule.rebook_blocked, naming the kind of block and the blocking line by id, booking
+    date and amount (never its counterparty)."""
+    return RuleViolationError(
+        [RULE_REBOOK_BLOCKED],
+        f"an earlier line of the name cannot be re-booked ({reason.value}): transaction "
+        f"{tx.id} booked {tx.booking_date.isoformat()} amount {tx.amount}",
+    )
 
 
 def _rebookable(hit: matching.Line) -> bool:
     """One confirmed row of a learnable household code with no scope or Beleg, on an open
     line of a private account."""
-    if not hit.private or hit.excluded or hit.awaiting_duplicate:
-        return False
-    if hit.import_status is not ImportStatus.RECONCILED or len(hit.current) != 1:
-        return False
-    (row,) = hit.current
-    scoped = (row.property_id, row.unit_id, row.tenancy_id, row.loan_id, row.document_id)
-    return matchers.learnable_household(row.category) and all(v is None for v in scoped)
+    return _block_of_line(hit) is None
+
+
+def _block_of_line(hit: matching.Line) -> RebookBlockReason | None:
+    return _block_of(
+        private=hit.private,
+        excluded=hit.excluded,
+        awaiting_duplicate=hit.awaiting_duplicate,
+        import_status=hit.import_status,
+        rows=hit.current,
+    )
+
+
+def _block_of(
+    *,
+    private: bool,
+    excluded: bool,
+    awaiting_duplicate: bool,
+    import_status: ImportStatus,
+    rows: Sequence[Any],
+) -> RebookBlockReason | None:
+    """Why a confirmed line cannot be re-booked (_rebookable's checks, which the GET's
+    rebook_blockers reads too): not an open line of a private account, more than one row, a
+    row with a property, unit, tenancy or loan, a Beleg, or a code no rule is learned for.
+    The transfer and depot links are _linked's. `rows` are Allocations or name_lines rows."""
+    if not private or excluded or awaiting_duplicate:
+        return RebookBlockReason.NOT_OPEN
+    if import_status is not ImportStatus.RECONCILED:
+        return RebookBlockReason.NOT_OPEN
+    if len(rows) != 1:
+        return RebookBlockReason.SPLIT
+    (row,) = rows
+    if any(v is not None for v in (row.property_id, row.unit_id, row.tenancy_id, row.loan_id)):
+        return RebookBlockReason.SCOPED
+    if row.document_id is not None:
+        return RebookBlockReason.DOCUMENT
+    if not matchers.learnable_household(AllocationCategory(row.category)):
+        return RebookBlockReason.CATEGORY
+    return None
 
 
 def _linked(conn: Connection, transaction_ids: list[UUID]) -> bool:
@@ -259,6 +330,64 @@ def _linked(conn: Connection, transaction_ids: list[UUID]) -> bool:
         )
     ).scalar_one()
     return bool(linked)
+
+
+def _rebook_blockers(conn: Connection, tx: MatchTransaction) -> list[RebookBlocker]:
+    """D160: the payee's earlier confirmed lines that _rebook_earlier would refuse, by the
+    same checks without a lock, oldest first: what the panel names instead of offering
+    „Diese auch auf … umbuchen“. The re-book skips a line already of the chosen category,
+    so the panel drops a blocker whose category is the one chosen."""
+    lines = [
+        hit
+        for hit in matching.name_lines(conn, tx)
+        if hit.confirmed and matchers.same_payee(tx.counterparty_name, hit.counterparty_name)
+    ]
+    if not lines:
+        return []
+    t = transaction_table.c
+    awaiting = (
+        exists()
+        .where(
+            duplicate_table.c.other_transaction_id == t.id,
+            duplicate_table.c.status == DuplicateStatus.OPEN.value,
+        )
+        .label("awaiting")
+    )
+    state = {
+        row.id: row
+        for row in conn.execute(
+            select(t.id, t.booking_date, import_table.c.status, awaiting)
+            .join(import_table, import_table.c.id == t.import_id)
+            .where(t.id.in_([hit.transaction_id for hit in lines]))
+        )
+    }
+    reasons: dict[UUID, RebookBlockReason] = {}
+    for hit in lines:
+        reason = _block_of(
+            private=True,  # name_lines reads private accounts only, never a merged line
+            excluded=False,
+            awaiting_duplicate=bool(state[hit.transaction_id].awaiting),
+            import_status=ImportStatus(state[hit.transaction_id].status),
+            rows=hit.rows,
+        )
+        if reason is not None:
+            reasons[hit.transaction_id] = reason
+    rest = [hit.transaction_id for hit in lines if hit.transaction_id not in reasons]
+    if _linked(conn, rest):
+        for transaction_id in rest:
+            if _linked(conn, [transaction_id]):
+                reasons[transaction_id] = RebookBlockReason.LINKED
+    return [
+        RebookBlocker(
+            transaction_id=hit.transaction_id,
+            booking_date=state[hit.transaction_id].booking_date,
+            amount=hit.amount,
+            reason=reasons[hit.transaction_id],
+            category=AllocationCategory(hit.rows[0].category) if len(hit.rows) == 1 else None,
+        )
+        for hit in lines
+        if hit.transaction_id in reasons
+    ]
 
 
 def _booked_by_rule(current: list[Allocation]) -> UUID | None:
@@ -364,6 +493,7 @@ def _response(
         default = rules_learned.learn_default(
             rules_learned.proposed_rule(tx, current, context, names=names), current
         )
+    history = _name_history(line, context, names)
     return TransactionAllocations(
         transaction=_transaction(conn, transaction_id),
         allocations=rows,
@@ -379,7 +509,8 @@ def _response(
             else []
         ),
         rule=rule,
-        name_history=_name_history(line, context, names),
+        name_history=history,
+        rebook_blockers=_rebook_blockers(conn, tx) if history else [],
         rebooked=rebooked,
     )
 

@@ -84,6 +84,7 @@ def test_the_earlier_lines_are_named_and_re_booked_with_the_flag(
     assert view["can_learn_rule"] is True
     assert view["name_history"] == [{"category": "hh_leisure_travel", "count": 3}]
     assert view["rebooked"] == 0
+    assert view["rebook_blockers"] == []
 
     refused = ok(client_a.put(url, json=_body(now, "-27.50", "hh_dining", learn_rule=True)), 422)
     assert refused["code"] == "rule.conflicts"
@@ -105,3 +106,45 @@ def test_the_earlier_lines_are_named_and_re_booked_with_the_flag(
         assert rows[0]["confirmed_by"] is not None  # the signed-in person
         events = ok(client_a.get("/api/events", params={"entity_id": tx}))
         assert [e["type"] for e in events] == ["transaction.allocated", "transaction.reallocated"]
+
+
+def test_an_earlier_split_is_named_and_refuses_the_re_book(client_a, app_engine, sessions, account):
+    """Review fix (14 Nov 2026): the GET names the earlier line the re-book would refuse
+    (rebook_blockers), and the PUT with the flag answers rule.rebook_blocked, not the name
+    rule's rule.conflicts, with nothing written."""
+    ws = sessions[TOKEN_A].workspace_id
+    earlier = [_line(app_engine, ws, account, day, f"-1{day}.90") for day in (1, 2)]
+    for day, tx in zip((1, 2), earlier, strict=True):
+        url = f"/api/transactions/{tx}/allocations"
+        ok(client_a.put(url, json=_body(tx, f"-1{day}.90", "hh_leisure_travel", learn_rule=False)))
+    split = _line(app_engine, ws, account, 5, "-40.00")
+    body = _body(split, "-25.00", "hh_dining", learn_rule=False)
+    body["allocation_set"]["allocations"].append({"amount": "-15.00", "category": "hh_groceries"})
+    ok(client_a.put(f"/api/transactions/{split}/allocations", json=body))
+    now = _line(app_engine, ws, account, 20, "-27.50")
+    url = f"/api/transactions/{now}/allocations"
+
+    view = ok(client_a.get(url))
+    assert view["name_history"] == [{"category": "hh_leisure_travel", "count": 2}]
+    assert view["rebook_blockers"] == [
+        {
+            "transaction_id": split,
+            "booking_date": "2026-10-05",
+            "amount": "-40.00",
+            "reason": "split",
+            "category": None,
+        }
+    ]
+
+    refused = ok(
+        client_a.put(
+            url, json=_body(now, "-27.50", "hh_dining", learn_rule=True, rebook_earlier=True)
+        ),
+        422,
+    )
+    assert refused["code"] == "rule.rebook_blocked"
+    assert refused["codes"] == ["rule.rebook_blocked"]
+    assert ok(client_a.get(url))["allocations"] == []
+    for tx in earlier:
+        rows = ok(client_a.get(f"/api/transactions/{tx}/allocations"))["allocations"]
+        assert [r["category"] for r in rows] == ["hh_leisure_travel"]

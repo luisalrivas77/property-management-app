@@ -23,6 +23,7 @@ from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import matching_rule as rule_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.db.tables import transfer_link as transfer_link_table
 from hausbuch.jobs.document_read import JobDeps
 from hausbuch.jobs.matching import run_match_transaction
 from hausbuch.rules import matching as matchers
@@ -812,9 +813,8 @@ def test_a_waiting_or_already_matching_line_is_not_re_booked(world, private):
     assert [r.category for r in _rows(world, refund)] == ["hh_refund"]  # the other sign
 
 
-@pytest.mark.parametrize("blocker", ["split", "transfer"])
-def test_an_earlier_line_that_cannot_be_re_booked_refuses_all(world, private, blocker):
-    earlier = _earlier(private, "hh_leisure_travel", n=2)
+def _odd_line(world: World, private: Private, blocker: str) -> uuid.UUID:
+    """An earlier delivery line, confirmed by a person, that the re-book must refuse."""
     odd = private.line(date(2026, 10, 3), "-40.00", name=DELIVERY)
     if blocker == "split":
         answer = AllocationSet(
@@ -832,18 +832,96 @@ def test_an_earlier_line_that_cannot_be_re_booked_refuses_all(world, private, bl
             ConfirmAllocationsBody(allocation_set=answer, learn_rule=False),
             iban_key=TEST_IBAN_KEY,
         )
-    else:
+    elif blocker == "category":
         _answer_line(world, odd, "-40.00", "internal_transfer_out", learn=False)
+    elif blocker == "document":
+        doc = world.query(
+            lambda c: world._document_row(c, type="invoice", subtype=None, title=None)
+        )
+        answer = AllocationSet(
+            transaction_id=odd,
+            method=AllocationMethod.USER,
+            confidence=Decimal("1.000"),
+            allocations=[
+                AllocationDraft(
+                    amount=Decimal("-40.00"), category="hh_leisure_travel", document_id=doc
+                )
+            ],
+        )
+        world.cmd(
+            review.allocate_transaction,
+            odd,
+            ConfirmAllocationsBody(allocation_set=answer, learn_rule=False),
+            iban_key=TEST_IBAN_KEY,
+        )
+    else:  # linked: a learnable code, but the line is a leg of a transfer link (D162)
+        _answer_line(world, odd, "-40.00", "hh_leisure_travel", learn=False)
+        other = private.line(date(2026, 10, 3), "40.00", name="Eigenes Konto Beispiel")
+        world.query(
+            lambda c: c.execute(
+                insert(transfer_link_table).values(
+                    workspace_id=world.ws,
+                    kind="bank",
+                    out_transaction_id=odd,
+                    in_transaction_id=other,
+                    matched_by="user",
+                )
+            )
+        )
+    return odd
+
+
+# The reason each blocker gives, and the category its one row carries (None for a split).
+_BLOCKERS = {
+    "split": ("split", None),
+    "category": ("category", "internal_transfer_out"),
+    "document": ("document", "hh_leisure_travel"),
+    "linked": ("linked", "hh_leisure_travel"),
+}
+
+
+@pytest.mark.parametrize("blocker", list(_BLOCKERS))
+def test_an_earlier_line_that_cannot_be_re_booked_refuses_all(world, private, blocker):
+    """rule.rebook_blocked (review fix, 14 Nov 2026): this PR's own test, updated from the
+    name rule's refusal (rule.conflicts / rule.too_broad) to the code that says the re-book
+    itself is blocked, naming the kind of block and the line's date and amount."""
+    earlier = _earlier(private, "hh_leisure_travel", n=2)
+    odd = _odd_line(world, private, blocker)
     now = private.line(date(2026, 11, 2), "-27.50", name=DELIVERY)
     with pytest.raises(RuleViolationError) as refused:
         _answer_rebook(world, now, "-27.50", "hh_dining")
-    # A split is not among the checked lines (one category each), a transfer is a second one.
-    expected = "rule.conflicts" if blocker == "split" else "rule.too_broad"
-    assert refused.value.code == expected
+    reason, _ = _BLOCKERS[blocker]
+    assert refused.value.code == "rule.rebook_blocked"
+    message = str(refused.value)
+    assert f"({reason})" in message and str(odd) in message
+    assert "2026-10-03" in message and "-40.00" in message
+    assert "LIEFERDIENST" not in message.upper()  # never the counterparty
     for tx in earlier:
         assert [r.category for r in _all_rows(world, tx)] == ["hh_leisure_travel"]
     assert _rows(world, now) == []
     assert world.query(lambda c: c.execute(select(rule_table)).all()) == []
+
+
+@pytest.mark.parametrize("blocker", list(_BLOCKERS))
+def test_the_line_view_names_the_earlier_line_that_blocks_the_re_book(world, private, blocker):
+    _earlier(private, "hh_leisure_travel", n=2)
+    odd = _odd_line(world, private, blocker)
+    now = private.line(date(2026, 11, 2), "-27.50", name=DELIVERY)
+    view = _view(world, now)
+    assert view.name_history  # the box is about to be offered
+    reason, category = _BLOCKERS[blocker]
+    assert [
+        (b.transaction_id, b.booking_date, b.amount, b.reason, b.category)
+        for b in view.rebook_blockers
+    ] == [(odd, date(2026, 10, 3), Decimal("-40.00"), reason, category)]
+
+
+def test_the_line_view_has_no_blocker_when_every_earlier_line_can_be_re_booked(world, private):
+    _earlier(private, "hh_leisure_travel", n=2)
+    waiting = private.line(date(2026, 10, 1), "-15.00", name=DELIVERY)  # no rows: not a blocker
+    now = private.line(date(2026, 11, 2), "-27.50", name=DELIVERY)
+    assert _view(world, now).rebook_blockers == []
+    assert _view(world, waiting).rebook_blockers == []
 
 
 def test_too_broad_is_re_booked_with_the_flag(world, private):
