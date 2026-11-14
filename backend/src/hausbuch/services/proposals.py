@@ -27,7 +27,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, JsonValue, ValidationError
-from sqlalchemy import Connection, exists, insert, null, select, update
+from sqlalchemy import Connection, Row, exists, insert, null, select, update
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset_movement as movement_table
@@ -574,26 +574,11 @@ def _is_depot_document(conn: Connection, document_id: UUID) -> bool:
     )
 
 
-def rebuild_depot_proposals(
-    ctx: CommandContext, store: BlobStore | None, *, iban_key: bytes, dry_run: bool = False
-) -> int:
-    """Every `ready` suggestion of a depot document rebuilt from its stored reading, without a
-    model call, so it offers the depot accounts as they are now, pre-selects the one whose
-    number or IBAN the document prints (depot.printed_depot_account, with `store`) and files
-    the document by its date's year (prefill typing). Runs when a depot account is created or
-    gets its number (statements.account_numbered, accounts.confirm_depot_iban), and once
-    after a deploy through `hausbuch rebuild-depot-proposals`.
-
-    Covered: a ready suggestion of the four depot kinds, and of a `general` reading of a
-    document code typed as the depot's (a rebalancing letter). The new suggestion keeps the
-    kind, reading (extraction_id, so D132's stale guard compares the same version), AI call
-    and tenant mark; the old one is superseded with its event. One whose rebuilt records are
-    the same as its stored ones is left as it is. An applied, rejected, blocked or failed
-    suggestion is never touched; nothing is applied here (principle 3). Returns how many were
-    (or, with `dry_run`, would be) rebuilt."""
+def _ready_depot_rows(conn: Connection, *, lock: bool = False) -> list[Row]:
+    """The `ready` suggestions rebuild_depot_proposals covers, oldest first."""
     p = proposal_table.c
     kinds = [k.value for k in (*DEPOT_EXTRACTION_KINDS, ExtractionKind.GENERAL)]
-    rows = ctx.conn.execute(
+    query = (
         select(proposal_table)
         .where(
             p.status == ProposalStatus.READY.value,
@@ -601,14 +586,43 @@ def rebuild_depot_proposals(
             p.extraction_id.is_not(None),
         )
         .order_by(p.created_at, p.id)
-        .with_for_update()
-    ).all()
+    )
+    rows = conn.execute(query.with_for_update() if lock else query).all()
+    return [
+        row
+        for row in rows
+        if row.kind != ExtractionKind.GENERAL.value or _is_depot_document(conn, row.document_id)
+    ]
+
+
+def count_ready_depot_proposals(conn: Connection) -> int:
+    """How many `ready` suggestions rebuild_depot_proposals would check (the CLI's dry run,
+    which has no object store to read the documents' numbers with)."""
+    return len(_ready_depot_rows(conn))
+
+
+def rebuild_depot_proposals(
+    ctx: CommandContext, store: BlobStore | None, *, iban_key: bytes
+) -> int:
+    """Every `ready` suggestion of a depot document rebuilt from its stored reading, without a
+    model call, so it offers the depot accounts as they are now, pre-selects the one whose
+    number or IBAN the document prints (depot.printed_depot_account, with `store`) and files
+    the document by its date's year (prefill typing). Runs when a depot account is created or
+    gets its number (statements.account_numbered, accounts.confirm_depot_iban), and once
+    after the deploy of 14 Nov 2026 through `hausbuch follow-accounts`
+    (statements.follow_all_accounts, in the worker).
+
+    Covered: a ready suggestion of the four depot kinds, and of a `general` reading of a
+    document code typed as the depot's (a rebalancing letter). The new suggestion keeps the
+    kind, reading (extraction_id, so D132's stale guard compares the same version), AI call
+    and tenant mark; the old one is superseded with its event. One whose rebuilt records are
+    the same as its stored ones is left as it is. An applied, rejected, blocked or failed
+    suggestion is never touched; nothing is applied here (principle 3). Returns how many were
+    rebuilt."""
     rebuilt = 0
-    for row in rows:
+    for row in _ready_depot_rows(ctx.conn, lock=True):
         old = _to_proposal(row)
         kind = ExtractionKind(old.kind)
-        if kind is ExtractionKind.GENERAL and not _is_depot_document(ctx.conn, old.document_id):
-            continue
         typing = next((r for r in old.records if r.key == "typing"), None)
         reading = ctx.conn.execute(
             select(extraction_table.c.fields).where(extraction_table.c.id == old.extraction_id)
@@ -640,8 +654,6 @@ def rebuild_depot_proposals(
         if fields == [r.model_dump(mode="json") for r in old.records]:
             continue
         rebuilt += 1
-        if dry_run:
-            continue
         _set(ctx, old.id, status=ProposalStatus.SUPERSEDED, error_code=None)
         append_event(ctx, EventType.PROPOSAL_SUPERSEDED, old.id, _noted(old))
         targeted = [r for r in records if r.mode != "create"]

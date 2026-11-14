@@ -20,6 +20,7 @@ from decimal import Decimal
 
 import pytest
 from db.db_support import TEST_IBAN_KEY
+from db.test_cli_evals_report import _owner_url
 from db.test_services_proposals import _accept_all, _ai_call, _v
 from sqlalchemy import select, text
 from test_card_pdf import draw
@@ -28,10 +29,13 @@ from test_jobs_document_read import _settings as _test_settings
 from test_services_statement_account import _create, _offer, _uploaded_and_refused
 from test_services_statement_account import hook_calls as hook_calls  # noqa: F401 (a fixture)
 
+from hausbuch import cli
 from hausbuch.ai.fake import FakeModelClient
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import event as event_table
 from hausbuch.jobs.document_read import JobDeps, run_document_read
+from hausbuch.jobs.enqueue import FOLLOW_ACCOUNTS_TASK
+from hausbuch.jobs.follow_accounts import run_follow_accounts
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.ai import ClassifyOutput
 from hausbuch.schemas.bank import AccountCreate
@@ -408,17 +412,77 @@ def test_a_printed_number_no_depot_holds_falls_back_to_the_only_depot(
     assert (chosen.value, chosen.confidence) == (str(a.id), "low")
 
 
-def test_a_rebuild_dry_run_counts_and_writes_nothing(run, read, job, blob_store, fresh_workspaces):
-    """`hausbuch rebuild-depot-proposals --dry-run` after a deploy: the waiting readings that
-    would change are counted, none is rebuilt; the real run rebuilds them."""
+def test_the_catch_up_command_queues_one_job_that_follows_the_existing_accounts(
+    dbname,
+    run,
+    read,
+    job,
+    app_engine,
+    blob_store,
+    fresh_workspaces,
+    tmp_path,
+    hook_calls,  # noqa: F811
+    capsys,
+):
+    """`hausbuch follow-accounts` once after the deploy: files that waited for an account that
+    existed before this change are imported onto it, and a ready depot reading is rebuilt with
+    the depot pre-selected. --dry-run counts and queues nothing; the worker's job does it."""
     ws, _ = fresh_workspaces
-    _depot(run, ws, number=DEPOT_A_NUMBER)
-    _depot(run, ws, label="Zweites Depot", number=OTHER_KONTO, n=1)
-    doc, ready = _report(run, job, ws, blob_store, DEPOT_B_NUMBER)
-    _depot(run, ws, label="Megatrends", number=DEPOT_B_NUMBER, n=2)  # without the follow
-    rebuild = proposals.rebuild_depot_proposals
-    assert run(ws, rebuild, blob_store, iban_key=TEST_IBAN_KEY, dry_run=True) == 1
-    assert read(ws, proposals.get_proposal, ready.id).status is ProposalStatus.READY
-    assert run(ws, rebuild, blob_store, iban_key=TEST_IBAN_KEY) == 1
+    docs = [
+        _uploaded_and_refused(
+            app_engine, blob_store, ws, tmp_path, _statement(n), "application/pdf"
+        )[0]
+        for n in (2, 1)
+    ]
+    _, ready = _report(run, job, ws, blob_store, DEPOT_B_NUMBER)
+    assert _account_field(ready).value is None  # no depot yet
+    _depot(run, ws, number=KONTO)  # created before the deploy: nothing followed
+    b = _depot(run, ws, label="Megatrends", number=DEPOT_B_NUMBER, n=1)
+    assert read(ws, statements.waiting_statement_documents) == [d.id for d in docs]
+
+    def queued() -> int:
+        with app_engine.begin() as conn:
+            return conn.execute(
+                text("SELECT count(*) FROM procrastinate_jobs WHERE task_name = :t"),
+                {"t": FOLLOW_ACCOUNTS_TASK},
+            ).scalar_one()
+
+    environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}
+    argv = ["follow-accounts", "--workspace", str(ws)]
+    assert cli.main([*argv, "--dry-run"], environ) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "2 statement file(s)" in out and "1 ready depot suggestion(s)" in out
+    assert "nothing queued" in out and queued() == 0
+
+    try:
+        assert cli.main(argv, environ) == cli.EXIT_OK
+        assert "postgresql" not in capsys.readouterr().out
+        assert queued() == 1
+    finally:
+        with app_engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM procrastinate_jobs WHERE task_name = :t"),
+                {"t": FOLLOW_ACCOUNTS_TASK},
+            )
+    deps = JobDeps(
+        engine=app_engine,
+        settings=_test_settings(tmp_path),
+        blob_store=blob_store,
+        model_client=None,
+        clock=lambda: T0,
+    )
+    result = run_follow_accounts(deps, workspace_id=ws)
+    assert (result.imported, result.refused, result.rebuilt) == (2, 0, 1)
+    assert read(ws, statements.waiting_statement_documents) == []
     assert read(ws, proposals.get_proposal, ready.id).status is ProposalStatus.SUPERSEDED
-    assert run(ws, rebuild, blob_store, iban_key=TEST_IBAN_KEY) == 0
+    (rebuilt,) = [
+        p
+        for p in read(ws, proposals.list_document_proposals, ready.document_id)
+        if p.status is ProposalStatus.READY
+    ]
+    assert (_account_field(rebuilt).value, _account_field(rebuilt).confidence) == (
+        str(b.id),
+        "high",
+    )
+    again = run_follow_accounts(deps, workspace_id=ws)
+    assert (again.imported, again.refused, again.rebuilt) == (0, 0, 0)

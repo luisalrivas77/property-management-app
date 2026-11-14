@@ -721,6 +721,41 @@ def account_numbered(
     return followed
 
 
+@dataclass
+class AccountsFollowed:
+    """What follow_all_accounts did: statements imported and refused, depot suggestions
+    rebuilt."""
+
+    imported: int = 0
+    refused: int = 0
+    rebuilt: int = 0
+
+
+def follow_all_accounts(
+    ctx: CommandContext, store: BlobStore, *, iban_key: bytes
+) -> AccountsFollowed:
+    """Once after the deploy of 14 Nov 2026 (`hausbuch follow-accounts`, run by the worker,
+    which holds the object store): every account that already has its IBAN or number takes the
+    statements waiting for it (import_waiting_statements, oldest account first), and every
+    ready depot suggestion is rebuilt (pre-selected depot, Steuerjahr). What a new account or
+    a new number does from now on by itself (account_numbered)."""
+    from .proposals import rebuild_depot_proposals  # proposals imports matching
+
+    a = account_table.c
+    numbered = ctx.conn.execute(
+        select(a.id)
+        .where((a.iban_hmac.is_not(None)) | (a.external_ref_hmac.is_not(None)))
+        .order_by(a.created_at, a.id)
+    ).scalars()
+    result = AccountsFollowed()
+    for account_id in list(numbered):
+        followed = import_waiting_statements(ctx, store, account_id, iban_key=iban_key)
+        result.imported += len(followed.imported)
+        result.refused += len(followed.refused)
+    result.rebuilt = rebuild_depot_proposals(ctx, store, iban_key=iban_key)
+    return result
+
+
 def declare_balances(
     ctx: CommandContext, import_id: UUID, body: DeclareBalanceBody
 ) -> StatementImport:
