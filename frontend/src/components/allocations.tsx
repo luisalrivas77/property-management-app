@@ -35,6 +35,10 @@
 //   …" one with same_amount_only. Nothing is preselected and Bestätigen stays disabled until
 //   one is chosen; the answer holds for the category it was given for, so changing the
 //   category asks again. Without that list there is no question and same_amount_only is false.
+//   The list names at most five amounts; the question and its two answers say how many lines
+//   wait in all (waiting_other_count, waiting_same_amount_count), so a payee whose lines are
+//   nearly all different amounts (groceries) shows "111 Zahlungen", not five amounts of 1×.
+//   Without the question, the hint says how many waiting lines of this amount the rule covers.
 // - Phase 6 D160 (14 Nov 2026): a private line's rule on the payee's name is refused while the
 //   payee's earlier lines are confirmed under another category (rule.conflicts). With the box
 //   ticked for one row, the panel names those lines from name_history („3 frühere Zahlungen
@@ -359,6 +363,9 @@ function AllocationEditor({
   const learn = blocked !== null ? false : (learnChoice ?? (current.length === 0 || rowsEdited ? suggested : view.learn_rule_default));
 
   const others = view.waiting_other_amounts ?? [];
+  const listed = others.reduce((sum, other) => sum + other.count, 0);
+  const otherCount = view.waiting_other_count ?? listed;
+  const sameCount = view.waiting_same_amount_count ?? 0;
   const askedCategory = rows.length === 1 ? (rows[0]?.category ?? "") : "";
   const asked = view.can_learn_rule && learn && others.length > 0 && askedCategory !== "" ? askedCategory : null;
   const sameAmountOnly = asked !== null && sameAmount !== null && sameAmount.category === asked ? sameAmount.only : null;
@@ -522,6 +529,7 @@ function AllocationEditor({
           </label>
           <p className="muted hint">
             {blocked !== null ? unlearnableReason(blocked) : "Weitere Buchungen dieser Gegenseite werden dann ohne Rückfrage so zugeordnet."}
+            {blocked === null && asked === null && sameCount > 0 ? ` ${waitingText(sameCount, line.amount)}` : null}
           </p>
           <FieldErrors messages={form.of("learn_rule")} />
           {earlier.length > 0 && askedCategory !== "" ? (
@@ -553,7 +561,9 @@ function AllocationEditor({
           {asked !== null ? (
             <fieldset className="allocation-same-amount">
               <legend>
-                Von {line.counterparty_name?.trim() || "dieser Bankverbindung"} warten auch Zahlungen über{" "}
+                Von {line.counterparty_name?.trim() || "dieser Bankverbindung"} warten noch{" "}
+                {otherCount === 1 ? "1 Zahlung mit einem anderen Betrag" : `${otherCount} Zahlungen mit anderen Beträgen`}
+                {otherCount > listed ? ", am häufigsten " : ": "}
                 {others.map((other) => `${formatMoney(unsigned(other.amount))} (${other.count}×)`).join(", ")}. Gehören die
                 auch zu {ALLOCATION_CATEGORY[asked]}?
               </legend>
@@ -566,7 +576,7 @@ function AllocationEditor({
                     checked={sameAmountOnly === false}
                     onChange={() => setSameAmount({ category: asked, only: false })}
                   />
-                  Ja, alle so zuordnen
+                  Ja, alle so zuordnen: die Regel gilt dann auch für {countText(otherCount + sameCount)}
                 </label>
                 <label className="inline" htmlFor={onlyId}>
                   <input
@@ -577,6 +587,7 @@ function AllocationEditor({
                     onChange={() => setSameAmount({ category: asked, only: true })}
                   />
                   Nein, nur Zahlungen über {formatMoney(unsigned(line.amount))}
+                  {sameCount > 0 ? `: die Regel gilt dann auch für ${countText(sameCount)}` : null}
                 </label>
               </div>
             </fieldset>
@@ -615,6 +626,17 @@ function AllocationEditor({
       <FormBanner errors={form.errors} />
     </form>
   );
+}
+
+/** „17 wartende Zahlungen“: how many waiting lines the rule learned with this answer covers. */
+function countText(count: number): string {
+  return count === 1 ? "1 wartende Zahlung" : `${count} wartende Zahlungen`;
+}
+
+/** The hint's addition when the rule covers waiting lines of this line's amount only. */
+function waitingText(count: number, amount: string): string {
+  const what = count === 1 ? "1 wartende Zahlung" : `${count} wartende Zahlungen`;
+  return `Die Regel gilt dann auch für ${what} über ${formatMoney(unsigned(amount))}.`;
 }
 
 /** Why a one-row answer of this category never becomes a rule (D160), by kind. */

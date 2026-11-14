@@ -647,6 +647,8 @@ def test_the_waiting_amounts_on_a_shared_iban_are_the_payees_own(world, private)
     )
     assert view.can_learn_rule is True
     assert [(w.amount, w.count) for w in view.waiting_other_amounts] == [(Decimal("-18.90"), 2)]
+    # The totals count the payee's own lines only, never the grocer's on the same IBAN.
+    assert view.waiting_other_count == 2
     # The model's similar answers for the line: only its own payee's.
     _answer_line(world, lines[GROCER], "-61.15", "hh_groceries", learn=False)
     similar = world.query(

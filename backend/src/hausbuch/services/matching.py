@@ -1544,19 +1544,21 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
 WAITING_AMOUNTS_LIMIT = 5
 
 
-def waiting_other_amounts(
+def waiting_amount_counts(
     conn: Connection, tx: MatchTransaction, *, shared: bool = False
-) -> list[WaitingAmount]:
-    """D49: the amounts other than this line's that lines still waiting from its IBAN hash
-    and sign carry (waiting as in waiting_lines: a reconciled import, not excluded, no
-    confirmed row), each with its count, most frequent first (then the larger amount), at
-    most five. Empty for a line without an IBAN hash. `shared` (D160 amended: the line's
-    IBAN is shared): only the lines of the line's own payee count (rules.matching.same_payee,
-    the lines the IBAN-and-name rule would book); empty for a line without a name."""
+) -> dict[Decimal, int]:
+    """D49: how many lines still wait from the line's IBAN hash and sign, by amount, this
+    line's own amount included and the line itself excluded (waiting as in waiting_lines: a
+    reconciled import, not excluded, no confirmed row). Empty for a line without an IBAN
+    hash. `shared` (D160 amended: the line's IBAN is shared): only the lines of the line's
+    own payee count (rules.matching.same_payee, the lines the IBAN-and-name rule would
+    book); empty for a line without a name. Uncapped: the panel says how many lines a rule
+    would book (14 Nov 2026: 111 waiting grocery lines of one payee, nearly every one a
+    different amount, showed as five amounts of 1x or 2x)."""
     if tx.counterparty_iban_hmac is None or tx.amount == 0:
-        return []
+        return {}
     if shared and matchers.merchant_pattern(tx.counterparty_name or "") == "^":
-        return []
+        return {}
     t = transaction_table.c
     a = allocation_table.c
     confirmed = exists().where(
@@ -1572,7 +1574,6 @@ def waiting_other_amounts(
             t.counterparty_iban_hmac == bytes.fromhex(tx.counterparty_iban_hmac),
             t.amount > 0 if tx.amount > 0 else t.amount < 0,
             t.id != tx.id,
-            t.amount != tx.amount,
         )
     )
     if shared:
@@ -1580,19 +1581,22 @@ def waiting_other_amounts(
         for row in conn.execute(waiting).all():
             if matchers.same_payee(tx.counterparty_name, row.counterparty_name):
                 counts[row.amount] = counts.get(row.amount, 0) + 1
-        ranked = sorted(counts.items(), key=lambda item: (-item[1], -abs(item[0])))
-        return [WaitingAmount(amount=amount, count=n) for amount, n in ranked][
-            :WAITING_AMOUNTS_LIMIT
-        ]
-    count = func.count().label("count")
+        return counts
     sub = waiting.subquery()
     rows = conn.execute(
-        select(sub.c.amount, count)
-        .group_by(sub.c.amount)
-        .order_by(count.desc(), func.abs(sub.c.amount).desc())
-        .limit(WAITING_AMOUNTS_LIMIT)
+        select(sub.c.amount, func.count().label("count")).group_by(sub.c.amount)
     ).all()
-    return [WaitingAmount(amount=r.amount, count=r.count) for r in rows]
+    return {r.amount: r.count for r in rows}
+
+
+def other_amounts(counts: dict[Decimal, int], amount: Decimal) -> list[WaitingAmount]:
+    """The waiting amounts other than `amount`, each with its count, most frequent first
+    (then the larger amount), at most five."""
+    ranked = sorted(
+        ((value, n) for value, n in counts.items() if value != amount),
+        key=lambda item: (-item[1], -abs(item[0])),
+    )
+    return [WaitingAmount(amount=value, count=n) for value, n in ranked][:WAITING_AMOUNTS_LIMIT]
 
 
 # --- What the model sees (data minimization, §5.3) -----------------------------------------

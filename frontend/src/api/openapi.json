@@ -27539,6 +27539,18 @@
             "type": "array",
             "title": "Waiting Other Amounts"
           },
+          "waiting_other_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Waiting Other Count",
+            "default": 0
+          },
+          "waiting_same_amount_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Waiting Same Amount Count",
+            "default": 0
+          },
           "unlearnable_categories": {
             "items": {
               "$ref": "#/components/schemas/AllocationCategory"
@@ -27586,7 +27598,7 @@
           "no_default_rule_categories"
         ],
         "title": "TransactionAllocations",
-        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nwaiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines\nstill waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no\nconfirmed row), each with its count, most frequent first, at most five; the panel then\nasks whether those belong to the same category (same_amount_only).\nunlearnable_categories: the categories the line's account takes for which a one-row\nanswer can never become a rule, with or without a typed pattern (phase 6 D160 on a\nprivate account: the transfer, depot and tax-relevant codes and those without a\nthreshold; empty on the rental account), in taxonomy order, so the UI greys the box and\nsays why instead of letting rule.not_learnable refuse the answer.\nrule: the rule this PUT created, if any.\nname_history (phase 6 D160): for a private line whose rule would be on its name (no\nIBAN, or a shared one), the payee's other confirmed lines of the same sign by category,\nmost frequent first: what rebook_earlier would re-book. rebook_blockers: with a\nname_history, the payee's earlier confirmed lines rebook_earlier would refuse to re-book\n(rule.rebook_blocked), oldest first, so the panel names them instead of offering it.\nrebooked: how many earlier lines this PUT re-booked."
+        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nwaiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines\nstill waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no\nconfirmed row), each with its count, most frequent first, at most five; the panel then\nasks whether those belong to the same category (same_amount_only).\nwaiting_other_count, waiting_same_amount_count: how many such lines wait in all with\nanother amount than this line's and with the same amount, uncapped, so the panel says\nhow many waiting lines the rule would book (a payee with many different amounts showed\nonly five of them, 14 Nov 2026).\nunlearnable_categories: the categories the line's account takes for which a one-row\nanswer can never become a rule, with or without a typed pattern (phase 6 D160 on a\nprivate account: the transfer, depot and tax-relevant codes and those without a\nthreshold; empty on the rental account), in taxonomy order, so the UI greys the box and\nsays why instead of letting rule.not_learnable refuse the answer.\nrule: the rule this PUT created, if any.\nname_history (phase 6 D160): for a private line whose rule would be on its name (no\nIBAN, or a shared one), the payee's other confirmed lines of the same sign by category,\nmost frequent first: what rebook_earlier would re-book. rebook_blockers: with a\nname_history, the payee's earlier confirmed lines rebook_earlier would refuse to re-book\n(rule.rebook_blocked), oldest first, so the panel names them instead of offering it.\nrebooked: how many earlier lines this PUT re-booked."
       },
       "TransferLegSource": {
         "type": "string",

@@ -546,6 +546,10 @@ class TransactionAllocations(Schema):
     still waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no
     confirmed row), each with its count, most frequent first, at most five; the panel then
     asks whether those belong to the same category (same_amount_only).
+    waiting_other_count, waiting_same_amount_count: how many such lines wait in all with
+    another amount than this line's and with the same amount, uncapped, so the panel says
+    how many waiting lines the rule would book (a payee with many different amounts showed
+    only five of them, 14 Nov 2026).
     unlearnable_categories: the categories the line's account takes for which a one-row
     answer can never become a rule, with or without a typed pattern (phase 6 D160 on a
     private account: the transfer, depot and tax-relevant codes and those without a
@@ -565,6 +569,8 @@ class TransactionAllocations(Schema):
     learn_rule_default: bool
     no_default_rule_categories: list[AllocationCategory]
     waiting_other_amounts: list[WaitingAmount] = Field(default_factory=list)
+    waiting_other_count: int = Field(default=0, ge=0)
+    waiting_same_amount_count: int = Field(default=0, ge=0)
     unlearnable_categories: list[AllocationCategory] = Field(default_factory=list)
     rule: MatchingRule | None = None
     name_history: list[NameCategoryCount] = Field(default_factory=list)
