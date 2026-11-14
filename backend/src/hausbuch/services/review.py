@@ -19,6 +19,7 @@ import logging
 import time
 from collections import Counter
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
@@ -56,6 +57,7 @@ from hausbuch.schemas.allocation import (
     MatchingRuleCreate,
     MatchTransaction,
     NameHistory,
+    SplitMethod,
 )
 from hausbuch.schemas.api import (
     AiRetryResult,
@@ -492,10 +494,16 @@ def _response(
     # rule.conflicts depends on the answer (another category may be learned); too_broad not.
     can_learn = probed is not None or refusal == RULE_CONFLICTS
     default = False
+    suggestion: _Suggestion | None = None
     if rows:
         current = _as_set(transaction_id, rows)
+        if not can_learn:
+            suggestion = _suggested_pattern(conn, line, current, context, names)
         default = rules_learned.learn_default(
-            rules_learned.proposed_rule(tx, current, context, names=names), current
+            suggestion.rule
+            if suggestion is not None
+            else rules_learned.proposed_rule(tx, current, context, names=names),
+            current,
         )
     history = _name_history(line, context, names)
     waiting = (
@@ -519,7 +527,62 @@ def _response(
         name_history=history,
         rebook_blockers=_rebook_blockers(conn, tx) if history else [],
         rebooked=rebooked,
+        suggested_purpose_pattern=None if suggestion is None else suggestion.pattern,
+        suggested_pattern_waiting=0 if suggestion is None else suggestion.waiting,
     )
+
+
+@dataclass(frozen=True)
+class _Suggestion:
+    rule: MatchingRuleCreate  # what a PUT with the suggested pattern would learn
+    waiting: int
+
+    @property
+    def pattern(self) -> str | None:
+        return self.rule.matcher.purpose_pattern
+
+
+def _suggested_pattern(
+    conn: Connection,
+    line: matching.Line,
+    current: AllocationSet,
+    context: MatchContext,
+    names: list[NameHistory],
+) -> _Suggestion | None:
+    """14 Nov 2026 (principle 7): the purpose pattern the panel proposes for a line without
+    an IBAN whose answer cannot become a rule on its own, so a person need not know which word
+    to type (a bank's „Entgeltabrechnung siehe Anlage …“). The candidate is `^` + the
+    purpose's first word (rules.matching.suggested_purpose_pattern); the rule is the one the
+    PUT would create with it (rules_learned.proposed_rule_or_refusal: one row of a category a
+    typed pattern learns on this account), and it must be safe on the workspace's lines
+    (rules.matching.pattern_waiting: none it hits has an IBAN or is confirmed otherwise).
+    Never for a category a deterministic matcher owns (D40's floor: rent, prepayment, loan,
+    Hausgeld, owner transfers; without an IBAN no amount check would guard such a rule) nor
+    for one that never auto-confirms (no threshold); a hand-typed pattern (D38) still may."""
+    tx = line.tx
+    if tx.counterparty_iban_hmac is not None or len(current.allocations) != 1:
+        return None
+    category = current.allocations[0].category
+    if category in matching._MATCHER_CATEGORIES or THRESHOLDS[category] is None:
+        return None
+    candidate = matchers.suggested_purpose_pattern(tx.purpose)
+    word = matchers.purpose_word(tx.purpose)
+    if candidate is None or word is None or len(candidate) > rules_learned.PATTERN_MAX_LENGTH:
+        return None  # a longer one would be refused (rule.invalid_pattern), never a GET error
+    rule, _ = rules_learned.proposed_rule_or_refusal(
+        tx, current, context, purpose_pattern=candidate, names=names
+    )
+    if (
+        rule is None
+        or rule.split_method is not SplitMethod.SINGLE_CATEGORY
+        or rule.category is None
+        or rule.matcher.counterparty_iban_hmac is not None
+        or rule.matcher.purpose_pattern != candidate
+    ):
+        return None
+    lines = matching.pattern_lines(conn, tx, word, line.account_purpose)
+    waiting = matchers.pattern_waiting(rule.matcher, rule.category, lines)
+    return None if waiting is None else _Suggestion(rule=rule, waiting=waiting)
 
 
 def _name_history(

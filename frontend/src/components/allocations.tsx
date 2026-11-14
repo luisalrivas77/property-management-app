@@ -28,6 +28,21 @@
 //   learn_rule is sent false; rule.not_learnable would refuse the whole answer. learn_rule is always
 //   sent explicitly: a typed pattern means "make a rule", whatever the server default for the
 //   category would be.
+// - Suggested purpose pattern (14 Nov 2026, principle 7): a line without an IBAN (a bank's own
+//   „Entgeltabrechnung siehe Anlage …“) cannot learn a rule without a pattern, and a person does
+//   not know which word to type. When the server sends suggested_purpose_pattern (`^` + the
+//   purpose's first word; only for one current row, checked safe on the workspace's lines), the
+//   panel shows the „Künftig immer so zuordnen“ box as for an IBAN line, starting from
+//   learn_rule_default (which the server computes with the suggestion) and following the rows like
+//   the IBAN box once they are edited, and under it the field „Erkannt am Anfang des
+//   Verwendungszwecks“ pre-filled with the word (without `^`), editable, plus one hint line saying
+//   which lines the rule books and, while the field still shows the suggestion, how many wait
+//   (suggested_pattern_waiting). Ticked: learn_rule true and purpose_pattern the suggestion as sent,
+//   or the edited text as plain text (regex-escaped, anchored with `^`, at most 200 characters in
+//   all, else a message on the field); unticked: learn_rule false and no pattern. The suggestion
+//   holds for the row's category it was checked for: another category, or a second row, falls
+//   back to the plain pattern field below, whose own state stays empty. Without a suggestion the
+//   panel is unchanged.
 // - D49: one IBAN can send two kinds of payment (the Hausverwaltung's Hausgeld and its fee).
 //   When the box is ticked for one row and the server lists other amounts still waiting from
 //   the same IBAN (waiting_other_amounts), the panel asks whether those belong to the same
@@ -320,6 +335,9 @@ function AllocationEditor({
   const [learnChoice, setLearnChoice] = useState<boolean | null>(null);
   const [rowsEdited, setRowsEdited] = useState(false);
   const [pattern, setPattern] = useState("");
+  // The suggested purpose pattern's field, kept apart from the plain one so that a pattern
+  // shown there is never sent once the suggestion no longer applies.
+  const [suggestedText, setSuggestedText] = useState(() => readablePattern(view.suggested_purpose_pattern ?? ""));
   // D49: the answer to "Gehören die auch zu …?", for the category it was given for.
   const [sameAmount, setSameAmount] = useState<{ category: AllocationCategory; only: boolean } | null>(null);
   // D160: „Diese auch auf … umbuchen“, off until ticked.
@@ -339,7 +357,18 @@ function AllocationEditor({
     ],
     [rows],
   );
-  const ruleField = view.can_learn_rule ? "learn_rule" : "purpose_pattern";
+  // The suggested purpose pattern holds for the category the server checked it for (the
+  // line's one current row); another category falls back to the plain pattern field.
+  const suggestedPattern = view.suggested_purpose_pattern ?? null;
+  const suggestion =
+    suggestedPattern !== null &&
+    !view.can_learn_rule &&
+    current.length === 1 &&
+    rows.length === 1 &&
+    rows[0]?.category === current[0]?.category
+      ? suggestedPattern
+      : null;
+  const ruleField = view.can_learn_rule || suggestion !== null ? "learn_rule" : "purpose_pattern";
   const form = useFormErrors(keys, {
     "rule.invalid_pattern": "purpose_pattern",
     "rule.not_learnable": ruleField,
@@ -424,13 +453,28 @@ function AllocationEditor({
         document_id: row.documentId,
       });
     });
+    const kept = suggestedText.trim();
+    // The suggestion as the server sent it while the field still shows it; an edited text is
+    // plain text, so it is escaped and anchored at the start, as the field's label says.
+    const suggested =
+      suggestion === null || !learn
+        ? null
+        : kept === readablePattern(suggestion)
+          ? suggestion
+          : `^${escapeRegExp(kept.replace(/^\^/, ""))}`;
+    if (suggestion !== null && learn && kept.replace(/^\^/, "") === "") {
+      (messages.purpose_pattern ??= []).push("Bitte einen Anfang eintragen oder „Künftig immer so zuordnen“ abwählen.");
+    } else if (suggested !== null && suggested.length > PATTERN_MAX_LENGTH) {
+      (messages.purpose_pattern ??= []).push("Der Anfang ist zu lang; bitte kürzen.");
+    }
     if (!values.ok || Object.keys(messages).length > 0) return form.invalid({ ...values.messages, ...messages });
     const typed = pattern.trim();
     const body: ConfirmAllocationsBody = {
       // The server reads only the rows: method, confidence and provenance become the person's.
       allocation_set: { transaction_id: line.id, allocations: drafts, method: "user", confidence: "1" },
-      learn_rule: view.can_learn_rule ? learn : typed !== "" && blocked === null,
-      purpose_pattern: view.can_learn_rule || typed === "" || blocked !== null ? null : typed,
+      learn_rule: view.can_learn_rule || suggestion !== null ? learn : typed !== "" && blocked === null,
+      purpose_pattern:
+        suggestion !== null ? suggested : view.can_learn_rule || typed === "" || blocked !== null ? null : typed,
       same_amount_only: asked !== null && sameAmountOnly === true,
       rebook_earlier: canRebook && rebook,
     };
@@ -593,6 +637,36 @@ function AllocationEditor({
             </fieldset>
           ) : null}
         </div>
+      ) : suggestion !== null ? (
+        <div className={form.of("learn_rule").length > 0 ? "field field-invalid" : "field"}>
+          <label className="inline" htmlFor={learnId}>
+            <input
+              id={learnId}
+              type="checkbox"
+              checked={learn}
+              disabled={blocked !== null}
+              onChange={(e) => setLearnChoice(e.target.checked)}
+            />
+            Künftig immer so zuordnen
+          </label>
+          <FieldErrors messages={form.of("learn_rule")} />
+          <Field
+            id={patternId}
+            label="Erkannt am Anfang des Verwendungszwecks"
+            hint={suggestionHint(suggestedText, suggestion, view.suggested_pattern_waiting ?? 0)}
+            description="Diese Buchung hat keine Kontonummer der Gegenseite. Hausbuch erkennt diese Art Buchung am Anfang ihres Verwendungszwecks; der Text lässt sich ändern."
+            errors={form.of("purpose_pattern")}
+          >
+            <input
+              type="text"
+              value={suggestedText}
+              onChange={(e) => setSuggestedText(e.target.value)}
+              disabled={!learn}
+              autoComplete="off"
+              maxLength={PATTERN_MAX_LENGTH - 1}
+            />
+          </Field>
+        </div>
       ) : (
         <Field
           id={patternId}
@@ -631,6 +705,33 @@ function AllocationEditor({
 /** „17 wartende Zahlungen“: how many waiting lines the rule learned with this answer covers. */
 function countText(count: number): string {
   return count === 1 ? "1 wartende Zahlung" : `${count} wartende Zahlungen`;
+}
+
+/** The longest pattern a rule may have (services.rules_learned.PATTERN_MAX_LENGTH). */
+const PATTERN_MAX_LENGTH = 200;
+
+/** Plain text as a regular expression matching it literally (an edited suggestion is text). */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** A suggested purpose pattern as the person reads it: `^Entgeltabrechnung` → „Entgeltabrechnung“.
+ * Only a pattern of `^` and letters is shown as its word (the server's suggestion is one, and
+ * escaping leaves letters alone, so the word converts back exactly); any other is shown as is. */
+function readablePattern(pattern: string): string {
+  return /^\^\p{L}+$/u.test(pattern) ? pattern.slice(1) : pattern;
+}
+
+/** The hint under the suggested pattern: which lines the rule books and, while the field still
+ * shows the suggestion, how many of them wait. */
+function suggestionHint(text: string, suggestion: string, waiting: number): string {
+  const kept = text.trim();
+  if (kept === "") return "Ohne einen Anfang lernt Hausbuch keine Regel.";
+  const start = kept.replace(/^\^/, "");
+  const unchanged = kept === readablePattern(suggestion);
+  return `Die Regel gilt für Buchungen, deren Verwendungszweck mit „${start}“ beginnt${
+    unchanged && waiting > 0 ? ` – auch für ${countText(waiting)}` : ""
+  }.`;
 }
 
 /** The hint's addition when the rule covers waiting lines of this line's amount only. */

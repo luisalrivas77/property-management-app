@@ -25,7 +25,7 @@ from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import transfer_link as transfer_link_table
 from hausbuch.jobs.document_read import JobDeps
-from hausbuch.jobs.matching import run_match_transaction
+from hausbuch.jobs.matching import run_match_transaction, run_rematch_waiting
 from hausbuch.rules import matching as matchers
 from hausbuch.schemas.allocation import AllocationDraft, AllocationMethod, AllocationSet
 from hausbuch.schemas.api import ConfirmAllocationsBody, InboxItemKind
@@ -972,3 +972,193 @@ def test_a_single_payee_iban_shows_no_name_history(world, private):
     _answer_line(world, first, "-29.99", "hh_sport", learn=False)
     now = private.line(date(2026, 10, 3), "-29.99", name="Fitness Beispiel", iban=SINGLE_IBAN)
     assert _view(world, now).name_history == []  # the rule is on the IBAN, not the name
+
+
+# --- A suggested purpose pattern for a line without an IBAN (14 Nov 2026) ------------------
+
+FEE_PURPOSE = "Entgeltabrechnung siehe Anlage Abrechnung {n}"
+
+
+def _propose(world: World, tx, amount: str, category: str, **scope) -> None:
+    """A proposed row, as the model or a rule's near miss leaves it (no model call here)."""
+    found = AllocationSet(
+        transaction_id=tx,
+        method=AllocationMethod.LLM,
+        confidence=Decimal("0.700"),
+        reasoning="Kontoentgelt der Bank.",
+        allocations=[AllocationDraft(amount=Decimal(amount), category=category, **scope)],
+    )
+    world.cmd(allocations.record_set, found, confirm=False, auto=False)
+
+
+def _fee(private: Private, month: int, amount: str = "-4.95", **kw) -> uuid.UUID:
+    return private.line(date(2026, month, 28), amount, purpose=FEE_PURPOSE.format(n=month), **kw)
+
+
+def test_a_fee_line_without_an_iban_gets_the_purposes_first_word(world, private):
+    """The panel proposes „Entgeltabrechnung“ so the person need not know what to type, and
+    says how many waiting lines the rule would book: the private ones only (a rule learned on
+    a private line never books a rental line)."""
+    first = _fee(private, 3)
+    _propose(world, first, "-4.95", "bank_fees")
+    waiting = [_fee(private, 4), _fee(private, 5, "-9.90")]  # no rows
+    proposed_other = _fee(private, 6)
+    _propose(world, proposed_other, "-4.95", "hh_other")  # proposed only: still waiting
+    confirmed_same = _fee(private, 7)
+    _answer_line(world, confirmed_same, "-4.95", "bank_fees", learn=False)
+    world.line(date(2026, 8, 28), "-7.50", purpose="Entgeltabrechnung siehe Anlage")  # rental
+    private.line(date(2026, 8, 28), "4.95", purpose="Entgeltabrechnung Erstattung")  # a credit
+
+    view = _view(world, first)
+    assert view.can_learn_rule is False
+    assert view.suggested_purpose_pattern == "^Entgeltabrechnung"
+    assert view.suggested_pattern_waiting == len(waiting) + 1  # the proposed hh_other line
+    assert view.learn_rule_default is True  # bank_fees has a threshold: the box starts ticked
+
+
+def test_no_suggestion_when_a_line_with_an_iban_starts_with_the_word(world, private):
+    first = _fee(private, 3)
+    _propose(world, first, "-4.95", "bank_fees")
+    private.line(
+        date(2026, 4, 2),
+        "-30.00",
+        name="Partei Beispiel",
+        iban=PAINTER_IBAN,
+        purpose="Entgeltabrechnung Rechnung 17",
+    )
+    view = _view(world, first)
+    assert view.suggested_purpose_pattern is None
+    assert view.suggested_pattern_waiting == 0
+    assert view.learn_rule_default is False  # as before: nothing to learn without a pattern
+
+
+def test_no_suggestion_when_a_line_with_the_word_is_confirmed_otherwise(world, private):
+    first = _fee(private, 3)
+    _propose(world, first, "-4.95", "bank_fees")
+    other = _fee(private, 4)
+    _answer_line(world, other, "-4.95", "hh_other", learn=False)
+    assert _view(world, first).suggested_purpose_pattern is None
+
+
+def test_a_rental_line_confirmed_otherwise_also_refuses_the_private_suggestion(world, private):
+    """Every account is checked, as rule_hits reads every line: stricter than the rule's
+    reach (a private fee rule never books a rental line), so it can only over-refuse."""
+    first = _fee(private, 3)
+    _propose(world, first, "-4.95", "bank_fees")
+    rental = world.line(date(2026, 4, 28), "-7.50", purpose="Entgeltabrechnung siehe Anlage")
+    world.cmd(
+        review.allocate_transaction,
+        rental,
+        ConfirmAllocationsBody(
+            allocation_set=_user_set(rental, "-7.50", "other_expense"), learn_rule=False
+        ),
+        iban_key=TEST_IBAN_KEY,
+    )
+    assert _view(world, first).suggested_purpose_pattern is None
+
+
+def test_an_iban_line_never_gets_a_suggested_pattern(world, private):
+    tx = private.line(
+        date(2026, 4, 2),
+        "-4.95",
+        name="Bank Beispiel",
+        iban=PAINTER_IBAN,
+        purpose="Entgeltabrechnung siehe Anlage",
+    )
+    _propose(world, tx, "-4.95", "bank_fees")
+    view = _view(world, tx)
+    assert view.can_learn_rule is True
+    assert view.suggested_purpose_pattern is None
+
+
+@pytest.mark.parametrize(
+    ("purpose", "expected"),
+    [
+        ("", None),
+        ("Karte 10/26", None),
+        ("10/2026 Entgeltabrechnung", None),
+        ("Entgelt Kontoführung 10/2026", "^Entgelt"),  # seven letters
+        ("A" * 250, None),  # longer than a rule's pattern may be: no suggestion, no error
+    ],
+)
+def test_the_suggestion_needs_a_long_first_word(world, private, purpose, expected):
+    tx = private.line(date(2026, 10, 28), "-4.95", purpose=purpose)
+    _propose(world, tx, "-4.95", "bank_fees")
+    assert _view(world, tx).suggested_purpose_pattern == expected
+
+
+def test_no_suggestion_without_rows_or_for_a_category_no_rule_learns(world, private):
+    bare = _fee(private, 3)
+    assert _view(world, bare).suggested_purpose_pattern is None  # nothing to learn yet
+    card = private.line(date(2026, 4, 28), "-4.95", purpose="Kreditkartenabrechnung 04")
+    _propose(world, card, "-4.95", "hh_credit_card")  # no threshold: never a rule (D160)
+    assert _view(world, card).suggested_purpose_pattern is None
+
+
+def test_a_rental_fee_line_without_an_iban_gets_one_too(world, private):
+    first = world.line(date(2026, 3, 31), "-7.50", purpose="Entgeltabrechnung siehe Anlage")
+    _propose(world, first, "-7.50", "bank_fees")
+    world.line(date(2026, 4, 30), "-7.50", purpose="Entgeltabrechnung siehe Anlage")
+    _fee(private, 4)  # waiting on a private account: a rental rule never books it
+    view = _view(world, first)
+    assert view.suggested_purpose_pattern == "^Entgeltabrechnung"
+    assert view.suggested_pattern_waiting == 1
+
+
+@pytest.mark.parametrize(
+    ("purpose", "category", "amount"),
+    [
+        ("Bareinzahlung Filiale", "owner_transfer_in", "500.00"),  # a matcher's (D40)
+        ("Darlehenszinsen 10/2026", "loan_interest", "-310.00"),  # a matcher's (D40)
+        ("Handwerkerrechnung 17", "repairs", "-310.00"),  # never auto-confirmed
+    ],
+)
+def test_no_suggestion_for_a_matchers_category_or_one_without_a_threshold(
+    world, private, purpose, category, amount
+):
+    """Without an IBAN no amount check guards the rule, so a one-click rule booking any
+    „Bareinzahlung …“ as an owner transfer is never offered; a typed pattern still may."""
+    scope = {"loan_id": world.loan()} if category == "loan_interest" else {}
+    tx = world.line(date(2026, 10, 28), amount, purpose=purpose)
+    _propose(world, tx, amount, category, property_id=world.property_id, **scope)
+    view = _view(world, tx)
+    assert view.can_learn_rule is False
+    assert view.suggested_purpose_pattern is None
+    assert view.suggested_pattern_waiting == 0
+    assert view.learn_rule_default is False
+
+
+def test_answering_with_the_suggested_pattern_books_the_waiting_lines(
+    world, private, app_engine, tmp_path
+):
+    first = _fee(private, 3)
+    _propose(world, first, "-4.95", "bank_fees")
+    waiting = [_fee(private, m) for m in (4, 5, 6)]
+    view = _view(world, first)
+    assert view.suggested_pattern_waiting == len(waiting)
+
+    pattern = view.suggested_purpose_pattern
+    result = _answer_with_pattern(world, first, "-4.95", "bank_fees", pattern)
+    rule = result.rule
+    assert rule is not None
+    assert rule.matcher.purpose_pattern == "^Entgeltabrechnung"
+    assert rule.matcher.counterparty_iban_hmac is None
+    assert world.query(matching.waiting_lines, "rule", rule.id) == waiting
+
+    client = FakeModelClient()  # any model request fails the test
+    plans = run_rematch_waiting(
+        _deps(app_engine, tmp_path, client),
+        workspace_id=world.ws,
+        trigger=f"rule:{rule.id}",
+        attempt=0,
+    )
+    assert [p.outcome for p in plans] == ["written"] * view.suggested_pattern_waiting
+    for tx in waiting:
+        (row,) = _rows(world, tx)
+        assert (row.category, row.method, row.status, row.rule_id) == (
+            "bank_fees",
+            "rule",
+            "confirmed",
+            rule.id,
+        )
+    assert client.requests == []

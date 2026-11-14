@@ -561,7 +561,16 @@ class TransactionAllocations(Schema):
     most frequent first: what rebook_earlier would re-book. rebook_blockers: with a
     name_history, the payee's earlier confirmed lines rebook_earlier would refuse to re-book
     (rule.rebook_blocked), oldest first, so the panel names them instead of offering it.
-    rebooked: how many earlier lines this PUT re-booked."""
+    rebooked: how many earlier lines this PUT re-booked.
+    suggested_purpose_pattern (14 Nov 2026, principle 7): for a line without an IBAN whose
+    answer cannot become a rule on its own (can_learn_rule false) and whose current rows are
+    one row of a category a typed pattern learns on this account, `^` + the purpose's first
+    word of at least six letters, regex-escaped, when the rule a PUT with it would create
+    hits no line with an IBAN and none confirmed under another category or as a split; the
+    panel then offers the rule box with this pattern, and learn_rule_default is computed with
+    it. None otherwise. suggested_pattern_waiting: how many waiting lines (as in
+    waiting_amount_counts, this line excluded, on accounts of its purpose) that rule would
+    book."""
 
     transaction: Transaction
     allocations: list[Allocation]
@@ -576,6 +585,8 @@ class TransactionAllocations(Schema):
     name_history: list[NameCategoryCount] = Field(default_factory=list)
     rebook_blockers: list[RebookBlocker] = Field(default_factory=list)
     rebooked: int = 0
+    suggested_purpose_pattern: str | None = None
+    suggested_pattern_waiting: int = Field(default=0, ge=0)
 
 
 class InboxItemKind(StrEnum):

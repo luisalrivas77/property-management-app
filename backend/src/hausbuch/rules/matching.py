@@ -841,6 +841,64 @@ def _found(pattern: str, text: str | None) -> bool:
         return False  # a broken pattern never hits; the line goes to review
 
 
+# --- A suggested purpose pattern (14 Nov 2026, principle 7) --------------------------------
+#
+# A line without an IBAN (a bank's own fee booking, „Entgeltabrechnung siehe Anlage …“) learns
+# a rule only on a typed purpose pattern (D38), and a person does not know which word to type.
+# The panel proposes the purpose's first word, anchored, when it is long enough to name the
+# kind of booking and is safe on the workspace's lines (services.review).
+
+PURPOSE_WORD_MIN = 6
+_LEADING_WORD = re.compile(r"[^\W\d_]+")  # letters only, umlauts and ß included
+
+
+def purpose_word(purpose: str | None) -> str | None:
+    """The word of letters the purpose starts with, as rule_hits reads the purpose
+    (whitespace collapsed), when it has at least PURPOSE_WORD_MIN letters; None for an empty
+    purpose, one starting with a digit or a sign, or a shorter word."""
+    found = _LEADING_WORD.match(" ".join((purpose or "").split()))
+    if found is None or len(found.group()) < PURPOSE_WORD_MIN:
+        return None
+    return found.group()
+
+
+def suggested_purpose_pattern(purpose: str | None) -> str | None:
+    """`^` + the purpose's first word (purpose_word), regex-escaped; None without one."""
+    word = purpose_word(purpose)
+    return None if word is None else "^" + re.escape(word)
+
+
+@dataclass(frozen=True)
+class PatternLine:
+    """Another line of the workspace a suggested purpose-pattern rule may hit: the line,
+    the categories of its confirmed current rows (empty when none is confirmed), and whether
+    it waits for an answer on an account the rule would book (a reconciled import, not
+    excluded, no confirmed row, an account of the line's purpose)."""
+
+    tx: MatchTransaction
+    confirmed: tuple[AllocationCategory, ...]
+    waiting: bool
+
+
+def pattern_waiting(
+    matcher: RuleMatcher, category: AllocationCategory, lines: Iterable[PatternLine]
+) -> int | None:
+    """How many waiting lines a rule with `matcher` booking `category` would book, or None
+    when the suggestion is not safe: a line it hits (rule_hits) has a counterparty IBAN, or
+    is confirmed under another category or as a split."""
+    waiting = 0
+    for line in lines:
+        if not rule_hits(matcher, line.tx):
+            continue
+        if line.tx.counterparty_iban_hmac is not None:
+            return None
+        if line.confirmed and line.confirmed != (category,):
+            return None
+        if line.waiting:
+            waiting += 1
+    return waiting
+
+
 def _is_lender(tx: MatchTransaction, loan: LoanFacts) -> bool:
     if (
         tx.counterparty_iban_hmac is not None
