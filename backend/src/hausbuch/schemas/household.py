@@ -206,7 +206,7 @@ class MovementKind(StrEnum):
     UNCATEGORIZED = "uncategorized"
     # Migration 0030 (D178 amended): a typed balance's difference a person booked, with a
     # reason, when the export misses a movement. Never a trade, a transfer or an acquisition;
-    # phase 8's FIFO treats an inflow correction as a lot with unknown cost.
+    # how phase 8's FIFO counts it (a lot of unknown cost, or none) is open (phase 6 Q-O96).
     BALANCE_CORRECTION = "balance_correction"
 
 
