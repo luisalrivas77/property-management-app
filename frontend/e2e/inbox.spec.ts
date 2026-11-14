@@ -10,6 +10,7 @@ import type { Page } from "@playwright/test";
 import { apiCall, expect, test } from "./support";
 
 const ZIP = path.resolve(import.meta.dirname, "..", "..", "backend", "tests", "fixtures", "phase2", "bank_samples", "camt052.zip");
+const CSV = path.resolve(import.meta.dirname, "..", "..", "backend", "tests", "fixtures", "phase2", "bank_samples", "csv_camt.csv");
 
 /** A rental account with the camt sample imported through Konten; returns the account id. */
 async function importSample(page: Page): Promise<string> {
@@ -29,6 +30,18 @@ async function importSample(page: Page): Promise<string> {
 async function openInbox(page: Page): Promise<void> {
   await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" }).click();
   await expect(page.getByRole("heading", { name: "Hochladen, bestätigen, fertig" })).toBeVisible();
+  await openSection(page, "Zahlungen zuordnen");
+}
+
+/** A section of Zu prüfen folds from its heading row; opens it when it is folded. */
+async function openSection(page: Page, title: string): Promise<void> {
+  const toggle = sectionToggle(page, title);
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+}
+
+function sectionToggle(page: Page, title: string) {
+  return page.getByRole("region", { name: "Zu erledigen" }).getByRole("button", { name: new RegExp(`^${title}`) });
 }
 
 test("an unmatched line is split by hand into two rows; Bestätigen waits until Rest is 0", async ({ page, signedIn }) => {
@@ -42,6 +55,16 @@ test("an unmatched line is split by hand into two rows; Bestätigen waits until 
   const navEntry = page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" });
   await expect(navEntry).toHaveAccessibleName(/22 offen/);
   await expect(page.getByRole("heading", { name: /^Zahlungen zuordnen/ })).toContainText("22");
+  // The section folds from its heading row and opens again on a click; the only section here
+  // is the first, so it starts open, and „Alle aufklappen“ is not offered for one section.
+  const lines = sectionToggle(page, "Zahlungen zuordnen");
+  await expect(page.getByRole("button", { name: "Alle aufklappen" })).toHaveCount(0);
+  await lines.click();
+  await expect(lines).toHaveAttribute("aria-expanded", "false");
+  await expect(queue).toBeHidden();
+  await lines.click();
+  await expect(lines).toHaveAttribute("aria-expanded", "true");
+  await expect(queue.getByRole("button")).toHaveCount(22);
   // „Empfänger suchen“ narrows the lines by payee, booking text or purpose, case ignored, and
   // says so; clearing it shows them all again.
   const search = page.getByLabel("Empfänger suchen");
@@ -239,4 +262,40 @@ test("a payer with other waiting amounts is asked whether the rule covers them (
   const body = (await response.json()) as { rule: { same_amount_only: boolean } | null };
   expect(body.rule?.same_amount_only).toBe(true);
   await expect(page.getByRole("status").filter({ hasText: "Zuordnung bestätigt." })).toContainText("Regel gespeichert");
+});
+
+test("a folded section opens on a click of its heading, and the choice is remembered", async ({ page, signedIn }) => {
+  void signedIn;
+  // The same payments as CSV and camt: the imports wait under Kontoauszüge and the 19 pairs
+  // under Mögliche Doppelbuchungen, which is not the first section, so it starts folded.
+  const account = await apiCall<{ id: string }>(page, "POST", "/api/accounts", {
+    label: "Mietkonto",
+    bank: "Sparkasse",
+    iban: "DE50100000000000000001",
+    opening_balance: "0.00",
+    opening_balance_on: "2026-03-31",
+  });
+  await page.goto(`/accounts/${account.id}`);
+  await page.getByLabel("Kontoauszug hochladen").setInputFiles(CSV);
+  await expect(page.getByRole("row").filter({ hasText: "csv_camt.csv" })).toBeVisible();
+  await page.getByLabel("Kontoauszug hochladen").setInputFiles(ZIP);
+  await expect(page.getByRole("row").filter({ hasText: "camt052.zip" }).locator(".badge")).toHaveText("nicht abgestimmt");
+  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" }).click();
+
+  const duplicates = sectionToggle(page, "Mögliche Doppelbuchungen");
+  const pairs = page.getByRole("list", { name: "Mögliche Doppelbuchungen" });
+  await expect(duplicates).toHaveAttribute("aria-expanded", "false");
+  await expect(pairs).toBeHidden();
+  await duplicates.click();
+  await expect(duplicates).toHaveAttribute("aria-expanded", "true");
+  await expect(pairs.getByRole("listitem").first()).toBeVisible();
+
+  // Remembered in this browser across a reload; „Alle zuklappen“ folds every section.
+  await page.reload();
+  await expect(duplicates).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("button", { name: "Alle zuklappen" }).click();
+  await expect(duplicates).toHaveAttribute("aria-expanded", "false");
+  await expect(sectionToggle(page, "Kontoauszüge")).toHaveAttribute("aria-expanded", "false");
+  await page.getByRole("button", { name: "Alle aufklappen" }).click();
+  await expect(pairs.getByRole("listitem").first()).toBeVisible();
 });

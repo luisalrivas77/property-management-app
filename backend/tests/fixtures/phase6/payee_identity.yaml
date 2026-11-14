@@ -147,6 +147,12 @@ same:
     a: {name: "GOOGLE *Netflix g.co/helppay#"}
     b: {name: "GOOGLE*Netflix"}
     same: true
+  - id: pay_tv_two_ibans_two_purposes  # 14 Nov 2026: one company collecting from two IBANs
+    note: the subscription collected from one IBAN until March and from another from April
+    a: {name: "Sky Deutschland Fernsehen GmbH Co. KG", purpose: "40123456 01/26 SKY ABO - MEHR INFO AUF SKY.DE/KONTO"}
+    b: {name: "SKY DEUTSCHLAND FERNSEHEN GMBH + CO. KG", purpose: "Ihr Sky Abo - 1234567890 - Zahlung 04/26"}
+    same: true
+
 different:
   - id: two_restaurants_at_the
     a: {name: "RESTAURANT AT THE PARK"}
@@ -341,6 +347,14 @@ strengths:
   - id: paypal_merchant_two_spellings
     a: {name: "PayPal Europe S.a.r.l. et Cie S.C.A", purpose: ", Ihr Einkauf bei DisneyPlus, "}
     b: {name: "4029357733 PAYPAL *DISNEYPLUS 35314369001 LU"}
+    strength: strong
+  - id: pay_tv_two_ibans_two_purposes  # an IBAN rule reaches the other IBAN's lines
+    a: {name: "Sky Deutschland Fernsehen GmbH Co. KG", purpose: "40123456 01/26 SKY ABO - MEHR INFO AUF SKY.DE/KONTO"}
+    b: {name: "SKY DEUTSCHLAND FERNSEHEN GMBH + CO. KG", purpose: "Ihr Sky Abo - 1234567890 - Zahlung 04/26"}
+    strength: strong
+  - id: paypal_card_with_address_and_direct_debit  # the card form with the merchant's address
+    a: {name: "12345678 PAYPAL *DISNEYPLUS Taurusavenue 9 2132LS Hoofddorp", purpose: "12345678 PAYPAL *DISNEYPLUS Taurusavenue 9 2132LS Hoofddorp"}
+    b: {name: "PayPal Europe S.a.r.l. et Cie S.C.A", purpose: "1041234567801 PP.1234.PP . DisneyPlus, Ihr Einkauf bei DisneyPlus"}
     strength: strong
 
 # Whether an IBAN hash is shared (two payees that are not one payee on its private lines).

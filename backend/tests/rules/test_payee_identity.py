@@ -20,13 +20,15 @@ from hausbuch.schemas.allocation import (
     AllocationDraft,
     AllocationMethod,
     AllocationSet,
+    HistoryLine,
+    HistoryRow,
     MatchContext,
     MatchingRule,
     MatchTransaction,
     NameHistory,
     RuleMatcher,
 )
-from hausbuch.schemas.enums import AccountPurpose
+from hausbuch.schemas.enums import AccountPurpose, AllocationStatus
 
 FIXTURE = phase6.load("payee_identity")
 PAYPAL_IBAN = "a" * 64
@@ -210,6 +212,52 @@ def test_a_card_paypal_rule_hits_the_merchant_through_paypal_only():
     assert matching.apply_rule(rule, _tx(SHORT, MICROSOFT, n=4), PRIVATE) is None
 
 
+# 14 Nov 2026: the merchant rule learned on a direct debit names the merchant, whatever form
+# the service's line comes in (Luis's DisneyPlus card line stayed waiting after PR #299).
+CARD_DISNEY = "12345678 PAYPAL *DISNEYPLUS Taurusavenue 9 2132LS Hoofddorp"
+
+
+def test_a_direct_debit_merchant_rule_hits_the_card_form_and_back():
+    on_debit = _learned(_tx(SHORT, DISNEY))
+    card = _tx(CARD_DISNEY, CARD_DISNEY, iban=None, n=2)
+    assert "Ihr Einkauf bei" not in (card.purpose or "")  # the regular expression misses it
+    found = matching.apply_rule(on_debit, card, PRIVATE)
+    assert found is not None and found.confidence == matching.EXACT
+    assert found.allocations[0].category is C.HH_STREAMING
+    other = "12345678 PAYPAL *MICROSOFT Taurusavenue 9 2132LS Hoofddorp"
+    assert matching.apply_rule(on_debit, _tx(other, other, iban=None, n=3), PRIVATE) is None
+
+    on_card = _learned(card)
+    assert on_card.matcher.counterparty_name_pattern == r"^PAYPAL \*DISNEYPLUS TAURUSAVENUE"
+    back = matching.apply_rule(on_card, _tx(LONG, DISNEY, n=4), PRIVATE)
+    assert back is not None and back.confidence == matching.EXACT
+    assert matching.apply_rule(on_card, _tx(LONG, MICROSOFT, n=5), PRIVATE) is None
+
+
+def test_a_klarna_merchant_rule_hits_only_klarnas_lines_of_the_merchant():
+    rule = _learned(_tx("Klarna Bank AB", "Purchase at DisneyPlus Gläubiger-ID: SE00"))
+    # the same merchant through another service is not the rule's
+    assert matching.apply_rule(rule, _tx(CARD_DISNEY, CARD_DISNEY, iban=None, n=2), PRIVATE) is None
+    assert matching.apply_rule(rule, _tx(SHORT, DISNEY, n=3), PRIVATE) is None
+
+
+def test_a_typed_purpose_pattern_on_a_service_keeps_its_regular_expression_meaning():
+    typed = _rule(
+        RuleMatcher(counterparty_name_pattern=r"^PAYPAL\b", purpose_pattern="Einkauf bei Disney")
+    )
+    assert matching.apply_rule(typed, _tx(SHORT, DISNEY), PRIVATE) is not None
+    card = _tx(CARD_DISNEY, CARD_DISNEY, iban=None, n=2)
+    assert matching.apply_rule(typed, card, PRIVATE) is None
+
+
+def test_a_weak_service_merchant_hit_names_the_merchant_in_its_question():
+    rule = _learned(_tx(SHORT, ", Ihr Einkauf bei Adler Modemarkt, "), C.HH_CLOTHING)
+    card = "12345678 PAYPAL *ADLER APOTHEKE 4029357733"
+    found = matching.apply_rule(rule, _tx(card, card, iban=None, n=2), PRIVATE)
+    assert found is not None and matching.weak_proposal(found)
+    assert found.question == "Gleicher Empfänger wie „PayPal: Adler Modemarkt“? Bitte bestätigen."
+
+
 def test_a_paypal_history_without_purposes_is_still_too_broad():
     # NameHistory without a purpose: the merchant is not known, so the line counts
     tx = _tx(SHORT, DISNEY)
@@ -371,3 +419,155 @@ def test_a_typed_paypal_pattern_is_no_service_only_rule():
     )
     assert matching.service_only(learned)
     assert matching.apply_rule(_rule(learned), tx, PRIVATE) is None
+
+
+# --- 14 Nov 2026: an IBAN rule reaches its payee on another IBAN -----------------------------
+
+SKY = "Sky Deutschland Fernsehen GmbH Co. KG"
+SKY_OLD = "40123456 01/26 SKY ABO - MEHR INFO AUF SKY.DE/KONTO"
+SKY_NEW = "Ihr Sky Abo - 1234567890 - Zahlung 04/26"
+NEW_IBAN = "d" * 64
+
+
+def _iban_rule(
+    name: str = SKY,
+    purpose: str = SKY_NEW,
+    category: C = C.HH_PAY_TV,
+    amount: str | None = "-30.00",
+    **fields,
+) -> MatchingRule:
+    rule = _rule(RuleMatcher(counterparty_iban_hmac=NEW_IBAN, amount_sign="debit"), category)
+    if fields:
+        rule = rule.model_copy(update=fields)
+    return rule.with_learned_from(name, purpose, None if amount is None else Decimal(amount))
+
+
+def _own_line(
+    amount: str,
+    day: date,
+    n: int,
+    category: C = C.HH_PAY_TV,
+    status: AllocationStatus = AllocationStatus.CONFIRMED,
+) -> HistoryLine:
+    """A line on the rule's own IBAN (NEW_IBAN) with one row."""
+    return HistoryLine(
+        transaction_id=UUID(f"0000003d-0000-4000-8000-{n:012d}"),
+        booking_date=day,
+        amount=Decimal(amount),
+        counterparty_iban_hmac=NEW_IBAN,
+        rows=[HistoryRow(category=category, status=status, amount=Decimal(amount))],
+    )
+
+
+def test_an_iban_rule_books_its_payee_on_another_iban():
+    rule = _iban_rule()
+    old = _tx(SKY, SKY_OLD, amount="-30.00", iban=OTHER_IBAN)
+    found = matching.apply_rule(rule, old, PRIVATE)
+    assert found is not None and found.confidence == matching.EXACT
+    assert found.allocations[0].category is C.HH_PAY_TV
+    answer = matching.rule_answer([rule], old, PRIVATE, [])
+    assert answer is not None and answer.confidence == matching.EXACT
+    # another company on that IBAN, a credit, a line without an IBAN: no hit
+    assert matching.apply_rule(rule, _tx("EPRIMO GMBH", iban=OTHER_IBAN, n=2), PRIVATE) is None
+    refund = _tx(SKY, SKY_OLD, amount="30.00", iban=OTHER_IBAN, n=3)
+    assert matching.apply_rule(rule, refund, PRIVATE) is None
+    assert matching.apply_rule(rule, _tx(SKY, SKY_OLD, iban=None, n=4), PRIVATE) is None
+
+
+def test_an_iban_rule_without_its_origin_line_stays_on_its_iban():
+    bare = _rule(RuleMatcher(counterparty_iban_hmac=NEW_IBAN, amount_sign="debit"), C.HH_PAY_TV)
+    assert bare.learned_from is None
+    assert matching.apply_rule(bare, _tx(SKY, SKY_OLD, iban=OTHER_IBAN), PRIVATE) is None
+    assert "learned_from" not in _iban_rule().model_dump()  # never serialised, never stored
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        MatchContext(account_purpose=AccountPurpose.RENTAL),
+        MatchContext(account_purpose=AccountPurpose.PRIVATE, shared_iban_hmacs=[OTHER_IBAN]),
+        MatchContext(account_purpose=AccountPurpose.PRIVATE, shared_iban_hmacs=[NEW_IBAN]),
+        MatchContext(account_purpose=AccountPurpose.PRIVATE, own_account_hmacs=[OTHER_IBAN]),
+        MatchContext(account_purpose=AccountPurpose.PRIVATE, own_account_hmacs=[NEW_IBAN]),
+    ],
+    ids=["rental", "line_iban_shared", "rule_iban_shared", "line_iban_own", "rule_iban_own"],
+)
+def test_an_iban_rule_never_reaches_another_iban_here(context):
+    old = _tx(SKY, SKY_OLD, iban=OTHER_IBAN)
+    assert matching.cross_iban_hit(_iban_rule(), old, context) is None
+    assert matching.apply_rule(_iban_rule(), old, context) is None
+
+
+def test_a_weak_or_same_amount_only_cross_iban_hit_is_a_proposal():
+    weak = _iban_rule("ADLER MODEMARKT", "", C.HH_CLOTHING)
+    found = matching.apply_rule(weak, _tx("ADLER APOTHEKE", iban=OTHER_IBAN), PRIVATE)
+    assert found is not None and matching.weak_proposal(found)
+    assert found.confidence == matching.GUARDED_CONFIDENCE
+    assert found.question == "Gleicher Empfänger wie „ADLER MODEMARKT“? Bitte bestätigen."
+
+    exact = _iban_rule(same_amount_only=True)
+    found = matching.apply_rule(exact, _tx(SKY, SKY_OLD, iban=OTHER_IBAN, n=2), PRIVATE)
+    assert found is not None and matching.weak_proposal(found)
+    assert found.question == f"Gleicher Empfänger wie „{SKY}“? Bitte bestätigen."
+
+
+def test_a_strong_cross_iban_hit_books_only_at_the_rules_latest_amount():
+    """Review F1 (Luis, 14 Nov 2026): one company's other product on another IBAN
+    (Kfz-Versicherung and Hausrat) is never booked as the first, only proposed."""
+    line = _tx(SKY, SKY_OLD, amount="-59.00", iban=OTHER_IBAN)  # booked 5 Oct 2026
+    question = f"Gleicher Empfänger wie „{SKY}“? Bitte bestätigen."
+
+    def answer(rule: MatchingRule, history: list[HistoryLine]) -> AllocationSet | None:
+        return matching.apply_rule(rule, line, PRIVATE, history)
+
+    rule = _iban_rule(amount="-30.00")
+    # the newest confirmed line of its category on or before the line's date decides
+    earlier = [_own_line("-30.00", date(2026, 4, 1), 1), _own_line("-59.00", date(2026, 9, 1), 2)]
+    found = answer(rule, earlier)
+    assert found is not None and found.confidence == matching.EXACT
+    later = [*earlier, _own_line("-30.00", date(2026, 11, 1), 3)]  # after the line: not used
+    assert answer(rule, later).confidence == matching.EXACT
+    moved = [_own_line("-59.00", date(2026, 4, 1), 1), _own_line("-39.00", date(2026, 9, 1), 2)]
+    found = answer(rule, moved)
+    assert found.confidence == matching.GUARDED_CONFIDENCE and found.question == question
+    # none that early: the newest of all
+    assert answer(rule, [_own_line("-59.00", date(2026, 11, 1), 1)]).confidence == matching.EXACT
+    # a proposed line, another category, a credit or another IBAN's line never counts:
+    # the line the rule was learned from (-30.00) decides
+    ignored = [
+        _own_line("-59.00", date(2026, 9, 1), 1, status=AllocationStatus.PROPOSED),
+        _own_line("-59.00", date(2026, 9, 2), 2, category=C.HH_STREAMING),
+        _own_line("59.00", date(2026, 9, 3), 3),
+        _own_line("-59.00", date(2026, 9, 4), 4).model_copy(
+            update={"counterparty_iban_hmac": OTHER_IBAN}
+        ),
+    ]
+    assert answer(rule, ignored).confidence == matching.GUARDED_CONFIDENCE
+    assert answer(_iban_rule(amount="-59.00"), ignored).confidence == matching.EXACT
+    # nothing known at all: a proposal
+    assert answer(_iban_rule(amount=None), []).question == question
+
+
+def test_a_split_or_a_payment_service_rule_is_not_carried_to_another_iban():
+    split = _iban_rule().model_copy(
+        update={
+            "split_method": "as_last_split",
+            "category": None,
+            "categories": [C.HH_PAY_TV, C.HH_STREAMING],
+        }
+    )
+    assert matching.cross_iban_payee(split) is None
+    assert matching.cross_iban_payee(_iban_rule(SHORT, DISNEY)) is None
+    on_service = _tx(SHORT, DISNEY, iban=OTHER_IBAN)
+    assert matching.apply_rule(_iban_rule(), on_service, PRIVATE) is None
+
+
+def test_a_rule_on_the_lines_own_iban_wins_over_one_from_another_iban():
+    cross = _iban_rule()
+    own = _rule(
+        RuleMatcher(counterparty_iban_hmac=OTHER_IBAN, amount_sign="debit"), C.HH_SUBSCRIPTIONS
+    )
+    line = _tx(SKY, SKY_OLD, iban=OTHER_IBAN)
+    for rules in ([cross, own], [own, cross]):
+        found = matching.rule_answer(rules, line, PRIVATE, [])
+        assert found is not None and found.allocations[0].category is C.HH_SUBSCRIPTIONS
