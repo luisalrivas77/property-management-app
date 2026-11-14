@@ -436,3 +436,59 @@ def test_correcting_a_line_disables_the_iban_and_name_rule_that_booked_it(
         "confirmed",
         new.id,
     )
+
+
+# --- A re-check never makes a waiting answer coarser (14 Nov 2026) -------------------------
+
+
+def test_rematch_waiting_keeps_a_subcategory_over_its_groups_fallback_rule(
+    world, private, app_engine, tmp_path
+):
+    # The first production run of rematch-waiting confirmed 20 waiting lines one level coarser:
+    # an old rule on hh_dining over the re-sort's hh_delivery proposals.
+    world.cmd(
+        rules_learned.create_rule,
+        MatchingRuleCreate(
+            matcher=RuleMatcher(counterparty_name_pattern="^LIEFERANDO", amount_sign="debit"),
+            split_method=SplitMethod.SINGLE_CATEGORY,
+            category="hh_dining",
+        ),
+    )
+    finer = private.line(date(2026, 9, 3), "-24.50", name="Lieferando")
+    _propose(world, finer, "-24.50", "hh_delivery")
+    (before,) = _rows(world, finer)
+    elsewhere = private.line(date(2026, 9, 4), "-19.00", name="Lieferando")
+    _propose(world, elsewhere, "-19.00", "hh_groceries")  # another group: the rule books it
+
+    plans = _recheck(app_engine, tmp_path, world, f"private_lines:{private.account_id}")
+    (after,) = _rows(world, finer)
+    assert (after.id, after.category, after.status) == (before.id, "hh_delivery", "proposed")
+    assert any(p.reason == "matching.keeps_finer" for p in plans)
+    assert _booked(world, elsewhere) == ("hh_dining", "rule", "confirmed")
+
+
+def test_learning_a_subcategory_without_the_iban_disables_the_fallback_rule_with_it(world):
+    clearing = "ab" * 32
+    old = world.cmd(
+        rules_learned.create_rule,
+        MatchingRuleCreate(
+            matcher=RuleMatcher(
+                counterparty_iban_hmac=clearing,
+                counterparty_name_pattern="^LIEFERANDO",
+                amount_sign="debit",
+            ),
+            split_method=SplitMethod.SINGLE_CATEGORY,
+            category="hh_dining",
+        ),
+    )
+    world.cmd(
+        rules_learned.create_rule,
+        MatchingRuleCreate(
+            matcher=RuleMatcher(counterparty_name_pattern="^LIEFERANDO", amount_sign="debit"),
+            split_method=SplitMethod.SINGLE_CATEGORY,
+            category="hh_delivery",
+        ),
+    )
+    with workspace_transaction(world.engine, world.ws) as conn:
+        rules = {r.id: r for r in rules_learned.list_rules(conn)}
+    assert rules[old.id].enabled is False
