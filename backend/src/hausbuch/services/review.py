@@ -15,21 +15,24 @@
   re-asks the model: rematch_waiting and rematch_on_evidence never call it.
 """
 
+from collections import Counter
 from datetime import UTC, date, datetime
 from uuid import UUID
 
-from sqlalchemy import Connection, Select, exists, select
+from sqlalchemy import Connection, Select, exists, or_, select
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import proposal as proposal_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.db.tables import transfer_link as transfer_link_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import matching as matchers
-from hausbuch.rules.errors import AI_DISABLED, RULE_CONFLICTS, RuleError
+from hausbuch.rules.errors import AI_DISABLED, RULE_CONFLICTS, RULE_TOO_BROAD, RuleError
 from hausbuch.rules.household.taxonomy import BULK_CONFIRMABLE, allowed_categories
 from hausbuch.rules.review import THRESHOLDS
 from hausbuch.schemas.ai import AiJob
@@ -51,6 +54,7 @@ from hausbuch.schemas.api import (
     ConfirmCategorySkip,
     InboxItem,
     InboxItemKind,
+    NameCategoryCount,
     TransactionAllocations,
 )
 from hausbuch.schemas.bank import Transaction
@@ -125,7 +129,18 @@ def allocate_transaction(
     if learn is None:
         learn = rules_learned.learn_default(proposed, confirmed)
     rule = None
+    rebooked: list[UUID] = []
     if learn:
+        corrected = {corrects} if corrects is not None else set()
+        if proposed is None and body.rebook_earlier and refusal in _REBOOKABLE:
+            # D160, 14 Nov 2026: the name's other confirmed lines are re-booked to this
+            # answer first (all or none), then the rule is checked again against them.
+            rebooked, rules_replaced = _rebook_earlier(ctx, line, confirmed, refusal)
+            corrected |= rules_replaced
+            names = _names(ctx.conn, line)
+            proposed, refusal = rules_learned.proposed_rule_or_refusal(
+                line.tx, confirmed, context, names=names
+            )
         if proposed is None:
             # D160: a name rule refused for the name's other lines says why, so the card can
             # ask for a purpose pattern (rule.too_broad) or name the conflict (rule.conflicts).
@@ -138,9 +153,112 @@ def allocate_transaction(
             "same_amount_only": body.same_amount_only and not rules_learned.checks_amount(proposed),
         }
         rule = rules_learned.create_rule(
-            ctx, MatchingRuleCreate.model_validate(data), corrects=corrects
+            ctx, MatchingRuleCreate.model_validate(data), corrects=corrected
         )
-    return _response(ctx.conn, line, written, context, names=names, rule=rule)
+    return _response(
+        ctx.conn, line, written, context, names=names, rule=rule, rebooked=len(rebooked)
+    )
+
+
+# The name rule's refusals that come from the name's other confirmed lines only (D160).
+_REBOOKABLE = frozenset({RULE_CONFLICTS, RULE_TOO_BROAD})
+
+
+def _rebook_earlier(
+    ctx: CommandContext, line: matching.Line, confirmed: AllocationSet, refusal: str
+) -> tuple[list[UUID], set[UUID]]:
+    """„Diese auch auf <Kategorie> umbuchen“ (phase 6 D160, 14 Nov 2026): every confirmed
+    private line of the same sign whose name the line's name rule hits, and whose booking is
+    not already the answer's category, is re-booked to that category as a person's
+    correction (services.allocations.record_set: new confirmed rows, the old ones superseded,
+    transaction.reallocated), each keeping its own period and recurring flag. All or none:
+    a hit line that is not one confirmed row of a learnable household code without a
+    property, tenancy, loan or Beleg, or that is linked as a transfer or a depot movement,
+    or is no longer open, refuses the whole answer with `refusal`, before anything is
+    written. The lines are locked in id order. Returns the re-booked line ids and the rules
+    whose bookings were corrected (create_rule replaces one with the same matcher, D49)."""
+    if len(confirmed.allocations) != 1:
+        raise RuleViolationError([refusal], "no rule can be learned from this answer")
+    (only,) = confirmed.allocations
+    tx = line.tx
+    hits = sorted(
+        (
+            hit.transaction_id
+            for hit in matching.name_lines(ctx.conn, tx)
+            if hit.rows and matchers.same_payee(tx.counterparty_name, hit.counterparty_name)
+        ),
+        key=str,
+    )
+    targets: list[tuple[matching.Line, Allocation]] = []
+    for transaction_id in hits:
+        hit = matching.load_line(ctx.conn, transaction_id, lock=True)
+        if hit is None or not hit.current:
+            continue
+        if any(a.status is not AllocationStatus.CONFIRMED for a in hit.current):
+            continue  # a waiting proposal is no earlier answer; the new rule re-checks it
+        if len(hit.current) == 1 and hit.current[0].category is only.category:
+            continue
+        if not _rebookable(hit):
+            raise RuleViolationError([refusal], "an earlier line of the name cannot be re-booked")
+        targets.append((hit, hit.current[0]))
+    if _linked(ctx.conn, [hit.tx.id for hit, _ in targets]):
+        raise RuleViolationError([refusal], "an earlier line of the name is linked")
+    replaced: set[UUID] = set()
+    for hit, row in targets:
+        by_rule = _booked_by_rule(hit.current)
+        if by_rule is not None:
+            replaced.add(by_rule)
+        draft = AllocationDraft(
+            amount=hit.tx.amount,
+            category=only.category,
+            service_period_start=row.service_period_start,
+            service_period_end=row.service_period_end,
+            recurring=row.recurring,
+        )
+        answer = AllocationSet(
+            transaction_id=hit.tx.id,
+            allocations=[draft],
+            method=AllocationMethod.USER,
+            confidence=USER_CONFIDENCE,
+        )
+        allocations.record_set(ctx, answer, confirm=True, auto=False)
+    return [hit.tx.id for hit, _ in targets], replaced
+
+
+def _rebookable(hit: matching.Line) -> bool:
+    """One confirmed row of a learnable household code with no scope or Beleg, on an open
+    line of a private account."""
+    if not hit.private or hit.excluded or hit.awaiting_duplicate:
+        return False
+    if hit.import_status is not ImportStatus.RECONCILED or len(hit.current) != 1:
+        return False
+    (row,) = hit.current
+    scoped = (row.property_id, row.unit_id, row.tenancy_id, row.loan_id, row.document_id)
+    return matchers.learnable_household(row.category) and all(v is None for v in scoped)
+
+
+def _linked(conn: Connection, transaction_ids: list[UUID]) -> bool:
+    """Whether a line is a leg of a current transfer link (D162) or carries a depot
+    movement (D165): its booking belongs to that link, not to a name rule."""
+    if not transaction_ids:
+        return False
+    link = transfer_link_table.c
+    movement = movement_table.c
+    linked = conn.execute(
+        select(
+            exists().where(
+                link.superseded_by.is_(None),
+                or_(
+                    link.out_transaction_id.in_(transaction_ids),
+                    link.in_transaction_id.in_(transaction_ids),
+                ),
+            )
+            | exists().where(
+                movement.superseded_by.is_(None), movement.transaction_id.in_(transaction_ids)
+            )
+        )
+    ).scalar_one()
+    return bool(linked)
 
 
 def _booked_by_rule(current: list[Allocation]) -> UUID | None:
@@ -227,6 +345,7 @@ def _response(
     *,
     names: list[NameHistory],
     rule=None,  # noqa: ANN001 - MatchingRule | None
+    rebooked: int = 0,
 ) -> TransactionAllocations:
     tx = line.tx
     transaction_id = tx.id
@@ -260,7 +379,29 @@ def _response(
             else []
         ),
         rule=rule,
+        name_history=_name_history(line, context, names),
+        rebooked=rebooked,
     )
+
+
+def _name_history(
+    line: matching.Line, context: MatchContext, names: list[NameHistory]
+) -> list[NameCategoryCount]:
+    """D160: the payee's other confirmed lines by category, when the line's rule would be on
+    its name (a private line without an IBAN, or on a shared one): the lines the name rule's
+    checks read (rules.matching.name_hits), most frequent first."""
+    tx = line.tx
+    if not line.private:
+        return []
+    hmac = tx.counterparty_iban_hmac
+    if hmac is not None and hmac not in context.shared_iban_hmacs:
+        return []
+    counts = Counter(h.category for h in matchers.name_hits(tx, names))
+    order = list(AllocationCategory)
+    return [
+        NameCategoryCount(category=category, count=count)
+        for category, count in sorted(counts.items(), key=lambda i: (-i[1], order.index(i[0])))
+    ]
 
 
 def _unlearnable(line: matching.Line) -> list[AllocationCategory]:

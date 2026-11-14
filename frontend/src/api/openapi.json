@@ -12424,6 +12424,11 @@
             "type": "boolean",
             "title": "Same Amount Only",
             "default": false
+          },
+          "rebook_earlier": {
+            "type": "boolean",
+            "title": "Rebook Earlier",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -12432,7 +12437,7 @@
           "allocation_set"
         ],
         "title": "ConfirmAllocationsBody",
-        "description": "PUT /transactions/{id}/allocations: the user's allocation set and the \"Künftig immer\nso zuordnen\" checkbox.\n\nOnly the set's allocations are read: the rows are written with method `user` and\nconfidence 1, whatever method, confidence, rule_id or ai_call_id the body carries. A set\nequal to the current proposed rows confirms those rows as they are (the proposer's method\nstays); one equal to the current confirmed rows changes nothing.\n\nlearn_rule: null = the server default (TransactionAllocations.learn_rule_default for this\nset); true for a set no rule can be learned from is refused with rule.not_learnable.\nThe patterns (case-insensitive regular expressions, refused with rule.invalid_pattern\nwhen they do not compile) narrow the rule, and let a line without an IBAN, or a\ncounterparty a matcher owns (D38), have one.\nsame_amount_only (D49): the answer to \"Gehören die auch zu …?\" when other amounts from\nthe same IBAN are waiting: true = the rule books only payments of this line's amount (the\nlatest confirmed one of its category, read from the ledger); ignored without learn_rule\nand for a rule whose split method checks the amount itself."
+        "description": "PUT /transactions/{id}/allocations: the user's allocation set and the \"Künftig immer\nso zuordnen\" checkbox.\n\nOnly the set's allocations are read: the rows are written with method `user` and\nconfidence 1, whatever method, confidence, rule_id or ai_call_id the body carries. A set\nequal to the current proposed rows confirms those rows as they are (the proposer's method\nstays); one equal to the current confirmed rows changes nothing.\n\nlearn_rule: null = the server default (TransactionAllocations.learn_rule_default for this\nset); true for a set no rule can be learned from is refused with rule.not_learnable.\nThe patterns (case-insensitive regular expressions, refused with rule.invalid_pattern\nwhen they do not compile) narrow the rule, and let a line without an IBAN, or a\ncounterparty a matcher owns (D38), have one.\nsame_amount_only (D49): the answer to \"Gehören die auch zu …?\" when other amounts from\nthe same IBAN are waiting: true = the rule books only payments of this line's amount (the\nlatest confirmed one of its category, read from the ledger); ignored without learn_rule\nand for a rule whose split method checks the amount itself.\nrebook_earlier (phase 6 D160, 14 Nov 2026): with learn_rule, when the name rule is refused\nonly for the name's other confirmed lines (rule.conflicts, rule.too_broad), those lines\nare re-booked to this answer's category first, then the rule is learned; refused as\nbefore when one of them is not a single confirmed row of a learnable household code."
       },
       "ConfirmCategoryBody": {
         "properties": {
@@ -19422,6 +19427,26 @@
         ],
         "title": "MovementStatus",
         "description": "asset_movement.status: only proposed -> confirmed moves (the trigger of 0025); a\ncorrection is a new row and the old one's superseded_by."
+      },
+      "NameCategoryCount": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "count"
+        ],
+        "title": "NameCategoryCount",
+        "description": "How many earlier lines of the payee are confirmed under one category (phase 6 D160)."
       },
       "NotarizedOnCorrection": {
         "properties": {
@@ -27475,6 +27500,18 @@
                 "type": "null"
               }
             ]
+          },
+          "name_history": {
+            "items": {
+              "$ref": "#/components/schemas/NameCategoryCount"
+            },
+            "type": "array",
+            "title": "Name History"
+          },
+          "rebooked": {
+            "type": "integer",
+            "title": "Rebooked",
+            "default": 0
           }
         },
         "additionalProperties": false,
@@ -27487,7 +27524,7 @@
           "no_default_rule_categories"
         ],
         "title": "TransactionAllocations",
-        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nwaiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines\nstill waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no\nconfirmed row), each with its count, most frequent first, at most five; the panel then\nasks whether those belong to the same category (same_amount_only).\nunlearnable_categories: the categories the line's account takes for which a one-row\nanswer can never become a rule, with or without a typed pattern (phase 6 D160 on a\nprivate account: the transfer, depot and tax-relevant codes and those without a\nthreshold; empty on the rental account), in taxonomy order, so the UI greys the box and\nsays why instead of letting rule.not_learnable refuse the answer.\nrule: the rule this PUT created, if any."
+        "description": "GET / PUT /transactions/{id}/allocations: the line, its current allocation rows\n(proposed or confirmed; none = not matched) and the rule checkbox.\n\ncan_learn_rule: whether a single-category answer for this line can become a rule\nwithout a typed pattern (false without an IBAN, and for a counterparty a matcher owns,\nD38). learn_rule_default: the checkbox's default for the current rows (off when a rule\ncannot be learned from them, or a category never auto-confirms, review F6).\nno_default_rule_categories: the categories that never auto-confirm (threshold None in\nrules.review.THRESHOLDS), in taxonomy order, so the UI can default the checkbox for rows\nthe person types (on unless one of these is among them, §8.1).\nwaiting_other_amounts (D49): when a rule can be learned, the other amounts of the lines\nstill waiting from the same IBAN hash and sign (reconciled import, not a duplicate, no\nconfirmed row), each with its count, most frequent first, at most five; the panel then\nasks whether those belong to the same category (same_amount_only).\nunlearnable_categories: the categories the line's account takes for which a one-row\nanswer can never become a rule, with or without a typed pattern (phase 6 D160 on a\nprivate account: the transfer, depot and tax-relevant codes and those without a\nthreshold; empty on the rental account), in taxonomy order, so the UI greys the box and\nsays why instead of letting rule.not_learnable refuse the answer.\nrule: the rule this PUT created, if any.\nname_history (phase 6 D160): for a private line whose rule would be on its name (no\nIBAN, or a shared one), the payee's other confirmed lines of the same sign by category,\nmost frequent first: what rebook_earlier would re-book. rebooked: how many earlier lines\nthis PUT re-booked."
       },
       "TransferLegSource": {
         "type": "string",

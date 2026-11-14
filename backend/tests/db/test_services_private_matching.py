@@ -19,6 +19,7 @@ from hausbuch.ai.fake import FakeModelClient, text_response
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import matching_rule as rule_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
@@ -680,3 +681,214 @@ def test_a_single_payee_iban_behaves_as_before(world, private, app_engine, tmp_p
     other = private.line(date(2026, 10, 4), "-29.99", name="Anderer Name", iban=SINGLE_IBAN)
     plan = _rematch(app_engine, tmp_path, world, other)
     assert plan.reason == "routing.no_match" and _rows(world, other) == []
+
+
+# --- D160, 14 Nov 2026: re-book the name's earlier lines when learning its rule --------------
+
+
+def _answer_rebook(world: World, tx, amount: str, category: str, *, rebook=True, learn=True):
+    return world.cmd(
+        review.allocate_transaction,
+        tx,
+        ConfirmAllocationsBody(
+            allocation_set=_user_set(tx, amount, category),
+            learn_rule=learn,
+            rebook_earlier=rebook,
+        ),
+        iban_key=TEST_IBAN_KEY,
+    )
+
+
+def _all_rows(world: World, tx):
+    return world.query(
+        lambda c: c.execute(
+            select(allocation_table)
+            .where(allocation_table.c.transaction_id == tx)
+            # the commands share one clock: a re-booked row is the one that supersedes
+            .order_by(allocation_table.c.supersedes_id.is_not(None), allocation_table.c.id)
+        ).all()
+    )
+
+
+def _events(world: World, tx) -> list[tuple[str, str]]:
+    return world.query(
+        lambda c: [
+            tuple(row)
+            for row in c.execute(
+                select(event_table.c.type, event_table.c.actor_type)
+                .where(event_table.c.entity_id == tx)
+                .order_by(event_table.c.seq)
+            )
+        ]
+    )
+
+
+def _earlier(private: Private, category: str, n: int = 4, iban: str | None = None):
+    """`n` earlier delivery lines, each confirmed by a person as `category`."""
+    lines = []
+    for day in range(1, n + 1):
+        amount = f"-{18 + day}.90"
+        tx = private.line(date(2026, 9, day), amount, name=DELIVERY, iban=iban)
+        _answer_line(private.world, tx, amount, category, learn=False)
+        lines.append(tx)
+    return lines
+
+
+def _view(world: World, tx):
+    return world.query(
+        lambda c: review.transaction_allocations(c, tx, iban_key=TEST_IBAN_KEY, today=NOW.date())
+    )
+
+
+def test_learning_a_name_rule_re_books_the_names_earlier_lines(
+    world, private, app_engine, tmp_path
+):
+    earlier = _earlier(private, "hh_leisure_travel")
+    now = private.line(date(2026, 11, 2), "-27.50", name="LIEFERDIENST BEISPIEL 4711")
+    view = _view(world, now)
+    assert view.can_learn_rule is True
+    assert [(h.category, h.count) for h in view.name_history] == [("hh_leisure_travel", 4)]
+
+    # Without the flag: refused as before, and nothing is written.
+    with pytest.raises(RuleViolationError) as refused:
+        _answer_rebook(world, now, "-27.50", "hh_dining", rebook=False)
+    assert refused.value.code == "rule.conflicts"
+    assert _rows(world, now) == []
+
+    result = _answer_rebook(world, now, "-27.50", "hh_dining")
+    assert result.rebooked == 4
+    assert result.rule is not None and result.rule.category == "hh_dining"
+    assert result.rule.matcher.counterparty_name_pattern == "^LIEFERDIENST BEISPIEL"
+    assert [(h.category, h.count) for h in result.name_history] == [("hh_dining", 4)]
+    for tx in earlier:
+        old, new = _all_rows(world, tx)
+        assert (old.category, old.status) == ("hh_leisure_travel", "superseded")
+        assert (new.category, new.status, new.method) == ("hh_dining", "confirmed", "user")
+        assert new.supersedes_id == old.id and new.confirmed_at is not None
+        assert new.amount == old.amount
+        assert _events(world, tx) == [
+            ("transaction.allocated", "user"),
+            ("transaction.reallocated", "user"),
+        ]
+
+    # The rule books the payee's next line.
+    later = private.line(date(2026, 11, 9), "-31.00", name="Lieferdienst Beispiel")
+    _rematch(app_engine, tmp_path, world, later)
+    (row,) = _rows(world, later)
+    assert (row.category, row.method, row.status) == ("hh_dining", "rule", "confirmed")
+
+
+def test_a_rule_whose_bookings_are_re_booked_is_replaced(world, private, app_engine, tmp_path):
+    first = private.line(date(2026, 9, 1), "-19.90", name=DELIVERY)
+    old_rule = _answer_line(world, first, "-19.90", "hh_leisure_travel", learn=True).rule
+    assert old_rule is not None
+    booked = private.line(date(2026, 9, 8), "-21.90", name=DELIVERY)
+    _rematch(app_engine, tmp_path, world, booked)
+    assert _rows(world, booked)[0].rule_id == old_rule.id
+
+    now = private.line(date(2026, 11, 2), "-27.50", name=DELIVERY)
+    result = _answer_rebook(world, now, "-27.50", "hh_dining")
+    assert result.rebooked == 2 and result.rule is not None
+    enabled = world.query(
+        lambda c: (
+            c.execute(select(rule_table.c.id).where(rule_table.c.enabled.is_(True))).scalars().all()
+        )
+    )
+    assert enabled == [result.rule.id]  # the old rule on the same name is switched off
+
+
+def test_a_waiting_or_already_matching_line_is_not_re_booked(world, private):
+    (same,) = _earlier(private, "hh_dining", n=1)
+    other = _earlier(private, "hh_leisure_travel", n=2)
+    waiting = private.line(date(2026, 10, 1), "-15.00", name=DELIVERY)  # no rows
+    refund = private.line(date(2026, 10, 2), "12.00", name=DELIVERY)
+    _answer_line(world, refund, "12.00", "hh_refund", learn=False)
+    now = private.line(date(2026, 11, 2), "-27.50", name=DELIVERY)
+    result = _answer_rebook(world, now, "-27.50", "hh_dining")
+    assert result.rebooked == 2
+    assert len(_all_rows(world, same)) == 1  # already dining: untouched
+    assert all(_rows(world, tx)[0].category == "hh_dining" for tx in other)
+    assert _rows(world, waiting) == []
+    assert [r.category for r in _rows(world, refund)] == ["hh_refund"]  # the other sign
+
+
+@pytest.mark.parametrize("blocker", ["split", "transfer"])
+def test_an_earlier_line_that_cannot_be_re_booked_refuses_all(world, private, blocker):
+    earlier = _earlier(private, "hh_leisure_travel", n=2)
+    odd = private.line(date(2026, 10, 3), "-40.00", name=DELIVERY)
+    if blocker == "split":
+        answer = AllocationSet(
+            transaction_id=odd,
+            method=AllocationMethod.USER,
+            confidence=Decimal("1.000"),
+            allocations=[
+                AllocationDraft(amount=Decimal("-25.00"), category="hh_dining"),
+                AllocationDraft(amount=Decimal("-15.00"), category="hh_groceries"),
+            ],
+        )
+        world.cmd(
+            review.allocate_transaction,
+            odd,
+            ConfirmAllocationsBody(allocation_set=answer, learn_rule=False),
+            iban_key=TEST_IBAN_KEY,
+        )
+    else:
+        _answer_line(world, odd, "-40.00", "internal_transfer_out", learn=False)
+    now = private.line(date(2026, 11, 2), "-27.50", name=DELIVERY)
+    with pytest.raises(RuleViolationError) as refused:
+        _answer_rebook(world, now, "-27.50", "hh_dining")
+    # A split is not among the checked lines (one category each), a transfer is a second one.
+    expected = "rule.conflicts" if blocker == "split" else "rule.too_broad"
+    assert refused.value.code == expected
+    for tx in earlier:
+        assert [r.category for r in _all_rows(world, tx)] == ["hh_leisure_travel"]
+    assert _rows(world, now) == []
+    assert world.query(lambda c: c.execute(select(rule_table)).all()) == []
+
+
+def test_too_broad_is_re_booked_with_the_flag(world, private):
+    _earlier(private, "hh_leisure_travel", n=2)
+    other = private.line(date(2026, 10, 3), "-40.00", name=DELIVERY)
+    _answer_line(world, other, "-40.00", "hh_groceries", learn=False)
+    now = private.line(date(2026, 11, 2), "-27.50", name=DELIVERY)
+    with pytest.raises(RuleViolationError) as refused:
+        _answer_rebook(world, now, "-27.50", "hh_dining", rebook=False)
+    assert refused.value.code == "rule.too_broad"
+    result = _answer_rebook(world, now, "-27.50", "hh_dining")
+    assert result.rebooked == 3 and result.rule is not None
+
+
+def test_the_flag_changes_nothing_without_a_refusal_or_a_rule(world, private):
+    earlier = _earlier(private, "hh_leisure_travel", n=2)
+    now = private.line(date(2026, 11, 2), "-27.50", name=DELIVERY)
+    result = _answer_rebook(world, now, "-27.50", "hh_dining", learn=False)
+    assert result.rebooked == 0 and result.rule is None
+    for tx in earlier:
+        assert len(_all_rows(world, tx)) == 1
+    fresh = private.line(date(2026, 11, 3), "-9.00", name="Kiosk Beispiel")
+    result = _answer_rebook(world, fresh, "-9.00", "hh_dining")
+    assert result.rebooked == 0 and result.rule is not None
+
+
+def test_on_a_shared_iban_the_payees_lines_are_re_booked(world, private):
+    lines = _shared_world(private)
+    _answer_line(world, lines[GROCER], "-61.15", "hh_groceries", learn=False)
+    earlier = _earlier(private, "hh_leisure_travel", n=2, iban=CLEARING_IBAN)
+    now = private.line(date(2026, 11, 2), "-27.50", name=DELIVERY, iban=CLEARING_IBAN)
+    assert [(h.category, h.count) for h in _view(world, now).name_history] == [
+        ("hh_leisure_travel", 2)
+    ]
+    result = _answer_rebook(world, now, "-27.50", "hh_dining")
+    assert result.rebooked == 2
+    assert result.rule is not None
+    assert result.rule.matcher.counterparty_iban_hmac is not None
+    assert result.rule.matcher.counterparty_name_pattern == "^LIEFERDIENST BEISPIEL"
+    assert all(_rows(world, tx)[0].category == "hh_dining" for tx in earlier)
+    assert [r.category for r in _rows(world, lines[GROCER])] == ["hh_groceries"]
+
+
+def test_a_single_payee_iban_shows_no_name_history(world, private):
+    first = private.line(date(2026, 9, 3), "-29.99", name="Fitness Beispiel", iban=SINGLE_IBAN)
+    _answer_line(world, first, "-29.99", "hh_sport", learn=False)
+    now = private.line(date(2026, 10, 3), "-29.99", name="Fitness Beispiel", iban=SINGLE_IBAN)
+    assert _view(world, now).name_history == []  # the rule is on the IBAN, not the name

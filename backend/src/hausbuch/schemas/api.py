@@ -475,19 +475,31 @@ class ConfirmAllocationsBody(Schema):
     same_amount_only (D49): the answer to "Gehören die auch zu …?" when other amounts from
     the same IBAN are waiting: true = the rule books only payments of this line's amount (the
     latest confirmed one of its category, read from the ledger); ignored without learn_rule
-    and for a rule whose split method checks the amount itself."""
+    and for a rule whose split method checks the amount itself.
+    rebook_earlier (phase 6 D160, 14 Nov 2026): with learn_rule, when the name rule is refused
+    only for the name's other confirmed lines (rule.conflicts, rule.too_broad), those lines
+    are re-booked to this answer's category first, then the rule is learned; refused as
+    before when one of them is not a single confirmed row of a learnable household code."""
 
     allocation_set: AllocationSet
     learn_rule: bool | None = None
     counterparty_name_pattern: str | None = Field(default=None, max_length=200)
     purpose_pattern: str | None = Field(default=None, max_length=200)
     same_amount_only: bool = False
+    rebook_earlier: bool = False
 
 
 class WaitingAmount(Schema):
     """An amount other lines from the same IBAN and sign are waiting with, and how many."""
 
     amount: Money
+    count: int = Field(ge=1)
+
+
+class NameCategoryCount(Schema):
+    """How many earlier lines of the payee are confirmed under one category (phase 6 D160)."""
+
+    category: AllocationCategory
     count: int = Field(ge=1)
 
 
@@ -511,7 +523,11 @@ class TransactionAllocations(Schema):
     private account: the transfer, depot and tax-relevant codes and those without a
     threshold; empty on the rental account), in taxonomy order, so the UI greys the box and
     says why instead of letting rule.not_learnable refuse the answer.
-    rule: the rule this PUT created, if any."""
+    rule: the rule this PUT created, if any.
+    name_history (phase 6 D160): for a private line whose rule would be on its name (no
+    IBAN, or a shared one), the payee's other confirmed lines of the same sign by category,
+    most frequent first: what rebook_earlier would re-book. rebooked: how many earlier lines
+    this PUT re-booked."""
 
     transaction: Transaction
     allocations: list[Allocation]
@@ -521,6 +537,8 @@ class TransactionAllocations(Schema):
     waiting_other_amounts: list[WaitingAmount] = Field(default_factory=list)
     unlearnable_categories: list[AllocationCategory] = Field(default_factory=list)
     rule: MatchingRule | None = None
+    name_history: list[NameCategoryCount] = Field(default_factory=list)
+    rebooked: int = 0
 
 
 class InboxItemKind(StrEnum):

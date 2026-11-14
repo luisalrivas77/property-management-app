@@ -4618,6 +4618,10 @@ export interface components {
          *     the same IBAN are waiting: true = the rule books only payments of this line's amount (the
          *     latest confirmed one of its category, read from the ledger); ignored without learn_rule
          *     and for a rule whose split method checks the amount itself.
+         *     rebook_earlier (phase 6 D160, 14 Nov 2026): with learn_rule, when the name rule is refused
+         *     only for the name's other confirmed lines (rule.conflicts, rule.too_broad), those lines
+         *     are re-booked to this answer's category first, then the rule is learned; refused as
+         *     before when one of them is not a single confirmed row of a learnable household code.
          */
         ConfirmAllocationsBody: {
             allocation_set: components["schemas"]["AllocationSet"];
@@ -4632,6 +4636,11 @@ export interface components {
              * @default false
              */
             same_amount_only: boolean;
+            /**
+             * Rebook Earlier
+             * @default false
+             */
+            rebook_earlier: boolean;
         };
         /**
          * ConfirmCategoryBody
@@ -7422,6 +7431,15 @@ export interface components {
          * @enum {string}
          */
         MovementStatus: "proposed" | "confirmed";
+        /**
+         * NameCategoryCount
+         * @description How many earlier lines of the payee are confirmed under one category (phase 6 D160).
+         */
+        NameCategoryCount: {
+            category: components["schemas"]["AllocationCategory"];
+            /** Count */
+            count: number;
+        };
         /** NotarizedOnCorrection */
         NotarizedOnCorrection: {
             /**
@@ -10573,6 +10591,10 @@ export interface components {
          *     threshold; empty on the rental account), in taxonomy order, so the UI greys the box and
          *     says why instead of letting rule.not_learnable refuse the answer.
          *     rule: the rule this PUT created, if any.
+         *     name_history (phase 6 D160): for a private line whose rule would be on its name (no
+         *     IBAN, or a shared one), the payee's other confirmed lines of the same sign by category,
+         *     most frequent first: what rebook_earlier would re-book. rebooked: how many earlier lines
+         *     this PUT re-booked.
          */
         TransactionAllocations: {
             transaction: components["schemas"]["Transaction"];
@@ -10589,6 +10611,13 @@ export interface components {
             /** Unlearnable Categories */
             unlearnable_categories?: components["schemas"]["AllocationCategory"][];
             rule?: components["schemas"]["MatchingRule"] | null;
+            /** Name History */
+            name_history?: components["schemas"]["NameCategoryCount"][];
+            /**
+             * Rebooked
+             * @default 0
+             */
+            rebooked: number;
         };
         /**
          * TransferLegSource
