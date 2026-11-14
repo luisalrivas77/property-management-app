@@ -60,22 +60,28 @@ function Inbox() {
   // whole page (every account's lines and imports) is reloaded only when the list changed,
   // and the checks stop at the first one that finds no change after one that did: the
   // re-check has finished. A check that finds no change before any change keeps going, since
-  // the job may start late.
+  // the job may start late. A check is skipped while the page's own load runs (the one after
+  // the save, or one a check started), so the change the save itself made is never taken for
+  // the re-check's and `shown` is the list the page shows.
   const reload = inbox.reload;
   const shown = useRef("");
+  const loading = useRef(true);
   useEffect(() => {
     if (items) shown.current = listKey(items);
   }, [items]);
+  useEffect(() => {
+    loading.current = inbox.loading;
+  }, [inbox.loading]);
   useEffect(() => {
     if (!saved?.rule) return;
     let cancelled = false;
     let changed = false;
     let done = false;
     async function check() {
-      if (cancelled || done) return;
+      if (cancelled || done || loading.current) return;
       try {
         const fresh = await ok(api.GET("/api/inbox"));
-        if (cancelled) return;
+        if (cancelled || loading.current) return;
         if (listKey(fresh) !== shown.current) {
           changed = true;
           shown.current = listKey(fresh);
