@@ -132,7 +132,15 @@ same:
     b: {name: "4029357733 PAYPAL *DISNEYPLUS 35314369001 LU"}
     same: true
 
+  - id: two_hotels_charged_by_booking  # Luis 14 Nov 2026: one company, Booking.com
+    a: {name: "Hotel at Booking.com Kanaalstraat 12"}
+    b: {name: "Hotel at Booking.com Parkweg 7"}
+    same: true
 different:
+  - id: two_restaurants_at_the
+    a: {name: "RESTAURANT AT THE PARK"}
+    b: {name: "RESTAURANT AT THE STATION"}
+    same: false
   - id: two_german_companies
     a: {name: "DEUTSCHE POST"}
     b: {name: "DEUTSCHE BAHN"}

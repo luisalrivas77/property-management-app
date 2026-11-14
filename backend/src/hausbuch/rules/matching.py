@@ -1520,7 +1520,10 @@ def _same_words(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
     """One payee (D160 amended (4)), both ways: either name's words start the other's ("EPRIMO
     GMBH" and "EPRIMO GMBH FLUGHAFENSTRASE"; one generic word alone, "HOTEL", is no payee), or
     the first two words are the same ("NETTO MARKEN DISCOUNT …", "BURGER KING …"; not with a
-    linking second word, "HOTEL AT …", nor fewer than FIRST_WORD_MIN letters, "G A …"), or the
+    linking second word, "HOTEL AT …", nor fewer than FIRST_WORD_MIN letters, "G A …"), or,
+    after a linking second word, the first three words are, the third not linking and of
+    FIRST_WORD_MIN letters or more ("HOTEL AT BOOKING …": every hotel Booking.com charges for
+    is one payee, Luis 14 Nov 2026; not "RESTAURANT AT THE …"), or the
     first word is, when it is not generic and has FIRST_WORD_MIN letters or more
     ("VOLKSWAGEN AUTOVERSICHERUNG AG" and "VOLKSWAGEN AUTOVERS AG"). Never for no payee."""
     if not a or not b:
@@ -1535,6 +1538,14 @@ def _same_words(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
         and len(a[0]) + len(a[1]) >= FIRST_WORD_MIN
     ):
         return True
+    if (
+        len(short) >= 3
+        and a[:3] == b[:3]
+        and a[1] in _LINKING_WORDS
+        and a[2] not in _LINKING_WORDS
+        and len(a[2]) >= FIRST_WORD_MIN
+    ):
+        return True  # "HOTEL AT BOOKING …": the collector named after the linking word (Luis)
     return a[0] == b[0] and len(a[0]) >= FIRST_WORD_MIN and a[0] not in GENERIC_FIRST_WORDS
 
 
