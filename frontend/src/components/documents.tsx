@@ -152,6 +152,32 @@ export async function uploadDocument(
   };
 }
 
+/** Every upload box takes any document (Luis, 14 Nov 2026: "I don't want to need to go somewhere
+ * else to upload something if there's already an upload button"): a file the box's own reader
+ * does not know is stored as an ordinary document and read by the AI, as „Dokumente hochladen“
+ * does. The classifier's tenant gate applies as for any upload. */
+export function storeAsDocument(file: File): Promise<Uploaded> {
+  return uploadDocument(file, { autoRead: true, containsTenantData: false });
+}
+
+/** The notice after storeAsDocument: where the document went and that the AI reads it. */
+export function StoredAsDocument({ result, what }: { result: Uploaded; what: string }) {
+  const name = result.document.original_filename ?? documentLabel(result.document);
+  return (
+    <div className="notice notice-info" role="status">
+      <p>
+        {name}: {what}{" "}
+        {result.existed
+          ? "Die Datei liegt schon unter Dokumente."
+          : result.aiUnavailable
+            ? "Sie ist unter Dokumente gespeichert."
+            : "Sie ist unter Dokumente gespeichert, und die KI liest sie gerade und schlägt dort vor, was daraus übernommen wird."}{" "}
+        <Link href={`/documents/${result.document.id}`}>Dokument öffnen</Link>
+      </p>
+    </div>
+  );
+}
+
 /** What a person recognises a document by: its title, file name, or hash prefix. */
 export function documentLabel(document: Document): string {
   return (
