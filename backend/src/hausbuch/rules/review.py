@@ -127,6 +127,8 @@ THRESHOLDS = MappingProxyType(
         C.HH_TRAVEL: _RECURRING,
         C.HH_INVESTMENT: None,
         C.HH_REFUND: None,
+        # D159 amended 14 Nov 2026 (migration 0031): fuel at 0.9 like hh_mobility.
+        C.HH_FUEL: _RECURRING,
         # D162: only the transfer matcher books a transfer, never a model or a threshold.
         C.INTERNAL_TRANSFER_IN: None,
         C.INTERNAL_TRANSFER_OUT: None,

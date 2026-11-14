@@ -37,6 +37,7 @@ def test_the_plain_household_income_and_spending_codes():
         "hh_sport",
         "hh_travel",
         "hh_refund",
+        "hh_fuel",
     }
 
 

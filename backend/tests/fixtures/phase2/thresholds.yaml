@@ -94,6 +94,7 @@ thresholds:
   - {category: hh_travel, threshold: "0.900"}
   - {category: hh_investment, threshold: null}
   - {category: hh_refund, threshold: null}
+  - {category: hh_fuel, threshold: "0.900"}  # D159 amended 14 Nov 2026 (0031), as hh_mobility
   - {category: security_purchase, threshold: null}
   - {category: security_sale, threshold: null}
   - {category: distribution, threshold: null}

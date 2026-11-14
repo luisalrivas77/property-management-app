@@ -106,6 +106,7 @@ per_category:
   - {category: hh_travel, decision: auto_confirm}
   - {category: hh_investment, decision: review}
   - {category: hh_refund, decision: review}
+  - {category: hh_fuel, decision: auto_confirm}  # D159 amended 14 Nov 2026 (migration 0031)
   - {category: security_purchase, decision: review}
   - {category: security_sale, decision: review}
   - {category: distribution, decision: review}

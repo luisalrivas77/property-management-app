@@ -121,6 +121,7 @@ CATEGORY_LINES = {
     C.HH_TRAVEL: None,
     C.HH_INVESTMENT: None,
     C.HH_REFUND: None,
+    C.HH_FUEL: None,
     C.SECURITY_PURCHASE: None,
     C.SECURITY_SALE: None,
     C.DISTRIBUTION: None,

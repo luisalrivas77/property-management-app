@@ -77,6 +77,8 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_SPORT, G.SPORT, R.SPENDING),
             _code(C.HH_TRAVEL, G.TRAVEL, R.SPENDING),
             _code(C.HH_REFUND, G.REFUND, R.SPENDING),  # a negative amount among spending
+            # D159 amended 14 Nov 2026 (migration 0031): fuel, inside the Mobilität group
+            _code(C.HH_FUEL, G.MOBILITY, R.SPENDING),
             _code(C.HH_INVESTMENT, G.INVESTMENT, R.TRANSFER),  # saved, not spent
             # Tax-relevant spending: each proposes the input its form already reads
             _code(C.HH_DONATION, G.TAX, R.TAX, P.RETURN_SPECIAL_EXPENSE),
