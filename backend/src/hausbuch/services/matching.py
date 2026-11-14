@@ -1813,6 +1813,38 @@ def rematch_recorded_bills(ctx: CommandContext) -> RecordedBillsRematch:
     return RecordedBillsRematch(bills=len(bills), waiting=len(waiting))
 
 
+@dataclass(frozen=True)
+class PrivateLinesRematch:
+    accounts: int  # private accounts, a rematch_waiting job each
+    waiting: int  # their lines still waiting for an answer
+
+
+def rematch_private_lines(ctx: CommandContext) -> PrivateLinesRematch:
+    """One-off after the deploy of D160 amended (4) (14 Nov 2026), run by the operator
+    (`hausbuch rematch-waiting`): queue rematch_waiting for every private account, so its
+    lines already waiting in Zu prüfen are checked once more against the learned rules and
+    the matchers, which now read a payee's other spellings and a payment service's merchant.
+    The job runs the deterministic order only, never the model, and never replaces a
+    confirmed row (Line.open_for); a line no rule or matcher answers keeps what it has."""
+    accounts = list(
+        ctx.conn.execute(
+            select(account_table.c.id)
+            .where(account_table.c.purpose == AccountPurpose.PRIVATE.value)
+            .order_by(account_table.c.id)
+        ).scalars()
+    )
+    waiting = 0
+    for account_id in accounts:
+        waiting += len(waiting_lines(ctx.conn, enqueue.TRIGGER_PRIVATE_LINES, account_id))
+        enqueue.enqueue_rematch_waiting(
+            ctx.conn,
+            workspace_id=ctx.workspace_id,
+            kind=enqueue.TRIGGER_PRIVATE_LINES,
+            entity_id=account_id,
+        )
+    return PrivateLinesRematch(accounts=len(accounts), waiting=waiting)
+
+
 # --- Which waiting lines a change may book -------------------------------------------------
 
 
@@ -1828,7 +1860,9 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
       name; a debit is cheap to re-match);
     - tenant: credits from the tenant's IBAN hash (rent); none without one;
     - tenancy: credits from any of its tenants' IBAN hashes (new parties or rent rows);
-    - account: lines from an owner account's IBAN hash; none for an account that is not one.
+    - account: lines from an owner account's IBAN hash; none for an account that is not one;
+    - private_lines: every waiting line of one private account (`hausbuch rematch-waiting`,
+      D160 amended (4)); none for a rental account.
     Whether a rule or matcher then fits, and the open-duplicate check, are match_line's."""
     t = transaction_table.c
     a = allocation_table.c
@@ -1896,6 +1930,16 @@ def waiting_lines(conn: Connection, kind: str, entity_id: UUID) -> list[UUID]:
         if owner is None:
             return []
         query = query.where(t.counterparty_iban_hmac == owner)
+    elif kind == enqueue.TRIGGER_PRIVATE_LINES:
+        private = conn.execute(
+            select(account_table.c.id).where(
+                account_table.c.id == entity_id,
+                account_table.c.purpose == AccountPurpose.PRIVATE.value,
+            )
+        ).one_or_none()
+        if private is None:
+            return []
+        query = query.where(t.account_id == entity_id)
     else:
         return []
     rows = conn.execute(query.order_by(t.booking_date, t.id)).all()
