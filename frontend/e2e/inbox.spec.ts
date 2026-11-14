@@ -42,6 +42,20 @@ test("an unmatched line is split by hand into two rows; Bestätigen waits until 
   const navEntry = page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" });
   await expect(navEntry).toHaveAccessibleName(/22 offen/);
   await expect(page.getByRole("heading", { name: /^Zahlungen zuordnen/ })).toContainText("22");
+  // „Empfänger suchen“ narrows the lines by payee, booking text or purpose, case ignored, and
+  // says so; clearing it shows them all again.
+  const search = page.getByLabel("Empfänger suchen");
+  await search.fill("verwendungszweck 22");
+  await expect(queue.getByRole("button")).toHaveCount(1);
+  await expect(page.getByText("1 von 22", { exact: true })).toBeVisible();
+  await search.fill("Partei D");
+  await expect(queue.getByRole("button")).toHaveCount(1);
+  await expect(queue.getByRole("button")).toContainText("Partei D");
+  await search.fill("Niemand Beispiel");
+  await expect(page.getByText("Keine Zahlung passt zu „Niemand Beispiel“.")).toBeVisible();
+  await expect(queue).toHaveCount(0);
+  await search.fill("");
+  await expect(queue.getByRole("button")).toHaveCount(22);
   // D50: unmatched lines can be sent to the model again; this API runs with the AI layer off,
   // so the request is refused with that reason.
   const queueCard = page.getByRole("region", { name: "Zu erledigen" });

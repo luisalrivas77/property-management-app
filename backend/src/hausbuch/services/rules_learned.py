@@ -32,7 +32,7 @@ a pattern (D32).
 """
 
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Any
 from uuid import UUID
 
@@ -295,12 +295,13 @@ def learn_default(rule: MatchingRuleCreate | None, confirmed: AllocationSet) -> 
 
 
 def create_rule(
-    ctx: CommandContext, data: MatchingRuleCreate, *, corrects: UUID | None = None
+    ctx: CommandContext, data: MatchingRuleCreate, *, corrects: Collection[UUID] = ()
 ) -> MatchingRule:
     """Store the rule, append rule.created and queue rematch_waiting for the waiting lines it
     may now book. Disabled first: an enabled rule with the same matcher and the same split
-    method and category, and `corrects` (the rule whose booking this answer replaced with
-    another split, review.allocate_transaction) when it has the same matcher (D49). A
+    method and category, and `corrects` (the rules whose bookings this answer replaced with
+    another split, review.allocate_transaction: the line's own, and those of the earlier
+    lines it re-booked with rebook_earlier) when one has the same matcher (D49). A
     shared-code rule learned on an account of the other purpose stays (rules_for_purpose):
     the rental and a private account may each learn their fees on „Entgelt“."""
     matcher = data.matcher.model_dump(mode="json", exclude_none=True)
@@ -311,7 +312,7 @@ def create_rule(
         same_matcher = old.matcher.model_dump(mode="json", exclude_none=True) == matcher
         if not same_matcher:
             continue
-        if old.id == corrects or (
+        if old.id in corrects or (
             _split(old) == _split(data) and not _other_purpose(old, old_origin, new_origin)
         ):
             disable_rule(ctx, old.id)

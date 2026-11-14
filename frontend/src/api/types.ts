@@ -4618,6 +4618,10 @@ export interface components {
          *     the same IBAN are waiting: true = the rule books only payments of this line's amount (the
          *     latest confirmed one of its category, read from the ledger); ignored without learn_rule
          *     and for a rule whose split method checks the amount itself.
+         *     rebook_earlier (phase 6 D160, 14 Nov 2026): with learn_rule, when the name rule is refused
+         *     only for the name's other confirmed lines (rule.conflicts, rule.too_broad), those lines
+         *     are re-booked to this answer's category first, then the rule is learned; refused as
+         *     before when one of them is not a single confirmed row of a learnable household code.
          */
         ConfirmAllocationsBody: {
             allocation_set: components["schemas"]["AllocationSet"];
@@ -4632,6 +4636,11 @@ export interface components {
              * @default false
              */
             same_amount_only: boolean;
+            /**
+             * Rebook Earlier
+             * @default false
+             */
+            rebook_earlier: boolean;
         };
         /**
          * ConfirmCategoryBody
@@ -7422,6 +7431,15 @@ export interface components {
          * @enum {string}
          */
         MovementStatus: "proposed" | "confirmed";
+        /**
+         * NameCategoryCount
+         * @description How many earlier lines of the payee are confirmed under one category (phase 6 D160).
+         */
+        NameCategoryCount: {
+            category: components["schemas"]["AllocationCategory"];
+            /** Count */
+            count: number;
+        };
         /** NotarizedOnCorrection */
         NotarizedOnCorrection: {
             /**
@@ -8721,6 +8739,39 @@ export interface components {
          * @enum {string}
          */
         RateBasis: "monthly_payment" | "yearly_premium" | "schedule" | "twelve_months" | "none";
+        /**
+         * RebookBlockReason
+         * @description Why an earlier line of the payee cannot be re-booked by „Diese auch auf … umbuchen“
+         *     (phase 6 D160, 14 Nov 2026), in the order the server checks: not_open (excluded, waiting
+         *     for a duplicate decision, or its import not reconciled), split (more than one row),
+         *     scoped (a property, unit, tenancy or loan), document (a Beleg), category (a code no rule
+         *     is learned for), linked (a leg of a transfer link or a depot movement).
+         * @enum {string}
+         */
+        RebookBlockReason: "not_open" | "split" | "scoped" | "document" | "category" | "linked";
+        /**
+         * RebookBlocker
+         * @description An earlier confirmed line of the payee that „Diese auch auf … umbuchen“ would refuse
+         *     to re-book (phase 6 D160): it must be changed by hand first. category: its one row's
+         *     category, or None for a split; a line already in the chosen category is not re-booked,
+         *     so it blocks nothing for that answer.
+         */
+        RebookBlocker: {
+            /**
+             * Transaction Id
+             * Format: uuid
+             */
+            transaction_id: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Amount */
+            amount: string;
+            reason: components["schemas"]["RebookBlockReason"];
+            category?: components["schemas"]["AllocationCategory"] | null;
+        };
         /**
          * ReducedRentCheck
          * @description §5.8 per Wohnung, monthly figures. market_warm = cold_rent_per_m2 × area + the year's
@@ -10573,6 +10624,12 @@ export interface components {
          *     threshold; empty on the rental account), in taxonomy order, so the UI greys the box and
          *     says why instead of letting rule.not_learnable refuse the answer.
          *     rule: the rule this PUT created, if any.
+         *     name_history (phase 6 D160): for a private line whose rule would be on its name (no
+         *     IBAN, or a shared one), the payee's other confirmed lines of the same sign by category,
+         *     most frequent first: what rebook_earlier would re-book. rebook_blockers: with a
+         *     name_history, the payee's earlier confirmed lines rebook_earlier would refuse to re-book
+         *     (rule.rebook_blocked), oldest first, so the panel names them instead of offering it.
+         *     rebooked: how many earlier lines this PUT re-booked.
          */
         TransactionAllocations: {
             transaction: components["schemas"]["Transaction"];
@@ -10589,6 +10646,15 @@ export interface components {
             /** Unlearnable Categories */
             unlearnable_categories?: components["schemas"]["AllocationCategory"][];
             rule?: components["schemas"]["MatchingRule"] | null;
+            /** Name History */
+            name_history?: components["schemas"]["NameCategoryCount"][];
+            /** Rebook Blockers */
+            rebook_blockers?: components["schemas"]["RebookBlocker"][];
+            /**
+             * Rebooked
+             * @default 0
+             */
+            rebooked: number;
         };
         /**
          * TransferLegSource

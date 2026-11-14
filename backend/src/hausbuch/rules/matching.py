@@ -1030,6 +1030,24 @@ def learnable_household(category: AllocationCategory) -> bool:
     )
 
 
+def name_hits(tx: MatchTransaction, names: Sequence[NameHistory]) -> list[NameHistory]:
+    """The confirmed lines a name rule learned from `tx` would hit, as _name_rule checks them:
+    the pattern merchant_pattern(tx's name) holds on the name, the amount has tx's sign (a
+    refund of the same merchant never counts against a debit rule, nor a purchase against a
+    refund rule), not tx itself. Empty when the name gives no pattern or tx is 0."""
+    pattern = merchant_pattern(tx.counterparty_name or "")
+    if pattern == "^" or tx.amount == 0:
+        return []
+    credit = tx.amount > 0
+    return [
+        h
+        for h in names
+        if h.transaction_id != tx.id
+        and (h.amount is None or (h.amount != 0 and (h.amount > 0) == credit))
+        and _name_found(pattern, h.counterparty_name)
+    ]
+
+
 def _name_rule(
     tx: MatchTransaction,
     confirmed: AllocationSet,
@@ -1041,7 +1059,8 @@ def _name_rule(
     a line without an IBAN becomes a rule on the merchant's name. Not for a split. Refused when
     the account's confirmed lines the pattern hits carry two or more categories (rule.too_broad:
     the name does not tell the kind, so the card asks for a purpose pattern) or one category
-    other than the answer's (rule.conflicts); too_broad is checked first. D160 amended: with
+    other than the answer's (rule.conflicts); too_broad is checked first. Only lines of the
+    rule's amount sign count (name_hits). D160 amended: with
     `iban_hmac` (a shared IBAN) the rule matches the IBAN and the name, both; the checks run
     on the name over every private line, as without it (stricter than the IBAN's lines)."""
     if len(confirmed.allocations) != 1:
@@ -1052,11 +1071,7 @@ def _name_rule(
     pattern = merchant_pattern(tx.counterparty_name or "")
     if pattern == "^":
         return None  # no name (or digits and dots only): nothing to match on
-    hits = {
-        h.category
-        for h in names
-        if h.transaction_id != tx.id and _name_found(pattern, h.counterparty_name)
-    }
+    hits = {h.category for h in name_hits(tx, names)}
     if len(hits) >= 2:
         raise RuleError(RULE_TOO_BROAD, "the name was confirmed under two categories")
     if hits and hits != {only.category}:

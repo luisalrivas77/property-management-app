@@ -35,6 +35,17 @@
 //   …" one with same_amount_only. Nothing is preselected and Bestätigen stays disabled until
 //   one is chosen; the answer holds for the category it was given for, so changing the
 //   category asks again. Without that list there is no question and same_amount_only is false.
+// - Phase 6 D160 (14 Nov 2026): a private line's rule on the payee's name is refused while the
+//   payee's earlier lines are confirmed under another category (rule.conflicts). With the box
+//   ticked for one row, the panel names those lines from name_history („3 frühere Zahlungen
+//   von … sind als … bestätigt.“) and offers „Diese auch auf <Kategorie> umbuchen“, which sends
+//   rebook_earlier: the server re-books them to the chosen category, then learns the rule, and
+//   says how many it re-booked. Offered only when none of those categories is one no rule is
+//   learned for (a transfer, a card bill, a tax-relevant code): the server would refuse.
+//   Nor when an earlier line of the payee cannot be re-booked (rebook_blockers: a split, a
+//   Beleg, a property or loan, a transfer or depot link, an open import or duplicate): the
+//   panel then names that line by date and amount, says why and what to do, and links to it
+//   (/inbox?umsatz=…), so it is changed by hand first; rule.rebook_blocked is the backstop.
 // - Phase 3 (§11 "Inputs"): under a confirmed line, its repairs and renovation rows get their
 //   tax questions (components/taxInputs.tsx), in their own form beside this one.
 import Link from "next/link";
@@ -61,6 +72,24 @@ export type AllocationCategory = Schemas["AllocationCategory"];
 export type AllocationDraft = Schemas["AllocationDraft"];
 export type TransactionAllocations = Schemas["TransactionAllocations"];
 export type ConfirmAllocationsBody = Schemas["ConfirmAllocationsBody"];
+type RebookBlocker = Schemas["RebookBlocker"];
+type RebookBlockReason = Schemas["RebookBlockReason"];
+
+/** Why an earlier payment cannot be re-booked by „Diese auch auf … umbuchen“, and what to do
+ * first (phase 6 D160, rebook_blockers). */
+const REBOOK_BLOCK_TEXT: Record<RebookBlockReason, string> = {
+  not_open:
+    "ihr Kontoauszug ist nicht abgestimmt, oder sie wartet auf die Entscheidung über eine mögliche Doppelbuchung. Erst das unter Zu prüfen erledigen.",
+  split: "sie ist auf mehrere Kategorien aufgeteilt. Sie bitte öffnen und von Hand zuordnen.",
+  scoped: "sie ist einer Immobilie, einem Mietverhältnis oder einem Darlehen zugeordnet. Sie bitte öffnen und von Hand ändern.",
+  document: "an ihr hängt ein Beleg. Sie bitte öffnen und von Hand ändern.",
+  category: "ihre Kategorie bucht Hausbuch nicht automatisch um. Sie bitte öffnen und von Hand ändern.",
+  linked:
+    "sie ist als Überweisung zwischen eigenen Konten oder als Depotbewegung verknüpft. Sie bitte öffnen und prüfen, ob sie wirklich zu diesem Empfänger gehört.",
+};
+
+/** At most this many blocking payments are named one by one. */
+const REBOOK_BLOCKERS_SHOWN = 5;
 
 // --- money in cents ------------------------------------------------------------------------
 
@@ -289,11 +318,14 @@ function AllocationEditor({
   const [pattern, setPattern] = useState("");
   // D49: the answer to "Gehören die auch zu …?", for the category it was given for.
   const [sameAmount, setSameAmount] = useState<{ category: AllocationCategory; only: boolean } | null>(null);
+  // D160: „Diese auch auf … umbuchen“, off until ticked.
+  const [rebook, setRebook] = useState(false);
   const [busy, setBusy] = useState(false);
   const learnId = useId();
   const patternId = useId();
   const allId = useId();
   const onlyId = useId();
+  const rebookId = useId();
 
   const keys = useMemo(
     () => [
@@ -304,7 +336,11 @@ function AllocationEditor({
     [rows],
   );
   const ruleField = view.can_learn_rule ? "learn_rule" : "purpose_pattern";
-  const form = useFormErrors(keys, { "rule.invalid_pattern": "purpose_pattern", "rule.not_learnable": ruleField });
+  const form = useFormErrors(keys, {
+    "rule.invalid_pattern": "purpose_pattern",
+    "rule.not_learnable": ruleField,
+    "rule.rebook_blocked": ruleField,
+  });
 
   const rest = restOf(line.amount, rows);
   const balanced = rest === 0n;
@@ -327,6 +363,18 @@ function AllocationEditor({
   const asked = view.can_learn_rule && learn && others.length > 0 && askedCategory !== "" ? askedCategory : null;
   const sameAmountOnly = asked !== null && sameAmount !== null && sameAmount.category === asked ? sameAmount.only : null;
   const unanswered = asked !== null && sameAmountOnly === null;
+
+  // D160: the payee's earlier lines confirmed under another category than the one chosen now.
+  const earlier =
+    view.can_learn_rule && learn && askedCategory !== ""
+      ? (view.name_history ?? []).filter((entry) => entry.category !== askedCategory)
+      : [];
+  // An earlier line the re-book would refuse; one already in the chosen category is skipped.
+  const blockers: RebookBlocker[] =
+    earlier.length > 0 ? (view.rebook_blockers ?? []).filter((blocker) => blocker.category !== askedCategory) : [];
+  const canRebook =
+    earlier.length > 0 && blockers.length === 0 && earlier.every((entry) => !unlearnable.has(entry.category));
+  const payee = line.counterparty_name?.trim() || "dieser Gegenseite";
 
   function update(key: number, patch: Partial<Row>) {
     setRowsEdited(true);
@@ -377,6 +425,7 @@ function AllocationEditor({
       learn_rule: view.can_learn_rule ? learn : typed !== "" && blocked === null,
       purpose_pattern: view.can_learn_rule || typed === "" || blocked !== null ? null : typed,
       same_amount_only: asked !== null && sameAmountOnly === true,
+      rebook_earlier: canRebook && rebook,
     };
     setBusy(true);
     form.clear();
@@ -475,6 +524,32 @@ function AllocationEditor({
             {blocked !== null ? unlearnableReason(blocked) : "Weitere Buchungen dieser Gegenseite werden dann ohne Rückfrage so zugeordnet."}
           </p>
           <FieldErrors messages={form.of("learn_rule")} />
+          {earlier.length > 0 && askedCategory !== "" ? (
+            <div className="allocation-rebook stack">
+              {earlier.map((entry) => (
+                <p key={entry.category} className="muted">
+                  {entry.count === 1
+                    ? `1 frühere Zahlung von ${payee} ist als ${ALLOCATION_CATEGORY[entry.category]} bestätigt.`
+                    : `${entry.count} frühere Zahlungen von ${payee} sind als ${ALLOCATION_CATEGORY[entry.category]} bestätigt.`}
+                </p>
+              ))}
+              {blockers.length > 0 ? (
+                <RebookBlocked blockers={blockers} payee={payee} />
+              ) : null}
+              {canRebook ? (
+                <>
+                  <label className="inline" htmlFor={rebookId}>
+                    <input id={rebookId} type="checkbox" checked={rebook} onChange={(e) => setRebook(e.target.checked)} />
+                    Diese auch auf {ALLOCATION_CATEGORY[askedCategory]} umbuchen
+                  </label>
+                  <p className="muted hint">
+                    Ohne Umbuchen lernt Hausbuch keine Regel, denn sie würde diesen früheren Zahlungen widersprechen. Jede
+                    umgebuchte Zahlung lässt sich danach einzeln ändern; die bisherige Zuordnung bleibt im Verlauf.
+                  </p>
+                </>
+              ) : null}
+            </div>
+          ) : null}
           {asked !== null ? (
             <fieldset className="allocation-same-amount">
               <legend>
@@ -770,5 +845,31 @@ function RowFields({
         </button>
       </div>
     </fieldset>
+  );
+}
+
+/** D160: the payee's earlier payments „Diese auch auf … umbuchen“ cannot re-book, each with
+ * its date, amount, why, and a link to open it; the box is not offered until they are changed. */
+function RebookBlocked({ blockers, payee }: { blockers: RebookBlocker[]; payee: string }) {
+  const shown = blockers.slice(0, REBOOK_BLOCKERS_SHOWN);
+  const more = blockers.length - shown.length;
+  return (
+    <div className="stack">
+      <p>
+        {blockers.length === 1
+          ? `Eine frühere Zahlung von ${payee} lässt sich nicht automatisch umbuchen. Sie muss zuerst von Hand geändert werden; danach lassen sich die übrigen hier umbuchen und die Regel lernen.`
+          : `${blockers.length} frühere Zahlungen von ${payee} lassen sich nicht automatisch umbuchen. Sie müssen zuerst von Hand geändert werden; danach lassen sich die übrigen hier umbuchen und die Regel lernen.`}{" "}
+        Oder diese Zahlung ohne „Künftig immer so zuordnen“ bestätigen.
+      </p>
+      <ul>
+        {shown.map((blocker) => (
+          <li key={blocker.transaction_id}>
+            Zahlung vom {formatDate(blocker.booking_date)} über {formatMoney(blocker.amount)}: {REBOOK_BLOCK_TEXT[blocker.reason]}{" "}
+            <Link href={`/inbox?umsatz=${blocker.transaction_id}`}>Zahlung öffnen</Link>
+          </li>
+        ))}
+      </ul>
+      {more > 0 ? <p className="muted">{more === 1 ? "Und 1 weitere." : `Und ${more} weitere.`}</p> : null}
+    </div>
   );
 }

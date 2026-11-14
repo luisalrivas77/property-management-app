@@ -129,6 +129,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Unter diesem Namen wurden schon Umsätze verschiedener Kategorien bestätigt (z. B. PayPal). Bitte stattdessen ein Muster aus dem Verwendungszweck angeben.",
   "rule.conflicts":
     "Eine Regel für diesen Namen würde Umsätze treffen, die anders bestätigt wurden. Ohne Regel bestätigen oder ein Muster aus dem Verwendungszweck angeben.",
+  // „Diese auch auf … umbuchen“ (phase-6.md D160, 14 Nov 2026); the panel names the line beforehand.
+  "rule.rebook_blocked":
+    "Nichts wurde umgebucht: eine frühere Zahlung dieses Empfängers lässt sich nicht automatisch umbuchen (sie ist aufgeteilt, hat einen Beleg, ist mit einer Immobilie, einer Überweisung oder dem Depot verknüpft, oder ihr Kontoauszug ist nicht abgestimmt). Bitte die Seite neu laden: die Zahlung wird dann hier genannt und lässt sich öffnen und von Hand ändern. Oder ohne „Künftig immer so zuordnen“ bestätigen.",
   "settings.consent_switch_off": "Erst „Private Konten mit KI zuordnen“ einschalten, dann zustimmen.",
   "settings.consent_already_recorded": "Ihre Zustimmung ist schon gespeichert.",
   // POST /inbox/ai-retry (D50); a proposal's ai.disabled has its own text in AI_ERROR_TEXT.

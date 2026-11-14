@@ -13,6 +13,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { AllocationPanel, type TransactionAllocations } from "@/components/allocations";
 import { documentLabel, UploadControl, type Uploaded } from "@/components/documents";
 import { inboxSummary, InboxList, isLineItem, loadInbox } from "@/components/inbox";
+import { ALLOCATION_CATEGORY } from "@/components/labels";
 import { Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { notifyInboxChanged } from "@/lib/inboxCount";
@@ -101,6 +102,7 @@ function Inbox() {
         {saved ? (
           <Notice>
             Zuordnung bestätigt.
+            {saved.rebooked > 0 ? ` ${rebookedText(saved)}` : null}
             {saved.rule
               ? " Regel gespeichert: künftige Buchungen dieser Art werden automatisch so zugeordnet. Wartende Zahlungen, auf die sie passt, werden jetzt neu geprüft."
               : null}
@@ -142,4 +144,13 @@ function Inbox() {
       </div>
     </section>
   );
+}
+
+/** „4 frühere Zahlungen auf Restaurant & Lieferdienst umgebucht.“ (phase 6 D160): the earlier
+ * lines of the payee the answer re-booked before its rule was learned. */
+function rebookedText(saved: TransactionAllocations): string {
+  const category = saved.rule?.category ?? saved.allocations[0]?.category;
+  const label = category ? ALLOCATION_CATEGORY[category] : "dieselbe Kategorie";
+  const count = saved.rebooked === 1 ? "1 frühere Zahlung" : `${saved.rebooked} frühere Zahlungen`;
+  return `${count} auf ${label} umgebucht.`;
 }

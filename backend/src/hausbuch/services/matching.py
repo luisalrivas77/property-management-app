@@ -889,17 +889,60 @@ def rule_history(
     ]
 
 
-def name_history(conn: Connection, tx: MatchTransaction) -> list[NameHistory]:
-    """D160: the other lines of every private account with the line's sign and a
-    counterparty name whose current rows are confirmed under one category, for the checks a
-    name rule learned from this line must pass (rules.matching._name_rule: rule.too_broad,
-    rule.conflicts). Every private account, since a rule hits the lines of all of them."""
+@dataclass(frozen=True)
+class NameLine:
+    """A private line of the same sign as the line a name rule is learned from, with its
+    current (not superseded) rows: what name_history reads and what the re-booking of
+    „Künftig immer so zuordnen“ (review.allocate_transaction, rebook_earlier) checks."""
+
+    transaction_id: UUID
+    counterparty_name: str
+    amount: Decimal
+    rows: tuple[Row, ...]
+
+    @property
+    def single_confirmed(self) -> Row | None:
+        """The one current row when the line has exactly one and it is confirmed."""
+        if len(self.rows) == 1 and self.rows[0].status == AllocationStatus.CONFIRMED.value:
+            return self.rows[0]
+        return None
+
+    @property
+    def confirmed(self) -> bool:
+        """Every current row confirmed (a line with none is not)."""
+        return bool(self.rows) and all(
+            r.status == AllocationStatus.CONFIRMED.value for r in self.rows
+        )
+
+
+def name_lines(conn: Connection, tx: MatchTransaction) -> list[NameLine]:
+    """D160: the other lines of every private account with the line's sign and a counterparty
+    name, each with its current rows (none superseded), oldest first. Every private account,
+    since a name rule hits the lines of all of them. Lines merged away as a duplicate are left
+    out; whether the line's name pattern hits one is the caller's (rules.matching.name_hits,
+    same_payee)."""
     if not tx.counterparty_name or tx.amount == 0:
         return []
     t = transaction_table.c
     a = allocation_table.c
     rows = conn.execute(
-        select(t.id, t.counterparty_name, a.category, a.status)
+        select(
+            t.id,
+            t.counterparty_name,
+            t.amount,
+            a.id.label("allocation_id"),
+            a.category,
+            a.status,
+            a.rule_id,
+            a.property_id,
+            a.unit_id,
+            a.tenancy_id,
+            a.loan_id,
+            a.document_id,
+            a.recurring,
+            a.service_period_start,
+            a.service_period_end,
+        )
         .join(allocation_table, a.transaction_id == t.id)
         .join(account_table, account_table.c.id == t.account_id)
         .where(
@@ -910,19 +953,36 @@ def name_history(conn: Connection, tx: MatchTransaction) -> list[NameHistory]:
             t.excluded_as_duplicate_of.is_(None),
             a.status != AllocationStatus.SUPERSEDED.value,
         )
-        .order_by(t.booking_date, t.id)
+        .order_by(t.booking_date, t.id, a.recorded_at, a.id)
     ).all()
     lines: dict[UUID, list[Row]] = {}
     for row in rows:
         lines.setdefault(row.id, []).append(row)
     return [
-        NameHistory(
+        NameLine(
             transaction_id=line_id,
             counterparty_name=parts[0].counterparty_name,
-            category=parts[0].category,
+            amount=parts[0].amount,
+            rows=tuple(parts),
         )
         for line_id, parts in lines.items()
-        if len(parts) == 1 and parts[0].status == AllocationStatus.CONFIRMED.value
+    ]
+
+
+def name_history(conn: Connection, tx: MatchTransaction) -> list[NameHistory]:
+    """D160: the other lines of every private account with the line's sign and a
+    counterparty name whose current rows are confirmed under one category, for the checks a
+    name rule learned from this line must pass (rules.matching._name_rule: rule.too_broad,
+    rule.conflicts). Every private account, since a rule hits the lines of all of them."""
+    return [
+        NameHistory(
+            transaction_id=line.transaction_id,
+            counterparty_name=line.counterparty_name,
+            category=only.category,
+            amount=line.amount,
+        )
+        for line in name_lines(conn, tx)
+        if (only := line.single_confirmed) is not None
     ]
 
 
