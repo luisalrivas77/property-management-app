@@ -802,6 +802,7 @@ async function rewriteLine(
         allocation_set: { transaction_id: transactionId, allocations: drafts, method: "user", confidence: "1" },
         learn_rule: false,
         same_amount_only: false,
+        rebook_earlier: false,
       },
     }),
   );

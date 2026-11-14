@@ -49,9 +49,17 @@
 // no rows: it sends those lines to the model again (POST /inbox/ai-retry) and reloads the list
 // once the jobs have had time to run; each reload updates the sidebar count (the page's own
 // notifyInboxChanged). It is outside the list, so the list holds only the lines.
+//
+// „Empfänger suchen“ (14 Nov 2026) sits under the same heading: it narrows the section's lines,
+// and the „Alle N bestätigen“ groups with them, to those whose payee, booking text or purpose
+// contains the typed text (case ignored), shows „N von M“ while it filters and says so when
+// nothing fits. The text lives in this component only. A group's tick list only ever holds the
+// lines shown, so „Ausgewählte bestätigen“ sends exactly the lines shown and ticked. In a
+// group's list („Zahlungen ansehen“ or the dialog), the payee is a button that opens that line
+// in the allocation panel, like a click on the line itself; the dialog closes first.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Account, Document, ExchangeMovementRow, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
@@ -249,6 +257,14 @@ function signedMoney(amount: string): string {
   return `${isCredit(amount) ? "+" : ""}${formatMoney(amount)}`;
 }
 
+/** „Empfänger suchen“: whether a line's payee, booking text or purpose contains the typed text,
+ * case ignored. A line not loaded alongside has no text to search, so it never matches. */
+function lineMatches(line: Transaction | undefined, query: string): boolean {
+  if (!line) return false;
+  const needle = query.toLocaleLowerCase("de");
+  return [line.counterparty_name, line.booking_text, line.purpose].some((text) => !!text && text.toLocaleLowerCase("de").includes(needle));
+}
+
 export function InboxList({
   data,
   selected,
@@ -260,42 +276,70 @@ export function InboxList({
   onSelect: (transactionId: string) => void;
   onChanged: () => void;
 }) {
+  // „Empfänger suchen“: narrows the Zahlungen zuordnen section only; kept in this component.
+  const [query, setQuery] = useState("");
+  const searchId = useId();
+  const needle = query.trim();
   return (
     <div className="inbox-sections">
       {SECTIONS.map(({ key: section, title }) => {
-        const items = data.items.filter((item) => sectionOf(item) === section);
-        if (items.length === 0) return null;
+        const all = data.items.filter((item) => sectionOf(item) === section);
+        if (all.length === 0) return null;
+        const filtering = section === "lines" && needle !== "";
+        const items = filtering ? all.filter((item) => lineMatches(data.transactions.get(item.transaction_id ?? ""), needle)) : all;
         const headingId = `inbox-section-${section}`;
         return (
           <section key={section} className="inbox-section" aria-labelledby={headingId}>
             <h3 className="inbox-section-head">
               <span id={headingId}>{title}</span>{" "}
-              <span className="inbox-section-count">{items.length}</span>
+              <span className="inbox-section-count">{all.length}</span>
             </h3>
-            {section === "lines" && items.some((item) => item.kind === "unmatched") ? <AiSuggestions onChanged={onChanged} /> : null}
-            {section === "lines" ? <BulkConfirm items={items} data={data} onChanged={onChanged} /> : null}
-            <ul className="inbox-list" aria-label={title}>
-              {items.map((item) => {
-                // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
-                // A forwarded document can arrive in two mails, and a failed mail names no id: the time tells them apart.
-                const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id ?? item.reminder_id ?? item.movement_id}:${item.created_at}`;
-                return (
-                  <li key={key}>
-                    {isLineItem(item) ? (
-                      <LineEntry
-                        item={item}
-                        line={data.transactions.get(item.transaction_id ?? "")}
-                        account={privateAccount(data.accounts, item.account_id)}
-                        pressed={selected === item.transaction_id}
-                        onSelect={onSelect}
-                      />
-                    ) : (
-                      <OtherEntry item={item} data={data} onChanged={onChanged} />
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+            {section === "lines" ? (
+              <div className="inbox-section-action inbox-search">
+                <label htmlFor={searchId}>Empfänger suchen</label>
+                <input
+                  id={searchId}
+                  type="search"
+                  value={query}
+                  autoComplete="off"
+                  placeholder="Name oder Verwendungszweck"
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                {filtering ? (
+                  <p className="muted" role="status">
+                    {items.length} von {all.length}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {section === "lines" && all.some((item) => item.kind === "unmatched") ? <AiSuggestions onChanged={onChanged} /> : null}
+            {section === "lines" ? <BulkConfirm items={items} data={data} onChanged={onChanged} onSelect={onSelect} /> : null}
+            {filtering && items.length === 0 ? (
+              <p className="muted inbox-empty">Keine Zahlung passt zu „{needle}“.</p>
+            ) : (
+              <ul className="inbox-list" aria-label={title}>
+                {items.map((item) => {
+                  // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
+                  // A forwarded document can arrive in two mails, and a failed mail names no id: the time tells them apart.
+                  const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id ?? item.reminder_id ?? item.movement_id}:${item.created_at}`;
+                  return (
+                    <li key={key}>
+                      {isLineItem(item) ? (
+                        <LineEntry
+                          item={item}
+                          line={data.transactions.get(item.transaction_id ?? "")}
+                          account={privateAccount(data.accounts, item.account_id)}
+                          pressed={selected === item.transaction_id}
+                          onSelect={onSelect}
+                        />
+                      ) : (
+                        <OtherEntry item={item} data={data} onChanged={onChanged} />
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
         );
       })}
@@ -371,8 +415,19 @@ type ConfirmCategoryResult = components["schemas"]["ConfirmCategoryResult"];
  * checkbox, ticked by default; „Ausgewählte bestätigen (N)“ sends the ticked ids only, never
  * the category alone (POST /inbox/confirm-category). An unticked line keeps waiting. The
  * ticks are shared by the inline list and the dialog. A line that changed meanwhile is
- * skipped by the API. */
-function BulkConfirm({ items, data, onChanged }: { items: InboxItem[]; data: InboxData; onChanged: () => void }) {
+ * skipped by the API. Under „Empfänger suchen“ the groups hold the matching lines only. A
+ * line's payee opens it in the allocation panel (onSelect). */
+function BulkConfirm({
+  items,
+  data,
+  onChanged,
+  onSelect,
+}: {
+  items: InboxItem[];
+  data: InboxData;
+  onChanged: () => void;
+  onSelect: (transactionId: string) => void;
+}) {
   const [result, setResult] = useState<ConfirmCategoryResult | null>(null);
   const [shown, setShown] = useState<ReadonlySet<AllocationCategory>>(new Set());
   const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set());
@@ -415,7 +470,7 @@ function BulkConfirm({ items, data, onChanged }: { items: InboxItem[]; data: Inb
             {listed.map(([category, group]) => {
               const open = shown.has(category);
               const listId = `inbox-bulk-${category}`;
-              const list = (onDone: (confirmed: ConfirmCategoryResult) => void) => (
+              const list = (onDone: (confirmed: ConfirmCategoryResult) => void, onOpen: (transactionId: string) => void) => (
                 <BulkConfirmList
                   category={category}
                   items={group}
@@ -423,6 +478,7 @@ function BulkConfirm({ items, data, onChanged }: { items: InboxItem[]; data: Inb
                   unticked={unticked}
                   onTick={setTicked}
                   onDone={onDone}
+                  onOpen={onOpen}
                 />
               );
               return (
@@ -444,16 +500,22 @@ function BulkConfirm({ items, data, onChanged }: { items: InboxItem[]; data: Inb
                       title={`${ALLOCATION_CATEGORY[category]}: Zahlungen auswählen und bestätigen`}
                     >
                       {(close) =>
-                        list((confirmed) => {
-                          close();
-                          done(confirmed);
-                        })
+                        list(
+                          (confirmed) => {
+                            close();
+                            done(confirmed);
+                          },
+                          (transactionId) => {
+                            close();
+                            onSelect(transactionId);
+                          },
+                        )
                       }
                     </ActionDialog>
                   </div>
                   {open ? (
                     <div id={listId} className="stack">
-                      {list(done)}
+                      {list(done, onSelect)}
                     </div>
                   ) : null}
                 </li>
@@ -481,6 +543,7 @@ function BulkConfirmList({
   unticked,
   onTick,
   onDone,
+  onOpen,
 }: {
   category: AllocationCategory;
   items: InboxItem[];
@@ -489,6 +552,8 @@ function BulkConfirmList({
   unticked: ReadonlySet<string>;
   onTick: (ids: string[], ticked: boolean) => void;
   onDone: (result: ConfirmCategoryResult) => void;
+  /** Opens the line in the allocation panel, as a click on it in the queue does. */
+  onOpen: (transactionId: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -549,7 +614,11 @@ function BulkConfirmList({
                     />
                   </td>
                   <td>{line ? formatDate(line.booking_date) : "–"}</td>
-                  <td>{payee}</td>
+                  <td>
+                    <button type="button" className="link" onClick={() => onOpen(id)}>
+                      {payee}
+                    </button>
+                  </td>
                   <td className="num">{amount}</td>
                   <td>{account?.label ?? "–"}</td>
                 </tr>
@@ -1124,6 +1193,7 @@ function BillUpload({ transactionId, onAttached }: { transactionId: string; onAt
             learn_rule: false,
             purpose_pattern: null,
             same_amount_only: false,
+            rebook_earlier: false,
           },
         }),
       );

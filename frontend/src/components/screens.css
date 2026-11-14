@@ -911,6 +911,15 @@ button.source-badge:not(:disabled):hover {
   padding: 0 20px 12px;
 }
 
+/* „Empfänger suchen“ above the lines: one field, not the card's full width on a wide screen. */
+.inbox-search input {
+  max-width: 420px;
+}
+
+.inbox-search p {
+  margin: 6px 0 0;
+}
+
 /* „Alle N bestätigen“: the private lines' proposals by category, one row per group. */
 .inbox-bulk {
   margin: 0;
