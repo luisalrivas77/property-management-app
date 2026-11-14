@@ -12,7 +12,7 @@ import pytest
 from db.db_support import TEST_IBAN_KEY
 from sqlalchemy import text
 from test_card_pdf import case_bytes, draw
-from test_depot_pdf import ROWS, page
+from test_depot_pdf import KONTO, ROWS, page
 from test_jobs_document_read import _settings as _test_settings
 from test_services_card_import import _card, _first
 
@@ -246,22 +246,17 @@ def test_an_account_of_another_kind_is_refused(
 def test_the_account_whose_number_the_file_prints_is_suggested(
     run, read, app_engine, blob_store, fresh_workspaces, tmp_path, hook_calls
 ):
-    """Two depots: the one whose number an earlier statement set is the suggestion and the only
-    candidate; a depot with another number is never offered."""
+    """Two depots: the one that holds the number the file prints is the suggestion and the only
+    candidate; a depot with another number is never offered.
+
+    Since 14 Nov 2026 a file uploaded after its account holds the number goes onto it at once
+    (test_services_statements_follow.py), and the API's account creation takes the waiting
+    files with it; the offer is still built for a file that waits while an account holds its
+    number (here: the number set by the service without the store, so nothing follows)."""
     ws, _ = fresh_workspaces
-    first, second = _depot(run, ws), _depot(run, ws, label="Megatrends")
-    run(
-        ws,
-        import_statement,
-        blob_store,
-        second.id,
-        _depot_bytes(),
-        media_type="application/pdf",
-        iban_key=TEST_IBAN_KEY,
-        now=T0,
-    )
     later = _depot_bytes(rows=ROWS[4:7], total="-500,00", closing="-400,00")
     doc, _ = _uploaded_and_refused(app_engine, blob_store, ws, tmp_path, later)
+    first, second = _depot(run, ws), _depot(run, ws, label="Megatrends", external_ref=KONTO)
     offer = _offer(read, blob_store, ws, doc.id)
     assert [c.account_id for c in offer.candidates] == [second.id]
     assert offer.suggested_account_id == second.id

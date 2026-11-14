@@ -60,6 +60,7 @@ def test_the_offer_then_create_and_import_201(client_a, app_engine, auth_a):
         "opening_balance": "0.00",
         "opening_balance_on": "2026-03-31",
         "opening_from_file": True,
+        "other_statements": 0,  # no other file of this account waits (14 Nov 2026)
     }
 
     owner = create(client_a, "/api/owners", {"full_name": "Owner A"})
@@ -89,9 +90,15 @@ def test_the_offer_then_create_and_import_201(client_a, app_engine, auth_a):
     assert again["code"] == "statement.no_account_offer"
 
 
-def test_an_account_with_the_files_iban_is_409(client_a, app_engine, auth_a):
+def test_an_account_created_with_the_files_iban_takes_the_waiting_file(
+    client_a, app_engine, auth_a
+):
+    """14 Nov 2026 (D176 (3) amended): POST /accounts with the IBAN a waiting file prints
+    imports the file onto it at once, so the file has no offer left and nothing to create
+    from; the 409 for an account that already holds the file's IBAN is covered in tests/db
+    (an account created without the follow, test_services_statement_account.py)."""
     document = _refused_upload(client_a, app_engine, auth_a.workspace_id)
-    create(
+    account = create(
         client_a,
         "/api/accounts",
         {
@@ -105,9 +112,11 @@ def test_an_account_with_the_files_iban_is_409(client_a, app_engine, auth_a):
         },
     )
     path = f"/api/documents/{document['id']}"
-    assert ok(client_a.get(path))["statement_offer"]["new_account"] is None
+    body = ok(client_a.get(path))
+    assert body["statement_offer"] is None
+    assert [i["account_id"] for i in body["statement_imports"]] == [account["id"]]
     response = client_a.post(f"{path}/statement-account", json={"label": "X", "bank": "Y"})
-    assert response.status_code == 409
+    assert ok(response, 422)["code"] == "statement.no_account_offer"
     assert IBAN not in response.text
     assert len(ok(client_a.get("/api/accounts"))) == 1
 

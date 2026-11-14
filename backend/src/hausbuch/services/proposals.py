@@ -31,6 +31,7 @@ from sqlalchemy import Connection, exists, insert, null, select, update
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset_movement as movement_table
+from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import document_extraction as extraction_table
 from hausbuch.db.tables import movement_import as movement_import_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
@@ -145,6 +146,7 @@ from hausbuch.schemas.proposal import (
 )
 from hausbuch.schemas.tax import LIMIT_15_CATEGORIES, TaxInput, TaxInputCreate, TaxInputKind
 from hausbuch.schemas.tenancy import InitialRent, TenancyCreate, TenantCreate
+from hausbuch.storage import BlobStore
 
 from . import (
     depot,
@@ -548,6 +550,131 @@ def _payment_proof_reading(conn: Connection, document_id: UUID) -> DocumentExtra
     return None if row is None else DocumentExtraction.model_validate(dict(row._mapping))
 
 
+# --- A depot document's waiting reading, rebuilt (14 Nov 2026, D165 (a) amended) ---------
+
+# The depot readers' kinds (phase 6 step 4): their records are booked on a depot account.
+DEPOT_EXTRACTION_KINDS = frozenset(
+    {
+        ExtractionKind.TRADE_CONFIRMATION,
+        ExtractionKind.DISTRIBUTION_NOTE,
+        ExtractionKind.DEPOT_REPORT,
+        ExtractionKind.SECURITIES_TRANSFER,
+    }
+)
+
+
+def _is_depot_document(conn: Connection, document_id: UUID) -> bool:
+    """Whether code typed the document as one of the depot's at upload (document.depot_kind,
+    phase 6 D177)."""
+    return (
+        conn.execute(
+            select(document_table.c.depot_kind).where(document_table.c.id == document_id)
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def rebuild_depot_proposals(
+    ctx: CommandContext, store: BlobStore | None, *, iban_key: bytes, dry_run: bool = False
+) -> int:
+    """Every `ready` suggestion of a depot document rebuilt from its stored reading, without a
+    model call, so it offers the depot accounts as they are now, pre-selects the one whose
+    number or IBAN the document prints (depot.printed_depot_account, with `store`) and files
+    the document by its date's year (prefill typing). Runs when a depot account is created or
+    gets its number (statements.account_numbered, accounts.confirm_depot_iban), and once
+    after a deploy through `hausbuch rebuild-depot-proposals`.
+
+    Covered: a ready suggestion of the four depot kinds, and of a `general` reading of a
+    document code typed as the depot's (a rebalancing letter). The new suggestion keeps the
+    kind, reading (extraction_id, so D132's stale guard compares the same version), AI call
+    and tenant mark; the old one is superseded with its event. One whose rebuilt records are
+    the same as its stored ones is left as it is. An applied, rejected, blocked or failed
+    suggestion is never touched; nothing is applied here (principle 3). Returns how many were
+    (or, with `dry_run`, would be) rebuilt."""
+    p = proposal_table.c
+    kinds = [k.value for k in (*DEPOT_EXTRACTION_KINDS, ExtractionKind.GENERAL)]
+    rows = ctx.conn.execute(
+        select(proposal_table)
+        .where(
+            p.status == ProposalStatus.READY.value,
+            p.kind.in_(kinds),
+            p.extraction_id.is_not(None),
+        )
+        .order_by(p.created_at, p.id)
+        .with_for_update()
+    ).all()
+    rebuilt = 0
+    for row in rows:
+        old = _to_proposal(row)
+        kind = ExtractionKind(old.kind)
+        if kind is ExtractionKind.GENERAL and not _is_depot_document(ctx.conn, old.document_id):
+            continue
+        typing = next((r for r in old.records if r.key == "typing"), None)
+        reading = ctx.conn.execute(
+            select(extraction_table.c.fields).where(extraction_table.c.id == old.extraction_id)
+        ).scalar_one_or_none()
+        if typing is None or reading is None or typing.fields.get("type") is None:
+            continue
+        subtype = typing.fields.get("subtype")
+        classification = ClassifyOutput(
+            type=DocumentType(typing.fields["type"].value),
+            subtype=None
+            if subtype is None or subtype.value is None
+            else DocumentSubtype(subtype.value),
+            contains_tenant_data=old.contains_tenant_data,
+            language="de",
+            confidence=typing.fields["type"].confidence,
+        )
+        context = prefill_context(
+            ctx.conn,
+            old.document_id,
+            classification,
+            printed_depot_account_id=(
+                depot.printed_depot_account(ctx.conn, store, old.document_id, iban_key=iban_key)
+                if kind in DEPOT_EXTRACTION_KINDS and store is not None
+                else None
+            ),
+        )
+        records = build_proposal(kind, EXTRACTION_MODELS[kind].model_validate(reading), context)
+        fields = [r.model_dump(mode="json") for r in records]
+        if fields == [r.model_dump(mode="json") for r in old.records]:
+            continue
+        rebuilt += 1
+        if dry_run:
+            continue
+        _set(ctx, old.id, status=ProposalStatus.SUPERSEDED, error_code=None)
+        append_event(ctx, EventType.PROPOSAL_SUPERSEDED, old.id, _noted(old))
+        targeted = [r for r in records if r.mode != "create"]
+        new = ctx.conn.execute(
+            insert(proposal_table)
+            .values(
+                workspace_id=ctx.workspace_id,
+                document_id=old.document_id,
+                status=ProposalStatus.READY.value,
+                kind=kind.value,
+                extraction_id=old.extraction_id,
+                ai_call_id=old.ai_call_id,
+                contains_tenant_data=old.contains_tenant_data,
+                target_mode=(
+                    ProposalTargetMode.PATCH if targeted else ProposalTargetMode.CREATE
+                ).value,
+                targets=[
+                    {"key": r.key, "entity_type": str(r.entity_type), "target_id": str(r.target_id)}
+                    for r in targeted
+                ]
+                or null(),  # SQL NULL; a JSONB column would otherwise store JSON null
+                fields=fields,
+                created_at=ctx.now,
+                updated_at=ctx.now,
+            )
+            .returning(proposal_table.c.id)
+        ).scalar_one()
+        append_event(
+            ctx, EventType.PROPOSAL_CREATED, new, ProposalNoted(document_id=old.document_id)
+        )
+    return rebuilt
+
+
 # --- The job's two seams -----------------------------------------------------------------
 
 
@@ -561,6 +688,7 @@ def record_read_result(
     extract_call_id: UUID | None,
     blocked_tenant_data: bool = False,
     iban_key: bytes | None = None,
+    store: BlobStore | None = None,
 ) -> Proposal:
     """The job read the document. Writes the `ai` extraction version (when `values` is
     given), builds the PrefillContext from the workspace, calls
@@ -586,6 +714,10 @@ def record_read_result(
     too) goes into the context, so no part of it is proposed as paid from another account
     (phase 2 D135); so does whether a private account's line pays it
     (paid_from_private_account, phase 6 D161), whose card then proposes those parts.
+
+    A depot document's reading: with `store` and `iban_key`, the depot account whose number
+    or IBAN its own text layer prints is pre-selected (depot.printed_depot_account, 14 Nov
+    2026, D165 (a) amended).
     """
     current = _lock(ctx.conn, proposal_id)
     if current.status not in _IN_FLIGHT:
@@ -667,6 +799,11 @@ def record_read_result(
         today=ctx.now.astimezone(documents.LOCAL_TIME_ZONE).date()
         if built_kind is ExtractionKind.PAYMENT_PROOF
         else None,
+        printed_depot_account_id=(
+            depot.printed_depot_account(ctx.conn, store, document_id, iban_key=iban_key)
+            if built_kind in DEPOT_EXTRACTION_KINDS and store is not None and iban_key
+            else None
+        ),
     )
     records = build_proposal(built_kind, extraction, context)
     if extraction_id is None and records and records[0].key == "typing":
@@ -745,10 +882,12 @@ def prefill_context(
     paid_from_rental_account: bool = False,
     paid_from_private_account: bool = False,
     today: date | None = None,
+    printed_depot_account_id: UUID | None = None,
 ) -> PrefillContext:
     """The workspace's records as the plain facts build_proposal reads (§6.3). `today` (the
     local date) picks the years a payment proof's candidate bills are looked for in (D149);
-    without it, none are."""
+    without it, none are. `printed_depot_account_id`: the depot account the document prints
+    (depot.printed_depot_account), read by the caller, which holds the store."""
     props = properties.list_properties(conn)
     proof_bill = _proof_bill(conn, document_id)
     linked_tenancies = {
@@ -834,6 +973,8 @@ def prefill_context(
             else []
         ),
         depot_accounts=depot.depot_accounts(conn),
+        printed_depot_account_id=printed_depot_account_id,
+        depot_document=_is_depot_document(conn, document_id),
     )
 
 

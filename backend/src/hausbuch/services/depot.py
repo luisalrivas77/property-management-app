@@ -10,6 +10,7 @@ supersedes the old one (record_holding); a movement is never corrected here, a d
 applied twice is refused (record_movement). Every read of holdings ignores superseded rows.
 """
 
+import hmac
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -57,10 +58,13 @@ from hausbuch.schemas.household import (
     Quantity,
 )
 from hausbuch.schemas.proposal import ExistingDepotAccount
+from hausbuch.storage import BlobStore
 
 from .context import CommandContext
+from .documents import document_media_type, read_original
 from .errors import RuleViolationError
 from .events import append_event
+from .iban import protect_iban, protect_ref
 
 # Codes of this service (frontend/src/api/errors.ts has their German text).
 DEPOT_ACCOUNT_REQUIRED = "depot.account_required"  # the account picked is no depot
@@ -128,6 +132,50 @@ def depot_accounts(conn: Connection) -> list[ExistingDepotAccount]:
         )
         for r in rows
     ]
+
+
+def printed_depot_account(
+    conn: Connection, store: BlobStore, document_id: UUID, *, iban_key: bytes
+) -> UUID | None:
+    """The one depot account whose number or IBAN the document's PDF text layer prints
+    (14 Nov 2026, D165 (a) amended): the labelled depot numbers and the IBANs it prints
+    (rules.depot printed_depot_numbers, printed_ibans), masked and HMAC'd as on store, compared
+    with each depot account's external_ref_hmac and iban_hmac. Read by code only; nothing
+    printed is kept or sent anywhere. None when the document names more than one depot number
+    (a financial report over several depots), when no depot or several match, when it is no
+    PDF, or when its original cannot be read (a pre-selection is never worth a failed
+    reading)."""
+    from hausbuch.services.bank.card_pdf import pdf_pages
+
+    a = account_table.c
+    depots = conn.execute(
+        select(a.id, a.external_ref_hmac, a.iban_hmac).where(a.kind == AccountKind.DEPOT.value)
+    ).all()
+    if not any(d.external_ref_hmac or d.iban_hmac for d in depots):
+        return None
+    if document_media_type(conn, document_id) != "application/pdf":
+        return None
+    try:
+        pages = pdf_pages(read_original(conn, store, document_id))
+    except Exception:  # noqa: BLE001 - the reading goes on without a pre-selection
+        return None
+    if not pages:
+        return None
+    text = "\n".join(pages)
+    numbers = rules.printed_depot_numbers(text)
+    if len(numbers) > 1:
+        return None
+    printed: set[bytes] = {protect_ref(n, iban_key).hmac for n in numbers}
+    printed |= {protect_iban(i, iban_key).hmac for i in rules.printed_ibans(text)}
+    matched = {
+        d.id
+        for d in depots
+        if any(
+            stored is not None and any(hmac.compare_digest(stored, p) for p in printed)
+            for stored in (d.external_ref_hmac, d.iban_hmac)
+        )
+    }
+    return next(iter(matched)) if len(matched) == 1 else None
 
 
 def _require_depot(conn: Connection, account_id: UUID) -> None:

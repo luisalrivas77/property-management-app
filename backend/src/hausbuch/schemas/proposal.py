@@ -346,3 +346,10 @@ class PrefillContext(Schema):
     proof_candidates: list[ExistingProofBill] = Field(default_factory=list)
     # Phase 6 step 4: the workspace's depot accounts, for a depot reading's records.
     depot_accounts: list[ExistingDepotAccount] = Field(default_factory=list)
+    # 14 Nov 2026 (D165 (a) amended): the depot account whose number or IBAN the document's
+    # own text layer prints, read by code (services.depot.printed_depot_account); None when
+    # none or several match, or the document is no depot document.
+    printed_depot_account_id: UUID | None = None
+    # Whether the document is one of the depot's (document.depot_kind, set by code at upload,
+    # D177), so a depot letter read as `general` (a rebalancing) is filed by its date's year.
+    depot_document: bool = False

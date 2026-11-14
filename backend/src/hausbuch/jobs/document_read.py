@@ -77,6 +77,7 @@ from hausbuch.schemas.enums import (
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, asked_fields
 from hausbuch.services import documents as document_service
 from hausbuch.services import proposals
+from hausbuch.services import statements as statement_service
 from hausbuch.services.bank import card_pdf, depot_pdf, is_bank_export, is_card_statement
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.exchange import is_exchange_export
@@ -220,7 +221,7 @@ def run_document_read(
         wait_s = RETRY_WAITS_S[attempt]
         logger.warning("document read retried", extra={"fields": log | {"retry_in_s": wait_s}})
         raise RetryLater(wait_s)
-    _fail(deps, workspace_id, target, code, ai_call_id, attempt + 1, log)
+    _fail(deps, workspace_id, target, code, ai_call_id, attempt + 1, log, document_id=document_id)
 
 
 def _fail(
@@ -231,14 +232,23 @@ def _fail(
     ai_call_id: UUID | None,
     attempts: int,
     fields: dict,
+    *,
+    document_id: UUID | None = None,
 ) -> None:
-    """record_read_failure; `attempts` counts the runs so far (the first one included)."""
+    """record_read_failure; `attempts` counts the runs so far (the first one included).
+
+    A statement file (CARD_STATEMENT) whose IBAN or number an account already holds is then
+    imported onto it in the same transaction (phase 6, 14 Nov 2026: a later upload needs no
+    click), which supersedes the failure just recorded; a refused import rolls back to its
+    savepoint and the offer waits on the document page."""
     try:
         with workspace_transaction(deps.engine, workspace_id) as conn:
             ctx = new_command(conn, workspace_id, SYSTEM_ACTOR, now=deps.clock())
             proposals.record_read_failure(
                 ctx, proposal_id, error_code=code, ai_call_id=ai_call_id, attempts=attempts
             )
+            if code == CARD_STATEMENT and document_id is not None:
+                fields = fields | _follow_account(ctx, deps, document_id)
     except Exception as exc:
         fields = fields | {"record_exc_type": type(exc).__name__}
         logger.error("document read failure not recorded", extra={"fields": fields})
@@ -248,6 +258,19 @@ def _fail(
     if failed:  # outside the except block: nothing chained
         raise JobFailed()
     logger.warning("document not read", extra={"fields": fields})
+
+
+def _follow_account(ctx, deps: JobDeps, document_id: UUID) -> dict:
+    """statements.import_onto_holding_account under a savepoint; the log fields it adds
+    (the outcome only, never a number or an amount)."""
+    try:
+        with ctx.conn.begin_nested():
+            imported = statement_service.import_onto_holding_account(
+                ctx, deps.blob_store, document_id, iban_key=deps.settings.iban_hmac_key
+            )
+    except Exception as exc:  # noqa: BLE001 - the offer waits; the failure stays recorded
+        return {"follow": "refused", "follow_exc_type": type(exc).__name__}
+    return {"follow": "imported" if imported is not None else "waiting"}
 
 
 class JobFailed(Exception):
@@ -794,4 +817,5 @@ def _finish(
             extract_call_id=extract_id,
             blocked_tenant_data=not ok,
             iban_key=deps.settings.iban_hmac_key,
+            store=deps.blob_store,
         )

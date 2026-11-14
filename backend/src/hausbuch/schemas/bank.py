@@ -302,6 +302,11 @@ class StatementNewAccount(Schema):
     opening_balance: Money
     opening_balance_on: date
     opening_from_file: bool
+    # Phase 6, 14 Nov 2026 (D165 (a), D176 (3) amended; Luis: "when you create the account they
+    # are all assigned directly to it"): the other statement files under Dokumente that print
+    # the same IBAN or number and wait for an account; the button imports them too, in
+    # statement order, and the opening above is the earliest one's.
+    other_statements: int = 0
 
 
 class StatementFileOffer(Schema):
@@ -345,12 +350,25 @@ class StatementAccountBody(Schema):
         return self
 
 
+class StatementRefusal(Schema):
+    """A statement file the app tried to import onto its account by itself and the import
+    refused (phase 6, 14 Nov 2026): the document keeps its „Auf Konto importieren“ offer, and
+    `code` is the import's statement.* (or other rule) code, which says why."""
+
+    document_id: UUID
+    code: str
+
+
 class StatementAccountCreated(Schema):
     """The account „Konto anlegen und einlesen“ created and the file's import onto it, both
-    written in one transaction."""
+    written in one transaction. Since 14 Nov 2026 the other statement files waiting under
+    Dokumente that print the same IBAN or number are imported with it, in statement order
+    (`other_imported`); one whose import refuses keeps its offer (`other_refused`)."""
 
     account: Account
     statement_import: StatementImport
+    other_imported: int = 0
+    other_refused: list[StatementRefusal] = Field(default_factory=list)
 
 
 class TransactionAllocationStatus(StrEnum):
