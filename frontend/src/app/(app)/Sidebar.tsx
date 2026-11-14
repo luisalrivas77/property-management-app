@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import { useAuth } from "@/auth/AuthGate";
@@ -35,6 +35,7 @@ const NAV = [
 const AREA_OF: Record<string, string> = { "/capture": "/inbox" };
 
 const COUNT_REFRESH_MS = 60_000;
+const ROUTE_REFRESH_MS = 30_000;
 
 function isCurrent(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
@@ -42,12 +43,20 @@ function isCurrent(pathname: string, href: string): boolean {
   return area === href || area.startsWith(`${href}/`);
 }
 
-/** The number of items GET /inbox lists, which is what the review page shows: fetched on
- * every route change, every minute while the tab is visible, and when the tab becomes
- * visible again; taken from the page's INBOX_CHANGED event after it reloads its list. A
- * failed fetch shows no number (null), without an error. */
+/** The number of items GET /inbox lists, which is what the review page shows: fetched when
+ * the app opens, every minute while the tab is visible, when the tab becomes visible again,
+ * and on a route change only when the count is older than ROUTE_REFRESH_MS; taken from the
+ * page's INBOX_CHANGED event after it reloads its list. GET /inbox is the API's most
+ * expensive read, and fetching it on every click slowed every other page on the small
+ * container (14 Nov 2026). A failed fetch shows no number (null), without an error. */
 function useInboxCount(pathname: string): number | null {
   const [count, setCount] = useState<number | null>(null);
+  const refreshRef = useRef<(() => void) | null>(null);
+  const fetchedAt = useRef(0);
+
+  useEffect(() => {
+    if (Date.now() - fetchedAt.current >= ROUTE_REFRESH_MS) refreshRef.current?.();
+  }, [pathname]);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,6 +64,7 @@ function useInboxCount(pathname: string): number | null {
 
     function refresh() {
       const mine = ++latest;
+      fetchedAt.current = Date.now();
       ok(api.GET("/api/inbox")).then(
         (items) => {
           if (!cancelled && mine === latest) setCount(items.length);
@@ -71,6 +81,7 @@ function useInboxCount(pathname: string): number | null {
       const detail: unknown = (event as CustomEvent<unknown>).detail;
       if (typeof detail === "number") {
         latest += 1;
+        fetchedAt.current = Date.now();
         setCount(detail);
       } else {
         refresh();
@@ -78,16 +89,18 @@ function useInboxCount(pathname: string): number | null {
     }
 
     refresh();
+    refreshRef.current = refresh;
     const timer = window.setInterval(refreshIfVisible, COUNT_REFRESH_MS);
     document.addEventListener("visibilitychange", refreshIfVisible);
     window.addEventListener(INBOX_CHANGED, onChanged);
     return () => {
       cancelled = true;
+      refreshRef.current = null;
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refreshIfVisible);
       window.removeEventListener(INBOX_CHANGED, onChanged);
     };
-  }, [pathname]);
+  }, []);
 
   return count;
 }

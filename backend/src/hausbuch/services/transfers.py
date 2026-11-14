@@ -30,7 +30,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Connection, Row, func, insert, or_, select, update
+from sqlalchemy import Connection, Row, Select, func, insert, or_, select, update
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
@@ -221,6 +221,18 @@ def _transfer_booked(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, Alloca
     }
 
 
+def _with_transfer_row() -> Select:
+    """The lines with a live, non-zero row of a transfer category: the only lines whose leg
+    can be booked as a transfer (_one_category, _transfer_booked), so open_transfers reads
+    those instead of every line and its rows (14 Nov 2026: most of GET /inbox's time)."""
+    a = allocation_table.c
+    return select(a.transaction_id).where(
+        a.status.in_(_LIVE),
+        a.amount != 0,
+        a.category.in_([c.value for c in TRANSFER_CATEGORIES]),
+    )
+
+
 def _line_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
     t, acc = transaction_table.c, account_table.c
     rows = conn.execute(
@@ -327,9 +339,14 @@ def _movement_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
     return legs
 
 
-def _legs_between(conn: Connection, start: date, end: date) -> list[_Leg]:
+def _legs_between(
+    conn: Connection, start: date, end: date, *, transfer_booked_only: bool = False
+) -> list[_Leg]:
+    """The legs booked between `start` and `end`; with `transfer_booked_only`, a line only when
+    it has a transfer row (_with_transfer_row), for a caller that skips every other line."""
     t, m = transaction_table.c, movement_table.c
-    lines = _line_legs(conn, t.booking_date >= start, t.booking_date <= end)
+    only = [t.id.in_(_with_transfer_row())] if transfer_booked_only else []
+    lines = _line_legs(conn, t.booking_date >= start, t.booking_date <= end, *only)
     moves = _movement_legs(
         conn,
         func.date(m.occurred_at) >= start,
@@ -489,7 +506,13 @@ def after_booking(
     linked = _linked_ids(ctx.conn)
     if transaction_id in linked:
         return
-    around = _legs_between(ctx.conn, leg.leg.booked_on - _AROUND, leg.leg.booked_on + _AROUND)
+    # Only a leg booked as a transfer is tried below, so the window reads those lines only.
+    around = _legs_between(
+        ctx.conn,
+        leg.leg.booked_on - _AROUND,
+        leg.leg.booked_on + _AROUND,
+        transfer_booked_only=True,
+    )
     for other in around:
         if other.leg.account_id == leg.leg.account_id or other.booked is None:
             continue
@@ -712,7 +735,8 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
     linked = _linked_ids(conn)
     waiting = [
         leg
-        for leg in _line_legs(conn) + _movement_legs(conn)
+        for leg in _line_legs(conn, transaction_table.c.id.in_(_with_transfer_row()))
+        + _movement_legs(conn)
         if leg.booked is not None and leg.leg.id not in linked
     ]
     items = []

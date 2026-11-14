@@ -126,7 +126,7 @@ from hausbuch.schemas.loan import LoanTerms
 
 from . import allocations, rules_learned, workspace_settings
 from .context import CommandContext
-from .documents import DOCUMENT_EVIDENCE_KINDS, EVIDENCE_KINDS, current_extraction
+from .documents import DOCUMENT_EVIDENCE_KINDS, EVIDENCE_KINDS
 from .tenancies import _rows_in_force, rent_on  # rent rows no correction supersedes
 from .transfers import own_account_hmacs
 
@@ -456,7 +456,11 @@ def _evidence(
         )
         .where(extraction_table.c.kind.in_([k.value for k in EVIDENCE_KINDS]))
     ).scalars()
-    found = [e for doc_id in ids if (e := evidence_of(conn, doc_id)) is not None]
+    ids = list(ids)
+    # One read for every document (14 Nov 2026: a query per document per line was most of a
+    # rule's re-check and of the allocations GET); `found` keeps the order of `ids`.
+    by_id = evidence_of_many(conn, ids)
+    found = [e for doc_id in ids if (e := by_id.get(doc_id)) is not None]
     used = _backing_confirmed(conn, exclude_for)
     loans_by_property: dict[UUID, list[UUID]] = {}
     for loan_id, property_id in conn.execute(select(loan_table.c.id, loan_table.c.property_id)):
@@ -481,29 +485,80 @@ def _evidence(
 
 
 def evidence_of(conn: Connection, document_id: UUID) -> _Evidence | None:
-    extraction = current_extraction(conn, document_id)
-    if extraction is None or extraction.kind not in EVIDENCE_KINDS:
-        return None
-    row = conn.execute(select(document_table).where(document_table.c.id == document_id)).one()
-    links = conn.execute(select(link_table).where(link_table.c.document_id == document_id)).all()
-    properties = {link.property_id for link in links if link.property_id is not None}
-    loan_ids = sorted({link.loan_id for link in links if link.loan_id is not None})
-    if not properties:
-        unit_ids = [link.unit_id for link in links if link.unit_id is not None]
-        if unit_ids:
-            properties |= set(
-                conn.execute(
-                    select(unit_table.c.property_id).where(unit_table.c.id.in_(unit_ids))
-                ).scalars()
-            )
-        if loan_ids:
-            properties |= set(
-                conn.execute(
-                    select(loan_table.c.property_id).where(loan_table.c.id.in_(loan_ids))
-                ).scalars()
-            )
-    property_id = next(iter(properties)) if len(properties) == 1 else None
-    return _Evidence(row, extraction, property_id, loan_ids)
+    return evidence_of_many(conn, [document_id]).get(document_id)
+
+
+def evidence_of_many(conn: Connection, document_ids: list[UUID]) -> dict[UUID, _Evidence]:
+    """evidence_of for many documents in a fixed number of queries: each document's current
+    (highest-version) extraction when it is an evidence kind, its row, its links, and the
+    property its unit or loan links name when no link names one. Documents that are no
+    evidence are left out."""
+    if not document_ids:
+        return {}
+    x = extraction_table.c
+    newest = (
+        select(x.document_id, func.max(x.version).label("version"))
+        .where(x.document_id.in_(document_ids))
+        .group_by(x.document_id)
+        .subquery()
+    )
+    extractions: dict[UUID, DocumentExtraction] = {}
+    for row in conn.execute(
+        select(extraction_table).join(
+            newest, and_(newest.c.document_id == x.document_id, newest.c.version == x.version)
+        )
+    ):
+        extraction = DocumentExtraction.model_validate(dict(row._mapping))
+        if extraction.kind in EVIDENCE_KINDS:
+            extractions[row.document_id] = extraction
+    if not extractions:
+        return {}
+    ids = list(extractions)
+    rows = {
+        r.id: r for r in conn.execute(select(document_table).where(document_table.c.id.in_(ids)))
+    }
+    links: dict[UUID, list[Row]] = {doc_id: [] for doc_id in ids}
+    for link in conn.execute(select(link_table).where(link_table.c.document_id.in_(ids))):
+        links[link.document_id].append(link)
+    unit_ids = {lk.unit_id for found in links.values() for lk in found if lk.unit_id is not None}
+    loan_ids = {lk.loan_id for found in links.values() for lk in found if lk.loan_id is not None}
+    unit_property = (
+        dict(
+            conn.execute(
+                select(unit_table.c.id, unit_table.c.property_id).where(
+                    unit_table.c.id.in_(unit_ids)
+                )
+            ).all()
+        )
+        if unit_ids
+        else {}
+    )
+    loan_property = (
+        dict(
+            conn.execute(
+                select(loan_table.c.id, loan_table.c.property_id).where(
+                    loan_table.c.id.in_(loan_ids)
+                )
+            ).all()
+        )
+        if loan_ids
+        else {}
+    )
+    found: dict[UUID, _Evidence] = {}
+    for doc_id, extraction in extractions.items():
+        doc_links = links[doc_id]
+        properties = {lk.property_id for lk in doc_links if lk.property_id is not None}
+        doc_loans = sorted({lk.loan_id for lk in doc_links if lk.loan_id is not None})
+        if not properties:
+            properties |= {
+                unit_property[lk.unit_id]
+                for lk in doc_links
+                if lk.unit_id is not None and lk.unit_id in unit_property
+            }
+            properties |= {loan_property[i] for i in doc_loans if i in loan_property}
+        property_id = next(iter(properties)) if len(properties) == 1 else None
+        found[doc_id] = _Evidence(rows[doc_id], extraction, property_id, doc_loans)
+    return found
 
 
 def _backing_confirmed(conn: Connection, exclude_for: UUID | None) -> set[UUID]:
