@@ -20,6 +20,7 @@ from db.test_services_private_matching import (
     Private,
     _answer_line,
     _deps,
+    _propose,
     _rematch,
     _rows,
     _view,
@@ -245,7 +246,7 @@ def test_one_tick_books_lieferando_on_both_accounts(world, private, app_engine, 
     )
 
     rule = _learn(world, first, "-24.50", "hh_dining")
-    assert rule.matcher.counterparty_iban_hmac is None  # a rule learned earlier keeps its IBAN
+    assert rule.matcher.counterparty_iban_hmac is None  # name and sign: any account
     assert rule.matcher.counterparty_name_pattern == "^LIEFERANDO"
     assert set(world.query(matching.waiting_lines, "rule", rule.id)) == {
         bank_waiting,
@@ -320,3 +321,26 @@ def test_the_private_lines_trigger_picks_nothing_on_a_rental_account(world, priv
     kind = enqueue.TRIGGER_PRIVATE_LINES
     assert world.query(matching.waiting_lines, kind, world.account_id) == []
     assert world.query(matching.waiting_lines, kind, uuid.uuid4()) == []
+
+
+def test_rematch_waiting_keeps_the_models_proposal_and_books_what_a_rule_now_hits(
+    world, private, app_engine, tmp_path
+):
+    world.cmd(
+        rules_learned.create_rule,
+        MatchingRuleCreate(
+            matcher=RuleMatcher(counterparty_name_pattern="^EPRIMO GMBH", amount_sign="debit"),
+            split_method=SplitMethod.SINGLE_CATEGORY,
+            category="hh_energy",
+        ),
+    )
+    asked = private.line(date(2026, 9, 2), "-12.00", name="Kiosk Beispiel")
+    _propose(world, asked, "-12.00", "hh_groceries")
+    (before,) = _rows(world, asked)
+    longer = private.line(date(2026, 9, 1), "-84.00", name="EPRIMO GMBH FLUGHAFENSTRASSE 20")
+    _propose(world, longer, "-84.00", "hh_other")  # the model's guess, before the deploy
+
+    _recheck(app_engine, tmp_path, world, f"private_lines:{private.account_id}")
+    (after,) = _rows(world, asked)  # no rule hits: the proposal stays as it was
+    assert (after.id, after.status, after.method) == (before.id, "proposed", "llm")
+    assert _booked(world, longer) == ("hh_energy", "rule", "confirmed")
