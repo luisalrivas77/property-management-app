@@ -106,7 +106,9 @@ THRESHOLDS = MappingProxyType(
         C.HH_PROPERTY_COST: None,
         C.HH_TAX_PAYMENT: None,
         C.HH_CREDIT_CARD: None,
-        C.HH_CASH: None,  # not named by D159; the conservative reading
+        # D159 amended 14 Nov 2026 (Luis could not tick „Künftig immer so zuordnen“ on an ATM
+        # withdrawal): 0.9 like the spending groups, so a cash withdrawal can learn a rule.
+        C.HH_CASH: _RECURRING,
         # D176 (3): a card's interest and fee lines are booked by code, never by a threshold.
         C.HH_INTEREST_FEES: None,
         # D159 amended 13 Nov 2026: the finer spending codes at 0.9 like their groups; None

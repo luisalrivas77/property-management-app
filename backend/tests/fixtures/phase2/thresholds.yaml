@@ -51,8 +51,9 @@ thresholds:
   # hh_child_benefit and the spending groups; null for the tax-relevant codes, hh_tax_refund,
   # hh_other_income, hh_capital_income, hh_credit_card and the transfer codes (D159 lists
   # them), hh_other (D159's null list names it although it is a spending group: the explicit
-  # list wins), the depot codes (D165 (1)) and hh_cash (not named by D159: reading, the
-  # conservative null).
+  # list wins), the depot codes (D165 (1)). hh_cash (not named by D159) was read as the
+  # conservative null until D159 amended 14 Nov 2026 set it to 0.9, so an ATM withdrawal can
+  # learn a rule („Künftig immer so zuordnen“ was greyed on it).
   - {category: hh_salary, threshold: "0.900"}
   - {category: hh_child_benefit, threshold: "0.900"}
   - {category: hh_tax_refund, threshold: null}
@@ -74,7 +75,7 @@ thresholds:
   - {category: hh_tax_payment, threshold: null}
   - {category: internal_transfer_in, threshold: null}
   - {category: internal_transfer_out, threshold: null}
-  - {category: hh_cash, threshold: null}
+  - {category: hh_cash, threshold: "0.900"}
   - {category: hh_credit_card, threshold: null}
   - {category: hh_interest_fees, threshold: null}  # D176 (3): booked by code, step 2b
   # D159 amended 13 Nov 2026 (migration 0029): 0.9 like the spending groups; null for money
