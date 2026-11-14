@@ -151,6 +151,40 @@ def test_disney_learned_on_the_short_name_books_the_long_names_waiting_lines(
     assert _booked(world, later) == ("hh_subscriptions", "rule", "confirmed")
 
 
+CARD_DISNEY = "12345678 PAYPAL *DISNEYPLUS Taurusavenue 9 2132LS Hoofddorp"
+
+
+def test_the_direct_debit_merchant_rule_books_the_card_form_and_back(
+    world, private, app_engine, tmp_path
+):
+    # 14 Nov 2026: the card line has no „Ihr Einkauf bei“ and its name starts with digits, so
+    # the direct debit's rule missed it after PR #299, though both are one payee.
+    card = SecondPrivate(world, CARD_ACCOUNT_IBAN)
+    card_waiting = card.line(date(2026, 9, 5), "-9.99", name=CARD_DISNEY, purpose=CARD_DISNEY)
+    other = "12345678 PAYPAL *MICROSOFT Taurusavenue 9 2132LS Hoofddorp"
+    card_other = card.line(date(2026, 9, 6), "-7.00", name=other, purpose=other)
+    debit = private.line(
+        date(2026, 10, 5), "-9.99", name=SHORT, iban=PAYPAL_IBAN, purpose=_paypal("DisneyPlus", 1)
+    )
+    rule = _learn(world, debit, "-9.99", "hh_streaming")
+    assert rule.matcher.purpose_pattern == r"Ihr Einkauf bei DisneyPlus(?!\w)"
+    assert world.query(matching.waiting_lines, "rule", rule.id) == [card_waiting]
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    assert _booked(world, card_waiting) == ("hh_streaming", "rule", "confirmed")
+    assert _rows(world, card_other) == []
+
+    # The reverse: a rule learned on the card form books the direct debit.
+    debit_waiting = private.line(
+        date(2026, 11, 5), "-9.99", name=LONG, iban=PAYPAL_IBAN, purpose=_paypal("DisneyPlus", 2)
+    )
+    later_card = card.line(date(2026, 11, 6), "-9.99", name=CARD_DISNEY, purpose=CARD_DISNEY)
+    on_card = _learn(world, later_card, "-9.99", "hh_streaming")
+    assert on_card.matcher.counterparty_name_pattern == r"^PAYPAL \*DISNEYPLUS TAURUSAVENUE"
+    assert debit_waiting in world.query(matching.waiting_lines, "rule", on_card.id)
+    _recheck(app_engine, tmp_path, world, f"rule:{on_card.id}")
+    assert _booked(world, debit_waiting) == ("hh_streaming", "rule", "confirmed")
+
+
 def test_a_paypal_line_without_a_merchant_offers_no_rule(world, private):
     tx = private.line(
         date(2026, 10, 5), "-12.00", name=SHORT, iban=PAYPAL_IBAN, purpose="1041234567 PP.1234.PP"
@@ -260,6 +294,132 @@ def test_one_tick_books_lieferando_on_both_accounts(world, private, app_engine, 
     for tx in (bank_waiting, *card_waiting):
         assert _booked(world, tx) == ("hh_dining", "rule", "confirmed")
     assert _rows(world, grocer) == []
+
+
+# --- An IBAN rule reaches its payee on another IBAN (14 Nov 2026) ----------------------------
+
+SKY = "Sky Deutschland Fernsehen GmbH Co. KG"
+SKY_OLD_IBAN = "DE04100000000000000441"  # until March
+SKY_NEW_IBAN = "DE74100000000000000442"  # from April
+OTHER_COMPANY_IBAN = "DE47100000000000000443"
+
+
+def _sky_old(month: int) -> str:
+    return f"40123456 {month:02d}/26 SKY ABO - MEHR INFO AUF SKY.DE/KONTO"
+
+
+def test_an_iban_rule_books_the_same_company_on_its_earlier_iban(
+    world, private, app_engine, tmp_path
+):
+    waiting = [
+        private.line(date(2026, m, 1), "-30.00", name=SKY, iban=SKY_OLD_IBAN, purpose=_sky_old(m))
+        for m in (1, 2, 3)
+    ]
+    other = private.line(date(2026, 3, 2), "-30.00", name="EPRIMO GMBH", iban=OTHER_COMPANY_IBAN)
+    first = private.line(
+        date(2026, 4, 1),
+        "-30.00",
+        name="SKY DEUTSCHLAND FERNSEHEN GMBH + CO. KG",
+        iban=SKY_NEW_IBAN,
+        purpose="Ihr Sky Abo - 1234567890 - Zahlung 04/26",
+    )
+    rule = _learn(world, first, "-30.00", "hh_pay_tv")
+    hmac = protect_iban(SKY_NEW_IBAN, TEST_IBAN_KEY).hmac.hex()
+    assert (rule.matcher.counterparty_iban_hmac, rule.matcher.counterparty_name_pattern) == (
+        hmac,
+        None,
+    )
+    loaded = world.query(rules_learned.load_rule, rule.id)
+    assert loaded is not None and loaded.learned_from is not None
+    assert rule.learned_from is None  # the API's rule carries no origin line
+    assert world.query(matching.waiting_lines, "rule", rule.id) == waiting
+
+    plans = _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    assert [p.outcome for p in plans] == ["written"] * 3
+    for tx in waiting:
+        (row,) = _rows(world, tx)
+        assert (row.category, row.method, row.status, row.rule_id) == (
+            "hh_pay_tv",
+            "rule",
+            "confirmed",
+            rule.id,
+        )
+    assert _rows(world, other) == []  # another company, on its own IBAN
+
+
+def test_an_iban_rule_does_not_reach_a_shared_iban(world, private, app_engine, tmp_path):
+    # the earlier IBAN carries two payees: it names none, so the IBAN rule does not reach it
+    sky = private.line(date(2026, 3, 1), "-30.00", name=SKY, iban=SKY_OLD_IBAN, purpose="x")
+    private.line(date(2026, 3, 2), "-12.00", name="EPRIMO GMBH", iban=SKY_OLD_IBAN)
+    first = private.line(date(2026, 4, 1), "-30.00", name=SKY, iban=SKY_NEW_IBAN)
+    rule = _learn(world, first, "-30.00", "hh_pay_tv")
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    assert _rows(world, sky) == []
+
+
+def test_a_weak_cross_iban_hit_is_proposed_with_a_question(world, private, app_engine, tmp_path):
+    asked = private.line(date(2026, 9, 3), "-19.90", name="ADLER APOTHEKE", iban=OTHER_COMPANY_IBAN)
+    first = private.line(date(2026, 10, 3), "-59.90", name="ADLER MODEMARKT", iban=SKY_NEW_IBAN)
+    rule = _learn(world, first, "-59.90", "hh_clothing")
+    assert rule.matcher.counterparty_name_pattern is None  # an IBAN rule
+    assert world.query(matching.waiting_lines, "rule", rule.id) == [asked]
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    (row,) = _rows(world, asked)
+    assert (row.category, row.method, row.status, row.rule_id) == (
+        "hh_clothing",
+        "rule",
+        "proposed",
+        rule.id,
+    )
+    assert row.question == "Gleicher Empfänger wie „ADLER MODEMARKT“? Bitte bestätigen."
+
+
+@pytest.mark.parametrize(
+    ("amount", "status"), [("-59.00", "confirmed"), ("-39.00", "proposed")], ids=["same", "other"]
+)
+def test_a_cross_iban_hit_books_only_at_the_rules_latest_amount(
+    world, private, app_engine, tmp_path, amount, status
+):
+    """Review F1 (Luis, 14 Nov 2026): the rule's latest confirmed amount on its own IBAN
+    decides; another amount is proposed with the question."""
+    waiting = private.line(
+        date(2026, 3, 1), amount, name=SKY, iban=SKY_OLD_IBAN, purpose=_sky_old(3)
+    )
+    # the price went up: the latest confirmed line on the rule's IBAN is -59.00, newer than
+    # the -30.00 line the rule is learned from
+    raised = private.line(date(2026, 5, 1), "-59.00", name=SKY, iban=SKY_NEW_IBAN)
+    _answer_line(world, raised, "-59.00", "hh_pay_tv", learn=False)
+    first = private.line(date(2026, 4, 1), "-30.00", name=SKY, iban=SKY_NEW_IBAN)
+    rule = _learn(world, first, "-30.00", "hh_pay_tv")
+    assert world.query(matching.waiting_lines, "rule", rule.id) == [waiting]
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    (row,) = _rows(world, waiting)
+    assert (row.category, row.method, row.status, row.rule_id) == (
+        "hh_pay_tv",
+        "rule",
+        status,
+        rule.id,
+    )
+    if status == "proposed":
+        assert row.question == f"Gleicher Empfänger wie „{SKY}“? Bitte bestätigen."
+
+
+def test_one_insurers_other_product_on_another_iban_is_only_proposed(
+    world, private, app_engine, tmp_path
+):
+    """Review F1: the Kfz-Versicherung rule on one IBAN never books the same insurer's
+    Hausrat on another IBAN, whose amount differs."""
+    insurer = "Allianz Versicherungs-AG"
+    home = private.line(
+        date(2026, 9, 1), "-12.50", name=insurer, iban=OTHER_COMPANY_IBAN, purpose="Hausrat"
+    )
+    car = private.line(date(2026, 10, 1), "-89.00", name=insurer, iban=SKY_NEW_IBAN, purpose="Kfz")
+    rule = _learn(world, car, "-89.00", "hh_ins_car")
+    assert rule.matcher.counterparty_name_pattern is None  # an IBAN rule
+    _recheck(app_engine, tmp_path, world, f"rule:{rule.id}")
+    (row,) = _rows(world, home)
+    assert (row.category, row.status) == ("hh_ins_car", "proposed")
+    assert row.question == f"Gleicher Empfänger wie „{insurer}“? Bitte bestätigen."
 
 
 # --- `hausbuch rematch-waiting` --------------------------------------------------------------

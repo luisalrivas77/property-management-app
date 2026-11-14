@@ -443,9 +443,23 @@ def apply_rule(
 
     Review F2 (14 Nov 2026): a rule whose name pattern hits the line only through a WEAK
     identity (weak_hit) gives its set as a proposal (GUARDED_CONFIDENCE and WEAK_QUESTION),
-    never an auto-confirm; rule_answer prefers a strong hit."""
-    if not rule.enabled or not rule_hits(rule.matcher, tx):
+    never an auto-confirm; rule_answer prefers a strong hit.
+
+    D160 amended (4), 14 Nov 2026: an IBAN rule learned on a private line also reaches that
+    line's payee on another IBAN (cross_iban_hit): a STRONG identity books as the rule would,
+    a WEAK one, or any such hit of a same_amount_only rule (whose amount kind the other IBAN's
+    history may not show), is a proposal with WEAK_QUESTION naming the payee. Review F1
+    (Luis, 14 Nov 2026): a STRONG one books only at the amount of the rule's latest
+    confirmed line (cross_iban_reference, read from `history`, which then holds the rule's
+    IBAN's lines too), else it is that proposal: one company's other product on another
+    IBAN (Kfz-Versicherung and Hausrat) is never booked as the first."""
+    if not rule.enabled:
         return None
+    cross = None
+    if not rule_hits(rule.matcher, tx):
+        cross = cross_iban_hit(rule, tx, context)
+        if cross is None:
+            return None
     if iban_only(rule.matcher) and rule.matcher.counterparty_iban_hmac in context.shared_iban_hmacs:
         return None
     if service_blind(rule.matcher, tx):
@@ -457,6 +471,14 @@ def apply_rule(
     if split is None or split.confidence != EXACT:
         return None
     found = _as_set(tx, split, AllocationMethod.RULE, rule_id=rule.id)
+    if cross is not None and (
+        cross == WEAK
+        or rule.same_amount_only
+        or cross_iban_reference(rule, tx, history) != tx.amount
+    ):
+        return found.model_copy(
+            update={"confidence": GUARDED_CONFIDENCE, "question": _cross_question(rule)}
+        )
     if weak_hit(rule.matcher, tx):
         # Review F2 (principle 3): the rule names this payee only loosely ("ADLER MODEMARKT"
         # and "ADLER APOTHEKE"), so a person confirms it.
@@ -515,18 +537,23 @@ def rule_answer(
 
     Rules are the workspace's, not an account's (phase 6 D159): a hit whose categories the
     line's account does not take (a household rule on a rental card line, a rental rule on a
-    private line) is no hit."""
+    private line) is no hit.
+
+    D160 amended (4), 14 Nov 2026: a strong hit of a rule that names the line itself
+    (rule_hits) wins over one that reaches it from another IBAN (cross_iban_hit), which counts
+    only when no rule names the line strongly."""
     allowed = allowed_categories(context.account_purpose)
-    found_hits = [
+    reached = [
         (rule, s)
         for rule in rules
         if (s := apply_rule(rule, tx, context, history)) is not None
         and all(a.category in allowed for a in s.allocations)
     ]
     # Review F2: a weak hit (weak_hit) is a proposal; it counts only when no rule hits strongly.
-    hits = [(rule, s) for rule, s in found_hits if not weak_proposal(s)]
+    strong = [(rule, s) for rule, s in reached if not weak_proposal(s)]
+    hits = [(rule, s) for rule, s in strong if rule_hits(rule.matcher, tx)] or strong
     if not hits:
-        weak = [s for _, s in found_hits]
+        weak = [s for _, s in reached]
         if not weak or any(not same_split(weak[0], other) for other in weak[1:]):
             return None
         return weak[0]
@@ -1015,9 +1042,7 @@ def rule_hits(matcher: RuleMatcher, tx: MatchTransaction) -> bool:
     wanted = matcher.counterparty_iban_hmac
     if wanted is not None and tx.counterparty_iban_hmac != wanted:
         return False
-    if matcher.amount_sign == "credit" and not tx.amount > 0:
-        return False
-    if matcher.amount_sign == "debit" and not tx.amount < 0:
+    if not _sign_fits(matcher, tx):
         return False
     name_pattern = matcher.counterparty_name_pattern
     purpose_pattern = matcher.purpose_pattern
@@ -1025,6 +1050,14 @@ def rule_hits(matcher: RuleMatcher, tx: MatchTransaction) -> bool:
         return purpose_pattern is None or _found(purpose_pattern, tx.purpose)
     # D160 amended (4): a learned name pattern also hits the other spellings of its payee.
     return _names_hit(name_pattern, purpose_pattern, tx.counterparty_name, tx.purpose)
+
+
+def _sign_fits(matcher: RuleMatcher, tx: MatchTransaction) -> bool:
+    if matcher.amount_sign == "credit":
+        return tx.amount > 0
+    if matcher.amount_sign == "debit":
+        return tx.amount < 0
+    return True
 
 
 def _found(pattern: str, text: str | None) -> bool:
@@ -1685,14 +1718,52 @@ def _names_strength(
     expressions (_name_found, _found), a STRONG hit, or, for a learned name pattern without a
     purpose pattern, the line's payee (_payee_hit, STRONG or WEAK). None for no hit. A purpose
     of None is not known (a caller that has only the name): the purpose pattern then counts as
-    a hit, so a check never passes on missing evidence."""
+    a hit, so a check never passes on missing evidence.
+
+    14 Nov 2026 (D160 amended (4)): a payment service's merchant rule in its learned shape
+    (_learned_service_payee: the service's word and the merchant's purpose phrase, as
+    _purpose_payee builds them) also hits a line of the same service whose merchant is the
+    rule's (_identity, STRONG or WEAK), in whatever form the line names it: the card form
+    "<digits> PAYPAL *DISNEYPLUS …" has no „Ihr Einkauf bei“ in its purpose and its name does
+    not start with the service's word. A purpose pattern a person typed keeps its plain
+    regular-expression meaning."""
     if purpose_pattern is not None:
-        if purpose is not None and not _found(purpose_pattern, purpose):
+        known = purpose is None or _found(purpose_pattern, purpose)
+        if known and _name_found(name_pattern, name):
+            return STRONG
+        learned = _learned_service_payee(name_pattern, purpose_pattern)
+        if learned is None:
             return None
-        return STRONG if _name_found(name_pattern, name) else None
+        line = payee(name, purpose)
+        if line.service is not learned.service:
+            return None
+        return _identity(learned.words, line.words)
     if _name_found(name_pattern, name):
         return STRONG
     return _payee_hit(name_pattern, name, purpose)
+
+
+def _learned_service_payee(name_pattern: str | None, purpose_pattern: str | None) -> Payee | None:
+    """The merchant a payment service's rule names when it is in the learned shape (D160
+    amended (4)): the name pattern is the service's word (^PAYPAL\\b) and the purpose pattern
+    the service's phrase and the merchant, exactly as _purpose_payee builds them from a direct
+    debit („Ihr Einkauf bei DisneyPlus(?!\\w)“). None for any other pair of patterns, a
+    person's own included, which keep their plain regular-expression meaning."""
+    if name_pattern is None or purpose_pattern is None:
+        return None
+    tail = r"(?!\w)"
+    for service in PAYMENT_SERVICES:
+        if name_pattern != rf"^{service.word}\b" or not purpose_pattern.endswith(tail):
+            continue
+        for phrase in service.purpose_phrases:
+            head = _as_pattern(phrase).removeprefix("^") + " "
+            if not purpose_pattern.startswith(head):
+                continue
+            merchant = re.sub(r"\\(.)", r"\1", purpose_pattern[len(head) : -len(tail)])
+            found = _purpose_payee(service, f"{phrase} {merchant}")
+            if (found.name_pattern, found.purpose_pattern) == (name_pattern, purpose_pattern):
+                return found  # the exact round trip: what a direct debit's rule is learned as
+    return None
 
 
 WEAK_QUESTION = "Gleicher Empfänger wie „{label}“? Bitte bestätigen."
@@ -1714,6 +1785,9 @@ def weak_question(matcher: RuleMatcher) -> str:
     """WEAK_QUESTION naming the payee the rule was learned on: a payment service's merchant
     („PayPal: DisneyPlus“) or the learned name ("ADLER MODEMARKT")."""
     pattern = matcher.counterparty_name_pattern or ""
+    service = _learned_service_payee(pattern, matcher.purpose_pattern)
+    if service is not None:
+        return WEAK_QUESTION.format(label=service.label)
     text = _learned_text(pattern) or pattern.removeprefix("^")
     learned = payee(text)
     return WEAK_QUESTION.format(label=learned.label or text)
@@ -1777,6 +1851,117 @@ def iban_only(matcher: RuleMatcher) -> bool:
         and matcher.counterparty_name_pattern is None
         and matcher.purpose_pattern is None
     )
+
+
+# --- An IBAN rule reaches its payee on another IBAN (D160 amended (4), 14 Nov 2026) --------
+#
+# One subscription was collected from one IBAN until March and from another from April; the
+# rule learned on the second IBAN left the first one's lines waiting. An IBAN rule learned on
+# a private line knows that line's payee (MatchingRule.learned_from, read by the rules loader
+# from the rule's created_from_allocation_id, never stored on the rule), so it also reaches a
+# private line on another IBAN whose payee is the same (_identity): STRONG books at the
+# amount of the rule's latest confirmed line (cross_iban_reference, review F1), WEAK proposes
+# (apply_rule). Not on a shared IBAN, the rental account, a matcher's counterparty (an own
+# account, a tenant, a lender), a payment service's line, or for a split.
+
+
+def cross_iban_payee(rule: MatchingRule) -> Payee | None:
+    """The payee of the private line an IBAN rule was learned from, when the rule may reach
+    that payee on another IBAN: an enabled single_category rule of a learnable household code
+    on the IBAN alone (iban_only), loaded with that line (MatchingRule.learned_from), whose
+    payee is named (not a payment service's). None for any other rule (a typed one, one
+    without a known origin line, a split, a rental rule): it keeps its old behaviour."""
+    origin = rule.learned_from
+    if (
+        origin is None
+        or not rule.enabled
+        or not iban_only(rule.matcher)
+        or rule.split_method is not SplitMethod.SINGLE_CATEGORY
+        or rule.category is None
+        or not learnable_household(rule.category)
+    ):
+        return None
+    found = payee(*origin)
+    return found if found.words and found.service is None else None
+
+
+def cross_iban_candidate(rule: MatchingRule, tx: MatchTransaction) -> str | None:
+    """How surely (_identity: STRONG, WEAK, None) the payee `rule` was learned on
+    (cross_iban_payee) is the payee of `tx`, a line of the rule's sign whose counterparty IBAN
+    is another than the rule's; None for a line without an IBAN, on the rule's own IBAN (that
+    is rule_hits'), or a payment service's line. The context-free part of cross_iban_hit, also
+    how services.matching.waiting_lines picks the lines a new rule may book."""
+    learned = cross_iban_payee(rule)
+    hmac = tx.counterparty_iban_hmac
+    if learned is None or hmac is None or hmac == rule.matcher.counterparty_iban_hmac:
+        return None
+    if tx.amount == 0 or not _sign_fits(rule.matcher, tx):
+        return None
+    line = payee(tx.counterparty_name, tx.purpose)
+    if line.service is not None:
+        return None
+    return _identity(learned.words, line.words)
+
+
+def cross_iban_hit(rule: MatchingRule, tx: MatchTransaction, context: MatchContext) -> str | None:
+    """cross_iban_candidate on a private line only, and never when the rule's IBAN or the
+    line's is shared (context.shared_iban_hmacs: services.matching adds the rule's when it
+    is) or a matcher's counterparty (matcher_owns: an own account, a tenant, a lender)."""
+    if context.account_purpose is not AccountPurpose.PRIVATE:
+        return None
+    own, line = rule.matcher.counterparty_iban_hmac, tx.counterparty_iban_hmac
+    if own is None or line is None:
+        return None
+    if own in context.shared_iban_hmacs or line in context.shared_iban_hmacs:
+        return None
+    if matcher_owns(own, context) or matcher_owns(line, context):
+        return None
+    return cross_iban_candidate(rule, tx)
+
+
+def cross_iban_reference(
+    rule: MatchingRule, tx: MatchTransaction, history: Sequence[HistoryLine]
+) -> Decimal | None:
+    """Review F1 (Luis, 14 Nov 2026): the amount a cross-IBAN hit must equal to be booked.
+    The amount of the rule's latest confirmed line on its own IBAN: of the line's sign, whose
+    current rows are one confirmed row of the rule's category, the newest booked on or before
+    the line's date, else the newest of all (by booking date, then transaction id). Without
+    one, the amount of the line the rule was learned from (MatchingRule.learned_amount);
+    None when neither is known, so the hit is a proposal. `history` may hold any lines; the
+    service adds the rule's IBAN's (services.matching.deterministic_set)."""
+    own = rule.matcher.counterparty_iban_hmac
+    if own is None:
+        return None
+    lines = []
+    for line in history:
+        if line.counterparty_iban_hmac != own or line.transaction_id == tx.id:
+            continue
+        if line.amount == 0 or (line.amount > 0) != (tx.amount > 0):
+            continue
+        current = [r for r in line.rows if r.status is not AllocationStatus.SUPERSEDED]
+        if len(current) != 1:
+            continue
+        (only,) = current
+        if only.status is AllocationStatus.CONFIRMED and only.category is rule.category:
+            lines.append(line)
+    if not lines:
+        return rule.learned_amount
+    earlier = [line for line in lines if line.booking_date <= tx.booking_date] or lines
+    return max(earlier, key=lambda line: (line.booking_date, str(line.transaction_id))).amount
+
+
+def rule_reaches(rule: MatchingRule, tx: MatchTransaction, context: MatchContext) -> bool:
+    """Whether the rule names the line (rule_hits) or reaches it from another IBAN
+    (cross_iban_hit): the lines whose history apply_rule may read."""
+    if not rule.enabled:
+        return False
+    return rule_hits(rule.matcher, tx) or cross_iban_hit(rule, tx, context) is not None
+
+
+def _cross_question(rule: MatchingRule) -> str:
+    """WEAK_QUESTION naming the payee of the line the rule was learned from."""
+    name, _ = rule.learned_from or (None, None)
+    return WEAK_QUESTION.format(label=" ".join((name or "").split()))
 
 
 def learnable_household(category: AllocationCategory) -> bool:
