@@ -266,6 +266,32 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "exchange.correction_no_difference": "Dieser Coin stimmt mit dem Bestand laut Börse überein; es gibt nichts zu korrigieren.",
   "exchange.correction_stale":
     "Seit der Eingabe des Bestands haben sich die Bewegungen geändert. Bitte den Bestand laut Börse neu eingeben und dann die Differenz buchen.",
+  // D193: why a document cannot be deleted; each names what still depends on it.
+  "document.delete_blocked.statement_import": "Aus diesem Auszug wurden Umsätze eingelesen; sie bleiben unverändert im Konto.",
+  "document.delete_blocked.bank_statement": "Es ist ein Kontoauszug, den die Bank über den Bankabruf geliefert hat; er gehört ins Jahresarchiv.",
+  "document.delete_blocked.movement_import": "Aus dieser Datei wurden Depot- oder Börsenbewegungen eingelesen; sie bleiben unverändert.",
+  "document.delete_blocked.asset_movement": "Eine eingelesene Depot- oder Börsenbewegung nennt dieses Dokument als Quelle.",
+  "document.delete_blocked.holding_statement": "Ein Depotbestand (Bestandsmeldung) beruht auf diesem Dokument.",
+  "document.delete_blocked.price": "Ein gespeicherter Kurs beruht auf diesem Dokument.",
+  "document.delete_blocked.allocation": "Eine Buchung nennt dieses Dokument als Beleg.",
+  "document.delete_blocked.applied_proposal": "Aus seinem Vorschlag wurden schon Werte übernommen.",
+  "document.delete_blocked.link":
+    "Das Dokument ist verknüpft. Zuerst unten unter „Verknüpfungen“ jede Verknüpfung entfernen, dann kann es gelöscht werden.",
+  "document.delete_blocked.linked_from_document":
+    "Ein anderes Dokument (z. B. ein Zahlungsnachweis) ist mit diesem verknüpft. Zuerst dort die Verknüpfung entfernen.",
+  "document.delete_blocked.acquisition_cost":
+    "Es ist der Beleg einer Kaufnebenkosten-Zeile. Zuerst bei der Immobilie unter Kauf der Zeile einen anderen Beleg geben.",
+  "document.delete_blocked.price_split": "Es belegt eine Kaufpreisaufteilung der Immobilie.",
+  "document.delete_blocked.rent_schedule": "Es belegt eine Mietänderung.",
+  "document.delete_blocked.tax_input": "Eine Steuerangabe beruht auf diesem Dokument.",
+  "document.delete_blocked.income_input": "Eine Einkommensangabe (z. B. aus einem Steuerbescheid) beruht auf diesem Dokument.",
+  "document.delete_blocked.return_input":
+    "Eine Angabe zur Einkommensteuer (z. B. aus einer Lohnsteuerbescheinigung oder Gehaltsabrechnung) beruht auf diesem Dokument.",
+  "document.delete_blocked.tax_export": "Es steckt in einem schon erstellten Steuer-Export (Ausfüllhilfe oder Jahresarchiv), der unverändert bleibt.",
+  "document.delete_blocked.inbound_mail": "Es kam als Anhang einer weitergeleiteten E-Mail; deren Eingangsliste bleibt unverändert.",
+  "document.delete_blocked.other_proposal":
+    "Ein offener Vorschlag eines anderen Dokuments nennt dieses. Zuerst diesen Vorschlag übernehmen oder verwerfen.",
+  "document.delete_blocked.ai_call": "Eine KI-Auswertung dieses Dokuments ist an anderer Stelle als Quelle genannt.",
 };
 
 /** German text for a proposal's `error_code`: why reading the document failed or was

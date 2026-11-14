@@ -367,8 +367,8 @@ class DocumentDetail(Schema):
     statement_offer: StatementFileOffer | None = None
     # D193, „Dokument löschen“: whether DELETE /documents/{id} would delete it, and if not, why
     # (one `document.delete_blocked.<kind>` code per kind of row that depends on it).
-    deletable: bool = False
-    delete_blocked_by: list[str] = Field(default_factory=list)
+    deletable: bool
+    delete_blocked_by: list[str]
 
 
 class LinkTargetRef(Schema):

@@ -283,6 +283,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "document.typed": "Dokument typisiert",
   "document.linked": "Dokument verknüpft",
   "document.unlinked": "Verknüpfung entfernt",
+  "document.deleted": "Dokument gelöscht",
   "document.classified": "Dokument klassifiziert",
   "document.extracted": "Felder ausgelesen",
   "document.read_failed": "Dokument konnte nicht gelesen werden",
