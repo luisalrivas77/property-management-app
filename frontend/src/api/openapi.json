@@ -9590,6 +9590,7 @@
           "hh_refund",
           "hh_fuel",
           "hh_streaming",
+          "hh_pay_tv",
           "hh_music_audio",
           "hh_software",
           "hh_cloud",

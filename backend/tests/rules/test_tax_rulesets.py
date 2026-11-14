@@ -123,6 +123,7 @@ CATEGORY_LINES = {
     C.HH_REFUND: None,
     C.HH_FUEL: None,
     C.HH_STREAMING: None,
+    C.HH_PAY_TV: None,
     C.HH_MUSIC_AUDIO: None,
     C.HH_SOFTWARE: None,
     C.HH_CLOUD: None,

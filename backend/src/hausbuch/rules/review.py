@@ -134,6 +134,7 @@ THRESHOLDS = MappingProxyType(
         # D159 amended 14 Nov 2026 (migration 0032): the subcategories at 0.9 like their
         # groups' codes (hh_postage too, though hh_other, its group's fallback, has none).
         C.HH_STREAMING: _RECURRING,
+        C.HH_PAY_TV: _RECURRING,  # D159 amended (4) 14 Nov 2026 (migration 0033), as hh_streaming
         C.HH_MUSIC_AUDIO: _RECURRING,
         C.HH_SOFTWARE: _RECURRING,
         C.HH_CLOUD: _RECURRING,
