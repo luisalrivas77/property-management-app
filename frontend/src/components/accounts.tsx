@@ -9,7 +9,7 @@ import Link from "next/link";
 import { useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import { ruleCodeText } from "@/api/errors";
+import { ApiError, ruleCodes, ruleCodeText } from "@/api/errors";
 import type {
   Document,
   ImportBody,
@@ -168,9 +168,27 @@ export function StatementUpload({
       {results.map((result, index) => (
         <ImportResult key={index} result={result} />
       ))}
-      <ErrorNotice error={error} />
+      {(card || depot) && isUnknownFormat(error) ? (
+        <div className="notice notice-warn" role="status">
+          <p>
+            {depot
+              ? "Das ist kein Kontoauszug des Depots. Hier wird nur der Kontoauszug (die Liste der Buchungen mit Anfangs- und Endsaldo) eingelesen."
+              : "Das ist keine Kreditkartenabrechnung, die Hausbuch lesen kann."}{" "}
+            Andere Unterlagen – zum Beispiel Wertpapierabrechnungen, Ein- und Ausbuchungen, Quartals- und Steuerberichte oder
+            Verträge – unter <Link href="/documents">Dokumente</Link> mit „Dokumente hochladen“ hochladen: dort liest die KI sie
+            und schlägt vor, was daraus übernommen wird.
+          </p>
+        </div>
+      ) : (
+        <ErrorNotice error={error} />
+      )}
     </div>
   );
+}
+
+/** A file none of the statement readers knows (statement.unknown_format). */
+function isUnknownFormat(error: unknown): boolean {
+  return error instanceof ApiError && error.body != null && ruleCodes(error.body).includes("statement.unknown_format");
 }
 
 function ImportResult({ result }: { result: Imported }) {
