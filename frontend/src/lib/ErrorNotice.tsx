@@ -26,7 +26,15 @@ export function ErrorNotice({ error, text: override }: { error: unknown; text?: 
     <div className="notice notice-error" role="alert">
       <p>
         {text}
-        {code ? <code className="error-code">{code}</code> : null}
+        {/* The stable code for reference, after a space and in brackets: never glued to the sentence. */}
+        {code ? (
+          <>
+            {" "}
+            <span className="muted">
+              (<code>{code}</code>)
+            </span>
+          </>
+        ) : null}
       </p>
       {details.length > 0 ? (
         <ul>
