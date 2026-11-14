@@ -1042,6 +1042,73 @@ def name_history(conn: Connection, tx: MatchTransaction) -> list[NameHistory]:
     ]
 
 
+def pattern_lines(
+    conn: Connection, tx: MatchTransaction, word: str, purpose: AccountPurpose
+) -> list[matchers.PatternLine]:
+    """The workspace's other lines of the line's sign whose purpose contains `word` (the
+    first word a suggested purpose pattern anchors, rules.matching.purpose_word), every
+    account, with the categories of their confirmed current rows; lines merged away as a
+    duplicate left out. One query; it reads a superset of what `^word` hits (any position,
+    any non-ASCII letter matched by one character whatever the database's locale folds), so
+    the caller narrows it with rules.matching.rule_hits. `waiting` as in waiting_lines (a
+    reconciled import, no confirmed row), on an account of `purpose`: a rule learned on the
+    line books no other purpose's line (rules_learned.rules_for_purpose, the categories each
+    purpose takes)."""
+    if tx.amount == 0:
+        return []
+    t = transaction_table.c
+    a = allocation_table.c
+    # The word is letters only: no LIKE wildcard to escape. ILIKE folds ASCII in any locale.
+    like = "%" + "".join(ch if ch.isascii() else "_" for ch in word) + "%"
+    confirmed = func.array_agg(a.category).filter(a.status == AllocationStatus.CONFIRMED.value)
+    rows = conn.execute(
+        select(
+            t.id,
+            t.booking_date,
+            t.value_date,
+            t.amount,
+            t.counterparty_name,
+            t.counterparty_iban_hmac,
+            t.purpose,
+            t.booking_text,
+            import_table.c.status.label("import_status"),
+            account_table.c.purpose.label("account_purpose"),
+            confirmed.label("confirmed"),
+        )
+        .select_from(
+            transaction_table.join(import_table, import_table.c.id == t.import_id)
+            .join(account_table, account_table.c.id == t.account_id)
+            .outerjoin(
+                allocation_table,
+                and_(
+                    a.transaction_id == t.id,
+                    a.status != AllocationStatus.SUPERSEDED.value,
+                ),
+            )
+        )
+        .where(
+            t.purpose.ilike(like),
+            t.amount > 0 if tx.amount > 0 else t.amount < 0,
+            t.id != tx.id,
+            t.excluded_as_duplicate_of.is_(None),
+        )
+        .group_by(t.id, import_table.c.status, account_table.c.purpose)
+    ).all()
+    lines = []
+    for row in rows:
+        categories = tuple(AllocationCategory(c) for c in row.confirmed or ())
+        lines.append(
+            matchers.PatternLine(
+                tx=match_transaction(row),
+                confirmed=categories,
+                waiting=not categories
+                and row.import_status == ImportStatus.RECONCILED.value
+                and row.account_purpose == purpose.value,
+            )
+        )
+    return lines
+
+
 def _guarded(conn: Connection, found: AllocationSet) -> AllocationSet:
     """Review F3 / D39: a rent set for a tenancy and period, or an instalment of a loan,
     already confirmed on another line goes to review.
