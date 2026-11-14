@@ -10662,6 +10662,11 @@ export interface components {
          *     it. None otherwise. suggested_pattern_waiting: how many waiting lines (as in
          *     waiting_amount_counts, this line excluded, on accounts of its purpose) that rule would
          *     book.
+         *     payee_label (phase 6 D160 amended (4), 14 Nov 2026): for a payment service's line
+         *     (PayPal, Klarna) the service and the merchant it names („PayPal: DisneyPlus“), whose
+         *     lines the rule books; None for any other line. no_merchant: a payment service's line
+         *     whose merchant cannot be read, so no rule is learned from it (rule.no_merchant) and the
+         *     panel greys the box with that reason.
          */
         TransactionAllocations: {
             transaction: components["schemas"]["Transaction"];
@@ -10704,6 +10709,13 @@ export interface components {
              * @default 0
              */
             suggested_pattern_waiting: number;
+            /** Payee Label */
+            payee_label?: string | null;
+            /**
+             * No Merchant
+             * @default false
+             */
+            no_merchant: boolean;
         };
         /**
          * TransferLegSource
