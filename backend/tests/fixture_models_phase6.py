@@ -352,6 +352,70 @@ class MerchantPatternFixture(_Fixture):
     cases: list[MerchantCase] = Field(min_length=10)
 
 
+# --- payee_identity.yaml: rules.matching.payee, same_payee, shared_iban (D160 amended (4)) --
+# Checked on load for shape only; tests/rules/test_payee_identity.py replays it on the code.
+
+
+class PayeeLine(Schema):
+    name: str
+    purpose: str | None = None
+
+
+class PayeePair(_Case):
+    id: str
+    a: PayeeLine
+    b: PayeeLine
+    same: bool | None
+    today: bool | None = None  # what the code reads a `same: null` pair as
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _either_has_today(self) -> Self:
+        if (self.same is None) != (self.today is not None):
+            raise ValueError(f"{self.id}: `today` is given exactly for a `same: null` pair")
+        return self
+
+
+class PayeeCase(_Case):
+    id: str
+    name: str
+    purpose: str | None = None
+    label: str | None
+    name_pattern: str | None = None
+    purpose_pattern: str | None = None
+    unreadable: bool = False
+
+    @model_validator(mode="after")
+    def _a_pattern_or_unreadable(self) -> Self:
+        if self.unreadable == (self.name_pattern is not None):
+            raise ValueError(f"{self.id}: a readable payee has a name pattern, else none")
+        return self
+
+
+class SharedIbanCase(_Case):
+    id: str
+    lines: list[PayeeLine] = Field(min_length=1)
+    shared: bool
+
+
+class PayeeIdentityFixture(_Fixture):
+    same: list[PayeePair] = Field(min_length=10)
+    different: list[PayeePair] = Field(min_length=5)
+    either: list[PayeePair] = Field(default_factory=list)
+    payees: list[PayeeCase] = Field(min_length=5)
+    shared_ibans: list[SharedIbanCase] = Field(min_length=3)
+
+    @model_validator(mode="after")
+    def _sections(self) -> Self:
+        if any(p.same is not True for p in self.same):
+            raise ValueError("every pair under `same` is same: true")
+        if any(p.same is not False for p in self.different):
+            raise ValueError("every pair under `different` is same: false")
+        if any(p.same is not None for p in self.either):
+            raise ValueError("every pair under `either` is same: null")
+        return self
+
+
 # --- matching_order.yaml: the matching order per account purpose (D158) -------------------
 
 Stage = Literal[
@@ -2011,6 +2075,7 @@ MODELS: dict[str, type[Schema]] = {
     "household_categories": HouseholdCategoriesFixture,
     "fints_slots": FintsSlotsFixture,
     "merchant_pattern": MerchantPatternFixture,
+    "payee_identity": PayeeIdentityFixture,
     "matching_order": MatchingOrderFixture,
     "transfers": TransfersFixture,
     "private_cost_link": PrivateCostLinkFixture,

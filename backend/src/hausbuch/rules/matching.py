@@ -42,6 +42,7 @@ there is the IBAN plus the payee's name.
 """
 
 import re
+import unicodedata
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -79,6 +80,7 @@ from . import proof_match
 from .categories import CATEGORY_LABEL
 from .errors import (
     RULE_CONFLICTS,
+    RULE_NO_MERCHANT,
     RULE_TOO_BROAD,
     TRANSFER_AMBIGUOUS,
     TRANSFER_UNMATCHED_LEG,
@@ -432,10 +434,17 @@ def apply_rule(
 
     D160 amended: a rule on the IBAN alone never applies to a line whose IBAN is shared
     (context.shared_iban_hmacs), however it was learned (before the IBAN became shared, or on
-    another account): the IBAN does not name the payee there."""
+    another account): the IBAN does not name the payee there.
+
+    D160 amended (4), 14 Nov 2026: a rule that names no merchant never applies to a payment
+    service's line (service_blind: an IBAN-only rule on PayPal's IBAN, or one learned on PayPal's
+    name alone before that day), on any account: it is disabled on read, not deleted, since it
+    would book every merchant's payment through the service as the one it was learned on."""
     if not rule.enabled or not rule_hits(rule.matcher, tx):
         return None
     if iban_only(rule.matcher) and rule.matcher.counterparty_iban_hmac in context.shared_iban_hmacs:
+        return None
+    if service_blind(rule.matcher, tx):
         return None
     if rule.split_method is SplitMethod.AS_LAST_SPLIT:
         split = _as_last_split(rule, tx, history)
@@ -616,17 +625,20 @@ def infer_rule(
     rule on its IBAN, under the same limits; a tenant's or a lender's IBAN included, since a
     household rule never hits a rental line (rule_answer drops a hit its account does not take)
     and that rule is D158's "the counterparty is also a private one". D160 amended: on a
-    shared IBAN (context.shared_iban_hmacs) it is the IBAN plus the name pattern of _name_rule,
-    under _name_rule's checks."""
+    shared IBAN (context.shared_iban_hmacs) it is the name rule of _name_rule, under its
+    checks; since D160 amended (4) (14 Nov 2026) without the IBAN, and so is a payment
+    service's line (PayPal, Klarna), whose IBAN names the service, not the merchant."""
     if tx.amount == 0:
         return None
     if context.account_purpose is AccountPurpose.PRIVATE:
-        if tx.counterparty_iban_hmac is None:
+        if (
+            tx.counterparty_iban_hmac is None
+            or tx.counterparty_iban_hmac in context.shared_iban_hmacs
+            or payee(tx.counterparty_name, tx.purpose).service is not None
+        ):
+            # A shared IBAN or a service's names no payee: the rule is the payee's name (and
+            # the merchant's purpose pattern), checked like a name rule; None without a name.
             return _name_rule(tx, confirmed, names)
-        if tx.counterparty_iban_hmac in context.shared_iban_hmacs:
-            # D160 amended: a shared IBAN names no payee, so the rule is the IBAN and the
-            # payee's name, checked like a name rule; None for a line without a name.
-            return _name_rule(tx, confirmed, names, iban_hmac=tx.counterparty_iban_hmac)
         if len(confirmed.allocations) != 1:
             return None
         (only,) = confirmed.allocations
@@ -992,10 +1004,11 @@ def rule_hits(matcher: RuleMatcher, tx: MatchTransaction) -> bool:
     if matcher.amount_sign == "debit" and not tx.amount < 0:
         return False
     name_pattern = matcher.counterparty_name_pattern
-    if name_pattern is not None and not _name_found(name_pattern, tx.counterparty_name):
-        return False
     purpose_pattern = matcher.purpose_pattern
-    return purpose_pattern is None or _found(purpose_pattern, tx.purpose)
+    if name_pattern is None:
+        return purpose_pattern is None or _found(purpose_pattern, tx.purpose)
+    # D160 amended (4): a learned name pattern also hits the other spellings of its payee.
+    return _names_hit(name_pattern, purpose_pattern, tx.counterparty_name, tx.purpose)
 
 
 def _found(pattern: str, text: str | None) -> bool:
@@ -1276,31 +1289,324 @@ def _name_found(pattern: str, name: str | None) -> bool:
 # --- A shared counterparty IBAN (D160 amended 13 Nov 2026) ---------------------------------
 
 # DKB's CSV export puts one clearing IBAN on every card payment, so on a private account one
-# IBAN hash can carry dozens of payees. An IBAN whose private lines carry this many distinct
-# payee names (payee_key) names no payee: no rule on it alone, and everything else keyed by
-# the IBAN (the D49 history and question, the similar answers) is keyed by IBAN and name.
+# IBAN hash can carry dozens of payees. An IBAN whose private lines carry this many payees that
+# are not one payee (same_payee) names no payee: no rule on it alone, and everything else keyed
+# by the IBAN (the D49 history and question, the similar answers) is keyed by IBAN and payee.
 SHARED_IBAN_MIN_NAMES = 2
 
 
-def payee_key(name: str | None) -> str:
-    """A payee name as merchant_pattern reads it (upper-cased, the //<Ort>/<Land> token,
-    digits, slashes and dots dropped, whitespace collapsed): two spellings of one merchant
-    ("Lieferdienst Beispiel" and "LIEFERDIENST BEISPIEL") are one payee."""
-    return _merchant_text(name or "")
+# --- The payee of a line (D160 amended (4), 14 Nov 2026) -----------------------------------
+#
+# Luis: „There are some repeated disney plus from PayPal …“; „Please check for all these
+# repetitions“. One payee is spelled several ways ("EPRIMO GMBH" and "EPRIMO GMBH
+# FLUGHAFENSTRASE 20", "HAUS DES DÖNERS" and "HAUS DES DOENERS MUENSTERSTR"), a card processor
+# names the merchant after its own name ("SPC*CAMPUS HAIR"), and a payment service carries
+# many merchants under its own name. Who a line pays is decided by code (payee, same_payee),
+# never by a cleverer pattern; the patterns a rule stores are unchanged (merchant_pattern), and
+# a learned one is read back as a payee to hit the other spellings (rule_hits).
 
 
-def shared_iban(names: Iterable[str | None]) -> bool:
-    """Whether an IBAN hash is shared: the counterparty names of its private lines hold at
-    least SHARED_IBAN_MIN_NAMES distinct payees (payee_key; no name is no payee)."""
-    return len({payee_key(n) for n in names} - {""}) >= SHARED_IBAN_MIN_NAMES
+@dataclass(frozen=True)
+class PaymentService:
+    label: str  # as the panel names it („PayPal: DisneyPlus“)
+    word: str  # the name's first word, upper-case
+    purpose_phrases: tuple[str, ...]  # the words before the merchant in a direct debit's purpose
 
 
-def same_payee(name: str | None, other: str | None) -> bool:
-    """Whether `other` is a line of the payee `name`, on a shared IBAN: the name rule learned
-    from `name` (merchant_pattern) hits it, so the lines counted as the payee's are exactly
-    the lines its rule books. False when `name` holds nothing to match on."""
-    pattern = merchant_pattern(name or "")
-    return pattern != "^" and _name_found(pattern, other)
+# Payment services: their own name on many merchants' payments. Recognised by the name's first
+# word (PayPal's two legal names, its card form "<digits> PAYPAL *<MERCHANT> …") or a debit
+# card's "<Merchant> - PayPal"; a direct debit names the merchant in the purpose after one of
+# the phrases ("…, Ihr Einkauf bei <Merchant>, …", "Purchase at <Merchant> Gläubiger-ID: …").
+PAYMENT_SERVICES = (
+    PaymentService("PayPal", "PAYPAL", ("Ihr Einkauf bei",)),
+    PaymentService("Klarna", "KLARNA", ("Purchase at", "Ihr Einkauf bei")),
+)
+# Card processors whose own short name comes first and the merchant after it ("SPC*CAMPUS
+# HAIR", "UZR SPANISCHER GARTEN", "ZETTLE CAFE NANE"): the payee is what follows.
+CARD_PROCESSORS = frozenset({"SPC", "UZR", "SQ", "SUMUP", "ZETTLE"})
+# First words many unrelated payees share: a shared first word alone never makes one payee.
+GENERIC_FIRST_WORDS = frozenset(
+    {
+        "APOTHEKE",
+        "AUTOHAUS",
+        "BAECKEREI",
+        "BAHNHOF",
+        "BISTRO",
+        "CAFE",
+        "CITY",
+        "DEUTSCHE",
+        "GASTSTAETTE",
+        "GRUPO",
+        "HAUS",
+        "HOTEL",
+        "KIOSK",
+        "KLINIK",
+        "PARKHAUS",
+        "PARKPLATZ",
+        "PIZZERIA",
+        "PRAXIS",
+        "RESTAURANT",
+        "SHOP",
+        "SPARKASSE",
+        "STADT",
+        "STADTWERKE",
+        "TANKSTELLE",
+    }
+)
+# Words that never make the second of the first two words a payee is known by ("HOTEL AT
+# BOOKING COM", "HAUS DES …").
+_LINKING_WORDS = frozenset(
+    {"AM", "AN", "AT", "C", "DAS", "DE", "DEL", "DER", "DES", "DI", "DIE", "EL", "IM", "IN"}
+    | {"LA", "LE", "OF", "THE", "UND", "VON", "ZUM", "ZUR"}
+)
+FIRST_WORD_MIN = 5  # a shared non-generic first word of this many letters names one payee
+# Where a merchant named in the purpose ends: a comma, the creditor id, a SEPA field tag.
+_MERCHANT_END = r"(?:,|;|\s+Gl(?:ä|ae)ubiger-?ID\b|\s+(?:EREF|MREF|CRED|SVWZ)\b|$)"
+_TRANSLITERATED = str.maketrans({"Ä": "AE", "Ö": "OE", "Ü": "UE"})
+
+
+@dataclass(frozen=True)
+class Payee:
+    """Who a line pays or is paid by. `words`: what two lines are compared on (same_payee),
+    upper-case letters only, umlauts written out, a card processor's name dropped; for a payment
+    service its merchant's words; () for no payee (no name, digits only, or a payment service
+    whose merchant is not read). `name_pattern` and `purpose_pattern`: the matcher a name rule
+    learned from the line gets. `known`: False when a service's direct debit was read without
+    its purpose (a caller that has only the name), so the merchant is not known."""
+
+    words: tuple[str, ...]
+    name_pattern: str | None
+    purpose_pattern: str | None = None
+    service: PaymentService | None = None
+    merchant: str | None = None  # the merchant as the line names it, for a service
+    known: bool = True
+
+    @property
+    def label(self) -> str | None:
+        """„PayPal: DisneyPlus“ for a service's merchant; None for any other payee."""
+        if self.service is None or self.merchant is None:
+            return None
+        return f"{self.service.label}: {self.merchant}"
+
+    @property
+    def unreadable(self) -> bool:
+        """A payment service whose merchant the line does not name: no payee, no rule."""
+        return self.service is not None and self.merchant is None and self.known
+
+
+_NO_PAYEE = Payee((), None)
+
+
+def payee_words(text: str) -> tuple[str, ...]:
+    """A name's words as payees are compared on: upper-case, Ä/Ö/Ü/ß written out (OE, SS),
+    accents dropped, every character that is not a letter (digits, '-', '*', '.', '/') a word
+    break."""
+    upper = text.upper().translate(_TRANSLITERATED)
+    ascii_text = unicodedata.normalize("NFKD", upper).encode("ascii", "ignore").decode()
+    return tuple(re.findall(r"[A-Z]+", ascii_text))
+
+
+def payee(name: str | None, purpose: str | None = None) -> Payee:
+    """The line's payee (D160 amended (4)). A payment service's line (PAYMENT_SERVICES):
+
+    - card form, "<digits> PAYPAL *<MERCHANT> <phone> <country>": the merchant after the `*`;
+      the name pattern is merchant_pattern's, up to and including the merchant;
+    - debit card form, "<Merchant> - PayPal": the merchant before it; the whole name's pattern;
+    - direct debit ("PayPal Europe S.a.r.l. et Cie S.C.A", "Klarna Bank AB"): the merchant read
+      from the purpose after the service's phrase; the name pattern is the service's word
+      (^PAYPAL\\b) and the purpose pattern the phrase and merchant ("Ihr Einkauf bei
+      DisneyPlus(?!\\w)"), so both of the service's IBANs and every spelling of its name hit;
+      no merchant read -> no payee (`unreadable`), purpose None -> not `known`.
+
+    Any other name: the name cut before a per-purchase token (_merchant_cut) and a card
+    processor's name dropped, with merchant_pattern as its pattern."""
+    if not name or not name.strip():
+        return _NO_PAYEE
+    full = _merchant_text(name)
+    for service in PAYMENT_SERVICES:
+        debit = re.fullmatch(rf"(.*\S)\s+-\s+{service.word}", full)
+        if debit is not None and _WORD_MIN.search(debit.group(1)):
+            merchant = re.sub(rf"\s+-\s+{service.word}\s*$", "", name.strip(), flags=re.I)
+            return _service_payee(service, merchant, merchant_pattern(name))
+        if re.match(rf"{service.word}\b", full) is None:
+            continue
+        cut = _merchant_cut(name)
+        if "*" in cut:
+            return _service_payee(service, cut.partition("*")[2], merchant_pattern(name))
+        return _purpose_payee(service, purpose)
+    words = payee_words(_merchant_cut(name))
+    if len(words) > 1 and words[0] in CARD_PROCESSORS:
+        words = words[1:]
+    pattern = merchant_pattern(name)
+    return Payee(words, pattern) if words and pattern != "^" else _NO_PAYEE
+
+
+def _service_payee(service: PaymentService, merchant: str, name_pattern: str) -> Payee:
+    merchant = merchant.strip(" .:-*")
+    words = payee_words(merchant)
+    if not words:
+        return Payee((), None, service=service)
+    return Payee(words, name_pattern, service=service, merchant=merchant)
+
+
+def _purpose_payee(service: PaymentService, purpose: str | None) -> Payee:
+    if purpose is None:
+        return Payee((), None, service=service, known=False)
+    collapsed = " ".join(purpose.split())
+    for phrase in service.purpose_phrases:
+        found = re.search(
+            rf"\b{re.escape(phrase)}\s+(.+?)\s*{_MERCHANT_END}", collapsed, re.IGNORECASE
+        )
+        if found is None:
+            continue
+        merchant = found.group(1).strip(" .:-")
+        words = payee_words(merchant)
+        if not words:
+            continue
+        return Payee(
+            words,
+            rf"^{service.word}\b",
+            _as_pattern(phrase).removeprefix("^")
+            + " "
+            + _as_pattern(merchant).removeprefix("^")
+            + r"(?!\w)",
+            service=service,
+            merchant=merchant,
+        )
+    return Payee((), None, service=service)
+
+
+def _same_words(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
+    """One payee (D160 amended (4)), both ways: either name's words start the other's ("EPRIMO
+    GMBH" and "EPRIMO GMBH FLUGHAFENSTRASE"; one generic word alone, "HOTEL", is no payee), or
+    the first two words are the same ("NETTO MARKEN DISCOUNT …", "BURGER KING …"; not with a
+    linking second word, "HOTEL AT …", nor fewer than FIRST_WORD_MIN letters, "G A …"), or the
+    first word is, when it is not generic and has FIRST_WORD_MIN letters or more
+    ("VOLKSWAGEN AUTOVERSICHERUNG AG" and "VOLKSWAGEN AUTOVERS AG"). Never for no payee."""
+    if not a or not b:
+        return False
+    short, long = sorted((a, b), key=len)
+    if long[: len(short)] == short and not (len(short) == 1 and short[0] in GENERIC_FIRST_WORDS):
+        return True
+    if (
+        len(short) >= 2
+        and a[:2] == b[:2]
+        and a[1] not in _LINKING_WORDS
+        and len(a[0]) + len(a[1]) >= FIRST_WORD_MIN
+    ):
+        return True
+    return a[0] == b[0] and len(a[0]) >= FIRST_WORD_MIN and a[0] not in GENERIC_FIRST_WORDS
+
+
+def payee_key(name: str | None, purpose: str | None = None) -> str:
+    """The payee's words as one text ("" for no payee), as shared_iban counts them."""
+    return " ".join(payee(name, purpose).words)
+
+
+def shared_iban(lines: Iterable[str | None | tuple[str | None, str | None]]) -> bool:
+    """Whether an IBAN hash is shared: its private lines, by counterparty name or by (name,
+    purpose), hold two payees that are not one payee (same_payee: a longer spelling of a name
+    is no second payee, a payment service's merchants are; no name is no payee)."""
+    seen: list[tuple[str, ...]] = []
+    for line in lines:
+        name, purpose = line if isinstance(line, tuple) else (line, None)
+        words = payee(name, purpose).words
+        if not words or words in seen:
+            continue
+        if any(not _same_words(words, other) for other in seen):
+            return True
+        seen.append(words)
+    return False
+
+
+def same_payee(
+    name: str | None,
+    other: str | None,
+    purpose: str | None = None,
+    other_purpose: str | None = None,
+) -> bool:
+    """Whether two lines have one payee (D160 amended (4), _same_words), both ways, so the
+    lines of a rule learned on the shorter spelling count the longer one's as its kind and the
+    reverse ("PayPal Europe … S.C.A" and "PayPal Europe … S.C.A 22-24 Boulevard …" had not
+    been). A payment service's line is its merchant's. False when either has no payee or its
+    merchant is not known."""
+    return _same_words(payee(name, purpose).words, payee(other, other_purpose).words)
+
+
+def _learned_text(pattern: str) -> str | None:
+    """The text a learned name pattern was built from (merchant_pattern: "^" and the escaped
+    normalised name), or None for any other pattern (a person's own regular expression, which
+    keeps its plain regular-expression meaning)."""
+    if not pattern.startswith("^"):
+        return None
+    text = re.sub(r"\\(.)", r"\1", pattern[1:])
+    return text if _as_pattern(_normalised(text)) == pattern and text else None
+
+
+def _payee_hit(pattern: str, name: str | None, purpose: str | None) -> bool:
+    """Whether a learned name pattern (_learned_text) names the line's payee (same_payee): a
+    rule learned on one spelling hits the others. A pattern naming a payment service without
+    its merchant hits nothing this way."""
+    text = _learned_text(pattern)
+    if text is None or name is None:
+        return False
+    learned = payee(text)
+    if learned.service is not None and learned.merchant is None:
+        return False
+    return _same_words(learned.words, payee(name, purpose).words)
+
+
+def _names_hit(
+    name_pattern: str, purpose_pattern: str | None, name: str | None, purpose: str | None
+) -> bool:
+    """A rule's name pattern (and purpose pattern) on a line: the patterns as regular
+    expressions (_name_found, _found), or, for a learned name pattern without a purpose
+    pattern, the line's payee (_payee_hit). A purpose of None is not known (a caller that has
+    only the name): the purpose pattern then counts as a hit, so a check never passes on
+    missing evidence."""
+    if purpose_pattern is not None:
+        if purpose is not None and not _found(purpose_pattern, purpose):
+            return False
+        return _name_found(name_pattern, name)
+    return _name_found(name_pattern, name) or _payee_hit(name_pattern, name, purpose)
+
+
+def rule_name_hits(tx: MatchTransaction, name: str | None, purpose: str | None) -> bool:
+    """Whether the name rule learned from `tx` (payee) would hit a line with this name and
+    purpose, as rule_hits reads it: the lines its rule books, counted and re-booked by
+    „Künftig immer so zuordnen“. False when `tx` gives no payee."""
+    found = payee(tx.counterparty_name, tx.purpose)
+    if found.name_pattern is None:
+        return False
+    return _names_hit(found.name_pattern, found.purpose_pattern, name, purpose)
+
+
+def service_only(matcher: RuleMatcher) -> bool:
+    """D160 amended (4): a rule on a payment service without its merchant: no purpose
+    pattern, and its name pattern names the service but no merchant, like the rule learned on
+    "^PAYPAL EUROPE S A R L ET CIE S C A" before 14 Nov 2026 (it booked every PayPal payment
+    of its amount as one merchant's)."""
+    pattern = matcher.counterparty_name_pattern
+    if matcher.purpose_pattern is not None or pattern is None:
+        return False
+    text = _learned_text(pattern)
+    if text is None:
+        return False
+    learned = payee(text)  # no purpose: a service's name form has no merchant here
+    return learned.service is not None and learned.merchant is None
+
+
+def service_blind(matcher: RuleMatcher, tx: MatchTransaction) -> bool:
+    """Whether the rule cannot tell which merchant a payment service's line pays: the line is
+    a service's (payee) and the rule names no merchant (no purpose pattern, and no name
+    pattern or a service_only one), e.g. an IBAN-only rule on PayPal's IBAN. Such a rule is
+    disabled on read for that line (apply_rule, services.matching.waiting_lines): it would book
+    every merchant's payment through the service as the one it was learned on."""
+    if payee(tx.counterparty_name, tx.purpose).service is None:
+        return False
+    if matcher.purpose_pattern is not None:
+        return False
+    return matcher.counterparty_name_pattern is None or service_only(matcher)
 
 
 def iban_only(matcher: RuleMatcher) -> bool:
@@ -1326,12 +1632,11 @@ def learnable_household(category: AllocationCategory) -> bool:
 
 
 def name_hits(tx: MatchTransaction, names: Sequence[NameHistory]) -> list[NameHistory]:
-    """The confirmed lines a name rule learned from `tx` would hit, as _name_rule checks them:
-    the pattern merchant_pattern(tx's name) holds on the name, the amount has tx's sign (a
-    refund of the same merchant never counts against a debit rule, nor a purchase against a
-    refund rule), not tx itself. Empty when the name gives no pattern or tx is 0."""
-    pattern = merchant_pattern(tx.counterparty_name or "")
-    if pattern == "^" or tx.amount == 0:
+    """The confirmed lines a name rule learned from `tx` would hit (rule_name_hits), as
+    _name_rule checks them: the amount has tx's sign (a refund of the same merchant never
+    counts against a debit rule, nor a purchase against a refund rule), not tx itself. Empty
+    when the line gives no payee or tx is 0."""
+    if tx.amount == 0:
         return []
     credit = tx.amount > 0
     return [
@@ -1339,7 +1644,7 @@ def name_hits(tx: MatchTransaction, names: Sequence[NameHistory]) -> list[NameHi
         for h in names
         if h.transaction_id != tx.id
         and (h.amount is None or (h.amount != 0 and (h.amount > 0) == credit))
-        and _name_found(pattern, h.counterparty_name)
+        and rule_name_hits(tx, h.counterparty_name, h.purpose)
     ]
 
 
@@ -1347,24 +1652,30 @@ def _name_rule(
     tx: MatchTransaction,
     confirmed: AllocationSet,
     names: Sequence[NameHistory],
-    *,
-    iban_hmac: str | None = None,
 ) -> MatchingRuleCreate | None:
     """D160: on a private account, a single-category answer of a learnable household code for
-    a line without an IBAN becomes a rule on the merchant's name. Not for a split. Refused when
-    the account's confirmed lines the pattern hits carry two or more categories (rule.too_broad:
+    a line without an IBAN becomes a rule on the payee's name. Not for a split. Refused when
+    the account's confirmed lines the rule hits carry two or more categories (rule.too_broad:
     the name does not tell the kind, so the card asks for a purpose pattern) or one category
     other than the answer's (rule.conflicts); too_broad is checked first. Only lines of the
-    rule's amount sign count (name_hits). D160 amended: with
-    `iban_hmac` (a shared IBAN) the rule matches the IBAN and the name, both; the checks run
-    on the name over every private line, as without it (stricter than the IBAN's lines)."""
+    rule's amount sign count (name_hits).
+
+    D160 amended (4), 14 Nov 2026: the rule is the payee's (payee): a payment service's
+    direct debit learns the service's name plus the merchant's purpose pattern, a card form the
+    name up to the merchant, and a line whose merchant cannot be read learns none
+    (rule.no_merchant). It never carries the IBAN, also for a line on a shared IBAN (which
+    names no payee) or a service's IBAN, so it books the same payee's lines on every private
+    account, a card statement's without an IBAN included. A rule learned earlier with the IBAN
+    stays as it was."""
     if len(confirmed.allocations) != 1:
         return None
     (only,) = confirmed.allocations
     if not learnable_household(only.category):
         return None
-    pattern = merchant_pattern(tx.counterparty_name or "")
-    if pattern == "^":
+    found = payee(tx.counterparty_name, tx.purpose)
+    if found.unreadable:
+        raise RuleError(RULE_NO_MERCHANT, "the payment service names no merchant here")
+    if found.name_pattern is None:
         return None  # no name (or digits and dots only): nothing to match on
     hits = {h.category for h in name_hits(tx, names)}
     if len(hits) >= 2:
@@ -1373,8 +1684,8 @@ def _name_rule(
         raise RuleError(RULE_CONFLICTS, "the pattern hits a line confirmed otherwise")
     return MatchingRuleCreate(
         matcher=RuleMatcher(
-            counterparty_iban_hmac=iban_hmac,
-            counterparty_name_pattern=pattern,
+            counterparty_name_pattern=found.name_pattern,
+            purpose_pattern=found.purpose_pattern,
             amount_sign="credit" if tx.amount > 0 else "debit",
         ),
         split_method=SplitMethod.SINGLE_CATEGORY,
