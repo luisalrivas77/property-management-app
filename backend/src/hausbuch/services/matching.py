@@ -85,7 +85,7 @@ from hausbuch.rules import matching as matchers
 from hausbuch.rules.errors import ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT, RuleError
 from hausbuch.rules.extraction_parse import cost_lines as parse_cost_lines
 from hausbuch.rules.household import card as card_rules
-from hausbuch.rules.household.taxonomy import BULK_CONFIRMABLE
+from hausbuch.rules.household.taxonomy import BULK_CONFIRMABLE, fallback_of
 from hausbuch.rules.iban import iban_hmac, normalize_iban
 from hausbuch.rules.periods import service_period
 from hausbuch.rules.prefill import names_financing, sort_reading
@@ -1450,6 +1450,11 @@ def match_line(
         # a line without rows; it never replaces another answer already waiting (a model's
         # proposal of another category stays for the person).
         return MatchPlan("skipped", "matching.keeps_proposal")
+    if rematch and line.current and _coarser(found, line.current):
+        # D159 amended (2), 14 Nov 2026: a rule learned on a group's fallback (hh_dining) never
+        # replaces a waiting proposal of one of its subcategories (hh_delivery) on a re-check:
+        # the first rematch-waiting run had confirmed 20 such lines one level coarser.
+        return MatchPlan("skipped", "matching.keeps_finer")
     decision = _route(line, found)
     if decision is not RoutingDecision.AUTO_CONFIRM:
         if any(a.status is AllocationStatus.CONFIRMED for a in line.current):
@@ -1459,6 +1464,18 @@ def match_line(
         if found.method in _MATCHERS and ai_available and not rematch and not line.private:
             return MatchPlan("explain", "routing.below_threshold", allocation_set=found)
     return write(ctx, line, found)
+
+
+def _coarser(found: AllocationSet, current: list[Allocation]) -> bool:
+    """Whether `found` books one row on the group fallback of the one waiting row's
+    subcategory (hh_dining over a proposed hh_delivery): no new evidence, only a coarser
+    answer. A confirmed row is never in question here (keeps_confirmed)."""
+    if len(found.allocations) != 1 or len(current) != 1:
+        return False
+    (row,) = current
+    if row.status is AllocationStatus.CONFIRMED:
+        return False
+    return fallback_of(row.category) is found.allocations[0].category
 
 
 def _card_charge(line: Line) -> AllocationSet | None:

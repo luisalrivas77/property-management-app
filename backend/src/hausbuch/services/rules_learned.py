@@ -317,8 +317,15 @@ def create_rule(
     for old, old_origin in _enabled_with_origin(ctx.conn):
         old_matcher = old.matcher.model_dump(mode="json", exclude_none=True)
         same_matcher = old_matcher == matcher
-        if not same_matcher and old.id in corrects and _iban_dropped(old_matcher, matcher):
-            disable_rule(ctx, old.id)  # review F3: the rule that booked the corrected line
+        if (
+            not same_matcher
+            and _iban_dropped(old_matcher, matcher)
+            and (old.id in corrects or _refined(old, data))
+        ):
+            # review F3: the rule that booked the corrected line; and the IBAN+name rule on
+            # the group's fallback when its finer answer is learned without the IBAN (the
+            # Lieferando rule on hh_dining once hh_delivery is learned, 14 Nov 2026)
+            disable_rule(ctx, old.id)
             continue
         if not same_matcher:
             continue
