@@ -4672,8 +4672,8 @@ export interface components {
         /**
          * ConfirmCategorySkip
          * @description A listed line left as it is: its proposal is no longer a waiting one-part proposal of
-         *     the category without a question (it changed since the list was shown), or the line no
-         *     longer counts (merged as a duplicate, its import not reconciled).
+         *     the category (it changed since the list was shown), or the line no longer counts (merged
+         *     as a duplicate, its import not reconciled). A model question is no reason (14 Nov 2026).
          */
         ConfirmCategorySkip: {
             /**
@@ -4685,7 +4685,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "not_open" | "not_waiting" | "split" | "category_changed" | "question";
+            reason: "not_open" | "not_waiting" | "split" | "category_changed";
         };
         /** ConfirmPaymentIbanBody */
         ConfirmPaymentIbanBody: {

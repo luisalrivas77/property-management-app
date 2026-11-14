@@ -875,9 +875,9 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
                     transaction_id=line.id,
                     account_id=line.account_id if private else None,
                     category=category,
-                    bulk_confirmable=private
-                    and category in BULK_CONFIRMABLE
-                    and rows[0].question is None,
+                    # a model question does not keep a line out: it is listed, ticked, with
+                    # its question shown under the payee (Luis, 14 Nov 2026)
+                    bulk_confirmable=private and category in BULK_CONFIRMABLE,
                 )
             )
     return items
@@ -894,8 +894,10 @@ def confirm_category(ctx: CommandContext, body: ConfirmCategoryBody) -> ConfirmC
 
     Only the lines named in the body, never the category's other lines. A listed line whose
     proposal changed since the list was shown (confirmed or answered meanwhile, re-proposed
-    in another category or split, given a question) or that no longer counts is skipped and
-    named. Refused, nothing confirmed: a category „Alle bestätigen“ does not offer
+    in another category or split) or that no longer counts is skipped and named. A line whose
+    proposal carries a model question is confirmed like the others: the list shows its
+    question, and the person unticks it when the answer changes the category (Luis, 14 Nov
+    2026). Refused, nothing confirmed: a category „Alle bestätigen“ does not offer
     (inbox.category_not_bulk: a tax-relevant, transfer, depot or uncategorized code, money to
     family, work costs, capital income), a line of the rental account (inbox.line_not_private),
     a line of no account of this workspace (404). Lines are locked in id order, so two
@@ -921,7 +923,8 @@ def confirm_category(ctx: CommandContext, body: ConfirmCategoryBody) -> ConfirmC
 
 def _bulk_skip(line: matching.Line, category: AllocationCategory) -> str | None:
     """Why a listed line is not confirmed with the others, or None (the inbox's
-    bulk_confirmable, read again under the line's lock)."""
+    bulk_confirmable, read again under the line's lock). A model question is not a reason:
+    the list shows it beside the line."""
     if line.excluded or line.awaiting_duplicate:
         return "not_open"
     if line.import_status is not ImportStatus.RECONCILED:
@@ -933,9 +936,7 @@ def _bulk_skip(line: matching.Line, category: AllocationCategory) -> str | None:
     (row,) = line.current
     if row.category is not category:
         return "category_changed"
-    if row.question is not None:
-        return "question"
-    return None
+    return None  # a question is no reason to skip: the list showed it (14 Nov 2026)
 
 
 # --- POST /inbox/ai-retry ----------------------------------------------------------------

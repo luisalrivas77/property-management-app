@@ -105,7 +105,9 @@ def test_the_inbox_marks_the_plain_one_part_proposals_of_a_private_line(world, p
 
     items = _items(world)
     assert (items[plain].category, items[plain].bulk_confirmable) == (C.HH_DINING, True)
-    assert (items[asked].category, items[asked].bulk_confirmable) == (C.HH_DINING, False)
+    # a model question no longer keeps a line out; its question is shown (Luis, 14 Nov 2026)
+    assert (items[asked].category, items[asked].bulk_confirmable) == (C.HH_DINING, True)
+    assert items[asked].question == "Privat oder geschäftlich?"
     assert (items[split].category, items[split].bulk_confirmable) == (None, False)
     assert items[donation].bulk_confirmable is False  # tax-relevant: one by one
     assert items[family].bulk_confirmable is False  # money to family: one by one
@@ -136,19 +138,33 @@ def test_lines_that_changed_since_the_list_are_skipped_and_named(world, private)
     _propose(world, moved, ("-31.50", "hh_groceries"))  # re-proposed in another category
     split = _dining(world, private, 13)
     _propose(world, split, ("-20.00", "hh_dining"), ("-11.50", "hh_gifts"))
-    asked = _dining(world, private, 14)
-    _propose(world, asked, ("-31.50", "hh_dining"), question="Mit Gästen?")
 
-    result = _confirm(world, "hh_dining", ok, answered, moved, split, asked)
+    result = _confirm(world, "hh_dining", ok, answered, moved, split)
     assert result.confirmed == 1
     assert {(s.transaction_id, s.reason) for s in result.skipped} == {
         (answered, "not_waiting"),
         (moved, "category_changed"),
         (split, "split"),
-        (asked, "question"),
     }
     assert _status(world, moved) == (("hh_groceries", "proposed"),)
     assert len(_events(world, answered)) == 1  # its own single confirmation only
+
+
+def test_a_listed_line_with_a_model_question_is_confirmed_like_the_others(world, private):
+    plain = _dining(world, private, 14)
+    asked = private.line(date(2026, 10, 14), "-18.00", name="Laden Beispiel")
+    _propose(world, asked, ("-18.00", "hh_dining"), question="Mit Gästen?")
+    assert _items(world)[asked].bulk_confirmable is True
+
+    result = _confirm(world, "hh_dining", plain, asked)
+    assert (result.confirmed, result.skipped) == (2, [])
+    assert _status(world, asked) == (("hh_dining", "confirmed"),)
+    ((kind, actor, payload),) = _events(world, asked)
+    assert (kind, actor, payload["auto"]) == ("transaction.allocated", "user", False)
+    assert (
+        world.query(lambda c: c.execute(select(func.count()).select_from(rule_table)).scalar_one())
+        == 0
+    )  # no learned rule
 
 
 @pytest.mark.parametrize(

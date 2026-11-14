@@ -405,11 +405,16 @@ function AiSuggestions({ onChanged }: { onChanged: () => void }) {
 }
 
 type AllocationCategory = components["schemas"]["AllocationCategory"];
+/** The API's fallback question for a proposal without a model question (review.py's
+ * _PROPOSED_QUESTION); the bulk list shows a line's question only when it is the model's own. */
+const GENERIC_PROPOSED_QUESTION = "Stimmt diese Zuordnung?";
 type ConfirmCategoryResult = components["schemas"]["ConfirmCategoryResult"];
 
 /** „Alle bestätigen“ (phase 6 D159 amended 13 Nov 2026): the private lines' plain proposals
- * (one part, no question, a household code that is not tax-relevant; the API's
- * bulk_confirmable), grouped by category with a count. A group of two or more gets
+ * (one part, a household code that is not tax-relevant; the API's bulk_confirmable),
+ * grouped by category with a count. A line whose proposal carries a model question is
+ * listed and ticked too, its question shown under the payee, so the person unticks it when
+ * the answer changes the category (Luis, 14 Nov 2026). A group of two or more gets
  * „Zahlungen ansehen“, which lists its lines inline without confirming anything, and „Alle N
  * prüfen und bestätigen“, which lists them in a dialog. In both lists every line has a
  * checkbox, ticked by default; „Ausgewählte bestätigen (N)“ sends the ticked ids only, never
@@ -577,7 +582,8 @@ function BulkConfirmList({
     <>
       <p>
         Die angehakten Zahlungen werden als „{label}“ bestätigt, jede wie mit ihrem eigenen „Bestätigen“. Eine Zahlung ohne
-        Haken bleibt in der Liste. Es wird keine Regel gelernt; jede Zahlung lässt sich danach einzeln ändern.
+        Haken bleibt in der Liste. Steht unter einer Zahlung eine Frage, nimm den Haken weg, wenn die Antwort eine andere
+        Kategorie ergibt. Es wird keine Regel gelernt; jede Zahlung lässt sich danach einzeln ändern.
       </p>
       <div className="table-wrap">
         <table aria-label={`Zahlungen als „${label}“`}>
@@ -598,8 +604,11 @@ function BulkConfirmList({
             </tr>
           </thead>
           <tbody>
-            {ids.map((id) => {
+            {items.map((item) => {
+              const id = item.transaction_id;
+              if (!id) return null;
               const line = data.transactions.get(id);
+              const question = item.question && item.question !== GENERIC_PROPOSED_QUESTION ? item.question : null;
               const payee = line?.counterparty_name ?? line?.booking_text ?? "Ohne Gegenseite";
               const amount = line ? signedMoney(line.amount) : "–";
               const account = line ? data.accounts.get(line.account_id) : undefined;
@@ -618,6 +627,7 @@ function BulkConfirmList({
                     <button type="button" className="link" onClick={() => onOpen(id)}>
                       {payee}
                     </button>
+                    {question ? <div className="muted">{question}</div> : null}
                   </td>
                   <td className="num">{amount}</td>
                   <td>{account?.label ?? "–"}</td>
