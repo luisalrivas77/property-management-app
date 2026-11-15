@@ -4,7 +4,7 @@
 #   rental   rules → owner transfer → rent → loan → Hausgeld → document → model (phase 2,
 #            unchanged; three phase 2 matchers.yaml cases replayed by id with their own
 #            transaction and expectation)
-#   private  rules (IBAN or name pattern, D160) → transfer by own IBAN (D162) → document match
+#   private  transfer by own IBAN (D162; a line naming an own IBAN gets no rule, D160 amended (5)) → rules (IBAN or name pattern, D160) → document match
 #            (D161) → the household model (D168), or with the switch ai_private_accounts off,
 #            review with routing.ai_disabled and every permitted code offered
 # The rent, loan and Hausgeld matchers never run on a private account. A private line whose
