@@ -42,6 +42,7 @@ from fixture_models import Lenient, RuleErrorExpect
 from pydantic import Field, model_validator
 
 from hausbuch.rules import errors as E
+from hausbuch.rules.matching import transfer_window_end
 from hausbuch.rules.statements import (
     ARCHIVE_REJECTED,
     MAX_ARCHIVE_BYTES,
@@ -757,7 +758,15 @@ def _check_against_facts(r: Reminder, facts: ReminderFacts) -> None:
         covered = max(d for d in (subject.reconciled_until, subject.history_until) if d)
         if args != {"account": subject.label, "covered_until": str(covered)}:
             raise ValueError(f"{r.id}: label_args are the account and the covered day")
-        following = _add_months(covered.replace(day=1), 2)
+        counted_from = covered
+        if subject.kind == "credit_card" and subject.closed_at_zero:
+            # D122 amended (6): a card closed at 0 counts from its first debit after the D162
+            # window following the covered day (three banking days).
+            later = [d for d in subject.paid_on if d > transfer_window_end(covered)]
+            if not later:
+                raise ValueError(f"{r.id}: a card closed at 0 needs a later debit paying it")
+            counted_from = min(later)
+        following = _add_months(counted_from.replace(day=1), 2)
         want = following - timedelta(days=1) + timedelta(days=10)
     if want is not None and due != want:
         raise ValueError(f"{r.id}: the §6.2 formula gives {want}")

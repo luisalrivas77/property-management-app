@@ -40,7 +40,7 @@ def reflected(dbname):
 
 def test_same_tables(reflected):
     assert set(metadata.tables) == set(reflected)
-    assert len(metadata.tables) == 56  # 0025 adds phase 6's eight tables, 0041 phase 7's six
+    assert len(metadata.tables) == 57  # 0025 adds phase 6's eight, 0039 one (D196), 0041 phase 7's six
 
 
 @pytest.mark.parametrize("table", sorted(metadata.tables))

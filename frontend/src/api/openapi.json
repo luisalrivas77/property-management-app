@@ -4088,6 +4088,221 @@
         }
       }
     },
+    "/api/accounts/auto-rate": {
+      "get": {
+        "summary": "Accounts Auto Rate",
+        "description": "Per private bank account and in total; the criterion leaves each account's first\nimport out (D172).",
+        "operationId": "accounts_auto_rate_api_accounts_auto_rate_get",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoRate"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/net-worth": {
+      "get": {
+        "summary": "Net Worth Get",
+        "operationId": "net_worth_get_api_net_worth_get",
+        "parameters": [
+          {
+            "name": "on",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "On"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetWorth"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/net-worth/overview": {
+      "get": {
+        "summary": "Net Worth Overview",
+        "operationId": "net_worth_overview_api_net_worth_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetWorthOverview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/net-worth/snapshots": {
+      "get": {
+        "summary": "Net Worth Snapshots",
+        "operationId": "net_worth_snapshots_api_net_worth_snapshots_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NetWorthRun"
+                  },
+                  "type": "array",
+                  "title": "Response Net Worth Snapshots Api Net Worth Snapshots Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Net Worth Snapshot",
+        "description": "200 in every case: the outcome says whether a run was written (written, recaptured)\nor not (unchanged, empty).",
+        "operationId": "net_worth_snapshot_api_net_worth_snapshots_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/net-worth/snapshots/{run_id}": {
+      "get": {
+        "summary": "Net Worth Snapshot Get",
+        "operationId": "net_worth_snapshot_get_api_net_worth_snapshots__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetWorth"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts": {
       "get": {
         "summary": "Accounts List",
@@ -5034,7 +5249,7 @@
     "/api/bank-credential-slots": {
       "get": {
         "summary": "Bank Credential Slots",
-        "description": "Signed-in members only, as every domain route; names only, never a PIN (D119).",
+        "description": "Signed-in members only, as every domain route; names only, never a PIN (D119, D196).",
         "operationId": "bank_credential_slots_api_bank_credential_slots_get",
         "responses": {
           "200": {
@@ -5046,6 +5261,90 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bank-credentials/{slot}": {
+      "put": {
+        "summary": "Bank Credential Set",
+        "description": "D196: the PIN is encrypted before it reaches the database; the answer names the slot\nand when, never the PIN.",
+        "operationId": "bank_credential_set_api_bank_credentials__slot__put",
+        "parameters": [
+          {
+            "name": "slot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^[a-z][a-z0-9_]{0,31}$",
+              "title": "Slot"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankPinSet"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppCredential"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Bank Credential Delete",
+        "operationId": "bank_credential_delete_api_bank_credentials__slot__delete",
+        "parameters": [
+          {
+            "name": "slot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^[a-z][a-z0-9_]{0,31}$",
+              "title": "Slot"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "default": {
             "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
@@ -10458,6 +10757,38 @@
         "title": "AnswerMovementBody",
         "description": "POST /movements/{id}/answer: what the movement really was. The movement is replaced\nby a confirmed row of that kind (the old one kept, superseded_by)."
       },
+      "AppCredential": {
+        "properties": {
+          "slot": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,31}$",
+            "title": "Slot"
+          },
+          "set_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Set At"
+          },
+          "readable": {
+            "type": "boolean",
+            "title": "Readable",
+            "default": true
+          },
+          "used": {
+            "type": "boolean",
+            "title": "Used",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "slot",
+          "set_at"
+        ],
+        "title": "AppCredential",
+        "description": "A slot whose PIN was typed into the app (D196): its name and when; never the PIN."
+      },
       "AppUser": {
         "properties": {
           "id": {
@@ -10962,6 +11293,164 @@
         "title": "Assumption",
         "description": "A stated assumption of the projection, as data; the frontend holds the German text."
       },
+      "AutoRate": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "title": "Month"
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/AutoRateAccount"
+            },
+            "type": "array",
+            "title": "Accounts"
+          },
+          "confirmed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Confirmed"
+          },
+          "auto": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Auto"
+          },
+          "ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio"
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,4})?$",
+            "title": "Target",
+            "default": "0.80"
+          },
+          "criterion_confirmed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Criterion Confirmed",
+            "default": 0
+          },
+          "criterion_auto": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Criterion Auto",
+            "default": 0
+          },
+          "criterion_ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criterion Ratio"
+          },
+          "met": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Met"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "confirmed",
+          "auto"
+        ],
+        "title": "AutoRate",
+        "description": "GET /accounts/auto-rate?month=YYYY-MM (D172): per private bank account and in total.\n`criterion_*` count only the allocations outside each account's first import; `met`\ncompares their ratio with the target, None when there are none (the criterion is read on\nthe second calendar month after the first import)."
+      },
+      "AutoRateAccount": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "confirmed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Confirmed"
+          },
+          "auto": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Auto"
+          },
+          "by_method": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Method"
+          },
+          "by_routing": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Routing"
+          },
+          "ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratio"
+          },
+          "first_import": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "First Import",
+            "default": 0
+          },
+          "first_import_auto": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "First Import Auto",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "label",
+          "confirmed",
+          "auto"
+        ],
+        "title": "AutoRateAccount",
+        "description": "A private bank account's confirmed allocations of the month, by the line's booking\nday (lines excluded as duplicates left out): `auto` those the app booked without a\nperson (D172 amended 15 Nov 2026): the method is rule, matcher_transfer, document_match\nor llm and no person confirmed it (confirmed_by null); `by_routing` splits them by who\nconfirmed (auto_confirm: no person, person: a member). `first_import`: of `confirmed`,\nthose on lines of the account's first import (the history, D26: the model never\nauto-confirms there), which D172 leaves out of the criterion."
+      },
       "BalanceCorrectionBody": {
         "properties": {
           "asset_id": {
@@ -11146,6 +11635,32 @@
                 "type": "null"
               }
             ]
+          },
+          "credential_source": {
+            "$ref": "#/components/schemas/CredentialSource",
+            "default": "none"
+          },
+          "credential_set_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Set At"
+          },
+          "credential_readable": {
+            "type": "boolean",
+            "title": "Credential Readable",
+            "default": true
+          },
+          "name_readable": {
+            "type": "boolean",
+            "title": "Name Readable",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -11247,12 +11762,38 @@
             },
             "type": "array",
             "title": "Slots"
+          },
+          "app_slots": {
+            "items": {
+              "$ref": "#/components/schemas/AppCredential"
+            },
+            "type": "array",
+            "title": "App Slots"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "BankCredentialSlots",
-        "description": "GET /bank-credential-slots (phase 6 D163): the slots whose container secret is set,\nnames only, so the Bankabruf card can say which variable is still missing."
+        "description": "GET /bank-credential-slots (phase 6 D163): the slots whose container secret is set,\nnames only, so the Bankabruf card can say which variable is still missing; and (D196) the\nslots whose PIN was typed into the app, so „Bankabruf einrichten“ can say so before a\nconnection exists."
+      },
+      "BankPinSet": {
+        "properties": {
+          "pin": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 5,
+            "format": "password",
+            "title": "Pin",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pin"
+        ],
+        "title": "BankPinSet",
+        "description": "PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and\nnever returned, logged or echoed (a SecretStr: its repr is stars). Surrounding blanks are\ntrimmed, as the container secret's are (settings._optional), so a PIN pasted with a space\nis the same PIN; the length counts after trimming."
       },
       "BankStatement": {
         "properties": {
@@ -12871,6 +13412,16 @@
           "months_covered"
         ],
         "title": "Coverage"
+      },
+      "CredentialSource": {
+        "type": "string",
+        "enum": [
+          "app",
+          "server",
+          "none"
+        ],
+        "title": "CredentialSource",
+        "description": "Where a connection's PIN comes from at the next sync (D196): typed in the app (stored\nencrypted, it wins), the slot's container secret, or nowhere yet."
       },
       "Currency": {
         "type": "string",
@@ -15274,6 +15825,8 @@
           "workspace.ai_consent_recorded",
           "workspace.prices_fetched",
           "workspace.valuation_snapshot_written",
+          "workspace.bank_pin_set",
+          "workspace.bank_pin_deleted",
           "proposal.created",
           "proposal.superseded",
           "proposal.rejected",
@@ -19771,6 +20324,456 @@
         ],
         "title": "NameCategoryCount",
         "description": "How many earlier lines of the payee are confirmed under one category (phase 6 D160)."
+      },
+      "NetWorth": {
+        "properties": {
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total"
+          },
+          "by_class": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NetWorthClass"
+            },
+            "type": "object",
+            "title": "By Class"
+          },
+          "by_owner": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "By Owner"
+          },
+          "unassigned": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Unassigned"
+          },
+          "property_estimate": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Property Estimate"
+          },
+          "loan_balances": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Loan Balances"
+          },
+          "property_net": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Property Net"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/NetWorthLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/NetWorthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          },
+          "stale_positions": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Stale Positions",
+            "default": 0
+          },
+          "unvalued_positions": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unvalued Positions",
+            "default": 0
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetWorthRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "on",
+          "total",
+          "by_class",
+          "by_owner",
+          "property_estimate",
+          "loan_balances",
+          "property_net"
+        ],
+        "title": "NetWorth",
+        "description": "GET /net-worth?on=: NetWorth(on) of D167 (4) on read, or a stored month-end (`run`\nset). `by_owner` covers what has shares: an account or a property without shares\ncounts in its class and the total, in no owner, and is listed in `unassigned`.\n`property_net` is the properties' estimate less their loans (mockup 07's „Immobilie\n(netto)“); the class `liabilities` holds the loans and a credit card's balance."
+      },
+      "NetWorthClass": {
+        "type": "string",
+        "enum": [
+          "bank",
+          "depot",
+          "crypto",
+          "property",
+          "liabilities"
+        ],
+        "title": "NetWorthClass",
+        "description": "Mockup 07's bar (D167 (4))."
+      },
+      "NetWorthLine": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/NetWorthLineKind"
+          },
+          "net_worth_class": {
+            "$ref": "#/components/schemas/NetWorthClass"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "account_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "account_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Label"
+          },
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "loan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loan Id"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
+          },
+          "price_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,8})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Eur"
+          },
+          "price_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PriceSourceKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price On"
+          },
+          "value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Eur"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": false
+          },
+          "estimate": {
+            "type": "boolean",
+            "title": "Estimate",
+            "default": false
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "not_valued_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Valued Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "net_worth_class",
+          "label"
+        ],
+        "title": "NetWorthLine",
+        "description": "One figure of the net worth, asset by asset (D172: the month-end is compared with the\nhousehold's spreadsheet line by line). `value_eur` None: not valued, counted nowhere,\n`not_valued_reason` says why. A balance's `as_of` is the last day a reconciled statement\ncovers (D167 (4)); a position's price has its own day. `estimate`: the property's value\nand a loan's balance, both labelled as estimates on the screen."
+      },
+      "NetWorthLineKind": {
+        "type": "string",
+        "enum": [
+          "account",
+          "position",
+          "property",
+          "loan"
+        ],
+        "title": "NetWorthLineKind"
+      },
+      "NetWorthOverview": {
+        "properties": {
+          "today": {
+            "$ref": "#/components/schemas/NetWorth"
+          },
+          "month_end": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetWorth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "month_end_due": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month End Due"
+          },
+          "month_end_now": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month End Now"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "today"
+        ],
+        "title": "NetWorthOverview",
+        "description": "GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest\nstored month-end, None before the first; `month_end_due` the last month-end when no run\nholds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read\nnow for the stored month-end's day when it differs from the stored total, set only when\nthat day is the last month-end (the one the button stores again)."
+      },
+      "NetWorthRun": {
+        "properties": {
+          "net_worth_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Net Worth Run Id"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Captured At"
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Rows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "net_worth_run_id",
+          "as_of",
+          "captured_at",
+          "rows"
+        ],
+        "title": "NetWorthRun",
+        "description": "One stored month-end: the valuation_snapshot rows of one net_worth_run_id."
+      },
+      "NetWorthTodo": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/NetWorthTodoCode"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "href": {
+            "type": "string",
+            "title": "Href"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "text",
+          "action",
+          "href"
+        ],
+        "title": "NetWorthTodo",
+        "description": "A gap in the figure as a plain to-do with the button or page that closes it\n(principle 7)."
+      },
+      "NetWorthTodoCode": {
+        "type": "string",
+        "enum": [
+          "net_worth.balance_unreconciled",
+          "net_worth.balance_outdated",
+          "net_worth.price_missing",
+          "net_worth.price_stale",
+          "net_worth.position_not_reconciled",
+          "net_worth.position_not_booked",
+          "net_worth.ownership_missing",
+          "net_worth.property_shares_missing",
+          "net_worth.loan_not_valued"
+        ],
+        "title": "NetWorthTodoCode"
       },
       "NoPayFact": {
         "properties": {},
@@ -25226,6 +26229,52 @@
         ],
         "title": "SettlementHint",
         "description": "A line of a monthly category that is not an instalment (an electricity Jahresabrechnung,\na Hausgeldabrechnung's back-payment): not a rate, shown as a hint that the next instalment\nmay rise. `amount` is the cost (a refund is negative)."
+      },
+      "SnapshotOutcome": {
+        "type": "string",
+        "enum": [
+          "written",
+          "recaptured",
+          "unchanged",
+          "empty"
+        ],
+        "title": "SnapshotOutcome"
+      },
+      "SnapshotResult": {
+        "properties": {
+          "outcome": {
+            "$ref": "#/components/schemas/SnapshotOutcome"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetWorthRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unvalued_positions": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unvalued Positions",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "outcome",
+          "as_of"
+        ],
+        "title": "SnapshotResult",
+        "description": "POST /net-worth/snapshots: what „Monatsabschluss festhalten“ did."
       },
       "SpecialExpenseFact": {
         "properties": {

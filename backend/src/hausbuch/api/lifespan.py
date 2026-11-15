@@ -1,6 +1,8 @@
 """Startup and shutdown of the API process, which also hosts the job worker (§3.7).
 
-startup:   if settings.run_worker and app.state.worker: await worker.start()
+startup:   if settings.run_worker and app.state.worker: the readable bank logins left from
+           before migration 0039 are encrypted (phase 6 D196, never raises), then
+           await worker.start()
 shutdown:  1. app.state.draining = True   new API requests get 503 shutting_down, Retry-After 2;
                                           /healthz still answers, so the platform does not
                                           kill the instance early
@@ -22,6 +24,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from hausbuch.services.bank_credentials import encrypt_all_logins
+
 from .errors import render, shutting_down
 
 HEALTH_PATH = "/healthz"
@@ -38,6 +42,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     state.draining = False
     worker = state.worker if settings.run_worker else None
     if worker is not None:
+        # D196: before the worker takes a sync and before the instance serves (uvicorn binds
+        # its port only after this start-up returns, so nothing is answering yet); in a
+        # thread, so the blocking database work stays off the event loop.
+        await asyncio.to_thread(encrypt_all_logins, state.engine, settings)
         await worker.start()
         logger.info("worker started", extra={"fields": {"event": "worker_started"}})
     try:

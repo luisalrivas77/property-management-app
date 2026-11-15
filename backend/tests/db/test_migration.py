@@ -77,6 +77,8 @@ MIGRATION_TABLES = {
     "transfer_link",
     "price",
     "valuation_snapshot",
+    # Phase 6 D196 (migration 0039)
+    "bank_credential",
     # Phase 7 (docs/phases/phase-7.md §11, migration 0041)
     "wallet_address",
     "movement_group",

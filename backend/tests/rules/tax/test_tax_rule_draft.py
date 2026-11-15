@@ -259,3 +259,23 @@ def test_payment_proof_rest_only_for_a_proven_part(case_id, proof_rest):
     assert proof_rest in rests and all(r in (None, proof_rest) for r in rests)
     if proof_rest is None:
         assert all("proof_rest" not in w.params for w in got)
+
+
+@pytest.mark.rule
+def test_a_receipt_and_its_bank_line_are_one_payment():
+    """D143 amended 15 Nov 2026 (the real case): a Grunderwerbsteuer of 11,374.00 paid in two
+    shares of 5,687.00, each shown by an uploaded receipt and by its private bank line, is
+    proven, and never reported as 22,748.00 paid; a bill paid partly by a receipt's payment
+    and partly by a bank line is still proven by both together."""
+    from hausbuch.rules.tax.draft import _BillProofs, _closest, _proven
+
+    share, bill = Decimal("5687.00"), Decimal("11374.00")
+    twice = _BillProofs(documents=(share, share), lines=(share, share))
+    assert _proven(bill, twice)
+    assert sum(_closest(bill, twice)) == bill
+    assert _proven(bill, _BillProofs(documents=(share,), lines=(share,)))
+    short = _BillProofs(documents=(Decimal("500.00"),), lines=(Decimal("500.00"),))
+    assert not _proven(Decimal("1200.00"), short)
+    assert sum(_closest(Decimal("1200.00"), short)) == Decimal("1000.00")
+    assert _proven(bill, _BillProofs(documents=(None,), lines=(share,)))
+    assert not _proven(bill, _BillProofs())

@@ -310,9 +310,30 @@ class _ProofNeed:
     parts: list[Decimal]
 
 
-def _proven(amount: Decimal, proofs: list[Decimal | None]) -> bool:
-    """D143: a bill is proven by a proof whose amount was not read (the user saw the proof), or
-    by one proof's amount or the proofs' sum equal to the bill's within 0.01."""
+@dataclass(frozen=True)
+class _BillProofs:
+    """The evidence that a bill was paid, in two kinds kept apart: the payment_proof
+    documents linked to it (D143, None for a proof whose amount was not read) and the
+    magnitudes of the confirmed private-account lines that paid it (phase 6 D161). The two
+    usually show the same payments (a receipt uploaded for a transfer the bank line also
+    shows), so they are never only summed together: a bill is proven by either kind alone,
+    or by both together for a bill paid partly each way (D143 amended 15 Nov 2026)."""
+
+    documents: tuple[Decimal | None, ...] = ()
+    lines: tuple[Decimal, ...] = ()
+
+    def sets(self) -> list[list[Decimal | None]]:
+        """The candidate sets, each non-empty: the documents, the lines, then both."""
+        out: list[list[Decimal | None]] = []
+        for s in (list(self.documents), list(self.lines)):
+            if s:
+                out.append(s)
+        if self.documents and self.lines:
+            out.append([*self.documents, *self.lines])
+        return out
+
+
+def _proven_by(amount: Decimal, proofs: list[Decimal | None]) -> bool:
     if any(p is None for p in proofs):
         return True
     read = [p for p in proofs if p is not None]
@@ -321,15 +342,32 @@ def _proven(amount: Decimal, proofs: list[Decimal | None]) -> bool:
     )
 
 
+def _proven(amount: Decimal, proofs: _BillProofs) -> bool:
+    """D143: a bill is proven by a proof whose amount was not read (the user saw the proof), or
+    by one proof's amount or the proofs' sum equal to the bill's within 0.01, taken over the
+    document proofs alone, the private lines alone, or both together (_BillProofs)."""
+    return any(_proven_by(amount, s) for s in proofs.sets())
+
+
+def _closest(amount: Decimal, proofs: _BillProofs) -> list[Decimal]:
+    """The candidate set whose sum is closest to the bill (documents first on a tie): what
+    the warning reports as proof_amount, so the same payment shown by a receipt and by its
+    bank line is never reported twice."""
+    sets = [[p for p in s if p is not None] for s in proofs.sets()]
+    return min(sets, key=lambda s: abs(sum(s, ZERO) - amount)) if sets else []
+
+
 def _proof_warning(
-    need: _ProofNeed, proofs: list[Decimal | None], unlinked: list[UnlinkedProofFact]
+    need: _ProofNeed, proofs: _BillProofs, unlinked: list[UnlinkedProofFact]
 ) -> list[DraftWarning]:
     # A bill split into an acquisition cost part and a private_cost part was usually paid in
     # one transfer: a proof of the whole bill (combined) proves both parts.
     if _proven(need.amount, proofs) or _proven(need.combined, proofs):
         return []
-    extra = {"proof_amount": money_str(sum(proofs, ZERO))} if proofs else {}
-    rest = _proof_rest(need, proofs)
+    closest = _closest(need.amount, proofs)
+    extra = {"proof_amount": money_str(sum(closest, ZERO))} if proofs.sets() else {}
+    rests = [r for s in proofs.sets() if (r := _proof_rest(need, s)) is not None]
+    rest = min(rests) if rests else None
     if rest is not None:
         extra["proof_rest"] = money_str(rest)
     offer = _proof_offer(need, unlinked)
@@ -465,16 +503,22 @@ def _proof_needs(facts: DraftFacts, tax_year: int) -> list[_ProofNeed]:
     return out
 
 
-def _proofs_by_bill(facts: DraftFacts) -> dict[UUID, list[Decimal | None]]:
+def _proofs_by_bill(facts: DraftFacts) -> dict[UUID, _BillProofs]:
     """The proofs per bill: its payment_proof documents' amounts (D143), and, since phase 6
     D161, the magnitude of each confirmed private-account line that paid it (a bank line of any
-    own account proves the bill, as the rental account's matched line always has)."""
-    proofs: dict[UUID, list[Decimal | None]] = {}
+    own account proves the bill, as the rental account's matched line always has), kept as
+    two kinds (_BillProofs)."""
+    documents: dict[UUID, list[Decimal | None]] = {}
     for p in facts.payment_proofs:
-        proofs.setdefault(p.bill_document_id, []).append(p.amount)
-    for bill, lines in private_payments(facts.allocations).items():
-        proofs.setdefault(bill, []).extend(abs(a.amount) for a in lines)
-    return proofs
+        documents.setdefault(p.bill_document_id, []).append(p.amount)
+    lines = {
+        bill: [abs(a.amount) for a in rows]
+        for bill, rows in private_payments(facts.allocations).items()
+    }
+    return {
+        bill: _BillProofs(tuple(documents.get(bill, [])), tuple(lines.get(bill, [])))
+        for bill in documents.keys() | lines.keys()
+    }
 
 
 def bills_without_proof(facts: DraftFacts, tax_year: int) -> list[UUID]:
@@ -487,8 +531,8 @@ def bills_without_proof(facts: DraftFacts, tax_year: int) -> list[UUID]:
             need.bill
             for need in _proof_needs(facts, tax_year)
             if not (
-                _proven(need.amount, proofs.get(need.bill, []))
-                or _proven(need.combined, proofs.get(need.bill, []))
+                _proven(need.amount, proofs.get(need.bill, _BillProofs()))
+                or _proven(need.combined, proofs.get(need.bill, _BillProofs()))
             )
         },
         key=str,
@@ -508,7 +552,7 @@ def _payment_proofs(facts: DraftFacts, tax_year: int) -> list[DraftWarning]:
     unlinked = sorted(facts.unlinked_proofs, key=lambda p: str(p.proof_document_id))
     out: list[DraftWarning] = []
     for need in _proof_needs(facts, tax_year):
-        out += _proof_warning(need, proofs.get(need.bill, []), unlinked)
+        out += _proof_warning(need, proofs.get(need.bill, _BillProofs()), unlinked)
     return out
 
 

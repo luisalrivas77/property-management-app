@@ -758,7 +758,7 @@ bank_connection = Table(
     _uuid("account_id"),
     _text("bank_code"),
     _text("fints_url"),
-    _text("login_name"),
+    _text("login_name", nullable=True),  # nullable since 0039: readable until encrypted (D196)
     _text("tan_mechanism", nullable=True),
     Column("client_data", LargeBinary, nullable=True),
     Column("client_data_mac", LargeBinary, nullable=True),
@@ -772,6 +772,24 @@ bank_connection = Table(
     Column("fetch_statements", Boolean, nullable=False, server_default=text("false")),
     # 0025 (phase 6, D163)
     _text("credential_slot", server_default=text("'primary'")),
+    # 0039 (phase 6, D196): the login name, AES-256-GCM (AAD = workspace id + connection id)
+    Column("login_nonce", LargeBinary, nullable=True),
+    Column("login_ciphertext", LargeBinary, nullable=True),
+    Column("login_key_version", SmallInteger, nullable=True),
+)
+# 0039 (phase 6, D196): a credential slot's PIN typed in the app, AES-256-GCM.
+bank_credential = Table(
+    "bank_credential",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("credential_slot"),
+    Column("nonce", LargeBinary, nullable=False),
+    Column("ciphertext", LargeBinary, nullable=False),
+    Column("key_version", SmallInteger, nullable=False),
+    _uuid("set_by", nullable=True),
+    _created_at(),
+    _updated_at(),
 )
 bank_sync = Table(
     "bank_sync",
@@ -1003,7 +1021,7 @@ valuation_snapshot = Table(
     metadata,
     _id(),
     _workspace_id(),
-    _uuid("account_id"),
+    _uuid("account_id", nullable=True),  # 0040: exactly one of account, property, loan
     _uuid("asset_id", nullable=True),
     _date("as_of"),
     _quantity("units", nullable=True),
@@ -1012,6 +1030,8 @@ valuation_snapshot = Table(
     _money("value_eur"),
     _uuid("net_worth_run_id"),
     _created_at(),
+    _uuid("property_id", nullable=True),
+    _uuid("loan_id", nullable=True),
 )
 
 

@@ -7,6 +7,7 @@ closing -3.028,51) for a synthetic IBAN; the PIN, login and product id are inven
 
 import base64
 import io
+import re
 import zipfile
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -107,6 +108,7 @@ class Bank:
             BankConnectionCreate(
                 account_id=self.account.id, bank_code="10000000", fints_url=URL, login_name=LOGIN
             ),
+            settings=self.settings,
             now=T0,
         )
         self.clients: list = []
@@ -155,6 +157,7 @@ class Bank:
             service.update_connection,
             account_id or self.account.id,
             BankConnectionPatch(auto_sync=on),
+            settings=self.settings,
             now=T0,
         )
 
@@ -168,7 +171,9 @@ class Bank:
     def events(self, type_):
         return [
             e.payload
-            for e in self.rows(event_table, event_table.c.type == type_.value)
+            for e in sorted(
+                self.rows(event_table, event_table.c.type == type_.value), key=lambda e: e.seq
+            )
             if e.entity_id == self.account.id
         ]
 
@@ -207,11 +212,12 @@ def test_a_second_connection_of_the_account_is_a_conflict(bank):
             BankConnectionCreate(
                 account_id=bank.account.id, bank_code="10000000", fints_url=URL, login_name="x"
             ),
+            settings=bank.settings,
             now=T0,
         )
 
 
-def test_an_owner_account_gets_no_connection(run, fresh_workspaces):
+def test_an_owner_account_gets_no_connection(run, fresh_workspaces, tmp_path):
     ws, _ = fresh_workspaces
     owner = run(
         ws,
@@ -234,6 +240,7 @@ def test_an_owner_account_gets_no_connection(run, fresh_workspaces):
             BankConnectionCreate(
                 account_id=owner.id, bank_code="10000000", fints_url=URL, login_name=LOGIN
             ),
+            settings=_settings(tmp_path),
             now=T0,
         )
 
@@ -248,6 +255,7 @@ def test_a_new_login_drops_the_stored_state(bank):
         service.update_connection,
         bank.account.id,
         BankConnectionPatch(login_name="another-login"),
+        settings=bank.settings,
         now=T1,
     )
     assert patched.state_present is False and patched.tan_mechanism is None
@@ -338,7 +346,7 @@ def test_the_first_sync_waits_for_the_approval_and_imports_the_zip(bank):
     assert bytes(connection.client_data) == FAKE_STATE
     assert connection.tan_mechanism == DECOUPLED and connection.sca_confirmed_at == T1
     assert (connection.last_sync_at, connection.last_booking_on) == (T1, imported.last_booking_on)
-    assert service.verified_state(service.state_key(bank.settings.session_key), connection)
+    assert service.verified_state(service.state_key(bank.settings.session_key), connection, LOGIN)
 
     assert len(bank.events(EventType.ACCOUNT_SYNC_APPROVAL_NEEDED)) == 1
     (completed,) = bank.events(EventType.ACCOUNT_SYNC_COMPLETED)
@@ -435,6 +443,30 @@ def test_a_first_sync_with_no_booked_stream_compares_with_the_anchor(bank):
     assert bank.job(sync.id, _good(streams=[], balance=Decimal("0.00"))) == "nothing_new"
     row = bank.sync(sync.id)
     assert (row.lines_total, row.balance_checked, row.error_code) == (0, True, E.BANK_NOTHING_NEW)
+
+
+def test_a_report_without_a_booked_entry_is_nothing_new_not_a_failure(bank):
+    """A Sparkasse answers a window without a booking (a private account quiet for two weeks)
+    with a camt report that states its balances and no entry; the import would refuse it as
+    statement.empty, which had failed the run on the real bank (15 Nov 2026)."""
+    first = bank.start()
+    bank.job(first.id, _good())
+    before = bank.connection_row().last_booking_on
+    quiet = re.sub(rb"<Ntry>.*?</Ntry>", b"", STREAMS[-1], flags=re.S)
+    assert b"<Ntry>" not in quiet
+    later = T1 + timedelta(minutes=1)
+    second = bank.start(now=later)
+    assert bank.job(second.id, _good(streams=[quiet]), at=later + timedelta(seconds=5)) == (
+        "nothing_new"
+    )
+    row = bank.sync(second.id)
+    assert (row.status, row.lines_total, row.error_code) == (
+        SyncStatus.NOTHING_NEW,
+        0,
+        E.BANK_NOTHING_NEW,
+    )
+    assert row.balance_checked is True
+    assert bank.connection_row().last_booking_on == before
 
 
 # --- Failures ---------------------------------------------------------------------------------
@@ -669,6 +701,7 @@ def test_the_schedule_queues_one_run_per_connection_with_auto_sync_on(bank):
         BankConnectionCreate(
             account_id=other.id, bank_code="10000000", fints_url=URL, login_name=LOGIN
         ),
+        settings=bank.settings,
         now=T0,
     )
     nothing = bank.schedule()
@@ -872,6 +905,7 @@ def _fetch_statements(bank, on=True):
         service.update_connection,
         bank.account.id,
         BankConnectionPatch(fetch_statements=on),
+        settings=bank.settings,
         now=T0,
     )
 
@@ -991,7 +1025,8 @@ def _refused_cards(bank, at):
 
 
 def _refusal(bank):
-    return bank.read(bank.ws, service.get_connection, bank.account.id).statements_refusal
+    connection = bank.read(bank.ws, service.get_connection, bank.account.id, settings=bank.settings)
+    return connection.statements_refusal
 
 
 def _sync_at(bank, script, at):

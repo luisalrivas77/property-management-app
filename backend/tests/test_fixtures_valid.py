@@ -643,6 +643,11 @@ PHASE5_CASES = {
         "statement_due_none_with_daily_fetch",
         "statement_due_none_for_an_exchange",
         "statement_due_none_without_a_reconciled_import",
+        # D122 amended (6), 15 Nov 2026: a card closed at 0.
+        "statement_due_none_for_a_card_closed_at_zero",
+        "statement_due_card_closed_at_zero_used_again",
+        "statement_due_card_closed_at_zero_settlement_in_window",
+        "statement_due_card_closed_owing_as_before",
         "snoozed_hidden_until_date",
         "done_hides_instance_only",
         "ids_stable_across_days",

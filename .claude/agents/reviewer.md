@@ -2,7 +2,7 @@
 name: reviewer
 description: Code review specialist. The orchestrator uses it for risky changes only (money and tax figures, migrations, row-level security, the event log, persisted state, silent-failure paths), or when Luis asks ("have the reviewer look at X"). Always given a FOCUS and a narrow target (the diff plus the spec), never the whole repo. Not for formatting, docs or anything CI already proves.
 model: fable
-effort: xhigh
+effort: high
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 ---
 

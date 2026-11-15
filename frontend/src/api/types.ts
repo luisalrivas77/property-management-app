@@ -1461,6 +1461,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/auto-rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Accounts Auto Rate
+         * @description Per private bank account and in total; the criterion leaves each account's first
+         *     import out (D172).
+         */
+        get: operations["accounts_auto_rate_api_accounts_auto_rate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/net-worth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Net Worth Get */
+        get: operations["net_worth_get_api_net_worth_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/net-worth/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Net Worth Overview */
+        get: operations["net_worth_overview_api_net_worth_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/net-worth/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Net Worth Snapshots */
+        get: operations["net_worth_snapshots_api_net_worth_snapshots_get"];
+        put?: never;
+        /**
+         * Net Worth Snapshot
+         * @description 200 in every case: the outcome says whether a run was written (written, recaptured)
+         *     or not (unchanged, empty).
+         */
+        post: operations["net_worth_snapshot_api_net_worth_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/net-worth/snapshots/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Net Worth Snapshot Get */
+        get: operations["net_worth_snapshot_get_api_net_worth_snapshots__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts": {
         parameters: {
             query?: never;
@@ -1790,12 +1884,34 @@ export interface paths {
         };
         /**
          * Bank Credential Slots
-         * @description Signed-in members only, as every domain route; names only, never a PIN (D119).
+         * @description Signed-in members only, as every domain route; names only, never a PIN (D119, D196).
          */
         get: operations["bank_credential_slots_api_bank_credential_slots_get"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-credentials/{slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Bank Credential Set
+         * @description D196: the PIN is encrypted before it reaches the database; the answer names the slot
+         *     and when, never the PIN.
+         */
+        put: operations["bank_credential_set_api_bank_credentials__slot__put"];
+        post?: never;
+        /** Bank Credential Delete */
+        delete: operations["bank_credential_delete_api_bank_credentials__slot__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3755,6 +3871,29 @@ export interface components {
             kind: components["schemas"]["MovementKind"];
         };
         /**
+         * AppCredential
+         * @description A slot whose PIN was typed into the app (D196): its name and when; never the PIN.
+         */
+        AppCredential: {
+            /** Slot */
+            slot: string;
+            /**
+             * Set At
+             * Format: date-time
+             */
+            set_at: string;
+            /**
+             * Readable
+             * @default true
+             */
+            readable: boolean;
+            /**
+             * Used
+             * @default true
+             */
+            used: boolean;
+        };
+        /**
          * AppUser
          * @description A person who can sign in. Auth credentials (passkey / TOTP) land with the API PR.
          */
@@ -3968,6 +4107,87 @@ export interface components {
             };
         };
         /**
+         * AutoRate
+         * @description GET /accounts/auto-rate?month=YYYY-MM (D172): per private bank account and in total.
+         *     `criterion_*` count only the allocations outside each account's first import; `met`
+         *     compares their ratio with the target, None when there are none (the criterion is read on
+         *     the second calendar month after the first import).
+         */
+        AutoRate: {
+            /** Month */
+            month: string;
+            /** Accounts */
+            accounts?: components["schemas"]["AutoRateAccount"][];
+            /** Confirmed */
+            confirmed: number;
+            /** Auto */
+            auto: number;
+            /** Ratio */
+            ratio?: string | null;
+            /**
+             * Target
+             * @default 0.80
+             */
+            target: string;
+            /**
+             * Criterion Confirmed
+             * @default 0
+             */
+            criterion_confirmed: number;
+            /**
+             * Criterion Auto
+             * @default 0
+             */
+            criterion_auto: number;
+            /** Criterion Ratio */
+            criterion_ratio?: string | null;
+            /** Met */
+            met?: boolean | null;
+        };
+        /**
+         * AutoRateAccount
+         * @description A private bank account's confirmed allocations of the month, by the line's booking
+         *     day (lines excluded as duplicates left out): `auto` those the app booked without a
+         *     person (D172 amended 15 Nov 2026): the method is rule, matcher_transfer, document_match
+         *     or llm and no person confirmed it (confirmed_by null); `by_routing` splits them by who
+         *     confirmed (auto_confirm: no person, person: a member). `first_import`: of `confirmed`,
+         *     those on lines of the account's first import (the history, D26: the model never
+         *     auto-confirms there), which D172 leaves out of the criterion.
+         */
+        AutoRateAccount: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Label */
+            label: string;
+            /** Confirmed */
+            confirmed: number;
+            /** Auto */
+            auto: number;
+            /** By Method */
+            by_method?: {
+                [key: string]: number;
+            };
+            /** By Routing */
+            by_routing?: {
+                [key: string]: number;
+            };
+            /** Ratio */
+            ratio?: string | null;
+            /**
+             * First Import
+             * @default 0
+             */
+            first_import: number;
+            /**
+             * First Import Auto
+             * @default 0
+             */
+            first_import_auto: number;
+        };
+        /**
          * BalanceCorrectionBody
          * @description POST /movement-imports/{id}/corrections: „Differenz als Korrektur buchen“ (D178
          *     amended, 0030). The coin whose typed balance differs, and why, in the person's words
@@ -4072,6 +4292,20 @@ export interface components {
              */
             auto_sync_allowed: boolean;
             statements_refusal?: components["schemas"]["StatementsRefusal"] | null;
+            /** @default none */
+            credential_source: components["schemas"]["CredentialSource"];
+            /** Credential Set At */
+            credential_set_at?: string | null;
+            /**
+             * Credential Readable
+             * @default true
+             */
+            credential_readable: boolean;
+            /**
+             * Name Readable
+             * @default true
+             */
+            name_readable: boolean;
         };
         /**
          * BankConnectionCreate
@@ -4116,11 +4350,29 @@ export interface components {
         /**
          * BankCredentialSlots
          * @description GET /bank-credential-slots (phase 6 D163): the slots whose container secret is set,
-         *     names only, so the Bankabruf card can say which variable is still missing.
+         *     names only, so the Bankabruf card can say which variable is still missing; and (D196) the
+         *     slots whose PIN was typed into the app, so „Bankabruf einrichten“ can say so before a
+         *     connection exists.
          */
         BankCredentialSlots: {
             /** Slots */
             slots?: string[];
+            /** App Slots */
+            app_slots?: components["schemas"]["AppCredential"][];
+        };
+        /**
+         * BankPinSet
+         * @description PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and
+         *     never returned, logged or echoed (a SecretStr: its repr is stars). Surrounding blanks are
+         *     trimmed, as the container secret's are (settings._optional), so a PIN pasted with a space
+         *     is the same PIN; the length counts after trimming.
+         */
+        BankPinSet: {
+            /**
+             * Pin
+             * Format: password
+             */
+            pin: string;
         };
         /**
          * BankStatement
@@ -4825,6 +5077,13 @@ export interface components {
             /** Covered Through */
             covered_through?: string | null;
         };
+        /**
+         * CredentialSource
+         * @description Where a connection's PIN comes from at the next sync (D196): typed in the app (stored
+         *     encrypted, it wins), the slot's container secret, or nowhere yet.
+         * @enum {string}
+         */
+        CredentialSource: "app" | "server" | "none";
         /**
          * Currency
          * @description transaction.currency. v1 is EUR only (one value, kept as a CHECK'd set like
@@ -5731,7 +5990,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -7566,6 +7825,173 @@ export interface components {
             /** Count */
             count: number;
         };
+        /**
+         * NetWorth
+         * @description GET /net-worth?on=: NetWorth(on) of D167 (4) on read, or a stored month-end (`run`
+         *     set). `by_owner` covers what has shares: an account or a property without shares
+         *     counts in its class and the total, in no owner, and is listed in `unassigned`.
+         *     `property_net` is the properties' estimate less their loans (mockup 07's „Immobilie
+         *     (netto)“); the class `liabilities` holds the loans and a credit card's balance.
+         */
+        NetWorth: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Total */
+            total: string;
+            /** By Class */
+            by_class: {
+                [key: string]: string;
+            };
+            /** By Owner */
+            by_owner: {
+                [key: string]: string;
+            };
+            /** Unassigned */
+            unassigned?: string[];
+            /** Property Estimate */
+            property_estimate: string;
+            /** Loan Balances */
+            loan_balances: string;
+            /** Property Net */
+            property_net: string;
+            /** Lines */
+            lines?: components["schemas"]["NetWorthLine"][];
+            /** Todos */
+            todos?: components["schemas"]["NetWorthTodo"][];
+            /**
+             * Stale Positions
+             * @default 0
+             */
+            stale_positions: number;
+            /**
+             * Unvalued Positions
+             * @default 0
+             */
+            unvalued_positions: number;
+            run?: components["schemas"]["NetWorthRun"] | null;
+        };
+        /**
+         * NetWorthClass
+         * @description Mockup 07's bar (D167 (4)).
+         * @enum {string}
+         */
+        NetWorthClass: "bank" | "depot" | "crypto" | "property" | "liabilities";
+        /**
+         * NetWorthLine
+         * @description One figure of the net worth, asset by asset (D172: the month-end is compared with the
+         *     household's spreadsheet line by line). `value_eur` None: not valued, counted nowhere,
+         *     `not_valued_reason` says why. A balance's `as_of` is the last day a reconciled statement
+         *     covers (D167 (4)); a position's price has its own day. `estimate`: the property's value
+         *     and a loan's balance, both labelled as estimates on the screen.
+         */
+        NetWorthLine: {
+            kind: components["schemas"]["NetWorthLineKind"];
+            net_worth_class: components["schemas"]["NetWorthClass"];
+            /** Label */
+            label: string;
+            /** Account Id */
+            account_id?: string | null;
+            account_kind?: components["schemas"]["AccountKind"] | null;
+            /** Account Label */
+            account_label?: string | null;
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            /** Loan Id */
+            loan_id?: string | null;
+            /** Units */
+            units?: string | null;
+            /** Price Eur */
+            price_eur?: string | null;
+            price_source?: components["schemas"]["PriceSourceKind"] | null;
+            /** Price On */
+            price_on?: string | null;
+            /** Value Eur */
+            value_eur?: string | null;
+            /** As Of */
+            as_of?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * Estimate
+             * @default false
+             */
+            estimate: boolean;
+            /** Note */
+            note?: string | null;
+            /** Not Valued Reason */
+            not_valued_reason?: string | null;
+        };
+        /**
+         * NetWorthLineKind
+         * @enum {string}
+         */
+        NetWorthLineKind: "account" | "position" | "property" | "loan";
+        /**
+         * NetWorthOverview
+         * @description GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest
+         *     stored month-end, None before the first; `month_end_due` the last month-end when no run
+         *     holds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read
+         *     now for the stored month-end's day when it differs from the stored total, set only when
+         *     that day is the last month-end (the one the button stores again).
+         */
+        NetWorthOverview: {
+            today: components["schemas"]["NetWorth"];
+            month_end?: components["schemas"]["NetWorth"] | null;
+            /** Month End Due */
+            month_end_due?: string | null;
+            /** Month End Now */
+            month_end_now?: string | null;
+        };
+        /**
+         * NetWorthRun
+         * @description One stored month-end: the valuation_snapshot rows of one net_worth_run_id.
+         */
+        NetWorthRun: {
+            /**
+             * Net Worth Run Id
+             * Format: uuid
+             */
+            net_worth_run_id: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /** Rows */
+            rows: number;
+        };
+        /**
+         * NetWorthTodo
+         * @description A gap in the figure as a plain to-do with the button or page that closes it
+         *     (principle 7).
+         */
+        NetWorthTodo: {
+            code: components["schemas"]["NetWorthTodoCode"];
+            /** Text */
+            text: string;
+            /** Action */
+            action: string;
+            /** Href */
+            href: string;
+        };
+        /**
+         * NetWorthTodoCode
+         * @enum {string}
+         */
+        NetWorthTodoCode: "net_worth.balance_unreconciled" | "net_worth.balance_outdated" | "net_worth.price_missing" | "net_worth.price_stale" | "net_worth.position_not_reconciled" | "net_worth.position_not_booked" | "net_worth.ownership_missing" | "net_worth.property_shares_missing" | "net_worth.loan_not_valued";
         /**
          * NoPayFact
          * @description „Kein Arbeitslohn in <Jahr>“ (D195): the owner had no pay that year (e.g. a whole year of
@@ -9770,6 +10196,29 @@ export interface components {
             booking_date: string;
             /** Amount */
             amount: string;
+        };
+        /**
+         * SnapshotOutcome
+         * @enum {string}
+         */
+        SnapshotOutcome: "written" | "recaptured" | "unchanged" | "empty";
+        /**
+         * SnapshotResult
+         * @description POST /net-worth/snapshots: what „Monatsabschluss festhalten“ did.
+         */
+        SnapshotResult: {
+            outcome: components["schemas"]["SnapshotOutcome"];
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            run?: components["schemas"]["NetWorthRun"] | null;
+            /**
+             * Unvalued Positions
+             * @default 0
+             */
+            unvalued_positions: number;
         };
         /** SpecialExpenseFact */
         SpecialExpenseFact: {
@@ -14721,6 +15170,186 @@ export interface operations {
             };
         };
     };
+    accounts_auto_rate_api_accounts_auto_rate_get: {
+        parameters: {
+            query: {
+                month: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoRate"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    net_worth_get_api_net_worth_get: {
+        parameters: {
+            query?: {
+                on?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetWorth"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    net_worth_overview_api_net_worth_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetWorthOverview"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    net_worth_snapshots_api_net_worth_snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetWorthRun"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    net_worth_snapshot_api_net_worth_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotResult"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    net_worth_snapshot_get_api_net_worth_snapshots__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetWorth"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     accounts_list_api_accounts_get: {
         parameters: {
             query?: never;
@@ -15403,6 +16032,70 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BankCredentialSlots"];
                 };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    bank_credential_set_api_bank_credentials__slot__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slot: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankPinSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppCredential"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    bank_credential_delete_api_bank_credentials__slot__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slot: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
             default: {

@@ -5,7 +5,7 @@ that file, follow it too. Changes from the original:
 
 - **Delegation is the default here** (Luis, 5 Nov 2026): the main session orchestrates and
   does only small changes itself. The original says "do it yourself by default".
-- The reviewer runs at `xhigh` (the original agent file said `high`; Luis confirmed `xhigh`).
+- The reviewer runs at `high` (the original agent file said `high`; Luis confirmed `xhigh` on 5 Nov 2026 and moved it back to `high` on 15 Nov 2026).
 - Coders commit but do not push; the orchestrator pushes. The original `/code` rules said to
   push after each commit, which contradicted the multi-agent rules below.
 - "When to review" and "the docs are YOUR job" name this repo's risky areas and docs.
@@ -25,7 +25,7 @@ itself. Anything bigger goes to an agent.
 
 🚨 **You own the scoping.** It is where errors are cheapest to catch and most expensive to miss, and you have context no fresh agent does. Delegating it buys a worse-informed answer at a higher price.
 
-🚨 **Do NOT pass `model` or `effort` on an Agent call. Omit both and let the agent definition decide.** Every agent in `.claude/agents/*.md` already declares its own tier and reasoning effort — those are deliberate choices, and an explicit parameter silently overrides them. `reviewer` is `fable` at `xhigh`; passing `model: "opus"` replaces the reviewing model you picked with one you didn't, and the substitution is invisible unless someone goes looking.
+🚨 **Do NOT pass `model` or `effort` on an Agent call. Omit both and let the agent definition decide.** Every agent in `.claude/agents/*.md` already declares its own tier and reasoning effort — those are deliberate choices, and an explicit parameter silently overrides them. `reviewer` is `fable` at `high`; passing `model: "opus"` replaces the reviewing model you picked with one you didn't, and the substitution is invisible unless someone goes looking.
 
 If a task genuinely needs a different tier than its agent declares, **say so and ask** — do not decide it silently. The one honest signal that an override happened is the agent's own transcript: `grep -oE '"model":"[a-z0-9-]+"' <task-output>.jsonl | sort -u`.
 

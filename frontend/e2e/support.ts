@@ -99,7 +99,7 @@ export function alert(page: Page, text: string | RegExp): Locator {
  */
 export async function apiCall<T = Record<string, unknown>>(
   page: Page,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PUT",
   path: string,
   body?: unknown,
   expected = method === "POST" ? 201 : 200,

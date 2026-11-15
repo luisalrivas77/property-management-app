@@ -49,6 +49,7 @@ from .matching import (
     run_rematch_on_evidence,
     run_rematch_waiting,
 )
+from .month_end import MONTH_END_CRON, MONTH_END_LOCK, MONTH_END_TASK, run_month_end
 from .notify import NOTIFY_CRON, NOTIFY_LOCK, NOTIFY_TASK, run_send_reminders
 from .scrub import SCRUB_CRON, SCRUB_TASK, run_scrub_proposals
 from .tax_export import run_tax_export
@@ -219,6 +220,13 @@ def fetch_prices(context: JobContext, *, timestamp: int) -> None:
     run_fetch_prices(deps)
 
 
+def month_end(context: JobContext, *, timestamp: int) -> None:
+    """D167 (5), at 08:00 on the 1st: the previous month-end's net worth stored once per
+    workspace (a month-end that has a run already is left alone)."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_month_end(deps)
+
+
 def register_tasks(app: procrastinate.App) -> procrastinate.App:
     """The queued tasks, plus scrub_proposals as a periodic task: the worker's periodic
     deferrer queues it at SCRUB_CRON. Procrastinate skips a schedule missed by more than
@@ -262,4 +270,8 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
         fetch_prices
     )
     app.periodic(cron=FETCH_PRICES_CRON, periodic_id=FETCH_PRICES_TASK)(prices)
+    # No retry: „Monatsabschluss festhalten“ stores a month-end by hand. lock= keeps one run at
+    # a time; each capture takes its workspace's advisory lock and writes only a missing one.
+    worth = app.task(name=MONTH_END_TASK, pass_context=True, lock=MONTH_END_LOCK)(month_end)
+    app.periodic(cron=MONTH_END_CRON, periodic_id=MONTH_END_TASK)(worth)
     return app

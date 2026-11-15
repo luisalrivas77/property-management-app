@@ -44,6 +44,7 @@ from .routes import (
     inbound_mail,
     income_inputs,
     loans,
+    net_worth,
     owners,
     performance,
     properties,
@@ -75,6 +76,7 @@ ROUTE_MODULES = (
     loans,
     documents,
     proposals,
+    net_worth,  # before accounts: GET /accounts/auto-rate, not /accounts/{account_id}
     accounts,
     assets,
     bank_sync,

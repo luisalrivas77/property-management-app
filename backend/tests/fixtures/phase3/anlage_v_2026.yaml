@@ -57,7 +57,11 @@
 #                        proof's current reading (null: not read or no amount stated).
 #   proven               when one proof's amount is null (the user saw the proof), or one
 #                        proof's amount, or the sum of the proofs' amounts, equals the bill's
-#                        amount within 0.01: an acquisition cost row's amount; for private costs
+#                        amount within 0.01, taken over the payment proofs alone, over the
+#                        confirmed private lines that paid the bill alone (phase 6 D161), or
+#                        over both together (a bill paid partly each way); a receipt and the
+#                        bank line of one payment are never summed as two payments (amended
+#                        15 Nov 2026): an acquisition cost row's amount; for private costs
 #                        the sum of value.amount (gross, before the share) of the bill's rows in
 #                        force in every year. A part also counts as proven when a proof matches
 #                        the bill's combined total (its acquisition cost rows plus its
@@ -66,7 +70,8 @@
 #                        document (the bill's id), source (acquisition_cost | private_cost),
 #                        kind (the row's AcquisitionCostKind) or label (the label of the bill's
 #                        row with the lowest id), amount (the bill's amount as above), and
-#                        proof_amount (the sum of the proofs' amounts) only when a proof exists
+#                        proof_amount (the sum of the proofs' amounts, of the kind above whose
+#                        sum is closest to the bill, payment proofs first) only when a proof exists
 #                        and none matches ("Betrag passt nicht"). Refs: the bill and its rows.
 #   facts.unlinked_proofs (D149) the payment_proof documents linked to no bill, of this
 #                        property or of none: {proof_document_id, amount}. When exactly one
@@ -1380,6 +1385,58 @@ cases:
     facts:
       <<: *facts
       tax_inputs: [*inputs_a_tiles, *input_certified, *input_private_repair]
+    add_allocations:
+      - {allocation_id: *HPL, booking_date: 2026-11-27, amount: "-595.00",
+         category: hh_property_cost, property_id: *P, document_id: *D_PR,
+         account_purpose: private}
+    expect:
+      <<: *expect_private_repair
+      lines:
+        - *line_rent
+        - *line_umlagen
+        - {key: income.total, amount: "6180.00", amount_rounded: 6180}
+        - *line_afa
+        - *line_interest
+        - *line_financing
+        - key: wk.maintenance
+          amount: "6545.00"
+          amount_rounded: 6545
+          provisional: true
+          sources: [{kind: allocation, id: *PA}, {kind: document, id: *D_P},
+                    {kind: allocation, id: *TL}, {kind: document, id: *D_T},
+                    {kind: tax_input, id: *TI1}, {kind: tax_input, id: *TI9},
+                    {kind: document, id: *D_PR}, {kind: allocation, id: *HPL}]
+        - *line_allocable
+        - *line_non_allocable
+        - {key: wk.total, amount: "14723.66", amount_rounded: 14725}
+        - {key: result.surplus, amount: "-8543.66", amount_rounded: -8545}
+        - {key: result.owner_a, amount: "-4271.83", amount_rounded: -4273}
+        - {key: result.owner_b, amount: "-4271.83", amount_rounded: -4272}
+      warnings:
+        - *w_notary_proof
+        - {code: hausgeld.abrechnung_pending}
+        - {code: income.pre_handover, params: {amount: "850.00", count: "2"}}
+        - {code: reduced_rent.no_market_rent}
+        - {code: draft.open_lines_excluded, params: {count: "2", sum: "-89.90"}}
+        - {code: draft.form_provisional}
+
+  - id: private_repair_proven_twice_counted_once
+    description: >
+      private_repair_proven_by_private_line plus a payment proof of 595.00 linked to the same
+      bill, a receipt of the same transfer the private line shows → still no
+      payment_proof.missing for the repair bill: a receipt and the bank line of one payment are
+      two proofs of it, never 1,190.00 paid (D143 amended 15 Nov 2026: the document proofs and
+      the private lines prove a bill each alone, or together for a bill paid partly each way;
+      the real case was a Grunderwerbsteuer of two shares, each paid once and shown by a
+      receipt and by its bank line, reported as 22,748.00 against a bill of 11,374.00)
+    pending: "phase 6 step 2 (D161's proof path and the D143 widening)"
+    tax_year: 2026
+    rule_set_year: 2026
+    facts:
+      <<: *facts
+      tax_inputs: [*inputs_a_tiles, *input_certified, *input_private_repair]
+      payment_proofs:
+        - {proof_document_id: *D_PPR, bill_document_id: *D_PR, amount: "595.00"}
     add_allocations:
       - {allocation_id: *HPL, booking_date: 2026-11-27, amount: "-595.00",
          category: hh_property_cost, property_id: *P, document_id: *D_PR,
