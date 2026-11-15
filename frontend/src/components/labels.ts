@@ -1155,6 +1155,9 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     "Lohnersatzleistungen sind noch nicht bescheinigt: der Steuersatz ist vorläufig.",
   "return.benefit_possible_double": () =>
     "Eine Lohnersatzleistung steht in der Bescheinigung und als eigene Angabe: bitte nur einmal erfassen.",
+  // Phase 6 D159 amended (8): confirmed wage-replacement payments not yet typed.
+  "return.benefit_booked": (p) =>
+    `Lohnersatzleistungen ${p.tax_year ?? ""}: ${money(p, "difference")} auf dem Konto gebucht, noch nicht als Lohnersatzleistung eingetragen.`,
   "return.children_mismatch": () =>
     "Die Zahl der Kinderfreibeträge der Bescheinigung passt nicht zu den erfassten Kindern.",
   "return.kindergeld_apply": () => "Für ein Kind ist noch kein Kindergeld erfasst: bitte bei der Familienkasse beantragen.",

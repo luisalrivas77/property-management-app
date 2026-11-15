@@ -53,9 +53,13 @@ from uuid import UUID
 from sqlalchemy import Connection, Row, and_, exists, insert, select
 from sqlalchemy.exc import IntegrityError
 
+from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import account_ownership as ownership_table
+from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import owner as owner_table
 from hausbuch.db.tables import return_input as return_input_table
+from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.rules.errors import (
     ANLAGE_N_USEFUL_LIFE_MISSING,
@@ -75,9 +79,11 @@ from hausbuch.rules.tax.anlage_n.draft import draft_n
 from hausbuch.rules.tax.anlage_n.summary import TaxContexts
 from hausbuch.rules.tax.questionnaire import reminders
 from hausbuch.rules.tax.return_estimate import return_estimate
+from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.employment import (
     HOUSEHOLD_KINDS,
     AnlageNDraft,
+    BookedBenefit,
     ChildcareFact,
     ChildFact,
     EquipmentFact,
@@ -93,7 +99,14 @@ from hausbuch.schemas.employment import (
     employer_key,
     return_input_amounts,
 )
-from hausbuch.schemas.enums import DocumentType, EntityType, IncomeInputKind, ReturnInputKind
+from hausbuch.schemas.enums import (
+    AccountPurpose,
+    AllocationStatus,
+    DocumentType,
+    EntityType,
+    IncomeInputKind,
+    ReturnInputKind,
+)
 from hausbuch.schemas.events import EventType, ReturnInputRecorded
 from hausbuch.schemas.performance import IncomeInputFact
 
@@ -287,7 +300,50 @@ def household_return_estimate(conn: Connection, *, tax_year: int, today: date) -
         rs,
         reminders=reminders(answers, q),
         not_modelled=NOT_MODELLED,
+        booked_benefits=booked_benefits(conn, tax_year),
     )
+
+
+def booked_benefits(conn: Connection, tax_year: int) -> list[BookedBenefit]:
+    """The confirmed `hh_wage_replacement` allocations on the private accounts booked in
+    `tax_year` (phase 6 D159 amended (8)), with the line's payee and purpose as their text and
+    the account's current owners; a line marked as a duplicate is left out. Read for
+    rules/tax/anlage_n/booked_benefits only, never returned."""
+    a, t, acc = allocation_table.c, transaction_table.c, account_table.c
+    rows = conn.execute(
+        select(a.id, a.amount, t.booking_date, t.counterparty_name, t.purpose, t.account_id)
+        .join(transaction_table, t.id == a.transaction_id)
+        .join(account_table, acc.id == t.account_id)
+        .where(
+            a.category == AllocationCategory.HH_WAGE_REPLACEMENT.value,
+            a.status == AllocationStatus.CONFIRMED.value,
+            acc.purpose == AccountPurpose.PRIVATE.value,
+            t.excluded_as_duplicate_of.is_(None),
+            t.booking_date >= date(tax_year, 1, 1),
+            t.booking_date <= date(tax_year, 12, 31),
+        )
+        .order_by(t.booking_date, a.id)
+    ).all()
+    if not rows:
+        return []
+    o = ownership_table.c
+    owners: dict[UUID, list[UUID]] = {}
+    for account_id, owner_id in conn.execute(
+        select(o.account_id, o.owner_id).where(
+            o.account_id.in_({r.account_id for r in rows}), o.superseded_by.is_(None)
+        )
+    ):
+        owners.setdefault(account_id, []).append(owner_id)
+    return [
+        BookedBenefit(
+            allocation_id=r.id,
+            booking_date=r.booking_date,
+            amount=r.amount,
+            text=" ".join(x for x in (r.counterparty_name, r.purpose) if x),
+            owner_ids=sorted(owners.get(r.account_id, []), key=str),
+        )
+        for r in rows
+    ]
 
 
 # --- Writes ------------------------------------------------------------------------------

@@ -161,6 +161,14 @@ function anlageN(anchor: string, label: string) {
 }
 
 const owners = (anchor: string, label: string) => () => link(`/owners#${anchor}`, label);
+
+/** return.benefit_booked (phase 6 D159 amended (8)): the Lohnersatzleistungen of the Anlage N
+ * tab, of the owner the warning names (an account with one owner), else of the tab's owner. */
+function benefitBooked(warning: DraftWarning, ctx: GuideContext): GuideAction {
+  const ownerId = warning.params?.owner_id ?? ctx.ownerId ?? null;
+  const href = taxFormHref("n", { year: ctx.year, propertyId: null, ownerId });
+  return link(`${href}#eingabe-replacement_income`, "Lohnersatzleistung eintragen");
+}
 const questions = (_: DraftWarning, ctx: GuideContext) => link(questionnaireHref(ctx.year), "Jahresfragen beantworten");
 
 // --- the map --------------------------------------------------------------------------------
@@ -487,6 +495,16 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     text: () =>
       "Die Leistung steht schon auf der Lohnsteuerbescheinigung. Die eigene Angabe unter Eingaben bei den Lohnersatzleistungen entfernen.",
     action: anlageN("eingabe-replacement_income", "Lohnersatzleistungen ansehen"),
+  },
+  // Phase 6 D159 amended (8): confirmed wage-replacement payments not yet typed.
+  "return.benefit_booked": {
+    todo: true,
+    title: (p) => `Lohnersatzleistungen ${p.tax_year ?? ""} eintragen`,
+    text: (p) =>
+      p.owner_id
+        ? `Auf dem Konto sind ${formatMoney(p.difference)} Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld eingegangen, die noch nicht als Lohnersatzleistung eingetragen sind. Sie erhöhen den Steuersatz auf das übrige Einkommen. Den Betrag prüfen und bei den Lohnersatzleistungen speichern.`
+        : `Auf einem gemeinsamen Konto sind ${formatMoney(p.difference)} Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld eingegangen, die noch nicht als Lohnersatzleistung eingetragen sind. Sie erhöhen den Steuersatz auf das übrige Einkommen. Zuerst die Person wählen, die die Leistung bekommen hat, dann den Betrag prüfen und speichern.`,
+    action: benefitBooked,
   },
   "return.children_mismatch": {
     todo: false,

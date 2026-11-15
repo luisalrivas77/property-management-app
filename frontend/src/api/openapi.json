@@ -28905,6 +28905,7 @@
           "anlage_n.first_workplace_check",
           "return.progression_provisional",
           "return.benefit_possible_double",
+          "return.benefit_booked",
           "return.children_mismatch",
           "return.kindergeld_apply",
           "return.child_over_18",

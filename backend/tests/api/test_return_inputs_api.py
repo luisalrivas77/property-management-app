@@ -61,3 +61,77 @@ def test_the_anlage_n_years_need_a_session(api_app):
 
     with client_for(api_app, None) as anonymous:
         assert anonymous.get("/api/tax/anlage-n/years").status_code == 401
+
+
+# --- Phase 6 D159 amended (8): booked wage-replacement lines become a to-do ----------------
+
+
+def _benefit_todos(client) -> list[dict]:
+    estimate = ok(client.get("/api/tax/return-estimate", params={"tax_year": 2026}))
+    return [w for w in estimate["warnings"] if w["code"] == "return.benefit_booked"]
+
+
+def test_a_booked_benefit_is_a_to_do_until_it_is_typed(client_a, client_b):
+    """A confirmed hh_wage_replacement line on a private account: on a joint account the to-do
+    names no owner, on a one-owner account that owner, and the typed row ends it."""
+    from test_bank_parsers import CAMT, build
+
+    case = next(c for c in CAMT.cases if c.id == "sparkasse_zip_of_daily_reports")
+    a = create(client_a, "/api/owners", {"full_name": "Person A"})["id"]
+    b = create(client_a, "/api/owners", {"full_name": "Person B"})["id"]
+    account = create(
+        client_a,
+        "/api/accounts",
+        {
+            "label": "Girokonto",
+            "bank": "Testbank",
+            "iban": "DE50100000000000000001",  # the fixture file's own
+            "purpose": "private",
+            "opening_balance": "0.00",
+            "opening_balance_on": "2026-03-31",
+        },
+    )
+    files = {"file": ("umsaetze.zip", build(case.input), "application/zip")}
+    ok(client_a.post(f"/api/accounts/{account['id']}/imports", files=files), 201)
+    lines = ok(client_a.get(f"/api/accounts/{account['id']}/transactions"))
+    line = next(t for t in lines if not t["amount"].startswith("-") and t["amount"] != "0.00")
+    assert line["booking_date"].startswith("2026-")
+    assert _benefit_todos(client_a) == []
+
+    body = {
+        "allocation_set": {
+            "transaction_id": line["id"],
+            "allocations": [{"amount": line["amount"], "category": "hh_wage_replacement"}],
+            "method": "user",
+            "confidence": "1.000",
+        },
+        "learn_rule": False,
+    }
+    ok(client_a.put(f"/api/transactions/{line['id']}/allocations", json=body))
+    url = f"/api/accounts/{account['id']}/ownership"
+    half = {"share_numerator": 1, "share_denominator": 2}
+    ok(client_a.post(url, json={"shares": [{"owner_id": a, **half}, {"owner_id": b, **half}]}))
+    (todo,) = _benefit_todos(client_a)
+    assert "owner_id" not in todo["params"]
+    assert todo["params"]["difference"] == line["amount"]
+    assert todo["refs"][0]["kind"] == "allocation"
+    # The line's payee and purpose never leave the server: amounts, year and codes only.
+    assert set(todo["params"]) <= {"tax_year", "booked", "typed", "difference", "benefit"}
+
+    sole = {"shares": [{"owner_id": a, "share_numerator": 1, "share_denominator": 1}]}
+    ok(client_a.post(url, json=sole))
+    (todo,) = _benefit_todos(client_a)
+    assert todo["params"]["owner_id"] == a
+    assert _benefit_todos(client_b) == []  # another workspace sees nothing of it (RLS)
+
+    create(
+        client_a,
+        "/api/return-inputs",
+        {
+            "owner_id": a,
+            "kind": "replacement_income",
+            "tax_year": 2026,
+            "value": {"benefit": "elterngeld", "amount": line["amount"]},
+        },
+    )
+    assert _benefit_todos(client_a) == []
