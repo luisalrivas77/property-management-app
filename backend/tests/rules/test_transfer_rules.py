@@ -19,7 +19,10 @@ def _leg(row: phase6.LegRow) -> TransferLeg:
         id=row.id,
         account_id=account.id,
         account_kind=account.kind,
-        account_iban_hmac=account.iban_hmac,
+        # An exchange's IBAN is its deposit IBAN: only its deposit legs carry it (D162 amended
+        # 15 Nov 2026, services.transfers._movement_legs).
+        account_iban_hmac=phase6.leg_account_iban(row, TRANSFERS.accounts),
+        account_purpose=account.purpose,
         booked_on=row.booked_on,
         amount=row.amount,
         fee_eur=row.fee_eur,
@@ -57,6 +60,7 @@ def test_match_transfer(case):
                 wanted.in_leg,
                 wanted.kind,
             ), name
+            assert found.deposit_fee == wanted.deposit_fee, name
     assert got.card == (expect.card.code if expect.card else None)
     assert got.candidates == sorted(expect.candidates)
 

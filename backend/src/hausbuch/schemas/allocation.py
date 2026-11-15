@@ -599,6 +599,10 @@ class TransferLeg(Schema):
     # D166), which makes it a transfer without an IBAN.
     account_iban_hmac: HmacHex | None = Field(default=None, pattern=HMAC_PATTERN)
     category: AllocationCategory | None = None
+    # D162 amended 15 Nov 2026: the purpose of the leg's account, so a deposit an exchange
+    # credited short (rules.matching.deposit_gap) is read only from a private bank line, never
+    # the rental account's. None (a caller that does not say) never fits such a gap.
+    account_purpose: AccountPurpose | None = None
 
 
 class MatchContext(Schema):

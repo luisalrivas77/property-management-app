@@ -61,6 +61,10 @@ accounts:
   # A second depot whose IBAN is known (a confirmed depot IBAN, D156 amended), 15 Nov 2026.
   depot_b: {id: 00000ac6-0000-4000-8000-000000000007, kind: depot, purpose: private,
             iban_hmac: "a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6"}
+  # An exchange whose deposit IBAN was learned from a first link by hand (D162 amended
+  # 15 Nov 2026, migration 0035); the exchange above keeps none.
+  exchange_b: {id: 00000ac6-0000-4000-8000-000000000008, kind: exchange, purpose: private,
+               iban_hmac: "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7"}
 
 bases:
   hmac_exchange_bank: &H_XBANK "e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0"
@@ -68,6 +72,7 @@ bases:
   hmac_rental: &H_R "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
   hmac_savings: &H_S "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4"
   hmac_depot_b: &H_D2 "a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6"
+  hmac_exchange_b: &H_X2 "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7"
 
 cases:
   - id: bank_to_bank_next_day
@@ -263,3 +268,201 @@ cases:
       category: internal_transfer_out
       confidence: "1.000"
       card: {code: transfer.unmatched_leg}
+
+  # D162 amended 15 Nov 2026 (an exchange credited each SEPA deposit 1 € less with no fee row
+  # in its export): a private bank line and an exchange's EUR Deposit row fit when the deposit
+  # is smaller by more than 0 and at most 2.00 € and neither records a fee. Tied by the
+  # exchange's deposit IBAN (exchange_b, learned from the first link by hand) the matcher links
+  # them and the link carries the gap (deposit_fee: booked as bank_fees on the bank line);
+  # without the tie the pair is only proposed. An exchange's IBAN is carried by its deposit
+  # legs only; its withdrawals come from another IBAN. Never the rental account's line.
+  - id: exchange_deposit_tied_gap_0
+    description: the bank line names the exchange's deposit IBAN, the amounts are equal; linked
+    leg: {id: 00000e60-0000-4000-8000-000000001401, account: owner_a, booked_on: 2026-09-07,
+          amount: "-100.00", counterparty_iban_hmac: *H_X2}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001402, account: exchange_b, source: movement,
+         booked_on: 2026-09-08, amount: "100.00", booked_as: internal_transfer_in}
+    today: 2026-09-09
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000001401,
+             in_leg: 00000e60-0000-4000-8000-000000001402, kind: exchange_eur}
+
+  - id: exchange_deposit_tied_gap_1
+    description: tied by the deposit IBAN, 901.00 paid and 900.00 credited; linked, 1.00 kept
+    leg: {id: 00000e60-0000-4000-8000-000000001411, account: owner_a, booked_on: 2026-09-07,
+          amount: "-901.00", counterparty_iban_hmac: *H_X2}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001412, account: exchange_b, source: movement,
+         booked_on: 2026-09-08, amount: "900.00", booked_as: internal_transfer_in}
+    today: 2026-09-09
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000001411,
+             in_leg: 00000e60-0000-4000-8000-000000001412, kind: exchange_eur,
+             deposit_fee: "1.00"}
+
+  - id: exchange_deposit_tied_gap_2
+    description: tied, 1,001.00 paid and 999.00 credited; 2.00 is the most kept; linked
+    leg: {id: 00000e60-0000-4000-8000-000000001421, account: owner_a, booked_on: 2026-09-07,
+          amount: "-1001.00", counterparty_iban_hmac: *H_X2}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001422, account: exchange_b, source: movement,
+         booked_on: 2026-09-08, amount: "999.00", booked_as: internal_transfer_in}
+    today: 2026-09-09
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000001421,
+             in_leg: 00000e60-0000-4000-8000-000000001422, kind: exchange_eur,
+             deposit_fee: "2.00"}
+
+  - id: exchange_deposit_tied_gap_2_01
+    description: tied, but 2.01 short is more than an exchange keeps; no link, card past the window
+    leg: {id: 00000e60-0000-4000-8000-000000001431, account: owner_a, booked_on: 2026-09-07,
+          amount: "-1001.01", counterparty_iban_hmac: *H_X2}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001432, account: exchange_b, source: movement,
+         booked_on: 2026-09-08, amount: "999.00", booked_as: internal_transfer_in}
+    today: 2026-09-14
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      card: {code: transfer.unmatched_leg}
+
+  - id: exchange_deposit_untied_gap_0
+    description: the bank line names the exchange's bank, not an own IBAN; equal amounts, proposed
+    leg: {id: 00000e60-0000-4000-8000-000000001441, account: owner_a, booked_on: 2026-09-07,
+          amount: "-100.00", counterparty_iban_hmac: *H_XBANK}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001442, account: exchange, source: movement,
+         booked_on: 2026-09-08, amount: "100.00", booked_as: internal_transfer_in}
+    today: 2026-09-09
+    expect:
+      category: null
+      proposed_link: {out_leg: 00000e60-0000-4000-8000-000000001441,
+                      in_leg: 00000e60-0000-4000-8000-000000001442, kind: exchange_eur}
+
+  - id: exchange_deposit_untied_gap_1
+    description: no tie, 1.00 short; proposed with the gap, never linked
+    leg: {id: 00000e60-0000-4000-8000-000000001451, account: owner_a, booked_on: 2026-09-07,
+          amount: "-901.00", counterparty_iban_hmac: *H_XBANK}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001452, account: exchange, source: movement,
+         booked_on: 2026-09-08, amount: "900.00", booked_as: internal_transfer_in}
+    today: 2026-09-09
+    expect:
+      category: null
+      proposed_link: {out_leg: 00000e60-0000-4000-8000-000000001451,
+                      in_leg: 00000e60-0000-4000-8000-000000001452, kind: exchange_eur,
+                      deposit_fee: "1.00"}
+
+  - id: exchange_deposit_untied_gap_2
+    description: no tie, 2.00 short; proposed with the gap
+    leg: {id: 00000e60-0000-4000-8000-000000001461, account: owner_a, booked_on: 2026-09-07,
+          amount: "-1001.00", counterparty_iban_hmac: *H_XBANK}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001462, account: exchange, source: movement,
+         booked_on: 2026-09-08, amount: "999.00", booked_as: internal_transfer_in}
+    today: 2026-09-09
+    expect:
+      category: null
+      proposed_link: {out_leg: 00000e60-0000-4000-8000-000000001461,
+                      in_leg: 00000e60-0000-4000-8000-000000001462, kind: exchange_eur,
+                      deposit_fee: "2.00"}
+
+  - id: exchange_deposit_untied_gap_2_01
+    description: no tie, 2.01 short; nothing proposed
+    leg: {id: 00000e60-0000-4000-8000-000000001471, account: owner_a, booked_on: 2026-09-07,
+          amount: "-1001.01", counterparty_iban_hmac: *H_XBANK}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001472, account: exchange, source: movement,
+         booked_on: 2026-09-08, amount: "999.00", booked_as: internal_transfer_in}
+    today: 2026-09-09
+    expect:
+      category: null
+
+  - id: exchange_deposit_untied_from_the_exchange_side
+    description: >
+      the exchange's Deposit row, a transfer by its type, finds the untied bank line 1.00
+      larger: proposed with the gap, never linked; past the window its card lists it
+    leg: {id: 00000e60-0000-4000-8000-000000001481, account: exchange, source: movement,
+          booked_on: 2026-09-08, amount: "900.00", booked_as: internal_transfer_in}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001482, account: owner_a, booked_on: 2026-09-07,
+         amount: "-901.00", counterparty_iban_hmac: *H_XBANK}
+    today: 2026-09-14
+    expect:
+      category: internal_transfer_in
+      confidence: "1.000"
+      proposed_link: {out_leg: 00000e60-0000-4000-8000-000000001482,
+                      in_leg: 00000e60-0000-4000-8000-000000001481, kind: exchange_eur,
+                      deposit_fee: "1.00"}
+      card: {code: transfer.unmatched_leg}
+
+  - id: exchange_deposit_tied_from_the_exchange_side
+    description: the exchange's Deposit row finds the bank line naming its deposit IBAN; linked
+    leg: {id: 00000e60-0000-4000-8000-000000001491, account: exchange_b, source: movement,
+          booked_on: 2026-09-08, amount: "900.00", booked_as: internal_transfer_in}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001492, account: owner_a, booked_on: 2026-09-07,
+         amount: "-901.00", counterparty_iban_hmac: *H_X2}
+    today: 2026-09-09
+    expect:
+      category: internal_transfer_in
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000001492,
+             in_leg: 00000e60-0000-4000-8000-000000001491, kind: exchange_eur,
+             deposit_fee: "1.00"}
+
+  - id: exchange_deposit_gap_never_from_the_rental_account
+    description: >
+      a rental line naming the exchange's deposit IBAN is an owner transfer, but a deposit
+      credited short is never its counterpart: the rental account's bank fees are a tax figure
+    leg: {id: 00000e60-0000-4000-8000-000000001501, account: rental, booked_on: 2026-09-07,
+          amount: "-901.00", counterparty_iban_hmac: *H_X2}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001502, account: exchange_b, source: movement,
+         booked_on: 2026-09-08, amount: "900.00", booked_as: internal_transfer_in}
+    today: 2026-09-14
+    expect:
+      category: owner_transfer_out
+      confidence: "1.000"
+      card: {code: transfer.unmatched_leg}
+
+  - id: exchange_withdrawal_links_after_the_deposit_iban
+    description: >
+      the exchange's Withdrawal row links to the bank's credit from the exchange's payout IBAN
+      although the exchange now carries its deposit IBAN (a withdrawal leg carries none)
+    leg: {id: 00000e60-0000-4000-8000-000000001511, account: exchange_b, source: movement,
+          booked_on: 2026-09-07, amount: "-500.00", booked_as: internal_transfer_out}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001512, account: owner_a, booked_on: 2026-09-08,
+         amount: "500.00", counterparty_iban_hmac: *H_XBANK}
+    today: 2026-09-09
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000001511,
+             in_leg: 00000e60-0000-4000-8000-000000001512, kind: exchange_eur}
+
+  - id: exchange_deposits_equal_in_one_window_ambiguous
+    description: >
+      two equal deposits credited inside one window: the tied bank line cannot tell them
+      apart, as with two equal exact transfers
+    leg: {id: 00000e60-0000-4000-8000-000000001521, account: owner_a, booked_on: 2026-09-07,
+          amount: "-1001.00", counterparty_iban_hmac: *H_X2}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001522, account: exchange_b, source: movement,
+         booked_on: 2026-09-08, amount: "1000.00", booked_as: internal_transfer_in}
+      - {id: 00000e60-0000-4000-8000-000000001523, account: exchange_b, source: movement,
+         booked_on: 2026-09-09, amount: "1000.00", booked_as: internal_transfer_in}
+    today: 2026-09-10
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      card: {code: transfer.ambiguous}
+      candidates: [00000e60-0000-4000-8000-000000001522, 00000e60-0000-4000-8000-000000001523]

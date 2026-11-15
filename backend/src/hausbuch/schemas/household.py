@@ -531,6 +531,9 @@ class TransferCandidate(Schema):
     out_leg: TransferLeg
     in_leg: TransferLeg
     kind: TransferLinkKind
+    # D162 amended 15 Nov 2026: what an exchange kept of a bank deposit without recording a fee
+    # (rules.matching.deposit_gap); the bank line is then booked as two parts on linking.
+    deposit_fee: Money | None = None
 
     @model_validator(mode="after")
     def _directions(self) -> Self:
@@ -546,8 +549,10 @@ class TransferMatch(Schema):
     category: the transfer code the leg is booked as (by an own IBAN, or the depot or exchange
     leg's own type), None when it is no transfer by either; link: the one counterpart, written
     by the matcher; proposed_link: a leg without an own IBAN that fits one exchange or depot
-    EUR movement exactly, for review only; card: transfer.ambiguous (candidates listed) or,
-    past the window, transfer.unmatched_leg."""
+    EUR movement exactly, for review only, or (D162 amended 15 Nov 2026) a deposit an exchange
+    credited up to 2 € short without a fee row, untied by the exchange's deposit IBAN (its
+    deposit_fee set); card: transfer.ambiguous (candidates listed) or, past the window,
+    transfer.unmatched_leg."""
 
     category: AllocationCategory | None = None
     confidence: Confidence | None = None
@@ -609,6 +614,10 @@ class TransferLegView(Schema):
     booked_category: AllocationCategory | None = None
     booked_as_transfer: bool = False
     rebook_on_link: bool = False
+    # D162 amended 15 Nov 2026: a bank deposit the exchange credited short without recording
+    # a fee; linking books the gap as bank_fees, and deposit_fee_text says so in German.
+    deposit_fee: Money | None = None
+    deposit_fee_text: str | None = None
 
 
 class TransferLinkView(Schema):
