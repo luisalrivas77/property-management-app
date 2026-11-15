@@ -526,10 +526,30 @@ def test_owner_shares_follow_the_set_in_force_on_the_day(run, read, fresh_worksp
     after = read(ws, net_worth.shares_on, [account], date(2026, 11, 2))
     assert before == {account: {a: Fraction(1)}}
     assert after == {account: {a: Fraction(1, 2), b: Fraction(1, 2)}}
+    # Before every set the earliest one applies (review of 15 Nov 2026, finding 6).
+    assert read(ws, net_worth.shares_on, [account], date(2025, 12, 31)) == {
+        account: {a: Fraction(1)}
+    }
     split = read(ws, net_worth.net_worth, date(2026, 11, 2)).by_owner
     # To the cent, summing up: the cent left over goes to the first owner by id.
     first, second = sorted((a, b), key=str)
     assert split == {first: Decimal("50.01"), second: Decimal("50.00")}
+
+
+def test_a_month_end_before_the_first_ownership_set_uses_it(run, read, fresh_workspaces):
+    """Review of 15 Nov 2026, finding 6: the form dates a first set today (12 Nov); the 31 Oct
+    figure splits by it instead of counting the account as unassigned with a to-do saying no
+    owners are recorded. Two sets dated after the day: the earlier one applies."""
+    ws, _ = fresh_workspaces
+    a = run(ws, create_owner, OwnerCreate(full_name="Eigentümer A"), now=NOW).id
+    b = run(ws, create_owner, OwnerCreate(full_name="Eigentümer B"), now=NOW).id
+    account = _account(run, ws, "Girokonto", AccountKind.BANK_CURRENT, iban=JOINT_IBAN)
+    run(ws, lambda ctx: _line(ctx, account, _import(ctx, account, ON, ON), ON, "300.00"), now=NOW)
+    _own(run, ws, account, {a: Fraction(1, 2), b: Fraction(1, 2)}, date(2026, 11, 12))
+    _own(run, ws, account, {a: Fraction(1)}, date(2026, 12, 1), NOW.replace(hour=6))
+    seen = read(ws, net_worth.net_worth, ON)
+    assert seen.by_owner == {a: Decimal("150.00"), b: Decimal("150.00")}
+    assert seen.unassigned == [] and T.OWNERSHIP_MISSING not in {t.code for t in seen.todos}
 
 
 # --- month-ends -----------------------------------------------------------------------------

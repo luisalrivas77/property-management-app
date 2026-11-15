@@ -29,8 +29,9 @@ NetWorth(on) = Σ balances + Σ positions × price + the properties' estimate �
   by the repayment schedule (the scenario's follow-up rate where it sets one, as the
   projection does), an estimate too.
 - **Owners**: an account's figures by its account_ownership set in force on `on` (the newest
-  recorded set whose effective_from is on or before `on`), the property and its loans by
-  the property's shares; split to the cent by rules.net_worth.split.
+  recorded set whose effective_from is on or before `on`; before its first set, the earliest
+  one), the property and its loans by the property's shares; split to the cent by
+  rules.net_worth.split.
 
 **Month-ends (D167 (5) amended, migration 0040).** `capture_month_end` writes one
 valuation_snapshot row per valued figure, all under one net_worth_run_id: per account balance
@@ -130,7 +131,11 @@ def shares_on(
     """Per account its ownership set in force on `on`: of the sets recorded (rows sharing
     created_at and effective_from), the newest whose effective_from is on or before `on`. A
     set recorded later for an earlier day (a correction) wins over an older one; one dated
-    after `on` waits for its day. An account without such a set is missing."""
+    after `on` waits for its day when an earlier set exists. For a day before every set of
+    the account, its earliest set applies (the earliest effective_from, the newest recorded
+    within it): owner shares rarely change and the form dates a first set today, so an
+    earlier month-end would otherwise count as unassigned with a false to-do (review of 15
+    Nov 2026, finding 6). An account without any set is missing."""
     ids = list(account_ids)
     if not ids:
         return {}
@@ -143,19 +148,22 @@ def shares_on(
             o.share_denominator,
             o.effective_from,
             o.created_at,
-        )
-        .where(o.account_id.in_(ids), o.effective_from <= on)
-        .order_by(o.account_id, o.created_at.desc(), o.effective_from.desc())
+        ).where(o.account_id.in_(ids))
     ).all()
-    found: dict[UUID, dict[UUID, Fraction]] = {}
-    chosen: dict[UUID, tuple[datetime, date]] = {}
+    sets: dict[UUID, dict[tuple[datetime, date], dict[UUID, Fraction]]] = defaultdict(dict)
     for r in rows:
-        key = (r.created_at, r.effective_from)
-        if chosen.setdefault(r.account_id, key) != key:
-            continue
-        found.setdefault(r.account_id, {})[r.owner_id] = Fraction(
+        sets[r.account_id].setdefault((r.created_at, r.effective_from), {})[r.owner_id] = Fraction(
             r.share_numerator, r.share_denominator
         )
+    found: dict[UUID, dict[UUID, Fraction]] = {}
+    for account_id, recorded in sets.items():
+        in_force = [key for key in recorded if key[1] <= on]
+        if in_force:
+            key = max(in_force)  # the newest recorded, then the later day
+        else:
+            first = min(day for _, day in recorded)
+            key = max(key for key in recorded if key[1] == first)
+        found[account_id] = recorded[key]
     return found
 
 
