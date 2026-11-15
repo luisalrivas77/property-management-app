@@ -253,7 +253,8 @@ def test_a_pin_is_set_shown_by_its_source_and_deleted_never_returned(configured,
 
     response = configured.put("/api/bank-credentials/primary", json={"pin": APP_PIN})
     stored = ok(response)
-    assert set(stored) == {"slot", "set_at", "readable"} and stored["slot"] == "primary"
+    assert set(stored) == {"slot", "set_at", "readable", "used"} and stored["slot"] == "primary"
+    assert stored["used"] is True
     assert APP_PIN not in response.text
     connection = ok(configured.get(path))
     assert connection["credential_source"] == "app"
@@ -261,7 +262,7 @@ def test_a_pin_is_set_shown_by_its_source_and_deleted_never_returned(configured,
     assert (connection["credential_readable"], connection["name_readable"]) == (True, True)
     slots = ok(configured.get("/api/bank-credential-slots"))
     assert slots["slots"] == ["primary"]
-    assert [s["slot"] for s in slots["app_slots"]] == ["primary"]
+    assert [(s["slot"], s["used"]) for s in slots["app_slots"]] == [("primary", True)]
     assert ok(client_b.get("/api/bank-credential-slots"))["app_slots"] == []  # RLS
     read_back = configured.get(path).text + configured.get("/api/bank-credential-slots").text
     assert APP_PIN not in read_back
@@ -280,6 +281,23 @@ def test_with_only_the_product_id_a_start_needs_the_pin_typed_into_the_app(produ
     assert (missing.status_code, missing.json()["code"]) == (422, E.BANK_PIN_MISSING)
     ok(product_only.put("/api/bank-credentials/primary", json={"pin": APP_PIN}))
     assert product_only.post(f"/api/accounts/{account['id']}/syncs").status_code == 202
+
+
+def test_a_pin_under_a_slot_no_connection_uses_is_listed_as_unused_until_deleted(product_only):
+    """D196: a PIN saved under a slot nothing names (a refused setup, a renamed slot) is
+    listed with used false, so the card can offer „PIN löschen“; it is never deleted by
+    itself."""
+    stored = ok(product_only.put("/api/bank-credentials/spare_x", json={"pin": APP_PIN}))
+    assert stored["used"] is False
+    account = create(product_only, "/api/accounts", ACCOUNT)
+    path = f"/api/accounts/{account['id']}/bank-connection"
+    create(product_only, path, _connection(account["id"]) | {"credential_slot": "used_y"})
+    ok(product_only.put("/api/bank-credentials/used_y", json={"pin": APP_PIN}))
+    slots = ok(product_only.get("/api/bank-credential-slots"))["app_slots"]
+    assert [(s["slot"], s["used"]) for s in slots] == [("spare_x", False), ("used_y", True)]
+    assert product_only.delete("/api/bank-credentials/spare_x").status_code == 204
+    slots = ok(product_only.get("/api/bank-credential-slots"))["app_slots"]
+    assert [s["slot"] for s in slots] == ["used_y"]
 
 
 @pytest.mark.parametrize(

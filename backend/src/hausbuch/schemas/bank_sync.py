@@ -257,6 +257,7 @@ class AppCredential(Schema):
     slot: CredentialSlot
     set_at: datetime
     readable: bool = True  # false once the session key changed: type it again
+    used: bool = True  # false: no connection names the slot (a refused setup, a renamed slot)
 
 
 class BankCredentialSlots(Schema):

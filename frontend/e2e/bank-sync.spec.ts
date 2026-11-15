@@ -166,3 +166,31 @@ test("a PIN typed into the app is saved, never shown, and can be deleted", async
   await expect(card).toContainText("Noch keine PIN hinterlegt.");
   await expect(card.getByLabel("PIN (Online-Banking)")).toHaveValue("");
 });
+
+// D196 review: a PIN saved under a name no connection uses (here put there through the API,
+// as a refused setup or a renamed connection leaves it) is listed on the card with
+// „PIN löschen“; it stays until a person deletes it.
+test("a PIN under a name no connection uses is listed and can be deleted", async ({ page, signedIn }) => {
+  void signedIn;
+  const accountId = await createAccountViaApi(page);
+  await apiCall(page, "PUT", "/api/bank-credentials/spare_x", { pin: SAMPLE_PIN });
+  await page.goto(`/accounts/${accountId}`);
+  const card = page.getByRole("region", { name: "Bankabruf" });
+  await card.getByLabel("BLZ").fill("10000000");
+  await card.getByLabel("FinTS-Adresse").fill("https://fints.example.org/fints");
+  await card.getByLabel("Anmeldename").fill("loginname-xyz");
+  await card.getByLabel("Name des Zugangs").fill("used_y");
+  await card.getByRole("button", { name: "Bankabruf einrichten" }).click();
+  await expect(card.getByText("lo***yz")).toBeVisible();
+  await expect(card).toContainText("„used_y“");
+
+  const unused = card.getByRole("list", { name: "Gespeicherte PINs ohne Bankzugang" });
+  await expect(unused.getByRole("listitem")).toHaveCount(1);
+  await expect(unused).toContainText("Zugang „spare_x“");
+  expect(await page.content()).not.toContain(SAMPLE_PIN);
+
+  page.once("dialog", (dialog) => void dialog.accept());
+  await unused.getByRole("button", { name: "PIN löschen" }).click();
+  await expect(unused).toHaveCount(0);
+  await expect(card).toContainText("Noch keine PIN hinterlegt.");
+});

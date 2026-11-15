@@ -261,7 +261,10 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
       {state.data === undefined ? (
         state.error ? null : <p className="muted">Lädt …</p>
       ) : state.data.connection === null ? (
-        <ConnectionCreateForm account={account} slots={state.data.slots} onCreated={reload} />
+        <>
+          <ConnectionCreateForm account={account} slots={state.data.slots} onCreated={reload} />
+          <UnusedPins slots={state.data.slots} onChanged={reload} />
+        </>
       ) : (
         <>
           <ConnectionFacts connection={state.data.connection} />
@@ -271,6 +274,7 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
             serverSet={state.data.slots.server.includes(state.data.connection.credential_slot)}
             onChanged={reload}
           />
+          <UnusedPins slots={state.data.slots} onChanged={reload} />
           <ConnectionSwitch
             connection={state.data.connection}
             field="auto_sync"
@@ -368,9 +372,10 @@ const PIN_HINT =
 const PIN_LENGTH = "Die PIN hat 5 bis 64 Zeichen.";
 const PIN_KEYS = ["pin"] as const;
 
-/** A PIN's length in characters, as the API counts them (code points, not UTF-16 units). */
+/** A PIN's length in characters, as the API counts them (code points, not UTF-16 units,
+ * after trimming the surrounding blanks, D196). */
 function checkPin(pin: string): string | null {
-  const length = [...pin].length;
+  const length = [...pin.trim()].length;
   return length >= 5 && length <= 64 ? null : PIN_LENGTH;
 }
 
@@ -523,6 +528,58 @@ function PinPanel({
           <ErrorNotice error={error} />
         </>
       )}
+    </div>
+  );
+}
+
+const UNUSED_PINS = "Gespeicherte PINs ohne Bankzugang";
+
+/** The PINs typed into the app under a name no connection of the household uses (a setup the
+ * bank form refused after the PIN was saved, a renamed connection; D196 review). They are
+ * listed so they can be deleted; Hausbuch never deletes one by itself. */
+function UnusedPins({ slots, onChanged }: { slots: Slots; onChanged: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const unused = slots.app.filter((c) => !c.used);
+  if (unused.length === 0) return null;
+
+  async function remove(slot: string) {
+    if (!window.confirm(`Die in Hausbuch gespeicherte PIN für den Zugang „${slot}“ löschen? Kein Bankzugang nutzt sie.`)) {
+      return;
+    }
+    setBusy(slot);
+    setError(null);
+    try {
+      await ok(api.DELETE("/api/bank-credentials/{slot}", { params: { path: { slot } } }));
+      onChanged();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <h3>{UNUSED_PINS}</h3>
+      <p className="muted">
+        Diese PINs sind in Hausbuch gespeichert, aber kein Bankzugang trägt ihren Namen, etwa nach einer abgelehnten Einrichtung
+        oder einem umbenannten Zugang. Hausbuch löscht sie nie von selbst; ein Zugang mit diesem Namen würde sie wieder nutzen.
+      </p>
+      <ul aria-label={UNUSED_PINS} className="stack">
+        {unused.map((c) => (
+          <li key={c.slot} className="row">
+            <span>
+              Zugang „{c.slot}“, gespeichert am {dayAfter(c.set_at, 0)}
+              {c.readable ? "" : " (nicht mehr lesbar)"}
+            </span>
+            <button type="button" className="danger" onClick={() => void remove(c.slot)} disabled={busy !== null}>
+              PIN löschen
+            </button>
+          </li>
+        ))}
+      </ul>
+      <ErrorNotice error={error} />
     </div>
   );
 }

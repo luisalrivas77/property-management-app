@@ -10558,6 +10558,11 @@
             "type": "boolean",
             "title": "Readable",
             "default": true
+          },
+          "used": {
+            "type": "boolean",
+            "title": "Used",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -11415,7 +11420,7 @@
           "pin"
         ],
         "title": "BankPinSet",
-        "description": "PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and\nnever returned, logged or echoed (a SecretStr: its repr is stars)."
+        "description": "PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and\nnever returned, logged or echoed (a SecretStr: its repr is stars). Surrounding blanks are\ntrimmed, as the container secret's are (settings._optional), so a PIN pasted with a space\nis the same PIN; the length counts after trimming."
       },
       "BankStatement": {
         "properties": {

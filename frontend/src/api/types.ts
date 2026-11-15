@@ -3793,6 +3793,11 @@ export interface components {
              * @default true
              */
             readable: boolean;
+            /**
+             * Used
+             * @default true
+             */
+            used: boolean;
         };
         /**
          * AppUser
@@ -4183,7 +4188,9 @@ export interface components {
         /**
          * BankPinSet
          * @description PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and
-         *     never returned, logged or echoed (a SecretStr: its repr is stars).
+         *     never returned, logged or echoed (a SecretStr: its repr is stars). Surrounding blanks are
+         *     trimmed, as the container secret's are (settings._optional), so a PIN pasted with a space
+         *     is the same PIN; the length counts after trimming.
          */
         BankPinSet: {
             /**

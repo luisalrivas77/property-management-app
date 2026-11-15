@@ -162,7 +162,15 @@ def set_pin(ctx: CommandContext, slot: str, pin: SecretStr, *, settings: Setting
         ctx.workspace_id,
         BankPinChanged(credential_slot=slot),
     )
-    return AppCredential(slot=row.credential_slot, set_at=row.updated_at)
+    return AppCredential(
+        slot=row.credential_slot, set_at=row.updated_at, used=_slot_used(ctx.conn, slot)
+    )
+
+
+def _slot_used(conn: Connection, slot: str) -> bool:
+    """Whether a connection of the workspace names the slot (RLS)."""
+    named = select(connection_table.c.id).where(connection_table.c.credential_slot == slot)
+    return conn.execute(named.limit(1)).first() is not None
 
 
 def delete_pin(ctx: CommandContext, slot: str) -> bool:
@@ -185,13 +193,17 @@ def delete_pin(ctx: CommandContext, slot: str) -> bool:
 
 
 def app_pins(conn: Connection, settings: Settings) -> list[AppCredential]:
-    """The slots whose PIN was typed into the app, with when and whether it still decrypts."""
+    """The slots whose PIN was typed into the app, with when, whether it still decrypts and
+    whether a connection of the workspace uses the slot (a PIN saved under a slot nothing
+    uses is shown so it can be deleted; it is never deleted by itself)."""
+    used = set(conn.execute(select(connection_table.c.credential_slot)).scalars())
     rows = conn.execute(select(credential_table).order_by(credential_table.c.credential_slot))
     return [
         AppCredential(
             slot=r.credential_slot,
             set_at=r.updated_at,
             readable=_open_pin(r, settings) is not None,
+            used=r.credential_slot in used,
         )
         for r in rows
     ]
