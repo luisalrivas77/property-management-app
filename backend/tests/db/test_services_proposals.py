@@ -26,6 +26,7 @@ from hausbuch.rules.errors import (
     PROPOSAL_NOT_READY,
 )
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue, SourceRef
+from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.enums import (
     AcquisitionCostKind,
     ActorType,
@@ -67,6 +68,7 @@ from hausbuch.services.properties import (
     record_price_split,
     select_price_split,
 )
+from hausbuch.services.review import inbox
 from hausbuch.services.tenancies import (
     create_tenancy,
     deposit_receipts,
@@ -436,6 +438,41 @@ def test_read_failure_marks_failed_with_the_code(
     with pytest.raises(RuleViolationError) as refused:
         run(ws, proposals.reject_proposal, proposal.id)
     assert refused.value.code == PROPOSAL_NOT_READY
+
+
+def test_a_failed_reads_card_leaves_once_the_document_is_read_again(
+    run, read, job, fresh_workspaces, blob_store, enqueued
+):
+    """The card „Konnte nicht gelesen werden“ asks for a new read; once one exists, whatever
+    its state, the old failure is no longer listed (15 Nov 2026: it stayed after the second
+    read was applied). A failure that is the document's latest read stays."""
+    ws, _ = fresh_workspaces
+    doc = _upload(run, ws, blob_store)
+    first = run(ws, proposals.request_read, doc.id)
+    job(
+        ws,
+        proposals.record_read_failure,
+        first.id,
+        error_code=AI_UNPARSABLE,
+        ai_call_id=None,
+        attempts=2,
+    )
+
+    def failed_cards():
+        return [i.proposal_id for i in read(ws, inbox) if i.kind is InboxItemKind.READ_FAILED]
+
+    assert failed_cards() == [first.id]
+    second = run(ws, proposals.request_read, doc.id)
+    assert failed_cards() == []
+    job(
+        ws,
+        proposals.record_read_failure,
+        second.id,
+        error_code=AI_UNPARSABLE,
+        ai_call_id=None,
+        attempts=2,
+    )
+    assert failed_cards() == [second.id]
 
 
 # --- Apply -------------------------------------------------------------------------------

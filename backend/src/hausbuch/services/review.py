@@ -769,9 +769,20 @@ def _questionnaire_items(conn: Connection, today: date) -> list[InboxItem]:
 
 
 def _proposal_items(conn: Connection) -> list[InboxItem]:
+    """A failed read's card asks to read the document again or type it by hand, so it leaves
+    once a later read of the same document exists, whatever that read's state (15 Nov 2026:
+    a document's first read was cut off at its answer limit, its second was read and applied,
+    and the card „Konnte nicht gelesen werden“ stayed). Decided on read; the failed row keeps
+    its status."""
+    t = proposal_table
+    later = proposal_table.alias("later")
     rows = conn.execute(
-        select(proposal_table).where(
-            proposal_table.c.status.in_([s.value for s in _PROPOSAL_TEXTS])
+        select(t).where(
+            t.c.status.in_([s.value for s in _PROPOSAL_TEXTS]),
+            (t.c.status != ProposalStatus.FAILED.value)
+            | ~exists().where(
+                later.c.document_id == t.c.document_id, later.c.created_at > t.c.created_at
+            ),
         )
     )
     items = []
