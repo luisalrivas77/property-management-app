@@ -28,6 +28,7 @@ from .common import (
 from .document import DocumentExplanation, HandField, HandFields
 from .enums import (
     AcquisitionCostKind,
+    DepotDocumentKind,
     EntityType,
     ExtractionKind,
     OperatingCostsTerms,
@@ -303,6 +304,24 @@ class ExistingDepotAccount(Schema):
     label: str
 
 
+class PrintedDepot(StrEnum):
+    """What a depot document's own text layer says about its depot (14 Nov 2026, D165 (a)
+    amended; outcomes split in the review of 15 Nov 2026), read by code
+    (services.depot.printed_depot_account)."""
+
+    MATCH = "match"  # exactly one depot account holds what it prints
+    # One labelled depot number no depot account holds: the document belongs to another
+    # depot, so none is pre-selected and the note says to create it first.
+    NAMED_ELSEWHERE = "named_elsewhere"
+    # More than one labelled depot number (a financial report over several depots): none is
+    # pre-selected, not even the only one, and no note is added.
+    SEVERAL = "several"
+    # Nothing that tells: no labelled number or IBAN of a depot, no PDF, or no depot account
+    # with a number to compare with. The earlier rule applies (the only depot).
+    NOTHING = "nothing"
+    UNREADABLE = "unreadable"  # the original could not be read just now
+
+
 class PrefillContext(Schema):
     """Everything build_proposal may look at. Lists are unordered: the result must not
     depend on their order (prefill.yaml runs every case shuffled too)."""
@@ -346,3 +365,12 @@ class PrefillContext(Schema):
     proof_candidates: list[ExistingProofBill] = Field(default_factory=list)
     # Phase 6 step 4: the workspace's depot accounts, for a depot reading's records.
     depot_accounts: list[ExistingDepotAccount] = Field(default_factory=list)
+    # 14 Nov 2026 (D165 (a) amended): what the document's own text layer says about its
+    # depot, read by code (services.depot.printed_depot_account), and the depot account it
+    # names when that is a MATCH.
+    printed_depot: PrintedDepot = PrintedDepot.NOTHING
+    printed_depot_account_id: UUID | None = None
+    # Which of the depot's documents it is (document.depot_kind, set by code at upload,
+    # D177), None for any other document: a depot letter read as `general` (a rebalancing)
+    # is filed by its date's year, a year-end report by the year it reports on.
+    depot_kind: DepotDocumentKind | None = None

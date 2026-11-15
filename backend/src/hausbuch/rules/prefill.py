@@ -122,6 +122,7 @@ from hausbuch.schemas.employment import employer_key as _shared_employer_key
 from hausbuch.schemas.enums import (
     AcquisitionCostKind,
     DepositForm,
+    DepotDocumentKind,
     DocumentSubtype,
     ExtractionKind,
     OperatingCostsTerms,
@@ -140,6 +141,7 @@ from hausbuch.schemas.proposal import (
     ExistingUnit,
     FieldOption,
     PrefillContext,
+    PrintedDepot,
     ProposalRecord,
 )
 from hausbuch.schemas.tax import GRUNDSTEUER_SUM_TOLERANCE, LIMIT_15_CATEGORIES
@@ -796,9 +798,12 @@ class _Builder:
     def depot_reading(self) -> None:
         """One `movement:<n>` record per movement and one `holding:<n>` per position that
         rules.depot.propose builds from the reading, each with the depot account to book it
-        on: offered as options, pre-selected when the workspace has only one (never routed by
-        a printed number). A reading's own figures that do not add up are notes on the first
-        record; the movement is still proposed for the user to check against the document."""
+        on: offered as options, pre-selected when the document's text layer prints the number
+        or IBAN of exactly one of them (context.printed_depot_account_id, read by code, never
+        by the model; 14 Nov 2026, D165 (a) amended), else when the workspace has only one
+        and the document names no other depot (context.printed_depot, review 15 Nov 2026).
+        A reading's own figures that do not add up are notes on the first record; the
+        movement is still proposed for the user to check against the document."""
         assert self.kind is not None
         sources = _DEPOT_SOURCES[self.kind]
         values = {
@@ -809,17 +814,29 @@ class _Builder:
         if proposal is None:
             return
         accounts = self.ctx.depot_accounts
-        account = (
-            _code_value(str(accounts[0].id), "low")
-            if len(accounts) == 1
-            else ExtractedValue.missing()
-        )
+        printed = next((a for a in accounts if a.id == self.ctx.printed_depot_account_id), None)
+        # A document that names another depot is never put on the only one (review,
+        # 15 Nov 2026); one that could not be read just now falls back like one that says
+        # nothing, since the reading itself had the file a moment ago.
+        # A report over several depots pre-selects none either, without a note.
+        elsewhere = printed is None and self.ctx.printed_depot is PrintedDepot.NAMED_ELSEWHERE
+        several = printed is None and self.ctx.printed_depot is PrintedDepot.SEVERAL
+        if printed is not None:
+            account = _code_value(str(printed.id), "high")
+        elif len(accounts) == 1 and not elsewhere and not several:
+            account = _code_value(str(accounts[0].id), "low")
+        else:
+            account = ExtractedValue.missing()
         options = (
             {"account_id": [FieldOption(value=str(a.id), label=a.label) for a in accounts]}
             if accounts
             else {}
         )
         notes = [_DEPOT_WARNINGS[w] for w in proposal.warnings if w in _DEPOT_WARNINGS]
+        if printed is not None:
+            notes.insert(0, _PRINTED_DEPOT_NOTE.format(label=printed.label))
+        if elsewhere and accounts:
+            notes.insert(0, _ELSEWHERE_DEPOT_NOTE)
         if not accounts:
             notes.append(_NO_DEPOT_NOTE)
         name = self.ev("security_name").value
@@ -912,6 +929,28 @@ class _Builder:
             tax_year = self._dated_year(("paid_on", "document_date"))
             if tax_year is not None:
                 fields["tax_year"] = tax_year
+        # 14 Nov 2026: a depot document is filed by its own date (D132: computed by code, with
+        # the date it comes from): the trade day, the distribution's payment day (the
+        # Zufluss) else its record day, the day units moved, the report's Stichtag; else its
+        # date. A depot letter read as `general` (a rebalancing) by its date. A year-end
+        # document (the Jahressteuerbescheinigung, the Ertragsübersicht, the Kostenausweis) is
+        # dated after the year it reports on, so it is filed by that year (review, 15 Nov 2026).
+        if "tax_year" not in fields and self.ctx.depot_kind in _ANNUAL_DEPOT_KINDS:
+            tax_year = self._reported_year()
+            if tax_year is not None:
+                fields["tax_year"] = tax_year
+        if "tax_year" not in fields:
+            dates = _DEPOT_YEAR_DATES.get(self.kind) if self.kind is not None else None
+            if (
+                dates is None
+                and self.kind is ExtractionKind.GENERAL
+                and self.ctx.depot_kind is not None
+            ):
+                dates = ("document_date",)
+            if dates is not None:
+                tax_year = self._dated_year(dates)
+                if tax_year is not None:
+                    fields["tax_year"] = tax_year
         notes = []
         if self.financing:
             notes.append(_FINANCING_NOTE)
@@ -1128,6 +1167,25 @@ class _Builder:
             if on is not None:
                 return _derived(on.year, [(name, self.ev(name))])
         return None
+
+    def _reported_year(self) -> ExtractedValue | None:
+        """The year a depot's year-end document reports on (review, 15 Nov 2026): the one
+        year its read title names („Jahressteuerbescheinigung 2026“), at most medium
+        confidence; else the year before its date, low, since such a document is issued after
+        its year ends. None when neither is read."""
+        title = self.ev("title")
+        if isinstance(title.value, str):
+            years = set(_TITLE_YEAR.findall(title.value))
+            if len(years) == 1:
+                named = _derived(int(years.pop()), [("title", title)])
+                if named.confidence == "high":
+                    named = named.model_copy(update={"confidence": "medium"})
+                return named
+        on = _iso_date(self.ev("document_date").value)
+        if on is None:
+            return None
+        before = _derived(on.year - 1, [("document_date", self.ev("document_date"))])
+        return before.model_copy(update={"confidence": "low"})
 
     # -- Kaufvertrag
 
@@ -2676,6 +2734,31 @@ _DEPOT_WARNINGS = {
         "vergleichen."
     ),
 }
+_PRINTED_DEPOT_NOTE = (
+    "Das Dokument nennt die Nummer des Depots {label}; es ist deshalb vorausgewählt."
+)
+# The date fields a depot document's Steuerjahr is derived from, first read wins (14 Nov 2026).
+_DEPOT_YEAR_DATES: dict[ExtractionKind, tuple[str, ...]] = {
+    ExtractionKind.TRADE_CONFIRMATION: ("trade_date", "document_date"),
+    ExtractionKind.DISTRIBUTION_NOTE: ("payment_date", "record_date", "document_date"),
+    ExtractionKind.SECURITIES_TRANSFER: ("transfer_date", "document_date"),
+    ExtractionKind.DEPOT_REPORT: ("report_date", "document_date"),
+}
+# The depot's documents that report on a whole past year and are issued after it ends (review,
+# 15 Nov 2026); every other kind is filed by its own date.
+_ANNUAL_DEPOT_KINDS = frozenset(
+    {
+        DepotDocumentKind.JAHRESSTEUERBESCHEINIGUNG,
+        DepotDocumentKind.ERTRAGSUEBERSICHT,
+        DepotDocumentKind.KOSTENAUSWEIS,
+    }
+)
+# A year a title names: four digits from 2000, not part of a longer number.
+_TITLE_YEAR = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
+_ELSEWHERE_DEPOT_NOTE = (
+    "Dieses Dokument nennt ein anderes Depot, als unter Konten angelegt ist. Bitte zuerst "
+    "dieses Depot anlegen (Konten › „Konto anlegen“, Kontoart „Depot“), dann hier wählen."
+)
 _NO_DEPOT_NOTE = (
     "Es gibt noch kein Depot unter Konten. Bitte zuerst das Depot anlegen (Konten › „Konto "
     "anlegen“, Kontoart „Depot“), dann hier das Depot wählen."

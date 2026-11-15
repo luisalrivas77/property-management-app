@@ -24,7 +24,9 @@ kept_both queues `match_transaction` for the later line, which waited for the de
 """
 
 import hmac
+import logging
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
@@ -37,6 +39,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import proposal as proposal_table
@@ -60,6 +63,7 @@ from hausbuch.schemas.bank import (
     StatementImport,
     StatementLine,
     StatementNewAccount,
+    StatementRefusal,
     StoredLine,
     Transaction,
     TransactionAllocationStatus,
@@ -103,6 +107,13 @@ from .iban import ProtectedIban, protect_iban, protect_ref
 from .lookup import require_row
 
 POSSIBLE_DUPLICATE = "possible_duplicate"  # NotFoundError entity type: it has no events
+
+logger = logging.getLogger("hausbuch.services.statements")
+
+# A followed file (one imported by itself after another, never the one a person chose) that
+# failed for a reason other than a rule (its original unreadable, the document gone): it keeps
+# its offer, and only this file is rolled back (review, 15 Nov 2026).
+STATEMENT_FOLLOW_UNREADABLE = "statement.follow_unreadable"
 
 # Codes that come from the file itself (D34): no anchor or declaration can clear them.
 _FILE_ERRORS = frozenset({rules.REPORT_UNBALANCED, rules.CHAIN_BREAK})
@@ -168,7 +179,7 @@ def import_statement(
     ).one_or_none()
     if existing is not None:
         return _to_import(existing)
-    _set_ref(ctx, account, statement.account_ref, iban_key)
+    numbered = _set_ref(ctx, account, statement.account_ref, iban_key)
 
     dates = [line.booking_date for line in statement.lines]
     first, last = min(dates), max(dates)
@@ -256,6 +267,13 @@ def import_statement(
     )
     checked = _check(ctx, account, row, announce=True, file_error=outcome.balance_error)
     recheck_account(ctx, account_id, skip=imported)
+    if numbered:
+        # The account has its number now (14 Nov 2026): the other statements of it waiting
+        # under Dokumente follow, and a depot's waiting readings are rebuilt with it.
+        account_numbered(ctx, store, account_id, iban_key=iban_key)
+        # The follow imported the account's earlier files and re-checked this one, so its
+        # status is read again rather than returned as it was before (review, 15 Nov 2026).
+        checked = get_import(ctx.conn, imported) or checked
     return checked.model_copy(
         update={
             "stated_closing": statement.stated_balance,
@@ -477,7 +495,10 @@ def statement_offer(
     ):
         label, bank, provider = _NEW_ACCOUNT_WORDS[statement.format]
         bank_file = statement.format in BANK_EXPORT_FORMATS
-        opening, opening_on, from_file = statement_file_anchor(statement)
+        siblings = same_account_files(conn, store, statement, identity, iban_key=iban_key)
+        opening, opening_on, from_file = statement_file_anchor(
+            earliest_statement(siblings) or statement
+        )
         new_account = StatementNewAccount(
             kind=statement_file_kind(statement) or kind,
             label=label,
@@ -488,6 +509,7 @@ def statement_offer(
             opening_balance=opening,
             opening_balance_on=opening_on,
             opening_from_file=from_file,
+            other_statements=sum(1 for doc, _ in siblings if doc != document_id),
         )
     return StatementFileOffer(
         format=statement.format,
@@ -504,6 +526,254 @@ def statement_offer(
         suggested_account_id=suggested,
         new_account=new_account,
     )
+
+
+# --- Statements follow their account (phase 6, 14 Nov 2026) ---------------------------------
+#
+# D165 (a) and D176 (3) amended (Luis: "when importing all the documents for a depot (or another
+# account in general) the app should recognize that they're all for the same account and when
+# you create the account they are all assigned directly to it"). A statement file waiting under
+# Dokumente (its read refused with proposal.bank_file_not_read, no import yet) goes onto the one
+# account whose stored IBAN (a bank's export) or number (a card's or depot's statement) is the
+# one it prints, the same test that pre-selects that account in statement_offer: when the
+# account is created from one of them, when it gets its number from its first statement, when
+# it is created by hand with it, and when the file is uploaded after the account exists. Read
+# by code only; these files never reach the model.
+
+
+@dataclass
+class FollowedStatements:
+    """What import_waiting_statements did: the imports it wrote, in statement order, and the
+    files whose import refused (each keeps its offer)."""
+
+    imported: list[StatementImport] = field(default_factory=list)
+    refused: list[StatementRefusal] = field(default_factory=list)
+
+
+def waiting_statement_documents(conn: Connection) -> list[UUID]:
+    """The documents stored through Dokumente whose read was refused as a statement file
+    (proposal.bank_file_not_read, still failed) and that no import holds yet; oldest first."""
+    from .proposals import PROPOSAL_BANK_FILE_NOT_READ  # proposals imports matching
+
+    p = proposal_table.c
+    d = document_table.c
+    refused = select(p.document_id).where(
+        p.status == ProposalStatus.FAILED.value, p.error_code == PROPOSAL_BANK_FILE_NOT_READ
+    )
+    return list(
+        conn.execute(
+            select(d.id)
+            .where(d.id.in_(refused), ~exists().where(import_table.c.document_id == d.id))
+            .order_by(d.created_at, d.id)
+        ).scalars()
+    )
+
+
+def _statement_order(statement: ParsedStatement) -> tuple[date, date]:
+    """A statement's place in its account's chain: its first booking, then its last (D21's
+    reconciliation chains by date). A file without lines sorts last."""
+    dates = [line.booking_date for line in statement.lines]
+    return (min(dates), max(dates)) if dates else (date.max, date.max)
+
+
+def _waiting_files(
+    conn: Connection, store: BlobStore, key: bytes
+) -> list[tuple[UUID, ParsedStatement, ProtectedIban]]:
+    """Every waiting statement file that names its account (a kind and an IBAN or number),
+    in statement order, then upload order (sorted() is stable)."""
+    files = []
+    for document_id in waiting_statement_documents(conn):
+        statement = refused_statement_file(conn, store, document_id)
+        if statement is None or statement_file_kind(statement) is None:
+            continue
+        identity = statement_file_identity(statement, key)
+        if identity is not None:
+            files.append((document_id, statement, identity))
+    return sorted(files, key=lambda f: _statement_order(f[1]))
+
+
+def _same_family(a: ParsedStatement, b: ParsedStatement) -> bool:
+    """Both files go onto the same kind of account: any bank export onto a bank account (by
+    its IBAN), a card's onto a card, a depot's onto a depot (by the printed number)."""
+    if a.format in BANK_EXPORT_FORMATS or b.format in BANK_EXPORT_FORMATS:
+        return a.format in BANK_EXPORT_FORMATS and b.format in BANK_EXPORT_FORMATS
+    return statement_file_kind(a) is statement_file_kind(b)
+
+
+def same_account_files(
+    conn: Connection,
+    store: BlobStore,
+    statement: ParsedStatement,
+    identity: ProtectedIban,
+    *,
+    iban_key: bytes,
+) -> list[tuple[UUID, ParsedStatement]]:
+    """The waiting statement files of the same account as this one (the same kind of account
+    and the same printed IBAN or number), this one's document included while it waits, in
+    statement order."""
+    return [
+        (document_id, other)
+        for document_id, other, theirs in _waiting_files(conn, store, iban_key)
+        if _same_family(statement, other) and hmac.compare_digest(theirs.hmac, identity.hmac)
+    ]
+
+
+def earliest_statement(files: Sequence[tuple[UUID, ParsedStatement]]) -> ParsedStatement | None:
+    """The first file of the chain that holds a booked line: its opening is the account's
+    anchor when the account is created from these files (statement_file_anchor)."""
+    return next((statement for _, statement in files if statement.lines), None)
+
+
+def _holds(account: Row, statement: ParsedStatement, identity: ProtectedIban) -> bool:
+    """Whether the account is the file's: of the kind the file imports onto, with the stored
+    IBAN (a bank's export) or number (a card's or depot's statement) the file prints."""
+    if statement.format in BANK_EXPORT_FORMATS:
+        stored = account.iban_hmac
+        fits = account.kind in {k.value for k in BANK_ACCOUNT_KINDS}
+    else:
+        kind = statement_file_kind(statement)
+        stored = account.external_ref_hmac
+        fits = kind is not None and account.kind == kind.value
+    return fits and stored is not None and hmac.compare_digest(stored, identity.hmac)
+
+
+def _import_or_refusal(
+    ctx: CommandContext, store: BlobStore, document_id: UUID, account_id: UUID, key: bytes
+) -> StatementImport | StatementRefusal:
+    """One waiting file imported under a savepoint: a refusal rolls back this file only (the
+    import writes nothing before its checks pass) and is returned with its code. Any other
+    failure of this followed file (its original unreadable, the document gone) is a refusal of
+    this file too, `statement.follow_unreadable`, logged by its exception class only: a file
+    that merely followed never rolls back the account or the file a person chose."""
+    try:
+        with ctx.conn.begin_nested():
+            return import_stored_statement(ctx, store, document_id, account_id, iban_key=key)
+    except (RuleError, ConflictError) as exc:
+        code = exc.code if isinstance(exc, RuleError) else "statement.conflict"
+        return StatementRefusal(document_id=document_id, code=code)
+    except Exception as exc:  # noqa: BLE001 - this file keeps its offer; see the docstring
+        logger.warning(
+            "followed statement not imported",
+            extra={"fields": {"document_id": str(document_id), "exc_type": type(exc).__name__}},
+        )
+        return StatementRefusal(document_id=document_id, code=STATEMENT_FOLLOW_UNREADABLE)
+
+
+def import_files(
+    ctx: CommandContext,
+    store: BlobStore,
+    account_id: UUID,
+    document_ids: Sequence[UUID],
+    *,
+    iban_key: bytes,
+) -> FollowedStatements:
+    """These waiting files imported onto the account, in the order given, each under its own
+    savepoint, so one refusal never blocks the others."""
+    result = FollowedStatements()
+    for document_id in document_ids:
+        outcome = _import_or_refusal(ctx, store, document_id, account_id, iban_key)
+        if isinstance(outcome, StatementRefusal):
+            result.refused.append(outcome)
+        else:
+            result.imported.append(outcome)
+    return result
+
+
+def import_waiting_statements(
+    ctx: CommandContext, store: BlobStore, account_id: UUID, *, iban_key: bytes
+) -> FollowedStatements:
+    """Every statement file waiting under Dokumente that prints this account's IBAN or number
+    imported onto it, in statement order (its first booking, then its last), so D21's
+    reconciliation chains and a gap names its missing statement (D176 (3) amended 13 Nov 2026).
+    A file whose import refuses keeps its offer; nothing for an account without an IBAN or
+    number. Under the account row's lock."""
+    account = _lock_account(ctx, account_id)
+    if account.iban_hmac is None and account.external_ref_hmac is None:
+        return FollowedStatements()
+    files = [
+        document_id
+        for document_id, statement, identity in _waiting_files(ctx.conn, store, iban_key)
+        if _holds(account, statement, identity)
+    ]
+    return import_files(ctx, store, account_id, files, iban_key=iban_key)
+
+
+def import_onto_holding_account(
+    ctx: CommandContext, store: BlobStore, document_id: UUID, *, iban_key: bytes
+) -> StatementImport | None:
+    """A statement file just uploaded through Dokumente (its read refused as a statement
+    file): imported at once onto the one account that already holds the IBAN or number it
+    prints, as „Auf Konto importieren“ would. None when no account holds it (or, since an
+    IBAN and a number are unique per workspace, impossibly several) or the file names none;
+    the offer then waits on the document page. A refusal raises; the caller decides what it
+    rolls back."""
+    statement = refused_statement_file(ctx.conn, store, document_id)
+    if statement is None or statement_file_kind(statement) is None:
+        return None
+    identity = statement_file_identity(statement, iban_key)
+    if identity is None:
+        return None
+    a = account_table.c
+    rows = ctx.conn.execute(
+        select(a.id, a.kind, a.iban_hmac, a.external_ref_hmac).order_by(a.id)
+    ).all()
+    holders = [r.id for r in rows if _holds(r, statement, identity)]
+    if len(holders) != 1:
+        return None
+    return import_stored_statement(ctx, store, document_id, holders[0], iban_key=iban_key)
+
+
+def account_numbered(
+    ctx: CommandContext, store: BlobStore, account_id: UUID, *, iban_key: bytes
+) -> FollowedStatements:
+    """An account got its IBAN or number (created with it, or its first statement set it):
+    its waiting statements follow (import_waiting_statements) and, for a depot, the waiting
+    readings of the depot's documents are rebuilt, so it is among their accounts and
+    pre-selected when they print its number (services.proposals.rebuild_depot_proposals)."""
+    followed = import_waiting_statements(ctx, store, account_id, iban_key=iban_key)
+    kind = ctx.conn.execute(
+        select(account_table.c.kind).where(account_table.c.id == account_id)
+    ).scalar_one()
+    if kind == AccountKind.DEPOT.value:
+        from .proposals import rebuild_depot_proposals  # proposals imports matching
+
+        rebuild_depot_proposals(ctx, store, iban_key=iban_key)
+    return followed
+
+
+@dataclass
+class AccountsFollowed:
+    """What follow_all_accounts did: statements imported and refused, depot suggestions
+    rebuilt."""
+
+    imported: int = 0
+    refused: int = 0
+    rebuilt: int = 0
+
+
+def follow_all_accounts(
+    ctx: CommandContext, store: BlobStore, *, iban_key: bytes
+) -> AccountsFollowed:
+    """Once after the deploy of 14 Nov 2026 (`hausbuch follow-accounts`, run by the worker,
+    which holds the object store): every account that already has its IBAN or number takes the
+    statements waiting for it (import_waiting_statements, oldest account first), and every
+    ready depot suggestion is rebuilt (pre-selected depot, Steuerjahr). What a new account or
+    a new number does from now on by itself (account_numbered)."""
+    from .proposals import rebuild_depot_proposals  # proposals imports matching
+
+    a = account_table.c
+    numbered = ctx.conn.execute(
+        select(a.id)
+        .where((a.iban_hmac.is_not(None)) | (a.external_ref_hmac.is_not(None)))
+        .order_by(a.created_at, a.id)
+    ).scalars()
+    result = AccountsFollowed()
+    for account_id in list(numbered):
+        followed = import_waiting_statements(ctx, store, account_id, iban_key=iban_key)
+        result.imported += len(followed.imported)
+        result.refused += len(followed.refused)
+    result.rebuilt = rebuild_depot_proposals(ctx, store, iban_key=iban_key)
+    return result
 
 
 def declare_balances(
@@ -1196,16 +1466,16 @@ def _require_same_ref(conn: Connection, account: Row, file_ref: str | None, key:
         raise RuleError(rules.ACCOUNT_MISMATCH, "the file is a statement of another account")
 
 
-def _set_ref(ctx: CommandContext, account: Row, file_ref: str | None, key: bytes) -> None:
+def _set_ref(ctx: CommandContext, account: Row, file_ref: str | None, key: bytes) -> bool:
     """Phase 6 D176 (3): the first card statement imported onto a card account without a
     reference sets it (masked + HMAC'd, never in clear), recorded as account.updated; so does
     a depot's first cash statement (step 4). The routing check (_route) ran first, under the
-    account row's lock."""
+    account row's lock. Whether it set the number."""
     if account.external_ref_hmac is not None or account.kind not in (
         AccountKind.CREDIT_CARD.value,
         AccountKind.DEPOT.value,
     ):
-        return
+        return False
     assert file_ref is not None  # _route refused a card statement without one
     ref = protect_ref(file_ref, key)
     ctx.conn.execute(
@@ -1219,6 +1489,7 @@ def _set_ref(ctx: CommandContext, account: Row, file_ref: str | None, key: bytes
         account.id,
         Updated(changes=diff_changes({}, {"external_ref_masked": ref.masked})),
     )
+    return True
 
 
 def _masked(raw: str | None, key: bytes) -> str | None:

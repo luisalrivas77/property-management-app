@@ -266,3 +266,20 @@ def enqueue_bank_sync(
         workspace_id=str(workspace_id),
         sync_id=str(sync_id),
     )
+
+
+# --- Statements follow their account (phase 6 D165 (a), D176 (3) amended 14 Nov 2026) -----
+#
+# Once after the deploy, from `hausbuch follow-accounts`: the worker holds the object store the
+# operator's computer does not, so the CLI only queues. Locked per workspace: one run at a time.
+
+FOLLOW_ACCOUNTS_TASK = "follow_accounts"
+
+
+def follow_lock(workspace_id: UUID) -> str:
+    return f"follow:{workspace_id}"
+
+
+def enqueue_follow_accounts(conn: Connection, *, workspace_id: UUID) -> None:
+    """Queue `follow_accounts` for the workspace, in the caller's transaction."""
+    _defer(conn, FOLLOW_ACCOUNTS_TASK, follow_lock(workspace_id), workspace_id=str(workspace_id))

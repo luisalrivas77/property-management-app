@@ -104,6 +104,14 @@ def test_rule_hits_checks_the_iban_hash_the_sign_and_the_patterns():
     assert not rule_hits(matcher, tx("-80.00", purpose="Nachzahlung"))  # pattern misses
 
 
+def test_follow_accounts_is_registered():
+    """`hausbuch follow-accounts` queues it by name (phase 6, 14 Nov 2026)."""
+    from hausbuch.jobs.enqueue import FOLLOW_ACCOUNTS_TASK
+
+    app = tasks.register_tasks(procrastinate.App(connector=procrastinate.SyncPsycopgConnector()))
+    assert FOLLOW_ACCOUNTS_TASK == "follow_accounts" and FOLLOW_ACCOUNTS_TASK in app.tasks
+
+
 def test_rematch_waiting_is_registered_and_locked_per_trigger():
     app = tasks.register_tasks(procrastinate.App(connector=procrastinate.SyncPsycopgConnector()))
     assert REMATCH_WAITING_TASK == "rematch_waiting" and REMATCH_WAITING_TASK in app.tasks

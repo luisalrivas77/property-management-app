@@ -76,6 +76,7 @@ def test_the_offer_then_the_import_201_then_200(client_a, app_engine, auth_a):
             "opening_balance": "-1250.40",
             "opening_balance_on": "2026-01-15",
             "opening_from_file": True,
+            "other_statements": 0,  # no other file of this account waits (14 Nov 2026)
         },
     }
     inbox = [i for i in ok(client_a.get("/api/inbox")) if i["kind"] == "read_failed"]

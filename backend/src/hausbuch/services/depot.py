@@ -10,6 +10,7 @@ supersedes the old one (record_holding); a movement is never corrected here, a d
 applied twice is refused (record_movement). Every read of holdings ignores superseded rows.
 """
 
+import hmac
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -56,15 +57,19 @@ from hausbuch.schemas.household import (
     PriceSourceKind,
     Quantity,
 )
-from hausbuch.schemas.proposal import ExistingDepotAccount
+from hausbuch.schemas.proposal import ExistingDepotAccount, PrintedDepot
+from hausbuch.storage import BlobStore
 
 from .context import CommandContext
+from .documents import document_media_type, read_original
 from .errors import RuleViolationError
 from .events import append_event
+from .iban import protect_iban, protect_ref
 
 # Codes of this service (frontend/src/api/errors.ts has their German text).
 DEPOT_ACCOUNT_REQUIRED = "depot.account_required"  # the account picked is no depot
-DEPOT_MOVEMENT_EXISTS = "depot.movement_exists"  # same reference, or same day and amount
+# Same reference and fund, or (no reference) same fund, day and amount.
+DEPOT_MOVEMENT_EXISTS = "depot.movement_exists"
 DEPOT_HOLDING_EXISTS = "depot.holding_exists"  # a report of that date is applied already
 
 # The cash line of a trade or a distribution is booked on the Valuta, a few bank days after
@@ -128,6 +133,68 @@ def depot_accounts(conn: Connection) -> list[ExistingDepotAccount]:
         )
         for r in rows
     ]
+
+
+def printed_depot_account(
+    conn: Connection, store: BlobStore, document_id: UUID, *, iban_key: bytes
+) -> tuple[PrintedDepot, UUID | None]:
+    """What the document's PDF text layer says about its depot (14 Nov 2026, D165 (a)
+    amended; outcomes split in the review of 15 Nov 2026), and the depot account it names on a
+    MATCH. The labelled depot numbers and the IBANs it prints (rules.depot
+    printed_depot_numbers, printed_ibans) are masked and HMAC'd as on store and compared with
+    each depot account's external_ref_hmac and iban_hmac. Read by code only; nothing printed is
+    kept or sent anywhere.
+
+    A labelled depot number decides alone: held by exactly one depot account, a MATCH; held by
+    none while every depot account has a number, NAMED_ELSEWHERE (the document is another
+    depot's, such as the receiving depot of an Einbuchung not created yet); more than one
+    labelled number (a financial report over several depots) is SEVERAL. The IBANs
+    count only when no labelled number is printed, and only a MATCH comes of them. NOTHING when
+    nothing tells: no depot account with a number or IBAN, no PDF, no text, nothing printed
+    that a depot holds, or a printed number while a depot account without a number could be
+    the one. UNREADABLE when the original could not be read just now (a pre-selection is never
+    worth a failed reading)."""
+    from hausbuch.services.bank.card_pdf import pdf_pages
+
+    a = account_table.c
+    depots = conn.execute(
+        select(a.id, a.external_ref_hmac, a.iban_hmac).where(a.kind == AccountKind.DEPOT.value)
+    ).all()
+    if not any(d.external_ref_hmac or d.iban_hmac for d in depots):
+        return PrintedDepot.NOTHING, None
+    if document_media_type(conn, document_id) != "application/pdf":
+        return PrintedDepot.NOTHING, None
+    try:
+        pages = pdf_pages(read_original(conn, store, document_id))
+    except Exception:  # noqa: BLE001 - the reading goes on without a pre-selection
+        return PrintedDepot.UNREADABLE, None
+    if not pages:
+        return PrintedDepot.NOTHING, None
+    text = "\n".join(pages)
+    numbers = rules.printed_depot_numbers(text)
+    if len(numbers) > 1:
+        return PrintedDepot.SEVERAL, None
+    if numbers:
+        printed = protect_ref(next(iter(numbers)), iban_key).hmac
+        matched = [
+            d.id
+            for d in depots
+            if d.external_ref_hmac is not None and hmac.compare_digest(d.external_ref_hmac, printed)
+        ]
+        if len(matched) == 1:
+            return PrintedDepot.MATCH, matched[0]
+        if not matched and all(d.external_ref_hmac is not None for d in depots):
+            return PrintedDepot.NAMED_ELSEWHERE, None
+        return PrintedDepot.NOTHING, None
+    ibans = [protect_iban(i, iban_key).hmac for i in rules.printed_ibans(text)]
+    matched = [
+        d.id
+        for d in depots
+        if d.iban_hmac is not None and any(hmac.compare_digest(d.iban_hmac, p) for p in ibans)
+    ]
+    if len(matched) == 1:
+        return PrintedDepot.MATCH, matched[0]
+    return PrintedDepot.NOTHING, None
 
 
 def _require_depot(conn: Connection, account_id: UUID) -> None:
@@ -214,19 +281,21 @@ def _cash_line(conn: Connection, values: DepotMovementValues) -> UUID | None:
 def record_movement(ctx: CommandContext, values: DepotMovementValues, document_id: UUID) -> UUID:
     """One confirmed movement read from a depot document, with its cash line when exactly one
     fits. Refused when the account is no depot, and when the document was applied already: a
-    current movement of the account carries the same reference and kind, or, for a movement
-    without a reference (a distribution note names none), the same fund, kind, day and
-    amount."""
+    current movement of the account carries the same reference, fund and kind (an Einbuchung
+    names one reference for all its positions, so the fund tells them apart; 14 Nov 2026), or,
+    for a movement without a reference (a distribution note names none), the same fund, kind,
+    day and amount."""
     _require_depot(ctx.conn, values.account_id)
     m = movement_table.c
+    known = ctx.conn.execute(
+        select(asset_table.c.id).where(asset_table.c.isin == values.isin)
+    ).all()
+    same_fund = m.asset_id.in_([r.id for r in known])
     if values.external_ref is not None:
-        same = [m.external_ref == values.external_ref]
+        same = [m.external_ref == values.external_ref, same_fund]
     else:
-        known = ctx.conn.execute(
-            select(asset_table.c.id).where(asset_table.c.isin == values.isin)
-        ).all()
         same = [
-            m.asset_id.in_([r.id for r in known]),
+            same_fund,
             m.occurred_at >= _at(values.occurred_on),
             m.occurred_at < _at(values.occurred_on + timedelta(days=1)),
             m.eur_amount.is_(None)

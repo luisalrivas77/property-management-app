@@ -1,6 +1,7 @@
 """`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills |
-rematch-waiting | household-resort` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41; phase 6 D159
-amended 13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended (4) 14 Nov 2026).
+rematch-waiting | household-resort | follow-accounts` (phase 1 step 3, §5, §6.5, §6.7; phase 2
+D41; phase 6 D159 amended 13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended (4)
+14 Nov 2026, D165 (a) and D176 (3) amended 14 Nov 2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -37,6 +38,12 @@ nothing.
 job per private line booked in a spending group's fallback, proposed or confirmed, so the
 model sorts it into one of migration 0032's subcategories; a finer answer goes back to Zu
 prüfen as a proposal. --dry-run prints what it would take and what it leaves alone, by reason.
+
+`follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
+14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
+holds its IBAN or number, and every ready depot suggestion is rebuilt with the depot it prints
+pre-selected and its Steuerjahr. The worker runs it because the stored files are read from the
+object store, which this computer does not hold. --dry-run counts and queues nothing.
 """
 
 import argparse
@@ -353,6 +360,45 @@ def rematch_waiting(args: argparse.Namespace, environ: Mapping[str, str]) -> int
     return EXIT_OK
 
 
+# --- follow-accounts ------------------------------------------------------------------
+
+
+def follow_accounts(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """Queues one `follow_accounts` job for the workspace (phase 6 D165 (a), D176 (3)
+    amended 14 Nov 2026); the worker runs it, since reading the stored files needs the object
+    store. `--dry-run` counts what it would look at and queues nothing."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.jobs.enqueue import enqueue_follow_accounts
+    from hausbuch.services.proposals import count_ready_depot_proposals
+    from hausbuch.services.statements import waiting_statement_documents
+
+    engine = owner_engine(environ)
+    try:
+        with workspace_transaction(engine, args.workspace) as conn:
+            statements = len(waiting_statement_documents(conn))
+            suggestions = count_ready_depot_proposals(conn)
+            if not args.dry_run:
+                enqueue_follow_accounts(conn, workspace_id=args.workspace)
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    print(
+        f"{statements} statement file(s) wait under Dokumente; each one an account already "
+        "holds the IBAN or number of is imported onto it"
+    )
+    print(f"{suggestions} ready depot suggestion(s) are rebuilt where they change")
+    if args.dry_run:
+        print("dry run: nothing queued")
+    else:
+        print("queued; the worker does it within a minute (see its log: accounts followed)")
+    return EXIT_OK
+
+
 # --- household-resort -----------------------------------------------------------------
 
 
@@ -514,6 +560,16 @@ def _parser() -> argparse.ArgumentParser:
     waiting.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     waiting.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
     waiting.set_defaults(command=rematch_waiting, command_name="rematch-waiting")
+
+    follow = commands.add_parser(
+        "follow-accounts",
+        help="import every statement waiting under Dokumente onto the account that already "
+        "holds its IBAN or number, and rebuild the ready depot suggestions (pre-selected "
+        "depot, Steuerjahr); once, after the deploy of 14 Nov 2026",
+    )
+    follow.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    follow.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
+    follow.set_defaults(command=follow_accounts, command_name="follow-accounts")
 
     resort = commands.add_parser(
         "household-resort",

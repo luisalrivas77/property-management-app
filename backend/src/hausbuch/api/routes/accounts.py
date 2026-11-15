@@ -56,9 +56,11 @@ def accounts_list(cmd: Cmd) -> list[Account]:
 
 
 @router.post("/accounts", status_code=201)
-def account_create(body: AccountCreate, cmd: Cmd, settings: SettingsDep) -> Account:
+def account_create(
+    body: AccountCreate, cmd: Cmd, settings: SettingsDep, store: StoreDep
+) -> Account:
     """409 when the workspace already has an account with this IBAN."""
-    return cmd.run(create_account, body, iban_key=settings.iban_hmac_key)
+    return cmd.run(create_account, body, iban_key=settings.iban_hmac_key, store=store)
 
 
 @router.get("/accounts/{account_id}")

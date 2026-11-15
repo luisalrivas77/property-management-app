@@ -95,11 +95,15 @@ from .lookup import require_row
 from .owners import UNSET, Unset
 from .rules_learned import disable_rule, enabled_rules
 from .statements import (
+    account_numbered,
     derived_opening,
+    earliest_statement,
     get_import,
+    import_files,
     import_stored_statement,
     recheck_account,
     refused_statement_file,
+    same_account_files,
     statement_file_anchor,
     statement_file_held,
     statement_file_identity,
@@ -129,7 +133,13 @@ _AccountFields = create_model(
 )
 
 
-def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes) -> Account:
+def create_account(
+    ctx: CommandContext,
+    data: AccountCreate,
+    *,
+    iban_key: bytes,
+    store: BlobStore | None = None,
+) -> Account:
     """A bank account (by its IBAN) or, since phase 6 step 2b, a credit card (D176): no IBAN,
     always private, its customer number optional (the first statement sets it) and stored
     masked + HMAC'd. Since step 4 a depot (D165 as amended): one per quirion account (the
@@ -138,7 +148,12 @@ def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes)
     here or confirmed from a statement, D156 amended), both masked + HMAC'd. Since step 5a an
     exchange (D178 (7)): Binance or BISON as its provider, always private, no IBAN and no
     number (Binance's User ID is never stored, D178 (2)). A wallet is refused
-    (account.kind_not_available) until phase 7."""
+    (account.kind_not_available) until phase 7.
+
+    With `store` (the API's POST /accounts, 14 Nov 2026): an account created with its IBAN or
+    number takes the statement files waiting under Dokumente that print it, in statement
+    order, and a depot rebuilds the waiting readings of the depot's documents
+    (statements.account_numbered)."""
     if data.kind is AccountKind.EXCHANGE:
         if data.purpose not in (None, AccountPurpose.PRIVATE):
             raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "an exchange is a private account")
@@ -222,6 +237,12 @@ def create_account(ctx: CommandContext, data: AccountCreate, *, iban_key: bytes)
         created.purpose is AccountPurpose.PRIVATE and created.iban_masked is not None
     ):
         _rematch_waiting(ctx, created.id)
+    if store is not None and (
+        created.iban_masked is not None
+        or created.external_ref_masked is not None
+        or created.kind is AccountKind.DEPOT
+    ):
+        account_numbered(ctx, store, created.id, iban_key=iban_key)
     return created
 
 
@@ -355,6 +376,12 @@ def create_account_from_statement(
     shares (D157; none leaves „Eigentümer festlegen“). Events as create_account,
     set_account_ownership and the import write them.
 
+    14 Nov 2026 (D165 (a), D176 (3) amended): every other statement file waiting under
+    Dokumente that prints the same IBAN or number is imported onto the new account too, in
+    statement order, and the anchor is the earliest file's, so the chain reconciles; one whose
+    import refuses keeps its offer and is named in `other_refused`. A depot's waiting readings
+    are rebuilt with the new account among their choices.
+
     404 for an unknown document; 422 statement.no_account_offer for a document with no such
     offer (never refused, already imported, or a file naming no account of its own); 409 when
     an account already holds the file's IBAN or number („Auf Konto importieren“ instead)."""
@@ -370,7 +397,12 @@ def create_account_from_statement(
     if not statement.lines:
         raise RuleError(EMPTY, "the file holds no booked line")
     bank_file = statement.format in BANK_EXPORT_FORMATS
-    opening, opening_on, _ = statement_file_anchor(statement)
+    # 14 Nov 2026: the other files of this account waiting under Dokumente are imported with
+    # it, in statement order, so the account starts at the earliest one's opening.
+    chain = same_account_files(ctx.conn, store, statement, identity, iban_key=iban_key)
+    if document_id not in {doc for doc, _ in chain}:
+        chain.append((document_id, statement))
+    opening, opening_on, _ = statement_file_anchor(earliest_statement(chain) or statement)
     try:
         data = AccountCreate(
             label=body.label,
@@ -390,9 +422,22 @@ def create_account_from_statement(
     account = create_account(ctx, data, iban_key=iban_key)
     if body.shares:
         set_account_ownership(ctx, account.id, SetOwnershipBody(shares=body.shares))
+    order = [doc for doc, _ in chain]
+    position = order.index(document_id)
+    # The chosen file is imported without a savepoint: its refusal fails the whole request,
+    # so no account is left behind; each other file keeps its offer when its import refuses.
+    before = import_files(ctx, store, account.id, order[:position], iban_key=iban_key)
     imported = import_stored_statement(ctx, store, document_id, account.id, iban_key=iban_key)
+    after = import_files(ctx, store, account.id, order[position + 1 :], iban_key=iban_key)
+    if account.kind is AccountKind.DEPOT:
+        from .proposals import rebuild_depot_proposals  # proposals imports matching
+
+        rebuild_depot_proposals(ctx, store, iban_key=iban_key)
     return StatementAccountCreated(
-        account=_account(ctx.conn, account.id), statement_import=imported
+        account=_account(ctx.conn, account.id),
+        statement_import=get_import(ctx.conn, imported.id) or imported,
+        other_imported=len(before.imported) + len(after.imported),
+        other_refused=before.refused + after.refused,
     )
 
 
@@ -777,6 +822,10 @@ def confirm_depot_iban(
     for rule in rules:
         disable_rule(ctx, rule.id)
     _rematch_waiting(ctx, account_id)
+    # 14 Nov 2026: a depot document that prints this IBAN now finds the depot.
+    from .proposals import rebuild_depot_proposals  # proposals imports matching
+
+    rebuild_depot_proposals(ctx, store, iban_key=iban_key)
     return PaymentIbanConfirmed(account=_account(ctx.conn, account_id), rules_disabled=len(rules))
 
 

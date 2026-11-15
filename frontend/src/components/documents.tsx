@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useCallback, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import { ApiError } from "@/api/errors";
+import { ApiError, ruleCodeText } from "@/api/errors";
 import type {
   AccountKind,
   AccountPurpose,
@@ -24,6 +24,7 @@ import type {
   RelatedDocument,
   StatementFileImport,
   StatementNewAccount,
+  StatementRefusal,
   UploadBody,
 } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
@@ -703,8 +704,16 @@ export function DocumentExplanationBox({ explanation }: { explanation: DocumentE
 /** Where a stored statement went (phase 6 D176 (3), step 4): „Importiert auf <Konto>“, linked to
  * the account's Kontoauszüge, where the import's status and „Anfangssaldo daraus übernehmen“
  * live. Nothing for a document that is no statement's original. */
-export function StatementImportsNotice({ imports }: { imports: StatementFileImport[] | undefined }) {
+export function StatementImportsNotice({
+  imports,
+  followed,
+}: {
+  imports: StatementFileImport[] | undefined;
+  followed?: FollowedStatements;
+}) {
   if (!imports?.length) return null;
+  const others = followed?.imported ?? 0;
+  const refused = followed?.refused ?? [];
   return (
     <div className="notice notice-ok" role="status">
       {imports.map((imp) => (
@@ -713,9 +722,37 @@ export function StatementImportsNotice({ imports }: { imports: StatementFileImpo
           {imp.status === "reconciled" ? "." : " – bitte dort den Kontoauszug prüfen."}
         </p>
       ))}
+      {others > 0 ? (
+        <p>
+          {others === 1
+            ? "Ein weiterer Kontoauszug dieses Kontos wurde eingelesen."
+            : `Weitere ${others} Kontoauszüge dieses Kontos wurden eingelesen.`}
+        </p>
+      ) : null}
+      {refused.length > 0 ? (
+        <div>
+          <p>
+            {refused.length === 1
+              ? "Ein weiterer Kontoauszug dieses Kontos ließ sich nicht einlesen"
+              : `${refused.length} weitere Kontoauszüge dieses Kontos ließen sich nicht einlesen`}
+            ; sie bleiben unter <Link href="/documents">Dokumente</Link> und lassen sich dort mit „Auf Konto importieren“ einlesen:
+          </p>
+          <ul>
+            {refused.map((r) => (
+              <li key={r.document_id}>
+                <Link href={`/documents/${r.document_id}`}>Kontoauszug öffnen</Link>: {ruleCodeText(r.code) ?? "Die Datei ließ sich nicht einlesen."}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
+
+/** The other waiting files of the same account that „Konto anlegen und einlesen“ imported with
+ * the clicked one (14 Nov 2026, D176 (3) amended), and those whose import refused. */
+type FollowedStatements = { imported: number; refused: StatementRefusal[] };
 
 /** What the file is (with its article), the kind of account it goes to, and the name of the
  * number that tells its account apart. */
@@ -759,15 +796,17 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [imported, setImported] = useState<StatementFileImport | null>(null);
+  const [followed, setFollowed] = useState<FollowedStatements | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const selectId = useId();
 
-  if (imported) return <StatementImportsNotice imports={[imported]} />;
+  if (imported) return <StatementImportsNotice imports={[imported]} followed={followed} />;
   if (detail.statement_imports?.length) return <StatementImportsNotice imports={detail.statement_imports} />;
   if (!offer) return null;
   const words = STATEMENT_KIND[offer.account_kind] ?? STATEMENT_WORDS;
   const only = candidates.length === 1 ? candidates[0] : undefined;
-  const created = (result: StatementFileImport) => {
+  const created = (result: StatementFileImport, others?: FollowedStatements) => {
+    setFollowed(others);
     setImported(result);
     onImported?.();
   };
@@ -895,7 +934,7 @@ function CreateStatementAccount({
   documentId: string;
   newAccount: StatementNewAccount;
   words: { account: string; number: string };
-  onCreated: (result: StatementFileImport) => void;
+  onCreated: (result: StatementFileImport, followed: FollowedStatements) => void;
 }) {
   const owners = useLoad(loadOwners);
   return (
@@ -916,7 +955,7 @@ function CreateStatementAccountForm({
   newAccount: StatementNewAccount;
   words: { account: string; number: string };
   owners: Owner[];
-  onCreated: (result: StatementFileImport) => void;
+  onCreated: (result: StatementFileImport, followed: FollowedStatements) => void;
 }) {
   const [label, setLabel] = useState(newAccount.label);
   const [bank, setBank] = useState(newAccount.bank ?? "");
@@ -953,12 +992,15 @@ function CreateStatementAccountForm({
           },
         }),
       );
-      onCreated({
-        import_id: result.statement_import.id,
-        account_id: result.account.id,
-        account_label: result.account.label,
-        status: result.statement_import.status,
-      });
+      onCreated(
+        {
+          import_id: result.statement_import.id,
+          account_id: result.account.id,
+          account_label: result.account.label,
+          status: result.statement_import.status,
+        },
+        { imported: result.other_imported, refused: result.other_refused ?? [] },
+      );
     } catch (caught) {
       // 409: meanwhile an account with this IBAN or number was created (another tab, or the
       // account page); the file then goes onto it with „Auf Konto importieren“.
@@ -983,6 +1025,13 @@ function CreateStatementAccountForm({
         · Anfangssaldo: <strong>{formatMoney(newAccount.opening_balance)}</strong> am {formatDate(newAccount.opening_balance_on)}
         {newAccount.opening_from_file ? " (aus der Datei)" : null}
       </p>
+      {newAccount.other_statements > 0 ? (
+        <p>
+          {newAccount.other_statements === 1
+            ? `Unter Dokumente wartet noch ein weiterer Kontoauszug mit dieser ${words.number}; er wird gleich mit eingelesen.`
+            : `Unter Dokumente warten noch ${newAccount.other_statements} weitere Kontoauszüge mit dieser ${words.number}; sie werden gleich mit eingelesen, der Reihe nach.`}
+        </p>
+      ) : null}
       {newAccount.opening_from_file ? null : (
         <p className="muted">
           Die Datei nennt keinen Anfangssaldo. 0,00 € ist deshalb nur ein Platzhalter: Nach dem Anlegen auf der Seite des Kontos unter

@@ -18,6 +18,8 @@ from decimal import Decimal
 
 from pydantic import Field
 
+from hausbuch.rules.errors import RuleError
+from hausbuch.rules.iban import IBAN_LENGTHS, normalize_iban
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.common import Schema
 from hausbuch.schemas.enums import DocumentSubtype, DocumentType
@@ -434,3 +436,48 @@ def _transfer(values: Mapping[str, object]) -> DepotProposal | None:
             )
         )
     return DepotProposal(movements=movements, warnings=sorted(warnings))
+
+
+# --- The depot a document prints (14 Nov 2026, D165 (a) amended) ---------------------------
+#
+# A depot document names its depot by a number the account already holds: quirion's
+# Wertpapierabrechnung and Erträgnisabrechnung print it as „<n>Depot“ and „über Ihr Konto <n>
+# EUR“ (the same number: the portfolio's Kontonummer its cash statement prints, D164), the
+# Einbuchung and Ausbuchung as „<n>Depot“, the Quartalsbericht as „Depot-Nr. <n>“ beside the
+# depot's IBAN (checked on the real documents 14 Nov 2026, never committed). Only a labelled
+# number counts: an Einbuchung prints the other depot's number too, unlabelled, beside the
+# holder's name, so an unlabelled number could pick the depot the units left. The service
+# compares each candidate, masked and HMAC'd, with the depot accounts' stored numbers and
+# IBANs; a number no depot holds matches nothing.
+
+_DEPOT_NUMBER_PATTERNS = (
+    re.compile(r"(?<!\d)(\d{6,12})\s*Depot(?![-\s]*Nr)(?!nummer)"),  # „<n>Depot“
+    re.compile(r"Depot(?:-\s*Nr\.?|nummer|\s+Nr\.?)\s*:?\s*(\d{6,12})(?!\d)"),  # „Depot-Nr. <n>“
+    re.compile(r"\bIhr(?:em)?\s+Konto\s*(\d{6,12})(?!\d)"),  # „über Ihr Konto <n> EUR“
+    re.compile(r"(?<!\d)(\d{6,12})\s*EUR\s*Konto\b"),  # a cash statement's „<n> EURKonto“
+)
+_IBAN_START = re.compile(r"(?=([A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,34}))")
+
+
+def printed_depot_numbers(text: str) -> set[str]:
+    """The depot or account numbers the text prints under a label (6 to 12 digits): „<n>Depot“,
+    „Depot-Nr. <n>“ (or „Depotnummer“), „Ihr Konto <n>“, „<n> EUR Konto“. An unlabelled
+    number (the other depot of a transfer, a reference, an ISIN's digits) is none."""
+    return {m.group(1) for pattern in _DEPOT_NUMBER_PATTERNS for m in pattern.finditer(text)}
+
+
+def printed_ibans(text: str) -> set[str]:
+    """Every valid IBAN the text prints, compact, spaced in groups or glued to a label on
+    either side („…in EUR<IBAN>“, „<IBAN>IBAN“): each candidate is cut to its country's
+    registry length and kept only when its check digits hold."""
+    found = set()
+    for match in _IBAN_START.finditer(text):
+        compact = match.group(1).replace(" ", "")
+        length = IBAN_LENGTHS.get(compact[:2])
+        if length is None or len(compact) < length:
+            continue
+        try:
+            found.add(normalize_iban(compact[:length]))
+        except RuleError:
+            continue
+    return found
