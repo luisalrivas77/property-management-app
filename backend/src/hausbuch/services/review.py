@@ -753,7 +753,9 @@ _TRANSFER_KINDS = (InboxItemKind.TRANSFER_LINK, InboxItemKind.TRANSFER_UNMATCHED
 
 def _lines_on_cards(conn: Connection, items: list[InboxItem]) -> list[InboxItem]:
     """Phase 6 D162 amended (5), 15 Nov 2026: the private lines' proposals that a transfer card
-    lists as a candidate its button books, holding only the model's proposal
+    lists as a candidate its button books, holding only the model's proposal: tied to the
+    card's leg by an own IBAN, or a short deposit's debit on a proposed card inside the three
+    banking days, never a by-amount candidate of a „Gegenbuchung fehlt“ card
     (transfers.lines_on_cards). They are answered on the card („Als Einzahlung verknüpfen“,
     „Als Übertrag buchen und verknüpfen“, or „Keine Überweisung – Zahlung anders zuordnen“),
     so they leave Zahlungen zuordnen, its „Alle N bestätigen“ groups and every count. Only a

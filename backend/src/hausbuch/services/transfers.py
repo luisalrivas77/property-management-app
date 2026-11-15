@@ -1266,14 +1266,19 @@ def lines_on_cards(conn: Connection, items: Iterable[InboxItem]) -> set[UUID]:
     """D162 amended (5), 15 Nov 2026 (Luis: „Aren't the zu prüfen the bank lines that are also
     in transfers between own accounts redundant?“): the bank lines among the transfer cards'
     candidates (`items`, transfer_inbox_items) that Zu prüfen lists on their card only, not
-    among the lines to allocate. A candidate is one when the card's own button books it: an
-    exchange deposit credited short (deposit_fee: the link books the split) or a line tied to
-    the leg by an own IBAN (rebook_on_link: the link re-books it as a transfer); and the line
-    holds only the model's proposal, never a person's or a rule's answer, current or superseded
-    (_free_for_matcher with at least one row, so a line holding nothing stays listed for
-    „KI-Vorschläge holen“). An untied candidate of the same amount is not one: a plain
-    „Verknüpfen“ leaves the model's proposal on it, so it would come back after the link.
-    Reads two small queries per such candidate line, each line once."""
+    among the lines to allocate. A candidate is one when the card's own button books it and the
+    card's leg is surely its counterpart: a line tied to the leg by an own IBAN
+    (rebook_on_link: the link re-books it as a transfer), or an exchange deposit credited short
+    (deposit_fee: the link books the split) that is the one candidate of a proposed card, so
+    it fits the leg inside the three banking days of D162; and the line holds only the model's
+    proposal, never a person's or a rule's answer, current or superseded (_free_for_matcher
+    with at least one row, so a line holding nothing stays listed for „KI-Vorschläge holen“).
+    Review, 15 Nov 2026: a short candidate found by its amount alone on a „Gegenbuchung fehlt“
+    card (any private debit up to 2 € above an unlinked deposit, ±31 days) stays listed, or
+    unrelated debits were parked behind that card where „Empfänger suchen“ and the Haushalt's
+    „N ohne Kategorie“ could not find them. An untied candidate of the same amount is not one
+    either: a plain „Verknüpfen“ leaves the model's proposal on it, so it would come back
+    after the link. Reads two small queries per such candidate line, each line once."""
     from . import allocations  # allocations imports services that import this module
 
     found: set[UUID] = set()
@@ -1281,10 +1286,13 @@ def lines_on_cards(conn: Connection, items: Iterable[InboxItem]) -> set[UUID]:
     for item in items:
         if item.transfer is None:
             continue
+        proposed = item.transfer.code is OpenTransferCode.PROPOSED
         for candidate in item.transfer.candidates:
             if candidate.source is not TransferLegSource.TRANSACTION or candidate.id in seen:
                 continue
-            if candidate.deposit_fee is None and not candidate.rebook_on_link:
+            if not candidate.rebook_on_link and not (
+                proposed and candidate.deposit_fee is not None
+            ):
                 continue
             seen.add(candidate.id)
             current = allocations.current_allocations(conn, candidate.id)

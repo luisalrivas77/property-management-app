@@ -1,9 +1,11 @@
 """Phase 6 D162 amended (5), 15 Nov 2026, under hausbuch_app and RLS: a private bank line that
-holds only the model's proposal and is a candidate a transfer card's button books (a deposit
-the exchange credited short, or a line tied to the leg by an own IBAN) is listed on the card
-only, not among Zu prüfen's lines to allocate, so the decision is listed and counted once.
-A line holding a person's or a rule's answer, a line holding nothing, an untied candidate of
-the same amount and a rental line stay listed. Invented names and IBANs only."""
+holds only the model's proposal and is a candidate a transfer card's button books (a line tied
+to the leg by an own IBAN, or a deposit the exchange credited short that is a proposed card's
+candidate, inside the three banking days) is listed on the card only, not among Zu prüfen's
+lines to allocate, so the decision is listed and counted once. A line holding a person's or a
+rule's answer, a line holding nothing, an untied candidate of the same amount, a short
+candidate found by its amount alone on a „Gegenbuchung fehlt“ card (review, 15 Nov 2026) and a
+rental line stay listed. Invented names and IBANs only."""
 
 from datetime import date
 from decimal import Decimal
@@ -98,6 +100,8 @@ def test_a_model_proposed_deposit_is_listed_on_its_card_only(world, bank, blob_s
     items = _inbox(world)
     [card] = _cards(items)
     assert card.transfer is not None and card.transfer.leg.id == deposit
+    # A proposed card: the debit fits the deposit inside the three banking days.
+    assert card.transfer.code is OpenTransferCode.PROPOSED
     assert [c.id for c in card.transfer.candidates] == [out]
     assert out not in _lines(items)
     assert _mentions(items, out) == 1  # one decision, counted once
@@ -115,20 +119,28 @@ def test_after_the_link_the_line_is_gone_everywhere(world, bank, blob_store):
     assert _mentions(items, out) == 0  # booked as the transfer and its fee: nothing waits
 
 
-def test_every_short_candidate_of_an_ambiguous_card_is_hidden(world, bank, blob_store):
+def test_by_amount_candidates_of_a_card_without_its_counterpart_stay_listed(
+    world, bank, blob_store
+):
+    """Review, 15 Nov 2026: two short debits fit an untied deposit, so its card says the
+    counterpart is missing (transfer.unmatched_leg) and offers both by their amount alone;
+    neither is surely the deposit, so both stay among the lines, where „Empfänger suchen“ and
+    the Haushalt's „N ohne Kategorie“ find them. A debit weeks away that is merely 1.50 € above
+    the deposit stays listed too."""
     a = bank.line(date(2026, 9, 7), "-901.00", name="Binance", iban=DEPOSIT_IBAN)
     b = bank.line(date(2026, 9, 7), "-901.50", name="Binance", iban=DEPOSIT_IBAN)
+    far = bank.line(date(2026, 9, 28), "-901.50", name="Möbelhaus Beispiel")
     _propose(world, a, "-901.00", C.UNCATEGORIZED)
     _propose(world, b, "-901.50", C.HH_INVESTMENT)
+    _propose(world, far, "-901.50", C.HH_OTHER)
     exchange = _exchange(world)
     _export(world, blob_store, exchange.id, "2026-09-08 08:00:00,Deposit,900")
     items = _inbox(world)
     [card] = _cards(items)
     assert card.transfer is not None
     assert card.transfer.code is OpenTransferCode.UNMATCHED_LEG
-    assert {c.id for c in card.transfer.candidates} == {a, b}
-    assert not _lines(items) & {a, b}
-    assert (_mentions(items, a), _mentions(items, b)) == (1, 1)
+    assert {c.id for c in card.transfer.candidates} == {a, b, far}
+    assert {a, b, far} <= _lines(items)
 
 
 def test_a_tied_candidate_the_model_proposed_is_read_as_on_its_card(world, bank):
