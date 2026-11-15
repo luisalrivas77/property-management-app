@@ -1021,13 +1021,18 @@ def book_report_trades(ctx: CommandContext, account_id: UUID) -> ReportTradesBoo
     return ReportTradesBooked(booked=booked, prices_stored=prices, left_out=plan.left_out)
 
 
-def _latest_report_rows(conn: Connection) -> list[Any]:
-    """Every depot account's current positions of its latest report (source = report)."""
+def _latest_report_rows(conn: Connection, on: date | None = None) -> list[Any]:
+    """Every depot account's current positions of its latest report (source = report); with
+    `on`, of its latest report dated on or before it (the Anlagen overview's guard reads the
+    same report, services.prices.overview._depot_bounds)."""
     h = holding_table.c
     report = HoldingSource.REPORT.value
+    current = [h.source == report, h.superseded_by.is_(None)]
+    if on is not None:
+        current.append(h.as_of <= on)
     latest = (
         select(h.account_id, func.max(h.as_of).label("as_of"))
-        .where(h.source == report, h.superseded_by.is_(None))
+        .where(*current)
         .group_by(h.account_id)
         .subquery()
     )
@@ -1040,21 +1045,49 @@ def _latest_report_rows(conn: Connection) -> list[Any]:
     )
 
 
-def latest_report_agreement(conn: Connection) -> dict[UUID, bool]:
-    """Per fund on a depot account's latest report: whether it agrees with the confirmed
-    movements to the report's date, re-checked on read as holdings_inbox_items does (False
-    when any account's latest report disagrees about it). A fund the movements hold that the
-    report omits (0 by omission) is in it as False: the holdings card names it too."""
-    rows = _latest_report_rows(conn)
-    agreed: dict[UUID, bool] = {}
-    for account_id in {r.account_id for r in rows}:
+@dataclass(frozen=True)
+class LatestReportCheck:
+    """One depot account's latest current report checked against its confirmed movements to
+    the report's date: `rows` the report's positions (holding_statement rows), `checks` the
+    report's positions and every fund the movements hold that it omits (reconcile_holdings).
+    """
+
+    account_id: UUID
+    as_of: date
+    rows: list[Any]
+    checks: list[rules.PositionCheck]
+
+    @property
+    def wrong(self) -> list[rules.PositionCheck]:
+        return [c for c in self.checks if not c.reconciled]
+
+
+def latest_report_checks(conn: Connection, on: date | None = None) -> list[LatestReportCheck]:
+    """Per depot account with a current report, its latest one (dated on or before `on` when
+    given) re-checked on read against today's confirmed movements, by account id. The one
+    check behind the holdings card (holdings_inbox_items), the price cards
+    (latest_report_agreement) and the net worth's unbooked funds (services.net_worth)."""
+    rows = _latest_report_rows(conn, on)
+    out = []
+    for account_id in sorted({r.account_id for r in rows}, key=str):
         mine = [r for r in rows if r.account_id == account_id]
         checks = rules.reconcile_holdings(
             mine[0].as_of,
             {r.asset_id: r.declared_units for r in mine},
             _movements(conn, account_id),
         )
-        for c in checks:
+        out.append(LatestReportCheck(account_id, mine[0].as_of, mine, checks))
+    return out
+
+
+def latest_report_agreement(conn: Connection) -> dict[UUID, bool]:
+    """Per fund on a depot account's latest report: whether it agrees with the confirmed
+    movements to the report's date, re-checked on read as holdings_inbox_items does (False
+    when any account's latest report disagrees about it). A fund the movements hold that the
+    report omits (0 by omission) is in it as False: the holdings card names it too."""
+    agreed: dict[UUID, bool] = {}
+    for report in latest_report_checks(conn):
+        for c in report.checks:
             agreed[c.asset] = agreed.get(c.asset, True) and c.reconciled
     return agreed
 
@@ -1105,20 +1138,12 @@ def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
     which „Umsätze aus dem Bericht buchen“ books; the review of the same day added the funds
     it leaves out (their holdings would not match the report) and the rows it cannot read,
     by fund and day."""
-    rows = _latest_report_rows(conn)
     items = []
-    for account_id in sorted({r.account_id for r in rows}, key=str):
-        mine = [r for r in rows if r.account_id == account_id]
-        as_of = mine[0].as_of
-        newest = max(mine, key=lambda r: r.created_at)
-        checks = rules.reconcile_holdings(
-            as_of,
-            {r.asset_id: r.declared_units for r in mine},
-            _movements(conn, account_id),
-        )
-        wrong = [c for c in checks if not c.reconciled]
+    for report in latest_report_checks(conn):
+        account_id, as_of, wrong = report.account_id, report.as_of, report.wrong
         if not wrong:
             continue
+        newest = max(report.rows, key=lambda r: r.created_at)
         plan = report_trades_plan(conn, account_id)
         unbooked = plan.trades
         names = _asset_names(conn, [c.asset for c in wrong])
@@ -1335,7 +1360,9 @@ __all__ = [
     "etf_overview",
     "finish_report",
     "holdings_inbox_items",
+    "LatestReportCheck",
     "latest_report_agreement",
+    "latest_report_checks",
     "record_holding",
     "record_movement",
     "store_all_report_prices",

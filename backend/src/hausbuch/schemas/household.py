@@ -788,22 +788,12 @@ class NetWorthClass(StrEnum):
     LIABILITIES = "liabilities"
 
 
-class NetWorth(Schema):
-    on: date
-    total: Money
-    by_class: dict[NetWorthClass, Money]
-    by_owner: dict[UUID, Money]  # over accounts with shares and the property's shares
-    unassigned_accounts: list[UUID] = Field(default_factory=list)
-    property_estimate: Money
-    loan_balances: Money  # positive: what is owed
-    snapshot_id: UUID | None = None
-
-
 class ValuationSnapshot(Record):
-    """valuation_snapshot row (immutable): one per account, asset and month-end; asset_id
-    None for a bank account's balance."""
+    """valuation_snapshot row (immutable): one per run of exactly one of an account (asset_id
+    None: its balance; else a position on it), a property (its estimate) or a loan (its
+    balance by the schedule, negative); migration 0040, D167 (5) amended."""
 
-    account_id: UUID
+    account_id: UUID | None = None
     asset_id: UUID | None = None
     as_of: date
     units: Quantity | None = None
@@ -811,6 +801,8 @@ class ValuationSnapshot(Record):
     price_source: PriceSourceKind | None = None
     value_eur: Money
     net_worth_run_id: UUID
+    property_id: UUID | None = None
+    loan_id: UUID | None = None
 
 
 # --- The household taxonomy (D159) -----------------------------------------------------

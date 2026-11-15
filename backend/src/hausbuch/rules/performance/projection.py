@@ -198,6 +198,13 @@ def _value(levers: Levers, purchase_price: Decimal, n: int) -> Decimal:
     return cents(base * (ONE + levers.value_growth) ** n)
 
 
+def value_today(levers: Levers | None, purchase_price: Decimal) -> Decimal:
+    """The property's value in today's year (n = 0): the scenario's today value, else the
+    purchase price. Phase 6's net worth shows it as the property's estimate (D167 (4)), so
+    the Übersicht and the Planung screen start from the same figure."""
+    return cents(purchase_price) if levers is None else _value(levers, purchase_price, 0)
+
+
 def _shares(facts: DraftFacts, owners: Sequence[OwnerTaxProfile]) -> list[TaxOwner]:
     """The owners' shares of the property; equal shares of the profiles when it lists none."""
     if facts.owners:

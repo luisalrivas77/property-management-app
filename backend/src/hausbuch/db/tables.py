@@ -1012,7 +1012,7 @@ valuation_snapshot = Table(
     metadata,
     _id(),
     _workspace_id(),
-    _uuid("account_id"),
+    _uuid("account_id", nullable=True),  # 0040: exactly one of account, property, loan
     _uuid("asset_id", nullable=True),
     _date("as_of"),
     _quantity("units", nullable=True),
@@ -1021,4 +1021,6 @@ valuation_snapshot = Table(
     _money("value_eur"),
     _uuid("net_worth_run_id"),
     _created_at(),
+    _uuid("property_id", nullable=True),
+    _uuid("loan_id", nullable=True),
 )

@@ -4,7 +4,9 @@
 // tenancy in force per unit, loans) and "Immobilie anlegen"; above them "Was noch fehlt", every
 // open to-do with its action (phase-3.md D136, components/overviewTodos.tsx), and the card
 // "Nächste Termine" (phase-5.md §11, mockup 01) from GET /reminders; between them the
-// household's Cashflow card for last month (phase 6 §13, mockup 07, components/cashflow.tsx).
+// household's Cashflow card for last month (phase 6 §13, mockup 07, components/cashflow.tsx),
+// after the Nettovermögen card and the Vermögensaufteilung bar (phase 6 step 6, D167 (4), (5),
+// components/netWorth.tsx).
 import Link from "next/link";
 
 import { api, ok } from "@/api/client";
@@ -14,6 +16,7 @@ import { CashflowCard } from "@/components/cashflow";
 import { currentTenancy, partyNames } from "@/components/entities";
 import { formatArea, formatDate, formatMoney, todayIso } from "@/components/format";
 import { PROPERTY_KIND } from "@/components/labels";
+import { NetWorthSection } from "@/components/netWorth";
 import { OverviewTodos } from "@/components/overviewTodos";
 import { NextDates } from "@/components/reminders";
 import { Loading } from "@/components/ui";
@@ -73,6 +76,7 @@ export default function OverviewPage() {
         </Link>
       </div>
       <OverviewTodos reminders={reminders.data ?? []} onRemindersChanged={reminders.reload} />
+      <NetWorthSection />
       <CashflowCard />
       <Loading state={reminders}>{(list) => <NextDates reminders={list} onChanged={reminders.reload} />}</Loading>
       <Loading state={overview}>
