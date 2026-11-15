@@ -516,6 +516,22 @@ def test_refusal_twice_fails_with_refused(setup, recorder, app_engine):
     assert kw["ai_call_id"] in {r.id for r in rows}
 
 
+def test_an_extract_cut_off_at_its_limit_is_sent_again_with_more_room(setup, recorder, app_engine):
+    """15 Nov 2026: a long depot report used all of EXTRACT_MAX_TOKENS twice; the second try
+    now gets twice the room, low effort and a longer wait (requests.extract_retry_request)."""
+    client = FakeModelClient([LETTER[0], text_response("", stop_reason="max_tokens"), LETTER[1]])
+    deps, ws, doc, proposal = setup(_pdf(1), client)
+    _run(deps, ws, doc, proposal)
+    assert recorder.failures == [] and len(recorder.results) == 1
+    first, second = client.requests[1], client.requests[2]
+    assert (first.max_tokens, first.effort, first.timeout_s) == (16000, "medium", None)
+    assert (second.max_tokens, second.effort) == (32000, "low")
+    assert second.timeout_s is not None and second.timeout_s > 120
+    assert second.content == first.content and "timeout_s" not in str(second.body())
+    rows = _calls(app_engine, ws, doc)
+    assert sorted(r.error_code or "" for r in rows) == ["", "", "ai.refused"]
+
+
 def test_unparsable_classification_is_retried_once(setup, recorder, app_engine):
     client = FakeModelClient(
         [

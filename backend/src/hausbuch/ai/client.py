@@ -44,6 +44,9 @@ class ModelRequest:
     thinking: dict[str, Any] | None = None
     effort: str | None = None
     output_schema: dict[str, Any] | None = None  # JSON schema for structured output
+    # A longer wait than the client's for this one request (the extract retry after a
+    # max_tokens stop). Transport only: not in body(), so it never changes input_sha256.
+    timeout_s: float | None = None
 
     def body(self) -> dict[str, Any]:
         """The request body as the Messages API takes it (keyword arguments of
@@ -143,7 +146,10 @@ class AnthropicModelClient:
     def send(self, request: ModelRequest) -> ModelResponse:
         started = time.monotonic()
         try:
-            message = self._client.messages.create(**cached(request.body()))
+            extra: dict[str, Any] = {}
+            if request.timeout_s is not None:
+                extra["timeout"] = request.timeout_s
+            message = self._client.messages.create(**cached(request.body()), **extra)
         except (anthropic.RateLimitError, anthropic.InternalServerError) as exc:
             # 429, and every 5xx including 529 overloaded.
             raise ModelCallError(
