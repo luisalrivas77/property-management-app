@@ -1155,6 +1155,7 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
         min(leg.leg.booked_on for leg in waiting) - _BY_HAND,
         max(leg.leg.booked_on for leg in waiting) + _BY_HAND,
     )
+    firsts: dict[UUID, date] | None = None  # read once, only when a leg has no counterpart
     for leg in waiting:
         start, end = leg.leg.booked_on - _BY_HAND, leg.leg.booked_on + _BY_HAND
         others = [
@@ -1174,6 +1175,10 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
         elif found.card is not None and found.candidates:
             code, candidates = OpenTransferCode.AMBIGUOUS, [by_id[i] for i in found.candidates]
         elif found.card is not None:
+            if firsts is None:
+                firsts = _first_days(conn)
+            if _before_every_history(leg, firsts):
+                continue
             named = leg.leg.counterparty_iban_hmac
             same = [
                 o
@@ -1216,6 +1221,44 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
             )
         )
     return items
+
+
+def _first_days(conn: Connection) -> dict[UUID, date]:
+    """The first day each account holds history: its earliest line of a reconciled import or
+    its earliest movement that stands (any kind), per account id."""
+    t, m = transaction_table.c, movement_table.c
+    lines = conn.execute(
+        select(t.account_id, func.min(t.booking_date))
+        .join(import_table, import_table.c.id == t.import_id)
+        .where(
+            t.excluded_as_duplicate_of.is_(None),
+            import_table.c.status == ImportStatus.RECONCILED.value,
+        )
+        .group_by(t.account_id)
+    ).all()
+    moves = conn.execute(
+        select(m.account_id, func.min(func.date(m.occurred_at)))
+        .where(m.superseded_by.is_(None))
+        .group_by(m.account_id)
+    ).all()
+    firsts: dict[UUID, date] = {}
+    for account_id, day in [*lines, *moves]:
+        if account_id not in firsts or day < firsts[account_id]:
+            firsts[account_id] = day
+    return firsts
+
+
+def _before_every_history(leg: _Leg, firsts: dict[UUID, date]) -> bool:
+    """D162 amended (5), 15 Nov 2026 (Luis: „There are some credit card deposits that were not
+    directly linked. Can you check?“): a leg without a counterpart whose by-hand window (the
+    card's list of same-amount lines, ±_BY_HAND) ends before the first day of every other
+    account's history can have no counterpart yet, so it gets no card: a card statement of
+    2 Dec 2025 while every bank account's lines start in January 2026. When no other account
+    holds anything the card stays. An older statement imported later brings the counterpart
+    into reach: booked as a transfer it is linked by after_booking, otherwise the card comes
+    back with it as a candidate."""
+    others = [day for account_id, day in firsts.items() if account_id != leg.leg.account_id]
+    return bool(others) and leg.leg.booked_on + _BY_HAND < min(others)
 
 
 def lines_on_cards(conn: Connection, items: Iterable[InboxItem]) -> set[UUID]:
