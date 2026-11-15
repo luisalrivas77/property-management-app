@@ -126,7 +126,7 @@ _SUPERSEDED_ONCE = "return_input_supersedes_id_key"
 _SCOPE_COLUMNS = ("kind", "tax_year", "owner_id")
 # One current row per owner and year (§6 invariants); a payslip per owner, employer and month.
 ONE_PER_YEAR = frozenset(
-    {K.HOME_OFFICE, K.WORK_ROOM, K.TELECOM, K.OTHER_INSURANCE, K.VORSORGE_OVERRIDE}
+    {K.HOME_OFFICE, K.WORK_ROOM, K.TELECOM, K.OTHER_INSURANCE, K.VORSORGE_OVERRIDE, K.NO_PAY}
 )
 _DOCUMENT_TYPES = {
     K.WAGE_CERTIFICATE: DocumentType.LOHNSTEUERBESCHEINIGUNG,

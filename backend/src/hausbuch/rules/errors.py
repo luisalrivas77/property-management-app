@@ -121,6 +121,8 @@ ANLAGE_N_RULE_SET_INVALID = "anlage_n.rule_set_invalid"  # an Anlage N file that
 ANLAGE_N_USEFUL_LIFE_MISSING = "anlage_n.useful_life_missing"  # an `other` item without life
 ANLAGE_N_WORK_ROOM_EXCLUDES_DAY_RATE = "anlage_n.work_room_excludes_day_rate"  # D106
 ANLAGE_N_NO_PAY = "anlage_n.no_pay"  # no certificate, payslip or expected pay
+# „Kein Arbeitslohn in <Jahr>“ (D195): the owner said so, so there is no Anlage N to export
+ANLAGE_N_NO_PAY_DECLARED = "anlage_n.no_pay_declared"
 RETURN_CHILDCARE_AGE = "return.childcare_age"  # a child aged 14 or more (§10 Abs. 1 Nr. 5)
 RETURN_HOUSEHOLD_SERVICES_CASH = "return.household_services_cash"  # §35a Abs. 5 S. 3
 

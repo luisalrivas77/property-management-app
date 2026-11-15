@@ -10183,7 +10183,8 @@
                 "enum": [
                   "certificate",
                   "payslip",
-                  "expected"
+                  "expected",
+                  "declared_none"
                 ]
               },
               {
@@ -10271,7 +10272,7 @@
           "form"
         ],
         "title": "AnlageNDraft",
-        "description": "One owner's Anlage N for one year (§5.6). status: certified (from certificates),\nestimate (payslip projection or expected pay), none (no pay source)."
+        "description": "One owner's Anlage N for one year (§5.6). status: certified (from certificates),\nestimate (payslip projection or expected pay), none (no pay source; gross_source\ndeclared_none when the owner said „Kein Arbeitslohn“ for the year, D195)."
       },
       "AnlageNYears": {
         "properties": {
@@ -19675,6 +19676,13 @@
         "title": "NameCategoryCount",
         "description": "How many earlier lines of the payee are confirmed under one category (phase 6 D160)."
       },
+      "NoPayFact": {
+        "properties": {},
+        "additionalProperties": false,
+        "type": "object",
+        "title": "NoPayFact",
+        "description": "„Kein Arbeitslohn in <Jahr>“ (D195): the owner had no pay that year (e.g. a whole year of\nparental leave). The row is the statement; its value carries nothing."
+      },
       "NotarizedOnCorrection": {
         "properties": {
           "new_date": {
@@ -20270,6 +20278,11 @@
             ],
             "title": "Tax Class Source"
           },
+          "no_pay_declared": {
+            "type": "boolean",
+            "title": "No Pay Declared",
+            "default": false
+          },
           "sources": {
             "items": {
               "$ref": "#/components/schemas/hausbuch__schemas__tax__SourceRef"
@@ -20390,7 +20403,8 @@
             "enum": [
               "expected",
               "certificate",
-              "payslip"
+              "payslip",
+              "declared_none"
             ],
             "title": "Gross Source",
             "default": "expected"
@@ -20425,7 +20439,7 @@
           "amount"
         ],
         "title": "OwnerZve",
-        "description": "One owner's part of the estimate (D84). deductions = the default, the override, or (phase\n4b D98) the Anlage N's applied Werbungskosten + Vorsorge + 36. gross_source says where the\ngross came from: the expected_gross_pay row, or a certificate or the payslip projection."
+        "description": "One owner's part of the estimate (D84). deductions = the default, the override, or (phase\n4b D98) the Anlage N's applied Werbungskosten + Vorsorge + 36. gross_source says where the\ngross came from: the expected_gross_pay row, or a certificate or the payslip projection, or\ndeclared_none when the owner said „Kein Arbeitslohn“ for the year (phase 4b D195: gross 0)."
       },
       "OwnershipBody": {
         "properties": {
@@ -23872,6 +23886,9 @@
               },
               {
                 "$ref": "#/components/schemas/SpecialExpenseFact"
+              },
+              {
+                "$ref": "#/components/schemas/NoPayFact"
               }
             ],
             "title": "Value"
@@ -24045,6 +24062,9 @@
               },
               {
                 "$ref": "#/components/schemas/SpecialExpenseFact"
+              },
+              {
+                "$ref": "#/components/schemas/NoPayFact"
               }
             ],
             "title": "Value"
@@ -24312,6 +24332,9 @@
               },
               {
                 "$ref": "#/components/schemas/SpecialExpenseFact"
+              },
+              {
+                "$ref": "#/components/schemas/NoPayFact"
               }
             ],
             "title": "Value"
@@ -24393,7 +24416,8 @@
           "child",
           "childcare_cost",
           "household_services",
-          "special_expense"
+          "special_expense",
+          "no_pay"
         ],
         "title": "ReturnInputKind",
         "description": "return_input.kind (migration 0018, phase 4b D97). Owner-scoped unless listed in\nHOUSEHOLD_KINDS; read per year unless listed in SPANNING_KINDS (D110)."
@@ -29119,6 +29143,7 @@
           "anlage_n.work_room_centre",
           "anlage_n.work_room_partial",
           "anlage_n.first_workplace_check",
+          "anlage_n.no_pay_overruled",
           "return.progression_provisional",
           "return.benefit_possible_double",
           "return.benefit_booked",

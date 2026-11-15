@@ -18,6 +18,7 @@ import { ReadUpload } from "./documents";
 import { formatDate, formatDecimal, formatMoney } from "./format";
 import { ANLAGE_N_STATUS, REPLACEMENT_BENEFIT, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
 import { BlockRows, hasBlocks } from "./anlageNBlocks";
+import { NO_PAY_HINT, NoPayButton, WithdrawNoPayButton } from "./noPay";
 import { EvidenceFold } from "./returnInputEvidence";
 import { InputsPanel, type BenefitForm, type ReturnInput } from "./returnInputs";
 import {
@@ -295,6 +296,8 @@ function DraftView({
   const warnings = (draft?.warnings ?? []).filter(
     (w) => w.code !== "anlage_n.form_provisional",
   );
+  // „Kein Arbeitslohn in <Jahr>“ (phase 4b D195): no Anlage N, so no form lines to show.
+  const declared = draft?.gross_source === "declared_none";
   return (
     <div className="stack">
       {draft && draft.form.form_status === "provisional" ? (
@@ -308,7 +311,25 @@ function DraftView({
       ) : null}
       <div className="tax-layout">
         <div className="stack tax-main">
-          {draft ? (
+          {draft && declared ? (
+            <div className="notice notice-info" role="status">
+              <p>
+                Für {owner.full_name} ist für {year} „Kein Arbeitslohn“
+                angegeben: es gibt keine Anlage N. Elterngeld und andere
+                Lohnersatzleistungen zählen trotzdem; sie stehen unten unter
+                Eingaben.
+              </p>
+              <div className="row todo-actions">
+                <WithdrawNoPayButton
+                  ownerId={owner.id}
+                  year={year}
+                  label="Angabe „Kein Arbeitslohn“ aufheben"
+                  className=""
+                  onDone={onChanged}
+                />
+              </div>
+            </div>
+          ) : draft ? (
             <>
               <PayCard draft={draft} rows={list} />
               <CostsCard draft={draft} />
@@ -330,7 +351,9 @@ function DraftView({
                 <Link href="/owners#einkommen">
                   Erwarteten Bruttolohn eintragen
                 </Link>
+                <NoPayButton ownerId={owner.id} year={year} onDone={onChanged} />
               </div>
+              <p className="muted">{NO_PAY_HINT}</p>
             </div>
           )}
           {rows.error != null && rows.data === undefined ? (
@@ -362,7 +385,8 @@ function DraftView({
           <AnlageNHandOver
             ownerId={owner.id}
             year={year}
-            ready={draft !== null}
+            ready={draft !== null && !declared}
+            declared={declared}
           />
         </aside>
       </div>
@@ -380,10 +404,13 @@ function AnlageNHandOver({
   ownerId,
   year,
   ready,
+  declared,
 }: {
   ownerId: string;
   year: number;
   ready: boolean;
+  /** „Kein Arbeitslohn“ for the year (D195): no sheet, and the note says why. */
+  declared: boolean;
 }) {
   const loadHistory = useCallback(
     () =>
@@ -416,7 +443,9 @@ function AnlageNHandOver({
       note={
         ready
           ? "Das Feldblatt sagt, was in welche Zeile der Anlage N in ELSTER gehört, und nennt am Ende, was von Hand einzutragen ist."
-          : "Das Feldblatt gibt es, sobald Arbeitslohn erfasst ist."
+          : declared
+            ? "Für dieses Jahr ist „Kein Arbeitslohn“ angegeben: es gibt kein Feldblatt der Anlage N."
+            : "Das Feldblatt gibt es, sobald Arbeitslohn erfasst ist."
       }
       loadHistory={loadHistory}
       queue={queue}
@@ -510,6 +539,8 @@ function grossSource(draft: AnlageNDraft, rows: ReturnInput[]): string {
     }
     case "expected":
       return "aus dem erwarteten Bruttolohn (Eigentümer)";
+    case "declared_none":
+      return "kein Arbeitslohn angegeben";
     default:
       return "kein Arbeitslohn erfasst";
   }

@@ -488,6 +488,11 @@ class ReplacementFact(Schema):
         return self
 
 
+class NoPayFact(Schema):
+    """„Kein Arbeitslohn in <Jahr>“ (D195): the owner had no pay that year (e.g. a whole year of
+    parental leave). The row is the statement; its value carries nothing."""
+
+
 class VorsorgeOverride(Schema):
     pension: NonNegativeMoney
     health_care_basis: NonNegativeMoney
@@ -532,6 +537,7 @@ ReturnInputValue = (
     | ChildcareFact
     | HouseholdServicesFact
     | SpecialExpenseFact
+    | NoPayFact
 )
 
 R = ReturnInputKind
@@ -553,6 +559,7 @@ RETURN_INPUT_VALUES: dict[ReturnInputKind, type[Schema]] = {
     R.CHILDCARE_COST: ChildcareFact,
     R.HOUSEHOLD_SERVICES: HouseholdServicesFact,
     R.SPECIAL_EXPENSE: SpecialExpenseFact,
+    R.NO_PAY: NoPayFact,
 }
 # A document required: the certificate and the payslip are their documents (D96, D105).
 DOCUMENT_REQUIRED = frozenset({R.WAGE_CERTIFICATE, R.PAYSLIP})
@@ -632,6 +639,8 @@ class ReturnInputCreate(Schema):
             problems.append("owner_id is set exactly for the owner kinds")
         if k in DOCUMENT_REQUIRED and self.document_id is None:
             problems.append("a certificate or payslip row needs its document")
+        if k is ReturnInputKind.NO_PAY and self.document_id is not None:
+            problems.append("a „Kein Arbeitslohn“ row has no document (D195)")
         if self.withdrawn and self.supersedes_id is None:
             problems.append("a withdrawal supersedes the row it withdraws")
         v = self.value
@@ -1037,12 +1046,13 @@ class WerbungskostenComponents(Schema):
 
 class AnlageNDraft(Schema):
     """One owner's Anlage N for one year (§5.6). status: certified (from certificates),
-    estimate (payslip projection or expected pay), none (no pay source)."""
+    estimate (payslip projection or expected pay), none (no pay source; gross_source
+    declared_none when the owner said „Kein Arbeitslohn“ for the year, D195)."""
 
     owner_id: UUID
     tax_year: TaxYear
     status: Literal["certified", "estimate", "none"]
-    gross_source: Literal["certificate", "payslip", "expected"] | None = None
+    gross_source: Literal["certificate", "payslip", "expected", "declared_none"] | None = None
     lines: list[DraftLine] = Field(default_factory=list)
     gross: NonNegativeMoney
     wk_itemised: NonNegativeMoney
@@ -1062,8 +1072,8 @@ class AnlageNDraft(Schema):
             raise ValueError("result = gross − wk_applied")
         if self.components.total() != self.wk_itemised:
             raise ValueError("Σ components = wk_itemised")
-        if (self.status == "none") != (self.gross_source is None):
-            raise ValueError("a draft with pay names its source")
+        if (self.status == "none") != (self.gross_source in (None, "declared_none")):
+            raise ValueError("a draft with pay names its source, one without pay none or D195's")
         return self
 
 
@@ -1084,11 +1094,12 @@ class VorsorgeResult(Schema):
 
 
 class OwnerEmployment(Schema):
-    """What phase 4's zvE estimate takes from 4b per owner (D98)."""
+    """What phase 4's zvE estimate takes from 4b per owner (D98). declared_none: the owner said
+    „Kein Arbeitslohn“ for the year (D195), so gross 0 replaces any expected pay."""
 
     owner_id: UUID
     gross: NonNegativeMoney
-    gross_source: Literal["certificate", "payslip", "expected"]
+    gross_source: Literal["certificate", "payslip", "expected", "declared_none"]
     wk_applied: NonNegativeMoney
     vorsorge: NonNegativeMoney
     sources: list[SourceRef] = Field(default_factory=list)
@@ -1162,6 +1173,9 @@ class OwnerIncome(Schema):
     # owner.tax_class answer, else none.
     tax_class: TaxClass | None = None
     tax_class_source: Literal["certificate", "payslip", "questionnaire"] | None = None
+    # „Kein Arbeitslohn in <Jahr>“ (D195): status none because the owner said so, not because
+    # no pay was entered; sources then name the marker row
+    no_pay_declared: bool = False
     sources: list[SourceRef] = Field(default_factory=list)  # the Anlage N lines' rows
 
 

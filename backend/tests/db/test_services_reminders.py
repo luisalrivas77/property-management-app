@@ -354,3 +354,59 @@ def test_the_inbox_shows_action_reminders_visible_today(world):
         assert item.reasoning is None and item.question is None
     # Without today the inbox has no reminder cards (the jobs call it so).
     assert not [i for i in world.query(review.inbox) if i.kind is InboxItemKind.REMINDER]
+
+
+def test_kein_arbeitslohn_asks_for_no_wage_certificate(world):
+    """Phase 4b D195 (3), from its review: an owner who declared „Kein Arbeitslohn“ for a year
+    is not asked for that year's Lohnsteuerbescheinigung, although an expected gross pay of
+    that year exists; withdrawing the marker asks again, and another year is untouched."""
+    from hausbuch.schemas.employment import ReturnInputCreate
+    from hausbuch.schemas.performance import IncomeInputCreate
+    from hausbuch.schemas.property import OwnerCreate
+    from hausbuch.services.income_inputs import create_income_input
+    from hausbuch.services.owners import create_owner
+    from hausbuch.services.return_inputs import create_input
+
+    owner = world.cmd(create_owner, OwnerCreate(full_name="Person A"))
+    for year in (2026, 2027):
+        world.cmd(
+            create_income_input,
+            IncomeInputCreate.model_validate(
+                {
+                    "owner_id": owner.id,
+                    "kind": "expected_gross_pay",
+                    "tax_year": year,
+                    "value": {"amount": "50000.00"},
+                }
+            ),
+            now=world.now + timedelta(seconds=year - 2025),
+        )
+
+    def pay_years() -> list[int]:
+        (row,) = [o for o in world.query(reminders._owners) if o.id == owner.id]
+        return row.pay_years
+
+    assert pay_years() == [2026, 2027]
+    marker = world.cmd(
+        create_input,
+        ReturnInputCreate.model_validate(
+            {"owner_id": owner.id, "kind": "no_pay", "tax_year": 2026, "value": {}}
+        ),
+        now=world.now + timedelta(seconds=10),
+    )
+    assert pay_years() == [2027]
+    world.cmd(
+        create_input,
+        ReturnInputCreate.model_validate(
+            {
+                "owner_id": owner.id,
+                "kind": "no_pay",
+                "tax_year": 2026,
+                "value": {},
+                "supersedes_id": marker.id,
+                "withdrawn": True,
+            }
+        ),
+        now=world.now + timedelta(seconds=11),
+    )
+    assert pay_years() == [2026, 2027]
