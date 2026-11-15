@@ -42,7 +42,7 @@ from hausbuch.schemas.household import (
     TransferLinkRequest,
     TransferMatchedBy,
 )
-from hausbuch.services import allocations, matching, transfers
+from hausbuch.services import allocations, household_resort, matching, transfers
 from hausbuch.services.accounts import create_account
 from hausbuch.services.exchange import imports
 
@@ -472,6 +472,29 @@ def test_a_deposit_a_person_answered_otherwise_waits_for_one_click(
     assert (link.out_transaction_id, link.in_movement_id) == (later, moves[Decimal("1000.00")])
     assert _booked(world, later) == _split("-1001.00", "1.00", "user")
     assert _open(world) == []
+
+
+def test_a_resort_proposal_over_a_persons_answer_is_never_split(world, bank, blob_store):
+    """Review, 15 Nov 2026: after the IBAN is learned, a later deposit the person had
+    confirmed in a fallback code and the one-off re-sort then proposed otherwise is not the
+    model's own proposal: the matcher neither splits nor links it."""
+    _, exchange, _, _ = _first_link(world, bank, blob_store)
+    later = bank.line(date(2026, 10, 5), "-1001.00", name="Binance", iban=DEPOSIT_IBAN)
+    _answer_line(world, later, "-1001.00", "hh_other")
+    line = world.query(matching.load_line, later)
+    answer = AllocationSet(
+        transaction_id=later,
+        method=AllocationMethod.LLM,
+        confidence=Decimal("0.700"),
+        reasoning="Vermutlich Porto.",
+        allocations=[AllocationDraft(amount=Decimal("-1001.00"), category=C.HH_POSTAGE)],
+    )
+    plan = world.cmd(household_resort.finish_resort, later, answer, household_resort.seen(line))
+    assert plan.outcome == "written"
+    _export(world, blob_store, exchange.id, "2026-10-06 08:00:00,Deposit,1000")
+    world.cmd(transfers.relink_all)
+    assert _booked(world, later) == [("hh_postage", Decimal("-1001.00"), "proposed", "llm")]
+    assert len(_links(world)) == 1  # the first link only
 
 
 # --- Never the rental account -----------------------------------------------------------------

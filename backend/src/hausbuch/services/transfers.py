@@ -580,27 +580,78 @@ def link_leg(
     )
 
 
-def _deposit_state(line_rows: Sequence, amount: Decimal, fee: Decimal) -> str | None:
-    """How a bank line paying a deposit credited `fee` short is booked: "split" (already
-    internal_transfer_out plus bank_fees of exactly the fee), "whole" (one internal_transfer_out
-    row of the whole amount the matcher wrote, or only a proposal), None otherwise (a person's
-    or a rule's answer, which the matcher never replaces)."""
+def _held_answer(conn: Connection, transaction_id: UUID) -> frozenset[AllocationCategory] | None:
+    """The categories of the latest set a person or a rule confirmed on the line, current or
+    superseded since (a superseded row keeps its method, confirmed_at and confirmed_by); None
+    when neither ever confirmed one. Review of D162 amended, 15 Nov 2026: the one-off
+    household re-sort writes a proposal over a person's confirmed fallback row, so a line whose
+    current rows are proposals may still hold a person's answer underneath. Every row of the
+    line is read, which covers the supersedes_id chain and the old rows a shorter set left
+    unnamed (services.allocations.record_set)."""
+    a = allocation_table.c
+    rows = conn.execute(
+        select(a.category, a.confirmed_at)
+        .where(
+            a.transaction_id == transaction_id,
+            a.confirmed_at.is_not(None),
+            or_(
+                a.confirmed_by.is_not(None),
+                a.method.in_([AllocationMethod.USER.value, AllocationMethod.RULE.value]),
+            ),
+        )
+        .order_by(a.confirmed_at.desc())
+    ).all()
+    if not rows:
+        return None
+    latest = rows[0].confirmed_at
+    return frozenset(AllocationCategory(r.category) for r in rows if r.confirmed_at == latest)
+
+
+def _free_for_matcher(conn: Connection, line_id: UUID, current: Sequence) -> bool:
+    """Whether the transfer matcher may book the line itself (D162 amended 15 Nov 2026,
+    review): it holds nothing or only the model's proposal (method llm; a rule's or a code
+    matcher's proposal is not the model's), and no person or rule ever confirmed an answer on
+    it (_held_answer)."""
+    if any(
+        r.status != AllocationStatus.PROPOSED or r.method != AllocationMethod.LLM for r in current
+    ):
+        return False
+    return _held_answer(conn, line_id) is None
+
+
+def _is_split(line_rows: Sequence, fee: Decimal) -> bool:
+    """Whether the line is booked as internal_transfer_out plus bank_fees of exactly `fee`."""
     rows = [r for r in line_rows if r.amount != 0]
     categories = {r.category for r in rows}
-    if categories == {AllocationCategory.INTERNAL_TRANSFER_OUT, AllocationCategory.BANK_FEES}:
-        kept = -sum(
-            (r.amount for r in rows if r.category == AllocationCategory.BANK_FEES), Decimal(0)
-        )
-        return "split" if kept == fee else None
-    whole = (
-        categories == {AllocationCategory.INTERNAL_TRANSFER_OUT}
-        and sum((r.amount for r in rows), Decimal(0)) == amount
-    )
+    if categories != {AllocationCategory.INTERNAL_TRANSFER_OUT, AllocationCategory.BANK_FEES}:
+        return False
+    kept = -sum((r.amount for r in rows if r.category == AllocationCategory.BANK_FEES), Decimal(0))
+    return kept == fee
+
+
+def _deposit_state(
+    conn: Connection, line_id: UUID, line_rows: Sequence, amount: Decimal, fee: Decimal
+) -> str | None:
+    """How a bank line paying a deposit credited `fee` short is booked: "split" (already
+    internal_transfer_out plus bank_fees of exactly the fee), "whole" (one internal_transfer_out
+    row of the whole amount the matcher wrote, or only the model's proposal of it, and no
+    person's or rule's answer underneath, _held_answer), None otherwise (a person's or a rule's
+    answer, which the matcher never replaces)."""
+    if _is_split(line_rows, fee):
+        return "split"
+    rows = [r for r in line_rows if r.amount != 0]
+    whole = {r.category for r in rows} == {AllocationCategory.INTERNAL_TRANSFER_OUT} and sum(
+        (r.amount for r in rows), Decimal(0)
+    ) == amount
+    if not whole:
+        return None
     by_matcher = all(
-        r.method == AllocationMethod.MATCHER_TRANSFER or r.status == AllocationStatus.PROPOSED
-        for r in rows
+        r.method == AllocationMethod.MATCHER_TRANSFER and r.status == AllocationStatus.CONFIRMED
+        for r in line_rows
     )
-    return "whole" if whole and by_matcher else None
+    if by_matcher:
+        return "whole" if _held_answer(conn, line_id) is None else None
+    return "whole" if _free_for_matcher(conn, line_id, line_rows) else None
 
 
 def _split_and_link(
@@ -620,7 +671,7 @@ def _split_and_link(
     line = matching.load_line(ctx.conn, bank.leg.id, lock=True)
     if line is None:
         return None
-    state = _deposit_state(line.current, line.tx.amount, fee)
+    state = _deposit_state(ctx.conn, line.tx.id, line.current, line.tx.amount, fee)
     if state is None:
         return None
     if state == "whole":
@@ -667,7 +718,11 @@ def _book_named_leg(
     if not private_line or not (names_other or deposit):
         return None
     line = matching.load_line(ctx.conn, other.leg.id, lock=True)
-    if line is None or not line.waiting or not line.open_for(rematch=True):
+    if line is None or not line.open_for(rematch=True):
+        return None
+    if not _free_for_matcher(ctx.conn, line.tx.id, line.current):
+        # Review, 15 Nov 2026: only nothing or the model's own proposal is replaced, never a
+        # rule's proposal nor a proposal written over a person's or a rule's answer.
         return None
     answer = (
         deposit_split_set(line.tx, fee)
@@ -885,14 +940,7 @@ def _link_deposit_by_hand(
         raise ConflictError("a leg of this transfer is linked already")
     line = matching.load_line(ctx.conn, out.leg.id, lock=True)
     assert line is not None  # _pair read it
-    if (
-        _deposit_state(
-            [r for r in line.current if r.status == AllocationStatus.CONFIRMED],
-            line.tx.amount,
-            fee,
-        )
-        != "split"
-    ):
+    if not _is_split([r for r in line.current if r.status == AllocationStatus.CONFIRMED], fee):
         if iban_key is None:
             raise ValueError("re-booking a leg needs the IBAN key")
         _answer(ctx, deposit_split_set(line.tx, fee, method=AllocationMethod.USER), iban_key)

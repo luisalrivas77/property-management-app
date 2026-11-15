@@ -31,7 +31,7 @@ from hausbuch.schemas.allocation import (
     AllocationSet,
 )
 from hausbuch.schemas.household import OpenTransferCode, TransferLinkKind, TransferMatchedBy
-from hausbuch.services import allocations, matching, statements, transfers
+from hausbuch.services import allocations, household_resort, matching, statements, transfers
 
 pytestmark = pytest.mark.db
 
@@ -298,3 +298,50 @@ def test_a_depot_statement_import_books_and_links_the_debits_naming_it(
     [in_] = [t.id for t in world.query(statements.list_transactions, depot.id)]
     assert _booked(world, in_) == [NAMED]
     _assert_linked(world, out, in_)
+
+
+# --- Review, 15 Nov 2026: a proposal written over a person's answer is not the model's ---------
+
+
+def _resort(world: World, tx, amount: str, category: C = C.HH_POSTAGE) -> None:
+    """The one-off household re-sort's model answer, proposed over the line's confirmed
+    fallback row (household_resort._propose_over_confirmed)."""
+    line = world.query(matching.load_line, tx)
+    assert world.query(household_resort.open_for_resort, line)
+    answer = _answer(tx, amount, category, AllocationMethod.LLM)
+    plan = world.cmd(household_resort.finish_resort, tx, answer, household_resort.seen(line))
+    assert plan.outcome == "written"
+
+
+@pytest.mark.parametrize("bank_first", [True, False])
+def test_a_resort_proposal_over_a_persons_answer_is_never_booked_as_the_transfer(
+    world, bank, bank_first
+):
+    depot = _depot(world)
+    in_ = depot.line(FRIDAY, "600.00", purpose="Lastschrift Einzug")
+    _confirm(world, in_, "600.00", C.HH_OTHER)  # a person's own answer, a fallback code
+    if bank_first:
+        out = bank.line(FRIDAY, "-600.00", iban=DEPOT_IBAN)
+        _match(world, out)
+        _resort(world, in_, "600.00")
+    else:
+        _resort(world, in_, "600.00")
+        out = bank.line(FRIDAY, "-600.00", iban=DEPOT_IBAN)
+        _match(world, out)
+    world.cmd(transfers.relink, depot.account_id)
+    assert _booked(world, in_) == [("hh_postage", "proposed", "llm")]
+    assert _links(world) == []
+    [card] = [c for c in _open(world) if c.leg.id == out]
+    assert [c.id for c in card.candidates] == [in_]
+
+
+def test_a_code_proposal_is_never_booked_as_the_transfer(world, bank):
+    """Only nothing or the model's own proposal is replaced (a rule's or a code's is not)."""
+    depot = _depot(world)
+    in_ = depot.line(FRIDAY, "600.00", purpose="Lastschrift Einzug")
+    rule = _answer(in_, "600.00", C.HH_OTHER, AllocationMethod.DOCUMENT_MATCH)
+    world.cmd(allocations.record_set, rule, confirm=False, auto=False)
+    out = bank.line(FRIDAY, "-600.00", iban=DEPOT_IBAN)
+    _match(world, out)
+    assert _booked(world, in_) == [("hh_other", "proposed", "document_match")]
+    assert _links(world) == []
