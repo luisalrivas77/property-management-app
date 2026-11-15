@@ -345,6 +345,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "movement.proposed": "Bewegung vorgeschlagen",
   "movement.confirmed": "Bewegung bestätigt",
   "movement.superseded": "Bewegung korrigiert",
+  "movement_group.confirmed": "Börsen-Trade zusammengefasst",
   "transfer.linked": "Übertrag verknüpft",
   "transfer.unlinked": "Übertrag getrennt",
   "statement.imported": "Kontoauszug importiert",

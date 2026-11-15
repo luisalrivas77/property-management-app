@@ -15922,6 +15922,7 @@
           "movement.proposed",
           "movement.confirmed",
           "movement.superseded",
+          "movement_group.confirmed",
           "transfer.linked",
           "transfer.unlinked",
           "statement.imported",

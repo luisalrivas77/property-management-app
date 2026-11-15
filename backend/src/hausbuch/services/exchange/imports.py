@@ -9,7 +9,11 @@ D178; step 5a). The parsers and the pure rules are `bison_csv`, `binance_csv` an
   export re-uploaded adds only its new rows, D178 (5)); an EUR deposit or withdrawal is then
   linked to its bank leg by D162. Binance's withdrawal history adds no import: it completes
   each open withdrawal with its network, fee and transaction hash by a new row that
-  supersedes the old one (D178 (4)).
+  supersedes the old one (D178 (4)). Each trade's legs are written in one `movement_group`
+  of kind swap without a chain (D178 amended (3), migration 0043), so phase 7's lots read the
+  given leg and the fee with the acquisition (D188 (1), (4)).
+- `group_stored_trades`: `hausbuch group-exchange-trades`, the same groups for the trades
+  imported before 0043, each leg superseded by a grouped row.
 - `declare_holdings`: the balances the exchange shows, typed once per import; Σ movements
   per asset to the import's last row against them (D166, D178 (6)), never bridged by code.
 - `book_correction`: „Differenz als Korrektur buchen“ (D178 amended, migration 0030): one
@@ -36,12 +40,14 @@ from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import holding_statement as holding_table
+from hausbuch.db.tables import movement_group as group_table
 from hausbuch.db.tables import movement_import as import_table
 from hausbuch.rules import errors as E
 from hausbuch.rules import exchange as rules
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.household.assets import registry
 from hausbuch.schemas.api import InboxItem, InboxItemKind
+from hausbuch.schemas.chain import GroupStatus
 from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.document import Document, DocumentTyping
 from hausbuch.schemas.enums import (
@@ -56,6 +62,7 @@ from hausbuch.schemas.events import (
     AssetRecorded,
     BalanceCorrected,
     EventType,
+    MovementGroupRecorded,
     MovementImportChecked,
     MovementImportRecorded,
     MovementRecorded,
@@ -278,7 +285,11 @@ def _store_original(
 
 
 def _insert_movement(
-    ctx: CommandContext, account_id: UUID, movement: ExchangeMovement, document_id: UUID
+    ctx: CommandContext,
+    account_id: UUID,
+    movement: ExchangeMovement,
+    document_id: UUID,
+    group_id: UUID | None = None,
 ) -> UUID:
     asset_id = asset_for_symbol(ctx, movement.asset)
     movement_id = ctx.conn.execute(
@@ -287,6 +298,7 @@ def _insert_movement(
             workspace_id=ctx.workspace_id,
             account_id=account_id,
             asset_id=asset_id,
+            group_id=group_id,
             kind=movement.kind.value,
             quantity=movement.quantity,
             eur_amount=movement.eur_amount,
@@ -322,6 +334,154 @@ def _insert_movement(
         ),
     )
     return movement_id
+
+
+# --- Trades as movement groups (phase 6 D178 amended (3), migration 0043) --------------------
+
+
+def _insert_group(ctx: CommandContext, account_id: UUID, occurred_at: datetime) -> UUID:
+    """One exchange trade's movement group: no chain and no transaction hash (a CHECK of 0043
+    allows that for a swap only), confirmed, since a trade's legs are confirmed by code
+    (D166). Its movement_group.confirmed event follows once its legs are written."""
+    return ctx.conn.execute(
+        insert(group_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            account_id=account_id,
+            chain=None,
+            tx_hash=None,
+            occurred_at=occurred_at,
+            kind=rules.TRADE_GROUP_KIND.value,
+            status=GroupStatus.CONFIRMED.value,
+            created_at=ctx.now,
+        )
+        .returning(group_table.c.id)
+    ).scalar_one()
+
+
+def _group_recorded(
+    ctx: CommandContext,
+    group_id: UUID,
+    account_id: UUID,
+    movement_ids: list[UUID],
+    document_id: UUID | None,
+) -> None:
+    append_event(
+        ctx,
+        EventType.MOVEMENT_GROUP_CONFIRMED,
+        group_id,
+        MovementGroupRecorded(
+            account_id=account_id,
+            kind=rules.TRADE_GROUP_KIND,
+            movement_ids=movement_ids,
+            document_id=document_id,
+        ),
+    )
+
+
+def _insert_movements(
+    ctx: CommandContext,
+    account_id: UUID,
+    provider: str,
+    movements: list[ExchangeMovement],
+    document_id: UUID,
+) -> None:
+    """The import's new movements, each trade's legs in one group (rules.trade_groups)."""
+    trades = rules.trade_groups(movements, provider)
+    group_of: dict[int, UUID] = {}
+    for legs in trades:
+        group_id = _insert_group(ctx, account_id, min(movements[i].occurred_at for i in legs))
+        group_of |= dict.fromkeys(legs, group_id)
+    ids = [
+        _insert_movement(ctx, account_id, movement, document_id, group_of.get(i))
+        for i, movement in enumerate(movements)
+    ]
+    for legs in trades:
+        _group_recorded(ctx, group_of[legs[0]], account_id, [ids[i] for i in legs], document_id)
+
+
+@dataclass(frozen=True)
+class GroupedTrades:
+    """`group_stored_trades`'s answer: the groups written, the movements superseded into
+    them, and how many acquisitions gained a fee_eur from their trade's EUR fee."""
+
+    groups: int
+    movements: int
+    fees: int
+
+
+def group_stored_trades(ctx: CommandContext) -> GroupedTrades:
+    """`hausbuch group-exchange-trades` (D178 amended (3)): the trades every exchange account
+    of the workspace imported before migration 0043, tied as the import ties them now. Each
+    trade gets its movement group, and each of its legs a new row with the group's id that
+    supersedes the stored one (0025's movement_forward refuses an UPDATE of group_id; the
+    `_supersede` path of the withdrawal history), quantity, EUR leg and status unchanged; an
+    acquisition whose trade paid a fee in EUR also gets that fee as its fee_eur, as the import
+    writes it now. Only the export's own legs are read: current, confirmed, ungrouped rows
+    that still carry their movement_hash (a person's answer or a completed withdrawal is a
+    superseding row without one), so a second run finds nothing."""
+    m, a, acc = movement_table.c, asset_table.c, account_table.c
+    accounts = ctx.conn.execute(
+        select(acc.id, acc.provider)
+        .where(acc.kind == AccountKind.EXCHANGE.value)
+        .order_by(acc.created_at, acc.id)
+    ).all()
+    groups = movements = fees = 0
+    for account in accounts:
+        rows = ctx.conn.execute(
+            select(m.id, m.kind, m.quantity, m.eur_amount, m.fee_eur, m.occurred_at, a.symbol)
+            .join(asset_table, a.id == m.asset_id)
+            .where(
+                m.account_id == account.id,
+                m.superseded_by.is_(None),
+                m.group_id.is_(None),
+                m.movement_hash.is_not(None),
+                m.source == MovementSource.CSV.value,
+                m.status == MovementStatus.CONFIRMED.value,
+                m.kind.in_([k.value for k in rules.TRADE_LEG_KINDS]),
+            )
+            .order_by(m.occurred_at, m.id)
+        ).all()
+        stored = [
+            _Leg(
+                id=r.id,
+                asset=r.symbol or "",
+                kind=MovementKind(r.kind),
+                quantity=r.quantity,
+                eur_amount=r.eur_amount,
+                fee_eur=r.fee_eur,
+                occurred_at=r.occurred_at,
+            )
+            for r in rows
+        ]
+        for legs in rules.trade_groups(stored, account.provider or ""):
+            trade = [stored[i] for i in legs]
+            fee = rules.trade_fee_eur(trade)
+            group_id = _insert_group(ctx, account.id, min(t.occurred_at for t in trade))
+            new_ids = []
+            for leg in trade:
+                changes: dict = {"group_id": group_id}
+                if fee is not None and leg.kind is MovementKind.ACQUISITION and leg.fee_eur is None:
+                    changes["fee_eur"] = fee
+                    fees += 1
+                new_ids.append(_supersede(ctx, leg.id, changes))
+            _group_recorded(ctx, group_id, account.id, new_ids, None)
+            groups += 1
+            movements += len(trade)
+    return GroupedTrades(groups=groups, movements=movements, fees=fees)
+
+
+@dataclass(frozen=True)
+class _Leg:
+    """A stored trade leg as rules.trade_groups and rules.trade_fee_eur read it."""
+
+    id: UUID
+    asset: str
+    kind: MovementKind
+    quantity: Decimal
+    eur_amount: Decimal | None
+    fee_eur: Decimal | None
+    occurred_at: datetime
 
 
 def import_export(
@@ -405,8 +565,7 @@ def import_export(
         .returning(*_IMPORT_COLUMNS)
     ).one()
     asset_for_symbol(ctx, rules.EUR)  # the EUR balance is typed even with no EUR row
-    for movement in new:
-        _insert_movement(ctx, account_id, movement, document.id)
+    _insert_movements(ctx, account_id, account.provider, new, document.id)
     append_event(
         ctx,
         EventType.ACCOUNT_MOVEMENTS_IMPORTED,
@@ -446,6 +605,7 @@ def _supersede(
         for c in (
             "account_id",
             "asset_id",
+            "group_id",  # a trade's leg stays in its group (D178 amended (3))
             "kind",
             "quantity",
             "eur_amount",
