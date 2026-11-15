@@ -140,7 +140,6 @@ fx_cases:
 # Invented prices.
 priced_as_cases:
   - id: chain_asset_valued_through_priced_as
-    pending: "phase 7 step 6 (rules/valuation.price_on with priced_as)"
     "on": 2026-06-30
     priced_as: SOL
     priced_as_prices:
@@ -149,7 +148,6 @@ priced_as_cases:
     expect: {price: {"on": 2026-06-30, source: coingecko_daily}, priced_by: priced_as, stale: false, value_eur: "350.00"}
 
   - id: typed_price_on_the_chain_asset_wins_its_day
-    pending: "phase 7 step 6 (rules/valuation.price_on with priced_as)"
     "on": 2026-06-30
     prices:
       - {"on": 2026-06-30, price_eur: "139.50", source: user}
@@ -160,7 +158,6 @@ priced_as_cases:
     expect: {price: {"on": 2026-06-30, source: user}, priced_by: own, stale: false, value_eur: "348.75"}
 
   - id: typed_price_does_not_freeze_the_next_day
-    pending: "phase 7 step 6 (rules/valuation.price_on with priced_as)"
     "on": 2026-07-01
     prices:
       - {"on": 2026-06-30, price_eur: "139.50", source: user}
@@ -172,7 +169,6 @@ priced_as_cases:
     expect: {price: {"on": 2026-07-01, source: coingecko_daily}, priced_by: priced_as, stale: false, value_eur: "355.00"}
 
   - id: token_with_neither_not_valued
-    pending: "phase 7 step 6 (rules/valuation.price_on with priced_as)"
     "on": 2026-06-30
     priced_as: null
     position: {units: "1000", reconciled_through: 2026-06-30}

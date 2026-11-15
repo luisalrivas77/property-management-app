@@ -11188,13 +11188,54 @@
           "symbol": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 1,
+                "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Symbol"
+          },
+          "chain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Chain"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contract_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Address"
+          },
+          "priced_as_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priced As Asset Id"
+          },
+          "spam": {
+            "type": "boolean",
+            "title": "Spam",
+            "default": false
           },
           "isin": {
             "anyOf": [
@@ -11276,7 +11317,7 @@
           "updated_at"
         ],
         "title": "AssetRow",
-        "description": "GET /assets: an asset with how it is priced (D167 (1), D174 (2))."
+        "description": "GET /assets: an asset with how it is priced (D167 (1), D174 (2)). A chain asset\n(phase 7 D180 amended 15 Nov 2026) also carries its chain, a token's contract, the\nsymbol-level asset it is priced as and its spam flag; its symbol is a label\n(TokenSymbol: wstETH, USD₮0), so it reads without failing."
       },
       "AssetsOverview": {
         "properties": {
@@ -12396,6 +12437,18 @@
         ],
         "title": "CategoryChange",
         "description": "A category's rate when the Pauschale was set and today, for the whole flat."
+      },
+      "Chain": {
+        "type": "string",
+        "enum": [
+          "bitcoin",
+          "ethereum",
+          "arbitrum",
+          "bsc",
+          "solana"
+        ],
+        "title": "Chain",
+        "description": "The registry codes (rules/chain/chains.yaml): wallet_address.chain, asset.chain,\nmovement_group.chain, chain_decoder.chain, chain_pair.from_chain / to_chain."
       },
       "ChecklistBankLine": {
         "properties": {
@@ -13909,7 +13962,7 @@
           },
           "units": {
             "type": "string",
-            "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
             "title": "Units"
           },
           "report_on": {
@@ -13928,7 +13981,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^[0-9]+(\\.[0-9]{1,10})?$"
+                "pattern": "^[0-9]+(\\.[0-9]{1,18})?$"
               },
               {
                 "type": "null"
@@ -16117,7 +16170,7 @@
           },
           "quantity": {
             "type": "string",
-            "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
             "title": "Quantity"
           },
           "eur_amount": {
@@ -16148,7 +16201,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^[0-9]+(\\.[0-9]{1,10})?$"
+                "pattern": "^[0-9]+(\\.[0-9]{1,18})?$"
               },
               {
                 "type": "null"
@@ -16428,14 +16481,14 @@
           },
           "units": {
             "type": "string",
-            "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
             "title": "Units"
           },
           "typed_units": {
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^[0-9]+(\\.[0-9]{1,10})?$"
+                "pattern": "^[0-9]+(\\.[0-9]{1,18})?$"
               },
               {
                 "type": "null"
@@ -16470,7 +16523,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$"
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$"
               },
               {
                 "type": "null"
@@ -17357,7 +17410,7 @@
           },
           "units": {
             "type": "string",
-            "pattern": "^[0-9]+(\\.[0-9]{1,10})?$",
+            "pattern": "^[0-9]+(\\.[0-9]{1,18})?$",
             "title": "Units"
           }
         },
@@ -17689,14 +17742,14 @@
           },
           "held": {
             "type": "string",
-            "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
             "title": "Held"
           },
           "typed": {
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^[0-9]+(\\.[0-9]{1,10})?$"
+                "pattern": "^[0-9]+(\\.[0-9]{1,18})?$"
               },
               {
                 "type": "null"
@@ -17719,7 +17772,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$"
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$"
               },
               {
                 "type": "null"
@@ -20618,7 +20671,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$"
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$"
               },
               {
                 "type": "null"
@@ -21201,7 +21254,7 @@
           },
           "units": {
             "type": "string",
-            "pattern": "^-?[0-9]+(\\.[0-9]{1,10})?$",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
             "title": "Units"
           },
           "price": {

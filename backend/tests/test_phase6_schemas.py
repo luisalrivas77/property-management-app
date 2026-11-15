@@ -102,11 +102,13 @@ def test_a_read_movement_names_its_document():
     assert _movement(source=MovementSource.CSV, document_id=None)
 
 
-def test_a_quantity_is_a_string_to_ten_places():
+def test_a_quantity_is_a_string_to_eighteen_places():
+    # Ten places until migration 0042 widened quantities for 18-decimal tokens (phase 7
+    # §15.1 item 9, decided 15 Nov 2026).
     with pytest.raises(ValidationError):
         _movement(quantity=12.345678)
     with pytest.raises(ValidationError):
-        _movement(quantity="0.00000000001")
+        _movement(quantity="0.0000000000000000001")
     with pytest.raises(ValidationError):
         _movement(fee_quantity="-0.0001")
 
