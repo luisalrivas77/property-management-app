@@ -193,9 +193,12 @@ def _require_exchange(conn: Connection, account_id: UUID, *, for_update: bool = 
 
 def asset_for_symbol(ctx: CommandContext, symbol: str) -> UUID:
     """The workspace's asset of a symbol, created on first use: EUR as cash, any other as a
-    coin named (and given its price ids) from the asset registry when it lists it."""
+    coin named (and given its price ids) from the asset registry when it lists it. Never a
+    chain asset (`chain IS NULL`): an exchange holds the chainless coin, and a chain token's
+    symbol is a label (phase 7 D180 amended, §15.1 item 10)."""
+    a = asset_table.c
     found = ctx.conn.execute(
-        select(asset_table.c.id).where(asset_table.c.symbol == symbol)
+        select(a.id).where(a.symbol == symbol, a.chain.is_(None))
     ).one_or_none()
     if found is not None:
         return found.id
@@ -575,8 +578,9 @@ def _held_by_asset(stored: Sequence[_Stored], conn: Connection) -> dict[UUID, De
     by_symbol = rules.positions(stored)
     ids = {s.asset: s.asset_id for s in stored}
     if rules.EUR in by_symbol and rules.EUR not in ids:
+        a = asset_table.c
         eur = conn.execute(
-            select(asset_table.c.id).where(asset_table.c.symbol == rules.EUR)
+            select(a.id).where(a.symbol == rules.EUR, a.chain.is_(None))
         ).scalar_one_or_none()
         if eur is not None:
             ids[rules.EUR] = eur
