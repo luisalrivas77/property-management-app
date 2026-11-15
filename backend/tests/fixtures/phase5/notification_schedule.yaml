@@ -72,6 +72,18 @@ bases:
     label_code: loan.special_termination
     label_args: {lender: Bank C}
     email_leads: []
+  statement_due_card: &statement_due_card
+    id: bank.statement_due:0000005a-0000-4000-8000-000000000002:2026-12-10
+    kind: bank.statement_due
+    scope: account
+    scope_id: 0000005a-0000-4000-8000-000000000002
+    due_on: 2026-12-10
+    visible_from: 2026-12-10
+    severity: action
+    cleared_by: auto
+    label_code: bank.statement_due
+    label_args: {account: Kreditkarte, covered_until: "2026-10-28"}
+    email_leads: [0]
 
 cases:
   - id: lead_day_sends_once
@@ -220,3 +232,21 @@ cases:
     expect:
       - {reminder_id: "tax.return_deadline:workspace:2027-08-02", lead_days: 14,
          recipient_user_id: *U1, attempt: 1}
+
+  - id: statement_due_mailed_on_its_day
+    description: >
+      bank.statement_due (D122 amended, 15 Nov 2026) is an action kind mailed in the digest on
+      its due day, as bank.sync_stale is (email lead 0)
+    today: 2026-12-10
+    reminders: [*statement_due_card]
+    recipients: [*U1]
+    expect:
+      - {reminder_id: "bank.statement_due:0000005a-0000-4000-8000-000000000002:2026-12-10",
+         lead_days: 0, recipient_user_id: *U1, attempt: 1}
+
+  - id: statement_due_not_mailed_before_its_day
+    description: the day before its due day nothing is sent
+    today: 2026-12-09
+    reminders: [*statement_due_card]
+    recipients: [*U1]
+    expect: []

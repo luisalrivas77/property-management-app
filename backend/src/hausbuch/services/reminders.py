@@ -46,6 +46,7 @@ from hausbuch.rules.statements import is_direct_debit
 from hausbuch.schemas.allocation import AllocationCategory, AllocationStatus
 from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.enums import (
+    AccountKind,
     AccountPurpose,
     ImportStatus,
     IncomeInputKind,
@@ -83,6 +84,7 @@ from .income_inputs import list_income_inputs
 from .properties import list_properties
 from .return_inputs import list_return_inputs
 from .tax_inputs import list_tax_inputs
+from .transfers import _last_days as history_ends  # D162 amended (9)'s history end
 
 _CONFIRMED = AllocationStatus.CONFIRMED.value
 _SCOPE_TABLES: dict[ReminderScope, Table] = {
@@ -283,7 +285,9 @@ def _owners(conn: Connection) -> list[ReminderOwner]:
 
 def _accounts(conn: Connection) -> list[ReminderAccount]:
     """Each account with the last booking day of its reconciled imports and its connection's
-    first day and last success (days in Europe/Berlin)."""
+    first day and last success (days in Europe/Berlin). For bank.statement_due (D122 amended)
+    also its kind, whether its connection fetches daily, and the day its imported history
+    reaches (transfers._last_days: a successful FinTS run's requested_to included)."""
     a, s, b = account_table.c, import_table.c, connection_table.c
     reconciled = dict(
         conn.execute(
@@ -293,10 +297,14 @@ def _accounts(conn: Connection) -> list[ReminderAccount]:
         ).all()
     )
     connections = {
-        r.account_id: r for r in conn.execute(select(b.account_id, b.created_at, b.last_sync_at))
+        r.account_id: r
+        for r in conn.execute(select(b.account_id, b.created_at, b.last_sync_at, b.auto_sync))
     }
+    history = history_ends(conn)
     out = []
-    for r in conn.execute(select(a.id, a.label, a.purpose, a.opening_balance_on).order_by(a.id)):
+    for r in conn.execute(
+        select(a.id, a.label, a.purpose, a.kind, a.opening_balance_on).order_by(a.id)
+    ):
         connection = connections.get(r.id)
         out.append(
             ReminderAccount(
@@ -314,6 +322,9 @@ def _accounts(conn: Connection) -> list[ReminderAccount]:
                     if connection is None or connection.last_sync_at is None
                     else _local_day(connection.last_sync_at)
                 ),
+                kind=AccountKind(r.kind),
+                auto_sync=connection is not None and connection.auto_sync,
+                history_until=history.get(r.id),
             )
         )
     return out

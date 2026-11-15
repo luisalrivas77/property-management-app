@@ -1523,6 +1523,12 @@ export const REMINDER_GUIDE: Record<ReminderKind, ReminderGuide> = {
     todo: true,
     text: () => "Das Konto öffnen und den Abruf neu starten; oft muss die Freigabe in der Banking-App bestätigt werden.",
   },
+  // D122 amended (15 Nov 2026): never an amount or an IBAN, only the day the statements reach.
+  "bank.statement_due": {
+    todo: true,
+    text: (r) =>
+      `Die Kontoauszüge in Hausbuch reichen bis ${formatDate(String(r.label_args?.covered_until ?? ""))}; der nächste fehlt. Ihn mit „Kontoauszug hochladen“ auf der Seite des Kontos hochladen; danach verschwindet der Termin von selbst.`,
+  },
 };
 
 /** Was tun for a reminder; null for a kind the map does not know yet. */
