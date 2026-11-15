@@ -437,6 +437,13 @@ The inbox gains the cards `transfer.unmatched_leg`, `transfer.ambiguous`, `depot
   - **The auto-rate counts only what no person confirmed** (D172 amended 15 Nov 2026).
 - **Still open:** the first month-end against Luis's spreadsheet (the step's done criterion).
 
+**Step 7, closing: first reading (16 Nov 2026, read-only on the live data, by the app's own functions `services.auto_rate.auto_rate` and `services.transfers.open_transfers` inside a transaction that was rolled back).** Two of the four measurements pass, two cannot be read yet:
+
+- **Every account with an owner share: met.** All 11 accounts (four bank accounts, two cards, three depots, two exchanges) have live owner rows that add up to 1.
+- **Every internal transfer linked: met today.** `open_transfers` returns no leg, so no „Gegenbuchung fehlt“ card waits. To be read again at the close, since a new month brings new legs.
+- **≥ 80 % booked without a person in the second month: not measurable yet.** Every private bank line in the app so far belongs to its account's first import (the 2026 history, imported 12–15 Nov 2026), which D172 leaves out of the criterion, so `criterion_ratio` is empty for every month. The criterion is read on **December 2026**, in early January 2027, once December's lines arrive by the daily fetch (all three private logins have „Täglich automatisch abrufen“ on; the DKB login's last run was refused by the bank and needs Luis's retry) or by upload (the account fed by uploads). As an indication only: inside the history, the share booked without a person per month ran from about 46 % to 86 % per account (September 76 %, October 63 %, November so far 47 % over the three accounts); the history never lets the model book alone (D26), while later imports do when its answer is confident, since `auto_accept_llm` is on.
+- **One month-end net worth equal to Luis's spreadsheet: waits for the spreadsheet.** No month-end is stored yet (the first is written on 1 Dec 2026 at 08:00 UTC, or with „Monatsabschluss festhalten“); the funds are priced by their 30 Sep reports until the issuers' daily prices are fixed (a fix is being built: no `issuer_nav` price had ever been stored).
+
 ## 15. Implementation steps
 
 | Step | Delivers | Migration | Done when | Size | Review | Luis does |

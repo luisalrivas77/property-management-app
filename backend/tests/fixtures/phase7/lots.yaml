@@ -28,7 +28,6 @@
 cases:
   # §8: three acquisitions, a transfer of 12 out, a disposal of 5, a reward and a fee.
   - id: fifo_transfer_disposal_reward_fee
-    pending: "phase 7 step 6 (rules/lots.lots, consume)"
     events:
       - {name: buy_feb, at: "2026-02-01T09:00:00Z", account: exchange, kind: acquisition, units: "10", cost_eur: "1000.00", fee_eur: "1.00"}
       - {name: buy_jun, at: "2026-06-01T09:00:00Z", account: exchange, kind: acquisition, units: "10", cost_eur: "2000.00", fee_eur: "2.00"}
@@ -51,7 +50,6 @@ cases:
 
   # An unpriced acquisition: the lot's cost and the disposal's cost are null, never 0 €.
   - id: unpriced_acquisition
-    pending: "phase 7 step 6 (rules/lots.lots, consume)"
     events:
       - {name: airdrop_mar, at: "2026-03-01T09:00:00Z", account: wallet, kind: reward, units: "4"}
       - {name: buy_apr, at: "2026-04-01T09:00:00Z", account: wallet, kind: acquisition, units: "2", cost_eur: "300.00"}
@@ -64,7 +62,6 @@ cases:
 
   # A swap's received leg at 23:30 UTC on 31 Dec: a new lot dated the swap's Berlin day.
   - id: swap_received_leg_new_lot
-    pending: "phase 7 step 6 (rules/lots.lots)"
     events:
       - {name: swap_in, at: "2026-12-31T23:30:00Z", account: wallet, kind: swap_in, units: "150", cost_eur: "138.00", fee_eur: "0.70"}
     expect_lots:
@@ -74,7 +71,6 @@ cases:
   # The same ledger read twice: first with the disposal, then with it superseded (re-booked).
   # The lots differ; nothing was cached.
   - id: before_rebooking
-    pending: "phase 7 step 6 (rules/lots.lots)"
     events:
       - {name: buy_a, at: "2026-02-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1000.00"}
       - {name: buy_b, at: "2026-03-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1200.00"}
@@ -85,7 +81,6 @@ cases:
       - {event: pay, acquired_on: 2026-02-01, units: "10", cost_eur: "1000.00"}
       - {event: pay, acquired_on: 2026-03-01, units: "2", cost_eur: "240.00"}
   - id: after_rebooking_superseded
-    pending: "phase 7 step 6 (rules/lots.lots)"
     events:
       - {name: buy_a, at: "2026-02-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1000.00"}
       - {name: buy_b, at: "2026-03-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1200.00"}
@@ -98,7 +93,6 @@ cases:
   # D184 (3): ETH wrapped into WETH on one chain. FIFO takes the March lot whole and half of
   # the May lot; both re-appear on WETH with their day and cost; nothing is a use.
   - id: wrap_carries_lots
-    pending: "phase 7 step 6 (rules/lots.lots)"
     events:
       - {name: buy_mar, at: "2026-03-01T09:00:00Z", account: wallet, asset: ETH, kind: acquisition, units: "2", cost_eur: "4000.00"}
       - {name: buy_may, at: "2026-05-01T09:00:00Z", account: wallet, asset: ETH, kind: acquisition, units: "1", cost_eur: "2500.00"}
@@ -112,7 +106,6 @@ cases:
   # D184 (2): ETH bridged from Ethereum to Arbitrum (the same wallet account, another asset).
   # The reward lot keeps its source; the bridged lots keep their days and costs; no use.
   - id: bridge_carries_lots
-    pending: "phase 7 step 6 (rules/lots.lots)"
     events:
       - {name: buy_jan, at: "2026-01-15T09:00:00Z", account: wallet, asset: ETH-ethereum, kind: acquisition, units: "1", cost_eur: "3000.00", fee_eur: "3.00"}
       - {name: reward_feb, at: "2026-02-15T09:00:00Z", account: wallet, asset: ETH-ethereum, kind: reward, units: "0.5", cost_eur: "1400.00"}
@@ -127,7 +120,6 @@ cases:
   # later sale of 8 units takes them from the one 10-unit lot (had the deposit consumed 4,
   # the February lot would hold 6 and the uses would differ).
   - id: lp_leaves_lots_untouched
-    pending: "phase 7 step 6 (rules/lots.lots)"
     events:
       - {name: buy, at: "2026-02-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1000.00"}
       - {name: lp_in, at: "2026-03-01T09:00:00Z", account: wallet, kind: lp_deposit, units: "4"}

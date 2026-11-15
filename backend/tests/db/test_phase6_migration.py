@@ -313,7 +313,7 @@ def test_an_ownership_row_outside_its_checks_is_refused(scope, change):
         {"kind": "etf", "symbol": "ETF"},  # an ETF or a stock has its ISIN
         {"isin": "DE000000000X"},  # the check digit is a digit
         {"symbol": "tst"},
-        {"decimals": 11},
+        {"decimals": 19},  # 0..18 since migration 0042 (phase 7 §15.1 item 9)
         {"currency": "euro"},
     ],
 )
