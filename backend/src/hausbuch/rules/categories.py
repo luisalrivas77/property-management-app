@@ -52,6 +52,7 @@ TAX_TREATMENT = MappingProxyType(
         # Phase 6 D159: the household's codes. PRIVATE is ignored by every rental tax rule.
         C.HH_SALARY: T.PRIVATE,
         C.HH_CHILD_BENEFIT: T.PRIVATE,
+        C.HH_WAGE_REPLACEMENT: T.PRIVATE,  # D159 amended (8), 0037
         C.HH_TAX_REFUND: T.PRIVATE,
         C.HH_CAPITAL_INCOME: T.PRIVATE,  # phase 8's KAP rules read the category
         C.HH_OTHER_INCOME: T.PRIVATE,
@@ -114,6 +115,7 @@ TAX_TREATMENT = MappingProxyType(
         C.HH_PARKING: T.PRIVATE,
         C.HH_CAR_SERVICE: T.PRIVATE,
         C.HH_CAR_TAX: T.PRIVATE,
+        C.HH_CAR_PURCHASE: T.PRIVATE,  # D159 amended (7), 0037
         C.HH_SUPERMARKET: T.PRIVATE,
         C.HH_DRUGSTORE: T.PRIVATE,
         C.HH_BAKERY: T.PRIVATE,
@@ -198,6 +200,7 @@ CATEGORY_LABEL = MappingProxyType(
         # Phase 6 (D159, D162, D165)
         C.HH_SALARY: "Gehalt",
         C.HH_CHILD_BENEFIT: "Kindergeld",
+        C.HH_WAGE_REPLACEMENT: "Elterngeld & Lohnersatz",  # D159 amended (8), 0037
         C.HH_TAX_REFUND: "Steuererstattung",
         C.HH_CAPITAL_INCOME: "Zinsen und Dividenden",
         C.HH_OTHER_INCOME: "Sonstige Einnahme (privat)",
@@ -256,6 +259,7 @@ CATEGORY_LABEL = MappingProxyType(
         C.HH_PARKING: "Parken & Maut",
         C.HH_CAR_SERVICE: "Auto: Werkstatt & Wartung",
         C.HH_CAR_TAX: "Auto: Kfz-Steuer & Zulassung",
+        C.HH_CAR_PURCHASE: "Auto: Kauf & Finanzierung",  # D159 amended (7), 0037
         C.HH_SUPERMARKET: "Supermarkt",
         C.HH_DRUGSTORE: "Drogerie & Kosmetik",
         C.HH_BAKERY: "Bäckerei, Kiosk & Markt",

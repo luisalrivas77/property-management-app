@@ -59,6 +59,7 @@ thresholds:
   - {category: hh_tax_refund, threshold: null}
   - {category: hh_capital_income, threshold: null}
   - {category: hh_other_income, threshold: null}
+  - {category: hh_wage_replacement, threshold: null}  # D159 amended (8) 15 Nov 2026 (0037), a return input
   - {category: hh_housing, threshold: "0.900"}
   - {category: hh_groceries, threshold: "0.900"}
   - {category: hh_family_child, threshold: "0.900"}
@@ -114,6 +115,7 @@ thresholds:
   - {category: hh_parking, threshold: "0.900"}
   - {category: hh_car_service, threshold: "0.900"}
   - {category: hh_car_tax, threshold: "0.900"}
+  - {category: hh_car_purchase, threshold: "0.900"}  # D159 amended (7) 15 Nov 2026 (0037), as hh_car_tax
   - {category: hh_supermarket, threshold: "0.900"}
   - {category: hh_drugstore, threshold: "0.900"}
   - {category: hh_bakery, threshold: "0.900"}
