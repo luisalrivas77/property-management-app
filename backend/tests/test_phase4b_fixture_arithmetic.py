@@ -227,6 +227,22 @@ def test_benefits_without_pay():
     assert m["filing_required"]["required"] is True and benefits > FILING_THRESHOLD
 
 
+def test_no_pay_marker_changes_no_figure():
+    """„Kein Arbeitslohn in <Jahr>“ (D195) only says why an owner has no pay: the twin of
+    benefits_without_pay, with the marker over an expected pay carried from 2025, states the
+    very same figures."""
+    twin = expect("return_estimate", "benefits_without_pay_declared")
+    assert twin == expect("return_estimate", "benefits_without_pay")
+    marked = expect("anlage_n", "no_pay_declared_over_expected_pay")
+    assert (marked["status"], marked["gross_source"]) == ("none", "declared_none")
+    assert all(D(marked[k]) == 0 for k in ("gross", "wk_applied", "result"))
+    overruled = expect("anlage_n", "certificate_overrules_no_pay")
+    plain = expect("anlage_n", "pauschbetrag_wins")
+    assert {k: overruled[k] for k in plain if k != "warnings"} == {
+        k: v for k, v in plain.items() if k != "warnings"
+    }
+
+
 def test_children_cases():
     high = expect("children", "allowances_win_200k")["assessed"]
     assert (income_tax(D("200000"), TARIFF), income_tax(D("190244"), TARIFF)) == (

@@ -488,6 +488,11 @@ class ReplacementFact(Schema):
         return self
 
 
+class NoPayFact(Schema):
+    """„Kein Arbeitslohn in <Jahr>“ (D195): the owner had no pay that year (e.g. a whole year of
+    parental leave). The row is the statement; its value carries nothing."""
+
+
 class VorsorgeOverride(Schema):
     pension: NonNegativeMoney
     health_care_basis: NonNegativeMoney
@@ -532,6 +537,7 @@ ReturnInputValue = (
     | ChildcareFact
     | HouseholdServicesFact
     | SpecialExpenseFact
+    | NoPayFact
 )
 
 R = ReturnInputKind
@@ -553,6 +559,7 @@ RETURN_INPUT_VALUES: dict[ReturnInputKind, type[Schema]] = {
     R.CHILDCARE_COST: ChildcareFact,
     R.HOUSEHOLD_SERVICES: HouseholdServicesFact,
     R.SPECIAL_EXPENSE: SpecialExpenseFact,
+    R.NO_PAY: NoPayFact,
 }
 # A document required: the certificate and the payslip are their documents (D96, D105).
 DOCUMENT_REQUIRED = frozenset({R.WAGE_CERTIFICATE, R.PAYSLIP})

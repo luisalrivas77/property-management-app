@@ -414,3 +414,64 @@ cases:
     - {key: wk.allowance, amount: '1230.00'}
     - {key: wk.applied, amount: '2919.90'}
     warnings: *a_warnings
+# „Kein Arbeitslohn in <Jahr>“ (D195, 15 Nov 2026): a no_pay row, one per owner and year, never
+# carried, with an empty value. It beats any expected gross pay (of the year or carried from an
+# earlier one); a confirmed certificate or payslip of the year beats it.
+- id: no_pay_declared_over_expected_pay
+  description: 'B marked „Kein Arbeitslohn in 2026“ (a year of parental leave) while her expected gross pay of 2025 carries forward: gross 0, status none, source declared_none, no anlage_n.certificate_missing'
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - {id: 0000004b-0000-4000-8000-000000000195, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: no_pay, tax_year: 2026, value: {}}
+    expected_gross_pay: {id: 0000004b-0000-4000-8000-000000000196,
+                         owner_id: 0000000a-0000-4000-8000-000000000002,
+                         kind: expected_gross_pay, tax_year: 2025, value: {amount: '32000.00'}}
+  expect:
+    status: none
+    gross_source: declared_none
+    gross: '0.00'
+    wk_itemised: '0.00'
+    wk_union: '0.00'
+    wk_allowance: '0.00'
+    wk_applied: '0.00'
+    result: '0.00'
+    replacement_benefits: '0.00'
+    components: {}
+    lines:
+    - {key: pay.gross, amount: '0.00'}
+    - {key: wk.itemised, amount: '0.00'}
+    - {key: wk.allowance, amount: '0.00'}
+    - {key: wk.applied, amount: '0.00'}
+    warnings: [*provisional]
+- id: certificate_overrules_no_pay
+  description: 'B''s certificate confirmed for a year she marked „Kein Arbeitslohn“: it counts exactly as in pauschbetrag_wins, and anlage_n.no_pay_overruled asks to lift the marker'
+  tax_year: 2026
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - *cert_b
+    - {id: 0000004b-0000-4000-8000-0000000000b6, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: other_expense, tax_year: 2026, value: {expense_class: account_fee, label: Kontoführung}}
+    - {id: 0000004b-0000-4000-8000-000000000197, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: no_pay, tax_year: 2026, value: {}}
+  expect:
+    status: certified
+    gross_source: certificate
+    gross: '32000.00'
+    wk_itemised: '16.00'
+    wk_applied: '1230.00'
+    result: '30770.00'
+    components: {other: '16.00'}
+    warnings: [*provisional, {code: anlage_n.no_pay_overruled}]
+- id: no_pay_marker_is_one_year_only
+  description: 'B''s „Kein Arbeitslohn“ of 2026 says nothing about 2027: with no pay source in 2027 the draft is refused as without any marker'
+  tax_year: 2027
+  facts:
+    owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - {id: 0000004b-0000-4000-8000-000000000198, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: no_pay, tax_year: 2026, value: {}}
+  expect:
+    error: {code: anlage_n.no_pay}
