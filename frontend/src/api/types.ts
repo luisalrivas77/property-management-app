@@ -2091,6 +2091,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/returns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Returned Payment
+         * @description The link joining the debit and the credit that returned it (matched_by user).
+         */
+        post: operations["returned_payment_api_returns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/household/cashflow": {
         parameters: {
             query?: never;
@@ -6543,6 +6563,7 @@ export interface components {
             /** Movement Id */
             movement_id?: string | null;
             transfer?: components["schemas"]["OpenTransfer"] | null;
+            returned?: components["schemas"]["OpenReturn"] | null;
             /** Asset Id */
             asset_id?: string | null;
             /** Private Costs */
@@ -6563,7 +6584,7 @@ export interface components {
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).
@@ -7544,6 +7565,18 @@ export interface components {
             owner_id?: string | null;
             /** Property Id */
             property_id?: string | null;
+        };
+        /**
+         * OpenReturn
+         * @description D162 amended (7), 15 Nov 2026: a credit on a private account that returns an earlier
+         *     debit of the same account (rules.household.returns), with the debits it may return: one
+         *     when the rule found one, several when it cannot tell which (never guessed). Booked by
+         *     POST /returns (ReturnedPaymentCreate).
+         */
+        OpenReturn: {
+            leg: components["schemas"]["TransferLegView"];
+            /** Candidates */
+            candidates: components["schemas"]["TransferLegView"][];
         };
         /**
          * OpenTransfer
@@ -9353,6 +9386,44 @@ export interface components {
          * @enum {string}
          */
         ReturnInputKind: "wage_certificate" | "payslip" | "commute" | "home_office" | "work_room" | "work_equipment" | "telecom" | "professional_association" | "training" | "other_expense" | "other_insurance" | "replacement_income" | "vorsorge_override" | "child" | "childcare_cost" | "household_services" | "special_expense";
+        /**
+         * ReturnedPartner
+         * @description Phase 6 D162 amended (7): the other line of a returned payment booked as such (the
+         *     debit that left, or the credit that brought it back, on the same account).
+         */
+        ReturnedPartner: {
+            /**
+             * Transaction Id
+             * Format: uuid
+             */
+            transaction_id: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Amount */
+            amount: string;
+        };
+        /**
+         * ReturnedPaymentCreate
+         * @description POST /returns' body (D162 amended (7)): the debit that left and the credit that brought
+         *     it back, both bank lines of one private account. Both are booked as transfer parts by the
+         *     person's answer and linked to each other (a transfer_link on one account), so together they
+         *     count as nothing.
+         */
+        ReturnedPaymentCreate: {
+            /**
+             * Out Transaction Id
+             * Format: uuid
+             */
+            out_transaction_id: string;
+            /**
+             * In Transaction Id
+             * Format: uuid
+             */
+            in_transaction_id: string;
+        };
         /** RoomRent */
         RoomRent: {
             /**
@@ -10681,6 +10752,7 @@ export interface components {
             allocation_status: components["schemas"]["TransactionAllocationStatus"];
             /** Allocation Categories */
             allocation_categories: components["schemas"]["AllocationCategory"][];
+            returned_with?: components["schemas"]["ReturnedPartner"] | null;
         };
         /**
          * TransactionAllocationStatus
@@ -15813,6 +15885,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TransferUnlinkBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferLink"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    returned_payment_api_returns_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnedPaymentCreate"];
             };
         };
         responses: {

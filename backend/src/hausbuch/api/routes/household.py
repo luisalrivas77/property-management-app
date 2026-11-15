@@ -9,6 +9,10 @@
   transfer by the person's answer (D176 (4)); 422 transfer.legs_invalid for one not tied.
 - POST /transfers/{id}/unlink: replace a wrong link by the one the user picks. 404, 409 when
   it was replaced already or a leg of the replacement is linked.
+- POST /returns: „Als Rücküberweisung verbuchen“ (D162 amended (7)): a credit on a private
+  account that returns an earlier debit of it, both booked as transfer parts by the person's
+  answer and linked to each other. 404 for an unknown line, 409 when either is linked to
+  another, 422 transfer.return_invalid for two lines that are no returned payment.
 - GET /household/cashflow?month=: the Haushalt screen, confirmed allocations only.
 - POST /transactions/{id}/private-costs: a property bill paid from a private account (D161
   path 2): the card's private_cost rows recorded; the bill's current rows unchanged when it
@@ -26,13 +30,14 @@ from fastapi import Query
 from hausbuch.schemas.household import (
     HouseholdCashflow,
     OpenTransfer,
+    ReturnedPaymentCreate,
     TransferLink,
     TransferLinkRequest,
     TransferLinkView,
     TransferUnlinkBody,
 )
 from hausbuch.schemas.tax import TaxInput
-from hausbuch.services import household, property_costs, transfers
+from hausbuch.services import household, property_costs, returns, transfers
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 
 from ..deps import Cmd, SettingsDep, domain_router
@@ -62,6 +67,12 @@ def transfer_link(body: TransferLinkRequest, cmd: Cmd, settings: SettingsDep) ->
 def transfer_unlink(link_id: UUID, body: TransferUnlinkBody, cmd: Cmd) -> TransferLink:
     """The replacing link (the old row names it in superseded_by)."""
     return cmd.run(transfers.unlink, link_id, body.replacement)
+
+
+@router.post("/returns", status_code=201)
+def returned_payment(body: ReturnedPaymentCreate, cmd: Cmd, settings: SettingsDep) -> TransferLink:
+    """The link joining the debit and the credit that returned it (matched_by user)."""
+    return cmd.run(returns.book_return, body, iban_key=settings.iban_hmac_key)
 
 
 @router.get("/household/cashflow")

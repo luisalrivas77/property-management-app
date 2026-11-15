@@ -180,6 +180,8 @@ RULE_REBOOK_BLOCKED = "rule.rebook_blocked"
 TRANSFER_AMBIGUOUS = "transfer.ambiguous"  # several candidate legs (D162)
 TRANSFER_UNMATCHED_LEG = "transfer.unmatched_leg"  # no counterpart after the window (D162)
 TRANSFER_LEGS_INVALID = "transfer.legs_invalid"  # not one out and one in leg of two accounts
+# D162 amended (7): two lines that are no returned payment of one private account
+TRANSFER_RETURN_INVALID = "transfer.return_invalid"
 STATEMENT_ACCOUNT_MISMATCH = "statement.account_mismatch"  # the file names another IBAN (D164)
 STATEMENT_IBAN_UNREAD = "statement.iban_unread"  # a PDF whose extraction has no IBAN (D164)
 DEPOT_HOLDINGS_MISMATCH = "depot.holdings_mismatch"  # report units != Σ movements (D165)
