@@ -909,6 +909,7 @@ export const RETURN_INPUT_KIND: Record<ReturnInputKind, string> = {
   childcare_cost: "Kinderbetreuungskosten",
   household_services: "Haushaltsnahe Dienstleistungen (§ 35a)",
   special_expense: "Spende",
+  no_pay: "Kein Arbeitslohn",
 };
 
 /** A pre-filled pay document's field (the proposal's field name, backend rules/prefill.py
@@ -970,6 +971,7 @@ export const GROSS_SOURCE: Record<GrossSource, string> = {
   certificate: "laut Lohnsteuerbescheinigung",
   payslip: "Hochrechnung aus Gehaltsabrechnung",
   expected: "Schätzung",
+  declared_none: "kein Arbeitslohn angegeben",
 };
 
 /** A §35a cost's class (HouseholdServicesFact.service_class, D112). */
@@ -1153,6 +1155,9 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     `Das Arbeitszimmer zählt für ${p.months ?? "einige"} Monate: die Tagespauschale nur für Tage der übrigen Monate eintragen.`,
   "anlage_n.first_workplace_check": () =>
     "Bitte prüfen, ob dies die erste Tätigkeitsstätte ist (Festlegung durch den Arbeitgeber).",
+  // Phase 4b D195: a pay document of the year beats „Kein Arbeitslohn“.
+  "anlage_n.no_pay_overruled": () =>
+    "Für dieses Jahr ist „Kein Arbeitslohn“ angegeben, aber eine Lohnsteuerbescheinigung oder Gehaltsabrechnung liegt vor: sie zählt. Die Angabe bitte aufheben.",
   "return.progression_provisional": () =>
     "Lohnersatzleistungen sind noch nicht bescheinigt: der Steuersatz ist vorläufig.",
   "return.benefit_possible_double": () =>

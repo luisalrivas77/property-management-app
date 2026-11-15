@@ -219,6 +219,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "return_input.carried_from_invalid": "Diese Angabe lässt sich nicht aus dem Vorjahr übernehmen.",
   "anlage_n.no_pay":
     "Für dieses Jahr ist noch kein Arbeitslohn erfasst (Lohnsteuerbescheinigung, Gehaltsabrechnung oder erwartetes Bruttogehalt).",
+  // Phase 4b D195: „Kein Arbeitslohn in <Jahr>“, so there is no Anlage N sheet to print.
+  "anlage_n.no_pay_declared":
+    "Für dieses Jahr ist „Kein Arbeitslohn“ angegeben: es gibt keine Anlage N. Wer doch Arbeitslohn hatte, hebt die Angabe auf der Eigentümer-Seite auf.",
   "anlage_n.useful_life_missing": "Für ein sonstiges Arbeitsmittel bitte die Nutzungsdauer in Monaten angeben.",
   "anlage_n.work_room_excludes_day_rate":
     "Ein ganzjähriges Arbeitszimmer und die Homeoffice-Tagespauschale schließen sich aus.",

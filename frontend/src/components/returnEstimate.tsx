@@ -269,6 +269,9 @@ function Breakdown({ estimate, owners, properties }: { estimate: ReturnEstimate;
   const withheld = estimate.withheld;
   const lines = estimate.line_sources;
   const propertyLabel = (id: string) => properties.find((p) => p.id === id)?.label ?? "Immobilie";
+  // An owner without pay: none recorded, or „Kein Arbeitslohn“ said for the year (D195).
+  const noPayText = (n: { status: string; no_pay_declared?: boolean }) =>
+    n.status !== "none" ? "" : n.no_pay_declared ? " (kein Arbeitslohn angegeben)" : " (kein Arbeitslohn erfasst)";
   return (
     <div className="stack tax-estimate-breakdown">
       <div>
@@ -277,7 +280,7 @@ function Breakdown({ estimate, owners, properties }: { estimate: ReturnEstimate;
           {(estimate.income_n ?? []).map((n) => (
             <Row
               key={n.owner_id}
-              label={`Anlage N ${ownerName(owners, n.owner_id)}${n.status === "none" ? " (kein Arbeitslohn erfasst)" : ""}`}
+              label={`Anlage N ${ownerName(owners, n.owner_id)}${noPayText(n)}`}
               amount={n.result}
               refs={n.sources}
             />

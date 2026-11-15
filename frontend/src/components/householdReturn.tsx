@@ -91,6 +91,9 @@ export function GrossSourceChip({ estimate, year }: { estimate: OwnerZve | undef
   if (!estimate) return null;
   const source = estimate.gross_source;
   if (source === "expected") return <span className="badge">{GROSS_SOURCE.expected}</span>;
+  // Phase 4b D195: the owner said „Kein Arbeitslohn“ for the year, so the estimate counts 0;
+  // the cell's NoPayMarker (components/noPay.tsx) says so, with „Aufheben“.
+  if (source === "declared_none") return null;
   return (
     <span className="muted">
       Verwendet: <strong>{formatMoney(estimate.gross)}</strong>{" "}

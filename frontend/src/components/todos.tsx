@@ -36,6 +36,7 @@ import { ReadUpload } from "./documents";
 import { formatDate, formatMoney, formatPercent } from "./format";
 import { toDecimalString } from "./input";
 import { ACQUISITION_COST_KIND, ALLOCATION_CATEGORY, PRICE_SPLIT_SOURCE, proofBill } from "./labels";
+import { WithdrawNoPayButton } from "./noPay";
 import { ActionDialog } from "./ui";
 import { useLoad } from "./useLoad";
 import { questionnaireHref, taxFormHref, withBenefitPrefill } from "./taxYear";
@@ -73,7 +74,10 @@ export type GuideAction =
    * payments as Kaltmiete (D140). */
   | { kind: "pre_handover"; facts: AllocationFact[] }
   /** income.living_area_missing: type the flat's Wohnfläche (PATCH /properties/{id}). */
-  | { kind: "living_area" };
+  | { kind: "living_area" }
+  /** anlage_n.no_pay_overruled (phase 4b D195): withdraw the owner's „Kein Arbeitslohn“ row
+   * the warning cites. */
+  | { kind: "withdraw_no_pay"; returnInputId: string | null };
 
 /** Was tun, in plain words: what to upload, open or confirm, not the law. The warning is
  * passed too, for a text that depends on what it cites (a payment or a tax input). */
@@ -461,6 +465,16 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     text: () => "Die fehlende Gehaltsabrechnung hochladen; die App liest sie aus.",
     action: () => ({ kind: "upload", label: "Gehaltsabrechnung hochladen" }),
   },
+  "anlage_n.no_pay_overruled": {
+    todo: true,
+    title: () => "„Kein Arbeitslohn“ aufheben",
+    text: () =>
+      "Für dieses Jahr liegt eine Lohnsteuerbescheinigung oder Gehaltsabrechnung vor, und sie zählt. Die Angabe „Kein Arbeitslohn“ aufheben, damit sie nicht mehr widerspricht.",
+    action: (warning) => ({
+      kind: "withdraw_no_pay",
+      returnInputId: (warning.refs ?? []).find((ref) => ref.kind === "return_input")?.id ?? null,
+    }),
+  },
   "anlage_n.payslip_no_ytd": {
     todo: false,
     text: () => "Nichts zu tun; genauer wird es mit der nächsten Abrechnung oder der Lohnsteuerbescheinigung.",
@@ -632,6 +646,17 @@ export function WarningActionView({
       ) : null;
     case "living_area":
       return ctx.propertyId ? <LivingAreaAction propertyId={ctx.propertyId} onChanged={onChanged} /> : null;
+    case "withdraw_no_pay":
+      return ctx.ownerId ? (
+        <WithdrawNoPayButton
+          ownerId={ctx.ownerId}
+          year={ctx.year}
+          returnInputId={action.returnInputId}
+          label="Angabe „Kein Arbeitslohn“ aufheben"
+          className=""
+          onDone={onChanged}
+        />
+      ) : null;
   }
 }
 

@@ -21,6 +21,7 @@ import type { components } from "@/api/types";
 import { ReadUpload } from "./documents";
 import { flatRateTodos } from "./flatRate";
 import { todayIso } from "./format";
+import { NO_PAY_HINT, NoPayButton } from "./noPay";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
 import { questionnaireHref, taxFormHref } from "./taxYear";
 import {
@@ -152,18 +153,21 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
   for (const { owner, draft, noPay } of data.owners) {
     // Before, the Anlage N draft's anlage_n.no_pay was swallowed here, so an owner without any
     // pay for the year had no to-do at all (Luis, 12 Nov 2026). A confirmed payslip or
-    // certificate, or an expected gross pay typed on Eigentümer, clears it.
+    // certificate, or an expected gross pay typed on Eigentümer, clears it, and so does
+    // „Kein Arbeitslohn in <Jahr>“ for a year without salary (phase 4b D195, Luis 15 Nov 2026).
     if (noPay) {
       entries.push({
         key: `${owner.id}-no-pay`,
         title: `Arbeitslohn ${data.year} fehlt`,
         text:
           "Die letzte Gehaltsabrechnung hochladen: Sie zeigt die Summen des Jahres bis dahin, die App liest sie aus und rechnet damit. " +
-          "Wer keine hochladen möchte, trägt auf der Eigentümer-Seite das erwartete Bruttogehalt ein; beides erledigt diesen Punkt.",
+          "Wer keine hochladen möchte, trägt auf der Eigentümer-Seite das erwartete Bruttogehalt ein; beides erledigt diesen Punkt. " +
+          NO_PAY_HINT,
         action: (
           <>
             <ReadUpload label="Gehaltsabrechnung hochladen" onUploaded={onChanged} />
             <Link href="/owners">Bruttogehalt eintragen</Link>
+            <NoPayButton ownerId={owner.id} year={data.year} onDone={onChanged} />
           </>
         ),
         context: owner.full_name,
