@@ -25,6 +25,7 @@ from typing import Literal
 from uuid import UUID
 
 from hausbuch.rules.document_checklist import build_checklist
+from hausbuch.rules.matching import transfer_window_end
 from hausbuch.rules.tax import registry
 from hausbuch.rules.tax._common import add_months, add_years
 from hausbuch.rules.tax.return_estimate import filing_deadline
@@ -414,13 +415,28 @@ def _statement_due(a: ReminderAccount) -> Reminder | None:
     """D122 amended: an account fed by statements with a reconciled import, unless its
     connection fetches daily (bank.sync_stale watches that one). Covered through the later of
     its reconciled imports' last booking day and its history (a successful FinTS run's
-    requested_to); the next statement is due 10 days after the end of the following month."""
+    requested_to); the next statement is due 10 days after the end of the following month.
+    D122 amended (6): a credit card whose latest statement closed at 0 is due only once a later
+    debit pays it, from that debit's month; covered_until stays the statements' end."""
     if a.kind not in STATEMENT_ACCOUNT_KINDS or a.reconciled_until is None:
         return None
     if a.connection and a.auto_sync:
         return None
     covered = max(a.reconciled_until, a.history_until or a.reconciled_until)
-    following_end = add_months(covered.replace(day=1), 2) - timedelta(days=1)
+    counted_from = covered
+    if a.kind is AccountKind.CREDIT_CARD and a.closed_at_zero:
+        # D122 amended (6): a card whose last statement closed at exactly 0 owes nothing, and
+        # an issuer may send no statement for an idle month. It is due again only once a debit
+        # on another own account pays it, counted from that debit's day. A debit inside the
+        # D162 window after the covered day may settle the balance the last statement already
+        # shows as paid (its credit up to three banking days before the debit), so it proves
+        # no new use.
+        window_end = transfer_window_end(covered)
+        later = [day for day in a.paid_on if day > window_end]
+        if not later:
+            return None
+        counted_from = min(later)
+    following_end = add_months(counted_from.replace(day=1), 2) - timedelta(days=1)
     return _reminder(
         K.STATEMENT_DUE,
         ReminderScope.ACCOUNT,
