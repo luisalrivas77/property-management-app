@@ -6,7 +6,12 @@
   each with the price `rules.valuation.price_on` picks (date first, then source), its source
   and day, the value, the stale marker after seven days, and „Kurs aus dem letzten Bericht“
   for a fund whose issuer has no adapter and is priced by a depot report (D174 (4)). EUR is a
-  cash asset at 1.0; USD, GBP and CHF are valued by their ECB rows.
+  cash asset at 1.0; USD, GBP and CHF are valued by their ECB rows. On an exchange account
+  a trade's EUR leg is never its own movement but the eur_amount of the coin's acquisition or
+  disposal (D178 (3)), so the account's EUR also takes those (`rules.exchange.positions`, as
+  the exchange page reconciles; 15 Nov 2026, Luis: „It says that Binance has 4k in euros
+  which is not the case“: the sum of movements alone showed every EUR deposit and none of
+  the EUR spent). A depot's cash is its bank lines, not movements, so a depot takes none.
 - `list_assets`, `update_asset` (PATCH: the name, and a coin's CoinGecko id and Kraken pair:
   „Kursquelle wählen“), `record_price` (POST: a typed `user` price, „Kurs eintragen“).
 - `price_inbox_items(conn, now)`: the Zu prüfen cards, computed on read like the depot's:
@@ -33,6 +38,7 @@ accounts once their imports (5a) state their reconciliation.
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -46,6 +52,7 @@ from hausbuch.db.tables import holding_statement as holding_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.rules import depot as depot_rules
 from hausbuch.rules import errors as E
+from hausbuch.rules import exchange as exchange_rules
 from hausbuch.rules import valuation
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.api import InboxItem, InboxItemKind
@@ -195,7 +202,32 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
         )
         .group_by(m.account_id, m.asset_id)
     ).all()
-    held = [u for u in units if u.units != 0]
+    sums: dict[tuple[UUID, UUID], Decimal] = {(u.account_id, u.asset_id): u.units for u in units}
+    exchanges = [r.id for r in accounts if r.kind == AccountKind.EXCHANGE.value]
+    euro = conn.execute(
+        select(a.id).where(a.kind == AssetKind.CASH.value, a.symbol == exchange_rules.EUR)
+    ).scalar()
+    if exchanges and euro is not None:
+        legs = conn.execute(
+            select(m.account_id, func.sum(m.eur_amount).label("eur"))
+            .where(
+                m.account_id.in_(exchanges),
+                m.kind.in_([k.value for k in exchange_rules.TRADE_KINDS]),
+                m.eur_amount.is_not(None),
+                m.status == MovementStatus.CONFIRMED.value,
+                m.superseded_by.is_(None),
+                m.occurred_at < end,
+            )
+            .group_by(m.account_id)
+        ).all()
+        for leg in legs:
+            key = (leg.account_id, euro)
+            sums[key] = sums.get(key, Decimal(0)) + leg.eur
+    held = [
+        SimpleNamespace(account_id=account_id, asset_id=asset_id, units=n)
+        for (account_id, asset_id), n in sums.items()
+        if n != 0
+    ]
     asset_ids = {u.asset_id for u in held}
     assets = {
         r.id: r
