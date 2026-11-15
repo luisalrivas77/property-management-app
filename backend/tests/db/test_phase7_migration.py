@@ -40,7 +40,7 @@ from psycopg.types.json import Jsonb
 from sqlalchemy.exc import DBAPIError
 
 HEAD = "0041_wallets"
-PREVIOUS = "0038_no_pay_marker"
+PREVIOUS = "0040_valuation_snapshot_scope"
 
 PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")
 EXPECTED_GRANTS = {

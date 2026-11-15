@@ -49,7 +49,7 @@ Create Date: 2026-11-15
 from alembic import op
 
 revision = "0041_wallets"
-down_revision = "0038_no_pay_marker"
+down_revision = "0040_valuation_snapshot_scope"
 branch_labels = None
 depends_on = None
 
