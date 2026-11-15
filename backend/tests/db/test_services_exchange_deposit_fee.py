@@ -36,14 +36,16 @@ from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.household import (
+    DepositIbanOutcome,
     MovementKind,
     OpenTransferCode,
     TransferLinkKind,
     TransferLinkRequest,
     TransferMatchedBy,
 )
-from hausbuch.services import allocations, household_resort, matching, transfers
+from hausbuch.services import accounts, allocations, household_resort, matching, transfers
 from hausbuch.services.accounts import create_account
+from hausbuch.services.errors import RuleViolationError
 from hausbuch.services.exchange import imports
 
 pytestmark = pytest.mark.db
@@ -205,7 +207,12 @@ def test_an_untied_deposit_credited_short_is_proposed_with_its_fee(world, bank, 
     assert (card.code, card.leg.id) == (OpenTransferCode.PROPOSED, deposit)
     [candidate] = card.candidates
     assert (candidate.id, candidate.deposit_fee) == (out, Decimal("1.00"))
-    assert candidate.deposit_fee_text == "1,00 € behält die Börse als Einzahlungsgebühr."
+    # Review, 15 Nov 2026: the card says what the link books and that the IBAN is learned.
+    assert candidate.deposit_fee_text == (
+        "1,00 € behält die Börse als Einzahlungsgebühr. „Als Einzahlung verknüpfen“ bucht diese"
+        " Zahlung als Einzahlung auf Binance und die 1,00 € als Bankgebühren. Spätere Zahlungen"
+        " an dieselbe IBAN gelten dann als Einzahlungen auf Binance."
+    )
     [item] = [
         i
         for i in world.query(transfers.transfer_inbox_items, TODAY)
@@ -289,15 +296,89 @@ def test_the_first_link_by_hand_splits_a_proposed_line_and_learns_the_iban(world
     _assert_learned(world, *_first_link(world, bank, blob_store))
 
 
-def test_the_first_link_by_hand_replaces_a_persons_household_answer(world, bank, blob_store):
-    """The person had answered the deposit as online shopping and learned a rule on the IBAN:
-    linking splits the line as the person's new answer and switches the rule off."""
-    out, exchange, deposit, link = _first_link(
-        world, bank, blob_store, confirm="hh_online_shopping"
+def test_a_persons_household_answer_is_never_replaced_by_the_first_link(world, bank, blob_store):
+    """Review, 15 Nov 2026: the person had answered the deposit as online shopping and learned
+    a rule on the IBAN. Untied, the pair is no candidate on the deposit's card and a link by
+    hand is refused, nothing written; once the person answers the line as a transfer, the card
+    offers it and the link splits it, learns the IBAN and switches the rule off."""
+    out = bank.line(date(2026, 9, 7), "-901.00", name="Binance", iban=DEPOSIT_IBAN)
+    _answer_line(world, out, "-901.00", "hh_online_shopping", learn=True)
+    exchange = _exchange(world)
+    _export(world, blob_store, exchange.id, "2026-09-08 08:00:00,Deposit,900")
+    deposit = _movements(world, exchange.id)[Decimal("900.00")]
+    [card] = _open(world)
+    assert (card.code, card.leg.id, card.candidates) == (
+        OpenTransferCode.UNMATCHED_LEG,
+        deposit,
+        [],
     )
-    _assert_learned(world, out, exchange, deposit, link)
+    with pytest.raises(RuleViolationError):
+        _link(world, out, deposit)
+    assert _booked(world, out) == [("hh_online_shopping", Decimal("-901.00"), "confirmed", "user")]
+    assert _links(world) == [] and _account(world, exchange.id).iban_hmac is None
+    _answer_line(world, out, "-901.00", "internal_transfer_out")
+    cards = {c.leg.id: c for c in _open(world)}
+    assert [c.id for c in cards[deposit].candidates] == [out]
+    world.query(lambda c: c.execute(text("DELETE FROM procrastinate_jobs")))
+    _assert_learned(world, out, exchange, deposit, _link(world, out, deposit))
     rules = world.query(lambda c: c.execute(select(rule_table)).all())
     assert rules and not any(r.enabled for r in rules)
+
+
+def _linked_payload(world: World):
+    [event] = world.query(
+        lambda c: c.execute(
+            select(event_table).where(event_table.c.type == "transfer.linked")
+        ).all()
+    )
+    return event.payload
+
+
+def test_the_link_names_the_learned_iban_on_its_event(world, bank, blob_store):
+    _first_link(world, bank, blob_store)
+    assert _linked_payload(world)["deposit_iban"] == "learned"
+
+
+def test_a_shared_iban_is_linked_and_split_but_never_learned(world, bank, blob_store):
+    """Review, 15 Nov 2026: the deposit IBAN also carries another payee's lines (a payment
+    provider's IBAN): the link and the split happen, the IBAN is not taken, the card and the
+    transfer.linked event say so, and no learned rule is switched off."""
+    bank.line(date(2026, 8, 3), "-19.99", name="Musterladen Versand GmbH", iban=DEPOSIT_IBAN)
+    out = bank.line(date(2026, 9, 7), "-901.00", name="Binance", iban=DEPOSIT_IBAN)
+    _propose(world, out, "-901.00")
+    exchange = _exchange(world)
+    _export(world, blob_store, exchange.id, "2026-09-08 08:00:00,Deposit,900")
+    deposit = _movements(world, exchange.id)[Decimal("900.00")]
+    [candidate] = [c for card in _open(world) if card.leg.id == deposit for c in card.candidates]
+    assert candidate.id == out
+    assert candidate.deposit_fee_text is not None
+    assert candidate.deposit_fee_text.endswith(
+        "Die IBAN wird nicht übernommen, weil an sie auch andere Empfänger gehen."
+    )
+    link = _link(world, out, deposit)
+    assert link.matched_by is TransferMatchedBy.USER
+    assert _booked(world, out) == _split("-901.00", "1.00", "user")
+    account = _account(world, exchange.id)
+    assert account.iban_hmac is None and account.iban_masked is None
+    assert _linked_payload(world)["deposit_iban"] == "shared_iban"
+    updated = world.query(
+        lambda c: c.execute(
+            select(event_table).where(
+                event_table.c.type == "account.updated", event_table.c.entity_id == exchange.id
+            )
+        ).all()
+    )
+    assert updated == []
+
+
+def test_an_iban_another_own_account_holds_is_never_learned(world, bank, blob_store):
+    out = bank.line(date(2026, 9, 7), "-901.00", name="Binance", iban=DEPOSIT_IBAN)
+    exchange = _exchange(world)
+    world.owner_account(DEPOSIT_IBAN)  # an own account holds the IBAN since
+    outcome = world.query(accounts.deposit_iban_outcome, exchange.id, out)
+    assert outcome is DepositIbanOutcome.OWN_ACCOUNT
+    assert world.cmd(accounts.learn_exchange_deposit_iban, exchange.id, out) is outcome
+    assert _account(world, exchange.id).iban_hmac is None
 
 
 def test_a_second_click_returns_the_link_and_changes_nothing(world, bank, blob_store):

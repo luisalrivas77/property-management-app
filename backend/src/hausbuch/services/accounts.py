@@ -28,7 +28,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError, create_model
-from sqlalchemy import Connection, Row, and_, insert, select, update
+from sqlalchemy import Connection, Row, and_, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import account as account_table
@@ -82,7 +82,12 @@ from hausbuch.schemas.events import (
     EventType,
     Updated,
 )
-from hausbuch.schemas.household import AccountOwnership, OwnershipShare, SetOwnershipBody
+from hausbuch.schemas.household import (
+    AccountOwnership,
+    DepositIbanOutcome,
+    OwnershipShare,
+    SetOwnershipBody,
+)
 from hausbuch.storage import BlobStore
 
 from .bank import BANK_EXPORT_FORMATS, depot_pdf, parse_card_statement
@@ -832,9 +837,55 @@ def confirm_depot_iban(
 # --- The exchange's deposit IBAN (D162 amended 15 Nov 2026) ---------------------------------
 
 
+def deposit_iban_outcome(
+    conn: Connection, account_id: UUID, transaction_id: UUID
+) -> DepositIbanOutcome | None:
+    """What the first link by hand of the bank line `transaction_id` and a deposit of the
+    exchange `account_id` credited short does with the line's counterparty IBAN (D162 amended
+    15 Nov 2026, review), read only: None when nothing is to learn (an account that is no
+    exchange or holds an IBAN already, a line without a counterparty IBAN or not on a private
+    account); own_account when another own account holds the IBAN (its IBAN or a card's
+    payment IBAN); shared_iban when the private lines with it carry payees that are not one
+    payee (services.matching.is_shared_iban: a payment provider's IBAN); learned otherwise."""
+    from .matching import is_shared_iban  # matching imports services that import this module
+
+    acc = account_table.c
+    account = conn.execute(
+        select(acc.kind, acc.iban_hmac).where(acc.id == account_id)
+    ).one_or_none()
+    if account is None or account.kind != AccountKind.EXCHANGE.value:
+        return None
+    if account.iban_hmac is not None:
+        return None
+    t = transaction_table.c
+    line = conn.execute(
+        select(t.counterparty_iban_hmac, t.counterparty_iban_masked, acc.purpose)
+        .join(account_table, acc.id == t.account_id)
+        .where(t.id == transaction_id)
+    ).one_or_none()
+    if (
+        line is None
+        or line.purpose != AccountPurpose.PRIVATE.value
+        or line.counterparty_iban_hmac is None
+        or line.counterparty_iban_masked is None
+    ):
+        return None
+    named = line.counterparty_iban_hmac
+    held = conn.execute(
+        select(acc.id)
+        .where(acc.id != account_id, or_(acc.iban_hmac == named, acc.payment_iban_hmac == named))
+        .limit(1)
+    ).first()
+    if held is not None:
+        return DepositIbanOutcome.OWN_ACCOUNT
+    if is_shared_iban(conn, named):
+        return DepositIbanOutcome.SHARED_IBAN
+    return DepositIbanOutcome.LEARNED
+
+
 def learn_exchange_deposit_iban(
     ctx: CommandContext, account_id: UUID, transaction_id: UUID
-) -> bool:
+) -> DepositIbanOutcome | None:
     """services.transfers' link by hand of a bank line and an exchange's deposit row the
     exchange credited up to 2 € short without a fee row (D162 amended 15 Nov 2026, migration
     0035): the bank line's counterparty IBAN, as the bank stored it (masked + HMAC'd, never
@@ -845,25 +896,20 @@ def learn_exchange_deposit_iban(
     an investment before) is switched off and the lines waiting in Zu prüfen that name it are
     matched again.
 
-    Nothing happens (False) for an account that is no exchange or holds an IBAN already, for a
-    line without a counterparty IBAN or of the rental account, or when another account of the
-    workspace holds that IBAN (the link stands either way)."""
-    account = _lock(ctx, account_id)
-    if account.kind != AccountKind.EXCHANGE.value or account.iban_hmac is not None:
-        return False
+    Returns deposit_iban_outcome, read under the account's row lock: nothing is learned unless
+    it is learned, so nothing happens (None) for an account that is no exchange or holds an
+    IBAN already, or a line without a counterparty IBAN or of the rental account, and the IBAN
+    is refused (review, 15 Nov 2026) when another own account holds it (own_account) or when
+    it carries other payees too (shared_iban: learning a payment provider's IBAN would make
+    every later payment to it a deposit). The link stands either way."""
+    _lock(ctx, account_id)
+    outcome = deposit_iban_outcome(ctx.conn, account_id, transaction_id)
+    if outcome is not DepositIbanOutcome.LEARNED:
+        return outcome
     t = transaction_table.c
     line = ctx.conn.execute(
-        select(t.counterparty_iban_hmac, t.counterparty_iban_masked, account_table.c.purpose)
-        .join(account_table, account_table.c.id == t.account_id)
-        .where(t.id == transaction_id)
-    ).one_or_none()
-    if (
-        line is None
-        or line.purpose != AccountPurpose.PRIVATE.value
-        or line.counterparty_iban_hmac is None
-        or line.counterparty_iban_masked is None
-    ):
-        return False
+        select(t.counterparty_iban_hmac, t.counterparty_iban_masked).where(t.id == transaction_id)
+    ).one()
     try:
         with ctx.conn.begin_nested():
             ctx.conn.execute(
@@ -877,7 +923,7 @@ def learn_exchange_deposit_iban(
             )
     except IntegrityError as exc:
         if violated_constraint(exc) == _IBAN_TAKEN:
-            return False
+            return DepositIbanOutcome.OWN_ACCOUNT
         raise
     append_event(
         ctx,
@@ -893,7 +939,7 @@ def learn_exchange_deposit_iban(
     for rule in [r for r in enabled_rules(ctx.conn) if r.matcher.counterparty_iban_hmac == named]:
         disable_rule(ctx, rule.id)
     _rematch_waiting(ctx, account_id)
-    return True
+    return DepositIbanOutcome.LEARNED
 
 
 def _with_statement_facts(conn: Connection, accounts: list[Account]) -> list[Account]:

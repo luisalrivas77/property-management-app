@@ -74,7 +74,12 @@ from hausbuch.schemas.allocation import (
     WirtschaftsplanFacts,
 )
 from hausbuch.schemas.enums import AccountKind, AccountPurpose, AllocationStatus
-from hausbuch.schemas.household import TransferCandidate, TransferLinkKind, TransferMatch
+from hausbuch.schemas.household import (
+    DepositIbanOutcome,
+    TransferCandidate,
+    TransferLinkKind,
+    TransferMatch,
+)
 from hausbuch.schemas.loan import ScheduleEntry
 
 from . import proof_match
@@ -2496,6 +2501,24 @@ def deposit_fee_text(fee: Decimal) -> str:
     """A transfer card's plain sentence for a deposit credited `fee` short (D162 amended
     15 Nov 2026)."""
     return f"{euro_text(fee)} behält die Börse als Einzahlungsgebühr."
+
+
+def deposit_link_text(fee: Decimal, exchange: str, iban: DepositIbanOutcome | None) -> str:
+    """The card's text for a bank line paying a deposit `exchange` credited `fee` short (D162
+    amended 15 Nov 2026, review): the gap, what „Als Einzahlung verknüpfen“ books, and, when
+    the exchange has no deposit IBAN yet (`iban`, the link's DepositIbanOutcome), that later
+    payments to the line's IBAN then count as deposits, or why the IBAN is not taken."""
+    text = (
+        f"{deposit_fee_text(fee)} „Als Einzahlung verknüpfen“ bucht diese Zahlung als "
+        f"Einzahlung auf {exchange} und die {euro_text(fee)} als Bankgebühren."
+    )
+    if iban is DepositIbanOutcome.LEARNED:
+        text += f" Spätere Zahlungen an dieselbe IBAN gelten dann als Einzahlungen auf {exchange}."
+    elif iban is DepositIbanOutcome.SHARED_IBAN:
+        text += " Die IBAN wird nicht übernommen, weil an sie auch andere Empfänger gehen."
+    elif iban is DepositIbanOutcome.OWN_ACCOUNT:
+        text += " Die IBAN wird nicht übernommen, weil sie zu einem anderen eigenen Konto gehört."
+    return text
 
 
 def euro_text(amount: Decimal) -> str:

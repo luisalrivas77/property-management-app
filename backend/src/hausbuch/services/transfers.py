@@ -51,6 +51,7 @@ from hausbuch.rules.matching import (
     TRANSFER_CATEGORIES,
     deposit_fee_text,
     deposit_gap,
+    deposit_link_text,
     deposit_split_set,
     ibans_agree,
     legs_fit,
@@ -71,6 +72,7 @@ from hausbuch.schemas.api import ConfirmAllocationsBody, InboxItem, InboxItemKin
 from hausbuch.schemas.enums import AccountKind, AccountPurpose, AllocationStatus, ImportStatus
 from hausbuch.schemas.events import EventType, TransferLinked, TransferUnlinked
 from hausbuch.schemas.household import (
+    DepositIbanOutcome,
     MovementKind,
     MovementStatus,
     OpenTransfer,
@@ -127,7 +129,11 @@ class _Leg:
         self.category = booked or category  # its one live category of any kind, None for a split
 
     def view(
-        self, *, rebook_on_link: bool = False, deposit_fee: Decimal | None = None
+        self,
+        *,
+        rebook_on_link: bool = False,
+        deposit_fee: Decimal | None = None,
+        deposit_text: str | None = None,
     ) -> TransferLegView:
         return TransferLegView(
             source=self.leg.source,
@@ -142,7 +148,11 @@ class _Leg:
             booked_as_transfer=self.booked is not None,
             rebook_on_link=rebook_on_link,
             deposit_fee=deposit_fee,
-            deposit_fee_text=None if deposit_fee is None else deposit_fee_text(deposit_fee),
+            deposit_fee_text=(
+                deposit_text
+                if deposit_text is not None or deposit_fee is None
+                else deposit_fee_text(deposit_fee)
+            ),
         )
 
 
@@ -486,6 +496,8 @@ def _write(
     in_: TransferLeg,
     kind: TransferLinkKind,
     matched_by: TransferMatchedBy,
+    *,
+    deposit_iban: DepositIbanOutcome | None = None,
 ) -> TransferLink:
     legs = _columns(out, in_)
     row = ctx.conn.execute(
@@ -505,7 +517,7 @@ def _write(
         ctx,
         EventType.TRANSFER_LINKED,
         link.id,
-        TransferLinked(kind=kind, matched_by=matched_by, **legs),
+        TransferLinked(kind=kind, matched_by=matched_by, deposit_iban=deposit_iban, **legs),
     )
     return link
 
@@ -587,10 +599,11 @@ def _held_answer(conn: Connection, transaction_id: UUID) -> frozenset[Allocation
     household re-sort writes a proposal over a person's confirmed fallback row, so a line whose
     current rows are proposals may still hold a person's answer underneath. Every row of the
     line is read, which covers the supersedes_id chain and the old rows a shorter set left
-    unnamed (services.allocations.record_set)."""
+    unnamed (services.allocations.record_set). A current confirmed set wins over every
+    superseded one (two answers may carry the same confirmed_at)."""
     a = allocation_table.c
     rows = conn.execute(
-        select(a.category, a.confirmed_at)
+        select(a.category, a.confirmed_at, a.status)
         .where(
             a.transaction_id == transaction_id,
             a.confirmed_at.is_not(None),
@@ -603,6 +616,9 @@ def _held_answer(conn: Connection, transaction_id: UUID) -> frozenset[Allocation
     ).all()
     if not rows:
         return None
+    current = [r for r in rows if r.status != AllocationStatus.SUPERSEDED.value]
+    if current:
+        return frozenset(AllocationCategory(r.category) for r in current)
     latest = rows[0].confirmed_at
     return frozenset(AllocationCategory(r.category) for r in rows if r.confirmed_at == latest)
 
@@ -617,6 +633,47 @@ def _free_for_matcher(conn: Connection, line_id: UUID, current: Sequence) -> boo
     ):
         return False
     return _held_answer(conn, line_id) is None
+
+
+# The answers a bank line may hold for an untied deposit link by hand (review, 15 Nov 2026).
+_DEPOSIT_ANSWER = frozenset(
+    {
+        AllocationCategory.INTERNAL_TRANSFER_OUT,
+        AllocationCategory.INTERNAL_TRANSFER_IN,
+        AllocationCategory.BANK_FEES,
+    }
+)
+
+
+def _answered_otherwise(conn: Connection, a: TransferLeg, b: TransferLeg) -> bool:
+    """Review of D162 amended, 15 Nov 2026: whether `a` and `b` are an UNTIED deposit an
+    exchange credited short (deposit_gap, and the bank line does not name the exchange's
+    deposit IBAN, which the exchange does not hold yet) whose bank line holds an answer a
+    person or a rule confirmed as something other than a transfer or its fee (_held_answer).
+    Such a pair is neither offered on a card nor linked by hand: the first link would replace
+    that answer and teach the exchange the IBAN on an amount and a date alone. A tied pair (the
+    IBAN learned) stays offered with its one click."""
+    out, in_ = _out_in(a, b)
+    if deposit_gap(out, in_) is None or names_the_other(out, in_):
+        return False
+    held = _held_answer(conn, out.id)
+    return held is not None and not held <= _DEPOSIT_ANSWER
+
+
+def _deposit_text(conn: Connection, leg: _Leg, other: _Leg, fee: Decimal | None) -> str | None:
+    """The card's text for a deposit credited `fee` short (rules.matching.deposit_link_text),
+    naming the exchange and, when the pair is untied, what the link does with the IBAN."""
+    from . import accounts  # accounts imports services that import this module
+
+    if fee is None:
+        return None
+    exchange, bank = (leg, other) if leg.leg.amount > 0 else (other, leg)
+    iban = (
+        None
+        if names_the_other(bank.leg, exchange.leg)
+        else accounts.deposit_iban_outcome(conn, exchange.leg.account_id, bank.leg.id)
+    )
+    return deposit_link_text(fee, exchange.label, iban)
 
 
 def _is_split(line_rows: Sequence, fee: Decimal) -> bool:
@@ -950,17 +1007,29 @@ def _link_deposit_by_hand(
         raise ConflictError("a leg of this transfer is linked already")
     line = matching.load_line(ctx.conn, out.leg.id, lock=True)
     assert line is not None  # _pair read it
+    if already is None and _answered_otherwise(ctx.conn, out.leg, in_.leg):
+        # Review, 15 Nov 2026: the card never offers this pair; a person re-answers the line
+        # as a transfer first, so the first link never replaces a confirmed answer unseen.
+        raise RuleViolationError(
+            [TRANSFER_LEGS_INVALID],
+            "a line a person or a rule answered otherwise is linked to a deposit credited short"
+            " only once it is answered as a transfer",
+        )
     if not _is_split([r for r in line.current if r.status == AllocationStatus.CONFIRMED], fee):
         if iban_key is None:
             raise ValueError("re-booking a leg needs the IBAN key")
         _answer(ctx, deposit_split_set(line.tx, fee, method=AllocationMethod.USER), iban_key)
+    # Read before the link is written, so its transfer.linked names what happens to the IBAN;
+    # learned after it (learning re-matches the waiting lines naming the IBAN).
+    iban = accounts.deposit_iban_outcome(ctx.conn, in_.leg.account_id, out.leg.id)
     found = already or _link_of(ctx.conn, out.leg.id, in_.leg.id)
     if found is None:
         linked = _linked_ids(ctx.conn)
         if out.leg.id in linked or in_.leg.id in linked:
             raise ConflictError("a leg of this transfer is linked already")
-        found = _write(ctx, out.leg, in_.leg, body.kind, TransferMatchedBy.USER)
-    accounts.learn_exchange_deposit_iban(ctx, in_.leg.account_id, out.leg.id)
+        found = _write(ctx, out.leg, in_.leg, body.kind, TransferMatchedBy.USER, deposit_iban=iban)
+    if iban is DepositIbanOutcome.LEARNED:
+        accounts.learn_exchange_deposit_iban(ctx, in_.leg.account_id, out.leg.id)
     return found
 
 
@@ -1121,6 +1190,16 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
             code, candidates = OpenTransferCode.UNMATCHED_LEG, same
         else:
             continue
+        # Review, 15 Nov 2026: an untied short deposit whose bank line a person or a rule
+        # answered otherwise is no candidate (_answered_otherwise). A proposal left without one
+        # waits for its window like a leg without a counterpart.
+        kept = [c for c in candidates if not _answered_otherwise(conn, leg.leg, c.leg)]
+        if len(kept) < len(candidates):
+            if not kept and code is OpenTransferCode.PROPOSED:
+                if found.card is None:
+                    continue
+                code = OpenTransferCode.UNMATCHED_LEG
+            candidates = kept
         items.append(
             OpenTransfer(
                 code=code,
@@ -1128,7 +1207,8 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
                 candidates=[
                     c.view(
                         rebook_on_link=_rebook_on_link(c, leg),
-                        deposit_fee=deposit_gap(*_out_in(leg.leg, c.leg)),
+                        deposit_fee=(fee := deposit_gap(*_out_in(leg.leg, c.leg))),
+                        deposit_text=_deposit_text(conn, leg, c, fee),
                     )
                     for c in candidates
                 ],

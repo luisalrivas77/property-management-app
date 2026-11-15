@@ -1156,7 +1156,10 @@ function rebookText(candidate: TransferLegView, leg: TransferLegView): string {
  * booked otherwise but tied to the leg by an own IBAN (rebook_on_link) is re-booked as a
  * transfer first: the button says so, with one line why. A bank line an exchange credited up
  * to 2 € short (D162 amended 15 Nov 2026) names the gap it keeps as a deposit fee; linking
- * books that gap as bank fees, split by the API. */
+ * books that gap as bank fees, split by the API. Its text (deposit_fee_text, from the API)
+ * says what the link books and, before the exchange's deposit IBAN is known, that later
+ * payments to the line's IBAN then count as deposits; its button reads „Als Einzahlung
+ * verknüpfen“, never a plain „Verknüpfen“ (review, 15 Nov 2026). */
 function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accounts: Map<string, Account>; onLinked: () => void }) {
   const [choice, setChoice] = useState(open.candidates.length === 1 ? (open.candidates[0]?.id ?? "") : "");
   const [busy, setBusy] = useState(false);
@@ -1191,7 +1194,13 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
       ))}
       {rebook && chosen ? <p className="muted">{rebookText(chosen, open.leg)}</p> : null}
       <button type="button" onClick={() => void link()} disabled={busy || choice === ""}>
-        {busy ? "Verknüpft …" : rebook ? "Als Übertrag buchen und verknüpfen" : "Verknüpfen"}
+        {busy
+          ? "Verknüpft …"
+          : chosen?.deposit_fee != null
+            ? "Als Einzahlung verknüpfen"
+            : rebook
+              ? "Als Übertrag buchen und verknüpfen"
+              : "Verknüpfen"}
       </button>
       <ErrorNotice error={error} />
     </fieldset>

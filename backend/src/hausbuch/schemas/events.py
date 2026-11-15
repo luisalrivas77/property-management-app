@@ -83,6 +83,7 @@ from .enums import (
 )
 from .household import (
     AssetKind,
+    DepositIbanOutcome,
     HoldingSource,
     MovementImportFormat,
     MovementKind,
@@ -1053,7 +1054,10 @@ class MovementSuperseded(Schema):
 
 
 class TransferLinked(Schema):
-    """transfer.linked (D162): the two legs, by id only."""
+    """transfer.linked (D162): the two legs, by id only. deposit_iban (D162 amended 15 Nov
+    2026, review): on the first link by hand of a deposit an exchange credited short, whether
+    the bank line's counterparty IBAN became the exchange's deposit IBAN or why not; None on
+    every other link."""
 
     kind: TransferLinkKind
     matched_by: TransferMatchedBy
@@ -1061,6 +1065,7 @@ class TransferLinked(Schema):
     out_movement_id: UUID | None = None
     in_transaction_id: UUID | None = None
     in_movement_id: UUID | None = None
+    deposit_iban: DepositIbanOutcome | None = None
 
 
 class TransferUnlinked(Schema):
