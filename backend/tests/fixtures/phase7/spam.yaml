@@ -1,0 +1,80 @@
+# Phase 7 (docs/phases/phase-7.md §15, D187): spam tokens, the symbol lookalike, promotion
+# and demotion.
+#
+# Each case is a token credited to an own address: its (chain, contract) and the symbol the
+# chain names it by (attacker-controlled), whether the workspace holds it with a confirmed
+# lot, whether the own address signed the transaction (paid a fee), whether a swap decoder's
+# received leg bought it, and a person's „Das ist echt“ (promote) or demotion. The registry
+# tokens are rules/household/assets.yaml's; every other contract and mint is generated from
+# random bytes for this file (0x9fad…21ab and 0x9f8b…c3d4 share the first four characters on
+# purpose: the mask must still tell them apart by the last four).
+#
+# Loading recomputes D187 (1)–(4) with the registry: spam = not in the registry, not held,
+# no fee paid, not bought; a promotion → `airdrop` (review, a card) needing a price source
+# when the registry does not list it; a demotion → spam. The label is the registry's symbol
+# for a listed token, else „Token <mask> (nennt sich <symbol>)“ (D187 (2): a copied symbol
+# is never shown alone). Step 0's reading (§15.1): a token held with a confirmed lot or
+# credited in a transaction the own address paid for is an `airdrop` (review), still
+# labelled by its mask while the registry does not list it.
+cases:
+  # §6 example 6: an unknown token, no fee paid → spam, confirmed, hidden, no price asked.
+  - id: unknown_token_no_fee
+    pending: "phase 7 step 2 (rules/chain/classify spam rules)"
+    token: {chain: ethereum, contract: "0x9fadc80dca344ba5e992fa18100ccf0d5b3021ab", symbol: FREE}
+    expect: {group: spam, movement: spam, hidden: true, card: false, label: "Token 0x9f…21ab (nennt sich FREE)", price_source_needed: false}
+
+  # §6 example 6, promoted with „Das ist echt“ → airdrop, review, „Kursquelle wählen“.
+  - id: unknown_token_promoted
+    pending: "phase 7 step 2 (services/wallets.promote_token)"
+    token: {chain: ethereum, contract: "0x9fadc80dca344ba5e992fa18100ccf0d5b3021ab", symbol: FREE}
+    action: promote
+    expect: {group: airdrop, movement: airdrop, hidden: false, card: true, label: "Token 0x9f…21ab (nennt sich FREE)", price_source_needed: true}
+
+  # §6 example 7: „USDC“ on a contract that is not the registry's USDC.
+  - id: symbol_lookalike_usdc
+    pending: "phase 7 step 2 (rules/chain/classify spam rules)"
+    token: {chain: ethereum, contract: "0x9f8b047f3f005569235c41965017843cddb2c3d4", symbol: USDC}
+    expect: {group: spam, movement: spam, hidden: true, card: false, label: "Token 0x9f…c3d4 (nennt sich USDC)", price_source_needed: false}
+
+  # The same on Solana: a mint that calls itself USDC but is not the registry's mint.
+  - id: symbol_lookalike_usdc_solana
+    pending: "phase 7 step 2 (rules/chain/classify spam rules)"
+    token: {chain: solana, contract: AFdNMPpJZKLSq77Tw96HV8dJeiiycR4i9H45Y5u1wvRm, symbol: USDC}
+    expect: {group: spam, movement: spam, hidden: true, card: false, label: "Token AFdN…wvRm (nennt sich USDC)", price_source_needed: false}
+
+  # D187 (4): a token the address bought in a swap is never spam; unlisted → a normal asset
+  # with „Kursquelle wählen“.
+  - id: bought_in_swap_never_spam
+    pending: "phase 7 step 2 (rules/chain/classify)"
+    token: {chain: solana, contract: FnDimjPQeLcgjfQDKmu5VfgFMaipDKR1PbjvSgN2r8Wz, symbol: BONKX}
+    bought: true
+    expect: {group: swap, movement: acquisition, hidden: false, card: false, label: "Token FnDi…r8Wz (nennt sich BONKX)", price_source_needed: true}
+
+  # D187 (4): a transfer the own address paid the fee for is never spam.
+  - id: fee_paid_never_spam
+    pending: "phase 7 step 2 (rules/chain/classify)"
+    token: {chain: arbitrum, contract: "0xbb2520003c006da19fdb62326a7dfb8d6b1fe240", symbol: GMXX}
+    fee_paid: true
+    expect: {group: airdrop, movement: airdrop, hidden: false, card: true, label: "Token 0xbb…e240 (nennt sich GMXX)", price_source_needed: true}
+
+  # D187 (1): a token the workspace already holds with a confirmed lot is not spam.
+  - id: held_token_not_spam
+    pending: "phase 7 step 2 (rules/chain/classify)"
+    token: {chain: bsc, contract: "0xb7b794eb2604f2b4388353ccde81903f3d9c7ebd", symbol: CAKEX}
+    held: true
+    expect: {group: airdrop, movement: airdrop, hidden: false, card: true, label: "Token 0xb7…7ebd (nennt sich CAKEX)", price_source_needed: true}
+
+  # A registry token airdropped (no fee paid): never spam, an airdrop for review, priced by
+  # the registry.
+  - id: registry_token_airdropped
+    pending: "phase 7 step 2 (rules/chain/classify)"
+    token: {chain: ethereum, contract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", symbol: USDC}
+    expect: {group: airdrop, movement: airdrop, hidden: false, card: true, label: USDC, price_source_needed: false}
+
+  # A demotion of a wrongly kept airdrop → spam, hidden; its movements superseded (step 2).
+  - id: airdrop_demoted
+    pending: "phase 7 step 2 (services/wallets.demote_token)"
+    token: {chain: solana, contract: AUjjFbhadjTECrxd4q1bqtyLuTAM2mFsC5UYdu7Uqw6u, symbol: GIFT}
+    fee_paid: true
+    action: demote
+    expect: {group: spam, movement: spam, hidden: true, card: false, label: "Token AUjj…qw6u (nennt sich GIFT)", price_source_needed: false}

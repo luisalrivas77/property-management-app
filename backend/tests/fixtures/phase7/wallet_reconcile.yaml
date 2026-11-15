@@ -1,0 +1,112 @@
+# Phase 7 (docs/phases/phase-7.md §9, §15, D186 (2), (3), D181 (c), D187 (1)): an address
+# reconciled against the chain's balance.
+#
+# Each case is one address's movements in base units of each asset (wei, lamports, sats, a
+# token's smallest unit; in positive, out and fee negative), confirmed or proposed, and the
+# source's balance at the sync's block as its parts (Solana: the main account's lamports plus
+# the rent each token account holds; Bitcoin: one UTXO sum per address of the account). Every
+# amount is invented.
+#
+# Loading recomputes D186 (2), (3): Σ movements (spam excluded, proposed included) against
+# the balance per asset, no tolerance; a mismatch → `wallet.unreconciled` with the
+# difference (balance − Σ movements). A balance-only address (D181 (c)) compares its balance
+# against Σ linked deposits instead; below → `wallet.coins_left` with the shortfall.
+cases:
+  # An EVM address: native in wei and a registry token's balanceOf, both equal.
+  - id: evm_equal
+    pending: "phase 7 step 2 (rules/chain/reconcile)"
+    chain: ethereum
+    movements:
+      - {asset: ETH, units: 1000000000000000000, status: confirmed}
+      - {asset: ETH, units: -200000000000000000, status: confirmed}
+      - {asset: ETH, units: -420000000000000, status: confirmed}
+      - {asset: USDC, units: 50000000, status: confirmed}
+    balance: {ETH: [799580000000000000], USDC: [50000000]}
+    expect: {reconciled: true}
+
+  # A sync that skipped a failed transaction's fee: the chain holds 21000000147000 wei less.
+  - id: evm_missing_fee
+    pending: "phase 7 step 2 (rules/chain/reconcile)"
+    chain: ethereum
+    movements:
+      - {asset: ETH, units: 1000000000000000000, status: confirmed}
+      - {asset: ETH, units: -200000000000000000, status: confirmed}
+      - {asset: ETH, units: -420000000000000, status: confirmed}
+    balance: {ETH: [799558999999853000]}
+    expect: {reconciled: false, difference: {ETH: -21000000147000}, card: wallet.unreconciled}
+
+  # §9: the main account holds 1 SOL and two token accounts 0.002 SOL of rent each → the SOL
+  # compared is 1.004; the USDC is the sum over both token accounts.
+  - id: solana_rent_in_token_accounts
+    pending: "phase 7 step 2 (rules/chain/reconcile)"
+    chain: solana
+    movements:
+      - {asset: SOL, units: 2500000000, status: confirmed}
+      - {asset: SOL, units: -1495995000, status: confirmed}
+      - {asset: SOL, units: -5000, status: confirmed}
+      - {asset: USDC, units: 25000000, status: confirmed}
+    balance: {SOL: [1000000000, 2000000, 2000000], USDC: [15000000, 10000000]}
+    expect: {reconciled: true}
+
+  # The stake account's lamports are part of the wallet's SOL too (the reward included).
+  - id: solana_stake_account_counted
+    pending: "phase 7 step 2 (rules/chain/reconcile)"
+    chain: solana
+    movements:
+      - {asset: SOL, units: 20000000000, status: confirmed}
+      - {asset: SOL, units: -5000, status: confirmed}
+      - {asset: SOL, units: 1534000, status: confirmed}
+    balance: {SOL: [9999995000, 10001534000]}
+    expect: {reconciled: true}
+
+  # A Bitcoin account with a receive and a change address: the UTXO sums match.
+  - id: bitcoin_two_addresses
+    pending: "phase 7 step 4 (rules/chain/reconcile)"
+    chain: bitcoin
+    movements:
+      - {asset: BTC, units: 3000000, status: confirmed}
+      - {asset: BTC, units: 1000000, status: confirmed}
+      - {asset: BTC, units: -1200000, status: confirmed}
+      - {asset: BTC, units: -5000, status: confirmed}
+    balance: {BTC: [1000000, 1795000]}
+    expect: {reconciled: true}
+
+  # A balance-only BSC address: Σ linked deposits equal to the balance → reconciled.
+  - id: bsc_balance_only_equal
+    pending: "phase 7 step 2 (rules/chain/reconcile, D181 (c))"
+    chain: bsc
+    balance_only: true
+    balance: {BNB: [600000000000000000]}
+    linked_deposits: {BNB: 600000000000000000}
+    expect: {reconciled: true}
+
+  # Σ linked deposits above the balance → coins left the address; the card's answers.
+  - id: bsc_balance_only_below_deposits
+    pending: "phase 7 step 2 (rules/chain/reconcile, D181 (c))"
+    chain: bsc
+    balance_only: true
+    balance: {BNB: [500000000000000000]}
+    linked_deposits: {BNB: 600000000000000000}
+    expect: {reconciled: false, difference: {BNB: -100000000000000000}, card: wallet.coins_left}
+
+  # A spam token's balance is not asked for (D187 (1)), its movement not counted.
+  - id: spam_token_not_asked
+    pending: "phase 7 step 2 (rules/chain/reconcile)"
+    chain: ethereum
+    movements:
+      - {asset: ETH, units: 1000000000000000000, status: confirmed}
+      - {asset: "Token 0x9f…21ab", units: 1000000000000000000000, status: confirmed, spam: true}
+    balance: {ETH: [1000000000000000000]}
+    expect: {reconciled: true}
+
+  # A proposed group counts, so an unanswered card does not read as a mismatch.
+  - id: proposed_group_counted
+    pending: "phase 7 step 2 (rules/chain/reconcile)"
+    chain: solana
+    movements:
+      - {asset: SOL, units: 2500000000, status: confirmed}
+      - {asset: SOL, units: -1000000000, status: proposed}
+      - {asset: SOL, units: -5000, status: confirmed}
+      - {asset: USDC, units: 150000000, status: proposed}
+    balance: {SOL: [1499995000], USDC: [150000000]}
+    expect: {reconciled: true}

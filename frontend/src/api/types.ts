@@ -7533,7 +7533,7 @@ export interface components {
         /**
          * MovementImportFormat
          * @description movement_import.format (migration 0025; binance_csv since 0028; chain_sync since
-         *     0040, one wallet sync's stored original, D182 (3)).
+         *     0041, one wallet sync's stored original, D182 (3)).
          * @enum {string}
          */
         MovementImportFormat: "bison_csv" | "binance_csv" | "chain_sync";
@@ -11040,7 +11040,7 @@ export interface components {
         };
         /**
          * TransferLinkKind
-         * @description transfer_link.kind (migration 0025; chain, bridge and wrap since 0040, phase 7 D184).
+         * @description transfer_link.kind (migration 0025; chain, bridge and wrap since 0041, phase 7 D184).
          *     A link by hand (TransferLinkCreate) still only takes the kind rules.matching
          *     .transfer_link_kind gives the two accounts, so the chain kinds wait for step 5.
          * @enum {string}

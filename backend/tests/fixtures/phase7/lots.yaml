@@ -1,0 +1,88 @@
+# Phase 7 (docs/phases/phase-7.md §8, §15, D188 (1), (2), (4), D184 (4)): lots by FIFO per
+# account and asset, computed on read.
+#
+# Each case is one asset's confirmed ledger events (`exchange` is a phase 6 exchange account,
+# `wallet` A's wallet account): an acquisition, a reward or a swap's received leg creates a
+# lot; a transfer out (a linked transfer, D184 (4)) moves the oldest lots to the receiving
+# account with their day and cost; a disposal or a fee paid in the asset consumes the oldest
+# lots at cost. Every amount is invented.
+#
+# Loading recomputes D188 (1): FIFO by the Berlin day of acquisition (D188 (2)); a lot's cost
+# is the event's `cost_eur` (the TOTAL for its units, as the exchange's EUR leg or the price
+# table gives it) plus its `fee_eur` (Rn. 59); a use's cost and an open lot's cost are the
+# per-unit cost × units, to the cent; an unpriced acquisition (`cost_eur` null) gives a lot
+# and uses whose cost is null, never 0 € (D188 (4)); a superseded event is not read (D184
+# (5): nothing is cached). Step 0's readings (§15.1):
+# - §8's „10 units on 1 Feb 2026 at 100 €“ is read as 100 € per unit (1,000 € for the lot);
+# - a swap's received leg is a lot with `source: acquisition` (LotSource has no `swap`; the
+#   screen's „Swap“ label comes from the group, step 3);
+# - a moved lot keeps its source and is marked `moved` (its `moved_through` chain is step 3's).
+cases:
+  # §8: three acquisitions, a transfer of 12 out, a disposal of 5, a reward and a fee.
+  - id: fifo_transfer_disposal_reward_fee
+    pending: "phase 7 step 3 (rules/lots.lots, consume)"
+    events:
+      - {name: buy_feb, at: "2026-02-01T09:00:00Z", account: exchange, kind: acquisition, units: "10", cost_eur: "1000.00", fee_eur: "1.00"}
+      - {name: buy_jun, at: "2026-06-01T09:00:00Z", account: exchange, kind: acquisition, units: "10", cost_eur: "2000.00", fee_eur: "2.00"}
+      - {name: buy_sep, at: "2026-09-01T09:00:00Z", account: exchange, kind: acquisition, units: "5", cost_eur: "750.00", fee_eur: "1.50"}
+      - {name: move_oct, at: "2026-10-01T09:00:00Z", account: exchange, kind: transfer_out, units: "12", to_account: wallet}
+      - {name: sell_nov, at: "2026-11-01T09:00:00Z", account: exchange, kind: disposal, units: "5"}
+      - {name: reward_nov, at: "2026-11-10T09:00:00Z", account: wallet, kind: reward, units: "1", cost_eur: "150.00"}
+      - {name: fee_nov, at: "2026-11-15T09:00:00Z", account: wallet, kind: fee, units: "0.1"}
+    expect_lots:
+      - {account: exchange, acquired_on: 2026-06-01, units_open: "3", cost_eur: "600.60", source: acquisition, tax_free_from: 2027-06-02}
+      - {account: exchange, acquired_on: 2026-09-01, units_open: "5", cost_eur: "751.50", source: acquisition, tax_free_from: 2027-09-02}
+      - {account: wallet, acquired_on: 2026-02-01, units_open: "9.9", cost_eur: "990.99", source: acquisition, tax_free_from: 2027-02-02, moved: true}
+      - {account: wallet, acquired_on: 2026-06-01, units_open: "2", cost_eur: "400.40", source: acquisition, tax_free_from: 2027-06-02, moved: true}
+      - {account: wallet, acquired_on: 2026-11-10, units_open: "1", cost_eur: "150.00", source: reward, tax_free_from: 2027-11-11}
+    expect_uses:
+      - {event: move_oct, acquired_on: 2026-02-01, units: "10", cost_eur: "1001.00"}
+      - {event: move_oct, acquired_on: 2026-06-01, units: "2", cost_eur: "400.40"}
+      - {event: sell_nov, acquired_on: 2026-06-01, units: "5", cost_eur: "1001.00"}
+      - {event: fee_nov, acquired_on: 2026-02-01, units: "0.1", cost_eur: "10.01"}
+
+  # An unpriced acquisition: the lot's cost and the disposal's cost are null, never 0 €.
+  - id: unpriced_acquisition
+    pending: "phase 7 step 3 (rules/lots.lots, consume)"
+    events:
+      - {name: airdrop_mar, at: "2026-03-01T09:00:00Z", account: wallet, kind: reward, units: "4"}
+      - {name: buy_apr, at: "2026-04-01T09:00:00Z", account: wallet, kind: acquisition, units: "2", cost_eur: "300.00"}
+      - {name: pay_may, at: "2026-05-01T09:00:00Z", account: wallet, kind: disposal, units: "5"}
+    expect_lots:
+      - {account: wallet, acquired_on: 2026-04-01, units_open: "1", cost_eur: "150.00", source: acquisition, tax_free_from: 2027-04-02}
+    expect_uses:
+      - {event: pay_may, acquired_on: 2026-03-01, units: "4", cost_eur: null}
+      - {event: pay_may, acquired_on: 2026-04-01, units: "1", cost_eur: "150.00"}
+
+  # A swap's received leg at 23:30 UTC on 31 Dec: a new lot dated the swap's Berlin day.
+  - id: swap_received_leg_new_lot
+    pending: "phase 7 step 3 (rules/lots.lots)"
+    events:
+      - {name: swap_in, at: "2026-12-31T23:30:00Z", account: wallet, kind: swap_in, units: "150", cost_eur: "138.00", fee_eur: "0.70"}
+    expect_lots:
+      - {account: wallet, acquired_on: 2027-01-01, units_open: "150", cost_eur: "138.70", source: acquisition, tax_free_from: 2028-01-02}
+    expect_uses: []
+
+  # The same ledger read twice: first with the disposal, then with it superseded (re-booked).
+  # The lots differ; nothing was cached.
+  - id: before_rebooking
+    pending: "phase 7 step 3 (rules/lots.lots)"
+    events:
+      - {name: buy_a, at: "2026-02-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1000.00"}
+      - {name: buy_b, at: "2026-03-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1200.00"}
+      - {name: pay, at: "2026-04-01T09:00:00Z", account: wallet, kind: disposal, units: "12"}
+    expect_lots:
+      - {account: wallet, acquired_on: 2026-03-01, units_open: "8", cost_eur: "960.00", source: acquisition, tax_free_from: 2027-03-02}
+    expect_uses:
+      - {event: pay, acquired_on: 2026-02-01, units: "10", cost_eur: "1000.00"}
+      - {event: pay, acquired_on: 2026-03-01, units: "2", cost_eur: "240.00"}
+  - id: after_rebooking_superseded
+    pending: "phase 7 step 3 (rules/lots.lots)"
+    events:
+      - {name: buy_a, at: "2026-02-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1000.00"}
+      - {name: buy_b, at: "2026-03-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1200.00"}
+      - {name: pay, at: "2026-04-01T09:00:00Z", account: wallet, kind: disposal, units: "12", superseded: true}
+    expect_lots:
+      - {account: wallet, acquired_on: 2026-02-01, units_open: "10", cost_eur: "1000.00", source: acquisition, tax_free_from: 2027-02-02}
+      - {account: wallet, acquired_on: 2026-03-01, units_open: "10", cost_eur: "1200.00", source: acquisition, tax_free_from: 2027-03-02}
+    expect_uses: []

@@ -1,0 +1,60 @@
+# Phase 7 (docs/phases/phase-7.md §15, D182 (1), (4)): the block window a chain sync reads,
+# `rules/chain/sync_window`.
+#
+# Loading recomputes D182 (4): a first sync (no cursor) reads from block 0 to
+# `tip − confirmations_final`; a later one from `cursor − confirmations_final` (the overlap)
+# to `tip − confirmations_final`; a window whose end is before its start reads nothing. The
+# overlap's movements are skipped by their movement hash (D182 (2)), so only hashes not seen
+# before are new. confirmations_final per chain is rules/chain/chains.yaml's (Bitcoin 6, EVM
+# 12). Step 0's reading (§15.1): Solana has no block window (it reads by signature at the
+# `finalized` commitment, confirmations_final 0), so no Solana case is here; the loader
+# refuses one. The hashes are placeholders, not movement hashes.
+cases:
+  - id: first_sync_from_genesis_bitcoin
+    pending: "phase 7 step 4 (rules/chain/sync_window)"
+    chain: bitcoin
+    cursor: null
+    tip: 900600
+    read_hashes: [h1, h2]
+    expect: {from_block: 0, to_block: 900594}
+    expect_new: [h1, h2]
+
+  - id: first_sync_from_genesis_ethereum
+    pending: "phase 7 step 2 (rules/chain/sync_window)"
+    chain: ethereum
+    cursor: null
+    tip: 21000300
+    read_hashes: [h1]
+    expect: {from_block: 0, to_block: 21000288}
+    expect_new: [h1]
+
+  # A later sync: the overlap's movement h2 was stored before and is skipped by its hash.
+  - id: later_sync_overlap_skipped
+    pending: "phase 7 step 2 (rules/chain/sync_window)"
+    chain: ethereum
+    cursor: 21000288
+    tip: 21000600
+    seen_hashes: [h1, h2]
+    read_hashes: [h2, h3]
+    expect: {from_block: 21000276, to_block: 21000588}
+    expect_new: [h3]
+
+  # The tip moved back (a reorg inside the overlap): the window re-reads blocks already read,
+  # every movement in it is known, no row is added.
+  - id: tip_moved_back_reorg
+    pending: "phase 7 step 2 (rules/chain/sync_window)"
+    chain: arbitrum
+    cursor: 300000288
+    tip: 300000296
+    seen_hashes: [h1, h2]
+    read_hashes: [h2]
+    expect: {from_block: 300000276, to_block: 300000284}
+    expect_new: []
+
+  # The tip behind the overlap's start (a provider lagging behind the last sync): nothing read.
+  - id: tip_behind_cursor_nothing
+    pending: "phase 7 step 2 (rules/chain/sync_window)"
+    chain: ethereum
+    cursor: 21000600
+    tip: 21000500
+    expect: null

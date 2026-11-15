@@ -1,0 +1,120 @@
+# Phase 7 (docs/phases/phase-7.md §15, D183, D186 (1), D188 (4), D191): a swap group's legs,
+# its valuation and its routing.
+#
+# Each case is a group already read from the chain (solana_tx.yaml and evm_tx.yaml read the
+# records): its legs by the priced_as symbol, its fee, the day's prices (EUR per unit) for the
+# group's Berlin day, whether a decoder row names its program, and a person's answer. Every
+# amount and price is invented.
+#
+# Loading recomputes D188 (4) (Rn. 58): a swap's value is the received asset's price × its
+# units, else the given asset's price × its units, to the cent; neither priced → no value
+# (never 0 €). The routing (`status`) is D186 (1): confirmed without a person only by a
+# decoder, with BOTH legs priced and both assets in the registry; a person's answer confirms.
+# Step 0's readings (§15.1):
+# - a swap whose received leg is unpriced but whose given leg is priced takes the given
+#   leg's value (D188 (4)'s fallback) AND waits for review (D186 (1): „a swap with a leg no
+#   price covers“), with the question naming the leg without a price;
+# - a swap on a program no decoder names is still a `swap` by its shape (one asset out, one
+#   in, one signer, D183 (3)) and waits with the question; „Künftig immer so“ writes the
+#   workspace decoder row (D191) and later swaps on it route as a listed decoder's.
+# Programs: DKFJ…TarL (a workspace decoder row, decoders.yaml), 9ZgA…pyQw (no row).
+cases:
+  # §6 example 3: 1 SOL for 150 USDC, both priced, a listed AMM → confirmed, valued by USDC.
+  - id: listed_both_priced_received_first
+    pending: "phase 7 step 2 (rules/chain/classify, rules/valuation.price_on)"
+    legs:
+      - {asset: SOL, units: "1", role: given}
+      - {asset: USDC, units: "150", role: received}
+    fee: {asset: SOL, units: "0.000005", role: given}
+    prices: {SOL: "140.00", USDC: "0.92"}
+    decoder_listed: true
+    expect: {group: swap, status: confirmed, eur_amount: "138.00", priced_by: USDC}
+
+  - id: received_unpriced_given_priced
+    pending: "phase 7 step 2 (rules/chain/classify, rules/valuation.price_on)"
+    legs:
+      - {asset: SOL, units: "1", role: given}
+      - {asset: USDC, units: "150", role: received}
+    fee: {asset: SOL, units: "0.000005", role: given}
+    prices: {SOL: "140.00"}
+    decoder_listed: true
+    expect:
+      group: swap
+      status: proposed
+      eur_amount: "140.00"
+      priced_by: SOL
+      question: "Kurs fehlt für USDC am 12.03.2026"
+
+  # §6 example 4: neither leg priced → no value, review, the to-do „Kurs eintragen“.
+  - id: neither_priced
+    pending: "phase 7 step 2 (rules/chain/classify, rules/valuation.price_on)"
+    legs:
+      - {asset: SOL, units: "1", role: given}
+      - {asset: USDC, units: "150", role: received}
+    fee: {asset: SOL, units: "0.000005", role: given}
+    decoder_listed: true
+    expect:
+      group: swap
+      status: proposed
+      eur_amount: null
+      priced_by: null
+      question: "Kurs fehlt für USDC und SOL am 12.03.2026"
+
+  # USDC out of one own token account and USDT into another, both owned by the signing
+  # address: one group, two legs.
+  - id: through_two_own_token_accounts
+    pending: "phase 7 step 2 (rules/chain/classify groups by transaction, not by account)"
+    legs:
+      - {asset: USDC, units: "100", role: given}
+      - {asset: USDT, units: "99.8", role: received}
+    fee: {asset: SOL, units: "0.000005", role: given}
+    prices: {USDC: "0.92", USDT: "0.92", SOL: "140.00"}
+    decoder_listed: true
+    expect: {group: swap, status: confirmed, eur_amount: "91.82", priced_by: USDT}
+
+  - id: unlisted_program_first_time
+    pending: "phase 7 step 2 (rules/chain/classify: a swap's shape on an unknown program)"
+    legs:
+      - {asset: SOL, units: "1", role: given}
+      - {asset: USDC, units: "150", role: received}
+    fee: {asset: SOL, units: "0.000005", role: given}
+    prices: {SOL: "140.00", USDC: "0.92"}
+    expect:
+      group: swap
+      status: proposed
+      eur_amount: "138.00"
+      priced_by: USDC
+      question: "Was war diese Transaktion bei 9ZgA…pyQw?"
+
+  # §6 example 11 before the answer: a leg out and nothing in → contract_call, review.
+  - id: contract_call_unanswered
+    pending: "phase 7 step 2 (rules/chain/classify)"
+    legs:
+      - {asset: USDC, units: "50", role: given}
+    fee: {asset: SOL, units: "0.000005", role: given}
+    prices: {USDC: "0.92"}
+    expect:
+      group: contract_call
+      status: proposed
+      eur_amount: null
+      priced_by: null
+      question: "Was war diese Transaktion bei 9ZgA…pyQw?"
+
+  # A contract_call answered „Tausch“ with „Künftig immer so“: the group becomes a swap,
+  # confirmed by the answer, and the workspace learns a decoder row for the program (never an
+  # amount, D191).
+  - id: contract_call_answered_learns_decoder
+    pending: "phase 7 step 2 (services/wallets.answer_group, chain_decoder)"
+    legs:
+      - {asset: SOL, units: "1", role: given}
+      - {asset: USDC, units: "150", role: received}
+    fee: {asset: SOL, units: "0.000005", role: given}
+    prices: {SOL: "140.00", USDC: "0.92"}
+    answer: swap
+    learn: true
+    expect:
+      group: swap
+      status: confirmed
+      eur_amount: "138.00"
+      priced_by: USDC
+      learned: {chain: solana, program: 9ZgAf9GnSdybtfn3p65Z5GaqYrnjvN97XsUiAeiupyQw, kind: swap, legs: swap}

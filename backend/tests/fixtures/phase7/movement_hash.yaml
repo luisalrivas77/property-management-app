@@ -1,0 +1,31 @@
+# Phase 7 (docs/phases/phase-7.md §15, D182 (2)): a chain movement's hash.
+#
+# movement_hash = SHA-256 over chain, tx_hash, address_hmac, index and role joined by "\x1f"
+# (U+001F, like rules/exchange.movement_hash), lower-case hex. Recomputed on load; the rule
+# (rules/chain.movement_hash) replays the cases in step 2.
+#
+# The index as step 0 writes it (D182 (2) names the parts, not their spelling; §15.1):
+# Bitcoin the vout or vin number, or `net` for D185's one net movement; EVM the log index,
+# `internal:<trace address>` (the trace's path joined by `_`), or `fee`; Solana the instruction
+# index, `<outer>.<inner>` for an inner instruction, or `fee`. Hashes and HMACs are invented
+# placeholders; the Solana signature was generated from random bytes.
+cases:
+  - {id: btc_receive_vout, pending: "phase 7 step 2 (rules/chain.movement_hash)", chain: bitcoin, tx_hash: c3315ac02576096aeacfd9331bb8f5c6cdfc5ecee3e9883b9ac567ae9a75953c, address_hmac: a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1, index: "1", role: in, hash: 935dc03411ae4621737a6f99af23598d3595c9e78e141101fc856d78d0a76361}
+  - {id: btc_spend_net, pending: "phase 7 step 2 (rules/chain.movement_hash)", chain: bitcoin, tx_hash: e60743b2adf7d203ed25856b679ea75bba640630dca70acc5f9e8d0074882d25, address_hmac: a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1, index: net, role: out, hash: e901dc1c92bfaee41e2f1dcd21c60d88624b548067aa166f84a5f17823c185c7}
+  - {id: btc_spend_fee, pending: "phase 7 step 2 (rules/chain.movement_hash)", chain: bitcoin, tx_hash: e60743b2adf7d203ed25856b679ea75bba640630dca70acc5f9e8d0074882d25, address_hmac: a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1, index: fee, role: fee, hash: 5cd9db64f41cf23392d660b13def8b545d62dd79cd34abfb3b6f0834651584a2}
+  - {id: evm_token_log, pending: "phase 7 step 2 (rules/chain.movement_hash)", chain: ethereum, tx_hash: "0x155018d16e5be002e50965bbeee175adf5504fec9a10f898c515e803acba7a36", address_hmac: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2, index: "17", role: in, hash: 60be31adf1122a37bd4bb4b33fea076571fe88ee0044bb0fcc421d0871815d0f}
+  - {id: evm_internal, pending: "phase 7 step 2 (rules/chain.movement_hash)", chain: ethereum, tx_hash: "0x56e85cd79691616846f77631c7bb7c1b059084bf114740f2001d115ebae8f286", address_hmac: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2, index: "internal:0_1", role: in, hash: 01b09c50924dfb3a095f3166b49734df87c4e7a3d1b46cdfa3ef514853450ffd}
+  - {id: evm_fee, pending: "phase 7 step 2 (rules/chain.movement_hash)", chain: ethereum, tx_hash: "0x56e85cd79691616846f77631c7bb7c1b059084bf114740f2001d115ebae8f286", address_hmac: b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2, index: fee, role: fee, hash: c00f322dea8b187d522f4b50d9ffab3f2d282df53749f0ee8a026d1afad84782}
+  - {id: sol_instruction, pending: "phase 7 step 2 (rules/chain.movement_hash)", chain: solana, tx_hash: 2Tr7A29v8BxJACPAAH4ThJuJ4niuedz9bo6jCarUboo6tczZNwX2P6VgyWJqghmSxWqa76hoQt8CeyVitVoA6vdx, address_hmac: c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3, index: "2", role: out, hash: 339a713624c1bbc1955a131489cbc5bc95d96f01c318817ba4596c54a2948a70}
+  # The same transaction and instruction on a second own address of the account (a swap
+  # through two own token accounts): its own hash, so both movements are stored.
+  - {id: sol_second_own_address, pending: "phase 7 step 2 (rules/chain.movement_hash)", chain: solana, tx_hash: 2Tr7A29v8BxJACPAAH4ThJuJ4niuedz9bo6jCarUboo6tczZNwX2P6VgyWJqghmSxWqa76hoQt8CeyVitVoA6vdx, address_hmac: a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1, index: "2", role: out, hash: 95e5dcbcca1fffa9dd358b215e5b91427bebc4be0414ee39683cb945638c2963}
+  # The same input read again by the next day's overlap: the same hash, so dedup skips it.
+  - {id: sol_same_input_again, pending: "phase 7 step 2 (rules/chain.movement_hash)", chain: solana, tx_hash: 2Tr7A29v8BxJACPAAH4ThJuJ4niuedz9bo6jCarUboo6tczZNwX2P6VgyWJqghmSxWqa76hoQt8CeyVitVoA6vdx, address_hmac: c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3, index: "2", role: out, hash: 339a713624c1bbc1955a131489cbc5bc95d96f01c318817ba4596c54a2948a70}
+  - {id: sol_other_role, pending: "phase 7 step 2 (rules/chain.movement_hash)", chain: solana, tx_hash: 2Tr7A29v8BxJACPAAH4ThJuJ4niuedz9bo6jCarUboo6tczZNwX2P6VgyWJqghmSxWqa76hoQt8CeyVitVoA6vdx, address_hmac: c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3, index: "2", role: in, hash: 2418fb1164c38c68e672f0c73a4132f53dd0bcda2fea2551a32ea5870a3b4b71}
+
+pairs:
+  - {id: two_own_addresses_two_hashes, a: sol_instruction, b: sol_second_own_address, same: false}
+  - {id: same_input_same_hash, a: sol_instruction, b: sol_same_input_again, same: true}
+  - {id: other_role_other_hash, a: sol_instruction, b: sol_other_role, same: false}
+  - {id: net_and_fee_differ, a: btc_spend_net, b: btc_spend_fee, same: false}

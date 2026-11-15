@@ -1,0 +1,34 @@
+# Phase 7 (docs/phases/phase-7.md §8, §15, D190, D187 (1), D188 (2)): the holdings statement
+# at the end of a day on the Berlin calendar.
+#
+# One wallet account with two addresses on two chains (masked as the statement prints them)
+# and an exchange account; every amount invented. Loading recomputes: a movement counts when
+# its Berlin day is on or before the statement's day; positions per account, address and
+# asset (units, not base units); a spam token is no position and is listed in the appendix
+# „nicht bewertete Token“; an address whose last sync did not reconcile is marked so. The
+# open lots with `tax_free_from` come from lots.yaml's rule (step 5 joins them).
+cases:
+  - id: end_of_2026
+    pending: "phase 7 step 5 (services/holdings.statement)"
+    "on": 2026-12-31
+    movements:
+      - {name: sol_in, account: wallet_a, address: "BU8o…jsJP", asset: SOL, units: "2.5", at: "2026-03-08T09:00:00Z"}
+      - {name: sol_out, account: wallet_a, address: "BU8o…jsJP", asset: SOL, units: "-1.000005", at: "2026-03-09T09:00:00Z"}
+      - {name: usdc_in, account: wallet_a, address: "BU8o…jsJP", asset: USDC, units: "150", at: "2026-03-12T09:00:00Z"}
+      - {name: eth_in, account: wallet_a, address: "0x2b…9c1e", asset: ETH, units: "0.2995", at: "2026-03-01T10:04:12Z"}
+      # 22:30 UTC on 31 Dec is 23:30 in Berlin: included.
+      - {name: evening_in, account: wallet_a, address: "0x2b…9c1e", asset: ETH, units: "0.1", at: "2026-12-31T22:30:00Z"}
+      # 23:30 UTC on 31 Dec is 1 Jan in Berlin: excluded.
+      - {name: late_in, account: wallet_a, address: "BU8o…jsJP", asset: SOL, units: "1", at: "2026-12-31T23:30:00Z"}
+      - {name: spam_in, account: wallet_a, address: "0x2b…9c1e", asset: "Token 0x9f…21ab", units: "1000", at: "2026-05-01T09:00:00Z", spam: true}
+      - {name: btc_buy, account: binance, asset: BTC, units: "0.05", at: "2026-02-03T12:00:00Z"}
+    unreconciled: ["0x2b…9c1e"]
+    expect:
+      positions:
+        - {account: binance, address: null, asset: BTC, units: "0.05"}
+        - {account: wallet_a, address: "0x2b…9c1e", asset: ETH, units: "0.3995"}
+        - {account: wallet_a, address: "BU8o…jsJP", asset: SOL, units: "1.499995"}
+        - {account: wallet_a, address: "BU8o…jsJP", asset: USDC, units: "150"}
+      excluded: [late_in]
+      unvalued: ["Token 0x9f…21ab"]
+      unreconciled: ["0x2b…9c1e"]

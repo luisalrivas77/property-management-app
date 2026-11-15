@@ -1,0 +1,135 @@
+# Phase 7 (docs/phases/phase-7.md §15, D185, D186 (2), D182 (1)): Bitcoin per UTXO.
+#
+# Each `tx` is an Esplora /tx record (the fields D185 reads: vin with prevout, vout, fee,
+# status), written by hand: every address is a bech32 address generated from random bytes
+# for this file, every txid an invented hash, every amount invented (sats). Loading checks
+# Σ inputs = Σ outputs + fee and recomputes D185 (1)/(2):
+# - a receive (no own input): one `in` movement per own output, index = the vout number;
+# - a spend (every input own): one `out` movement of Σ own inputs − Σ own outputs − fee
+#   (index `net`) and one `fee`, both on the first own input's address; the change is no
+#   movement;
+# - a transaction with foreign inputs too (a CoinJoin, a shared PSBT): `unknown`, review;
+# - step 0's reading of the change question (§15.1): while two or more outputs go to
+#   unregistered addresses nobody answered for, the group is `unknown` with the card
+#   `wallet.change_candidate` listing them; one answer settles §6 (12) either way.
+#
+# Addresses: own receive bc1q62vj…rtxz, own change (registered) bc1qsdqk…z2k, a second own
+# address bc1q0phh…zqrl; a payee bc1qfrg0…tuf; an unregistered output bc1qn8du…ngw (the
+# Tangem's change with „Dynamic Addresses“ on); a foreign input bc1qmc3c…yhg.
+cases:
+  - id: receive
+    pending: "phase 7 step 4 (rules/chain/normalise.utxo_net, classify)"
+    own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
+    tx:
+      txid: a52568b62afb649b0fe2a9e6ae36cafe0d305fd5f5d405e029b1b0434e47f091
+      vin:
+        - {txid: c3315ac02576096aeacfd9331bb8f5c6cdfc5ecee3e9883b9ac567ae9a75953c, vout: 0, prevout: {scriptpubkey_address: bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf, value: 1500000}}
+      vout:
+        - {scriptpubkey_address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, value: 1000000}
+        - {scriptpubkey_address: bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf, value: 490000}
+      fee: 10000
+      status: {confirmed: true, block_height: 900001, block_time: 1772356800}
+    expect:
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: in, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 1000000, index: "0"}
+
+  - id: spend_registered_change
+    pending: "phase 7 step 4 (rules/chain/normalise.utxo_net, classify)"
+    own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, bc1qsdqk2xmw06qgn2589yjzthjlk368wfpq4pgz2k]
+    tx:
+      txid: c1fc6ec8750e91249f6f5584356d5eccf89344b9c285deb70170b6ed0367b0b0
+      vin:
+        - {txid: a52568b62afb649b0fe2a9e6ae36cafe0d305fd5f5d405e029b1b0434e47f091, vout: 0, prevout: {scriptpubkey_address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, value: 3000000}}
+      vout:
+        - {scriptpubkey_address: bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf, value: 1200000}
+        - {scriptpubkey_address: bc1qsdqk2xmw06qgn2589yjzthjlk368wfpq4pgz2k, value: 1795000}
+      fee: 5000
+      status: {confirmed: true, block_height: 900102, block_time: 1773000000}
+    expect:
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: out, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 1200000, index: net}
+        - {kind: fee, role: fee, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 5000, index: fee}
+
+  # §6 example 12: 0.05 BTC in, 0.02 to the payee, 0.0299 to an unregistered address, fee 0.0001.
+  - id: spend_unregistered_output_card
+    pending: "phase 7 step 4 (classify, the change card)"
+    own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
+    tx: &example_12
+      txid: 4ed07048b25495b2b12bd81488fd3597ce6840e19d2c03c201e6892ae5c82a07
+      vin:
+        - {txid: c1fc6ec8750e91249f6f5584356d5eccf89344b9c285deb70170b6ed0367b0b0, vout: 1, prevout: {scriptpubkey_address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, value: 5000000}}
+      vout:
+        - {scriptpubkey_address: bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf, value: 2000000}
+        - {scriptpubkey_address: bc1qn8duhwxyj87x0d2efhvv44p5r0f48jr6t94ngw, value: 2990000}
+      fee: 10000
+      status: {confirmed: true, block_height: 900230, block_time: 1774000000}
+    expect:
+      group: unknown
+      movements: []
+      candidates: [bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf, bc1qn8duhwxyj87x0d2efhvv44p5r0f48jr6t94ngw]
+      card: wallet.change_candidate
+  - id: spend_unregistered_output_answered_yes
+    pending: "phase 7 step 4 (classify, „Ja, eigene Adresse“ re-derives the net movement)"
+    own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
+    answered_change: [bc1qn8duhwxyj87x0d2efhvv44p5r0f48jr6t94ngw]
+    tx: *example_12
+    expect:
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: out, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 2000000, index: net}
+        - {kind: fee, role: fee, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 10000, index: fee}
+  - id: spend_unregistered_output_answered_no
+    pending: "phase 7 step 4 (classify, „Nein, Empfänger“)"
+    own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
+    answered_payee: [bc1qn8duhwxyj87x0d2efhvv44p5r0f48jr6t94ngw]
+    tx: *example_12
+    expect:
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: out, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 4990000, index: net}
+        - {kind: fee, role: fee, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 10000, index: fee}
+
+  - id: spend_from_two_own_addresses
+    pending: "phase 7 step 4 (rules/chain/normalise.utxo_net, classify)"
+    own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, bc1q0phhhvur8dmwqv48kmf6d7ck3s3zkfjksuzqrl, bc1qsdqk2xmw06qgn2589yjzthjlk368wfpq4pgz2k]
+    tx:
+      txid: a5e4ebfd217b4d0e63d332e1ae6458cc47140369c6b9e408fbbcacc417511657
+      vin:
+        - {txid: 155018d16e5be002e50965bbeee175adf5504fec9a10f898c515e803acba7a36, vout: 0, prevout: {scriptpubkey_address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, value: 600000}}
+        - {txid: 56e85cd79691616846f77631c7bb7c1b059084bf114740f2001d115ebae8f286, vout: 2, prevout: {scriptpubkey_address: bc1q0phhhvur8dmwqv48kmf6d7ck3s3zkfjksuzqrl, value: 700000}}
+      vout:
+        - {scriptpubkey_address: bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf, value: 1000000}
+        - {scriptpubkey_address: bc1qsdqk2xmw06qgn2589yjzthjlk368wfpq4pgz2k, value: 295000}
+      fee: 5000
+      status: {confirmed: true, block_height: 900400, block_time: 1775000000}
+    expect:
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: out, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 1000000, index: net}
+        - {kind: fee, role: fee, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 5000, index: fee}
+
+  - id: coinjoin_shaped_unknown
+    pending: "phase 7 step 4 (classify)"
+    own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
+    tx:
+      txid: b773602c4ee06da1bc10da8a3136f4888b2309d69d65a0cc4e8b35190a243783
+      vin:
+        - {txid: e60743b2adf7d203ed25856b679ea75bba640630dca70acc5f9e8d0074882d25, vout: 0, prevout: {scriptpubkey_address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, value: 1000000}}
+        - {txid: c4a9f2b2edfdf9327c117099b9679a174b9c7d90cd0518071022261d60fe1b6a, vout: 3, prevout: {scriptpubkey_address: bc1qmc3ct8j5r6se3lnsrd8g9xmhw6p909s5l7kyhg, value: 1000000}}
+      vout:
+        - {scriptpubkey_address: bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf, value: 995000}
+        - {scriptpubkey_address: bc1qn8duhwxyj87x0d2efhvv44p5r0f48jr6t94ngw, value: 995000}
+      fee: 10000
+      status: {confirmed: true, block_height: 900500, block_time: 1776000000}
+    expect: {group: unknown, movements: [], card: group.unknown}
+
+balances:
+  # D185 (3): chain_stats.funded_txo_sum − spent_txo_sum per address.
+  - {id: balance_receive_address, pending: "phase 7 step 4 (services/chain/bitcoin_esplora.balances)", address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, chain_stats: {funded_txo_sum: 9000000, spent_txo_sum: 8000000}, expect_sats: 1000000}
+  - {id: balance_change_address, pending: "phase 7 step 4 (services/chain/bitcoin_esplora.balances)", address: bc1qsdqk2xmw06qgn2589yjzthjlk368wfpq4pgz2k, chain_stats: {funded_txo_sum: 2090000, spent_txo_sum: 0}, expect_sats: 2090000}
+
+errors:
+  - {id: throttled_429, pending: "phase 7 step 4 (services/chain/bitcoin_esplora)", status: 429, expect_error: wallet.source_throttled}
+  - {id: refused_403, pending: "phase 7 step 4 (services/chain/bitcoin_esplora)", status: 403, expect_error: wallet.source_refused}

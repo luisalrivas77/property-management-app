@@ -1,4 +1,4 @@
-"""Migration 0040 (docs/phases/phase-7.md §11, D179-D191): the six wallet tables with their
+"""Migration 0041 (docs/phases/phase-7.md §11, D179-D191): the six wallet tables with their
 triggers and grants, the asset and asset_movement columns, the per-chain address CHECKs, the
 chain kinds of transfer_link, and the downgrade guard.
 
@@ -39,7 +39,7 @@ from psycopg import errors
 from psycopg.types.json import Jsonb
 from sqlalchemy.exc import DBAPIError
 
-HEAD = "0040_wallets"
+HEAD = "0041_wallets"
 PREVIOUS = "0038_no_pay_marker"
 
 PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")
@@ -633,7 +633,7 @@ def _check(conn, name: str) -> str:
     ).fetchone()[0]
 
 
-def test_0040_runs_up_down_and_up_on_an_empty_database():
+def test_0041_runs_up_down_and_up_on_an_empty_database():
     name = create_database()
     try:
         alembic(name, "upgrade", HEAD)
@@ -668,7 +668,7 @@ def test_0040_runs_up_down_and_up_on_an_empty_database():
         ("chain_event", "an event is about a wallet, an address or a movement group"),
     ],
 )
-def test_0040_downgrade_refuses_while_data_would_be_lost(seed, what):
+def test_0041_downgrade_refuses_while_data_would_be_lost(seed, what):
     """A downgrade never drops a row nor leaves one the old CHECK refuses; the guard sees rows
     under forced RLS and restores FORCE afterwards."""
     name = create_database()

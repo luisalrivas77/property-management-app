@@ -107,7 +107,7 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("transfer_link", "matched_by"): TransferMatchedBy,
     ("price", "source"): PriceSourceKind,
     ("valuation_snapshot", "price_source"): PriceSourceKind,
-    # Phase 7 (0040)
+    # Phase 7 (0041)
     ("asset", "chain"): Chain,
     ("wallet_address", "chain"): Chain,
     ("wallet_address", "kind"): AddressKind,

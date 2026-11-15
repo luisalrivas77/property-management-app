@@ -1,0 +1,631 @@
+# Phase 7 (docs/phases/phase-7.md §15, D181 (d), D183, D186, D187): Solana by shape, over
+# standard JSON-RPC `getTransaction` records (encoding jsonParsed, maxSupportedTransactionVersion
+# 0) and `getInflationReward`.
+#
+# WRITTEN BY HAND in the RPC's field names, never copied from a live answer: every key is
+# generated from random bytes for this file, every signature too, every amount invented. The
+# public program ids are the System, Token, Token-2022, Associated Token Account and Stake
+# programs and the registry's USDC mint; the AMM programs are invented (decoders.yaml).
+# Only the fields D181 (d) reads are kept: accountKeys, the instructions' programId and
+# parsed type, meta.err, meta.fee, pre/postBalances, pre/postTokenBalances (with `owner`),
+# meta.loadedAddresses.
+#
+# Loading recomputes D181 (d): the own address's SOL delta over its main account and every
+# token account it owns (so a token account's rent moving from the main account is no
+# delta), the fee added back when the own address is accountKeys[0] (the fee payer); one
+# delta per mint over the token balances it owns (a routed swap's intermediate token nets to
+# zero and is no delta); meta.err → failed. The movements, the group kind and the card are
+# step 2's (`pending`). Step 0's readings (§15.1):
+# - jsonParsed lists the lookup table's keys in accountKeys with `source: lookupTable`, so
+#   the balance arrays index that list as it stands (the plain json encoding would need
+#   meta.loadedAddresses appended); step 2 checks this against a stored original;
+# - a send that creates the recipient's token account: the rent A paid is part of the `fee`
+#   movement (meta.fee + rent), D181 (d)'s „the rent as fee“;
+# - a signed transaction that moves no asset (a token account closed, its rent back): group
+#   `transfer` whose only movement is the fee, confirmed like a fee (D186 (1)).
+#
+# A = BU8o…jsJP (own); F = ANgP…Y5J (a third party); A's USDC token account Dd2n…ZH8ZU;
+# F's USDC token account 41fr…nD4; a stake account Hqw2…9fF; the invented listed AMM
+# DKFJ…TarL and unlisted program 9ZgA…pyQw; pool accounts E1ST…bT7, H7CG…f6Bf, 3jDv…2rEu.
+cases:
+  # §6 example 1: 2.5 SOL to A in a transaction A did not sign.
+  - id: native_receive
+    pending: "phase 7 step 2 (services/chain/solana_rpc, normalise.solana_deltas, classify)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300000001
+      blockTime: 1772960400
+      transaction:
+        signatures: [2Tr7A29v8BxJACPAAH4ThJuJ4niuedz9bo6jCarUboo6tczZNwX2P6VgyWJqghmSxWqa76hoQt8CeyVitVoA6vdx]
+        message:
+          accountKeys:
+            - {pubkey: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, signer: true, writable: true, source: transaction}
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: false, writable: true, source: transaction}
+            - {pubkey: "11111111111111111111111111111111", signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: "11111111111111111111111111111111", parsed: {type: transfer, info: {source: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, destination: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, lamports: 2500000000}}}
+      meta: {err: null, fee: 5000, preBalances: [10000000000, 1000000000, 1], postBalances: [7499995000, 3500000000, 1], preTokenBalances: [], postTokenBalances: [], loadedAddresses: {writable: [], readonly: []}}
+    expect:
+      status: ok
+      fee_lamports: null
+      deltas: [{units: 2500000000}]
+      group: transfer
+      movements: [{kind: uncategorized, role: in, units: 2500000000, index: "0"}]
+      card: transfer.unmatched_leg
+
+  - id: native_send_with_fee
+    pending: "phase 7 step 2 (services/chain/solana_rpc, normalise.solana_deltas, classify)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300000101
+      blockTime: 1773000000
+      transaction:
+        signatures: [4M2z7mBddBVLFTZasv1hc9gmLr76Hb36Hxp8khi7nAK3uu5NvRzebWKWsSrvmJkicLh1qA8YSbUwFnmuREtVpRP4]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, signer: false, writable: true, source: transaction}
+            - {pubkey: "11111111111111111111111111111111", signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: "11111111111111111111111111111111", parsed: {type: transfer, info: {source: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, destination: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, lamports: 1000000000}}}
+      meta: {err: null, fee: 5000, preBalances: [3500000000, 7499995000, 1], postBalances: [2499995000, 8499995000, 1], preTokenBalances: [], postTokenBalances: [], loadedAddresses: {writable: [], readonly: []}}
+    expect:
+      status: ok
+      fee_lamports: 5000
+      deltas: [{units: -1000000000}]
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: out, units: 1000000000, index: "0"}
+        - {kind: fee, role: fee, units: 5000, index: fee}
+      card: transfer.unmatched_leg
+
+  - id: spl_in
+    pending: "phase 7 step 2 (normalise.solana_deltas, classify)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300000201
+      blockTime: 1773100000
+      transaction:
+        signatures: [5NKF31stDRx661UuFRfQchMUH7MZ1Ks22YbYt5UHY4xr6aZvPdWtS6zCQUwFMZPbBeAcYtru8Ys8tMx9zyQN6rAi]
+        message:
+          accountKeys:
+            - {pubkey: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, signer: true, writable: true, source: transaction}
+            - {pubkey: 41frPyR5ATwWweP1VzSdHDY82VbWy3Dt6mViHk9a1nD4, signer: false, writable: true, source: transaction}
+            - {pubkey: Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU, signer: false, writable: true, source: transaction}
+            - {pubkey: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, parsed: {type: transferChecked}}
+      meta:
+        err: null
+        fee: 5000
+        preBalances: [7499995000, 2039280, 2039280, 1]
+        postBalances: [7499990000, 2039280, 2039280, 1]
+        preTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, uiTokenAmount: {amount: "80000000", decimals: 6}}
+          - {accountIndex: 2, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, uiTokenAmount: {amount: "0", decimals: 6}}
+        postTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, uiTokenAmount: {amount: "30000000", decimals: 6}}
+          - {accountIndex: 2, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, uiTokenAmount: {amount: "50000000", decimals: 6}}
+        loadedAddresses: {writable: [], readonly: []}
+    expect:
+      status: ok
+      fee_lamports: null
+      deltas: [{mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, units: 50000000}]
+      group: transfer
+      movements: [{kind: uncategorized, role: in, units: 50000000, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, index: "0"}]
+      card: transfer.unmatched_leg
+
+  - id: spl_out
+    pending: "phase 7 step 2 (normalise.solana_deltas, classify)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300000301
+      blockTime: 1773200000
+      transaction:
+        signatures: [38c48R5ArgXXgXF4HZ8acJ1rGr2xZEdJiMM3xfLVQqn9zUHww6xqSqFrcBzs1PC8VHUmhUW3BY3B7nHCF9EoduRD]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU, signer: false, writable: true, source: transaction}
+            - {pubkey: 41frPyR5ATwWweP1VzSdHDY82VbWy3Dt6mViHk9a1nD4, signer: false, writable: true, source: transaction}
+            - {pubkey: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, parsed: {type: transferChecked}}
+      meta:
+        err: null
+        fee: 5000
+        preBalances: [2499995000, 2039280, 2039280, 1]
+        postBalances: [2499990000, 2039280, 2039280, 1]
+        preTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "50000000", decimals: 6}}
+          - {accountIndex: 2, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, uiTokenAmount: {amount: "30000000", decimals: 6}}
+        postTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "30000000", decimals: 6}}
+          - {accountIndex: 2, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, uiTokenAmount: {amount: "50000000", decimals: 6}}
+        loadedAddresses: {writable: [], readonly: []}
+    expect:
+      status: ok
+      fee_lamports: 5000
+      deltas: [{mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, units: -20000000}]
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: out, units: 20000000, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, index: "0"}
+        - {kind: fee, role: fee, units: 5000, index: fee}
+      card: transfer.unmatched_leg
+
+  # §6 example 3: 1 SOL for 150 USDC through a decoder-listed AMM (a workspace row of the
+  # invented program), fee 0.000005 SOL. Pricing and routing: swap_group.yaml and phase 2's
+  # review_routing.yaml `chain_cases`.
+  - id: swap_listed_amm
+    pending: "phase 7 step 2 (normalise.solana_deltas, classify with a decoder)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    decoder_listed: true
+    tx:
+      version: 0
+      slot: 300000401
+      blockTime: 1773300000
+      transaction:
+        signatures: [2jZM9u3qbhwWf8vEevSJFg3vgk8Vhmh5aKmgWKVEwHsB8QMY73RsGVD9yNVWi7F7ubPewKCwzy5HYHG89htEv8Sg]
+        message:
+          accountKeys: &swap_keys
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU, signer: false, writable: true, source: transaction}
+            - {pubkey: E1STzRBxkqNZjDwfoMgE6AXyihQxU7pcngWdPDvhxbT7, signer: false, writable: true, source: transaction}
+            - {pubkey: H7CGmFeCPYdrhCpS5DF8PsZ2KfwKTBqdN7pRGTWWf6Bf, signer: false, writable: true, source: transaction}
+            - {pubkey: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL, signer: false, writable: false, source: transaction}
+            - {pubkey: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, signer: false, writable: false, source: transaction}
+            - {pubkey: "11111111111111111111111111111111", signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL, data: "invented"}
+      meta: &swap_meta
+        err: null
+        fee: 5000
+        preBalances: [2499990000, 2039280, 500000000000, 2039280, 1, 1, 1]
+        postBalances: [1499985000, 2039280, 501000000000, 2039280, 1, 1, 1]
+        preTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "30000000", decimals: 6}}
+          - {accountIndex: 3, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: E1STzRBxkqNZjDwfoMgE6AXyihQxU7pcngWdPDvhxbT7, uiTokenAmount: {amount: "900000000000", decimals: 6}}
+        postTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "180000000", decimals: 6}}
+          - {accountIndex: 3, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: E1STzRBxkqNZjDwfoMgE6AXyihQxU7pcngWdPDvhxbT7, uiTokenAmount: {amount: "899850000000", decimals: 6}}
+        loadedAddresses: {writable: [], readonly: []}
+    expect: &swap_expect
+      status: ok
+      fee_lamports: 5000
+      deltas:
+        - {units: -1000000000}
+        - {mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, units: 150000000}
+      group: swap
+      movements:
+        - {kind: disposal, role: out, units: 1000000000, index: "0"}
+        - {kind: acquisition, role: in, units: 150000000, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, index: "0"}
+        - {kind: fee, role: fee, units: 5000, index: fee}
+
+  # The same swap on a program no decoder row names: a card the first time; „Künftig immer
+  # so“ writes the workspace row (swap_group.yaml `contract_call_answered_learns_decoder`).
+  - id: swap_unlisted_program
+    pending: "phase 7 step 2 (classify: the shape is a swap, the program unknown → card)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300000402
+      blockTime: 1773300060
+      transaction:
+        signatures: [4ysMBZqN5SwEXCuqspf7J3jzgjwgatYw9i7ua23jikd6mMvpaTQ536vccsBowFiedB6Z1aHGoHT5ExRoDDES73BU]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU, signer: false, writable: true, source: transaction}
+            - {pubkey: E1STzRBxkqNZjDwfoMgE6AXyihQxU7pcngWdPDvhxbT7, signer: false, writable: true, source: transaction}
+            - {pubkey: H7CGmFeCPYdrhCpS5DF8PsZ2KfwKTBqdN7pRGTWWf6Bf, signer: false, writable: true, source: transaction}
+            - {pubkey: 9ZgAf9GnSdybtfn3p65Z5GaqYrnjvN97XsUiAeiupyQw, signer: false, writable: false, source: transaction}
+            - {pubkey: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, signer: false, writable: false, source: transaction}
+            - {pubkey: "11111111111111111111111111111111", signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: 9ZgAf9GnSdybtfn3p65Z5GaqYrnjvN97XsUiAeiupyQw, data: "invented"}
+      meta: *swap_meta
+    expect: *swap_expect
+
+  # A routed trade through an intermediate token X (mint 3hBm…GwDs, A's account ABXU…MPWu):
+  # X comes in and goes out in the same transaction, nets to zero, and is no leg.
+  - id: swap_three_legs_routed
+    pending: "phase 7 step 2 (normalise.solana_deltas drops the netted leg)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    decoder_listed: true
+    tx:
+      version: 0
+      slot: 300000501
+      blockTime: 1773400000
+      transaction:
+        signatures: [2cgAQNQcN1LjFMGAh2Le8kULn4xjkBrLznqYnwk8URvdfoVv8uq38FUzvxvjGvi9irFUhs2zHVqWzTjCGYv91wos]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU, signer: false, writable: true, source: transaction}
+            - {pubkey: ABXUciotZu8EBH2m8CCMBFKaWgjUbdnKDATy7C7GMPWu, signer: false, writable: true, source: transaction}
+            - {pubkey: E1STzRBxkqNZjDwfoMgE6AXyihQxU7pcngWdPDvhxbT7, signer: false, writable: true, source: transaction}
+            - {pubkey: H7CGmFeCPYdrhCpS5DF8PsZ2KfwKTBqdN7pRGTWWf6Bf, signer: false, writable: true, source: transaction}
+            - {pubkey: 3jDvSYTWsXMjZ1GMzinj2cSmXZBKYAxgHvNKYcic2rEu, signer: false, writable: true, source: transaction}
+            - {pubkey: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL, signer: false, writable: false, source: transaction}
+            - {pubkey: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, signer: false, writable: false, source: transaction}
+            - {pubkey: "11111111111111111111111111111111", signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL, data: "invented"}
+      meta:
+        err: null
+        fee: 5000
+        preBalances: [2499990000, 2039280, 2039280, 500000000000, 2039280, 2039280, 1, 1, 1]
+        postBalances: [1499985000, 2039280, 2039280, 501000000000, 2039280, 2039280, 1, 1, 1]
+        innerInstructions:
+          - index: 0
+            instructions:
+              - {programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, parsed: {type: transfer, info: {source: 3jDvSYTWsXMjZ1GMzinj2cSmXZBKYAxgHvNKYcic2rEu, destination: ABXUciotZu8EBH2m8CCMBFKaWgjUbdnKDATy7C7GMPWu, amount: "7000000"}}}
+              - {programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, parsed: {type: transfer, info: {source: ABXUciotZu8EBH2m8CCMBFKaWgjUbdnKDATy7C7GMPWu, destination: 3jDvSYTWsXMjZ1GMzinj2cSmXZBKYAxgHvNKYcic2rEu, amount: "7000000"}}}
+        preTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "30000000", decimals: 6}}
+          - {accountIndex: 2, mint: 3hBmU2c1WK3EjMPv4scKm1oyKEWpgbjSmBkSmiR8GwDs, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "0", decimals: 6}}
+          - {accountIndex: 4, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: E1STzRBxkqNZjDwfoMgE6AXyihQxU7pcngWdPDvhxbT7, uiTokenAmount: {amount: "900000000000", decimals: 6}}
+          - {accountIndex: 5, mint: 3hBmU2c1WK3EjMPv4scKm1oyKEWpgbjSmBkSmiR8GwDs, owner: E1STzRBxkqNZjDwfoMgE6AXyihQxU7pcngWdPDvhxbT7, uiTokenAmount: {amount: "5000000000", decimals: 6}}
+        postTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "180000000", decimals: 6}}
+          - {accountIndex: 2, mint: 3hBmU2c1WK3EjMPv4scKm1oyKEWpgbjSmBkSmiR8GwDs, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "0", decimals: 6}}
+          - {accountIndex: 4, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: E1STzRBxkqNZjDwfoMgE6AXyihQxU7pcngWdPDvhxbT7, uiTokenAmount: {amount: "899850000000", decimals: 6}}
+          - {accountIndex: 5, mint: 3hBmU2c1WK3EjMPv4scKm1oyKEWpgbjSmBkSmiR8GwDs, owner: E1STzRBxkqNZjDwfoMgE6AXyihQxU7pcngWdPDvhxbT7, uiTokenAmount: {amount: "5000000000", decimals: 6}}
+        loadedAddresses: {writable: [], readonly: []}
+    expect: *swap_expect
+
+  # §6 example 10: A delegates 10 SOL to a new stake account → the card asks whether it is
+  # A's own; until answered the 10 SOL are an internal_transfer_out proposed.
+  - id: stake_delegation_card
+    pending: "phase 7 step 2 (classify with the Stake program row)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    decoder_listed: true
+    tx:
+      version: 0
+      slot: 300000601
+      blockTime: 1773500000
+      transaction:
+        signatures: [3mspNtrMQqQ1vFQNzFfQK9vaFZihjLMTT1RTKF3yMqjosLFHL1emj8XRem6CnMQsTqSKPfz5a1zNdYRWxTyj9ex7]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: Hqw2dGuE2dcLueqA4UFgPw1Uciu9C7q41pxeUWcxX9fF, signer: true, writable: true, source: transaction}
+            - {pubkey: "11111111111111111111111111111111", signer: false, writable: false, source: transaction}
+            - {pubkey: Stake11111111111111111111111111111111111111, signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: "11111111111111111111111111111111", parsed: {type: createAccount}}
+            - {programId: Stake11111111111111111111111111111111111111, parsed: {type: initialize}}
+            - {programId: Stake11111111111111111111111111111111111111, parsed: {type: delegate}}
+      meta: {err: null, fee: 5000, preBalances: [20000000000, 0, 1, 1], postBalances: [9999995000, 10000000000, 1, 1], preTokenBalances: [], postTokenBalances: [], loadedAddresses: {writable: [], readonly: []}}
+    expect:
+      status: ok
+      fee_lamports: 5000
+      deltas: [{units: -10000000000}]
+      group: stake
+      movements:
+        - {kind: internal_transfer_out, role: out, units: 10000000000, index: "0"}
+        - {kind: fee, role: fee, units: 5000, index: fee}
+
+  # §6 example 11: a token leg out and nothing in, through a program no row names.
+  - id: contract_call_shape
+    pending: "phase 7 step 2 (classify)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300000701
+      blockTime: 1773600000
+      transaction:
+        signatures: [Cie2CtYo4t1FgryiSXgXVXhxuNxPXCTPyYvGcXToGvitaD4A2915on7b8jatLXKctjmbhdC7LCuyGvyuvct9J8u]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU, signer: false, writable: true, source: transaction}
+            - {pubkey: H7CGmFeCPYdrhCpS5DF8PsZ2KfwKTBqdN7pRGTWWf6Bf, signer: false, writable: true, source: transaction}
+            - {pubkey: 9ZgAf9GnSdybtfn3p65Z5GaqYrnjvN97XsUiAeiupyQw, signer: false, writable: false, source: transaction}
+            - {pubkey: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: 9ZgAf9GnSdybtfn3p65Z5GaqYrnjvN97XsUiAeiupyQw, data: "invented"}
+      meta:
+        err: null
+        fee: 5000
+        preBalances: [9999995000, 2039280, 2039280, 1, 1]
+        postBalances: [9999990000, 2039280, 2039280, 1, 1]
+        preTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "180000000", decimals: 6}}
+          - {accountIndex: 2, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: E1STzRBxkqNZjDwfoMgE6AXyihQxU7pcngWdPDvhxbT7, uiTokenAmount: {amount: "899850000000", decimals: 6}}
+        postTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "130000000", decimals: 6}}
+          - {accountIndex: 2, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: E1STzRBxkqNZjDwfoMgE6AXyihQxU7pcngWdPDvhxbT7, uiTokenAmount: {amount: "899900000000", decimals: 6}}
+        loadedAddresses: {writable: [], readonly: []}
+    expect:
+      status: ok
+      fee_lamports: 5000
+      deltas: [{mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, units: -50000000}]
+      group: contract_call
+      movements:
+        - {kind: uncategorized, role: out, units: 50000000, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, index: "0"}
+        - {kind: fee, role: fee, units: 5000, index: fee}
+      card: group.contract_call
+
+  # A Token-2022 transfer out of an invented mint A already holds (AA84…yyYw; A's account
+  # HWJn…bVq6, F's BQTN…6AB): read like any SPL transfer.
+  - id: token_2022_transfer
+    pending: "phase 7 step 2 (normalise.solana_deltas over Token-2022)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300000801
+      blockTime: 1773700000
+      transaction:
+        signatures: [2yXc1fAEntcHERF9qvGijg7H5xotSug9rYfwj8Qv5XYqE4h1Ma6tr8NqLw8basjWPZr56DEUURZWszpguiNNbH2E]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: HWJnoLWz9HDdvCKDPaS9RYoXC4FZueQVXyCk3ryXbVq6, signer: false, writable: true, source: transaction}
+            - {pubkey: BQTNXgBv3dW4YwTrrs3yFgEMAV7DKTLQjhsvbXnX6AB, signer: false, writable: true, source: transaction}
+            - {pubkey: TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb, signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb, parsed: {type: transferChecked}}
+      meta:
+        err: null
+        fee: 5000
+        preBalances: [9999990000, 2074080, 2074080, 1]
+        postBalances: [9999985000, 2074080, 2074080, 1]
+        preTokenBalances:
+          - {accountIndex: 1, mint: AA84V3cuyat3DZfiLtTCQfx3qhvKLHjJxcBnfbgLyyYw, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, programId: TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb, uiTokenAmount: {amount: "5000000", decimals: 6}}
+          - {accountIndex: 2, mint: AA84V3cuyat3DZfiLtTCQfx3qhvKLHjJxcBnfbgLyyYw, owner: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, programId: TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb, uiTokenAmount: {amount: "0", decimals: 6}}
+        postTokenBalances:
+          - {accountIndex: 1, mint: AA84V3cuyat3DZfiLtTCQfx3qhvKLHjJxcBnfbgLyyYw, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, programId: TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb, uiTokenAmount: {amount: "3000000", decimals: 6}}
+          - {accountIndex: 2, mint: AA84V3cuyat3DZfiLtTCQfx3qhvKLHjJxcBnfbgLyyYw, owner: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, programId: TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb, uiTokenAmount: {amount: "2000000", decimals: 6}}
+        loadedAddresses: {writable: [], readonly: []}
+    expect:
+      status: ok
+      fee_lamports: 5000
+      deltas: [{mint: AA84V3cuyat3DZfiLtTCQfx3qhvKLHjJxcBnfbgLyyYw, units: -2000000}]
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: out, units: 2000000, mint: AA84V3cuyat3DZfiLtTCQfx3qhvKLHjJxcBnfbgLyyYw, index: "0"}
+        - {kind: fee, role: fee, units: 5000, index: fee}
+      card: transfer.unmatched_leg
+
+  # The first USDC receive: A pays the rent of its new token account (AtcK…uyej) and F sends
+  # 25 USDC in the same transaction. The rent stays A's SOL (no movement), only the fee is.
+  - id: first_spl_receive_creates_account
+    pending: "phase 7 step 2 (normalise.solana_deltas)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300000901
+      blockTime: 1773800000
+      transaction:
+        signatures: [2gmgv7rtoGXdD4bppaY6gyZyeBEiZk23vtjFbGMrBTZ4Mm5QnwXHqM25L5dJfX8yC736cJoUpsp2Dztbjn5ig1mM]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, signer: true, writable: false, source: transaction}
+            - {pubkey: AtcK14U2KY2hvegt1GqcTEXSeWDBjQUPsnukPCacuyej, signer: false, writable: true, source: transaction}
+            - {pubkey: 41frPyR5ATwWweP1VzSdHDY82VbWy3Dt6mViHk9a1nD4, signer: false, writable: true, source: transaction}
+            - {pubkey: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, signer: false, writable: false, source: transaction}
+            - {pubkey: "11111111111111111111111111111111", signer: false, writable: false, source: transaction}
+            - {pubkey: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, signer: false, writable: false, source: transaction}
+            - {pubkey: ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL, signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL, parsed: {type: create}}
+            - {programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, parsed: {type: transferChecked}}
+      meta:
+        err: null
+        fee: 5000
+        preBalances: [1000000000, 7499990000, 0, 2039280, 1461600, 1, 1, 1]
+        postBalances: [997955720, 7499990000, 2039280, 2039280, 1461600, 1, 1, 1]
+        preTokenBalances:
+          - {accountIndex: 3, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, uiTokenAmount: {amount: "50000000", decimals: 6}}
+        postTokenBalances:
+          - {accountIndex: 2, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "25000000", decimals: 6}}
+          - {accountIndex: 3, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, uiTokenAmount: {amount: "25000000", decimals: 6}}
+        loadedAddresses: {writable: [], readonly: []}
+    expect:
+      status: ok
+      fee_lamports: 5000
+      deltas: [{mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, units: 25000000}]
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: in, units: 25000000, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, index: "1"}
+        - {kind: fee, role: fee, units: 5000, index: fee}
+      card: transfer.unmatched_leg
+
+  # An empty token account (9C9P…uYLR) closed, its rent back to A's main account: no movement
+  # but the fee (step 0's reading: a `transfer` group with the fee only).
+  - id: token_account_closed
+    pending: "phase 7 step 2 (normalise.solana_deltas, classify)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300001001
+      blockTime: 1773900000
+      transaction:
+        signatures: [3oF971seMwBzQsGEPNmTiApmukEvzRNb1yPQWSR64TmJ9TQ5wcuNBvR93Pm3EKGRRv2i2pGZU9qvjndAMVbNeeLE]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: 9C9PEYz62e4p6VPR2PMKF8cXr487iWvHoLEwun7HuYLR, signer: false, writable: true, source: transaction}
+            - {pubkey: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, parsed: {type: closeAccount}}
+      meta:
+        err: null
+        fee: 5000
+        preBalances: [997955720, 2039280, 1]
+        postBalances: [999990000, 0, 1]
+        preTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "0", decimals: 6}}
+        postTokenBalances: []
+        loadedAddresses: {writable: [], readonly: []}
+    expect:
+      status: ok
+      fee_lamports: 5000
+      deltas: []
+      group: transfer
+      movements: [{kind: fee, role: fee, units: 5000, index: fee}]
+
+  # A sends 10 USDC to R (4TWA…yoeM) and creates R's token account (DrZn…QR1q): the token
+  # leg plus the rent as part of the fee, no card for the rent.
+  - id: send_creating_recipient_account
+    pending: "phase 7 step 2 (normalise.solana_deltas, classify)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300001101
+      blockTime: 1774000000
+      transaction:
+        signatures: [pX1ovT5vp2c8X4fnLQ641KAEWXkMVCdZRzgFN3eWuQSyMJvbjnpgqWruFa7MC2H1fx4cZeTNTgeVnDscgAtbQax]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU, signer: false, writable: true, source: transaction}
+            - {pubkey: DrZn9RJEMEhZSDuRZaibxoK3QdbNEGz6qhdEHKMBQR1q, signer: false, writable: true, source: transaction}
+            - {pubkey: 4TWApYDwYwX8V1JuzSW2AKWAJPzn7w4ZLx7Pud1LyoeM, signer: false, writable: false, source: transaction}
+            - {pubkey: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, signer: false, writable: false, source: transaction}
+            - {pubkey: "11111111111111111111111111111111", signer: false, writable: false, source: transaction}
+            - {pubkey: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, signer: false, writable: false, source: transaction}
+            - {pubkey: ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL, signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL, parsed: {type: create}}
+            - {programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, parsed: {type: transferChecked}}
+      meta:
+        err: null
+        fee: 5000
+        preBalances: [999990000, 2039280, 0, 50000000, 1461600, 1, 1, 1]
+        postBalances: [997945720, 2039280, 2039280, 50000000, 1461600, 1, 1, 1]
+        preTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "130000000", decimals: 6}}
+        postTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "120000000", decimals: 6}}
+          - {accountIndex: 2, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: 4TWApYDwYwX8V1JuzSW2AKWAJPzn7w4ZLx7Pud1LyoeM, uiTokenAmount: {amount: "10000000", decimals: 6}}
+        loadedAddresses: {writable: [], readonly: []}
+    expect:
+      status: ok
+      fee_lamports: 5000
+      deltas:
+        - {units: -2039280}
+        - {mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, units: -10000000}
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: out, units: 10000000, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, index: "1"}
+        - {kind: fee, role: fee, units: 2044280, index: fee}
+      card: transfer.unmatched_leg
+
+  - id: failed_transaction
+    pending: "phase 7 step 2 (classify: failed, the fee only)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300001201
+      blockTime: 1774100000
+      transaction:
+        signatures: [39TQctyzRMR1fzcRXNxGMDqwCV8quhWPhNYCB2JKqC3z65kx81YXt5Y2VSRFtma7Jq8Sibd55wcXVBbGJceGGEnZ]
+        message:
+          accountKeys: *swap_keys
+          instructions:
+            - {programId: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL, data: "invented"}
+      meta:
+        err: {InstructionError: [0, {Custom: 6001}]}
+        fee: 5000
+        preBalances: [997945720, 2039280, 501000000000, 2039280, 1, 1, 1]
+        postBalances: [997940720, 2039280, 501000000000, 2039280, 1, 1, 1]
+        preTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "120000000", decimals: 6}}
+        postTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "120000000", decimals: 6}}
+        loadedAddresses: {writable: [], readonly: []}
+    expect:
+      status: failed
+      fee_lamports: 5000
+      deltas: []
+      group: failed
+      movements: [{kind: fee, role: fee, units: 5000, index: fee}]
+
+  # A version 0 transaction whose own token account comes from an address lookup table.
+  - id: versioned_lookup_table
+    pending: "phase 7 step 2 (services/chain/solana_rpc with maxSupportedTransactionVersion 0)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    tx:
+      version: 0
+      slot: 300001301
+      blockTime: 1774200000
+      transaction:
+        signatures: [TyzxBP6AaiL7jjMbjVzqg65hk3z9QC4WozBs1QsPKPbupMca7dEhwn3WvCfytY1BQypnRK5JPB1PHUaFcg4N93M]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: 41frPyR5ATwWweP1VzSdHDY82VbWy3Dt6mViHk9a1nD4, signer: false, writable: true, source: transaction}
+            - {pubkey: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, signer: false, writable: false, source: transaction}
+            - {pubkey: Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU, signer: false, writable: true, source: lookupTable}
+          addressTableLookups:
+            - {accountKey: 3jDvSYTWsXMjZ1GMzinj2cSmXZBKYAxgHvNKYcic2rEu, writableIndexes: [4], readonlyIndexes: []}
+          instructions:
+            - {programId: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, parsed: {type: transferChecked}}
+      meta:
+        err: null
+        fee: 5000
+        preBalances: [997940720, 2039280, 1, 2039280]
+        postBalances: [997935720, 2039280, 1, 2039280]
+        preTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, uiTokenAmount: {amount: "25000000", decimals: 6}}
+          - {accountIndex: 3, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "120000000", decimals: 6}}
+        postTokenBalances:
+          - {accountIndex: 1, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, uiTokenAmount: {amount: "30000000", decimals: 6}}
+          - {accountIndex: 3, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, owner: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, uiTokenAmount: {amount: "115000000", decimals: 6}}
+        loadedAddresses: {writable: [Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU], readonly: []}
+    expect:
+      status: ok
+      fee_lamports: 5000
+      deltas: [{mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, units: -5000000}]
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: out, units: 5000000, mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, index: "0"}
+        - {kind: fee, role: fee, units: 5000, index: fee}
+      card: transfer.unmatched_leg
+
+  # An optional Helius label (D181 (d), D192): attached to the group, never its kind.
+  - id: helius_label_kind_unchanged
+    pending: "phase 7 step 2 (the optional enrichment)"
+    own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
+    provider_label: {type: TRANSFER, source: SYSTEM_PROGRAM, description: "Transferred 0.5 SOL"}
+    tx:
+      version: 0
+      slot: 300001401
+      blockTime: 1774300000
+      transaction:
+        signatures: [5Ek3QZnR8wweRmoVDhBAEeZFUwpntR8yZ639RJZ7Wmra4MCHxFZftpBrUDA7m8fDbzHFC4HBZML6TPhrvQEQJ6Qp]
+        message:
+          accountKeys:
+            - {pubkey: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, signer: true, writable: true, source: transaction}
+            - {pubkey: ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J, signer: false, writable: true, source: transaction}
+            - {pubkey: "11111111111111111111111111111111", signer: false, writable: false, source: transaction}
+          instructions:
+            - {programId: "11111111111111111111111111111111", parsed: {type: transfer}}
+      meta: {err: null, fee: 5000, preBalances: [997935720, 8499995000, 1], postBalances: [497930720, 8999995000, 1], preTokenBalances: [], postTokenBalances: [], loadedAddresses: {writable: [], readonly: []}}
+    expect:
+      status: ok
+      fee_lamports: 5000
+      deltas: [{units: -500000000}]
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: out, units: 500000000, index: "0"}
+        - {kind: fee, role: fee, units: 5000, index: fee}
+      card: transfer.unmatched_leg
+      label: "Transferred 0.5 SOL"
+
+inflation_rewards:
+  # §6 example 10's reward: getInflationReward for the stake account, dated the epoch's end
+  # on the Berlin calendar (22:30 UTC on 30 Jun is 1 Jul in Berlin).
+  - id: epoch_reward_to_stake_account
+    pending: "phase 7 step 2 (services/chain/solana_rpc.inflation_rewards)"
+    stake_account: Hqw2dGuE2dcLueqA4UFgPw1Uciu9C7q41pxeUWcxX9fF
+    result: {epoch: 820, effectiveSlot: 354240000, amount: 1534000, postBalance: 10001534000, commission: 7}
+    epoch_end: "2026-06-30T22:30:00Z"
+    expect: {kind: staking_reward, units: 1534000, "on": 2026-07-01}

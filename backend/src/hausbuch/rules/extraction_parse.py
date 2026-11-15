@@ -1124,7 +1124,7 @@ CODE_ONLY_SUBTYPES = frozenset(
         DocumentSubtype.EXCHANGE_EXPORT,
         DocumentSubtype.DISTRIBUTION_NOTE,
         DocumentSubtype.SECURITIES_TRANSFER,
-        # Phase 7 (migration 0040, D182 (3)): a wallet sync's stored original, written by code.
+        # Phase 7 (migration 0041, D182 (3)): a wallet sync's stored original, written by code.
         DocumentSubtype.CHAIN_SYNC,
     }
 )

@@ -1,7 +1,7 @@
 # The chain registry (docs/phases/phase-7.md D180 (1), D181, D184): one row per chain the app
 # reads. Public facts only, nothing here is the household's.
 #
-# code: the text value of every `chain` column (migration 0040's CHECK lists the same five;
+# code: the text value of every `chain` column (migration 0041's CHECK lists the same five;
 #   a new chain is one row here plus that CHECK rebuilt, no code).
 # chain_id: EIP-155, EVM only (1 Ethereum, 42161 Arbitrum One, 56 BNB Smart Chain).
 # address_format: what rules/chain/address.validate accepts (D180 (1), §4).

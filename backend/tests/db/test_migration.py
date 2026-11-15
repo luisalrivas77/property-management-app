@@ -77,7 +77,7 @@ MIGRATION_TABLES = {
     "transfer_link",
     "price",
     "valuation_snapshot",
-    # Phase 7 (docs/phases/phase-7.md §11, migration 0040)
+    # Phase 7 (docs/phases/phase-7.md §11, migration 0041)
     "wallet_address",
     "movement_group",
     "wallet_sync",

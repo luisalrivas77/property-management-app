@@ -1,5 +1,5 @@
 """Wallets, chains, movement groups, lots and the year-end holdings statement
-(docs/phases/phase-7.md §11, §12; migration 0040).
+(docs/phases/phase-7.md §11, §12; migration 0041).
 
 Phase 7 step 0 writes the shapes; the steps that build each rule fill them (step 1: the
 registry, addresses and Bitcoin; step 2: EVM; step 3: Solana and the classifier; step 4:
@@ -27,7 +27,7 @@ from pydantic import Field, JsonValue, model_validator
 from .common import Money, Schema
 from .household import AssetMovementDraft, AssetSymbol, NonNegativeQuantity, Quantity
 
-# --- Value sets (the CHECKs of migration 0040) -------------------------------------------
+# --- Value sets (the CHECKs of migration 0041) -------------------------------------------
 
 
 class Chain(StrEnum):

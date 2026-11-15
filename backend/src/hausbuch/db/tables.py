@@ -898,7 +898,7 @@ asset = Table(
     Column("decimals", Integer, nullable=False, server_default=text("8")),
     _created_at(),
     _updated_at(),
-    # 0040 (phase 7 D180, D187): a chain asset's identity, its price twin and the spam flag
+    # 0041 (phase 7 D180, D187): a chain asset's identity, its price twin and the spam flag
     _text("chain", nullable=True),
     _text("contract_address", nullable=True),
     _uuid("priced_as_asset_id", nullable=True),
@@ -947,7 +947,7 @@ asset_movement = Table(
     _uuid("superseded_by", nullable=True),
     _created_at(),
     _text("note", nullable=True),  # 0030: a balance_correction's reason (D178 amended)
-    # 0040 (phase 7 D182 (2), D183 (1)): a chain movement's group, own address and index
+    # 0041 (phase 7 D182 (2), D183 (1)): a chain movement's group, own address and index
     _uuid("group_id", nullable=True),
     _uuid("address_id", nullable=True),
     _text("index", nullable=True),  # a reserved word: quoted in hand-written SQL ("index")
@@ -1015,7 +1015,7 @@ valuation_snapshot = Table(
 )
 
 
-# --- Phase 7 (0040): wallets, chain syncs, movement groups, holdings exports ----------------
+# --- Phase 7 (0041): wallets, chain syncs, movement groups, holdings exports ----------------
 
 wallet_address = Table(
     "wallet_address",

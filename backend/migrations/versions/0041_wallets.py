@@ -38,16 +38,17 @@ a movement carries a group, an address or an index, or a new CHECK value is in u
 CHECKs would refuse those rows, and a downgrade never drops data. It lifts FORCE RLS for the
 checks, since the owner has no workspace set, and restores it.
 
-0039 is phase 6's bank_credential (D196); this revision follows it.
+0039 is phase 6's bank_credential (D196) and 0040 its valuation_snapshot_scope; this revision
+follows them.
 
-Revision ID: 0040_wallets
-Revises: 0039_bank_credential
+Revision ID: 0041_wallets
+Revises: 0040_valuation_snapshot_scope
 Create Date: 2026-11-15
 """
 
 from alembic import op
 
-revision = "0040_wallets"
+revision = "0041_wallets"
 down_revision = "0038_no_pay_marker"
 branch_labels = None
 depends_on = None
@@ -97,7 +98,8 @@ SYNC_STATUSES = ("running", "succeeded", "failed", "throttled", "refused")
 DECODER_KINDS = ("swap", "wrap", "bridge", "stake", "reward", "lp")
 PAIR_KINDS = ("bridge", "wrap")
 
-# The lists as 0025 to 0038 left them, in their order (0039 changes none of them).
+# The lists as 0025 to 0038 left them, in their order (0039 and 0040 change none of them, as
+# far as step 0 knew).
 OLD_MOVEMENT_KINDS = (
     "acquisition",
     "disposal",

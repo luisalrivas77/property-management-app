@@ -19705,7 +19705,7 @@
           "chain_sync"
         ],
         "title": "MovementImportFormat",
-        "description": "movement_import.format (migration 0025; binance_csv since 0028; chain_sync since\n0040, one wallet sync's stored original, D182 (3))."
+        "description": "movement_import.format (migration 0025; binance_csv since 0028; chain_sync since\n0041, one wallet sync's stored original, D182 (3))."
       },
       "MovementKind": {
         "type": "string",
@@ -28427,7 +28427,7 @@
           "wrap"
         ],
         "title": "TransferLinkKind",
-        "description": "transfer_link.kind (migration 0025; chain, bridge and wrap since 0040, phase 7 D184).\nA link by hand (TransferLinkCreate) still only takes the kind rules.matching\n.transfer_link_kind gives the two accounts, so the chain kinds wait for step 5."
+        "description": "transfer_link.kind (migration 0025; chain, bridge and wrap since 0041, phase 7 D184).\nA link by hand (TransferLinkCreate) still only takes the kind rules.matching\n.transfer_link_kind gives the two accounts, so the chain kinds wait for step 5."
       },
       "TransferLinkRequest": {
         "properties": {
