@@ -775,7 +775,17 @@ def test_a_report_naming_an_unbooked_trade_is_a_card_until_that_trade_is_applied
             )
         },
     )
-    _apply(run, ws, report)
+    # Since D165 amended (15 Nov 2026) the report proposes its unbooked trade as a movement;
+    # the person leaves it out here, so the card path is the one under test.
+    (proposed,) = [r for r in report.records if r.key.startswith("movement:")]
+    assert proposed.fields["external_ref"].value == "5500000003"
+    body = ProposalApplyBody(
+        records=[
+            ProposalApplyRecord(key=r.key, skip=True) if r.key == proposed.key else r
+            for r in _accept_all(report).records
+        ]
+    )
+    run(ws, proposals.apply_proposal, report.id, body, iban_key=TEST_IBAN_KEY)
 
     def cards():
         return [i for i in read(ws, review.inbox) if i.kind is InboxItemKind.HOLDINGS_MISMATCH]

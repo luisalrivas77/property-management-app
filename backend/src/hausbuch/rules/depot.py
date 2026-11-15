@@ -12,7 +12,7 @@ tests/fixtures/phase6/depot_lines.yaml and holdings_reconcile.yaml). Built in ph
 """
 
 import re
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Collection, Hashable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 
@@ -413,6 +413,102 @@ def _report(values: Mapping[str, object]) -> DepotProposal | None:
         except (ArithmeticError, ValueError):
             warnings.add(ROW_UNREADABLE)
     return DepotProposal(holdings=holdings, trades=trades, warnings=sorted(warnings))
+
+
+# --- A report's trades booked from the report alone (D165 amended, 15 Nov 2026) ------------
+#
+# quirion prints one Wertpapierabrechnung per fund and trade; the report's Umsätze list holds
+# each trade's date, ISIN, units, Ausmachender Betrag and reference, which is all the ledger
+# needs for units and cash (fees and withheld taxes are the yearly tax certificate's, phase 8).
+_ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}[0-9]")
+_UNKNOWN = "unbekannt"
+
+
+def bookable_trades(
+    trades: Sequence[ProposedTrade], as_of: date, booked: Collection[str] = ()
+) -> list[ProposedTrade]:
+    """The report's trades code may book: up to the report's date, with an ISIN and a
+    reference as printed („unbekannt“ is none: without a reference a trade cannot be told
+    from a repeat), units other than 0, the first of each reference only (the list repeats
+    earlier trades), and none whose reference is booked already."""
+    seen: set[str] = set(booked)
+    found = []
+    for trade in trades:
+        reference = trade.reference.strip()
+        if (
+            trade.trade_date > as_of
+            or trade.units == 0
+            or not _ISIN.fullmatch(trade.isin)
+            or not reference
+            or reference.casefold() == _UNKNOWN
+            or reference in seen
+        ):
+            continue
+        seen.add(reference)
+        found.append(trade)
+    return found
+
+
+def trade_signs_agree(trade: ProposedTrade) -> bool:
+    """Review of 15 Nov 2026: a purchase has positive units and a negative amount, a sale
+    negative units and a positive amount. A row whose signs contradict each other (or whose
+    amount is 0) is not readable; „Umsätze aus dem Bericht buchen“ never repairs it."""
+    return (trade.units > 0 and trade.amount < 0) or (trade.units < 0 and trade.amount > 0)
+
+
+class FundAgreement(Schema):
+    """One fund against a report's date: whether its units agree now, and whether they would
+    with the trades to book booked."""
+
+    now: bool
+    after: bool
+
+
+def fund_agreement(
+    as_of: date,
+    declared: Mapping[Hashable, Decimal],
+    movements: Sequence[UnitsMovement],
+    trades: Sequence[ProposedTrade],
+) -> dict[str, FundAgreement]:
+    """Review of 15 Nov 2026: for every fund (ISIN) the trades name, reconcile_holdings on
+    as_of over the confirmed movements, without and with those trades as confirmed
+    movements. `declared` and the movements' assets are keyed by ISIN; a fund the report
+    does not list is declared 0. A fund is booked only when it agrees afterwards, all its
+    trades or none."""
+    funds = {t.isin for t in trades}
+    stated = {isin: declared.get(isin, Decimal(0)) for isin in sorted(funds)}
+    mine = [m for m in movements if m.asset in funds]
+    booked = [
+        UnitsMovement(
+            asset=t.isin,
+            quantity=t.units,
+            occurred_on=t.trade_date,
+            status=MovementStatus.CONFIRMED,
+            external_ref=t.reference.strip(),
+        )
+        for t in trades
+    ]
+    now = {c.asset: c.reconciled for c in reconcile_holdings(as_of, stated, mine)}
+    after = {c.asset: c.reconciled for c in reconcile_holdings(as_of, stated, mine + booked)}
+    return {isin: FundAgreement(now=now[isin], after=after[isin]) for isin in stated}
+
+
+def report_trade_movement(trade: ProposedTrade, name: str | None = None) -> ProposedMovement:
+    """A report's trade as the movement its trade confirmation would propose: a purchase by
+    positive units, a sale by negative ones; the cash amount takes its sign from the side (a
+    purchase negative), whatever sign the reading kept, so the cash line is found by it. No
+    fee and no tax: the list prints neither."""
+    buy = trade.units > 0
+    amount = abs(trade.amount)
+    return ProposedMovement(
+        kind=MovementKind.ACQUISITION if buy else MovementKind.DISPOSAL,
+        isin=trade.isin,
+        name=name,
+        quantity=trade.units,
+        eur_amount=-amount if buy else amount,
+        occurred_on=trade.trade_date,
+        external_ref=trade.reference.strip(),
+    )
 
 
 def _transfer(values: Mapping[str, object]) -> DepotProposal | None:

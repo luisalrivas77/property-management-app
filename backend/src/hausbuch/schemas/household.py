@@ -662,6 +662,26 @@ class OpenTransfer(Schema):
     window_end: date
 
 
+class OpenReturn(Schema):
+    """D162 amended (7), 15 Nov 2026: a credit on a private account that returns an earlier
+    debit of the same account (rules.household.returns), with the debits it may return: one
+    when the rule found one, several when it cannot tell which (never guessed). Booked by
+    POST /returns (ReturnedPaymentCreate)."""
+
+    leg: TransferLegView  # the returning credit
+    candidates: list[TransferLegView]  # the debits it may return, in booking order
+
+
+class ReturnedPaymentCreate(Schema):
+    """POST /returns' body (D162 amended (7)): the debit that left and the credit that brought
+    it back, both bank lines of one private account. Both are booked as transfer parts by the
+    person's answer and linked to each other (a transfer_link on one account), so together they
+    count as nothing."""
+
+    out_transaction_id: UUID
+    in_transaction_id: UUID
+
+
 class TransferUnlinkBody(Schema):
     """POST /transfers/{id}/unlink: the link that replaces the wrong one (append-only, D162:
     the old row names the new one in superseded_by)."""

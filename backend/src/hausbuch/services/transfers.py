@@ -24,7 +24,9 @@ links and computes the cards on read.
   it in superseded_by (unlink). The table has no status (migration 0025 is on main), so a
   link the matcher wrote is current only while both its legs are booked as transfers
   (_current_links, review F3): re-booking or rejecting a leg withdraws it, and booking it as
-  a transfer again brings the same row back.
+  a transfer again brings the same row back. D162 amended (7): a link of two lines of one
+  account is a returned payment (services.returns.book_return); it counts the same way, and
+  list_links never lists it.
 - open_transfers: computed on read, never written. A leg inside its window has no card; after
   it transfer.unmatched_leg; two fitting counterparts transfer.ambiguous; a counterpart that
   fits but was not linked (a movement, or a leg booked before the other) transfer.proposed.
@@ -187,14 +189,22 @@ def _current_links(conn: Connection) -> list[Row]:
     re-books or rejects a leg withdraws the matcher's link by that booking, which is its event;
     booked as a transfer again, the same row counts again and no second link is written. A
     link the person made stays current until it is replaced (unlink): its legs need not be
-    booked as transfers. A leg in two such links keeps the newer one."""
+    booked as transfers. A leg in two such links keeps the newer one.
+
+    D162 amended (7), 15 Nov 2026: a returned payment (two lines of one account, written by
+    services.returns.book_return) counts like a matcher's link, only while both lines are
+    booked as transfers: a person who re-books one of them withdraws the pair, and the
+    „Rücküberweisung erkannt“ card offers it again, so no half of it stays silently linked."""
     c = link_table.c
     rows = conn.execute(
         select(link_table)
         .where(c.superseded_by.is_(None))
         .order_by(c.created_at.desc(), c.id.desc())
     ).all()
-    matcher = [r for r in rows if r.matched_by == TransferMatchedBy.MATCHER.value]
+    returns = _return_link_ids(conn, rows)
+    matcher = [
+        r for r in rows if r.matched_by == TransferMatchedBy.MATCHER.value or r.id in returns
+    ]
     tx_ids = {i for r in matcher for i in (r.out_transaction_id, r.in_transaction_id) if i}
     mv_ids = {i for r in matcher for i in (r.out_movement_id, r.in_movement_id) if i}
     booked = set(_transfer_booked(conn, sorted(tx_ids)))
@@ -212,13 +222,38 @@ def _current_links(conn: Connection) -> list[Row]:
     current, used = [], set()
     for r in rows:
         legs = _leg_ids(r)
-        if r.matched_by == TransferMatchedBy.MATCHER.value and not all(i in booked for i in legs):
+        checked = r.matched_by == TransferMatchedBy.MATCHER.value or r.id in returns
+        if checked and not all(i in booked for i in legs):
             continue
         if used.intersection(legs):
             continue
         used.update(legs)
         current.append(r)
     return current
+
+
+def _return_link_ids(conn: Connection, rows: Sequence[Row]) -> set[UUID]:
+    """D162 amended (7): the links among `rows` whose two legs are bank lines of one account,
+    a returned payment and the debit it returns (services.returns)."""
+    pairs = [r for r in rows if r.out_transaction_id and r.in_transaction_id]
+    if not pairs:
+        return set()
+    t = transaction_table.c
+    ids = {i for r in pairs for i in (r.out_transaction_id, r.in_transaction_id)}
+    account = dict(conn.execute(select(t.id, t.account_id).where(t.id.in_(ids))).tuples().all())
+    return {
+        r.id for r in pairs if account.get(r.out_transaction_id) == account.get(r.in_transaction_id)
+    }
+
+
+def is_return_link(out_leg: TransferLegView, in_leg: TransferLegView) -> bool:
+    """D162 amended (7): a link whose two legs are bank lines of one account is a returned
+    payment, not a transfer between two accounts."""
+    return (
+        out_leg.source is TransferLegSource.TRANSACTION
+        and in_leg.source is TransferLegSource.TRANSACTION
+        and out_leg.account_id == in_leg.account_id
+    )
 
 
 def _linked_ids(conn: Connection) -> set[UUID]:
@@ -1220,7 +1255,10 @@ def unlink(ctx: CommandContext, link_id: UUID, replacement: TransferLinkCreate) 
 
 
 def list_links(conn: Connection, *, start: date, end: date) -> list[TransferLinkView]:
-    """The current links with a leg booked between `start` and `end`, by the out leg's date."""
+    """The current links with a leg booked between `start` and `end`, by the out leg's date.
+    D162 amended (7): never a returned payment (two lines of one account): it moved nothing
+    between accounts, so the Haushalt's „Gespart, nicht ausgegeben“ (and saved_in) never lists
+    it; Konten › Umsätze names each half's partner instead (services.returns)."""
     rows = _current_links(conn)
     legs = {leg.leg.id: leg for leg in _legs_between(conn, start - _AROUND, end + _AROUND)}
     out = []
@@ -1228,6 +1266,8 @@ def list_links(conn: Connection, *, start: date, end: date) -> list[TransferLink
         a = legs.get(r.out_transaction_id or r.out_movement_id)
         b = legs.get(r.in_transaction_id or r.in_movement_id)
         if a is None or b is None:
+            continue
+        if is_return_link(a.view(), b.view()):
             continue
         if not (start <= a.leg.booked_on <= end or start <= b.leg.booked_on <= end):
             continue
@@ -1551,6 +1591,7 @@ def _kinds(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, AccountKind]:
 
 __all__ = [
     "after_booking",
+    "is_return_link",
     "own_account_hmacs",
     "link_by_hand",
     "link_leg",

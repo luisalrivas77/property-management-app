@@ -689,6 +689,7 @@ def inbox(
     from .depot import holdings_inbox_items  # it imports the asset services
     from .exchange.imports import exchange_inbox_items  # it imports the transfer services
     from .property_costs import property_cost_items  # it imports the matching services
+    from .returns import return_inbox_items  # it imports the transfer services
 
     sections: list[tuple[str, Callable[[], list[InboxItem]]]] = [
         ("proposals", lambda: _proposal_items(conn)),
@@ -697,6 +698,7 @@ def inbox(
         ("property_costs", lambda: property_cost_items(conn)),
         ("holdings", lambda: holdings_inbox_items(conn)),
         ("exchange", lambda: exchange_inbox_items(conn)),
+        ("returns", lambda: return_inbox_items(conn)),
     ]
     if today is not None:
         from .reminders import reminder_inbox_items  # it imports the checklist services
@@ -727,7 +729,13 @@ def inbox(
         section_ms[name] = round((time.perf_counter() - began) * 1000, 1)
         section_items[name] = len(found)
         items += found
-    hidden = _lines_on_cards(conn, items)
+    # The return cards decide first: a transfer card they drop no longer answers its
+    # candidates, so only the transfer cards that stay hide lines (else a candidate of a
+    # dropped card would be listed nowhere).
+    on_return_cards = _lines_on_return_cards(items)
+    dropped = {id(item) for item in on_return_cards}
+    staying = [item for item in items if id(item) not in dropped]
+    hidden = on_return_cards + _lines_on_cards(conn, staying)
     if hidden:
         gone = {id(item) for item in hidden}
         items = [item for item in items if id(item) not in gone]
@@ -773,6 +781,35 @@ def _lines_on_cards(conn: Connection, items: list[InboxItem]) -> list[InboxItem]
         if item.kind is InboxItemKind.ALLOCATION_PROPOSED
         and item.account_id is not None
         and item.transaction_id in on_cards
+    ]
+
+
+def _lines_on_return_cards(items: list[InboxItem]) -> list[InboxItem]:
+    """Phase 6 D162 amended (7), 15 Nov 2026: one decision, one place, for a returned payment
+    (services.returns.lines_on_cards). A transfer card whose leg is a line of a „Rücküberweisung
+    erkannt“ card leaves (the credit's „Überweisung ohne Gegenstück“ is the return card's
+    question), and so does the proposal (or „Nicht zugeordnet“, a line without any answer) of the
+    card's credit and of its one debit under Zahlungen zuordnen: the card's button books them,
+    and „Keine Rücküberweisung – Zahlung anders zuordnen“ opens the line in the allocation
+    panel. A line holding a person's answer is no proposal and is not listed there anyway."""
+    from .returns import lines_on_cards  # it imports the transfer services
+
+    named, booked = lines_on_cards(items)
+    if not named:
+        return []
+    return [
+        item
+        for item in items
+        if (
+            item.kind in _TRANSFER_KINDS
+            and item.transfer is not None
+            and item.transfer.leg.id in named
+        )
+        or (
+            item.kind in (InboxItemKind.ALLOCATION_PROPOSED, InboxItemKind.UNMATCHED)
+            and item.account_id is not None
+            and item.transaction_id in booked
+        )
     ]
 
 
