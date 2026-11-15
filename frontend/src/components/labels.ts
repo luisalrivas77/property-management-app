@@ -542,6 +542,8 @@ export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
   // Phase 6 (D159, D162, D165)
   hh_salary: "Gehalt",
   hh_child_benefit: "Kindergeld",
+  // D159 amended (8) 15 Nov 2026 (migration 0037)
+  hh_wage_replacement: "Elterngeld & Lohnersatz",
   hh_tax_refund: "Steuererstattung",
   hh_capital_income: "Zinsen und Dividenden",
   hh_other_income: "Sonstige Einnahme (privat)",
@@ -602,6 +604,8 @@ export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
   hh_parking: "Parken & Maut",
   hh_car_service: "Auto: Werkstatt & Wartung",
   hh_car_tax: "Auto: Kfz-Steuer & Zulassung",
+  // D159 amended (7) 15 Nov 2026 (migration 0037)
+  hh_car_purchase: "Auto: Kauf & Finanzierung",
   hh_supermarket: "Supermarkt",
   hh_drugstore: "Drogerie & Kosmetik",
   hh_bakery: "Bäckerei, Kiosk & Markt",
@@ -711,7 +715,16 @@ export const HOUSEHOLD_SPENDING_GROUPS: { group: HouseholdGroup; categories: All
   { group: "dining", categories: ["hh_restaurant", "hh_cafe", "hh_bar", "hh_sweets", "hh_fast_food", "hh_delivery", "hh_dining"] },
   {
     group: "mobility",
-    categories: ["hh_fuel", "hh_public_transport", "hh_taxi", "hh_parking", "hh_car_service", "hh_car_tax", "hh_mobility"],
+    categories: [
+      "hh_fuel",
+      "hh_public_transport",
+      "hh_taxi",
+      "hh_parking",
+      "hh_car_service",
+      "hh_car_tax",
+      "hh_car_purchase",
+      "hh_mobility",
+    ],
   },
   { group: "insurance", categories: ["hh_ins_car", "hh_ins_liability_contents", "hh_ins_health", "hh_ins_life", "hh_insurance"] },
   {
@@ -742,7 +755,10 @@ export const HOUSEHOLD_SPENDING_GROUPS: { group: HouseholdGroup; categories: All
  * are a group of their own (0029's finer codes) share one block „Weitere Ausgaben“; „Sonstiges“
  * comes last among the spending blocks. */
 const HOUSEHOLD_GROUPS: { label: string; categories: AllocationCategory[] }[] = [
-  { label: "Einnahmen", categories: ["hh_salary", "hh_child_benefit", "hh_tax_refund", "hh_capital_income", "hh_other_income"] },
+  {
+    label: "Einnahmen",
+    categories: ["hh_salary", "hh_child_benefit", "hh_wage_replacement", "hh_tax_refund", "hh_capital_income", "hh_other_income"],
+  },
   ...HOUSEHOLD_SPENDING_GROUPS.filter((entry) => entry.group !== "other").map((entry) => ({
     label: HOUSEHOLD_GROUP[entry.group],
     categories: entry.categories,
@@ -1141,6 +1157,9 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     "Lohnersatzleistungen sind noch nicht bescheinigt: der Steuersatz ist vorläufig.",
   "return.benefit_possible_double": () =>
     "Eine Lohnersatzleistung steht in der Bescheinigung und als eigene Angabe: bitte nur einmal erfassen.",
+  // Phase 6 D159 amended (8): confirmed wage-replacement payments not yet typed.
+  "return.benefit_booked": (p) =>
+    `Lohnersatzleistungen ${p.tax_year ?? ""}: ${money(p, "difference")} auf dem Konto gebucht, noch nicht als Lohnersatzleistung eingetragen.`,
   "return.children_mismatch": () =>
     "Die Zahl der Kinderfreibeträge der Bescheinigung passt nicht zu den erfassten Kindern.",
   "return.kindergeld_apply": () => "Für ein Kind ist noch kein Kindergeld erfasst: bitte bei der Familienkasse beantragen.",

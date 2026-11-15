@@ -33,6 +33,9 @@ codes:
   # Income
   - {category: hh_salary, label: Gehalt, group: income, relevance: income, treatment: private, threshold: "0.900"}
   - {category: hh_child_benefit, label: Kindergeld, group: income, relevance: income, treatment: private, threshold: "0.900"}
+  # D159 amended (8) 15 Nov 2026 (migration 0037): Elterngeld, Mutterschaftsgeld, Krankengeld,
+  # Arbeitslosengeld, Kurzarbeitergeld; proposes the year's Lohnersatzleistung (phase 4b D102).
+  - {category: hh_wage_replacement, label: "Elterngeld & Lohnersatz", group: income, relevance: income, treatment: private, threshold: null, proposes: "return_input:replacement_income"}
   - {category: hh_tax_refund, label: Steuererstattung, group: income, relevance: income, treatment: private, threshold: null}
   - {category: hh_capital_income, group: income, relevance: income, treatment: private, threshold: null}
   - {category: hh_other_income, group: income, relevance: income, treatment: private, threshold: null}
@@ -100,6 +103,9 @@ codes:
   - {category: hh_parking, label: "Parken & Maut", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_car_service, label: "Auto: Werkstatt & Wartung", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_car_tax, label: "Auto: Kfz-Steuer & Zulassung", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
+  # D159 amended (7) 15 Nov 2026 (migration 0037, Luis: „There's a payment to finish buying the car. I
+  # didn't think we have a proper category for it.“): buying or financing a car, same group.
+  - {category: hh_car_purchase, label: "Auto: Kauf & Finanzierung", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_supermarket, label: "Supermarkt", group: groceries, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_drugstore, label: "Drogerie & Kosmetik", group: groceries, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_bakery, label: "Bäckerei, Kiosk & Markt", group: groceries, relevance: spending, treatment: private, threshold: "0.900"}

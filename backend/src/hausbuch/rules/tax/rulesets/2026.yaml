@@ -188,6 +188,7 @@ form:
     # Anlage V; a rental cost paid privately reaches it as a private_cost input only.
     hh_salary: null
     hh_child_benefit: null
+    hh_wage_replacement: null  # phase 6 D159 amended (8) 15 Nov 2026 (migration 0037): via return_input, no Anlage V line
     hh_tax_refund: null
     hh_capital_income: null
     hh_other_income: null
@@ -244,6 +245,7 @@ form:
     hh_parking: null
     hh_car_service: null
     hh_car_tax: null
+    hh_car_purchase: null  # phase 6 D159 amended (7) 15 Nov 2026 (migration 0037): private, on no form
     hh_supermarket: null
     hh_drugstore: null
     hh_bakery: null

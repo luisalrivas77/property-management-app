@@ -862,6 +862,8 @@ class ProposedInput(StrEnum):
     RETURN_SPECIAL_EXPENSE = "return_input:" + ReturnInputKind.SPECIAL_EXPENSE.value
     RETURN_HOUSEHOLD_SERVICES = "return_input:" + ReturnInputKind.HOUSEHOLD_SERVICES.value
     RETURN_CHILDCARE_COST = "return_input:" + ReturnInputKind.CHILDCARE_COST.value
+    # D159 amended (8) 15 Nov 2026: hh_wage_replacement's yearly Lohnersatzleistung
+    RETURN_REPLACEMENT_INCOME = "return_input:" + ReturnInputKind.REPLACEMENT_INCOME.value
     TAX_PRIVATE_COST = "tax_input:private_cost"
 
 

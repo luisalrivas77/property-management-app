@@ -666,6 +666,9 @@ class WarningCode(StrEnum):
     ANLAGE_N_FIRST_WORKPLACE_CHECK = "anlage_n.first_workplace_check"
     RETURN_PROGRESSION_PROVISIONAL = "return.progression_provisional"
     RETURN_BENEFIT_POSSIBLE_DOUBLE = "return.benefit_possible_double"
+    # Phase 6 D159 amended (8) 15 Nov 2026: confirmed wage-replacement payments on the
+    # accounts exceed the typed Lohnersatzleistungen of the year.
+    RETURN_BENEFIT_BOOKED = "return.benefit_booked"
     RETURN_CHILDREN_MISMATCH = "return.children_mismatch"
     RETURN_KINDERGELD_APPLY = "return.kindergeld_apply"
     RETURN_CHILD_OVER_18 = "return.child_over_18"
@@ -730,6 +733,7 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.ANLAGE_N_FIRST_WORKPLACE_CHECK: "info",
     W.RETURN_PROGRESSION_PROVISIONAL: "info",
     W.RETURN_BENEFIT_POSSIBLE_DOUBLE: "warning",
+    W.RETURN_BENEFIT_BOOKED: "warning",
     W.RETURN_CHILDREN_MISMATCH: "info",
     W.RETURN_KINDERGELD_APPLY: "info",
     W.RETURN_CHILD_OVER_18: "warning",
