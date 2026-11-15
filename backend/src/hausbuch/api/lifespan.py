@@ -42,7 +42,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     state.draining = False
     worker = state.worker if settings.run_worker else None
     if worker is not None:
-        # D196: before the worker takes a sync; in a thread, the loop keeps answering
+        # D196: before the worker takes a sync and before the instance serves (uvicorn binds
+        # its port only after this start-up returns, so nothing is answering yet); in a
+        # thread, so the blocking database work stays off the event loop.
         await asyncio.to_thread(encrypt_all_logins, state.engine, settings)
         await worker.start()
         logger.info("worker started", extra={"fields": {"event": "worker_started"}})

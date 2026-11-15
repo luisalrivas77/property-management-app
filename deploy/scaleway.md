@@ -1225,6 +1225,12 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
    Steuern, Immobilien tabs, Mieter, Mietverhältnisse, Einheiten, document detail) fails
    from the migration until the new API tag is live. The reverse order fails too (the new
    image reads `owner.church_tax`), so keep migration-first and keep the gap to minutes.
+   **0039 (phase 6 D196, a bank PIN typed in the app) is additive, but the first image with
+   it cannot be rolled back** (see "Rolling back"): its first start stores every bank login
+   encrypted only, before the instance serves. Keep `HAUSBUCH_FINTS_PIN` set in the container
+   until the new image is confirmed working (point 5 and one „Jetzt abrufen“), even if you
+   then type the PIN into the app: the images before D196 refuse to start with a product id
+   and no PIN variable.
 3. Point `hausbuch-api` at the new tag (console, or `scw container container update <id>
    region=fr-par image=rg.fr-par.scw.cloud/hausbuch/api:<tag>`; the field is `image`, and the
    older `registry-image` is accepted but silently changes nothing). Scaleway starts the new instance and switches
@@ -1243,7 +1249,13 @@ image. Keep the order: grace < uvicorn's timeout < the platform's kill timeout.
 - **Migrations are not rolled back.** There is no `alembic downgrade` in production: a
   downgrade can drop data. Roll the app back to an image that works with the newer schema;
   additive migrations make that the normal case. After a migration that removed a column the
-  older images read (0016 onwards), no older image works, so fix forward instead. If a migration itself damaged data,
+  older images read (0016 onwards), no older image works, so fix forward instead. The same
+  holds for the API image that brought migration 0039 (phase 6 D196): its first start stores
+  every bank login encrypted only and empties the readable column (`bank_connection.login_name`),
+  at the new instance's start and before it serves, so an earlier API tag fails on every
+  Bankabruf card and every sync (it expects the readable login), and the 0039 downgrade is
+  refused once a login is encrypted. From that image on, roll the API back only to a tag
+  that has D196, and otherwise fix forward. If a migration itself damaged data,
   restore the database from a backup (below), after checking with yourself what the restore
   loses.
 
