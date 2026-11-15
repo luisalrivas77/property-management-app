@@ -7,6 +7,7 @@ closing -3.028,51) for a synthetic IBAN; the PIN, login and product id are inven
 
 import base64
 import io
+import re
 import zipfile
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -440,6 +441,30 @@ def test_a_first_sync_with_no_booked_stream_compares_with_the_anchor(bank):
     assert bank.job(sync.id, _good(streams=[], balance=Decimal("0.00"))) == "nothing_new"
     row = bank.sync(sync.id)
     assert (row.lines_total, row.balance_checked, row.error_code) == (0, True, E.BANK_NOTHING_NEW)
+
+
+def test_a_report_without_a_booked_entry_is_nothing_new_not_a_failure(bank):
+    """A Sparkasse answers a window without a booking (a private account quiet for two weeks)
+    with a camt report that states its balances and no entry; the import would refuse it as
+    statement.empty, which had failed the run on the real bank (15 Nov 2026)."""
+    first = bank.start()
+    bank.job(first.id, _good())
+    before = bank.connection_row().last_booking_on
+    quiet = re.sub(rb"<Ntry>.*?</Ntry>", b"", STREAMS[-1], flags=re.S)
+    assert b"<Ntry>" not in quiet
+    later = T1 + timedelta(minutes=1)
+    second = bank.start(now=later)
+    assert bank.job(second.id, _good(streams=[quiet]), at=later + timedelta(seconds=5)) == (
+        "nothing_new"
+    )
+    row = bank.sync(second.id)
+    assert (row.status, row.lines_total, row.error_code) == (
+        SyncStatus.NOTHING_NEW,
+        0,
+        E.BANK_NOTHING_NEW,
+    )
+    assert row.balance_checked is True
+    assert bank.connection_row().last_booking_on == before
 
 
 # --- Failures ---------------------------------------------------------------------------------

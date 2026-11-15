@@ -75,6 +75,7 @@ from hausbuch.rules import bank_statements as statement_fetch
 from hausbuch.rules import bank_sync as rules
 from hausbuch.rules import errors as E
 from hausbuch.rules.errors import RuleError
+from hausbuch.rules.statements import EMPTY as STATEMENT_EMPTY
 from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.bank import StatementFormat
 from hausbuch.schemas.bank_sync import (
@@ -1345,9 +1346,27 @@ def finish_run(
     try:
         with ctx.conn.begin_nested():
             data = rules.build_archive(fetched.streams)
-            preview = preview_import(
-                ctx.conn, plan.account_id, data, iban_key=settings.iban_hmac_key
-            )
+            try:
+                preview = preview_import(
+                    ctx.conn, plan.account_id, data, iban_key=settings.iban_hmac_key
+                )
+            except RuleError as exc:
+                if exc.code != STATEMENT_EMPTY:
+                    raise
+                # A report for days without a booking (a private account quiet for two weeks)
+                # states its balances and no entry: nothing new, as when the bank sends no
+                # stream at all, and HKSAL's balance still checks that nothing was missed.
+                move = rules.next_state(status, SyncEvent.STREAMS_EMPTY, plan.trigger)
+                _nothing_new(
+                    ctx,
+                    row,
+                    plan,
+                    move.status,
+                    lines_total=0,
+                    balance=fetched.balance,
+                    last_booking_on=connection.last_booking_on,
+                )
+                return move.status
             if preview.lines_new == 0:
                 move = rules.next_state(status, SyncEvent.NOTHING_NEW, plan.trigger)
                 _nothing_new(
