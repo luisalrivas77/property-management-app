@@ -404,9 +404,16 @@ def _draft_n(facts: OwnerReturnFacts, year: int) -> dict:
     this_year = [r for r in rows if r.tax_year == year]
     real, projected, warnings = _certs_of(facts, year)
     certs = real + projected
+    no_pay = [r for r in this_year if r.kind is K.NO_PAY]  # „Kein Arbeitslohn“ (D195)
     if certs:
         gross = sum((c.gross for c in certs), ZERO)
         status, source = ("estimate", "payslip") if projected else ("certified", "certificate")
+        if no_pay:
+            warnings.append(("anlage_n.no_pay_overruled", {}))
+    elif no_pay:
+        # D195: declared, so no pay and nothing else counted, as for an owner without any pay
+        # source (no Werbungskosten, no certificate_missing), whatever pay was expected
+        return _declared_none(rs, list(warnings))
     elif facts.expected_gross_pay is not None:
         gross = facts.expected_gross_pay.value.amount
         status, source = "estimate", "expected"
@@ -525,6 +532,29 @@ def _draft_n(facts: OwnerReturnFacts, year: int) -> dict:
         "warnings": warnings,
         "certificates": certs,
         "projected": bool(projected),
+    }
+
+
+def _declared_none(rs: AnlageNRuleSet, warnings: list[Warn]) -> dict:
+    """D195: the draft of an owner who declared „Kein Arbeitslohn“ for the year: gross 0 and
+    nothing applied, so result 0; status none, gross source declared_none."""
+    if rs.form.status.value == "provisional":
+        warnings.append(("anlage_n.form_provisional", {"form_year": str(rs.form.form_year)}))
+    return {
+        "status": "none",
+        "gross_source": "declared_none",
+        "gross": ZERO,
+        "wk_itemised": ZERO,
+        "wk_union": ZERO,
+        "wk_allowance": ZERO,
+        "wk_applied": ZERO,
+        "result": ZERO,
+        "replacement_benefits": ZERO,
+        "components": {name: ZERO for name in Components.model_fields},
+        "lines": {"pay.gross": ZERO, "wk.itemised": ZERO, "wk.allowance": ZERO, "wk.applied": ZERO},
+        "warnings": warnings,
+        "certificates": [],
+        "projected": False,
     }
 
 
@@ -702,6 +732,10 @@ def _estimate(case: EstimateCase) -> dict:
                 "status": "none",
                 "gross_source": None,
             }
+        if drafts[f.owner_id]["gross_source"] == "declared_none":
+            # D195: „Kein Arbeitslohn“ counts exactly as no pay source at all, whatever pay
+            # was expected
+            unpaid.add(f.owner_id)
         vorsorge[f.owner_id] = _vorsorge(f, year)
     gde = sum((d["result"] for d in drafts.values()), ZERO) + sum(
         (p.result for p in case.properties), ZERO
@@ -1297,8 +1331,8 @@ class Components(Schema):
 
 
 class DraftExpect(Schema):
-    status: Literal["certified", "estimate"] | None = None
-    gross_source: Literal["certificate", "payslip", "expected"] | None = None
+    status: Literal["certified", "estimate", "none"] | None = None
+    gross_source: Literal["certificate", "payslip", "expected", "declared_none"] | None = None
     gross: NonNegativeMoney | None = None
     wk_itemised: NonNegativeMoney | None = None
     wk_union: NonNegativeMoney | None = None

@@ -46,6 +46,7 @@ from hausbuch.services.questionnaire import (
     record_answer,
 )
 from hausbuch.services.return_inputs import (
+    anlage_n_draft,
     create_input,
     household_return_estimate,
     list_return_inputs,
@@ -235,6 +236,41 @@ def test_one_current_home_office_row_and_its_correction(world):
     _create(world, **_home_office(owner.id, days=100, supersedes_id=second.id, withdrawn=True))
     assert world.query(list_return_inputs, tax_year=2026) == []
     assert len(world.query(list_return_inputs, include_history=True)) == 3
+
+
+def _no_pay(owner_id, **extra) -> dict:
+    return {"owner_id": owner_id, "kind": "no_pay", "tax_year": 2026, "value": {}} | extra
+
+
+def test_kein_arbeitslohn_is_one_row_per_owner_and_year_and_undone_by_withdrawing(world):
+    """D195: the to-do's button writes one `no_pay` row with an empty value and the ordinary
+    owner event; a second current one is refused; „Aufheben“ is a withdrawn row, after which
+    the draft is the plain no-pay refusal again."""
+    owner = _owner(world)
+    first = _create(world, **_no_pay(owner.id))
+    (event,) = _events(world, EventType.OWNER_RETURN_INPUT_RECORDED)
+    assert (event.entity_type, event.entity_id) == ("owner", owner.id)
+    assert (event.payload["kind"], event.payload["amounts"]) == ("no_pay", {})
+    draft = world.query(anlage_n_draft, owner.id, tax_year=2026)
+    assert (draft.status, draft.gross_source, draft.gross) == ("none", "declared_none", 0)
+    _refused(world, RETURN_INPUT_NOT_CURRENT, **_no_pay(owner.id))
+    other = _owner(world, "Person B")  # one per owner, not per household
+    _create(world, **_no_pay(other.id))
+    _create(world, **_no_pay(owner.id, tax_year=2027))  # and per year
+    _create(world, **_no_pay(owner.id, supersedes_id=first.id, withdrawn=True))
+    with pytest.raises(RuleError) as info:
+        world.query(anlage_n_draft, owner.id, tax_year=2026)
+    assert info.value.code == "anlage_n.no_pay"
+
+
+def test_kein_arbeitslohn_has_an_owner_and_no_document(world):
+    owner = _owner(world)
+    doc = _document(world)
+    with pytest.raises(ValueError, match="no document"):
+        ReturnInputCreate.model_validate(_no_pay(owner.id, document_id=doc))
+    with pytest.raises(ValueError):
+        ReturnInputCreate.model_validate(_no_pay(None))
+    assert world.query(list_return_inputs, tax_year=2026) == []
 
 
 def test_a_full_year_work_room_and_the_day_rate_exclude_each_other(world):
@@ -460,6 +496,44 @@ def test_the_tax_rate_takes_the_certified_pay(world):
     assert (per_owner.gross, per_owner.gross_source) == (Decimal("60000.00"), "certificate")
     assert per_owner.deductions_source == "employment"
     assert got.zve.household is not None
+
+
+def test_the_tax_rate_counts_a_marked_owner_with_gross_0_that_year_only(world):
+    """D195 through the service: an expected pay typed for 2025 carries into 2026 and 2027;
+    „Kein Arbeitslohn in 2026“ makes 2026 gross 0 and leaves 2027 on the carried pay."""
+    owner = _owner(world)
+    other = _owner(world, "Person B")
+    for who, amount in ((owner, "50000.00"), (other, "40000.00")):
+        world.cmd(
+            create_income_input,
+            IncomeInputCreate.model_validate(
+                {
+                    "owner_id": who.id,
+                    "kind": "expected_gross_pay",
+                    "tax_year": 2025,
+                    "value": {"amount": amount},
+                }
+            ),
+            now=_later(world),
+        )
+    _create(world, **_no_pay(owner.id))
+
+    def per_owner(year: int):
+        got = world.query(
+            tax_rate, tax_year=year, result=Decimal("-5000.00"), today=date(2026, 11, 9)
+        )
+        return {o.owner_id: (o.gross, o.gross_source) for o in got.zve.per_owner}
+
+    marked = per_owner(2026)
+    assert marked[owner.id] == (Decimal("0"), "declared_none")
+    assert marked[other.id] == (Decimal("40000.00"), "expected")
+    later = per_owner(2027)
+    assert later[owner.id] == (Decimal("50000.00"), "expected")
+
+
+def test_kein_arbeitslohn_before_the_first_rule_set_is_refused(world):
+    owner = _owner(world)
+    _refused(world, "tax.no_rule_set", **_no_pay(owner.id, tax_year=2025))
 
 
 def test_the_household_estimate_is_computed_on_read(world):

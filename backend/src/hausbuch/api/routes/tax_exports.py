@@ -9,7 +9,8 @@ logic. Error codes, all 422 with `code`: the draft's `tax.year_not_available` an
 
 Phase 4b (docs/phases/phase-4b.md D104): an owner's Anlage N field sheet (PDF) is exported
 per owner under /owners/{owner_id}/anlage-n/exports, with the Anlage N draft's errors
-(`tax.no_rule_set`, `anlage_n.no_pay`); GET /tax-exports/{id} and its download serve both.
+(`tax.no_rule_set`, `anlage_n.no_pay`, `anlage_n.no_pay_declared`); GET /tax-exports/{id} and
+its download serve both.
 `tax_export.kind_invalid` refuses an `anlage_n_sheet` on the property route and any other kind
 on the owner route.
 

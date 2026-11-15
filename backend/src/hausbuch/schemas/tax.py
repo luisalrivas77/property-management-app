@@ -664,6 +664,8 @@ class WarningCode(StrEnum):
     ANLAGE_N_WORK_ROOM_CENTRE = "anlage_n.work_room_centre"
     ANLAGE_N_WORK_ROOM_PARTIAL = "anlage_n.work_room_partial"  # F5: a room for 1-11 months
     ANLAGE_N_FIRST_WORKPLACE_CHECK = "anlage_n.first_workplace_check"
+    # D195: a confirmed certificate or payslip of a year the owner marked „Kein Arbeitslohn“
+    ANLAGE_N_NO_PAY_OVERRULED = "anlage_n.no_pay_overruled"
     RETURN_PROGRESSION_PROVISIONAL = "return.progression_provisional"
     RETURN_BENEFIT_POSSIBLE_DOUBLE = "return.benefit_possible_double"
     # Phase 6 D159 amended (8) 15 Nov 2026: confirmed wage-replacement payments on the
@@ -731,6 +733,7 @@ WARNING_SEVERITY: dict[WarningCode, Severity] = {
     W.ANLAGE_N_WORK_ROOM_CENTRE: "info",
     W.ANLAGE_N_WORK_ROOM_PARTIAL: "info",
     W.ANLAGE_N_FIRST_WORKPLACE_CHECK: "info",
+    W.ANLAGE_N_NO_PAY_OVERRULED: "warning",
     W.RETURN_PROGRESSION_PROVISIONAL: "info",
     W.RETURN_BENEFIT_POSSIBLE_DOUBLE: "warning",
     W.RETURN_BENEFIT_BOOKED: "warning",

@@ -276,7 +276,8 @@ def return_estimate(
     the accounts (phase 6 D159 amended (8)), which add the to-do return.benefit_booked and
     change no figure. An owner without any pay source counts with result 0 and status none,
     and their typed wage-replacement benefits still enter the Progressionsvorbehalt (D102
-    amended 15 Nov 2026). RuleError return.childcare_age, return.household_services_cash and
+    amended 15 Nov 2026); so does an owner who said „Kein Arbeitslohn“ for the year (D195,
+    `no_pay_declared`). RuleError return.childcare_age, return.household_services_cash and
     those of the Anlage N rules."""
     items: dict[UUID, Itemised] = {}
     vorsorge_of: dict[UUID, VorsorgeResult] = {}
@@ -295,6 +296,22 @@ def return_estimate(
                     status="none",
                     tax_class=tax_class,
                     tax_class_source=source,
+                )
+            )
+            continue
+        if item.gross_source == "declared_none":
+            # D195: „Kein Arbeitslohn“, counted exactly as an owner without any pay source
+            # (the marker changes no figure, it only says why and ends the to-do)
+            tax_class, source = _tax_class(None, f.owner_id, answers)
+            income_n.append(
+                OwnerIncome(
+                    owner_id=f.owner_id,
+                    result=ZERO,
+                    status="none",
+                    tax_class=tax_class,
+                    tax_class_source=source,
+                    no_pay_declared=True,
+                    sources=item.line_sources["pay"],
                 )
             )
             continue

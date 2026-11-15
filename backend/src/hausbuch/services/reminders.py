@@ -248,9 +248,12 @@ def _month_end(first: date) -> date:
 
 def _owners(conn: Connection) -> list[ReminderOwner]:
     """Per owner, the years with a payslip or an expected gross pay, and the years with a
-    wage certificate (current rows only)."""
+    wage certificate (current rows only). Phase 4b D195 (3): a year the owner declared
+    „Kein Arbeitslohn“ for is no pay year by its expected gross pay, so no certificate is
+    asked for; a payslip of that year overrules the marker and keeps the year."""
     pay: dict[UUID, set[int]] = defaultdict(set)
     certificates: dict[UUID, set[int]] = defaultdict(set)
+    no_pay: dict[UUID, set[int]] = defaultdict(set)
     for row in list_return_inputs(conn):
         if row.owner_id is None:
             continue
@@ -258,8 +261,14 @@ def _owners(conn: Connection) -> list[ReminderOwner]:
             pay[row.owner_id].add(row.tax_year)
         elif row.kind is ReturnInputKind.WAGE_CERTIFICATE:
             certificates[row.owner_id].add(row.tax_year)
+        elif row.kind is ReturnInputKind.NO_PAY:
+            no_pay[row.owner_id].add(row.tax_year)
     for row in list_income_inputs(conn):
-        if row.owner_id is not None and row.kind is IncomeInputKind.EXPECTED_GROSS_PAY:
+        if (
+            row.owner_id is not None
+            and row.kind is IncomeInputKind.EXPECTED_GROSS_PAY
+            and row.tax_year not in no_pay[row.owner_id]
+        ):
             pay[row.owner_id].add(row.tax_year)
     ids = conn.execute(select(owner_table.c.id).order_by(owner_table.c.id)).scalars()
     return [

@@ -415,11 +415,12 @@ class TaxEffect(Schema):
 class OwnerZve(Schema):
     """One owner's part of the estimate (D84). deductions = the default, the override, or (phase
     4b D98) the Anlage N's applied Werbungskosten + Vorsorge + 36. gross_source says where the
-    gross came from: the expected_gross_pay row, or a certificate or the payslip projection."""
+    gross came from: the expected_gross_pay row, or a certificate or the payslip projection, or
+    declared_none when the owner said „Kein Arbeitslohn“ for the year (phase 4b D195: gross 0)."""
 
     owner_id: UUID
     gross: NonNegativeMoney
-    gross_source: Literal["expected", "certificate", "payslip"] = "expected"
+    gross_source: Literal["expected", "certificate", "payslip", "declared_none"] = "expected"
     deductions: NonNegativeMoney
     deductions_source: Literal["default", "override", "employment"]
     amount: NonNegativeMoney  # max(0, gross − deductions)

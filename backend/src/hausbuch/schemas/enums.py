@@ -483,6 +483,9 @@ class ReturnInputKind(StrEnum):
     CHILDCARE_COST = "childcare_cost"  # household (D112)
     HOUSEHOLD_SERVICES = "household_services"  # household, §35a (D112)
     SPECIAL_EXPENSE = "special_expense"  # household, donations (D112)
+    # „Kein Arbeitslohn in <Jahr>“: the owner had no pay that year (parental leave); one per
+    # owner and year, never carried, no document, an empty value (D195)
+    NO_PAY = "no_pay"
 
 
 # The household-scoped kinds (owner_id NULL); every other kind names its owner. Migration
@@ -506,6 +509,7 @@ NOT_CARRIED_KINDS = frozenset(
         ReturnInputKind.PAYSLIP,
         ReturnInputKind.REPLACEMENT_INCOME,
         ReturnInputKind.TRAINING,
+        ReturnInputKind.NO_PAY,
     }
 )
 # One current row per owner and year (the "one current answer" rule; payslip: per owner,
@@ -517,6 +521,7 @@ ONE_PER_OWNER_AND_YEAR = frozenset(
         ReturnInputKind.TELECOM,
         ReturnInputKind.OTHER_INSURANCE,
         ReturnInputKind.VORSORGE_OVERRIDE,
+        ReturnInputKind.NO_PAY,
     }
 )
 

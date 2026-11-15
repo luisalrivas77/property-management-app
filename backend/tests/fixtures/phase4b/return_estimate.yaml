@@ -843,6 +843,56 @@ cases:
     warnings:
     - {code: return.kindergeld_apply}
     - {code: return.filing_required}
+# The twin of benefits_without_pay (D195): B marked „Kein Arbeitslohn in 2026“ while her expected
+# gross pay of 2025 would otherwise carry into 2026. The marker beats the expected pay, so every
+# figure equals benefits_without_pay's: the marker changes no euro figure, it only says why.
+- id: benefits_without_pay_declared
+  description: 'as benefits_without_pay, with B''s „Kein Arbeitslohn in 2026“ over an expected pay carried from 2025: identical figures, ESt 4,051, result −5,149.00'
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts:
+  - *owner_a
+  - owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - {id: 0000004b-0000-4000-8000-000000000199, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: replacement_income, tax_year: 2026, value: {benefit: elterngeld, amount: '10000.00'}}
+    - {id: 0000004b-0000-4000-8000-00000000019a, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: no_pay, tax_year: 2026, value: {}}
+    expected_gross_pay: {id: 0000004b-0000-4000-8000-00000000019b,
+                         owner_id: 0000000a-0000-4000-8000-000000000002,
+                         kind: expected_gross_pay, tax_year: 2025, value: {amount: '32000.00'}}
+  household: [*child_march]
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '49275.44'
+    vorsorge_total: '11700.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '11772.00'
+    zve: '37503'
+    assessed:
+      zve: '37503'
+      zve_after_allowances: '29373'
+      est_without: '4051'
+      est_with: '2298'
+      est: '4051'
+      credit_35a: '0.00'
+      est_final: '4051.00'
+      progression: {benefits: '10570.00', allowance_unused: '1230.00', rate: '0.108044', fictitious_zve: '48073.00', fictitious_tax: '5194'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '1753', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '4051.00'
+    withheld: {income_tax: '9200.00', soli: '0.00', church_tax: '0.00', total: '9200.00'}
+    result: '-5149.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 10.570,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
 - id: filing_required_rental_positive
   description: no benefits, no child, Anlage V +2,000.00 → filing required for income without wage-tax withholding
   tax_year: 2026

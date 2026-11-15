@@ -9,7 +9,9 @@
 //   (withdrawn = true, repeating the current value). The server refuses a write against a row
 //   that is no longer current (income_input.not_current), e.g. after a change in another tab.
 // - Phase 4b (phase-4b.md §10): the gross pay's source chip and the Kinder and Haushalt blocks
-//   with the links to the Anlage N and the Jahresfragen (components/householdReturn.tsx).
+//   with the links to the Anlage N and the Jahresfragen (components/householdReturn.tsx), and
+//   per owner and year „Kein Arbeitslohn in <Jahr>“ or, while it is in force, „Kein
+//   Arbeitslohn angegeben“ with „Aufheben“ (D195, components/noPay.tsx).
 // - TaxEffectLine (Steuern page): the "Steuerwirkung" of the draft's result, from
 //   GET /api/tax-rate, with its source (Schätzung / Bescheid / manuell).
 //
@@ -41,6 +43,7 @@ import {
   toSignedMoneyString,
   type Parsed,
 } from "./input";
+import { NoPayMarker } from "./noPay";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -299,6 +302,7 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
                             onChanged={changed}
                           />
                           <GrossSourceChip estimate={estimate} year={year} />
+                          <NoPayMarker ownerId={owner.id} year={year} onChanged={changed} />
                         </td>
                         <td>
                           <InputCell

@@ -35,7 +35,8 @@ from the return_input rows of the year):
   has one, else the expected_gross_pay row; an owner with a summary needs no income_input row.
   A summary whose gross is itself the expected pay (no certificate, no payslip) is not used:
   D84's default estimates the social insurance (phase 4b's estimate uses the same default,
-  `default_vorsorge`, D113).
+  `default_vorsorge`, D113). A summary of source `declared_none` (the owner said „Kein
+  Arbeitslohn“ for the year, D195) has gross 0 and replaces the expected pay for that year.
 - deductions: a deductions_override row first (the user's figure always wins), else the
   summary's wk_applied + vorsorge + the Sonderausgaben-Pauschbetrag (36), else D84's default.
 - household: the Sonderausgaben beyond Vorsorge become max(2 × 36, church tax paid +
@@ -151,7 +152,7 @@ def household_deductions(household: HouseholdTaxContext, tariff: Tariff) -> Deci
 
 def _usable(employment: Employment) -> dict[UUID, OwnerEmployment]:
     """The owners' Anlage N summaries D98 uses: those whose gross is a certificate's or the
-    payslip projection's (the module doc)."""
+    payslip projection's, or 0 by „Kein Arbeitslohn“ (phase 4b D195; the module doc)."""
     return {e.owner_id: e for e in employment or () if e.gross_source != "expected"}
 
 
@@ -172,7 +173,9 @@ def _year_rows(
     current = in_force(inputs)
     years = [r.tax_year for r in current if r.tax_year <= year]
     if not years:
-        if _usable(employment):  # D98: the year's Anlage N summaries stand on their own
+        # D98: the year's Anlage N summaries stand on their own; a „Kein Arbeitslohn“ one
+        # (D195) alone does not, the other owner's income would be missing unsaid
+        if any(e.gross_source != "declared_none" for e in _usable(employment).values()):
             return _YearRows(year=year, carried_forward=False, rows=[])
         return None
     used = max(years)

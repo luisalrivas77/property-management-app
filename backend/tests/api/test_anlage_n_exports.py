@@ -272,3 +272,37 @@ def test_an_archive_without_owners_names_no_income_tax_pages(
     archive = _archive(client_a, deps, jobs, ws_a, booked["pid"])
     names = archive.namelist()
     assert not [n for n in names if n.startswith("einkommensteuer/Anlage-N")]
+
+
+def _no_pay(client, owner_id: str) -> dict:
+    """„Kein Arbeitslohn in 2026“ (D195): the row the to-do's button writes."""
+    return create(
+        client,
+        "/api/return-inputs",
+        {"owner_id": owner_id, "kind": "no_pay", "tax_year": 2026, "value": {}},
+    )
+
+
+def test_an_owner_who_said_no_pay_gets_no_sheet_and_the_reason_says_so(
+    client_a,
+    booked,  # noqa: F811
+    owners,
+    deps,  # noqa: F811
+    jobs,  # noqa: F811
+    ws_a,
+):
+    """D195: the marker refuses the sheet with its own code, and the archive's README says
+    „angegeben“ (the household said so), not „erfasst“ (nothing recorded)."""
+    _no_pay(client_a, owners["b"])
+    draft = ok(client_a.get(f"/api/owners/{owners['b']}/anlage-n", params={"tax_year": 2026}))
+    assert (draft["status"], draft["gross_source"]) == ("none", "declared_none")
+    response = _request(client_a, owners["b"])
+    assert (response.status_code, response.json()["code"]) == (422, "anlage_n.no_pay_declared")
+    assert jobs(ws_a) == []
+    archive = _archive(client_a, deps, jobs, ws_a, booked["pid"])
+    names = archive.namelist()
+    assert not [n for n in names if "Person B" in n]
+    readme = archive.read("README.txt").decode("utf-8")
+    assert "Anlage N Person B: nicht enthalten (kein Arbeitslohn angegeben)." in readme
+    total = _pdf_text(archive.read("einkommensteuer/Gesamt_2026_Schaetzung.pdf"))
+    assert "kein Arbeitslohn angegeben" in total

@@ -3647,7 +3647,8 @@ export interface components {
         /**
          * AnlageNDraft
          * @description One owner's Anlage N for one year (§5.6). status: certified (from certificates),
-         *     estimate (payslip projection or expected pay), none (no pay source).
+         *     estimate (payslip projection or expected pay), none (no pay source; gross_source
+         *     declared_none when the owner said „Kein Arbeitslohn“ for the year, D195).
          */
         AnlageNDraft: {
             /**
@@ -3663,7 +3664,7 @@ export interface components {
              */
             status: "certified" | "estimate" | "none";
             /** Gross Source */
-            gross_source?: ("certificate" | "payslip" | "expected") | null;
+            gross_source?: ("certificate" | "payslip" | "expected" | "declared_none") | null;
             /** Lines */
             lines?: components["schemas"]["DraftLine"][];
             /** Gross */
@@ -7558,6 +7559,12 @@ export interface components {
             /** Count */
             count: number;
         };
+        /**
+         * NoPayFact
+         * @description „Kein Arbeitslohn in <Jahr>“ (D195): the owner had no pay that year (e.g. a whole year of
+         *     parental leave). The row is the statement; its value carries nothing.
+         */
+        NoPayFact: Record<string, never>;
         /** NotarizedOnCorrection */
         NotarizedOnCorrection: {
             /**
@@ -7806,6 +7813,11 @@ export interface components {
             tax_class?: ("i" | "ii" | "iii" | "iv" | "iv_factor" | "v" | "vi") | null;
             /** Tax Class Source */
             tax_class_source?: ("certificate" | "payslip" | "questionnaire") | null;
+            /**
+             * No Pay Declared
+             * @default false
+             */
+            no_pay_declared: boolean;
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
@@ -7845,7 +7857,8 @@ export interface components {
          * OwnerZve
          * @description One owner's part of the estimate (D84). deductions = the default, the override, or (phase
          *     4b D98) the Anlage N's applied Werbungskosten + Vorsorge + 36. gross_source says where the
-         *     gross came from: the expected_gross_pay row, or a certificate or the payslip projection.
+         *     gross came from: the expected_gross_pay row, or a certificate or the payslip projection, or
+         *     declared_none when the owner said „Kein Arbeitslohn“ for the year (phase 4b D195: gross 0).
          */
         OwnerZve: {
             /**
@@ -7860,7 +7873,7 @@ export interface components {
              * @default expected
              * @enum {string}
              */
-            gross_source: "expected" | "certificate" | "payslip";
+            gross_source: "expected" | "certificate" | "payslip" | "declared_none";
             /** Deductions */
             deductions: string;
             /**
@@ -9287,7 +9300,7 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["WageCertificate"] | components["schemas"]["Payslip"] | components["schemas"]["CommuteFact"] | components["schemas"]["HomeOfficeFact"] | components["schemas"]["WorkRoomFact"] | components["schemas"]["EquipmentFact"] | components["schemas"]["TelecomFact"] | components["schemas"]["AssociationFact"] | components["schemas"]["TrainingFact"] | components["schemas"]["OtherExpenseFact"] | components["schemas"]["OtherInsuranceFact"] | components["schemas"]["ReplacementFact"] | components["schemas"]["VorsorgeOverride"] | components["schemas"]["ChildFact"] | components["schemas"]["ChildcareFact"] | components["schemas"]["HouseholdServicesFact"] | components["schemas"]["SpecialExpenseFact"];
+            value: components["schemas"]["WageCertificate"] | components["schemas"]["Payslip"] | components["schemas"]["CommuteFact"] | components["schemas"]["HomeOfficeFact"] | components["schemas"]["WorkRoomFact"] | components["schemas"]["EquipmentFact"] | components["schemas"]["TelecomFact"] | components["schemas"]["AssociationFact"] | components["schemas"]["TrainingFact"] | components["schemas"]["OtherExpenseFact"] | components["schemas"]["OtherInsuranceFact"] | components["schemas"]["ReplacementFact"] | components["schemas"]["VorsorgeOverride"] | components["schemas"]["ChildFact"] | components["schemas"]["ChildcareFact"] | components["schemas"]["HouseholdServicesFact"] | components["schemas"]["SpecialExpenseFact"] | components["schemas"]["NoPayFact"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
@@ -9332,7 +9345,7 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["WageCertificate"] | components["schemas"]["Payslip"] | components["schemas"]["CommuteFact"] | components["schemas"]["HomeOfficeFact"] | components["schemas"]["WorkRoomFact"] | components["schemas"]["EquipmentFact"] | components["schemas"]["TelecomFact"] | components["schemas"]["AssociationFact"] | components["schemas"]["TrainingFact"] | components["schemas"]["OtherExpenseFact"] | components["schemas"]["OtherInsuranceFact"] | components["schemas"]["ReplacementFact"] | components["schemas"]["VorsorgeOverride"] | components["schemas"]["ChildFact"] | components["schemas"]["ChildcareFact"] | components["schemas"]["HouseholdServicesFact"] | components["schemas"]["SpecialExpenseFact"];
+            value: components["schemas"]["WageCertificate"] | components["schemas"]["Payslip"] | components["schemas"]["CommuteFact"] | components["schemas"]["HomeOfficeFact"] | components["schemas"]["WorkRoomFact"] | components["schemas"]["EquipmentFact"] | components["schemas"]["TelecomFact"] | components["schemas"]["AssociationFact"] | components["schemas"]["TrainingFact"] | components["schemas"]["OtherExpenseFact"] | components["schemas"]["OtherInsuranceFact"] | components["schemas"]["ReplacementFact"] | components["schemas"]["VorsorgeOverride"] | components["schemas"]["ChildFact"] | components["schemas"]["ChildcareFact"] | components["schemas"]["HouseholdServicesFact"] | components["schemas"]["SpecialExpenseFact"] | components["schemas"]["NoPayFact"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
@@ -9405,7 +9418,7 @@ export interface components {
             /** Document Id */
             document_id?: string | null;
             /** Value */
-            value: components["schemas"]["WageCertificate"] | components["schemas"]["Payslip"] | components["schemas"]["CommuteFact"] | components["schemas"]["HomeOfficeFact"] | components["schemas"]["WorkRoomFact"] | components["schemas"]["EquipmentFact"] | components["schemas"]["TelecomFact"] | components["schemas"]["AssociationFact"] | components["schemas"]["TrainingFact"] | components["schemas"]["OtherExpenseFact"] | components["schemas"]["OtherInsuranceFact"] | components["schemas"]["ReplacementFact"] | components["schemas"]["VorsorgeOverride"] | components["schemas"]["ChildFact"] | components["schemas"]["ChildcareFact"] | components["schemas"]["HouseholdServicesFact"] | components["schemas"]["SpecialExpenseFact"];
+            value: components["schemas"]["WageCertificate"] | components["schemas"]["Payslip"] | components["schemas"]["CommuteFact"] | components["schemas"]["HomeOfficeFact"] | components["schemas"]["WorkRoomFact"] | components["schemas"]["EquipmentFact"] | components["schemas"]["TelecomFact"] | components["schemas"]["AssociationFact"] | components["schemas"]["TrainingFact"] | components["schemas"]["OtherExpenseFact"] | components["schemas"]["OtherInsuranceFact"] | components["schemas"]["ReplacementFact"] | components["schemas"]["VorsorgeOverride"] | components["schemas"]["ChildFact"] | components["schemas"]["ChildcareFact"] | components["schemas"]["HouseholdServicesFact"] | components["schemas"]["SpecialExpenseFact"] | components["schemas"]["NoPayFact"];
             /** Note */
             note?: string | null;
             /** Supersedes Id */
@@ -9429,7 +9442,7 @@ export interface components {
          *     HOUSEHOLD_KINDS; read per year unless listed in SPANNING_KINDS (D110).
          * @enum {string}
          */
-        ReturnInputKind: "wage_certificate" | "payslip" | "commute" | "home_office" | "work_room" | "work_equipment" | "telecom" | "professional_association" | "training" | "other_expense" | "other_insurance" | "replacement_income" | "vorsorge_override" | "child" | "childcare_cost" | "household_services" | "special_expense";
+        ReturnInputKind: "wage_certificate" | "payslip" | "commute" | "home_office" | "work_room" | "work_equipment" | "telecom" | "professional_association" | "training" | "other_expense" | "other_insurance" | "replacement_income" | "vorsorge_override" | "child" | "childcare_cost" | "household_services" | "special_expense" | "no_pay";
         /**
          * ReturnedPartner
          * @description Phase 6 D162 amended (7): the other line of a returned payment booked as such (the
@@ -11423,7 +11436,7 @@ export interface components {
          * WarningCode
          * @enum {string}
          */
-        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "limit.private_cost_undated" | "limit.private_cost_after_window" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "tax.private_cost_paid_from_account" | "payment_proof.missing" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "return.progression_provisional" | "return.benefit_possible_double" | "return.benefit_booked" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
+        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "limit.private_cost_undated" | "limit.private_cost_after_window" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "tax.private_cost_paid_from_account" | "payment_proof.missing" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "anlage_n.no_pay_overruled" | "return.progression_provisional" | "return.benefit_possible_double" | "return.benefit_booked" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
         /** WerbungskostenComponents */
         WerbungskostenComponents: {
             commute?: components["schemas"]["CommuteComponent"] | null;
