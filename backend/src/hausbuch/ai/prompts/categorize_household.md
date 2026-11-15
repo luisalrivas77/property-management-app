@@ -13,7 +13,7 @@ quarterly, yearly), false for a one-off payment.
 `category`, one of:
 - `hh_salary`: pay from an employer (Gehalt, Lohn)
 - `hh_child_benefit`: Kindergeld from the Familienkasse
-- `hh_wage_replacement`: a benefit that replaces pay: Elterngeld (from the Elterngeldstelle or the L-Bank), Mutterschaftsgeld paid by the Krankenkasse (often „Leistung von <date> bis <date>“), Krankengeld, Arbeitslosengeld or Kurzarbeitergeld; a Krankenkasse's „Kostenerstattung“ or a private insurer's „Leistungsabrechnung“ refunds a health cost and is never this code, and the employer's Zuschuss zum Mutterschaftsgeld arrives with the pay and stays `hh_salary`
+- `hh_wage_replacement`: a benefit that replaces pay: Elterngeld (from the Elterngeldstelle), Mutterschaftsgeld paid by the Krankenkasse (often „Leistung von <date> bis <date>“), Krankengeld, Arbeitslosengeld or Kurzarbeitergeld; a Krankenkasse's „Kostenerstattung“ or a private insurer's „Leistungsabrechnung“ refunds a health cost and is never this code, and the employer's Zuschuss zum Mutterschaftsgeld arrives with the pay and stays `hh_salary`
 - `hh_tax_refund`: a refund from the Finanzamt
 - `hh_capital_income`: interest or dividends credited to this account
 - `hh_other_income`: any other money received

@@ -150,7 +150,7 @@ def test_joint_lines_count_as_covered_by_what_an_owner_typed_beyond_their_own_li
 @pytest.mark.parametrize(
     ("text", "kind"),
     [
-        ("L-Bank Elterngeld 03/2026", "elterngeld"),
+        ("Elterngeldstelle Elterngeld 03/2026", "elterngeld"),
         ("ELTERNGELDSTELLE ElterngeldPlus", "elterngeld"),
         ("Krankenkasse Mutterschaftsgeld 01.02.-15.05.2026", "mutterschaftsgeld"),
         ("Krankenkasse Kinderkrankengeld", "krankengeld"),
@@ -181,3 +181,14 @@ def test_the_kind_is_given_only_when_every_line_names_the_same():
 
 def test_nothing_booked_needs_nothing():
     assert booked_benefit_warnings(2026, [_facts()], []) == []
+
+
+def test_every_kind_read_is_a_benefit_the_form_saves():
+    """The pre-filled kind must be one ReplacementFact accepts, or the form would drop it."""
+    from typing import get_args
+
+    from hausbuch.rules.tax.anlage_n.booked_benefits import _KINDS
+    from hausbuch.schemas.employment import ReplacementFact
+
+    saved = set(get_args(ReplacementFact.model_fields["benefit"].annotation))
+    assert {code for code, _ in _KINDS} <= saved
