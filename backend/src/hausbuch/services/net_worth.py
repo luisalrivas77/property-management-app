@@ -18,7 +18,9 @@ NetWorth(on) = Σ balances + Σ positions × price + the properties' estimate �
   valuation (`services.prices.overview.assets_overview`, with D167 (b)'s report guard and an
   exchange's EUR after its trades, D178 amended (2)), so the Übersicht and the Anlagen screen
   never disagree. The class follows the account's kind, not the asset's (an exchange's EUR
-  is Krypto). A position without a value counts nowhere and is a to-do.
+  is Krypto). A position without a value counts nowhere and is a to-do. A fund a depot's
+  latest report lists while no unit of it is booked (the overview shows booked units only)
+  is listed unvalued too, with a to-do pointing to the holdings card in Zu prüfen.
 - **The property** from its handover (purchase_date) to the end of ownership: the value in
   today's year by the default scenario in force (its „Wert heute“, else the purchase price;
   rules.performance.projection.value_today, D86), an estimate. **Its loans** from the payout,
@@ -87,6 +89,8 @@ from hausbuch.schemas.net_worth import (
 )
 
 from .context import CommandContext
+from .depot import _german_units as german_units
+from .depot import latest_report_checks
 from .events import append_event
 from .loans import list_loans
 from .prices.overview import assets_overview
@@ -327,7 +331,81 @@ def _positions(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTo
                         href="/assets",
                     )
                 )
-    return items, todos, stale, unvalued
+    known = {(i.line.account_id, i.line.asset_id) for i in items}
+    unbooked, unbooked_todos = _unbooked_funds(conn, on, known)
+    return items + unbooked, todos + unbooked_todos, stale, unvalued + len(unbooked)
+
+
+def _unbooked_funds(
+    conn: Connection, on: date, known: set[tuple[UUID | None, UUID | None]]
+) -> tuple[list[_Item], list[NetWorthTodo]]:
+    """The funds a depot's latest report on or before `on` lists while no unit of them is
+    booked: the Anlagen overview has no position for them (it lists booked units only), so
+    without this they would drop out of the figure without a trace (review of 15 Nov 2026,
+    finding 1). The disagreement is the holdings card's own (services.depot
+    latest_report_checks); the fund is never valued from the report's units (D167 (b)), it
+    is listed unvalued with a to-do pointing to that card, where „Umsätze aus dem Bericht
+    buchen“ books the report's trades."""
+    missing = [
+        (report, check)
+        for report in latest_report_checks(conn, on)
+        for check in report.wrong
+        if check.listed and (report.account_id, check.asset) not in known
+    ]
+    if not missing:
+        return [], []
+    acc, a = account_table.c, asset_table.c
+    labels = dict(
+        conn.execute(
+            select(acc.id, acc.label).where(acc.id.in_({r.account_id for r, _ in missing}))
+        )
+        .tuples()
+        .all()
+    )
+    names = dict(
+        conn.execute(select(a.id, a.name).where(a.id.in_({c.asset for _, c in missing})))
+        .tuples()
+        .all()
+    )
+    items: list[_Item] = []
+    todos: list[NetWorthTodo] = []
+    for report, check in missing:
+        label, name = labels[report.account_id], names.get(check.asset, "Wertpapier")
+        declared = german_units(check.declared_units)
+        items.append(
+            _Item(
+                NetWorthLine(
+                    kind=L.POSITION,
+                    net_worth_class=rules.class_of(AccountKind.DEPOT),
+                    label=name,
+                    account_id=report.account_id,
+                    account_kind=AccountKind.DEPOT,
+                    account_label=label,
+                    asset_id=check.asset,
+                    note=(
+                        f"laut Depotbericht vom {_german(report.as_of)} {declared} Anteile, "
+                        "keiner gebucht"
+                    ),
+                    not_valued_reason=E.VALUATION_NOT_VALUED,
+                ),
+                report.account_id,
+            )
+        )
+        todos.append(
+            NetWorthTodo(
+                code=T.POSITION_NOT_BOOKED,
+                text=(
+                    f"Der Depotbericht vom {_german(report.as_of)} nennt {declared} Anteile "
+                    f"{name} („{label}“), gebucht ist keiner; der Fonds zählt noch nicht im "
+                    "Nettovermögen. Die Karte „Depotbestand“ in Zu prüfen bucht die Käufe mit "
+                    "„Umsätze aus dem Bericht buchen“ oder nennt die fehlende "
+                    "Wertpapierabrechnung."
+                ),
+                action="Zu prüfen öffnen",
+                href="/inbox",
+            )
+        )
+    return items, todos
 
 
 def _properties(

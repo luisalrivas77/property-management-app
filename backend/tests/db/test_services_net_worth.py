@@ -22,6 +22,7 @@ from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import document_file as file_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import holding_statement as holding_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
@@ -418,6 +419,54 @@ def test_a_balance_stops_at_its_last_reconciled_statement(run, read, fresh_works
     assert account not in {
         line.account_id for line in read(ws, net_worth.net_worth, date(2026, 6, 1)).lines
     }
+
+
+def test_a_fund_the_report_lists_with_nothing_booked_is_listed_unvalued(
+    run, read, fresh_workspaces
+):
+    """Review of 15 Nov 2026, finding 1: cash paid in, a purchase debited on the depot's cash
+    statement, the quarterly report declares the fund's units, and no trade is booked. The
+    Anlagen overview has no position for it; the net worth lists it unvalued with a to-do to
+    the holdings card, and the total is the cash only (never the report's units, D167 (b))."""
+    ws, _ = fresh_workspaces
+    owner = run(ws, create_owner, OwnerCreate(full_name="Eigentümer A"), now=NOW).id
+    depot = _account(run, ws, "Depot", AccountKind.DEPOT)
+    _own(run, ws, depot, {owner: Fraction(1)})
+
+    def stored(ctx):
+        statement = _import(ctx, depot, date(2026, 7, 1), date(2026, 9, 30))
+        _line(ctx, depot, statement, date(2026, 7, 1), "5000.00")
+        _line(ctx, depot, statement, date(2026, 7, 2), "-4000.00")
+        fund = _asset(ctx, kind="etf", isin="IE00BEISPL09", name="Fonds Welt")
+        ctx.conn.execute(
+            insert(holding_table).values(
+                workspace_id=ctx.workspace_id,
+                account_id=depot,
+                asset_id=fund,
+                as_of=date(2026, 9, 30),
+                declared_units=Decimal("10"),
+                source="report",
+                created_at=ctx.now,
+            )
+        )
+        return fund
+
+    fund = run(ws, stored, now=NOW)
+    seen = read(ws, net_worth.net_worth, ON)
+    assert seen.total == Decimal("1000.00") and seen.by_class[C.DEPOT] == Decimal("1000.00")
+    assert seen.unvalued_positions == 1
+    [line] = [line for line in seen.lines if line.asset_id == fund]
+    assert (line.kind, line.value_eur, line.account_id) == (NetWorthLineKind.POSITION, None, depot)
+    assert "10 Anteile" in line.note
+    [todo] = [t for t in seen.todos if t.code is T.POSITION_NOT_BOOKED]
+    assert "Fonds Welt" in todo.text and "Umsätze aus dem Bericht buchen" in todo.text
+    assert todo.href == "/inbox"
+    # The month-end stores the cash only and says one position is missing.
+    captured = run(ws, net_worth.capture_month_end, ON, now=NOW)
+    assert captured.run.rows == 1 and captured.unvalued_positions == 1
+    # A report dated after the day asked does not reach back.
+    before = read(ws, net_worth.net_worth, date(2026, 9, 29))
+    assert before.unvalued_positions == 0 and fund not in {line.asset_id for line in before.lines}
 
 
 def test_owner_shares_follow_the_set_in_force_on_the_day(run, read, fresh_workspaces):

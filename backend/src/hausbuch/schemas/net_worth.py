@@ -55,6 +55,8 @@ class NetWorthTodoCode(StrEnum):
     PRICE_MISSING = "net_worth.price_missing"
     PRICE_STALE = "net_worth.price_stale"
     POSITION_NOT_RECONCILED = "net_worth.position_not_reconciled"
+    # A fund the depot's latest report lists with no unit booked (review of 15 Nov 2026).
+    POSITION_NOT_BOOKED = "net_worth.position_not_booked"
     OWNERSHIP_MISSING = "net_worth.ownership_missing"
     PROPERTY_SHARES_MISSING = "net_worth.property_shares_missing"
     LOAN_NOT_VALUED = "net_worth.loan_not_valued"
