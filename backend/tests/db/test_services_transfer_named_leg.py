@@ -23,6 +23,7 @@ from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.schemas.allocation import (
     AllocationCategory,
@@ -344,4 +345,56 @@ def test_a_code_proposal_is_never_booked_as_the_transfer(world, bank):
     out = bank.line(FRIDAY, "-600.00", iban=DEPOT_IBAN)
     _match(world, out)
     assert _booked(world, in_) == [("hh_other", "proposed", "document_match")]
+    assert _links(world) == []
+
+
+# --- Review, 15 Nov 2026: a depot line its own headline books is left to its own job --------
+
+
+def _headline_line(depot: Private, day: date, amount: str, text: str):
+    """A depot cash line with the bank's booking text (Private.line has none)."""
+    import hashlib
+    import uuid
+
+    from sqlalchemy import insert
+
+    with workspace_transaction(depot.world.engine, depot.world.ws) as conn:
+        return conn.execute(
+            insert(transaction_table)
+            .values(
+                workspace_id=depot.world.ws,
+                account_id=depot.account_id,
+                import_id=depot.import_id,
+                line_hash=hashlib.sha256(uuid.uuid4().bytes).digest(),
+                booking_date=day,
+                value_date=day,
+                amount=Decimal(amount),
+                purpose="",
+                booking_text=text,
+                created_at=depot.world.now,
+            )
+            .returning(transaction_table.c.id)
+        ).scalar_one()
+
+
+SOLD = [("security_sale", "confirmed", "matcher_depot")]
+
+
+@pytest.mark.parametrize("bank_first", [True, False])
+def test_a_security_sale_next_to_an_equal_named_debit_stays_a_sale(world, bank, bank_first):
+    depot = _depot(world)
+    if bank_first:
+        out = bank.line(FRIDAY, "-600.00", iban=DEPOT_IBAN)
+        _match(world, out)
+        sale = _headline_line(depot, FRIDAY, "600.00", "Wertpapier Verkauf, Ref.: 5500000011")
+        world.cmd(transfers.relink, depot.account_id)  # the import's relink, before the job
+        assert _rows(world, sale) == []
+        _match(world, sale)
+    else:
+        sale = _headline_line(depot, FRIDAY, "600.00", "Wertpapier Verkauf, Ref.: 5500000011")
+        _match(world, sale)
+        out = bank.line(FRIDAY, "-600.00", iban=DEPOT_IBAN)
+        _match(world, out)
+        world.cmd(transfers.relink, depot.account_id)
+    assert _booked(world, sale) == SOLD
     assert _links(world) == []

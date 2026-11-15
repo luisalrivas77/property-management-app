@@ -1528,6 +1528,15 @@ def _coarser(found: AllocationSet, current: list[Allocation]) -> bool:
     return fallback_of(row.category) is found.allocations[0].category
 
 
+def own_code_set(line: Line) -> AllocationSet | None:
+    """The answer the line's own account kind books by code before any rule or model (a
+    card's interest, fee or payment line, a depot's headline), or None. services.transfers
+    never books a line as a transfer's leg when this answer is something else (review of D162
+    amended, 15 Nov 2026: a depot's „Wertpapier Verkauf“ next to an equal debit naming the
+    depot)."""
+    return _card_charge(line) or _depot_booking(line)
+
+
 def _card_charge(line: Line) -> AllocationSet | None:
     """Phase 6 D176 (3): a card statement's interest or fee line, booked by code to
     hh_interest_fees before any rule or model (it has no payee to learn); D176 (4): its payment

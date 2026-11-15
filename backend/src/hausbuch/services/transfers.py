@@ -724,6 +724,12 @@ def _book_named_leg(
         # Review, 15 Nov 2026: only nothing or the model's own proposal is replaced, never a
         # rule's proposal nor a proposal written over a person's or a rule's answer.
         return None
+    own = matching.own_code_set(line)
+    if own is not None and any(a.category not in TRANSFER_CATEGORIES for a in own.allocations):
+        # Review, 15 Nov 2026: relink runs at a depot import before the lines' own jobs, so a
+        # line its own account books by code otherwise (a „Wertpapier Verkauf“) is left to
+        # that job, never pre-empted by an equal debit that names the depot.
+        return None
     answer = (
         deposit_split_set(line.tx, fee)
         if deposit and fee is not None
