@@ -435,7 +435,9 @@ Stage = Literal[
     "rule", "owner_transfer", "rent", "loan", "hausgeld", "transfer", "document", "model"
 ]
 # D158: the stages each purpose runs, in order. "model" is the household model on a private
-# account (D168) and phase 2's categorisation on the rental one.
+# account (D168) and phase 2's categorisation on the rental one. Private since D160 amended
+# (5) and its review fixes (15 Nov 2026): the transfer by an own IBAN and a bill the line pays
+# (recorded or a property's) come before the learned rules.
 STAGES: dict[AccountPurpose, tuple[Stage, ...]] = {
     AccountPurpose.RENTAL: (
         "rule",
@@ -446,7 +448,7 @@ STAGES: dict[AccountPurpose, tuple[Stage, ...]] = {
         "document",
         "model",
     ),
-    AccountPurpose.PRIVATE: ("rule", "transfer", "document", "model"),
+    AccountPurpose.PRIVATE: ("transfer", "document", "rule", "model"),
 }
 TENANT_QUESTION = "Diese Zahlung kommt von einem Mieter: gehört sie zum Mietobjekt?"
 LENDER_QUESTION = "Diese Zahlung geht an die Bank des Darlehens: gehört sie zum Mietobjekt?"
