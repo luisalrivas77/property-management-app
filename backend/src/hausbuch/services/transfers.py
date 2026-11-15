@@ -60,6 +60,7 @@ from hausbuch.rules.matching import (
     TRANSFER_CODES,
     deposit_fee_text,
     deposit_gap,
+    deposit_iban_link_text,
     deposit_link_text,
     deposit_split_set,
     ibans_agree,
@@ -817,12 +818,16 @@ def _answered_otherwise(conn: Connection, a: TransferLeg, b: TransferLeg) -> boo
 
 def _deposit_text(conn: Connection, leg: _Leg, other: _Leg, fee: Decimal | None) -> str | None:
     """The card's text for a deposit credited `fee` short (rules.matching.deposit_link_text),
-    naming the exchange and, when the pair is untied, what the link does with the IBAN."""
+    naming the exchange and, when the pair is untied, what the link does with the IBAN. D162
+    amended (8): for an exact pair, what the link does with the IBAN when the bank line is a
+    person's confirmed transfer out (rules.matching.deposit_iban_link_text), else None."""
     from . import accounts  # accounts imports services that import this module
 
-    if fee is None:
-        return None
     exchange, bank = (leg, other) if leg.leg.amount > 0 else (other, leg)
+    if fee is None:
+        # D162 amended (8): an exact pair whose bank line a person confirmed as a transfer out
+        # teaches the exchange the line's IBAN when linked; the card says so before the click.
+        return deposit_iban_link_text(exchange.label, _hand_link_deposit_iban(conn, bank, exchange))
     iban = (
         None
         if names_the_other(bank.leg, exchange.leg)
@@ -1139,7 +1144,8 @@ def link_by_hand(
             _rebook(ctx, leg, iban_key)  # type: ignore[arg-type]
         found = _link_of(ctx.conn, out.leg.id, in_.leg.id)
         if found is not None:
-            _learn_on_hand_link(ctx, out, in_)
+            # A re-booked leg is tied by an own IBAN, so an exchange here holds its IBAN
+            # already: nothing to learn (D162 amended (8)).
             return found
         linked = _linked_ids(ctx.conn)
         if out.leg.id in linked or in_.leg.id in linked:

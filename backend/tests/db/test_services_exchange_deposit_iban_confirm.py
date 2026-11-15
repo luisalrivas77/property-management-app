@@ -51,6 +51,10 @@ C = AllocationCategory
 TODAY = NOW.date()
 OTHER_IBAN = "DE88100000000000000093"  # another IBAN of the same exchange's bank
 SYSTEM = Actor(ActorType.SYSTEM, "cli:test")
+LEARN_TEXT = (
+    "„Verknüpfen“ merkt sich die IBAN dieser Zahlung als Einzahlungskonto von Binance."
+    " Spätere Zahlungen an dieselbe IBAN gelten dann als Einzahlungen auf Binance."
+)
 
 
 @pytest.fixture
@@ -357,10 +361,50 @@ def test_a_link_by_hand_of_a_confirmed_line_learns_and_names_it(world, bank, blo
     """The person had confirmed the line as a transfer before the exchange's export arrived;
     two equal deposits make the card ambiguous, and the person links one by hand."""
     out, exchange, moves = _two_equal_deposits(world, bank, blob_store, confirm=True)
+    # the cards say beforehand that the link learns the IBAN; the button stays „Verknüpfen“
+    cards = {c.leg.id: c for c in _open(world)}
+    assert {c.id for c in cards[out].candidates} == set(moves)
+    for candidate in cards[out].candidates:
+        assert candidate.deposit_fee is None
+        assert candidate.deposit_fee_text == LEARN_TEXT
     link = _link(world, out, moves[0])
     assert link.matched_by is TransferMatchedBy.USER
     linked = _linked_payload(world)
     assert linked["deposit_iban"] == "learned"
+    _assert_learned(world, out, exchange)
+
+
+def test_a_card_names_a_shared_iban_and_a_proposed_line_says_nothing(world, bank, blob_store):
+    bank.line(date(2026, 8, 3), "-19.99", name="Musterladen Versand GmbH", iban=DEPOSIT_IBAN)
+    out, _, moves = _two_equal_deposits(world, bank, blob_store, confirm=True)
+    cards = {c.leg.id: c for c in _open(world)}
+    assert {c.deposit_fee_text for c in cards[out].candidates} == {
+        "Die IBAN wird nicht übernommen, weil an sie auch andere Empfänger gehen."
+    }
+    _link(world, out, moves[0])
+    assert _linked_payload(world)["deposit_iban"] == "shared_iban"
+
+
+def test_a_proposed_lines_card_says_nothing_about_the_iban(world, bank, blob_store):
+    out, _, _ = _two_equal_deposits(world, bank, blob_store)
+    cards = {c.leg.id: c for c in _open(world)}
+    assert {c.deposit_fee_text for c in cards[out].candidates} == {None}
+
+
+def test_a_click_on_a_pair_the_matcher_linked_since_learns(world, bank, blob_store):
+    """Not covered by the confirmation: the person confirmed the line before the exchange's
+    export arrived, and the matcher linked the pair at the import (no person's act, nothing
+    learned). A click on the card shown before (link_by_hand finds the link) learns it."""
+    out = bank.line(date(2026, 9, 7), "-1000.00", name="Musterbörse", iban=DEPOSIT_IBAN)
+    _answer_line(world, out, "-1000.00", "internal_transfer_out")
+    exchange = _exchange(world)
+    _export(world, blob_store, exchange.id, "2026-09-08 08:00:00,Deposit,1000")
+    deposit = _movements(world, exchange.id)[Decimal("1000.00")]
+    assert _current_pairs(world) == {(out, deposit, TransferMatchedBy.MATCHER.value)}
+    _assert_not_learned(world, exchange)
+    _clear_jobs(world)
+    link = _link(world, out, deposit)
+    assert link.matched_by is TransferMatchedBy.MATCHER  # the matcher's link is returned
     _assert_learned(world, out, exchange)
 
 

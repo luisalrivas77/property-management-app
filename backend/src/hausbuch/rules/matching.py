@@ -2581,6 +2581,23 @@ def deposit_link_text(fee: Decimal, exchange: str, iban: DepositIbanOutcome | No
     return text
 
 
+def deposit_iban_link_text(exchange: str, iban: DepositIbanOutcome | None) -> str | None:
+    """D162 amended (8): the card's text for an exact bank line ↔ `exchange` deposit pair whose
+    bank line a person confirmed as a transfer out, so „Verknüpfen“ also records the line's IBAN
+    as the exchange's deposit IBAN (`iban`, the link's DepositIbanOutcome), or why it is not
+    taken; None when the link teaches nothing."""
+    if iban is DepositIbanOutcome.LEARNED:
+        return (
+            f"„Verknüpfen“ merkt sich die IBAN dieser Zahlung als Einzahlungskonto von {exchange}."
+            f" Spätere Zahlungen an dieselbe IBAN gelten dann als Einzahlungen auf {exchange}."
+        )
+    if iban is DepositIbanOutcome.SHARED_IBAN:
+        return "Die IBAN wird nicht übernommen, weil an sie auch andere Empfänger gehen."
+    if iban is DepositIbanOutcome.OWN_ACCOUNT:
+        return "Die IBAN wird nicht übernommen, weil sie zu einem anderen eigenen Konto gehört."
+    return None
+
+
 def euro_text(amount: Decimal) -> str:
     """Decimal("1") → "1,00 €" (the amount's size; the sentence says which way it went)."""
     whole, fraction = f"{abs(amount).quantize(CENT):,.2f}".split(".")
