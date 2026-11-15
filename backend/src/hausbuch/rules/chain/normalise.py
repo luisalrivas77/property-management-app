@@ -6,19 +6,21 @@
 - `utxo_net`: a Bitcoin transaction to the net amount out of the own addresses, its fee and
   the outputs to unregistered addresses (D185 (1), (2)). Step 4.
 
-Fixtures tests/fixtures/phase7/solana_tx.yaml and btc_utxo.yaml.
+Each delegates to its family module (rules/chain/solana.py, utxo.py), so steps 2 and 4 own
+separate files. Fixtures tests/fixtures/phase7/solana_tx.yaml and btc_utxo.yaml.
 """
 
 from collections.abc import Collection, Mapping
 
 from pydantic import JsonValue
 
+from hausbuch.rules.chain import solana, utxo
 from hausbuch.schemas.chain import ChainTx, SolanaDelta
 
 
 def solana_deltas(tx: Mapping[str, JsonValue], own: Collection[str]) -> list[SolanaDelta]:
-    raise NotImplementedError("phase 7 step 2")
+    return solana.solana_deltas(tx, own)
 
 
 def utxo_net(tx: ChainTx, own: Collection[str]) -> tuple[int, int, list[str]]:
-    raise NotImplementedError("phase 7 step 4")
+    return utxo.utxo_net(tx, own)
