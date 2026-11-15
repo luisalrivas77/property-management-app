@@ -299,6 +299,9 @@ def test_a_card_settlement_before_the_paying_accounts_history_gets_no_card(
     if payer_first is not None:
         settlement = bank.line(payer_first, "-100.00", iban=PAYMENT_IBAN, purpose="Kreditkarte")
         _match(world, settlement)
+        # D162 amended (9): the payer's history must also reach past the window (5 Dec), or a
+        # payer whose lines end inside it gets no card either.
+        bank.line(date(2026, 1, 5), "-30.00", name="Beispiel Markt")
     else:
         bank.line(date(2026, 1, 2), "-30.00", name="Beispiel Markt")
     cards = [c for c in world.query(transfers.open_transfers, TODAY) if c.leg.id == paid]

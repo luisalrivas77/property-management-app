@@ -10805,9 +10805,9 @@ export interface components {
          *     only five of them, 14 Nov 2026).
          *     unlearnable_categories: the categories the line's account takes for which a one-row
          *     answer can never become a rule, with or without a typed pattern (phase 6 D160 on a
-         *     private account: the transfer, depot and tax-relevant codes and those without a
-         *     threshold; empty on the rental account), in taxonomy order, so the UI greys the box and
-         *     says why instead of letting rule.not_learnable refuse the answer.
+         *     private account as amended (5): uncategorized, the transfer and depot codes, a
+         *     property bill, work and education; empty on the rental account), in taxonomy order, so
+         *     the UI shows no rule box instead of letting rule.not_learnable refuse the answer.
          *     rule: the rule this PUT created, if any.
          *     name_history (phase 6 D160): for a private line whose rule would be on its name (no
          *     IBAN, or a shared one), the payee's other confirmed lines of the same sign by category,
@@ -10828,7 +10828,10 @@ export interface components {
          *     (PayPal, Klarna) the service and the merchant it names („PayPal: DisneyPlus“), whose
          *     lines the rule books; None for any other line. no_merchant: a payment service's line
          *     whose merchant cannot be read, so no rule is learned from it (rule.no_merchant) and the
-         *     panel greys the box with that reason.
+         *     panel shows no rule box. own_iban (D160 amended (5), review fixes, 15 Nov 2026): a
+         *     private line whose counterparty IBAN is another own account's, always a transfer, so no
+         *     rule is learned from it, typed pattern or not (rule.not_learnable), and the panel shows
+         *     no rule box, no suggested pattern and no pattern field, as for no_merchant.
          */
         TransactionAllocations: {
             transaction: components["schemas"]["Transaction"];
@@ -10878,6 +10881,11 @@ export interface components {
              * @default false
              */
             no_merchant: boolean;
+            /**
+             * Own Iban
+             * @default false
+             */
+            own_iban: boolean;
         };
         /**
          * TransferLegSource

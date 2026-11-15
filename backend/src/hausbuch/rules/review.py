@@ -129,8 +129,9 @@ THRESHOLDS = MappingProxyType(
         C.HH_SPORT: _RECURRING,
         C.HH_TRAVEL: _RECURRING,
         C.HH_INVESTMENT: None,
-        # D159 amended (6) 15 Nov 2026 (migration 0036): none like hh_investment, so a
-        # person confirms each payment into an investment and no rule is learned on one.
+        # D159 amended (6) 15 Nov 2026 (migration 0036): none like hh_investment, so the
+        # model never books a payment into an investment alone; since D160 amended (5) a
+        # learned rule may repeat a person's own answer for a payee (a savings plan).
         C.HH_INVESTMENT_PROPERTY: None,
         C.HH_INVESTMENT_SECURITIES: None,
         C.HH_INVESTMENT_CRYPTO: None,
