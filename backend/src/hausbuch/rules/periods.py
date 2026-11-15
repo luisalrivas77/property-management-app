@@ -3,11 +3,16 @@
 service_period(purpose, booking_date, recurring), first rule that applies:
   1. a range of months in the purpose: MM/YY-MM/YY or MM/YYYY-MM/YYYY -> the first day of its
      first month to the last day of its last month;
+  1b. a quarter: Q1-Q4, then a two- or four-digit year after „/“ or a space -> its three months
+     (D27 amended 15 Nov 2026: „Q4/2025“ had been read as April 2025);
   2. one month in the purpose, leftmost of: MM/YYYY, MM.YYYY, YYYY-MM, German month name +
      YYYY (case-insensitive) -> that month;
   3. a bare four-digit year (2000-2100) -> that calendar year;
   4. a recurring line -> its booking month;
   5. else None.
+A period read from the text counts only when its years lie from PAST_YEARS before the booking
+year to FUTURE_YEARS after it; otherwise the next candidate is read (D27 amended 15 Nov 2026:
+a house number in a card line, „2093 … Pike“, had become a period for 2093).
 The period stands on its own when the purpose states one: January's rent paid on 30 December
 is January's (the §11 ten-day rule in phase 3 reads both dates). Digits that belong to a longer
 number or a full date (01.03.2027) are not read as a month or a year. A debit card's expiry
@@ -23,6 +28,10 @@ from hausbuch.schemas.allocation import ServicePeriod
 
 YEAR_MIN = 2000
 YEAR_MAX = 2100
+# The years a payment plausibly pays for, around its booking year (D27 amended): a back-payment
+# for an old year, a prepayment for the next one.
+PAST_YEARS = 10
+FUTURE_YEARS = 1
 
 _MONTHS = {
     "januar": 1,
@@ -58,6 +67,13 @@ _MONTH = re.compile(
     + _END,
     re.IGNORECASE,
 )
+# „Q4/2025“, „Q4/25“, „Q4.2025“, „Q4-2025“, „Quartal 4/2025“, „Q4 2025“; after a space only a
+# four-digit year, so „LIDL Q3 24 BERLIN“ or „Parkhaus Q2 19,50“ is no quarter (review F2, F3).
+_QUARTER = re.compile(
+    r"(?<![A-Za-z0-9])(?:Q|Quartal\s*)([1-4])"
+    + r"(?:[/.-]\s*(\d{4}|\d{2})|\s+(\d{4}))(?![.,/-]?\d)",
+    re.IGNORECASE,
+)
 _YEAR = re.compile(_START + r"(\d{4})" + _END)
 # A card and its expiry month, as a Sparkasse card purpose ends: "Debitk.1 2028-12".
 _CARD_EXPIRY = re.compile(r"\b(?:Debitk|Kreditk)\.\s*\d+\s+\d{4}-\d{1,2}" + _END, re.IGNORECASE)
@@ -65,11 +81,20 @@ _CARD_EXPIRY = re.compile(r"\b(?:Debitk|Kreditk)\.\s*\d+\s+\d{4}-\d{1,2}" + _END
 
 def service_period(purpose: str, booking_date: date, recurring: bool) -> ServicePeriod | None:
     text = _CARD_EXPIRY.sub(" ", purpose or "")
+    lowest, highest = booking_date.year - PAST_YEARS, booking_date.year + FUTURE_YEARS
+
+    def plausible(*years: int) -> bool:
+        return all(lowest <= year <= highest for year in years)
+
     for m in _RANGE.finditer(text):
         first = _month(m.group(1), m.group(2))
         last = _month(m.group(3), m.group(4))
-        if first and last and last >= first:
+        if first and last and last >= first and plausible(first[0], last[0]):
             return _months(first, last)
+    for m in _QUARTER.finditer(text):
+        if (year := _year(m.group(2) or m.group(3))) is not None and plausible(year):
+            quarter = int(m.group(1))
+            return _months((year, 3 * quarter - 2), (year, 3 * quarter))
     for m in _MONTH.finditer(text):
         if m.group("mm"):
             found = _month(m.group("mm"), m.group("yyyy"))
@@ -77,10 +102,10 @@ def service_period(purpose: str, booking_date: date, recurring: bool) -> Service
             found = _month(m.group("iso_m"), m.group("iso_y"))
         else:
             found = _month(str(_MONTHS[m.group("name").casefold()]), m.group("name_y"))
-        if found:
+        if found and plausible(found[0]):
             return _months(found, found)
     for m in _YEAR.finditer(text):
-        if (year := _year(m.group(1))) is not None:
+        if (year := _year(m.group(1))) is not None and plausible(year):
             return ServicePeriod(start=date(year, 1, 1), end=date(year, 12, 31))
     if recurring:
         month = (booking_date.year, booking_date.month)

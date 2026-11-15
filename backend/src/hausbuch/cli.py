@@ -1,7 +1,8 @@
 """`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills |
-rematch-waiting | household-resort | follow-accounts` (phase 1 step 3, §5, §6.5, §6.7; phase 2
-D41; phase 6 D159 amended 13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended (4)
-14 Nov 2026, D165 (a) and D176 (3) amended 14 Nov 2026).
+rematch-waiting | household-resort | follow-accounts | repair-periods` (phase 1 step 3, §5,
+§6.5, §6.7; phase 2 D41, D27 amended 15 Nov 2026; phase 6 D159 amended 13 and 14 Nov 2026,
+D161 widened 14 Nov 2026, D160 amended (4) 14 Nov 2026, D165 (a) and D176 (3) amended
+14 Nov 2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -33,6 +34,11 @@ same owner URL: it queues a rematch per private account, so every line of it sti
 Zu prüfen is checked again against the learned rules and the matchers (never the model, never
 a confirmed line), once after the deploy of D160 amended (4). --dry-run counts and queues
 nothing.
+
+`repair-periods` runs services.matching.repair_periods once for a workspace, with the same
+owner URL: every line still proposed with a service period outside the plausible years of its
+booking date is proposed again with its period read by the current rule (phase 2 D27 amended
+15 Nov 2026; never a confirmed line). --dry-run counts and changes nothing.
 
 `household-resort` runs services.household_resort.resort_household the same way: it queues a
 job per private line booked in a spending group's fallback, proposed or confirmed, so the
@@ -360,6 +366,38 @@ def rematch_waiting(args: argparse.Namespace, environ: Mapping[str, str]) -> int
     return EXIT_OK
 
 
+# --- repair-periods -------------------------------------------------------------------
+
+
+def repair_periods(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.matching import repair_periods as repair
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:repair-periods")
+                repaired = repair(new_command(conn, args.workspace, actor))
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    verb = "would propose" if args.dry_run else "proposed"
+    print(f"{verb} {repaired} line(s) again with a period read by the current rule")
+    return EXIT_OK
+
+
 # --- follow-accounts ------------------------------------------------------------------
 
 
@@ -560,6 +598,15 @@ def _parser() -> argparse.ArgumentParser:
     waiting.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     waiting.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
     waiting.set_defaults(command=rematch_waiting, command_name="rematch-waiting")
+
+    periods = commands.add_parser(
+        "repair-periods",
+        help="propose again the lines still proposed with a service period far from their "
+        "booking date, read by the current rule (once, after the deploy of D27 amended)",
+    )
+    periods.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    periods.add_argument("--dry-run", action="store_true", help="count only, change nothing")
+    periods.set_defaults(command=repair_periods, command_name="repair-periods")
 
     follow = commands.add_parser(
         "follow-accounts",
