@@ -28,6 +28,8 @@ links and computes the cards on read.
   A candidate booked otherwise but tied to the leg by an own IBAN (a card bill answered
   hh_credit_card before the card account existed) is marked rebook_on_link: the card's
   button re-books it as a transfer, then links (link_by_hand with rebook, D176 (4)).
+- lines_on_cards: the candidates Zu prüfen shows on their card only (D162 amended (5)): the
+  card's button books them, and they hold only the model's proposal.
 
 Every link and every replacement writes its event (transfer.linked, transfer.unlinked). Reads
 and writes run under the workspace's row-level security."""
@@ -789,6 +791,13 @@ def _book_named_leg(
         # line its own account books by code otherwise (a „Wertpapier Verkauf“) is left to
         # that job, never pre-empted by an equal debit that names the depot.
         return None
+    if own is None and line.account_kind == AccountKind.CREDIT_CARD.value:
+        # Review of D162 amended (5), 15 Nov 2026: a card's line is its settlement leg only
+        # when the card reader's own code reads it as the payment („Bezahlung“); a merchant's
+        # refund („Gutschrift“) of the same amount, a few banking days before a debit naming
+        # the payment IBAN, was booked as the transfer and the real payment left with a dead
+        # card. Such a pair goes to the person as a proposed card (principle 3).
+        return None
     answer = (
         deposit_split_set(line.tx, fee)
         if deposit and fee is not None
@@ -1153,6 +1162,10 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
         min(leg.leg.booked_on for leg in waiting) - _BY_HAND,
         max(leg.leg.booked_on for leg in waiting) + _BY_HAND,
     )
+    # Read once, only when a leg has no counterpart: each account's first bank line, and the
+    # account each own IBAN belongs to.
+    firsts: dict[UUID, date] | None = None
+    own: dict[str, UUID] = {}
     for leg in waiting:
         start, end = leg.leg.booked_on - _BY_HAND, leg.leg.booked_on + _BY_HAND
         others = [
@@ -1185,6 +1198,11 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
                 )
                 and (named is None or o.leg.account_iban_hmac in (None, named))
             ]
+            if not same:
+                if firsts is None:
+                    firsts, own = _first_days(conn), _own_accounts(conn)
+                if _before_every_history(leg, firsts, own):
+                    continue
             code, candidates = OpenTransferCode.UNMATCHED_LEG, same
         else:
             continue
@@ -1214,6 +1232,100 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
             )
         )
     return items
+
+
+def _first_days(conn: Connection) -> dict[UUID, date]:
+    """The first day of each account's bank lines: its earliest line of a reconciled import,
+    per account id. Movements are left out: an exchange's export carries its history from
+    years before the bank accounts' (D178), so an old trade would keep every card."""
+    t = transaction_table.c
+    rows = conn.execute(
+        select(t.account_id, func.min(t.booking_date))
+        .join(import_table, import_table.c.id == t.import_id)
+        .where(
+            t.excluded_as_duplicate_of.is_(None),
+            import_table.c.status == ImportStatus.RECONCILED.value,
+        )
+        .group_by(t.account_id)
+    ).all()
+    return {account_id: day for account_id, day in rows}
+
+
+def _own_accounts(conn: Connection) -> dict[str, UUID]:
+    """The account each own IBAN belongs to (hex HMAC → account id): an account's own IBAN, a
+    credit card's payment IBAN, an exchange's learned deposit IBAN."""
+    acc = account_table.c
+    rows = conn.execute(select(acc.id, acc.iban_hmac, acc.payment_iban_hmac)).all()
+    found: dict[str, UUID] = {}
+    for account_id, iban, payment in rows:
+        for value in (iban, payment):
+            if (key := _hex(value)) is not None:
+                found[key] = account_id
+    return found
+
+
+def _before_every_history(leg: _Leg, firsts: dict[UUID, date], own: dict[str, UUID]) -> bool:
+    """D162 amended (5), 15 Nov 2026 (Luis: „There are some credit card deposits that were not
+    directly linked. Can you check?“): a leg without a counterpart and without a same-amount
+    line in its by-hand window (±_BY_HAND), whose window ends before the first bank line of
+    every other account (_first_days), can have no counterpart yet, so it gets no card: a card
+    statement's payment of 2 Dec 2025 while every bank account's lines start in January 2026.
+    When no other account holds a line the card stays. An exchange's or depot's movements do
+    not count, so an exchange deposit older than every bank line gets no card either. An older
+    statement imported later brings the counterpart into reach: the card comes back proposing
+    it, and booked as a transfer (matcher, rule or person) it is linked by after_booking.
+
+    Review of D162 amended (5), 15 Nov 2026: a leg that names an own account by its IBAN
+    (`own`) is decided by that account alone: the card stays while that account has no bank
+    line yet (a debit to the other owner's account, whose statements are not imported), and
+    goes only when that account's first line is after the window. Every other account counts
+    only for a leg that names none, or an unrelated account with later lines would hide it."""
+    named = leg.leg.counterparty_iban_hmac
+    account = None if named is None else own.get(named)
+    if account is not None and account != leg.leg.account_id:
+        first = firsts.get(account)
+        return first is not None and leg.leg.booked_on + _BY_HAND < first
+    others = [day for account_id, day in firsts.items() if account_id != leg.leg.account_id]
+    return bool(others) and leg.leg.booked_on + _BY_HAND < min(others)
+
+
+def lines_on_cards(conn: Connection, items: Iterable[InboxItem]) -> set[UUID]:
+    """D162 amended (5), 15 Nov 2026 (Luis: „Aren't the zu prüfen the bank lines that are also
+    in transfers between own accounts redundant?“): the bank lines among the transfer cards'
+    candidates (`items`, transfer_inbox_items) that Zu prüfen lists on their card only, not
+    among the lines to allocate. A candidate is one when the card's own button books it and the
+    card's leg is surely its counterpart: a line tied to the leg by an own IBAN
+    (rebook_on_link: the link re-books it as a transfer), or an exchange deposit credited short
+    (deposit_fee: the link books the split) that is the one candidate of a proposed card, so
+    it fits the leg inside the three banking days of D162; and the line holds only the model's
+    proposal, never a person's or a rule's answer, current or superseded (_free_for_matcher
+    with at least one row, so a line holding nothing stays listed for „KI-Vorschläge holen“).
+    Review, 15 Nov 2026: a short candidate found by its amount alone on a „Gegenbuchung fehlt“
+    card (any private debit up to 2 € above an unlinked deposit, ±31 days) stays listed, or
+    unrelated debits were parked behind that card where „Empfänger suchen“ and the Haushalt's
+    „N ohne Kategorie“ could not find them. An untied candidate of the same amount is not one
+    either: a plain „Verknüpfen“ leaves the model's proposal on it, so it would come back
+    after the link. Reads two small queries per such candidate line, each line once."""
+    from . import allocations  # allocations imports services that import this module
+
+    found: set[UUID] = set()
+    seen: set[UUID] = set()
+    for item in items:
+        if item.transfer is None:
+            continue
+        proposed = item.transfer.code is OpenTransferCode.PROPOSED
+        for candidate in item.transfer.candidates:
+            if candidate.source is not TransferLegSource.TRANSACTION or candidate.id in seen:
+                continue
+            if not candidate.rebook_on_link and not (
+                proposed and candidate.deposit_fee is not None
+            ):
+                continue
+            seen.add(candidate.id)
+            current = allocations.current_allocations(conn, candidate.id)
+            if current and _free_for_matcher(conn, candidate.id, current):
+                found.add(candidate.id)
+    return found
 
 
 _LINK_REASON = {
@@ -1296,6 +1408,7 @@ __all__ = [
     "own_account_hmacs",
     "link_by_hand",
     "link_leg",
+    "lines_on_cards",
     "list_links",
     "open_transfers",
     "relink",

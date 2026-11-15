@@ -295,10 +295,12 @@ def test_the_payment_iban_is_confirmed_from_the_statement(
         ws,
         lambda conn: (
             conn.execute(
-                select(event_table.c.payload).where(
+                select(event_table.c.payload)
+                .where(
                     event_table.c.entity_id == card.id,
                     event_table.c.type == EventType.ACCOUNT_UPDATED.value,
                 )
+                .order_by(event_table.c.seq)
             )
             .scalars()
             .all()

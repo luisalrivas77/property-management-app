@@ -28,7 +28,11 @@
 //   GET /reminders, loaded alongside.
 // - a transfer between own accounts that waits for a person (transfer_link, transfer_unmatched,
 //   phase 6 D162): the counterparts to pick and „Verknüpfen“ (POST /transfers); one without a
-//   counterpart links to Konten, to import the other account.
+//   counterpart links to Konten, to import the other account. A chosen counterpart that is a
+//   bank line also gets „Keine Überweisung – Zahlung anders zuordnen“, which opens that line in
+//   the allocation panel beside the list (?umsatz=…). A private line holding only the model's
+//   proposal that the card's button books is listed on the card only, not under Zahlungen
+//   zuordnen (GET /inbox leaves it out, D162 amended (5)), so its decision is counted once.
 // - a property cost paid from a private account (phase 6 D161): „Übernehmen“ records the
 //   proposed privately paid costs (property_cost_row, POST /transactions/{id}/private-costs);
 //   „Beleg hochladen“ uploads the missing bill and saves it on the line (property_cost_bill);
@@ -409,7 +413,8 @@ export function InboxList({
                   {items.map((item) => {
                     // A possible duplicate also names its later line, which may sit in two pairs: its own id first.
                     // A forwarded document can arrive in two mails, and a failed mail names no id: the time tells them apart.
-                    const key = `${item.kind}:${item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id ?? item.reminder_id ?? item.movement_id}:${item.created_at}`;
+                    // A transfer card is keyed by its leg: two exchange deposits of one import share the import id and time.
+                    const key = `${item.kind}:${item.transfer?.leg.id ?? item.possible_duplicate_id ?? item.proposal_id ?? item.import_id ?? item.transaction_id ?? item.document_id ?? item.reminder_id ?? item.movement_id}:${item.created_at}`;
                     return (
                       <li key={key}>
                         {isLineItem(item) ? (
@@ -1159,7 +1164,11 @@ function rebookText(candidate: TransferLegView, leg: TransferLegView): string {
  * books that gap as bank fees, split by the API. Its text (deposit_fee_text, from the API)
  * says what the link books and, before the exchange's deposit IBAN is known, that later
  * payments to the line's IBAN then count as deposits; its button reads „Als Einzahlung
- * verknüpfen“, never a plain „Verknüpfen“ (review, 15 Nov 2026). */
+ * verknüpfen“, never a plain „Verknüpfen“ (review, 15 Nov 2026). A chosen bank line that is
+ * not the transfer is answered in the allocation panel: „Keine Überweisung – Zahlung anders
+ * zuordnen“ selects it (?umsatz=…; the panel opens a line that is not in the list, D162
+ * amended (5)); once a person answers it, it is no longer the model's proposal, and the card
+ * offers it as PR #321 built (an untied short deposit not at all, a tied one with re-booking). */
 function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accounts: Map<string, Account>; onLinked: () => void }) {
   const [choice, setChoice] = useState(open.candidates.length === 1 ? (open.candidates[0]?.id ?? "") : "");
   const [busy, setBusy] = useState(false);
@@ -1202,6 +1211,11 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
               ? "Als Übertrag buchen und verknüpfen"
               : "Verknüpfen"}
       </button>
+      {chosen?.source === "transaction" ? (
+        <Link href={`/inbox?umsatz=${chosen.id}`} scroll={false}>
+          Keine Überweisung – Zahlung anders zuordnen
+        </Link>
+      ) : null}
       <ErrorNotice error={error} />
     </fieldset>
   );

@@ -2313,16 +2313,17 @@ def legs_fit(out: TransferLeg, in_: TransferLeg, *, exact: bool = False, gap: bo
     (names_the_other), the in-leg may also be booked up to three banking days *before* the
     out-leg: a depot credits a direct debit on the day it collects it, the paying bank books
     it days later (a quirion Einlage credited on the 5th, the DKB debit booked on the 7th).
-    Without that tie the in-leg is never earlier than the out-leg, and never for a credit
-    card's leg (review, 15 Nov 2026: only the depot's direct debit motivated the early window,
-    and no real card pair needs it). With `gap`, a deposit the
+    Without that tie the in-leg is never earlier than the out-leg. D162 amended (5), 15 Nov
+    2026: a credit card's leg too (a card issuer credited a payment on 1 Jan, the bank's debit
+    naming the card's payment IBAN was booked on 2 Jan and waited for a link by hand; the
+    review of the same day had left cards out while no real card pair needed it). With `gap`,
+    a deposit the
     exchange credited up to EXCHANGE_DEPOSIT_GAP short without a fee fits too (deposit_gap):
     match_transfer only proposes such a pair, and links it only when the bank line names the
     exchange's deposit IBAN."""
     earliest = (
         subtract_banking_days(out.booked_on, TRANSFER_WINDOW_BANKING_DAYS)
         if names_the_other(out, in_)
-        and AccountKind.CREDIT_CARD not in {out.account_kind, in_.account_kind}
         else out.booked_on
     )
     if not earliest <= in_.booked_on <= transfer_window_end(out.booked_on):

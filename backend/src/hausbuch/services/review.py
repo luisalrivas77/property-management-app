@@ -6,7 +6,9 @@
   allocation set or none (excluded lines and the later line of an open possible duplicate
   are not listed: the duplicate is decided first).
   An unmatched line whose latest categorize call failed says so (D50), so a failing model is
-  visible in the queue rather than looking like "nothing fits".
+  visible in the queue rather than looking like "nothing fits". A private line holding only
+  the model's proposal that a transfer card's button books (transfers.lines_on_cards, phase 6
+  D162 amended (5)) is listed on that card only, so one decision is listed and counted once.
 - `allocate_transaction`: PUT /transactions/{id}/allocations. The person's answer is written
   through services.allocations (sum check, events, paid_on), optionally followed by a learned
   rule (services.rules_learned).
@@ -725,6 +727,10 @@ def inbox(
         section_ms[name] = round((time.perf_counter() - began) * 1000, 1)
         section_items[name] = len(found)
         items += found
+    hidden = _lines_on_cards(conn, items)
+    if hidden:
+        gone = {id(item) for item in hidden}
+        items = [item for item in items if id(item) not in gone]
     result = sorted(items, key=lambda item: item.created_at, reverse=True)
     logger.info(
         "inbox sections",
@@ -735,10 +741,39 @@ def inbox(
                 "items": len(result),
                 "section_ms": section_ms,
                 "section_items": section_items,
+                "lines_on_cards": len(hidden),
             }
         },
     )
     return result
+
+
+_TRANSFER_KINDS = (InboxItemKind.TRANSFER_LINK, InboxItemKind.TRANSFER_UNMATCHED)
+
+
+def _lines_on_cards(conn: Connection, items: list[InboxItem]) -> list[InboxItem]:
+    """Phase 6 D162 amended (5), 15 Nov 2026: the private lines' proposals that a transfer card
+    lists as a candidate its button books, holding only the model's proposal: tied to the
+    card's leg by an own IBAN, or a short deposit's debit on a proposed card inside the three
+    banking days, never a by-amount candidate of a „Gegenbuchung fehlt“ card
+    (transfers.lines_on_cards). They are answered on the card („Als Einzahlung verknüpfen“,
+    „Als Übertrag buchen und verknüpfen“, or „Keine Überweisung – Zahlung anders zuordnen“),
+    so they leave Zahlungen zuordnen, its „Alle N bestätigen“ groups and every count. Only a
+    private line (its item names its account): a rental line is never re-booked as a transfer
+    between own accounts. Without transfer cards (no `today`) nothing is hidden."""
+    from .transfers import lines_on_cards  # it imports services that import this module
+
+    cards = [item for item in items if item.kind in _TRANSFER_KINDS]
+    if not cards:
+        return []
+    on_cards = lines_on_cards(conn, cards)
+    return [
+        item
+        for item in items
+        if item.kind is InboxItemKind.ALLOCATION_PROPOSED
+        and item.account_id is not None
+        and item.transaction_id in on_cards
+    ]
 
 
 def _questionnaire_items(conn: Connection, today: date) -> list[InboxItem]:

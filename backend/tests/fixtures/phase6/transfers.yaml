@@ -16,7 +16,8 @@
 #   the link     candidates: opposite sign, out booked on or before in, in within 3 banking days
 #                of out (D162 amended 15 Nov 2026: when one leg names the other's account by
 #                IBAN, in may also be booked up to 3 banking days before out, a direct debit
-#                the depot credited before the bank booked it); amount equal to the cent, or
+#                the depot credited before the bank booked it; D162 amended (5): a credit
+#                card's too, when the debit names its payment IBAN); amount equal to the cent, or
 #                (one side an exchange) the in-leg equal to
 #                the out-leg less at most the recorded fee. One → transfer_link written
 #                (matched_by matcher), kind bank | exchange_eur | depot_cash by the accounts'
@@ -65,6 +66,10 @@ accounts:
   # 15 Nov 2026, migration 0035); the exchange above keeps none.
   exchange_b: {id: 00000ac6-0000-4000-8000-000000000008, kind: exchange, purpose: private,
                iban_hmac: "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7"}
+  # A credit card whose payment IBAN is confirmed (D176 (4): it stands as the card's account
+  # IBAN for the paying debit), 15 Nov 2026.
+  card: {id: 00000ac6-0000-4000-8000-000000000009, kind: credit_card, purpose: private,
+         iban_hmac: "a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8"}
 
 bases:
   hmac_exchange_bank: &H_XBANK "e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0"
@@ -73,6 +78,7 @@ bases:
   hmac_savings: &H_S "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4"
   hmac_depot_b: &H_D2 "a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6"
   hmac_exchange_b: &H_X2 "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7"
+  hmac_card: &H_C "a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8"
 
 cases:
   - id: bank_to_bank_next_day
@@ -251,6 +257,41 @@ cases:
       - {id: 00000e60-0000-4000-8000-000000001202, account: joint, booked_on: 2026-08-07,
          amount: "-600.00", counterparty_iban_hmac: *H_DBANK}
     today: 2026-08-11
+    expect:
+      category: internal_transfer_in
+      confidence: "1.000"
+      card: {code: transfer.unmatched_leg}
+
+  # D162 amended (5) (15 Nov 2026, Luis: „There are some credit card deposits that were not
+  # directly linked. Can you check?“): a card issuer credited a payment on the day before the
+  # paying bank booked its debit to the card's payment IBAN. Tied by that IBAN, a credit card's
+  # in-leg may be up to 3 banking days earlier too; untied, never.
+  - id: card_payment_credited_the_banking_day_before_the_debit
+    description: >
+      owner A's debit (Tuesday) names the card's payment IBAN; the issuer credited the payment
+      on Monday, one banking day before: linked
+    leg: {id: 00000e60-0000-4000-8000-000000001601, account: owner_a, booked_on: 2026-10-06,
+          amount: "-312.75", counterparty_iban_hmac: *H_C}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001602, account: card, booked_on: 2026-10-05,
+         amount: "312.75"}
+    today: 2026-10-07
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000001601,
+             in_leg: 00000e60-0000-4000-8000-000000001602, kind: bank}
+
+  - id: card_payment_credited_before_a_debit_without_the_iban_tie
+    description: >
+      the same dates, but the debit names no IBAN: a card's in-leg before its out-leg is no
+      counterpart, and the card's payment gets its card past the window
+    leg: {id: 00000e60-0000-4000-8000-000000001611, account: card, booked_on: 2026-10-05,
+          amount: "312.75", booked_as: internal_transfer_in}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001612, account: joint, booked_on: 2026-10-06,
+         amount: "-312.75"}
+    today: 2026-10-09
     expect:
       category: internal_transfer_in
       confidence: "1.000"

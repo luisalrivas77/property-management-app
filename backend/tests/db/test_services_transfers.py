@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.matching_support import ACCOUNT_IBAN, PAINTER_IBAN, World
+from db.test_services_exchange_deposit_fee import _exchange, _export, _movements
 from db.test_services_private_matching import NOW, PRIVATE_IBAN, Private
 from sqlalchemy import select, update
 
@@ -44,6 +45,7 @@ TODAY = NOW.date()
 MONDAY = date(2026, 10, 5)
 FRIEND_IBAN = "DE46100000000000000073"  # a third party's account, not the household's
 SAVINGS_IBAN = "DE73100000000000000072"  # Bundesbank test bank code 10000000
+OTHER_OWNER_IBAN = "DE19100000000000000074"  # the other owner's account, nothing imported
 
 
 @pytest.fixture
@@ -270,6 +272,73 @@ def test_a_leg_past_its_window_without_a_counterpart_gets_the_unmatched_card(wor
     ]
     assert item.transaction_id == leg
     assert item.transfer is not None and item.transfer.code is OpenTransferCode.UNMATCHED_LEG
+
+
+@pytest.mark.parametrize(
+    ("first_elsewhere", "card"),
+    [(date(2026, 1, 2), True), (date(2026, 1, 3), False)],
+)
+def test_a_leg_before_every_other_accounts_history_gets_no_card(
+    world, private, blob_store, first_elsewhere, card
+):
+    """D162 amended (5), 15 Nov 2026 (Luis: „There are some credit card deposits that were not
+    directly linked. Can you check?“): a transfer leg of 2 Dec 2025 without an IBAN, while the
+    other account's lines start in January 2026, can have no counterpart: no card once its
+    by-hand window (±31 days, to 2 Jan) ends before that account's first line. An older
+    statement imported later brings the counterpart; booked as a transfer, it is linked."""
+    leg = private.line(date(2025, 12, 2), "-200.00", purpose="Umbuchung")
+    _book(world, leg, "-200.00", C.INTERNAL_TRANSFER_OUT)
+    savings = _savings(world)
+    savings.line(first_elsewhere, "12.00", purpose="Zinsen")
+    # An exchange's export reaches back years before the bank lines: its movements do not
+    # count as history, or one old trade would keep every card.
+    exchange = _exchange(world)
+    _export(world, blob_store, exchange.id, "2024-03-04 08:00:00,Deposit,50")
+    old_deposit = _movements(world, exchange.id)[Decimal("50.00")]
+    cards = [c for c in _open(world) if c.leg.id == leg]
+    assert [c.code for c in cards] == ([OpenTransferCode.UNMATCHED_LEG] if card else [])
+    # The exchange's own deposit of 2024 is older than every bank line: no card either.
+    assert [c for c in _open(world) if c.leg.id == old_deposit] == []
+    unmatched = [
+        i for i in world.query(review.inbox, TODAY) if i.kind is InboxItemKind.TRANSFER_UNMATCHED
+    ]
+    assert [i.transaction_id for i in unmatched] == ([leg] if card else [])
+
+    # The December statement of the other account arrives later: its line fits the leg, so
+    # the card comes back proposing it, and booked as a transfer it is linked.
+    older = savings.add_import(world.now)
+    late = savings.line(date(2025, 12, 3), "200.00", purpose="Umbuchung", import_id=older)
+    [back] = [c for c in _open(world) if c.leg.id == leg]
+    assert (back.code, [c.id for c in back.candidates]) == (OpenTransferCode.PROPOSED, [late])
+    _book(world, late, "200.00", C.INTERNAL_TRANSFER_IN)
+    [link] = _links(world)
+    assert (link.out_transaction_id, link.in_transaction_id) == (leg, late)
+    assert _open(world) == []
+
+
+@pytest.mark.parametrize(
+    ("named", "card"),
+    [("empty", True), ("savings", False)],
+)
+def test_a_leg_naming_an_own_account_is_decided_by_that_account(world, private, named, card):
+    """Review of D162 amended (5), 15 Nov 2026: a debit of 2 Dec 2025 naming the other owner's
+    account, whose statements are not imported, keeps its card although the only other account's
+    lines start after the window (it had lost its one to-do); a debit naming an account whose
+    first line is after the window gets none, although the rental account's lines start
+    before it."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        world._account(conn, OTHER_OWNER_IBAN, owner=True)  # no import, no line
+    savings = _savings(world)
+    savings.line(date(2026, 1, 3), "12.00", purpose="Zinsen")  # after the window (2 Jan)
+    if named == "empty":
+        iban = OTHER_OWNER_IBAN
+    else:
+        iban = SAVINGS_IBAN
+        world.line(date(2025, 11, 20), "-5.00", name="Bank")  # the rental account, before it
+    leg = private.line(date(2025, 12, 2), "-200.00", iban=iban, purpose="Umbuchung")
+    _book(world, leg, "-200.00", C.INTERNAL_TRANSFER_OUT)
+    cards = [c for c in _open(world) if c.leg.id == leg]
+    assert [c.code for c in cards] == ([OpenTransferCode.UNMATCHED_LEG] if card else [])
 
 
 def test_a_link_by_hand_and_its_replacement(world, private):

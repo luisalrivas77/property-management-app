@@ -9,6 +9,13 @@ import pytest
 from api_support import ok
 from db.db_support import TEST_IBAN_KEY, _admin
 from db.matching_support import ACCOUNT_IBAN, World
+from db.test_services_exchange_deposit_fee import (
+    DEPOSIT_IBAN,
+    _exchange,
+    _export,
+    _movements,
+    _propose,
+)
 from db.test_services_private_matching import NOW, PRIVATE_IBAN, Private
 from sqlalchemy import update
 
@@ -171,3 +178,28 @@ def test_the_haushalt_month(client_a, client_b, world, private):
     }
     other = ok(client_b.get("/api/household/cashflow", params={"month": "2026-10"}))
     assert (other["income"], other["open_lines"], other["savings_rate"]) == ("0.00", 0, None)
+
+
+def test_a_deposit_the_model_proposed_is_listed_once_until_linked(
+    client_a, user_a, world, private, blob_store
+):
+    """D162 amended (5): GET /inbox, whose length is the sidebar's count, lists the deposit's
+    card and not the line it proposes; „Als Einzahlung verknüpfen“ removes both."""
+    out = private.line(date(2026, 9, 7), "-901.00", name="Binance", iban=DEPOSIT_IBAN)
+    _propose(world, out, "-901.00", C.UNCATEGORIZED)
+    exchange = _exchange(world)
+    _export(world, blob_store, exchange.id, "2026-09-08 08:00:00,Deposit,900")
+    deposit = _movements(world, exchange.id)[Decimal("900.00")]
+
+    inbox = ok(client_a.get("/api/inbox"))
+    assert [i for i in inbox if i.get("transaction_id") == str(out)] == []
+    [card] = [i for i in inbox if i["kind"] == "transfer_link"]
+    assert [c["id"] for c in card["transfer"]["candidates"]] == [str(out)]
+    [open_card] = ok(client_a.get("/api/transfers/open"))
+    assert [c["id"] for c in open_card["candidates"]] == [str(out)]
+
+    body = {"kind": "exchange_eur", "out_transaction_id": str(out), "in_movement_id": str(deposit)}
+    ok(client_a.post("/api/transfers", json=body), 201)
+    inbox = ok(client_a.get("/api/inbox"))
+    assert not [i for i in inbox if i["kind"].startswith("transfer")]
+    assert not [i for i in inbox if i.get("transaction_id") == str(out)]
