@@ -6,8 +6,10 @@ household's context for the assessed tax (D109, D112, D102):
 
 - Lohnersatzleistungen `L` per owner = Σ Nr. 15 of the certificates (real or projected) + the
   typed `replacement_income` rows, less the part of the Arbeitnehmer-Pauschbetrag not used
-  against pay (§32b Abs. 2: `unused = min(own, max(0, 1,230 − gross))`); a typed amount equal to
-  one of that owner's non-zero Nr. 15 amounts raises `return.benefit_possible_double`;
+  against pay (§32b Abs. 2: `unused = min(own, max(0, 1,230 − gross))`); an owner without any
+  pay source (no `itemise` result) counts with gross 0, so only their typed rows, less the whole
+  Pauschbetrag (D102 amended 15 Nov 2026); a typed amount equal to one of that owner's non-zero
+  Nr. 15 amounts raises `return.benefit_possible_double`;
 - church tax paid = Σ Nr. 6 + Nr. 7 over the certificates;
 - donations within `20 % × max(0, GdE)`, cut to the cent (§10b Abs. 1); the excess raises
   `return.donation_over_cap {excess}` (no carry-forward);
@@ -88,7 +90,9 @@ def household_figures(
     tariff: Tariff,
 ) -> HouseholdFigures:
     """The household context of `tax_year` from the owners' figures and the household rows
-    (the module docstring). `items` holds each owner's `itemise` result."""
+    (the module docstring). `items` holds the `itemise` result of each owner with a pay
+    source; an owner of `owner_facts` missing from it has none and brings only their typed
+    wage-replacement benefits."""
     warnings: list[DraftWarning] = []
     refs: list[SourceRef] = []
     lines: dict[str, list[SourceRef]] = {}
@@ -100,17 +104,20 @@ def household_figures(
     benefits = unused_total = ZERO
     church_paid = ZERO
     for facts in owner_facts:
-        item = items[facts.owner_id]
+        # None: an owner without any pay source, whose typed benefits still count (D102
+        # amended 15 Nov 2026), against the whole Pauschbetrag since the gross is 0
+        item = items.get(facts.owner_id)
         year_rows = [r for r in in_year(facts.inputs, tax_year) if r.tax_year == tax_year]
         typed = [r for r in year_rows if r.kind is K.REPLACEMENT_INCOME]
-        own = item.replacement_benefits + sum((r.value.amount for r in typed), ZERO)
-        unused = min(own, max(ZERO, tariff.employee_allowance - item.gross))
+        on_certificates = item.replacement_benefits if item is not None else ZERO
+        gross = item.gross if item is not None else ZERO
+        own = on_certificates + sum((r.value.amount for r in typed), ZERO)
+        unused = min(own, max(ZERO, tariff.employee_allowance - gross))
         benefits += own - unused
         unused_total += unused
-        certs = item.pay.certificates
         if own:
             cite("benefits", row_sources(typed))
-            if item.replacement_benefits:
+            if item is not None and on_certificates:
                 cite("benefits", item.pay.sources())
         nr15 = {
             r.value.replacement_benefits
@@ -119,7 +126,9 @@ def household_figures(
         }
         if any(r.value.amount in nr15 for r in typed):
             warnings.append(warning(WarningCode.RETURN_BENEFIT_POSSIBLE_DOUBLE, row_sources(typed)))
-        paid = sum((c.church_tax + c.church_tax_spouse for c in certs), ZERO)
+        if item is None:
+            continue
+        paid = sum((c.church_tax + c.church_tax_spouse for c in item.pay.certificates), ZERO)
         if paid:
             church_paid += paid
             cite("church_tax_paid", item.pay.sources())
@@ -242,7 +251,8 @@ class TaxContexts:
     work item alone, being spanning rows, make no year). No such year: (None, None), phase 4
     unchanged. At S: an Anlage N summary per owner whose pay of S is a certificate or payslips
     (an owner with only expected pay gets none, so D84's default stays); the household context
-    of S over those owners. A projected year after S reuses S's figures (D98's carry-forward:
+    of S over every owner (one without any pay source brings only their typed benefits, D102
+    amended 15 Nov 2026). A projected year after S reuses S's figures (D98's carry-forward:
     the certified pay, the itemised costs) with no wage-replacement benefits, and the children
     in force in Y (assessed_tax counts their months for Y)."""
 
@@ -292,14 +302,16 @@ class TaxContexts:
             except RuleError as error:
                 if error.code != ANLAGE_N_NO_PAY:
                     raise
-        counted = [f for f in owner_facts if f.owner_id in items]
         employment = [
             employment_summary(f, year, rs, tariff)
-            for f in counted
-            if items[f.owner_id].gross_source in ("certificate", "payslip")
+            for f in owner_facts
+            if f.owner_id in items and items[f.owner_id].gross_source in ("certificate", "payslip")
         ]
         gde = sum((i.result for i in items.values()), ZERO) + rental_result
-        context = household_figures(items, counted, self.household_rows, gde, year, tariff).context
+        # every owner: one without pay still brings their typed benefits (D102 amended)
+        context = household_figures(
+            items, owner_facts, self.household_rows, gde, year, tariff
+        ).context
         if year < tax_year:
             in_force = in_year(self.household_rows, tax_year)
             context = context.model_copy(

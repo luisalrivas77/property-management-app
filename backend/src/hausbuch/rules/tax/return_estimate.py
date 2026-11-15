@@ -274,9 +274,10 @@ def return_estimate(
     `properties` the Anlage V results of the year (phase 3's draft); `answers` the year's
     current questionnaire answers; `booked_benefits` the confirmed wage-replacement lines on
     the accounts (phase 6 D159 amended (8)), which add the to-do return.benefit_booked and
-    change no figure. An owner without any pay source counts with result 0 and
-    status none. RuleError return.childcare_age, return.household_services_cash and those of
-    the Anlage N rules."""
+    change no figure. An owner without any pay source counts with result 0 and status none,
+    and their typed wage-replacement benefits still enter the Progressionsvorbehalt (D102
+    amended 15 Nov 2026). RuleError return.childcare_age, return.household_services_cash and
+    those of the Anlage N rules."""
     items: dict[UUID, Itemised] = {}
     vorsorge_of: dict[UUID, VorsorgeResult] = {}
     income_n: list[OwnerIncome] = []
@@ -312,11 +313,13 @@ def return_estimate(
                 ),
             )
         )
-    paid_facts = [f for f in owner_facts if f.owner_id in items]
     rental = sum((p.result for p in properties), ZERO)
     gde = sum((i.result for i in items.values()), ZERO) + rental
 
-    figures = household_figures(items, paid_facts, list(household_rows), gde, tax_year, tariff)
+    # every owner: one without pay still brings their typed benefits into L (D102 amended)
+    figures = household_figures(
+        items, list(owner_facts), list(household_rows), gde, tax_year, tariff
+    )
     household = figures.context
     warnings = list(figures.warnings)
 
