@@ -408,11 +408,9 @@ HELIUS_KEY = "helius-test-key-0003"
 
 def test_chain_source_defaults():
     settings = load_settings(ENV)
-    assert (settings.etherscan_key, settings.solana_rpc_url, settings.helius_key) == (
-        None,
-        None,
-        None,
-    )
+    assert (settings.etherscan_key, settings.helius_key) == (None, None)
+    # D181 (d): Solana works without a secret, over the public endpoint.
+    assert settings.solana_rpc_url.get_secret_value() == "https://api.mainnet-beta.solana.com"
     assert settings.esplora_urls == ("https://mempool.space/api", "https://blockstream.info/api")
     assert settings.etherscan_url == "https://api.etherscan.io/v2/api"
     assert settings.bsc_rpc_url == "https://bsc-dataseed.bnbchain.org"

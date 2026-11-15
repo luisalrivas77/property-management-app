@@ -73,7 +73,7 @@ DEFAULT_ESPLORA_URLS = ("https://mempool.space/api", "https://blockstream.info/a
 DEFAULT_ETHERSCAN_URL = "https://api.etherscan.io/v2/api"
 DEFAULT_BSC_RPC_URL = "https://bsc-dataseed.bnbchain.org"
 DEFAULT_SOLANA_RPC_RPS = 4  # the public endpoint's pace; 40 on Helius's Developer plan (Q-O87)
-SOLANA_PUBLIC_RPC_URL = "https://api.mainnet-beta.solana.com"  # for the runbook; not a default
+SOLANA_PUBLIC_RPC_URL = "https://api.mainnet-beta.solana.com"  # the default (D181 (d))
 
 # The document_file.media_type CHECK.
 _MEDIA_TYPE = re.compile(r"[a-z]+/[a-z0-9.+-]+")
@@ -174,12 +174,15 @@ class Settings:
     # without it the coin prices come from Kraken alone.
     coingecko_key: SecretStr | None = field(default=None, repr=False)
     # Phase 7 chain sources (D181, D192). Secrets: the Etherscan V2 key (Ethereum, Arbitrum),
-    # the Solana RPC URL (a provider's URL carries its key; unset = Solana not configured, the
-    # sync says wallet.key_missing) and the optional Helius key (labels only). Plain: the
-    # Esplora base URLs tried in order (mempool.space, then Blockstream), the Etherscan-shaped
-    # API's URL, BNB Smart Chain's JSON-RPC URL (balances only) and the Solana request pace.
+    # the Solana RPC URL (a provider's URL carries its key; unset = the public endpoint, D181
+    # (d): Solana works without any secret) and the optional Helius key (labels only). Plain:
+    # the Esplora base URLs tried in order (mempool.space, then Blockstream), the
+    # Etherscan-shaped API's URL, BNB Smart Chain's JSON-RPC URL (balances only) and the Solana
+    # request pace.
     etherscan_key: SecretStr | None = field(default=None, repr=False)
-    solana_rpc_url: SecretStr | None = field(default=None, repr=False)
+    solana_rpc_url: SecretStr = field(
+        default_factory=lambda: SecretStr(SOLANA_PUBLIC_RPC_URL), repr=False
+    )
     helius_key: SecretStr | None = field(default=None, repr=False)
     esplora_urls: tuple[str, ...] = DEFAULT_ESPLORA_URLS
     etherscan_url: str = DEFAULT_ETHERSCAN_URL
@@ -233,8 +236,7 @@ class Settings:
             ("HAUSBUCH_ETHERSCAN_URL", self.etherscan_url),
             ("HAUSBUCH_BSC_RPC_URL", self.bsc_rpc_url),
         ]
-        if self.solana_rpc_url is not None:
-            urls.append(("HAUSBUCH_SOLANA_RPC_URL", self.solana_rpc_url.get_secret_value()))
+        urls.append(("HAUSBUCH_SOLANA_RPC_URL", self.solana_rpc_url.get_secret_value()))
         for name, url in urls:
             if not _is_http_url(url):
                 raise SettingsError(f"{name} must be an http(s) URL with a host")
@@ -431,7 +433,8 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
         mail_from=_optional(environ, "HAUSBUCH_MAIL_FROM"),
         coingecko_key=_secret(environ, "HAUSBUCH_COINGECKO_KEY"),
         etherscan_key=_secret(environ, "HAUSBUCH_ETHERSCAN_KEY"),
-        solana_rpc_url=_secret(environ, "HAUSBUCH_SOLANA_RPC_URL"),
+        solana_rpc_url=_secret(environ, "HAUSBUCH_SOLANA_RPC_URL")
+        or SecretStr(SOLANA_PUBLIC_RPC_URL),
         helius_key=_secret(environ, "HAUSBUCH_HELIUS_KEY"),
         esplora_urls=_url_list(environ, "HAUSBUCH_ESPLORA_URL", DEFAULT_ESPLORA_URLS),
         etherscan_url=_optional(environ, "HAUSBUCH_ETHERSCAN_URL") or DEFAULT_ETHERSCAN_URL,
