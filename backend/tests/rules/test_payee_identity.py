@@ -122,7 +122,9 @@ def test_identity_strength_reads_the_fixture(case):
     a, b = case.a, case.b
     assert matching.identity_strength(a.name, b.name, a.purpose, b.purpose) == case.strength
     assert matching.identity_strength(b.name, a.name, b.purpose, a.purpose) == case.strength
-    assert matching.same_payee(a.name, b.name, a.purpose, b.purpose)  # weak is one payee too
+    # weak is one payee too, except a first word that only starts the other's (one_payee)
+    assert matching.same_payee(a.name, b.name, a.purpose, b.purpose) is case.one_payee
+    assert matching.same_payee(b.name, a.name, b.purpose, a.purpose) is case.one_payee
 
 
 @pytest.mark.parametrize("case", FIXTURE.shared_ibans, ids=lambda c: c.id)

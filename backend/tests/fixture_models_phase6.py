@@ -404,6 +404,9 @@ class PayeeStrength(_Case):
     a: PayeeLine
     b: PayeeLine
     strength: Literal["strong", "weak"]  # review F2: identity_strength of the pair
+    # same_payee of the pair, for an IBAN's lines: weak is one payee too, except a first word
+    # that only starts the other's (review, 15 Nov 2026)
+    one_payee: bool = True
     note: str | None = None
 
 
