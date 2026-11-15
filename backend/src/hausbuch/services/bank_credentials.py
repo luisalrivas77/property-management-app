@@ -268,15 +268,23 @@ def connection_login(row: Row | Any, settings: Settings) -> str | None:
 def encrypt_login_if_readable(conn: Connection, row: Row, settings: Settings) -> Row:
     """Encrypt a connection's readable login in place (the readable column nulled in the same
     UPDATE); the row as it is now. A no-op for a row already encrypted. No event: the login
-    does not change, only how it is stored."""
+    does not change, only how it is stored.
+
+    `row` may be stale (a sync read it before a member's change of the login committed): the
+    UPDATE applies only while the stored login is still readable and still this one (so
+    never NULL), so it never seals an old login over a new one; otherwise the row is read
+    again and returned as it now is."""
     if row.login_name is None:
         return row
-    return conn.execute(
+    updated = conn.execute(
         update(connection_table)
-        .where(connection_table.c.id == row.id)
+        .where(connection_table.c.id == row.id, connection_table.c.login_name == row.login_name)
         .values(**sealed_login(settings, row.workspace_id, row.id, row.login_name))
         .returning(connection_table)
-    ).one()
+    ).one_or_none()
+    if updated is not None:
+        return updated
+    return conn.execute(select(connection_table).where(connection_table.c.id == row.id)).one()
 
 
 def encrypt_readable_logins(conn: Connection, settings: Settings) -> int:

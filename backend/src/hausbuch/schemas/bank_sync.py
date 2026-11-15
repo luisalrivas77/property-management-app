@@ -22,7 +22,7 @@ from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, StringConstraints, field_validator
 
 from .api import Patch
 from .common import Money, MutableRecord, Schema
@@ -32,7 +32,8 @@ from .enums import BalanceSource
 BANK_URL_NOT_HTTPS = "bank.url_not_https"
 
 BankCode = Annotated[str, Field(pattern=r"^[0-9]{8}$")]  # Bankleitzahl, the bank_code CHECK
-LoginName = Annotated[str, Field(min_length=1, max_length=100)]  # the Anmeldename (≤ 100)
+# The Anmeldename (≤ 100), its surrounding blanks trimmed (D196, as a container secret is).
+LoginName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 FintsUrl = Annotated[str, Field(min_length=len("https://x"), max_length=500)]
 # The masked login (D119): the first two and the last two characters around three stars, or
 # three stars alone for a login shorter than six characters (where two plus two would show
@@ -157,7 +158,9 @@ class BankConnectionPatch(Patch):
 
 class BankPinSet(Schema):
     """PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and
-    never returned, logged or echoed (a SecretStr: its repr is stars)."""
+    never returned, logged or echoed (a SecretStr: its repr is stars). Surrounding blanks are
+    trimmed, as the container secret's are (settings._optional), so a PIN pasted with a space
+    is the same PIN; the length counts after trimming."""
 
     pin: SecretStr = Field(
         json_schema_extra={"minLength": PIN_MIN_LENGTH, "maxLength": PIN_MAX_LENGTH}
@@ -165,12 +168,13 @@ class BankPinSet(Schema):
 
     @field_validator("pin")
     @classmethod
-    def _length(cls, value: SecretStr) -> SecretStr:
-        if not PIN_MIN_LENGTH <= len(value.get_secret_value()) <= PIN_MAX_LENGTH:
+    def _trimmed(cls, value: SecretStr) -> SecretStr:
+        pin = value.get_secret_value().strip()
+        if not PIN_MIN_LENGTH <= len(pin) <= PIN_MAX_LENGTH:
             raise ValueError(
                 f"{BANK_PIN_INVALID}: the PIN has {PIN_MIN_LENGTH} to {PIN_MAX_LENGTH} characters"
             )
-        return value
+        return SecretStr(pin)
 
 
 class StatementsRefusal(Schema):

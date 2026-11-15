@@ -5,13 +5,20 @@ foreign AAD reads as unreadable (None), never a crash, and the PIN's request mod
 the PIN. Every PIN and login is invented."""
 
 import uuid
+from datetime import UTC, date, datetime
 
 import pytest
 from pydantic import ValidationError
 
-from hausbuch.schemas.bank_sync import BankPinSet
+from hausbuch.jobs.bank_sync import _Run
+from hausbuch.schemas.bank_sync import (
+    BankConnectionCreate,
+    BankConnectionPatch,
+    BankPinSet,
+    SyncTrigger,
+)
 from hausbuch.services import bank_credentials as C
-from hausbuch.services.bank_sync import state_key
+from hausbuch.services.bank_sync import RunPlan, state_key
 
 SESSION_KEY = bytes(range(1, 33))
 OTHER_KEY = bytes(range(101, 133))
@@ -91,6 +98,46 @@ def test_a_pin_outside_5_to_64_characters_is_refused_without_naming_it(pin):
     assert error["msg"] == "Value error, bank.pin_invalid: the PIN has 5 to 64 characters"
     if pin:
         assert pin not in error["msg"]
+
+
+def test_a_pin_is_trimmed_and_only_blanks_count_as_empty():
+    assert BankPinSet(pin=f"  {PIN}\t\n").pin.get_secret_value() == PIN
+    assert BankPinSet(pin=" 12345 ").pin.get_secret_value() == "12345"
+    for pin in ("      ", " 1234 "):  # nothing, or four characters, once trimmed
+        with pytest.raises(ValidationError) as refused:
+            BankPinSet(pin=pin)
+        (error,) = refused.value.errors(include_input=False)
+        assert error["msg"] == "Value error, bank.pin_invalid: the PIN has 5 to 64 characters"
+
+
+def test_a_login_name_is_trimmed_and_a_blank_one_refused():
+    create = {"account_id": WS, "bank_code": "10000000", "fints_url": "https://fints.example.org"}
+    body = BankConnectionCreate(**create, login_name="  loginname-xyz \t")
+    assert body.login_name == "loginname-xyz"
+    assert BankConnectionPatch(login_name=" other-login ").login_name == "other-login"
+    with pytest.raises(ValidationError):
+        BankConnectionCreate(**create, login_name="   ")
+
+
+def test_a_run_plan_and_the_jobs_run_never_show_the_login():
+    plan = RunPlan(
+        sync_id=uuid.uuid4(),
+        account_id=uuid.uuid4(),
+        connection_id=uuid.uuid4(),
+        trigger=SyncTrigger.MANUAL,
+        token=datetime(2026, 11, 15, tzinfo=UTC),
+        requested_from=date(2026, 11, 1),
+        requested_to=date(2026, 11, 15),
+        bank_code="10000000",
+        fints_url="https://fints.example.org",
+        login_name="loginname-xyz",
+        client_data=None,
+        tan_mechanism=None,
+        iban_hmac=b"\x00" * 32,
+        created_by=None,
+    )
+    assert plan.login_name == "loginname-xyz"
+    assert "loginname-xyz" not in repr(plan) and "loginname-xyz" not in repr(_Run(plan))
 
 
 def test_the_pin_request_never_shows_the_pin():

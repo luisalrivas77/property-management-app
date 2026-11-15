@@ -53,7 +53,7 @@ event carries a secret, an amount or a name.
 
 import hashlib
 import hmac
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -1166,7 +1166,7 @@ class RunPlan:
     requested_to: date
     bank_code: str
     fints_url: str
-    login_name: str
+    login_name: str = field(repr=False)  # D196: never in a repr, a traceback or a log
     client_data: bytes | None  # verified against its MAC
     tan_mechanism: str | None
     iban_hmac: bytes

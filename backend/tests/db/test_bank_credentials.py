@@ -310,6 +310,29 @@ def test_a_live_connection_keeps_its_state_after_its_login_is_encrypted(bank):
     assert bank.clients[1].init["client_data"] == FAKE_STATE  # restored, no approval asked
 
 
+def test_a_stale_readable_row_never_seals_the_old_login_over_a_changed_one(bank):
+    """A sync read the connection while its login was still readable; a member then changed
+    the login (stored encrypted). Encrypting from the stale row leaves the new login alone and
+    hands back the row as it now is, without raising."""
+    _make_readable(bank)
+    stale = bank.connection_row()
+    assert stale.login_name == LOGIN
+    bank.run(
+        bank.ws,
+        service.update_connection,
+        bank.account.id,
+        BankConnectionPatch(login_name=NEW_LOGIN),
+        settings=bank.settings,
+        now=T1,
+    )
+    with workspace_transaction(bank.engine, bank.ws) as conn:
+        returned = credentials.encrypt_login_if_readable(conn, stale, bank.settings)
+    current = bank.connection_row()
+    assert credentials.connection_login(current, bank.settings) == NEW_LOGIN
+    assert tuple(returned) == tuple(current)
+    assert credentials.connection_login(returned, bank.settings) == NEW_LOGIN
+
+
 def test_the_first_sync_encrypts_a_readable_login_and_keeps_the_state(bank):
     _sync(bank)
     _make_readable(bank)
