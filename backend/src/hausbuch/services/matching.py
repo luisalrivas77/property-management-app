@@ -7,7 +7,10 @@ Order (§8.1, cheapest first): learned rules (`rules.matching.rule_answer`, whic
 counterparty's confirmed lines from `rule_history`, D49), the deterministic matchers (owner
 transfer, rent, loan), the document match, and only then the model (jobs.matching, which calls
 back into `finish_line`). A rules' proposal (a near miss on the amount, D49) is used only when
-no matcher answers. `rules.review.route` decides auto-confirm or review; the workspace's
+no matcher answers. On a private account (phase 6 D158, as D160 amended (5) and its review
+fixes order it) the transfer by an own IBAN, a recorded bill and a property bill come before
+the learned rules (rules.matching.deterministic_answer). `rules.review.route` decides
+auto-confirm or review; the workspace's
 `auto_accept_llm` (default false, D26) is passed through.
 
 A line is matched only when it is *open*:
@@ -1001,9 +1004,11 @@ def deterministic_set(
     Rental: learned rules, then the matchers, then the document match (§8.1); the rules'
     answer is either a standing hit (confidence 1, used at once) or a near-miss proposal
     (D49), which the matchers come before: an exact rent, loan, owner or document match wins
-    over it. Private: learned rules, the document match, then the tenant / lender question;
-    a line naming another own account's IBAN is the transfer matcher's, never a rule's (D160
-    amended (5), rules.matching.own_rule_blind).
+    over it. Private: the transfer by an own IBAN, a recorded bill, a property bill, the
+    learned rules, a payment to the seller, then the tenant / lender question; a line naming
+    another own account's IBAN is the transfer matcher's, never a rule's (D160 amended (5),
+    rules.matching.own_rule_blind), and a line paying a bill is proposed as its payment
+    before any rule (its review fixes, 15 Nov 2026).
     `skip_rule_categories`: a rule booking one of these codes is left out (the re-sort into
     the subcategories, services.household_resort: a rule learned on a group's fallback would
     only book the line back where it is)."""

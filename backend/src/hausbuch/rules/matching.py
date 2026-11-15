@@ -2205,16 +2205,24 @@ _RENTAL_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | 
     match_loan,
     match_document,
 )
-# D158 on a private account (after the learned rules, which never answer a line naming an
-# own IBAN, D160 amended (5): own_rule_blind): the transfer by an own IBAN (D162), a payment
-# to the seller (14 Nov 2026), a bill already recorded as a Nebenkosten or private_cost row
-# (D161 widened), the document match (a bill of the property becomes hh_property_cost, D161),
-# then the tenant / lender question.
-_PRIVATE_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...] = (
+# D158 on a private account, as D160 amended (5) and its review fixes (15 Nov 2026) order it.
+# Before the learned rules: the transfer by an own IBAN (D162; such a line is never a rule's,
+# own_rule_blind), a bill already recorded as a Nebenkosten or private_cost row (D161
+# widened) and the document match (a bill of the property becomes hh_property_cost, D161):
+# a line that pays a bill is proposed as that bill's payment for a person, never booked by a
+# rule learned on its payee. After the rules: a payment to the seller (14 Nov 2026, after the
+# rules as before), then the tenant / lender question.
+_PRIVATE_BEFORE_RULES: tuple[
+    Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...
+] = (
     lambda tx, context: match_transfer_line(tx, context),  # defined below
-    match_down_payment,
     match_recorded_bill,
     match_private_document,
+)
+_PRIVATE_AFTER_RULES: tuple[
+    Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...
+] = (
+    match_down_payment,
     rental_counterparty_question,
 )
 
@@ -2238,22 +2246,32 @@ def deterministic_answer(
 ) -> AllocationSet | None:
     """The deterministic order per account purpose (D158; fixture matching_order.yaml), before
     the model. Rental: learned rules -> owner transfer -> rent -> loan -> document (Hausgeld is
-    a by_wirtschaftsplan rule), as in phase 2. Private: learned rules -> transfer by an own
-    IBAN (D162) -> a payment to the seller -> a recorded bill -> a property bill (D161) ->
-    D158's question; the rent, loan, Hausgeld and
-    owner-transfer matchers never run there. A standing rule hit (confidence 1) wins at once;
-    a rule's near-miss proposal (D49) only when no matcher answers. Every answer is one the
-    account's purpose takes (D159).
+    a by_wirtschaftsplan rule), as in phase 2. Private: transfer by an own IBAN (D162) -> a
+    recorded bill -> a property bill (D161) -> learned rules -> a payment to the seller ->
+    D158's question; the rent, loan, Hausgeld and owner-transfer matchers never run there. A
+    standing rule hit (confidence 1) wins over every matcher after it; a rule's near-miss
+    proposal (D49) only when no matcher answers. Every answer is one the account's purpose
+    takes (D159).
 
-    D160 amended (5), 15 Nov 2026: on a private account a line whose counterparty IBAN is
-    another own account's (own_rule_blind) is never a rule's: its transfer by that IBAN comes
-    first, whatever a learned rule on its payee's name or another IBAN would say (a card not
-    in the app paid to the same issuer as a card that is). The rental order is unchanged."""
+    D160 amended (5) and its review fixes, 15 Nov 2026: on a private account a line whose
+    counterparty IBAN is another own account's (own_rule_blind) is never a rule's: its
+    transfer by that IBAN comes first, whatever a learned rule on its payee's name or another
+    IBAN would say (a card not in the app paid to the same issuer as a card that is). A line
+    that pays a recorded bill or a bill of the property is proposed as that bill's payment
+    before any rule (a rule learned on the Finanzamt's IBAN for an income-tax payment had
+    booked the private payment of a recorded Grunderwerbsteuer as hh_tax_payment): the
+    proposal goes to a person, so this only turns an automatic booking into a question. The
+    rental order is unchanged."""
+    private = context.account_purpose is AccountPurpose.PRIVATE
+    if private:
+        for matcher in _PRIVATE_BEFORE_RULES:
+            answer = _allowed_set(matcher(tx, context), context)
+            if answer is not None:
+                return answer
     found = None if own_rule_blind(tx, context) else rule_answer(rules, tx, context, history)
     if found is not None and found.confidence == EXACT:
         return found
-    order = _PRIVATE_ORDER if context.account_purpose is AccountPurpose.PRIVATE else _RENTAL_ORDER
-    for matcher in order:
+    for matcher in _PRIVATE_AFTER_RULES if private else _RENTAL_ORDER:
         answer = _allowed_set(matcher(tx, context), context)
         if answer is not None:
             return answer
