@@ -221,18 +221,32 @@ def test_before_the_payment_iban_is_confirmed_the_debit_is_no_transfer(world, gi
 
 
 @pytest.mark.parametrize(
-    ("paid_on", "linked"),
+    ("paid_on", "tied", "linked"),
     [
-        (MONDAY, True),  # the same day
-        (date(2026, 10, 8), True),  # the third banking day after Monday
-        (date(2026, 10, 9), False),  # the fourth
-        (date(2026, 10, 2), False),  # before the debit
+        (MONDAY, True, True),  # the same day
+        (date(2026, 10, 8), True, True),  # the third banking day after Monday
+        (date(2026, 10, 9), True, False),  # the fourth
+        # D162 amended (5), 15 Nov 2026: the debit names the card's payment IBAN, so the
+        # issuer's credit may come up to three banking days before it (Consors credited a
+        # payment on 1 Jan, the Sparkasse booked the debit on 2 Jan).
+        (date(2026, 10, 2), True, True),  # the banking day before the debit
+        (date(2026, 9, 30), True, True),  # the third banking day before
+        (date(2026, 9, 29), True, False),  # the fourth
+        # Without the IBAN tie (a debit a person booked as a transfer, naming no IBAN), the
+        # credit is never before the debit.
+        (MONDAY, False, True),
+        (date(2026, 10, 2), False, False),
     ],
 )
-def test_the_link_needs_the_d162_window(world, giro, paid_on, linked):
+def test_the_link_needs_the_d162_window(world, giro, paid_on, tied, linked):
     card = Card(world, PAYMENT_IBAN)
-    debit = giro.line(MONDAY, "-312.75", iban=PAYMENT_IBAN)
-    _match(world, debit)
+    if tied:
+        debit = giro.line(MONDAY, "-312.75", iban=PAYMENT_IBAN)
+        _match(world, debit)
+    else:
+        debit = giro.line(MONDAY, "-312.75", purpose="Kreditkarte")
+        _answer_line(world, debit, "-312.75", "internal_transfer_out")
+    assert _booked(world, debit) == [("internal_transfer_out", "confirmed")]
     paid = card.payment(paid_on, "312.75")
     _match(world, paid)
     assert _booked(world, paid) == [("internal_transfer_in", "confirmed")]
