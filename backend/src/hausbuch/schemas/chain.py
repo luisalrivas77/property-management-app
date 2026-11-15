@@ -377,11 +377,18 @@ class GroupRoutingInput(Schema):
     review_routing.yaml `chain_cases`."""
 
     kind: GroupKind
-    decoder_listed: bool = False  # a public or workspace decoder row named the program
-    priced: bool = False  # the received (else the given) asset had a price that day
-    first_sync: bool = False  # the address's first sync (D186 (2): its swaps go to review)
-    registry_token: bool = False  # an airdrop of a registry token or one already held
-    linked: bool = False  # a transfer whose counterpart leg was linked by hash
+    # A public or workspace decoder row named the program (a wrap: the registry's wrap pair).
+    decoder_listed: bool = False
+    # Every leg that carries value has a price for the group's Berlin day (D186 (1) „both
+    # legs“, D188 (4); §6 examples 3 and 4).
+    priced: bool = False
+    # Every asset the group moves is a chain's native coin or a registry token (D186 (1)).
+    registry_assets: bool = False
+    first_sync: bool = False  # the address's first sync (D186 (1): a person reads it once)
+    # A transfer's counterpart leg is own and linked (by hash, D184 (1)); a bridge's by a pair.
+    linked: bool = False
+    pair_learned: bool = False  # a bridge over a pair the workspace's chain_pair rows hold
+    unregistered_output: bool = False  # a Bitcoin spend paying an unregistered address (D185)
 
 
 # --- Lots and the holding period (D187, D188) -------------------------------------------

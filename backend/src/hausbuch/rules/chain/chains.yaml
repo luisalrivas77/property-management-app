@@ -1,0 +1,90 @@
+# The chain registry (docs/phases/phase-7.md D180 (1), D181, D184): one row per chain the app
+# reads. Public facts only, nothing here is the household's.
+#
+# code: the text value of every `chain` column (migration 0040's CHECK lists the same five;
+#   a new chain is one row here plus that CHECK rebuilt, no code).
+# chain_id: EIP-155, EVM only (1 Ethereum, 42161 Arbitrum One, 56 BNB Smart Chain).
+# address_format: what rules/chain/address.validate accepts (D180 (1), §4).
+# source: the ChainSource kind of D181 (BSC by balance only over plain RPC, D181 (c)).
+# explorer_tx_url: the „auf der Chain ansehen“ link, opened in the user's browser; the app
+#   sends nothing to the explorer.
+# confirmations_final: D182 (4)'s overlap in blocks (Bitcoin 6, EVM 12). Solana has no block
+#   count: its sources read at the `finalized` commitment, so its row says 0 (step 0 reading,
+#   docs/phases/phase-7.md §15.1).
+# exchange_networks: Binance's network names (its withdraw history's „Network“ column,
+#   D178) for this chain, D184 (1)(a); a name no row lists matches no chain. BISON names none
+#   (Q-O76).
+# bridge_pairs: the canonical bridges from this chain (D184 (2)); a pair is read in both
+#   directions. max_fee_share 0.0100 = 1 % (D184 (2) „1 % at the start“). Only the native ETH
+#   pair is listed at the start: the canonical Arbitrum token bridge mints USDC.e, which the
+#   token registry does not list (§15.1).
+# wraps: the native coin and its wrapped token on this chain (D184 (3)); the wrapped contract
+#   is a row of rules/household/assets.yaml `tokens:` with `wraps:` the native symbol (the
+#   loader checks it).
+#
+# Explorer hosts read 15 Nov 2026: mempool.space, etherscan.io, arbiscan.io, bscscan.com,
+# solscan.io (each serves /tx/<hash>).
+
+chains:
+  - code: bitcoin
+    family: utxo
+    native_symbol: BTC
+    native_decimals: 8
+    address_format: bech32_or_base58check
+    source: bitcoin_esplora
+    explorer_tx_url: "https://mempool.space/tx/{hash}"
+    confirmations_final: 6
+    exchange_networks: {BTC: bitcoin}
+
+  - code: ethereum
+    family: evm
+    chain_id: 1
+    native_symbol: ETH
+    native_decimals: 18
+    address_format: eip55_or_lower_hex
+    source: evm_etherscan
+    explorer_tx_url: "https://etherscan.io/tx/{hash}"
+    confirmations_final: 12
+    exchange_networks: {ETH: ethereum}
+    bridge_pairs:
+      - {from_chain: ethereum, to_chain: arbitrum, max_fee_share: "0.0100"}
+    wraps:
+      - {native: ETH, wrapped: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"}
+
+  - code: arbitrum
+    family: evm
+    chain_id: 42161
+    native_symbol: ETH
+    native_decimals: 18
+    address_format: eip55_or_lower_hex
+    source: evm_etherscan
+    explorer_tx_url: "https://arbiscan.io/tx/{hash}"
+    confirmations_final: 12
+    exchange_networks: {ARBITRUM: arbitrum}
+    wraps:
+      - {native: ETH, wrapped: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"}
+
+  - code: bsc
+    family: evm
+    chain_id: 56
+    native_symbol: BNB
+    native_decimals: 18
+    address_format: eip55_or_lower_hex
+    source: evm_rpc_balance
+    explorer_tx_url: "https://bscscan.com/tx/{hash}"
+    confirmations_final: 12
+    exchange_networks: {BSC: bsc}
+    wraps:
+      - {native: BNB, wrapped: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"}
+
+  - code: solana
+    family: solana
+    native_symbol: SOL
+    native_decimals: 9
+    address_format: base58_32_bytes
+    source: solana_rpc
+    explorer_tx_url: "https://solscan.io/tx/{hash}"
+    confirmations_final: 0
+    exchange_networks: {SOL: solana}
+    wraps:
+      - {native: SOL, wrapped: So11111111111111111111111111111111111111112}
