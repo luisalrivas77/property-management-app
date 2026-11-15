@@ -146,6 +146,14 @@ export type AnswerMovementBody = Schemas["AnswerMovementBody"];
 export type MovementAnswered = Schemas["MovementAnswered"];
 export type WithdrawalsConfirmed = Schemas["WithdrawalsConfirmed"];
 export type MovementImportBody = Schemas["Body_movement_import_create_api_accounts__account_id__movement_imports_post"];
+// a wallet's addresses, read by public address only (phase 7 step 1, D179)
+export type Chain = Schemas["Chain"];
+export type AddressKind = Schemas["AddressKind"];
+export type WalletPage = Schemas["WalletPage"];
+export type WalletAddress = Schemas["WalletAddress"];
+export type WalletAddressBody = Schemas["WalletAddressBody"];
+export type WalletAddressPatch = Schemas["WalletAddressPatch"];
+export type WalletAddressPlain = Schemas["WalletAddressPlain"];
 export type StatementImport = Schemas["StatementImport"];
 export type StatementFormat = Schemas["StatementFormat"];
 export type ImportStatus = Schemas["ImportStatus"];

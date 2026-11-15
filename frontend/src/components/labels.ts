@@ -5,8 +5,10 @@ import type {
   AccountPurpose,
   AccountSource,
   AcquisitionCostKind,
+  AddressKind,
   AssetKind,
   BalanceSource,
+  Chain,
   DepositForm,
   DocumentSubtype,
   DocumentType,
@@ -431,8 +433,8 @@ export const ACCOUNT_SOURCE: Record<AccountSource, string> = {
   aggregator: "Kontoaggregator",
 };
 
-/** account.kind (phase 6 D156). Depot and exchange accounts come with steps 4 and 5, wallets
- * with phase 7; the API refuses them until then. */
+/** account.kind (phase 6 D156; the depot and the exchange since steps 4 and 5, the wallet since
+ * phase 7 step 1). */
 export const ACCOUNT_KIND: Record<AccountKind, string> = {
   bank_current: "Girokonto",
   bank_savings: "Sparkonto oder Tagesgeld",
@@ -440,6 +442,23 @@ export const ACCOUNT_KIND: Record<AccountKind, string> = {
   exchange: "Börse (Krypto)",
   wallet: "Wallet",
   credit_card: "Kreditkarte",
+};
+
+/** wallet_address.chain (phase 7, the registry's five chains). */
+export const CHAIN: Record<Chain, string> = {
+  bitcoin: "Bitcoin",
+  ethereum: "Ethereum",
+  arbitrum: "Arbitrum",
+  bsc: "BNB Smart Chain",
+  solana: "Solana",
+};
+
+/** wallet_address.kind (phase 7 D185): an address added by hand is a receive address; a change
+ * address and a stake account are registered from a card's answer (step 2 on). */
+export const ADDRESS_KIND: Record<AddressKind, string> = {
+  receive: "Empfangsadresse",
+  change: "Wechselgeld-Adresse",
+  stake: "Stake-Konto",
 };
 
 /** price.source (D167, D174): where a stored price came from, shown beside every price. */

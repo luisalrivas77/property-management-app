@@ -11,23 +11,39 @@
 // Konten“ is step 2's, wallets phase 7's. A credit card (D176) is listed under Bank with the
 // chip „Kreditkarte“ and its card's last four digits; its Stand is what is owed on the card
 // (the statement's Neuer Saldo, negative when owed, shown as a positive amount „offen“).
+// A wallet (phase 7 step 1, §14) is listed under Krypto after the exchanges, with its
+// provider, its chains as pills and „N Chains · M Adressen“ (active addresses only); its Quelle
+// and Stand read „noch nicht abgerufen“ until step 2 reads the chains.
 import Link from "next/link";
 
 import { api, ok } from "@/api/client";
-import type { Account, Loan, LoanSchedule, Owner, StatementImport } from "@/api/schemas";
+import type { Account, Loan, LoanSchedule, Owner, StatementImport, WalletAddress } from "@/api/schemas";
 import { ImportStatusPill, ownerChip } from "@/components/accounts";
 import { formatDate, formatMoney, todayIso } from "@/components/format";
+import { CHAIN } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { walletChains, walletSummary } from "@/components/wallet";
 
-type Row = { account: Account; imports: StatementImport[] };
+/** `addresses` is set on a wallet's row only (its masked addresses, from GET /wallets/{id}). */
+type Row = { account: Account; imports: StatementImport[]; addresses: WalletAddress[] | null };
 type LoanRow = { loan: Loan; schedule: LoanSchedule };
 
 const GROUPS: { label: string; kinds: Account["kind"][] }[] = [
   { label: "Bank", kinds: ["bank_current", "bank_savings", "credit_card"] },
   { label: "Depot", kinds: ["depot"] },
-  { label: "Krypto", kinds: ["exchange"] },
+  { label: "Krypto", kinds: ["exchange", "wallet"] },
 ];
+
+/** A wallet has no statement imports: its row reads its addresses instead. */
+async function loadRow(account: Account): Promise<Row> {
+  if (account.kind === "wallet") {
+    const page = await ok(api.GET("/api/wallets/{account_id}", { params: { path: { account_id: account.id } } }));
+    return { account, imports: [], addresses: page.addresses };
+  }
+  const imports = await ok(api.GET("/api/accounts/{account_id}/imports", { params: { path: { account_id: account.id } } }));
+  return { account, imports, addresses: null };
+}
 
 async function loadAccounts() {
   const [accounts, owners, properties] = await Promise.all([
@@ -44,14 +60,7 @@ async function loadAccounts() {
     )
   ).flat();
   const [rows, loanRows] = await Promise.all([
-    Promise.all(
-      accounts.map(
-        async (account): Promise<Row> => ({
-          account,
-          imports: await ok(api.GET("/api/accounts/{account_id}/imports", { params: { path: { account_id: account.id } } })),
-        }),
-      ),
-    ),
+    Promise.all(accounts.map(loadRow)),
     Promise.all(
       loans.map(
         async (loan): Promise<LoanRow> => ({
@@ -82,7 +91,9 @@ export default function AccountsPage() {
           ) : (
             <div className="stack">
               {GROUPS.map((group) => {
-                const members = rows.filter((row) => group.kinds.includes(row.account.kind));
+                // Within Krypto the exchanges come first, then the wallets (§14); otherwise the API's order.
+                const rank = (row: Row) => (row.account.kind === "wallet" ? 1 : 0);
+                const members = rows.filter((row) => group.kinds.includes(row.account.kind)).sort((a, b) => rank(a) - rank(b));
                 return members.length === 0 ? null : (
                   <AccountGroup key={group.label} label={group.label} rows={members} owners={owners} />
                 );
@@ -112,7 +123,10 @@ function AccountGroup({ label, rows, owners }: { label: string; rows: Row[]; own
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ account, imports }) => (
+            {rows.map(({ account, imports, addresses }) =>
+              addresses !== null ? (
+                <WalletRow key={account.id} account={account} addresses={addresses} owners={owners} />
+              ) : (
               <tr key={account.id}>
                 <td>
                   <Link href={`/accounts/${account.id}`}>{account.label}</Link>
@@ -145,11 +159,51 @@ function AccountGroup({ label, rows, owners }: { label: string; rows: Row[]; own
                 <Stand imports={imports} owed={account.kind === "credit_card"} />
                 <LastImport imports={imports} />
               </tr>
-            ))}
+              ),
+            )}
           </tbody>
         </table>
       </div>
     </div>
+  );
+}
+
+/** One wallet: its provider, its chains as pills and how many active addresses it reads. No
+ * address is shown here, not even masked. Quelle and Stand stay „noch nicht abgerufen“ until
+ * step 2 syncs the chains. */
+function WalletRow({ account, addresses, owners }: { account: Account; addresses: WalletAddress[]; owners: Owner[] }) {
+  return (
+    <tr>
+      <td>
+        <Link href={`/accounts/${account.id}`}>{account.label}</Link> <span className="tag">Wallet</span>
+        <p className="cell-detail">
+          {account.provider ?? account.bank} · {walletSummary(addresses)}
+        </p>
+        {walletChains(addresses).length > 0 ? (
+          <p className="row">
+            {walletChains(addresses).map((chain) => (
+              <span key={chain} className="tag">
+                {CHAIN[chain]}
+              </span>
+            ))}
+          </p>
+        ) : null}
+      </td>
+      <td>
+        <span className="muted">noch nicht abgerufen</span>
+      </td>
+      <td>
+        {account.ownership_missing ? (
+          <Link href={`/accounts/${account.id}`}>Eigentümer festlegen</Link>
+        ) : (
+          <span className="badge">{ownerChip(account.ownership ?? [], owners)}</span>
+        )}
+      </td>
+      <td className="num">
+        <span className="muted">noch nicht abgerufen</span>
+      </td>
+      <td>–</td>
+    </tr>
   );
 }
 
