@@ -851,7 +851,7 @@ class _Builder:
             notes += trade_notes
             movement_sources = _REPORT_TRADE_SOURCES
         elif self.kind is ExtractionKind.TRADE_CONFIRMATION and movements:
-            notes += self._booked_from_report(movements[0])
+            notes += self._booked_from_report(movements[0], account.value)
         rows: list[tuple[str, str, dict[str, object], tuple[str, ...], dict]] = [
             (
                 f"movement:{n}",
@@ -909,25 +909,37 @@ class _Builder:
             notes.append(_REPORT_TRADES_BOOKED_NOTE.format(count=len(listed) - len(trades)))
         return movements, notes
 
-    def _booked_from_report(self, movement: depot_rules.ProposedMovement) -> list[str]:
+    def _booked_from_report(
+        self, movement: depot_rules.ProposedMovement, account: object
+    ) -> list[str]:
         """A trade confirmation whose trade a report booked already (D165 amended, 15 Nov
-        2026): „Übernehmen“ books nothing a second time (services.depot.record_movement); the
-        note says so, and names a difference between the two readings, the report's booking
-        staying."""
-        booked = next(
-            (
-                t
-                for t in self.ctx.booked_depot_trades
-                if t.source is MovementSource.REPORT
-                and t.external_ref == movement.external_ref
-                and t.isin == movement.isin
-                and t.kind is movement.kind
-            ),
-            None,
-        )
-        if booked is None:
+        2026): on that depot „Übernehmen“ books nothing a second time
+        (services.depot.record_movement), and the note promises that only when it is the
+        depot pre-selected here (`account`); otherwise it names the depot the trade is booked
+        on and says that another depot books it again there (review of 15 Nov 2026). A
+        difference between the two readings is named, the report's booking staying."""
+        matching = [
+            t
+            for t in self.ctx.booked_depot_trades
+            if t.source is MovementSource.REPORT
+            and t.external_ref == movement.external_ref
+            and t.isin == movement.isin
+            and t.kind is movement.kind
+        ]
+        if not matching:
             return []
-        notes = [_BOOKED_FROM_REPORT_NOTE]
+        here = next((t for t in matching if str(t.account_id) == account), None)
+        booked = here or matching[0]
+        if here is not None:
+            notes = [_BOOKED_FROM_REPORT_NOTE]
+        else:
+            label = next(
+                (a.label for a in self.ctx.depot_accounts if a.id == booked.account_id),
+                "einem anderen Depot",
+            )
+            notes = [
+                (_BOOKED_ELSEWHERE_NOTE if account else _BOOKED_ON_DEPOT_NOTE).format(label=label)
+            ]
         if booked.quantity != movement.quantity or booked.eur_amount != movement.eur_amount:
             notes.append(
                 _BOOKED_FROM_REPORT_DIFFERS.format(
@@ -2859,6 +2871,18 @@ _REPORT_TRADES_BOOKED_NOTE = (
 _BOOKED_FROM_REPORT_NOTE = (
     "Bereits aus dem Quartalsbericht gebucht. „Übernehmen“ bucht nichts ein zweites Mal; "
     "die Abrechnung bleibt unter Dokumente abgelegt."
+)
+# Review of 15 Nov 2026: the report booked the trade on another depot than the one
+# pre-selected here, or none is pre-selected.
+_BOOKED_ELSEWHERE_NOTE = (
+    "Bereits aus dem Quartalsbericht gebucht, aber auf einem anderen Depot ({label}). Bleibt "
+    "das hier gewählte Depot, bucht „Übernehmen“ den Umsatz dort ein zweites Mal; mit dem "
+    "Depot {label} bucht es nichts doppelt."
+)
+_BOOKED_ON_DEPOT_NOTE = (
+    "Bereits aus dem Quartalsbericht gebucht, auf dem Depot {label}. Mit diesem Depot bucht "
+    "„Übernehmen“ nichts ein zweites Mal; mit einem anderen Depot wird der Umsatz dort noch "
+    "einmal gebucht."
 )
 _BOOKED_FROM_REPORT_DIFFERS = (
     "Die Abrechnung nennt {units} Anteile und {amount}, aus dem Bericht gebucht sind "

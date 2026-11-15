@@ -19,7 +19,7 @@ DEPOT = {
 def test_report_trades_books_nothing_without_a_report_and_needs_a_depot(client_a, client_b):
     depot = create(client_a, "/api/accounts", DEPOT)
     url = f"/api/accounts/{depot['id']}/report-trades"
-    assert ok(client_a.post(url)) == {"booked": 0, "prices_stored": 0}
+    assert ok(client_a.post(url)) == {"booked": 0, "prices_stored": 0, "left_out": []}
     # Another workspace does not see the account.
     assert client_b.post(url).status_code == 404
 

@@ -9082,14 +9082,17 @@ export interface components {
         };
         /**
          * ReportTradesBooked
-         * @description POST /accounts/{id}/report-trades: how many trades were booked from the reports and
-         *     how many report prices that stored (D167 amended (c)).
+         * @description POST /accounts/{id}/report-trades: how many trades were booked from the reports, how
+         *     many report prices that stored (D167 amended (c)), and the funds left out because their
+         *     holdings would not match the report (review of 15 Nov 2026).
          */
         ReportTradesBooked: {
             /** Booked */
             booked: number;
             /** Prices Stored */
             prices_stored: number;
+            /** Left Out */
+            left_out?: string[];
         };
         /**
          * RequirementCode

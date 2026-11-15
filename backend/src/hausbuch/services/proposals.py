@@ -1220,6 +1220,20 @@ def apply_proposal(
         if key not in by_key or by_key[key].mode != "correction":
             raise ValueError(f"effective_date_corrections names no correction record {key!r}")
 
+    # Review of 15 Nov 2026: the depot accounts this apply books movements on, locked in the
+    # order of their ids before the first one, so a transfer between own depots and a
+    # report's trades never double-book or wait crosswise (services.depot.record_movement).
+    depot.lock_depots(
+        ctx.conn,
+        [
+            account
+            for r in current.records
+            if _prefix(r.key) == "movement"
+            and (chosen := given.get(r.key)) is not None
+            and not chosen.skip
+            and (account := _uuid_or_none(chosen.values.get("account_id"))) is not None
+        ],
+    )
     run = _Apply(ctx, current, given, body.effective_date_corrections, iban_key)
     ordered = sorted(current.records, key=lambda r: _APPLY_ORDER.get(_prefix(r.key), 99))
     for record in ordered:
@@ -1284,6 +1298,15 @@ def apply_proposal(
             ),
         )
     return ProposalApplyResult(proposal=updated, applied=applied)
+
+
+def _uuid_or_none(value: object) -> UUID | None:
+    """A record's id value as the user sent it, None when it is no id (the record's own
+    validation then refuses it)."""
+    try:
+        return UUID(str(value)) if value is not None else None
+    except ValueError:
+        return None
 
 
 class _Apply:

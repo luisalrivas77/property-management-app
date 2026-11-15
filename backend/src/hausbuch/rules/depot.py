@@ -449,6 +449,50 @@ def bookable_trades(
     return found
 
 
+def trade_signs_agree(trade: ProposedTrade) -> bool:
+    """Review of 15 Nov 2026: a purchase has positive units and a negative amount, a sale
+    negative units and a positive amount. A row whose signs contradict each other (or whose
+    amount is 0) is not readable; „Umsätze aus dem Bericht buchen“ never repairs it."""
+    return (trade.units > 0 and trade.amount < 0) or (trade.units < 0 and trade.amount > 0)
+
+
+class FundAgreement(Schema):
+    """One fund against a report's date: whether its units agree now, and whether they would
+    with the trades to book booked."""
+
+    now: bool
+    after: bool
+
+
+def fund_agreement(
+    as_of: date,
+    declared: Mapping[Hashable, Decimal],
+    movements: Sequence[UnitsMovement],
+    trades: Sequence[ProposedTrade],
+) -> dict[str, FundAgreement]:
+    """Review of 15 Nov 2026: for every fund (ISIN) the trades name, reconcile_holdings on
+    as_of over the confirmed movements, without and with those trades as confirmed
+    movements. `declared` and the movements' assets are keyed by ISIN; a fund the report
+    does not list is declared 0. A fund is booked only when it agrees afterwards, all its
+    trades or none."""
+    funds = {t.isin for t in trades}
+    stated = {isin: declared.get(isin, Decimal(0)) for isin in sorted(funds)}
+    mine = [m for m in movements if m.asset in funds]
+    booked = [
+        UnitsMovement(
+            asset=t.isin,
+            quantity=t.units,
+            occurred_on=t.trade_date,
+            status=MovementStatus.CONFIRMED,
+            external_ref=t.reference.strip(),
+        )
+        for t in trades
+    ]
+    now = {c.asset: c.reconciled for c in reconcile_holdings(as_of, stated, mine)}
+    after = {c.asset: c.reconciled for c in reconcile_holdings(as_of, stated, mine + booked)}
+    return {isin: FundAgreement(now=now[isin], after=after[isin]) for isin in stated}
+
+
 def report_trade_movement(trade: ProposedTrade, name: str | None = None) -> ProposedMovement:
     """A report's trade as the movement its trade confirmation would propose: a purchase by
     positive units, a sale by negative ones; the cash amount takes its sign from the side (a

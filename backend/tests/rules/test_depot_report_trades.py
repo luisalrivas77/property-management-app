@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytest
 
 from hausbuch.rules import depot
-from hausbuch.schemas.household import MovementKind
+from hausbuch.schemas.household import MovementKind, MovementStatus
 
 pytestmark = pytest.mark.rule
 
@@ -56,3 +56,50 @@ def test_a_purchase_and_a_sale_take_their_cash_sign_from_the_side():
         Decimal("250.00"),
         date(2026, 3, 13),
     )
+
+
+def test_a_row_whose_units_and_amount_contradict_each_other_is_not_readable():
+    assert depot.trade_signs_agree(_trade("1", units="4.8", amount="-500.00"))
+    assert depot.trade_signs_agree(_trade("2", units="-2.4", amount="250.00"))
+    assert not depot.trade_signs_agree(_trade("3", units="4.8", amount="500.00"))
+    assert not depot.trade_signs_agree(_trade("4", units="-2.4", amount="-250.00"))
+    assert not depot.trade_signs_agree(_trade("5", units="4.8", amount="0"))
+
+
+def _held(isin, units, on=date(2026, 1, 10)):
+    return depot.UnitsMovement(
+        asset=isin, quantity=Decimal(units), occurred_on=on, status=MovementStatus.CONFIRMED
+    )
+
+
+def test_a_fund_is_booked_only_when_its_trades_make_it_agree_with_the_report():
+    other = "IE00BEISPL03"
+    agreement = depot.fund_agreement(
+        date(2026, 6, 30),
+        {ISIN: Decimal("7.2"), other: Decimal("10")},
+        [_held(other, "10")],
+        [
+            _trade("5500000001", units="4.8"),
+            _trade("5500000002", units="2.4"),
+            # The other fund agrees already: a trade booked under another reference.
+            _trade("5500000003", units="10", isin=other),
+            # A sold-out fund the report no longer lists is stated as 0.
+            _trade("5500000004", units="3", isin="IE00BEISPL04"),
+            _trade("5500000005", units="-3", amount="30.00", isin="IE00BEISPL04"),
+        ],
+    )
+    assert agreement == {
+        ISIN: depot.FundAgreement(now=False, after=True),
+        other: depot.FundAgreement(now=True, after=False),
+        "IE00BEISPL04": depot.FundAgreement(now=True, after=True),
+    }
+
+
+def test_a_doubled_reading_leaves_its_fund_out():
+    agreement = depot.fund_agreement(
+        date(2026, 6, 30),
+        {ISIN: Decimal("4.8")},
+        [],
+        [_trade("5500000001"), _trade("5500000009")],
+    )
+    assert agreement == {ISIN: depot.FundAgreement(now=False, after=False)}

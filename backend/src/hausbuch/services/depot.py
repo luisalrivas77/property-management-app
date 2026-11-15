@@ -11,14 +11,14 @@ applied twice is refused (record_movement). Every read of holdings ignores super
 """
 
 import hmac
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 from sqlalchemy import Connection, func, insert, select, update
 
 from hausbuch.db.tables import account as account_table
@@ -33,7 +33,7 @@ from hausbuch.rules import depot as rules
 from hausbuch.rules.errors import DEPOT_HOLDINGS_MISMATCH
 from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.common import Money, NonNegativeMoney, Schema
-from hausbuch.schemas.enums import AccountKind
+from hausbuch.schemas.enums import AccountKind, ExtractionKind, ProposalStatus
 from hausbuch.schemas.events import (
     AssetRecorded,
     EventType,
@@ -199,12 +199,26 @@ def printed_depot_account(
     return PrintedDepot.NOTHING, None
 
 
-def _require_depot(conn: Connection, account_id: UUID) -> None:
-    kind = conn.execute(
-        select(account_table.c.kind).where(account_table.c.id == account_id)
-    ).scalar_one_or_none()
+def _require_depot(conn: Connection, account_id: UUID, *, lock: bool = False) -> None:
+    """Refused unless the account is a depot. `lock` takes the account row's lock (FOR NO KEY
+    UPDATE) first, so two bookings on one depot run one after the other (review of 15 Nov
+    2026: two at once each found the trade unbooked and both wrote it)."""
+    query = select(account_table.c.kind).where(account_table.c.id == account_id)
+    if lock:
+        query = query.with_for_update(key_share=True)
+    kind = conn.execute(query).scalar_one_or_none()
     if kind != AccountKind.DEPOT.value:
         raise RuleViolationError([DEPOT_ACCOUNT_REQUIRED], "a depot record names a depot account")
+
+
+def lock_depots(conn: Connection, account_ids: Iterable[UUID]) -> None:
+    """The account rows' locks, in the order of their ids (review of 15 Nov 2026): an apply
+    that books on two depots (a transfer between own depots) takes both before its first
+    movement, so two such applies never wait on each other crosswise. An id no account has
+    is passed over; the record's own check refuses it."""
+    a = account_table.c
+    for account_id in sorted(set(account_ids)):
+        conn.execute(select(a.id).where(a.id == account_id).with_for_update(key_share=True))
 
 
 def asset_for_isin(ctx: CommandContext, isin: str, name: str | None) -> UUID:
@@ -301,8 +315,11 @@ def record_movement(
     earlier trades, and a suggestion built before they were booked must still apply). The
     other way round, a trade confirmation whose trade a report booked already writes nothing
     either and returns that movement: the confirmation is its evidence, the report's units and
-    amount stay. A second confirmation of a trade a confirmation booked is still refused."""
-    _require_depot(ctx.conn, values.account_id)
+    amount stay. A second confirmation of a trade a confirmation booked is still refused.
+
+    Every check runs under the account row's lock (review of 15 Nov 2026), so a second
+    booking of the same trade waits for the first and then finds it."""
+    _require_depot(ctx.conn, values.account_id, lock=True)
     m = movement_table.c
     current = [m.account_id == values.account_id, m.superseded_by.is_(None)]
     if source is MovementSource.REPORT:
@@ -767,18 +784,36 @@ def _asset_names(conn: Connection, ids: list[Any]) -> dict[UUID, str]:
     return dict(conn.execute(select(a.id, a.name).where(a.id.in_(ids))).tuples().all())
 
 
+def _confirmed_report(conn: Connection, document_id: UUID) -> DepotReportExtraction | None:
+    """The reading of the report's most recently applied depot-report suggestion (review of
+    15 Nov 2026): what the person confirmed, never a re-read they rejected or one still
+    waiting (documents.current_extraction). None when no suggestion of it was applied."""
+    from .documents import extraction_by_id  # it imports the job queue
+
+    p = proposal_table.c
+    extraction_id = conn.execute(
+        select(p.extraction_id)
+        .where(
+            p.document_id == document_id,
+            p.kind == ExtractionKind.DEPOT_REPORT.value,
+            p.status == ProposalStatus.APPLIED.value,
+            p.extraction_id.is_not(None),
+        )
+        .order_by(p.decided_at.desc().nulls_last(), p.created_at.desc(), p.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    extraction = None if extraction_id is None else extraction_by_id(conn, extraction_id)
+    fields = None if extraction is None else extraction.fields
+    return fields if isinstance(fields, DepotReportExtraction) else None
+
+
 def _report_reading(
     conn: Connection, document_id: UUID | None, as_of: date
 ) -> tuple[list[rules.ProposedTrade], dict[str, str]]:
-    """The trades a report's current reading lists (rules.depot.propose's parse), and the
+    """The trades a report's confirmed reading lists (rules.depot.propose's parse), and the
     fund names its positions give by ISIN; empty when it has no such reading."""
-    if document_id is None:
-        return [], {}
-    from .documents import current_extraction  # it imports the job queue
-
-    extraction = current_extraction(conn, document_id)
-    fields = None if extraction is None else extraction.fields
-    if not isinstance(fields, DepotReportExtraction):
+    fields = None if document_id is None else _confirmed_report(conn, document_id)
+    if fields is None:
         return [], {}
     proposal = rules.propose(
         "depot_report",
@@ -797,23 +832,74 @@ def _report_reading(
 @dataclass(frozen=True)
 class ReportTrade:
     """A trade of a report's Umsätze list no movement of the depot carries (D165 amended,
-    15 Nov 2026), with the report that lists it and the fund's name the report prints."""
+    15 Nov 2026), with the report that lists it and the movement it books."""
 
     trade: rules.ProposedTrade
     document_id: UUID
-    name: str | None
+    values: DepotMovementValues
 
 
-def unbooked_report_trades(conn: Connection, account_id: UUID) -> list[ReportTrade]:
-    """D165 amended, 15 Nov 2026: the trades „Umsätze aus dem Bericht buchen“ books and the
-    holdings card counts, one list for both. Every current report of the depot account
-    (source = report, not superseded), newest first, gives the trades of its reading up to its
-    own date (rules.depot.bookable_trades); a reference counts once (a later report repeats
-    the earlier trades, the newest report's row wins) and none that a current movement of the
-    account carries. A trade of a fund that the latest report's check finds in agreement
-    with the movements is left out: booking it would make that fund disagree. Ordered by
-    trade date, then reference."""
-    h, m = holding_table.c, movement_table.c
+@dataclass(frozen=True)
+class UnreadableTrade:
+    """A row of a report's Umsätze list that is not booked because it cannot be read as a
+    trade (review of 15 Nov 2026): named by its fund and day only."""
+
+    name: str
+    trade_date: date
+
+
+@dataclass(frozen=True)
+class ReportTradesPlan:
+    """What „Umsätze aus dem Bericht buchen“ books on one depot and what it leaves out, one
+    computation for the button and the holdings card."""
+
+    trades: list[ReportTrade]
+    # Funds that disagree with the latest report and would still disagree with their
+    # trades booked: none of their trades is booked.
+    left_out: list[str]
+    unreadable: list[UnreadableTrade]
+
+
+def _trade_values(
+    account_id: UUID, trade: rules.ProposedTrade, name: str | None
+) -> DepotMovementValues | None:
+    """A report's row as the movement it books, None when it is not readable: its units and
+    amount contradict each other (rules.depot.trade_signs_agree) or the values fail
+    DepotMovementValues (an amount with more than two decimals, a name too long). Never
+    rounded or repaired."""
+    if not rules.trade_signs_agree(trade):
+        return None
+    movement = rules.report_trade_movement(trade, name)
+    try:
+        return DepotMovementValues(
+            account_id=account_id,
+            isin=movement.isin,
+            name=movement.name,
+            kind=movement.kind,
+            quantity=movement.quantity,
+            eur_amount=movement.eur_amount,
+            occurred_on=movement.occurred_on,
+            external_ref=movement.external_ref,
+        )
+    except ValidationError:
+        return None
+
+
+def report_trades_plan(conn: Connection, account_id: UUID) -> ReportTradesPlan:
+    """D165 amended, 15 Nov 2026, with the review's fixes: the trades „Umsätze aus dem Bericht
+    buchen“ books and the holdings card counts, one computation for both. Every current
+    report of the depot account (source = report, not superseded), newest first, gives the
+    trades of its confirmed reading (_confirmed_report) up to its own date
+    (rules.depot.bookable_trades); a reference counts once (a later report repeats the earlier
+    trades, the newest report's row wins) and none that a current movement of the account
+    carries. A row that is not readable (_trade_values) is left out and named. Then per fund,
+    all or nothing (rules.depot.fund_agreement): its trades are booked only when, with them
+    booked, the fund's units on this depot equal the units the depot's latest report states
+    on its date (the current holding rows, 0 for a fund it does not list); otherwise none is,
+    and the fund is named when it disagrees with the report now (a fund that agrees already
+    needs nothing). That also leaves out a trade booked under another reference, a corrected
+    reference and a doubled reading. Ordered by trade date, then reference."""
+    h, m, a = holding_table.c, movement_table.c, asset_table.c
     rows = conn.execute(
         select(h.document_id, h.asset_id, h.as_of, h.declared_units, h.created_at)
         .where(
@@ -824,20 +910,7 @@ def unbooked_report_trades(conn: Connection, account_id: UUID) -> list[ReportTra
         .order_by(h.as_of.desc(), h.created_at.desc(), h.id)
     ).all()
     if not rows:
-        return []
-    latest_on = rows[0].as_of
-    checks = rules.reconcile_holdings(
-        latest_on,
-        {r.asset_id: r.declared_units for r in rows if r.as_of == latest_on},
-        _movements(conn, account_id),
-    )
-    agreed = [c.asset for c in checks if c.reconciled]
-    a = asset_table.c
-    agreed_isins = (
-        set(conn.execute(select(a.isin).where(a.id.in_(agreed))).scalars().all())
-        if agreed
-        else set()
-    )
+        return ReportTradesPlan([], [], [])
     seen = set(
         conn.execute(
             select(m.external_ref).where(
@@ -853,50 +926,99 @@ def unbooked_report_trades(conn: Connection, account_id: UUID) -> list[ReportTra
     for r in rows:
         if (r.document_id, r.as_of) not in reports:
             reports.append((r.document_id, r.as_of))
-    found: list[ReportTrade] = []
+    candidates: list[ReportTrade] = []
+    unreadable: list[UnreadableTrade] = []
+    names: dict[str, str] = {}
     for document_id, as_of in reports:
-        trades, names = _report_reading(conn, document_id, as_of)
+        trades, report_names = _report_reading(conn, document_id, as_of)
+        for isin, name in report_names.items():
+            names.setdefault(isin, name)
         for trade in rules.bookable_trades(trades, as_of, seen):
             seen.add(trade.reference.strip())
-            if trade.isin not in agreed_isins:
-                found.append(ReportTrade(trade, document_id, names.get(trade.isin)))
-    return sorted(found, key=lambda t: (t.trade.trade_date, t.trade.reference))
+            values = _trade_values(account_id, trade, report_names.get(trade.isin))
+            if values is None:
+                unreadable.append(
+                    UnreadableTrade(_fund_name(conn, names, trade.isin), trade.trade_date)
+                )
+            else:
+                candidates.append(ReportTrade(trade, document_id, values))
+    if not candidates:
+        return ReportTradesPlan([], [], _ordered(unreadable))
+    latest_on = rows[0].as_of
+    movements = _movements(conn, account_id)
+    assets = {r.asset_id for r in rows} | {mv.asset for mv in movements}
+    isin_of = dict(
+        conn.execute(select(a.id, a.isin).where(a.id.in_(assets), a.isin.is_not(None)))
+        .tuples()
+        .all()
+    )
+    declared: dict[Any, Decimal] = {}
+    for r in rows:
+        if r.as_of == latest_on:
+            key = isin_of.get(r.asset_id, r.asset_id)
+            declared[key] = declared.get(key, Decimal(0)) + r.declared_units
+    agreement = rules.fund_agreement(
+        latest_on,
+        declared,
+        [mv.model_copy(update={"asset": isin_of.get(mv.asset, mv.asset)}) for mv in movements],
+        [c.trade for c in candidates],
+    )
+    booked = [c for c in candidates if agreement[c.trade.isin].after]
+    left_out = sorted(
+        {
+            _fund_name(conn, names, isin)
+            for isin, fund in agreement.items()
+            if not fund.after and not fund.now
+        }
+    )
+    return ReportTradesPlan(
+        sorted(booked, key=lambda t: (t.trade.trade_date, t.trade.reference)),
+        left_out,
+        _ordered(unreadable),
+    )
+
+
+def _fund_name(conn: Connection, names: dict[str, str], isin: str) -> str:
+    """The fund as the report names it, else as the asset is named, else „Wertpapier“."""
+    if isin in names:
+        return names[isin]
+    a = asset_table.c
+    found = conn.execute(
+        select(a.name).where(a.isin == isin, a.name.is_not(None)).order_by(a.id)
+    ).scalar()
+    return found or "Wertpapier"
+
+
+def _ordered(rows: list[UnreadableTrade]) -> list[UnreadableTrade]:
+    return sorted(rows, key=lambda r: (r.trade_date, r.name))
 
 
 class ReportTradesBooked(Schema):
-    """POST /accounts/{id}/report-trades: how many trades were booked from the reports and
-    how many report prices that stored (D167 amended (c))."""
+    """POST /accounts/{id}/report-trades: how many trades were booked from the reports, how
+    many report prices that stored (D167 amended (c)), and the funds left out because their
+    holdings would not match the report (review of 15 Nov 2026)."""
 
     booked: int
     prices_stored: int
+    left_out: list[str] = Field(default_factory=list)
 
 
 def book_report_trades(ctx: CommandContext, account_id: UUID) -> ReportTradesBooked:
     """„Umsätze aus dem Bericht buchen“ on the holdings card (D165 amended, 15 Nov 2026): every
-    trade unbooked_report_trades lists, recomputed here, booked as a confirmed movement with
-    source = report and the report as its document, through record_movement (the cash line
-    linked as a confirmation's would be, one movement.confirmed event each), the person the
-    actor; then the reports' prices that now agree (store_report_prices). One transaction, the
-    caller's. The person's press is the confirmation (principle 3); nothing books on its own.
-    Nothing to book books nothing."""
-    _require_depot(ctx.conn, account_id)
-    booked = 0
-    for item in unbooked_report_trades(ctx.conn, account_id):
-        movement = rules.report_trade_movement(item.trade, item.name)
-        values = DepotMovementValues(
-            account_id=account_id,
-            isin=movement.isin,
-            name=movement.name,
-            kind=movement.kind,
-            quantity=movement.quantity,
-            eur_amount=movement.eur_amount,
-            occurred_on=movement.occurred_on,
-            external_ref=movement.external_ref,
-        )
-        record_movement(ctx, values, item.document_id, source=MovementSource.REPORT)
-        booked += 1
+    trade report_trades_plan lists, recomputed here under the depot account's lock (a second
+    press, or a report's „Übernehmen“ at the same time, waits and then finds them booked),
+    booked as a confirmed movement with source = report and the report as its document,
+    through record_movement (the cash line linked as a confirmation's would be, one
+    movement.confirmed event each), the person the actor; then the reports' prices that now
+    agree (store_report_prices). One transaction, the caller's. The person's press is the
+    confirmation (principle 3); nothing books on its own. Nothing to book books nothing."""
+    _require_depot(ctx.conn, account_id, lock=True)
+    plan = report_trades_plan(ctx.conn, account_id)
+    for item in plan.trades:
+        record_movement(ctx, item.values, item.document_id, source=MovementSource.REPORT)
+    booked = len(plan.trades)
     prices = store_report_prices(ctx, account_id) if booked else 0
-    return ReportTradesBooked(booked=booked, prices_stored=prices)
+    return ReportTradesBooked(booked=booked, prices_stored=prices, left_out=plan.left_out)
 
 
 def _latest_report_rows(conn: Connection) -> list[Any]:
@@ -944,6 +1066,32 @@ def _days_text(days: Sequence[date]) -> str:
     return "vom " + ", ".join(_german_day(day) for day in days)
 
 
+def _left_out_text(plan: ReportTradesPlan) -> str:
+    """The card's sentences on what „Umsätze aus dem Bericht buchen“ does not book (review of
+    15 Nov 2026), by fund and day only; empty when it books everything."""
+    text = ""
+    if plan.left_out:
+        text += (
+            f" Nicht aus dem Bericht gebucht: {_names_text(plan.left_out)} (Bestand würde "
+            "nicht zum Bericht passen). Dafür bitte die Wertpapierabrechnungen unter Dokumente "
+            "hochladen."
+        )
+    if plan.unreadable:
+        rows = _names_text([f"vom {_german_day(r.trade_date)} ({r.name})" for r in plan.unreadable])
+        one = len(plan.unreadable) == 1
+        text += (
+            f" {'Ein Umsatz' if one else 'Umsätze'} des Berichts {'ist' if one else 'sind'} "
+            f"nicht lesbar: {rows}. Bitte die Wertpapierabrechnung "
+            f"{'dieses Umsatzes' if one else 'dieser Umsätze'} unter Dokumente hochladen."
+        )
+    return text
+
+
+def _names_text(names: Sequence[str]) -> str:
+    """["A"] -> "A"; ["A", "B", "C"] -> "A, B und C"."""
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} und {names[-1]}"
+
+
 def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
     """One card per depot account whose latest report (source = report) disagrees with the
     confirmed movements to its date (§14.1, principle 7). Re-checked on every read against
@@ -953,8 +1101,10 @@ def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
     days of the trades the reports list that no movement covers; never an amount, a
     reference or an account number. Since D167 amended (c) the question also says that the
     report prices its funds once it agrees (the fund gets no „Kein Kurs“ card meanwhile).
-    D165 amended, 15 Nov 2026: report_trades counts those trades (unbooked_report_trades),
-    which „Umsätze aus dem Bericht buchen“ books."""
+    D165 amended, 15 Nov 2026: report_trades counts those trades (report_trades_plan),
+    which „Umsätze aus dem Bericht buchen“ books; the review of the same day added the funds
+    it leaves out (their holdings would not match the report) and the rows it cannot read,
+    by fund and day."""
     rows = _latest_report_rows(conn)
     items = []
     for account_id in sorted({r.account_id for r in rows}, key=str):
@@ -969,7 +1119,8 @@ def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
         wrong = [c for c in checks if not c.reconciled]
         if not wrong:
             continue
-        unbooked = unbooked_report_trades(conn, account_id)
+        plan = report_trades_plan(conn, account_id)
+        unbooked = plan.trades
         names = _asset_names(conn, [c.asset for c in wrong])
         funds = "; ".join(
             f"{names.get(c.asset, 'Wertpapier')}: laut Bericht {_german_units(c.declared_units)}"
@@ -998,6 +1149,7 @@ def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
                 "läuft dann von selbst neu. Sobald der Bericht stimmt, liefert er auch die "
                 "Kurse der Fonds."
             )
+        question += _left_out_text(plan)
         items.append(
             InboxItem(
                 kind=InboxItemKind.HOLDINGS_MISMATCH,
@@ -1174,8 +1326,11 @@ __all__ = [
     "DepotMovementValues",
     "ReportTrade",
     "ReportTradesBooked",
+    "ReportTradesPlan",
+    "UnreadableTrade",
     "asset_for_isin",
     "book_report_trades",
+    "lock_depots",
     "depot_accounts",
     "etf_overview",
     "finish_report",
@@ -1187,5 +1342,5 @@ __all__ = [
     "store_report_prices",
     "store_report_prices_after",
     "transfer_pair",
-    "unbooked_report_trades",
+    "report_trades_plan",
 ]

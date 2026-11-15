@@ -23431,6 +23431,13 @@
           "prices_stored": {
             "type": "integer",
             "title": "Prices Stored"
+          },
+          "left_out": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Left Out"
           }
         },
         "additionalProperties": false,
@@ -23440,7 +23447,7 @@
           "prices_stored"
         ],
         "title": "ReportTradesBooked",
-        "description": "POST /accounts/{id}/report-trades: how many trades were booked from the reports and\nhow many report prices that stored (D167 amended (c))."
+        "description": "POST /accounts/{id}/report-trades: how many trades were booked from the reports, how\nmany report prices that stored (D167 amended (c)), and the funds left out because their\nholdings would not match the report (review of 15 Nov 2026)."
       },
       "RequirementCode": {
         "type": "string",
