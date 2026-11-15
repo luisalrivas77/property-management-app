@@ -49,6 +49,7 @@ from sqlalchemy import Connection, Row, Select, func, insert, or_, select, updat
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import asset_movement as movement_table
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import transfer_link as link_table
@@ -77,7 +78,13 @@ from hausbuch.schemas.allocation import (
     MatchContext,
 )
 from hausbuch.schemas.api import ConfirmAllocationsBody, InboxItem, InboxItemKind
-from hausbuch.schemas.enums import AccountKind, AccountPurpose, AllocationStatus, ImportStatus
+from hausbuch.schemas.enums import (
+    AccountKind,
+    AccountPurpose,
+    ActorType,
+    AllocationStatus,
+    ImportStatus,
+)
 from hausbuch.schemas.events import EventType, TransferLinked, TransferUnlinked
 from hausbuch.schemas.household import (
     DepositIbanOutcome,
@@ -1102,6 +1109,8 @@ def link_by_hand(
             for leg, other in ((out, in_), (in_, out)):
                 if leg.booked is None and _rebook_on_link(leg, other):
                     _rebook(ctx, leg, iban_key)
+        # D162 amended (8): the person's click on a pair the matcher linked by amount and date.
+        _learn_on_hand_link(ctx, out, in_)
         return _link_of(ctx.conn, out.leg.id, in_.leg.id) or already
     linked = _linked_ids(ctx.conn)
     if out.leg.id in linked or in_.leg.id in linked:
@@ -1118,11 +1127,21 @@ def link_by_hand(
             _rebook(ctx, leg, iban_key)  # type: ignore[arg-type]
         found = _link_of(ctx.conn, out.leg.id, in_.leg.id)
         if found is not None:
+            _learn_on_hand_link(ctx, out, in_)
             return found
         linked = _linked_ids(ctx.conn)
         if out.leg.id in linked or in_.leg.id in linked:
             raise ConflictError("a leg of this transfer is linked already")
-    return _write(ctx, out.leg, in_.leg, body.kind, TransferMatchedBy.USER)
+    # D162 amended (8): an exact pair of a bank line a person confirmed as a transfer out and an
+    # exchange's deposit teaches the exchange the line's IBAN; read before the link is written,
+    # so its transfer.linked names the outcome, learned after it (as _link_deposit_by_hand).
+    iban = _hand_link_deposit_iban(ctx.conn, out, in_)
+    found = _write(ctx, out.leg, in_.leg, body.kind, TransferMatchedBy.USER, deposit_iban=iban)
+    if iban is DepositIbanOutcome.LEARNED:
+        from . import accounts  # accounts imports services that import this module
+
+        accounts.learn_exchange_deposit_iban(ctx, in_.leg.account_id, out.leg.id)
+    return found
 
 
 def _link_deposit_by_hand(
@@ -1174,6 +1193,126 @@ def _link_deposit_by_hand(
     if iban is DepositIbanOutcome.LEARNED:
         accounts.learn_exchange_deposit_iban(ctx, in_.leg.account_id, out.leg.id)
     return found
+
+
+# --- The exchange's deposit IBAN from a person's confirmation (D162 amended (8)) ------------
+
+
+def _confirmed_transfer_out(conn: Connection, transaction_id: UUID) -> bool:
+    """Whether the line's live rows are all confirmed and resolve to internal_transfer_out:
+    the whole line, or the transfer plus its fee within EXCHANGE_DEPOSIT_GAP (_one_category)."""
+    a = allocation_table.c
+    statuses = set(
+        conn.execute(
+            select(a.status).where(a.transaction_id == transaction_id, a.status.in_(_LIVE))
+        ).scalars()
+    )
+    if statuses != {AllocationStatus.CONFIRMED.value}:
+        return False
+    found = _one_category(conn, [transaction_id]).get(transaction_id)
+    return found is AllocationCategory.INTERNAL_TRANSFER_OUT
+
+
+def _confirmed_by_person(conn: Connection, transaction_id: UUID) -> bool:
+    """Whether the line's current confirmed set is a person's: its latest transaction.allocated
+    or transaction.reallocated event (every confirmation writes one) is not auto and was
+    written by a person's command. The rows cannot tell: a person who confirms a proposal
+    keeps the proposer's method, and confirmed_by stays null for an actor without an app_user
+    row."""
+    e = event_table.c
+    latest = conn.execute(
+        select(e.actor_type, e.payload)
+        .where(
+            e.entity_id == transaction_id,
+            e.type.in_(
+                [EventType.TRANSACTION_ALLOCATED.value, EventType.TRANSACTION_REALLOCATED.value]
+            ),
+        )
+        .order_by(e.seq.desc())
+        .limit(1)
+    ).first()
+    return (
+        latest is not None
+        and latest.actor_type == ActorType.USER.value
+        and latest.payload.get("auto") is False
+    )
+
+
+def _exchange_deposit_link(conn: Connection, transaction_id: UUID) -> UUID | None:
+    """The exchange account whose EUR deposit is the in leg of the current link whose out leg
+    is the bank line `transaction_id` (_current_links, written by the matcher or a person);
+    None when there is no such link. Only a deposit's out leg: a withdrawal's bank credit never
+    names the exchange's deposit IBAN (its payouts come from another one)."""
+    row = next(
+        (r for r in _current_links(conn) if r.out_transaction_id == transaction_id),
+        None,
+    )
+    if row is None or row.in_movement_id is None:
+        return None
+    in_ = _one_leg(conn, TransferLegSource.MOVEMENT, row.in_movement_id)
+    if in_ is None or in_.leg.account_kind is not AccountKind.EXCHANGE:
+        return None
+    return in_.leg.account_id
+
+
+def learn_deposit_iban_on_confirm(
+    ctx: CommandContext, transaction_id: UUID
+) -> DepositIbanOutcome | None:
+    """D162 amended (8), 15 Nov 2026 (Luis: „Yes the app should learn Bison's account
+    number“): services.allocations' hook after a person's confirmation of the line is written
+    (confirm_proposed, or record_set confirming without auto, after its after_booking hook so
+    a link the answer itself lets the matcher write is seen). When the line, a private bank
+    debit now confirmed as internal_transfer_out (the whole line or the transfer plus its fee),
+    is the out leg of a current link whose in leg is an exchange's EUR deposit, the line's
+    counterparty IBAN becomes the exchange's deposit IBAN (accounts.learn_exchange_deposit_iban:
+    nothing when the exchange holds one already or the line has none; refused when another own
+    account holds it or it carries other payees too; recorded by its account.updated). So a
+    pair the matcher linked by amount and date alone teaches the exchange its IBAN once a
+    person confirms the bank line, and the next deposit to it is tied by IBAN (D162 amended
+    (6)). Only a person's command: the matcher's, a rule's or the model's own confirmation
+    never teaches. The outcome, or None when nothing was to learn."""
+    from . import accounts  # accounts imports services that import this module
+
+    if ctx.actor.actor_type is not ActorType.USER:
+        return None
+    if not _confirmed_transfer_out(ctx.conn, transaction_id):
+        return None
+    exchange_id = _exchange_deposit_link(ctx.conn, transaction_id)
+    if exchange_id is None:
+        return None
+    return accounts.learn_exchange_deposit_iban(ctx, exchange_id, transaction_id)
+
+
+def _hand_link_deposit_iban(conn: Connection, out: _Leg, in_: _Leg) -> DepositIbanOutcome | None:
+    """D162 amended (8): what a person's link by hand of the exact pair `out` (a bank line) and
+    `in_` (an exchange's EUR deposit) does with the line's IBAN, read only: None unless the
+    line's live rows are confirmed as internal_transfer_out by a person (_confirmed_by_person:
+    a line the matcher, a rule or the model booked teaches nothing; a line still only proposed
+    teaches when the person confirms it later, learn_deposit_iban_on_confirm); otherwise
+    accounts.deposit_iban_outcome."""
+    from . import accounts  # accounts imports services that import this module
+
+    if out.leg.source is not TransferLegSource.TRANSACTION:
+        return None
+    if in_.leg.source is not TransferLegSource.MOVEMENT:
+        return None
+    if in_.leg.account_kind is not AccountKind.EXCHANGE:
+        return None
+    if not _confirmed_transfer_out(conn, out.leg.id):
+        return None
+    if not _confirmed_by_person(conn, out.leg.id):
+        return None
+    return accounts.deposit_iban_outcome(conn, in_.leg.account_id, out.leg.id)
+
+
+def _learn_on_hand_link(ctx: CommandContext, out: _Leg, in_: _Leg) -> None:
+    """D162 amended (8): learn the exchange's deposit IBAN after a person's link by hand of an
+    exact pair, when _hand_link_deposit_iban says it is learned (accounts.learn_exchange_
+    deposit_iban reads it again under the account's lock)."""
+    from . import accounts  # accounts imports services that import this module
+
+    if _hand_link_deposit_iban(ctx.conn, out, in_) is DepositIbanOutcome.LEARNED:
+        accounts.learn_exchange_deposit_iban(ctx, in_.leg.account_id, out.leg.id)
 
 
 def _answer(ctx: CommandContext, answer: AllocationSet, iban_key: bytes) -> None:

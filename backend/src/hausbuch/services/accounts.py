@@ -894,7 +894,9 @@ def learn_exchange_deposit_iban(
     to it are transfers by IBAN, linked by it and split by code (rules.matching.match_transfer
     with the tie). Every enabled learned rule on that IBAN (a deposit answered as spending or
     an investment before) is switched off and the lines waiting in Zu prüfen that name it are
-    matched again.
+    matched again. D162 amended (8): also called when a person confirms a bank line as a
+    transfer out that is the out leg of a current link with the exchange's deposit, or links
+    such an exact pair by hand (transfers.learn_deposit_iban_on_confirm, link_by_hand).
 
     Returns deposit_iban_outcome, read under the account's row lock: nothing is learned unless
     it is learned, so nothing happens (None) for an account that is no exchange or holds an

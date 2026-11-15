@@ -529,7 +529,8 @@ class TransferMatchedBy(StrEnum):
 
 class DepositIbanOutcome(StrEnum):
     """D162 amended 15 Nov 2026, review: what the first link by hand of a deposit an exchange
-    credited short does with the bank line's counterparty IBAN, recorded on its
+    credited short (or, D162 amended (8), a person's confirmation of a bank line paired with an
+    exchange's deposit) does with the bank line's counterparty IBAN, recorded on its
     transfer.linked. learned: it became the exchange's deposit IBAN. shared_iban: not learned,
     the IBAN carries other payees too (rules.matching.shared_iban). own_account: not learned,
     another own account holds it."""
