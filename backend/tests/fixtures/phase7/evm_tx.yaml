@@ -151,7 +151,6 @@ cases:
 
   # D181 (c): BSC is balance-only; its records are balances, never a history.
   - id: bsc_balance_only
-    pending: "phase 7 step 3 (services/chain/evm_rpc_balance)"
     chain: bsc
     own: ["0xed052f45caae52c75f9087ae2440d534765570e1"]
     records:
@@ -232,7 +231,6 @@ cases:
     expect: {reconciled: true, card: transfer.unmatched_leg}
 
   - id: key_unset
-    pending: "phase 7 step 3 (services/chain/evm_etherscan without HAUSBUCH_ETHERSCAN_KEY)"
     chain: arbitrum
     own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
     expect: {error: wallet.key_missing}
