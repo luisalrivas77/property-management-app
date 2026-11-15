@@ -20,7 +20,6 @@ cases:
     expect_new: [h1, h2]
 
   - id: first_sync_from_genesis_ethereum
-    pending: "phase 7 step 3 (rules/chain/sync_window)"
     chain: ethereum
     cursor: null
     tip: 21000300
@@ -30,7 +29,6 @@ cases:
 
   # A later sync: the overlap's movement h2 was stored before and is skipped by its hash.
   - id: later_sync_overlap_skipped
-    pending: "phase 7 step 3 (rules/chain/sync_window)"
     chain: ethereum
     cursor: 21000288
     tip: 21000600
@@ -42,7 +40,6 @@ cases:
   # The tip moved back (a reorg inside the overlap): the window re-reads blocks already read,
   # every movement in it is known, no row is added.
   - id: tip_moved_back_reorg
-    pending: "phase 7 step 3 (rules/chain/sync_window)"
     chain: arbitrum
     cursor: 300000288
     tip: 300000296
@@ -53,7 +50,6 @@ cases:
 
   # The tip behind the overlap's start (a provider lagging behind the last sync): nothing read.
   - id: tip_behind_cursor_nothing
-    pending: "phase 7 step 3 (rules/chain/sync_window)"
     chain: ethereum
     cursor: 21000600
     tip: 21000500
