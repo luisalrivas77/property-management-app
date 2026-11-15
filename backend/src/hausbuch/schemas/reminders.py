@@ -262,6 +262,14 @@ class ReminderAccount(Schema):
     # services/transfers._last_days: its latest line of a reconciled import, or the
     # requested_to of its latest successful FinTS run, whichever is later.
     history_until: date | None = None
+    # D122 amended (6), 15 Nov 2026: a credit card's latest reconciled import (by its last
+    # booking day) declares a closing balance of exactly 0: nothing owed, so an issuer that
+    # sends no statement for an idle month may send none. False when the closing is unknown.
+    closed_at_zero: bool = False
+    # And the booking days of the debits on the other own accounts that pay this card (they
+    # name its payment IBAN, services/transfers.card_payments_after), after its covered day and
+    # not a leg of a current transfer link. Only read for a credit card closed at zero.
+    paid_on: list[date] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _connection(self) -> Self:

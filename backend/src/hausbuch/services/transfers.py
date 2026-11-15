@@ -1685,6 +1685,48 @@ def _card_payers(conn: Connection) -> dict[UUID, set[UUID]]:
     return found
 
 
+def card_payments_after(conn: Connection, cards: dict[UUID, date]) -> dict[UUID, list[date]]:
+    """Phase 5 D122 amended (6), 15 Nov 2026: per credit card id in `cards`, the booking days
+    of the debits that pay it after the given day (its covered day): lines on another own
+    account of a reconciled import, not excluded as a duplicate, with a negative amount,
+    naming an IBAN that belongs to the card (_own_account_sets: its payment IBAN, or its own),
+    and not a leg of a current link (_linked_ids), whose counterpart is already in the app:
+    two cards can share one payment IBAN, and the other card's linked settlements are no use
+    of this one. A card no such line pays is absent."""
+    if not cards:
+        return {}
+    named_by = _own_account_sets(conn)
+    keys: dict[bytes, set[UUID]] = {}
+    for key, accounts in named_by.items():
+        for card_id in accounts & cards.keys():
+            keys.setdefault(bytes.fromhex(key), set()).add(card_id)
+    if not keys:
+        return {}
+    t = transaction_table.c
+    rows = conn.execute(
+        select(t.id, t.account_id, t.counterparty_iban_hmac, t.booking_date)
+        .join(import_table, import_table.c.id == t.import_id)
+        .where(
+            t.counterparty_iban_hmac.in_(list(keys)),
+            t.amount < 0,
+            t.booking_date > min(cards.values()),
+            t.excluded_as_duplicate_of.is_(None),
+            import_table.c.status == ImportStatus.RECONCILED.value,
+        )
+    ).all()
+    if not rows:
+        return {}
+    linked = _linked_ids(conn)
+    found: dict[UUID, list[date]] = {}
+    for line_id, account_id, iban, day in rows:
+        if line_id in linked:
+            continue
+        for card_id in keys[bytes(iban)]:
+            if account_id != card_id and day > cards[card_id]:
+                found.setdefault(card_id, []).append(day)
+    return {card_id: sorted(days) for card_id, days in found.items()}
+
+
 def _before_every_history(
     leg: _Leg,
     firsts: dict[UUID, date],

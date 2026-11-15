@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from db.db_support import TEST_IBAN_KEY
 from db.matching_support import TENANT_IBAN, World
 from sqlalchemy import func, insert, select, update
 
@@ -20,6 +21,7 @@ from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import reminder_ack as ack_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.schemas.allocation import (
     AllocationCategory,
     AllocationDraft,
@@ -31,6 +33,7 @@ from hausbuch.schemas.reminders import ReminderAckAction, ReminderAckCreate, Rem
 from hausbuch.schemas.tax import TaxInputCreate, TaxInputKind
 from hausbuch.services import allocations, reminders, review
 from hausbuch.services.errors import RuleViolationError
+from hausbuch.services.iban import protect_iban
 from hausbuch.services.tax_inputs import create_tax_input
 
 pytestmark = pytest.mark.db
@@ -340,20 +343,30 @@ def test_another_workspace_can_neither_ack_nor_see(world, other):
 # --- A statement due (D122 amended, 15 Nov 2026) --------------------------------------------
 
 
-def _card_account(world: World) -> uuid.UUID:
-    """A credit card account (fed by its PDF statements, D176) with no import yet."""
+def _card_account(
+    world: World,
+    *,
+    payment_iban: str | None = None,
+    opening_on: date = date(2026, 6, 30),
+    label: str = "Kreditkarte",
+) -> uuid.UUID:
+    """A credit card account (fed by its PDF statements, D176) with no import yet; its payment
+    IBAN confirmed (`payment_iban`) or not."""
+    protected = None if payment_iban is None else protect_iban(payment_iban, TEST_IBAN_KEY)
     with workspace_transaction(world.engine, world.ws) as conn:
         return conn.execute(
             insert(account_table)
             .values(
                 workspace_id=world.ws,
-                label="Kreditkarte",
+                label=label,
                 bank="Beispielbank",
                 kind="credit_card",
                 purpose="private",
                 is_owner_account=True,
                 opening_balance=Decimal("0.00"),
-                opening_balance_on=date(2026, 6, 30),
+                opening_balance_on=opening_on,
+                payment_iban_masked=None if protected is None else protected.masked,
+                payment_iban_hmac=None if protected is None else protected.hmac,
                 created_at=world.now,
                 updated_at=world.now,
             )
@@ -361,26 +374,37 @@ def _card_account(world: World) -> uuid.UUID:
         ).scalar_one()
 
 
-def _card_import(world: World, account_id: uuid.UUID, first: date, last: date) -> None:
-    """A reconciled card statement import whose lines run from `first` to `last`."""
+def _card_import(
+    world: World,
+    account_id: uuid.UUID,
+    first: date,
+    last: date,
+    *,
+    closing: Decimal = Decimal("-100.00"),
+    at: datetime | None = None,
+) -> uuid.UUID:
+    """A reconciled card statement import whose lines run from `first` to `last`, declaring
+    `closing` (by default a balance owed; D122 amended (6) treats a closing of 0 apart)."""
     with workspace_transaction(world.engine, world.ws) as conn:
         doc = world._document_row(conn, type="statement", subtype=None, title=None)
-        conn.execute(
-            insert(import_table).values(
+        return conn.execute(
+            insert(import_table)
+            .values(
                 workspace_id=world.ws,
                 account_id=account_id,
                 document_id=doc,
                 format="card_pdf",
                 status="reconciled",
                 balance_source="file",
-                declared_closing=Decimal("0.00"),
-                computed_closing=Decimal("0.00"),
+                declared_closing=closing,
+                computed_closing=closing,
                 first_booking_on=first,
                 last_booking_on=last,
-                created_at=world.now,
-                updated_at=world.now,
+                created_at=at or world.now,
+                updated_at=at or world.now,
             )
-        )
+            .returning(import_table.c.id)
+        ).scalar_one()
 
 
 def _cards(world: World, today: date) -> set[str]:
@@ -413,6 +437,124 @@ def test_a_card_statement_is_due_on_the_tenth_of_the_month_after_next(world):
         f"bank.statement_due:{card}:2027-01-10"
     ]
     assert _cards(world, date(2026, 12, 10)) == set()
+
+
+# D122 amended (6), 15 Nov 2026: a card issuer that sends no statement for an idle month.
+CARD_PAYMENT_IBAN = "DE77100000000000003007"  # synthetic: the issuer's account for payments
+
+
+def _card_fact(world: World, card: uuid.UUID, today: date):
+    (fact,) = [a for a in world.query(reminders.facts, today).accounts if a.id == card]
+    return fact
+
+
+def _statement_due_ids(world: World, card: uuid.UUID, today: date) -> list[str]:
+    return [
+        r.id
+        for r in _list(world, today)
+        if r.scope_id == card and r.kind is ReminderKind.STATEMENT_DUE
+    ]
+
+
+def test_a_card_closed_at_zero_is_due_only_once_a_later_debit_pays_it(world):
+    """The card's latest statement (lines 2–20 Jan 2026) closed at 0: no statement is due
+    while nothing pays the card again. A settlement debit inside the D162 window (22 Jan, up
+    to three banking days after the covered day) and a credit from the issuer's IBAN prove no
+    new use; a debit of 5 Oct 2026 naming the card's payment IBAN does, so the next statement
+    is due 30 Nov + 10 = 10 Dec 2026, the label still naming the statements' end."""
+    today = date(2026, 11, 10)
+    card = _card_account(world, payment_iban=CARD_PAYMENT_IBAN, opening_on=date(2025, 12, 31))
+    _card_import(world, card, date(2026, 1, 2), date(2026, 1, 20), closing=Decimal("0.00"))
+    fact = _card_fact(world, card, today)
+    assert fact.closed_at_zero and fact.paid_on == []
+    assert _statement_due_ids(world, card, today) == []
+
+    world.line(date(2026, 1, 22), "-80.00", iban=CARD_PAYMENT_IBAN)  # the January settlement
+    world.line(date(2026, 3, 3), "15.00", iban=CARD_PAYMENT_IBAN)  # a payout, not a payment
+    world.line(date(2026, 1, 15), "-40.00", iban=CARD_PAYMENT_IBAN)  # before the covered day
+    assert _card_fact(world, card, today).paid_on == [date(2026, 1, 22)]
+    assert _statement_due_ids(world, card, today) == []
+
+    world.line(date(2026, 10, 5), "-60.00", iban=CARD_PAYMENT_IBAN)
+    assert _card_fact(world, card, today).paid_on == [date(2026, 1, 22), date(2026, 10, 5)]
+    (reminder,) = [r for r in _list(world, today) if r.scope_id == card]
+    assert reminder.id == f"bank.statement_due:{card}:2026-12-10"
+    assert reminder.label_args == {"account": "Kreditkarte", "covered_until": "2026-01-20"}
+
+    # The September statement arrives with a balance owed: as before, from its last line.
+    _card_import(world, card, date(2026, 9, 3), date(2026, 9, 28), closing=Decimal("-60.00"))
+    fact = _card_fact(world, card, today)
+    assert not fact.closed_at_zero and fact.paid_on == []
+    assert _statement_due_ids(world, card, today) == [f"bank.statement_due:{card}:2026-11-10"]
+
+
+def test_the_latest_card_statement_is_read_by_its_last_line(world):
+    """The import with the latest last booking day decides, not the one uploaded last: an
+    older December statement owing a balance, uploaded after January's zero one, changes
+    nothing. A bank account at 0 is no card and keeps its reminder."""
+    today = date(2026, 11, 10)
+    card = _card_account(world, payment_iban=CARD_PAYMENT_IBAN, opening_on=date(2025, 11, 30))
+    _card_import(world, card, date(2026, 1, 2), date(2026, 1, 20), closing=Decimal("0.00"))
+    _card_import(
+        world,
+        card,
+        date(2025, 12, 1),
+        date(2025, 12, 19),
+        closing=Decimal("-80.00"),
+        at=world.now + timedelta(hours=1),
+    )
+    assert _card_fact(world, card, today).closed_at_zero
+    assert _statement_due_ids(world, card, today) == []
+    # The rental account's own import declares 0 too (World's setup) and keeps its reminder.
+    _reconciled_through(world, date(2026, 10, 31))
+    assert not _card_fact(world, world.account_id, today).closed_at_zero
+    assert f"bank.statement_due:{world.account_id}:2026-12-10" in _ids(world, today)
+
+
+def test_a_linked_debit_pays_another_card_on_a_shared_payment_iban(world):
+    """Two cards of one issuer share its payment IBAN. A debit already linked as a transfer to
+    the other card's line is that card's settlement, no use of the idle one; an unlinked
+    debit to the shared IBAN still counts for both."""
+    today = date(2026, 11, 10)
+    idle = _card_account(world, payment_iban=CARD_PAYMENT_IBAN, opening_on=date(2025, 12, 31))
+    _card_import(world, idle, date(2026, 1, 2), date(2026, 1, 20), closing=Decimal("0.00"))
+    other = _card_account(
+        world, payment_iban=CARD_PAYMENT_IBAN, opening_on=date(2025, 12, 31), label="Karte 2"
+    )
+    other_import = _card_import(world, other, date(2026, 9, 1), date(2026, 10, 2))
+    debit = world.line(date(2026, 10, 5), "-60.00", iban=CARD_PAYMENT_IBAN)
+    with workspace_transaction(world.engine, world.ws) as conn:
+        credit = conn.execute(
+            insert(transaction_table)
+            .values(
+                workspace_id=world.ws,
+                account_id=other,
+                import_id=other_import,
+                line_hash=hashlib.sha256(uuid.uuid4().bytes).digest(),
+                booking_date=date(2026, 10, 2),
+                value_date=date(2026, 10, 2),
+                amount=Decimal("60.00"),
+                purpose="Zahlung",
+                created_at=world.now,
+            )
+            .returning(transaction_table.c.id)
+        ).scalar_one()
+        conn.execute(
+            insert(link_table).values(
+                workspace_id=world.ws,
+                kind="bank",
+                out_transaction_id=debit,
+                in_transaction_id=credit,
+                matched_by="user",
+                created_at=world.now,
+            )
+        )
+    assert _card_fact(world, idle, today).paid_on == []
+    assert _statement_due_ids(world, idle, today) == []
+
+    world.line(date(2026, 10, 12), "-25.00", iban=CARD_PAYMENT_IBAN)
+    assert _card_fact(world, idle, today).paid_on == [date(2026, 10, 12)]
+    assert _statement_due_ids(world, idle, today) == [f"bank.statement_due:{idle}:2026-12-10"]
 
 
 def test_no_statement_reminder_while_the_daily_fetch_is_on(world):
