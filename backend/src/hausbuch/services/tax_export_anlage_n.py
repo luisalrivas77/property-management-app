@@ -71,6 +71,7 @@ GROSS_SOURCE = {
     "certificate": "aus der Lohnsteuerbescheinigung",
     "payslip": "Hochrechnung aus den Gehaltsabrechnungen",
     "expected": "aus dem erwarteten Bruttolohn (Eigentümer)",
+    "declared_none": "kein Arbeitslohn angegeben",  # „Kein Arbeitslohn in <Jahr>“ (D195)
 }
 DRAFT_STATUS = {"certified": "bescheinigt", "estimate": "Schätzung", "none": "kein Arbeitslohn"}
 RETURN_STATUS = {"estimate": "Schätzung", "certified": "laut Bescheinigungen"}
@@ -386,7 +387,10 @@ def _estimate_rows(
         rows.append([Paragraph(text, _CELL), Paragraph(escape(_money(amount)), _NUM)])
 
     for n in estimate.income_n:
-        none = " (kein Arbeitslohn erfasst)" if n.status == "none" else ""
+        none = ""
+        if n.status == "none":  # D195: said so, or simply nothing entered
+            said = "angegeben" if n.no_pay_declared else "erfasst"
+            none = f" (kein Arbeitslohn {said})"
         add(f"Anlage N {owner_names.get(n.owner_id, 'Eigentümer')}{none}", n.result)
     for v in estimate.income_v:
         add(f"Anlage V {property_labels.get(v.property_id, 'Immobilie')}", v.result)

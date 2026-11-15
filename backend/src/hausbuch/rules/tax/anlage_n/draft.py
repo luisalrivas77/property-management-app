@@ -1,8 +1,10 @@
 """§5.6: one owner's Anlage N draft for one year (`draft_n`).
 
 Pay: the year's certificates (`certified`), else the payslip projection of the employers without
-one (`estimate`, D105), else the owner's `expected_gross_pay` row (`estimate`, warning
-`anlage_n.certificate_missing`), else RuleError `anlage_n.no_pay`. Werbungskosten itemised =
+one (`estimate`, D105), else the year's „Kein Arbeitslohn“ row (`none`, `declared_none`: gross 0
+and nothing counted, D195; under a certificate or payslip it raises `anlage_n.no_pay_overruled`),
+else the owner's `expected_gross_pay` row (`estimate`, warning `anlage_n.certificate_missing`),
+else RuleError `anlage_n.no_pay`. Werbungskosten itemised =
 commute + Tagespauschale + work room + equipment + telecom + dues (all) + training + other;
 applied = union + max(min(Pauschbetrag, gross), itemised − union) while union dues stand beside
 the Pauschbetrag (§9a S. 3 from 2026), else max(min(Pauschbetrag, gross), itemised); result =
@@ -120,9 +122,19 @@ def itemise(facts: OwnerReturnFacts, tax_year: int, rs: AnlageNRuleSet, tariff: 
     warnings = list(pay.warnings)
     certs = pay.certificates
     pay_refs = pay.sources()
+    markers = [r for r in year_rows if r.kind is K.NO_PAY]  # „Kein Arbeitslohn“ (D195)
     if certs:
         gross = sum((c.gross for c in certs), ZERO)
         status, source = ("estimate", "payslip") if pay.projected else ("certified", "certificate")
+        if markers:
+            warnings.append(warning(WarningCode.ANLAGE_N_NO_PAY_OVERRULED, row_sources(markers)))
+    elif markers:
+        # D195: declared without pay, so gross 0 and nothing else counted, as for an owner
+        # without any pay source (D102 amended): whatever pay was expected, no Werbungskosten
+        gross = ZERO
+        status, source = "none", "declared_none"
+        pay_refs = row_sources(markers)
+        rows, year_rows = [], []
     elif facts.expected_gross_pay is not None:
         gross = facts.expected_gross_pay.value.amount
         status, source = "estimate", "expected"

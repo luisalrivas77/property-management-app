@@ -413,6 +413,10 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
     WarningCode.ANLAGE_N_FIRST_WORKPLACE_CHECK: lambda p: (
         "Bitte prüfen, ob dies die erste Tätigkeitsstätte ist (Festlegung durch den Arbeitgeber)."
     ),
+    WarningCode.ANLAGE_N_NO_PAY_OVERRULED: lambda p: (
+        "Für dieses Jahr ist „Kein Arbeitslohn“ angegeben, aber eine Lohnsteuerbescheinigung "
+        "oder Gehaltsabrechnung liegt vor: sie zählt. Die Angabe bitte aufheben."
+    ),
     WarningCode.RETURN_PROGRESSION_PROVISIONAL: lambda p: (
         "Lohnersatzleistungen sind noch nicht bescheinigt: der Steuersatz ist vorläufig."
     ),

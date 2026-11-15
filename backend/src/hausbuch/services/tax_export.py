@@ -65,6 +65,7 @@ from hausbuch.db.tables import tax_export as tax_export_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.jobs.enqueue import TAX_EXPORT_TASK, enqueue_tax_export, export_lock
 from hausbuch.rules.errors import (
+    ANLAGE_N_NO_PAY_DECLARED,
     TAX_EXPORT_FAILED,
     TAX_EXPORT_KIND_INVALID,
     TAX_EXPORT_TOO_LARGE,
@@ -258,15 +259,16 @@ def request_anlage_n_export(
     ctx: CommandContext, owner_id: UUID, body: TaxExportCreate
 ) -> TaxExportQueued:
     """POST /owners/{id}/anlage-n/exports (D104): check that the owner's sheet can be built
-    (the draft's own refusals: 404 for an unknown owner, tax.no_rule_set, anlage_n.no_pay)
-    and queue its job; writes nothing else. Only kind anlage_n_sheet, else
+    (the draft's own refusals: 404 for an unknown owner, tax.no_rule_set, anlage_n.no_pay;
+    anlage_n.no_pay_declared for an owner who said „Kein Arbeitslohn“, D195) and queue its
+    job; writes nothing else. Only kind anlage_n_sheet, else
     tax_export.kind_invalid."""
     if body.kind is not TaxExportKind.ANLAGE_N_SHEET:
         raise RuleError(
             TAX_EXPORT_KIND_INVALID,
             f"an owner's export is the Anlage N sheet, not {body.kind.value}",
         )
-    anlage_n_draft(ctx.conn, owner_id, tax_year=body.tax_year)
+    _exportable_draft(ctx.conn, owner_id, tax_year=body.tax_year)
     export_id = uuid4()
     enqueue_tax_export(
         ctx.conn,
@@ -319,10 +321,22 @@ def _questions_open(conn: Connection, tax_year: int) -> int:
     return len(questionnaire_progress(conn, tax_year).open)
 
 
+def _exportable_draft(conn: Connection, owner_id: UUID, *, tax_year: int) -> AnlageNDraft:
+    """The owner's draft when it has pay to print: RuleError anlage_n.no_pay_declared for an
+    owner who said „Kein Arbeitslohn“ for the year (D195), like anlage_n.no_pay for one with
+    no pay at all; an empty Anlage N is never a sheet."""
+    draft = anlage_n_draft(conn, owner_id, tax_year=tax_year)
+    if draft.gross_source == "declared_none":
+        raise RuleError(
+            ANLAGE_N_NO_PAY_DECLARED, f"the owner said „Kein Arbeitslohn“ for {tax_year}"
+        )
+    return draft
+
+
 def anlage_n_sheet(conn: Connection, owner_id: UUID, *, tax_year: int) -> AnlageNSheet:
     """One owner's sheet, computed now. The draft's own refusals, as its route: NotFoundError,
-    RuleError tax.no_rule_set, anlage_n.no_pay."""
-    draft = anlage_n_draft(conn, owner_id, tax_year=tax_year)
+    RuleError tax.no_rule_set, anlage_n.no_pay, anlage_n.no_pay_declared (D195)."""
+    draft = _exportable_draft(conn, owner_id, tax_year=tax_year)
     owner = require_row(conn, owner_table, EntityType.OWNER, owner_id)
     return AnlageNSheet(
         draft=draft,
@@ -336,6 +350,7 @@ def anlage_n_sheet(conn: Connection, owner_id: UUID, *, tax_year: int) -> Anlage
 # Why the archive leaves an Anlage N page out (README.txt), by the refusal's code.
 _LEFT_OUT = {
     "anlage_n.no_pay": "kein Arbeitslohn erfasst",
+    "anlage_n.no_pay_declared": "kein Arbeitslohn angegeben",
     "tax.no_rule_set": "kein Regelwerk für dieses Jahr",
 }
 

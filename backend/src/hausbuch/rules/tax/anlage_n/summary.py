@@ -47,6 +47,7 @@ from hausbuch.schemas.tax import DraftWarning, SourceRef, WarningCode
 
 from ._base import SPANNING_KINDS, ZERO, cents, current, in_year, row_sources
 from .draft import Itemised, itemise
+from .payslip import pay_of_rows
 from .vorsorge import vorsorge
 
 CENT = Decimal("0.01")
@@ -59,6 +60,16 @@ def employment_summary(
     """One owner's Anlage N summary for phase 4's zvE estimate. RuleError as `itemise`
     (anlage_n.no_pay when the owner has no pay source at all)."""
     item = itemise(facts, tax_year, rs, tariff)
+    if item.gross_source == "declared_none":
+        # „Kein Arbeitslohn“ (D195): nothing counted, as for an owner without any pay source
+        return OwnerEmployment(
+            owner_id=facts.owner_id,
+            gross=ZERO,
+            gross_source="declared_none",
+            wk_applied=ZERO,
+            vorsorge=ZERO,
+            sources=item.line_sources["pay"],
+        )
     v = vorsorge(facts, tax_year, rs, tariff)
     return OwnerEmployment(
         owner_id=facts.owner_id,
@@ -254,7 +265,13 @@ class TaxContexts:
     of S over every owner (one without any pay source brings only their typed benefits, D102
     amended 15 Nov 2026). A projected year after S reuses S's figures (D98's carry-forward:
     the certified pay, the itemised costs) with no wage-replacement benefits, and the children
-    in force in Y (assessed_tax counts their months for Y)."""
+    in force in Y (assessed_tax counts their months for Y).
+
+    „Kein Arbeitslohn in <Jahr>“ (D195) holds for its own year only: an owner with a current
+    no_pay row of Y and no certificate or payslip of Y gets a summary of gross 0
+    (`declared_none`, nothing applied, no Vorsorge), which phase 4 takes instead of any expected
+    pay; that owner's figures of an earlier source year are not reused for Y. A no_pay row never
+    makes a source year, and one of an earlier source year is read as absent."""
 
     owner_facts: list[OwnerReturnFacts]
     household_rows: list[ReturnInputFact]
@@ -285,16 +302,43 @@ class TaxContexts:
         years = [
             r.tax_year
             for r in current(rows)
-            if r.kind not in SPANNING_KINDS and r.tax_year <= tax_year
+            if r.kind not in SPANNING_KINDS and r.kind is not K.NO_PAY and r.tax_year <= tax_year
         ]
         return max(years) if years else None
 
+    def declared(self, tax_year: int) -> list[OwnerEmployment]:
+        """The owners who said „Kein Arbeitslohn“ for `tax_year` and have no certificate or
+        payslip of it (D195), as summaries of gross 0."""
+        out: list[OwnerEmployment] = []
+        for f in self.owner_facts:
+            rows = in_year(f.inputs, tax_year)
+            markers = [r for r in rows if r.kind is K.NO_PAY and r.tax_year == tax_year]
+            if markers and not pay_of_rows(rows, tax_year).certificates:
+                out.append(
+                    OwnerEmployment(
+                        owner_id=f.owner_id,
+                        gross=ZERO,
+                        gross_source="declared_none",
+                        wk_applied=ZERO,
+                        vorsorge=ZERO,
+                        sources=row_sources(markers),
+                    )
+                )
+        return out
+
     def __call__(self, tax_year: int, rental_result: Decimal = ZERO) -> Contexts:
+        declared = self.declared(tax_year)
         year = self.source_year(tax_year)
         if year is None:
-            return None, None
+            return declared or None, None
         rs, tariff = self.rules(year), self.tariffs(year)
         owner_facts = [self._with_expected(f, year) for f in self.owner_facts]
+        if year < tax_year:
+            # a marker holds for its own year only (D195): an earlier one is read as absent
+            owner_facts = [
+                f.model_copy(update={"inputs": [r for r in f.inputs if r.kind is not K.NO_PAY]})
+                for f in owner_facts
+            ]
         items: dict[UUID, Itemised] = {}
         for f in owner_facts:
             try:
@@ -302,11 +346,18 @@ class TaxContexts:
             except RuleError as error:
                 if error.code != ANLAGE_N_NO_PAY:
                     raise
+        if year < tax_year:
+            # an owner without pay in Y (D195) brings nothing of the source year into Y
+            for e in declared:
+                items.pop(e.owner_id, None)
         employment = [
             employment_summary(f, year, rs, tariff)
             for f in owner_facts
-            if f.owner_id in items and items[f.owner_id].gross_source in ("certificate", "payslip")
+            if f.owner_id in items
+            and items[f.owner_id].gross_source in ("certificate", "payslip", "declared_none")
         ]
+        if year < tax_year:
+            employment += declared
         gde = sum((i.result for i in items.values()), ZERO) + rental_result
         # every owner: one without pay still brings their typed benefits (D102 amended)
         context = household_figures(
