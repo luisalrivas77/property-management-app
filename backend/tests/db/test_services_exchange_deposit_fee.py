@@ -431,11 +431,56 @@ def test_a_withdrawal_still_links_after_the_deposit_iban_is_learned(world, bank,
     assert MovementKind.INTERNAL_TRANSFER_OUT in {m.kind for m in kinds}
 
 
+def test_a_deposit_a_person_answered_otherwise_waits_for_one_click(
+    world, bank, blob_store, app_engine, tmp_path
+):
+    """A later deposit the person had confirmed as spending is not replaced by the matcher once
+    the IBAN is learned: its card offers the re-book with the fee, and one click splits it."""
+    first = bank.line(date(2026, 9, 7), "-901.00", name="Binance", iban=DEPOSIT_IBAN)
+    _propose(world, first, "-901.00")
+    later = bank.line(date(2026, 10, 5), "-1001.00", name="Binance", iban=DEPOSIT_IBAN)
+    _answer_line(world, later, "-1001.00", "hh_online_shopping")
+    exchange = _exchange(world)
+    _export(
+        world,
+        blob_store,
+        exchange.id,
+        "2026-09-08 08:00:00,Deposit,900",
+        "2026-10-06 08:00:00,Deposit,1000",
+    )
+    moves = _movements(world, exchange.id)
+    world.query(lambda c: c.execute(text("DELETE FROM procrastinate_jobs")))
+    _link(world, first, moves[Decimal("900.00")])
+    _recheck(
+        app_engine, tmp_path, world, enqueue.waiting_trigger(enqueue.TRIGGER_ACCOUNT, exchange.id)
+    )
+    assert world.cmd(transfers.relink_all) == 0
+    assert _booked(world, later) == [
+        ("hh_online_shopping", Decimal("-1001.00"), "confirmed", "user")
+    ]
+    cards = {c.leg.id: c for c in _open(world)}
+    [candidate] = cards[moves[Decimal("1000.00")]].candidates
+    assert (candidate.id, candidate.deposit_fee, candidate.rebook_on_link) == (
+        later,
+        Decimal("1.00"),
+        True,
+    )
+    link = _link(world, later, moves[Decimal("1000.00")], rebook=True)
+    # The click books the split as the person's answer; the IBAN tie then lets the matcher
+    # link the pair within the same command, and the click returns that link (as the re-book
+    # of an exactly fitting leg does, D176 (4)).
+    assert (link.out_transaction_id, link.in_movement_id) == (later, moves[Decimal("1000.00")])
+    assert _booked(world, later) == _split("-1001.00", "1.00", "user")
+    assert _open(world) == []
+
+
 # --- Never the rental account -----------------------------------------------------------------
 
 
 def test_a_rental_line_is_never_split_nor_teaches_the_iban(world, blob_store):
-    rental = world.line(date(2026, 9, 7), "-901.00", purpose="Binance Einzahlung")
+    rental = world.line(
+        date(2026, 9, 7), "-901.00", name="Binance", iban=DEPOSIT_IBAN, purpose="Einzahlung"
+    )
     exchange = _exchange(world)
     _export(world, blob_store, exchange.id, "2026-09-08 08:00:00,Deposit,900")
     deposit = _movements(world, exchange.id)[Decimal("900.00")]
