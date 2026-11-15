@@ -30505,7 +30505,7 @@
           "movements_new"
         ],
         "title": "WalletSyncRun",
-        "description": "One address's run (a wallet_sync row). `balances` and `difference` are base units per\nasset (the contract, or `native`), as strings. `reconciled` null with `balances` set: a\ngroup waits for an answer („wartet auf Antwort“); `balances` null on a succeeded run: the\nbudget ended first (`wallet.sync_deferred`)."
+        "description": "One address's run (a wallet_sync row). `balances` and `difference` are base units per\nasset (the contract, or `native`), as strings. `reconciled` null with `balances` set: a\ngroup waits for an answer („wartet auf Antwort“), or the account's next address in the\nsame run carries the account's verdict; `balances` null on a succeeded run: the budget\nended first (`wallet.sync_deferred`)."
       },
       "WalletSyncStatus": {
         "type": "string",

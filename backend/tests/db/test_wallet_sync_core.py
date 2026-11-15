@@ -337,6 +337,38 @@ def test_account_scope_and_a_waiting_question(dbname, world, wallet, sync):
     assert groups == [("unknown", "proposed", True)]
 
 
+def test_account_scope_the_last_address_of_the_run_decides(
+    dbname, world, wallet, app_engine, blob_store
+):
+    """A receive on B is in B's history only: A's run sees the account's balance before B's
+    movement is stored, so in one job A leaves the verdict to B, which reconciles."""
+    ws, account, a, b = wallet
+    world.scope = "account"
+    world.txs[SOL_A] = [_tx(1, **{"in": 300})]
+    world.txs[SOL_B] = [_tx(2, **{"in": 700})]
+    world.balance[SOL_A], world.balance[SOL_B] = 300, 700
+    run = sync_wallets(
+        app_engine,
+        ws,
+        settings=SETTINGS,
+        store=blob_store,
+        actor=ACTOR,
+        clock=lambda: T0 + timedelta(days=1),
+        account_id=account,
+    )
+    assert [(o.address_id, o.reconciled, o.waiting) for o in run] == [
+        (a, None, False),
+        (b, True, False),
+    ]
+    rows = _rows(
+        dbname,
+        "SELECT address_id, reconciled, difference, balances IS NOT NULL FROM wallet_sync"
+        " WHERE account_id = %s ORDER BY started_at, created_at",
+        account,
+    )
+    assert rows == [(a, None, None, True), (b, True, None, True)]
+
+
 def test_no_plaintext_address_in_events_logs_or_rows(dbname, world, wallet, sync, caplog):
     ws, account, a, b = wallet
     world.txs[SOL_A] = [_tx(1, **{"in": 5})]

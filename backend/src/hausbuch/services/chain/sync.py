@@ -37,7 +37,10 @@ How a run's row reads (step 1's wallet page):
   false raises `wallet.unreconciled` with `difference` = balance − Σ per asset.
 - `succeeded`, `balances` set, `reconciled` null: a group of the account waits for a person's
   answer with no movements yet (a Bitcoin change card), so the difference is not a mismatch
-  but „wartet auf Antwort“ (the event's `waiting`).
+  but „wartet auf Antwort“ (the event's `waiting`); or, on an account-scope source, another
+  address of the same account is read after this one in the same job (`sync_wallets`), and
+  that last address's run carries the account's verdict once every address's movements are
+  stored (a receive on address B is in B's history only, so A's run cannot have it yet).
 
 Readings of the spec (step 2 core):
 
@@ -713,7 +716,13 @@ def _finish(ctx: CommandContext, start: _Start, values: dict, payload: WalletSyn
     append_event(ctx, event, start.account_id, payload)
 
 
-def _write(ctx: CommandContext, store: BlobStore, start: _Start, read: _Read) -> SyncOutcome:
+def _write(
+    ctx: CommandContext,
+    store: BlobStore,
+    start: _Start,
+    read: _Read,
+    account_pending: bool = False,
+) -> SyncOutcome:
     plans = _plan(ctx, start, read)
     moving = [p for p in plans if p.legs]
     document_id = import_id = None
@@ -765,6 +774,8 @@ def _write(ctx: CommandContext, store: BlobStore, start: _Start, read: _Read) ->
         reconciled = not difference
         if difference and _waiting(ctx, start):
             reconciled, difference, waiting = None, None, True
+        elif difference and start.scope == "account" and account_pending:
+            reconciled, difference = None, None  # the account's last address decides
         block = max((b.at_block for b in read.balances), default=block)
     _finish(
         ctx,
@@ -935,10 +946,13 @@ def sync_address(
     actor: Actor,
     clock: Clock,
     budgets: dict | None = None,
+    account_pending: bool = False,
 ) -> SyncOutcome:
     """One run of one address (see the module docstring). Never raises for the provider's or
     its own failure: the address's row says it, and the next address runs. `budgets` holds
-    one RequestBudget per source kind, shared by the addresses of one job run."""
+    one RequestBudget per source kind, shared by the addresses of one job run.
+    `account_pending`: another address of the same account and chain runs after this one in
+    the same job, so an account-scope difference is left to that run."""
     begun = _begin(
         engine,
         workspace_id,
@@ -962,7 +976,7 @@ def sync_address(
     try:
         with workspace_transaction(engine, workspace_id) as conn:
             ctx_w = new_command(conn, workspace_id, actor, now=clock())
-            outcome = _write(ctx_w, store, start, read)
+            outcome = _write(ctx_w, store, start, read, account_pending)
     except Exception as exc:  # noqa: BLE001 - the write rolled back; its class name only
         return _fail(
             engine, workspace_id, actor, clock, start, WALLET_SYNC_ERROR, len(read.txs), exc
@@ -1005,10 +1019,27 @@ def sync_wallets(
     budgets: dict | None = None,
 ) -> list[SyncOutcome]:
     """Every active address of one wallet (account_id) or of the workspace, oldest sync
-    first, each in its own run; the budgets are shared per source kind (D182 (1))."""
+    first, each in its own run; the budgets are shared per source kind (D182 (1)). The
+    addresses of one account and chain run one after another, so the last of them reconciles
+    an account-scope source with every address's movements stored."""
     budgets = {} if budgets is None else budgets
     with workspace_transaction(engine, workspace_id) as conn:
         ids = addresses_to_sync(conn, account_id)
+        keys = (
+            {
+                r.id: (r.account_id, r.chain)
+                for r in conn.execute(
+                    select(
+                        address_table.c.id, address_table.c.account_id, address_table.c.chain
+                    ).where(address_table.c.id.in_(ids))
+                )
+            }
+            if ids
+            else {}
+        )
+    groups: dict[tuple, list[UUID]] = {}
+    for address_id in ids:  # dicts keep order: each group where its oldest address stood
+        groups.setdefault(keys[address_id], []).append(address_id)
     return [
         sync_address(
             engine,
@@ -1019,8 +1050,10 @@ def sync_wallets(
             actor=actor,
             clock=clock,
             budgets=budgets,
+            account_pending=n < len(group) - 1,
         )
-        for address_id in ids
+        for group in groups.values()
+        for n, address_id in enumerate(group)
     ]
 
 
