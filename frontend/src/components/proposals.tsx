@@ -246,7 +246,7 @@ const DEPOT_ACCOUNT: FieldSpec = {
   label: "Depot",
   kind: "offered",
   description:
-    "Das Depot unter Konten, auf dem dieser Vorgang gebucht wird. Hausbuch wählt es nur vor, wenn es genau ein Depot gibt; die Nummer auf dem Dokument ordnet es nicht von selbst zu. Bei mehreren Depots bitte das wählen, dessen Nummer auf dem Dokument steht.",
+    "Das Depot unter Konten, auf dem dieser Vorgang gebucht wird. Hausbuch wählt das Depot vor, dessen Nummer auf dem Dokument steht, und das einzige, wenn das Dokument keine Nummer trägt. Ist keins gewählt, bitte das wählen, dessen Nummer auf dem Dokument steht.",
 };
 const ISIN: FieldSpec = text("ISIN", "Die zwölfstellige Kennung des Wertpapiers, wie auf dem Dokument.");
 const SECURITY_NAME: FieldSpec = text("Wertpapier", "Der Name des Fonds, wie auf dem Dokument; so heißt er unter Anlagen.");
