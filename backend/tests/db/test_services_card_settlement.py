@@ -24,6 +24,12 @@ from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.jobs import enqueue
+from hausbuch.schemas.allocation import (
+    AllocationCategory,
+    AllocationDraft,
+    AllocationMethod,
+    AllocationSet,
+)
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import AccountPurpose, ImportStatus
 from hausbuch.schemas.household import (
@@ -32,7 +38,7 @@ from hausbuch.schemas.household import (
     TransferLinkRequest,
     TransferMatchedBy,
 )
-from hausbuch.services import accounts, household, matching, transfers
+from hausbuch.services import accounts, allocations, household, matching, transfers
 from hausbuch.services.errors import RuleViolationError
 from hausbuch.services.iban import protect_iban
 
@@ -302,6 +308,67 @@ def test_two_cards_with_one_payment_iban_and_one_amount_ask_which(world, giro):
     [card] = [o for o in world.query(transfers.open_transfers, TODAY) if o.leg.id == debit]
     assert card.code is OpenTransferCode.AMBIGUOUS
     assert {c.id for c in card.candidates} == {a, b}
+
+
+def _refund(card: Card, booking_date: date, amount: str) -> uuid.UUID:
+    """A merchant's refund on the card: a credit naming its merchant, kind word Gutschrift,
+    with the model's proposal on it."""
+    with workspace_transaction(card.world.engine, card.world.ws) as conn:
+        tx = conn.execute(
+            insert(transaction_table)
+            .values(
+                workspace_id=card.world.ws,
+                account_id=card.account_id,
+                import_id=card.import_id,
+                line_hash=hashlib.sha256(uuid.uuid4().bytes).digest(),
+                booking_date=booking_date,
+                value_date=booking_date,
+                amount=Decimal(amount),
+                counterparty_name="BEISPIEL VERSAND",
+                booking_text="Gutschrift",
+                purpose="BEISPIEL VERSAND",
+                bank_reference=str(uuid.uuid4().int)[:10],
+                created_at=card.world.now,
+            )
+            .returning(transaction_table.c.id)
+        ).scalar_one()
+    proposal = AllocationSet(
+        transaction_id=tx,
+        method=AllocationMethod.LLM,
+        confidence=Decimal("0.700"),
+        reasoning="Vermutlich eine Erstattung.",
+        allocations=[
+            AllocationDraft(amount=Decimal(amount), category=AllocationCategory.HH_REFUND)
+        ],
+    )
+    card.world.cmd(allocations.record_set, proposal, confirm=False, auto=False)
+    return tx
+
+
+def test_a_merchant_refund_before_the_debit_is_never_booked_as_the_payment(world, giro):
+    """Review of D162 amended (5), 15 Nov 2026: a refund of exactly the settlement amount, one
+    banking day before a debit naming the payment IBAN, fits the early window, but only the
+    card reader's own payment line is booked as the card's leg: the refund keeps the model's
+    proposal, nothing is linked, and the debit's card names it for a person to decide. Once
+    the real payment is in too, both fit: a question, never an automatic link."""
+    card = Card(world, PAYMENT_IBAN)
+    refund = _refund(card, date(2026, 10, 2), "312.75")
+    debit = giro.line(MONDAY, "-312.75", iban=PAYMENT_IBAN, purpose="Kreditkarte")
+    _match(world, debit)
+    assert _booked(world, debit) == [("internal_transfer_out", "confirmed")]
+    assert _booked(world, refund) == [("hh_refund", "proposed")]
+    assert _links(world) == []
+    [item] = [o for o in world.query(transfers.open_transfers, TODAY) if o.leg.id == debit]
+    assert [c.id for c in item.candidates] == [refund]
+
+    paid = card.payment(TUESDAY, "312.75")
+    _match(world, paid)
+    assert _booked(world, paid) == [("internal_transfer_in", "confirmed")]
+    assert _booked(world, refund) == [("hh_refund", "proposed")]
+    assert _links(world) == []
+    [item] = [o for o in world.query(transfers.open_transfers, TODAY) if o.leg.id == debit]
+    assert item.code is OpenTransferCode.AMBIGUOUS
+    assert {c.id for c in item.candidates} == {refund, paid}
 
 
 # --- A card bill answered as spending before the card account existed (review of step 2b) -----

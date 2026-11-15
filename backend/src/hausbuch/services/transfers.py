@@ -791,6 +791,13 @@ def _book_named_leg(
         # line its own account books by code otherwise (a „Wertpapier Verkauf“) is left to
         # that job, never pre-empted by an equal debit that names the depot.
         return None
+    if own is None and line.account_kind == AccountKind.CREDIT_CARD.value:
+        # Review of D162 amended (5), 15 Nov 2026: a card's line is its settlement leg only
+        # when the card reader's own code reads it as the payment („Bezahlung“); a merchant's
+        # refund („Gutschrift“) of the same amount, a few banking days before a debit naming
+        # the payment IBAN, was booked as the transfer and the real payment left with a dead
+        # card. Such a pair goes to the person as a proposed card (principle 3).
+        return None
     answer = (
         deposit_split_set(line.tx, fee)
         if deposit and fee is not None
