@@ -1220,6 +1220,15 @@ def apply_proposal(
         # Phase 6 step 4: a report's assets held but not listed, and its one event per
         # account and date (reconciled or the inbox card's mismatch).
         depot.finish_report(ctx, current.document_id)
+    moved = [
+        a.entity_id
+        for a in run.applied.values()
+        if _prefix(a.key) == "movement" and not a.skipped and a.entity_id is not None
+    ]
+    if moved:
+        # D167 amended (c): a report taken over before this trade, distribution or transfer
+        # note stored no price for the positions the note now makes agree; it stores it now.
+        depot.store_report_prices_after(ctx, moved)
 
     applied = [run.applied[r.key] for r in current.records]
     decisions = {r.key: _decisions(r, given.get(r.key)) for r in current.records}

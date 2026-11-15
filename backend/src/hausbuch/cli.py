@@ -1,8 +1,8 @@
 """`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills |
-rematch-waiting | household-resort | follow-accounts | repair-periods | relink-transfers`
-(phase 1 step 3, §5, §6.5, §6.7; phase 2 D41, D27 amended 15 Nov 2026; phase 6 D159 amended
-13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended (4) 14 Nov 2026, D165 (a) and
-D176 (3) amended 14 Nov 2026, D162 amended 15 Nov 2026).
+rematch-waiting | household-resort | follow-accounts | repair-periods | relink-transfers |
+store-report-prices` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41, D27 amended 15 Nov 2026;
+phase 6 D159 amended 13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended (4) 14 Nov
+2026, D165 (a) and D176 (3) amended 14 Nov 2026, D162 and D167 (c) amended 15 Nov 2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -53,6 +53,13 @@ counterpart fits now, and a depot's cash line that a bank debit names by the dep
 booked as that transfer's leg when it holds no confirmed answer. It runs here, not in the
 worker: it reads and writes only the database. --dry-run rolls back and prints what it would
 link.
+
+`store-report-prices` runs services.depot.store_all_report_prices once for a workspace, with
+the same owner URL (phase 6 D167 amended (c), 15 Nov 2026): every current quarterly-report
+position of every depot that agrees with the confirmed movements now and has no price yet
+stores the report's price (value ÷ units), as a trade confirmation applied after the report
+does since that change. It reads and writes only the database. --dry-run rolls back and prints
+what it would store.
 
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
 14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
@@ -410,6 +417,41 @@ def relink_transfers(args: argparse.Namespace, environ: Mapping[str, str]) -> in
     return EXIT_OK
 
 
+# --- store-report-prices --------------------------------------------------------------
+
+
+def store_report_prices(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.depot.store_all_report_prices once for a workspace (phase 6 D167 amended (c),
+    15 Nov 2026): the price of every report position that agrees now and has none stored.
+    `--dry-run` rolls everything back."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.depot import store_all_report_prices
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:store-report-prices")
+                stored = store_all_report_prices(new_command(conn, args.workspace, actor))
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    verb = "would store" if args.dry_run else "stored"
+    print(f"{verb} {stored} price(s) from the depot reports")
+    return EXIT_OK
+
+
 # --- repair-periods -------------------------------------------------------------------
 
 
@@ -673,6 +715,15 @@ def _parser() -> argparse.ArgumentParser:
     relinked.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     relinked.add_argument("--dry-run", action="store_true", help="count only, change nothing")
     relinked.set_defaults(command=relink_transfers, command_name="relink-transfers")
+
+    report_prices = commands.add_parser(
+        "store-report-prices",
+        help="store the price of every depot report position that agrees with the booked "
+        "trades now and has none yet (once, after the deploy of D167 amended (c))",
+    )
+    report_prices.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    report_prices.add_argument("--dry-run", action="store_true", help="count only, change nothing")
+    report_prices.set_defaults(command=store_report_prices, command_name="store-report-prices")
 
     follow = commands.add_parser(
         "follow-accounts",
