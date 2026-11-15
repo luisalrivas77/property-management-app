@@ -83,7 +83,7 @@ from hausbuch.services.events import append_event, diff_changes
 from hausbuch.services.lookup import require_row
 
 from .assets import fund_source, price_ids
-from .fetch import STREAK_WINDOW_DAYS, failure_runs
+from .fetch import STREAK_WINDOW_DAYS, failure_runs, held_subquery
 from .issuer_nav import issuer_name
 
 S = PriceSourceKind
@@ -420,17 +420,11 @@ def record_price(ctx: CommandContext, asset_id: UUID, body: TypedPriceBody) -> A
 
 
 def _held(conn: Connection) -> list[Any]:
-    a, m = asset_table.c, movement_table.c
-    sums = (
-        select(m.asset_id, func.sum(m.quantity).label("units"))
-        .where(m.status == MovementStatus.CONFIRMED.value, m.superseded_by.is_(None))
-        .group_by(m.asset_id)
-        .subquery()
-    )
+    a = asset_table.c
+    sums = held_subquery()  # the fetch's own rule: positive on some account
     return conn.execute(
         select(a.id, a.kind, a.symbol, a.isin, a.name, a.coingecko_id, a.kraken_pair, a.created_at)
         .join(sums, sums.c.asset_id == a.id)
-        .where(sums.c.units > 0)
         .order_by(a.name, a.id)
     ).all()
 

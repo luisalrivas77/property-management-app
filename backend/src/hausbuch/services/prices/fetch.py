@@ -165,24 +165,38 @@ class Sources:
 # --- 1. plan ------------------------------------------------------------------------------
 
 
-def held_assets(conn: Connection) -> list[Held]:
-    m, a = movement_table.c, asset_table.c
-    sums = (
-        select(
-            m.asset_id,
-            func.sum(m.quantity).label("units"),
-            func.min(m.occurred_at).label("first_at"),
-        )
-        .where(m.status == MovementStatus.CONFIRMED.value, m.superseded_by.is_(None))
+def held_subquery():
+    """(asset_id, first_at) of every asset some account holds: a positive sum of confirmed,
+    current movements on at least one account, as the Übersicht shows positions per account.
+    Not the sum over all accounts (16 Nov 2026): units moved from one own depot to another,
+    when the first depot's purchases came before the app, net to zero across both and would
+    leave the position the Übersicht shows unpriced. `first_at` is the asset's first movement
+    on any account."""
+    m = movement_table.c
+    current = [m.status == MovementStatus.CONFIRMED.value, m.superseded_by.is_(None)]
+    per_account = (
+        select(m.asset_id, func.sum(m.quantity).label("units"))
+        .where(*current)
+        .group_by(m.account_id, m.asset_id)
+        .subquery()
+    )
+    held_ids = select(per_account.c.asset_id).where(per_account.c.units > 0)
+    return (
+        select(m.asset_id, func.min(m.occurred_at).label("first_at"))
+        .where(*current, m.asset_id.in_(held_ids))
         .group_by(m.asset_id)
         .subquery()
     )
+
+
+def held_assets(conn: Connection) -> list[Held]:
+    a = asset_table.c
+    sums = held_subquery()
     rows = conn.execute(
         select(
             a.id, a.kind, a.symbol, a.isin, a.name, a.coingecko_id, a.kraken_pair, sums.c.first_at
         )
         .join(sums, sums.c.asset_id == a.id)
-        .where(sums.c.units > 0)
         .order_by(a.name, a.id)
     ).all()
     return [
@@ -482,6 +496,7 @@ __all__ = [
     "collect",
     "failure_runs",
     "held_assets",
+    "held_subquery",
     "plan",
     "run_workspace",
     "stored_rates",
