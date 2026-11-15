@@ -582,8 +582,31 @@ def _link_kind(a: TransferAccount, b: TransferAccount) -> TransferLinkKind:
     return TransferLinkKind.BANK
 
 
+def _sub_banking_days(day: date, n: int) -> date:
+    while n:
+        day -= timedelta(days=1)
+        if day.weekday() < 5:
+            n -= 1
+    return day
+
+
+def _tied(out: LegRow, in_: LegRow, accounts: dict[str, TransferAccount]) -> bool:
+    """D162 amended 15 Nov 2026: one leg names the other's account by its IBAN."""
+    out_iban, in_iban = accounts[out.account].iban_hmac, accounts[in_.account].iban_hmac
+    return (out.counterparty_iban_hmac is not None and out.counterparty_iban_hmac == in_iban) or (
+        in_.counterparty_iban_hmac is not None and in_.counterparty_iban_hmac == out_iban
+    )
+
+
 def _fits(out: LegRow, in_: LegRow, accounts: dict[str, TransferAccount], *, exact: bool) -> bool:
-    if not out.booked_on <= in_.booked_on <= _add_banking_days(out.booked_on, WINDOW_BANKING_DAYS):
+    # D162 amended 15 Nov 2026: tied by an own IBAN, the in-leg may be booked up to three
+    # banking days before the out-leg (a depot credits a direct debit before the bank books it).
+    earliest = (
+        _sub_banking_days(out.booked_on, WINDOW_BANKING_DAYS)
+        if _tied(out, in_, accounts)
+        else out.booked_on
+    )
+    if not earliest <= in_.booked_on <= _add_banking_days(out.booked_on, WINDOW_BANKING_DAYS):
         return False
     gap = -out.amount - in_.amount  # what the exchange kept
     exchange = AccountKind.EXCHANGE in {accounts[out.account].kind, accounts[in_.account].kind}

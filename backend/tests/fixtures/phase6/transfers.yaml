@@ -14,7 +14,10 @@
 #                exchange's EUR Deposit/Withdrawal row (D166) is a transfer by its type
 #                (booked_as); the candidates are every other own account's legs.
 #   the link     candidates: opposite sign, out booked on or before in, in within 3 banking days
-#                of out; amount equal to the cent, or (one side an exchange) the in-leg equal to
+#                of out (D162 amended 15 Nov 2026: when one leg names the other's account by
+#                IBAN, in may also be booked up to 3 banking days before out, a direct debit
+#                the depot credited before the bank booked it); amount equal to the cent, or
+#                (one side an exchange) the in-leg equal to
 #                the out-leg less at most the recorded fee. One → transfer_link written
 #                (matched_by matcher), kind bank | exchange_eur | depot_cash by the accounts'
 #                kinds; several → transfer.ambiguous with the candidates (the allocation is still
@@ -55,12 +58,16 @@ accounts:
             iban_hmac: "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4"}
   exchange: {id: 00000ac6-0000-4000-8000-000000000005, kind: exchange, purpose: private}
   depot: {id: 00000ac6-0000-4000-8000-000000000006, kind: depot, purpose: private}
+  # A second depot whose IBAN is known (a confirmed depot IBAN, D156 amended), 15 Nov 2026.
+  depot_b: {id: 00000ac6-0000-4000-8000-000000000007, kind: depot, purpose: private,
+            iban_hmac: "a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6"}
 
 bases:
   hmac_exchange_bank: &H_XBANK "e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0"
   hmac_depot_bank: &H_DBANK "d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
   hmac_rental: &H_R "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
   hmac_savings: &H_S "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4"
+  hmac_depot_b: &H_D2 "a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6"
 
 cases:
   - id: bank_to_bank_next_day
@@ -209,3 +216,50 @@ cases:
       category: null
       proposed_link: {out_leg: 00000e60-0000-4000-8000-000000001001,
                       in_leg: 00000e60-0000-4000-8000-000000001002, kind: exchange_eur}
+
+  # D162 amended 15 Nov 2026 (Luis: „Check the deposits from my dkb account to the Quirion
+  # account.“): a depot credits a direct debit on the day it collects it and the paying bank
+  # books it days later. Tied by an own IBAN, the in-leg may be up to 3 banking days earlier.
+  - id: direct_debit_credited_two_banking_days_before_the_debit
+    description: >
+      owner A's debit (Friday) names the depot's IBAN; the depot credited it on Wednesday,
+      two banking days before: linked
+    leg: {id: 00000e60-0000-4000-8000-000000001101, account: owner_a, booked_on: 2026-08-07,
+          amount: "-600.00", counterparty_iban_hmac: *H_D2}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001102, account: depot_b, booked_on: 2026-08-05,
+         amount: "600.00"}
+    today: 2026-08-10
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      link: {out_leg: 00000e60-0000-4000-8000-000000001101,
+             in_leg: 00000e60-0000-4000-8000-000000001102, kind: depot_cash}
+
+  - id: credited_before_the_debit_without_an_iban_tie
+    description: >
+      the same dates, but the debit names the depot's bank, not an own account: an in-leg
+      before its out-leg is no counterpart, and the depot's Einlage gets its card
+    leg: {id: 00000e60-0000-4000-8000-000000001201, account: depot, booked_on: 2026-08-05,
+          amount: "600.00", booked_as: internal_transfer_in}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001202, account: joint, booked_on: 2026-08-07,
+         amount: "-600.00", counterparty_iban_hmac: *H_DBANK}
+    today: 2026-08-11
+    expect:
+      category: internal_transfer_in
+      confidence: "1.000"
+      card: {code: transfer.unmatched_leg}
+
+  - id: direct_debit_credited_four_banking_days_before_the_debit
+    description: tied by the IBAN, but four banking days earlier is outside the window
+    leg: {id: 00000e60-0000-4000-8000-000000001301, account: owner_a, booked_on: 2026-08-07,
+          amount: "-600.00", counterparty_iban_hmac: *H_D2}
+    open_legs:
+      - {id: 00000e60-0000-4000-8000-000000001302, account: depot_b, booked_on: 2026-08-03,
+         amount: "600.00"}
+    today: 2026-08-13
+    expect:
+      category: internal_transfer_out
+      confidence: "1.000"
+      card: {code: transfer.unmatched_leg}

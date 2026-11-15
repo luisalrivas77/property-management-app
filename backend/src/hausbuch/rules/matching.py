@@ -2215,6 +2215,15 @@ def add_banking_days(day: date, n: int) -> date:
     return day
 
 
+def subtract_banking_days(day: date, n: int) -> date:
+    """add_banking_days backwards: Monday to Friday, no holiday calendar."""
+    while n:
+        day = date.fromordinal(day.toordinal() - 1)
+        if day.weekday() < 5:
+            n -= 1
+    return day
+
+
 def transfer_window_end(booked_on: date) -> date:
     """The last day a counterpart of a leg booked on `booked_on` may be booked: three banking
     days later. A leg without one gets its card only after this day."""
@@ -2234,11 +2243,31 @@ def _ordered(a: TransferLeg, b: TransferLeg) -> tuple[TransferLeg, TransferLeg]:
     return (a, b) if a.amount < 0 else (b, a)
 
 
+def names_the_other(a: TransferLeg, b: TransferLeg) -> bool:
+    """Whether one leg names the other's account by its IBAN (its counterparty IBAN is the
+    other's account IBAN, both known): the pair is a transfer by an own IBAN, not only by its
+    amount and date."""
+    return (
+        a.counterparty_iban_hmac is not None and a.counterparty_iban_hmac == b.account_iban_hmac
+    ) or (b.counterparty_iban_hmac is not None and b.counterparty_iban_hmac == a.account_iban_hmac)
+
+
 def legs_fit(out: TransferLeg, in_: TransferLeg, *, exact: bool = False) -> bool:
     """D162: the in-leg booked on or after the out-leg and within three banking days of it;
     the amounts equal to the cent, or, when one side is an exchange (and not `exact`), the
-    in-leg less than the out-leg by at most the fee either side recorded."""
-    if not out.booked_on <= in_.booked_on <= transfer_window_end(out.booked_on):
+    in-leg less than the out-leg by at most the fee either side recorded.
+
+    D162 amended 15 Nov 2026: when one leg names the other's account by IBAN
+    (names_the_other), the in-leg may also be booked up to three banking days *before* the
+    out-leg: a depot credits a direct debit on the day it collects it, the paying bank books
+    it days later (a quirion Einlage credited on the 5th, the DKB debit booked on the 7th).
+    Without that tie the in-leg is never earlier than the out-leg."""
+    earliest = (
+        subtract_banking_days(out.booked_on, TRANSFER_WINDOW_BANKING_DAYS)
+        if names_the_other(out, in_)
+        else out.booked_on
+    )
+    if not earliest <= in_.booked_on <= transfer_window_end(out.booked_on):
         return False
     gap = -out.amount - in_.amount  # what the exchange kept
     exchange = AccountKind.EXCHANGE in {out.account_kind, in_.account_kind}
@@ -2346,4 +2375,23 @@ def match_transfer_line(tx: MatchTransaction, context: MatchContext) -> Allocati
         confidence=EXACT,
         allocations=[_draft(tx.amount, category, period, False)],
         reasoning="Überweisung zwischen zwei eigenen Konten.",
+    )
+
+
+def named_transfer_set(tx: MatchTransaction, purpose: AccountPurpose) -> AllocationSet:
+    """D162 amended 15 Nov 2026: a line without an own IBAN (a depot's cash line carries
+    none) whose transfer's other leg names this line's account by IBAN is that transfer's leg,
+    internal_transfer_out|in at confidence 1.0, booked by services.transfers.link_leg when the
+    pair fits (equal to the cent) and the line holds no confirmed answer."""
+    category = TRANSFER_CODES[(purpose, tx.amount > 0)]
+    period = service_period(tx.purpose, tx.booking_date, False)
+    return AllocationSet(
+        transaction_id=tx.id,
+        method=AllocationMethod.MATCHER_TRANSFER,
+        confidence=EXACT,
+        allocations=[_draft(tx.amount, category, period, False)],
+        reasoning=(
+            "Überweisung zwischen zwei eigenen Konten: die Buchung auf dem anderen Konto "
+            "nennt dieses Konto."
+        ),
     )

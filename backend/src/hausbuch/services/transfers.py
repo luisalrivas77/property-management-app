@@ -8,8 +8,15 @@ links and computes the cards on read.
   when exactly one counterpart fits and both are booked as transfers; a leg of another
   account booked as a transfer and still unlinked is tried too, so the counterpart that
   arrives late links it. A counterpart booked otherwise is never linked by the matcher: the
-  leg's card proposes it for a link by hand (review F3). relink(account_id) runs the same
-  over an account's unlinked transfer legs (confirmed and proposed), for a late import.
+  leg's card proposes it for a link by hand (review F3). One exception (D162 amended
+  15 Nov 2026): when the leg names the counterpart's account by IBAN and the counterpart is
+  a private bank or depot line of the same amount with no confirmed answer (a depot's cash
+  line carries no IBAN, so only the model guessed it), the matcher books the counterpart as
+  the transfer's leg and links the pair (_book_named_leg); a confirmed answer is never
+  replaced. relink(account_id) runs the same over an account's unlinked transfer legs
+  (confirmed and proposed) and the other accounts' transfer lines that name it, for a late
+  import (a depot's cash statement calls it, services.statements.import_statement);
+  relink_all over every account (`hausbuch relink-transfers`).
 - transfer_link is append-only: a wrong link is replaced by a new row and the old one names
   it in superseded_by (unlink). The table has no status (migration 0025 is on main), so a
   link the matcher wrote is current only while both its legs are booked as transfers
@@ -44,6 +51,8 @@ from hausbuch.rules.matching import (
     ibans_agree,
     legs_fit,
     match_transfer,
+    named_transfer_set,
+    names_the_other,
     transfer_link_kind,
     transfer_window_end,
 )
@@ -526,11 +535,50 @@ def link_leg(
         found.link.in_leg.id if found.link.out_leg.id == leg.leg.id else found.link.out_leg.id
     )
     other = next((o for o in others if o.leg.id == other_id), None)
-    if leg.booked is None or other is None or other.booked is None:
+    if leg.booked is None or other is None:
         return None
+    if other.booked is None:
+        return _book_named_leg(ctx, leg, other, found.link)
     return _write(
         ctx, found.link.out_leg, found.link.in_leg, found.link.kind, TransferMatchedBy.MATCHER
     )
+
+
+def _book_named_leg(
+    ctx: CommandContext, leg: _Leg, other: _Leg, pair: TransferCandidate
+) -> TransferLink | None:
+    """D162 amended 15 Nov 2026: `leg` is booked as a transfer and names `other`'s account
+    by IBAN, the pair fits both ways and to the cent, and `other` is a private bank or depot
+    line not booked as a transfer (a depot's cash line has no IBAN, so the model guessed it).
+    When `other` holds no confirmed answer (only the model's proposal, or nothing), the
+    matcher books it as the transfer's leg (rules.matching.named_transfer_set, auto-confirmed
+    as any matcher set at confidence 1.0) and links the pair. A person's or a rule's confirmed
+    answer is never replaced: that line keeps its card (transfer.proposed, with its re-book
+    button). The rental account is left to its phase 2 matchers."""
+    from . import allocations, matching  # matching imports this module
+
+    named = (
+        other.leg.source is TransferLegSource.TRANSACTION
+        and other.purpose is AccountPurpose.PRIVATE
+        and leg.leg.counterparty_iban_hmac is not None
+        and leg.leg.counterparty_iban_hmac == other.leg.account_iban_hmac
+        and leg.leg.amount == -other.leg.amount
+    )
+    if not named:
+        return None
+    line = matching.load_line(ctx.conn, other.leg.id, lock=True)
+    if line is None or not line.waiting or not line.open_for(rematch=True):
+        return None
+    allocations.record_set(ctx, named_transfer_set(line.tx, other.purpose), confirm=True, auto=True)
+    # record_set's hook (after_booking) links the pair itself when it sees it: that link is
+    # returned, never a second row.
+    found = _link_of(ctx.conn, pair.out_leg.id, pair.in_leg.id)
+    if found is not None:
+        return found
+    linked = _linked_ids(ctx.conn)
+    if leg.leg.id in linked or other.leg.id in linked:
+        return None
+    return _write(ctx, pair.out_leg, pair.in_leg, pair.kind, TransferMatchedBy.MATCHER)
 
 
 def after_booking(
@@ -559,15 +607,30 @@ def after_booking(
             continue
         if other.leg.id in linked:
             continue
-        if link_leg(ctx, other.leg.id, other.leg.source) is not None:
+        found = link_leg(ctx, other.leg.id, other.leg.source)
+        if found is None:
+            continue
+        # D162 amended 15 Nov 2026: another leg's link may book and link a third line it
+        # names (_book_named_leg), so the search goes on until this line is linked.
+        if transaction_id in (found.out_transaction_id, found.in_transaction_id):
             return
+        linked = _linked_ids(ctx.conn)
 
 
 def relink(ctx: CommandContext, account_id: UUID) -> int:
     """D162 after an import: every unlinked transfer leg of the account (confirmed or
-    proposed) is linked when one counterpart fits now; the number linked."""
-    legs = _line_legs(ctx.conn, transaction_table.c.account_id == account_id)
+    proposed) is linked when one counterpart fits now; the number linked. D162 amended
+    15 Nov 2026: also every other account's unlinked transfer line that names this account's
+    IBAN, so a depot's cash lines imported after the bank's debits are booked and linked by
+    those debits (_book_named_leg), whether or not the model has answered them yet."""
+    t, acc = transaction_table.c, account_table.c
+    legs = _line_legs(ctx.conn, t.account_id == account_id)
     legs += _movement_legs(ctx.conn, movement_table.c.account_id == account_id)
+    iban = ctx.conn.execute(
+        select(func.coalesce(acc.iban_hmac, acc.payment_iban_hmac)).where(acc.id == account_id)
+    ).scalar_one_or_none()
+    if iban is not None:
+        legs += _line_legs(ctx.conn, t.account_id != account_id, t.counterparty_iban_hmac == iban)
     linked = _linked_ids(ctx.conn)
     count = 0
     for leg in legs:
@@ -577,6 +640,14 @@ def relink(ctx: CommandContext, account_id: UUID) -> int:
             count += 1
             linked = _linked_ids(ctx.conn)
     return count
+
+
+def relink_all(ctx: CommandContext) -> int:
+    """`hausbuch relink-transfers`: relink over every account of the workspace, oldest
+    first; the number linked."""
+    acc = account_table.c
+    ids = ctx.conn.execute(select(acc.id).order_by(acc.created_at, acc.id)).scalars().all()
+    return sum(relink(ctx, account_id) for account_id in ids)
 
 
 def _pair(conn: Connection, body: TransferLinkCreate) -> tuple[_Leg, _Leg]:
@@ -613,9 +684,7 @@ def _tied(a: TransferLeg, b: TransferLeg) -> bool:
     """Whether one leg names the other's own IBAN as its counterparty (for a card, its
     confirmed payment IBAN stands as its account IBAN, _line_legs): the pair is a transfer
     by an own IBAN, not only by its amount and date."""
-    return (
-        a.counterparty_iban_hmac is not None and a.counterparty_iban_hmac == b.account_iban_hmac
-    ) or (b.counterparty_iban_hmac is not None and b.counterparty_iban_hmac == a.account_iban_hmac)
+    return names_the_other(a, b)
 
 
 def _rebook_on_link(leg: _Leg, other: _Leg) -> bool:
@@ -904,6 +973,7 @@ __all__ = [
     "list_links",
     "open_transfers",
     "relink",
+    "relink_all",
     "saved_in",
     "transfer_inbox_items",
     "unlink",

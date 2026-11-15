@@ -1,8 +1,8 @@
 """`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills |
-rematch-waiting | household-resort | follow-accounts | repair-periods` (phase 1 step 3, §5,
-§6.5, §6.7; phase 2 D41, D27 amended 15 Nov 2026; phase 6 D159 amended 13 and 14 Nov 2026,
-D161 widened 14 Nov 2026, D160 amended (4) 14 Nov 2026, D165 (a) and D176 (3) amended
-14 Nov 2026).
+rematch-waiting | household-resort | follow-accounts | repair-periods | relink-transfers`
+(phase 1 step 3, §5, §6.5, §6.7; phase 2 D41, D27 amended 15 Nov 2026; phase 6 D159 amended
+13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended (4) 14 Nov 2026, D165 (a) and
+D176 (3) amended 14 Nov 2026, D162 amended 15 Nov 2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -44,6 +44,13 @@ booking date is proposed again with its period read by the current rule (phase 2
 job per private line booked in a spending group's fallback, proposed or confirmed, so the
 model sorts it into one of migration 0032's subcategories; a finer answer goes back to Zu
 prüfen as a proposal. --dry-run prints what it would take and what it leaves alone, by reason.
+
+`relink-transfers` runs services.transfers.relink_all once for a workspace, with the same owner
+URL (phase 6 D162 amended 15 Nov 2026): on every account, each transfer leg is linked where one
+counterpart fits now, and a depot's cash line that a bank debit names by the depot's IBAN is
+booked as that transfer's leg when it holds no confirmed answer. It runs here, not in the
+worker: it reads and writes only the database. --dry-run rolls back and prints what it would
+link.
 
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
 14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
@@ -366,6 +373,41 @@ def rematch_waiting(args: argparse.Namespace, environ: Mapping[str, str]) -> int
     return EXIT_OK
 
 
+# --- relink-transfers -----------------------------------------------------------------
+
+
+def relink_transfers(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.transfers.relink_all once for a workspace (phase 6 D162 amended 15 Nov 2026):
+    every account's transfers are linked where one counterpart fits now, and a depot's cash
+    line named by the bank's debit is booked as its leg. `--dry-run` rolls everything back."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.transfers import relink_all
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:relink-transfers")
+                linked = relink_all(new_command(conn, args.workspace, actor))
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    verb = "would link" if args.dry_run else "linked"
+    print(f"{verb} {linked} transfer(s)")
+    return EXIT_OK
+
+
 # --- repair-periods -------------------------------------------------------------------
 
 
@@ -607,6 +649,16 @@ def _parser() -> argparse.ArgumentParser:
     periods.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     periods.add_argument("--dry-run", action="store_true", help="count only, change nothing")
     periods.set_defaults(command=repair_periods, command_name="repair-periods")
+
+    relinked = commands.add_parser(
+        "relink-transfers",
+        help="link the transfers between own accounts once more on every account, booking a "
+        "depot's cash line the bank's debit names as its transfer (once, after the deploy of "
+        "D162 amended 15 Nov 2026)",
+    )
+    relinked.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    relinked.add_argument("--dry-run", action="store_true", help="count only, change nothing")
+    relinked.set_defaults(command=relink_transfers, command_name="relink-transfers")
 
     follow = commands.add_parser(
         "follow-accounts",
