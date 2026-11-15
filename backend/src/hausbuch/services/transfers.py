@@ -1162,7 +1162,10 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
         min(leg.leg.booked_on for leg in waiting) - _BY_HAND,
         max(leg.leg.booked_on for leg in waiting) + _BY_HAND,
     )
-    firsts: dict[UUID, date] | None = None  # read once, only when a leg has no counterpart
+    # Read once, only when a leg has no counterpart: each account's first bank line, and the
+    # account each own IBAN belongs to.
+    firsts: dict[UUID, date] | None = None
+    own: dict[str, UUID] = {}
     for leg in waiting:
         start, end = leg.leg.booked_on - _BY_HAND, leg.leg.booked_on + _BY_HAND
         others = [
@@ -1197,8 +1200,8 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
             ]
             if not same:
                 if firsts is None:
-                    firsts = _first_days(conn)
-                if _before_every_history(leg, firsts):
+                    firsts, own = _first_days(conn), _own_accounts(conn)
+                if _before_every_history(leg, firsts, own):
                     continue
             code, candidates = OpenTransferCode.UNMATCHED_LEG, same
         else:
@@ -1248,7 +1251,20 @@ def _first_days(conn: Connection) -> dict[UUID, date]:
     return {account_id: day for account_id, day in rows}
 
 
-def _before_every_history(leg: _Leg, firsts: dict[UUID, date]) -> bool:
+def _own_accounts(conn: Connection) -> dict[str, UUID]:
+    """The account each own IBAN belongs to (hex HMAC → account id): an account's own IBAN, a
+    credit card's payment IBAN, an exchange's learned deposit IBAN."""
+    acc = account_table.c
+    rows = conn.execute(select(acc.id, acc.iban_hmac, acc.payment_iban_hmac)).all()
+    found: dict[str, UUID] = {}
+    for account_id, iban, payment in rows:
+        for value in (iban, payment):
+            if (key := _hex(value)) is not None:
+                found[key] = account_id
+    return found
+
+
+def _before_every_history(leg: _Leg, firsts: dict[UUID, date], own: dict[str, UUID]) -> bool:
     """D162 amended (5), 15 Nov 2026 (Luis: „There are some credit card deposits that were not
     directly linked. Can you check?“): a leg without a counterpart and without a same-amount
     line in its by-hand window (±_BY_HAND), whose window ends before the first bank line of
@@ -1257,7 +1273,18 @@ def _before_every_history(leg: _Leg, firsts: dict[UUID, date]) -> bool:
     When no other account holds a line the card stays. An exchange's or depot's movements do
     not count, so an exchange deposit older than every bank line gets no card either. An older
     statement imported later brings the counterpart into reach: the card comes back proposing
-    it, and booked as a transfer (matcher, rule or person) it is linked by after_booking."""
+    it, and booked as a transfer (matcher, rule or person) it is linked by after_booking.
+
+    Review of D162 amended (5), 15 Nov 2026: a leg that names an own account by its IBAN
+    (`own`) is decided by that account alone: the card stays while that account has no bank
+    line yet (a debit to the other owner's account, whose statements are not imported), and
+    goes only when that account's first line is after the window. Every other account counts
+    only for a leg that names none, or an unrelated account with later lines would hide it."""
+    named = leg.leg.counterparty_iban_hmac
+    account = None if named is None else own.get(named)
+    if account is not None and account != leg.leg.account_id:
+        first = firsts.get(account)
+        return first is not None and leg.leg.booked_on + _BY_HAND < first
     others = [day for account_id, day in firsts.items() if account_id != leg.leg.account_id]
     return bool(others) and leg.leg.booked_on + _BY_HAND < min(others)
 

@@ -45,6 +45,7 @@ TODAY = NOW.date()
 MONDAY = date(2026, 10, 5)
 FRIEND_IBAN = "DE46100000000000000073"  # a third party's account, not the household's
 SAVINGS_IBAN = "DE73100000000000000072"  # Bundesbank test bank code 10000000
+OTHER_OWNER_IBAN = "DE19100000000000000074"  # the other owner's account, nothing imported
 
 
 @pytest.fixture
@@ -313,6 +314,31 @@ def test_a_leg_before_every_other_accounts_history_gets_no_card(
     [link] = _links(world)
     assert (link.out_transaction_id, link.in_transaction_id) == (leg, late)
     assert _open(world) == []
+
+
+@pytest.mark.parametrize(
+    ("named", "card"),
+    [("empty", True), ("savings", False)],
+)
+def test_a_leg_naming_an_own_account_is_decided_by_that_account(world, private, named, card):
+    """Review of D162 amended (5), 15 Nov 2026: a debit of 2 Dec 2025 naming the other owner's
+    account, whose statements are not imported, keeps its card although the only other account's
+    lines start after the window (it had lost its one to-do); a debit naming an account whose
+    first line is after the window gets none, although the rental account's lines start
+    before it."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        world._account(conn, OTHER_OWNER_IBAN, owner=True)  # no import, no line
+    savings = _savings(world)
+    savings.line(date(2026, 1, 3), "12.00", purpose="Zinsen")  # after the window (2 Jan)
+    if named == "empty":
+        iban = OTHER_OWNER_IBAN
+    else:
+        iban = SAVINGS_IBAN
+        world.line(date(2025, 11, 20), "-5.00", name="Bank")  # the rental account, before it
+    leg = private.line(date(2025, 12, 2), "-200.00", iban=iban, purpose="Umbuchung")
+    _book(world, leg, "-200.00", C.INTERNAL_TRANSFER_OUT)
+    cards = [c for c in _open(world) if c.leg.id == leg]
+    assert [c.code for c in cards] == ([OpenTransferCode.UNMATCHED_LEG] if card else [])
 
 
 def test_a_link_by_hand_and_its_replacement(world, private):
