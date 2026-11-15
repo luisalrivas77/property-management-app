@@ -225,6 +225,10 @@ form:
     hh_sport: null
     hh_travel: null
     hh_investment: null
+    hh_investment_property: null  # phase 6 D159 amended (6) 15 Nov 2026 (migration 0036): private, on no form
+    hh_investment_securities: null
+    hh_investment_crypto: null
+    hh_investment_savings: null
     hh_refund: null
     hh_fuel: null  # phase 6 D159 amended 14 Nov 2026 (migration 0031): private, on no form
     hh_streaming: null  # phase 6 D159 amended 14 Nov 2026 (migration 0032): private, on no form

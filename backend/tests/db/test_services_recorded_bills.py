@@ -5,7 +5,8 @@ the record's proof of payment and never a second record; the Anlage V figures st
 to the cent. Three shapes: a Grunderwerbsteuer notice of two buyers paid by two equal lines
 (D150's parts), a Landesjustizkasse bill split into a Nebenkosten row and a financing row paid
 by one line, a notary's financing bill paid weeks after its date. Also: a private payment to
-the seller is proposed as hh_investment. Invented names, IBANs and amounts only."""
+the seller is proposed as hh_investment_property („Immobilien“, D159 amended (6)). Invented
+names, IBANs and amounts only."""
 
 from datetime import date
 from decimal import Decimal
@@ -21,6 +22,7 @@ from hausbuch import cli
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import tax_input as tax_input_table
+from hausbuch.jobs import enqueue
 from hausbuch.rules import matching as matchers
 from hausbuch.schemas.allocation import (
     AllocationCategory,
@@ -460,8 +462,9 @@ def test_the_rental_accounts_own_matching_is_unchanged(world, private):
 
 def test_a_private_payment_to_the_seller_is_a_down_payment(world, private):
     """The seller's IBAN received the purchase price from the rental account; a private
-    line to it is proposed as hh_investment with the property, and the draft never reads it
-    (the AfA basis comes from the property record, phase 3 D55)."""
+    line to it is proposed as hh_investment_property („Immobilien“ in the Geldanlage group,
+    D159 amended (6)) with the property, and the draft never reads it (the AfA basis comes
+    from the property record, phase 3 D55)."""
     paid = world.line(date(2026, 4, 30), "-200000.00", iban=SELLER_IBAN, purpose="Kaufpreis")
     _book(world, paid, "-200000.00", C.PURCHASE_PRICE, confirm=True, property_id=world.property_id)
     before, counts = _figures(world), _record_counts(world)
@@ -470,7 +473,7 @@ def test_a_private_payment_to_the_seller_is_a_down_payment(world, private):
     _match(world, tx)
     [booked] = _rows(world, tx)
     assert (booked.category, booked.status, booked.property_id, booked.document_id) == (
-        "hh_investment",
+        "hh_investment_property",
         "proposed",
         world.property_id,
         None,
@@ -489,7 +492,60 @@ def test_a_private_payment_to_the_seller_is_a_down_payment(world, private):
     # A credit from the seller is no payment to them.
     back = private.line(date(2026, 3, 9), "25.00", iban=SELLER_IBAN, name="Verkäufer")
     _match(world, back)
-    assert all(r.category != "hh_investment" for r in _rows(world, back))
+    assert all(
+        r.category not in ("hh_investment", "hh_investment_property") for r in _rows(world, back)
+    )
+
+
+def test_a_waiting_down_payment_is_proposed_again_as_immobilien(world, private):
+    """D159 amended (6) 15 Nov 2026: a down payment still waiting as the matcher's earlier
+    hh_investment proposal is proposed again as hh_investment_property by the re-check of the
+    waiting private lines (`hausbuch rematch-waiting`'s job: match_line with rematch), with the
+    same question and property; the earlier proposal is superseded, nothing is confirmed.
+    A line a person already confirmed as hh_investment is never touched by the re-check."""
+    paid = world.line(date(2026, 4, 30), "-200000.00", iban=SELLER_IBAN, purpose="Kaufpreis")
+    _book(world, paid, "-200000.00", C.PURCHASE_PRICE, confirm=True, property_id=world.property_id)
+    waiting = private.line(date(2026, 3, 2), "-25000.00", iban=SELLER_IBAN, name="Verkäufer")
+    world.cmd(
+        allocations.record_set,
+        AllocationSet(
+            transaction_id=waiting,
+            allocations=[
+                AllocationDraft(
+                    amount=Decimal("-25000.00"),
+                    category=C.HH_INVESTMENT,
+                    property_id=world.property_id,
+                )
+            ],
+            method=AllocationMethod.DOCUMENT_MATCH,
+            confidence=matchers.GUARDED_CONFIDENCE,
+            question=matchers.DOWN_PAYMENT_QUESTION,
+        ),
+        confirm=False,
+        auto=False,
+    )
+    booked = private.line(date(2026, 3, 3), "-5000.00", iban=SELLER_IBAN, name="Verkäufer")
+    _book(world, booked, "-5000.00", C.HH_INVESTMENT, confirm=True, property_id=world.property_id)
+
+    lines = world.query(matching.waiting_lines, enqueue.TRIGGER_PRIVATE_LINES, private.account_id)
+    assert waiting in lines and booked not in lines
+    for tx in lines:
+        world.cmd(matching.match_line, tx, iban_key=TEST_IBAN_KEY, ai_available=False, rematch=True)
+
+    [row] = _rows(world, waiting)
+    assert (row.category, row.status, row.property_id, row.question) == (
+        "hh_investment_property",
+        "proposed",
+        world.property_id,
+        matchers.DOWN_PAYMENT_QUESTION,
+    )
+    [kept] = _rows(world, booked)
+    assert (kept.category, kept.status) == ("hh_investment", "confirmed")
+    # The same answer again changes nothing.
+    plan = world.cmd(
+        matching.match_line, waiting, iban_key=TEST_IBAN_KEY, ai_available=False, rematch=True
+    )
+    assert plan.reason == "matching.unchanged"
 
 
 # --- the one-off command for lines already waiting -----------------------------------------

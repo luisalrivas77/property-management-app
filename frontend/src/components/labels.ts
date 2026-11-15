@@ -578,7 +578,12 @@ export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
   hh_work_education: "Arbeitsmittel & Fortbildung",
   hh_sport: "Sport & Fitness",
   hh_travel: "Sonstiges Reisen",
-  hh_investment: "Geldanlage",
+  hh_investment: "Sonstige Geldanlage",
+  // D159 amended (6) 15 Nov 2026 (migration 0036): the Geldanlage subcategories
+  hh_investment_property: "Immobilien",
+  hh_investment_securities: "Wertpapiere & ETF",
+  hh_investment_crypto: "Krypto",
+  hh_investment_savings: "Sparen & Tagesgeld",
   hh_refund: "Erstattung",
   // D159 amended 14 Nov 2026 (migration 0031)
   hh_fuel: "Tanken (Auto)",
@@ -763,7 +768,13 @@ const HOUSEHOLD_GROUPS: { label: string; categories: AllocationCategory[] }[] = 
     label: "Steuerlich relevant",
     categories: ["hh_donation", "hh_household_services", "hh_childcare", "hh_property_cost", "hh_tax_payment"],
   },
-  { label: "Bewegungen", categories: ["internal_transfer_in", "internal_transfer_out", "hh_cash", "hh_credit_card", "hh_investment"] },
+  // D159 amended (6) 15 Nov 2026 (migration 0036): the Geldanlage group (saved, not spent), its
+  // fallback „Sonstige Geldanlage“ last.
+  {
+    label: HOUSEHOLD_GROUP.investment,
+    categories: ["hh_investment_property", "hh_investment_securities", "hh_investment_crypto", "hh_investment_savings", "hh_investment"],
+  },
+  { label: "Bewegungen", categories: ["internal_transfer_in", "internal_transfer_out", "hh_cash", "hh_credit_card"] },
   { label: "Konto", categories: ["bank_fees", "uncategorized"] },
 ];
 

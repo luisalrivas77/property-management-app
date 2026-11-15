@@ -100,8 +100,18 @@ leisure.
   - `hh_work_education`: work equipment, professional literature, courses and further training
   - `hh_sport`: gym, sports club, sports equipment and courses
   - `hh_refund`: money back for a purchase: a return, a merchant's refund, a cancelled order (never income)
-  - `hh_investment`: a payment to an investment or savings platform that is not one of the household's own accounts here
   - `hh_other`: (fallback) any other spending
+
+Money put aside (Geldanlage) is saved, not spent. Use these codes only for a payment into an
+investment or savings product that is not one of the household's own accounts here: money to
+an account the household holds here (its own savings account, depot or exchange account) is
+`internal_transfer_out`, never Geldanlage. Money paid back from such an investment takes the
+same code. Inside the group, pick the most specific code that fits:
+  - `hh_investment_property`: a property: a down payment or own funds towards buying a flat or house, a Bausparvertrag saved for a property
+  - `hh_investment_securities`: shares, ETFs or funds: a depot, broker or savings plan (Wertpapiere, ETF-Sparplan)
+  - `hh_investment_crypto`: an exchange or crypto platform: buying Bitcoin or other coins
+  - `hh_investment_savings`: a Tagesgeld, Festgeld or savings account at another bank
+  - `hh_investment`: (fallback) any other investment, or one the line does not say more about
 
 Tax-relevant spending, movements and the bank:
 - `hh_donation`: a donation to a charity, a church or a party

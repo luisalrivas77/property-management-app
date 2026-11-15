@@ -149,6 +149,12 @@ def test_the_haushalt_month(client_a, client_b, world, private):
     _book(
         world, private.line(date(2026, 10, 4), "-450.00", name="Markt"), "-450.00", C.HH_GROCERIES
     )
+    _book(
+        world,
+        private.line(date(2026, 10, 6), "-150.00", name="Krypto-Plattform Beispiel"),
+        "-150.00",
+        C.HH_INVESTMENT_CRYPTO,
+    )
     private.line(date(2026, 10, 9), "-19.99", name="Unbekannt")  # waits in Zu prüfen
     out = private.line(date(2026, 10, 12), "-500.00", iban=SAVINGS_IBAN, purpose="Sparen")
     in_ = savings.line(date(2026, 10, 13), "500.00", iban=PRIVATE_IBAN, purpose="Sparen")
@@ -161,12 +167,14 @@ def test_the_haushalt_month(client_a, client_b, world, private):
         "month": "2026-10",
         "income": "3200.00",
         "spending_by_group": {"groceries": "450.00"},
-        "saved": "500.00",
+        "saved": "650.00",
         "surplus": "2750.00",
         "savings_rate": "0.8594",
         "income_by_category": {"hh_salary": "3200.00"},
         "open_lines": 1,
         "spending_by_category": {"groceries": {"hh_groceries": "450.00"}},
+        # D159 amended (6): the Geldanlage part of saved by its codes, not the link's 500
+        "invested_by_category": {"hh_investment_crypto": "150.00"},
     }
     other = ok(client_b.get("/api/household/cashflow", params={"month": "2026-10"}))
     assert (other["income"], other["open_lines"], other["savings_rate"]) == ("0.00", 0, None)

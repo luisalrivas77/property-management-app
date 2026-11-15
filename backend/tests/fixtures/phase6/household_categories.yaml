@@ -77,7 +77,7 @@ codes:
   - {category: hh_work_education, label: "Arbeitsmittel & Fortbildung", group: work_education, relevance: spending, treatment: private, threshold: null}
   - {category: hh_sport, label: "Sport & Fitness", group: sport, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_travel, label: "Sonstiges Reisen", group: travel, relevance: spending, treatment: private, threshold: "0.900"}
-  - {category: hh_investment, label: "Geldanlage", group: investment, relevance: transfer, treatment: private, threshold: null}
+  - {category: hh_investment, label: "Sonstige Geldanlage", group: investment, relevance: transfer, treatment: private, threshold: null}
   - {category: hh_refund, label: "Erstattung", group: refund, relevance: spending, treatment: private, threshold: null}
   # D159 amended 14 Nov 2026 (migration 0031, Luis: "I want to add Gas (car) category"): fuel
   # apart from hh_mobility, inside the same Mobilität group (no group of its own).
@@ -133,6 +133,14 @@ codes:
   - {category: hh_mobile_phone, label: "Mobilfunk", group: telecom, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_internet, label: "Internet & Festnetz", group: telecom, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_postage, label: "Porto & Versand", group: other, relevance: spending, treatment: private, threshold: "0.900"}
+  # D159 amended (6) 15 Nov 2026 (migration 0036, Luis: „Should we split the category into
+  # subcategories? Like Immobilien, Krypto, etf, etc...“): the Geldanlage group's subcategories,
+  # transfers like hh_investment (saved, not spent), no threshold (a person confirms each), on no
+  # form; hh_investment stays as the group's fallback, relabelled „Sonstige Geldanlage“ above.
+  - {category: hh_investment_property, label: "Immobilien", group: investment, relevance: transfer, treatment: private, threshold: null}
+  - {category: hh_investment_securities, label: "Wertpapiere & ETF", group: investment, relevance: transfer, treatment: private, threshold: null}
+  - {category: hh_investment_crypto, label: "Krypto", group: investment, relevance: transfer, treatment: private, threshold: null}
+  - {category: hh_investment_savings, label: "Sparen & Tagesgeld", group: investment, relevance: transfer, treatment: private, threshold: null}
   # The depot's own bookings (D165 (1))
   - {category: security_purchase, group: depot, relevance: transfer, treatment: private, threshold: null}
   - {category: security_sale, group: depot, relevance: transfer, treatment: private, threshold: null}

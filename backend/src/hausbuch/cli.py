@@ -1,8 +1,8 @@
 """`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills |
-rematch-waiting | household-resort | follow-accounts | repair-periods | relink-transfers`
-(phase 1 step 3, §5, §6.5, §6.7; phase 2 D41, D27 amended 15 Nov 2026; phase 6 D159 amended
-13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended (4) 14 Nov 2026, D165 (a) and
-D176 (3) amended 14 Nov 2026, D162 amended 15 Nov 2026).
+rematch-waiting | household-resort | follow-accounts | repair-periods | relink-transfers |
+store-report-prices` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41, D27 amended 15 Nov 2026;
+phase 6 D159 amended 13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended (4) 14 Nov
+2026, D165 (a) and D176 (3) amended 14 Nov 2026, D162 and D167 (c) amended 15 Nov 2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -41,9 +41,11 @@ booking date is proposed again with its period read by the current rule (phase 2
 15 Nov 2026; never a confirmed line). --dry-run counts and changes nothing.
 
 `household-resort` runs services.household_resort.resort_household the same way: it queues a
-job per private line booked in a spending group's fallback, proposed or confirmed, so the
-model sorts it into one of migration 0032's subcategories; a finer answer goes back to Zu
-prüfen as a proposal. --dry-run prints what it would take and what it leaves alone, by reason.
+job per private line booked in a group's fallback, proposed or confirmed, so the model sorts it
+into one of the group's subcategories (migration 0032's, and the Geldanlage group's of 0036); a
+finer answer goes back to Zu prüfen as a proposal. --category names the fallback codes to take
+(repeatable; e.g. hh_investment after migration 0036), by default every group's fallback.
+--dry-run prints what it would take and what it leaves alone, by reason.
 
 `relink-transfers` runs services.transfers.relink_all once for a workspace, with the same owner
 URL (phase 6 D162 amended 15 Nov 2026): on every account, each transfer leg is linked where one
@@ -51,6 +53,13 @@ counterpart fits now, and a depot's cash line that a bank debit names by the dep
 booked as that transfer's leg when it holds no confirmed answer. It runs here, not in the
 worker: it reads and writes only the database. --dry-run rolls back and prints what it would
 link.
+
+`store-report-prices` runs services.depot.store_all_report_prices once for a workspace, with
+the same owner URL (phase 6 D167 amended (c), 15 Nov 2026): every current quarterly-report
+position of every depot that agrees with the confirmed movements now and has no price yet
+stores the report's price (value ÷ units), as a trade confirmation applied after the report
+does since that change. It reads and writes only the database. --dry-run rolls back and prints
+what it would store.
 
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
 14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
@@ -408,6 +417,41 @@ def relink_transfers(args: argparse.Namespace, environ: Mapping[str, str]) -> in
     return EXIT_OK
 
 
+# --- store-report-prices --------------------------------------------------------------
+
+
+def store_report_prices(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.depot.store_all_report_prices once for a workspace (phase 6 D167 amended (c),
+    15 Nov 2026): the price of every report position that agrees now and has none stored.
+    `--dry-run` rolls everything back."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.depot import store_all_report_prices
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:store-report-prices")
+                stored = store_all_report_prices(new_command(conn, args.workspace, actor))
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    verb = "would store" if args.dry_run else "stored"
+    print(f"{verb} {stored} price(s) from the depot reports")
+    return EXIT_OK
+
+
 # --- repair-periods -------------------------------------------------------------------
 
 
@@ -488,9 +532,21 @@ def household_resort(args: argparse.Namespace, environ: Mapping[str, str]) -> in
     Each queued line is one categorization per run (a retry or the hard-model escalation
     may add a call, as jobs.matching._categorize does)."""
     from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.allocation import AllocationCategory
     from hausbuch.schemas.enums import ActorType
     from hausbuch.services.context import Actor, new_command
-    from hausbuch.services.household_resort import resort_household
+    from hausbuch.services.household_resort import RESORT_CATEGORIES, resort_household
+
+    categories = RESORT_CATEGORIES
+    if args.category:
+        allowed = {c.value for c in RESORT_CATEGORIES}
+        unknown = sorted(set(args.category) - allowed)
+        if unknown:
+            raise CliError(
+                f"cannot re-sort {', '.join(unknown)}; --category takes one of "
+                f"{', '.join(sorted(allowed))}"
+            )
+        categories = frozenset(AllocationCategory(c) for c in args.category)
 
     engine = owner_engine(environ)
     try:
@@ -498,7 +554,7 @@ def household_resort(args: argparse.Namespace, environ: Mapping[str, str]) -> in
             with workspace_transaction(engine, args.workspace) as conn:
                 actor = Actor(ActorType.SYSTEM, "cli:household-resort")
                 ctx = new_command(conn, args.workspace, actor)
-                result = resort_household(ctx)
+                result = resort_household(ctx, categories)
                 if args.dry_run:
                     raise _DryRun
         except _DryRun:
@@ -660,6 +716,15 @@ def _parser() -> argparse.ArgumentParser:
     relinked.add_argument("--dry-run", action="store_true", help="count only, change nothing")
     relinked.set_defaults(command=relink_transfers, command_name="relink-transfers")
 
+    report_prices = commands.add_parser(
+        "store-report-prices",
+        help="store the price of every depot report position that agrees with the booked "
+        "trades now and has none yet (once, after the deploy of D167 amended (c))",
+    )
+    report_prices.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    report_prices.add_argument("--dry-run", action="store_true", help="count only, change nothing")
+    report_prices.set_defaults(command=store_report_prices, command_name="store-report-prices")
+
     follow = commands.add_parser(
         "follow-accounts",
         help="import every statement waiting under Dokumente onto the account that already "
@@ -673,10 +738,17 @@ def _parser() -> argparse.ArgumentParser:
     resort = commands.add_parser(
         "household-resort",
         help="re-sort the private lines booked in a group's fallback („Sonstige …“), proposed "
-        "or confirmed, into the subcategories of migration 0032; each finer answer goes back "
-        "to Zu prüfen as a proposal",
+        "or confirmed, into the group's subcategories (migrations 0032 and 0036); each finer "
+        "answer goes back to Zu prüfen as a proposal",
     )
     resort.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    resort.add_argument(
+        "--category",
+        action="append",
+        metavar="CODE",
+        help="re-sort only the lines booked in this fallback code, repeatable (e.g. "
+        "hh_investment after 0036); default: every group's fallback",
+    )
     resort.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
     resort.set_defaults(command=household_resort, command_name="household-resort")
 

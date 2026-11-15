@@ -105,6 +105,10 @@ per_category:
   - {category: hh_sport, decision: auto_confirm}
   - {category: hh_travel, decision: auto_confirm}
   - {category: hh_investment, decision: review}
+  - {category: hh_investment_property, decision: review}  # D159 amended (6) 15 Nov 2026 (migration 0036)
+  - {category: hh_investment_securities, decision: review}
+  - {category: hh_investment_crypto, decision: review}
+  - {category: hh_investment_savings, decision: review}
   - {category: hh_refund, decision: review}
   - {category: hh_fuel, decision: auto_confirm}  # D159 amended 14 Nov 2026 (migration 0031)
   # D159 amended 14 Nov 2026 (migration 0032): the subcategories, as their groups' codes

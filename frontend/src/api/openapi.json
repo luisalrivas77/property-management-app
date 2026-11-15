@@ -9587,6 +9587,10 @@
           "hh_sport",
           "hh_travel",
           "hh_investment",
+          "hh_investment_property",
+          "hh_investment_securities",
+          "hh_investment_crypto",
+          "hh_investment_savings",
           "hh_refund",
           "hh_fuel",
           "hh_streaming",
@@ -16707,6 +16711,17 @@
             },
             "type": "object",
             "title": "Spending By Category"
+          },
+          "invested_by_category": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            },
+            "type": "object",
+            "title": "Invested By Category"
           }
         },
         "additionalProperties": false,
