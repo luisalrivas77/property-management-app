@@ -10,14 +10,20 @@ from decimal import Decimal
 import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.matching_support import ACCOUNT_IBAN, PAINTER_IBAN, World
+from db.test_services_card_settlement import PAYMENT_IBAN, Card
 from db.test_services_exchange_deposit_fee import _exchange, _export, _movements
 from db.test_services_private_matching import NOW, PRIVATE_IBAN, Private
-from sqlalchemy import select, update
+from db.test_services_transfer_named_leg import DEPOT_B_IBAN, DEPOT_IBAN
+from db.test_services_transfer_named_leg import _depot as _depot_account
+from sqlalchemy import insert, select, update
 
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import bank_connection as connection_table
+from hausbuch.db.tables import bank_sync as sync_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.schemas.allocation import (
     AllocationCategory,
@@ -27,6 +33,7 @@ from hausbuch.schemas.allocation import (
 )
 from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.common import Fraction
+from hausbuch.schemas.enums import ImportStatus
 from hausbuch.schemas.household import (
     OpenTransferCode,
     TransferLinkCreate,
@@ -339,6 +346,206 @@ def test_a_leg_naming_an_own_account_is_decided_by_that_account(world, private, 
     _book(world, leg, "-200.00", C.INTERNAL_TRANSFER_OUT)
     cards = [c for c in _open(world) if c.leg.id == leg]
     assert [c.code for c in cards] == ([OpenTransferCode.UNMATCHED_LEG] if card else [])
+
+
+# --- D162 amended (9): the leg after the named account's history ----------------------------
+
+NOV_DEBIT = date(2026, 11, 3)  # a Tuesday; its D162 window ends Friday 6 Nov
+NOV_WINDOW_END = date(2026, 11, 6)
+
+
+def _unmatched(world: World, leg) -> list[OpenTransferCode]:
+    return [c.code for c in _open(world) if c.leg.id == leg]
+
+
+def test_a_monthly_depot_debit_after_the_depots_last_statement_gets_no_card(world, private):
+    """D162 amended (9), 15 Nov 2026: a private account pays two depots 600 € each at the start
+    of every month, each debit naming its depot's IBAN. October's pairs are linked; the depot
+    statements reach 30 Oct, so November's debits, booked and past their window, can have no
+    counterpart yet: no card, also not in Zu prüfen. The next statement of one depot reaching
+    the window without the credit brings that card back; the other's, with the credit, links
+    it."""
+    depot_a = _depot_account(world, DEPOT_IBAN)
+    depot_b = _depot_account(world, DEPOT_B_IBAN)
+    for depot, iban in ((depot_a, DEPOT_IBAN), (depot_b, DEPOT_B_IBAN)):
+        out = private.line(MONDAY, "-600.00", iban=iban, purpose="Sparplan")
+        _match(world, out)
+        depot.line(MONDAY, "600.00", purpose="Lastschrift Einzug")
+        world.cmd(transfers.relink, depot.account_id)  # what a depot statement import runs
+        depot.line(date(2026, 10, 30), "-1.20", purpose="Kostenbelastung")
+    assert len(_links(world)) == 2
+    debit_a = private.line(NOV_DEBIT, "-600.00", iban=DEPOT_IBAN, purpose="Sparplan")
+    debit_b = private.line(NOV_DEBIT, "-600.00", iban=DEPOT_B_IBAN, purpose="Sparplan")
+    for leg in (debit_a, debit_b):
+        _match(world, leg)
+        assert [(r.category, r.status) for r in _rows(world, leg)] == [
+            ("internal_transfer_out", "confirmed")
+        ]
+    assert len(_links(world)) == 2
+    assert _open(world) == []
+    kinds = {i.kind for i in world.query(review.inbox, TODAY)}
+    assert InboxItemKind.TRANSFER_UNMATCHED not in kinds
+
+    # Depot A's November statement reaches past the window, without the credit: the card is
+    # back. Depot B's still ends on 30 Oct: its debit stays silent.
+    later_a = depot_a.add_import(world.now)
+    depot_a.line(date(2026, 11, 10), "0.40", purpose="Zinsen", import_id=later_a)
+    [card] = _open(world)
+    assert (card.code, card.leg.id, card.candidates) == (
+        OpenTransferCode.UNMATCHED_LEG,
+        debit_a,
+        [],
+    )
+    # Depot B's November statement brings the credit: the import's relink links it.
+    later_b = depot_b.add_import(world.now)
+    credit_b = depot_b.line(NOV_DEBIT, "600.00", purpose="Lastschrift Einzug", import_id=later_b)
+    depot_b.line(date(2026, 11, 10), "0.40", purpose="Zinsen", import_id=later_b)
+    assert world.cmd(transfers.relink, depot_b.account_id) == 1
+    assert (debit_b, credit_b) in {
+        (link.out_transaction_id, link.in_transaction_id) for link in _links(world)
+    }
+    assert [c.leg.id for c in _open(world)] == [debit_a]
+
+
+@pytest.mark.parametrize(
+    ("last_line", "card"),
+    [(NOV_WINDOW_END, True), (date(2026, 11, 5), False)],
+)
+def test_the_named_accounts_history_must_reach_the_window_end(world, private, last_line, card):
+    """D162 amended (9): a debit naming an own bank account keeps its card when that account's
+    lines reach the leg's window end (6 Nov), as before; one day short, it gets none."""
+    savings = _savings(world)
+    savings.line(date(2026, 10, 1), "12.00", purpose="Zinsen")
+    savings.line(last_line, "0.10", purpose="Zinsen")
+    leg = private.line(NOV_DEBIT, "-200.00", iban=SAVINGS_IBAN, purpose="Umbuchung")
+    _match(world, leg)
+    assert [r.category for r in _rows(world, leg)] == ["internal_transfer_out"]
+    assert _unmatched(world, leg) == ([OpenTransferCode.UNMATCHED_LEG] if card else [])
+
+
+@pytest.mark.parametrize(
+    ("status", "card"),
+    [("nothing_new", True), ("failed", False)],
+)
+def test_a_successful_sync_without_new_lines_counts_as_history(world, private, status, card):
+    """D162 amended (9): an account synced over FinTS whose run on 12 Nov brought no new line
+    (no import is kept, phase 5 D127) has its history up to that day, so the debit naming it
+    keeps its card; a failed run proves nothing and the card stays away."""
+    savings = _savings(world)
+    savings.line(date(2026, 10, 30), "12.00", purpose="Zinsen")
+    with workspace_transaction(world.engine, world.ws) as conn:
+        connection = conn.execute(
+            insert(connection_table)
+            .values(
+                workspace_id=world.ws,
+                account_id=savings.account_id,
+                bank_code="10000000",
+                fints_url="https://fints.example.invalid/",
+                login_name="beispiel",
+            )
+            .returning(connection_table.c.id)
+        ).scalar_one()
+        conn.execute(
+            insert(sync_table).values(
+                workspace_id=world.ws,
+                account_id=savings.account_id,
+                connection_id=connection,
+                trigger="scheduled",
+                status=status,
+                requested_from=date(2026, 10, 29),
+                requested_to=TODAY,
+                lines_total=0,
+                lines_new=0,
+                started_at=world.now,
+                finished_at=world.now,
+            )
+        )
+    leg = private.line(NOV_DEBIT, "-200.00", iban=SAVINGS_IBAN, purpose="Umbuchung")
+    _match(world, leg)
+    assert _unmatched(world, leg) == ([OpenTransferCode.UNMATCHED_LEG] if card else [])
+
+
+def test_a_leg_naming_no_own_account_keeps_its_card(world, private):
+    """D162 amended (9): a leg booked as a transfer that names no own account is not decided by
+    any account's last line, or an unrelated account whose statements stop would hide it."""
+    savings = _savings(world)
+    savings.line(date(2026, 10, 1), "12.00", purpose="Zinsen")  # its lines end before the window
+    leg = private.line(NOV_DEBIT, "-200.00", purpose="Umbuchung")
+    _book(world, leg, "-200.00", C.INTERNAL_TRANSFER_OUT)
+    assert _unmatched(world, leg) == [OpenTransferCode.UNMATCHED_LEG]
+
+
+def test_a_named_account_without_any_line_keeps_the_card(world, private):
+    """D162 amended (9), as in D162 amended (5)'s review: an own account whose statements were
+    never imported (the other owner's) is no history that ends; the debit naming it keeps its
+    card."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        world._account(conn, OTHER_OWNER_IBAN, owner=True)  # no import, no line
+    leg = private.line(NOV_DEBIT, "-200.00", iban=OTHER_OWNER_IBAN, purpose="Umbuchung")
+    _match(world, leg)
+    assert [r.category for r in _rows(world, leg)] == ["internal_transfer_out"]
+    assert _unmatched(world, leg) == [OpenTransferCode.UNMATCHED_LEG]
+
+
+def test_a_card_payment_after_its_paying_accounts_last_line_gets_no_card(world, private):
+    """D162 amended (9), the mirror of (6) (7): the card statement's payment credit of 3 Nov,
+    which names no IBAN, is decided by the account that pays the card (its October settlement
+    names the card's payment IBAN); that account's lines end on 30 Oct, so no card until its
+    next statement reaches the window without the debit."""
+    card = Card(world, PAYMENT_IBAN)
+    debit = private.line(MONDAY, "-300.00", iban=PAYMENT_IBAN, purpose="Kreditkarte")
+    _match(world, debit)
+    _match(world, card.payment(MONDAY, "300.00"))
+    assert len(_links(world)) == 1
+    private.line(date(2026, 10, 30), "-20.00", name="Bäckerei Beispiel")
+    payment = card.payment(NOV_DEBIT, "450.00")
+    _match(world, payment)
+    assert [r.category for r in _rows(world, payment)] == ["internal_transfer_in"]
+    assert _unmatched(world, payment) == []
+    later = private.add_import(world.now)
+    private.line(date(2026, 11, 9), "-15.00", name="Bäckerei Beispiel", import_id=later)
+    assert _unmatched(world, payment) == [OpenTransferCode.UNMATCHED_LEG]
+
+
+def _card_statement(world: World, card: Card) -> None:
+    """The card's next monthly statement: a reconciled import its later lines go to."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        doc = world._document_row(conn, type="statement", subtype=None, title=None)
+        card.import_id = conn.execute(
+            insert(import_table)
+            .values(
+                workspace_id=world.ws,
+                account_id=card.account_id,
+                document_id=doc,
+                format="card_pdf",
+                status=ImportStatus.RECONCILED.value,
+                balance_source="file",
+                declared_closing=Decimal("0.00"),
+                computed_closing=Decimal("0.00"),
+                created_at=world.now,
+                updated_at=world.now,
+            )
+            .returning(import_table.c.id)
+        ).scalar_one()
+
+
+def test_a_card_settlement_debit_after_the_cards_last_statement_gets_no_card(world, private):
+    """D162 amended (9), the card direction (Luis: „Does the Quirion transfer card also apply to
+    the credit card card?“): the bank's debit of 3 Nov names the card's payment IBAN, so it is
+    decided by the card account, whose monthly statements (imports of their own, read like a
+    bank's) end on 30 Oct: no card. The card's November statement reaching the window without
+    the settlement credit brings the card back."""
+    card = Card(world, PAYMENT_IBAN)
+    card.purchase(date(2026, 10, 30), "-20.00", "Buchhandlung Beispiel")
+    debit = private.line(NOV_DEBIT, "-450.00", iban=PAYMENT_IBAN, purpose="Kreditkarte")
+    _match(world, debit)
+    assert [(r.category, r.status) for r in _rows(world, debit)] == [
+        ("internal_transfer_out", "confirmed")
+    ]
+    assert _unmatched(world, debit) == []
+    _card_statement(world, card)
+    card.purchase(date(2026, 11, 9), "-15.00", "Buchhandlung Beispiel")
+    assert _unmatched(world, debit) == [OpenTransferCode.UNMATCHED_LEG]
 
 
 def test_a_link_by_hand_and_its_replacement(world, private):
