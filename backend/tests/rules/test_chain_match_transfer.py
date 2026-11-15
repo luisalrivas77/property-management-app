@@ -349,3 +349,25 @@ def test_a_wrap_in_one_transaction_still_needs_its_units():
     leg = _eth("out", Chain.ETHEREUM, "1", T0, tx_hash=EVM_HASH)
     half = _eth("in", Chain.ETHEREUM, "0.5", T0, contract=WETH, tx_hash=EVM_HASH)
     assert match(leg, [half]).result == "unmatched"
+
+
+def test_a_hex_hash_with_and_without_0x_is_one_transaction():
+    leg = ChainLeg(
+        ref="out",
+        account="binance",
+        asset="ETH",
+        units=Decimal("1"),
+        at=T0,
+        tx_hash=EVM_HASH.removeprefix("0x"),
+        network="ETH",
+    )
+    got_in = _eth("in", Chain.ETHEREUM, "0.99", T0, tx_hash=EVM_HASH)
+    assert match(leg, [got_in]).result == "linked"
+
+
+def test_two_legs_in_the_sending_transaction_are_ambiguous():
+    leg = _sol("out", "wallet_a", "1", T0, tx_hash=SOL_HASH)
+    one = _sol("in_1", "tangem", "1", T0, tx_hash=SOL_HASH)
+    two = _sol("in_2", "wallet_a", "1", T0, tx_hash=SOL_HASH)
+    got = match(leg, [one, two])
+    assert got.result == "ambiguous" and got.link is TransferLinkKind.CHAIN

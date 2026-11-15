@@ -223,8 +223,9 @@ def _same_hash(leg: ChainLeg, c: ChainLeg) -> bool:
 
 
 def _hash(value: str) -> str:
-    """A hex hash (EVM, Bitcoin) compared without case; a base58 signature as written."""
-    return value.lower() if _HEX.match(value) else value
+    """A hex hash (EVM, Bitcoin) compared without case and without its `0x`; a base58
+    signature as written."""
+    return value.lower().removeprefix("0x") if _HEX.match(value) else value
 
 
 def _contract(value: str | None) -> str | None:
