@@ -995,16 +995,42 @@ class LedgerEvent(Schema):
     name: str
     at: datetime
     account: str
-    kind: Literal["acquisition", "reward", "swap_in", "transfer_out", "disposal", "fee"]
+    # The asset, when a case holds two (a wrap's native coin and its wrapped token, a bridge's
+    # asset on two chains); None: the case's one asset.
+    asset: str | None = None
+    kind: Literal[
+        "acquisition",
+        "reward",
+        "swap_in",
+        "transfer_out",
+        "wrap",
+        "bridge",
+        "disposal",
+        "fee",
+        "lp_deposit",
+        "lp_withdrawal",
+    ]
     units: Decimal = Field(gt=0)
     cost_eur: Money | None = None  # acquisition, reward, swap_in; None: unpriced
     fee_eur: Money = Decimal(0)
     to_account: str | None = None  # transfer_out
+    to_asset: str | None = None  # wrap, bridge: the same account, the other asset
     superseded: bool = False
+
+    @model_validator(mode="after")
+    def _moves(self) -> Self:
+        if (self.kind == "transfer_out") != (self.to_account is not None):
+            raise ValueError(f"{self.name}: a transfer out, and only one, names its account")
+        if (self.kind in ("wrap", "bridge")) != (self.to_asset is not None):
+            raise ValueError(f"{self.name}: a wrap or a bridge, and only one, names its asset")
+        if self.to_asset is not None and (self.asset is None or self.to_asset == self.asset):
+            raise ValueError(f"{self.name}: a wrap or a bridge moves to another asset")
+        return self
 
 
 class LotExpect(Schema):
     account: str
+    asset: str | None = None  # as LedgerEvent.asset
     acquired_on: date
     units_open: Decimal
     cost_eur: Money | None  # of the open units
@@ -1026,7 +1052,7 @@ class LotsCase(_Case):
     expect_uses: list[UseExpect]
 
     def recompute(self) -> tuple[list[LotExpect], list[UseExpect]]:
-        books: dict[str, list[dict]] = {}
+        books: dict[tuple[str, str | None], list[dict]] = {}
         uses: list[UseExpect] = []
         source_of = {
             "acquisition": LotSource.ACQUISITION,
@@ -1034,7 +1060,9 @@ class LotsCase(_Case):
             "swap_in": LotSource.ACQUISITION,  # a swap's received leg (LotSource has no swap)
         }
         for ev in sorted((e for e in self.events if not e.superseded), key=lambda e: e.at):
-            lots = books.setdefault(ev.account, [])
+            lots = books.setdefault((ev.account, ev.asset), [])
+            if ev.kind in ("lp_deposit", "lp_withdrawal"):
+                continue  # D188 (1): lp_* consumes nothing (phase 8 decides), and creates none
             if ev.kind in source_of:
                 cost = None if ev.cost_eur is None else ev.cost_eur + ev.fee_eur
                 per = None if cost is None else cost / ev.units
@@ -1058,6 +1086,13 @@ class LotsCase(_Case):
                     continue
                 lot["units"] -= take
                 left -= take
+                if ev.kind in ("wrap", "bridge"):
+                    # D184 (2)-(4): not a disposal; the lot is re-created on the other asset
+                    # with its day, cost per unit and source, and no use is recorded.
+                    books.setdefault((ev.account, ev.to_asset), []).append(
+                        {**lot, "units": take, "moved": True}
+                    )
+                    continue
                 cost = (
                     None
                     if lot["per"] is None
@@ -1067,7 +1102,7 @@ class LotsCase(_Case):
                     UseExpect(event=ev.name, acquired_on=lot["on"], units=take, cost_eur=cost)
                 )
                 if ev.kind == "transfer_out":
-                    books.setdefault(ev.to_account or "", []).append(
+                    books.setdefault((ev.to_account or "", ev.asset), []).append(
                         {**lot, "units": take, "moved": True}
                     )
             if left:
@@ -1075,6 +1110,7 @@ class LotsCase(_Case):
         out = [
             LotExpect(
                 account=account,
+                asset=asset,
                 acquired_on=lot["on"],
                 units_open=lot["units"],
                 cost_eur=None
@@ -1084,7 +1120,9 @@ class LotsCase(_Case):
                 tax_free_from=tax_free_from(lot["on"]),
                 moved=lot["moved"],
             )
-            for account, lots in sorted(books.items())
+            for (account, asset), lots in sorted(
+                books.items(), key=lambda item: (item[0][0], item[0][1] or "")
+            )
             for lot in sorted(lots, key=lambda x: x["on"])
             if lot["units"]
         ]

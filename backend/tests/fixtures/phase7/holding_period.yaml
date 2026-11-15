@@ -42,12 +42,24 @@ days:
     acquired_at: "2028-02-29T12:00:00Z"
     expect_acquired_on: 2028-02-29
     expect_tax_free_from: 2029-03-01
+  # A year that holds 29 Feb 2028: 1 Jun 2027 to 1 Jun 2028 is 366 days, so the period is
+  # one calendar year, not a count of days (a „+366 days“ reading would make 1 Jun 2028
+  # tax-free, and passes every case above). Added from the step 0 review (15 Nov 2026).
+  - id: leap_year_spanned
+    pending: "phase 7 step 6 (rules/lots.tax_free_from)"
+    acquired_at: "2027-06-01T10:00:00Z"
+    expect_acquired_on: 2027-06-01
+    expect_tax_free_from: 2028-06-02
 
 sales:
   - {id: sold_on_anniversary_taxable, pending: "phase 7 step 3 (rules/lots)", acquired_on: 2026-03-15, sold_on: 2027-03-15, expect_taxable: true}
   - {id: sold_day_after_free, pending: "phase 7 step 3 (rules/lots)", acquired_on: 2026-03-15, sold_on: 2027-03-16, expect_taxable: false}
   - {id: leap_day_sold_28_feb_taxable, pending: "phase 7 step 3 (rules/lots)", acquired_on: 2028-02-29, sold_on: 2029-02-28, expect_taxable: true}
   - {id: leap_day_sold_1_mar_free, pending: "phase 7 step 3 (rules/lots)", acquired_on: 2028-02-29, sold_on: 2029-03-01, expect_taxable: false}
+  # The year that holds 29 Feb 2028 (the days case leap_year_spanned): the anniversary, 366
+  # days after, is still taxable; the day after it is free.
+  - {id: leap_year_sold_anniversary_taxable, pending: "phase 7 step 6 (rules/lots)", acquired_on: 2027-06-01, sold_on: 2028-06-01, expect_taxable: true}
+  - {id: leap_year_sold_day_after_free, pending: "phase 7 step 6 (rules/lots)", acquired_on: 2027-06-01, sold_on: 2028-06-02, expect_taxable: false}
 
 kept:
   # A lot moved to another account keeps its acquisition day (D184 (4)).
