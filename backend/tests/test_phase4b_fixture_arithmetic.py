@@ -203,6 +203,30 @@ def test_mutterschutz_pay_stop():
     assert total - D("9200") == D("-4797.00")
 
 
+def test_benefits_without_pay():
+    """B has no pay source at all (a year of parental leave): no Anlage N, but her typed
+    Elterngeld less the whole Pauschbetrag she cannot use enters L (§32b Abs. 1 Nr. 1 j,
+    Abs. 2 Nr. 1; D102 amended 15 Nov 2026)."""
+    gde = RESULT_A + RESULT_V
+    zve = floor(gde - VORSORGE_A - SONDERAUSGABEN_PAUSCHBETRAG_JOINT)
+    benefits = D("1800") + D("10000") - min(D("10000"), PAUSCHBETRAG)  # B's gross is 0
+    e_, with_, s, ch, total = assessed(zve, benefits, 10)
+    assert (gde, zve, benefits) == (D("49275.44"), D("37503"), D("10570"))
+    assert income_tax(zve + benefits, TARIFF) == D("5194")
+    assert trunc6(D("5194") / (zve + benefits)) == D("0.108044")
+    assert (e_, with_, s, ch) == (D("4051"), D("2298"), 0, 0)
+    assert e_ - with_ == D("1753") < 10 * KINDERGELD_MONTHLY  # Kindergeld wins
+    m = expect("return_estimate", "benefits_without_pay")
+    assert (D(m["zve"]), D(m["assessed"]["est"]), D(m["result"])) == (
+        zve,
+        e_,
+        total - D("9200"),
+    )
+    assert D(m["assessed"]["progression"]["benefits"]) == benefits
+    assert total - D("9200") == D("-5149.00")
+    assert m["filing_required"]["required"] is True and benefits > FILING_THRESHOLD
+
+
 def test_children_cases():
     high = expect("children", "allowances_win_200k")["assessed"]
     assert (income_tax(D("200000"), TARIFF), income_tax(D("190244"), TARIFF)) == (

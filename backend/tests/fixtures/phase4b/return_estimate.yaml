@@ -784,6 +784,65 @@ cases:
     warnings:
     - {code: return.kindergeld_apply}
     - {code: return.filing_required}
+# B on parental leave all year: no certificate, no payslip, no expected pay, so B has no Anlage N
+# (result 0, status none, no missing certificate), but her typed Elterngeld still enters L:
+# §32b Abs. 1 S. 1 Nr. 1 lit. j applies whether or not she had pay (D102 amended 15 Nov 2026).
+# By hand from the 2026 tariff (§32a zones, splitting on the half floored to the euro):
+#   total_income = A's result 57,224.10 + Anlage V −7,948.66 = 49,275.44
+#   special = A's Vorsorge 11,700.00 + 72 = 11,772.00 → zvE = floor(37,503.44) = 37,503
+#   L = A's Elterngeld 1,800.00 + B's 10,000.00 − B's unused Pauschbetrag
+#     min(10,000.00, 1,230 − 0) = 10,570.00 (§32b Abs. 2 Nr. 1: the Pauschbetrag B cannot use
+#     against pay comes off her benefits; A's pay of 60,000.00 uses all of A's own)
+#   est_without: 2 × T(floor(48,073 / 2) = 24,036) = 5,194 on zvE + L = 48,073; rate =
+#     5,194 / 48,073 cut to six decimals = 0.108044; floor(37,503 × 0.108044) = 4,051
+#   est_with: floor(37,503 − 10/12 × 9,756 = 29,373.00) = 29,373; 2 × T(19,971) = 3,126 on
+#     39,943; rate 0.078261; floor(29,373 × 0.078261) = 2,298
+#   4,051 − 2,298 = 1,753 < Kindergeld 10 × 259 = 2,590 → Kindergeld wins, ESt 4,051
+#   Soli on 2,298 is below the Freigrenze, no church tax → total 4,051.00; withheld A's 9,200.00
+#   result = 4,051.00 − 9,200.00 = −5,149.00 (without B's Elterngeld L would be 1,800.00 and
+#   the result −6,368.00)
+- id: benefits_without_pay
+  description: 'B on parental leave all year with no pay source, Elterngeld 10,000.00 typed: her benefits less the 1,230 Pauschbetrag she cannot use enter L (10,570.00), ESt 4,051, result −5,149.00'
+  tax_year: 2026
+  owners: *owners_plain
+  owner_facts:
+  - *owner_a
+  - owner_id: 0000000a-0000-4000-8000-000000000002
+    inputs:
+    - {id: 0000004b-0000-4000-8000-0000000000f7, owner_id: 0000000a-0000-4000-8000-000000000002,
+       kind: replacement_income, tax_year: 2026, value: {benefit: elterngeld, amount: '10000.00'}}
+  household: [*child_march]
+  properties: *flat_loss
+  questionnaire: *all_answered
+  expect:
+    status: 'certified'
+    total_income: '49275.44'
+    vorsorge_total: '11700.00'
+    church_tax_paid: '0.00'
+    donations: '0.00'
+    childcare: '0.00'
+    special_expenses: '11772.00'
+    zve: '37503'
+    assessed:
+      zve: '37503'
+      zve_after_allowances: '29373'
+      est_without: '4051'
+      est_with: '2298'
+      est: '4051'
+      credit_35a: '0.00'
+      est_final: '4051.00'
+      progression: {benefits: '10570.00', allowance_unused: '1230.00', rate: '0.108044', fictitious_zve: '48073.00', fictitious_tax: '5194'}
+      children: {months: 10, kindergeld: '2590.00', allowances: '8130.00', saving: '1753', favourable: 'kindergeld'}
+      soli: '0.00'
+      church: '0.00'
+      total: '4051.00'
+    withheld: {income_tax: '9200.00', soli: '0.00', church_tax: '0.00', total: '9200.00'}
+    result: '-5149.00'
+    filing_required: {required: true, reasons: ['Lohnersatzleistungen 10.570,00 € > 410,00 €'], deadline: 2027-08-02}
+    missing: []
+    warnings:
+    - {code: return.kindergeld_apply}
+    - {code: return.filing_required}
 - id: filing_required_rental_positive
   description: no benefits, no child, Anlage V +2,000.00 → filing required for income without wage-tax withholding
   tax_year: 2026

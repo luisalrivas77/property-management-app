@@ -686,8 +686,22 @@ def _estimate(case: EstimateCase) -> dict:
     facts = case.resolved_owners()
     household_rows = current(case.household)
     drafts, vorsorge = {}, {}
+    unpaid: set = set()  # owners without any pay source: no Anlage N, but their benefits count
     for f in facts:
-        drafts[f.owner_id] = _draft_n(f, year)
+        try:
+            drafts[f.owner_id] = _draft_n(f, year)
+        except Refused as refused:
+            if refused.code != "anlage_n.no_pay":
+                raise
+            unpaid.add(f.owner_id)
+            drafts[f.owner_id] = {
+                "result": ZERO,
+                "gross": ZERO,
+                "replacement_benefits": ZERO,
+                "certificates": [],
+                "status": "none",
+                "gross_source": None,
+            }
         vorsorge[f.owner_id] = _vorsorge(f, year)
     gde = sum((d["result"] for d in drafts.values()), ZERO) + sum(
         (p.result for p in case.properties), ZERO
@@ -800,7 +814,7 @@ def _estimate(case: EstimateCase) -> dict:
     if case.questionnaire.open:
         warnings.append(("return.questionnaire_open", {"open": str(len(case.questionnaire.open))}))
     for f in facts:
-        if drafts[f.owner_id]["gross_source"] != "certificate":
+        if f.owner_id not in unpaid and drafts[f.owner_id]["gross_source"] != "certificate":
             missing.append(
                 MissingItem(kind="document", key="wage_certificate", owner_id=f.owner_id)
             )
@@ -831,7 +845,9 @@ def _estimate(case: EstimateCase) -> dict:
     ]
     if any(c.child_allowance_count != counted for c in real):
         warnings.append(("return.children_mismatch", {}))
-    status = "certified" if all(d["status"] == "certified" for d in drafts.values()) else "estimate"
+    # an owner without pay is not employed, so D101's "every employed owner" leaves them out
+    paid = [d for o, d in drafts.items() if o not in unpaid]
+    status = "certified" if paid and all(d["status"] == "certified" for d in paid) else "estimate"
     return {
         "status": status,
         "total_income": gde,
