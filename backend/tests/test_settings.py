@@ -397,3 +397,64 @@ def test_the_pin_mapping_hides_its_values_and_hashes():
     assert "owner_b" in text
     for value in SLOT_PINS.values():
         assert value not in text
+
+
+# --- Phase 7 chain sources (docs/phases/phase-7.md D181, D192, §17 runbook step 19) ----------
+
+CHAIN_KEY = "etherscan-test-key-0001"
+SOLANA_URL = "https://solana.example.invalid/?api-key=solana-test-key-0002"
+HELIUS_KEY = "helius-test-key-0003"
+
+
+def test_chain_source_defaults():
+    settings = load_settings(ENV)
+    assert (settings.etherscan_key, settings.helius_key) == (None, None)
+    # D181 (d): Solana works without a secret, over the public endpoint.
+    assert settings.solana_rpc_url.get_secret_value() == "https://api.mainnet-beta.solana.com"
+    assert settings.esplora_urls == ("https://mempool.space/api", "https://blockstream.info/api")
+    assert settings.etherscan_url == "https://api.etherscan.io/v2/api"
+    assert settings.bsc_rpc_url == "https://bsc-dataseed.bnbchain.org"
+    assert settings.solana_rpc_rps == 4
+
+
+def test_chain_source_settings_are_read_and_secrets_never_shown():
+    settings = load_settings(
+        ENV
+        | {
+            "HAUSBUCH_ETHERSCAN_KEY": CHAIN_KEY,
+            "HAUSBUCH_SOLANA_RPC_URL": SOLANA_URL,
+            "HAUSBUCH_HELIUS_KEY": HELIUS_KEY,
+            "HAUSBUCH_ESPLORA_URL": "https://esplora.example.invalid/api, https://b.invalid/api",
+            "HAUSBUCH_ETHERSCAN_URL": "https://indexer.example.invalid/api",
+            "HAUSBUCH_BSC_RPC_URL": "https://bsc.example.invalid",
+            "HAUSBUCH_SOLANA_RPC_RPS": "40",
+        }
+    )
+    assert settings.etherscan_key.get_secret_value() == CHAIN_KEY
+    assert settings.solana_rpc_url.get_secret_value() == SOLANA_URL
+    assert settings.helius_key.get_secret_value() == HELIUS_KEY
+    assert settings.esplora_urls == ("https://esplora.example.invalid/api", "https://b.invalid/api")
+    assert settings.etherscan_url == "https://indexer.example.invalid/api"
+    assert settings.bsc_rpc_url == "https://bsc.example.invalid"
+    assert settings.solana_rpc_rps == 40
+    for secret in (CHAIN_KEY, SOLANA_URL, "solana-test-key-0002", HELIUS_KEY):
+        assert secret not in repr(settings) and secret not in str(settings)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("HAUSBUCH_SOLANA_RPC_URL", "solana.example.invalid/?api-key=solana-test-key-0002"),
+        ("HAUSBUCH_ESPLORA_URL", "ftp://esplora.example.invalid"),
+        ("HAUSBUCH_ESPLORA_URL", " , "),
+        ("HAUSBUCH_ETHERSCAN_URL", "https://"),
+        ("HAUSBUCH_BSC_RPC_URL", "https://bsc.example.invalid:port"),
+        ("HAUSBUCH_SOLANA_RPC_RPS", "0"),
+        ("HAUSBUCH_SOLANA_RPC_RPS", "four"),
+    ],
+)
+def test_a_bad_chain_source_setting_is_named_without_its_value(name, value):
+    with pytest.raises(SettingsError) as caught:
+        load_settings(ENV | {name: value})
+    assert name in str(caught.value)
+    assert "solana-test-key-0002" not in str(caught.value)

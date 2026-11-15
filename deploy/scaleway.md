@@ -1125,6 +1125,52 @@ shows the to-do „Kursquelle wählen“ (choose a price source) on the Anlagen 
 The key is sent in a request header only and never logged; redirects are not followed, so
 it never reaches another host.
 
+## Step 19: The chain sources for the wallets (phase 7, D181, D192)
+
+From phase 7 the app reads the household's wallets by their **public addresses** only (never a
+seed phrase or a private key). Each chain is read through a provider whose address and, where
+needed, key are settings of the API container. The settings are read from phase 7 step 1; the
+daily read of the chains comes with step 2, so until then they change nothing visible.
+
+**Secrets** (Scaleway console: Serverless → Containers → namespace `hausbuch` → container
+`hausbuch-api` → **Settings** tab, environment variables, each added as a **secret**, then
+**Deploy**/redeploy):
+
+| Variable | What it is | Without it |
+| --- | --- | --- |
+| `HAUSBUCH_ETHERSCAN_KEY` | A free Etherscan API key (etherscan.io → sign up → „API Keys“; the free tier covers Ethereum and Arbitrum) | Ethereum and Arbitrum addresses are not read; from step 2 the wallet page names the missing key |
+| `HAUSBUCH_SOLANA_RPC_URL` | The Solana JSON-RPC URL of a provider, its key included (Helius Developer today; any provider's URL serves the same calls) | The public endpoint `https://api.mainnet-beta.solana.com`, slower and possibly not back to an address's first transaction |
+| `HAUSBUCH_HELIUS_KEY` (optional) | A Helius key, used only to show Helius's description of a transaction as a label on its card | No labels; nothing else changes |
+
+The Solana URL is a secret because a provider's key sits in it. Once the app reads the chains
+(step 2), it logs a request's host and path only, never its query string, and never puts a key
+or URL into an event or an error; a refused setting at start names the variable only.
+
+**Plain settings** (plain environment variables; leave them unset to keep the defaults):
+
+| Variable | Default | What it changes |
+| --- | --- | --- |
+| `HAUSBUCH_ESPLORA_URL` | `https://mempool.space/api,https://blockstream.info/api` | The Bitcoin source (the Esplora API); several URLs, comma-separated, tried in order |
+| `HAUSBUCH_ETHERSCAN_URL` | `https://api.etherscan.io/v2/api` | Another indexer with an Etherscan-shaped API |
+| `HAUSBUCH_BSC_RPC_URL` | `https://bsc-dataseed.bnbchain.org` | The BNB Smart Chain node (balances only, no history) |
+| `HAUSBUCH_SOLANA_RPC_RPS` | `4` | Solana requests per second: 4 suits the public endpoint, 40 the Helius Developer plan |
+
+Every URL must start with `http://` or `https://` and name a host; the container refuses to
+start otherwise, naming the variable (never its value) in its log.
+
+**Cancelling a provider loses nothing (D192).** From step 2, every answer the app reads from a
+chain is stored with the wallet's records, so a provider that is cancelled, gets more expensive or
+disappears costs nothing already read. To switch, change the one variable (for Solana the URL,
+for Bitcoin the Esplora URL, for Ethereum and Arbitrum the Etherscan URL and key) and redeploy;
+the next read continues where the last one stopped. From step 2, a provider that refuses the
+app (a cancelled plan) is named on the wallet page with a pointer to this step, and the
+history already read stays as it is.
+
+**Then, in the Hausbuch app** (Konten › „Konto anlegen“): create each wallet with Kontoart
+„Wallet“, its provider (for example Tangem) and its owners, then add its addresses on its page
+with „Adresse hinzufügen“ (for an Ethereum address of a hardware wallet, tick „Auch auf
+Arbitrum und BNB Smart Chain lesen“).
+
 ## Checks to run at the first deploy, and record here
 
 These are open questions from the spec (§13) that only the real platform can answer. Fill

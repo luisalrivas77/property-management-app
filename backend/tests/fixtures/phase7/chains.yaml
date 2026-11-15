@@ -23,22 +23,22 @@ registry_rows:
 
 addresses:
   # Bitcoin: bech32 (BIP-173) and base58check legacy.
-  - {id: btc_bech32_valid, pending: "phase 7 step 1 (address.validate, mask)", chain: bitcoin, address: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4, valid: true, normalised: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4, masked: "bc1q…f3t4"}
-  - {id: btc_bech32_generated, pending: "phase 7 step 1 (address.validate, mask)", chain: bitcoin, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, valid: true, normalised: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, masked: "bc1q…rtxz"}
-  - {id: btc_bech32_bad_checksum, pending: "phase 7 step 1 (address.validate)", chain: bitcoin, address: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5, valid: false}
-  - {id: btc_legacy_valid, pending: "phase 7 step 1 (address.validate, mask)", chain: bitcoin, address: 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2, valid: true, normalised: 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2, masked: "1BvB…NVN2"}
-  - {id: btc_legacy_bad_checksum, pending: "phase 7 step 1 (address.validate)", chain: bitcoin, address: 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN3, valid: false}
+  - {id: btc_bech32_valid, chain: bitcoin, address: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4, valid: true, normalised: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4, masked: "bc1q…f3t4"}
+  - {id: btc_bech32_generated, chain: bitcoin, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, valid: true, normalised: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, masked: "bc1q…rtxz"}
+  - {id: btc_bech32_bad_checksum, chain: bitcoin, address: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5, valid: false}
+  - {id: btc_legacy_valid, chain: bitcoin, address: 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2, valid: true, normalised: 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2, masked: "1BvB…NVN2"}
+  - {id: btc_legacy_bad_checksum, chain: bitcoin, address: 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN3, valid: false}
   # EVM: EIP-55. Normalised is the lower-case form the HMAC is taken over (D179 (2)); the mask
   # shows it as stored.
-  - {id: evm_eip55_valid, pending: "phase 7 step 1 (address.validate with Keccak-256)", chain: ethereum, address: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", valid: true, normalised: "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", masked: "0x5a…eaed"}
-  - {id: evm_eip55_wrong_checksum, pending: "phase 7 step 1 (address.validate with Keccak-256)", chain: ethereum, address: "0x5aaeb6053F3E94C9b9A09f33669435E7Ef1BeAed", valid: false}
-  - {id: evm_lower_case_accepted, pending: "phase 7 step 1 (address.validate)", chain: arbitrum, address: "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", valid: true, normalised: "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", masked: "0x5a…eaed"}
-  - {id: evm_too_short, pending: "phase 7 step 1 (address.validate)", chain: bsc, address: "0x5aaeb6053f3e94c9b9a09f33669435e7ef1bea", valid: false}
+  - {id: evm_eip55_valid, chain: ethereum, address: "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", valid: true, normalised: "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", masked: "0x5a…eaed"}
+  - {id: evm_eip55_wrong_checksum, chain: ethereum, address: "0x5aaeb6053F3E94C9b9A09f33669435E7Ef1BeAed", valid: false}
+  - {id: evm_lower_case_accepted, chain: arbitrum, address: "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", valid: true, normalised: "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", masked: "0x5a…eaed"}
+  - {id: evm_too_short, chain: bsc, address: "0x5aaeb6053f3e94c9b9a09f33669435e7ef1bea", valid: false}
   # Solana: base58 of exactly 32 bytes.
-  - {id: sol_system_program, pending: "phase 7 step 1 (address.validate, mask)", chain: solana, address: "11111111111111111111111111111111", valid: true, normalised: "11111111111111111111111111111111", masked: "1111…1111"}
-  - {id: sol_generated, pending: "phase 7 step 1 (address.validate, mask)", chain: solana, address: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, valid: true, normalised: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, masked: "BU8o…jsJP"}
-  - {id: sol_31_bytes_refused, pending: "phase 7 step 1 (address.validate)", chain: solana, address: "1111111111111111111111111111111", valid: false}
-  - {id: sol_not_base58, pending: "phase 7 step 1 (address.validate)", chain: solana, address: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjs0P, valid: false}
+  - {id: sol_system_program, chain: solana, address: "11111111111111111111111111111111", valid: true, normalised: "11111111111111111111111111111111", masked: "1111…1111"}
+  - {id: sol_generated, chain: solana, address: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, valid: true, normalised: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP, masked: "BU8o…jsJP"}
+  - {id: sol_31_bytes_refused, chain: solana, address: "1111111111111111111111111111111", valid: false}
+  - {id: sol_not_base58, chain: solana, address: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjs0P, valid: false}
 
 networks:
   # D184 (1)(a): Binance's withdraw history names the network; BISON's rows name none (Q-O76).
