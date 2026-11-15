@@ -20,6 +20,17 @@ ACCOUNT = UUID("00000000-0000-0000-0000-0000000000a1")
 ASSET = UUID("00000000-0000-0000-0000-0000000000b7")
 
 
+QUESTIONS = {
+    "spend_unregistered_output_card": (
+        "Ist eine dieser Adressen Ihr Wechselgeld? bc1q…atuf (0,02 BTC), bc1q…4ngw (0,0299 BTC)"
+    ),
+    # „Nein“ on bc1qn8du… settles that address only; the card asks about the other one.
+    "spend_unregistered_output_answered_no": (
+        "Ist diese Adresse Ihr Wechselgeld? bc1q…atuf (0,02 BTC)"
+    ),
+}
+
+
 def _tx(case_id: str) -> ChainTx:
     return to_chain_tx(RAW[case_id]["tx"])
 
@@ -61,8 +72,8 @@ def test_btc_utxo_case(case):
         group = utxo.answer_change(ACCOUNT, tx, ids, ASSET, change, change_id)
         ids[change] = change_id
     elif case.answered_payee:
-        (payee,) = case.answered_payee
-        group = utxo.answer_payee(ACCOUNT, tx, ids, ASSET, payee)
+        *earlier, payee = case.answered_payee
+        group = utxo.answer_payee(ACCOUNT, tx, ids, ASSET, payee, answered_payee=earlier)
     else:
         group = utxo.classify_utxo(ACCOUNT, tx, ids, ASSET)
     assert group.chain is Chain.BITCOIN and group.kind is case.expect.group
@@ -84,9 +95,7 @@ def test_btc_utxo_case(case):
         for e in case.expect.movements
     ]
     if case.expect.card == E.WALLET_CHANGE_CANDIDATE:
-        assert group.question == (
-            "Ist eine dieser Adressen Ihr Wechselgeld? bc1q…atuf (0,02 BTC), bc1q…4ngw (0,0299 BTC)"
-        )
+        assert group.question == QUESTIONS[case.id]
         assert "bc1qfrg03s5v" not in group.question  # never the plaintext
     else:
         assert group.question is None
@@ -125,9 +134,10 @@ def test_the_same_tx_reads_the_same_whichever_own_address_surfaced_it():
 
 
 @pytest.mark.rule
-def test_three_outputs_need_two_answers():
-    """A spend with three unregistered outputs: one answer leaves two, so the card stays; the
-    second settles it, and the last one left is the payee."""
+def test_three_outputs_need_every_answer():
+    """A spend with three unregistered outputs: each „Nein“ settles its own address only, so
+    the card stays, naming the ones left, until every unregistered output is answered; a „Ja“
+    takes its address out of the question (D185 amended 15 Nov 2026)."""
     own = RAW["spend_unregistered_output_card"]["own"]
     payer = own[0]
     record = {
@@ -159,9 +169,23 @@ def test_three_outputs_need_two_answers():
     assert one.card == E.WALLET_CHANGE_CANDIDATE and len(one.candidates) == 2
     ids = _ids(own)
     group = utxo.answer_payee(ACCOUNT, tx, ids, ASSET, "bc1qother", answered_payee=[])
-    assert group.kind is GroupKind.UNKNOWN
-    done = utxo.answer_change(
-        ACCOUNT, tx, ids, ASSET, "bc1qchange", uuid4(), answered_payee=["bc1qother"]
+    assert group.kind is GroupKind.UNKNOWN and not group.movements
+    assert "bc1q…ayee" in group.question and "bc1q…ange" in group.question
+    assert "bc1q…ther" not in group.question
+    change_id = uuid4()
+    still = utxo.answer_change(
+        ACCOUNT, tx, ids, ASSET, "bc1qchange", change_id, answered_payee=["bc1qother"]
+    )
+    # Two outputs are still unregistered (payee, other) and the payee is unanswered.
+    assert still.kind is GroupKind.UNKNOWN and not still.movements
+    assert still.question == "Ist diese Adresse Ihr Wechselgeld? bc1q…ayee (0,01 BTC)"
+    done = utxo.answer_payee(
+        ACCOUNT,
+        tx,
+        {**ids, "bc1qchange": change_id},
+        ASSET,
+        "bc1qpayee",
+        answered_payee=["bc1qother"],
     )
     assert done.kind is GroupKind.TRANSFER
     assert [(m.kind, m.quantity, m.index) for m in done.movements] == [
@@ -309,8 +333,8 @@ def test_a_confirmed_change_address_changes_earlier_readings():
 
 @pytest.mark.rule
 def test_two_outputs_to_one_unregistered_address_are_one_payee():
-    """Deviation from the loader's reference, which counts outputs: two outputs to the same
-    unregistered address are one candidate, so the spend has paid it and nothing is asked."""
+    """Two outputs to the same unregistered address are one candidate (§15.1 item 19, as
+    the loader's reference reads it), so the spend has paid it and nothing is asked."""
     own = ["bc1qa"]
     record = {
         "txid": "a" * 64,
@@ -331,6 +355,68 @@ def test_two_outputs_to_one_unregistered_address_are_one_payee():
     reading = utxo.read_utxo(to_chain_tx(record), own)
     assert reading.card is None
     assert [(leg.role, leg.sats) for leg in reading.legs] == [("out", 900), ("fee", 100)]
+
+
+@pytest.mark.rule
+def test_a_nein_on_the_payee_leaves_the_change_asked():
+    """The review's case: a truthful „Nein“ on the real payee must not book the unregistered
+    change as sent; the group waits, asking about the change only."""
+    tx = _tx("spend_unregistered_output_card")
+    payee = "bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf"
+    ids = _ids(RAW["spend_unregistered_output_card"]["own"])
+    group = utxo.answer_payee(ACCOUNT, tx, ids, ASSET, payee)
+    assert group.kind is GroupKind.UNKNOWN and not group.movements
+    assert group.question == "Ist diese Adresse Ihr Wechselgeld? bc1q…4ngw (0,0299 BTC)"
+
+
+@pytest.mark.rule
+def test_a_tx_touching_no_own_address_is_a_caller_error():
+    tx = _tx("receive")
+    with pytest.raises(ValueError):
+        utxo.read_utxo(tx, ["bc1qnotours"])
+    with pytest.raises(ValueError):
+        utxo.classify_utxo(ACCOUNT, tx, {"bc1qnotours": uuid4()}, ASSET)
+
+
+@pytest.mark.rule
+def test_a_group_with_no_movement_is_never_a_transfer():
+    """An own output of 0 sats, or a spend between own addresses with no fee, moves nothing:
+    the group is unknown and a person sees it, never an empty transfer."""
+    zero_receive = {
+        "txid": "c" * 64,
+        "vin": [
+            {
+                "txid": "d" * 64,
+                "vout": 0,
+                "prevout": {"scriptpubkey_address": "bc1qsender", "value": 1000},
+            }
+        ],
+        "vout": [
+            {"scriptpubkey_address": "bc1qa", "value": 0},
+            {"scriptpubkey_address": "bc1qsender", "value": 900},
+        ],
+        "fee": 100,
+        "status": {"confirmed": True, "block_height": 7, "block_time": 1777000000},
+    }
+    no_fee = {
+        "txid": "e" * 64,
+        "vin": [
+            {
+                "txid": "f" * 64,
+                "vout": 0,
+                "prevout": {"scriptpubkey_address": "bc1qa", "value": 1000},
+            }
+        ],
+        "vout": [{"scriptpubkey_address": "bc1qb", "value": 1000}],
+        "fee": 0,
+        "status": {"confirmed": True, "block_height": 8, "block_time": 1777000000},
+    }
+    for record in (zero_receive, no_fee):
+        reading = utxo.read_utxo(to_chain_tx(record), ["bc1qa", "bc1qb"])
+        assert reading.kind is GroupKind.UNKNOWN and not reading.legs
+        assert reading.card == E.GROUP_UNKNOWN
+        group = utxo.classify_utxo(ACCOUNT, to_chain_tx(record), _ids(["bc1qa", "bc1qb"]), ASSET)
+        assert group.kind is GroupKind.UNKNOWN and not group.movements
 
 
 @pytest.mark.rule

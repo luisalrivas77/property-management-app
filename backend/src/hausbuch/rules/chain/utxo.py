@@ -8,7 +8,7 @@ input, index `vin:<n>`, `from_addr` the spent output's address (None for a coinb
 and one per output, index `<n>` (the vout number), `to_addr` its address (None for an output
 without one, an OP_RETURN). Every amount is in satoshi.
 
-The rules (D185 (1), (2); step 0's reading in §15.1):
+The rules (D185 (1), (2), (2) amended 15 Nov 2026; §15.1 item 19):
 
 - `own` is the account's registered Bitcoin addresses, the change addresses a person
   confirmed („Ja, eigene Adresse“) among them.
@@ -17,11 +17,18 @@ The rules (D185 (1), (2); step 0's reading in §15.1):
   fee (index `net`, none when it is 0, a consolidation) and one `fee` movement, both on the
   first own input's address; the change is no movement.
 - A transaction with foreign inputs too (a CoinJoin, a shared PSBT) is `unknown` (review).
-- While **two or more** outputs of a spend go to unregistered addresses nobody answered for,
-  the group is `unknown` with the card `wallet.change_candidate` listing them all (one of them
-  must be the payee); with one such output left, that output is the payee. „Nein, Empfänger“
-  (`answered_payee`) takes an address out of the question; „Ja, eigene Adresse“ registers it
-  (`wallet_address(kind = change)`) and so puts it into `own`.
+- While **two or more** outputs of a spend go to unregistered addresses (one entry per
+  address, counted against `own`) and **any** of them is unanswered, the group is `unknown`
+  with the card `wallet.change_candidate` listing the unanswered ones. „Nein, Empfänger“
+  (`answered_payee`) settles only the address it names (D185 amended: a truthful „Nein“ on
+  the payee must not book the unregistered change as sent too); „Ja, eigene Adresse“
+  registers it (`wallet_address(kind = change)`) and so puts it into `own`. The spend is a
+  transfer once every unregistered address is answered, or when only one is unregistered
+  (that one is the payee and nothing is asked).
+- A transaction that touches no own address is a programming error (`ValueError`): a source
+  returns only the transactions of the address it was asked about. A reading with no
+  movement (an own output of 0 sats, a spend between own addresses with no fee) is never a
+  `transfer`: it is `unknown` with `group.unknown`, so a person sees it.
 
 No model and no guess: a change address is only ever own because a person said so (D185).
 """
@@ -114,8 +121,9 @@ class UtxoReading:
 def change_candidates(
     tx: ChainTx, own: Collection[str], answered_payee: Collection[str] = ()
 ) -> list[ChangeCandidate]:
-    """The outputs of an own spend that go to an unregistered address nobody answered for,
-    one per address in vout order; [] for a receive or a transaction with foreign inputs."""
+    """The outputs of an own spend that go to an unregistered address not in
+    `answered_payee`, one per address in vout order (two outputs to one address are one
+    candidate, their amounts summed); [] for a receive or a transaction with foreign inputs."""
     own = set(own)
     ins = inputs(tx)
     if not ins or any(t.from_addr not in own for t in ins):
@@ -137,23 +145,28 @@ def change_candidates(
 def read_utxo(
     tx: ChainTx, own: Collection[str], answered_payee: Collection[str] = ()
 ) -> UtxoReading:
-    """D185 (1), (2) for one transaction, without ids (the fixture's shape)."""
+    """D185 (1), (2) for one transaction, without ids (the fixture's shape). Raises
+    `ValueError` for a transaction that touches no own address."""
     own = set(own)
     ins = inputs(tx)
     own_ins = [t for t in ins if t.from_addr in own]
     if not own_ins:
+        own_outs = [t for t in outputs(tx) if t.to_addr in own]
+        if not own_outs:
+            raise ValueError("a Bitcoin transaction that touches no own address")
         legs = [
             Leg(MovementKind.UNCATEGORIZED, "in", t.to_addr, t.units, t.index)
-            for t in outputs(tx)
-            if t.to_addr in own and t.units > 0
+            for t in own_outs
+            if t.units > 0
         ]
-        return UtxoReading(kind=GroupKind.TRANSFER, legs=legs)
+        return _settled(legs)
     if len(own_ins) != len(ins):
         return UtxoReading(kind=GroupKind.UNKNOWN, card=errors.GROUP_UNKNOWN)
-    candidates = change_candidates(tx, own, answered_payee)
-    if len(candidates) >= 2:
+    unregistered = change_candidates(tx, own)
+    unanswered = [c for c in unregistered if c.address not in answered_payee]
+    if len(unregistered) >= 2 and unanswered:
         return UtxoReading(
-            kind=GroupKind.UNKNOWN, candidates=candidates, card=errors.WALLET_CHANGE_CANDIDATE
+            kind=GroupKind.UNKNOWN, candidates=unanswered, card=errors.WALLET_CHANGE_CANDIDATE
         )
     net, fee, _ = utxo_net(tx, own)
     payer = own_ins[0].from_addr
@@ -163,6 +176,14 @@ def read_utxo(
         legs.append(Leg(MovementKind.UNCATEGORIZED, "out", payer, net, NET))
     if fee:
         legs.append(Leg(MovementKind.FEE, "fee", payer, fee, FEE))
+    return _settled(legs)
+
+
+def _settled(legs: list[Leg]) -> UtxoReading:
+    """A transfer when something moved; a group with no movement is never a transfer, so a
+    person sees it (`unknown`, `group.unknown`)."""
+    if not legs:
+        return UtxoReading(kind=GroupKind.UNKNOWN, card=errors.GROUP_UNKNOWN)
     return UtxoReading(kind=GroupKind.TRANSFER, legs=legs)
 
 
@@ -214,7 +235,8 @@ def classify_utxo(
 ) -> MovementGroupDraft:
     """One Bitcoin transaction to its movement group. `own` maps each registered address of
     the account on Bitcoin to its `wallet_address.id`; `asset_id` is the account's BTC asset.
-    Quantities are signed on the account: in positive, out and fee negative (D186 (2))."""
+    Quantities are signed on the account: in positive, out and fee negative (D186 (2)).
+    Raises `ValueError` for a transaction that touches no own address (a caller's error)."""
     reading = read_utxo(tx, own.keys(), answered_payee)
     sign = {"in": 1, "out": -1, "fee": -1}
     movements = [
@@ -256,7 +278,8 @@ def answer_change(
 ) -> MovementGroupDraft:
     """„Ja, eigene Adresse“: the address is registered as change (`change_id` its new
     `wallet_address` row) and the spend re-derived with it; the new group supersedes the
-    unknown one. Any other candidate left alone is then the payee."""
+    unknown one. When only one unregistered output is left, it is the payee; with more, each
+    still needs its own answer."""
     return classify_utxo(account_id, tx, {**own, change: change_id}, asset_id, answered_payee)
 
 
@@ -269,7 +292,8 @@ def answer_payee(
     answered_payee: Collection[str] = (),
 ) -> MovementGroupDraft:
     """„Nein, Empfänger“: the output stays part of the amount sent; the spend is re-derived
-    without asking about it again."""
+    without asking about it again. It settles this address only: while another unregistered
+    output is unanswered the group stays `unknown` (D185 amended 15 Nov 2026)."""
     return classify_utxo(account_id, tx, own, asset_id, {*answered_payee, payee})
 
 

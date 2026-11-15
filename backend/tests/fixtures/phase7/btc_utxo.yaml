@@ -90,7 +90,6 @@ cases:
       candidates: [bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf]
       card: wallet.change_candidate
   - id: spend_unregistered_outputs_both_answered_no
-    pending: "phase 7 step 4 (classify, „Nein, Empfänger“ on every output)"
     own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
     answered_payee: [bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf, bc1qn8duhwxyj87x0d2efhvv44p5r0f48jr6t94ngw]
     tx: *example_12
