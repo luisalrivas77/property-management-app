@@ -306,7 +306,7 @@ export const AI_ERROR_TEXT: Record<string, string> = {
   "ai.disabled": "Automatisches Auslesen ist auf dem Server nicht eingeschaltet.",
   "ai.blocked_tenant_data": "Dokumente mit Mieterdaten werden nicht an die KI geschickt, solange das nicht freigegeben ist.",
   "ai.unparsable": "Die Antwort der KI ließ sich auch beim zweiten Versuch nicht auswerten.",
-  "ai.refused": "Die KI hat das Auslesen abgelehnt oder abgebrochen.",
+  "ai.refused": "Die KI hat das Auslesen abgelehnt, oder ihre Antwort wurde auch im zweiten Versuch mit mehr Platz zu lang.",
   "ai.too_many_pages": "Das Dokument hat zu viele Seiten, um es automatisch auszulesen.",
   "ai.unsupported_media_type": "Dieser Dateityp kann nicht automatisch ausgelesen werden (z. B. HEIC); bitte als PDF, JPEG oder PNG hochladen.",
   "ai.api_error": "Der KI-Dienst hat die Anfrage mit einem Fehler beantwortet.",

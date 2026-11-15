@@ -27,6 +27,7 @@ The document travels as data in the user turn, before a text block that carries 
 field list; the system prompt says that instructions inside the document are content.
 """
 
+import dataclasses
 import hashlib
 import json
 from dataclasses import dataclass
@@ -52,6 +53,13 @@ CLASSIFY_MAX_TOKENS = 300
 CLASSIFY_PAGES = 3
 EXTRACT_MAX_TOKENS = 16000
 EXTRACT_EFFORT = "medium"
+# 15 Nov 2026: a long depot report (a year's Umsätze, 75k input tokens) used all 16,000
+# tokens on thinking and its cited lines twice, so the same request sent again could never
+# finish. The second try after a max_tokens stop gets twice the room, thinks less, and may
+# wait longer (about 80 s for 16,000 tokens was measured; the client's default is 120 s).
+EXTRACT_RETRY_MAX_TOKENS = 32000
+EXTRACT_RETRY_EFFORT = "low"
+EXTRACT_RETRY_TIMEOUT_S = 360.0
 MATCH_MAX_TOKENS = 4000  # thinking counts against max_tokens (D50)
 MATCH_EFFORT = "low"
 EXPLAIN_MAX_TOKENS = 400
@@ -142,6 +150,18 @@ def extract_request(
         max_tokens=EXTRACT_MAX_TOKENS,
         inference_geo=settings.ai_inference_geo,
         effort=EXTRACT_EFFORT,
+    )
+
+
+def extract_retry_request(request: ModelRequest) -> ModelRequest:
+    """The extract request sent again after a max_tokens stop: the same document, prompt and
+    fields with EXTRACT_RETRY_MAX_TOKENS, EXTRACT_RETRY_EFFORT and a longer wait. Its
+    ai_call row records the changed body (input_sha256 differs from the first try's)."""
+    return dataclasses.replace(
+        request,
+        max_tokens=EXTRACT_RETRY_MAX_TOKENS,
+        effort=EXTRACT_RETRY_EFFORT,
+        timeout_s=EXTRACT_RETRY_TIMEOUT_S,
     )
 
 

@@ -43,6 +43,7 @@ from hausbuch.ai.requests import (
     CLASSIFY_PAGES,
     classify_request,
     extract_request,
+    extract_retry_request,
     parse_classification,
 )
 from hausbuch.db.session import workspace_transaction
@@ -65,7 +66,7 @@ from hausbuch.rules.extraction_parse import (
     scrub_general_answer,
     scrubber,
 )
-from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue
+from hausbuch.schemas.ai import AiJob, ClassifyOutput, ExtractedValue
 from hausbuch.schemas.document import DocumentTyping
 from hausbuch.schemas.enums import (
     ActorType,
@@ -697,6 +698,9 @@ class _Parsed:
     result: Any  # what the job uses, None when the answer is unusable
     output: Any  # ai_call.output (JSON)
     error_code: str | None
+    # The answer stopped at max_tokens: an extract is then sent again with more room
+    # (requests.extract_retry_request), not the same request that ran out.
+    cut_off: bool = False
 
 
 def _with_one_retry(
@@ -720,6 +724,8 @@ def _with_one_retry(
         )
         if parsed.error_code is None:
             return parsed.result, call_id
+        if parsed.cut_off and request.job is AiJob.EXTRACT:
+            request = extract_retry_request(request)
     assert parsed.error_code is not None
     raise _Stop(parsed.error_code, call_id)
 
@@ -757,7 +763,7 @@ def _send(
             )
         raise _CallFailed(error, call_id) from None
     if response.stop_reason in _RETRY_STOPS:
-        parsed = _Parsed(None, None, REFUSED)
+        parsed = _Parsed(None, None, REFUSED, cut_off=response.stop_reason == "max_tokens")
     else:
         parsed = parse(response)
     with workspace_transaction(deps.engine, workspace_id) as conn:
