@@ -480,7 +480,6 @@ def test_the_line_view_names_the_categories_no_rule_is_learned_for(world, privat
     view = world.query(review.transaction_allocations, tx, iban_key=TEST_IBAN_KEY, today=NOW.date())
     unlearnable = set(view.unlearnable_categories)
     assert {
-        "hh_credit_card",
         "internal_transfer_in",
         "internal_transfer_out",
         "hh_donation",
@@ -489,7 +488,16 @@ def test_the_line_view_names_the_categories_no_rule_is_learned_for(world, privat
         "hh_other",
         "uncategorized",
     } <= unlearnable
-    assert not {"hh_groceries", "hh_salary", "bank_fees", "hh_family_transfers"} & unlearnable
+    assert (
+        not {
+            "hh_groceries",
+            "hh_salary",
+            "bank_fees",
+            "hh_family_transfers",
+            "hh_credit_card",
+        }
+        & unlearnable
+    )
     # Each one is refused by the PUT, so the list says what the server does.
     for category in unlearnable:
         assert not matchers.learnable_household(category)
@@ -515,6 +523,24 @@ def test_money_to_family_learns_a_rule_that_books_the_next_month(
     assert (plan.outcome, plan.reason) == ("written", "routing.auto_confirm")
     (row,) = _rows(world, second)
     assert (row.category, row.method, row.status) == ("hh_family_transfers", "rule", "confirmed")
+
+
+def test_a_card_settlement_learns_a_rule_that_books_the_next_month_at_another_amount(
+    world, private, app_engine, tmp_path
+):
+    """15 Nov 2026 (Luis): a card whose statements are not in the app is paid each month to
+    its issuer at a different amount; „Künftig immer so zuordnen“ on „Kreditkartenabrechnung“
+    learns a rule that books the next settlement. Its threshold stays None, so the model never
+    books it alone."""
+    first = private.line(date(2026, 9, 8), "-189.76", iban=PAINTER_IBAN, name="Beispiel Bank AB")
+    result = _answer_line(world, first, "-189.76", "hh_credit_card", learn=True)
+    assert result.rule is not None
+    deps = _deps(app_engine, tmp_path, FakeModelClient())
+    second = private.line(date(2026, 10, 7), "-512.77", iban=PAINTER_IBAN, name="Beispiel Bank AB")
+    plan = _run(deps, world, second)
+    assert (plan.outcome, plan.reason) == ("written", "routing.auto_confirm")
+    (row,) = _rows(world, second)
+    assert (row.category, row.method, row.status) == ("hh_credit_card", "rule", "confirmed")
 
 
 def test_uncategorized_on_a_private_line_still_learns_no_rule(world, private):
