@@ -3,10 +3,15 @@
 
 - `asset_for_symbol`: the workspace's asset of a symbol, created on first sight; a registry
   coin gets its name and its CoinGecko id and Kraken pair, a currency code is a cash asset.
+  A symbol names an off-chain asset only (`chain IS NULL`): a chain asset's symbol is a label
+  a spam token may copy (phase 7 D180 amended, §15.1 item 10), so a lookup by symbol never
+  meets one.
 - `cash_asset`: the cash asset of a currency, where the ECB rates are stored.
 - `price_ids` and `fund_source`: how an asset is priced. The asset row's own ids win (a
   person may set them, PATCH /assets/{id}); otherwise the registry's. An ETF is priced by its
-  issuer's adapter when the registry names one with a fund reference.
+  issuer's adapter when the registry names one with a fund reference. A chain asset never
+  takes the registry's coin ids by its symbol (a lookalike reading „USDC“ is not USDC, D187):
+  only its own ids, or its `priced_as` asset's rows (D180 (3)).
 """
 
 from dataclasses import dataclass
@@ -42,9 +47,16 @@ class PriceIds:
         return self.coingecko_id is not None or self.kraken_pair is not None
 
 
-def price_ids(symbol: str | None, coingecko_id: str | None, kraken_pair: str | None) -> PriceIds:
-    """A crypto asset's ids: its own row's, else the registry's for its symbol."""
-    coin = registry().coin(symbol) if symbol else None
+def price_ids(
+    symbol: str | None,
+    coingecko_id: str | None,
+    kraken_pair: str | None,
+    *,
+    chain: str | None = None,
+) -> PriceIds:
+    """A crypto asset's ids: its own row's, else the registry's for its symbol; a chain
+    asset's own only."""
+    coin = registry().coin(symbol) if symbol and chain is None else None
     return PriceIds(
         coingecko_id=coingecko_id or (coin.coingecko_id if coin else None),
         kraken_pair=kraken_pair or (coin.kraken_pair if coin else None),
@@ -77,8 +89,9 @@ def _create(ctx: CommandContext, values: dict) -> UUID:
 
 
 def _by_symbol(conn: Connection, symbol: str) -> UUID | None:
+    a = asset_table.c
     return conn.execute(
-        select(asset_table.c.id).where(asset_table.c.symbol == symbol)
+        select(a.id).where(a.symbol == symbol, a.chain.is_(None))
     ).scalar_one_or_none()
 
 

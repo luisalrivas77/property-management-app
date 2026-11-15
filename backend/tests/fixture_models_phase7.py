@@ -448,10 +448,11 @@ class BtcCase(_Case):
     expect: BtcExpect
 
     def recompute(self) -> BtcExpect:
-        """D185 (1), (2). Step 0's reading of (2) (§15.1): a spend asks while two or more of
-        its outputs go to unregistered, unanswered addresses (one of them must be the payee;
-        a spend with one such output has paid it and asks nothing); one answer settles the
-        example of §6 (12) either way. The net and fee movements sit on the first own input's
+        """D185 (1), (2), (2) amended 15 Nov 2026 (§15.1): a spend asks while two or more of
+        its outputs go to unregistered addresses (one entry per address, counted against the
+        registered set with the confirmed change) and any of them is unanswered, naming only
+        the unanswered ones; a „Nein“ settles only its address. A spend with one such output
+        has paid it and asks nothing. The net and fee movements sit on the first own input's
         address."""
         own = set(self.own) | set(self.answered_change)
         vin_own = [i.prevout for i in self.tx.vin if i.prevout.scriptpubkey_address in own]
@@ -473,11 +474,13 @@ class BtcCase(_Case):
             return BtcExpect(group=GroupKind.UNKNOWN, movements=[], card=E.GROUP_UNKNOWN)
         payer = vin_own[0].scriptpubkey_address
         in_own = sum(o.value for o in self.tx.vout if o.scriptpubkey_address in own)
-        foreign = [
-            o.scriptpubkey_address for o in self.tx.vout if o.scriptpubkey_address not in own
-        ]
+        foreign = list(
+            dict.fromkeys(
+                o.scriptpubkey_address for o in self.tx.vout if o.scriptpubkey_address not in own
+            )
+        )
         candidates = [a for a in foreign if a not in self.answered_payee]
-        if len(candidates) >= 2:
+        if len(foreign) >= 2 and candidates:
             return BtcExpect(
                 group=GroupKind.UNKNOWN,
                 movements=[],

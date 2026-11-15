@@ -55,7 +55,6 @@ providers:
   # the stored originals with no source configured gives the same movements; a refused
   # provider leaves the history untouched. `records_from` names the recorded case replayed.
   - id: esplora_two_urls
-    pending: "phase 7 step 4 (services/chain/bitcoin_esplora)"
     chain: bitcoin
     records_from: btc_utxo.spend_registered_change
     urls: ["https://esplora.example.invalid/api", "https://mirror.example.invalid/api"]

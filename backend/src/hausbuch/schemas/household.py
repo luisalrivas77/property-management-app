@@ -4,8 +4,8 @@
 Phase 6 step 0 writes the shapes; the steps that build each rule fill them (step 1:
 ownership, taxonomy; step 2: transfers; step 4: the depot; step 5: the exchange and prices;
 step 6: valuations and net worth). Money stays Decimal: EUR figures are numeric(14,2), units
-numeric(28,10), prices numeric(20,8), each refusing a JSON number like every decimal type of
-schemas/common.py.
+numeric(38,18) (numeric(28,10) until phase 7's migration 0042), prices numeric(20,8), each
+refusing a JSON number like every decimal type of schemas/common.py.
 
 The account sets (AccountKind, AccountPurpose) live in enums.py and the transfer leg in
 allocation.py (MatchContext carries it); both are re-exported here so phase 6 code imports
@@ -19,7 +19,7 @@ from fractions import Fraction
 from typing import Annotated, Protocol, Self
 from uuid import UUID
 
-from pydantic import Field, JsonValue, StringConstraints, model_validator
+from pydantic import AfterValidator, Field, JsonValue, StringConstraints, model_validator
 
 from .allocation import AllocationCategory, TransferLeg, TransferLegSource
 from .common import (
@@ -54,19 +54,42 @@ __all__ = [
 
 # --- Value types ----------------------------------------------------------------------
 
-# numeric(28,10): units of an asset (an ETF's shares to 6 places, a coin's to 8 or more).
-# Signed: a disposal or an out-transfer is negative on the account.
+QUANTITY_PLACES = 18  # numeric(38,18) since migration 0042 (phase 7 §15.1 item 9)
+_PHASE6_PLACES = 10  # numeric(28,10), the columns before 0042
+
+
+def _trim_places(value: Decimal) -> Decimal:
+    """Drop the trailing zeros numeric(38,18) adds beyond the tenth place, never below it:
+    a stored 1.5 read back as 1.500000000000000000 is 1.5000000000, as numeric(28,10) gave it
+    before migration 0042, so every phase 6 figure keeps its text on the wire; an 18-decimal
+    amount keeps its digits (0.000021000000147). The same number either way. Built from the
+    digit tuple, never through the context (28 digits), so no digit is rounded."""
+    if not value.is_finite():
+        return value
+    sign, digits, exponent = value.as_tuple()
+    assert isinstance(exponent, int)
+    while exponent < -_PHASE6_PLACES and len(digits) > 1 and digits[-1] == 0:
+        digits, exponent = digits[:-1], exponent + 1
+    if exponent < -_PHASE6_PLACES and digits == (0,):
+        exponent = -_PHASE6_PLACES  # a stored zero: 0E-18 -> 0E-10, "0.0000000000"
+    return Decimal((sign, digits, exponent))
+
+
+# numeric(38,18): units of an asset (an ETF's shares to 6 places, a coin's to 8, an ERC-20
+# token's to 18). Signed: a disposal or an out-transfer is negative on the account.
 Quantity = Annotated[
     Decimal,
-    Field(max_digits=28, decimal_places=10),
+    Field(max_digits=38, decimal_places=QUANTITY_PLACES),
     _STRING_ONLY,
-    _string_schema(10, signed=True),
+    AfterValidator(_trim_places),
+    _string_schema(QUANTITY_PLACES, signed=True),
 ]
 NonNegativeQuantity = Annotated[
     Decimal,
-    Field(ge=0, max_digits=28, decimal_places=10),
+    Field(ge=0, max_digits=38, decimal_places=QUANTITY_PLACES),
     _STRING_ONLY,
-    _string_schema(10),
+    AfterValidator(_trim_places),
+    _string_schema(QUANTITY_PLACES),
 ]
 # numeric(20,8): a price in EUR per unit (a coin's price may need 8 places).
 PriceEur = Annotated[
@@ -173,8 +196,29 @@ class AssetCreate(Schema):
         return self
 
 
-class Asset(AssetCreate, MutableRecord):
-    pass
+class Asset(MutableRecord):
+    """An asset as stored (D167; phase 7 D180 amended 15 Nov 2026). AssetCreate stays
+    off-chain; a row read back may be a chain asset: its `chain` a registry code, a token's
+    `contract_address` (EVM lower-case, a Solana mint as written), its symbol a display label
+    (schemas.chain.TokenSymbol's 1 to 32 characters without a control character, or None for
+    an unlisted token), its decimals up to 18 (migration 0042), its `priced_as_asset_id` the
+    symbol-level asset it is priced as, and its spam flag. The two chain types are written
+    out here because schemas.chain imports this module."""
+
+    kind: AssetKind
+    symbol: str | None = Field(
+        default=None, min_length=1, max_length=32, pattern=r"^[^\x00-\x1f\x7f-\x9f]+$"
+    )
+    isin: Isin | None = None
+    name: str = Field(min_length=1, max_length=200)
+    currency: CurrencyCode = "EUR"
+    coingecko_id: str | None = Field(default=None, min_length=1, max_length=100)
+    kraken_pair: str | None = Field(default=None, min_length=1, max_length=20)
+    decimals: int = Field(default=8, ge=0, le=QUANTITY_PLACES)
+    chain: str | None = None
+    contract_address: str | None = Field(default=None, min_length=20, max_length=128)
+    priced_as_asset_id: UUID | None = None
+    spam: bool = False
 
 
 class AssetPatch(Schema):

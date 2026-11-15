@@ -73,7 +73,6 @@ cases:
 
   # A balance-only BSC address: Σ linked deposits equal to the balance → reconciled.
   - id: bsc_balance_only_equal
-    pending: "phase 7 step 3 (rules/chain/reconcile, D181 (c))"
     chain: bsc
     balance_only: true
     balance: {BNB: [600000000000000000]}
@@ -82,7 +81,6 @@ cases:
 
   # Σ linked deposits above the balance → coins left the address; the card's answers.
   - id: bsc_balance_only_below_deposits
-    pending: "phase 7 step 3 (rules/chain/reconcile, D181 (c))"
     chain: bsc
     balance_only: true
     balance: {BNB: [500000000000000000]}

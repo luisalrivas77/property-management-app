@@ -884,7 +884,8 @@ notification = Table(
 
 
 def _quantity(name: str, *, nullable: bool = False) -> Column:
-    return Column(name, Numeric(28, 10), nullable=nullable)
+    # numeric(38,18) since 0042 (phase 7 §15.1 item 9): an 18-decimal coin's units to the unit
+    return Column(name, Numeric(38, 18), nullable=nullable)
 
 
 account_ownership = Table(

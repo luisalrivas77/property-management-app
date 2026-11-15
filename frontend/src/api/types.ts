@@ -4127,7 +4127,10 @@ export interface components {
         };
         /**
          * AssetRow
-         * @description GET /assets: an asset with how it is priced (D167 (1), D174 (2)).
+         * @description GET /assets: an asset with how it is priced (D167 (1), D174 (2)). A chain asset
+         *     (phase 7 D180 amended 15 Nov 2026) also carries its chain, a token's contract, the
+         *     symbol-level asset it is priced as and its spam flag; its symbol is a label
+         *     (TokenSymbol: wstETH, USD₮0), so it reads without failing.
          */
         AssetRow: {
             /**
@@ -4140,6 +4143,16 @@ export interface components {
             name: string;
             /** Symbol */
             symbol?: string | null;
+            chain?: components["schemas"]["Chain"] | null;
+            /** Contract Address */
+            contract_address?: string | null;
+            /** Priced As Asset Id */
+            priced_as_asset_id?: string | null;
+            /**
+             * Spam
+             * @default false
+             */
+            spam: boolean;
             /** Isin */
             isin?: string | null;
             /** Currency */
