@@ -1142,8 +1142,9 @@ daily read of the chains comes with step 2, so until then they change nothing vi
 | `HAUSBUCH_SOLANA_RPC_URL` | The Solana JSON-RPC URL of a provider, its key included (Helius Developer today; any provider's URL serves the same calls) | The public endpoint `https://api.mainnet-beta.solana.com`, slower and possibly not back to an address's first transaction |
 | `HAUSBUCH_HELIUS_KEY` (optional) | A Helius key, used only to show Helius's description of a transaction as a label on its card | No labels; nothing else changes |
 
-The Solana URL is a secret because a provider's key sits in it. The app logs a request's host
-and path only, never its query string, and never puts a key or URL into an event or an error.
+The Solana URL is a secret because a provider's key sits in it. Once the app reads the chains
+(step 2), it logs a request's host and path only, never its query string, and never puts a key
+or URL into an event or an error; a refused setting at start names the variable only.
 
 **Plain settings** (plain environment variables; leave them unset to keep the defaults):
 
@@ -1157,8 +1158,8 @@ and path only, never its query string, and never puts a key or URL into an event
 Every URL must start with `http://` or `https://` and name a host; the container refuses to
 start otherwise, naming the variable (never its value) in its log.
 
-**Cancelling a provider loses nothing (D192).** Every answer the app has read from a chain is
-stored with the wallet's records, so a provider that is cancelled, gets more expensive or
+**Cancelling a provider loses nothing (D192).** From step 2, every answer the app reads from a
+chain is stored with the wallet's records, so a provider that is cancelled, gets more expensive or
 disappears costs nothing already read. To switch, change the one variable (for Solana the URL,
 for Bitcoin the Esplora URL, for Ethereum and Arbitrum the Etherscan URL and key) and redeploy;
 the next read continues where the last one stopped. From step 2, a provider that refuses the

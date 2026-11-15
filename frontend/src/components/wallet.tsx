@@ -138,21 +138,29 @@ function AddressRow({ accountId, address, onChanged }: { accountId: string; addr
   }
 
   // The full address goes from the answer straight to the clipboard: it is never put into
-  // state or the page. If the browser refuses the clipboard, it is not shown instead.
+  // state or the page. If the browser refuses the clipboard, it is not shown instead. Safari
+  // allows a clipboard write only within the click itself, so where the browser has
+  // ClipboardItem the write starts at once with the address still being fetched; elsewhere
+  // the address is written once it has arrived.
   async function copy() {
     setBusy(true);
     setError(null);
     setCopied(null);
+    const address = ok(api.GET("/api/wallets/{account_id}/addresses/{address_id}/plain", path)).then((plain) => plain.address);
     try {
-      const plain = await ok(api.GET("/api/wallets/{account_id}/addresses/{address_id}/plain", path));
-      try {
-        await navigator.clipboard.writeText(plain.address);
-        setCopied("ok");
-      } catch {
-        setCopied("blocked");
+      if (typeof ClipboardItem !== "undefined" && typeof navigator.clipboard?.write === "function") {
+        const blob = address.then((text) => new Blob([text], { type: "text/plain" }));
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+      } else {
+        await navigator.clipboard.writeText(await address);
       }
-    } catch (caught) {
-      setError(caught);
+      setCopied("ok");
+    } catch {
+      // Either the request failed (its error is shown) or the clipboard refused.
+      await address.then(
+        () => setCopied("blocked"),
+        (caught: unknown) => setError(caught),
+      );
     } finally {
       setBusy(false);
     }
