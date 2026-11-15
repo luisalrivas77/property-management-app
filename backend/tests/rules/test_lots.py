@@ -602,3 +602,32 @@ def test_lp_spam_and_distribution_neither_add_nor_take():
     got = L.book(rows, [], [], DAY)
     assert [(lot.id, lot.units_open) for lot in got.lots] == [(buy.id, D(10))]
     assert got.uses == {} and got.unfilled == {}
+
+
+def test_the_year_end_on_the_berlin_calendar():
+    """holdings_statement.yaml's boundary through `on`: 22:30 UTC on 31 Dec is 23:30 in Berlin
+    and read on 31 Dec; 23:30 UTC is 1 Jan in Berlin and read only from 1 Jan."""
+    acct, eth = uuid4(), uuid4()
+    evening = movement(
+        K.ACQUISITION,
+        "0.1",
+        datetime(2026, 12, 31, 22, 30, tzinfo=UTC),
+        account=acct,
+        asset=eth,
+        eur_amount=D("-300"),
+    )
+    late = movement(
+        K.ACQUISITION,
+        "1",
+        datetime(2026, 12, 31, 23, 30, tzinfo=UTC),
+        account=acct,
+        asset=eth,
+        eur_amount=D("-3000"),
+    )
+    year_end = L.lots([evening, late], [], [], date(2026, 12, 31))
+    assert [lot.id for lot in year_end] == [evening.id]
+    new_year = L.lots([evening, late], [], [], date(2027, 1, 1))
+    assert [(lot.id, lot.acquired_on) for lot in new_year] == [
+        (evening.id, date(2026, 12, 31)),
+        (late.id, date(2027, 1, 1)),
+    ]
