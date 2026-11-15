@@ -23,13 +23,14 @@ A PIN is sent only to the server it was typed for (D196 amended, 16 Nov 2026): w
 edit a bank connection could otherwise change its FinTS address and make the next sync send
 the stored PIN to another host. The PUT that carries the PIN names the FinTS address it is
 for; the row (key version 2, info `hausbuch/fints-pin/v2`) seals the SHA-256 of that address,
-normalised (server_address: scheme and host lower-cased, the port explicit, then the path),
-before the PIN, so the binding is authenticated by the same tag and needs no column. A sync
-compares it with the address it is about to dial and refuses with bank.pin_server_changed
-before any request when they differ: the PIN must be typed again for the new address. A row
-of key version 1 (typed before the binding; none on the live data, checked 15 Nov 2026) names
-no address and is refused the same way, never bound at its first use. Only the PIN typed into
-the app is bound; a container secret is the operator's and follows the connection.
+normalised (server_address: a plain https address by its host, port and path, any other
+shape verbatim), before the PIN, so the binding is authenticated by the same tag and needs
+no column. A sync compares it with the address it is about to dial and refuses with
+bank.pin_server_changed before any request when they differ: the PIN must be typed again
+for the new address. A row of key version 1 (typed before the binding; none on the live
+data, checked 15 Nov 2026) names no address and is refused the same way, never bound at its
+first use. Only the PIN typed into the app is bound; a container secret is the operator's
+and follows the connection.
 
 A PIN is a secret, not history: setting it replaces the row, deleting it removes it. Each act
 is an event (workspace.bank_pin_set, workspace.bank_pin_deleted) naming the slot and its actor
@@ -41,6 +42,7 @@ start-up (encrypt_all_logins) and at the first sync or change of its connection
 import hashlib
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -143,25 +145,35 @@ def unseal(key: bytes, nonce: bytes, ciphertext: bytes, aad: bytes) -> str | Non
 # --- The server a PIN is for (D196 amended, 16 Nov 2026) --------------------------------------
 
 
+# A plain https address: a host of letters, digits, dots and hyphens (or a bracketed IPv6
+# literal), an optional numeric port, and a path of ordinary characters; no user info, no
+# backslash, no query, no fragment. Only this shape is normalised: on it every URL parser
+# (urlsplit here, urllib3 under python-fints' requests session) reads the same host.
+_PLAIN_ADDRESS = re.compile(
+    r"(?i:https)://(?P<host>[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::(?P<port>[0-9]{1,5}))?"
+    r"(?P<path>/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?"
+)
+
+
 def server_address(url: str) -> str:
-    """The FinTS address a PIN is bound to: scheme and host lower-cased, the port explicit
-    (443 for https, 80 otherwise, when none is given), then the path ("/" when empty); the
-    user info, query and fragment left out. Read by urlsplit, never sliced, so
-    `https://bank.example@other.example/` is the host other.example. A port that does not
-    parse keeps the whole lower-cased netloc, so it can only differ from a real address."""
-    parts = urlsplit(url.strip())
-    scheme = parts.scheme.lower()
-    path = parts.path or "/"
-    host = (parts.hostname or "").lower()
-    if ":" in host:
-        host = f"[{host}]"  # an IPv6 literal keeps its brackets
-    try:
-        port = parts.port
-    except ValueError:
-        return f"{scheme}://{parts.netloc.lower()}{path}"
-    if port is None:
-        port = 443 if scheme == "https" else 80
-    return f"{scheme}://{host}:{port}{path}"
+    """The FinTS address a PIN is bound to. A plain https address (_PLAIN_ADDRESS) becomes
+    `https://<host lower-cased>:<port, 443 when none>` plus its path ("/" when empty), so
+    the same server written another way stays the same server. Anything else (user info, a
+    backslash, a query, a fragment, a port above 65535) is bound verbatim and can only
+    equal itself: parsers disagree on such URLs (urlsplit reads
+    `https://a.example\\@b.example/` as host b.example, urllib3 dials a.example), and a
+    normalised form must never let a changed address hash like the bound one."""
+    raw = url.strip()
+    plain = _PLAIN_ADDRESS.fullmatch(raw)
+    if plain is not None:
+        port = int(plain["port"] or 443)
+        if port <= 65535:
+            # urlsplit agrees with the regex on this shape; it lower-cases the host
+            host = (urlsplit(raw).hostname or "").lower()
+            if ":" in host:
+                host = f"[{host}]"  # an IPv6 literal keeps its brackets
+            return f"https://{host}:{port}{plain['path'] or '/'}"
+    return f"verbatim {raw}"  # never starts with https://, so never equals a plain one
 
 
 def server_hash(url: str) -> bytes:

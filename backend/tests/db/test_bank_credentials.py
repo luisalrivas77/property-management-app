@@ -260,6 +260,17 @@ def test_a_changed_address_refuses_the_stored_pin_before_any_dialog(bank):
     assert OTHER_URL not in str(changed.value) and APP_PIN not in str(changed.value)
 
 
+def test_an_address_that_only_looks_like_the_bound_one_is_refused(bank):
+    """urlsplit reads this URL's host as the bound one, but the requests session python-fints
+    dials with reads evil.example: such a URL is bound verbatim, so it never matches."""
+    _set_pin(bank)
+    _change_url(bank, "https://evil.example\\@fints.example.org/fints")
+    assert _connection(bank).credential_server_matches is False
+    sync, outcome = _sync(bank)
+    assert outcome == "failed" and bank.clients == []
+    assert bank.sync(sync.id).error_code == E.BANK_PIN_SERVER_CHANGED
+
+
 def test_a_pin_typed_again_for_the_new_address_is_used_there(bank):
     _set_pin(bank)
     _change_url(bank, OTHER_URL)

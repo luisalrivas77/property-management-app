@@ -147,17 +147,33 @@ def test_a_run_plan_and_the_jobs_run_never_show_the_login():
         ("https://fints.example.org/fints", "https://fints.example.org:443/fints"),
         ("HTTPS://FINTS.Example.ORG:443/fints", "https://fints.example.org:443/fints"),
         ("https://fints.example.org", "https://fints.example.org:443/"),
-        ("https://fints.example.org/fints?x=1#top", "https://fints.example.org:443/fints"),
         ("https://fints.example.org:8443/fints", "https://fints.example.org:8443/fints"),
-        ("https://fints.example.org@other.example/fints", "https://other.example:443/fints"),
         ("https://[2001:db8::1]/fints", "https://[2001:db8::1]:443/fints"),
+        ("https://fints.example.org/fints?x=1", "verbatim https://fints.example.org/fints?x=1"),
+        (
+            "https://fints.example.org@other.example/fints",
+            "verbatim https://fints.example.org@other.example/fints",
+        ),
     ],
-    ids=["plain", "case_and_port", "no_path", "query", "other_port", "user_info", "ipv6"],
+    ids=["plain", "case_and_port", "no_path", "other_port", "ipv6", "query", "user_info"],
 )
-def test_a_pins_server_is_its_scheme_host_port_and_path(url, address):
-    """D196 amended: the address a PIN is bound to is read by urlsplit, so a user-info part
-    before @ is not the host, and the path is kept (another path is another endpoint)."""
+def test_a_pins_server_is_its_host_port_and_path_or_the_address_itself(url, address):
+    """D196 amended: a plain https address is normalised (host case, the default port), the
+    path kept (another path is another endpoint); any other shape is bound verbatim."""
     assert C.server_address(url) == address
+
+
+# URLs on which urlsplit and urllib3 (what python-fints' requests session dials) read
+# different hosts, or which only look like the bound address: none may hash like it.
+LOOKALIKES = (
+    "https://evil.example\\@fints.example.org/fints",  # urllib3 dials evil.example
+    "https://evil.example#@fints.example.org/fints",
+    "https://evil.example?@fints.example.org/fints",
+    "https://fints.example.org@evil.example/fints",
+    "https://user:pw@fints.example.org/fints",
+    "https://fints.example.org:99999/fints",  # a port that does not parse
+    "https://fints.example.org/fints\\..\\x",
+)
 
 
 def test_another_host_port_or_path_is_another_server():
@@ -167,11 +183,18 @@ def test_another_host_port_or_path_is_another_server():
         "https://fints.example.org:8443/fints",
         "https://fints.example.org/other",
         "https://fints.example.org/FINTS",  # a path is case-sensitive
-        "https://fints.example.org:99999/fints",  # a port that does not parse
+        *LOOKALIKES,
     ):
         assert C.server_hash(other) != base, other
     assert C.server_hash("https://FINTS.example.org:443/fints") == base
     assert len(base) == C.SERVER_HASH_BYTES
+
+
+@pytest.mark.parametrize("url", LOOKALIKES)
+def test_a_url_parsers_disagree_on_is_bound_verbatim(url):
+    """Whatever host such a URL dials, its binding is the URL itself, so it matches only a
+    PIN typed for exactly that string."""
+    assert C.server_address(url) == f"verbatim {url}"
 
 
 def test_the_pin_request_needs_an_https_address():
