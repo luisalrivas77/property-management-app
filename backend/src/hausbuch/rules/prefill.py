@@ -2857,8 +2857,8 @@ _REPORT_TRADES_BOOKED_NOTE = (
     "vorgeschlagen."
 )
 _BOOKED_FROM_REPORT_NOTE = (
-    "Bereits aus dem Quartalsbericht gebucht. „Übernehmen“ ordnet diese Abrechnung der "
-    "Buchung zu; eine zweite Buchung entsteht nicht."
+    "Bereits aus dem Quartalsbericht gebucht. „Übernehmen“ bucht nichts ein zweites Mal; "
+    "die Abrechnung bleibt unter Dokumente abgelegt."
 )
 _BOOKED_FROM_REPORT_DIFFERS = (
     "Die Abrechnung nennt {units} Anteile und {amount}, aus dem Bericht gebucht sind "
