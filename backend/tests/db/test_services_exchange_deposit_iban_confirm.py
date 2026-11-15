@@ -234,8 +234,9 @@ def test_the_exchange_export_first_then_the_bank_line(world, bank, blob_store):
 def test_an_answer_that_creates_the_link_learns_only_once_its_box_is_shown(world, bank, blob_store):
     """The model guessed an investment, so the matcher left the pair unlinked and the panel
     showed no box; the person's answer books the transfer and its hook links the pair. A flag
-    sent with it teaches nothing (the pair was never on the panel); the panel then shows the
-    box, and „Bestätigen“ with it ticked, the same answer, learns."""
+    sent with it teaches nothing (the pair was never on the panel). Zu prüfen closes the panel
+    on save; opened again from Konten › Umsätze it shows the box, and „Bestätigen“ with it
+    ticked, the same answer, learns."""
     out, exchange, deposit = _paired(world, bank, blob_store, guess=C.HH_INVESTMENT)
     assert _links(world) == [] and _offer(world, out) is None
     view = _confirm(world, out, "-1000.00", "internal_transfer_out", box=True)
