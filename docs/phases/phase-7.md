@@ -248,7 +248,7 @@ Loaded by `tests/fixture_models_phase7.py` (the phase 6 loader's pattern: loadin
 5. **`DecoderKind`** (`swap, wrap, bridge, stake, reward, lp`) is a subset of `GroupKind`.
 6. **`chain_pair`** holds each side as its chain plus an `asset` id (`from_chain`/`from_asset_id`, `to_chain`/`to_asset_id`, FKs to `asset`), not a contract text. A CHECK says a bridge joins two chains and a wrap stays on one, and only a bridge has a `max_fee_share`.
 7. **Wrapped coins.** wSOL (Solana) and USDT0 (Arbitrum) are as described in the token paragraph. On Solana a wrap is the Token program's `syncNative`, so its `decoders.yaml` row names a `method`; a row with `method: null` matches any call to its program. Reading for step 2: a lookup tries the program with the instruction's method before the program alone.
-8. **EIP-55.** The repository has no keccak library (Python's `sha3_256` is not keccak-256), so the checksum cases in `address.yaml` are `pending` until step 1 adds one.
+8. **EIP-55.** The repository has no keccak library (Python's `sha3_256` is not keccak-256), so the checksum cases in `tests/fixtures/phase7/chains.yaml` are `pending` until step 1 adds one.
 9. **Precision.** Chain amounts stay integer base units until a movement is written. `asset_movement.quantity` is `numeric(28,10)`, so an 18-decimal amount loses digits below 10⁻¹⁰ there. **Recommendation:** widen `quantity` to scale 18 in step 2's migration rather than rounding, since D185 reconciles to the unit.
 10. **Uniqueness.**
     - `asset`: a symbol lookup without a chain must say `chain IS NULL`, because the partial unique index is on `COALESCE(chain, '')`.
