@@ -3,6 +3,9 @@
 // supersedes the row, Entfernen withdraws it), the owner switch changes only the URL, and the
 // Gesamt card above the tabs renders the whole-return estimate the API computed. Synthetic
 // data only (owners "A" and "B", invented amounts).
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import type { Locator, Page } from "@playwright/test";
 
 import { apiCall, expect, test } from "./support";
@@ -12,12 +15,18 @@ type Row = { id: string; kind: string; tax_year: number; supersedes_id: string |
 type Estimate = { result: string; zve: string; questionnaire: { answered: number; total: number } };
 
 const YEAR = 2026;
+const SAMPLE_ZIP = path.resolve(import.meta.dirname, "..", "..", "backend", "tests", "fixtures", "phase2", "bank_samples", "camt052.zip");
 
 /** "365698.33" → "365.698,33 €", the way the screen formats money (format.ts formatMoney). */
 function euro(value: string): string {
   const [int = "", frac = ""] = value.replace(/^-/, "").split(".");
   const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   return `${value.startsWith("-") ? "-" : ""}${grouped},${frac.padEnd(2, "0")} €`;
+}
+
+/** "1287.00" → "1287,00", the way the money input shows a decimal (returnInputs decimalInput). */
+function euroInput(value: string): string {
+  return value.replace(".", ",");
 }
 
 async function expectedPay(page: Page, ownerId: string, amount: string): Promise<void> {
@@ -237,4 +246,76 @@ test("the Anlage N tab names the open questions, the Gesamt card the tax classes
     .click();
   await expect(page).toHaveURL(new RegExp(`/tax/${YEAR}/fragen\\?frage=household\\.children$`));
   await expect(page.locator("h2.fragen-question")).toHaveText("Leben Kinder im Haushalt, und kam in diesem Jahr ein Kind dazu?");
+});
+
+// Phase 6 D159 amended (8): a confirmed Elterngeld & Lohnersatz line on owner A's own private
+// account is a to-do on the Gesamt card. Its button opens the pre-filled form on the owner
+// already on screen (the page does not remount there), and once the amount is saved the
+// browser's Back never offers the same amount again.
+test("the Lohnersatz to-do opens its pre-filled form on the owner on screen, and a stale pre-fill is dropped", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const origin = new URL(page.url()).origin;
+  const a = await apiCall<Owner>(page, "POST", "/api/owners", { full_name: "A. Muster", church_tax: false });
+  const b = await apiCall<Owner>(page, "POST", "/api/owners", { full_name: "B. Muster", church_tax: false });
+  await expectedPay(page, a.id, "52000.00");
+  await expectedPay(page, b.id, "38000.00");
+  const account = await apiCall<{ id: string }>(page, "POST", "/api/accounts", {
+    label: "Girokonto A",
+    bank: "Testbank",
+    iban: "DE50100000000000000001", // the sample file's own
+    purpose: "private",
+    opening_balance: "0.00",
+    opening_balance_on: "2026-03-31",
+  });
+  const share = { share_numerator: 1, share_denominator: 1 };
+  await apiCall(page, "POST", `/api/accounts/${account.id}/ownership`, { shares: [{ owner_id: a.id, ...share }] }, 200);
+  const imported = await page.request.post(`/api/accounts/${account.id}/imports`, {
+    multipart: { file: { name: "umsaetze.zip", mimeType: "application/zip", buffer: readFileSync(SAMPLE_ZIP) } },
+    headers: { Origin: origin },
+  });
+  expect(imported.status()).toBe(201);
+  const lines = await apiCall<{ id: string; amount: string }[]>(page, "GET", `/api/accounts/${account.id}/transactions`);
+  const line = lines.find((t) => !t.amount.startsWith("-") && t.amount !== "0.00");
+  if (!line) throw new Error("the sample has no credit");
+  const booked = await page.request.fetch(`/api/transactions/${line.id}/allocations`, {
+    method: "PUT",
+    data: {
+      allocation_set: {
+        transaction_id: line.id,
+        allocations: [{ amount: line.amount, category: "hh_wage_replacement" }],
+        method: "user",
+        confidence: "1.000",
+      },
+      learn_rule: false,
+    },
+    headers: { Origin: origin },
+  });
+  expect(booked.status()).toBe(200);
+
+  // A is on screen; the to-do's button names A, so the URL changes on the same page.
+  await page.goto(`/tax/${YEAR}?tab=anlage-n&eigentuemer=${a.id}`);
+  await expect(page.getByRole("heading", { level: 1, name: "A. Muster" })).toBeVisible();
+  const card = page.getByRole("region", { name: "Gesamt" });
+  await expect(card).toContainText("Bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag");
+  await card.getByRole("link", { name: "Lohnersatzleistung eintragen" }).click();
+  const form = page.getByRole("form", { name: "Lohnersatzleistungen eintragen" });
+  await expect(form).toBeVisible();
+  await expect(form.getByLabel("Betrag im Jahr", { exact: true })).toHaveValue(euroInput(line.amount));
+  // The sample's purpose text names no benefit, so the person picks it.
+  await form.getByLabel("Leistung", { exact: true }).selectOption("elterngeld");
+  await form.getByRole("button", { name: "Speichern" }).click();
+  await expect(form).toBeHidden();
+  await expect(page).not.toHaveURL(/lohnersatz=/);
+  await expect(card.getByRole("link", { name: "Lohnersatzleistung eintragen" })).toHaveCount(0);
+
+  // Back to the pre-filled URL: no to-do offers the amount any more, so no form opens and the
+  // pre-fill leaves the URL.
+  await page.goBack();
+  await expect(page).not.toHaveURL(/lohnersatz=/);
+  await expect(page.getByRole("form", { name: "Lohnersatzleistungen eintragen" })).toHaveCount(0);
+  const rows = await apiCall<Row[]>(page, "GET", `/api/return-inputs?tax_year=${YEAR}&owner_id=${a.id}`);
+  expect(rows.filter((row) => row.kind === "replacement_income")).toHaveLength(1);
 });
