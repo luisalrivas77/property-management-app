@@ -9047,10 +9047,10 @@ export interface components {
         };
         /**
          * ReminderKind
-         * @description The catalogue's eleven kinds (§6.2); the value is the reminder key.
+         * @description The catalogue's twelve kinds (§6.2); the value is the reminder key.
          * @enum {string}
          */
-        ReminderKind: "grundsteuer.instalment" | "checklist.due" | "tax.return_deadline" | "tax.questionnaire_open" | "tax.wage_certificate_missing" | "loan.fixed_rate_end" | "loan.special_termination" | "property.speculation_end" | "tenancy.settlement_deadline" | "tenancy.rent_missing" | "bank.sync_stale";
+        ReminderKind: "grundsteuer.instalment" | "checklist.due" | "tax.return_deadline" | "tax.questionnaire_open" | "tax.wage_certificate_missing" | "loan.fixed_rate_end" | "loan.special_termination" | "property.speculation_end" | "tenancy.settlement_deadline" | "tenancy.rent_missing" | "bank.sync_stale" | "bank.statement_due";
         /**
          * ReminderScope
          * @description reminder_ack.scope_type (migration 0019). WORKSPACE is §6.2's "household".

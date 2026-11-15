@@ -13,6 +13,8 @@ from db.matching_support import TENANT_IBAN, World
 from sqlalchemy import func, insert, select, update
 
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import bank_connection as connection_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import reminder_ack as ack_table
@@ -333,6 +335,111 @@ def test_another_workspace_can_neither_ack_nor_see(world, other):
     assert _ack_rows(other) == 0
     assert not [r for r in _list(other) if r.scope_id in (loan, world.property_id)]
     assert first not in _ids(world)
+
+
+# --- A statement due (D122 amended, 15 Nov 2026) --------------------------------------------
+
+
+def _card_account(world: World) -> uuid.UUID:
+    """A credit card account (fed by its PDF statements, D176) with no import yet."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        return conn.execute(
+            insert(account_table)
+            .values(
+                workspace_id=world.ws,
+                label="Kreditkarte",
+                bank="Beispielbank",
+                kind="credit_card",
+                purpose="private",
+                is_owner_account=True,
+                opening_balance=Decimal("0.00"),
+                opening_balance_on=date(2026, 6, 30),
+                created_at=world.now,
+                updated_at=world.now,
+            )
+            .returning(account_table.c.id)
+        ).scalar_one()
+
+
+def _card_import(world: World, account_id: uuid.UUID, first: date, last: date) -> None:
+    """A reconciled card statement import whose lines run from `first` to `last`."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        doc = world._document_row(conn, type="statement", subtype=None, title=None)
+        conn.execute(
+            insert(import_table).values(
+                workspace_id=world.ws,
+                account_id=account_id,
+                document_id=doc,
+                format="card_pdf",
+                status="reconciled",
+                balance_source="file",
+                declared_closing=Decimal("0.00"),
+                computed_closing=Decimal("0.00"),
+                first_booking_on=first,
+                last_booking_on=last,
+                created_at=world.now,
+                updated_at=world.now,
+            )
+        )
+
+
+def _cards(world: World, today: date) -> set[str]:
+    return {
+        i.reminder_id
+        for i in world.query(review.inbox, today)
+        if i.kind is InboxItemKind.REMINDER and i.reminder_id.startswith("bank.statement_due")
+    }
+
+
+def test_a_card_statement_is_due_on_the_tenth_of_the_month_after_next(world):
+    card = _card_account(world)
+    due = f"bank.statement_due:{card}:2026-12-10"
+    # No import yet: nothing to anchor on.
+    assert not [r for r in _list(world, date(2026, 12, 10)) if r.scope_id == card]
+
+    # The October statement's lines end 31 Oct: the November one is due 30 Nov + 10 days.
+    _card_import(world, card, date(2026, 10, 1), date(2026, 10, 31))
+    (reminder,) = [r for r in _list(world, date(2026, 12, 9)) if r.scope_id == card]
+    assert reminder.id == due  # listed within the horizon, shown only from its day
+    assert reminder.visible_from == date(2026, 12, 10)
+    assert reminder.severity == "action" and reminder.email_leads == [0]
+    assert reminder.label_args == {"account": "Kreditkarte", "covered_until": "2026-10-31"}
+    assert _cards(world, date(2026, 12, 9)) == set()
+    assert _cards(world, date(2026, 12, 10)) == {due}
+
+    # The November statement arrives: the December instance is gone, the next due 10 Jan.
+    _card_import(world, card, date(2026, 11, 2), date(2026, 11, 28))
+    assert [r.id for r in _list(world, date(2026, 12, 10)) if r.scope_id == card] == [
+        f"bank.statement_due:{card}:2027-01-10"
+    ]
+    assert _cards(world, date(2026, 12, 10)) == set()
+
+
+def test_no_statement_reminder_while_the_daily_fetch_is_on(world):
+    """The rental account fetched daily over FinTS has bank.sync_stale instead; with the
+    daily fetch off it gets both."""
+    _reconciled_through(world, date(2026, 10, 31))
+    account = world.account_id
+    due = f"bank.statement_due:{account}:2026-12-10"
+    assert due in _ids(world, date(2026, 12, 10))
+    with workspace_transaction(world.engine, world.ws) as conn:
+        conn.execute(
+            insert(connection_table).values(
+                workspace_id=world.ws,
+                account_id=account,
+                bank_code="10000000",
+                fints_url="https://fints.example.invalid/",
+                login_name="beispiel",
+                auto_sync=True,
+                created_at=world.now,
+                updated_at=world.now,
+            )
+        )
+    kinds = {r.kind for r in _list(world, date(2026, 12, 10)) if r.scope_id == account}
+    assert kinds == {ReminderKind.SYNC_STALE}
+    with workspace_transaction(world.engine, world.ws) as conn:
+        conn.execute(update(connection_table).values(auto_sync=False))
+    assert due in _ids(world, date(2026, 12, 10))
 
 
 # --- Zu prüfen (§11) -----------------------------------------------------------------------

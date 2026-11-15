@@ -29,6 +29,7 @@
 #   tenancy.settlement_deadline  tenancy      90      90, 30    action   ack      unit, year
 #   tenancy.rent_missing         tenancy      0       0         action   auto     unit, month
 #   bank.sync_stale              account      0       0         info     auto     account
+#   bank.statement_due           account      0       0         action   auto     account, covered_until
 #   Every other kind's label_code is its key.
 #
 # Due dates and conditions per kind:
@@ -67,6 +68,7 @@
 #   in yet and nothing fires). label_args name the unit, never a tenant (D5).
 # - bank.sync_stale: (last_sync_on, else connected_on) + 35 days, for an account with a
 #   connection. Cleared auto by a newer success (the date moves).
+# - bank.statement_due (D122 amended, 15 Nov 2026): see the section of its cases below.
 # - acks: `done` hides the instance with that key, scope and due_on; `snoozed` hides it while
 #   today < snoozed_until; the latest muted/unmuted row by recorded_at for the key and scope
 #   decides whether every instance is hidden.
@@ -86,6 +88,10 @@ ids:
   owner_a: &O1 0000005d-0000-4000-8000-000000000001
   owner_b: &O2 0000005d-0000-4000-8000-000000000002
   account: &A1 0000005a-0000-4000-8000-000000000001
+  account_card: &A2 0000005a-0000-4000-8000-000000000002
+  account_depot: &A3 0000005a-0000-4000-8000-000000000003
+  account_current: &A4 0000005a-0000-4000-8000-000000000004
+  account_exchange: &A5 0000005a-0000-4000-8000-000000000005
   doc_bescheid: &D_GSB 0000005c-0000-4000-8000-000000000001
   doc_zins: &D_ZB 0000005c-0000-4000-8000-000000000002
   schedule_2027: &S27 00000051-0000-4000-8000-000000000001
@@ -260,6 +266,33 @@ bases:
     cleared_by: auto
     label_code: bank.sync_stale
     label_args: {account: Mietkonto}
+    email_leads: [0]
+  statement_due_a1: &statement_due_a1
+    id: bank.statement_due:0000005a-0000-4000-8000-000000000001:2026-12-10
+    kind: bank.statement_due
+    scope: account
+    scope_id: *A1
+    due_on: 2026-12-10
+    visible_from: 2026-12-10
+    severity: action
+    cleared_by: auto
+    label_code: bank.statement_due
+    label_args: {account: Mietkonto, covered_until: "2026-10-31"}
+    email_leads: [0]
+  card_oct: &card_oct
+    {id: *A2, label: Kreditkarte, kind: credit_card, opening_balance_on: 2026-06-30,
+     reconciled_until: 2026-10-28}
+  statement_due_card_dec: &statement_due_card_dec
+    id: bank.statement_due:0000005a-0000-4000-8000-000000000002:2026-12-10
+    kind: bank.statement_due
+    scope: account
+    scope_id: *A2
+    due_on: 2026-12-10
+    visible_from: 2026-12-10
+    severity: action
+    cleared_by: auto
+    label_code: bank.statement_due
+    label_args: {account: Kreditkarte, covered_until: "2026-10-28"}
     email_leads: [0]
 
 cases:
@@ -698,6 +731,151 @@ cases:
       accounts:
         - {<<: *account, connection: true, connected_on: 2026-09-01, last_sync_on: 2026-10-01}
     expect: [*sync_stale_a1]
+
+  # --- Statements due (D122 amended, 15 Nov 2026) -----------------------------------------
+  # bank.statement_due: an account of kind bank_current, bank_savings, credit_card or depot
+  # with a reconciled import (reconciled_until set), unless its connection's daily fetch is on
+  # (auto_sync: those have bank.sync_stale). Covered through = the later of reconciled_until
+  # and history_until (services/transfers._last_days: its latest reconciled line or a
+  # successful FinTS run's requested_to). Due = the last day of the month after the covered
+  # day's month + 10 days. An exchange (no fixed period) and an account without a reconciled
+  # import get none. The facts of the older cases carry no kind, so none of them gets one.
+
+  - id: statement_due_tenth_of_the_month_after_next
+    description: >
+      the rental account's statements are reconciled to 31 Oct 2026; the November statement
+      is due 30 Nov + 10 = 10 Dec 2026, listed (horizon 8 Feb 2027) and shown from that day
+    today: 2026-11-10
+    facts:
+      accounts: [{<<: *account, kind: bank_current}]
+    expect: [*statement_due_a1]
+
+  - id: statement_due_card_from_its_last_line
+    description: >
+      a credit card's last statement line is 28 Oct 2026 (the import keeps no period end);
+      covered through 28 Oct, so due 10 Dec 2026, on its own day
+    today: 2026-12-10
+    facts:
+      accounts: [*card_oct]
+    expect: [*statement_due_card_dec]
+
+  - id: statement_due_moves_with_a_later_import
+    description: >
+      the card's next statement is in: its lines reach 27 Nov 2026, so the 10 Dec instance is
+      gone by itself and the next one is due 31 Dec + 10 = 10 Jan 2027
+    today: 2026-12-10
+    facts:
+      accounts: [{<<: *card_oct, reconciled_until: 2026-11-27}]
+    expect:
+      - <<: *statement_due_card_dec
+        id: bank.statement_due:0000005a-0000-4000-8000-000000000002:2027-01-10
+        due_on: 2027-01-10
+        visible_from: 2027-01-10
+        label_args: {account: Kreditkarte, covered_until: "2026-11-27"}
+
+  - id: statement_due_depot_overdue
+    description: >
+      a depot's cash statements reach 30 Sep 2026; the October statement was due 31 Oct + 10
+      = 10 Nov 2026, today: an action card from its due day
+    today: 2026-11-10
+    facts:
+      accounts:
+        - {id: *A3, label: Depot, kind: depot, opening_balance_on: 2026-03-31,
+           reconciled_until: 2026-09-30}
+    expect:
+      - id: bank.statement_due:0000005a-0000-4000-8000-000000000003:2026-11-10
+        kind: bank.statement_due
+        scope: account
+        scope_id: *A3
+        due_on: 2026-11-10
+        visible_from: 2026-11-10
+        severity: action
+        cleared_by: auto
+        label_code: bank.statement_due
+        label_args: {account: Depot, covered_until: "2026-09-30"}
+        email_leads: [0]
+
+  - id: statement_due_manual_fetch_counts_the_sync
+    description: >
+      a private current account with a FinTS connection whose daily fetch is off: its last
+      import's lines reach 31 Oct, its last successful run asked up to 5 Nov 2026
+      (history_until), so covered through 5 Nov and due 31 Dec + 10 = 10 Jan 2027; it also
+      keeps bank.sync_stale (5 Nov + 35 = 10 Dec 2026)
+    today: 2026-11-10
+    facts:
+      accounts:
+        - {id: *A4, label: Girokonto, kind: bank_current, opening_balance_on: 2025-12-31,
+           reconciled_until: 2026-10-31, history_until: 2026-11-05, connection: true,
+           connected_on: 2026-09-01, last_sync_on: 2026-11-05, auto_sync: false}
+    expect:
+      - id: bank.sync_stale:0000005a-0000-4000-8000-000000000004:2026-12-10
+        kind: bank.sync_stale
+        scope: account
+        scope_id: *A4
+        due_on: 2026-12-10
+        visible_from: 2026-12-10
+        severity: info
+        cleared_by: auto
+        label_code: bank.sync_stale
+        label_args: {account: Girokonto}
+        email_leads: [0]
+      - id: bank.statement_due:0000005a-0000-4000-8000-000000000004:2027-01-10
+        kind: bank.statement_due
+        scope: account
+        scope_id: *A4
+        due_on: 2027-01-10
+        visible_from: 2027-01-10
+        severity: action
+        cleared_by: auto
+        label_code: bank.statement_due
+        label_args: {account: Girokonto, covered_until: "2026-11-05"}
+        email_leads: [0]
+
+  - id: statement_due_none_with_daily_fetch
+    description: >
+      the same account with „Täglich automatisch abrufen“ on: only bank.sync_stale watches it
+    today: 2026-11-10
+    facts:
+      accounts:
+        - {id: *A4, label: Girokonto, kind: bank_current, opening_balance_on: 2025-12-31,
+           reconciled_until: 2026-10-31, history_until: 2026-11-05, connection: true,
+           connected_on: 2026-09-01, last_sync_on: 2026-11-05, auto_sync: true}
+    expect:
+      - id: bank.sync_stale:0000005a-0000-4000-8000-000000000004:2026-12-10
+        kind: bank.sync_stale
+        scope: account
+        scope_id: *A4
+        due_on: 2026-12-10
+        visible_from: 2026-12-10
+        severity: info
+        cleared_by: auto
+        label_code: bank.sync_stale
+        label_args: {account: Girokonto}
+        email_leads: [0]
+
+  - id: statement_due_none_for_an_exchange
+    description: >
+      an exchange's export has no fixed period and a quiet exchange has no lines: no
+      statement is ever due, whatever its imports reach
+    today: 2026-11-10
+    facts:
+      accounts:
+        - {id: *A5, label: Börse, kind: exchange, opening_balance_on: 2025-12-31,
+           reconciled_until: 2026-08-31}
+    expect: []
+
+  - id: statement_due_none_without_a_reconciled_import
+    description: >
+      a credit card created but never imported (nothing reconciled, no history): nothing to
+      anchor on, no card; a history from a sync alone (history_until without a reconciled
+      import) anchors nothing either
+    today: 2026-11-10
+    facts:
+      accounts:
+        - {<<: *card_oct, reconciled_until: null}
+        - {id: *A4, label: Girokonto, kind: bank_current, opening_balance_on: 2025-12-31,
+           history_until: 2026-08-31}
+    expect: []
 
   # --- Acknowledgements and the contract ---------------------------------------------------
 

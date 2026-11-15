@@ -23271,10 +23271,11 @@
           "property.speculation_end",
           "tenancy.settlement_deadline",
           "tenancy.rent_missing",
-          "bank.sync_stale"
+          "bank.sync_stale",
+          "bank.statement_due"
         ],
         "title": "ReminderKind",
-        "description": "The catalogue's eleven kinds (§6.2); the value is the reminder key."
+        "description": "The catalogue's twelve kinds (§6.2); the value is the reminder key."
       },
       "ReminderScope": {
         "type": "string",

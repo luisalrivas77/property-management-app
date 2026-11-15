@@ -109,6 +109,8 @@ def reminder_label(reminder: Reminder) -> str:
             return f"Miete {arg('unit')} für {german_month(arg('month'))} fehlt"
         case "bank.sync_stale":
             return f"Bankabruf {arg('account')} lange nicht erfolgreich"
+        case "bank.statement_due":  # D122 amended: never an amount or an IBAN (D123)
+            return f"Kontoauszug fällig: {arg('account')}"
     return FALLBACK_LABEL
 
 

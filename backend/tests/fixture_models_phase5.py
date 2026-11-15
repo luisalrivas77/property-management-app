@@ -655,6 +655,14 @@ _CATALOGUE = {
         cleared_by="auto",
         args=frozenset({"account"}),
     ),
+    K.STATEMENT_DUE: _Row(
+        scope=ReminderScope.ACCOUNT,
+        in_app=0,
+        email=(0,),
+        severity="action",
+        cleared_by="auto",
+        args=frozenset({"account", "covered_until"}),
+    ),
 }
 
 
@@ -739,6 +747,18 @@ def _check_against_facts(r: Reminder, facts: ReminderFacts) -> None:
         if args["account"] != subject.label:
             raise ValueError(f"{r.id}: label_args name the account")
         want = (subject.last_sync_on or subject.connected_on) + timedelta(days=35)
+    elif r.kind is K.STATEMENT_DUE:
+        # D122 amended: kinds bank, credit_card, depot with a reconciled import, never with
+        # the daily fetch on; due 10 days after the end of the month after the covered day's.
+        if subject.kind not in ("bank_current", "bank_savings", "credit_card", "depot"):
+            raise ValueError(f"{r.id}: only an account fed by statements")
+        if subject.reconciled_until is None or (subject.connection and subject.auto_sync):
+            raise ValueError(f"{r.id}: needs a reconciled import and no daily fetch")
+        covered = max(d for d in (subject.reconciled_until, subject.history_until) if d)
+        if args != {"account": subject.label, "covered_until": str(covered)}:
+            raise ValueError(f"{r.id}: label_args are the account and the covered day")
+        following = _add_months(covered.replace(day=1), 2)
+        want = following - timedelta(days=1) + timedelta(days=10)
     if want is not None and due != want:
         raise ValueError(f"{r.id}: the §6.2 formula gives {want}")
 
