@@ -18,9 +18,10 @@ the masked form, the chain and the label, never the address or its HMAC, and no 
 message here repeats the input. The model never sees a wallet row (D179 (3)).
 """
 
+import hashlib
 from uuid import UUID
 
-from sqlalchemy import Connection, Row, insert, select, update
+from sqlalchemy import Connection, Row, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import account as account_table
@@ -47,6 +48,7 @@ from .owners import UNSET, Unset
 _READ_COLUMNS = [c for c in address_table.c if c.name not in {"address", "address_hmac"}]
 _TAKEN = "wallet_address_workspace_id_chain_address_hmac_key"
 _CHAIN_ORDER = {chain: i for i, chain in enumerate(Chain)}
+_LOCK_DOMAIN = b"wallet_address_lock\x00"
 
 _TAKEN_ELSEWHERE = "Diese Adresse ist schon auf einem anderen eigenen Konto eingetragen."
 _TAKEN_HERE = "Diese Adresse ist auf dieser Wallet für diese Chain schon eingetragen."
@@ -85,6 +87,7 @@ def add_address(
         raise RuleError(WALLET_ADDRESS_INVALID, _ALSO_ON_EVM_ONLY)
     chains = [body.chain, *sorted(extra, key=_CHAIN_ORDER.__getitem__)]
     digest = address_hmac(normalised, key)
+    _lock_address(ctx, digest)
     known = ctx.conn.execute(
         select(address_table.c.account_id, address_table.c.chain).where(
             address_table.c.address_hmac == digest
@@ -206,6 +209,22 @@ def _lock_wallet(conn: Connection, account_id: UUID) -> None:
     ).scalar_one_or_none()
     if kind != AccountKind.WALLET.value:
         raise NotFoundError(EntityType.WALLET, account_id)
+
+
+def _lock_address(ctx: CommandContext, digest: bytes) -> None:
+    """pg_advisory_xact_lock on the address (workspace and HMAC), released at commit or
+    rollback (review of PR #374, 16 Nov 2026). The wallet lock serialises adds to one wallet
+    only, and the unique key is per chain, so two adds of one 0x address to two wallets on two
+    chains both committed. One lock covers every chain of an add (`also_on` included): the
+    HMAC is of the address alone, so the rows of one add share one key. Taken after the
+    wallet's row lock and before the „taken elsewhere“ read, which then sees the other add's
+    committed row (READ COMMITTED). The unique key stays the backstop.
+
+    The key is a signed 64-bit hash of workspace and HMAC computed here, so neither the HMAC
+    nor a text holding it is a bind parameter a lock timeout's error could print."""
+    material = _LOCK_DOMAIN + ctx.workspace_id.bytes + digest
+    lock_key = int.from_bytes(hashlib.sha256(material).digest()[:8], "big", signed=True)
+    ctx.conn.execute(select(func.pg_advisory_xact_lock(lock_key)))
 
 
 def _address_row(
