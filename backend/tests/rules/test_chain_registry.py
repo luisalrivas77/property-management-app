@@ -1,6 +1,9 @@
 """Phase 7 step 0: the chain registry, the token rows and the public decoders load and refuse
 what the spec forbids (docs/phases/phase-7.md D180, D183 (4), D184, D191)."""
 
+import re
+from importlib.resources import files
+
 import pytest
 from pydantic import ValidationError
 
@@ -70,6 +73,50 @@ def test_tokens_price_as_listed_coins():
         assert coin.symbol == (token.wraps or token.symbol)
 
 
+def test_every_evm_address_in_the_registry_files_is_lower_case():
+    """D180 amended 15 Nov 2026: one form per EVM address, the database's CHECK's. Read from
+    the files' text, since the loader lower-cases what it reads."""
+    texts = [
+        (files(package) / name).read_text(encoding="utf-8")
+        for package, name in (
+            ("hausbuch.rules.household", "assets.yaml"),
+            ("hausbuch.rules.chain", "chains.yaml"),
+            ("hausbuch.rules.chain", "decoders.yaml"),
+        )
+    ]
+    evm = [a for text in texts for a in re.findall(r"0x[0-9a-fA-F]{40}(?![0-9a-fA-F])", text)]
+    assert len(evm) >= 15 and all(a == a.lower() for a in evm)
+
+
+def test_an_evm_token_is_found_whatever_its_case_a_solana_mint_only_as_written():
+    assets = asset_registry()
+    usdc = assets.token(Chain.ETHEREUM, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48")  # EIP-55
+    assert usdc is not None and usdc.symbol == "USDC"
+    assert assets.token(Chain.ETHEREUM, usdc.contract.upper().replace("0X", "0x")) == usdc
+    mint = next(t for t in assets.tokens if t.chain is Chain.SOLANA)
+    assert assets.token(Chain.SOLANA, mint.contract) == mint
+    assert assets.token(Chain.SOLANA, mint.contract.lower()) is None
+    assert assets.token(Chain.ARBITRUM, usdc.contract) is None  # another chain, another token
+
+
+def test_a_registry_row_written_in_eip55_is_loaded_lower_case():
+    eip55 = {**USDC, "contract": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"}
+    loaded = AssetRegistry.model_validate(_assets([eip55]))
+    assert loaded.tokens[0].contract == USDC["contract"]
+
+
+@pytest.mark.parametrize("symbol", ["wstETH", "USD₮0", "x" * 32])
+def test_a_token_symbol_is_a_label_of_up_to_32_characters(symbol):
+    """D180 (2) amended 15 Nov 2026 (TokenSymbol); a coin's symbol keeps AssetSymbol."""
+    AssetRegistry.model_validate(_assets([{**USDC, "symbol": symbol, "wraps": "USDC"}]))
+
+
+@pytest.mark.parametrize("symbol", ["", "x" * 33, "US\nDC", "US\x07DC"])
+def test_a_token_symbol_outside_its_label_is_refused(symbol):
+    with pytest.raises(ValidationError):
+        AssetRegistry.model_validate(_assets([{**USDC, "symbol": symbol, "wraps": "USDC"}]))
+
+
 def _assets(extra_tokens: list[dict]) -> dict:
     return {
         "coins": [
@@ -83,7 +130,7 @@ def _assets(extra_tokens: list[dict]) -> dict:
 
 USDC = {
     "chain": "ethereum",
-    "contract": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "contract": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
     "symbol": "USDC",
     "decimals": 6,
     "coingecko_id": "usd-coin",

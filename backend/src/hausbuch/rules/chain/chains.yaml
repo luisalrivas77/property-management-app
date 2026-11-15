@@ -4,7 +4,9 @@
 # code: the text value of every `chain` column (migration 0041's CHECK lists the same five;
 #   a new chain is one row here plus that CHECK rebuilt, no code).
 # chain_id: EIP-155, EVM only (1 Ethereum, 42161 Arbitrum One, 56 BNB Smart Chain).
-# address_format: what rules/chain/address.validate accepts (D180 (1), §4).
+# address_format: what rules/chain/address.validate accepts (D180 (1), §4); an EVM address is
+#   accepted in EIP-55 or lower-case form and stored, compared and written here lower-case
+#   (D180 amended 15 Nov 2026).
 # source: the ChainSource kind of D181 (BSC by balance only over plain RPC, D181 (c)).
 # explorer_tx_url: the „auf der Chain ansehen“ link, opened in the user's browser; the app
 #   sends nothing to the explorer.
@@ -49,7 +51,7 @@ chains:
     bridge_pairs:
       - {from_chain: ethereum, to_chain: arbitrum, max_fee_share: "0.0100"}
     wraps:
-      - {native: ETH, wrapped: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"}
+      - {native: ETH, wrapped: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"}
 
   - code: arbitrum
     family: evm
@@ -62,7 +64,7 @@ chains:
     confirmations_final: 12
     exchange_networks: {ARBITRUM: arbitrum}
     wraps:
-      - {native: ETH, wrapped: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"}
+      - {native: ETH, wrapped: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"}
 
   - code: bsc
     family: evm
@@ -75,7 +77,7 @@ chains:
     confirmations_final: 12
     exchange_networks: {BSC: bsc}
     wraps:
-      - {native: BNB, wrapped: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"}
+      - {native: BNB, wrapped: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"}
 
   - code: solana
     family: solana

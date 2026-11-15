@@ -52,8 +52,9 @@ EXPECTED_GRANTS = {
     "holdings_export": {"SELECT", "INSERT"},
 }
 
-EVM = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"  # EIP-55's first example
-EVM_2 = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359"  # EIP-55's second example
+EVM_EIP55 = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"  # EIP-55's first example
+EVM = EVM_EIP55.lower()  # stored lower-case (D180 amended 15 Nov 2026)
+EVM_2 = "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359".lower()  # EIP-55's second example
 BECH32 = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"  # BIP-173's example
 LEGACY = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"  # the Bitcoin wiki's example address
 SOLANA = "11111111111111111111111111111111"  # the system program: 32 zero bytes
@@ -96,7 +97,7 @@ def _address_row(ws, account_id, **overrides) -> dict:
         "account_id": account_id,
         "chain": "ethereum",
         "address": EVM,
-        "address_masked": "0x5a…eAed",
+        "address_masked": "0x5a…eaed",
         "address_hmac": _hmac(),
     } | overrides
 
@@ -158,7 +159,7 @@ def test_an_address_belongs_to_a_wallet_account(scope):
     ("chain", "address"),
     [
         ("ethereum", EVM),
-        ("arbitrum", EVM.lower()),  # lower-case hex is accepted (D179 (2))
+        ("arbitrum", EVM),
         ("bsc", EVM_2),
         ("bitcoin", BECH32),
         ("bitcoin", LEGACY),
@@ -177,6 +178,8 @@ def test_an_address_of_its_chains_format_is_accepted(scope, chain, address):
         {"chain": "bitcoin"},  # a 0x address on Bitcoin
         {"chain": "solana"},
         {"address": EVM[:-1]},  # 39 hex digits
+        {"address": EVM_EIP55},  # EVM is stored lower-case (D180 amended 15 Nov 2026)
+        {"chain": "bsc", "address": "0x" + EVM[2:].upper()},
         {"address": "0x" + "g" * 40},
         {"chain": "ethereum", "address": BECH32},
         {"chain": "bitcoin", "address": BECH32.upper()},  # bech32 is stored lower case
@@ -415,11 +418,13 @@ def test_a_decoder_row_is_superseded_once_and_names_a_program_of_its_chain(scope
         conn.execute("UPDATE chain_decoder SET superseded_by = NULL WHERE id = %s", (decoder,))
     for change in (
         {"program": EVM},  # a 0x program on Solana
+        {"chain": "ethereum", "program": EVM_EIP55, "kind": "swap"},  # EVM is lower-case
         {"chain": "bitcoin", "program": BECH32},  # Bitcoin has no programs
         {"kind": "transfer"},  # a decoder never makes a transfer
     ):
         with pytest.raises(errors.CheckViolation), conn.transaction():
             _insert(conn, "chain_decoder", row | change)
+    _insert(conn, "chain_decoder", row | {"chain": "ethereum", "program": EVM, "kind": "swap"})
 
 
 def test_a_pair_is_a_bridge_across_chains_or_a_wrap_on_one(scope):
@@ -431,7 +436,7 @@ def test_a_pair_is_a_bridge_across_chains_or_a_wrap_on_one(scope):
         symbol="WETH",
         name="Wrapped Ether",
         chain="ethereum",
-        contract_address="0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        contract_address="0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
         priced_as_asset_id=ids["coin"],
     )
     bridge = {
@@ -536,7 +541,7 @@ def test_a_symbol_is_unique_per_chain(scope):
 
 def test_a_contract_is_unique_per_chain_and_of_its_chains_format(scope):
     conn, a, ids = scope
-    usdc = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    usdc = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
     token = {"symbol": "USDC", "name": "USD Coin", "chain": "ethereum", "contract_address": usdc}
     _asset(conn, a, **token)
     with pytest.raises(errors.UniqueViolation), conn.transaction():
@@ -547,9 +552,37 @@ def test_a_contract_is_unique_per_chain_and_of_its_chains_format(scope):
         {"chain": "bitcoin"},
         {"chain": None},  # a contract names its chain
         {"contract_address": "0x1234"},
+        # D180 amended 15 Nov 2026: an EVM contract is stored lower-case, never EIP-55
+        {"contract_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"},
+        {"contract_address": "0x" + usdc[2:].upper()},
     ):
         with pytest.raises(errors.CheckViolation), conn.transaction():
             _asset(conn, a, **token | {"symbol": "USDX"} | change)
+
+
+def test_a_token_is_its_contract_and_its_symbol_a_label(scope):
+    """D180 (2) amended 15 Nov 2026: two tokens calling themselves USDC on two contracts are two
+    assets (the registry's and a lookalike, D187 (2)); a token's symbol is any 1 to 32
+    characters without a control character, or null (its name stands in); a row without a
+    contract keeps 0025's symbol pattern and its per-chain uniqueness."""
+    conn, a, _ = scope
+    ethereum = {"chain": "ethereum", "name": "USD Coin"}
+    _asset(conn, a, symbol="USDC", contract_address="0x" + "a0" * 20, **ethereum)
+    _asset(conn, a, symbol="USDC", contract_address="0x" + "9f" * 20, spam=True, **ethereum)
+    spam = {"chain": "ethereum", "spam": True, "name": "Token 0x9e…9e9e"}
+    _asset(conn, a, symbol=None, contract_address="0x" + "9e" * 20, **spam)
+    for n, symbol in enumerate(("wstETH", "USD₮0", "UЅDC", "x" * 32)):  # the Ѕ is Cyrillic
+        _asset(conn, a, symbol=symbol, contract_address=f"0x{n:040x}", **ethereum)
+    for symbol in ("", "x" * 33, "US\nDC", "US\x07DC"):
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            _asset(conn, a, symbol=symbol, contract_address="0x" + "7c" * 20, **ethereum)
+    # without a contract: 0025's pattern (a native coin, an exchange's chainless coin) ...
+    for symbol, chain in (("wstETH", "ethereum"), ("USD₮0", None), ("ETH ", "arbitrum")):
+        with pytest.raises(errors.CheckViolation), conn.transaction():
+            _asset(conn, a, symbol=symbol, name="Coin", chain=chain)
+    # ... and a symbol or an ISIN; a contract stands in for both
+    with pytest.raises(errors.CheckViolation), conn.transaction():
+        _asset(conn, a, symbol=None, name="Coin", chain="ethereum")
 
 
 @pytest.mark.parametrize(
@@ -655,6 +688,13 @@ def test_0041_runs_up_down_and_up_on_an_empty_database():
             assert "chain_sync" not in _check(conn, "document_subtype_check")
             assert "wallet" not in _check(conn, "event_entity_type_check")
             assert _check(conn, "asset_workspace_id_symbol_key") == "UNIQUE (workspace_id, symbol)"
+            # 0025's two symbol CHECKs, exactly as it wrote them
+            assert (
+                _check(conn, "asset_symbol_check") == "CHECK ((symbol ~ '^[A-Z0-9]{1,12}$'::text))"
+            )
+            assert _check(conn, "asset_check") == (
+                "CHECK (((symbol IS NOT NULL) OR (isin IS NOT NULL)))"
+            )
         alembic(name, "upgrade", HEAD)
     finally:
         drop_database(name)

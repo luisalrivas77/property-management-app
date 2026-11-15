@@ -50,11 +50,13 @@ from hausbuch.schemas.chain import (
     Chain,
     ChainFamily,
     ChainSourceKind,
+    ContractId,
     DecoderKind,
     DecoderRow,
     GroupKind,
     GroupStatus,
     LotSource,
+    TokenSymbol,
 )
 from hausbuch.schemas.common import Money, Schema
 from hausbuch.schemas.household import (
@@ -776,8 +778,8 @@ class SwapFixture(_Fixture):
 
 class Token(Schema):
     chain: Chain
-    contract: str = Field(min_length=20, max_length=128)
-    symbol: str  # as the chain names it (attacker-controlled)
+    contract: ContractId = Field(min_length=20, max_length=128)
+    symbol: TokenSymbol  # as the chain names it (attacker-controlled; D180 (2) amended)
 
 
 class SpamExpect(Schema):

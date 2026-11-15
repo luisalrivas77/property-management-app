@@ -16,7 +16,7 @@
 # `refused` runs the text through rules/chain/decoders.parse and expects the error.
 rows:
   - {id: evm_swap, family: evm, row: {chain: ethereum, program: "0xbac1b60215808a2bce58af79feb1efcaebbcdb3a", method: "0x38ed1739", kind: swap, legs: swap, name: Invented AMM router}}
-  - {id: evm_wrap, family: evm, row: {chain: ethereum, program: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", kind: wrap, legs: wrap, name: WETH}}
+  - {id: evm_wrap, family: evm, row: {chain: ethereum, program: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", kind: wrap, legs: wrap, name: WETH}}
   - {id: evm_lp, family: evm, row: {chain: arbitrum, program: "0xc64cf78892c1e516f9686eedba168d4ab59b937f", kind: lp, legs: lp, name: Invented pool}}
   - {id: sol_swap, family: solana, row: {chain: solana, program: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL, kind: swap, legs: swap, name: Invented AMM}}
   - {id: sol_wrap, family: solana, row: {chain: solana, program: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, method: syncNative, kind: wrap, legs: wrap, name: wSOL}}
@@ -56,8 +56,8 @@ override_cases:
   - id: other_chain_no_row
     pending: "phase 7 step 2 (decoders.decoder_for)"
     public:
-      - {chain: ethereum, program: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", kind: wrap, legs: wrap}
-    call: {chain: arbitrum, program: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"}
+      - {chain: ethereum, program: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", kind: wrap, legs: wrap}
+    call: {chain: arbitrum, program: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"}
     expect: {kind: null, source: null}
 
 refused:

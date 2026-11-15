@@ -12,7 +12,7 @@ from typing import Self
 import yaml
 from pydantic import Field, model_validator
 
-from hausbuch.schemas.chain import Chain, TokenRegistryRow
+from hausbuch.schemas.chain import Chain, TokenRegistryRow, _evm_lower
 from hausbuch.schemas.common import Schema
 from hausbuch.schemas.household import AssetSymbol, CurrencyCode, Isin
 
@@ -47,9 +47,11 @@ class AssetRegistry(Schema):
 
     @model_validator(mode="after")
     def _tokens(self) -> Self:
-        """D180: a token once per chain and contract, and once per chain and symbol (so the
-        symbol-level lookup of D180 (2)'s partial index cannot meet two rows); priced as a
-        listed coin (its `wraps`, else its own symbol), with that coin's CoinGecko id."""
+        """D180: a token once per chain and contract, and once per chain and symbol (the
+        registry is curated: one listed „USDC“ per chain, so a label never shows two, D187 (2);
+        the database identifies a token by its contract alone, D180 (2) amended 15 Nov 2026);
+        priced as a listed coin (its `wraps`, else its own symbol), with that coin's CoinGecko
+        id."""
         keys = [(t.chain, t.contract) for t in self.tokens]
         symbols = [(t.chain, t.symbol) for t in self.tokens]
         if len(keys) != len(set(keys)) or len(symbols) != len(set(symbols)):
@@ -69,8 +71,10 @@ class AssetRegistry(Schema):
         return next((f for f in self.funds if f.isin == isin), None)
 
     def token(self, chain: Chain, contract: str) -> TokenRegistryRow | None:
-        """The registry token at this contract (exact, as the file writes it: EIP-55 for EVM,
-        the base58 mint for Solana; step 1 normalises an address before it asks)."""
+        """The registry token at this contract: an EVM contract compared lower-case, whichever
+        case the caller holds (D180 amended 15 Nov 2026; the rows are loaded lower-case), a
+        Solana mint exactly as written (base58 is case-sensitive)."""
+        contract = _evm_lower(contract)
         return next((t for t in self.tokens if t.chain == chain and t.contract == contract), None)
 
     def priced_as(self, token: TokenRegistryRow) -> CoinEntry:

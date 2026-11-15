@@ -30,7 +30,10 @@ cases:
     action: promote
     expect: {group: airdrop, movement: airdrop, hidden: false, card: true, label: "Token 0x9f…21ab (nennt sich FREE)", price_source_needed: true}
 
-  # §6 example 7: „USDC“ on a contract that is not the registry's USDC.
+  # §6 example 7: „USDC“ on a contract that is not the registry's USDC. Stored as its own
+  # asset: a token is identified by its chain and contract alone, its symbol a display label
+  # that is not unique (D180 (2) amended 15 Nov 2026), so this row and the registry's USDC
+  # are two assets that both say USDC in the database; the screen shows the label below.
   - id: symbol_lookalike_usdc
     pending: "phase 7 step 2 (rules/chain/classify spam rules)"
     token: {chain: ethereum, contract: "0x9f8b047f3f005569235c41965017843cddb2c3d4", symbol: USDC}
@@ -68,7 +71,7 @@ cases:
   # the registry.
   - id: registry_token_airdropped
     pending: "phase 7 step 2 (rules/chain/classify)"
-    token: {chain: ethereum, contract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", symbol: USDC}
+    token: {chain: ethereum, contract: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbol: USDC}
     expect: {group: airdrop, movement: airdrop, hidden: false, card: true, label: USDC, price_source_needed: false}
 
   # A demotion of a wrongly kept airdrop → spam, hidden; its movements superseded (step 2).
@@ -78,3 +81,11 @@ cases:
     fee_paid: true
     action: demote
     expect: {group: spam, movement: spam, hidden: true, card: false, label: "Token AUjj…qw6u (nennt sich GIFT)", price_source_needed: false}
+
+  # A lookalike that copies the symbol with a Cyrillic „Ѕ“ (U+0405): a token's symbol is any 1
+  # to 32 characters (D180 (2) amended 15 Nov 2026), so it is stored as the chain names it,
+  # and it is spam by its contract, not by its name. Contract generated for this file.
+  - id: symbol_lookalike_homoglyph
+    pending: "phase 7 step 2 (rules/chain/classify spam rules)"
+    token: {chain: ethereum, contract: "0x92ffd7c90d0cc951f2deeaf06b61b4a0f8928397", symbol: "UЅDC"}
+    expect: {group: spam, movement: spam, hidden: true, card: false, label: "Token 0x92…8397 (nennt sich UЅDC)", price_source_needed: false}

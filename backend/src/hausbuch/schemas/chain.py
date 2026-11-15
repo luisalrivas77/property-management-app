@@ -22,7 +22,7 @@ from enum import StrEnum
 from typing import Annotated, Literal, Protocol, Self
 from uuid import UUID
 
-from pydantic import Field, JsonValue, model_validator
+from pydantic import BeforeValidator, Field, JsonValue, model_validator
 
 from .common import _STRING_ONLY, Money, Schema, _string_schema
 from .household import AssetMovementDraft, AssetSymbol, NonNegativeQuantity, Quantity
@@ -159,8 +159,25 @@ class OpenWalletCode(StrEnum):
 # Units on a chain: a non-negative integer of the asset's smallest denomination. Never sent to
 # a browser at step 0; a JSON client would need it as a string (above 2^53).
 BaseUnits = int
-# A contract, mint or program id as the chain writes it (EVM hex, Solana base58).
-ContractId = str
+
+
+def _evm_lower(value: object) -> object:
+    """D180 amended 15 Nov 2026: an EVM address is held lower-case, in the registry files, in
+    every lookup and in the database (migration 0041's CHECK), so a contract never misses on
+    letter case; EIP-55 is a display form only (step 1). Base58 has no „0“, so a „0x“ prefix
+    is EVM's and a Solana mint is never touched (it is case-sensitive)."""
+    return value.lower() if isinstance(value, str) and value.startswith("0x") else value
+
+
+# A contract, mint or program id as the chain writes it: EVM hex lower-cased, Solana base58 as
+# written.
+ContractId = Annotated[str, BeforeValidator(_evm_lower)]
+# A token's symbol as its contract names it (D180 (2) amended 15 Nov 2026): a display label,
+# not unique, any 1 to 32 characters without a control character (wstETH, USD₮0); a chain
+# asset without a contract (a native coin) keeps AssetSymbol, as migration 0041's CHECK does.
+TokenSymbol = Annotated[
+    str, Field(min_length=1, max_length=32, pattern=r"^[^\x00-\x1f\x7f-\x9f]+$")
+]
 
 
 # --- The public registry (rules/chain/chains.yaml, rules/household/assets.yaml) ------------
@@ -217,7 +234,7 @@ class TokenRegistryRow(Schema):
 
     chain: Chain
     contract: ContractId = Field(min_length=20, max_length=128)
-    symbol: AssetSymbol
+    symbol: TokenSymbol
     decimals: int = Field(ge=0, le=18)
     coingecko_id: str | None = Field(default=None, pattern=r"^[a-z0-9-]{1,100}$")
     wraps: AssetSymbol | None = None  # priced as this coin (D180 (3))

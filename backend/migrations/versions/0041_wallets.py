@@ -17,10 +17,17 @@
 - `holdings_export` (D190): one year-end holdings statement snapshot per account and date,
   its PDF and CSV as document_files. Immutable.
 - `asset` gains `chain`, `contract_address`, `priced_as_asset_id` and `spam` (D180, D187).
-  UNIQUE (workspace_id, symbol) becomes a partial unique index on
-  (workspace_id, symbol, COALESCE(chain, '')) WHERE symbol IS NOT NULL, so ETH on Ethereum,
-  ETH on Arbitrum and the exchanges' chainless ETH are three assets; a contract is unique
-  per chain.
+  A token with a contract is identified by (workspace_id, chain, contract_address) alone
+  (D180 (2) amended 15 Nov 2026): its symbol is a display label, not unique, any 1 to 32
+  characters without a control character (wstETH, USD₮0, a lookalike spam token's copied
+  name), or null. 0025's symbol CHECK becomes chain-aware: a row without a contract (an
+  exchange's or a depot's asset, chain null, and a chain's native coin) keeps
+  '^[A-Z0-9]{1,12}$'. UNIQUE (workspace_id, symbol) becomes a partial unique index on
+  (workspace_id, symbol, COALESCE(chain, '')) WHERE symbol IS NOT NULL AND contract_address
+  IS NULL, so ETH on Ethereum, ETH on Arbitrum and the exchanges' chainless ETH are three
+  assets and two tokens calling themselves USDC on two contracts are two. 0025's "a symbol
+  or an ISIN" CHECK also takes a contract. An EVM address (a wallet's, a token contract, a
+  decoder's program) is stored lower-case (D180 amended 15 Nov 2026).
 - `asset_movement` gains `group_id`, `address_id` and `index` (D182 (2), D183 (1)); its kind
   CHECK gains airdrop, spam, lp_deposit and lp_withdrawal, its source CHECK chain.
 - The value-list CHECKs rebuilt as supersets: movement_import.format (chain_sync),
@@ -207,12 +214,14 @@ OLD_ENTITY_TYPES = (
 NEW_ENTITY_TYPES = ("wallet", "wallet_address", "movement_group")
 
 # The address formats in the database, the backstop of rules/chain/address.validate (which
-# also checks the bech32 / base58check checksums and EIP-55 casing): Bitcoin bech32 (lower
-# case, as validate normalises it) or a base58 legacy/P2SH address; EVM 0x + 40 hex; Solana
-# base58 of 32 bytes (32 to 44 characters).
+# also checks the bech32 / base58check checksums and, from step 1, EIP-55 casing): Bitcoin
+# bech32 (lower case, as validate normalises it) or a base58 legacy/P2SH address; EVM 0x + 40
+# lower-case hex (D180 amended 15 Nov 2026: one form per address, so a lookup by contract or
+# address never misses on letter case; EIP-55 is a display form only); Solana base58 of 32
+# bytes (32 to 44 characters, case-sensitive).
 _B58 = "[1-9A-HJ-NP-Za-km-z]"
 BITCOIN_ADDRESS = rf"^(bc1[02-9ac-hj-np-z]{{8,87}}|[13]{_B58}{{25,34}})$"
-EVM_ADDRESS = r"^0x[0-9a-fA-F]{40}$"
+EVM_ADDRESS = r"^0x[0-9a-f]{40}$"
 SOLANA_ADDRESS = rf"^{_B58}{{32,44}}$"
 
 
@@ -499,10 +508,27 @@ ALTER TABLE asset
         REFERENCES asset (workspace_id, id),
     ADD CONSTRAINT asset_workspace_id_chain_contract_address_key
         UNIQUE (workspace_id, chain, contract_address),
-    DROP CONSTRAINT asset_workspace_id_symbol_key;
--- D180 (2): a symbol is unique per chain; NULL symbols (funds, known by their ISIN) repeat.
+    DROP CONSTRAINT asset_workspace_id_symbol_key,
+    -- D180 (2) amended 15 Nov 2026: a token's symbol is the chain's display label (1 to 32
+    -- characters, no control character, or null); a row without a contract keeps 0025's.
+    DROP CONSTRAINT asset_symbol_check,
+    ADD CONSTRAINT asset_symbol_check CHECK (
+        CASE WHEN contract_address IS NULL THEN symbol ~ '^[A-Z0-9]{{1,12}}$'
+             ELSE length(symbol) BETWEEN 1 AND 32 AND symbol !~ '[[:cntrl:]]'
+        END
+    ),
+    -- 0025's "a symbol or an ISIN": a contract identifies a token too.
+    DROP CONSTRAINT asset_check,
+    ADD CONSTRAINT asset_check CHECK (
+        symbol IS NOT NULL OR isin IS NOT NULL OR contract_address IS NOT NULL
+    );
+-- D180 (2) amended: a symbol is unique per chain among the rows without a contract (the native
+-- coins, and the chainless assets of the exchanges and depots); a token is identified by its
+-- contract alone, so two tokens calling themselves USDC on two contracts are two rows. NULL
+-- symbols (funds, known by their ISIN) repeat.
 CREATE UNIQUE INDEX asset_symbol_chain_key
-    ON asset (workspace_id, symbol, COALESCE(chain, '')) WHERE symbol IS NOT NULL;
+    ON asset (workspace_id, symbol, COALESCE(chain, ''))
+    WHERE symbol IS NOT NULL AND contract_address IS NULL;
 COMMENT ON TABLE asset IS
     'D167, D180: what a position is held in (EUR is an asset of kind cash). A chain asset is '
     'identified by its chain and contract (null for the native coin), priced through '
@@ -514,6 +540,10 @@ ASSET_DOWN = """
 DROP INDEX asset_symbol_chain_key;
 ALTER TABLE asset
     ADD CONSTRAINT asset_workspace_id_symbol_key UNIQUE (workspace_id, symbol),
+    DROP CONSTRAINT asset_check,
+    ADD CONSTRAINT asset_check CHECK (symbol IS NOT NULL OR isin IS NOT NULL),
+    DROP CONSTRAINT asset_symbol_check,
+    ADD CONSTRAINT asset_symbol_check CHECK (symbol ~ '^[A-Z0-9]{1,12}$'),
     DROP CONSTRAINT asset_workspace_id_chain_contract_address_key,
     DROP CONSTRAINT asset_priced_as_fkey,
     DROP COLUMN spam,
