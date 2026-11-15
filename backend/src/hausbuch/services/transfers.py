@@ -16,7 +16,10 @@ links and computes the cards on read.
   replaced. relink(account_id) runs the same over an account's unlinked transfer legs
   (confirmed and proposed) and the other accounts' transfer lines that name it, for a late
   import (a depot's cash statement calls it, services.statements.import_statement);
-  relink_all over every account (`hausbuch relink-transfers`).
+  relink_all over every account (`hausbuch relink-transfers`). D162 amended (6): after every
+  link the matcher writes, a line of a pair tied by an own IBAN that holds only the model's
+  proposal of that transfer is booked as its leg (_confirm_tied_legs); confirm_linked does it
+  for the links written before (`hausbuch relink-transfers` too).
 - transfer_link is append-only: a wrong link is replaced by a new row and the old one names
   it in superseded_by (unlink). The table has no status (migration 0025 is on main), so a
   link the matcher wrote is current only while both its legs are booked as transfers
@@ -51,6 +54,7 @@ from hausbuch.rules.errors import TRANSFER_LEGS_INVALID
 from hausbuch.rules.matching import (
     EXCHANGE_DEPOSIT_GAP,
     TRANSFER_CATEGORIES,
+    TRANSFER_CODES,
     deposit_fee_text,
     deposit_gap,
     deposit_link_text,
@@ -521,7 +525,104 @@ def _write(
         link.id,
         TransferLinked(kind=kind, matched_by=matched_by, deposit_iban=deposit_iban, **legs),
     )
+    if matched_by is TransferMatchedBy.MATCHER:
+        # D162 amended (6): written after the link, so record_set's hook finds the leg linked.
+        _confirm_tied_legs(ctx, out, in_)
     return link
+
+
+def _confirm_tied_legs(ctx: CommandContext, out: TransferLeg, in_: TransferLeg) -> int:
+    """D162 amended (6), 15 Nov 2026: after the matcher links a pair tied by an own IBAN (one
+    leg names the other's account, names_the_other), each bank or depot line of the pair that
+    holds only the model's proposal of that very transfer is booked as the transfer's leg by
+    the matcher (_confirm_leg), so it leaves Zahlungen zuordnen. A pair linked by amount and
+    date alone is left as it is: the model's guess plus a coincidence decides nothing
+    (principle 3). The number of lines booked."""
+    if not names_the_other(out, in_):
+        return 0
+    return sum(_confirm_leg(ctx, leg, other) for leg, other in ((out, in_), (in_, out)))
+
+
+def _confirm_leg(ctx: CommandContext, leg: TransferLeg, other: TransferLeg) -> bool:
+    """One leg of a tied pair the matcher linked (_confirm_tied_legs): a private account's line
+    whose current rows are only the model's proposal (_free_for_matcher), all of the transfer
+    code the line takes (internal_transfer_out|in), is booked by the matcher as
+    named_transfer_set does, or as deposit_split_set for a deposit an exchange credited short
+    (auto-confirmed, method matcher_transfer, its events). Never a line holding a person's or a
+    rule's answer, a rule's or a code's proposal, a proposal over a confirmed answer, a rental
+    line (its phase 2 matchers decide, D40), a line its own account books by code otherwise,
+    nor a card's line its reader does not read as the payment (D162 amended (5) (7)(a))."""
+    from . import allocations, matching  # matching imports this module
+
+    if leg.source is not TransferLegSource.TRANSACTION:
+        return False
+    # Skipped while another transaction holds the line (_split_and_link).
+    line = matching.load_line(ctx.conn, leg.id, lock=True, skip_locked=True)
+    if line is None or not line.private or not line.current:
+        return False
+    if not line.open_for(rematch=True) or not _free_for_matcher(ctx.conn, line.tx.id, line.current):
+        return False
+    category = TRANSFER_CODES[(AccountPurpose.PRIVATE, line.tx.amount > 0)]
+    if {a.category for a in line.current} != {category}:
+        return False
+    own = matching.own_code_set(line)
+    if own is not None and any(a.category not in TRANSFER_CATEGORIES for a in own.allocations):
+        return False
+    if own is None and line.account_kind == AccountKind.CREDIT_CARD.value:
+        return False
+    fee = deposit_gap(leg, other) if leg.amount < 0 else None
+    if fee is not None:
+        answer = deposit_split_set(line.tx, fee)
+    else:
+        answer = named_transfer_set(line.tx, AccountPurpose.PRIVATE)
+        if leg.counterparty_iban_hmac is not None and (
+            leg.counterparty_iban_hmac == other.account_iban_hmac
+        ):
+            # This line names the other account itself: match_transfer_line's wording.
+            answer = answer.model_copy(
+                update={"reasoning": "Überweisung zwischen zwei eigenen Konten."}
+            )
+    allocations.record_set(ctx, answer, confirm=True, auto=True)
+    return True
+
+
+def confirm_linked(ctx: CommandContext) -> int:
+    """`hausbuch relink-transfers`, D162 amended (6): the links the matcher wrote before it
+    booked their legs (a leg holding the model's proposal of the transfer was linked as it
+    was and kept its question in Zu prüfen) get their tied legs booked now (_confirm_tied_legs).
+    Idempotent: a booked leg is no longer free for the matcher. The number of lines booked."""
+    _lock(ctx)
+    rows = [r for r in _current_links(ctx.conn) if r.matched_by == TransferMatchedBy.MATCHER.value]
+    tx_ids = {i for r in rows for i in (r.out_transaction_id, r.in_transaction_id) if i}
+    if not tx_ids:
+        return 0
+    a = allocation_table.c
+    proposed = set(
+        ctx.conn.execute(
+            select(a.transaction_id).where(
+                a.transaction_id.in_(tx_ids),
+                a.status == AllocationStatus.PROPOSED.value,
+                a.method == AllocationMethod.LLM.value,
+            )
+        ).scalars()
+    )
+    count = 0
+    for r in rows:
+        if not proposed.intersection({r.out_transaction_id, r.in_transaction_id}):
+            continue
+        out = _one_leg(
+            ctx.conn,
+            TransferLegSource.TRANSACTION if r.out_transaction_id else TransferLegSource.MOVEMENT,
+            r.out_transaction_id or r.out_movement_id,
+        )
+        in_ = _one_leg(
+            ctx.conn,
+            TransferLegSource.TRANSACTION if r.in_transaction_id else TransferLegSource.MOVEMENT,
+            r.in_transaction_id or r.in_movement_id,
+        )
+        if out is not None and in_ is not None:
+            count += _confirm_tied_legs(ctx, out.leg, in_.leg)
+    return count
 
 
 def _both_ways(
@@ -1166,6 +1267,7 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
     # account each own IBAN belongs to.
     firsts: dict[UUID, date] | None = None
     own: dict[str, UUID] = {}
+    payers: dict[UUID, set[UUID]] = {}
     for leg in waiting:
         start, end = leg.leg.booked_on - _BY_HAND, leg.leg.booked_on + _BY_HAND
         others = [
@@ -1201,7 +1303,8 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
             if not same:
                 if firsts is None:
                     firsts, own = _first_days(conn), _own_accounts(conn)
-                if _before_every_history(leg, firsts, own):
+                    payers = _card_payers(conn)
+                if _before_every_history(leg, firsts, own, payers):
                     continue
             code, candidates = OpenTransferCode.UNMATCHED_LEG, same
         else:
@@ -1264,7 +1367,37 @@ def _own_accounts(conn: Connection) -> dict[str, UUID]:
     return found
 
 
-def _before_every_history(leg: _Leg, firsts: dict[UUID, date], own: dict[str, UUID]) -> bool:
+def _card_payers(conn: Connection) -> dict[UUID, set[UUID]]:
+    """D162 amended (6), 15 Nov 2026: the accounts that pay each credit card, per card account
+    id: the other accounts with a line of a reconciled import whose counterparty IBAN is the
+    card's confirmed payment IBAN (the card's settlements are debited there). A card whose
+    payment IBAN is unknown, or that no line pays yet, is absent."""
+    t, card = transaction_table.c, account_table.c
+    rows = conn.execute(
+        select(card.id, t.account_id)
+        .distinct()
+        .select_from(transaction_table)
+        .join(import_table, import_table.c.id == t.import_id)
+        .join(account_table, card.payment_iban_hmac == t.counterparty_iban_hmac)
+        .where(
+            card.kind == AccountKind.CREDIT_CARD.value,
+            t.account_id != card.id,
+            t.excluded_as_duplicate_of.is_(None),
+            import_table.c.status == ImportStatus.RECONCILED.value,
+        )
+    ).all()
+    found: dict[UUID, set[UUID]] = {}
+    for card_id, account_id in rows:
+        found.setdefault(card_id, set()).add(account_id)
+    return found
+
+
+def _before_every_history(
+    leg: _Leg,
+    firsts: dict[UUID, date],
+    own: dict[str, UUID],
+    payers: dict[UUID, set[UUID]] | None = None,
+) -> bool:
     """D162 amended (5), 15 Nov 2026 (Luis: „There are some credit card deposits that were not
     directly linked. Can you check?“): a leg without a counterpart and without a same-amount
     line in its by-hand window (±_BY_HAND), whose window ends before the first bank line of
@@ -1279,7 +1412,20 @@ def _before_every_history(leg: _Leg, firsts: dict[UUID, date], own: dict[str, UU
     (`own`) is decided by that account alone: the card stays while that account has no bank
     line yet (a debit to the other owner's account, whose statements are not imported), and
     goes only when that account's first line is after the window. Every other account counts
-    only for a leg that names none, or an unrelated account with later lines would hide it."""
+    only for a leg that names none, or an unrelated account with later lines would hide it.
+
+    D162 amended (6), 15 Nov 2026 (Luis: a card payment from before the uploaded bank
+    statements): a credit card's line names no IBAN, so it fell to every other account and the
+    ±31 days, and a settlement credit of 2 Dec 2025 kept its card while the account paying the
+    card starts on 2 Jan 2026 (the household's history starts 1 Jan 2026). Such a leg is
+    decided by the accounts that pay the card (_card_payers): no card when every one's first
+    line is after the leg's D162 window (transfer_window_end: the latest day its counterpart
+    could be booked, the debit up to three banking days after an early credit). A card whose
+    payer is unknown keeps the rule above."""
+    paying = (payers or {}).get(leg.leg.account_id)
+    if leg.leg.account_kind is AccountKind.CREDIT_CARD and paying:
+        days = [firsts[a] for a in paying if a in firsts]
+        return bool(days) and transfer_window_end(leg.leg.booked_on) < min(days)
     named = leg.leg.counterparty_iban_hmac
     account = None if named is None else own.get(named)
     if account is not None and account != leg.leg.account_id:
