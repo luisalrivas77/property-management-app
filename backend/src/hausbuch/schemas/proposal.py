@@ -8,7 +8,6 @@ once by tenant erasure (D19).
 """
 
 from datetime import date, datetime
-from decimal import Decimal
 from enum import StrEnum
 from typing import Literal, Self
 from uuid import UUID
@@ -37,7 +36,7 @@ from .enums import (
     ProposalStatus,
     ProposalTargetMode,
 )
-from .household import MovementKind, MovementSource
+from .household import MovementKind, MovementSource, Quantity
 from .property import Address
 from .tenancy import RentDueDay
 
@@ -315,8 +314,8 @@ class BookedDepotTrade(Schema):
     isin: str
     external_ref: str
     kind: MovementKind
-    quantity: Decimal
-    eur_amount: Decimal | None = None
+    quantity: Quantity
+    eur_amount: Money | None = None
     source: MovementSource
 
 
