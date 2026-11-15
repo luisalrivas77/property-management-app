@@ -614,8 +614,9 @@ def _name_history(
 
 def _unlearnable(line: matching.Line) -> list[AllocationCategory]:
     """The categories the line's account takes for which a one-row answer can never become
-    a rule, whatever is typed (D160 on a private account: a transfer, depot or tax-relevant
-    code, or one without a threshold); none on the rental account, whose limits depend on the
+    a rule, whatever is typed (D160 amended (5) on a private account: matchers.NEVER_LEARNED,
+    a transfer or depot code, a property bill, work and education, uncategorized); the panel
+    shows no rule box for them. None on the rental account, whose limits depend on the
     counterparty (D38) and stay can_learn_rule's."""
     if not line.private:
         return []

@@ -92,26 +92,41 @@ from .errors import (
     TRANSFER_UNMATCHED_LEG,
     RuleError,
 )
-from .household.taxonomy import HOUSEHOLD_CODES, TAX_RELEVANT, allowed_categories
+from .household.taxonomy import HOUSEHOLD_CODES, allowed_categories
 from .loan_schedule import build_schedule
 from .periods import months_in, service_period
-from .review import THRESHOLDS
 from .statements import norm
 
 # The shared code (D159) a private account may learn a rule for, beside its household codes:
-# its own bank fees. uncategorized stays unlearnable (no threshold).
+# its own bank fees.
 LEARNABLE_SHARED = frozenset({AllocationCategory.BANK_FEES})
-# Household codes without a threshold that a person may still turn into a rule (15 Nov 2026,
-# Luis: „Künftig immer so zuordnen“ was greyed on the monthly money to family). The model
-# never books them alone (their threshold stays None); a rule only repeats the person's own
-# answer for that payee, and the line keeps its code, so a later Unterhalt check loses nothing.
-# The same for a card's monthly settlement (15 Nov 2026, Luis: „Can't click immer so für the
-# credit card payments“): a card whose statements are not in the app is paid each month at a
-# different amount to one issuer IBAN. Once the card is an account, confirming its payment
-# IBAN switches off every learned rule on that IBAN (D176 (4)), and a line a rule booked
-# hh_credit_card is re-booked as the transfer when linked (D176, rebook_on_link).
-LEARNABLE_WITHOUT_THRESHOLD = frozenset(
-    {AllocationCategory.HH_FAMILY_TRANSFERS, AllocationCategory.HH_CREDIT_CARD}
+# The codes a private account's one-row answer never learns a rule for (D160 amended (5),
+# 15 Nov 2026, Luis: „check for all the places where the check box is disabled and enable
+# the pertinent“). Every other household code may learn one, those without a threshold
+# included: money to family and a card's settlement (15 Nov 2026, the first two), the
+# Finanzamt, a bank's interest, the catch-alls, the Geldanlage codes, a refund, a card's
+# interest, and the tax-relevant donations, childcare and household services. Their
+# threshold stays None, so the model never books them alone; a rule only repeats a person's
+# own answer for that payee, and the line keeps its code, so whatever later reads it (a
+# return input, an Unterhalt check) reads it the same. A rule on an IBAN that later becomes
+# an own account's is switched off then (services.accounts._own_iban: a card's payment IBAN,
+# a depot's or an exchange's IBAN, an account created with one), so it never outranks the
+# transfer matcher, and a line a rule booked hh_credit_card is re-booked as the transfer when
+# linked (D176, rebook_on_link).
+NEVER_LEARNED = frozenset(
+    {
+        AllocationCategory.UNCATEGORIZED,  # no answer to repeat
+        AllocationCategory.INTERNAL_TRANSFER_IN,  # booked by the matcher from an own IBAN
+        AllocationCategory.INTERNAL_TRANSFER_OUT,
+        AllocationCategory.HH_PROPERTY_COST,  # each payment pays its own bill (D161)
+        AllocationCategory.HH_WORK_EDUCATION,  # work or not depends on the item, not the shop
+        # The depot's own bookings, made by code from the depot statement's text (D165 (1))
+        AllocationCategory.SECURITY_PURCHASE,
+        AllocationCategory.SECURITY_SALE,
+        AllocationCategory.DISTRIBUTION,
+        AllocationCategory.CAPITAL_INCOME_TAX,
+        AllocationCategory.DEPOT_FEE,
+    }
 )
 
 EXACT = Decimal("1.000")
@@ -2049,18 +2064,14 @@ def _cross_question(rule: MatchingRule) -> str:
 
 
 def learnable_household(category: AllocationCategory) -> bool:
-    """D160: a household code with a threshold that is not tax-relevant, or bank_fees (the
-    shared code a private account's own fee lines take; they carry no counterparty, so their
-    rule is a typed purpose pattern). A tax-relevant code proposes a return input a person
-    confirms each time; a transfer or depot code is booked by its matcher only; a code
-    without a threshold (hh_other, uncategorized) is never booked unseen, except
-    LEARNABLE_WITHOUT_THRESHOLD (money to family, a card's settlement), whose rule repeats a
-    person's own answer."""
+    """D160 as amended (5): a household code, or bank_fees (the shared code a private
+    account's own fee lines take; they carry no counterparty, so their rule is a typed purpose
+    pattern), outside NEVER_LEARNED (uncategorized, a transfer or depot code, a property bill,
+    work and education). Whether the model may book a code alone is THRESHOLDS', not this:
+    a rule repeats a person's own answer for that payee."""
     return (
-        (category in HOUSEHOLD_CODES or category in LEARNABLE_SHARED)
-        and category not in TAX_RELEVANT
-        and (THRESHOLDS[category] is not None or category in LEARNABLE_WITHOUT_THRESHOLD)
-    )
+        category in HOUSEHOLD_CODES or category in LEARNABLE_SHARED
+    ) and category not in NEVER_LEARNED
 
 
 def name_hits(tx: MatchTransaction, names: Sequence[NameHistory]) -> list[NameHistory]:

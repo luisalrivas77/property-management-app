@@ -64,7 +64,7 @@ def test_a_refund_of_the_merchant_does_not_block_a_purchase_rule():
 
 
 def test_a_payment_to_the_name_does_not_block_a_credit_rule():
-    # A credit is learned on a learnable income code (hh_refund never is: no threshold).
+    # A credit is learned on a learnable income code.
     tx = _tx("2100.00").model_copy(update={"counterparty_name": "Arbeitgeber Beispiel"})
     paid = _seen(1, C.HH_GIFTS, "-50.00", name="Arbeitgeber Beispiel")
     rule = matching.infer_rule(tx, _answer(tx, C.HH_SALARY), PRIVATE, [paid])

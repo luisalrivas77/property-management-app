@@ -475,29 +475,50 @@ def test_the_rental_and_a_private_account_each_keep_their_fee_rule(world, privat
 
 
 def test_the_line_view_names_the_categories_no_rule_is_learned_for(world, private):
-    """The box is greyed for these instead of rule.not_learnable refusing the answer."""
+    """The panel shows no rule box for these instead of rule.not_learnable refusing the
+    answer. D160 amended (5) (15 Nov 2026): exactly the stay-off list; every other code a
+    private account takes may learn a rule, those without a threshold included."""
     tx = private.line(date(2026, 10, 3), "-250.00", name="Kartenabrechnung Beispiel")
     view = world.query(review.transaction_allocations, tx, iban_key=TEST_IBAN_KEY, today=NOW.date())
     unlearnable = set(view.unlearnable_categories)
-    assert {
+    assert unlearnable == {
+        "uncategorized",
         "internal_transfer_in",
         "internal_transfer_out",
-        "hh_donation",
         "hh_property_cost",
+        "hh_work_education",
+        "security_purchase",
+        "security_sale",
+        "distribution",
         "capital_income_tax",
+        "depot_fee",
+    }
+    newly_learnable = {
+        "hh_tax_refund",
+        "hh_tax_payment",
+        "hh_capital_income",
+        "hh_other_income",
         "hh_other",
-        "uncategorized",
-    } <= unlearnable
+        "hh_interest_fees",
+        "hh_refund",
+        "hh_investment",
+        "hh_investment_property",
+        "hh_investment_securities",
+        "hh_investment_crypto",
+        "hh_investment_savings",
+        "hh_donation",
+        "hh_childcare",
+        "hh_household_services",
+    }
     assert (
-        not {
-            "hh_groceries",
-            "hh_salary",
-            "bank_fees",
-            "hh_family_transfers",
-            "hh_credit_card",
-        }
+        not (
+            newly_learnable
+            | {"hh_groceries", "hh_salary", "bank_fees", "hh_family_transfers", "hh_credit_card"}
+        )
         & unlearnable
     )
+    # The model still never books them alone, so the box starts unticked for them.
+    assert newly_learnable <= set(view.no_default_rule_categories)
     # Each one is refused by the PUT, so the list says what the server does.
     for category in unlearnable:
         assert not matchers.learnable_household(category)
@@ -541,6 +562,86 @@ def test_a_card_settlement_learns_a_rule_that_books_the_next_month_at_another_am
     assert (plan.outcome, plan.reason) == ("written", "routing.auto_confirm")
     (row,) = _rows(world, second)
     assert (row.category, row.method, row.status) == ("hh_credit_card", "rule", "confirmed")
+
+
+# --- D160 amended (5), 15 Nov 2026: the pertinent codes learn a rule ------------------------------
+
+KITA_IBAN = "DE39100000000000003012"
+SAVINGS_PAYEE_IBAN = "DE12100000000000003013"
+TAX_IBAN = "DE82100000000000003014"
+
+
+@pytest.mark.parametrize(
+    ("category", "iban", "name", "first", "second"),
+    [
+        # A monthly Kita fee: tax-relevant, but confirmed twelve times a year otherwise.
+        ("hh_childcare", KITA_IBAN, "Kita Beispiel e.V.", "-180.00", "-180.00"),
+        # A standing order to a savings account at another bank, not (yet) in the app.
+        ("hh_investment_savings", SAVINGS_PAYEE_IBAN, "Tagesgeld Beispiel", "-150.00", "-150.00"),
+    ],
+)
+def test_a_code_without_a_threshold_learns_a_rule_that_books_the_next_month(
+    world, private, app_engine, tmp_path, category, iban, name, first, second
+):
+    """Luis: „check for all the places where the check box is disabled and enable the
+    pertinent“. The box starts unticked (the model never books these alone, their threshold
+    stays None), but a person may tick it; the rule then books the payee's next line and the
+    line keeps its code."""
+    one = private.line(date(2026, 9, 1), first, iban=iban, name=name)
+    view = world.query(
+        review.transaction_allocations, one, iban_key=TEST_IBAN_KEY, today=NOW.date()
+    )
+    assert category not in view.unlearnable_categories
+    result = _answer_line(world, one, first, category, learn=True)
+    assert result.rule is not None and result.rule.category == category
+    deps = _deps(app_engine, tmp_path, FakeModelClient())
+    two = private.line(date(2026, 10, 1), second, iban=iban, name=name)
+    plan = _run(deps, world, two)
+    assert (plan.outcome, plan.reason) == ("written", "routing.auto_confirm")
+    (row,) = _rows(world, two)
+    assert (row.category, row.method, row.status) == (category, "rule", "confirmed")
+
+
+def test_a_catch_all_may_learn_a_rule_but_its_box_starts_unticked(world, private):
+    """hh_other may learn a rule from now on, but the server's default for the box stays off
+    (it never auto-confirms), so a person ticks it on purpose."""
+    tx = private.line(date(2026, 10, 2), "-12.00", iban=PAINTER_IBAN, name="Verein Beispiel")
+    answered = _answer_line(world, tx, "-12.00", "hh_other", learn=False)
+    assert answered.rule is None
+    view = world.query(review.transaction_allocations, tx, iban_key=TEST_IBAN_KEY, today=NOW.date())
+    assert view.can_learn_rule is True
+    assert view.learn_rule_default is False
+    assert "hh_other" in view.no_default_rule_categories
+    assert "hh_other" not in view.unlearnable_categories
+    learned = _answer_line(world, tx, "-12.00", "hh_other", learn=True)
+    assert learned.rule is not None and learned.rule.category == "hh_other"
+
+
+def test_the_finanzamt_learns_a_refund_and_a_payment_rule_kept_apart_by_sign(
+    world, private, app_engine, tmp_path
+):
+    """One Finanzamt IBAN refunds and collects: a rule learned on a refund is a credit rule
+    and one learned on a payment a debit rule, so each books only lines of its own sign."""
+    refund = private.line(date(2026, 8, 3), "640.00", iban=TAX_IBAN, name="Finanzamt Beispiel")
+    learned_refund = _answer_line(world, refund, "640.00", "hh_tax_refund", learn=True)
+    assert learned_refund.rule is not None
+    assert learned_refund.rule.matcher.amount_sign == "credit"
+    paid = private.line(date(2026, 8, 10), "-311.00", iban=TAX_IBAN, name="Finanzamt Beispiel")
+    learned_paid = _answer_line(world, paid, "-311.00", "hh_tax_payment", learn=True)
+    assert learned_paid.rule is not None
+    assert learned_paid.rule.matcher.amount_sign == "debit"
+    deps = _deps(app_engine, tmp_path, FakeModelClient())
+    next_refund = private.line(date(2026, 10, 5), "88.00", iban=TAX_IBAN, name="Finanzamt Beispiel")
+    next_paid = private.line(
+        date(2026, 11, 10), "-311.00", iban=TAX_IBAN, name="Finanzamt Beispiel"
+    )
+    for tx in (next_refund, next_paid):
+        plan = _run(deps, world, tx)
+        assert (plan.outcome, plan.reason) == ("written", "routing.auto_confirm")
+    assert [(r.category, r.method) for r in _rows(world, next_refund)] == [
+        ("hh_tax_refund", "rule")
+    ]
+    assert [(r.category, r.method) for r in _rows(world, next_paid)] == [("hh_tax_payment", "rule")]
 
 
 def test_uncategorized_on_a_private_line_still_learns_no_rule(world, private):

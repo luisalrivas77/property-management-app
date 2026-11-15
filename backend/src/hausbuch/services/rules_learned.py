@@ -279,8 +279,8 @@ def _with_patterns(
         return None
     (only,) = confirmed.allocations
     if context.account_purpose is AccountPurpose.PRIVATE:
-        # D160's limits hold for a typed pattern too: no tax-relevant, transfer or depot code
-        # and none without a threshold; the rental matchers never run on a private line. The
+        # D160's limits hold for a typed pattern too: none of NEVER_LEARNED (a transfer or
+        # depot code, a property bill, ...); the rental matchers never run on a private line. The
         # account's own fees (bank_fees, no counterparty) are learnable on a typed pattern.
         if not matchers.learnable_household(only.category):
             return None
