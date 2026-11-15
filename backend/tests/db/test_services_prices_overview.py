@@ -341,44 +341,61 @@ def test_a_fund_in_a_report_that_disagrees_gets_no_price_card_of_its_own(
     run, read, fresh_workspaces
 ):
     """D167 amended (c): the holdings card covers a fund its depot's latest report lists while
-    the report disagrees; a fund no report lists keeps its card, which says so."""
+    the report disagrees, or omits while it is held; a fund no report lists keeps its card,
+    which says so."""
     ws, _ = fresh_workspaces
 
-    def seed(ctx):
-        created = create_account(
-            ctx,
-            AccountCreate(
-                label="Depot",
-                bank="Beispiel",
-                kind=AccountKind.DEPOT,
-                opening_balance=Decimal("0.00"),
-                opening_balance_on=date(2026, 6, 1),
-            ),
-            iban_key=TEST_IBAN_KEY,
+    def depot_account(ctx, label):
+        body = AccountCreate(
+            label=label,
+            bank="Beispiel",
+            kind=AccountKind.DEPOT,
+            opening_balance=Decimal("0.00"),
+            opening_balance_on=date(2026, 6, 1),
         )
-        listed = _asset(ctx, kind="etf", isin="IE000INVENT8", name="Fonds im Bericht")
+        return create_account(ctx, body, iban_key=TEST_IBAN_KEY).id
+
+    def seed(ctx):
+        a, b = depot_account(ctx, "Depot A"), depot_account(ctx, "Depot B")
+        listed = _asset(ctx, kind="etf", isin="IE000INVENT7", name="Fonds im Bericht")
+        later = _asset(ctx, kind="etf", isin="IE000INVENT8", name="Fonds später gekauft")
         unlisted = _asset(ctx, kind="etf", isin="IE000INVENT9", name="Fonds ohne Bericht")
-        for asset_id in (listed, unlisted):
-            _held(ctx, created.id, asset_id)
-        return created.id, listed, unlisted
+        _held(ctx, a, listed)
+        _held(ctx, a, later, at=datetime(2026, 6, 26, 9, 0, tzinfo=UTC))
+        _held(ctx, b, unlisted)  # depot B has no report
+        return a, listed, later, unlisted
 
-    account, listed, unlisted = run(ws, seed, now=FIRST)
-    # The report says 3 units of the listed fund; 2 are booked. It does not list the other.
+    account, listed, later, unlisted = run(ws, seed, now=FIRST)
+
+    def no_source_cards():
+        return {c.asset_id: c for c in _cards(read, ws, NOW, InboxItemKind.PRICE_NO_SOURCE)}
+
+    # Depot A's report of the 25th says 3 units of the first fund; 2 are booked.
     run(ws, _report, account, listed, date(2026, 6, 25), "3", now=NOW)
-
-    cards = _cards(read, ws, NOW, InboxItemKind.PRICE_NO_SOURCE)
-    assert [c.asset_id for c in cards] == [unlisted]
-    assert cards[0].reasoning == (
+    cards = no_source_cards()
+    assert set(cards) == {later, unlisted}
+    assert cards[unlisted].reasoning == (
         "Für Fonds ohne Bericht veröffentlicht die Fondsgesellschaft keinen Kurs, den Hausbuch "
         "abrufen kann, und bisher nennt ihn kein Depotbericht."
     )
     (holdings,) = _cards(read, ws, NOW, InboxItemKind.HOLDINGS_MISMATCH)
-    assert "liefert er auch die Kurse der Fonds" in holdings.question
+    assert holdings.question.endswith(
+        "Sobald der Bericht stimmt, liefert er auch die Kurse der Fonds."
+    )
 
     # Once the report agrees but states no value, the card comes back and says why.
     run(ws, _held, account, listed, "1", datetime(2026, 6, 25, 9, 0, tzinfo=UTC), now=NOW)
-    cards = _cards(read, ws, NOW, InboxItemKind.PRICE_NO_SOURCE)
-    listed_card = next(c for c in cards if c.asset_id == listed)
-    assert listed_card.reasoning.endswith(
+    cards = no_source_cards()
+    assert set(cards) == {listed, later, unlisted}
+    assert cards[listed].reasoning.endswith(
         "der letzte Depotbericht nennt für ihn keinen Wert, aus dem sich ein Kurs ergibt."
     )
+
+    # A newer report lists only the fund bought on the 26th and omits the first one, which the
+    # movements still hold (0 by omission): the holdings card names it, no price card does.
+    run(ws, _report, account, later, date(2026, 6, 26), "2", now=NOW)
+    cards = no_source_cards()
+    assert set(cards) == {later, unlisted}
+    assert cards[later].reasoning.endswith("keinen Wert, aus dem sich ein Kurs ergibt.")
+    (holdings,) = _cards(read, ws, NOW, InboxItemKind.HOLDINGS_MISMATCH)
+    assert "Fonds im Bericht: laut Bericht 0, gebucht 3 Anteile" in holdings.reasoning

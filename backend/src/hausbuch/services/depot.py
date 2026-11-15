@@ -765,9 +765,10 @@ def _latest_report_rows(conn: Connection) -> list[Any]:
 
 
 def latest_report_agreement(conn: Connection) -> dict[UUID, bool]:
-    """Per fund that a depot account's latest report lists: whether every such listing agrees
-    with the confirmed movements to the report's date, re-checked on read as
-    holdings_inbox_items does. A fund held but not listed (0 by omission) is not in it."""
+    """Per fund on a depot account's latest report: whether it agrees with the confirmed
+    movements to the report's date, re-checked on read as holdings_inbox_items does (False
+    when any account's latest report disagrees about it). A fund the movements hold that the
+    report omits (0 by omission) is in it as False: the holdings card names it too."""
     rows = _latest_report_rows(conn)
     agreed: dict[UUID, bool] = {}
     for account_id in {r.account_id for r in rows}:
@@ -778,8 +779,7 @@ def latest_report_agreement(conn: Connection) -> dict[UUID, bool]:
             _movements(conn, account_id),
         )
         for c in checks:
-            if c.listed:
-                agreed[c.asset] = agreed.get(c.asset, True) and c.reconciled
+            agreed[c.asset] = agreed.get(c.asset, True) and c.reconciled
     return agreed
 
 

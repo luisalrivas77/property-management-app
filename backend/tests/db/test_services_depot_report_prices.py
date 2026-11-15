@@ -90,8 +90,13 @@ def _booked_without_the_hook(run, ws, depot_id):
     run(ws, book)
 
 
+NOW = datetime(2026, 11, 15, 8, 0, tzinfo=UTC)
+
+
 def _cards(read, ws, kind):
-    return [i for i in read(ws, review.inbox) if i.kind is kind]
+    """Zu prüfen with `now`, so the price cards are read too."""
+    items = read(ws, review.inbox, today=NOW.date(), now=NOW)
+    return [i for i in items if i.kind is kind]
 
 
 def test_a_trade_applied_after_its_report_stores_the_reports_price_once(

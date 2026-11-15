@@ -424,6 +424,22 @@ def _any_price(conn: Connection, asset_id: UUID) -> bool:
     return conn.execute(select(p.id).where(p.asset_id == asset_id).limit(1)).first() is not None
 
 
+def _in_any_report(conn: Connection, asset_id: UUID) -> bool:
+    h = holding_table.c
+    return (
+        conn.execute(
+            select(h.id)
+            .where(
+                h.asset_id == asset_id,
+                h.source == HoldingSource.REPORT.value,
+                h.superseded_by.is_(None),
+            )
+            .limit(1)
+        ).first()
+        is not None
+    )
+
+
 def _last_run_at(conn: Connection) -> datetime | None:
     e = event_table.c
     return conn.execute(
@@ -471,11 +487,15 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 continue  # „Kurs aus dem letzten Bericht“, no card (D174 (4))
             if in_reports.get(row.id) is False:
                 continue  # the holdings card („Depotbericht stimmt nicht“) covers it
-            report = (
-                "der letzte Depotbericht nennt für ihn keinen Wert, aus dem sich ein Kurs ergibt"
-                if row.id in in_reports
-                else "bisher nennt ihn kein Depotbericht"
-            )
+            if row.id in in_reports:
+                report = (
+                    "der letzte Depotbericht nennt für ihn keinen Wert, aus dem sich ein Kurs "
+                    "ergibt"
+                )
+            elif _in_any_report(conn, row.id):
+                report = "kein aktueller Depotbericht bewertet ihn"
+            else:
+                report = "bisher nennt ihn kein Depotbericht"
             items.append(
                 InboxItem(
                     kind=InboxItemKind.PRICE_NO_SOURCE,
