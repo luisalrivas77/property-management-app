@@ -10,6 +10,11 @@
 #      gives the first day of its first month to the last day of its last month.
 #   2. else a bare four-digit year (2000-2100) in the purpose: that calendar year
 #      ("Nachzahlung NK 2026": a settlement for the year 2026);
+#   Amended 15 Nov 2026 (D27 amended): a quarter „Q4/2025“ (Q1-Q4, then a two- or four-digit
+#   year after „/“ or a space) is its three months, read before a month, so it is never
+#   month 4; and a period read from the text counts only when its years lie from ten years
+#   before the booking year to one year after it, else the next candidate is read: a street
+#   number in a card line („2093 Market Pike“) is not the year a payment is for.
 #   3. else, for a recurring line, the booking month;
 #   4. else null.
 # The period is independent of the booking date when the purpose states one (rent for January
@@ -63,5 +68,57 @@ cases:
   - id: none_not_recurring_null
     purpose: Rechnung R 8817
     booking_date: 2027-02-01
+    recurring: false
+    expect: null
+
+  - id: quarter_not_month
+    description: A quarter is its three months, never the month of its number (D27 amended).
+    purpose: 3 - Ihre Rate fuer Quartal Q4/2025 - Kreditkarte
+    booking_date: 2026-01-02
+    recurring: false
+    expect: {start: 2025-10-01, end: 2025-12-31}
+
+  - id: quarter_with_space_two_digit_year
+    purpose: Beitrag Q1 27
+    booking_date: 2026-12-28
+    recurring: false
+    expect: {start: 2027-01-01, end: 2027-03-31}
+
+  - id: street_number_not_a_year
+    description: A four-digit house number far from the booking year is no period (D27 amended).
+    purpose: EXAMPLE CLOUD 2093 Market Pike Unit 12
+    booking_date: 2026-07-17
+    recurring: false
+    expect: null
+
+  - id: street_number_recurring_booking_month
+    description: The implausible year is skipped, so a recurring line falls back to its month.
+    purpose: EXAMPLE CLOUD 2093 Market Pike Unit 12
+    booking_date: 2026-10-19
+    recurring: true
+    expect: {start: 2026-10-01, end: 2026-10-31}
+
+  - id: implausible_year_then_plausible_one
+    description: An implausible candidate is skipped and the next one is read.
+    purpose: Hauptstr. 2093 Nachzahlung NK 2025
+    booking_date: 2026-03-12
+    recurring: false
+    expect: {start: 2025-01-01, end: 2025-12-31}
+
+  - id: year_ten_before_booking_counts
+    purpose: Nachzahlung Grundsteuer 2016
+    booking_date: 2026-05-04
+    recurring: false
+    expect: {start: 2016-01-01, end: 2016-12-31}
+
+  - id: year_two_after_booking_does_not
+    purpose: Zinsbindung bis 2028
+    booking_date: 2026-05-04
+    recurring: false
+    expect: null
+
+  - id: month_far_ahead_does_not
+    purpose: Gutschein gueltig bis 12/2031
+    booking_date: 2026-05-04
     recurring: false
     expect: null
