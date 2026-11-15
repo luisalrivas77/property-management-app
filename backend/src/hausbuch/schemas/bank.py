@@ -393,6 +393,15 @@ class TransactionAllocationStatus(StrEnum):
     OPEN = "open"
 
 
+class ReturnedPartner(Schema):
+    """Phase 6 D162 amended (6): the other line of a returned payment booked as such (the
+    debit that left, or the credit that brought it back, on the same account)."""
+
+    transaction_id: UUID
+    booking_date: date
+    amount: Money
+
+
 class Transaction(Record):
     """Read shape. The counterparty IBAN is shown masked only. allocation_status and
     allocation_categories are computed on read, never stored: the distinct categories of
@@ -414,6 +423,9 @@ class Transaction(Record):
     excluded_as_duplicate_of: UUID | None = None
     allocation_status: TransactionAllocationStatus
     allocation_categories: list[AllocationCategory]
+    # Phase 6 D162 amended (6): set by GET /accounts/{id}/transactions when the line is one
+    # half of a returned payment booked as such; the other half.
+    returned_with: ReturnedPartner | None = None
 
 
 class PossibleDuplicate(Record):
