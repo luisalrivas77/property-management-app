@@ -131,6 +131,13 @@ def normalise(
                 continue
             by_hash.setdefault(tx_hash, {}).setdefault(action, []).append(row)
     out = [_tx(chain, tx_hash, rows, own) for tx_hash, rows in by_hash.items()]
+    # A transaction the address neither paid for nor moved a unit in (a zero-value token row,
+    # as an address-poisoning transfer sends; a third party's failed call to it) is no group.
+    out = [
+        t
+        for t in out
+        if t.fee is not None or any(own in (x.from_addr, x.to_addr) for x in t.transfers)
+    ]
     return sorted(out, key=lambda t: (t.block, t.hash))
 
 
@@ -478,8 +485,10 @@ def classify_evm(
     if tx.status == "failed":
         return group(GroupKind.FAILED, [])
 
-    ins = [t for t in tx.transfers if t.to_addr == me]
-    outs = [t for t in tx.transfers if t.from_addr == me]
+    # A send to itself nets to nothing: no leg (its in and out would share one index).
+    looped = [t for t in tx.transfers if t.from_addr == me and t.to_addr == me]
+    ins = [t for t in tx.transfers if t.to_addr == me and t not in looped]
+    outs = [t for t in tx.transfers if t.from_addr == me and t not in looped]
 
     # (c) the registry's wrap, by shape: a decoder row never overrides the shape (D183 (4)).
     wrap = _wrap_row(chain, tx.program_calls, rows) if signed else None
@@ -552,6 +561,8 @@ def classify_evm(
     if not ins and not outs:
         if spam_legs:
             return group(GroupKind.SPAM, spam_legs)
+        if looped:
+            return group(GroupKind.TRANSFER, [], fee_only=True)
         return group(GroupKind.CONTRACT_CALL, [], fee_only=True)
 
     # (b) an exchange withdrawal's hash: the deposit side of D175.
@@ -620,6 +631,12 @@ def classify_evm(
 # --- to the stored shape --------------------------------------------------------------------
 
 
+def _plain(value: Decimal) -> Decimal:
+    """Trailing zeros dropped, never a positive exponent (100, not 1E+2): exact, no rounding."""
+    value = value.normalize()
+    return value.quantize(Decimal(1)) if value.as_tuple().exponent > 0 else value  # type: ignore[operator]
+
+
 def to_draft(
     group: EvmGroup,
     account_id: UUID,
@@ -632,7 +649,7 @@ def to_draft(
     movements = []
     for leg in group.legs:
         asset_id, decimals = assets[leg.asset_key]
-        quantity = Decimal(leg.units).scaleb(-decimals).normalize()  # exact: no rounding
+        quantity = _plain(Decimal(leg.units).scaleb(-decimals))
         movements.append(
             AssetMovementDraft(
                 account_id=account_id,

@@ -264,6 +264,25 @@ def test_records_normalise_failed_internal_erc20_and_nfts_as_spam():
     assert page.items[0].raw["txlist"][0]["isError"] == "1"  # the stored original
 
 
+def test_one_run_reads_history_and_balances_to_one_block():
+    class Moving(Etherscan):  # the chain moves on between the calls
+        tips = iter(range(TIP, TIP + 100))
+
+        def __call__(self, url, headers, timeout, max_bytes):
+            if "eth_blockNumber" in url:
+                self.urls.append(url)
+                self.queries.append({"action": "eth_blockNumber"})
+                return _proxy(hex(next(self.tips)))
+            return super().__call__(url, headers, timeout, max_bytes)
+
+    fetch = Moving()
+    source = _source(fetch)
+    page = source.transactions(ME, None)
+    balances = source.balances(ME)
+    assert [q["action"] for q in fetch.queries].count("eth_blockNumber") == 1
+    assert {b.at_block for b in balances} == {int(page.next_cursor or 0)}
+
+
 def test_balances_at_the_window_end():
     fetch = Etherscan()
     got = _source(fetch).balances(ME)

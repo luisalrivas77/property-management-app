@@ -43,6 +43,7 @@ class RpcBalanceSource:
     sleep: Callable[[float], None] = field(default=time.sleep, repr=False)
     kind: ChainSourceKind = ChainSourceKind.EVM_RPC_BALANCE
     _calls: int = field(default=0, init=False, repr=False)
+    _tip: int | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         row = registry().chain(self.chain)
@@ -73,7 +74,12 @@ class RpcBalanceSource:
         return int(result, 16) if result != "0x" else 0
 
     def tip(self) -> int:
-        return self._hex("eth_blockNumber", [])
+        """The chain's tip, read once per instance: the history, the balances and a deposit
+        of one sync run are read to the same block (D186 (2)), so a sync builds one source
+        per run."""
+        if self._tip is None:
+            self._tip = self._hex("eth_blockNumber", [])
+        return self._tip
 
     def transactions(self, address: str, cursor: str | None) -> Page[ChainTx]:
         return Page[ChainTx](items=[], next_cursor=cursor)  # D181 (c): balance only

@@ -233,8 +233,26 @@ def test_a_failed_internal_call_moves_nothing():
     rows = {
         "txlistinternal": [_row(**{"from": FOREIGN, "to": ME}, value="9", traceId="0", isError="1")]
     }
-    (tx,) = evm.normalise(Chain.ARBITRUM, rows, ME)
-    assert tx.transfers == []
+    assert evm.normalise(Chain.ARBITRUM, rows, ME) == []  # no fee, no unit moved: no group
+
+
+def test_a_zero_value_token_row_is_no_group():
+    # an address-poisoning transfer: a lookalike sender moves 0 units in the address's name
+    rows = {"tokentx": [_row(**{"from": ME, "to": FOREIGN}, contractAddress=USDC, value="0")]}
+    assert evm.normalise(Chain.ETHEREUM, rows, ME) == []
+
+
+def test_a_third_partys_failed_call_to_the_address_is_no_group():
+    rows = {"txlist": [_row(**{"from": FOREIGN, "to": ME}, value="5", isError="1")]}
+    assert evm.normalise(Chain.ETHEREUM, rows, ME) == []
+
+
+def test_a_send_to_itself_is_its_fee_only():
+    rows = {"txlist": [_row(**{"from": ME, "to": ME}, value="5", gasUsed="2", gasPrice="3")]}
+    (tx,) = evm.normalise(Chain.ETHEREUM, rows, ME)
+    group = evm.classify_evm(Chain.ETHEREUM, tx, ME)
+    assert group.kind is GroupKind.TRANSFER and group.fee_only and group.card is None
+    assert [(g.kind, g.units, g.index) for g in group.legs] == [(MovementKind.FEE, 6, "fee")]
 
 
 def test_a_minted_registry_token_is_an_airdrop():
@@ -325,6 +343,7 @@ def test_to_draft_signs_and_scales():
         (usdc, Decimal("-100"), "40", MovementSource.CHAIN),
         (eth, Decimal("-0.0006"), "fee", MovementSource.CHAIN),
     ]
+    assert [str(m.quantity) for m in draft.movements] == ["-100", "-0.0006"]  # never 1E+2
 
 
 def test_receipt_ignores_a_four_topic_transfer():
