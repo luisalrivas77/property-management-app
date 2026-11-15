@@ -10,7 +10,12 @@ import pytest
 from hausbuch.rules.depot import printed_depot_numbers, printed_ibans
 from hausbuch.rules.prefill import build_proposal
 from hausbuch.schemas.ai import ClassifyOutput, ExtractedValue, SourceRef
-from hausbuch.schemas.enums import DocumentSubtype, DocumentType, ExtractionKind
+from hausbuch.schemas.enums import (
+    DepotDocumentKind,
+    DocumentSubtype,
+    DocumentType,
+    ExtractionKind,
+)
 from hausbuch.schemas.extraction import (
     DepotReportExtraction,
     DistributionNoteExtraction,
@@ -18,7 +23,7 @@ from hausbuch.schemas.extraction import (
     SecuritiesTransferExtraction,
     TradeConfirmationExtraction,
 )
-from hausbuch.schemas.proposal import ExistingDepotAccount, PrefillContext
+from hausbuch.schemas.proposal import ExistingDepotAccount, PrefillContext, PrintedDepot
 
 DOC = UUID("00000000-0000-0000-0000-00000000d0c1")
 DEPOT_A = ExistingDepotAccount(
@@ -40,7 +45,14 @@ def _v(value, quote: str | None = None) -> ExtractedValue:
     )
 
 
-def _context(subtype, *, accounts=(DEPOT_A, DEPOT_B), printed=None, depot_document=True):
+def _context(
+    subtype,
+    *,
+    accounts=(DEPOT_A, DEPOT_B),
+    printed=None,
+    outcome=None,
+    depot_kind=DepotDocumentKind.REBALANCING,
+):
     return PrefillContext(
         document_id=DOC,
         classification=ClassifyOutput(
@@ -51,8 +63,9 @@ def _context(subtype, *, accounts=(DEPOT_A, DEPOT_B), printed=None, depot_docume
             confidence="high",
         ),
         depot_accounts=list(accounts),
+        printed_depot=outcome or (PrintedDepot.MATCH if printed else PrintedDepot.NOTHING),
         printed_depot_account_id=printed,
-        depot_document=depot_document,
+        depot_kind=depot_kind,
     )
 
 
@@ -146,17 +159,42 @@ def test_without_a_printed_depot_two_depots_are_left_to_the_user():
     assert movement.fields["account_id"].value is None
 
 
-def test_a_printed_account_that_is_no_choice_falls_back_to_the_only_depot():
+@pytest.mark.parametrize("outcome", [PrintedDepot.NOTHING, PrintedDepot.UNREADABLE])
+def test_a_document_that_names_no_depot_falls_back_to_the_only_depot(outcome):
     records = _build(
         ExtractionKind.TRADE_CONFIRMATION,
         _trade(),
         DocumentSubtype.TRADE_CONFIRMATION,
         accounts=(DEPOT_A,),
-        printed=DEPOT_B.id,
+        outcome=outcome,
     )
     movement = next(r for r in records if r.key == "movement:1")
     assert movement.fields["account_id"].value == str(DEPOT_A.id)
     assert movement.fields["account_id"].confidence == "low"
+
+
+def test_a_document_that_names_another_depot_is_not_put_on_the_only_one():
+    # Review, 15 Nov 2026: the receiving depot of an Einbuchung is not created yet, and the
+    # only depot under Konten is another one; the user creates the right depot first.
+    records = _build(
+        ExtractionKind.SECURITIES_TRANSFER,
+        SecuritiesTransferExtraction(
+            direction=_v("Einbuchung"),
+            transfer_date=_v("2026-03-02", "02.03.2026"),
+            reference=_v("REF0002"),
+            positions=_v([f"{ISIN} | Beispiel Welt ETF | 2,5000"]),
+        ),
+        DocumentSubtype.SECURITIES_TRANSFER,
+        accounts=(DEPOT_A,),
+        outcome=PrintedDepot.NAMED_ELSEWHERE,
+    )
+    movement = next(r for r in records if r.key == "movement:1")
+    assert movement.fields["account_id"].value is None
+    assert [o.value for o in movement.options["account_id"]] == [str(DEPOT_A.id)]
+    assert movement.notes[0] == (
+        "Dieses Dokument nennt ein anderes Depot, als unter Konten angelegt ist. Bitte zuerst "
+        "dieses Depot anlegen (Konten › „Konto anlegen“, Kontoart „Depot“), dann hier wählen."
+    )
 
 
 # --- the Steuerjahr by the document's own date --------------------------------------------
@@ -237,9 +275,90 @@ def test_a_general_reading_of_another_document_gets_no_year_by_code():
     records = build_proposal(
         ExtractionKind.GENERAL,
         GeneralExtraction(document_date=_v("2026-04-01", "01.04.2026")),
-        _context(None, depot_document=False),
+        _context(None, depot_kind=None),
     )
     assert _tax_year(records) is None
+
+
+# --- a year-end document by the year it reports on (review, 15 Nov 2026) ------------------
+
+ANNUAL_KINDS = [
+    DepotDocumentKind.JAHRESSTEUERBESCHEINIGUNG,
+    DepotDocumentKind.ERTRAGSUEBERSICHT,
+    DepotDocumentKind.KOSTENAUSWEIS,
+]
+
+
+@pytest.mark.parametrize("depot_kind", ANNUAL_KINDS)
+def test_a_year_end_document_takes_the_year_its_title_names(depot_kind):
+    records = build_proposal(
+        ExtractionKind.GENERAL,
+        GeneralExtraction(
+            title=_v("Jahressteuerbescheinigung 2026"),
+            document_date=_v("2027-02-15", "15.02.2027"),
+        ),
+        _context(None, depot_kind=depot_kind),
+    )
+    tax_year = _tax_year(records)
+    assert tax_year is not None
+    assert tax_year.value == 2026
+    assert tax_year.derived_from == ["title"]
+    assert tax_year.confidence == "medium"
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        None,
+        "Jahressteuerbescheinigung",
+        # two years named: the title does not decide
+        "Ertragsübersicht 2026, erstellt 2027",
+    ],
+)
+@pytest.mark.parametrize("depot_kind", ANNUAL_KINDS)
+def test_a_year_end_document_without_one_year_in_its_title_takes_the_year_before_its_date(
+    depot_kind, title
+):
+    extraction = GeneralExtraction(
+        document_date=_v("2027-02-15", "15.02.2027"),
+        **({"title": _v(title)} if title is not None else {}),
+    )
+    records = build_proposal(
+        ExtractionKind.GENERAL, extraction, _context(None, depot_kind=depot_kind)
+    )
+    tax_year = _tax_year(records)
+    assert tax_year is not None
+    assert tax_year.value == 2026
+    assert tax_year.derived_from == ["document_date"]
+    assert tax_year.confidence == "low"
+
+
+def test_a_year_end_document_without_title_year_or_date_gets_no_year():
+    records = build_proposal(
+        ExtractionKind.GENERAL,
+        GeneralExtraction(title=_v("Kostenausweis")),
+        _context(None, depot_kind=DepotDocumentKind.KOSTENAUSWEIS),
+    )
+    assert _tax_year(records) is None
+
+
+@pytest.mark.parametrize(
+    "depot_kind",
+    [k for k in DepotDocumentKind if k not in ANNUAL_KINDS],
+)
+def test_every_other_depot_document_keeps_its_own_dates_year(depot_kind):
+    records = build_proposal(
+        ExtractionKind.GENERAL,
+        GeneralExtraction(
+            title=_v("Mitteilung 2025"),
+            document_date=_v("2026-04-01", "01.04.2026"),
+        ),
+        _context(None, depot_kind=depot_kind),
+    )
+    tax_year = _tax_year(records)
+    assert tax_year is not None
+    assert tax_year.value == 2026
+    assert tax_year.derived_from == ["document_date"]
 
 
 def test_a_depot_document_without_any_date_gets_no_year():

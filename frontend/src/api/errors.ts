@@ -72,6 +72,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Diese Datei wird nicht mit KI ausgelesen: Hausbuch hat sie beim Bankabruf von der Bank geholt, oder sie ist ein Kontoauszug oder Umsatz-Export einer Bank, eine Kreditkartenabrechnung oder ein Kontoauszug des Depot-Verrechnungskontos. Solche Dateien liest Hausbuch selbst, ohne KI, auf ihrem Konto ein; steht sie dort noch nicht, auf der Seite des Dokuments „Auf Konto importieren“ oder „Konto anlegen und einlesen“ wählen.",
   "statement.no_account_offer":
     "Aus dieser Datei lässt sich kein neues Konto anlegen: sie ist schon eingelesen, oder sie ist kein Kontoauszug, den Hausbuch selbst liest. Bitte die Seite neu laden.",
+  // Review of 15 Nov 2026: a file that followed its account but could not be read just now.
+  "statement.follow_unreadable":
+    "Diese Datei ließ sich gerade nicht lesen; bitte später auf ihrer Seite „Auf Konto importieren“ klicken.",
   // Phase 6 D166, step 5a: an exchange export is never sent to the model.
   "proposal.exchange_export_not_read":
     "Das ist ein Export einer Börse (BISON oder Binance). Hausbuch liest ihn selbst, ohne KI, auf dem Konto der Börse ein: unter Konten das Konto der Börse öffnen und den Export dort mit „Export der Börse hochladen“ hochladen; gibt es noch keins, ein Konto der Art „Börse (Krypto)“ anlegen.",

@@ -14,6 +14,7 @@ hausbuch_app under RLS.
 Invented numbers and files only (tests/test_depot_pdf.py's layout).
 """
 
+import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -333,11 +334,31 @@ def _report_values(positions: list[str]) -> dict:
     }
 
 
-def _report(run, job, ws, blob_store, number: str, positions=None):
-    """A depot report printing „Depot-Nr. <number>“, uploaded and read (the job's result
-    recorded with the store, as the document job does)."""
+TRANSFER = ClassifyOutput(
+    type=DocumentType.LETTER,
+    subtype=DocumentSubtype.SECURITIES_TRANSFER,
+    contains_tenant_data=False,
+    language="de",
+    confidence="high",
+)
+
+
+def _report(
+    run,
+    job,
+    ws,
+    blob_store,
+    number: str,
+    positions=None,
+    *,
+    text: str | None = None,
+    classification: ClassifyOutput = REPORT,
+    values: dict | None = None,
+):
+    """A depot report printing „Depot-Nr. <number>“ (or another depot document's `text`),
+    uploaded and read (the job's result recorded with the store, as the document job does)."""
     data = draw(
-        [f"Quartalsbericht\nDepot-Nr. {number}\nStammnummer 12345678\nSeite 1 von 1"],
+        [text or f"Quartalsbericht\nDepot-Nr. {number}\nStammnummer 12345678\nSeite 1 von 1"],
         salt=uuid.uuid4().hex,
     )
     doc = run(
@@ -356,9 +377,10 @@ def _report(run, job, ws, blob_store, number: str, positions=None):
         ws,
         proposals.record_read_result,
         queued.id,
-        classification=REPORT,
+        classification=classification,
         classify_call_id=classify_id,
-        values=_report_values(
+        values=values
+        or _report_values(
             ["IE00BEISPL01 | Beispiel Welt ETF | 2,5000 | 101,00 | 252,50 | EUR"]
             if positions is None
             else positions
@@ -380,9 +402,48 @@ def job(app_engine):
     return _job
 
 
-def _account_field(proposal):
-    holding = next(r for r in proposal.records if r.key == "holding:1")
+def _account_field(proposal, key: str = "holding:1"):
+    holding = next(r for r in proposal.records if r.key == key)
     return holding.fields["account_id"]
+
+
+def _ready_now(read, ws, doc_id):
+    (current,) = [
+        p
+        for p in read(ws, proposals.list_document_proposals, doc_id)
+        if p.status is ProposalStatus.READY
+    ]
+    return current
+
+
+class _Flaky:
+    """A store that fails the second read of any key (review, 15 Nov 2026): a followed
+    file's first read is the search for waiting files, its second the import."""
+
+    def __init__(self, inner):
+        self._inner, self._seen = inner, set()
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def get(self, key):
+        if key in self._seen:
+            raise TimeoutError("object storage timed out")
+        self._seen.add(key)
+        return self._inner.get(key)
+
+
+class _Unreachable:
+    """A store whose every read fails."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def get(self, key):
+        raise TimeoutError("object storage timed out")
 
 
 def _tax_year(proposal):
@@ -432,7 +493,7 @@ def test_an_applied_reading_is_never_rebuilt(run, read, job, blob_store, fresh_w
     """A reading applied on the only depot (pre-selected by the rule of one) stays as it is
     when a second depot, the one it prints, is created: what was applied is never redone."""
     ws, _ = fresh_workspaces
-    a = _depot(run, ws, number=DEPOT_A_NUMBER)
+    a = _depot(run, ws)  # no number yet, so nothing tells it is not the depot printed
     doc, ready = _report(run, job, ws, blob_store, DEPOT_B_NUMBER)
     assert _account_field(ready).value == str(a.id)
     applied = run(
@@ -444,14 +505,175 @@ def test_an_applied_reading_is_never_rebuilt(run, read, job, blob_store, fresh_w
     assert [p.id for p in read(ws, proposals.list_document_proposals, doc.id)] == [ready.id]
 
 
-def test_a_printed_number_no_depot_holds_falls_back_to_the_only_depot(
+ELSEWHERE_NOTE = (
+    "Dieses Dokument nennt ein anderes Depot, als unter Konten angelegt ist. Bitte zuerst "
+    "dieses Depot anlegen (Konten › „Konto anlegen“, Kontoart „Depot“), dann hier wählen."
+)
+
+
+def test_a_printed_number_no_depot_holds_pre_selects_nothing(
     run, read, job, blob_store, fresh_workspaces
 ):
+    """Review, 15 Nov 2026: the only depot has another number, so the document is another
+    depot's; it is never put on the only one (it was, at low confidence, until then)."""
     ws, _ = fresh_workspaces
     a = _depot(run, ws, number=DEPOT_A_NUMBER)
     _, ready = _report(run, job, ws, blob_store, DEPOT_B_NUMBER)
     chosen = _account_field(ready)
+    assert chosen.value is None
+    holding = next(r for r in ready.records if r.key == "holding:1")
+    assert holding.notes[0] == ELSEWHERE_NOTE
+    assert [o.value for o in holding.options["account_id"]] == [str(a.id)]
+
+
+def test_a_printed_number_with_the_only_depot_unnumbered_falls_back_to_it(
+    run, read, job, blob_store, fresh_workspaces
+):
+    """A depot without a number could be the one printed, so the rule of one still holds."""
+    ws, _ = fresh_workspaces
+    a = _depot(run, ws)
+    _, ready = _report(run, job, ws, blob_store, DEPOT_B_NUMBER)
+    chosen = _account_field(ready)
     assert (chosen.value, chosen.confidence) == (str(a.id), "low")
+
+
+def test_an_einbuchung_into_a_depot_not_created_yet_pre_selects_nothing(
+    run, read, job, blob_store, fresh_workspaces
+):
+    """The giving depot (A) is the only one under Konten; the Einbuchung prints the
+    receiving depot's number (B) under its label and A's only beside the holder's name."""
+    ws, _ = fresh_workspaces
+    _depot(run, ws, number=DEPOT_A_NUMBER)
+    _, ready = _report(
+        run,
+        job,
+        ws,
+        blob_store,
+        DEPOT_B_NUMBER,
+        text=(
+            f"Einbuchung von Wertpapieren\nDepot-Nr. {DEPOT_B_NUMBER}\n"
+            f"Übertrag von Beispiel, Erika {DEPOT_A_NUMBER}\nSeite 1 von 1"
+        ),
+        classification=TRANSFER,
+        values={
+            "title": _v("Einbuchung von Wertpapieren"),
+            "document_date": _v("2026-04-02"),
+            "direction": _v("Einbuchung"),
+            "transfer_date": _v("2026-04-02"),
+            "reference": _v("UMB0001"),
+            "positions": _v(["IE00BEISPL01 | Beispiel Welt ETF | 3,0000"]),
+        },
+    )
+    assert _account_field(ready, "movement:1").value is None
+    movement = next(r for r in ready.records if r.key == "movement:1")
+    assert movement.notes[0] == ELSEWHERE_NOTE
+
+
+def test_a_rebuild_that_cannot_read_the_document_leaves_its_suggestion(
+    run, read, job, blob_store, fresh_workspaces
+):
+    """Review, 15 Nov 2026: a passing store error during a rebuild never takes a
+    pre-selection away; the suggestion stays as it is."""
+    ws, _ = fresh_workspaces
+    a = _depot(run, ws)
+    doc, ready = _report(run, job, ws, blob_store, DEPOT_B_NUMBER)
+    assert _account_field(ready).value == str(a.id)
+    _depot(run, ws, _Unreachable(blob_store), label="Megatrends", number=OTHER_KONTO, n=1)
+    assert read(ws, proposals.get_proposal, ready.id).status is ProposalStatus.READY
+    assert _ready_now(read, ws, doc.id).id == ready.id
+
+
+def test_one_suggestion_that_cannot_be_rebuilt_blocks_no_other(
+    run, read, job, blob_store, fresh_workspaces, monkeypatch, caplog
+):
+    ws, _ = fresh_workspaces
+    _depot(run, ws)
+    broken_doc, broken = _report(run, job, ws, blob_store, DEPOT_B_NUMBER)
+    doc, ready = _report(run, job, ws, blob_store, DEPOT_B_NUMBER)
+    real = proposals.build_proposal
+
+    def failing(kind, extraction, context):
+        if context.document_id == broken_doc.id:
+            raise ValueError("a secret value 4711")
+        return real(kind, extraction, context)
+
+    monkeypatch.setattr(proposals, "build_proposal", failing)
+    caplog.set_level(logging.WARNING, logger="hausbuch.services.proposals")
+    b = _depot(run, ws, blob_store, label="Megatrends", number=DEPOT_B_NUMBER, n=1)
+    assert read(ws, proposals.get_proposal, broken.id).status is ProposalStatus.READY
+    assert read(ws, proposals.get_proposal, ready.id).status is ProposalStatus.SUPERSEDED
+    assert _account_field(_ready_now(read, ws, doc.id)).value == str(b.id)
+    (record,) = [r for r in caplog.records if r.name == "hausbuch.services.proposals"]
+    assert record.fields == {"proposal_id": str(broken.id), "exc_type": "ValueError"}
+    assert "4711" not in caplog.text
+
+
+# --- Review fixes of 15 Nov 2026: the follow -----------------------------------------------
+
+
+def test_the_import_returns_the_status_the_follow_left_it_with(
+    run, read, app_engine, blob_store, fresh_workspaces, tmp_path, hook_calls
+):
+    """Statement 3 imported onto a depot without a number: its number is set and statements
+    1 and 2 follow, after which 3 reconciles; the answer says so, not what it was before."""
+    ws, _ = fresh_workspaces
+    docs = {
+        n: _uploaded_and_refused(
+            app_engine, blob_store, ws, tmp_path, _statement(n), "application/pdf"
+        )[0]
+        for n in (1, 2, 3)
+    }
+    depot = _depot(run, ws)
+    returned = run(
+        ws,
+        statements.import_stored_statement,
+        blob_store,
+        docs[3].id,
+        depot.id,
+        iban_key=TEST_IBAN_KEY,
+        now=T0 + timedelta(minutes=5),
+    )
+    stored = {i.document_id: i for i in read(ws, list_imports, depot.id)}
+    assert len(stored) == 3
+    assert returned.status is stored[docs[3].id].status
+    assert returned.status is ImportStatus.RECONCILED
+
+
+def test_a_followed_file_that_cannot_be_read_keeps_its_offer_and_rolls_back_nothing(
+    run, read, app_engine, blob_store, fresh_workspaces, tmp_path, hook_calls, caplog
+):
+    ws, _ = fresh_workspaces
+    docs = [
+        _uploaded_and_refused(
+            app_engine, blob_store, ws, tmp_path, _statement(n), "application/pdf"
+        )[0]
+        for n in (1, 2)
+    ]
+    caplog.set_level(logging.WARNING, logger="hausbuch.services.statements")
+    account = _depot(run, ws, _Flaky(blob_store), number=KONTO)
+    assert read(ws, get_account, account.id).id == account.id  # the account stays
+    assert read(ws, list_imports, account.id) == []
+    for doc in docs:
+        assert _offer(read, blob_store, ws, doc.id).suggested_account_id == account.id
+    logged = [r.fields for r in caplog.records if r.name == "hausbuch.services.statements"]
+    assert logged == [{"document_id": str(doc.id), "exc_type": "TimeoutError"} for doc in docs]
+
+    followed = run(
+        ws,
+        statements.import_waiting_statements,
+        _Flaky(blob_store),
+        account.id,
+        iban_key=TEST_IBAN_KEY,
+    )
+    assert followed.imported == []
+    assert [(r.document_id, r.code) for r in followed.refused] == [
+        (doc.id, "statement.follow_unreadable") for doc in docs
+    ]
+    # Once the store answers again, they follow.
+    again = run(
+        ws, statements.import_waiting_statements, blob_store, account.id, iban_key=TEST_IBAN_KEY
+    )
+    assert [i.document_id for i in again.imported] == [doc.id for doc in docs]
 
 
 def test_the_catch_up_command_queues_one_job_that_follows_the_existing_accounts(

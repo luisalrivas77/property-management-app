@@ -24,6 +24,7 @@ kept_both queues `match_transaction` for the later line, which waited for the de
 """
 
 import hmac
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -106,6 +107,13 @@ from .iban import ProtectedIban, protect_iban, protect_ref
 from .lookup import require_row
 
 POSSIBLE_DUPLICATE = "possible_duplicate"  # NotFoundError entity type: it has no events
+
+logger = logging.getLogger("hausbuch.services.statements")
+
+# A followed file (one imported by itself after another, never the one a person chose) that
+# failed for a reason other than a rule (its original unreadable, the document gone): it keeps
+# its offer, and only this file is rolled back (review, 15 Nov 2026).
+STATEMENT_FOLLOW_UNREADABLE = "statement.follow_unreadable"
 
 # Codes that come from the file itself (D34): no anchor or declaration can clear them.
 _FILE_ERRORS = frozenset({rules.REPORT_UNBALANCED, rules.CHAIN_BREAK})
@@ -263,6 +271,9 @@ def import_statement(
         # The account has its number now (14 Nov 2026): the other statements of it waiting
         # under Dokumente follow, and a depot's waiting readings are rebuilt with it.
         account_numbered(ctx, store, account_id, iban_key=iban_key)
+        # The follow imported the account's earlier files and re-checked this one, so its
+        # status is read again rather than returned as it was before (review, 15 Nov 2026).
+        checked = get_import(ctx.conn, imported) or checked
     return checked.model_copy(
         update={
             "stated_closing": statement.stated_balance,
@@ -630,13 +641,22 @@ def _import_or_refusal(
     ctx: CommandContext, store: BlobStore, document_id: UUID, account_id: UUID, key: bytes
 ) -> StatementImport | StatementRefusal:
     """One waiting file imported under a savepoint: a refusal rolls back this file only (the
-    import writes nothing before its checks pass) and is returned with its code."""
+    import writes nothing before its checks pass) and is returned with its code. Any other
+    failure of this followed file (its original unreadable, the document gone) is a refusal of
+    this file too, `statement.follow_unreadable`, logged by its exception class only: a file
+    that merely followed never rolls back the account or the file a person chose."""
     try:
         with ctx.conn.begin_nested():
             return import_stored_statement(ctx, store, document_id, account_id, iban_key=key)
     except (RuleError, ConflictError) as exc:
         code = exc.code if isinstance(exc, RuleError) else "statement.conflict"
         return StatementRefusal(document_id=document_id, code=code)
+    except Exception as exc:  # noqa: BLE001 - this file keeps its offer; see the docstring
+        logger.warning(
+            "followed statement not imported",
+            extra={"fields": {"document_id": str(document_id), "exc_type": type(exc).__name__}},
+        )
+        return StatementRefusal(document_id=document_id, code=STATEMENT_FOLLOW_UNREADABLE)
 
 
 def import_files(
