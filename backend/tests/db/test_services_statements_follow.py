@@ -23,7 +23,7 @@ import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.test_cli_evals_report import _owner_url
 from db.test_services_proposals import _accept_all, _ai_call, _v
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from test_bank_parsers import CAMT, build
 from test_card_pdf import draw
 from test_depot_pdf import KONTO, page
@@ -34,6 +34,7 @@ from test_services_statement_account import hook_calls as hook_calls  # noqa: F4
 from hausbuch import cli
 from hausbuch.ai.fake import FakeModelClient
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.jobs.document_read import JobDeps, run_document_read
 from hausbuch.jobs.enqueue import FOLLOW_ACCOUNTS_TASK
@@ -54,6 +55,7 @@ from hausbuch.schemas.events import EventType
 from hausbuch.services import documents, proposals, statements
 from hausbuch.services.accounts import create_account, get_account
 from hausbuch.services.context import Actor, new_command
+from hausbuch.services.iban import protect_iban
 from hausbuch.services.statements import document_statement_imports, list_imports
 
 pytestmark = pytest.mark.db
@@ -567,6 +569,51 @@ def test_an_einbuchung_into_a_depot_not_created_yet_pre_selects_nothing(
     assert _account_field(ready, "movement:1").value is None
     movement = next(r for r in ready.records if r.key == "movement:1")
     assert movement.notes[0] == ELSEWHERE_NOTE
+
+
+DEPOT_A_IBAN = "DE89370400440532013000"  # the public documentation example
+
+
+def _give_iban(ctx, account_id, iban: str):
+    protected = protect_iban(iban, TEST_IBAN_KEY)
+    ctx.conn.execute(
+        update(account_table)
+        .where(account_table.c.id == account_id)
+        .values(iban_masked=protected.masked, iban_hmac=protected.hmac)
+    )
+
+
+def test_a_labelled_number_decides_alone_over_a_printed_iban(
+    run, read, job, blob_store, fresh_workspaces
+):
+    """Review, 15 Nov 2026: the document prints depot B's number under its label and depot
+    A's IBAN; B is not under Konten, so it is another depot's and A's IBAN does not count
+    (it would have pre-selected A until then)."""
+    ws, _ = fresh_workspaces
+    a = _depot(run, ws, number=DEPOT_A_NUMBER)
+    run(ws, _give_iban, a.id, DEPOT_A_IBAN)
+    _, ready = _report(
+        run,
+        job,
+        ws,
+        blob_store,
+        DEPOT_B_NUMBER,
+        text=f"Quartalsbericht\nDepot-Nr. {DEPOT_B_NUMBER}\nIBAN {DEPOT_A_IBAN}\nSeite 1 von 1",
+    )
+    assert _account_field(ready).value is None
+    # Without a labelled number, the IBAN finds its depot.
+    _, by_iban = _report(
+        run,
+        job,
+        ws,
+        blob_store,
+        DEPOT_B_NUMBER,
+        text=f"Quartalsbericht\nIBAN {DEPOT_A_IBAN}\nSeite 1 von 1",
+    )
+    assert (_account_field(by_iban).value, _account_field(by_iban).confidence) == (
+        str(a.id),
+        "high",
+    )
 
 
 def test_a_rebuild_that_cannot_read_the_document_leaves_its_suggestion(
