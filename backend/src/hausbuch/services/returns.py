@@ -242,6 +242,12 @@ def book_return(
         )
     for leg in (out, in_):
         transfers._rebook(ctx, leg, iban_key)
+    # The pair booked once and withdrawn by re-booking one half (transfers._current_links)
+    # counts again now that both halves are transfers: that same row is the link, and no
+    # second one is written (as for a matcher's link).
+    revived = transfers._link_of(conn, out.leg.id, in_.leg.id)
+    if revived is not None:
+        return revived
     # Booking a line as a transfer runs the transfer matcher (allocations.record_set's hook),
     # which links it when another account holds its counterpart: then it was a transfer after
     # all, and nothing of this answer is kept.

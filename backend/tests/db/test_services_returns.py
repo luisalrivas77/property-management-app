@@ -213,6 +213,47 @@ def test_rebooking_one_half_withdraws_the_pair_and_the_card_returns(world, priva
     assert lines[credit].returned_with is None
     [card] = _cards(world)
     assert [c.id for c in card.returned.candidates] == [debit]
+    # Booked again from the card: the same link counts again, no second one is written.
+    again = _book(world, debit, credit)
+    assert _rows(world, debit) == [("internal_transfer_out", "confirmed")]
+    assert [r.id for r in _links(world)] == [again.id]
+    assert [r.id for r in world.query(transfers._current_links)] == [again.id]
+    assert _cards(world) == []
+    lines = {t.id: t for t in world.query(statements.list_transactions, private.account_id)}
+    assert lines[credit].returned_with.transaction_id == debit
+
+
+def test_a_return_on_a_savings_account_is_never_saved(world, private):
+    """A Tagesgeld account's recalled payment: booked, it is neither saved nor spent."""
+    savings = _savings(world)
+    debit = savings.line(SENT, "-800.00", iban=FRIEND_IBAN, purpose=ORIGINAL)
+    credit = savings.line(BACK, "800.00", iban=FRIEND_IBAN, purpose=RECALL)
+    [card] = _cards(world)
+    assert (card.transaction_id, [c.id for c in card.returned.candidates]) == (credit, [debit])
+    _book(world, debit, credit)
+    july = world.query(household.cashflow, "2026-07")
+    assert (july.income, july.saved, july.open_lines) == (Decimal("0"), Decimal("0"), 0)
+    assert july.spending_by_group == {}
+
+
+def test_a_debit_the_matcher_links_elsewhere_rolls_the_booking_back(world, private):
+    """Booked as a transfer, the debit turns out to be one: the savings account holds its
+    counterpart, the matcher links it there, and nothing of the answer is kept."""
+    savings = _savings(world)
+    debit = private.line(SENT, "-3200.00", iban=SAVINGS_IBAN, purpose=ORIGINAL)
+    _answer(world, debit, "-3200.00", C.HH_OTHER)
+    mirror = savings.line(SENT, "3200.00", iban=PRIVATE_IBAN, purpose=ORIGINAL)
+    _match(world, mirror)
+    assert _rows(world, mirror) == [("internal_transfer_in", "confirmed")]
+    assert _links(world) == []
+    credit = private.line(BACK, "3200.00", iban=FRIEND_IBAN, purpose=RECALL)
+    [card] = _cards(world)
+    assert [c.id for c in card.returned.candidates] == [debit]
+    with pytest.raises(ConflictError):
+        _book(world, debit, credit)
+    assert _rows(world, debit) == [("hh_other", "confirmed")]
+    assert _rows(world, credit) == []
+    assert _links(world) == []
 
 
 def test_a_persons_other_answer_on_the_credit_ends_the_card(world, private):
