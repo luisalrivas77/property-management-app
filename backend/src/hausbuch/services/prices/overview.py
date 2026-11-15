@@ -101,13 +101,24 @@ def _german_day(day: date) -> str:
 
 def _latest_prices(conn: Connection, asset_ids: set[UUID], on: date) -> dict[UUID, PricePoint]:
     """Per asset the row price_on picks on `on`: only the rows of each asset's latest day on
-    or before `on` are read (date first, D167 (2))."""
+    or before `on` are read (date first, D167 (2)). A chain asset with a `priced_as` asset
+    (phase 7 D180 (3)) is valued from its own rows and that asset's together; the row chosen
+    keeps the asset_id it was stored under."""
     if not asset_ids:
         return {}
+    a = asset_table.c
+    twin_of: dict[UUID, UUID] = dict(
+        conn.execute(
+            select(a.id, a.priced_as_asset_id).where(
+                a.id.in_(asset_ids), a.priced_as_asset_id.is_not(None)
+            )
+        ).all()
+    )
+    read = set(asset_ids) | set(twin_of.values())
     p = price_table.c
     day = (
         select(p.asset_id, func.max(p.on).label("on"))
-        .where(p.asset_id.in_(asset_ids), p.on <= on)
+        .where(p.asset_id.in_(read), p.on <= on)
         .group_by(p.asset_id)
         .subquery()
     )
@@ -127,7 +138,14 @@ def _latest_prices(conn: Connection, asset_ids: set[UUID], on: date) -> dict[UUI
                 fetched_at=r.fetched_at,
             )
         )
-    chosen = {asset_id: valuation.price_on(listed, on) for asset_id, listed in points.items()}
+    chosen = {
+        asset_id: valuation.price_on(
+            points.get(asset_id, []),
+            on,
+            priced_as=points.get(twin_of[asset_id], []) if asset_id in twin_of else (),
+        )
+        for asset_id in asset_ids
+    }
     return {k: v for k, v in chosen.items() if v is not None}
 
 
@@ -205,7 +223,9 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
     sums: dict[tuple[UUID, UUID], Decimal] = {(u.account_id, u.asset_id): u.units for u in units}
     exchanges = [r.id for r in accounts if r.kind == AccountKind.EXCHANGE.value]
     euro = conn.execute(
-        select(a.id).where(a.kind == AssetKind.CASH.value, a.symbol == exchange_rules.EUR)
+        select(a.id).where(
+            a.kind == AssetKind.CASH.value, a.symbol == exchange_rules.EUR, a.chain.is_(None)
+        )
     ).scalar()
     if exchanges and euro is not None:
         legs = conn.execute(
@@ -319,10 +339,11 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
 
 def _asset_row(row: Any, latest: PricePoint | None) -> AssetRow:
     kind = AssetKind(row.kind)
-    ids = price_ids(row.symbol, row.coingecko_id, row.kraken_pair)
+    ids = price_ids(row.symbol, row.coingecko_id, row.kraken_pair, chain=row.chain)
     fund = fund_source(row.isin) if kind is AssetKind.ETF else None
     if kind is AssetKind.CRYPTO:
-        has_source = ids.any
+        # A chain asset is also priced through its priced_as asset (phase 7 D180 (3)).
+        has_source = ids.any or row.priced_as_asset_id is not None
     elif kind is AssetKind.CASH:
         has_source = True  # EUR is 1.0; other currencies by the ECB
     else:
@@ -332,6 +353,10 @@ def _asset_row(row: Any, latest: PricePoint | None) -> AssetRow:
         kind=kind,
         name=row.name,
         symbol=row.symbol,
+        chain=row.chain,
+        contract_address=row.contract_address,
+        priced_as_asset_id=row.priced_as_asset_id,
+        spam=row.spam,
         isin=row.isin,
         currency=row.currency,
         coingecko_id=ids.coingecko_id if kind is AssetKind.CRYPTO else None,
@@ -428,9 +453,21 @@ def _held(conn: Connection) -> list[Any]:
         .subquery()
     )
     return conn.execute(
-        select(a.id, a.kind, a.symbol, a.isin, a.name, a.coingecko_id, a.kraken_pair, a.created_at)
+        select(
+            a.id,
+            a.kind,
+            a.symbol,
+            a.isin,
+            a.name,
+            a.coingecko_id,
+            a.kraken_pair,
+            a.created_at,
+            a.chain,
+            a.priced_as_asset_id,
+        )
         .join(sums, sums.c.asset_id == a.id)
-        .where(sums.c.units > 0)
+        # Phase 7: a spam token is hidden, never a card (D187).
+        .where(sums.c.units > 0, a.spam.is_(False))
         .order_by(a.name, a.id)
     ).all()
 
@@ -492,7 +529,9 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
     for row in held:
         kind = AssetKind(row.kind)
         if kind is AssetKind.CRYPTO:
-            if price_ids(row.symbol, row.coingecko_id, row.kraken_pair).any:
+            if row.priced_as_asset_id is not None:
+                continue  # priced through its priced_as asset (phase 7 D180 (3))
+            if price_ids(row.symbol, row.coingecko_id, row.kraken_pair, chain=row.chain).any:
                 continue
             items.append(
                 InboxItem(

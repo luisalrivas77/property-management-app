@@ -11,6 +11,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from .chain import Chain, ContractId, TokenSymbol
 from .common import Money, Schema
 from .household import (
     AssetKind,
@@ -111,12 +112,19 @@ class AssetsOverview(Schema):
 
 
 class AssetRow(Schema):
-    """GET /assets: an asset with how it is priced (D167 (1), D174 (2))."""
+    """GET /assets: an asset with how it is priced (D167 (1), D174 (2)). A chain asset
+    (phase 7 D180 amended 15 Nov 2026) also carries its chain, a token's contract, the
+    symbol-level asset it is priced as and its spam flag; its symbol is a label
+    (TokenSymbol: wstETH, USD₮0), so it reads without failing."""
 
     id: UUID
     kind: AssetKind
     name: str
-    symbol: str | None = None
+    symbol: TokenSymbol | None = None
+    chain: Chain | None = None
+    contract_address: ContractId | None = None
+    priced_as_asset_id: UUID | None = None
+    spam: bool = False
     isin: str | None = None
     currency: CurrencyCode
     coingecko_id: str | None = None
