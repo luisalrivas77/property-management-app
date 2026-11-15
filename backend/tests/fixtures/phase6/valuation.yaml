@@ -126,3 +126,54 @@ fx_cases:
       - {"on": 2026-06-25, per_eur: "1.0900"}
       - {"on": 2026-06-26, per_eur: "1.0850"}
     expect: {rate_on: 2026-06-26, price_eur: "74.83870968"}
+
+# Phase 7 (docs/phases/phase-7.md §10, D180 (3), D167 amended; appended in phase 7 step 0):
+# a chain asset (SOL on the Solana wallet, ETH on Arbitrum, a registry token) valued through
+# its `priced_as` symbol's rows, which phase 6's fetch already stores once per symbol.
+# Recomputed on load (fixture_models_phase6.PricedAsCase): the chain asset's own rows and
+# its priced_as rows read together, date first, then SOURCE_PRECEDENCE, and on one day and
+# source the asset's own row first; staleness and reconciled_through as the cases above; no
+# row on either → not valued with the to-do price.no_source („Kursquelle wählen“). Step 0's
+# reading (§15.1): D180 (3)'s „when the chain asset has none of its own“ is read per day,
+# so a price typed once on the chain asset wins its day and the symbol's newer rows value
+# the days after it (otherwise one typed price would freeze the asset at that price).
+# Invented prices.
+priced_as_cases:
+  - id: chain_asset_valued_through_priced_as
+    pending: "phase 7 step 6 (rules/valuation.price_on with priced_as)"
+    "on": 2026-06-30
+    priced_as: SOL
+    priced_as_prices:
+      - {"on": 2026-06-30, price_eur: "140.00", source: coingecko_daily}
+    position: {units: "2.500000000", reconciled_through: 2026-06-30}
+    expect: {price: {"on": 2026-06-30, source: coingecko_daily}, priced_by: priced_as, stale: false, value_eur: "350.00"}
+
+  - id: typed_price_on_the_chain_asset_wins_its_day
+    pending: "phase 7 step 6 (rules/valuation.price_on with priced_as)"
+    "on": 2026-06-30
+    prices:
+      - {"on": 2026-06-30, price_eur: "139.50", source: user}
+    priced_as: SOL
+    priced_as_prices:
+      - {"on": 2026-06-30, price_eur: "140.00", source: coingecko_daily}
+    position: {units: "2.500000000", reconciled_through: 2026-06-30}
+    expect: {price: {"on": 2026-06-30, source: user}, priced_by: own, stale: false, value_eur: "348.75"}
+
+  - id: typed_price_does_not_freeze_the_next_day
+    pending: "phase 7 step 6 (rules/valuation.price_on with priced_as)"
+    "on": 2026-07-01
+    prices:
+      - {"on": 2026-06-30, price_eur: "139.50", source: user}
+    priced_as: SOL
+    priced_as_prices:
+      - {"on": 2026-06-30, price_eur: "140.00", source: coingecko_daily}
+      - {"on": 2026-07-01, price_eur: "142.00", source: coingecko_daily}
+    position: {units: "2.500000000", reconciled_through: 2026-07-01}
+    expect: {price: {"on": 2026-07-01, source: coingecko_daily}, priced_by: priced_as, stale: false, value_eur: "355.00"}
+
+  - id: token_with_neither_not_valued
+    pending: "phase 7 step 6 (rules/valuation.price_on with priced_as)"
+    "on": 2026-06-30
+    priced_as: null
+    position: {units: "1000", reconciled_through: 2026-06-30}
+    expect: {price: null, priced_by: null, stale: false, value_eur: null, not_valued_reason: valuation.not_valued, todo: price.no_source}

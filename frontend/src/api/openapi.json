@@ -14638,7 +14638,8 @@
           "capital_income_tax_certificate",
           "exchange_export",
           "distribution_note",
-          "securities_transfer"
+          "securities_transfer",
+          "chain_sync"
         ],
         "title": "DocumentSubtype",
         "description": "Finer typing where retention or the AfA basis depends on it."
@@ -15168,7 +15169,10 @@
           "workspace",
           "asset",
           "movement",
-          "transfer"
+          "transfer",
+          "wallet",
+          "wallet_address",
+          "movement_group"
         ],
         "title": "EntityType",
         "description": "Entities that carry events. Also the prefix of every event type."
@@ -16160,6 +16164,31 @@
             ],
             "title": "Note"
           },
+          "address_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Id"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
           "movement_hash": {
             "anyOf": [
               {
@@ -16186,6 +16215,18 @@
               }
             ],
             "title": "Superseded By"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
           },
           "symbol": {
             "type": "string",
@@ -20213,10 +20254,11 @@
         "type": "string",
         "enum": [
           "bison_csv",
-          "binance_csv"
+          "binance_csv",
+          "chain_sync"
         ],
         "title": "MovementImportFormat",
-        "description": "movement_import.format (migration 0025; binance_csv since 0028)."
+        "description": "movement_import.format (migration 0025; binance_csv since 0028; chain_sync since\n0041, one wallet sync's stored original, D182 (3))."
       },
       "MovementKind": {
         "type": "string",
@@ -20231,7 +20273,11 @@
           "distribution",
           "capital_income_tax",
           "uncategorized",
-          "balance_correction"
+          "balance_correction",
+          "airdrop",
+          "spam",
+          "lp_deposit",
+          "lp_withdrawal"
         ],
         "title": "MovementKind",
         "description": "asset_movement.kind (migration 0025, §8). Phase 7 widens the CHECK with the chain\nkinds of the design's §2.2."
@@ -20244,7 +20290,8 @@
           "distribution_note",
           "report",
           "user",
-          "securities_transfer"
+          "securities_transfer",
+          "chain"
         ],
         "title": "MovementSource",
         "description": "asset_movement.source: where the row was read from."
@@ -29423,10 +29470,13 @@
         "enum": [
           "bank",
           "exchange_eur",
-          "depot_cash"
+          "depot_cash",
+          "chain",
+          "bridge",
+          "wrap"
         ],
         "title": "TransferLinkKind",
-        "description": "transfer_link.kind (migration 0025). Phase 7 adds chain, bridge and wrap."
+        "description": "transfer_link.kind (migration 0025; chain, bridge and wrap since 0041, phase 7 D184).\nA link by hand (TransferLinkCreate) still only takes the kind rules.matching\n.transfer_link_kind gives the two accounts, so the chain kinds wait for step 5."
       },
       "TransferLinkRequest": {
         "properties": {

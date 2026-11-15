@@ -41,6 +41,7 @@ from hausbuch.schemas.bank import (
     StoredLine,
     WindowSums,
 )
+from hausbuch.schemas.chain import GroupKind, GroupRoutingInput
 from hausbuch.schemas.common import Confidence, Money, Schema, Sha256Hex
 from hausbuch.schemas.enums import AccountPurpose, DuplicateStatus, ExtractionKind
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, _Typing
@@ -346,11 +347,56 @@ class RoutingCase(Lenient):
     expect: Routing
 
 
+def route_group_reference(item: GroupRoutingInput) -> Routing:
+    """Phase 7 D186 (1) in the order the comment above review_routing.yaml `chain_cases`
+    states, written once more so the cases are checked before rules.review.route_group
+    exists (phase 7 step 2)."""
+    auto = Routing(decision=RoutingDecision.AUTO_CONFIRM, reason="routing.deterministic")
+
+    def review(reason: str) -> Routing:
+        return Routing(decision=RoutingDecision.REVIEW, reason=f"routing.{reason}")
+
+    if item.kind in (GroupKind.FAILED, GroupKind.SPAM) or item.fee_only:
+        return auto
+    if item.first_sync:
+        return review("chain_first_sync")
+    if item.unregistered_output:
+        return review("chain_change_candidate")
+    if item.kind in (GroupKind.TRANSFER, GroupKind.EXCHANGE_TRANSFER):
+        return auto if item.linked else review("no_match")
+    if item.kind is GroupKind.WRAP:
+        return auto if item.decoder_listed else review("chain_no_decoder")
+    if item.kind in (GroupKind.SWAP, GroupKind.REWARD):
+        if not item.decoder_listed:
+            return review("chain_no_decoder")
+        if not item.priced:
+            return review("chain_unpriced")
+        if item.kind is GroupKind.SWAP and not item.registry_assets:
+            return review("never_auto")
+        return auto
+    if item.kind is GroupKind.BRIDGE and item.pair_learned and item.linked:
+        return auto
+    return review("never_auto")  # bridge, stake, airdrop, lp, contract_call, unknown
+
+
+class ChainRoutingCase(Lenient):
+    pending: str | None = None  # phase 7 step 2 builds rules.review.route_group
+    item: GroupRoutingInput
+    expect: Routing
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if route_group_reference(self.item) != self.expect:
+            raise ValueError(f"{self.id}: D186 (1) gives {route_group_reference(self.item)}")
+        return self
+
+
 class RoutingFixture(Schema):
     tx: UUID
     rule_id: UUID
     per_category: list[CategoryRouting]
     cases: list[RoutingCase]
+    chain_cases: list[ChainRoutingCase] = Field(default_factory=list)  # phase 7, appended
 
     @model_validator(mode="after")
     def _complete(self) -> Self:

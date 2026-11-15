@@ -34,6 +34,7 @@ from hausbuch.schemas.allocation import (
     RoutingDecision,
     RoutingInput,
 )
+from hausbuch.schemas.chain import GroupRoutingInput
 from hausbuch.schemas.enums import AccountPurpose, ImportStatus
 
 RULE_HIT = "routing.rule_hit"
@@ -47,6 +48,11 @@ NO_MATCH = "routing.no_match"
 IMPORT_UNRECONCILED = "routing.import_unreconciled"
 IMPORT_PENDING_BALANCE = "routing.import_pending_balance"
 IMPORT_FAILED = "routing.import_failed"
+# Phase 7 (D186 (1)): why a chain movement group waits for a person (route_group).
+CHAIN_FIRST_SYNC = "routing.chain_first_sync"
+CHAIN_UNPRICED = "routing.chain_unpriced"
+CHAIN_NO_DECODER = "routing.chain_no_decoder"
+CHAIN_CHANGE_CANDIDATE = "routing.chain_change_candidate"
 
 EXACT = Decimal("1.000")
 _RECURRING = Decimal("0.900")
@@ -293,6 +299,14 @@ def route(item: RoutingInput) -> Routing:
     if found.confidence >= max(limits):  # type: ignore[type-var]
         return Routing(decision=RoutingDecision.AUTO_CONFIRM, reason=ABOVE_THRESHOLD)
     return _review(BELOW_THRESHOLD)
+
+
+def route_group(item: GroupRoutingInput) -> Routing:
+    """D186 (1): a chain movement group confirmed by code or sent to a person; never a model
+    answer (there is none on a chain). Fixture: phase 2 review_routing.yaml `chain_cases`;
+    the order is stated in the comment above that key (and replayed by
+    tests/fixture_models_phase2.route_group_reference); built in step 2."""
+    raise NotImplementedError("phase 7 step 2")
 
 
 def _zero_line(found: AllocationSet) -> bool:

@@ -186,6 +186,11 @@ class DocumentSubtype(StrEnum):
     # between two own depots (letter); read by the securities_transfer reader; retention
     # holding_records (the acquisition date travels with the units).
     SECURITIES_TRANSFER = "securities_transfer"
+    # Phase 7 (migration 0041, D182 (3)): the provider's records of one wallet sync that
+    # brought a new movement, stored as NDJSON on the wallet account. Written by code only:
+    # never shown, never classified, never read, never sent to the model (it holds every
+    # address in clear); retention holding_records (the lots rest on it).
+    CHAIN_SYNC = "chain_sync"
 
 
 class DepotDocumentKind(StrEnum):
@@ -246,6 +251,10 @@ class EntityType(StrEnum):
     ASSET = "asset"  # an asset row; its prices' events too (price.* -> asset.*)
     MOVEMENT = "movement"  # an asset_movement row
     TRANSFER = "transfer"  # a transfer_link row
+    # Phase 7 (migration 0041, §11). The event types are added by the steps that write them.
+    WALLET = "wallet"  # a wallet account's sync and reveal events (entity_id = account.id)
+    WALLET_ADDRESS = "wallet_address"  # a wallet_address row (masked form only, D179)
+    MOVEMENT_GROUP = "movement_group"  # a movement_group row (D183)
 
 
 class LinkTarget(StrEnum):

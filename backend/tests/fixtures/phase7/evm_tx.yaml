@@ -1,0 +1,269 @@
+# Phase 7 (docs/phases/phase-7.md §15, D181 (b), (c), D183, D184 (1), D186, D187): EVM
+# transactions through Etherscan's API (txlist, tokentx, txlistinternal result rows) and the
+# BSC balance-only source (eth_getBalance, eth_getTransactionByHash, eth_getTransactionReceipt).
+#
+# Written by hand in the providers' field names; every address is generated from random
+# bytes for this file except the registry's own token contracts (USDC, WETH, USDT on BSC,
+# public), every hash invented, every amount invented. Loading checks the fee as
+# gasUsed × gasPrice of the transaction the own address signed, and that each non-fee
+# movement's units are some record's integer value (an Etherscan `value`, a receipt's hex
+# `value` or log `data`). Everything else waits for step 3 (`pending`).
+#
+# Step 0's readings (§15.1):
+# - a top-level native value is the movement with index `value` (D182 (2) names the log
+#   index, `internal:<trace>` and `fee`; a plain ETH transfer has no log);
+# - WETH's `deposit()` (selector 0xd0e30db0) emits Deposit, not Transfer, so Etherscan's
+#   tokentx does not list the received WETH: the wrap's in-leg is the decoder's reading of
+#   the call (index `deposit`), its units the call's value;
+# - amounts: `asset_movement.quantity` is numeric(28,10) as 0041 leaves it, which cannot
+#   hold every wei of an 18-decimal asset; every case here is exact at 10 decimals except
+#   `fee_below_numeric_scale`, which pins the gap. Decided in the step 0 review (15 Nov 2026,
+#   §15.1 item 9, §16): step 2's own migration widens `quantity` to numeric(38,18),
+#   `asset.decimals` to 0..18 and the `Quantity` wire alias, before step 2 writes its first
+#   movement; the case's `precision_note` describes the column before that migration.
+#
+# Own: A's address 0x627f…46f6 (Ethereum and Arbitrum), the hardware wallet's 0xed05…70e1
+# (BSC); foreign 0x96d8…b831; an exchange's hot wallet 0xb70f…158a; a spam contract
+# 0x8a3b…9e42; an unknown contract 0xbac1…db3a.
+cases:
+  - id: native_receive
+    pending: "phase 7 step 3 (services/chain/evm_etherscan, classify)"
+    chain: ethereum
+    own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
+    records:
+      txlist:
+        - {hash: "0x87b46c080c06fab81137165cf0e082a45d76d1da54be18ff6511f378679e004a", blockNumber: "21000100", timeStamp: "1772960400", from: "0x96d82db02c1fdeb860fcb6c58f11625348b9b831", to: "0x627f3684df28ba04ebecf523c815218a0f4346f6", value: "500000000000000000", gasUsed: "21000", gasPrice: "20000000000", isError: "0", input: "0x"}
+    expect:
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: in, units: 500000000000000000, index: value}
+      card: transfer.unmatched_leg
+
+  - id: native_send_with_fee
+    pending: "phase 7 step 3 (services/chain/evm_etherscan, classify)"
+    chain: ethereum
+    own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
+    records:
+      txlist:
+        - {hash: "0x4fb9ca0962147ccdf8e158753b3e1f7f144246d5456a8814da2b16630d6b8c11", blockNumber: "21000200", timeStamp: "1773000000", from: "0x627f3684df28ba04ebecf523c815218a0f4346f6", to: "0x96d82db02c1fdeb860fcb6c58f11625348b9b831", value: "200000000000000000", gasUsed: "21000", gasPrice: "20000000000", isError: "0", input: "0x"}
+    expect:
+      group: transfer
+      fee_wei: 420000000000000
+      movements:
+        - {kind: uncategorized, role: out, units: 200000000000000000, index: value}
+        - {kind: fee, role: fee, units: 420000000000000, index: fee}
+      card: transfer.unmatched_leg
+
+  # §6 example 5: isError = 1, the fee only, confirmed.
+  - id: failed_fee_only
+    pending: "phase 7 step 3 (classify)"
+    chain: ethereum
+    own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
+    records:
+      txlist:
+        - {hash: "0xcc4744cd7087be47ac49f926a6f6cc029755d484b1f9f4ef38bec40c921d090d", blockNumber: "21000300", timeStamp: "1773100000", from: "0x627f3684df28ba04ebecf523c815218a0f4346f6", to: "0xbac1b60215808a2bce58af79feb1efcaebbcdb3a", value: "100000000000000000", gasUsed: "45000", gasPrice: "10000000000", isError: "1", input: "0x38ed1739"}
+    expect:
+      group: failed
+      fee_wei: 450000000000000
+      movements:
+        - {kind: fee, role: fee, units: 450000000000000, index: fee}
+
+  - id: erc20_in
+    pending: "phase 7 step 3 (services/chain/evm_etherscan, classify)"
+    chain: ethereum
+    own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
+    records:
+      tokentx:
+        - {hash: "0x794daee755e22df7186a0e1b28981a97356f16adbb0e7515f0de334ca7528c44", blockNumber: "21000400", timeStamp: "1773200000", from: "0x96d82db02c1fdeb860fcb6c58f11625348b9b831", to: "0x627f3684df28ba04ebecf523c815218a0f4346f6", contractAddress: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", tokenSymbol: USDC, tokenDecimal: "6", value: "250000000", logIndex: "12"}
+    expect:
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: in, units: 250000000, index: "12", contract: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"}
+      card: transfer.unmatched_leg
+
+  - id: erc20_out
+    pending: "phase 7 step 3 (services/chain/evm_etherscan, classify)"
+    chain: ethereum
+    own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
+    records:
+      txlist:
+        - {hash: "0xc4a9f2b2edfdf9327c117099b9679a174b9c7d90cd0518071022261d60fe1b6a", blockNumber: "21000500", timeStamp: "1773300000", from: "0x627f3684df28ba04ebecf523c815218a0f4346f6", to: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", value: "0", gasUsed: "50000", gasPrice: "12000000000", isError: "0", input: "0xa9059cbb"}
+      tokentx:
+        - {hash: "0xc4a9f2b2edfdf9327c117099b9679a174b9c7d90cd0518071022261d60fe1b6a", blockNumber: "21000500", timeStamp: "1773300000", from: "0x627f3684df28ba04ebecf523c815218a0f4346f6", to: "0x96d82db02c1fdeb860fcb6c58f11625348b9b831", contractAddress: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", tokenSymbol: USDC, tokenDecimal: "6", value: "100000000", logIndex: "40"}
+    expect:
+      group: transfer
+      fee_wei: 600000000000000
+      movements:
+        - {kind: uncategorized, role: out, units: 100000000, index: "40", contract: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"}
+        - {kind: fee, role: fee, units: 600000000000000, index: fee}
+      card: transfer.unmatched_leg
+
+  - id: internal_in
+    pending: "phase 7 step 3 (services/chain/evm_etherscan txlistinternal, classify)"
+    chain: arbitrum
+    own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
+    records:
+      txlistinternal:
+        - {hash: "0x87b46c080c06fab81137165cf0e082a45d76d1da54be18ff6511f378679e004a", blockNumber: "300000100", timeStamp: "1773400000", from: "0xbac1b60215808a2bce58af79feb1efcaebbcdb3a", to: "0x627f3684df28ba04ebecf523c815218a0f4346f6", value: "30000000000000000", traceId: "0_1", isError: "0"}
+    expect:
+      group: transfer
+      movements:
+        - {kind: uncategorized, role: in, units: 30000000000000000, index: "internal:0_1"}
+      card: transfer.unmatched_leg
+
+  # §6 example 6 (the EVM half): a token unknown to the registry, A paid no fee → spam.
+  - id: spam_token
+    pending: "phase 7 step 3 (classify, D187)"
+    chain: ethereum
+    own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
+    records:
+      tokentx:
+        - {hash: "0x155018d16e5be002e50965bbeee175adf5504fec9a10f898c515e803acba7a36", blockNumber: "21000600", timeStamp: "1773500000", from: "0x96d82db02c1fdeb860fcb6c58f11625348b9b831", to: "0x627f3684df28ba04ebecf523c815218a0f4346f6", contractAddress: "0x8a3b8db704d0375052d72f723674f80f48649e42", tokenSymbol: CLAIM, tokenDecimal: "18", value: "1000000000000000000000", logIndex: "3"}
+    expect:
+      group: spam
+      movements:
+        - {kind: spam, role: in, units: 1000000000000000000000, index: "3", contract: "0x8a3b8db704d0375052d72f723674f80f48649e42"}
+
+  # §6 example 2: the exchange's withdrawal of 0.3 ETH with 0.0005 fee arrives as 0.2995 ETH
+  # in the transaction its withdraw history names.
+  - id: exchange_withdrawal_by_hash
+    pending: "phase 7 step 5 (match_transfer by hash)"
+    chain: ethereum
+    own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
+    records:
+      txlist:
+        - {hash: "0xa5e4ebfd217b4d0e63d332e1ae6458cc47140369c6b9e408fbbcacc417511657", blockNumber: "21000700", timeStamp: "1773600000", from: "0xb70f11bb61b8bc94b873e7bc2b1f47eea34a158a", to: "0x627f3684df28ba04ebecf523c815218a0f4346f6", value: "299500000000000000", gasUsed: "21000", gasPrice: "15000000000", isError: "0", input: "0x"}
+    exchange_leg: {kind: internal_transfer_out, quantity: "0.3", fee_quantity: "0.0005", network: ETH, tx_hash: "0xa5e4ebfd217b4d0e63d332e1ae6458cc47140369c6b9e408fbbcacc417511657"}
+    expect:
+      group: exchange_transfer
+      movements:
+        - {kind: internal_transfer_in, role: in, units: 299500000000000000, index: value}
+      link: chain
+
+  # §6 example 8: 1 ETH into the registry's WETH, 1 WETH back in the same transaction.
+  - id: wrap_weth
+    pending: "phase 7 step 3 (classify with the WETH decoder row)"
+    chain: ethereum
+    own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
+    records:
+      txlist:
+        - {hash: "0xb773602c4ee06da1bc10da8a3136f4888b2309d69d65a0cc4e8b35190a243783", blockNumber: "21000800", timeStamp: "1773700000", from: "0x627f3684df28ba04ebecf523c815218a0f4346f6", to: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", value: "1000000000000000000", gasUsed: "28000", gasPrice: "10000000000", isError: "0", input: "0xd0e30db0", methodId: "0xd0e30db0"}
+    expect:
+      group: wrap
+      fee_wei: 280000000000000
+      movements:
+        - {kind: internal_transfer_out, role: out, units: 1000000000000000000, index: value}
+        - {kind: internal_transfer_in, role: in, units: 1000000000000000000, index: deposit, contract: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"}
+        - {kind: fee, role: fee, units: 280000000000000, index: fee}
+      link: wrap
+
+  # D181 (c): BSC is balance-only; its records are balances, never a history.
+  - id: bsc_balance_only
+    pending: "phase 7 step 3 (services/chain/evm_rpc_balance)"
+    chain: bsc
+    own: ["0xed052f45caae52c75f9087ae2440d534765570e1"]
+    records:
+      eth_getBalance: "0x6f05b59d3b200000"
+      balanceOf: {"0x55d398326f99059ff775485246999027b3197955": "0x0de0b6b3a7640000"}
+    expect: {movements: []}
+
+  # An exchange withdrawal with a hash: the receipt names the own address → the deposit
+  # movement comes from the receipt and is linked by hash (native, then BEP-20).
+  - id: bsc_withdrawal_receipt_native
+    pending: "phase 7 step 3 (evm_rpc_balance by hash) and step 5 (link)"
+    chain: bsc
+    own: ["0xed052f45caae52c75f9087ae2440d534765570e1"]
+    records:
+      transaction: {hash: "0x56e85cd79691616846f77631c7bb7c1b059084bf114740f2001d115ebae8f286", from: "0xb70f11bb61b8bc94b873e7bc2b1f47eea34a158a", to: "0xed052f45caae52c75f9087ae2440d534765570e1", value: "0x1bc16d674ec80000", blockNumber: "0x2faf080"}
+      receipt: {transactionHash: "0x56e85cd79691616846f77631c7bb7c1b059084bf114740f2001d115ebae8f286", status: "0x1", logs: []}
+    exchange_leg: {kind: internal_transfer_out, quantity: "2.001", fee_quantity: "0.001", network: BSC, tx_hash: "0x56e85cd79691616846f77631c7bb7c1b059084bf114740f2001d115ebae8f286"}
+    expect:
+      group: exchange_transfer
+      movements:
+        - {kind: internal_transfer_in, role: in, units: 2000000000000000000, index: value}
+      link: chain
+  - id: bsc_withdrawal_receipt_bep20
+    pending: "phase 7 step 3 (evm_rpc_balance by hash) and step 5 (link)"
+    chain: bsc
+    own: ["0xed052f45caae52c75f9087ae2440d534765570e1"]
+    records:
+      transaction: {hash: "0xe60743b2adf7d203ed25856b679ea75bba640630dca70acc5f9e8d0074882d25", from: "0xb70f11bb61b8bc94b873e7bc2b1f47eea34a158a", to: "0x55d398326f99059ff775485246999027b3197955", value: "0x0", blockNumber: "0x2faf0e4"}
+      receipt:
+        transactionHash: "0xe60743b2adf7d203ed25856b679ea75bba640630dca70acc5f9e8d0074882d25"
+        status: "0x1"
+        logs:
+          - address: "0x55d398326f99059ff775485246999027b3197955"
+            logIndex: "0x5"
+            topics:
+              - "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+              - "0x000000000000000000000000b70f11bb61b8bc94b873e7bc2b1f47eea34a158a"
+              - "0x000000000000000000000000ed052f45caae52c75f9087ae2440d534765570e1"
+            data: "0x00000000000000000000000000000000000000000000000ad78ebc5ac6200000"
+    exchange_leg: {kind: internal_transfer_out, quantity: "201", fee_quantity: "1", network: BSC, tx_hash: "0xe60743b2adf7d203ed25856b679ea75bba640630dca70acc5f9e8d0074882d25"}
+    expect:
+      group: exchange_transfer
+      movements:
+        - {kind: internal_transfer_in, role: in, units: 200000000000000000000, index: "5", contract: "0x55d398326f99059ff775485246999027b3197955"}
+      link: chain
+  - id: bsc_withdrawal_receipt_other_address
+    pending: "phase 7 step 3 (evm_rpc_balance by hash)"
+    chain: bsc
+    own: ["0xed052f45caae52c75f9087ae2440d534765570e1"]
+    records:
+      transaction: {hash: "0xc3315ac02576096aeacfd9331bb8f5c6cdfc5ecee3e9883b9ac567ae9a75953c", from: "0xb70f11bb61b8bc94b873e7bc2b1f47eea34a158a", to: "0x96d82db02c1fdeb860fcb6c58f11625348b9b831", value: "0x1bc16d674ec80000", blockNumber: "0x2faf148"}
+      receipt: {transactionHash: "0xc3315ac02576096aeacfd9331bb8f5c6cdfc5ecee3e9883b9ac567ae9a75953c", status: "0x1", logs: []}
+    exchange_leg: {kind: internal_transfer_out, quantity: "2.001", fee_quantity: "0.001", network: BSC, tx_hash: "0xc3315ac02576096aeacfd9331bb8f5c6cdfc5ecee3e9883b9ac567ae9a75953c"}
+    expect: {movements: []}
+  # BISON's withdrawals carry no hash (Q-O76): nothing on the chain side until the person's
+  # answer on the exchange card writes the typed deposit.
+  - id: bsc_withdrawal_without_hash
+    pending: "phase 7 step 5 (the exchange card's answer writes the deposit)"
+    chain: bsc
+    own: ["0xed052f45caae52c75f9087ae2440d534765570e1"]
+    exchange_leg: {kind: internal_transfer_out, quantity: "0.5", fee_quantity: "0.0005", network: null, tx_hash: null}
+    expect: {movements: [], card: transfer.unmatched_leg}
+
+  # D186 (2) for a balance-only address: the balance against Σ linked deposits.
+  - id: bsc_linked_deposits_equal
+    pending: "phase 7 step 3 (reconcile, balance-only)"
+    chain: bsc
+    own: ["0xed052f45caae52c75f9087ae2440d534765570e1"]
+    records: {eth_getBalance: "0x1bc16d674ec80000", linked_deposits: "2000000000000000000"}
+    expect: {reconciled: true}
+  - id: bsc_balance_below_deposits
+    pending: "phase 7 step 3 (reconcile, balance-only)"
+    chain: bsc
+    own: ["0xed052f45caae52c75f9087ae2440d534765570e1"]
+    records: {eth_getBalance: "0x0de0b6b3a7640000", linked_deposits: "2000000000000000000"}
+    expect: {reconciled: false, card: wallet.coins_left}
+  - id: bsc_balance_above_deposits
+    pending: "phase 7 step 3 (reconcile, balance-only: the excess is an open leg)"
+    chain: bsc
+    own: ["0xed052f45caae52c75f9087ae2440d534765570e1"]
+    records: {eth_getBalance: "0x29a2241af62c0000", linked_deposits: "2000000000000000000"}
+    expect: {reconciled: true, card: transfer.unmatched_leg}
+
+  - id: key_unset
+    pending: "phase 7 step 3 (services/chain/evm_etherscan without HAUSBUCH_ETHERSCAN_KEY)"
+    chain: arbitrum
+    own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
+    expect: {error: wallet.key_missing}
+
+  # The precision gap (§15.1): a fee of 21,000,000,147,000 wei is 0.000021000000147 ETH,
+  # 15 decimals; numeric(28,10) keeps 0.0000210000. Step 2's migration widens the column to
+  # numeric(38,18) (§16); the EVM normaliser that reads this record is step 3's.
+  - id: fee_below_numeric_scale
+    pending: "phase 7 step 2 (the numeric(38,18) migration) and step 3 (evm_etherscan)"
+    chain: ethereum
+    own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
+    records:
+      txlist:
+        - {hash: "0xa52568b62afb649b0fe2a9e6ae36cafe0d305fd5f5d405e029b1b0434e47f091", blockNumber: "21000900", timeStamp: "1773800000", from: "0x627f3684df28ba04ebecf523c815218a0f4346f6", to: "0x96d82db02c1fdeb860fcb6c58f11625348b9b831", value: "100000000000000000", gasUsed: "21000", gasPrice: "1000000007", isError: "0", input: "0x"}
+    expect:
+      group: transfer
+      fee_wei: 21000000147000
+      movements:
+        - {kind: uncategorized, role: out, units: 100000000000000000, index: value}
+        - {kind: fee, role: fee, units: 21000000147000, index: fee}
+      card: transfer.unmatched_leg
+      precision_note: "0.000021000000147 ETH needs 15 decimals; asset_movement.quantity keeps 10"

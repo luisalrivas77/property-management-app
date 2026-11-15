@@ -67,6 +67,7 @@ _CLASS_BY_SUBTYPE: dict[DocumentSubtype, RetentionClass] = {
     DocumentSubtype.TRADE_CONFIRMATION: RetentionClass.HOLDING_RECORDS,
     DocumentSubtype.EXCHANGE_EXPORT: RetentionClass.HOLDING_RECORDS,
     DocumentSubtype.SECURITIES_TRANSFER: RetentionClass.HOLDING_RECORDS,
+    DocumentSubtype.CHAIN_SYNC: RetentionClass.HOLDING_RECORDS,  # phase 7 D182 (3)
 }
 
 

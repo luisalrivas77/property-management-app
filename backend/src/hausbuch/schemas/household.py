@@ -208,6 +208,14 @@ class MovementKind(StrEnum):
     # reason, when the export misses a movement. Never a trade, a transfer or an acquisition;
     # how phase 8's FIFO counts it (a lot of unknown cost, or none) is open (phase 6 Q-O96).
     BALANCE_CORRECTION = "balance_correction"
+    # Phase 7 (migration 0041, D183, D187): a token credited with no own action and in the
+    # registry or already held (review), a spam token (confirmed, hidden, never priced, never
+    # a lot), and the two legs of a liquidity-pool position (phase 8 decides; here they
+    # consume nothing, D188 (1)).
+    AIRDROP = "airdrop"
+    SPAM = "spam"
+    LP_DEPOSIT = "lp_deposit"
+    LP_WITHDRAWAL = "lp_withdrawal"
 
 
 class MovementSource(StrEnum):
@@ -221,6 +229,8 @@ class MovementSource(StrEnum):
     # Phase 6 step 4 (migration 0027): an Einbuchung or Ausbuchung, units moved between two
     # own depots that keep their acquisition date (D165 amended).
     SECURITIES_TRANSFER = "securities_transfer"
+    # Phase 7 (migration 0041, D182): read from a chain by a wallet sync.
+    CHAIN = "chain"
 
 
 class MovementStatus(StrEnum):
@@ -252,6 +262,11 @@ class AssetMovementDraft(Schema):
     transaction_id: UUID | None = None  # the cash leg on the depot's own statement
     # A balance_correction's reason, written by the person (0030); never sent to a model.
     note: str | None = Field(default=None, min_length=1, max_length=500)
+    # Phase 7 (0041, D182 (2)): a chain movement's own address and its index in the
+    # transaction (Bitcoin: the vout or vin, or `net`; EVM: the log index, `internal:<trace>`
+    # or `fee`; Solana: the instruction index or `fee`).
+    address_id: UUID | None = None
+    index: str | None = Field(default=None, min_length=1, max_length=64)
 
     @model_validator(mode="after")
     def _sourced(self) -> Self:
@@ -263,13 +278,28 @@ class AssetMovementDraft(Schema):
         }
         if self.source in documented and self.document_id is None:
             raise ValueError(f"a movement read from a {self.source} names its document")
+        if self.source is MovementSource.CHAIN and (self.address_id is None or self.index is None):
+            raise ValueError("a movement read from a chain names its address and index")
+        if self.kind in _CHAIN_KINDS and self.source not in (
+            MovementSource.CHAIN,
+            MovementSource.USER,
+        ):
+            raise ValueError(f"a {self.kind} movement comes from a chain or a person")
         return self
+
+
+# Phase 7 (0041): kinds only a chain sync or a person's answer writes (the CHECK
+# asset_movement_chain_kind_check).
+_CHAIN_KINDS = frozenset(
+    {MovementKind.AIRDROP, MovementKind.SPAM, MovementKind.LP_DEPOSIT, MovementKind.LP_WITHDRAWAL}
+)
 
 
 class AssetMovement(AssetMovementDraft, Record):
     movement_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     status: MovementStatus
     superseded_by: UUID | None = None
+    group_id: UUID | None = None  # phase 7 (0041, D183 (1)): the chain transaction's group
 
 
 class MovementLine(Schema):
@@ -345,10 +375,12 @@ class AssetCheck(Schema):
 
 
 class MovementImportFormat(StrEnum):
-    """movement_import.format (migration 0025; binance_csv since 0028)."""
+    """movement_import.format (migration 0025; binance_csv since 0028; chain_sync since
+    0041, one wallet sync's stored original, D182 (3))."""
 
     BISON_CSV = "bison_csv"
     BINANCE_CSV = "binance_csv"
+    CHAIN_SYNC = "chain_sync"
 
 
 class MovementImport(MutableRecord):
@@ -515,11 +547,16 @@ class BalanceCorrectionBody(Schema):
 
 
 class TransferLinkKind(StrEnum):
-    """transfer_link.kind (migration 0025). Phase 7 adds chain, bridge and wrap."""
+    """transfer_link.kind (migration 0025; chain, bridge and wrap since 0041, phase 7 D184).
+    A link by hand (TransferLinkCreate) still only takes the kind rules.matching
+    .transfer_link_kind gives the two accounts, so the chain kinds wait for step 5."""
 
     BANK = "bank"
     EXCHANGE_EUR = "exchange_eur"
     DEPOT_CASH = "depot_cash"
+    CHAIN = "chain"  # same chain, same asset, linked by hash or amount and window (D184 (1))
+    BRIDGE = "bridge"  # two chains, the registry's bridge_pairs (D184 (2))
+    WRAP = "wrap"  # one chain, the registry's wraps pairs (D184 (3))
 
 
 class TransferMatchedBy(StrEnum):

@@ -31,6 +31,24 @@
 # publish no NAV history file the app can read (pages drawn by script, monthly PDFs only), so
 # their funds are not listed: a fund missing here is priced from the reports exactly like a
 # listed one with fund_ref null.
+#
+# tokens (phase 7 D180 (4), added 15 Nov 2026): a token on one chain, identified by its
+#   contract (EVM, written lower-case, D180 amended 15 Nov 2026) or its mint (Solana, as
+#   written: base58 is case-sensitive), never by its symbol, which a
+#   spam token can copy (D187). A row is priced as the coin of `wraps` when set (the wrapped
+#   native coins, D184 (3)), else as the coin of its own symbol: the token's asset points
+#   there through `asset.priced_as_asset_id`, so the daily price is fetched once per symbol
+#   (D180 (3)). coingecko_id, where set, is that coin's id (the loader checks it). A token not
+#   listed is spam until a person promotes it into the workspace's assets, never into this
+#   file. Every contract, its decimals and its symbol were read from the chain on
+#   15 Nov 2026 (eth_call symbol() and decimals() against a public RPC node of each EVM
+#   chain; the Solana mints by getAccountInfo, jsonParsed), and every EVM contract's EIP-55
+#   checksum was recomputed before it was lower-cased. Arbitrum's USDT contract reads its symbol as „USD₮0“ on the
+#   chain (the USDT0 migration of that contract); it is the same contract, listed as USDT,
+#   the symbol its price follows. Arbitrum's USDC is the native (Circle-issued) contract,
+#   not the bridged USDC.e, which is not listed. Wrapped SOL is written WSOL (AssetSymbol
+#   allows upper case only; the chain's own name is „wSOL“). The token's symbol is a display
+#   label (TokenSymbol, D180 (2) amended 15 Nov 2026); this file still lists one per chain.
 
 coins:
   - {symbol: BTC, name: Bitcoin, coingecko_id: bitcoin, kraken_pair: XXBTZEUR}
@@ -63,3 +81,21 @@ funds:
   - {isin: IE00BF4RFH31, name: iShares MSCI World Small Cap UCITS ETF, issuer: ishares, fund_ref: "296576", nav_currency: USD}
   - {isin: IE00BMCZLH06, name: iShares $ Development Bank Bonds UCITS ETF EUR Hedged (Acc), issuer: ishares, fund_ref: "315563", nav_currency: EUR}
   - {isin: IE00B4L5YC18, name: iShares MSCI EM UCITS ETF (Acc), issuer: ishares, fund_ref: "251858", nav_currency: USD}
+
+tokens:
+  # Ethereum (chain id 1)
+  - {chain: ethereum, contract: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", symbol: USDC, decimals: 6, coingecko_id: usd-coin, name: USD Coin}
+  - {chain: ethereum, contract: "0xdac17f958d2ee523a2206206994597c13d831ec7", symbol: USDT, decimals: 6, coingecko_id: tether, name: Tether USD}
+  - {chain: ethereum, contract: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", symbol: WETH, decimals: 18, wraps: ETH, name: Wrapped Ether}
+  # Arbitrum One (chain id 42161)
+  - {chain: arbitrum, contract: "0xaf88d065e77c8cc2239327c5edb3a432268e5831", symbol: USDC, decimals: 6, coingecko_id: usd-coin, name: USD Coin}
+  - {chain: arbitrum, contract: "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9", symbol: USDT, decimals: 6, coingecko_id: tether, name: Tether USD (USD₮0)}
+  - {chain: arbitrum, contract: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1", symbol: WETH, decimals: 18, wraps: ETH, name: Wrapped Ether}
+  # BNB Smart Chain (chain id 56): every BEP-20 here has 18 decimals
+  - {chain: bsc, contract: "0x55d398326f99059ff775485246999027b3197955", symbol: USDT, decimals: 18, coingecko_id: tether, name: Tether USD (BEP-20)}
+  - {chain: bsc, contract: "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d", symbol: USDC, decimals: 18, coingecko_id: usd-coin, name: USD Coin (BEP-20)}
+  - {chain: bsc, contract: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c", symbol: WBNB, decimals: 18, wraps: BNB, name: Wrapped BNB}
+  # Solana (mints)
+  - {chain: solana, contract: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, symbol: USDC, decimals: 6, coingecko_id: usd-coin, name: USD Coin}
+  - {chain: solana, contract: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, symbol: USDT, decimals: 6, coingecko_id: tether, name: Tether USD}
+  - {chain: solana, contract: So11111111111111111111111111111111111111112, symbol: WSOL, decimals: 9, wraps: SOL, name: Wrapped SOL}

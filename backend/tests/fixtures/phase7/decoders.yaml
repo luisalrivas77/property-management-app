@@ -1,0 +1,75 @@
+# Phase 7 (docs/phases/phase-7.md §15, D183 (4), D191): decoder rows, the workspace override,
+# and the files the loader refuses.
+#
+# `rows`: one row per kind and chain family that needs it, validated as DecoderRow (so a row
+# carrying an amount, or any other key, is refused by extra="forbid"). The public file
+# (rules/chain/decoders.yaml) holds only the registry's wraps and Solana's stake program; the
+# swap, reward and lp programs here are INVENTED ids (generated base58 keys, invented hex),
+# never a real protocol's: the real ones are written in step 2 from the stored originals
+# (D183 (4)), or arrive as a household's workspace rows (D191).
+#
+# `override_cases` recompute D191's order on load: a workspace row wins over a public one for
+# the same (chain, program, method); step 0's reading adds that a row for the call's method
+# wins over a method-less row of the same program, and a method-less row covers every method
+# (§15.1).
+#
+# `refused` runs the text through rules/chain/decoders.parse and expects the error.
+rows:
+  - {id: evm_swap, family: evm, row: {chain: ethereum, program: "0xbac1b60215808a2bce58af79feb1efcaebbcdb3a", method: "0x38ed1739", kind: swap, legs: swap, name: Invented AMM router}}
+  - {id: evm_wrap, family: evm, row: {chain: ethereum, program: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", kind: wrap, legs: wrap, name: WETH}}
+  - {id: evm_lp, family: evm, row: {chain: arbitrum, program: "0xc64cf78892c1e516f9686eedba168d4ab59b937f", kind: lp, legs: lp, name: Invented pool}}
+  - {id: sol_swap, family: solana, row: {chain: solana, program: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL, kind: swap, legs: swap, name: Invented AMM}}
+  - {id: sol_wrap, family: solana, row: {chain: solana, program: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, method: syncNative, kind: wrap, legs: wrap, name: wSOL}}
+  - {id: sol_stake, family: solana, row: {chain: solana, program: Stake11111111111111111111111111111111111111, kind: stake, legs: stake, name: Solana Stake}}
+  - {id: sol_reward, family: solana, row: {chain: solana, program: DmP1ZyfaoHEyq1QLCjbF5aDPJsiqa9UKZh1Q86KcnqVg, method: claim, kind: reward, legs: reward, name: Invented reward claim}}
+  - {id: sol_lp, family: solana, row: {chain: solana, program: 7oGmBiunUdcd15gnRWFDawMQXbt4Cs9XsuuJpMmNzQUR, kind: lp, legs: lp, name: Invented pool}}
+
+override_cases:
+  - id: workspace_wins_same_key
+    pending: "phase 7 step 2 (decoders.decoder_for)"
+    public:
+      - {chain: solana, program: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL, kind: swap, legs: swap}
+    workspace:
+      - {chain: solana, program: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL, kind: lp, legs: lp}
+    call: {chain: solana, program: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL}
+    expect: {kind: lp, source: workspace}
+  - id: public_when_no_workspace_row
+    pending: "phase 7 step 2 (decoders.decoder_for)"
+    public:
+      - {chain: solana, program: Stake11111111111111111111111111111111111111, kind: stake, legs: stake}
+    call: {chain: solana, program: Stake11111111111111111111111111111111111111}
+    expect: {kind: stake, source: public}
+  - id: method_row_before_method_less
+    pending: "phase 7 step 2 (decoders.decoder_for)"
+    public:
+      - {chain: solana, program: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, method: syncNative, kind: wrap, legs: wrap}
+    workspace:
+      - {chain: solana, program: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, kind: swap, legs: swap}
+    call: {chain: solana, program: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, method: syncNative}
+    expect: {kind: wrap, source: public}
+  - id: method_less_row_covers_other_methods
+    pending: "phase 7 step 2 (decoders.decoder_for)"
+    public:
+      - {chain: ethereum, program: "0xbac1b60215808a2bce58af79feb1efcaebbcdb3a", kind: swap, legs: swap}
+    call: {chain: ethereum, program: "0xbac1b60215808a2bce58af79feb1efcaebbcdb3a", method: "0x7ff36ab5"}
+    expect: {kind: swap, source: public}
+  - id: other_chain_no_row
+    pending: "phase 7 step 2 (decoders.decoder_for)"
+    public:
+      - {chain: ethereum, program: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", kind: wrap, legs: wrap}
+    call: {chain: arbitrum, program: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"}
+    expect: {kind: null, source: null}
+
+refused:
+  - id: row_with_amount
+    text: "decoders:\n  - {chain: solana, program: Stake11111111111111111111111111111111111111, kind: stake, amount: '10'}\n"
+    error_match: amount
+  - id: bitcoin_row
+    text: "decoders:\n  - {chain: bitcoin, program: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, kind: swap}\n"
+    error_match: Bitcoin
+  - id: wrap_not_in_registry
+    text: "decoders:\n  - {chain: ethereum, program: '0x8a3b8db704d0375052d72f723674f80f48649e42', kind: wrap, legs: wrap, name: Fake}\n"
+    error_match: registry wrap
+  - id: same_key_twice
+    text: "decoders:\n  - {chain: solana, program: Stake11111111111111111111111111111111111111, kind: stake}\n  - {chain: solana, program: Stake11111111111111111111111111111111111111, kind: reward}\n"
+    error_match: one row per chain

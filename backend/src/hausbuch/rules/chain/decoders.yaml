@@ -1,0 +1,30 @@
+# Protocol decoders as data (docs/phases/phase-7.md D183 (4), D191): which program or contract
+# gives a group its kind and how its legs read. Never an amount: the loader refuses any key
+# the DecoderRow schema does not list (extra = forbid). A decoder never overrides the shape
+# (a swap row on a transaction with one leg is still a card). A workspace's own rows
+# (`chain_decoder`, written by „Künftig immer so“) override a public row with the same
+# chain, program and method.
+#
+# Step 0 lists only what §16 row 0 asks for: the wrap contracts of the chain registry
+# (rules/chain/chains.yaml `wraps`) and Solana's native stake program. The AMMs, bridges,
+# reward and LP programs come in steps 2 to 4 from the household's own stored originals
+# (§15.1 records each).
+#
+# method: EVM a 4-byte selector („0x“ + 8 hex), Solana the parsed instruction's type; null =
+#   any call to the program.
+#
+# Program ids read 15 Nov 2026: the WETH/WBNB contracts are the ones rules/household/assets.yaml
+# lists (read from each chain, EIP-55 checked, written lower-case as every EVM address is,
+# D180 amended 15 Nov 2026); Solana's SPL Token program
+# (TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA) and native stake program
+# (Stake11111111111111111111111111111111111111) are the ids the Solana JSON-RPC's jsonParsed
+# instructions name as `programId`. On Solana a wrap is the Token program's `syncNative` on an
+# account of the wrapped SOL mint; the unwrap is a `closeAccount` of such an account, which the
+# step 2 shape rule tells apart from an ordinary rent return by the account's mint, not a row.
+
+decoders:
+  - {chain: ethereum, program: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", kind: wrap, legs: wrap, name: WETH}
+  - {chain: arbitrum, program: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1", kind: wrap, legs: wrap, name: WETH}
+  - {chain: bsc, program: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c", kind: wrap, legs: wrap, name: WBNB}
+  - {chain: solana, program: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, method: syncNative, kind: wrap, legs: wrap, name: wSOL}
+  - {chain: solana, program: Stake11111111111111111111111111111111111111, kind: stake, legs: stake, name: Solana Stake}

@@ -214,6 +214,8 @@ export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = {
   exchange_export: "Börse / Exchange-Export (CSV)",
   distribution_note: "Ertragsabrechnung (Ausschüttung)",
   securities_transfer: "Wertpapierübertrag (Ein- oder Ausbuchung)",
+  // Phase 7 (D182 (3)): written by code only, never offered in the type picker
+  chain_sync: "Wallet-Abruf (Rohdaten der Chain)",
 };
 
 export const LINK_TARGET: Record<LinkTarget, string> = {
@@ -887,6 +889,11 @@ export const MOVEMENT_KIND: Record<MovementKind, string> = {
   capital_income_tax: "Kapitalertragsteuer",
   uncategorized: "Unbekannt",
   balance_correction: "Korrektur (von Hand)",
+  // phase 7 (D183, D187)
+  airdrop: "Airdrop",
+  spam: "Spam-Token",
+  lp_deposit: "Einzahlung in Liquiditätspool",
+  lp_withdrawal: "Auszahlung aus Liquiditätspool",
 };
 
 

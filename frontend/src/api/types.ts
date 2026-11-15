@@ -5596,7 +5596,7 @@ export interface components {
          * @description Finer typing where retention or the AfA basis depends on it.
          * @enum {string}
          */
-        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid" | "einkommensteuerbescheid" | "land_register_extract" | "declaration_of_division" | "land_charge_deed" | "energy_certificate" | "building_records" | "insurance_policy" | "management_contract" | "service_contract" | "weg_minutes" | "weg_invitation" | "special_levy" | "repayment_schedule" | "loan_terms_change" | "loan_statement" | "financing_invoice" | "lease_amendment" | "rent_increase" | "termination_notice" | "tenant_self_disclosure" | "landlord_confirmation" | "operating_costs_statement" | "tenant_correspondence" | "utility_bill" | "quote" | "chimney_sweep_notice" | "payment_proof" | "prepayment_notice" | "tax_return_copy" | "donation_receipt" | "childcare_invoice" | "household_services_invoice" | "insurance_contribution_certificate" | "pension_contribution_certificate" | "benefit_notice" | "child_benefit_notice" | "employment_contract" | "employer_certificate" | "work_expense_invoice" | "depot_statement" | "depot_report" | "trade_confirmation" | "capital_income_tax_certificate" | "exchange_export" | "distribution_note" | "securities_transfer";
+        DocumentSubtype: "purchase_contract" | "price_split_evidence" | "appraisal" | "loan_contract" | "lease" | "handover_protocol" | "deposit_record" | "cost_basis_evidence" | "grundsteuerbescheid" | "einkommensteuerbescheid" | "land_register_extract" | "declaration_of_division" | "land_charge_deed" | "energy_certificate" | "building_records" | "insurance_policy" | "management_contract" | "service_contract" | "weg_minutes" | "weg_invitation" | "special_levy" | "repayment_schedule" | "loan_terms_change" | "loan_statement" | "financing_invoice" | "lease_amendment" | "rent_increase" | "termination_notice" | "tenant_self_disclosure" | "landlord_confirmation" | "operating_costs_statement" | "tenant_correspondence" | "utility_bill" | "quote" | "chimney_sweep_notice" | "payment_proof" | "prepayment_notice" | "tax_return_copy" | "donation_receipt" | "childcare_invoice" | "household_services_invoice" | "insurance_contribution_certificate" | "pension_contribution_certificate" | "benefit_notice" | "child_benefit_notice" | "employment_contract" | "employer_certificate" | "work_expense_invoice" | "depot_statement" | "depot_report" | "trade_confirmation" | "capital_income_tax_certificate" | "exchange_export" | "distribution_note" | "securities_transfer" | "chain_sync";
         /**
          * DocumentType
          * @description The classifier's output set (AI layer). Phase 1 sets it by hand.
@@ -5772,7 +5772,7 @@ export interface components {
          * @description Entities that carry events. Also the prefix of every event type.
          * @enum {string}
          */
-        EntityType: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan" | "document" | "user" | "proposal" | "account" | "statement" | "transaction" | "rule" | "workspace" | "asset" | "movement" | "transfer";
+        EntityType: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan" | "document" | "user" | "proposal" | "account" | "statement" | "transaction" | "rule" | "workspace" | "asset" | "movement" | "transfer" | "wallet" | "wallet_address" | "movement_group";
         /** EquipmentComponent */
         EquipmentComponent: {
             /** Amount */
@@ -6103,11 +6103,17 @@ export interface components {
             transaction_id?: string | null;
             /** Note */
             note?: string | null;
+            /** Address Id */
+            address_id?: string | null;
+            /** Index */
+            index?: string | null;
             /** Movement Hash */
             movement_hash?: string | null;
             status: components["schemas"]["MovementStatus"];
             /** Superseded By */
             superseded_by?: string | null;
+            /** Group Id */
+            group_id?: string | null;
             /** Symbol */
             symbol: string;
             /** Question */
@@ -7785,23 +7791,24 @@ export interface components {
         };
         /**
          * MovementImportFormat
-         * @description movement_import.format (migration 0025; binance_csv since 0028).
+         * @description movement_import.format (migration 0025; binance_csv since 0028; chain_sync since
+         *     0041, one wallet sync's stored original, D182 (3)).
          * @enum {string}
          */
-        MovementImportFormat: "bison_csv" | "binance_csv";
+        MovementImportFormat: "bison_csv" | "binance_csv" | "chain_sync";
         /**
          * MovementKind
          * @description asset_movement.kind (migration 0025, §8). Phase 7 widens the CHECK with the chain
          *     kinds of the design's §2.2.
          * @enum {string}
          */
-        MovementKind: "acquisition" | "disposal" | "internal_transfer_in" | "internal_transfer_out" | "fee" | "staking_reward" | "cashback_reward" | "distribution" | "capital_income_tax" | "uncategorized" | "balance_correction";
+        MovementKind: "acquisition" | "disposal" | "internal_transfer_in" | "internal_transfer_out" | "fee" | "staking_reward" | "cashback_reward" | "distribution" | "capital_income_tax" | "uncategorized" | "balance_correction" | "airdrop" | "spam" | "lp_deposit" | "lp_withdrawal";
         /**
          * MovementSource
          * @description asset_movement.source: where the row was read from.
          * @enum {string}
          */
-        MovementSource: "csv" | "trade_confirmation" | "distribution_note" | "report" | "user" | "securities_transfer";
+        MovementSource: "csv" | "trade_confirmation" | "distribution_note" | "report" | "user" | "securities_transfer" | "chain";
         /**
          * MovementStatus
          * @description asset_movement.status: only proposed -> confirmed moves (the trigger of 0025); a
@@ -11482,10 +11489,12 @@ export interface components {
         };
         /**
          * TransferLinkKind
-         * @description transfer_link.kind (migration 0025). Phase 7 adds chain, bridge and wrap.
+         * @description transfer_link.kind (migration 0025; chain, bridge and wrap since 0041, phase 7 D184).
+         *     A link by hand (TransferLinkCreate) still only takes the kind rules.matching
+         *     .transfer_link_kind gives the two accounts, so the chain kinds wait for step 5.
          * @enum {string}
          */
-        TransferLinkKind: "bank" | "exchange_eur" | "depot_cash";
+        TransferLinkKind: "bank" | "exchange_eur" | "depot_cash" | "chain" | "bridge" | "wrap";
         /**
          * TransferLinkRequest
          * @description POST /transfers' body. rebook (D176 (4), review of step 2b): a leg booked as something

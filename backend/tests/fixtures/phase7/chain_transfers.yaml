@@ -1,0 +1,155 @@
+# Phase 7 (docs/phases/phase-7.md §7, §15, D184, D175, D162): transfers between own accounts
+# on a chain, matched by `rules/chain/match_transfer`.
+#
+# Each case is one open sending leg and the receiving legs the matcher may see: an account
+# (`binance`, `bison` are phase 6 exchange accounts; `wallet_a` A's Solana and EVM wallet,
+# `tangem` the hardware wallet; every account here owned 50/50 by A and B or by one of them,
+# which the matcher does not read), the chain (none for an exchange row), the priced_as
+# symbol, the units, the exchange's `fee_quantity`, the time (UTC), the hash and Binance's
+# network name where the exchange gives them. Every hash is generated from random bytes,
+# every amount invented.
+#
+# Loading recomputes D184 (1)–(3) and (5):
+# - `chain` with a hash on the sending side: the candidate in the same transaction;
+# - otherwise the window (chain 48 h, bridge 24 h, wrap 1 minute, measured from the sending
+#   leg), the same priced_as symbol, and the units: `quantity − fee_quantity` exactly for
+#   `chain` and `wrap`, within the registry pair's max_fee_share for a bridge; Binance's
+#   network name mapped through chains.yaml's `exchange_networks`, an unknown name → no
+#   candidate;
+# - only own, not superseded legs are candidates (a third party's credit is never the
+#   counterpart; a re-booked leg ends its link, the lots recomputed on read);
+# - one candidate → linked; several → `transfer.ambiguous`; none → `transfer.unmatched_leg`.
+# Step 0's reading (§15.1): `lots_move` says whether the lots change ACCOUNT; a wrap or a
+# bridge inside one wallet account moves them to the other asset or chain of the same
+# account (lots_move false), with their acquired_on and cost unchanged either way.
+cases:
+  # §6 example 2: Binance's withdrawal of 0.3 ETH (fee 0.0005, network „ETH“) arrives as
+  # 0.2995 ETH in the same transaction → linked by hash, the lot moves to the wallet.
+  - id: exchange_withdrawal_by_hash
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: chain
+    leg: {name: binance_out, account: binance, asset: ETH, units: "0.3", fee: "0.0005", at: "2026-03-01T10:00:00Z", tx_hash: "0x9eb1266fee703db2c7d42db52e23b5bb7fdb3fb9e77433aea7730af93792918e", network: ETH}
+    candidates:
+      - {name: wallet_in, account: wallet_a, chain: ethereum, asset: ETH, units: "0.2995", at: "2026-03-01T10:04:12Z", tx_hash: "0x9eb1266fee703db2c7d42db52e23b5bb7fdb3fb9e77433aea7730af93792918e"}
+    expect: {result: linked, link: chain, with_leg: wallet_in, lots_move: true}
+
+  # §6 example 8: 1 ETH to the registry's WETH contract, 1 WETH back in the same block.
+  - id: wrap_eth_to_weth
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: wrap
+    leg: {name: eth_out, account: wallet_a, chain: ethereum, asset: ETH, units: "1", at: "2026-03-02T09:00:00Z", tx_hash: "0x3e6bf59d0db9da41113556e7b604ed433fa9104b9ee8c2309b0b9535441d3611"}
+    candidates:
+      - {name: weth_in, account: wallet_a, chain: ethereum, asset: ETH, units: "1", at: "2026-03-02T09:00:00Z", tx_hash: "0x3e6bf59d0db9da41113556e7b604ed433fa9104b9ee8c2309b0b9535441d3611"}
+    expect: {result: linked, link: wrap, with_leg: weth_in, lots_move: false}
+
+  # §6 example 9: 0.5 ETH out on Ethereum at 10:00, 0.4985 ETH in on Arbitrum at 10:20 (the
+  # bridge kept 0.3 %, inside the pair's 1 %).
+  - id: bridge_ethereum_to_arbitrum
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: bridge
+    leg: {name: eth_out, account: wallet_a, chain: ethereum, asset: ETH, units: "0.5", at: "2026-03-03T10:00:00Z", tx_hash: "0x518319fb7036d3b987b7203233f0a8525fe166cec67e1c71b0eda1f10849ac85"}
+    candidates:
+      - {name: arb_in, account: wallet_a, chain: arbitrum, asset: ETH, units: "0.4985", at: "2026-03-03T10:20:00Z", tx_hash: "0x091af31bcfafd743ee3514e86b14dc21abe676509627164d2235bd7a9bc74d69"}
+    expect: {result: linked, link: bridge, with_leg: arb_in, lots_move: false}
+
+  - id: bridge_fee_above_share
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: bridge
+    leg: {name: eth_out, account: wallet_a, chain: ethereum, asset: ETH, units: "0.5", at: "2026-03-03T10:00:00Z", tx_hash: "0x518319fb7036d3b987b7203233f0a8525fe166cec67e1c71b0eda1f10849ac85"}
+    candidates:
+      - {name: arb_in, account: wallet_a, chain: arbitrum, asset: ETH, units: "0.49", at: "2026-03-03T10:20:00Z", tx_hash: "0x091af31bcfafd743ee3514e86b14dc21abe676509627164d2235bd7a9bc74d69"}
+    expect: {result: unmatched, card: transfer.unmatched_leg}
+
+  # §6 example 10 answered yes: the stake account is A's; the 10 SOL stay in the account.
+  - id: stake_delegation_own
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: chain
+    leg: {name: sol_out, account: wallet_a, chain: solana, asset: SOL, units: "10", at: "2026-03-04T12:00:00Z", tx_hash: 3mspNtrMQqQ1vFQNzFfQK9vaFZihjLMTT1RTKF3yMqjosLFHL1emj8XRem6CnMQsTqSKPfz5a1zNdYRWxTyj9ex7}
+    candidates:
+      - {name: stake_in, account: wallet_a, chain: solana, asset: SOL, units: "10", at: "2026-03-04T12:00:00Z", tx_hash: 3mspNtrMQqQ1vFQNzFfQK9vaFZihjLMTT1RTKF3yMqjosLFHL1emj8XRem6CnMQsTqSKPfz5a1zNdYRWxTyj9ex7}
+    expect: {result: linked, link: chain, with_leg: stake_in, lots_move: false}
+
+  # §7: 1 SOL from A's Solana wallet to the Tangem's Solana address, one transaction.
+  - id: wallet_to_wallet_by_hash
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: chain
+    leg: {name: sol_out, account: wallet_a, chain: solana, asset: SOL, units: "1", at: "2026-03-05T08:00:00Z", tx_hash: 5EfKsYTdUGotNe7CybcAaG4NscuXP89dLAhJtZbDQ8nJcFpV37kyAuENBawzA7zDHkcCdYQrikMBCLpsX3rD86rf}
+    candidates:
+      - {name: tangem_in, account: tangem, chain: solana, asset: SOL, units: "1", at: "2026-03-05T08:00:00Z", tx_hash: 5EfKsYTdUGotNe7CybcAaG4NscuXP89dLAhJtZbDQ8nJcFpV37kyAuENBawzA7zDHkcCdYQrikMBCLpsX3rD86rf}
+    expect: {result: linked, link: chain, with_leg: tangem_in, lots_move: true}
+
+  # §7: a BISON withdrawal has no hash (Q-O76) and no network: asset, quantity − fee and the
+  # 48 hours, one candidate → linked.
+  - id: bison_without_hash_one_candidate
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: chain
+    leg: {name: bison_out, account: bison, asset: BTC, units: "0.01", fee: "0.0002", at: "2026-03-06T15:00:00Z"}
+    candidates:
+      - {name: tangem_in, account: tangem, chain: bitcoin, asset: BTC, units: "0.0098", at: "2026-03-06T16:10:00Z", tx_hash: 97558857d85f623d278730bb6b3858868f54446e9024417029d2728eba809348}
+    expect: {result: linked, link: chain, with_leg: tangem_in, lots_move: true}
+
+  # §7: two deposits of the same amount on the same day → ambiguous, both on the card.
+  - id: bison_two_candidates_ambiguous
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: chain
+    leg: {name: bison_out, account: bison, asset: BTC, units: "0.01", fee: "0.0002", at: "2026-03-06T15:00:00Z"}
+    candidates:
+      - {name: tangem_in_1, account: tangem, chain: bitcoin, asset: BTC, units: "0.0098", at: "2026-03-06T16:10:00Z", tx_hash: 97558857d85f623d278730bb6b3858868f54446e9024417029d2728eba809348}
+      - {name: tangem_in_2, account: tangem, chain: bitcoin, asset: BTC, units: "0.0098", at: "2026-03-06T19:40:00Z", tx_hash: 4f09c77d2c3336ac1987a525f0cd35877a6de9c6d988c5d2e5f61e3b37bf446a}
+    expect: {result: ambiguous, card: transfer.ambiguous}
+
+  # §7: the right amount 50 hours after the withdrawal → outside the window, open leg.
+  - id: outside_window_50_hours
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: chain
+    leg: {name: bison_out, account: bison, asset: BTC, units: "0.01", fee: "0.0002", at: "2026-03-06T15:00:00Z"}
+    candidates:
+      - {name: tangem_in, account: tangem, chain: bitcoin, asset: BTC, units: "0.0098", at: "2026-03-08T17:00:00Z", tx_hash: 97558857d85f623d278730bb6b3858868f54446e9024417029d2728eba809348}
+    expect: {result: unmatched, card: transfer.unmatched_leg}
+
+  # §7: a third party's credit of the same amount inside the window is never the counterpart.
+  - id: third_party_same_amount
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: chain
+    leg: {name: binance_out, account: binance, asset: SOL, units: "2", fee: "0.01", at: "2026-03-07T11:00:00Z", tx_hash: 22SftPdYNv5x6c2wUSB75PBu51NfELuEuoFsDkMjnVuqtVoeooniifEfJvueVcYCL9SkFt6NimU4z2pbnh4TfCZk, network: SOL}
+    candidates:
+      - {name: stranger_in, account: wallet_a, chain: solana, asset: SOL, units: "1.99", at: "2026-03-07T11:05:00Z", tx_hash: 21ESV5Jrkc12ww9a9CZ5VfGETfgsvZJnJLKQzyR57h8jUJMGcajqcw2ZtQ321iLCsav7EzCyFBFNFJkTQ3PTo5yJ, own: false}
+    expect: {result: unmatched, card: transfer.unmatched_leg}
+
+  # Binance's withdrawal without a hash in its row: matched by amount, window and the network
+  # „SOL“ mapped to solana.
+  - id: binance_network_mapped
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: chain
+    leg: {name: binance_out, account: binance, asset: SOL, units: "2", fee: "0.01", at: "2026-03-07T11:00:00Z", network: SOL}
+    candidates:
+      - {name: wallet_in, account: wallet_a, chain: solana, asset: SOL, units: "1.99", at: "2026-03-07T11:01:30Z", tx_hash: JCKY5W4Qxdoitt4XhMa4fTY2YVaVssq9GVTmWVpxbbdBDcmVQ2YX9hBP2EWeQKW5jTVY18u91BzAL9r6XB8FEep}
+    expect: {result: linked, link: chain, with_leg: wallet_in, lots_move: true}
+
+  # An unknown network name → no candidate; the card names it (step 5).
+  - id: unknown_network_name
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: chain
+    leg: {name: binance_out, account: binance, asset: SOL, units: "2", fee: "0.01", at: "2026-03-07T11:00:00Z", network: SOLANA_NEW}
+    candidates:
+      - {name: wallet_in, account: wallet_a, chain: solana, asset: SOL, units: "1.99", at: "2026-03-07T11:01:30Z", tx_hash: JCKY5W4Qxdoitt4XhMa4fTY2YVaVssq9GVTmWVpxbbdBDcmVQ2YX9hBP2EWeQKW5jTVY18u91BzAL9r6XB8FEep}
+    expect: {result: unmatched, card: transfer.unmatched_leg}
+
+  # D184 (1)(b): the wallet's 2 SOL out against the exchange's Deposit row within 48 hours.
+  - id: wallet_to_exchange_deposit
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
+    kind: chain
+    leg: {name: wallet_out, account: wallet_a, chain: solana, asset: SOL, units: "2", at: "2026-03-09T18:00:00Z"}
+    candidates:
+      - {name: binance_deposit, account: binance, asset: SOL, units: "2", at: "2026-03-09T18:03:00Z"}
+    expect: {result: linked, link: chain, with_leg: binance_deposit, lots_move: true}
+
+  # D184 (5): the receiving leg re-booked (superseded) → the link ends, the leg is open again
+  # and the lots are recomputed on read without it.
+  - id: link_ended_by_rebooking
+    pending: "phase 7 step 6 (rules/chain/match_transfer, rules/lots on read)"
+    kind: chain
+    leg: {name: bison_out, account: bison, asset: BTC, units: "0.01", fee: "0.0002", at: "2026-03-06T15:00:00Z"}
+    candidates:
+      - {name: tangem_in, account: tangem, chain: bitcoin, asset: BTC, units: "0.0098", at: "2026-03-06T16:10:00Z", tx_hash: 97558857d85f623d278730bb6b3858868f54446e9024417029d2728eba809348, superseded: true}
+    expect: {result: unmatched, card: transfer.unmatched_leg}
