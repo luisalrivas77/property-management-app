@@ -226,12 +226,7 @@ def test_before_the_payment_iban_is_confirmed_the_debit_is_no_transfer(world, gi
         (MONDAY, True),  # the same day
         (date(2026, 10, 8), True),  # the third banking day after Monday
         (date(2026, 10, 9), False),  # the fourth
-        # D162 amended 15 Nov 2026: the debit names the card's payment IBAN, so the card may
-        # credit it up to three banking days before the bank books it (a direct debit the
-        # card's issuer pulls); this case said False before the amendment.
-        (date(2026, 10, 2), True),  # one banking day before the debit
-        (date(2026, 9, 30), True),  # the third banking day before
-        (date(2026, 9, 29), False),  # the fourth
+        (date(2026, 10, 2), False),  # before the debit
     ],
 )
 def test_the_link_needs_the_d162_window(world, giro, paid_on, linked):

@@ -639,10 +639,12 @@ def _fits(
     gap: bool = False,
 ) -> bool:
     # D162 amended 15 Nov 2026: tied by an own IBAN, the in-leg may be booked up to three
-    # banking days before the out-leg (a depot credits a direct debit before the bank books it).
+    # banking days before the out-leg (a depot credits a direct debit before the bank books it);
+    # never with a credit card's leg (review, 15 Nov 2026).
+    card = AccountKind.CREDIT_CARD in {accounts[out.account].kind, accounts[in_.account].kind}
     earliest = (
         _sub_banking_days(out.booked_on, WINDOW_BANKING_DAYS)
-        if _tied(out, in_, accounts)
+        if _tied(out, in_, accounts) and not card
         else out.booked_on
     )
     if not earliest <= in_.booked_on <= _add_banking_days(out.booked_on, WINDOW_BANKING_DAYS):
