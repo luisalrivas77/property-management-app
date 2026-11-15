@@ -56,6 +56,7 @@ def test_the_plain_household_income_and_spending_codes():
         "hh_bakery",
         "hh_restaurant",
         "hh_cafe",
+        "hh_bar",
         "hh_sweets",
         "hh_fast_food",
         "hh_delivery",

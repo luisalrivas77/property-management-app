@@ -114,6 +114,7 @@ TAX_TREATMENT = MappingProxyType(
         C.HH_BAKERY: T.PRIVATE,
         C.HH_RESTAURANT: T.PRIVATE,
         C.HH_CAFE: T.PRIVATE,
+        C.HH_BAR: T.PRIVATE,  # D159 amended (5) 15 Nov 2026 (migration 0034)
         C.HH_SWEETS: T.PRIVATE,
         C.HH_FAST_FOOD: T.PRIVATE,
         C.HH_DELIVERY: T.PRIVATE,
@@ -250,6 +251,7 @@ CATEGORY_LABEL = MappingProxyType(
         C.HH_BAKERY: "Bäckerei, Kiosk & Markt",
         C.HH_RESTAURANT: "Restaurant",
         C.HH_CAFE: "Café",
+        C.HH_BAR: "Bar & Kneipe",  # D159 amended (5) 15 Nov 2026 (migration 0034)
         C.HH_SWEETS: "Eis & Süßes",
         C.HH_FAST_FOOD: "Imbiss & Fast Food",
         C.HH_DELIVERY: "Lieferdienst",

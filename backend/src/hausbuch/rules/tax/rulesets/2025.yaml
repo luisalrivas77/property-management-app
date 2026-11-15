@@ -245,6 +245,7 @@ form:
     hh_bakery: null
     hh_restaurant: null
     hh_cafe: null
+    hh_bar: null  # phase 6 D159 amended (5) 15 Nov 2026 (migration 0034): private, on no form
     hh_sweets: null
     hh_fast_food: null
     hh_delivery: null

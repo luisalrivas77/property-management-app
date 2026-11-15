@@ -99,6 +99,8 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_BAKERY, G.GROCERIES, R.SPENDING),
             _code(C.HH_RESTAURANT, G.DINING, R.SPENDING),
             _code(C.HH_CAFE, G.DINING, R.SPENDING),
+            # D159 amended (5) 15 Nov 2026 (migration 0034): bars and pubs beside the café
+            _code(C.HH_BAR, G.DINING, R.SPENDING),
             _code(C.HH_SWEETS, G.DINING, R.SPENDING),
             _code(C.HH_FAST_FOOD, G.DINING, R.SPENDING),
             _code(C.HH_DELIVERY, G.DINING, R.SPENDING),

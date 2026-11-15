@@ -602,6 +602,8 @@ export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
   hh_bakery: "Bäckerei, Kiosk & Markt",
   hh_restaurant: "Restaurant",
   hh_cafe: "Café",
+  // D159 amended (5) 15 Nov 2026 (migration 0034)
+  hh_bar: "Bar & Kneipe",
   hh_sweets: "Eis & Süßes",
   hh_fast_food: "Imbiss & Fast Food",
   hh_delivery: "Lieferdienst",
@@ -701,7 +703,7 @@ export const HOUSEHOLD_GROUP: Record<HouseholdGroup, string> = {
 export const HOUSEHOLD_SPENDING_GROUPS: { group: HouseholdGroup; categories: AllocationCategory[] }[] = [
   { group: "housing", categories: ["hh_rent", "hh_energy", "hh_broadcast_fee", "hh_flat_search", "hh_housing"] },
   { group: "groceries", categories: ["hh_supermarket", "hh_drugstore", "hh_bakery", "hh_groceries"] },
-  { group: "dining", categories: ["hh_restaurant", "hh_cafe", "hh_sweets", "hh_fast_food", "hh_delivery", "hh_dining"] },
+  { group: "dining", categories: ["hh_restaurant", "hh_cafe", "hh_bar", "hh_sweets", "hh_fast_food", "hh_delivery", "hh_dining"] },
   {
     group: "mobility",
     categories: ["hh_fuel", "hh_public_transport", "hh_taxi", "hh_parking", "hh_car_service", "hh_car_tax", "hh_mobility"],

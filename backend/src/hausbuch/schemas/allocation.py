@@ -142,6 +142,9 @@ class AllocationCategory(StrEnum):
     # group dining
     HH_RESTAURANT = "hh_restaurant"  # private (Restaurant)
     HH_CAFE = "hh_cafe"  # private (Café)
+    # Phase 6 D159 amended (5) 15 Nov 2026 (migration 0034, Luis): bars, pubs and beer gardens
+    # apart from hh_restaurant.
+    HH_BAR = "hh_bar"  # private (Bar & Kneipe)
     HH_SWEETS = "hh_sweets"  # private (Eis & Süßes)
     HH_FAST_FOOD = "hh_fast_food"  # private (Imbiss & Fast Food)
     HH_DELIVERY = "hh_delivery"  # private (Lieferdienst)

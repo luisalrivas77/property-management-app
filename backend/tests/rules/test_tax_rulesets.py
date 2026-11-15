@@ -140,6 +140,7 @@ CATEGORY_LINES = {
     C.HH_BAKERY: None,
     C.HH_RESTAURANT: None,
     C.HH_CAFE: None,
+    C.HH_BAR: None,
     C.HH_SWEETS: None,
     C.HH_FAST_FOOD: None,
     C.HH_DELIVERY: None,

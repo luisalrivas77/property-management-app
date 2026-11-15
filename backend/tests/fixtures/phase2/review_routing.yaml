@@ -126,6 +126,7 @@ per_category:
   - {category: hh_bakery, decision: auto_confirm}
   - {category: hh_restaurant, decision: auto_confirm}
   - {category: hh_cafe, decision: auto_confirm}
+  - {category: hh_bar, decision: auto_confirm}  # D159 amended (5) 15 Nov 2026 (migration 0034)
   - {category: hh_sweets, decision: auto_confirm}
   - {category: hh_fast_food, decision: auto_confirm}
   - {category: hh_delivery, decision: auto_confirm}
