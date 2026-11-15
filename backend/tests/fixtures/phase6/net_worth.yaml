@@ -8,7 +8,11 @@
 # liabilities (negative); each figure split to the owners by its account's shares (the
 # property and its loan by the property's shares), every split exact to the cent; the total
 # is the sum of the classes and of the owners. One snapshot row per account and asset (the
-# bank accounts with asset null), none for the property or the loan.
+# bank accounts with asset null), plus one for the property's estimate and one per loan
+# (amended 15 Nov 2026, D167 (5) amended, migration 0040: a stored month-end must hold the
+# whole figure, or a later change of the estimate or the schedule would move a frozen total).
+# expect.snapshots lists the account rows only; the property and loan rows are checked by
+# tests/db/test_services_net_worth.py against expect.by_class.
 #
 # The key "on" is quoted: YAML 1.1 reads a bare on as true.
 # Invented accounts, owners A and B, figures and prices.
@@ -16,8 +20,9 @@
 # Step 0 readings (listed in the step 0 report):
 # - An exchange's EUR balance counts in the crypto class, with the account's kind (mockup 07's
 #   bar has no class for cash held at an exchange).
-# - The property and its loan are no snapshot rows (valuation_snapshot is per account; the
-#   estimate and the loan balance are columns of the net worth run).
+# - The property and its loan were no snapshot rows at step 0 (valuation_snapshot was per
+#   account); step 6 found that the run has no column for them, so a stored month-end lost
+#   them, and migration 0040 gives the snapshot a property or loan scope (amended above).
 # - The month-end is the calendar month's last day, a Saturday here: the prices are the
 #   latest on or before it (Friday's NAV), as valuation.yaml's date-first rule says.
 
