@@ -11,6 +11,15 @@ from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import AllocationCategory, AllocationMethod, SplitMethod
 from hausbuch.schemas.bank import StatementFormat
 from hausbuch.schemas.bank_sync import SyncStatus, SyncTrigger
+from hausbuch.schemas.chain import (
+    AddressKind,
+    Chain,
+    ChainPairKind,
+    DecoderKind,
+    GroupKind,
+    GroupStatus,
+    WalletSyncStatus,
+)
 from hausbuch.schemas.household import (
     AssetKind,
     HoldingSource,
@@ -98,6 +107,19 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("transfer_link", "matched_by"): TransferMatchedBy,
     ("price", "source"): PriceSourceKind,
     ("valuation_snapshot", "price_source"): PriceSourceKind,
+    # Phase 7 (0040)
+    ("asset", "chain"): Chain,
+    ("wallet_address", "chain"): Chain,
+    ("wallet_address", "kind"): AddressKind,
+    ("wallet_sync", "status"): WalletSyncStatus,
+    ("movement_group", "chain"): Chain,
+    ("movement_group", "kind"): GroupKind,
+    ("movement_group", "status"): GroupStatus,
+    ("chain_decoder", "chain"): Chain,
+    ("chain_decoder", "kind"): DecoderKind,
+    ("chain_pair", "kind"): ChainPairKind,
+    ("chain_pair", "from_chain"): Chain,
+    ("chain_pair", "to_chain"): Chain,
 }
 
 

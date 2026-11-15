@@ -130,6 +130,10 @@ function Original({ detail }: { detail: DocumentDetail }) {
   );
 }
 
+// Phase 7 (D182 (3)): a wallet sync's stored original is typed by code only; the picker never
+// offers it (a document already typed so keeps its value).
+const CODE_WRITTEN_SUBTYPES: ReadonlySet<DocumentSubtype> = new Set<DocumentSubtype>(["chain_sync"]);
+
 const TYPING_KEYS = [
   "typing",
   "typing.type",
@@ -260,7 +264,9 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
         >
           <select value={subtype} onChange={(e) => setSubtype(e.target.value as DocumentSubtype | "")}>
             <option value="">– keiner –</option>
-            {options(DOCUMENT_SUBTYPE).map(([value, text]) => (
+            {options(DOCUMENT_SUBTYPE)
+              .filter(([value]) => !CODE_WRITTEN_SUBTYPES.has(value) || value === subtype)
+              .map(([value, text]) => (
               <option key={value} value={value}>
                 {text}
               </option>

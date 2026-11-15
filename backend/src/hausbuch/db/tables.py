@@ -898,6 +898,11 @@ asset = Table(
     Column("decimals", Integer, nullable=False, server_default=text("8")),
     _created_at(),
     _updated_at(),
+    # 0040 (phase 7 D180, D187): a chain asset's identity, its price twin and the spam flag
+    _text("chain", nullable=True),
+    _text("contract_address", nullable=True),
+    _uuid("priced_as_asset_id", nullable=True),
+    Column("spam", Boolean, nullable=False, server_default=text("false")),
 )
 movement_import = Table(
     "movement_import",
@@ -942,6 +947,10 @@ asset_movement = Table(
     _uuid("superseded_by", nullable=True),
     _created_at(),
     _text("note", nullable=True),  # 0030: a balance_correction's reason (D178 amended)
+    # 0040 (phase 7 D182 (2), D183 (1)): a chain movement's group, own address and index
+    _uuid("group_id", nullable=True),
+    _uuid("address_id", nullable=True),
+    _text("index", nullable=True),  # a reserved word: quoted in hand-written SQL ("index")
 )
 holding_statement = Table(
     "holding_statement",
@@ -1003,4 +1012,106 @@ valuation_snapshot = Table(
     _money("value_eur"),
     _uuid("net_worth_run_id"),
     _created_at(),
+)
+
+
+# --- Phase 7 (0040): wallets, chain syncs, movement groups, holdings exports ----------------
+
+wallet_address = Table(
+    "wallet_address",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _text("chain"),
+    _text("address"),
+    _text("address_masked"),
+    Column("address_hmac", LargeBinary, nullable=False),
+    _text("label", nullable=True),
+    _text("kind", server_default=text("'receive'")),
+    _uuid("discovered_from", nullable=True),
+    Column("active", Boolean, nullable=False, server_default=text("true")),
+    _created_at(),
+)
+movement_group = Table(
+    "movement_group",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _text("chain"),
+    _text("tx_hash"),
+    _timestamp("occurred_at", default=False),
+    _text("kind"),
+    _text("decoder", nullable=True),
+    _text("status", server_default=text("'proposed'")),
+    _text("question", nullable=True),
+    _uuid("superseded_by", nullable=True),
+    _created_at(),
+)
+wallet_sync = Table(
+    "wallet_sync",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("address_id"),
+    _timestamp("started_at"),
+    _timestamp("finished_at", nullable=True, default=False),
+    _text("status", server_default=text("'running'")),
+    _text("source_host"),
+    _text("cursor_before", nullable=True),
+    _text("cursor_after", nullable=True),
+    Column("block", BigInteger, nullable=True),
+    Column("oldest_slot_reached", BigInteger, nullable=True),
+    Column("txs_seen", Integer, nullable=False, server_default=text("0")),
+    Column("movements_new", Integer, nullable=False, server_default=text("0")),
+    Column("balances", JSONB, nullable=True),
+    Column("reconciled", Boolean, nullable=True),
+    Column("difference", JSONB, nullable=True),
+    _text("error_code", nullable=True),
+    _uuid("import_id", nullable=True),
+    _uuid("document_id", nullable=True),
+    _created_at(),
+)
+chain_decoder = Table(
+    "chain_decoder",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("chain"),
+    _text("program"),
+    _text("method", nullable=True),
+    _text("kind"),
+    _uuid("created_from_group_id", nullable=True),
+    _uuid("superseded_by", nullable=True),
+    _created_at(),
+)
+chain_pair = Table(
+    "chain_pair",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("kind"),
+    _text("from_chain"),
+    _uuid("from_asset_id"),
+    _text("to_chain"),
+    _uuid("to_asset_id"),
+    Column("max_fee_share", Numeric(5, 4), nullable=True),
+    _uuid("created_from_group_id", nullable=True),
+    _uuid("superseded_by", nullable=True),
+    _created_at(),
+)
+holdings_export = Table(
+    "holdings_export",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _date("as_of"),
+    Column("pdf_sha256", LargeBinary, nullable=False),
+    Column("csv_sha256", LargeBinary, nullable=False),
+    Column("statement", JSONB, nullable=False),
+    _created_at(),
+    _uuid("created_by", nullable=True),
 )

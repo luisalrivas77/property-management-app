@@ -225,3 +225,18 @@ BANK_AUTO_SYNC_WAITS = "bank.auto_sync_waits"  # DKB: two manual syncs without a
 SETTINGS_CONSENT_SWITCH_OFF = "settings.consent_switch_off"  # nothing to consent to
 SETTINGS_CONSENT_ALREADY_RECORDED = "settings.consent_already_recorded"  # this member did
 SETTINGS_CONSENT_NOT_A_MEMBER = "settings.consent_not_a_member"  # only a signed-in member
+# Phase 7 (docs/phases/phase-7.md §12): wallets, chain syncs and movement groups. Written in
+# step 0; each is raised or shown by the step that builds its rule (D179-D190).
+WALLET_ADDRESS_INVALID = "wallet.address_invalid"  # not the chain's address format (D179 (2))
+WALLET_ADDRESS_TAKEN = "wallet.address_taken"  # registered on another own account (D179 (2))
+WALLET_KEY_MISSING = "wallet.key_missing"  # the chain's source needs a key that is unset
+WALLET_SOURCE_THROTTLED = "wallet.source_throttled"  # a 429: the sync resumes the next day
+WALLET_SOURCE_REFUSED = "wallet.source_refused"  # a 401/403: change the URL or key (D182 (1))
+WALLET_UNRECONCILED = "wallet.unreconciled"  # Σ movements != the chain's balance (D186 (2))
+WALLET_COINS_LEFT = "wallet.coins_left"  # a balance-only address below its linked deposits
+WALLET_SYNC_DEFERRED = "wallet.sync_deferred"  # the run's budget ran out; a page note, no card
+WALLET_CHANGE_CANDIDATE = "wallet.change_candidate"  # an own spend's unregistered output (D185)
+GROUP_UNKNOWN = "group.unknown"  # no rule reads the transaction (D183 (3f))
+GROUP_CONTRACT_CALL = "group.contract_call"  # a shape no rule reads (D183 (4))
+GROUP_UNPRICED = "group.unpriced"  # a leg without the day's price (D188 (4))
+GROUP_LP_UNDECIDED = "group.lp_undecided"  # a pool position, phase 8 decides (D183 (4))
