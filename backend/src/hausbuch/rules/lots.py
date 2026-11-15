@@ -5,13 +5,14 @@ Pure, on read, no table and no cache (phase 3 D59's precedent: a `tax_lot` table
 cache the first superseded movement makes wrong, D184 (5)):
 
 - `book(movements, links, prices, on)`: FIFO per account and asset over the confirmed,
-  unsuperseded movements whose Berlin day is on or before `on`, and the unsuperseded links
-  between two of them. Every lot ever created (closed ones too), the lots each movement took
-  (`uses`), and the units a movement took that no lot covered (`unfilled`).
+  unsuperseded movements whose Berlin day is on or before `on` (a linked pair: whose earlier
+  leg's is), and the unsuperseded links between two confirmed movements. Every lot ever
+  created (closed ones too), the lots each movement took (`uses`), and the units a movement
+  took that no lot covered (`unfilled`).
 - `lots(movements, links, prices, on)`: the lots of `book` still open at the end of `on`.
 - `consume(open_lots, units)`: which lots a disposal, an outgoing transfer or a fee takes, the
-  oldest `acquired_on` first, then the oldest `acquired_at`; it never takes more than is open
-  (the caller sees the shortfall as `units − Σ use.units`).
+  oldest `acquired_on` first, then the oldest `acquired_at`, from one account and asset; it
+  never takes more than is open (the caller sees the shortfall as `units − Σ use.units`).
 - `cost_total(lots)`: the cost of some lots, withheld (None) when any is unpriced, with the
   priced part and the count of unpriced lots for „ohne n Posten ohne Kurs“ (D188 (4)).
 - `tax_free_from(acquired_on)`: §23 Abs. 1 S. 1 Nr. 2 EStG with §108 Abs. 1 AO and §§ 187
@@ -36,7 +37,9 @@ spec leaves them open; listed in the step 6 report):
 - a price counts for a cost only when it is the price OF the movement's Berlin day („no price
   for its day“, D188 (4)); an older row `price_on` would return leaves the cost unpriced;
 - a `balance_correction` (phase 6 Q-O96) adds units as a lot of unknown cost (source
-  `unknown`, cost None) and takes units like a disposal;
+  `unknown`, cost None, acquired on the correction's day) and takes units like a disposal.
+  PROVISIONAL until phase 8 decides Q-O96: that lot's day starts a holding period the coins
+  may not have, and its missing cost withholds every total it is in;
 - an unlinked transfer in is a lot of source `unknown` whose cost is its EUR leg or None; an
   unlinked transfer out takes its units like a disposal (they left the account);
 - a linked transfer moves min(out units, in units), the oldest first; what the out-leg took
@@ -47,22 +50,35 @@ spec leaves them open; listed in the step 6 report):
   within one account to another asset (a wrap, a bridge) it records none, since nothing left
   the account (lots.yaml's wrap and bridge cases); within one account and asset it moves
   nothing (D184 (1)(c));
-- a pair is processed at the earlier of its two legs, so a credit seen before its debit
-  (D162 amended) does not first appear as an unknown lot;
-- at equal instants a movement that adds units goes before one that takes units.
+- a pair is processed whole at the earlier of its two legs, so a credit seen before its
+  debit (D162 amended) does not first appear as an unknown lot; links are resolved over every
+  confirmed movement whatever `on` is, and a pair whose earlier leg's Berlin day is on or
+  before `on` is read whole, its later leg too (a transfer across 31 Dec: the lot is on the
+  receiver at the year's end, never on both accounts and never an unknown lot); an unlinked
+  movement is read only up to `on`;
+- a link that competes with another for one leg: the earliest created stands (then the id);
+  the matcher refuses a second link, so this only keeps a bad row from depending on order;
+- at equal instants: what adds units first, then the linked moves (one whose receiving
+  account and asset is another's sending side before that other: a chain of moves within one
+  instant runs in its order), then what takes units (a disposal, a transfer out or a
+  correction before a fee, then the movement's `index`, then its id), so the result never
+  depends on the random ids.
 
 Every amount is exact until output: a lot keeps its exact cost per unit (the total over its
 units), moved parts carry it unchanged, and a cost is quantized to the cent half up only when
-a `Lot` or a `LotUse` is written (`cost_per_unit` to 8 places, numeric(20,8)).
+a `Lot` or a `LotUse` is written (`cost_per_unit` to 8 places, numeric(20,8)). The arithmetic
+runs with 60 significant digits (`_exact`), not the default 28, so units of 18 decimals on a
+large balance subtract exactly once the quantity type is widened (migration 0042).
 
 Fixtures tests/fixtures/phase7/lots.yaml, holding_period.yaml.
 """
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, localcontext
+from functools import wraps
 from uuid import UUID, uuid5
 from zoneinfo import ZoneInfo
 
@@ -103,6 +119,21 @@ _NOTHING = frozenset(
     }
 )
 _CREATES_IN_GROUP = frozenset({MovementKind.ACQUISITION}) | _REWARDS
+# Significant digits for the unit arithmetic: numeric(38,18) units need 38, a cost per unit
+# over them more; Python's default of 28 would round a large balance's last decimals.
+PRECISION = 60
+
+
+def _exact[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
+    """Run `fn` with PRECISION significant digits (nested calls keep it)."""
+
+    @wraps(fn)
+    def run(*args: P.args, **kwargs: P.kwargs) -> R:
+        with localcontext() as ctx:
+            ctx.prec = max(ctx.prec, PRECISION)
+            return fn(*args, **kwargs)
+
+    return run
 
 
 class HeldLot(Lot):
@@ -196,6 +227,7 @@ def _cost(per: Decimal | None, units: Decimal) -> Decimal | None:
     return None if per is None else _cents(per * units)
 
 
+@_exact
 def _fifo(parts: Iterable[_Part], units: Decimal) -> list[tuple[_Part, Decimal]]:
     """The parts `units` takes, oldest first, and how much of each; mutates nothing."""
     out: list[tuple[_Part, Decimal]] = []
@@ -209,13 +241,19 @@ def _fifo(parts: Iterable[_Part], units: Decimal) -> list[tuple[_Part, Decimal]]
     return out
 
 
+@_exact
 def consume(open_lots: Sequence[HeldLot], units: Decimal) -> list[LotUse]:
     """Which lots `units` takes, FIFO: the oldest `acquired_on` first, then the oldest
-    `acquired_at`. Each use's cost is the lot's cost per unit × the units taken, to the cent;
-    None for an unpriced lot. Takes at most what is open: the shortfall is `units` minus the
-    uses' units. The lots are not changed."""
+    `acquired_at`. The lots are of one account and asset (FIFO is per account and asset); lots
+    of several are refused. Each use's cost is the lot's cost per unit × the units taken, to
+    the cent; None for an unpriced lot. The cost per unit is the lot's rounded open cost over
+    its open units (a `HeldLot` carries no exact one), so a use may differ by a cent from the
+    same use in `book`, which keeps the exact cost per unit. Takes at most what is open: the
+    shortfall is `units` minus the uses' units. The lots are not changed."""
     if units < 0:
         raise ValueError("units taken are not negative")
+    if len({(lot.account_id, lot.asset_id) for lot in open_lots}) > 1:
+        raise ValueError("consume takes from the lots of one account and asset")
     parts = [
         _Part(
             id=lot.id,
@@ -260,6 +298,7 @@ class _Book:
     def add(self, part: _Part) -> None:
         self.parts[(part.account_id, part.asset_id)].append(part)
 
+    @_exact
     def take(
         self, movement: AssetMovement, units: Decimal, *, record: bool = True
     ) -> list[tuple[_Part, Decimal]]:
@@ -320,17 +359,21 @@ class _Prices:
 def _acquisition_total(
     m: AssetMovement, group: Sequence[AssetMovement], prices: _Prices
 ) -> Decimal | None:
-    """D188 (1), (4): the EUR leg, else the day's price × units, else (a swap) the given legs'
-    value; plus `fee_eur`, else the group's fee movements valued on the day (only when the
-    group creates this one lot). Any part unpriced → None, never 0 €."""
+    """D188 (1), (4): the EUR leg, else the day's price × units, else (a swap that creates
+    this one lot) the given legs' value; plus `fee_eur`, else the group's fee movements valued
+    on the day (again only when the group creates this one lot). Any part unpriced → None,
+    never 0 €: a group that creates two lots cannot give each the whole given value."""
     day = berlin_day(m.occurred_at)
     units = abs(m.quantity)
+    creating = [g for g in group if g.kind in _CREATES_IN_GROUP and g.quantity > 0]
     if m.eur_amount is not None:
         base: Decimal | None = abs(m.eur_amount)
     else:
         price = prices.of_day(m.asset_id, day)
         if price is not None:
             base = price * units
+        elif len(creating) != 1:
+            base = None
         else:
             given = [
                 g
@@ -345,7 +388,6 @@ def _acquisition_total(
         return None
     if m.fee_eur is not None:
         return base + m.fee_eur
-    creating = [g for g in group if g.kind in _CREATES_IN_GROUP and g.quantity > 0]
     fees = [g for g in group if g.kind is MovementKind.FEE]
     if not fees or len(creating) != 1:
         return base
@@ -367,10 +409,12 @@ def _per(total: Decimal | None, units: Decimal) -> Decimal | None:
 def _live_links(
     links: Sequence[TransferLink], movements: dict[UUID, AssetMovement]
 ) -> dict[UUID, TransferLink]:
-    """Per movement id, the one unsuperseded link that joins it to another read movement,
-    out-leg negative and in-leg positive. A bank or EUR link (a transaction leg) moves no lot."""
+    """Per movement id, the one unsuperseded link that joins it to another given movement,
+    out-leg negative and in-leg positive. A bank or EUR link (a transaction leg) moves no lot.
+    A leg in two links (the matcher refuses that): the earliest created stands, then the
+    lowest id, whatever order the links come in."""
     out: dict[UUID, TransferLink] = {}
-    for link in links:
+    for link in sorted(links, key=lambda k: (k.created_at, str(k.id))):
         if link.superseded_by is not None:
             continue
         a, b = link.out_movement_id, link.in_movement_id
@@ -379,11 +423,12 @@ def _live_links(
         if movements[a].quantity >= 0 or movements[b].quantity <= 0:
             continue
         if a in out or b in out:
-            continue  # a leg in two links: the first stands, the matcher refuses a second
+            continue
         out[a] = out[b] = link
     return out
 
 
+@_exact
 def _move(book: _Book, link: TransferLink, sender: AssetMovement, receiver: AssetMovement) -> None:
     sent, received = abs(sender.quantity), abs(receiver.quantity)
     same_account = sender.account_id == receiver.account_id
@@ -416,18 +461,67 @@ def _move(book: _Book, link: TransferLink, sender: AssetMovement, receiver: Asse
         book.add(part)
 
 
-def _read(m: AssetMovement, on: date) -> bool:
-    return (
-        m.status is MovementStatus.CONFIRMED
-        and m.superseded_by is None
-        and berlin_day(m.occurred_at) <= on
-    )
+def _confirmed(m: AssetMovement) -> bool:
+    return m.status is MovementStatus.CONFIRMED and m.superseded_by is None
 
 
 def _adds(m: AssetMovement) -> bool:
     return m.quantity > 0
 
 
+# A step of the book: its sort key, the movement (a pair's sender) and a pair's link and
+# receiver. Classes at one instant: 0 adds, 1 linked moves, 2 takes.
+_Key = tuple[datetime, int, int, str, str]
+_Step = tuple[_Key, AssetMovement, TransferLink | None, AssetMovement | None]
+
+
+def _step(m: AssetMovement) -> _Step:
+    if _adds(m):
+        return ((m.occurred_at, 0, 0, "", str(m.id)), m, None, None)
+    fee_last = 1 if m.kind is MovementKind.FEE else 0
+    return ((m.occurred_at, 2, fee_last, m.index or "", str(m.id)), m, None, None)
+
+
+def _chain_order(moves: list[_Step]) -> list[_Step]:
+    """Linked moves at one instant: a move whose receiving account and asset is another's
+    sending side goes before it (A→B before B→C); otherwise, and in a cycle, by id."""
+
+    def sends(s: _Step) -> tuple[UUID, UUID]:
+        return (s[1].account_id, s[1].asset_id)
+
+    def receives(s: _Step) -> tuple[UUID, UUID]:
+        assert s[3] is not None
+        return (s[3].account_id, s[3].asset_id)
+
+    left = list(moves)
+    out: list[_Step] = []
+    while left:
+        ready = next(
+            (s for s in left if not any(o is not s and receives(o) == sends(s) for o in left)),
+            left[0],
+        )
+        out.append(ready)
+        left.remove(ready)
+    return out
+
+
+def _ordered(steps: list[_Step]) -> list[_Step]:
+    steps = sorted(steps, key=lambda s: s[0])
+    out: list[_Step] = []
+    i = 0
+    while i < len(steps):
+        j = i + 1
+        if steps[i][2] is not None:
+            while j < len(steps) and steps[j][2] is not None and steps[j][0][0] == steps[i][0][0]:
+                j += 1
+            out.extend(_chain_order(steps[i:j]))
+        else:
+            out.append(steps[i])
+        i = j
+    return out
+
+
+@_exact
 def book(
     movements: Sequence[AssetMovement],
     links: Sequence[TransferLink],
@@ -437,34 +531,39 @@ def book(
     """Every lot of the movements read at the end of the Berlin day `on`, and what took them.
     `movements` and `prices` may hold several accounts and assets; FIFO is per account and
     asset. The caller passes only assets that are lots (not EUR)."""
-    read = {m.id: m for m in movements if _read(m, on)}
-    linked = _live_links(links, read)
+    confirmed = {m.id: m for m in movements if _confirmed(m)}
+    linked = _live_links(links, confirmed)
     priced = _Prices(prices)
+
+    # One step per movement read; a linked pair one step at its earlier leg, read whole when
+    # that leg's Berlin day is on or before `on` (the later leg may be after it).
+    steps: list[_Step] = []
+    read: list[AssetMovement] = []
+    done: set[UUID] = set()
+    for m in confirmed.values():
+        link = linked.get(m.id)
+        if link is None:
+            if berlin_day(m.occurred_at) <= on:
+                steps.append(_step(m))
+                read.append(m)
+        elif link.id not in done:
+            done.add(link.id)
+            sender = confirmed[link.out_movement_id]  # type: ignore[index]
+            receiver = confirmed[link.in_movement_id]  # type: ignore[index]
+            at = min(sender.occurred_at, receiver.occurred_at)
+            if berlin_day(at) <= on:
+                steps.append(((at, 1, 0, "", str(sender.id)), sender, link, receiver))
+                read += [sender, receiver]
     groups: dict[UUID, list[AssetMovement]] = defaultdict(list)
-    for m in read.values():
+    for m in read:
         if m.group_id is not None:
             groups[m.group_id].append(m)
 
-    # One step per movement, a linked pair one step at its earlier leg.
-    steps: list[tuple[datetime, int, str, AssetMovement, TransferLink | None]] = []
-    done: set[UUID] = set()
-    for m in read.values():
-        link = linked.get(m.id)
-        if link is None:
-            steps.append((m.occurred_at, 0 if _adds(m) else 1, str(m.id), m, None))
-        elif link.id not in done:
-            done.add(link.id)
-            sender = read[link.out_movement_id]  # type: ignore[index]
-            receiver = read[link.in_movement_id]  # type: ignore[index]
-            at = min(sender.occurred_at, receiver.occurred_at)
-            steps.append((at, 1, str(sender.id), sender, link))
-    steps.sort(key=lambda s: (s[0], s[1], s[2]))
-
     lots = _Book()
-    for _, _, _, m, link in steps:
+    for _, m, link, receiver in _ordered(steps):
         units = abs(m.quantity)
-        if link is not None:
-            _move(lots, link, m, read[link.in_movement_id])  # type: ignore[index]
+        if link is not None and receiver is not None:
+            _move(lots, link, m, receiver)
         elif m.kind is MovementKind.ACQUISITION:
             group = groups[m.group_id] if m.group_id is not None else [m]
             total = _acquisition_total(m, group, priced)

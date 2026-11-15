@@ -50,6 +50,7 @@ def movement(
     group: UUID | None = None,
     superseded: bool = False,
     status: MovementStatus = MovementStatus.CONFIRMED,
+    index: str | None = None,
 ) -> AssetMovement:
     return AssetMovement(
         id=uuid4(),
@@ -66,16 +67,22 @@ def movement(
         status=status,
         superseded_by=uuid4() if superseded else None,
         group_id=group,
+        index=index,
     )
 
 
 def link(
-    out: AssetMovement, into: AssetMovement, kind: TransferLinkKind, *, superseded: bool = False
+    out: AssetMovement,
+    into: AssetMovement,
+    kind: TransferLinkKind,
+    *,
+    superseded: bool = False,
+    created_at: datetime = datetime(2027, 1, 1, tzinfo=UTC),
 ) -> TransferLink:
     return TransferLink(
         id=uuid4(),
         workspace_id=WORKSPACE,
-        created_at=datetime(2027, 1, 1, tzinfo=UTC),
+        created_at=created_at,
         kind=kind,
         out_movement_id=out.id,
         in_movement_id=into.id,
@@ -631,3 +638,193 @@ def test_the_year_end_on_the_berlin_calendar():
         (evening.id, date(2026, 12, 31)),
         (late.id, date(2027, 1, 1)),
     ]
+
+
+# --- PR #368 review: order at one instant, pairs across `on`, groups, consume, precision --
+
+
+def test_a_transfer_and_its_fee_at_one_instant_never_depend_on_the_ids():
+    """The linked move runs before the fee at one instant: B gets the whole oldest lot and the
+    fee takes from the next, for any ids."""
+    for _ in range(40):
+        a, b, eth = uuid4(), uuid4(), uuid4()
+        old = movement(K.ACQUISITION, "1", AT, account=a, asset=eth, eur_amount=D("-1000"))
+        new = movement(
+            K.ACQUISITION, "1", AT + timedelta(hours=1), account=a, asset=eth, eur_amount=D("-3000")
+        )
+        at = AT + timedelta(hours=2)
+        out = movement(K.INTERNAL_TRANSFER_OUT, "-1", at, account=a, asset=eth)
+        fee = movement(K.FEE, "-0.01", at, account=a, asset=eth)
+        into = movement(K.INTERNAL_TRANSFER_IN, "1", at, account=b, asset=eth)
+        got = L.book([old, new, out, fee, into], [link(out, into, TransferLinkKind.CHAIN)], [], DAY)
+        on_b = [
+            (lot.movement_id, lot.units_open, lot.cost_eur)
+            for lot in got.lots
+            if lot.account_id == b
+        ]
+        assert on_b == [(old.id, D(1), D("1000.00"))]
+        assert [(u.lot_id, u.units, u.cost_eur) for u in got.uses[fee.id]] == [
+            (new.id, D("0.01"), D("30.00"))
+        ]
+
+
+def test_takes_at_one_instant_go_disposal_before_fee_then_by_index():
+    acct, sol = uuid4(), uuid4()
+    first = movement(K.ACQUISITION, "1", AT, account=acct, asset=sol, eur_amount=D("-100"))
+    second = movement(
+        K.ACQUISITION, "1", AT + timedelta(hours=1), account=acct, asset=sol, eur_amount=D("-200")
+    )
+    at = AT + timedelta(hours=2)
+    for _ in range(20):
+        fee = movement(K.FEE, "-0.5", at, account=acct, asset=sol, index="0")
+        sale_b = movement(K.DISPOSAL, "-0.5", at, account=acct, asset=sol, index="2")
+        sale_a = movement(K.DISPOSAL, "-0.5", at, account=acct, asset=sol, index="1")
+        got = L.book([first, second, fee, sale_b, sale_a], [], [], DAY)
+        assert [u.lot_id for u in got.uses[sale_a.id]] == [first.id]
+        assert [u.lot_id for u in got.uses[sale_b.id]] == [first.id]
+        assert [u.lot_id for u in got.uses[fee.id]] == [second.id]
+
+
+def test_a_pair_and_a_sale_on_the_receiver_at_one_instant_leave_nothing_unfilled():
+    for _ in range(20):
+        a, b, eth = uuid4(), uuid4(), uuid4()
+        buy = movement(K.ACQUISITION, "1", AT, account=a, asset=eth, eur_amount=D("-2000"))
+        at = AT + timedelta(hours=1)
+        out = movement(K.INTERNAL_TRANSFER_OUT, "-1", at, account=a, asset=eth)
+        into = movement(K.INTERNAL_TRANSFER_IN, "1", at, account=b, asset=eth)
+        sell = movement(K.DISPOSAL, "-1", at, account=b, asset=eth)
+        got = L.book([buy, out, into, sell], [link(out, into, TransferLinkKind.CHAIN)], [], DAY)
+        assert got.unfilled == {}
+        assert [lot for lot in got.lots if lot.units_open] == []
+        assert [(u.units, u.cost_eur) for u in got.uses[sell.id]] == [(D(1), D("2000.00"))]
+
+
+def test_a_wrap_and_a_sale_of_the_wrapped_coin_at_one_instant_leave_nothing_unfilled():
+    for _ in range(20):
+        wallet, sol, wsol = uuid4(), uuid4(), uuid4()
+        buy = movement(K.ACQUISITION, "2", AT, account=wallet, asset=sol, eur_amount=D("-280"))
+        at = AT + timedelta(hours=1)
+        out = movement(K.INTERNAL_TRANSFER_OUT, "-2", at, account=wallet, asset=sol)
+        into = movement(K.INTERNAL_TRANSFER_IN, "2", at, account=wallet, asset=wsol)
+        sell = movement(K.DISPOSAL, "-2", at, account=wallet, asset=wsol)
+        got = L.book([sell, into, out, buy], [link(out, into, TransferLinkKind.WRAP)], [], DAY)
+        assert got.unfilled == {}
+        assert [lot for lot in got.lots if lot.units_open] == []
+
+
+def test_a_chain_of_moves_at_one_instant_runs_in_its_order():
+    """A→B and B→C at one instant: A→B first whatever the ids, so C gets A's lot."""
+    for _ in range(20):
+        a, b, c, eth = uuid4(), uuid4(), uuid4(), uuid4()
+        buy = movement(K.ACQUISITION, "1", AT, account=a, asset=eth, eur_amount=D("-2000"))
+        at = AT + timedelta(hours=1)
+        ab_out = movement(K.INTERNAL_TRANSFER_OUT, "-1", at, account=a, asset=eth)
+        ab_in = movement(K.INTERNAL_TRANSFER_IN, "1", at, account=b, asset=eth)
+        bc_out = movement(K.INTERNAL_TRANSFER_OUT, "-1", at, account=b, asset=eth)
+        bc_in = movement(K.INTERNAL_TRANSFER_IN, "1", at, account=c, asset=eth)
+        links = [
+            link(bc_out, bc_in, TransferLinkKind.CHAIN),
+            link(ab_out, ab_in, TransferLinkKind.CHAIN),
+        ]
+        got = L.book([buy, bc_out, bc_in, ab_out, ab_in], links, [], DAY)
+        assert got.unfilled == {}
+        assert [
+            (lot.account_id, lot.movement_id, lot.source) for lot in got.lots if lot.units_open
+        ] == [(c, buy.id, LotSource.ACQUISITION)]
+
+
+@pytest.mark.parametrize("credit_first", [False, True])
+def test_a_pair_across_the_year_end_is_read_whole(credit_first):
+    """The pair rule: a pair whose earlier leg is on or before `on` is read whole, so on 31
+    Dec the lot is on the receiver once, with its own day, never an unknown lot."""
+    a, b, eth = uuid4(), uuid4(), uuid4()
+    buy = movement(K.ACQUISITION, "1", AT, account=a, asset=eth, eur_amount=D("-2000"))
+    dec = datetime(2026, 12, 31, 20, tzinfo=UTC)
+    jan = datetime(2027, 1, 1, 9, tzinfo=UTC)
+    out_at, in_at = (jan, dec) if credit_first else (dec, jan)
+    out = movement(K.INTERNAL_TRANSFER_OUT, "-1", out_at, account=a, asset=eth)
+    into = movement(K.INTERNAL_TRANSFER_IN, "1", in_at, account=b, asset=eth)
+    rows, links = [buy, out, into], [link(out, into, TransferLinkKind.CHAIN)]
+    for on in (date(2026, 12, 31), date(2027, 1, 1)):
+        held = L.lots(rows, links, [], on)
+        assert [(lot.account_id, lot.units_open, lot.acquired_on, lot.source) for lot in held] == [
+            (b, D(1), DAY, LotSource.ACQUISITION)
+        ]
+    # Before the earlier leg's day nothing moved.
+    assert [lot.account_id for lot in L.lots(rows, links, [], date(2026, 12, 30))] == [a]
+
+
+def test_a_group_creating_two_lots_gives_neither_the_given_value():
+    """The given-leg fallback is for a group that creates exactly one lot: two received legs
+    cannot each take the whole given value, so both stay unpriced."""
+    acct, sol, usdc, usdt, group = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
+    rows = [
+        movement(
+            K.ACQUISITION, "2", AT - timedelta(days=9), account=acct, asset=sol, eur_amount=D("-1")
+        ),
+        movement(K.DISPOSAL, "-1", AT, account=acct, asset=sol, group=group),
+        movement(K.ACQUISITION, "70", AT, account=acct, asset=usdc, group=group),
+        movement(K.ACQUISITION, "70", AT, account=acct, asset=usdt, group=group),
+    ]
+    got = L.lots(rows, [], [price(sol, DAY, "140.00")], DAY)
+    assert {lot.asset_id: lot.cost_eur for lot in got if lot.asset_id != sol} == {
+        usdc: None,
+        usdt: None,
+    }
+
+
+def test_consume_refuses_lots_of_two_accounts_or_assets():
+    a, b, eth = uuid4(), uuid4(), uuid4()
+    rows = [
+        movement(K.ACQUISITION, "1", AT, account=a, asset=eth, eur_amount=D("-1")),
+        movement(K.ACQUISITION, "1", AT, account=b, asset=eth, eur_amount=D("-1")),
+    ]
+    held = L.lots(rows, [], [], DAY)
+    with pytest.raises(ValueError):
+        L.consume(held, D(1))
+    assert len(L.consume([held[0]], D(1))) == 1
+
+
+def test_competing_links_for_one_leg_choose_the_earliest_created_in_any_order():
+    a, b, c, eth = uuid4(), uuid4(), uuid4(), uuid4()
+    buy = movement(K.ACQUISITION, "1", AT, account=a, asset=eth, eur_amount=D("-2000"))
+    at = AT + timedelta(hours=1)
+    out = movement(K.INTERNAL_TRANSFER_OUT, "-1", at, account=a, asset=eth)
+    to_b = movement(K.INTERNAL_TRANSFER_IN, "1", at, account=b, asset=eth)
+    to_c = movement(K.INTERNAL_TRANSFER_IN, "1", at, account=c, asset=eth)
+    first = link(out, to_b, TransferLinkKind.CHAIN, created_at=datetime(2027, 1, 1, tzinfo=UTC))
+    second = link(out, to_c, TransferLinkKind.CHAIN, created_at=datetime(2027, 1, 2, tzinfo=UTC))
+    rows = [buy, out, to_b, to_c]
+    for links in ([first, second], [second, first]):
+        held = {lot.account_id: lot.source for lot in L.lots(rows, links, [], DAY)}
+        assert held == {b: LotSource.ACQUISITION, c: LotSource.UNKNOWN}
+
+
+def test_units_of_18_decimals_on_a_large_balance_subtract_exactly():
+    """Fix 6 at the Decimal level: the Quantity type still refuses more than 10 decimals
+    (migration 0042 widens it on another branch), so the arithmetic is tested on the book's
+    own parts. With Python's default 28 digits the open units would round."""
+    acct, asset = uuid4(), uuid4()
+    holder = movement(K.DISPOSAL, "-1", AT, account=acct, asset=asset)
+    big = D("12345678901.123456789012345678")
+    tiny = D("0.000000000000000001")
+    part = L._Part(
+        id=uuid4(),
+        movement_id=uuid4(),
+        account_id=acct,
+        asset_id=asset,
+        acquired_at=AT,
+        acquired_on=DAY,
+        units=big,
+        open=big,
+        per=D("0.5"),
+        source=LotSource.ACQUISITION,
+    )
+    ledger = L._Book()
+    ledger.add(part)
+    taken = ledger.take(holder, tiny, record=False)
+    assert taken == [(part, tiny)]
+    assert part.open == D("12345678901.123456789012345677")
+    ledger.take(holder, big, record=False)
+    assert part.open == 0
+    assert ledger.unfilled == {holder.id: tiny}
