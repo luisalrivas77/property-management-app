@@ -79,8 +79,12 @@ def _debit(lines):
 
 
 def test_the_inbox_lists_every_unmatched_line_without_an_iban(client_a, lines):
-    items = ok(client_a.get("/api/inbox"))
-    assert {i["kind"] for i in items} == {"unmatched"}
+    # Reminders depend on the wall clock (the inbox route reads today's date): from 10 Jan 2027
+    # the fixture account's „Kontoauszug fällig“ joins the list (phase 5 D122 amended), so only
+    # the line items are compared here.
+    every = ok(client_a.get("/api/inbox"))
+    assert {i["kind"] for i in every} <= {"unmatched", "reminder"}
+    items = [i for i in every if i["kind"] == "unmatched"]
     assert {i["transaction_id"] for i in items} == {line["id"] for line in lines}
     assert all(i["question"] and i["reasoning"] for i in items)
     text = client_a.get("/api/inbox").text
