@@ -171,7 +171,9 @@ class Bank:
     def events(self, type_):
         return [
             e.payload
-            for e in self.rows(event_table, event_table.c.type == type_.value)
+            for e in sorted(
+                self.rows(event_table, event_table.c.type == type_.value), key=lambda e: e.seq
+            )
             if e.entity_id == self.account.id
         ]
 
