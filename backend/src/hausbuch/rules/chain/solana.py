@@ -18,9 +18,10 @@ Readings of step 2 (docs/phases/phase-7.md §15.1, reported with the step):
   lamports; its token amount counts as WSOL and only the rest of its lamports as SOL, so a wrap
   or an unwrap is one SOL leg and one WSOL leg of the same units (a `wrap` by the registry's
   pair), and a temporary wSOL account opened and closed inside a swap nets to nothing;
-- the rent of a third party's token account the own address opened beside a token leg (a send
-  that creates the recipient's account) is read from the record: the new account's own lamports,
-  folded into the `fee` movement (D181 (d) „the rent as fee“), never fetched from the RPC;
+- the rent of a third party's token account the own fee payer opened (a send that creates the
+  recipient's account) is read from the record: the new account's own lamports, folded into the
+  `fee` movement (D181 (d) „the rent as fee“), never fetched from the RPC and with no condition
+  that a token leg moves beside it;
   a new foreign account of the native mint counts only its lamports beyond the wrapped amount
   (the amount is a SOL leg that was sent, never fee);
 - the rent a third party paid into an own token account it opened is a SOL `in` leg of its own
