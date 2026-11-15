@@ -571,3 +571,22 @@ def test_a_rule_on_the_lines_own_iban_wins_over_one_from_another_iban():
     for rules in ([cross, own], [own, cross]):
         found = matching.rule_answer(rules, line, PRIVATE, [])
         assert found is not None and found.allocations[0].category is C.HH_SUBSCRIPTIONS
+
+
+SPK = "STADTSPARKASSE DUESSELDORF"
+
+
+def test_a_cash_rule_books_a_withdrawal_on_another_iban_at_any_amount():
+    """15 Nov 2026 (Luis): a cash withdrawal at another of the bank's machines (another IBAN)
+    of another amount is booked by the cash rule; a non-card debit to the bank is not."""
+    rule = _iban_rule(SPK, "2026-04-27T13:08 Debitk.3 2029-12", C.HH_CASH, "-100.00")
+    atm = _tx(SPK, "2026-08-09T12:32 Debitk.3 2029-12", amount="-20.00", iban=OTHER_IBAN)
+    found = matching.apply_rule(
+        rule, atm, PRIVATE, [_own_line("-100.00", date(2026, 4, 27), 1, C.HH_CASH)]
+    )
+    assert found is not None and found.confidence == matching.EXACT
+    assert found.allocations[0].category is C.HH_CASH
+    other = _tx(SPK, "Darlehen 12345 Rate 08/26", amount="-20.00", iban=OTHER_IBAN, n=2)
+    proposed = matching.apply_rule(rule, other, PRIVATE)
+    assert proposed is not None and matching.weak_proposal(proposed)
+    assert not matching.cash_across_ibans(_iban_rule(), atm)  # another category keeps F1
