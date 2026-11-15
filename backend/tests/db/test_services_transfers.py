@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.matching_support import ACCOUNT_IBAN, PAINTER_IBAN, World
+from db.test_services_exchange_deposit_fee import _exchange, _export, _movements
 from db.test_services_private_matching import NOW, PRIVATE_IBAN, Private
 from sqlalchemy import select, update
 
@@ -277,7 +278,7 @@ def test_a_leg_past_its_window_without_a_counterpart_gets_the_unmatched_card(wor
     [(date(2026, 1, 2), True), (date(2026, 1, 3), False)],
 )
 def test_a_leg_before_every_other_accounts_history_gets_no_card(
-    world, private, first_elsewhere, card
+    world, private, blob_store, first_elsewhere, card
 ):
     """D162 amended (5), 15 Nov 2026 (Luis: „There are some credit card deposits that were not
     directly linked. Can you check?“): a transfer leg of 2 Dec 2025 without an IBAN, while the
@@ -288,8 +289,15 @@ def test_a_leg_before_every_other_accounts_history_gets_no_card(
     _book(world, leg, "-200.00", C.INTERNAL_TRANSFER_OUT)
     savings = _savings(world)
     savings.line(first_elsewhere, "12.00", purpose="Zinsen")
+    # An exchange's export reaches back years before the bank lines: its movements do not
+    # count as history, or one old trade would keep every card.
+    exchange = _exchange(world)
+    _export(world, blob_store, exchange.id, "2024-03-04 08:00:00,Deposit,50")
+    old_deposit = _movements(world, exchange.id)[Decimal("50.00")]
     cards = [c for c in _open(world) if c.leg.id == leg]
     assert [c.code for c in cards] == ([OpenTransferCode.UNMATCHED_LEG] if card else [])
+    # The exchange's own deposit of 2024 is older than every bank line: no card either.
+    assert [c for c in _open(world) if c.leg.id == old_deposit] == []
     unmatched = [
         i for i in world.query(review.inbox, TODAY) if i.kind is InboxItemKind.TRANSFER_UNMATCHED
     ]
