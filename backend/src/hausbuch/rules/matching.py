@@ -2587,15 +2587,31 @@ def deposit_iban_link_text(exchange: str, iban: DepositIbanOutcome | None) -> st
     as the exchange's deposit IBAN (`iban`, the link's DepositIbanOutcome), or why it is not
     taken; None when the link teaches nothing."""
     if iban is DepositIbanOutcome.LEARNED:
-        return (
-            f"„Verknüpfen“ merkt sich die IBAN dieser Zahlung als Einzahlungskonto von {exchange}."
-            f" Spätere Zahlungen an dieselbe IBAN gelten dann als Einzahlungen auf {exchange}."
-        )
+        return _learns_iban_text("„Verknüpfen“", exchange)
     if iban is DepositIbanOutcome.SHARED_IBAN:
         return "Die IBAN wird nicht übernommen, weil an sie auch andere Empfänger gehen."
     if iban is DepositIbanOutcome.OWN_ACCOUNT:
         return "Die IBAN wird nicht übernommen, weil sie zu einem anderen eigenen Konto gehört."
     return None
+
+
+def deposit_iban_offer_text(exchange: str, deposit_date: date, deposit_amount: Decimal) -> str:
+    """D162 amended (8), review (15 Nov 2026): the allocation panel's sentence under the box
+    „IBAN als Einzahlungskonto von <exchange> merken“: the deposit the bank line is linked to,
+    by date and amount, and what „Bestätigen“ with the box ticked does with the line's IBAN."""
+    return (
+        f"Diese Zahlung ist mit der Einzahlung vom {deposit_date:%d.%m.%Y} über "
+        f"{euro_text(deposit_amount)} auf {exchange} verknüpft. "
+        + _learns_iban_text("„Bestätigen“ mit Häkchen", exchange)
+        + " Ohne Häkchen wird die IBAN nicht übernommen."
+    )
+
+
+def _learns_iban_text(action: str, exchange: str) -> str:
+    return (
+        f"{action} merkt sich die IBAN dieser Zahlung als Einzahlungskonto von {exchange}."
+        f" Spätere Zahlungen an dieselbe IBAN gelten dann als Einzahlungen auf {exchange}."
+    )
 
 
 def euro_text(amount: Decimal) -> str:

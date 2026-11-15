@@ -62,6 +62,7 @@ from hausbuch.rules.matching import (
     deposit_fee_text,
     deposit_gap,
     deposit_iban_link_text,
+    deposit_iban_offer_text,
     deposit_link_text,
     deposit_split_set,
     ibans_agree,
@@ -79,7 +80,12 @@ from hausbuch.schemas.allocation import (
     AllocationSet,
     MatchContext,
 )
-from hausbuch.schemas.api import ConfirmAllocationsBody, InboxItem, InboxItemKind
+from hausbuch.schemas.api import (
+    ConfirmAllocationsBody,
+    DepositIbanOffer,
+    InboxItem,
+    InboxItemKind,
+)
 from hausbuch.schemas.bank_sync import SyncStatus
 from hausbuch.schemas.enums import (
     AccountKind,
@@ -1258,11 +1264,11 @@ def _confirmed_by_person(conn: Connection, transaction_id: UUID) -> bool:
     )
 
 
-def _exchange_deposit_link(conn: Connection, transaction_id: UUID) -> UUID | None:
-    """The exchange account whose EUR deposit is the in leg of the current link whose out leg
-    is the bank line `transaction_id` (_current_links, written by the matcher or a person);
-    None when there is no such link. Only a deposit's out leg: a withdrawal's bank credit never
-    names the exchange's deposit IBAN (its payouts come from another one)."""
+def _exchange_deposit(conn: Connection, transaction_id: UUID) -> _Leg | None:
+    """The exchange's EUR deposit that is the in leg of the current link whose out leg is the
+    bank line `transaction_id` (_current_links, written by the matcher or a person); None when
+    there is no such link. Only a deposit's out leg: a withdrawal's bank credit never names the
+    exchange's deposit IBAN (its payouts come from another one)."""
     row = next(
         (r for r in _current_links(conn) if r.out_transaction_id == transaction_id),
         None,
@@ -1272,35 +1278,64 @@ def _exchange_deposit_link(conn: Connection, transaction_id: UUID) -> UUID | Non
     in_ = _one_leg(conn, TransferLegSource.MOVEMENT, row.in_movement_id)
     if in_ is None or in_.leg.account_kind is not AccountKind.EXCHANGE:
         return None
-    return in_.leg.account_id
+    return in_
+
+
+def deposit_iban_offer(conn: Connection, transaction_id: UUID) -> DepositIbanOffer | None:
+    """D162 amended (8), review (15 Nov 2026): what the allocation panel's box „IBAN als
+    Einzahlungskonto von <Börse> merken“ names for the private bank debit `transaction_id`
+    (the caller passes only such a line): the exchange's deposit it is the out leg of a
+    current link to, when accounts.deposit_iban_outcome would learn the line's IBAN; None
+    otherwise (no such link, the exchange holds an IBAN, the IBAN carries other payees or is
+    another own account's), so a refused outcome shows no box. Read only, whatever the line's
+    current rows: a link a person made stays current while the line is proposed otherwise."""
+    from . import accounts  # accounts imports services that import this module
+
+    deposit = _exchange_deposit(conn, transaction_id)
+    if deposit is None:
+        return None
+    outcome = accounts.deposit_iban_outcome(conn, deposit.leg.account_id, transaction_id)
+    if outcome is not DepositIbanOutcome.LEARNED:
+        return None
+    return DepositIbanOffer(
+        deposit_movement_id=deposit.leg.id,
+        exchange_account_id=deposit.leg.account_id,
+        exchange_label=deposit.label,
+        deposit_date=deposit.leg.booked_on,
+        deposit_amount=deposit.leg.amount,
+        text=deposit_iban_offer_text(deposit.label, deposit.leg.booked_on, deposit.leg.amount),
+    )
 
 
 def learn_deposit_iban_on_confirm(
-    ctx: CommandContext, transaction_id: UUID
+    ctx: CommandContext, transaction_id: UUID, offer: DepositIbanOffer
 ) -> DepositIbanOutcome | None:
     """D162 amended (8), 15 Nov 2026 (Luis: „Yes the app should learn Bison's account
-    number“): services.allocations' hook after a person's confirmation of the line is written
-    (confirm_proposed, or record_set confirming without auto, after its after_booking hook so
-    a link the answer itself lets the matcher write is seen). When the line, a private bank
-    debit now confirmed as internal_transfer_out (the whole line or the transfer plus its fee),
-    is the out leg of a current link whose in leg is an exchange's EUR deposit, the line's
-    counterparty IBAN becomes the exchange's deposit IBAN (accounts.learn_exchange_deposit_iban:
-    nothing when the exchange holds one already or the line has none; refused when another own
-    account holds it or it carries other payees too; recorded by its account.updated). So a
-    pair the matcher linked by amount and date alone teaches the exchange its IBAN once a
-    person confirms the bank line, and the next deposit to it is tied by IBAN (D162 amended
-    (6)). Only a person's command: the matcher's, a rule's or the model's own confirmation
-    never teaches. The outcome, or None when nothing was to learn."""
+    number“), as changed by its review the same day: review.allocate_transaction calls it after
+    a person's answer is written, only when the answer ticked the box
+    (ConfirmAllocationsBody.learn_deposit_iban) the panel showed for `offer`, read before the
+    answer was written. When the line, a private bank debit now confirmed as
+    internal_transfer_out (the whole line or the transfer plus its fee), is still the out leg
+    of the current link to that same deposit, the line's counterparty IBAN becomes the
+    exchange's deposit IBAN. The outcome is read first (accounts.deposit_iban_outcome, no
+    lock) and the exchange's row is locked only to learn (accounts.learn_exchange_deposit_iban
+    reads it again under the lock): an exchange that holds an IBAN already is never locked by
+    a person's answer. A link the answer itself lets the matcher write was not on the panel
+    and teaches nothing. Only a person's command. The outcome, or None when nothing was to
+    learn."""
     from . import accounts  # accounts imports services that import this module
 
     if ctx.actor.actor_type is not ActorType.USER:
         return None
     if not _confirmed_transfer_out(ctx.conn, transaction_id):
         return None
-    exchange_id = _exchange_deposit_link(ctx.conn, transaction_id)
-    if exchange_id is None:
+    deposit = _exchange_deposit(ctx.conn, transaction_id)
+    if deposit is None or deposit.leg.id != offer.deposit_movement_id:
         return None
-    return accounts.learn_exchange_deposit_iban(ctx, exchange_id, transaction_id)
+    outcome = accounts.deposit_iban_outcome(ctx.conn, deposit.leg.account_id, transaction_id)
+    if outcome is not DepositIbanOutcome.LEARNED:
+        return outcome
+    return accounts.learn_exchange_deposit_iban(ctx, deposit.leg.account_id, transaction_id)
 
 
 def _hand_link_deposit_iban(conn: Connection, out: _Leg, in_: _Leg) -> DepositIbanOutcome | None:
@@ -1308,7 +1343,8 @@ def _hand_link_deposit_iban(conn: Connection, out: _Leg, in_: _Leg) -> DepositIb
     `in_` (an exchange's EUR deposit) does with the line's IBAN, read only: None unless the
     line's live rows are confirmed as internal_transfer_out by a person (_confirmed_by_person:
     a line the matcher, a rule or the model booked teaches nothing; a line still only proposed
-    teaches when the person confirms it later, learn_deposit_iban_on_confirm); otherwise
+    teaches when the person confirms it later with the panel's box ticked,
+    learn_deposit_iban_on_confirm); otherwise
     accounts.deposit_iban_outcome."""
     from . import accounts  # accounts imports services that import this module
 

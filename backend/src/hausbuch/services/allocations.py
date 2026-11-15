@@ -171,10 +171,6 @@ def record_set(
     from . import transfers  # phase 6 D162: it reads the lines this module books
 
     transfers.after_booking(ctx, tx.id, {a.category for a in written})
-    if confirm and not auto:
-        # Phase 6 D162 amended (8): after the hook, so a link the answer let the matcher
-        # write is seen.
-        _after_person_confirmed(ctx, tx.id, written)
     return written
 
 
@@ -194,34 +190,7 @@ def confirm_proposed(ctx: CommandContext, transaction_id: UUID) -> list[Allocati
     )
     written = sorted((to_allocation(r) for r in rows), key=lambda a: (a.recorded_at, str(a.id)))
     _confirmed(ctx, tx, written, [], auto=False)
-    _after_person_confirmed(ctx, tx.id, written)
     return written
-
-
-def _after_person_confirmed(
-    ctx: CommandContext, transaction_id: UUID, written: Sequence[Allocation]
-) -> None:
-    """Phase 6 D162 amended (8): a person's confirmation of a private bank line as a transfer
-    out (the whole line, or the transfer plus its fee) that is paired with an exchange's
-    deposit teaches the exchange the line's IBAN (transfers.learn_deposit_iban_on_confirm,
-    which checks the actor, the link and the guards). Every other answer is skipped here,
-    before any link is read."""
-    if ctx.actor.actor_type is not ActorType.USER:
-        return
-    categories = {a.category for a in written if a.amount != 0}
-    if AllocationCategory.INTERNAL_TRANSFER_OUT not in categories:
-        return
-    if not categories <= _TRANSFER_OUT_ANSWER:
-        return
-    from . import transfers  # phase 6 D162: it reads the lines this module books
-
-    transfers.learn_deposit_iban_on_confirm(ctx, transaction_id)
-
-
-# Phase 6 D162 amended (8): the answers of a bank line paying an exchange deposit.
-_TRANSFER_OUT_ANSWER = frozenset(
-    {AllocationCategory.INTERNAL_TRANSFER_OUT, AllocationCategory.BANK_FEES}
-)
 
 
 def user_id(ctx: CommandContext) -> UUID | None:

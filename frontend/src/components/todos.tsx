@@ -826,6 +826,7 @@ async function rewriteLine(
         learn_rule: false,
         same_amount_only: false,
         rebook_earlier: false,
+        learn_deposit_iban: false,
       },
     }),
   );

@@ -1059,7 +1059,7 @@ class TransferLinked(Schema):
     amended (8)) of an exact deposit whose bank line a person confirmed as a transfer out,
     whether the bank line's counterparty IBAN became the exchange's deposit IBAN or why not;
     None on every other link (an IBAN learned when a person confirms a line the matcher had
-    linked is recorded by its account.updated only)."""
+    linked, with the panel's box ticked, is recorded by its account.updated only)."""
 
     kind: TransferLinkKind
     matched_by: TransferMatchedBy
