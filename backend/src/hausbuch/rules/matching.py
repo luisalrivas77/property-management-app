@@ -107,8 +107,8 @@ LEARNABLE_SHARED = frozenset({AllocationCategory.BANK_FEES})
 # answer for that payee, and the line keeps its code, so a later Unterhalt check loses nothing.
 # The same for a card's monthly settlement (15 Nov 2026, Luis: „Can't click immer so für the
 # credit card payments“): a card whose statements are not in the app is paid each month at a
-# different amount to one issuer IBAN; once the card is an account, its payment IBAN is an own
-# IBAN, the transfer matcher books the debit before any rule, and a line a rule booked
+# different amount to one issuer IBAN. Once the card is an account, confirming its payment
+# IBAN switches off every learned rule on that IBAN (D176 (4)), and a line a rule booked
 # hh_credit_card is re-booked as the transfer when linked (D176, rebook_on_link).
 LEARNABLE_WITHOUT_THRESHOLD = frozenset(
     {AllocationCategory.HH_FAMILY_TRANSFERS, AllocationCategory.HH_CREDIT_CARD}
