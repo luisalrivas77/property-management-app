@@ -28,14 +28,14 @@
 //   /accounts/{id}/bank-statements), each linking to its document, and how many the latest
 //   run brought (the rows whose sync_id is that run's, counted here; no amount is summed).
 // - Phase 6 step 3 (phase-6.md D163, D173): each connection names its online-banking login's
-//   credential slot; its PIN is the API container's secret HAUSBUCH_FINTS_PIN_<SLOT> (slot
-//   `primary`: HAUSBUCH_FINTS_PIN), set in the Scaleway console (runbook step 17). The form
-//   and the facts name that variable and say whether it is set (GET /bank-credential-slots,
-//   names only). The approval texts are the connection's `approval_text` (the DKB app for a
-//   DKB connection), and the daily switch stays locked while `auto_sync_allowed` is false
-//   (DKB before two manual syncs in a row without an approval).
-// - Phase 6 D196: the PIN can instead be typed here (PUT /bank-credentials/{slot}); the API
-//   stores it encrypted and it wins over the variable. The input is a password field that is
+//   credential slot; its PIN can be the API container's secret HAUSBUCH_FINTS_PIN_<SLOT> (slot
+//   `primary`: HAUSBUCH_FINTS_PIN), set in the Scaleway console (runbook step 17), and the
+//   card says whether it is set (GET /bank-credential-slots, names only). The approval texts
+//   are the connection's `approval_text` (the DKB app for a DKB connection), and the daily
+//   switch stays locked while `auto_sync_allowed` is false (DKB before two manual syncs in a
+//   row without an approval).
+// - Phase 6 D196: the PIN can also be typed here, the way the runbook now leads with (PUT
+//   /bank-credentials/{slot}); the API stores it encrypted and it wins over the variable. The input is a password field that is
 //   never prefilled and is emptied once saved; no response carries the PIN back, so the card
 //   shows only where it comes from (`credential_source`) and since when. „PIN löschen“
 //   (DELETE) falls back to the variable. After the server's key changed, a stored PIN or
@@ -374,10 +374,23 @@ function checkPin(pin: string): string | null {
   return length >= 5 && length <= 64 ? null : PIN_LENGTH;
 }
 
-/** The password input of a PIN: never prefilled, no browser autofill of a saved password. */
-function PinInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+/** The password input of a PIN: never prefilled, no browser autofill of a saved password.
+ * `Field` clones its child with the id and the aria links of its label, hint and errors, so
+ * they are passed on to the input. */
+function PinInput({
+  value,
+  onChange,
+  ...linked
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  id?: string;
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
+}) {
   return (
     <input
+      {...linked}
       type="password"
       value={value}
       onChange={(e) => onChange(e.target.value)}
