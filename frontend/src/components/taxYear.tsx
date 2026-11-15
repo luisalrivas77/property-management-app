@@ -25,6 +25,40 @@ function query(params: [string, string | null][]): string {
   return parts.length > 0 ? `?${parts.join("&")}` : "";
 }
 
+/** The pre-fill of the Lohnersatzleistungen form from the payments booked as Elterngeld &
+ * Lohnersatz (phase 6 D159 amended (8)): ?lohnersatz=<amount>&leistung=<benefit code>, carried
+ * on the Anlage N URL until the form is saved or cancelled. Nothing is saved from the URL. */
+export const BENEFIT_AMOUNT_PARAM = "lohnersatz";
+export const BENEFIT_KIND_PARAM = "leistung";
+
+export interface BenefitPrefill {
+  /** A decimal string with a dot, e.g. "1287.00". */
+  amount: string;
+  /** A benefit code the form offers, else null (the person picks). */
+  benefit: string | null;
+}
+
+/** The prefill read from the URL's params; null without a valid amount. */
+export function benefitPrefill(get: (key: string) => string | null, benefits: readonly string[]): BenefitPrefill | null {
+  const amount = get(BENEFIT_AMOUNT_PARAM);
+  if (!amount || !/^\d{1,9}(\.\d{1,2})?$/.test(amount)) return null;
+  const benefit = get(BENEFIT_KIND_PARAM);
+  return { amount, benefit: benefit && benefits.includes(benefit) ? benefit : null };
+}
+
+/** `href` (an Anlage N URL, which always has a query) with the prefill's params added. */
+export function withBenefitPrefill(href: string, prefill: BenefitPrefill | null): string {
+  if (!prefill) return href;
+  const at = href.indexOf("#");
+  const path = at < 0 ? href : href.slice(0, at);
+  const hash = at < 0 ? "" : href.slice(at);
+  const extra = query([
+    [BENEFIT_AMOUNT_PARAM, prefill.amount],
+    [BENEFIT_KIND_PARAM, prefill.benefit],
+  ]).slice(1);
+  return `${path}${path.includes("?") ? "&" : "?"}${extra}${hash}`;
+}
+
 /** The URL of one form of the year. */
 export function taxFormHref(form: TaxForm, state: TaxYearState): string {
   if (form === "v") return `/tax/${state.year}${query([["immobilie", state.propertyId]])}`;

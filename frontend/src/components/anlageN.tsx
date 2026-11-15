@@ -6,7 +6,7 @@
 // hand-over. The owner is ?eigentuemer=… (the first one when absent). Every euro figure is
 // the backend's (principle 1): this screen picks, names and formats, it adds nothing up.
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useId } from "react";
 
 import { api, ok } from "@/api/client";
@@ -16,10 +16,10 @@ import type { components } from "@/api/types";
 
 import { ReadUpload } from "./documents";
 import { formatDate, formatDecimal, formatMoney } from "./format";
-import { ANLAGE_N_STATUS, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
+import { ANLAGE_N_STATUS, REPLACEMENT_BENEFIT, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
 import { BlockRows, hasBlocks } from "./anlageNBlocks";
 import { EvidenceFold } from "./returnInputEvidence";
-import { InputsPanel, type ReturnInput } from "./returnInputs";
+import { InputsPanel, type BenefitForm, type ReturnInput } from "./returnInputs";
 import {
   ReturnEstimateCard,
   useReturnEstimate,
@@ -28,10 +28,12 @@ import {
 import { ExportCard, SourcesButton, type ExportButton } from "./tax";
 import { WarningActionView, WhatToDo, resolveAction } from "./todos";
 import {
+  benefitPrefill,
   questionnaireHref,
   TaxTabs,
   taxFormHref,
   type TaxYearState,
+  withBenefitPrefill,
 } from "./taxYear";
 import { Loading } from "./ui";
 import { useLoad, type Loaded } from "./useLoad";
@@ -125,6 +127,19 @@ function OwnerScreen({
   const router = useRouter();
   const ids = useId();
   const estimate = useReturnEstimate(year);
+  // The Lohnersatzleistungen pre-fill of the to-do return.benefit_booked (phase 6 D159 amended
+  // (8)): kept on the owner switch, and opened as a form only for the owner the URL names (or
+  // the only owner), so a joint account's amount is never saved on an owner picked by default.
+  const search = useSearchParams();
+  const prefill = benefitPrefill((key) => search.get(key), Object.keys(REPLACEMENT_BENEFIT));
+  const ownerNamed = search.get("eigentuemer") === owner.id;
+  const clearPrefill = useCallback(
+    () => router.replace(taxFormHref("n", state), { scroll: false }),
+    [router, state],
+  );
+  const benefitForm: BenefitForm | null = prefill
+    ? { prefill, open: ownerNamed || owners.length === 1, clear: clearPrefill }
+    : null;
   const loadDraft = useCallback(async (): Promise<DraftState> => {
     try {
       const draft = await ok(
@@ -208,7 +223,7 @@ function OwnerScreen({
           {owners.map((o) => (
             <Link
               key={o.id}
-              href={taxFormHref("n", { ...state, ownerId: o.id })}
+              href={withBenefitPrefill(taxFormHref("n", { ...state, ownerId: o.id }), prefill)}
               aria-current={o.id === owner.id ? "page" : undefined}
               scroll={false}
             >
@@ -226,6 +241,7 @@ function OwnerScreen({
             rows={rows}
             estimate={estimate.data ?? null}
             onChanged={changed}
+            benefitForm={benefitForm}
           />
         )}
       </Loading>
@@ -241,6 +257,7 @@ function DraftView({
   rows,
   estimate,
   onChanged,
+  benefitForm,
 }: {
   result: DraftState;
   owner: Owner;
@@ -248,6 +265,7 @@ function DraftView({
   rows: Loaded<ReturnInput[]>;
   estimate: ReturnEstimate | null;
   onChanged: () => void;
+  benefitForm: BenefitForm | null;
 }) {
   const draft = "draft" in result ? result.draft : null;
   const list = rows.data ?? [];
@@ -309,6 +327,7 @@ function DraftView({
               year={year}
               rows={list}
               onChanged={onChanged}
+              benefitForm={benefitForm}
             />
           )}
         </div>

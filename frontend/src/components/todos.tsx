@@ -38,7 +38,7 @@ import { toDecimalString } from "./input";
 import { ACQUISITION_COST_KIND, ALLOCATION_CATEGORY, PRICE_SPLIT_SOURCE, proofBill } from "./labels";
 import { ActionDialog } from "./ui";
 import { useLoad } from "./useLoad";
-import { questionnaireHref, taxFormHref } from "./taxYear";
+import { questionnaireHref, taxFormHref, withBenefitPrefill } from "./taxYear";
 
 import "./tax.css";
 
@@ -162,12 +162,16 @@ function anlageN(anchor: string, label: string) {
 
 const owners = (anchor: string, label: string) => () => link(`/owners#${anchor}`, label);
 
-/** return.benefit_booked (phase 6 D159 amended (8)): the Lohnersatzleistungen of the Anlage N
- * tab, of the owner the warning names (an account with one owner), else of the tab's owner. */
+/** return.benefit_booked (phase 6 D159 amended (8)): the Lohnersatzleistungen form of the
+ * Anlage N tab, pre-filled with the difference and the benefit kind the payments name. The
+ * owner is the warning's (an account with one owner); a joint account's to-do names none, so
+ * the tab asks the person to pick the owner before the form opens. */
 function benefitBooked(warning: DraftWarning, ctx: GuideContext): GuideAction {
-  const ownerId = warning.params?.owner_id ?? ctx.ownerId ?? null;
+  const params = warning.params ?? {};
+  const ownerId = params.owner_id ?? null;
   const href = taxFormHref("n", { year: ctx.year, propertyId: null, ownerId });
-  return link(`${href}#eingabe-replacement_income`, "Lohnersatzleistung eintragen");
+  const prefill = params.difference ? { amount: params.difference, benefit: params.benefit ?? null } : null;
+  return link(`${withBenefitPrefill(href, prefill)}#eingabe-replacement_income`, "Lohnersatzleistung eintragen");
 }
 const questions = (_: DraftWarning, ctx: GuideContext) => link(questionnaireHref(ctx.year), "Jahresfragen beantworten");
 
