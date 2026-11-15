@@ -378,8 +378,8 @@ inferred:
     confirmed: {parts: [{amount: "-20.00", category: hh_groceries}, {amount: "-11.20", category: hh_health}]}
     expect_rule: null
 
-  - id: tax_relevant_code_no_rule
-    description: a donation proposes a return input a person confirms each time
+  - id: tax_relevant_code_learns_a_rule
+    description: "a monthly donation learns a rule from a person's answer, so it is not confirmed twelve times; the line keeps its code, the model never books it alone (D160 amended (5), 15 Nov 2026; this case expected no rule until then)"
     pending: "phase 6 step 1 (name-pattern rules, D160)"
     purpose: private
     transaction:
@@ -389,6 +389,18 @@ inferred:
       counterparty_name: Beispiel Hilfswerk e.V.
       purpose: Spende
     confirmed: {category: hh_donation}
+    expect_rule:
+      matcher: {counterparty_name_pattern: "^BEISPIEL HILFSWERK E V", amount_sign: debit}
+      split_method: single_category
+      category: hh_donation
+      recurring: false
+
+  - id: work_education_code_no_rule
+    description: "whether a purchase is for work depends on the item, not the shop: no rule (D160 amended (5))"
+    pending: "phase 6 step 1 (name-pattern rules, D160)"
+    purpose: private
+    transaction: *TX_CARD
+    confirmed: {category: hh_work_education}
     expect_rule: null
 
   - id: transfer_code_no_rule
@@ -404,13 +416,17 @@ inferred:
     confirmed: {category: internal_transfer_out}
     expect_rule: null
 
-  - id: no_threshold_code_no_rule
-    description: hh_other has no threshold (D160 infers only for a code with one)
+  - id: catch_all_code_learns_a_rule
+    description: "hh_other has no threshold, so the model never books it alone, but a person's answer learns a rule (D160 amended (5), 15 Nov 2026; this case expected no rule until then; the box starts unticked)"
     pending: "phase 6 step 1 (name-pattern rules, D160)"
     purpose: private
     transaction: *TX_CARD
     confirmed: {category: hh_other}
-    expect_rule: null
+    expect_rule:
+      matcher: {counterparty_name_pattern: "^REWE SAGT DANKE", amount_sign: debit}
+      split_method: single_category
+      category: hh_other
+      recurring: false
 
   - id: rental_account_without_iban_unchanged
     description: on the rental account a line without an IBAN still gets no rule (the user types a pattern)

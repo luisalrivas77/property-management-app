@@ -4,9 +4,13 @@
 #   rental   rules → owner transfer → rent → loan → Hausgeld → document → model (phase 2,
 #            unchanged; three phase 2 matchers.yaml cases replayed by id with their own
 #            transaction and expectation)
-#   private  rules (IBAN or name pattern, D160) → transfer by own IBAN (D162) → document match
-#            (D161) → the household model (D168), or with the switch ai_private_accounts off,
-#            review with routing.ai_disabled and every permitted code offered
+#   private  transfer by own IBAN (D162; a line naming an own IBAN gets no rule, D160 amended (5))
+#            → a recorded bill → a property bill (D161; both before the rules since D160
+#            amended (5)'s review fixes, 15 Nov 2026: a line paying a bill already recorded is
+#            proposed as that bill's payment for a person, never booked by a learned rule) →
+#            rules (IBAN or name pattern, D160) → a payment to the seller → D158's question →
+#            the household model (D168), or with the switch ai_private_accounts off, review
+#            with routing.ai_disabled and every permitted code offered
 # The rent, loan and Hausgeld matchers never run on a private account. A private line whose
 # counterparty is a tenant's IBAN, a loan account or the Hausverwaltung goes to review with
 # D158's question, answered by booking hh_property_cost / hh_other_income with the property,
@@ -40,6 +44,8 @@ bases:
   hmac_tenant: &H_TENANT "1111111111111111111111111111111111111111111111111111111111111111"
   hmac_loan: &H_LOAN "3333333333333333333333333333333333333333333333333333333333333333"
   hmac_rental: &H_RENTAL "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+  hmac_finanzamt: &H_FA "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1"
+  hmac_craftsman: &H_CRAFT "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2"
 
 context:
   account_purpose: private
@@ -65,6 +71,23 @@ context:
         first_payment_on: 2025-02-01
         fixed_until: 2025-06-30
         follow_up_rate: "0.08"
+  # D160 amended (5), review fixes: a Grunderwerbsteuer notice recorded as a Nebenkosten row
+  # (paid to the Finanzamt) and a craftsman's bill of the property, not yet recorded.
+  recorded_bills:
+    - document_id: 0000001d-0000-4000-8000-000000000601
+      property_id: *P
+      acquisition: ["4500.00"]
+      issued_on: 2026-05-04
+      due_on: 2026-06-01
+      iban_hmac: *H_FA
+  documents:
+    - id: 0000001d-0000-4000-8000-000000000602
+      kind: invoice
+      category: uncategorized
+      property_id: *P
+      payments:
+        - {due_on: 2026-09-15, amount: "238.00"}
+      iban_hmac: *H_CRAFT
 
 rules:
   rewe_name:
@@ -75,6 +98,27 @@ rules:
     matcher: {counterparty_name_pattern: "^REWE SAGT DANKE", amount_sign: debit}
     split_method: single_category
     category: hh_groceries
+    recurring: false
+  # Learned on an income-tax prepayment to the Finanzamt (hh_tax_payment, learnable since
+  # D160 amended (5)).
+  finanzamt_iban:
+    id: 0000002b-0000-4000-8000-000000000061
+    workspace_id: *W
+    created_at: 2026-03-10T10:00:00Z
+    updated_at: 2026-03-10T10:00:00Z
+    matcher: {counterparty_iban_hmac: *H_FA, amount_sign: debit}
+    split_method: single_category
+    category: hh_tax_payment
+    recurring: false
+  # Learned on a purchase from the craftsman for the household (hh_home).
+  craftsman_iban:
+    id: 0000002b-0000-4000-8000-000000000062
+    workspace_id: *W
+    created_at: 2026-04-02T10:00:00Z
+    updated_at: 2026-04-02T10:00:00Z
+    matcher: {counterparty_iban_hmac: *H_CRAFT, amount_sign: debit}
+    split_method: single_category
+    category: hh_home
     recurring: false
 
 cases:
@@ -142,6 +186,64 @@ cases:
     expect:
       outcome: review
       error: {code: routing.ai_disabled}
+
+  # D160 amended (5), review fixes (15 Nov 2026): a bill the line pays beats a learned rule.
+  - id: recorded_bill_beats_a_learned_rule
+    description: >-
+      owner A pays the recorded Grunderwerbsteuer from a private account to the Finanzamt's
+      IBAN, on which a rule was learned for income-tax prepayments; the line is proposed as
+      the bill's payment for a person, never booked hh_tax_payment by the rule
+    pending: "phase 6 step 1 (the matching order per purpose, D158; D160 amended (5))"
+    purpose: private
+    rules: [finanzamt_iban]
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000605
+      booking_date: 2026-05-28
+      amount: "-4500.00"
+      counterparty_name: Finanzamt Beispielstadt
+      counterparty_iban_hmac: *H_FA
+      purpose: Grunderwerbsteuer Kaeufer A
+    expect:
+      outcome: review
+      question: "Ist das die Zahlung dieser Rechnung des Mietobjekts?"
+      offered: [hh_property_cost]
+
+  - id: the_same_rule_books_a_payment_of_no_bill
+    description: the next income-tax prepayment to the same IBAN pays no bill; the rule books it
+    pending: "phase 6 step 1 (the matching order per purpose, D158; D160 amended (5))"
+    purpose: private
+    rules: [finanzamt_iban]
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000606
+      booking_date: 2026-06-10
+      amount: "-311.00"
+      counterparty_name: Finanzamt Beispielstadt
+      counterparty_iban_hmac: *H_FA
+      purpose: ESt-Vorauszahlung II/2026
+    expect:
+      outcome: booked
+      by: rule
+      allocations:
+        - {amount: "-311.00", category: hh_tax_payment, recurring: false}
+
+  - id: property_bill_beats_a_learned_rule
+    description: >-
+      owner A pays the craftsman's bill of the flat from a private account; a rule learned on
+      the craftsman's IBAN for a household purchase would book it hh_home
+    pending: "phase 6 step 1 (the matching order per purpose, D158; D160 amended (5))"
+    purpose: private
+    rules: [craftsman_iban]
+    transaction:
+      id: 0000002a-0000-4000-8000-000000000607
+      booking_date: 2026-09-18
+      amount: "-238.00"
+      counterparty_name: Malerbetrieb Beispiel
+      counterparty_iban_hmac: *H_CRAFT
+      purpose: Rechnung 2026-117
+    expect:
+      outcome: review
+      question: "Ist das die Zahlung dieser Rechnung des Mietobjekts?"
+      offered: [hh_property_cost]
 
   # The rental account: phase 2's order and results, unchanged.
   - id: rental_rent_unchanged

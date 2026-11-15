@@ -15,7 +15,7 @@ import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.matching_support import World
 from db.test_cli_evals_report import _owner_url
-from db.test_services_private_matching import NOW, Private
+from db.test_services_private_matching import NOW, TAX_IBAN, Private, _answer_line
 from sqlalchemy import select, text
 
 from hausbuch import cli
@@ -579,3 +579,51 @@ def test_the_command_counts_with_dry_run_and_then_queues_a_rematch_per_bill(
         "proposed",
         doc,
     )
+
+
+# --- a recorded bill beats a learned household rule (D160 amended (5), review fixes) --------
+
+
+def test_a_recorded_bill_beats_a_rule_learned_on_the_finanzamt(world, private):
+    """D160 amended (5), review fixes (15 Nov 2026): a rule learned on the Finanzamt's IBAN
+    for an income-tax prepayment (hh_tax_payment) no longer books the private payment of a
+    recorded Grunderwerbsteuer: the line is proposed as that bill's payment for a person
+    (hh_property_cost with the bill, never confirmed), and the bill's proof is then the line.
+    A later payment to the Finanzamt that pays no bill is still booked by the rule. A line the
+    rule booked before the bill was recorded stays as it is (a re-check replaces a rule's
+    confirmed booking only with one that auto-confirms)."""
+    fa = "Finanzamt Beispielstadt"
+    est = private.line(date(2026, 3, 10), "-311.00", name=fa, iban=TAX_IBAN, purpose="ESt-VZ I")
+    learned = _answer_line(world, est, "-311.00", "hh_tax_payment", learn=True)
+    assert learned.rule is not None
+    early = private.line(date(2026, 4, 28), "-4500.00", name=fa, iban=TAX_IBAN, purpose="GrESt")
+    _match(world, early)
+    assert [(r.category, r.method, r.status) for r in _rows(world, early)] == [
+        ("hh_tax_payment", "rule", "confirmed")
+    ]
+
+    doc = _grest(world)
+    _acquisition(world, AcquisitionCostKind.REAL_ESTATE_TRANSFER_TAX, "9000.00", doc)
+    _rematch(world, doc)
+    assert [(r.category, r.method, r.status) for r in _rows(world, early)] == [
+        ("hh_tax_payment", "rule", "confirmed")
+    ]
+
+    grest = private.line(
+        date(2026, 5, 28), "-4500.00", name=fa, iban=TAX_IBAN, purpose="Grunderwerbsteuer Käufer A"
+    )
+    _match(world, grest)
+    [row] = _rows(world, grest)
+    assert (row.category, row.method, row.status, row.document_id) == (
+        "hh_property_cost",
+        "document_match",
+        "proposed",
+        doc,
+    )
+    assert row.question == matchers.RECORDED_PART_QUESTION
+
+    later = private.line(date(2026, 6, 10), "-311.00", name=fa, iban=TAX_IBAN, purpose="ESt-VZ II")
+    _match(world, later)
+    assert [(r.category, r.method, r.status) for r in _rows(world, later)] == [
+        ("hh_tax_payment", "rule", "confirmed")
+    ]

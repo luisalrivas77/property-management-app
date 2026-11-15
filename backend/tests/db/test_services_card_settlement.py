@@ -20,6 +20,7 @@ from sqlalchemy import insert, select, text, update
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import transfer_link as link_table
@@ -29,16 +30,27 @@ from hausbuch.schemas.allocation import (
     AllocationDraft,
     AllocationMethod,
     AllocationSet,
+    MatchingRuleCreate,
+    RuleMatcher,
+    SplitMethod,
 )
 from hausbuch.schemas.bank import AccountCreate
-from hausbuch.schemas.enums import AccountPurpose, ImportStatus
+from hausbuch.schemas.enums import AccountKind, AccountPurpose, ImportStatus
+from hausbuch.schemas.events import EventType
 from hausbuch.schemas.household import (
     OpenTransferCode,
     TransferLinkKind,
     TransferLinkRequest,
     TransferMatchedBy,
 )
-from hausbuch.services import accounts, allocations, household, matching, transfers
+from hausbuch.services import (
+    accounts,
+    allocations,
+    household,
+    matching,
+    rules_learned,
+    transfers,
+)
 from hausbuch.services.errors import RuleViolationError
 from hausbuch.services.iban import protect_iban
 
@@ -512,3 +524,101 @@ def test_a_new_private_account_rechecks_the_lines_that_name_its_iban(world, giro
     assert waiting == [debit]
     world.cmd(matching.match_line, debit, iban_key=TEST_IBAN_KEY, ai_available=False, rematch=True)
     assert _booked(world, debit) == [("internal_transfer_out", "confirmed")]
+
+
+# --- D160 amended (5): an IBAN that becomes an own account's switches off its rules -------------
+
+SAVINGS_IBAN = "DE66100000000000003011"  # a savings account at another bank, not yet in the app
+
+
+def _rule_on(world: World, iban: str, category: AllocationCategory):
+    matcher = RuleMatcher(
+        counterparty_iban_hmac=protect_iban(iban, TEST_IBAN_KEY).hmac.hex(), amount_sign="debit"
+    )
+    data = MatchingRuleCreate(
+        matcher=matcher, split_method=SplitMethod.SINGLE_CATEGORY, category=category
+    )
+    return world.cmd(rules_learned.create_rule, data)
+
+
+def _enabled_rules(world: World) -> set[uuid.UUID]:
+    return {r.id for r in world.query(rules_learned.enabled_rules)}
+
+
+def _disabled_events(world: World) -> list[uuid.UUID]:
+    return world.query(
+        lambda c: (
+            c.execute(
+                select(event_table.c.entity_id).where(
+                    event_table.c.type == EventType.RULE_DISABLED.value
+                )
+            )
+            .scalars()
+            .all()
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [AccountKind.BANK_SAVINGS, AccountKind.BANK_CURRENT, AccountKind.DEPOT],
+)
+def test_an_account_created_with_the_iban_of_a_learned_rule_switches_the_rule_off(
+    world, giro, kind
+):
+    """15 Nov 2026 (D160 amended (5)): the monthly payment to a savings account at another
+    bank was answered as „Sparen & Tagesgeld“ with „Künftig immer so zuordnen“. A rule books
+    before the transfer matcher, so once that account is added to Hausbuch (a bank account
+    with its IBAN, or a depot with its IBAN typed) the rule is switched off (rule.disabled)
+    and the next payment to it is a transfer between own accounts. A rule on another IBAN
+    stays."""
+    on_savings = _rule_on(world, SAVINGS_IBAN, AllocationCategory.HH_INVESTMENT_SAVINGS)
+    other = _rule_on(world, OTHER_PAYMENT_IBAN, AllocationCategory.HH_GROCERIES)
+    before = giro.line(date(2026, 9, 1), "-200.00", iban=SAVINGS_IBAN, name="Tagesgeld Beispiel")
+    _match(world, before)
+    assert _booked(world, before) == [("hh_investment_savings", "confirmed")]
+    created = world.cmd(
+        accounts.create_account,
+        AccountCreate(
+            label="Tagesgeld",
+            bank="Beispielbank",
+            iban=SAVINGS_IBAN,
+            kind=kind,
+            purpose=AccountPurpose.PRIVATE,
+            opening_balance=Decimal("0.00"),
+            opening_balance_on=date(2025, 12, 31),
+        ),
+        iban_key=TEST_IBAN_KEY,
+    )
+    assert _enabled_rules(world) == {other.id}
+    assert _disabled_events(world) == [on_savings.id]
+    lock = enqueue.waiting_lock(enqueue.waiting_trigger(enqueue.TRIGGER_ACCOUNT, created.id))
+    with workspace_transaction(world.engine, world.ws) as conn:
+        queued = conn.execute(
+            text("SELECT count(*) FROM procrastinate_jobs WHERE lock = :lock"), {"lock": lock}
+        ).scalar_one()
+    assert queued == 1
+    after = giro.line(date(2026, 10, 1), "-200.00", iban=SAVINGS_IBAN, name="Tagesgeld Beispiel")
+    _match(world, after)
+    assert _booked(world, after) == [("internal_transfer_out", "confirmed")]
+    # The line the rule booked before stays as it was.
+    assert _booked(world, before) == [("hh_investment_savings", "confirmed")]
+
+
+def test_an_account_created_without_a_rule_on_its_iban_switches_nothing_off(world, giro):
+    other = _rule_on(world, OTHER_PAYMENT_IBAN, AllocationCategory.HH_GROCERIES)
+    world.cmd(
+        accounts.create_account,
+        AccountCreate(
+            label="Tagesgeld",
+            bank="Beispielbank",
+            iban=SAVINGS_IBAN,
+            kind=AccountKind.BANK_SAVINGS,
+            purpose=AccountPurpose.PRIVATE,
+            opening_balance=Decimal("0.00"),
+            opening_balance_on=date(2025, 12, 31),
+        ),
+        iban_key=TEST_IBAN_KEY,
+    )
+    assert _enabled_rules(world) == {other.id}
+    assert _disabled_events(world) == []

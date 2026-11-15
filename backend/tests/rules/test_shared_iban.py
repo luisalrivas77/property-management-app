@@ -143,9 +143,10 @@ def test_a_shared_iban_line_without_a_name_learns_nothing():
     assert matching.infer_rule(tx, _answer(tx, C.HH_DINING), SHARED) is None
 
 
-def test_a_tax_relevant_code_on_a_shared_iban_learns_nothing():
-    tx = _tx("SPENDE BEISPIEL")
-    assert matching.infer_rule(tx, _answer(tx, C.HH_DONATION), SHARED) is None
+def test_a_code_no_rule_is_learned_for_on_a_shared_iban_learns_nothing():
+    # D160 amended (5): a donation may learn a rule now; work and education never does.
+    tx = _tx("BUCHHANDLUNG BEISPIEL")
+    assert matching.infer_rule(tx, _answer(tx, C.HH_WORK_EDUCATION), SHARED) is None
 
 
 # --- Applying a rule ---------------------------------------------------------------------

@@ -496,11 +496,14 @@ def _response(
     probed, refusal = rules_learned.proposed_rule_or_refusal(tx, probe, context, names=names)
     # rule.conflicts depends on the answer (another category may be learned); too_broad not.
     can_learn = probed is not None or refusal == RULE_CONFLICTS
+    # D160 amended (5), review fixes: a line naming an own IBAN learns no rule at all, so no
+    # box, no suggested pattern and no pattern field (the test the matching order uses).
+    own_iban = line.private and matchers.own_rule_blind(tx, context)
     default = False
     suggestion: _Suggestion | None = None
     if rows:
         current = _as_set(transaction_id, rows)
-        if not can_learn:
+        if not can_learn and not own_iban:
             suggestion = _suggested_pattern(conn, line, current, context, names)
         default = rules_learned.learn_default(
             suggestion.rule
@@ -535,6 +538,7 @@ def _response(
         suggested_pattern_waiting=0 if suggestion is None else suggestion.waiting,
         payee_label=found.label if line.private else None,
         no_merchant=line.private and refusal == RULE_NO_MERCHANT,
+        own_iban=own_iban,
     )
 
 
@@ -614,8 +618,9 @@ def _name_history(
 
 def _unlearnable(line: matching.Line) -> list[AllocationCategory]:
     """The categories the line's account takes for which a one-row answer can never become
-    a rule, whatever is typed (D160 on a private account: a transfer, depot or tax-relevant
-    code, or one without a threshold); none on the rental account, whose limits depend on the
+    a rule, whatever is typed (D160 amended (5) on a private account: matchers.NEVER_LEARNED,
+    a transfer or depot code, a property bill, work and education, uncategorized); the panel
+    shows no rule box for them. None on the rental account, whose limits depend on the
     counterparty (D38) and stay can_learn_rule's."""
     if not line.private:
         return []
