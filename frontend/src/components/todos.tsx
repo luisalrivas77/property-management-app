@@ -164,8 +164,9 @@ const owners = (anchor: string, label: string) => () => link(`/owners#${anchor}`
 
 /** return.benefit_booked (phase 6 D159 amended (8)): the Lohnersatzleistungen form of the
  * Anlage N tab, pre-filled with the difference and the benefit kind the payments name. The
- * owner is the warning's (an account with one owner); a joint account's to-do names none, so
- * the tab asks the person to pick the owner before the form opens. */
+ * owner is the warning's suggestion (the one whose own account's lines are not covered; the
+ * spouses are assessed jointly, so the person may save it on the other); a joint account's
+ * to-do names none, so the tab asks the person to pick the owner before the form opens. */
 function benefitBooked(warning: DraftWarning, ctx: GuideContext): GuideAction {
   const params = warning.params ?? {};
   const ownerId = params.owner_id ?? null;

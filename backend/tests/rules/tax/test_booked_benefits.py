@@ -133,7 +133,7 @@ def test_a_payment_back_lowers_the_booked_sum():
     assert got.params["difference"] == "643.50"
 
 
-def test_each_owner_is_compared_with_their_own_rows():
+def test_the_owner_whose_own_lines_are_not_covered_gets_the_to_do():
     lines = [_line("1000.00", [A]), _line("400.00", [B])]
     facts = [_facts(_typed(A, "1000.00")), _facts(owner=B)]
     (got,) = booked_benefit_warnings(2026, facts, lines)
