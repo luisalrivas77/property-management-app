@@ -113,7 +113,7 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
             {monthEnd ? (
               <>
                 {" · "}
-                <span className="net-worth-change">
+                <span className={toCents(today.total) >= toCents(monthEnd.total) ? "net-worth-change" : "net-worth-change-down"}>
                   {signedMoney(fromCents(toCents(today.total) - toCents(monthEnd.total)))} gegenüber dem Monatsabschluss vom{" "}
                   {formatDate(monthEnd.on)}
                 </span>{" "}

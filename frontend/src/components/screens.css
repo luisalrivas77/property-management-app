@@ -1558,6 +1558,11 @@ button.household-toggle:not(:disabled):hover {
   font-weight: 600;
 }
 
+.net-worth-change-down {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .net-worth-bar {
   display: flex;
   gap: 2px;
