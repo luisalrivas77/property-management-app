@@ -1508,6 +1508,16 @@ button.household-toggle:not(:disabled):hover {
   font-size: 13px;
 }
 
+/* D159 amended (6): the Geldanlage row of „Gespart, nicht ausgegeben“ opens like a group row. */
+.household-rows button.household-toggle {
+  margin: -8px 0;
+}
+
+.household-rows li.household-subitem {
+  padding-left: 20px;
+  font-size: 13px;
+}
+
 .household-rows {
   margin: 0;
   padding: 0;

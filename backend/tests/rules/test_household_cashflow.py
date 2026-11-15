@@ -109,6 +109,40 @@ def test_every_investment_subcategory_is_saved_like_its_fallback(code):
     assert got.surplus == D("1940.00")
 
 
+def test_the_invested_part_of_saved_is_split_by_its_subcategories():
+    """D159 amended (6) 15 Nov 2026 (migration 0036): invested_by_category gives the
+    Geldanlage group's part of saved by its codes, signed as saved (a payout back lowers its
+    code); a code that nets to zero is left out; the codes sum to saved less the transfer
+    links' part, which is not split; spending and transfers never appear in it."""
+    rows = [
+        (C.HH_SALARY, D("3000.00")),
+        (C.HH_INVESTMENT_SECURITIES, D("-200.00")),
+        (C.HH_INVESTMENT_SECURITIES, D("-50.00")),
+        (C.HH_INVESTMENT_CRYPTO, D("-100.00")),
+        (C.HH_INVESTMENT_CRYPTO, D("30.00")),  # a payout back
+        (C.HH_INVESTMENT_SAVINGS, D("-40.00")),
+        (C.HH_INVESTMENT_SAVINGS, D("40.00")),  # back the same month: nets to zero
+        (C.HH_INVESTMENT, D("-10.00")),  # the fallback
+        (C.HH_SUPERMARKET, D("-80.00")),
+        (C.INTERNAL_TRANSFER_OUT, D("-500.00")),
+    ]
+    links = D("500.00")  # the transfer links' part, from services.transfers.saved_in
+    got = month_cashflow("2026-10", rows, saved=links)
+    assert got.invested_by_category == {
+        C.HH_INVESTMENT_SECURITIES: D("250.00"),
+        C.HH_INVESTMENT_CRYPTO: D("70.00"),
+        C.HH_INVESTMENT: D("10.00"),
+    }
+    assert got.saved == links + D("330.00")
+    assert sum(got.invested_by_category.values()) == got.saved - links
+    assert got.spending_by_category == {G.GROCERIES: {C.HH_SUPERMARKET: D("80.00")}}
+
+
+def test_a_month_without_an_investment_has_no_breakdown():
+    got = month_cashflow("2026-10", [(C.HH_SUPERMARKET, D("-80.00"))], saved=D("500.00"))
+    assert (got.saved, got.invested_by_category) == (D("500.00"), {})
+
+
 def test_each_group_is_split_by_its_codes():
     """D159 amended 14 Nov 2026 (migration 0032): spending_by_category gives each group's
     figure by its subcategories and its fallback, keyed by the group and signed as the

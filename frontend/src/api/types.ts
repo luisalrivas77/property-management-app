@@ -6310,6 +6310,10 @@ export interface components {
                     [key: string]: string;
                 };
             };
+            /** Invested By Category */
+            invested_by_category?: {
+                [key: string]: string;
+            };
         };
         /**
          * HouseholdGroup

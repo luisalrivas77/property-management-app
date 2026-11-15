@@ -17,7 +17,12 @@ a month without income.
 spending_by_category (D159 amended 14 Nov 2026, migration 0032) splits each group's figure by
 its codes, keyed by the group and signed as the group's (a refund negative), so the Haushalt
 screen can list a group's subcategories under it; the codes of one group sum to that group's
-figure."""
+figure.
+
+invested_by_category (D159 amended (6) 15 Nov 2026, migration 0036) splits the Geldanlage
+group's part of saved by its codes, signed as saved (a payout back negative), so the Haushalt
+screen can open „Gespart, nicht ausgegeben“ to its subcategories; the codes sum to saved less
+the transfer links' part."""
 
 from collections.abc import Iterable
 from decimal import ROUND_HALF_UP, Decimal
@@ -44,10 +49,12 @@ def month_cashflow(
     spending: dict[HouseholdGroup, Decimal] = {}
     by_spending: dict[HouseholdGroup, dict[AllocationCategory, Decimal]] = {}
     invested = Decimal("0.00")
+    by_investment: dict[AllocationCategory, Decimal] = {}
     for category, amount in rows:
         code = TAXONOMY.get(category)
         if code is not None and code.group is HouseholdGroup.INVESTMENT:
             invested -= amount
+            by_investment[category] = by_investment.get(category, Decimal("0.00")) - amount
             continue
         if code is None:  # bank_fees, uncategorized
             other = spending.get(HouseholdGroup.OTHER, Decimal("0.00"))
@@ -75,6 +82,7 @@ def month_cashflow(
         savings_rate=rate,
         income_by_category={c: v for c, v in by_income.items() if v},
         open_lines=open_lines,
+        invested_by_category={c: v for c, v in by_investment.items() if v},
     )
 
 
