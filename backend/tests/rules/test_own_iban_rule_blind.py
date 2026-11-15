@@ -11,12 +11,15 @@ import pytest
 from hausbuch.rules import matching
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.allocation import (
+    AllocationDraft,
     AllocationMethod,
+    AllocationSet,
     MatchContext,
     MatchingRule,
     MatchTransaction,
 )
 from hausbuch.schemas.enums import AccountPurpose
+from hausbuch.services import rules_learned
 
 OWN = "a" * 64  # an own card's payment IBAN
 ISSUER = "b" * 64  # the same issuer's IBAN for a card not in the app
@@ -84,3 +87,52 @@ def test_the_rental_order_is_unchanged():
     assert not matching.own_rule_blind(tx, RENTAL)
     found = matching.deterministic_answer([rule], tx, RENTAL)
     assert found is not None and found.method is AllocationMethod.RULE
+
+
+# --- D160 amended (5), review fixes (15 Nov 2026): no rule from a line naming an own IBAN ----
+
+
+def _answer(tx: MatchTransaction, category: C) -> AllocationSet:
+    return AllocationSet(
+        transaction_id=tx.id,
+        allocations=[AllocationDraft(amount=tx.amount, category=category)],
+        method=AllocationMethod.USER,
+        confidence=Decimal("1"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("name_pattern", "purpose_pattern"),
+    [(None, None), ("^ANDERE FIRMA", None), (None, "^Rate")],
+    ids=["inferred", "typed_name", "typed_purpose"],
+)
+def test_a_private_line_naming_an_own_iban_learns_no_rule(name_pattern, purpose_pattern):
+    """An own IBAN is always a transfer: an answer for such a line (a second payee paid to
+    the card's payment IBAN, re-booked by hand) learns no rule, typed pattern or not."""
+    tx = _tx(OWN)
+    answer = _answer(tx, C.HH_GROCERIES)
+    assert matching.infer_rule(tx, answer, PRIVATE) is None
+    assert rules_learned.proposed_rule_or_refusal(
+        tx, answer, PRIVATE, name_pattern=name_pattern, purpose_pattern=purpose_pattern
+    ) == (None, rules_learned.NOT_LEARNABLE)
+
+
+def test_the_same_payee_on_another_iban_still_learns_its_rule():
+    tx = _tx(ISSUER)
+    rule, refusal = rules_learned.proposed_rule_or_refusal(
+        tx, _answer(tx, C.HH_CREDIT_CARD), PRIVATE
+    )
+    assert refusal is None
+    assert rule is not None and rule.matcher.counterparty_iban_hmac == ISSUER
+
+
+def test_a_rental_line_naming_an_own_iban_still_learns_as_before():
+    """Rental lines are unchanged: an owner transfer answer becomes the owner_transfer rule,
+    and a typed pattern on another answer is not refused for the IBAN."""
+    tx = _tx(OWN, "-500.00")
+    owner = matching.infer_rule(tx, _answer(tx, C.OWNER_TRANSFER_OUT), RENTAL)
+    assert owner is not None and owner.split_method.value == "owner_transfer"
+    typed, refusal = rules_learned.proposed_rule_or_refusal(
+        tx, _answer(tx, C.BANK_FEES), RENTAL, purpose_pattern="^Entgelt"
+    )
+    assert refusal is None and typed is not None

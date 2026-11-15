@@ -71,7 +71,10 @@
 //   payee_label („PayPal: DisneyPlus“); the panel names it under the title and uses it wherever
 //   it names the payee. A service's line whose merchant cannot be read (no_merchant) learns no
 //   rule: no box and no pattern field are shown (D160 amended (5)), and learn_rule is sent
-//   false (rule.no_merchant is the backstop, its message shown under the rows).
+//   false (rule.no_merchant is the backstop, its message shown under the rows). The same for
+//   a private line naming another own account's IBAN (own_iban, D160 amended (5)'s review
+//   fixes): an own IBAN is always a transfer, so no rule is learned there (rule.not_learnable
+//   is the backstop).
 // - Phase 3 (§11 "Inputs"): under a confirmed line, its repairs and renovation rows get their
 //   tax questions (components/taxInputs.tsx), in their own form beside this one.
 import Link from "next/link";
@@ -367,7 +370,12 @@ function AllocationEditor({
   // The suggested purpose pattern holds for the category the server checked it for (the
   // line's one current row); another category falls back to the plain pattern field.
   const suggestedPattern = view.suggested_purpose_pattern ?? null;
+  // No rule can be learned from this line at all, so no box, no suggested pattern and no
+  // pattern field: a payment service's line naming no merchant (no_merchant), or a line
+  // naming another own account's IBAN, always a transfer (own_iban, D160 amended (5)).
+  const noRule = (view.no_merchant ?? false) || (view.own_iban ?? false);
   const suggestion =
+    !noRule &&
     suggestedPattern !== null &&
     !view.can_learn_rule &&
     current.length === 1 &&
@@ -419,7 +427,6 @@ function AllocationEditor({
   const canRebook =
     earlier.length > 0 && blockers.length === 0 && earlier.every((entry) => !unlearnable.has(entry.category));
   const payeeLabel = view.payee_label ?? null;
-  const noMerchant = view.no_merchant ?? false;
   const payee = payeeLabel || line.counterparty_name?.trim() || "dieser Gegenseite";
 
   function update(key: number, patch: Partial<Row>) {
@@ -482,12 +489,12 @@ function AllocationEditor({
     const body: ConfirmAllocationsBody = {
       // The server reads only the rows: method, confidence and provenance become the person's.
       allocation_set: { transaction_id: line.id, allocations: drafts, method: "user", confidence: "1" },
-      learn_rule: noMerchant
+      learn_rule: noRule
         ? false
         : view.can_learn_rule || suggestion !== null
           ? learn
           : typed !== "" && blocked === null,
-      purpose_pattern: noMerchant
+      purpose_pattern: noRule
         ? null
         : suggestion !== null
           ? suggested
@@ -579,7 +586,7 @@ function AllocationEditor({
         <p className="muted">Die Zeilen müssen zusammen genau den Betrag der Buchung ergeben ({formatMoney(line.amount)}).</p>
       ) : null}
 
-      {noMerchant || blocked !== null ? (
+      {noRule || blocked !== null ? (
         // D160 amended (5): no rule can be learned here, so no box and no pattern field; a
         // refusal from the server (the backstop) still shows.
         <FieldErrors messages={[...form.of("learn_rule"), ...form.of("purpose_pattern")]} />

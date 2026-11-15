@@ -707,8 +707,12 @@ def infer_rule(
     and that rule is D158's "the counterparty is also a private one". D160 amended: on a
     shared IBAN (context.shared_iban_hmacs) it is the name rule of _name_rule, under its
     checks; since D160 amended (4) (14 Nov 2026) without the IBAN, and so is a payment
-    service's line (PayPal, Klarna), whose IBAN names the service, not the merchant."""
-    if tx.amount == 0:
+    service's line (PayPal, Klarna), whose IBAN names the service, not the merchant.
+
+    D160 amended (5), review fixes (15 Nov 2026): a private line whose counterparty IBAN is
+    another own account's (own_rule_blind, the test the matching order uses) learns no rule:
+    an own IBAN is always a transfer, and no rule can beat it."""
+    if tx.amount == 0 or own_rule_blind(tx, context):
         return None
     if context.account_purpose is AccountPurpose.PRIVATE:
         if (

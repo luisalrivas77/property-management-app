@@ -10699,7 +10699,10 @@ export interface components {
          *     (PayPal, Klarna) the service and the merchant it names („PayPal: DisneyPlus“), whose
          *     lines the rule books; None for any other line. no_merchant: a payment service's line
          *     whose merchant cannot be read, so no rule is learned from it (rule.no_merchant) and the
-         *     panel shows no rule box.
+         *     panel shows no rule box. own_iban (D160 amended (5), review fixes, 15 Nov 2026): a
+         *     private line whose counterparty IBAN is another own account's, always a transfer, so no
+         *     rule is learned from it, typed pattern or not (rule.not_learnable), and the panel shows
+         *     no rule box, no suggested pattern and no pattern field, as for no_merchant.
          */
         TransactionAllocations: {
             transaction: components["schemas"]["Transaction"];
@@ -10749,6 +10752,11 @@ export interface components {
              * @default false
              */
             no_merchant: boolean;
+            /**
+             * Own Iban
+             * @default false
+             */
+            own_iban: boolean;
         };
         /**
          * TransferLegSource

@@ -35,8 +35,10 @@ from hausbuch.schemas.allocation import (
     RuleMatcher,
     SplitMethod,
 )
+from hausbuch.schemas.api import ConfirmAllocationsBody
 from hausbuch.schemas.household import TransferLinkKind, TransferMatchedBy
 from hausbuch.services import allocations, matching, review, rules_learned
+from hausbuch.services.errors import RuleViolationError
 
 pytestmark = pytest.mark.db
 
@@ -277,3 +279,68 @@ def test_settlements_to_an_own_iban_not_yet_linked_are_no_earlier_answer_either(
     result = _answer_rebook(world, first, "-189.76", "hh_credit_card")
     assert result.rule is not None and result.rebooked == 0
     assert all(_booked(world, d) == [("internal_transfer_out", "confirmed")] for d in debits)
+
+
+# --- D160 amended (5), review fixes (15 Nov 2026): no rule from a line naming an own IBAN ----
+
+
+def _view(world: World, tx):
+    return world.query(
+        lambda c: review.transaction_allocations(
+            c, tx, iban_key=TEST_IBAN_KEY, today=world.now.date()
+        )
+    )
+
+
+def test_a_line_naming_an_own_iban_offers_no_rule_and_learns_none(world, app_engine, tmp_path):
+    """An own IBAN is always a transfer. A second payee paid to the card's confirmed payment
+    IBAN is booked as the transfer; the panel shows no box, no suggested pattern and no
+    pattern field (own_iban), and an answer that asks for a rule anyway, with or without a
+    typed pattern, is refused with rule.not_learnable and writes nothing. Re-booked by hand
+    without a rule, the next line to that IBAN is still the transfer."""
+    giro = Private(world)
+    Card(world, CARD_IBAN)
+    line = giro.line(date(2026, 9, 9), "-55.00", name=OTHER_PAYEE, iban=CARD_IBAN, purpose="Rate")
+    _match(world, line)
+    assert _booked(world, line) == [("internal_transfer_out", "confirmed")]
+
+    view = _view(world, line)
+    assert view is not None
+    assert (view.can_learn_rule, view.own_iban, view.learn_rule_default) == (False, True, False)
+    assert view.suggested_purpose_pattern is None
+    assert view.no_merchant is False
+
+    for pattern in (None, "^Rate"):
+        body = ConfirmAllocationsBody(
+            allocation_set=_user_set(line, "-55.00", "hh_groceries"),
+            learn_rule=True,
+            purpose_pattern=pattern,
+        )
+        with pytest.raises(RuleViolationError) as refused:
+            world.cmd(review.allocate_transaction, line, body, iban_key=TEST_IBAN_KEY)
+        assert refused.value.code == rules_learned.NOT_LEARNABLE
+        assert _booked(world, line) == [("internal_transfer_out", "confirmed")]
+    assert world.query(rules_learned.enabled_rules) == []
+
+    # The person re-books it by hand (no rule): accepted, and still no rule.
+    result = _answer_line(world, line, "-55.00", "hh_groceries", learn=False)
+    assert result.rule is None and result.own_iban is True
+    assert _booked(world, line) == [("hh_groceries", "confirmed")]
+    assert world.query(rules_learned.enabled_rules) == []
+
+    nxt = giro.line(date(2026, 10, 9), "-55.00", name=OTHER_PAYEE, iban=CARD_IBAN, purpose="Rate")
+    _rematch(app_engine, tmp_path, world, nxt)
+    assert [(r.category, r.method, r.status) for r in _rows(world, nxt)] == [
+        ("internal_transfer_out", "matcher_transfer", "confirmed")
+    ]
+
+
+def test_a_line_on_a_third_partys_iban_keeps_its_box(world):
+    """The same payee on an IBAN no own account has: the box is offered as before."""
+    giro = Private(world)
+    Card(world, CARD_IBAN)
+    line = giro.line(date(2026, 9, 9), "-55.00", name=OTHER_PAYEE, iban=ISSUER_IBAN, purpose="Rate")
+    _match(world, line)
+    view = _view(world, line)
+    assert view is not None
+    assert (view.can_learn_rule, view.own_iban) == (True, False)

@@ -241,9 +241,16 @@ def proposed_rule_or_refusal(
 ) -> tuple[MatchingRuleCreate | None, str | None]:
     """proposed_rule, with the code of a name rule D160 refuses (rule.too_broad: the name
     was confirmed under two categories; rule.conflicts: the pattern hits a line confirmed
-    otherwise). A typed pattern replaces the refused name pattern, so it is learned then."""
+    otherwise). A typed pattern replaces the refused name pattern, so it is learned then.
+
+    D160 amended (5), review fixes (15 Nov 2026): a private line whose counterparty IBAN is
+    another own account's (rules.matching.own_rule_blind, the test the matching order uses)
+    learns no rule at all, typed pattern or not (rule.not_learnable): an own IBAN is always a
+    transfer, and no rule can beat it."""
     name_pattern = check_pattern(name_pattern)
     purpose_pattern = check_pattern(purpose_pattern)
+    if matchers.own_rule_blind(tx, context):
+        return None, NOT_LEARNABLE
     refusal = None
     try:
         inferred = matchers.infer_rule(tx, confirmed, context, names)
