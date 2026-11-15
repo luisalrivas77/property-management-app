@@ -169,7 +169,9 @@ HOUSEHOLD_CODES = frozenset(c for c in C if c.value.startswith("hh_"))
 PRIVATE_ONLY = HOUSEHOLD_CODES | TRANSFER_CODES | DEPOT_CODES
 # The codes both purposes share (D159: bank_fees is reused for every bank kind).
 SHARED = frozenset({C.BANK_FEES, C.UNCATEGORIZED})
-# Tax-relevant codes: never auto-confirmed, never a learned name rule (D159, D160).
+# Tax-relevant codes: never auto-confirmed (D159). Since D160 amended (5) (15 Nov 2026) a
+# person's answer for one may become a learned rule all the same (a monthly donation, a Kita
+# fee: rules.matching.learnable_household); the line keeps its code.
 TAX_RELEVANT = frozenset(c for c, row in TAXONOMY.items() if row.relevance is R.TAX)
 
 if set(TAXONOMY) != PRIVATE_ONLY:  # pragma: no cover - a code without its row

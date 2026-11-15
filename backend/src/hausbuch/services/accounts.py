@@ -612,9 +612,11 @@ def _own_iban(
     confirmed (D156 amended) or an exchange's deposit IBAN learned (D162 amended). Every
     enabled learned rule on that IBAN (a payment to the account answered as spending or an
     investment with „Künftig immer so zuordnen“ before the account was in Hausbuch) is
-    switched off (rules_learned.disable_rule, rule.disabled): such a rule never books a line
-    naming an own IBAN any more (rules.matching.own_rule_blind, the same amendment), so this
-    only keeps a dead rule out of the rules list (defence in depth). The lines waiting in
+    switched off (rules_learned.disable_rule, rule.disabled): such a rule never books a private
+    line naming an own IBAN any more (rules.matching.own_rule_blind, the same amendment), so
+    there this only keeps a dead rule out of the rules list (defence in depth). A rental rule
+    on the IBAN is switched off too, and a rental line from it is then no rule's but goes to
+    the owner-transfer matcher (rules.matching.match_owner_transfer). The lines waiting in
     Zu prüfen that name the IBAN are matched again (not with `rematch=False`: a rental
     account created without the owner flag, which create_account never re-checked); lines a
     rule already booked stay as they are. Returns how many rules were switched off."""
@@ -690,7 +692,9 @@ def confirm_payment_iban(
     (rules_learned.disable_rule, rule.disabled): before D160 amended (5) a rule booked before
     the transfer matcher and would have kept the payment to the card as spending; since then
     the transfer by an own IBAN comes first (rules.matching.own_rule_blind) and the switch-off
-    is defence in depth. The result counts them. Lines a rule booked before stay as they are."""
+    is defence in depth on a private line. A rental rule on the IBAN is switched off too, and
+    a rental line from it then goes to the owner-transfer matcher. The result counts them.
+    Lines a rule booked before stay as they are."""
     account = _lock(ctx, account_id)
     if account.kind != AccountKind.CREDIT_CARD.value:
         raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "only a credit card has a payment IBAN")
