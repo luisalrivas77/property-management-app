@@ -221,7 +221,7 @@ def fetch_prices(context: JobContext, *, timestamp: int) -> None:
 
 
 def month_end(context: JobContext, *, timestamp: int) -> None:
-    """D167 (5), at 05:00 on the 1st: the previous month-end's net worth stored once per
+    """D167 (5), at 08:00 on the 1st: the previous month-end's net worth stored once per
     workspace (a month-end that has a run already is left alone)."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
     run_month_end(deps)

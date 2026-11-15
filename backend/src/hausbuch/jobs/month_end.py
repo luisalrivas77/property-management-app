@@ -1,16 +1,17 @@
 """The month_end periodic task (docs/phases/phase-6.md D167 (5); phase 6 step 6).
 
-At 05:00 UTC on the 1st the worker stores the previous month-end's net worth for every
+At 08:00 UTC on the 1st the worker stores the previous month-end's net worth for every
 provisioned workspace (services.net_worth.capture_month_end with only_if_missing): one
-valuation_snapshot row per account balance and valued position under one net_worth_run_id,
-and the event workspace.valuation_snapshot_written. A month-end that already has a run is
-left alone, so a second run of the task (a worker restart, a run by hand) writes nothing.
-The month-end is the last day of the month before the run's day in UTC; at 05:00 UTC that
-is the same day in Berlin.
+valuation_snapshot row per account balance, valued position, property and loan under one
+net_worth_run_id, and the event workspace.valuation_snapshot_written. A month-end that already
+has a run is left alone, so a second run of the task (a worker restart, a run by hand) writes
+nothing. The month-end is the last day of the month before the run's day in UTC; at 08:00 UTC
+that is the same day in Berlin.
 
-It runs before the 06:30 bank fetch and the 07:00 price fetch, so a statement or a price
-that arrives later that morning is not in the stored run; „Monatsabschluss festhalten“ on
-the Übersicht stores a new run when the figures changed since.
+It runs after the 06:30 bank fetch and the 07:00 price fetch, so the month's last lines and
+the last day's prices fetched that morning are in the stored run; a statement or a price that
+arrives later still is stored by „Monatsabschluss festhalten“ on the Übersicht, as a new run
+when the figures changed.
 
 No retry: a failed workspace is logged by its exception class and „Monatsabschluss
 festhalten“ stores the month-end by hand. lock= keeps one run at a time; each capture also
@@ -32,7 +33,7 @@ from hausbuch.services.net_worth import capture_month_end, last_month_end
 from .document_read import JobDeps
 
 MONTH_END_TASK = "month_end"
-MONTH_END_CRON = "0 5 1 * *"  # D167 (5): 05:00 on the 1st, the worker's clock (UTC)
+MONTH_END_CRON = "0 8 1 * *"  # D167 (5): 08:00 on the 1st, the worker's clock (UTC)
 MONTH_END_LOCK = "net_worth:month_end"
 SYSTEM_ACTOR = Actor(ActorType.SYSTEM, MONTH_END_TASK)
 

@@ -18,7 +18,7 @@ def test_the_task_is_registered_on_the_first_at_five_with_a_lock():
     task = app.tasks[job.MONTH_END_TASK]
     assert task.lock == job.MONTH_END_LOCK
     periodic = [p for p in app.periodic_registry.periodic_tasks.values() if p.task is task]
-    assert [p.cron for p in periodic] == [job.MONTH_END_CRON] == ["0 5 1 * *"]
+    assert [p.cron for p in periodic] == [job.MONTH_END_CRON] == ["0 8 1 * *"]
 
 
 def test_no_workspace_logs_one_line_for_the_last_month_end(caplog):
