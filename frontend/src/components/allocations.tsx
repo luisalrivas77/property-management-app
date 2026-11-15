@@ -21,11 +21,12 @@
 //   since the server learns no copy of those and rule.not_learnable would refuse the whole
 //   answer; off otherwise, and the person may still tick it. A line that arrives with rows
 //   starts from the server's learn_rule_default and follows the rows once they are edited.
-//   Otherwise an optional purpose pattern can still make a rule (D38). Phase 6 D160: for one
-//   row whose category is among unlearnable_categories (a private account's transfer, card
-//   bill, tax-relevant or depot code, or one without a threshold), no rule is ever learned, so
-//   the box (or the pattern field) is greyed and unticked with one line saying why, and
-//   learn_rule is sent false; rule.not_learnable would refuse the whole answer. learn_rule is always
+//   Otherwise an optional purpose pattern can still make a rule (D38). Phase 6 D160 amended
+//   (5) (15 Nov 2026, Luis: „if it's disabled then it shouldn't show“): for one row whose
+//   category is among unlearnable_categories (a private account's transfer or depot code, a
+//   property bill, work and education, uncategorized), no rule is ever learned, so neither the
+//   box nor a pattern field is shown, and learn_rule is sent false; rule.not_learnable would
+//   refuse the whole answer, and its message still shows under the rows. learn_rule is always
 //   sent explicitly: a typed pattern means "make a rule", whatever the server default for the
 //   category would be.
 // - Suggested purpose pattern (14 Nov 2026, principle 7): a line without an IBAN (a bank's own
@@ -60,7 +61,7 @@
 //   von … sind als … bestätigt.“) and offers „Diese auch auf <Kategorie> umbuchen“, which sends
 //   rebook_earlier: the server re-books them to the chosen category, then learns the rule, and
 //   says how many it re-booked. Offered only when none of those categories is one no rule is
-//   learned for (a transfer, a card bill, a tax-relevant code): the server would refuse.
+//   learned for (a transfer or depot code, a property bill, ...): the server would refuse.
 //   Nor when an earlier line of the payee cannot be re-booked (rebook_blockers: a split, a
 //   Beleg, a property or loan, a transfer or depot link, an open import or duplicate): the
 //   panel then names that line by date and amount, says why and what to do, and links to it
@@ -69,8 +70,8 @@
 //   merchants, so on a private line the payee is the merchant the line names. The server sends
 //   payee_label („PayPal: DisneyPlus“); the panel names it under the title and uses it wherever
 //   it names the payee. A service's line whose merchant cannot be read (no_merchant) learns no
-//   rule: the box is shown greyed and unticked with one line saying why, no pattern field, and
-//   learn_rule is sent false (rule.no_merchant is the backstop).
+//   rule: no box and no pattern field are shown (D160 amended (5)), and learn_rule is sent
+//   false (rule.no_merchant is the backstop, its message shown under the rows).
 // - Phase 3 (§11 "Inputs"): under a confirmed line, its repairs and renovation rows get their
 //   tax questions (components/taxInputs.tsx), in their own form beside this one.
 import Link from "next/link";
@@ -84,7 +85,7 @@ import { loadDirectory, partyNames, type Directory } from "./entities";
 import { collector, Field, FormBanner, useFormErrors, type FieldMessages } from "./form";
 import { formatDate, formatDateTime, formatMoney } from "./format";
 import { decimalInput, toSignedMoneyString } from "./input";
-import { ALLOCATION_CATEGORY, ALLOCATION_METHOD, categoryGroups, TAX_RELEVANT_CATEGORIES } from "./labels";
+import { ALLOCATION_CATEGORY, ALLOCATION_METHOD, categoryGroups } from "./labels";
 import { AllocationTaxInputs } from "./taxInputs";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
@@ -392,7 +393,7 @@ function AllocationEditor({
     rows.length === 1
       ? rows.every((row) => row.category === "" || !noDefault.has(row.category))
       : account.purpose === "rental" && splitSuggested(rows, noDefault);
-  // D160: one row of a category no rule is ever learned for: the box is greyed and off.
+  // D160 amended (5): one row of a category no rule is ever learned for: no box, learn_rule off.
   const unlearnable = new Set(view.unlearnable_categories ?? []);
   const onlyCategory = rows.length === 1 ? (rows[0]?.category ?? "") : "";
   const blocked = onlyCategory !== "" && unlearnable.has(onlyCategory) ? onlyCategory : null;
@@ -578,34 +579,21 @@ function AllocationEditor({
         <p className="muted">Die Zeilen müssen zusammen genau den Betrag der Buchung ergeben ({formatMoney(line.amount)}).</p>
       ) : null}
 
-      {noMerchant ? (
-        <div className={form.of("learn_rule").length > 0 ? "field field-invalid" : "field"}>
-          <label className="inline" htmlFor={learnId}>
-            <input id={learnId} type="checkbox" checked={false} disabled />
-            Künftig immer so zuordnen
-          </label>
-          <p className="muted hint">{NO_MERCHANT_REASON}</p>
-          <FieldErrors messages={form.of("learn_rule")} />
-        </div>
+      {noMerchant || blocked !== null ? (
+        // D160 amended (5): no rule can be learned here, so no box and no pattern field; a
+        // refusal from the server (the backstop) still shows.
+        <FieldErrors messages={[...form.of("learn_rule"), ...form.of("purpose_pattern")]} />
       ) : view.can_learn_rule ? (
         <div className={form.of("learn_rule").length > 0 ? "field field-invalid" : "field"}>
           <label className="inline" htmlFor={learnId}>
-            <input
-              id={learnId}
-              type="checkbox"
-              checked={learn}
-              disabled={blocked !== null}
-              onChange={(e) => setLearnChoice(e.target.checked)}
-            />
+            <input id={learnId} type="checkbox" checked={learn} onChange={(e) => setLearnChoice(e.target.checked)} />
             Künftig immer so zuordnen
           </label>
           <p className="muted hint">
-            {blocked !== null
-              ? unlearnableReason(blocked)
-              : payeeLabel
-                ? `Weitere Zahlungen an ${payeeLabel} werden dann ohne Rückfrage so zugeordnet, andere Händler über denselben Zahlungsdienst nicht.`
-                : "Weitere Buchungen dieser Gegenseite werden dann ohne Rückfrage so zugeordnet."}
-            {blocked === null && asked === null && sameCount > 0 ? ` ${waitingText(sameCount, line.amount)}` : null}
+            {payeeLabel
+              ? `Weitere Zahlungen an ${payeeLabel} werden dann ohne Rückfrage so zugeordnet, andere Händler über denselben Zahlungsdienst nicht.`
+              : "Weitere Buchungen dieser Gegenseite werden dann ohne Rückfrage so zugeordnet."}
+            {asked === null && sameCount > 0 ? ` ${waitingText(sameCount, line.amount)}` : null}
           </p>
           <FieldErrors messages={form.of("learn_rule")} />
           {earlier.length > 0 && askedCategory !== "" ? (
@@ -672,13 +660,7 @@ function AllocationEditor({
       ) : suggestion !== null ? (
         <div className={form.of("learn_rule").length > 0 ? "field field-invalid" : "field"}>
           <label className="inline" htmlFor={learnId}>
-            <input
-              id={learnId}
-              type="checkbox"
-              checked={learn}
-              disabled={blocked !== null}
-              onChange={(e) => setLearnChoice(e.target.checked)}
-            />
+            <input id={learnId} type="checkbox" checked={learn} onChange={(e) => setLearnChoice(e.target.checked)} />
             Künftig immer so zuordnen
           </label>
           <FieldErrors messages={form.of("learn_rule")} />
@@ -703,19 +685,14 @@ function AllocationEditor({
         <Field
           id={patternId}
           label="Muster im Verwendungszweck (optional)"
-          hint={
-            blocked !== null
-              ? unlearnableReason(blocked)
-              : "Für diese Gegenseite lernt Hausbuch keine Regel allein aus der IBAN. Mit einem Muster (z. B. Abschluss) werden künftige Buchungen mit passendem Verwendungszweck so zugeordnet."
-          }
+          hint="Für diese Gegenseite lernt Hausbuch keine Regel allein aus der IBAN. Mit einem Muster (z. B. Abschluss) werden künftige Buchungen mit passendem Verwendungszweck so zugeordnet."
           description="Ein Text aus dem Verwendungszweck, an dem sich diese Art Buchung erkennen lässt, z. B. „Abschluss“ bei der Kontoabrechnung der Bank."
           errors={form.of("purpose_pattern")}
         >
           <input
             type="text"
-            value={blocked !== null ? "" : pattern}
+            value={pattern}
             onChange={(e) => setPattern(e.target.value)}
-            disabled={blocked !== null}
             autoComplete="off"
             maxLength={200}
           />
@@ -770,22 +747,6 @@ function suggestionHint(text: string, suggestion: string, waiting: number): stri
 function waitingText(count: number, amount: string): string {
   const what = count === 1 ? "1 wartende Zahlung" : `${count} wartende Zahlungen`;
   return `Die Regel gilt dann auch für ${what} über ${formatMoney(unsigned(amount))}.`;
-}
-
-/** Why a one-row answer of this category never becomes a rule (D160), by kind. */
-/** D160 amended (4): a payment service's line that names no merchant. */
-const NO_MERCHANT_REASON =
-  "Diese Zahlung läuft über einen Zahlungsdienst wie PayPal, Klarna oder Google Pay, der für viele Händler zahlt, und nennt keinen Händler. Eine Regel würde jede Zahlung über diesen Dienst so zuordnen, darum lernt Hausbuch hier keine. Bitte diese Zahlung ohne Regel bestätigen.";
-
-function unlearnableReason(category: AllocationCategory): string {
-  if (category === "internal_transfer_in" || category === "internal_transfer_out") {
-    return "Überträge zwischen eigenen Konten erkennt Hausbuch selbst an der Kontonummer.";
-  }
-  if (category === "hh_credit_card") {
-    return "Kartenzahlungen erkennt Hausbuch selbst, sobald die Kreditkarte als Konto angelegt ist.";
-  }
-  if (TAX_RELEVANT_CATEGORIES.has(category)) return "Steuerlich relevante Zahlungen bestätigen Sie jedes Mal selbst.";
-  return "Für diese Kategorie lernt Hausbuch keine Regel.";
 }
 
 function FieldErrors({ messages }: { messages: string[] }) {
