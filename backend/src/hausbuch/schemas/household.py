@@ -788,17 +788,6 @@ class NetWorthClass(StrEnum):
     LIABILITIES = "liabilities"
 
 
-class NetWorth(Schema):
-    on: date
-    total: Money
-    by_class: dict[NetWorthClass, Money]
-    by_owner: dict[UUID, Money]  # over accounts with shares and the property's shares
-    unassigned_accounts: list[UUID] = Field(default_factory=list)
-    property_estimate: Money
-    loan_balances: Money  # positive: what is owed
-    snapshot_id: UUID | None = None
-
-
 class ValuationSnapshot(Record):
     """valuation_snapshot row (immutable): one per account, asset and month-end; asset_id
     None for a bank account's balance."""
