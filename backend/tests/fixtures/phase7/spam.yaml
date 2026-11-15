@@ -24,7 +24,7 @@ cases:
 
   # §6 example 6, promoted with „Das ist echt“ → airdrop, review, „Kursquelle wählen“.
   - id: unknown_token_promoted
-    pending: "phase 7 step 3 (services/chain/tokens.promote_token: the stored asset; the verdict replays)"
+    pending: "phase 7 step 2 (token promotion)"
     token: {chain: ethereum, contract: "0x9fadc80dca344ba5e992fa18100ccf0d5b3021ab", symbol: FREE}
     action: promote
     expect: {group: airdrop, movement: airdrop, hidden: false, card: true, label: "Token 0x9f…21ab (nennt sich FREE)", price_source_needed: true}

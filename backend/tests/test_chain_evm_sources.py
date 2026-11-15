@@ -468,3 +468,30 @@ def test_rpc_paced():
     post = Rpc()
     _rpc(post, sleeps).balances(BSC_ME)
     assert sleeps == [0.4] * (len(post.calls) - 1)
+
+
+# --- review fixes (PR #371) -----------------------------------------------------------------
+
+
+def test_notok_with_an_empty_list_is_a_refusal_not_an_empty_window():
+    # only Etherscan's "No transactions found" means no rows; a bare NOTOK with [] must not
+    # read as an empty window, or the sync would move its cursor past rows it never saw
+    body = json.dumps({"status": "0", "message": "NOTOK", "result": []}).encode()
+    fetch = Etherscan(tokentx=(200, body))
+    with pytest.raises(ChainSourceError) as caught:
+        _source(fetch).transactions(ME, "21000000")
+    assert caught.value.code == evm_http.SOURCE_FAILED
+    assert KEY not in str(caught.value)
+
+
+@pytest.mark.parametrize("message", ["No transactions found", "No records found"])
+def test_no_rows_messages_are_an_empty_window(message):
+    body = json.dumps({"status": "0", "message": message, "result": []}).encode()
+    fetch = Etherscan(tokentx=(200, body))
+    page = _source(fetch).transactions(ME, None)
+    assert page.items == [] and page.next_cursor == str(TIP - 12)
+
+
+def test_the_rpc_url_is_not_in_the_sources_repr():
+    source = _rpc(Rpc())
+    assert RPC_URL not in repr(source) and "INVENTEDPATHKEY" not in repr(source)

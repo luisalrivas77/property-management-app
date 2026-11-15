@@ -38,7 +38,7 @@ LIMIT_EXCEEDED = -32005
 @dataclass
 class RpcBalanceSource:
     chain: Chain
-    url: str
+    url: str = field(repr=False)  # a provider URL may carry its key
     post: Post = field(default=urllib_post, repr=False)
     sleep: Callable[[float], None] = field(default=time.sleep, repr=False)
     kind: ChainSourceKind = ChainSourceKind.EVM_RPC_BALANCE

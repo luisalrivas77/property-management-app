@@ -12,7 +12,7 @@ and skip while it is not built.
 """
 
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, Inexact, InvalidOperation, localcontext
 from uuid import uuid4
 
 import pytest
@@ -377,3 +377,158 @@ def test_balance_only_card_codes_exist():
 def test_not_an_evm_chain():
     with pytest.raises(ValueError):
         evm.normalise(Chain.SOLANA, {}, ME)
+
+
+# --- review fixes (PR #371) -----------------------------------------------------------------
+
+UNLISTED = "0x3333333333333333333333333333333333333333"  # in no registry, held by no one
+PAD = "0x" + "0" * 24
+
+
+def test_an_exchange_hash_wins_over_spam_on_etherscan():
+    # D183 (3)(b) before D187 (1): an unlisted, unheld token the exchange sent is the deposit
+    rows = {
+        "tokentx": [
+            _row(**{"from": FOREIGN, "to": ME}, contractAddress=UNLISTED, value="5", logIndex="2")
+        ],
+        "tokennfttx": [_row(**{"from": FOREIGN, "to": ME}, contractAddress=NFT, tokenID="1")],
+    }
+    (tx,) = evm.normalise(Chain.ETHEREUM, rows, ME)
+    group = evm.classify_evm(Chain.ETHEREUM, tx, ME, exchange_hashes={H.upper()})
+    assert group.kind is GroupKind.EXCHANGE_TRANSFER and group.card is None
+    assert [(g.kind, g.role, g.asset_key.contract) for g in group.legs] == [
+        (MovementKind.INTERNAL_TRANSFER_IN, "in", UNLISTED),
+        (MovementKind.SPAM, "in", NFT),  # the other junk in the same transaction stays spam
+    ]
+    # without the hash the same token is spam
+    alone = evm.classify_evm(Chain.ETHEREUM, tx, ME)
+    assert alone.kind is GroupKind.SPAM
+
+
+def test_an_exchange_hash_wins_over_spam_on_the_bsc_receipt():
+    receipt = {
+        "status": "0x1",
+        "logs": [
+            {
+                "address": UNLISTED,
+                "logIndex": "0x3",
+                "topics": [evm.TRANSFER_TOPIC, PAD + FOREIGN[2:], PAD + ME[2:]],
+                "data": "0x" + f"{7:064x}",
+            }
+        ],
+    }
+    transaction = {"hash": H, "from": FOREIGN, "to": UNLISTED, "value": "0x0", "blockNumber": "0x1"}
+    tx = evm.deposit_from_receipt(Chain.BSC, transaction, receipt, datetime.now(UTC), ME)
+    assert tx is not None
+    group = evm.classify_evm(Chain.BSC, tx, ME, exchange_hashes={H})
+    assert group.kind is GroupKind.EXCHANGE_TRANSFER
+    assert [(g.kind, g.units, g.index) for g in group.legs] == [
+        (MovementKind.INTERNAL_TRANSFER_IN, 7, "3")
+    ]
+    # without the hash the same token is spam
+    assert evm.classify_evm(Chain.BSC, tx, ME).kind is GroupKind.SPAM
+
+
+def test_an_unlisted_token_from_another_own_address_is_a_transfer():
+    rows = {
+        "tokentx": [
+            _row(
+                **{"from": OTHER_OWN, "to": ME}, contractAddress=UNLISTED, value="9", logIndex="1"
+            ),
+        ],
+        "tokennfttx": [_row(**{"from": FOREIGN, "to": ME}, contractAddress=NFT, tokenID="4")],
+    }
+    (tx,) = evm.normalise(Chain.ETHEREUM, rows, ME)
+    group = evm.classify_evm(Chain.ETHEREUM, tx, ME, own=[ME, OTHER_OWN])
+    assert group.kind is GroupKind.TRANSFER and group.card is None
+    assert [(g.kind, g.asset_key.contract) for g in group.legs] == [
+        (MovementKind.INTERNAL_TRANSFER_IN, UNLISTED),
+        (MovementKind.SPAM, NFT),  # a third party's junk in the same transaction stays spam
+    ]
+    # seen alone, without the other own address, it is spam
+    assert evm.classify_evm(Chain.ETHEREUM, tx, ME).kind is GroupKind.SPAM
+
+
+def test_a_fake_token_sent_out_in_an_unsigned_transaction_is_spam():
+    # address poisoning: a fake token's contract emits Transfer(victim → lookalike); the
+    # address never signed it, so the out leg is spam and asks nothing
+    rows = {
+        "tokentx": [
+            _row(**{"from": ME, "to": FOREIGN}, contractAddress=UNLISTED, value="5", logIndex="1")
+        ]
+    }
+    (tx,) = evm.normalise(Chain.ETHEREUM, rows, ME)
+    assert tx.fee is None
+    group = evm.classify_evm(Chain.ETHEREUM, tx, ME)
+    assert group.kind is GroupKind.SPAM and group.card is None
+    assert [(g.kind, g.role) for g in group.legs] == [(MovementKind.SPAM, "out")]
+    assert evm.signed_units(group) == {}
+
+
+def test_a_signed_send_of_an_unlisted_token_is_no_spam():
+    rows = {
+        "txlist": [_row(**{"from": ME, "to": UNLISTED}, value="0", gasUsed="1", gasPrice="1")],
+        "tokentx": [
+            _row(**{"from": ME, "to": FOREIGN}, contractAddress=UNLISTED, value="5", logIndex="1")
+        ],
+    }
+    (tx,) = evm.normalise(Chain.ETHEREUM, rows, ME)
+    group = evm.classify_evm(Chain.ETHEREUM, tx, ME)
+    assert group.kind is GroupKind.TRANSFER and group.card == E.TRANSFER_UNMATCHED_LEG
+
+
+def test_an_unlisted_token_out_of_a_held_asset_is_no_spam():
+    rows = {
+        "tokentx": [
+            _row(**{"from": ME, "to": FOREIGN}, contractAddress=UNLISTED, value="5", logIndex="1")
+        ]
+    }
+    (tx,) = evm.normalise(Chain.ETHEREUM, rows, ME)
+    held = [AssetKey(chain=Chain.ETHEREUM, contract=UNLISTED)]
+    group = evm.classify_evm(Chain.ETHEREUM, tx, ME, held=held)
+    assert group.kind is GroupKind.TRANSFER and group.card == E.TRANSFER_UNMATCHED_LEG
+
+
+@pytest.mark.parametrize("data", ["0x", "", None])
+def test_a_receipt_transfer_with_empty_data_is_skipped(data):
+    receipt = {
+        "status": "0x1",
+        "logs": [
+            {
+                "address": USDC,
+                "logIndex": "0x1",
+                "topics": [evm.TRANSFER_TOPIC, PAD + FOREIGN[2:], PAD + ME[2:]],
+                "data": data,
+            }
+        ],
+    }
+    transaction = {"hash": H, "from": FOREIGN, "to": USDC, "value": "0x0", "blockNumber": "0x1"}
+    assert evm.deposit_from_receipt(Chain.BSC, transaction, receipt, datetime.now(UTC), ME) is None
+
+
+@pytest.mark.parametrize("digits", [29, 38, 78])
+@pytest.mark.parametrize("decimals", [0, 6, 18])
+def test_quantity_is_exact_beyond_the_context_precision(digits, decimals):
+    units = int("9" * (digits - 1) + "7")
+    quantity = evm._quantity(units, decimals)
+    with localcontext() as ctx:
+        ctx.prec = 200
+        assert quantity * Decimal(10) ** decimals == units
+    assert quantity.as_tuple().exponent <= 0
+
+
+def test_quantity_of_the_largest_uint256_is_exact():
+    units = 2**256 - 1
+    with localcontext() as ctx:
+        ctx.traps[InvalidOperation] = True
+        ctx.traps[Inexact] = True
+        quantity = evm._quantity(units, 18)
+    assert quantity.as_tuple().digits == tuple(int(d) for d in str(units))
+    assert quantity.as_tuple().exponent == -18
+
+
+def test_quantity_drops_trailing_zeros_only_down_to_the_unit():
+    assert str(evm._quantity(10**20, 18)) == "100"
+    assert str(evm._quantity(1500, 3)) == "1.5"
+    assert str(evm._quantity(600, 0)) == "600"
+    assert str(evm._quantity(-6 * 10**14, 18)) == "-0.0006"

@@ -50,6 +50,12 @@ BALANCE_OF = "0x70a08231"  # balanceOf(address)
 Row = Mapping[str, JsonValue]
 
 
+def _no_rows(message: str) -> bool:
+    """Etherscan's own words for an empty answer, the only `status "0"` that is no error."""
+    text = message.lower()
+    return "no transactions found" in text or "no records found" in text
+
+
 def _refusal(message: str) -> ChainSourceError:
     text = message.lower()
     if "rate limit" in text:
@@ -95,9 +101,11 @@ class EtherscanSource:
             raise _refusal(str(message or ""))
         result = answer.get("result")
         if str(answer.get("status", "1")) == "0":
-            if isinstance(result, list):
-                return []  # "No transactions found"
-            raise _refusal(str(result or answer.get("message") or ""))
+            message = str(answer.get("message") or "")
+            if isinstance(result, list) and not result and _no_rows(message):
+                return []  # "No transactions found": the window holds nothing
+            text = result if isinstance(result, str) and result else message
+            raise _refusal(text)  # NOTOK with [] is a refusal too: the cursor never advances
         if isinstance(result, str) and not result.startswith("0x") and "jsonrpc" in answer:
             raise _refusal(result)  # the proxy module's rate-limit text with no status
         return result

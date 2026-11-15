@@ -258,7 +258,10 @@ def deposit_from_receipt(
         if len(topics) != 3 or topics[0] != TRANSFER_TOPIC:
             continue  # an ERC-721 Transfer has 4 topics: never a BEP-20 deposit
         to = "0x" + topics[2][-40:]
-        units = _int(log.get("data"))
+        data = str(log.get("data") or "").strip()
+        if data in ("", "0x"):
+            continue  # a Transfer event with no amount moves nothing
+        units = _int(data)
         contract = _lower(log.get("address"))
         if to != own or not units or contract is None:
             continue
@@ -541,19 +544,25 @@ def classify_evm(
                         link=TransferLinkKind.WRAP,
                     )
 
-    # D187: NFT records are spam legs; an unlisted, unheld token credited without an own
-    # action is spam. What remains decides the group.
-    spam_legs = [
-        _leg(t, MovementKind.SPAM, "in" if t.to_addr == me else "out")
-        for t in ins + outs
-        if t.index.startswith(NFT_PREFIX)
-    ]
+    # D187, after (a) and (b): a leg whose counterparty is another own address, or credited in
+    # a transaction an own exchange withdrawal names, is never spam. Of the rest, NFT records
+    # are spam legs, and so is an unlisted, unheld token moved in a transaction the address
+    # did not sign: credited with no own action, or sent out by an event it never made (an
+    # address-poisoning `Transfer(victim → lookalike)`), no card either way. What remains
+    # decides the group.
+    in_hash = tx.hash.lower() in hashes
     held_keys = set(held)
-    for t in ins:
-        if not t.index.startswith(NFT_PREFIX) and is_spam(
-            t.asset_key, held=t.asset_key in held_keys, fee_paid=signed, bought=False
-        ):
-            spam_legs.append(_leg(t, MovementKind.SPAM, "in"))
+    spam_legs: list[EvmLeg] = []
+    for t in ins + outs:
+        role: Role = "in" if t.to_addr == me else "out"
+        if t.index.startswith(NFT_PREFIX):
+            spam_legs.append(_leg(t, MovementKind.SPAM, role))
+            continue
+        counterparty = t.from_addr if role == "in" else t.to_addr
+        if counterparty in others or (role == "in" and in_hash):
+            continue
+        if is_spam(t.asset_key, held=t.asset_key in held_keys, fee_paid=signed, bought=False):
+            spam_legs.append(_leg(t, MovementKind.SPAM, role))
     spam_idx = {leg.index for leg in spam_legs}
     ins = [t for t in ins if t.index not in spam_idx]
     outs = [t for t in outs if t.index not in spam_idx]
@@ -566,7 +575,7 @@ def classify_evm(
         return group(GroupKind.CONTRACT_CALL, [], fee_only=True)
 
     # (b) an exchange withdrawal's hash: the deposit side of D175.
-    if tx.hash.lower() in hashes and ins and not outs:
+    if in_hash and ins and not outs:
         legs = [_leg(t, MovementKind.INTERNAL_TRANSFER_IN, "in") for t in ins]
         return group(GroupKind.EXCHANGE_TRANSFER, legs + spam_legs)
 
@@ -631,10 +640,17 @@ def classify_evm(
 # --- to the stored shape --------------------------------------------------------------------
 
 
-def _plain(value: Decimal) -> Decimal:
-    """Trailing zeros dropped, never a positive exponent (100, not 1E+2): exact, no rounding."""
-    value = value.normalize()
-    return value.quantize(Decimal(1)) if value.as_tuple().exponent > 0 else value  # type: ignore[operator]
+def _quantity(units: int, decimals: int) -> Decimal:
+    """`units` base units of an asset with `decimals` decimals, built from the integer's own
+    digits with no arithmetic, so the context's 28-digit precision never rounds it (2**256 − 1
+    stays exact): trailing zeros dropped down to the unit, never a positive exponent (100,
+    not 1E+2)."""
+    if units == 0:
+        return Decimal(0)
+    digits = str(abs(units))
+    zeros = min(len(digits) - len(digits.rstrip("0")), decimals)
+    kept = digits[: len(digits) - zeros]
+    return Decimal((int(units < 0), tuple(int(d) for d in kept), zeros - decimals))
 
 
 def to_draft(
@@ -649,7 +665,7 @@ def to_draft(
     movements = []
     for leg in group.legs:
         asset_id, decimals = assets[leg.asset_key]
-        quantity = _plain(Decimal(leg.units).scaleb(-decimals))
+        quantity = _quantity(leg.units, decimals)
         movements.append(
             AssetMovementDraft(
                 account_id=account_id,
