@@ -140,6 +140,9 @@ def test_an_invalid_paste_is_refused_without_repeating_it(client_a):
         ("bitcoin", "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5"),
         ("solana", SOL[:-2] + "0P"),
         ("solana", EVM_OTHER),  # an EVM address pasted under Solana
+        # BIP-350's valid v16 vector, padded: 14 characters once trimmed, below 0041's CHECK
+        # (a 500 before the review of PR #374)
+        ("bitcoin", "   bc1sw50qgdz25j   "),
     ):
         response = client_a.post(
             f"/api/wallets/{wallet_id}/addresses", json={"chain": chain, "address": text}

@@ -142,7 +142,8 @@ def test_a_published_taproot_address_is_valid():
         (0, 25, BECH32, False),  # v0 is 20 or 32 bytes
         (1, 32, BECH32M, True),
         (1, 32, BECH32, False),  # v1+ must use bech32m
-        (16, 2, BECH32M, True),
+        (16, 6, BECH32M, True),  # 20 characters, the shortest 0041 stores
+        (16, 5, BECH32M, False),  # valid BIP-350 but 18 characters, below 0041's CHECK
         (2, 41, BECH32M, False),  # a program is at most 40 bytes
     ],
 )
@@ -154,6 +155,16 @@ def test_segwit_versions_and_checksums(version, length, const, valid):
     else:
         with pytest.raises(RuleError):
             validate(Chain.BITCOIN, built)
+
+
+def test_an_address_outside_the_stored_length_is_refused():
+    """0041's CHECK is length(address) BETWEEN 20 AND 128: BIP-350's 14-character v16 vector
+    is valid bech32m but would be a 500 from the database, so validate refuses it (review of
+    PR #374), with surrounding whitespace too."""
+    with pytest.raises(RuleError) as refused:
+        validate(Chain.BITCOIN, "   bc1sw50qgdz25j   ")
+    assert refused.value.code == WALLET_ADDRESS_INVALID
+    assert "bc1sw50qgdz25j" not in str(refused.value)
 
 
 def test_mixed_case_bech32_is_refused():

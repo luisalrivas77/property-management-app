@@ -52,11 +52,15 @@ _HEX = frozenset("0123456789abcdefABCDEF")
 # Domain separation: an address's HMAC never equals an IBAN's or an account number's under
 # the same key (services/iban).
 _HMAC_DOMAIN = b"wallet_address\x00"
+# Migration 0041's CHECK on wallet_address.address: a normalised address outside it is refused
+# here, so a valid but very short Bitcoin vector (BIP-350's 14-character v16 address) is a
+# 422, not a 500 from the database (review of PR #374, 16 Nov 2026).
+_STORED_LENGTH = range(20, 129)
 
 
 def validate(chain: Chain, address: str) -> str:
     """The normalised address, or RuleError(wallet.address_invalid). Surrounding whitespace
-    of a paste is dropped."""
+    of a paste is dropped; the normalised form is 20 to 128 characters (0041's CHECK)."""
     text = address.strip()
     if chain is Chain.BITCOIN:
         normalised = _bitcoin(text)
@@ -67,7 +71,7 @@ def validate(chain: Chain, address: str) -> str:
         normalised = text if data is not None and len(data) == 32 else None
     else:  # pragma: no cover - every Chain is handled above
         normalised = None
-    if normalised is None:
+    if normalised is None or len(normalised) not in _STORED_LENGTH:
         raise RuleError(WALLET_ADDRESS_INVALID, EXPECTED_SHAPE[chain])
     return normalised
 
