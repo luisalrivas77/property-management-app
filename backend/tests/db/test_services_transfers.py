@@ -23,6 +23,7 @@ from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import bank_connection as connection_table
 from hausbuch.db.tables import bank_sync as sync_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.schemas.allocation import (
     AllocationCategory,
@@ -32,6 +33,7 @@ from hausbuch.schemas.allocation import (
 )
 from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.common import Fraction
+from hausbuch.schemas.enums import ImportStatus
 from hausbuch.schemas.household import (
     OpenTransferCode,
     TransferLinkCreate,
@@ -503,6 +505,47 @@ def test_a_card_payment_after_its_paying_accounts_last_line_gets_no_card(world, 
     later = private.add_import(world.now)
     private.line(date(2026, 11, 9), "-15.00", name="Bäckerei Beispiel", import_id=later)
     assert _unmatched(world, payment) == [OpenTransferCode.UNMATCHED_LEG]
+
+
+def _card_statement(world: World, card: Card) -> None:
+    """The card's next monthly statement: a reconciled import its later lines go to."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        doc = world._document_row(conn, type="statement", subtype=None, title=None)
+        card.import_id = conn.execute(
+            insert(import_table)
+            .values(
+                workspace_id=world.ws,
+                account_id=card.account_id,
+                document_id=doc,
+                format="card_pdf",
+                status=ImportStatus.RECONCILED.value,
+                balance_source="file",
+                declared_closing=Decimal("0.00"),
+                computed_closing=Decimal("0.00"),
+                created_at=world.now,
+                updated_at=world.now,
+            )
+            .returning(import_table.c.id)
+        ).scalar_one()
+
+
+def test_a_card_settlement_debit_after_the_cards_last_statement_gets_no_card(world, private):
+    """D162 amended (9), the card direction (Luis: „Does the Quirion transfer card also apply to
+    the credit card card?“): the bank's debit of 3 Nov names the card's payment IBAN, so it is
+    decided by the card account, whose monthly statements (imports of their own, read like a
+    bank's) end on 30 Oct: no card. The card's November statement reaching the window without
+    the settlement credit brings the card back."""
+    card = Card(world, PAYMENT_IBAN)
+    card.purchase(date(2026, 10, 30), "-20.00", "Buchhandlung Beispiel")
+    debit = private.line(NOV_DEBIT, "-450.00", iban=PAYMENT_IBAN, purpose="Kreditkarte")
+    _match(world, debit)
+    assert [(r.category, r.status) for r in _rows(world, debit)] == [
+        ("internal_transfer_out", "confirmed")
+    ]
+    assert _unmatched(world, debit) == []
+    _card_statement(world, card)
+    card.purchase(date(2026, 11, 9), "-15.00", "Buchhandlung Beispiel")
+    assert _unmatched(world, debit) == [OpenTransferCode.UNMATCHED_LEG]
 
 
 def test_a_link_by_hand_and_its_replacement(world, private):
