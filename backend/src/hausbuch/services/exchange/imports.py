@@ -62,7 +62,7 @@ from hausbuch.schemas.events import (
     AssetRecorded,
     BalanceCorrected,
     EventType,
-    MovementGroupRecorded,
+    ExchangeTradeGrouped,
     MovementImportChecked,
     MovementImportRecorded,
     MovementRecorded,
@@ -342,7 +342,7 @@ def _insert_movement(
 def _insert_group(ctx: CommandContext, account_id: UUID, occurred_at: datetime) -> UUID:
     """One exchange trade's movement group: no chain and no transaction hash (a CHECK of 0043
     allows that for a swap only), confirmed, since a trade's legs are confirmed by code
-    (D166). Its movement_group.confirmed event follows once its legs are written."""
+    (D166). Its movement_group.trade_recorded event follows once its legs are written."""
     return ctx.conn.execute(
         insert(group_table)
         .values(
@@ -368,9 +368,9 @@ def _group_recorded(
 ) -> None:
     append_event(
         ctx,
-        EventType.MOVEMENT_GROUP_CONFIRMED,
+        EventType.MOVEMENT_GROUP_TRADE_RECORDED,
         group_id,
-        MovementGroupRecorded(
+        ExchangeTradeGrouped(
             account_id=account_id,
             kind=rules.TRADE_GROUP_KIND,
             movement_ids=movement_ids,

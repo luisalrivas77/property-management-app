@@ -15922,7 +15922,7 @@
           "movement.proposed",
           "movement.confirmed",
           "movement.superseded",
-          "movement_group.confirmed",
+          "movement_group.trade_recorded",
           "transfer.linked",
           "transfer.unlinked",
           "statement.imported",

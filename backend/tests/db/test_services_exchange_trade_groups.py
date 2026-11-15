@@ -125,7 +125,7 @@ def test_a_binance_export_writes_each_trade_as_one_group(run, read, blob_store, 
     sol = by_symbol[("SOL", "acquisition")]
     assert (sol.eur_amount, sol.fee_eur) == (None, None)
 
-    events = _events(read, ws, "movement_group.confirmed")
+    events = _events(read, ws, "movement_group.trade_recorded")
     assert sorted(e.entity_id for e in events) == sorted(g.id for g in groups)
     assert {e.entity_type for e in events} == {"movement_group"}
     ids_of = {gid: {leg.id for leg in legs if leg.group_id == gid} for gid in _by_group(legs)}
@@ -195,7 +195,7 @@ def test_group_exchange_trades_ties_earlier_imports_once_and_changes_no_check(
     assert eth.fee_eur == Decimal("0.25")
     assert eth.document_id == imported.document_id
     assert len(_events(read, ws, "movement.superseded")) == 5
-    assert len(_events(read, ws, "movement_group.confirmed")) == 2
+    assert len(_events(read, ws, "movement_group.trade_recorded")) == 2
     # The typed balances still agree, and Zu prüfen shows what it showed.
     [view] = read(ws, imports.exchange_overview, account.id).imports
     assert view.status is ImportStatus.RECONCILED

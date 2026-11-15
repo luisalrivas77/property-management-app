@@ -1054,10 +1054,11 @@ class MovementSuperseded(Schema):
     document_id: UUID | None = None
 
 
-class MovementGroupRecorded(Schema):
-    """movement_group.confirmed: one exchange trade's legs tied as one group (phase 6 D178
-    amended (3), migration 0043), by id only: the movements it holds, the export they came
-    from. A chain group (phase 7 D183) records its own events from step 2."""
+class ExchangeTradeGrouped(Schema):
+    """movement_group.trade_recorded: one exchange trade's legs tied as one group (phase 6
+    D178 amended (3), migration 0043), by id only: the movements it holds, the export they
+    came from. Its own type, not movement_group.confirmed, which phase 7 step 2 gives a chain
+    transaction's routing (a chain and a reason an exchange trade has not)."""
 
     account_id: UUID
     kind: GroupKind
@@ -1282,7 +1283,7 @@ class EventType(StrEnum):
     MOVEMENT_CONFIRMED = "movement.confirmed"
     MOVEMENT_SUPERSEDED = "movement.superseded"
 
-    MOVEMENT_GROUP_CONFIRMED = "movement_group.confirmed"  # phase 6 D178 amended (3), 0043
+    MOVEMENT_GROUP_TRADE_RECORDED = "movement_group.trade_recorded"  # phase 6 D178 amended (3)
 
     TRANSFER_LINKED = "transfer.linked"  # phase 6
     TRANSFER_UNLINKED = "transfer.unlinked"
@@ -1498,8 +1499,8 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.MOVEMENT_PROPOSED: EventSpec(MovementRecorded, "optional", "Movement proposed"),
     E.MOVEMENT_CONFIRMED: EventSpec(MovementRecorded, "optional", "Movement confirmed"),
     E.MOVEMENT_SUPERSEDED: EventSpec(MovementSuperseded, "forbidden", "Movement corrected"),
-    E.MOVEMENT_GROUP_CONFIRMED: EventSpec(
-        MovementGroupRecorded, "optional", "Exchange trade grouped"
+    E.MOVEMENT_GROUP_TRADE_RECORDED: EventSpec(
+        ExchangeTradeGrouped, "optional", "Exchange trade grouped"
     ),
     E.TRANSFER_LINKED: EventSpec(TransferLinked, "forbidden", "Transfer legs linked"),
     E.TRANSFER_UNLINKED: EventSpec(TransferUnlinked, "forbidden", "Transfer link undone"),
