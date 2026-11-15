@@ -12,8 +12,9 @@
   (account.kind_set): a bank account's kind stays a bank kind (its IBAN is its identity), and
   a purpose is refused while the account holds a booking of a category the new purpose does
   not allow (D159), so no booking ever sits on an account whose purpose refuses it.
-  create_account takes the bank kinds only until the depot (step 4) and the exchange (step 5)
-  are built, and refuses a wallet (phase 7) with account.kind_not_available.
+  create_account takes the bank kinds, a credit card (step 2b), a depot (step 4), an exchange
+  (step 5a) and, since phase 7 step 1, a wallet (D179); an aggregator is refused with
+  account.kind_not_available.
 - Phase 6 D157: owner shares per account, append-only (account_ownership): a new full set
   supersedes the current one; Σ = 1 and every owner known (rules.household.ownership). An
   account without shares is the to-do „Eigentümer festlegen“ (Account.ownership_missing).
@@ -152,8 +153,10 @@ def create_account(
     account number optional (its first cash statement sets it) and its IBAN optional (typed
     here or confirmed from a statement, D156 amended), both masked + HMAC'd. Since step 5a an
     exchange (D178 (7)): Binance or BISON as its provider, always private, no IBAN and no
-    number (Binance's User ID is never stored, D178 (2)). A wallet is refused
-    (account.kind_not_available) until phase 7.
+    number (Binance's User ID is never stored, D178 (2)). Since phase 7 step 1 a wallet
+    (D179): its provider (the wallet's maker or app, typed), always private, no IBAN and no
+    number; its addresses are added on the wallet page (services/wallets). An aggregator is
+    refused (account.kind_not_available).
 
     With `store` (the API's POST /accounts, 14 Nov 2026): an account created with its IBAN or
     number takes the statement files waiting under Dokumente that print it, in statement
@@ -166,6 +169,15 @@ def create_account(
             raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "an exchange account takes no number")
         if data.provider not in EXCHANGE_PROVIDERS:
             raise RuleError(EXCHANGE_PROVIDER_UNKNOWN, "the exchange is Binance or BISON")
+        purpose = AccountPurpose.PRIVATE
+        identity = {}
+    elif data.kind is AccountKind.WALLET:
+        if data.purpose not in (None, AccountPurpose.PRIVATE):
+            raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a wallet is a private account")
+        if data.external_ref is not None:
+            raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a wallet takes no number")
+        if data.provider is None:
+            raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a wallet names its provider")
         purpose = AccountPurpose.PRIVATE
         identity = {}
     elif data.kind is AccountKind.DEPOT:
@@ -312,6 +324,9 @@ def update_account(
         if before.kind is AccountKind.CREDIT_CARD:
             # D176: a credit card is always private, as create_account sets it (review F4).
             raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a credit card is a private account")
+        if before.kind is AccountKind.WALLET:
+            # D179: a wallet is always private, as create_account sets it.
+            raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a wallet is a private account")
         _require_bookings_fit(ctx.conn, account_id, AccountPurpose(new_values["purpose"]))
 
     row = ctx.conn.execute(
