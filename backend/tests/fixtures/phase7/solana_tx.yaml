@@ -30,7 +30,6 @@
 cases:
   # §6 example 1: 2.5 SOL to A in a transaction A did not sign.
   - id: native_receive
-    pending: "phase 7 step 2 (services/chain/solana_rpc, normalise.solana_deltas, classify)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -55,7 +54,6 @@ cases:
       card: transfer.unmatched_leg
 
   - id: native_send_with_fee
-    pending: "phase 7 step 2 (services/chain/solana_rpc, normalise.solana_deltas, classify)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -82,7 +80,6 @@ cases:
       card: transfer.unmatched_leg
 
   - id: spl_in
-    pending: "phase 7 step 2 (normalise.solana_deltas, classify)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -119,7 +116,6 @@ cases:
       card: transfer.unmatched_leg
 
   - id: spl_out
-    pending: "phase 7 step 2 (normalise.solana_deltas, classify)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -161,7 +157,6 @@ cases:
   # invented program), fee 0.000005 SOL. Pricing and routing: swap_group.yaml and phase 2's
   # review_routing.yaml `chain_cases`.
   - id: swap_listed_amm
-    pending: "phase 7 step 2 (normalise.solana_deltas, classify with a decoder)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     decoder_listed: true
     tx:
@@ -208,7 +203,6 @@ cases:
   # The same swap on a program no decoder row names: a card the first time; „Künftig immer
   # so“ writes the workspace row (swap_group.yaml `contract_call_answered_learns_decoder`).
   - id: swap_unlisted_program
-    pending: "phase 7 step 2 (classify: the shape is a swap, the program unknown → card)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -233,7 +227,6 @@ cases:
   # A routed trade through an intermediate token X (mint 3hBm…GwDs, A's account ABXU…MPWu):
   # X comes in and goes out in the same transaction, nets to zero, and is no leg.
   - id: swap_three_legs_routed
-    pending: "phase 7 step 2 (normalise.solana_deltas drops the netted leg)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     decoder_listed: true
     tx:
@@ -281,7 +274,6 @@ cases:
   # §6 example 10: A delegates 10 SOL to a new stake account → the card asks whether it is
   # A's own; until answered the 10 SOL are an internal_transfer_out proposed.
   - id: stake_delegation_card
-    pending: "phase 7 step 2 (classify with the Stake program row)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     decoder_listed: true
     tx:
@@ -312,7 +304,6 @@ cases:
 
   # §6 example 11: a token leg out and nothing in, through a program no row names.
   - id: contract_call_shape
-    pending: "phase 7 step 2 (classify)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -354,7 +345,6 @@ cases:
   # A Token-2022 transfer out of an invented mint A already holds (AA84…yyYw; A's account
   # HWJn…bVq6, F's BQTN…6AB): read like any SPL transfer.
   - id: token_2022_transfer
-    pending: "phase 7 step 2 (normalise.solana_deltas over Token-2022)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -395,7 +385,6 @@ cases:
   # The first USDC receive: A pays the rent of its new token account (AtcK…uyej) and F sends
   # 25 USDC in the same transaction. The rent stays A's SOL (no movement), only the fee is.
   - id: first_spl_receive_creates_account
-    pending: "phase 7 step 2 (normalise.solana_deltas)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -440,7 +429,6 @@ cases:
   # An empty token account (9C9P…uYLR) closed, its rent back to A's main account: no movement
   # but the fee (step 0's reading: a `transfer` group with the fee only).
   - id: token_account_closed
-    pending: "phase 7 step 2 (normalise.solana_deltas, classify)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -474,7 +462,6 @@ cases:
   # A sends 10 USDC to R (4TWA…yoeM) and creates R's token account (DrZn…QR1q): the token
   # leg plus the rent as part of the fee, no card for the rent.
   - id: send_creating_recipient_account
-    pending: "phase 7 step 2 (normalise.solana_deltas, classify)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -519,7 +506,6 @@ cases:
       card: transfer.unmatched_leg
 
   - id: failed_transaction
-    pending: "phase 7 step 2 (classify: failed, the fee only)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -550,7 +536,6 @@ cases:
 
   # A version 0 transaction whose own token account comes from an address lookup table.
   - id: versioned_lookup_table
-    pending: "phase 7 step 2 (services/chain/solana_rpc with maxSupportedTransactionVersion 0)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     tx:
       version: 0
@@ -592,7 +577,6 @@ cases:
 
   # An optional Helius label (D181 (d), D192): attached to the group, never its kind.
   - id: helius_label_kind_unchanged
-    pending: "phase 7 step 2 (the optional enrichment)"
     own: BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP
     provider_label: {type: TRANSFER, source: SYSTEM_PROGRAM, description: "Transferred 0.5 SOL"}
     tx:
@@ -624,7 +608,6 @@ inflation_rewards:
   # §6 example 10's reward: getInflationReward for the stake account, dated the epoch's end
   # on the Berlin calendar (22:30 UTC on 30 Jun is 1 Jul in Berlin).
   - id: epoch_reward_to_stake_account
-    pending: "phase 7 step 2 (services/chain/solana_rpc.inflation_rewards)"
     stake_account: Hqw2dGuE2dcLueqA4UFgPw1Uciu9C7q41pxeUWcxX9fF
     result: {epoch: 820, effectiveSlot: 354240000, amount: 1534000, postBalance: 10001534000, commission: 7}
     epoch_end: "2026-06-30T22:30:00Z"
