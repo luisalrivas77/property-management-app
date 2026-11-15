@@ -1909,9 +1909,67 @@ class FxCase(_Case):
         return self
 
 
+class PricedAsExpect(Schema):
+    price: PriceRef | None
+    priced_by: Literal["own", "priced_as"] | None
+    stale: bool
+    value_eur: Money | None
+    not_valued_reason: str | None = None
+    todo: str | None = None
+
+
+class PricedAsCase(_Case):
+    """Phase 7 §10, D180 (3): a chain asset valued through its `priced_as` symbol's rows."""
+
+    on: date
+    prices: list[PriceRow] = Field(default_factory=list)  # the chain asset's own rows
+    priced_as: str | None  # the registry symbol; None: the token is not in the registry
+    priced_as_prices: list[PriceRow] = Field(default_factory=list)
+    position: HeldPosition
+    expect: PricedAsExpect
+
+    def recompute(self) -> PricedAsExpect:
+        rows = [(p, "own") for p in self.prices] + [(p, "priced_as") for p in self.priced_as_prices]
+        eligible = [(p, by) for p, by in rows if p.on <= self.on]
+        if not eligible:
+            return PricedAsExpect(
+                price=None,
+                priced_by=None,
+                stale=False,
+                value_eur=None,
+                not_valued_reason=E.VALUATION_NOT_VALUED,
+                todo=E.PRICE_NO_SOURCE,
+            )
+        day = max(p.on for p, _ in eligible)
+        price, by = min(
+            ((p, b) for p, b in eligible if p.on == day),
+            key=lambda pb: (valuation.SOURCE_PRECEDENCE.index(pb[0].source), pb[1] != "own"),
+        )
+        stale = (self.on - price.on).days > valuation.STALE_AFTER_DAYS
+        past = self.on > self.position.reconciled_through
+        return PricedAsExpect(
+            price=PriceRef(on=price.on, source=price.source),
+            priced_by=by,  # type: ignore[arg-type]
+            stale=stale,
+            value_eur=(
+                None
+                if past
+                else (self.position.units * price.price_eur).quantize(_CENT, ROUND_HALF_UP)
+            ),
+            not_valued_reason=E.VALUATION_NOT_VALUED if past else None,
+        )
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if self.recompute() != self.expect:
+            raise ValueError(f"{self.id}: D180 (3) gives {self.recompute()}")
+        return self
+
+
 class ValuationFixture(_Fixture):
     cases: list[ValuationCase] = Field(min_length=1)
     fx_cases: list[FxCase] = Field(min_length=1)
+    priced_as_cases: list[PricedAsCase] = Field(default_factory=list)  # phase 7, appended
 
 
 # --- issuer_nav.yaml: the issuer adapters' rows as prices (D174) -----------------------------

@@ -377,6 +377,9 @@ class GroupRoutingInput(Schema):
     review_routing.yaml `chain_cases`."""
 
     kind: GroupKind
+    # The group moves nothing but its own fee (a token account closed, its rent back): D186
+    # (1)'s „a fee“, confirmed like a failed group, also on a first sync.
+    fee_only: bool = False
     # A public or workspace decoder row named the program (a wrap: the registry's wrap pair).
     decoder_listed: bool = False
     # Every leg that carries value has a price for the group's Berlin day (D186 (1) „both

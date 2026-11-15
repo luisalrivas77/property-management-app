@@ -303,8 +303,9 @@ def route(item: RoutingInput) -> Routing:
 
 def route_group(item: GroupRoutingInput) -> Routing:
     """D186 (1): a chain movement group confirmed by code or sent to a person; never a model
-    answer (there is none on a chain). Fixture: phase 2 review_routing.yaml `chain_cases`,
-    whose header states the order; built in step 2."""
+    answer (there is none on a chain). Fixture: phase 2 review_routing.yaml `chain_cases`;
+    the order is stated in the comment above that key (and replayed by
+    tests/fixture_models_phase2.route_group_reference); built in step 2."""
     raise NotImplementedError("phase 7 step 2")
 
 
