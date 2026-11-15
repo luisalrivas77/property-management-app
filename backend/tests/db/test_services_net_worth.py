@@ -26,6 +26,8 @@ from hausbuch.db.tables import price as price_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import valuation_snapshot as snapshot_table
+from hausbuch.jobs.document_read import JobDeps
+from hausbuch.jobs.month_end import run_month_end
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.common import Fraction as ShareFraction
 from hausbuch.schemas.enums import AccountKind, ImportStatus
@@ -536,3 +538,33 @@ def test_the_button_stores_the_last_month_end_in_berlin_time(run, read, fresh_wo
         ws, net_worth.capture_last_month_end, now=datetime(2026, 11, 30, 23, 30, tzinfo=UTC)
     )
     assert result.as_of == date(2026, 11, 30) and result.outcome is SnapshotOutcome.WRITTEN
+
+
+def test_the_month_end_task_stores_each_workspace_once(run, read, app_engine, fresh_workspaces):
+    ws, empty = fresh_workspaces
+    _ledger(run, ws)
+    deps = JobDeps(
+        engine=app_engine,
+        settings=None,
+        blob_store=None,
+        model_client=None,
+        clock=lambda: datetime(2026, 11, 1, 5, 0, 3, tzinfo=UTC),
+    )
+    first = run_month_end(deps, workspace_ids=[ws, empty])
+    assert first.as_of == "2026-10-31"
+    assert first.outcomes == {"written": 1, "empty": 1} and first.failed_workspaces == 0
+    again = run_month_end(deps, workspace_ids=[ws, empty])
+    assert again.outcomes == {"unchanged": 1, "empty": 1}
+    assert len(_snapshot_rows(read, ws)) == 7 and _snapshot_rows(read, empty) == []
+    [stored] = read(ws, net_worth.list_runs)
+    assert stored.as_of == ON
+    e = event_table.c
+    actors = read(
+        ws,
+        lambda conn: conn.execute(
+            select(e.actor_type, e.actor_id).where(
+                e.type == EventType.WORKSPACE_VALUATION_SNAPSHOT_WRITTEN.value
+            )
+        ).all(),
+    )
+    assert [tuple(a) for a in actors] == [("system", "month_end")]

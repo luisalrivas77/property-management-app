@@ -48,7 +48,7 @@ while its estimate follows a later change of the scenario's „Wert heute“ or 
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from fractions import Fraction
 from uuid import UUID, uuid4
@@ -499,8 +499,11 @@ def net_worth(conn: Connection, on: date) -> NetWorth:
 # --- month-ends -----------------------------------------------------------------------------
 
 
-def _latest_run(conn: Connection, as_of: date | None = None) -> NetWorthRun | None:
-    """The newest run of `as_of`, or of the latest month-end stored when None."""
+def _runs(
+    conn: Connection, *, as_of: date | None = None, run_id: UUID | None = None
+) -> list[NetWorthRun]:
+    """The stored runs, the newest month-end first and within one month-end the newest
+    capture first."""
     s = snapshot_table.c
     query = select(
         s.net_worth_run_id,
@@ -510,17 +513,26 @@ def _latest_run(conn: Connection, as_of: date | None = None) -> NetWorthRun | No
     ).group_by(s.net_worth_run_id, s.as_of)
     if as_of is not None:
         query = query.where(s.as_of == as_of)
-    row = conn.execute(
-        query.order_by(s.as_of.desc(), func.min(s.created_at).desc(), s.net_worth_run_id).limit(1)
-    ).one_or_none()
-    if row is None:
-        return None
-    return NetWorthRun(
-        net_worth_run_id=row.net_worth_run_id,
-        as_of=row.as_of,
-        captured_at=row.captured_at,
-        rows=row.rows,
-    )
+    if run_id is not None:
+        query = query.where(s.net_worth_run_id == run_id)
+    rows = conn.execute(
+        query.order_by(s.as_of.desc(), func.min(s.created_at).desc(), s.net_worth_run_id)
+    ).all()
+    return [
+        NetWorthRun(
+            net_worth_run_id=r.net_worth_run_id,
+            as_of=r.as_of,
+            captured_at=r.captured_at.astimezone(UTC),
+            rows=r.rows,
+        )
+        for r in rows
+    ]
+
+
+def _latest_run(conn: Connection, as_of: date | None = None) -> NetWorthRun | None:
+    """The newest run of `as_of`, or of the latest month-end stored when None."""
+    runs = _runs(conn, as_of=as_of)
+    return runs[0] if runs else None
 
 
 def _stored(conn: Connection, run_id: UUID) -> list:
@@ -595,26 +607,13 @@ def overview(conn: Connection, today: date) -> NetWorthOverview:
 
 def list_runs(conn: Connection) -> list[NetWorthRun]:
     """GET /net-worth/snapshots: every run, the newest month-end first."""
-    s = snapshot_table.c
-    rows = conn.execute(
-        select(
-            s.net_worth_run_id,
-            s.as_of,
-            func.min(s.created_at).label("captured_at"),
-            func.count().label("rows"),
-        )
-        .group_by(s.net_worth_run_id, s.as_of)
-        .order_by(s.as_of.desc(), func.min(s.created_at).desc(), s.net_worth_run_id)
-    ).all()
-    return [
-        NetWorthRun(
-            net_worth_run_id=r.net_worth_run_id,
-            as_of=r.as_of,
-            captured_at=r.captured_at,
-            rows=r.rows,
-        )
-        for r in rows
-    ]
+    return _runs(conn)
+
+
+def stored_run(conn: Connection, run_id: UUID) -> NetWorth | None:
+    """GET /net-worth/snapshots/{id}: one stored run, None when unknown."""
+    runs = _runs(conn, run_id=run_id)
+    return month_end_figure(conn, runs[0]) if runs else None
 
 
 def _lock(ctx: CommandContext) -> None:
@@ -687,7 +686,12 @@ def capture_month_end(
     return SnapshotResult(
         outcome=SnapshotOutcome.WRITTEN if existing is None else SnapshotOutcome.RECAPTURED,
         as_of=as_of,
-        run=NetWorthRun(net_worth_run_id=run_id, as_of=as_of, captured_at=ctx.now, rows=len(rows)),
+        run=NetWorthRun(
+            net_worth_run_id=run_id,
+            as_of=as_of,
+            captured_at=ctx.now.astimezone(UTC),
+            rows=len(rows),
+        ),
         unvalued_positions=figure.unvalued_positions,
     )
 
@@ -711,4 +715,5 @@ __all__ = [
     "net_worth",
     "overview",
     "shares_on",
+    "stored_run",
 ]

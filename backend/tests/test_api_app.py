@@ -101,6 +101,7 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
         "loans",
         "documents",
         "proposals",
+        "net_worth",  # before accounts: GET /accounts/auto-rate (phase 6 step 6)
         "accounts",
         "assets",
         "bank_sync",

@@ -1461,6 +1461,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/auto-rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Accounts Auto Rate
+         * @description Per private bank account and in total; the criterion leaves each account's first
+         *     import out (D172).
+         */
+        get: operations["accounts_auto_rate_api_accounts_auto_rate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/net-worth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Net Worth Get */
+        get: operations["net_worth_get_api_net_worth_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/net-worth/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Net Worth Overview */
+        get: operations["net_worth_overview_api_net_worth_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/net-worth/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Net Worth Snapshots */
+        get: operations["net_worth_snapshots_api_net_worth_snapshots_get"];
+        put?: never;
+        /**
+         * Net Worth Snapshot
+         * @description 200 in every case: the outcome says whether a run was written (written, recaptured)
+         *     or not (unchanged, empty).
+         */
+        post: operations["net_worth_snapshot_api_net_worth_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/net-worth/snapshots/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Net Worth Snapshot Get */
+        get: operations["net_worth_snapshot_get_api_net_worth_snapshots__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts": {
         parameters: {
             query?: never;
@@ -3966,6 +4060,87 @@ export interface components {
             params?: {
                 [key: string]: string;
             };
+        };
+        /**
+         * AutoRate
+         * @description GET /accounts/auto-rate?month=YYYY-MM (D172): per private bank account and in total.
+         *     `criterion_*` count only the allocations outside each account's first import; `met`
+         *     compares their ratio with the target, None when there are none (the criterion is read on
+         *     the second calendar month after the first import).
+         */
+        AutoRate: {
+            /** Month */
+            month: string;
+            /** Accounts */
+            accounts?: components["schemas"]["AutoRateAccount"][];
+            /** Confirmed */
+            confirmed: number;
+            /** Auto */
+            auto: number;
+            /** Ratio */
+            ratio?: string | null;
+            /**
+             * Target
+             * @default 0.80
+             */
+            target: string;
+            /**
+             * Criterion Confirmed
+             * @default 0
+             */
+            criterion_confirmed: number;
+            /**
+             * Criterion Auto
+             * @default 0
+             */
+            criterion_auto: number;
+            /** Criterion Ratio */
+            criterion_ratio?: string | null;
+            /** Met */
+            met?: boolean | null;
+        };
+        /**
+         * AutoRateAccount
+         * @description A private bank account's confirmed allocations of the month, by the line's booking
+         *     day (lines excluded as duplicates left out): `auto` those whose method is rule,
+         *     matcher_transfer or document_match, or an llm answer the routing confirmed (confirmed_by
+         *     null); `by_routing` splits them by who confirmed (auto_confirm: no person, person: a
+         *     member). `first_import`: of `confirmed`, those on lines of the account's first import
+         *     (the history, D26: the model never auto-confirms there), which D172 leaves out of the
+         *     criterion.
+         */
+        AutoRateAccount: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Label */
+            label: string;
+            /** Confirmed */
+            confirmed: number;
+            /** Auto */
+            auto: number;
+            /** By Method */
+            by_method?: {
+                [key: string]: number;
+            };
+            /** By Routing */
+            by_routing?: {
+                [key: string]: number;
+            };
+            /** Ratio */
+            ratio?: string | null;
+            /**
+             * First Import
+             * @default 0
+             */
+            first_import: number;
+            /**
+             * First Import Auto
+             * @default 0
+             */
+            first_import_auto: number;
         };
         /**
          * BalanceCorrectionBody
@@ -7560,6 +7735,169 @@ export interface components {
             count: number;
         };
         /**
+         * NetWorth
+         * @description GET /net-worth?on=: NetWorth(on) of D167 (4) on read, or a stored month-end (`run`
+         *     set). `by_owner` covers what has shares: an account or a property without shares
+         *     counts in its class and the total, in no owner, and is listed in `unassigned`.
+         *     `property_net` is the properties' estimate less their loans (mockup 07's „Immobilie
+         *     (netto)“); the class `liabilities` holds the loans and a credit card's balance.
+         */
+        NetWorth: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Total */
+            total: string;
+            /** By Class */
+            by_class: {
+                [key: string]: string;
+            };
+            /** By Owner */
+            by_owner: {
+                [key: string]: string;
+            };
+            /** Unassigned */
+            unassigned?: string[];
+            /** Property Estimate */
+            property_estimate: string;
+            /** Loan Balances */
+            loan_balances: string;
+            /** Property Net */
+            property_net: string;
+            /** Lines */
+            lines?: components["schemas"]["NetWorthLine"][];
+            /** Todos */
+            todos?: components["schemas"]["NetWorthTodo"][];
+            /**
+             * Stale Positions
+             * @default 0
+             */
+            stale_positions: number;
+            /**
+             * Unvalued Positions
+             * @default 0
+             */
+            unvalued_positions: number;
+            run?: components["schemas"]["NetWorthRun"] | null;
+        };
+        /**
+         * NetWorthClass
+         * @description Mockup 07's bar (D167 (4)).
+         * @enum {string}
+         */
+        NetWorthClass: "bank" | "depot" | "crypto" | "property" | "liabilities";
+        /**
+         * NetWorthLine
+         * @description One figure of the net worth, asset by asset (D172: the month-end is compared with the
+         *     household's spreadsheet line by line). `value_eur` None: not valued, counted nowhere,
+         *     `not_valued_reason` says why. A balance's `as_of` is the last day a reconciled statement
+         *     covers (D167 (4)); a position's price has its own day. `estimate`: the property's value
+         *     and a loan's balance, both labelled as estimates on the screen.
+         */
+        NetWorthLine: {
+            kind: components["schemas"]["NetWorthLineKind"];
+            net_worth_class: components["schemas"]["NetWorthClass"];
+            /** Label */
+            label: string;
+            /** Account Id */
+            account_id?: string | null;
+            account_kind?: components["schemas"]["AccountKind"] | null;
+            /** Account Label */
+            account_label?: string | null;
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Property Id */
+            property_id?: string | null;
+            /** Loan Id */
+            loan_id?: string | null;
+            /** Units */
+            units?: string | null;
+            /** Price Eur */
+            price_eur?: string | null;
+            price_source?: components["schemas"]["PriceSourceKind"] | null;
+            /** Price On */
+            price_on?: string | null;
+            /** Value Eur */
+            value_eur?: string | null;
+            /** As Of */
+            as_of?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /**
+             * Estimate
+             * @default false
+             */
+            estimate: boolean;
+            /** Note */
+            note?: string | null;
+            /** Not Valued Reason */
+            not_valued_reason?: string | null;
+        };
+        /**
+         * NetWorthLineKind
+         * @enum {string}
+         */
+        NetWorthLineKind: "account" | "position" | "property" | "loan";
+        /**
+         * NetWorthOverview
+         * @description GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest
+         *     stored month-end, None before the first; `month_end_due` the last month-end when no run
+         *     holds it yet (the button „Monatsabschluss festhalten“).
+         */
+        NetWorthOverview: {
+            today: components["schemas"]["NetWorth"];
+            month_end?: components["schemas"]["NetWorth"] | null;
+            /** Month End Due */
+            month_end_due?: string | null;
+        };
+        /**
+         * NetWorthRun
+         * @description One stored month-end: the valuation_snapshot rows of one net_worth_run_id.
+         */
+        NetWorthRun: {
+            /**
+             * Net Worth Run Id
+             * Format: uuid
+             */
+            net_worth_run_id: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /** Rows */
+            rows: number;
+        };
+        /**
+         * NetWorthTodo
+         * @description A gap in the figure as a plain to-do with the button or page that closes it
+         *     (principle 7).
+         */
+        NetWorthTodo: {
+            code: components["schemas"]["NetWorthTodoCode"];
+            /** Text */
+            text: string;
+            /** Action */
+            action: string;
+            /** Href */
+            href: string;
+        };
+        /**
+         * NetWorthTodoCode
+         * @enum {string}
+         */
+        NetWorthTodoCode: "net_worth.balance_unreconciled" | "net_worth.price_missing" | "net_worth.price_stale" | "net_worth.position_not_reconciled" | "net_worth.ownership_missing" | "net_worth.property_shares_missing" | "net_worth.loan_not_valued";
+        /**
          * NoPayFact
          * @description „Kein Arbeitslohn in <Jahr>“ (D195): the owner had no pay that year (e.g. a whole year of
          *     parental leave). The row is the statement; its value carries nothing.
@@ -9763,6 +10101,29 @@ export interface components {
             booking_date: string;
             /** Amount */
             amount: string;
+        };
+        /**
+         * SnapshotOutcome
+         * @enum {string}
+         */
+        SnapshotOutcome: "written" | "recaptured" | "unchanged" | "empty";
+        /**
+         * SnapshotResult
+         * @description POST /net-worth/snapshots: what „Monatsabschluss festhalten“ did.
+         */
+        SnapshotResult: {
+            outcome: components["schemas"]["SnapshotOutcome"];
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            run?: components["schemas"]["NetWorthRun"] | null;
+            /**
+             * Unvalued Positions
+             * @default 0
+             */
+            unvalued_positions: number;
         };
         /** SpecialExpenseFact */
         SpecialExpenseFact: {
@@ -14699,6 +15060,186 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Proposal"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    accounts_auto_rate_api_accounts_auto_rate_get: {
+        parameters: {
+            query: {
+                month: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoRate"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    net_worth_get_api_net_worth_get: {
+        parameters: {
+            query?: {
+                on?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetWorth"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    net_worth_overview_api_net_worth_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetWorthOverview"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    net_worth_snapshots_api_net_worth_snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetWorthRun"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    net_worth_snapshot_api_net_worth_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotResult"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    net_worth_snapshot_get_api_net_worth_snapshots__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetWorth"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

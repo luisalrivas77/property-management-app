@@ -130,29 +130,38 @@ class SnapshotResult(Schema):
 
 
 class AutoRateAccount(Schema):
-    """A private bank account's confirmed allocations of the month (by the line's booking
-    day): `auto` those whose method is rule, matcher_transfer or document_match, or an llm
-    answer confirmed by the routing (confirmed_by null). `first_month`: the account's first
-    month with lines, excluded from the criterion by D172."""
+    """A private bank account's confirmed allocations of the month, by the line's booking
+    day (lines excluded as duplicates left out): `auto` those whose method is rule,
+    matcher_transfer or document_match, or an llm answer the routing confirmed (confirmed_by
+    null); `by_routing` splits them by who confirmed (auto_confirm: no person, person: a
+    member). `first_import`: of `confirmed`, those on lines of the account's first import
+    (the history, D26: the model never auto-confirms there), which D172 leaves out of the
+    criterion."""
 
     account_id: UUID
     label: str
     confirmed: int = Field(ge=0)
     auto: int = Field(ge=0)
     by_method: dict[str, int] = Field(default_factory=dict)
-    by_routing: dict[str, int] = Field(default_factory=dict)  # auto_confirm, person
+    by_routing: dict[str, int] = Field(default_factory=dict)
     ratio: Decimal | None = None  # auto ÷ confirmed, four places; None without any
-    first_month: bool = False
+    first_import: int = Field(default=0, ge=0)
+    first_import_auto: int = Field(default=0, ge=0)
 
 
 class AutoRate(Schema):
+    """GET /accounts/auto-rate?month=YYYY-MM (D172): per private bank account and in total.
+    `criterion_*` count only the allocations outside each account's first import; `met`
+    compares their ratio with the target, None when there are none (the criterion is read on
+    the second calendar month after the first import)."""
+
     month: str
     accounts: list[AutoRateAccount] = Field(default_factory=list)
     confirmed: int = Field(ge=0)
     auto: int = Field(ge=0)
     ratio: Decimal | None = None
     target: Decimal = Decimal("0.80")
-    # The total over the accounts not in their first month (D172), and whether it meets the
-    # target; None when every account is in its first month or nothing is confirmed.
+    criterion_confirmed: int = Field(default=0, ge=0)
+    criterion_auto: int = Field(default=0, ge=0)
     criterion_ratio: Decimal | None = None
     met: bool | None = None
