@@ -1179,10 +1179,7 @@ def derived_opening(conn: Connection, account: Row, import_id: UUID) -> tuple[De
     if row.declared_opening is not None:
         if row.error_code not in (rules.OPENING_MISMATCH, rules.BEFORE_ANCHOR):
             return None
-        if any_reconciled and not (
-            row.declared_closing == account.opening_balance
-            and row.last_booking_on <= account.opening_balance_on
-        ):
+        if any_reconciled and not _chains_to_anchor(rows, row, account):
             return None
         return (
             row.declared_opening.quantize(Decimal("0.01")),
@@ -1200,6 +1197,38 @@ def derived_opening(conn: Connection, account: Row, import_id: UUID) -> tuple[De
         (row.declared_closing - sums.stored_through).quantize(Decimal("0.01")),
         account.opening_balance_on,
     )
+
+
+def _chains_to_anchor(rows: Sequence[Row], first: Row, account: Row) -> bool:
+    """The imports that end on or before the anchor day, from `first` (the earliest import),
+    form one unbroken chain to the anchor: each declared closing is the next one's declared
+    opening, and the last closing is the anchor balance (15 Nov 2026: an account created from
+    a later statement and then given its earlier months by D176 (3)'s follow had them all
+    before the anchor, and the earliest's offer was refused because its own closing was not
+    the anchor). A gap or a spanning statement breaks the chain, so nothing is bridged."""
+    before = sorted(
+        (
+            r
+            for r in rows
+            if r.first_booking_on is not None
+            and r.last_booking_on is not None
+            and r.last_booking_on <= account.opening_balance_on
+        ),
+        key=lambda r: (r.first_booking_on, r.last_booking_on),
+    )
+    if not before or before[0].id != first.id:
+        return False
+    if any(
+        r.first_booking_on is not None
+        and r.last_booking_on is not None
+        and r.first_booking_on <= account.opening_balance_on < r.last_booking_on
+        for r in rows
+    ):
+        return False
+    for earlier, later in zip(before, before[1:], strict=False):
+        if earlier.declared_closing is None or earlier.declared_closing != later.declared_opening:
+            return False
+    return before[-1].declared_closing == account.opening_balance
 
 
 _DERIVABLE_CODES = (rules.UNRECONCILED, rules.OPENING_MISMATCH, rules.BEFORE_ANCHOR)

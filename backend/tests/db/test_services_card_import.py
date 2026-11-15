@@ -517,3 +517,39 @@ def test_an_earlier_statement_uploaded_later_extends_the_chain_backwards(
 
     run(ws, opening_from_closing, first.id, now=T0)
     assert {i.status for i in read(ws, list_imports, account.id)} == {ImportStatus.RECONCILED}
+
+
+def test_two_earlier_statements_followed_onto_an_account_offer_the_earliest_opening(
+    run, read, blob_store, fresh_workspaces
+):
+    """An account created from a later statement, then the two months before it imported
+    (statements follow their account, D176 (3)): both start before the anchor, and only the
+    earlier one prints the opening that heads the chain. Its offer reaches the anchor through
+    the month between, each closing the next one's opening, so taking it reconciles all three;
+    the month between offers nothing (a later start never moves the anchor back far enough)."""
+    ws, _ = fresh_workspaces
+    account = _card(run, ws, opening_balance=Decimal("0.00"), opening_balance_on=date(2025, 12, 31))
+    third = _import(run, blob_store, ws, account.id, _case("refund"))
+    run(ws, opening_from_closing, third.id, now=T0)
+    first = _import(run, blob_store, ws, account.id, _case("plain_month"), 1)
+    second = _import(run, blob_store, ws, account.id, _case("foreign_currency"), 2)
+    assert {first.error_code, second.error_code} == {rules.BEFORE_ANCHOR}
+    shown = _by_id(read, ws, account.id)
+    assert shown[first.id].derived_opening_balance == Decimal("-1250.40")
+    assert shown[first.id].derived_opening_balance_on == first.first_booking_on - timedelta(days=1)
+    assert shown[second.id].derived_opening_balance is None
+
+    run(ws, opening_from_closing, first.id, now=T0)
+    assert {i.status for i in read(ws, list_imports, account.id)} == {ImportStatus.RECONCILED}
+
+
+def test_a_gap_before_the_anchor_offers_nothing(run, read, blob_store, fresh_workspaces):
+    """The chain to the anchor must be unbroken: with the month between missing, the
+    earliest statement's closing is not the anchor and nothing is offered."""
+    ws, _ = fresh_workspaces
+    account = _card(run, ws, opening_balance=Decimal("0.00"), opening_balance_on=date(2025, 12, 31))
+    third = _import(run, blob_store, ws, account.id, _case("refund"))
+    run(ws, opening_from_closing, third.id, now=T0)
+    first = _import(run, blob_store, ws, account.id, _case("plain_month"), 1)
+    assert first.error_code == rules.BEFORE_ANCHOR
+    assert _by_id(read, ws, account.id)[first.id].derived_opening_balance is None
