@@ -729,7 +729,13 @@ def inbox(
         section_ms[name] = round((time.perf_counter() - began) * 1000, 1)
         section_items[name] = len(found)
         items += found
-    hidden = _lines_on_cards(conn, items) + _lines_on_return_cards(items)
+    # The return cards decide first: a transfer card they drop no longer answers its
+    # candidates, so only the transfer cards that stay hide lines (else a candidate of a
+    # dropped card would be listed nowhere).
+    on_return_cards = _lines_on_return_cards(items)
+    dropped = {id(item) for item in on_return_cards}
+    staying = [item for item in items if id(item) not in dropped]
+    hidden = on_return_cards + _lines_on_cards(conn, staying)
     if hidden:
         gone = {id(item) for item in hidden}
         items = [item for item in items if id(item) not in gone]

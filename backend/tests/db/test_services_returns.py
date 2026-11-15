@@ -18,11 +18,13 @@ from db.matching_support import ACCOUNT_IBAN, World
 from db.test_cli_evals_report import _owner_url
 from db.test_services_private_matching import NOW, PRIVATE_IBAN, Private
 from db.test_services_transfers import FRIEND_IBAN, SAVINGS_IBAN, _savings
-from sqlalchemy import select
+from sqlalchemy import insert, select
 
 from hausbuch import cli
+from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.rules.errors import TRANSFER_RETURN_INVALID
 from hausbuch.schemas.allocation import (
@@ -261,6 +263,77 @@ def test_a_persons_other_answer_on_the_credit_ends_the_card(world, private):
     _debit, credit = _recall(world, private)
     _answer(world, credit, "3200.00", C.HH_OTHER_INCOME)
     assert _cards(world) == []
+
+
+def test_a_dropped_transfer_cards_candidate_stays_listed(world, private):
+    """Review fix (15 Nov 2026): the credit's „Überweisung ohne Gegenstück“ card offers another
+    own account's equal debit; the return card drops that transfer card, so the debit is
+    answered on no card and keeps its own entry under Zahlungen zuordnen."""
+    savings = _savings(world)
+    debit = private.line(SENT, "-3200.00", iban=FRIEND_IBAN, name="Beispiel Bau", purpose=ORIGINAL)
+    _answer(world, debit, "-3200.00", C.HH_PROPERTY_COST, method=AllocationMethod.LLM)
+    credit = private.line(BACK, "3200.00", iban=SAVINGS_IBAN, name="A Muster", purpose=RECALL)
+    _match(world, credit)
+    assert _rows(world, credit) == [("internal_transfer_in", "confirmed")]
+    other = savings.line(date(2026, 7, 10), "-3200.00", name="Beispiel Handwerk", purpose="Re 77")
+    _answer(world, other, "-3200.00", C.HH_HOUSING, method=AllocationMethod.LLM)
+    items = _inbox(world)
+    [card] = [i for i in items if i.kind is InboxItemKind.RETURNED_PAYMENT]
+    assert [c.id for c in card.returned.candidates] == [debit]
+    assert not [i for i in items if i.kind in TRANSFER_CARDS]
+    [listed] = [i for i in items if i.transaction_id == other]
+    assert listed.kind is InboxItemKind.ALLOCATION_PROPOSED
+
+
+def test_a_credit_a_person_answered_otherwise_is_refused(world, private):
+    """Review fix (15 Nov 2026): the write accepts only what the read offers; a person's answer
+    on the credit (a refund) ends the card, and a stale press of its button changes nothing."""
+    debit = private.line(SENT, "-80.00", name="Beispiel Versand", purpose="Bestellung 4711")
+    _answer(world, debit, "-80.00", C.HH_CLOTHING, method=AllocationMethod.LLM)
+    credit = private.line(BACK, "80.00", name="Beispiel Versand", purpose="Retoure 4711")
+    assert len(_cards(world)) == 1
+    _answer(world, credit, "80.00", C.HH_REFUND)
+    assert _cards(world) == []
+    with pytest.raises(RuleViolationError) as refused:
+        _book(world, debit, credit)
+    assert refused.value.codes == (TRANSFER_RETURN_INVALID,)
+    assert _rows(world, credit) == [("hh_refund", "confirmed")]
+    assert _rows(world, debit) == [("hh_clothing", "proposed")]
+    assert _links(world) == []
+
+
+def test_a_credit_awaiting_its_duplicate_question_gets_no_card(world, private):
+    """Review fix (15 Nov 2026): the later line of an open possible duplicate is listed nowhere
+    until the duplicate question is answered, so no card names it and the button refuses it."""
+    debit = private.line(SENT, "-80.00", name="Beispiel Versand", purpose="Bestellung 4711")
+    earlier = private.line(BACK, "80.00", name="Beispiel Versand", purpose="Gutschrift 4711")
+    credit = private.line(BACK, "80.00", name="Beispiel Versand", purpose="Retoure 4711")
+    assert len(_cards(world)) == 1
+    with workspace_transaction(world.engine, world.ws) as conn:
+        conn.execute(
+            insert(duplicate_table).values(
+                workspace_id=world.ws,
+                transaction_id=earlier,
+                other_transaction_id=credit,
+                status="open",
+                created_at=world.now,
+            )
+        )
+    assert _cards(world) == []
+    with pytest.raises(RuleViolationError) as refused:
+        _book(world, debit, credit)
+    assert refused.value.codes == (TRANSFER_RETURN_INVALID,)
+    assert _rows(world, debit) == [] and _rows(world, credit) == []
+    assert _links(world) == []
+
+
+def test_a_return_word_wrapped_across_purpose_lines_still_reads(world, private):
+    """Review fix (15 Nov 2026): the database's first filter ignores spacing as the rule does,
+    so a return word the bank wrapped across two purpose lines still gives the card."""
+    debit = private.line(SENT, "-3200.00", iban=FRIEND_IBAN, purpose="Bestellung 4711")
+    private.line(BACK, "3200.00", iban=FRIEND_IBAN, purpose="RUE CKUEBERWEISUNG Bestellung 4711")
+    [card] = _cards(world)
+    assert [c.id for c in card.returned.candidates] == [debit]
 
 
 # --- What is no returned payment ------------------------------------------------------------

@@ -27,9 +27,10 @@ from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, time
 from uuid import UUID
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, exists, func, select
 
 from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules.errors import TRANSFER_RETURN_INVALID
@@ -38,7 +39,7 @@ from hausbuch.rules.matching import transfer_link_kind
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.bank import ReturnedPartner
-from hausbuch.schemas.enums import AccountPurpose, ImportStatus
+from hausbuch.schemas.enums import AccountPurpose, DuplicateStatus, ImportStatus
 from hausbuch.schemas.household import (
     OpenReturn,
     ReturnedPaymentCreate,
@@ -52,7 +53,11 @@ from .context import CommandContext
 from .errors import ConflictError, NotFoundError, RuleViolationError
 
 # A cheap first filter in the database for rules.household.returns.reads_as_return, which
-# decides: every return word starts with one of these stems (ü, Ü, ue or a plain u).
+# decides. It must never be stricter than the rule: every return word, as the rule reads it
+# (case ignored, ü written ü or ue), starts with one of these stems, and it is matched against
+# the purpose with all whitespace removed, since the rule ignores spacing (a word wrapped across
+# purpose lines still reads). The plain u it also lets through („ruck“) reads as no return word;
+# the rule drops such a line.
 _STEMS = r"r(ü|Ü|ue|u)ck|recall|retour"
 _TRANSFER_IN = frozenset({AllocationCategory.INTERNAL_TRANSFER_IN})
 
@@ -66,8 +71,14 @@ QUESTION_SEVERAL = "Welche Abbuchung kam zurück?"
 
 
 def _lines(conn: Connection, *where) -> list[ReturnLine]:  # noqa: ANN002
-    """The private accounts' lines that count (a reconciled import, not merged away)."""
+    """The private accounts' lines that count (a reconciled import, not merged away, not the
+    later line of an open possible duplicate, as review._listed_lines: no card until the
+    duplicate question is answered)."""
     t, acc = transaction_table.c, account_table.c
+    awaiting = exists().where(
+        duplicate_table.c.other_transaction_id == t.id,
+        duplicate_table.c.status == DuplicateStatus.OPEN.value,
+    )
     rows = conn.execute(
         select(
             t.id,
@@ -84,6 +95,7 @@ def _lines(conn: Connection, *where) -> list[ReturnLine]:  # noqa: ANN002
             acc.purpose == AccountPurpose.PRIVATE.value,
             t.excluded_as_duplicate_of.is_(None),
             import_table.c.status == ImportStatus.RECONCILED.value,
+            ~awaiting,
             *where,
         )
         .order_by(t.booking_date, t.id)
@@ -130,7 +142,8 @@ def _candidates(conn: Connection, credit: ReturnLine, linked: set[UUID]) -> list
 def _pairs(conn: Connection) -> list[tuple[UUID, list[UUID]]]:
     """Every waiting returned payment: the credit and the debits it may return."""
     t = transaction_table.c
-    credits = _lines(conn, t.amount > 0, t.purpose.op("~*")(_STEMS))
+    unspaced = func.regexp_replace(t.purpose, r"\s", "", "g")
+    credits = _lines(conn, t.amount > 0, unspaced.op("~*")(_STEMS))
     if not credits:
         return []
     linked = transfers._linked_ids(conn)
@@ -211,7 +224,10 @@ def book_return(
     an unknown line; 409 when either line is linked to another (also when booking one of them
     let the transfer matcher link it elsewhere: nothing is written); 422 transfer.return_invalid
     when the two are no returned payment of one private account (the credit's purpose and the
-    equal debit within 30 days before, rules.household.returns)."""
+    equal debit within 30 days before, rules.household.returns), and when the card is not
+    offered: the credit holds a person's or a rule's answer other than a transfer in, or either
+    line is the later line of an open possible duplicate (the write accepts what the read
+    offers)."""
     transfers._lock(ctx)
     conn = ctx.conn
     out = transfers._one_leg(conn, TransferLegSource.TRANSACTION, body.out_transaction_id)
@@ -232,13 +248,15 @@ def book_return(
         credit is not None
         and out.purpose is AccountPurpose.PRIVATE
         and out.leg.account_id == in_.leg.account_id
+        and not _answered_otherwise(conn, credit.id)
         and out.leg.id in _candidates(conn, credit, linked)
     )
     if not valid:
         raise RuleViolationError(
             [TRANSFER_RETURN_INVALID],
             "the credit returns no such debit of its account (a return word in its purpose, "
-            "the same amount within 30 days before)",
+            "the same amount within 30 days before), or no card offers this pair (the credit "
+            "answered otherwise, or a line awaiting its duplicate question)",
         )
     for leg in (out, in_):
         transfers._rebook(ctx, leg, iban_key)

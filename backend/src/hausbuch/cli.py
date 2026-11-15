@@ -772,7 +772,7 @@ def _parser() -> argparse.ArgumentParser:
         "pair-returns",
         help="count the returned payments (a recalled transfer credited back) the private "
         "accounts' imported lines hold, as Zu prüfen shows them; never books (once, after the "
-        "deploy of D162 amended (6))",
+        "deploy of D162 amended (7))",
     )
     returned.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     returned.add_argument(
