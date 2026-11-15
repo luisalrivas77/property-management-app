@@ -296,13 +296,20 @@ class SolanaRpc:
         and the classifier (rules/chain/solana.classify_solana reads the raw record, never the
         fields here). `transfers` and `fee` are right only when `own` holds every own address
         (a payment between two of them is no transfer out), and a token row without an owner
-        needs `own_token_accounts` (solana.solana_deltas raises wallet.record_unreadable
-        otherwise)."""
+        needs `own_token_accounts`: a record whose token legs cannot be read is a
+        ChainSourceError `wallet.record_unreadable`, as every source's error (its cause names
+        the signature only)."""
         keys = solana.account_keys(record)
         payer = bool(keys) and keys[0] in own
         fee = cast(int, cast(Mapping[str, JsonValue], record["meta"])["fee"])
+        try:
+            deltas = solana.solana_deltas(record, own, own_token_accounts)
+        except E.RuleError as exc:
+            if exc.code != E.WALLET_RECORD_UNREADABLE:
+                raise
+            raise ChainSourceError(E.WALLET_RECORD_UNREADABLE) from exc
         transfers = []
-        for d in solana.solana_deltas(record, own, own_token_accounts):
+        for d in deltas:
             if d.units == 0:
                 continue
             side = d.token_account or next(iter(sorted(own)))

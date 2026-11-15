@@ -297,6 +297,10 @@ def _balances(
     post = [int(cast(int, v)) for v in _list(meta["postBalances"])]
     if len(keys) != len(pre) or len(keys) != len(post):
         raise ValueError("a balance per account key")
+    if failed(tx):
+        # A failed transaction reverts everything but its fee: no token moved, so its token
+        # rows are not read (a record that lacks them is still readable).
+        return _Balances(keys, pre, post, [], [], int(cast(int, meta["fee"])))
     raw_pre = _list(meta.get("preTokenBalances"))
     raw_post = _list(meta.get("postTokenBalances"))
     if not raw_pre and not raw_post and _calls_a_token_program(tx):

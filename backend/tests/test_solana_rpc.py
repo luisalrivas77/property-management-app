@@ -28,6 +28,7 @@ from hausbuch.services.chain.solana_rpc import (
 SECRET = "k3yInv3nt3dF0rTh1sT3st"
 URL = f"https://rpc.example.invalid/v1/{SECRET}?api-key={SECRET}"
 A = "BU8oH89B6z89SV3HfU1FBa5p8aE43HhZz3F6BQBtjsJP"
+F = "ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J"
 USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 CASES = {c.id: c for c in phase7.load("solana_tx").cases}
 
@@ -234,9 +235,27 @@ def test_transactions_read_with_every_own_account_and_the_token_accounts():
         (USDC, 20000000, own_account)
     ]
     rpc, _, _ = _rpc(answers)
-    with pytest.raises(E.RuleError) as raised:
+    # As every source's error: a ChainSourceError with the code, its cause naming the
+    # signature only.
+    with pytest.raises(ChainSourceError) as raised:
         rpc.transactions(A, None)
     assert raised.value.code == E.WALLET_RECORD_UNREADABLE
+    assert _sig("spl_out")["signature"] in str(raised.value.__cause__)
+    assert own_account not in str(raised.value.__cause__) and A not in str(raised.value)
+
+
+def test_a_payment_between_two_own_addresses_is_no_transfer_with_every_own_address():
+    """transactions() with `own`: A's send to F is no transfer out when F is A's too."""
+    answers = {
+        "getSignaturesForAddress": [(200, [_sig("native_send_with_fee")]), (200, [])],
+        "getTransaction": [(200, CASES["native_send_with_fee"].tx)],
+    }
+    rpc, _, _ = _rpc(answers)
+    (alone,) = rpc.transactions(A, None).items
+    assert [(t.units, t.from_addr) for t in alone.transfers] == [(1000000000, A)]
+    rpc, _, _ = _rpc(answers)
+    (both,) = rpc.transactions(A, None, own={F}).items
+    assert both.transfers == [] and both.fee == (AssetKey(chain=Chain.SOLANA), 5000)
 
 
 # --- failures that may be logged -----------------------------------------------------------

@@ -636,6 +636,20 @@ def test_a_new_account_without_owner_the_caller_does_not_know_is_unreadable():
     assert raised.value.code == E.WALLET_RECORD_UNREADABLE
 
 
+def test_a_failed_record_without_token_rows_still_keeps_its_fee():
+    """A failed transaction moved nothing but its fee, so its token rows are never read."""
+    case = CASES["failed_transaction"]
+    tx = deepcopy(case.tx)
+    tx["transaction"]["message"]["instructions"] = [
+        {"programId": solana.TOKEN_PROGRAM, "parsed": {"type": "transferChecked"}}
+    ]
+    del tx["meta"]["preTokenBalances"], tx["meta"]["postTokenBalances"]
+    assert solana.solana_deltas(tx, {case.own}) == []
+    group = solana.classify_solana(tx, {case.own}, _lookup(False))
+    assert group.kind is GroupKind.FAILED
+    assert [(m.kind, m.units) for m in group.legs] == [(MovementKind.FEE, 5000)]
+
+
 def test_a_token_program_call_without_token_balances_is_unreadable():
     case = CASES["spl_out"]
     tx = deepcopy(case.tx)
