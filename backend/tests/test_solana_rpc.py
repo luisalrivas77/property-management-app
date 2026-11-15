@@ -8,6 +8,7 @@ solana_tx.yaml); the answers keep the RPC's real shapes."""
 
 import json
 import urllib.error
+from copy import deepcopy
 from datetime import UTC, datetime
 
 import fixture_models_phase7 as phase7
@@ -103,8 +104,34 @@ def test_signatures_page_back_to_the_first_and_come_oldest_first():
     assert sigs[-1].failed and not sigs[0].failed
 
 
+def test_a_short_page_is_not_the_end_only_an_empty_one_is():
+    """A provider may answer fewer than the limit while older signatures remain."""
+    newest_first = [_sig(i) for i in reversed(ORDER)]
+    rpc, fake, _ = _rpc(
+        {
+            "getSignaturesForAddress": [
+                (200, newest_first[:1]),
+                (200, newest_first[1:3]),
+                (200, newest_first[3:]),
+                (200, []),
+            ]
+        },
+        signature_page=3,
+    )
+    sigs = rpc.signatures(A)
+    assert [s.signature for s in sigs] == [_sig(i)["signature"] for i in ORDER]
+    calls = fake.calls("getSignaturesForAddress")
+    assert len(calls) == 4
+    assert [c[1].get("before") for c in calls] == [
+        None,
+        newest_first[0]["signature"],
+        newest_first[2]["signature"],
+        newest_first[3]["signature"],
+    ]
+
+
 def test_signatures_until_the_cursor():
-    rpc, fake, _ = _rpc({"getSignaturesForAddress": [(200, [_sig("spl_out")])]})
+    rpc, fake, _ = _rpc({"getSignaturesForAddress": [(200, [_sig("spl_out")]), (200, [])]})
     cursor = _sig("native_send_with_fee")["signature"]
     assert [s.signature for s in rpc.signatures(A, cursor)] == [_sig("spl_out")["signature"]]
     assert fake.calls("getSignaturesForAddress")[0][1]["until"] == cursor
@@ -114,7 +141,7 @@ def test_transactions_are_read_jsonparsed_version_0_finalized_in_pages():
     records = {i: CASES[i].tx for i in ORDER[:3]}
     rpc, fake, _ = _rpc(
         {
-            "getSignaturesForAddress": [(200, [_sig(i) for i in reversed(ORDER[:3])])],
+            "getSignaturesForAddress": [(200, [_sig(i) for i in reversed(ORDER[:3])]), (200, [])],
             "getTransaction": [(200, records[i]) for i in ORDER[:3]],
         },
         transaction_page=2,
@@ -125,8 +152,9 @@ def test_transactions_are_read_jsonparsed_version_0_finalized_in_pages():
     second = rpc.transactions(A, first.next_cursor)
     assert [t.hash for t in second.items] == [_sig("spl_out")["signature"]]
     assert second.next_cursor is None
-    # The rest of the listing was kept: one getSignaturesForAddress for both pages.
-    assert len(fake.calls("getSignaturesForAddress")) == 1
+    # The rest of the listing was kept: one listing (its page and the empty page that ends
+    # it) for both pages.
+    assert len(fake.calls("getSignaturesForAddress")) == 2
     for params in fake.calls("getTransaction"):
         assert params[1] == {
             "encoding": "jsonParsed",
@@ -154,7 +182,7 @@ def test_a_failed_transaction_keeps_its_fee():
 def test_a_listed_signature_without_its_transaction_stops_the_sync():
     rpc, _, _ = _rpc(
         {
-            "getSignaturesForAddress": [(200, [_sig("native_receive")])],
+            "getSignaturesForAddress": [(200, [_sig("native_receive")]), (200, [])],
             "getTransaction": [(200, None)],
         }
     )
@@ -171,6 +199,44 @@ def test_a_ledger_error_names_the_slot_too():
         rpc.transaction("x", 123)
     assert (caught.value.slot, caught.value.code) == (123, -32009)
     _no_secret(caught.value, rpc)
+
+
+def test_a_cleaned_up_block_is_a_ledger_error_with_the_slot():
+    """-32001 (block cleaned up) on getTransaction and on getBlockTime."""
+    error = (200, {"error": {"code": -32001, "message": f"cleaned up {URL}"}})
+    rpc, _, _ = _rpc({"getTransaction": [error], "getBlockTime": [error]})
+    with pytest.raises(HistoryUnavailable) as caught:
+        rpc.transaction("x", 456)
+    assert (caught.value.slot, caught.value.code) == (456, -32001)
+    _no_secret(caught.value, rpc)
+    with pytest.raises(HistoryUnavailable) as caught:
+        rpc.block_time(789)
+    assert (caught.value.slot, caught.value.code) == (789, -32001)
+    _no_secret(caught.value, rpc)
+
+
+def test_transactions_read_with_every_own_account_and_the_token_accounts():
+    """A record whose token rows carry no owner reads through transactions() once the own
+    token accounts are passed; without them it is unreadable, never a dropped leg."""
+    record = deepcopy(CASES["spl_out"].tx)
+    for key in ("preTokenBalances", "postTokenBalances"):
+        for row in record["meta"][key]:
+            row.pop("owner")
+    own_account = "Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU"
+    answers = {
+        "getSignaturesForAddress": [(200, [_sig("spl_out")]), (200, [])],
+        "getTransaction": [(200, record)],
+    }
+    rpc, _, _ = _rpc(answers)
+    page = rpc.transactions(A, None, own_token_accounts={own_account})
+    (tx,) = page.items
+    assert [(t.asset_key.contract, t.units, t.from_addr) for t in tx.transfers] == [
+        (USDC, 20000000, own_account)
+    ]
+    rpc, _, _ = _rpc(answers)
+    with pytest.raises(E.RuleError) as raised:
+        rpc.transactions(A, None)
+    assert raised.value.code == E.WALLET_RECORD_UNREADABLE
 
 
 # --- failures that may be logged -----------------------------------------------------------

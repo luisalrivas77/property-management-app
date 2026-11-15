@@ -32,7 +32,7 @@ import ssl
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import cast
@@ -58,10 +58,10 @@ COMMITMENT = "finalized"
 SIGNATURE_PAGE = 1000  # getSignaturesForAddress's largest page
 TRANSACTION_PAGE = 100  # transactions per Page the sync writes
 DEFAULT_RPS = 4.0
-# JSON-RPC errors that say the provider holds no ledger for that slot (Q-O93): -32004 block not
-# available, -32007 slot skipped or missing in long-term storage, -32009 missing in long-term
-# storage, -32011 transaction history not available.
-_HISTORY_ERRORS = frozenset({-32004, -32007, -32009, -32011})
+# JSON-RPC errors that say the provider holds no ledger for that slot (Q-O93): -32001 block
+# cleaned up, -32004 block not available, -32007 slot skipped or missing in long-term storage,
+# -32009 missing in long-term storage, -32011 transaction history not available.
+_HISTORY_ERRORS = frozenset({-32001, -32004, -32007, -32009, -32011})
 
 # (url, headers, body, timeout, max_bytes) -> (HTTP status, body). An HTTP error status is
 # returned, not raised; a body over max_bytes raises ResponseTooLarge.
@@ -216,7 +216,8 @@ class SolanaRpc:
     def signatures(self, address: str, until: str | None = None) -> list[SignatureInfo]:
         """Every signature of the address newer than `until` (all of them without one), paged
         back with `before` to the first; oldest first. Failed transactions included: their
-        fee is a movement (D183 (2))."""
+        fee is a movement (D183 (2)). Paging ends on an empty page only: a provider may answer
+        a page shorter than the limit while older signatures remain."""
         key = (address, until)
         if key in self._signatures:
             return self._signatures[key]
@@ -233,7 +234,7 @@ class SolanaRpc:
                 raise SolanaRpcError("parse")
             for raw in page:
                 found.append(_signature_info(raw))
-            if len(page) < self.signature_page:
+            if not page:
                 break
             before = found[-1].signature
         found.reverse()
@@ -257,27 +258,51 @@ class SolanaRpc:
             raise SolanaRpcError("parse")
         return record
 
-    def transactions(self, address: str, cursor: str | None) -> Page[ChainTx]:
+    def transactions(
+        self,
+        address: str,
+        cursor: str | None,
+        *,
+        own: Collection[str] | None = None,
+        own_token_accounts: Collection[str] | None = None,
+    ) -> Page[ChainTx]:
         """The next page of the address's transactions after `cursor` (the last signature a
         sync wrote), oldest first. `next_cursor` is the page's last signature while more
-        follow, else None; a sync keeps the last item's hash as its cursor either way."""
+        follow, else None; a sync keeps the last item's hash as its cursor either way.
+
+        Each item's `transfers` and `fee` are right only when `own` holds every own address
+        of the wallet (the address alone without it: a transfer to its registered stake
+        account would read as leaving) and `own_token_accounts` resolves token rows without
+        an owner (chain_tx). The classifier reads `raw`, never these fields."""
         listed = self.signatures(address, cursor)
         page = listed[: self.transaction_page]
-        items = [self.chain_tx(self.transaction(s.signature, s.slot), {address}) for s in page]
+        mine = set(own) | {address} if own is not None else {address}
+        items = [
+            self.chain_tx(self.transaction(s.signature, s.slot), mine, own_token_accounts)
+            for s in page
+        ]
         more = len(listed) > len(page)
         if more and page:
             self._signatures[(address, page[-1].signature)] = listed[len(page) :]
         return Page[ChainTx](items=items, next_cursor=page[-1].signature if more else None)
 
     @staticmethod
-    def chain_tx(record: Mapping[str, JsonValue], own: set[str]) -> ChainTx:
+    def chain_tx(
+        record: Mapping[str, JsonValue],
+        own: set[str],
+        own_token_accounts: Collection[str] | None = None,
+    ) -> ChainTx:
         """The record as the chain-neutral ChainTx; `raw` keeps it whole for the stored original
-        and the classifier (rules/chain/solana.classify_solana reads the raw record)."""
+        and the classifier (rules/chain/solana.classify_solana reads the raw record, never the
+        fields here). `transfers` and `fee` are right only when `own` holds every own address
+        (a payment between two of them is no transfer out), and a token row without an owner
+        needs `own_token_accounts` (solana.solana_deltas raises wallet.record_unreadable
+        otherwise)."""
         keys = solana.account_keys(record)
         payer = bool(keys) and keys[0] in own
         fee = cast(int, cast(Mapping[str, JsonValue], record["meta"])["fee"])
         transfers = []
-        for d in solana.solana_deltas(record, own):
+        for d in solana.solana_deltas(record, own, own_token_accounts):
             if d.units == 0:
                 continue
             side = d.token_account or next(iter(sorted(own)))
@@ -384,8 +409,12 @@ class SolanaRpc:
         return [cast(dict[str, JsonValue], e) if isinstance(e, dict) else None for e in entries]
 
     def block_time(self, slot: int) -> datetime:
-        """getBlockTime: the epoch's end is its reward's effective slot's time."""
-        value = self.call("getBlockTime", [slot])
+        """getBlockTime: the epoch's end is its reward's effective slot's time. A ledger error
+        names the slot, as transaction() does."""
+        try:
+            value = self.call("getBlockTime", [slot])
+        except HistoryUnavailable as exc:
+            raise HistoryUnavailable(slot, exc.code) from None
         if not isinstance(value, int):
             raise HistoryUnavailable(slot)
         return datetime.fromtimestamp(value, UTC)
