@@ -14,6 +14,14 @@ transaction:
    day stores nothing twice) and appends one `workspace.prices_fetched` event, plus
    `asset.price_source_failed` once when an ETF's NAV has failed on seven days in a row.
 
+A chain asset priced as a symbol-level asset (phase 7 D180 (3), §10) is never fetched itself:
+its `priced_as` asset is, once however many chain assets point at it (SOL on two wallets, ETH
+on Ethereum and Arbitrum), from the earliest first day of its own held movements and of the
+chain assets' current movements, proposed ones included (a swap waiting for its price is
+priced before it is confirmed, D186), and whether or not the chain asset is still held (its
+lots need the day's price, D188 (4)). A spam token is never fetched (D187). A chain asset
+without a `priced_as` is fetched by its own ids only, never the registry's for its symbol.
+
 Bounds per run and asset: CoinGecko at most 31 days (D167 (3)), newest first, so today's
 price comes before the backlog, and only within its 365 days; Kraken (one request answers
 720 days) and an issuer file (a full history) at most 400 rows (D174 (3)), newest first.
@@ -28,7 +36,7 @@ catalogue names is priced from the depot's reports as before, with no card.
 """
 
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -229,32 +237,85 @@ def held_subquery():
     )
 
 
+def _held(row: Any, first_at: datetime, stored: dict[UUID, NavSource]) -> Held:
+    return Held(
+        id=row.id,
+        kind=AssetKind(row.kind),
+        symbol=row.symbol,
+        isin=row.isin,
+        name=row.name,
+        first_on=first_at.astimezone(UTC).date(),
+        ids=price_ids(row.symbol, row.coingecko_id, row.kraken_pair, chain=row.chain),
+        fund=nav_source(fund_source(row.isin), row.isin, stored.get(row.id))
+        if row.kind == AssetKind.ETF.value
+        else None,
+    )
+
+
+def _with_priced_as(
+    conn: Connection, held: list[Held], stored: dict[UUID, NavSource]
+) -> list[Held]:
+    """The priced_as assets of the chain assets with a current movement, each once, from the
+    earliest first day (its own held movements' or the chain assets')."""
+    m, a = movement_table.c, asset_table.c
+    twins = dict(
+        conn.execute(
+            select(a.priced_as_asset_id, func.min(m.occurred_at))
+            .join(movement_table, m.asset_id == a.id)
+            .where(
+                a.priced_as_asset_id.is_not(None),
+                a.spam.is_(False),
+                m.superseded_by.is_(None),
+            )
+            .group_by(a.priced_as_asset_id)
+        ).all()
+    )
+    if not twins:
+        return held
+    # The held assets keep their order; a priced_as asset not held itself comes after them.
+    out = [
+        replace(h, first_on=min(h.first_on, twins[h.id].astimezone(UTC).date()))
+        if h.id in twins
+        else h
+        for h in held
+    ]
+    known = {h.id for h in held}
+    missing = [twin_id for twin_id in twins if twin_id not in known]
+    if missing:
+        rows = conn.execute(
+            select(a.id, a.kind, a.symbol, a.isin, a.name, a.coingecko_id, a.kraken_pair, a.chain)
+            .where(a.id.in_(missing), a.spam.is_(False))
+            .order_by(a.name, a.id)
+        )
+        out += [_held(row, twins[row.id], stored) for row in rows]
+    return out
+
+
 def held_assets(conn: Connection) -> list[Held]:
     a = asset_table.c
     sums = held_subquery()
     stored = stored_nav_sources(conn)
     rows = conn.execute(
         select(
-            a.id, a.kind, a.symbol, a.isin, a.name, a.coingecko_id, a.kraken_pair, sums.c.first_at
+            a.id,
+            a.kind,
+            a.symbol,
+            a.isin,
+            a.name,
+            a.coingecko_id,
+            a.kraken_pair,
+            a.chain,
+            sums.c.first_at,
         )
         .join(sums, sums.c.asset_id == a.id)
+        .where(
+            # Phase 7: priced through its priced_as asset (below), or spam: never fetched.
+            a.priced_as_asset_id.is_(None),
+            a.spam.is_(False),
+        )
         .order_by(a.name, a.id)
     ).all()
-    return [
-        Held(
-            id=r.id,
-            kind=AssetKind(r.kind),
-            symbol=r.symbol,
-            isin=r.isin,
-            name=r.name,
-            first_on=r.first_at.astimezone(UTC).date(),
-            ids=price_ids(r.symbol, r.coingecko_id, r.kraken_pair),
-            fund=nav_source(fund_source(r.isin), r.isin, stored.get(r.id))
-            if r.kind == AssetKind.ETF.value
-            else None,
-        )
-        for r in rows
-    ]
+    return _with_priced_as(conn, [_held(r, r.first_at, stored) for r in rows], stored)
 
 
 def plan(conn: Connection) -> Plan:
