@@ -19,6 +19,12 @@ price comes before the backlog, and only within its 365 days; Kraken (one reques
 720 days) and an issuer file (a full history) at most 400 rows (D174 (3)), newest first.
 A failed source is logged by class and status only (the job's line) and leaves the price
 stale; no card, except D174's.
+
+A held fund the registry does not list (D174 amended 16 Nov 2026) is looked up by its ISIN
+in the catalogue of the issuer its name names, each catalogue asked at most once a run;
+a reference found there prices the fund like a registry one, and the rows it stores keep it
+(`raw.issuer`, `raw.fund_ref`), so the next runs need no catalogue for it. A fund no
+catalogue names is priced from the depot's reports as before, with no card.
 """
 
 from collections import Counter, defaultdict
@@ -37,7 +43,6 @@ from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.rules import valuation
-from hausbuch.rules.household.assets import FundEntry
 from hausbuch.schemas.events import EventType, PricesFetched, PriceSourceFailed
 from hausbuch.schemas.household import AssetKind, MovementStatus
 from hausbuch.schemas.prices import FxRate, PriceSourceKind
@@ -45,7 +50,16 @@ from hausbuch.services.context import Actor, CommandContext, new_command
 from hausbuch.services.events import append_event
 
 from . import ecb_fx, kraken
-from .assets import PriceIds, cash_asset, fund_source, price_ids
+from .assets import (
+    FundSource,
+    NavSource,
+    PriceIds,
+    cash_asset,
+    fund_source,
+    nav_source,
+    price_ids,
+    stored_nav_sources,
+)
 from .coingecko import CoinGeckoDaily
 from .http import Fetch, SourceError
 from .issuer_nav import ADAPTERS, IssuerAdapter, NavFile, read_points
@@ -67,7 +81,7 @@ class Held:
     name: str
     first_on: date
     ids: PriceIds
-    fund: FundEntry | None
+    fund: FundSource | None  # the registry's entry or the stored catalogue reference
 
 
 @dataclass
@@ -95,6 +109,7 @@ class Collected:
     sources: set[PriceSourceKind] = field(default_factory=set)
     assets: int = 0
     failed: list[UUID] = field(default_factory=list)
+    discovered: dict[UUID, NavSource] = field(default_factory=dict)  # found this run
 
 
 @dataclass
@@ -111,6 +126,7 @@ class Sources:
     _coingecko: dict[tuple[str, date], Decimal | None] = field(default_factory=dict)
     _coingecko_error: SourceError | None = None
     _nav: dict[tuple[str, str, str], NavFile | SourceError] = field(default_factory=dict)
+    _catalogues: dict[str, dict[str, str] | SourceError] = field(default_factory=dict)
 
     def _failed(self, source: str, exc: SourceError) -> SourceError:
         self.errors[(source, exc.kind, exc.status)] += 1
@@ -150,11 +166,35 @@ class Sources:
                 self._coingecko_error = self._failed(S.COINGECKO_DAILY.value, error)
         return {d: p for d, p in found.items() if p is not None}, self._coingecko_error
 
-    def nav(self, fund: FundEntry) -> NavFile | SourceError:
+    def _adapter(self, issuer: str) -> IssuerAdapter:
+        adapter = self.adapters.get(issuer) or ADAPTERS[issuer](self.fetch)
+        self.adapters[issuer] = adapter
+        return adapter
+
+    def discover(self, isin: str, name: str) -> NavSource | None:
+        """The fund's reference from the catalogue of the issuer its name names (an iShares
+        fund's from iShares'); each catalogue is asked once a run, a failed one counted once.
+        A fund whose name names no issuer with a catalogue asks nothing."""
+        for issuer, cls in ADAPTERS.items():
+            if cls.catalogue_url is None or not cls.names_brand(name):
+                continue
+            adapter = self._adapter(issuer)
+            if issuer not in self._catalogues:
+                try:
+                    self._catalogues[issuer] = adapter.catalogue()
+                except SourceError as exc:
+                    self._catalogues[issuer] = self._failed(
+                        f"{S.ISSUER_NAV.value}:{issuer}:catalogue", exc
+                    )
+            listed = self._catalogues[issuer]
+            if not isinstance(listed, SourceError) and isin in listed:
+                return NavSource(issuer=issuer, fund_ref=listed[isin], isin=isin)
+        return None
+
+    def nav(self, fund: FundSource) -> NavFile | SourceError:
         key = (fund.issuer, fund.fund_ref or "", fund.isin)
         if key not in self._nav:
-            adapter = self.adapters.get(fund.issuer) or ADAPTERS[fund.issuer](self.fetch)
-            self.adapters[fund.issuer] = adapter
+            adapter = self._adapter(fund.issuer)
             try:
                 self._nav[key] = read_points(adapter, fund.fund_ref or "", fund.isin)
             except SourceError as exc:
@@ -192,6 +232,7 @@ def held_subquery():
 def held_assets(conn: Connection) -> list[Held]:
     a = asset_table.c
     sums = held_subquery()
+    stored = stored_nav_sources(conn)
     rows = conn.execute(
         select(
             a.id, a.kind, a.symbol, a.isin, a.name, a.coingecko_id, a.kraken_pair, sums.c.first_at
@@ -208,7 +249,9 @@ def held_assets(conn: Connection) -> list[Held]:
             name=r.name,
             first_on=r.first_at.astimezone(UTC).date(),
             ids=price_ids(r.symbol, r.coingecko_id, r.kraken_pair),
-            fund=fund_source(r.isin) if r.kind == AssetKind.ETF.value else None,
+            fund=nav_source(fund_source(r.isin), r.isin, stored.get(r.id))
+            if r.kind == AssetKind.ETF.value
+            else None,
         )
         for r in rows
     ]
@@ -316,12 +359,16 @@ def _coin(held: Held, plan: Plan, sources: Sources, today: date, out: Collected)
 
 
 def _etf(
-    held: Held, plan: Plan, sources: Sources, rates: dict[str, list[FxRate]], out: Collected
+    held: Held,
+    fund: FundSource,
+    plan: Plan,
+    sources: Sources,
+    rates: dict[str, list[FxRate]],
+    out: Collected,
 ) -> None:
-    assert held.fund is not None
     out.assets += 1
     out.sources.add(S.ISSUER_NAV)
-    answer = sources.nav(held.fund)
+    answer = sources.nav(fund)
     if isinstance(answer, SourceError):
         out.failed.append(held.id)
         return
@@ -333,6 +380,8 @@ def _etf(
         raw: dict[str, Any] = {"nav": str(row.nav), "currency": row.currency}
         if row.rate_on is not None:
             raw["rate_on"] = row.rate_on.isoformat()
+        if isinstance(fund, NavSource):  # kept for the next runs and the screens
+            raw |= {"issuer": fund.issuer, "fund_ref": fund.fund_ref}
         out.drafts.append(Draft(held.id, row.on, row.price_eur, S.ISSUER_NAV, raw))
 
 
@@ -352,8 +401,15 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
         if held.kind is AssetKind.CRYPTO and held.ids.any:
             _coin(held, plan, sources, today, out)
     for held in plan.held:
-        if held.kind is AssetKind.ETF and held.fund is not None:
-            _etf(held, plan, sources, merged, out)
+        if held.kind is not AssetKind.ETF:
+            continue
+        fund = held.fund
+        if fund is None and held.isin:
+            fund = sources.discover(held.isin, held.name)
+            if fund is not None:
+                out.discovered[held.id] = fund
+        if fund is not None:
+            _etf(held, fund, plan, sources, merged, out)
     return out
 
 
@@ -449,7 +505,7 @@ def write(ctx: CommandContext, plan: Plan, out: Collected) -> int:
     since = ctx.now - timedelta(days=STREAK_WINDOW_DAYS)
     held = {h.id: h for h in plan.held}
     for asset_id in out.failed:
-        if held[asset_id].fund is None:
+        if held[asset_id].kind is not AssetKind.ETF:
             continue  # a coin's failure never raises a card (D167 (3))
         runs = failure_runs(ctx.conn, asset_id, since)
         days = valuation.failed_days(runs)

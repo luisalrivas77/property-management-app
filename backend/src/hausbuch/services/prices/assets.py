@@ -7,17 +7,25 @@
 - `price_ids` and `fund_source`: how an asset is priced. The asset row's own ids win (a
   person may set them, PATCH /assets/{id}); otherwise the registry's. An ETF is priced by its
   issuer's adapter when the registry names one with a fund reference.
+- `nav_source` and `stored_nav_sources` (D174 amended 16 Nov 2026): a fund the registry does
+  not list is priced by the issuer whose catalogue named its ISIN (services.prices.fetch).
+  That reference is kept in the workspace's own data, the `raw` of the fund's issuer_nav
+  price rows (`issuer`, `fund_ref`), never in the repository, so the household's funds stay
+  out of it; the registry, the whole public universe of quirion, stays the seed and wins.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import Connection, insert, select
 
 from hausbuch.db.tables import asset as asset_table
+from hausbuch.db.tables import price as price_table
 from hausbuch.rules.household.assets import FundEntry, registry
 from hausbuch.schemas.events import AssetRecorded, EventType
 from hausbuch.schemas.household import AssetKind
+from hausbuch.schemas.prices import PriceSourceKind
 from hausbuch.services.context import CommandContext
 from hausbuch.services.events import append_event
 
@@ -57,6 +65,55 @@ def fund_source(isin: str | None) -> FundEntry | None:
     if fund is None or fund.fund_ref is None or fund.issuer not in ADAPTERS:
         return None
     return fund
+
+
+@dataclass(frozen=True)
+class NavSource:
+    """A fund's issuer and reference found in the issuer's catalogue (not the registry)."""
+
+    issuer: str
+    fund_ref: str
+    isin: str
+
+
+FundSource = FundEntry | NavSource
+
+
+def stored_nav_sources(
+    conn: Connection, asset_ids: Iterable[UUID] | None = None
+) -> dict[UUID, NavSource]:
+    """Per asset the issuer and reference of its latest issuer_nav row that names them."""
+    p, a = price_table.c, asset_table.c
+    query = (
+        select(p.asset_id, a.isin, p.raw["issuer"].astext, p.raw["fund_ref"].astext)
+        .join(asset_table, a.id == p.asset_id)
+        .where(
+            p.source == PriceSourceKind.ISSUER_NAV.value,
+            p.raw.has_key("issuer"),
+            p.raw.has_key("fund_ref"),
+        )
+        .order_by(p.asset_id, p.on.desc(), p.created_at.desc())
+        .distinct(p.asset_id)
+    )
+    if asset_ids is not None:
+        query = query.where(p.asset_id.in_(list(asset_ids)))
+    return {
+        asset_id: NavSource(issuer=issuer, fund_ref=ref, isin=isin)
+        for asset_id, isin, issuer, ref in conn.execute(query)
+        if isin and issuer in ADAPTERS and ref
+    }
+
+
+def nav_source(
+    registry_fund: FundEntry | None, isin: str | None, stored: NavSource | None
+) -> FundSource | None:
+    """How a fund is priced: its registry entry (`fund_source(isin)`, passed in) first, else
+    the reference stored from the issuer's catalogue."""
+    if registry_fund is not None:
+        return registry_fund
+    if stored is not None and isin and stored.isin == isin and stored.issuer in ADAPTERS:
+        return stored
+    return None
 
 
 def _create(ctx: CommandContext, values: dict) -> UUID:

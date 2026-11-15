@@ -1,0 +1,96 @@
+{
+ "data": {
+  "fundType": [
+   {
+    "key": "etfs",
+    "name": "ETFs",
+    "size": 4
+   }
+  ],
+  "funds": {
+   "etfs": {
+    "datas": [
+     {
+      "fundName": "SPDR Invented EUR UCITS ETF",
+      "fundTicker": "INV GY",
+      "fundUri": "/de/de/individual/etfs/spdr-invented-inv-gy",
+      "documentPdf": [
+       {
+        "docType": "Prospectus",
+        "docs": [
+         {
+          "language": "",
+          "name": "Prospekt",
+          "path": "/library-content/products/fund-docs/etfs/emea/prospectus.pdf",
+          "canDownload": true
+         }
+        ]
+       },
+       {
+        "docType": "Kid",
+        "docs": [
+         {
+          "language": "DE",
+          "name": "KID",
+          "path": "/library-content/kids?isin=IE000INVENT1&documentType=kid&country=de&language=de&ticker=inv-gy",
+          "canDownload": true
+         },
+         {
+          "language": "EN",
+          "name": "KID",
+          "path": "/library-content/kids?isin=IE000INVENT1&documentType=kid&country=de&language=en&ticker=inv-gy",
+          "canDownload": true
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "fundName": "SPDR Invented Twin",
+      "fundTicker": "TWA GY",
+      "documentPdf": [
+       {
+        "docType": "Kid",
+        "docs": [
+         {
+          "language": "DE",
+          "name": "KID",
+          "path": "/library-content/kids?isin=IE000INVENT5&documentType=kid&country=de&language=de&ticker=twa-gy",
+          "canDownload": true
+         },
+         {
+          "language": "DE",
+          "name": "KID",
+          "path": "/library-content/kids?isin=IE000INVENT5&documentType=kid&country=de&language=de&ticker=twb-gy",
+          "canDownload": true
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "fundName": "SPDR Invented bad slug",
+      "fundTicker": "BAD",
+      "documentPdf": [
+       {
+        "docType": "Kid",
+        "docs": [
+         {
+          "language": "DE",
+          "name": "KID",
+          "path": "/library-content/kids?isin=IE000INVENT6&documentType=kid&country=de&language=de&ticker=Bad%20Slug!",
+          "canDownload": true
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "fundName": "SPDR Invented no documents",
+      "fundTicker": "NOD GY"
+     }
+    ]
+   }
+  }
+ }
+}
