@@ -1,5 +1,5 @@
 """POST /returns and the „Rücküberweisung erkannt“ card over HTTP (docs/phases/phase-6.md,
-D162 amended (6)): status codes, the inbox shape and workspace isolation. The service
+D162 amended (7)): status codes, the inbox shape and workspace isolation. The service
 behaviour is tests/db/test_services_returns.py. Invented names, IBANs and amounts only."""
 
 from datetime import date

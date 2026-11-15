@@ -1,4 +1,4 @@
-"""A returned payment paired with its original (docs/phases/phase-6.md, D162 amended (6),
+"""A returned payment paired with its original (docs/phases/phase-6.md, D162 amended (7),
 15 Nov 2026; Luis: „What is the 3200€ payment still there?“).
 
 A private account sends money, the payment is recalled or bounced, and the bank credits it

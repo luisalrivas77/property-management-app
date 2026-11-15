@@ -1,5 +1,5 @@
 """A returned payment paired with its original under hausbuch_app and RLS (docs/phases/
-phase-6.md, D162 amended (6), 15 Nov 2026): the „Rücküberweisung erkannt“ card computed on
+phase-6.md, D162 amended (7), 15 Nov 2026): the „Rücküberweisung erkannt“ card computed on
 read, its button booking both lines through the person's answer and linking them, what the
 pair then counts as (nothing), and `hausbuch pair-returns`. The pure half is
 tests/rules/test_household_returns.py. Invented names, IBANs and amounts only.

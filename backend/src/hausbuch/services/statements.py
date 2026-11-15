@@ -119,7 +119,7 @@ STATEMENT_FOLLOW_UNREADABLE = "statement.follow_unreadable"
 _FILE_ERRORS = frozenset({rules.REPORT_UNBALANCED, rules.CHAIN_BREAK})
 _IMPORT_COLUMNS = [c for c in import_table.c if c.name != "ai_call_id"]
 # Computed on read (transaction_select), not columns of the transaction table.
-# returned_with (D162 amended (6)) is filled by list_transactions from the transfer links.
+# returned_with (D162 amended (7)) is filled by list_transactions from the transfer links.
 _COMPUTED_TRANSACTION_FIELDS = frozenset(
     {"allocation_status", "allocation_categories", "returned_with"}
 )
@@ -1339,7 +1339,7 @@ def list_transactions(
         )
     )
     lines = [_to_transaction(r) for r in rows]
-    # Phase 6 D162 amended (6): each half of a returned payment booked as such names the other.
+    # Phase 6 D162 amended (7): each half of a returned payment booked as such names the other.
     from .returns import returned_partners  # it imports the transfer services
 
     partners = returned_partners(conn, [line.id for line in lines])

@@ -3,7 +3,7 @@ rematch-waiting | household-resort | follow-accounts | repair-periods | relink-t
 pair-returns | store-report-prices` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41, D27 amended
 15 Nov 2026; phase 6 D159 amended 13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended
 (4) 14 Nov 2026, D165 (a) and D176 (3) amended 14 Nov 2026, D162 and D167 (c) amended 15 Nov
-2026, D162 amended (6) 15 Nov 2026).
+2026, D162 amended (6) and (7) 15 Nov 2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -51,12 +51,13 @@ finer answer goes back to Zu prüfen as a proposal. --category names the fallbac
 `relink-transfers` runs services.transfers.relink_all once for a workspace, with the same owner
 URL (phase 6 D162 amended 15 Nov 2026): on every account, each transfer leg is linked where one
 counterpart fits now, and a depot's cash line that a bank debit names by the depot's IBAN is
-booked as that transfer's leg when it holds no confirmed answer. It runs here, not in the
-worker: it reads and writes only the database. --dry-run rolls back and prints what it would
-link.
+booked as that transfer's leg when it holds no confirmed answer; a line of a link already
+written, tied by an own IBAN, that holds only the model's proposal of the transfer is booked as
+its leg too (D162 amended (6)). It runs here, not in the worker: it reads and writes only the
+database. --dry-run rolls back and prints what it would link and book.
 
 `pair-returns` runs services.returns.count_pairs once for a workspace, with the same owner URL
-(phase 6 D162 amended (6), 15 Nov 2026): it prints how many returned payments of the private
+(phase 6 D162 amended (7), 15 Nov 2026): it prints how many returned payments of the private
 accounts the lines already imported hold, the „Rücküberweisung erkannt“ cards Zu prüfen shows,
 and how many of them offer more than one debit. It never books: the cards are computed when Zu
 prüfen is read, so a new import is recognised without it and there is nothing to write; it
@@ -396,18 +397,22 @@ def rematch_waiting(args: argparse.Namespace, environ: Mapping[str, str]) -> int
 def relink_transfers(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     """services.transfers.relink_all once for a workspace (phase 6 D162 amended 15 Nov 2026):
     every account's transfers are linked where one counterpart fits now, and a depot's cash
-    line named by the bank's debit is booked as its leg. `--dry-run` rolls everything back."""
+    line named by the bank's debit is booked as its leg; D162 amended (6): a line of a link
+    tied by an own IBAN that holds only the model's proposal of the transfer is booked as its
+    leg too (transfers.confirm_linked). `--dry-run` rolls everything back."""
     from hausbuch.db.session import workspace_transaction
     from hausbuch.schemas.enums import ActorType
     from hausbuch.services.context import Actor, new_command
-    from hausbuch.services.transfers import relink_all
+    from hausbuch.services.transfers import confirm_linked, relink_all
 
     engine = owner_engine(environ)
     try:
         try:
             with workspace_transaction(engine, args.workspace) as conn:
                 actor = Actor(ActorType.SYSTEM, "cli:relink-transfers")
-                linked = relink_all(new_command(conn, args.workspace, actor))
+                ctx = new_command(conn, args.workspace, actor)
+                linked = relink_all(ctx)
+                confirmed = confirm_linked(ctx)
                 if args.dry_run:
                     raise _DryRun
         except _DryRun:
@@ -422,6 +427,8 @@ def relink_transfers(args: argparse.Namespace, environ: Mapping[str, str]) -> in
         engine.dispose()
     verb = "would link" if args.dry_run else "linked"
     print(f"{verb} {linked} transfer(s)")
+    verb = "would book" if args.dry_run else "booked"
+    print(f"{verb} {confirmed} linked line(s) the model had only proposed as the transfer")
     return EXIT_OK
 
 
@@ -429,7 +436,7 @@ def relink_transfers(args: argparse.Namespace, environ: Mapping[str, str]) -> in
 
 
 def pair_returns(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
-    """services.returns.count_pairs once for a workspace (phase 6 D162 amended (6)): the
+    """services.returns.count_pairs once for a workspace (phase 6 D162 amended (7)): the
     returned payments the imported lines hold, never booked. Read-only, with or without
     `--apply`: the cards are computed on read."""
     from hausbuch.db.session import workspace_transaction
@@ -753,8 +760,9 @@ def _parser() -> argparse.ArgumentParser:
     relinked = commands.add_parser(
         "relink-transfers",
         help="link the transfers between own accounts once more on every account, booking a "
-        "depot's cash line the bank's debit names as its transfer (once, after the deploy of "
-        "D162 amended 15 Nov 2026)",
+        "depot's cash line the bank's debit names as its transfer, and book the lines of links "
+        "tied by an own IBAN that hold only the model's proposal of the transfer (once, after "
+        "the deploy of D162 amended 15 Nov 2026 and again after D162 amended (6))",
     )
     relinked.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     relinked.add_argument("--dry-run", action="store_true", help="count only, change nothing")

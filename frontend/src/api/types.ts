@@ -7538,7 +7538,7 @@ export interface components {
         };
         /**
          * OpenReturn
-         * @description D162 amended (6), 15 Nov 2026: a credit on a private account that returns an earlier
+         * @description D162 amended (7), 15 Nov 2026: a credit on a private account that returns an earlier
          *     debit of the same account (rules.household.returns), with the debits it may return: one
          *     when the rule found one, several when it cannot tell which (never guessed). Booked by
          *     POST /returns (ReturnedPaymentCreate).
@@ -9344,7 +9344,7 @@ export interface components {
         ReturnInputKind: "wage_certificate" | "payslip" | "commute" | "home_office" | "work_room" | "work_equipment" | "telecom" | "professional_association" | "training" | "other_expense" | "other_insurance" | "replacement_income" | "vorsorge_override" | "child" | "childcare_cost" | "household_services" | "special_expense";
         /**
          * ReturnedPartner
-         * @description Phase 6 D162 amended (6): the other line of a returned payment booked as such (the
+         * @description Phase 6 D162 amended (7): the other line of a returned payment booked as such (the
          *     debit that left, or the credit that brought it back, on the same account).
          */
         ReturnedPartner: {
@@ -9363,7 +9363,7 @@ export interface components {
         };
         /**
          * ReturnedPaymentCreate
-         * @description POST /returns' body (D162 amended (6)): the debit that left and the credit that brought
+         * @description POST /returns' body (D162 amended (7)): the debit that left and the credit that brought
          *     it back, both bank lines of one private account. Both are booked as transfer parts by the
          *     person's answer and linked to each other (a transfer_link on one account), so together they
          *     count as nothing.

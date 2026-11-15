@@ -394,7 +394,7 @@ class TransactionAllocationStatus(StrEnum):
 
 
 class ReturnedPartner(Schema):
-    """Phase 6 D162 amended (6): the other line of a returned payment booked as such (the
+    """Phase 6 D162 amended (7): the other line of a returned payment booked as such (the
     debit that left, or the credit that brought it back, on the same account)."""
 
     transaction_id: UUID
@@ -423,7 +423,7 @@ class Transaction(Record):
     excluded_as_duplicate_of: UUID | None = None
     allocation_status: TransactionAllocationStatus
     allocation_categories: list[AllocationCategory]
-    # Phase 6 D162 amended (6): set by GET /accounts/{id}/transactions when the line is one
+    # Phase 6 D162 amended (7): set by GET /accounts/{id}/transactions when the line is one
     # half of a returned payment booked as such; the other half.
     returned_with: ReturnedPartner | None = None
 

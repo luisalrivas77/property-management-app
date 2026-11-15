@@ -1,4 +1,4 @@
-"""A returned payment paired with its original (docs/phases/phase-6.md, D162 amended (6),
+"""A returned payment paired with its original (docs/phases/phase-6.md, D162 amended (7),
 15 Nov 2026; Luis: „What is the 3200€ payment still there?“).
 
 A private account's credit whose purpose reads as a return and whose amount equals an earlier
@@ -182,7 +182,7 @@ def return_inbox_items(conn: Connection) -> list[InboxItem]:
 
 
 def lines_on_cards(items: Iterable[InboxItem]) -> tuple[set[UUID], set[UUID]]:
-    """D162 amended (6), as D162 amended (5) for the transfer cards: one decision, one place.
+    """D162 amended (7), as D162 amended (5) for the transfer cards: one decision, one place.
     The lines of the „Rücküberweisung erkannt“ cards among `items`: (every line a card names,
     the credit and each debit it offers; the lines the card's button surely books, the credit
     and a card's one debit). Zu prüfen drops a transfer card whose leg is among the first (the

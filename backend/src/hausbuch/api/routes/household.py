@@ -9,7 +9,7 @@
   transfer by the person's answer (D176 (4)); 422 transfer.legs_invalid for one not tied.
 - POST /transfers/{id}/unlink: replace a wrong link by the one the user picks. 404, 409 when
   it was replaced already or a leg of the replacement is linked.
-- POST /returns: „Als Rücküberweisung verbuchen“ (D162 amended (6)): a credit on a private
+- POST /returns: „Als Rücküberweisung verbuchen“ (D162 amended (7)): a credit on a private
   account that returns an earlier debit of it, both booked as transfer parts by the person's
   answer and linked to each other. 404 for an unknown line, 409 when either is linked to
   another, 422 transfer.return_invalid for two lines that are no returned payment.

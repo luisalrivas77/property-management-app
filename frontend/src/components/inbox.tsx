@@ -45,7 +45,7 @@
 //   gingen an eigene Wallets“ (POST /movement-imports/{id}/withdrawals/confirm), and a link to
 //   answer them one by one; any other proposed movement (a crypto deposit) gets its answers
 //   (POST /movements/{id}/confirm or /answer), from GET /accounts/{id}/movements.
-// - a returned payment on a private account (returned_payment, phase 6 D162 amended (6)): a
+// - a returned payment on a private account (returned_payment, phase 6 D162 amended (7)): a
 //   credit whose purpose says the money came back (a recall, „Rücküberweisung“) and the equal
 //   debit it returns, both named; „Als Rücküberweisung verbuchen“ (POST /returns) books the two
 //   as one returned payment that counts as nothing. Several debits that fit are listed to pick
@@ -164,7 +164,7 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   exchange_unreconciled: "exchanges",
   exchange_withdrawals: "exchanges",
   exchange_movement: "exchanges",
-  // Phase 6 D162 amended (6): a returned payment, beside the transfers it was shown as before.
+  // Phase 6 D162 amended (7): a returned payment, beside the transfers it was shown as before.
   returned_payment: "transfers",
 };
 
@@ -1247,7 +1247,7 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
   );
 }
 
-/** D162 amended (6): „Rücküberweisung erkannt“. The credit came back from the debit it names
+/** D162 amended (7): „Rücküberweisung erkannt“. The credit came back from the debit it names
  * (one is pre-selected; several that fit are listed to pick one, never guessed), and the text
  * says the two together count as nothing. „Als Rücküberweisung verbuchen“ posts both lines
  * (POST /returns), which books them through the person's answer and links them; a debit a

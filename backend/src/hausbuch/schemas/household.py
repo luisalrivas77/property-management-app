@@ -663,7 +663,7 @@ class OpenTransfer(Schema):
 
 
 class OpenReturn(Schema):
-    """D162 amended (6), 15 Nov 2026: a credit on a private account that returns an earlier
+    """D162 amended (7), 15 Nov 2026: a credit on a private account that returns an earlier
     debit of the same account (rules.household.returns), with the debits it may return: one
     when the rule found one, several when it cannot tell which (never guessed). Booked by
     POST /returns (ReturnedPaymentCreate)."""
@@ -673,7 +673,7 @@ class OpenReturn(Schema):
 
 
 class ReturnedPaymentCreate(Schema):
-    """POST /returns' body (D162 amended (6)): the debit that left and the credit that brought
+    """POST /returns' body (D162 amended (7)): the debit that left and the credit that brought
     it back, both bank lines of one private account. Both are booked as transfer parts by the
     person's answer and linked to each other (a transfer_link on one account), so together they
     count as nothing."""

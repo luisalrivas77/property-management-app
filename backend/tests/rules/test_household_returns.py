@@ -1,4 +1,4 @@
-"""rules.household.returns (phase 6 D162 amended (6), 15 Nov 2026): a credit whose purpose
+"""rules.household.returns (phase 6 D162 amended (7), 15 Nov 2026): a credit whose purpose
 reads as a returned payment, paired with the equal earlier debit on its account. Invented
 amounts, purposes and payees only."""
 

@@ -779,7 +779,7 @@ def _lines_on_cards(conn: Connection, items: list[InboxItem]) -> list[InboxItem]
 
 
 def _lines_on_return_cards(items: list[InboxItem]) -> list[InboxItem]:
-    """Phase 6 D162 amended (6), 15 Nov 2026: one decision, one place, for a returned payment
+    """Phase 6 D162 amended (7), 15 Nov 2026: one decision, one place, for a returned payment
     (services.returns.lines_on_cards). A transfer card whose leg is a line of a „Rücküberweisung
     erkannt“ card leaves (the credit's „Überweisung ohne Gegenstück“ is the return card's
     question), and so does the proposal (or „Nicht zugeordnet“, a line without any answer) of the

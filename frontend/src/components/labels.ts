@@ -852,7 +852,7 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   exchange_unreconciled: "Bestand weicht ab",
   exchange_withdrawals: "Auszahlungen",
   exchange_movement: "Eingang prüfen",
-  // phase 6 D162 amended (6): a returned payment and the debit it brings back
+  // phase 6 D162 amended (7): a returned payment and the debit it brings back
   returned_payment: "Rücküberweisung erkannt",
 };
 
