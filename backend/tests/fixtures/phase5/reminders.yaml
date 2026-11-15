@@ -68,7 +68,8 @@
 #   in yet and nothing fires). label_args name the unit, never a tenant (D5).
 # - bank.sync_stale: (last_sync_on, else connected_on) + 35 days, for an account with a
 #   connection. Cleared auto by a newer success (the date moves).
-# - bank.statement_due (D122 amended, 15 Nov 2026): see the section of its cases below.
+# - bank.statement_due (D122 amended, 15 Nov 2026; a card closed at 0, D122 amended (6)): see
+#   the section of its cases below.
 # - acks: `done` hides the instance with that key, scope and due_on; `snoozed` hides it while
 #   today < snoozed_until; the latest muted/unmuted row by recorded_at for the key and scope
 #   decides whether every instance is hidden.
@@ -876,6 +877,60 @@ cases:
         - {id: *A4, label: Girokonto, kind: bank_current, opening_balance_on: 2025-12-31,
            history_until: 2026-08-31}
     expect: []
+
+  # D122 amended (6), 15 Nov 2026: a card issuer that sends no statement for an idle month.
+  # A credit card whose latest reconciled import declares a closing balance of exactly 0
+  # (closed_at_zero) gets no card unless a debit on another own account pays it (paid_on:
+  # the debit days naming its payment IBAN after the covered day, not a leg of a current
+  # transfer link) after the D162 window following the covered day (transfer_window_end:
+  # three banking days; a settlement debit inside it may pay the balance the last statement
+  # already shows as paid). Then due = the last day of the month after the earliest such
+  # debit's month + 10 days; covered_until stays the statements' end. A card closed at any
+  # other balance, and every other kind, as before.
+
+  - id: statement_due_none_for_a_card_closed_at_zero
+    description: >
+      the card's latest statement (lines to 20 Jan 2026) closed at 0 and no later debit pays
+      the card: the issuer sent no statement for the idle months, nothing is due (the old
+      rule had made it due on 10 Mar 2026)
+    today: 2026-11-10
+    facts:
+      accounts:
+        - &card_jan_zero
+          {id: *A2, label: Kreditkarte, kind: credit_card, opening_balance_on: 2025-12-31,
+           reconciled_until: 2026-01-20, closed_at_zero: true}
+    expect: []
+
+  - id: statement_due_card_closed_at_zero_used_again
+    description: >
+      the same card, and a debit of 5 Oct 2026 on a bank account pays it: the card was used
+      again, so its statement exists; due 30 Nov + 10 = 10 Dec 2026, the label still names the
+      statements' end (20 Jan)
+    today: 2026-11-10
+    facts:
+      accounts: [{<<: *card_jan_zero, paid_on: [2026-10-05]}]
+    expect:
+      - <<: *statement_due_card_dec
+        label_args: {account: Kreditkarte, covered_until: "2026-01-20"}
+
+  - id: statement_due_card_closed_at_zero_settlement_in_window
+    description: >
+      the only debit paying the card is booked 22 Jan 2026, inside the D162 window after the
+      covered day (20 Jan + 3 banking days = 23 Jan): it settles the balance the January
+      statement already shows as paid, no new use, nothing due
+    today: 2026-11-10
+    facts:
+      accounts: [{<<: *card_jan_zero, paid_on: [2026-01-22]}]
+    expect: []
+
+  - id: statement_due_card_closed_owing_as_before
+    description: >
+      a card whose latest statement closed at -100 (a balance owed always brings a next
+      statement): due as before, 10 Dec 2026 from its lines to 28 Oct
+    today: 2026-12-10
+    facts:
+      accounts: [{<<: *card_oct, closed_at_zero: false}]
+    expect: [*statement_due_card_dec]
 
   # --- Acknowledgements and the contract ---------------------------------------------------
 

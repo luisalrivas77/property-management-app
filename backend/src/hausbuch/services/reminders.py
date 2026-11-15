@@ -85,6 +85,7 @@ from .properties import list_properties
 from .return_inputs import list_return_inputs
 from .tax_inputs import list_tax_inputs
 from .transfers import _last_days as history_ends  # D162 amended (9)'s history end
+from .transfers import card_payments_after
 
 _CONFIRMED = AllocationStatus.CONFIRMED.value
 _SCOPE_TABLES: dict[ReminderScope, Table] = {
@@ -287,7 +288,9 @@ def _accounts(conn: Connection) -> list[ReminderAccount]:
     """Each account with the last booking day of its reconciled imports and its connection's
     first day and last success (days in Europe/Berlin). For bank.statement_due (D122 amended)
     also its kind, whether its connection fetches daily, and the day its imported history
-    reaches (transfers._last_days: a successful FinTS run's requested_to included)."""
+    reaches (transfers._last_days: a successful FinTS run's requested_to included), and for a
+    credit card (D122 amended (6)) whether its latest statement closed at 0 and, if so, the
+    days of the later debits that pay it (transfers.card_payments_after)."""
     a, s, b = account_table.c, import_table.c, connection_table.c
     reconciled = dict(
         conn.execute(
@@ -301,6 +304,16 @@ def _accounts(conn: Connection) -> list[ReminderAccount]:
         for r in conn.execute(select(b.account_id, b.created_at, b.last_sync_at, b.auto_sync))
     }
     history = history_ends(conn)
+    zero = _cards_closed_at_zero(conn)
+    # The debits that pay a card closed at zero after the day its statements cover.
+    paid = card_payments_after(
+        conn,
+        {
+            card: max(reconciled[card], history.get(card, reconciled[card]))
+            for card in zero
+            if card in reconciled
+        },
+    )
     out = []
     for r in conn.execute(
         select(a.id, a.label, a.purpose, a.kind, a.opening_balance_on).order_by(a.id)
@@ -325,9 +338,30 @@ def _accounts(conn: Connection) -> list[ReminderAccount]:
                 kind=AccountKind(r.kind),
                 auto_sync=connection is not None and connection.auto_sync,
                 history_until=history.get(r.id),
+                closed_at_zero=r.id in zero,
+                paid_on=paid.get(r.id, []),
             )
         )
     return out
+
+
+def _cards_closed_at_zero(conn: Connection) -> set[UUID]:
+    """D122 amended (6), 15 Nov 2026: the credit cards whose latest reconciled import (the
+    greatest last booking day, the day reconciled_until reads; ties by the later row) declares
+    a closing balance of exactly 0. A closing not declared is not 0."""
+    a, s = account_table.c, import_table.c
+    rows = conn.execute(
+        select(s.account_id, s.declared_closing)
+        .join(account_table, a.id == s.account_id)
+        .where(
+            a.kind == AccountKind.CREDIT_CARD.value,
+            s.status == ImportStatus.RECONCILED.value,
+            s.last_booking_on.is_not(None),
+        )
+        .distinct(s.account_id)
+        .order_by(s.account_id, s.last_booking_on.desc(), s.created_at.desc(), s.id.desc())
+    ).all()
+    return {account_id for account_id, closing in rows if closing is not None and closing == 0}
 
 
 def _local_day(moment: datetime) -> date:
