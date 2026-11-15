@@ -9,12 +9,12 @@ from decimal import Decimal
 
 import pytest
 from db.db_support import TEST_IBAN_KEY
-from db.matching_support import ACCOUNT_IBAN, World
+from db.matching_support import ACCOUNT_IBAN, USER, World
 from db.test_cli_evals_report import _owner_url
 from db.test_services_depot_import import _depot as create_depot
 from db.test_services_depot_import import _import as import_depot
 from db.test_services_private_matching import NOW, Private
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from test_depot_pdf import IBAN as DEPOT_PDF_IBAN
 from test_depot_pdf import KONTO, page
 
@@ -33,6 +33,7 @@ from hausbuch.schemas.allocation import (
 )
 from hausbuch.schemas.household import OpenTransferCode, TransferLinkKind, TransferMatchedBy
 from hausbuch.services import allocations, household_resort, matching, statements, transfers
+from hausbuch.services.context import new_command
 
 pytestmark = pytest.mark.db
 
@@ -398,3 +399,28 @@ def test_a_security_sale_next_to_an_equal_named_debit_stays_a_sale(world, bank, 
         world.cmd(transfers.relink, depot.account_id)
     assert _booked(world, sale) == SOLD
     assert _links(world) == []
+
+
+# --- Review, 15 Nov 2026: a line another transaction holds is skipped, never waited for -------
+
+
+def test_a_locked_line_is_skipped_and_linked_by_its_own_hook(world, bank):
+    """A relink (advisory lock, then the line's row lock) used to wait for a line whose own job
+    held its row lock and then wanted the advisory lock: a deadlock. Now the relink skips the
+    held line, and the job's own hook (after_booking) books and links it."""
+    depot = _depot(world)
+    out = bank.line(FRIDAY, "-600.00", iban=DEPOT_IBAN)
+    _match(world, out)
+    in_ = depot.line(FRIDAY, "600.00")
+    with workspace_transaction(world.engine, world.ws) as job:
+        ctx = new_command(job, world.ws, USER, now=world.now)
+        line = matching.load_line(ctx.conn, in_, lock=True)  # the line's own job
+        assert line is not None
+        with workspace_transaction(world.engine, world.ws) as other:
+            other.execute(text("SET LOCAL lock_timeout = '3s'"))  # a wait fails, never hangs
+            relinker = new_command(other, world.ws, USER, now=world.now)
+            assert transfers.relink(relinker, depot.account_id) == 0
+        assert _links(world) == []
+        matching.write(ctx, line, _answer(in_, "600.00", C.HH_OTHER, AllocationMethod.LLM))
+    assert _booked(world, in_) == [NAMED]
+    _assert_linked(world, out, in_)

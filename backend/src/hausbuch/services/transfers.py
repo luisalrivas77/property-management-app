@@ -668,7 +668,10 @@ def _split_and_link(
 
     fee = pair.deposit_fee
     assert fee is not None
-    line = matching.load_line(ctx.conn, bank.leg.id, lock=True)
+    # Review, 15 Nov 2026: the advisory lock is held here, so a line another transaction holds
+    # (its own job, which takes the advisory lock in its hook) is skipped, never waited for: the
+    # other order deadlocked. That job's hook (after_booking) finishes the pair.
+    line = matching.load_line(ctx.conn, bank.leg.id, lock=True, skip_locked=True)
     if line is None:
         return None
     state = _deposit_state(ctx.conn, line.tx.id, line.current, line.tx.amount, fee)
@@ -717,7 +720,8 @@ def _book_named_leg(
     )
     if not private_line or not (names_other or deposit):
         return None
-    line = matching.load_line(ctx.conn, other.leg.id, lock=True)
+    # Review, 15 Nov 2026: skipped while another transaction holds the line (_split_and_link).
+    line = matching.load_line(ctx.conn, other.leg.id, lock=True, skip_locked=True)
     if line is None or not line.open_for(rematch=True):
         return None
     if not _free_for_matcher(ctx.conn, line.tx.id, line.current):
