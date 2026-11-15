@@ -115,6 +115,7 @@ thresholds:
   - {category: hh_bakery, threshold: "0.900"}
   - {category: hh_restaurant, threshold: "0.900"}
   - {category: hh_cafe, threshold: "0.900"}
+  - {category: hh_bar, threshold: "0.900"}  # D159 amended (5) 15 Nov 2026 (0034), as hh_cafe
   - {category: hh_sweets, threshold: "0.900"}
   - {category: hh_fast_food, threshold: "0.900"}
   - {category: hh_delivery, threshold: "0.900"}

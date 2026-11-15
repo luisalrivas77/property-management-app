@@ -101,6 +101,7 @@ categories:
   - {category: hh_bakery, treatment: private}
   - {category: hh_restaurant, treatment: private}
   - {category: hh_cafe, treatment: private}
+  - {category: hh_bar, treatment: private}  # phase 6 D159 amended (5) 15 Nov 2026 (migration 0034)
   - {category: hh_sweets, treatment: private}
   - {category: hh_fast_food, treatment: private}
   - {category: hh_delivery, treatment: private}

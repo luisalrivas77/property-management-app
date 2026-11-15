@@ -105,6 +105,9 @@ codes:
   - {category: hh_bakery, label: "Bäckerei, Kiosk & Markt", group: groceries, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_restaurant, label: "Restaurant", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_cafe, label: "Café", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
+  # D159 amended (5) 15 Nov 2026 (migration 0034, Luis: „We're missing a bar or drinks sub category in
+  # the essen gehen“): bars, pubs and beer gardens beside hh_cafe, same group.
+  - {category: hh_bar, label: "Bar & Kneipe", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_sweets, label: "Eis & Süßes", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_fast_food, label: "Imbiss & Fast Food", group: dining, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_delivery, label: "Lieferdienst", group: dining, relevance: spending, treatment: private, threshold: "0.900"}

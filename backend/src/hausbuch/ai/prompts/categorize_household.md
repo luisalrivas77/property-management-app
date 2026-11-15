@@ -33,8 +33,9 @@ leisure.
   - `hh_bakery`: a bakery, kiosk, butcher or market stall
   - `hh_groceries`: (fallback) other food shopping
 - Eating out and ordering in (Essen gehen & bestellen):
-  - `hh_restaurant`: a restaurant or bar
+  - `hh_restaurant`: a restaurant (a bar or pub is `hh_bar`)
   - `hh_cafe`: a café or coffee shop (Tchibo, Starbucks)
+  - `hh_bar`: drinks out: a bar, pub or Kneipe, a cocktail bar, a beer garden (Biergarten) or the drinks bought in a club; a club's entry fee is `hh_outings`; a drinks shop (Getränkemarkt) is `hh_groceries` and drinks bought in a supermarket stay `hh_supermarket`
   - `hh_sweets`: ice cream, cakes and sweets (Gelateria, Eiscafé, Konditorei)
   - `hh_fast_food`: fast food or a snack bar (Burger King, McDonald's, a Döner or Imbiss)
   - `hh_delivery`: a food delivery service (Lieferando, Uber Eats, Wolt)

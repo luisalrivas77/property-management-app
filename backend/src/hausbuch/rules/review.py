@@ -151,6 +151,7 @@ THRESHOLDS = MappingProxyType(
         C.HH_BAKERY: _RECURRING,
         C.HH_RESTAURANT: _RECURRING,
         C.HH_CAFE: _RECURRING,
+        C.HH_BAR: _RECURRING,  # D159 amended (5) 15 Nov 2026 (migration 0034), as hh_cafe
         C.HH_SWEETS: _RECURRING,
         C.HH_FAST_FOOD: _RECURRING,
         C.HH_DELIVERY: _RECURRING,
