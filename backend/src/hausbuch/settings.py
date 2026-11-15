@@ -68,6 +68,12 @@ DEFAULT_SYNC_APPROVAL_TIMEOUT_S = 300  # D118: wait at most 5 minutes for a push
 DEFAULT_INBOX_IMAP_HOST = "imap.gmail.com"  # D121
 DEFAULT_INBOX_AUTHSERV_ID = "mx.google.com"  # D121: the only trusted Authentication-Results
 DEFAULT_TEM_REGION = "fr-par"  # D123: Scaleway Transactional Email
+# Phase 7 chain sources (D181, D192): public endpoints, replaceable by one variable each.
+DEFAULT_ESPLORA_URLS = ("https://mempool.space/api", "https://blockstream.info/api")
+DEFAULT_ETHERSCAN_URL = "https://api.etherscan.io/v2/api"
+DEFAULT_BSC_RPC_URL = "https://bsc-dataseed.bnbchain.org"
+DEFAULT_SOLANA_RPC_RPS = 4  # the public endpoint's pace; 40 on Helius's Developer plan (Q-O87)
+SOLANA_PUBLIC_RPC_URL = "https://api.mainnet-beta.solana.com"  # for the runbook; not a default
 
 # The document_file.media_type CHECK.
 _MEDIA_TYPE = re.compile(r"[a-z]+/[a-z0-9.+-]+")
@@ -167,6 +173,18 @@ class Settings:
     # Phase 6 prices (D167 (3)): the CoinGecko Demo key, sent only in its request header;
     # without it the coin prices come from Kraken alone.
     coingecko_key: SecretStr | None = field(default=None, repr=False)
+    # Phase 7 chain sources (D181, D192). Secrets: the Etherscan V2 key (Ethereum, Arbitrum),
+    # the Solana RPC URL (a provider's URL carries its key; unset = Solana not configured, the
+    # sync says wallet.key_missing) and the optional Helius key (labels only). Plain: the
+    # Esplora base URLs tried in order (mempool.space, then Blockstream), the Etherscan-shaped
+    # API's URL, BNB Smart Chain's JSON-RPC URL (balances only) and the Solana request pace.
+    etherscan_key: SecretStr | None = field(default=None, repr=False)
+    solana_rpc_url: SecretStr | None = field(default=None, repr=False)
+    helius_key: SecretStr | None = field(default=None, repr=False)
+    esplora_urls: tuple[str, ...] = DEFAULT_ESPLORA_URLS
+    etherscan_url: str = DEFAULT_ETHERSCAN_URL
+    bsc_rpc_url: str = DEFAULT_BSC_RPC_URL
+    solana_rpc_rps: int = DEFAULT_SOLANA_RPC_RPS
 
     def __post_init__(self) -> None:
         if not self.database_url:
@@ -193,6 +211,7 @@ class Settings:
             ("HAUSBUCH_AI_MAX_PAGES", self.ai_max_pages),
             ("HAUSBUCH_AI_TIMEOUT_S", self.ai_timeout_s),
             ("HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S", self.sync_approval_timeout_s),
+            ("HAUSBUCH_SOLANA_RPC_RPS", self.solana_rpc_rps),
         ):
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise SettingsError(f"{name} must be a positive integer")
@@ -202,6 +221,23 @@ class Settings:
             )
         self._check_ai()
         self._check_automation()
+        self._check_chain_sources()
+
+    def _check_chain_sources(self) -> None:
+        """Phase 7 (D181): every chain source URL is an http(s) URL with a host. The messages
+        name the variables, never their values (the Solana URL may carry a key)."""
+        if not self.esplora_urls:
+            raise SettingsError("HAUSBUCH_ESPLORA_URL must name at least one URL")
+        urls = [("HAUSBUCH_ESPLORA_URL", url) for url in self.esplora_urls]
+        urls += [
+            ("HAUSBUCH_ETHERSCAN_URL", self.etherscan_url),
+            ("HAUSBUCH_BSC_RPC_URL", self.bsc_rpc_url),
+        ]
+        if self.solana_rpc_url is not None:
+            urls.append(("HAUSBUCH_SOLANA_RPC_URL", self.solana_rpc_url.get_secret_value()))
+        for name, url in urls:
+            if not _is_http_url(url):
+                raise SettingsError(f"{name} must be an http(s) URL with a host")
 
     def _merge_fints_pins(self) -> None:
         """Phase 6 D163: fints_pin and fints_pins['primary'] are one value; every slot name
@@ -394,6 +430,13 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
         tem_region=_optional(environ, "HAUSBUCH_TEM_REGION") or DEFAULT_TEM_REGION,
         mail_from=_optional(environ, "HAUSBUCH_MAIL_FROM"),
         coingecko_key=_secret(environ, "HAUSBUCH_COINGECKO_KEY"),
+        etherscan_key=_secret(environ, "HAUSBUCH_ETHERSCAN_KEY"),
+        solana_rpc_url=_secret(environ, "HAUSBUCH_SOLANA_RPC_URL"),
+        helius_key=_secret(environ, "HAUSBUCH_HELIUS_KEY"),
+        esplora_urls=_url_list(environ, "HAUSBUCH_ESPLORA_URL", DEFAULT_ESPLORA_URLS),
+        etherscan_url=_optional(environ, "HAUSBUCH_ETHERSCAN_URL") or DEFAULT_ETHERSCAN_URL,
+        bsc_rpc_url=_optional(environ, "HAUSBUCH_BSC_RPC_URL") or DEFAULT_BSC_RPC_URL,
+        solana_rpc_rps=_int(environ, "HAUSBUCH_SOLANA_RPC_RPS", DEFAULT_SOLANA_RPC_RPS),
     )
 
 
@@ -437,6 +480,23 @@ def _fints_slot_pins(environ: Mapping[str, str]) -> dict[str, str]:
 def _optional(environ: Mapping[str, str], name: str) -> str | None:
     value = environ.get(name, "").strip()
     return value or None
+
+
+def _url_list(environ: Mapping[str, str], name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    """One URL, or several separated by commas (tried in order); unset gives the default."""
+    value = _optional(environ, name)
+    if value is None:
+        return default
+    return tuple(url.strip() for url in value.split(",") if url.strip())
+
+
+def _is_http_url(url: str) -> bool:
+    try:
+        parts = urlsplit(url)
+        parts.port  # noqa: B018 - raises ValueError on a malformed port
+    except ValueError:
+        return False
+    return parts.scheme in ("https", "http") and bool(parts.hostname)
 
 
 def _secret(environ: Mapping[str, str], name: str) -> SecretStr | None:
