@@ -92,26 +92,42 @@ from .errors import (
     TRANSFER_UNMATCHED_LEG,
     RuleError,
 )
-from .household.taxonomy import HOUSEHOLD_CODES, TAX_RELEVANT, allowed_categories
+from .household.taxonomy import HOUSEHOLD_CODES, allowed_categories
 from .loan_schedule import build_schedule
 from .periods import months_in, service_period
-from .review import THRESHOLDS
 from .statements import norm
 
 # The shared code (D159) a private account may learn a rule for, beside its household codes:
-# its own bank fees. uncategorized stays unlearnable (no threshold).
+# its own bank fees.
 LEARNABLE_SHARED = frozenset({AllocationCategory.BANK_FEES})
-# Household codes without a threshold that a person may still turn into a rule (15 Nov 2026,
-# Luis: „Künftig immer so zuordnen“ was greyed on the monthly money to family). The model
-# never books them alone (their threshold stays None); a rule only repeats the person's own
-# answer for that payee, and the line keeps its code, so a later Unterhalt check loses nothing.
-# The same for a card's monthly settlement (15 Nov 2026, Luis: „Can't click immer so für the
-# credit card payments“): a card whose statements are not in the app is paid each month at a
-# different amount to one issuer IBAN. Once the card is an account, confirming its payment
-# IBAN switches off every learned rule on that IBAN (D176 (4)), and a line a rule booked
-# hh_credit_card is re-booked as the transfer when linked (D176, rebook_on_link).
-LEARNABLE_WITHOUT_THRESHOLD = frozenset(
-    {AllocationCategory.HH_FAMILY_TRANSFERS, AllocationCategory.HH_CREDIT_CARD}
+# The codes a private account's one-row answer never learns a rule for (D160 amended (5),
+# 15 Nov 2026, Luis: „check for all the places where the check box is disabled and enable
+# the pertinent“). Every other household code may learn one, those without a threshold
+# included: money to family and a card's settlement (15 Nov 2026, the first two), the
+# Finanzamt, a bank's interest, the catch-alls, the Geldanlage codes, a refund, a card's
+# interest, and the tax-relevant donations, childcare and household services. Their
+# threshold stays None, so the model never books them alone; a rule only repeats a person's
+# own answer for that payee, and the line keeps its code, so whatever later reads it (a
+# return input, an Unterhalt check) reads it the same. A line naming an own account's IBAN
+# is never a rule's (own_rule_blind: the transfer matcher comes first on a private account),
+# a rule on an IBAN that later becomes an own account's is also switched off then
+# (services.accounts._own_iban: a card's payment IBAN, a depot's or an exchange's IBAN, an
+# account created with one), and a line a rule booked hh_credit_card is re-booked as the
+# transfer when linked (D176, rebook_on_link).
+NEVER_LEARNED = frozenset(
+    {
+        AllocationCategory.UNCATEGORIZED,  # no answer to repeat
+        AllocationCategory.INTERNAL_TRANSFER_IN,  # booked by the matcher from an own IBAN
+        AllocationCategory.INTERNAL_TRANSFER_OUT,
+        AllocationCategory.HH_PROPERTY_COST,  # each payment pays its own bill (D161)
+        AllocationCategory.HH_WORK_EDUCATION,  # work or not depends on the item, not the shop
+        # The depot's own bookings, made by code from the depot statement's text (D165 (1))
+        AllocationCategory.SECURITY_PURCHASE,
+        AllocationCategory.SECURITY_SALE,
+        AllocationCategory.DISTRIBUTION,
+        AllocationCategory.CAPITAL_INCOME_TAX,
+        AllocationCategory.DEPOT_FEE,
+    }
 )
 
 EXACT = Decimal("1.000")
@@ -691,8 +707,12 @@ def infer_rule(
     and that rule is D158's "the counterparty is also a private one". D160 amended: on a
     shared IBAN (context.shared_iban_hmacs) it is the name rule of _name_rule, under its
     checks; since D160 amended (4) (14 Nov 2026) without the IBAN, and so is a payment
-    service's line (PayPal, Klarna), whose IBAN names the service, not the merchant."""
-    if tx.amount == 0:
+    service's line (PayPal, Klarna), whose IBAN names the service, not the merchant.
+
+    D160 amended (5), review fixes (15 Nov 2026): a private line whose counterparty IBAN is
+    another own account's (own_rule_blind, the test the matching order uses) learns no rule:
+    an own IBAN is always a transfer, and no rule can beat it."""
+    if tx.amount == 0 or own_rule_blind(tx, context):
         return None
     if context.account_purpose is AccountPurpose.PRIVATE:
         if (
@@ -2049,18 +2069,14 @@ def _cross_question(rule: MatchingRule) -> str:
 
 
 def learnable_household(category: AllocationCategory) -> bool:
-    """D160: a household code with a threshold that is not tax-relevant, or bank_fees (the
-    shared code a private account's own fee lines take; they carry no counterparty, so their
-    rule is a typed purpose pattern). A tax-relevant code proposes a return input a person
-    confirms each time; a transfer or depot code is booked by its matcher only; a code
-    without a threshold (hh_other, uncategorized) is never booked unseen, except
-    LEARNABLE_WITHOUT_THRESHOLD (money to family, a card's settlement), whose rule repeats a
-    person's own answer."""
+    """D160 as amended (5): a household code, or bank_fees (the shared code a private
+    account's own fee lines take; they carry no counterparty, so their rule is a typed purpose
+    pattern), outside NEVER_LEARNED (uncategorized, a transfer or depot code, a property bill,
+    work and education). Whether the model may book a code alone is THRESHOLDS', not this:
+    a rule repeats a person's own answer for that payee."""
     return (
-        (category in HOUSEHOLD_CODES or category in LEARNABLE_SHARED)
-        and category not in TAX_RELEVANT
-        and (THRESHOLDS[category] is not None or category in LEARNABLE_WITHOUT_THRESHOLD)
-    )
+        category in HOUSEHOLD_CODES or category in LEARNABLE_SHARED
+    ) and category not in NEVER_LEARNED
 
 
 def name_hits(tx: MatchTransaction, names: Sequence[NameHistory]) -> list[NameHistory]:
@@ -2193,17 +2209,37 @@ _RENTAL_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | 
     match_loan,
     match_document,
 )
-# D158 on a private account: the transfer by an own IBAN (D162), a payment to the seller
-# (14 Nov 2026), a bill already recorded as a Nebenkosten or private_cost row (D161 widened),
-# the document match (a bill of the property becomes hh_property_cost, D161), then the
-# tenant / lender question.
-_PRIVATE_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...] = (
+# D158 on a private account, as D160 amended (5) and its review fixes (15 Nov 2026) order it.
+# Before the learned rules: the transfer by an own IBAN (D162; such a line is never a rule's,
+# own_rule_blind), a bill already recorded as a Nebenkosten or private_cost row (D161
+# widened) and the document match (a bill of the property becomes hh_property_cost, D161):
+# a line that pays a bill is proposed as that bill's payment for a person, never booked by a
+# rule learned on its payee. After the rules: a payment to the seller (14 Nov 2026, after the
+# rules as before), then the tenant / lender question.
+_PRIVATE_BEFORE_RULES: tuple[
+    Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...
+] = (
     lambda tx, context: match_transfer_line(tx, context),  # defined below
-    match_down_payment,
     match_recorded_bill,
     match_private_document,
+)
+_PRIVATE_AFTER_RULES: tuple[
+    Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...
+] = (
+    match_down_payment,
     rental_counterparty_question,
 )
+
+
+def own_rule_blind(tx: MatchTransaction, context: MatchContext) -> bool:
+    """D160 amended (5): a private line whose counterparty IBAN is another own account's (an
+    account's IBAN, a card's confirmed payment IBAN, a depot's or an exchange's deposit IBAN:
+    context.own_account_hmacs) is booked by the transfer matcher, never by a learned rule."""
+    return (
+        context.account_purpose is AccountPurpose.PRIVATE
+        and tx.counterparty_iban_hmac is not None
+        and tx.counterparty_iban_hmac in context.own_account_hmacs
+    )
 
 
 def deterministic_answer(
@@ -2214,17 +2250,32 @@ def deterministic_answer(
 ) -> AllocationSet | None:
     """The deterministic order per account purpose (D158; fixture matching_order.yaml), before
     the model. Rental: learned rules -> owner transfer -> rent -> loan -> document (Hausgeld is
-    a by_wirtschaftsplan rule), as in phase 2. Private: learned rules -> transfer by an own
-    IBAN (D162) -> a payment to the seller -> a recorded bill -> a property bill (D161) ->
-    D158's question; the rent, loan, Hausgeld and
-    owner-transfer matchers never run there. A standing rule hit (confidence 1) wins at once;
-    a rule's near-miss proposal (D49) only when no matcher answers. Every answer is one the
-    account's purpose takes (D159)."""
-    found = rule_answer(rules, tx, context, history)
+    a by_wirtschaftsplan rule), as in phase 2. Private: transfer by an own IBAN (D162) -> a
+    recorded bill -> a property bill (D161) -> learned rules -> a payment to the seller ->
+    D158's question; the rent, loan, Hausgeld and owner-transfer matchers never run there. A
+    standing rule hit (confidence 1) wins over every matcher after it; a rule's near-miss
+    proposal (D49) only when no matcher answers. Every answer is one the account's purpose
+    takes (D159).
+
+    D160 amended (5) and its review fixes, 15 Nov 2026: on a private account a line whose
+    counterparty IBAN is another own account's (own_rule_blind) is never a rule's: its
+    transfer by that IBAN comes first, whatever a learned rule on its payee's name or another
+    IBAN would say (a card not in the app paid to the same issuer as a card that is). A line
+    that pays a recorded bill or a bill of the property is proposed as that bill's payment
+    before any rule (a rule learned on the Finanzamt's IBAN for an income-tax payment had
+    booked the private payment of a recorded Grunderwerbsteuer as hh_tax_payment): the
+    proposal goes to a person, so this only turns an automatic booking into a question. The
+    rental order is unchanged."""
+    private = context.account_purpose is AccountPurpose.PRIVATE
+    if private:
+        for matcher in _PRIVATE_BEFORE_RULES:
+            answer = _allowed_set(matcher(tx, context), context)
+            if answer is not None:
+                return answer
+    found = None if own_rule_blind(tx, context) else rule_answer(rules, tx, context, history)
     if found is not None and found.confidence == EXACT:
         return found
-    order = _PRIVATE_ORDER if context.account_purpose is AccountPurpose.PRIVATE else _RENTAL_ORDER
-    for matcher in order:
+    for matcher in _PRIVATE_AFTER_RULES if private else _RENTAL_ORDER:
         answer = _allowed_set(matcher(tx, context), context)
         if answer is not None:
             return answer
