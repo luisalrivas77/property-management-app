@@ -7931,13 +7931,17 @@ export interface components {
          * NetWorthOverview
          * @description GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest
          *     stored month-end, None before the first; `month_end_due` the last month-end when no run
-         *     holds it yet (the button „Monatsabschluss festhalten“).
+         *     holds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read
+         *     now for the stored month-end's day when it differs from the stored total, set only when
+         *     that day is the last month-end (the one the button stores again).
          */
         NetWorthOverview: {
             today: components["schemas"]["NetWorth"];
             month_end?: components["schemas"]["NetWorth"] | null;
             /** Month End Due */
             month_end_due?: string | null;
+            /** Month End Now */
+            month_end_now?: string | null;
         };
         /**
          * NetWorthRun

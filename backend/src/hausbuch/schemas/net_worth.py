@@ -108,11 +108,14 @@ class NetWorth(Schema):
 class NetWorthOverview(Schema):
     """GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest
     stored month-end, None before the first; `month_end_due` the last month-end when no run
-    holds it yet (the button „Monatsabschluss festhalten“)."""
+    holds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read
+    now for the stored month-end's day when it differs from the stored total, set only when
+    that day is the last month-end (the one the button stores again)."""
 
     today: NetWorth
     month_end: NetWorth | None = None
     month_end_due: date | None = None
+    month_end_now: Money | None = None
 
 
 class SnapshotOutcome(StrEnum):

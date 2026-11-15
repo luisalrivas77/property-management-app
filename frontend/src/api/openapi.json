@@ -20628,6 +20628,18 @@
               }
             ],
             "title": "Month End Due"
+          },
+          "month_end_now": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month End Now"
           }
         },
         "additionalProperties": false,
@@ -20636,7 +20648,7 @@
           "today"
         ],
         "title": "NetWorthOverview",
-        "description": "GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest\nstored month-end, None before the first; `month_end_due` the last month-end when no run\nholds it yet (the button „Monatsabschluss festhalten“)."
+        "description": "GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest\nstored month-end, None before the first; `month_end_due` the last month-end when no run\nholds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read\nnow for the stored month-end's day when it differs from the stored total, set only when\nthat day is the last month-end (the one the button stores again)."
       },
       "NetWorthRun": {
         "properties": {

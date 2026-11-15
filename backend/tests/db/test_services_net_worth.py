@@ -563,23 +563,23 @@ def test_a_month_end_is_stored_once_and_recaptured_only_when_it_changed(
         "rows": 9,
     }
 
-    # The same figures again: nothing written, by the task or by the button.
+    # The same figures again: nothing written.
     again = run(ws, net_worth.capture_month_end, ON, now=NOW.replace(hour=9))
     assert again.outcome is SnapshotOutcome.UNCHANGED and again.run == first.run
-    task = run(ws, net_worth.capture_month_end, ON, only_if_missing=True, now=NOW)
-    assert task.outcome is SnapshotOutcome.UNCHANGED
     assert len(_snapshot_rows(read, ws)) == 9
+    assert read(ws, net_worth.overview, date(2026, 11, 15)).month_end_now is None
 
-    # A price typed for the month-end after the capture: the button stores a new run, the
-    # task still does not, and the old run stays.
+    # A price typed for the month-end after the capture: the overview says the stored
+    # month-end differs from today's reading of it, and a capture (the button, or the 1st's
+    # task since the review of 15 Nov 2026) stores a new run; the old run stays.
     run(
         ws,
         lambda ctx: _price(ctx, ids["assets"]["IE00BEISPL02"], ON, "41.00", "user"),
         now=NOW,
     )
-    assert run(ws, net_worth.capture_month_end, ON, only_if_missing=True, now=NOW).outcome is (
-        SnapshotOutcome.UNCHANGED
-    )
+    drift = read(ws, net_worth.overview, date(2026, 11, 15))
+    assert drift.month_end.total == FIXTURE.expect.total
+    assert drift.month_end_now == FIXTURE.expect.total + Decimal("20.00")
     later = run(ws, net_worth.capture_month_end, ON, now=NOW.replace(hour=10))
     assert later.outcome is SnapshotOutcome.RECAPTURED and later.run.rows == 9
     assert len(_snapshot_rows(read, ws)) == 18
@@ -598,7 +598,10 @@ def test_a_month_end_is_stored_once_and_recaptured_only_when_it_changed(
 
     view = read(ws, net_worth.overview, date(2026, 11, 15))
     assert view.month_end.run == stored.run and view.month_end_due is None
-    assert read(ws, net_worth.overview, date(2026, 12, 1)).month_end_due == date(2026, 11, 30)
+    assert view.month_end_now is None
+    # A month later the button stores 30 Nov, not this month-end: no difference offered.
+    december = read(ws, net_worth.overview, date(2026, 12, 1))
+    assert december.month_end_due == date(2026, 11, 30) and december.month_end_now is None
 
     # Other workspace: no runs.
     assert read(other, net_worth.list_runs) == []
@@ -725,3 +728,34 @@ def test_the_month_end_task_stores_each_workspace_once(run, read, app_engine, fr
         ).all(),
     )
     assert [tuple(a) for a in actors] == [("system", "month_end")]
+
+
+def test_the_task_stores_again_what_changed_after_an_early_press(
+    run, read, app_engine, fresh_workspaces
+):
+    """Review of 15 Nov 2026, finding 3: „Monatsabschluss festhalten“ pressed at 05:00 on the
+    1st, before the morning's fetches; the month-end's price arrives afterwards. The 08:00
+    task stores a new run (until then it left any stored month-end alone, so the early
+    figure stayed for good)."""
+    ws, _ = fresh_workspaces
+    ids = _ledger(run, ws)
+    early = run(ws, net_worth.capture_last_month_end, now=NOW)  # 05:00 UTC on 1 Nov
+    assert (early.as_of, early.outcome) == (ON, SnapshotOutcome.WRITTEN)
+    run(
+        ws,
+        lambda ctx: _price(ctx, ids["assets"]["IE00BEISPL02"], ON, "41.00", "issuer_nav"),
+        now=NOW.replace(hour=7),
+    )
+    deps = JobDeps(
+        engine=app_engine,
+        settings=None,
+        blob_store=None,
+        model_client=None,
+        clock=lambda: datetime(2026, 11, 1, 8, 0, 2, tzinfo=UTC),
+    )
+    assert run_month_end(deps, workspace_ids=[ws]).outcomes == {"recaptured": 1}
+    stored = read(ws, net_worth.latest_month_end)
+    assert stored.run.net_worth_run_id != early.run.net_worth_run_id
+    assert stored.total == read(ws, net_worth.net_worth, ON).total
+    assert run_month_end(deps, workspace_ids=[ws]).outcomes == {"unchanged": 1}
+    assert len(read(ws, net_worth.list_runs)) == 2

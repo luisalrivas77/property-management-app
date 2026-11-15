@@ -37,11 +37,14 @@ valuation_snapshot row per valued figure, all under one net_worth_run_id: per ac
 and per position (asset null for a balance), per property (its estimate) and per loan (its
 balance, negative), and the event workspace.valuation_snapshot_written. The table is
 immutable, so a run is never changed. The periodic task `month_end` (1st, 08:00 UTC, after
-the 06:30 bank fetch and the 07:00 price fetch) writes a month-end only when no run holds it
-yet. „Monatsabschluss festhalten“ writes a new run for the same month-end when the figures
-read now differ from the newest stored run (a statement or a price that arrived late), and
+the 06:30 bank fetch and the 07:00 price fetch) and „Monatsabschluss festhalten“ both write a
+new run for the month-end when the figures read now differ from the newest stored run (a
+statement or a price that arrived late, or a button press before the morning's fetches), and
 nothing when they are the same; the newest run of a month-end is the one shown, the older
-runs stay. Captures of one workspace run one at a time (an advisory lock).
+runs stay. Until 15 Nov 2026 the task wrote only when no run held the month-end yet, so a
+press before 08:00 on the 1st froze an early figure for good (review, finding 3). The
+overview reads the stored month-end's day again and says when today's reading of it differs
+(`month_end_now`). Captures of one workspace run one at a time (an advisory lock).
 
 A stored month-end is read from its rows alone: every euro figure, the classes and the total
 are the stored values, never recomputed (a later „Wert heute“ or loan change leaves it as
@@ -791,12 +794,23 @@ def latest_month_end(conn: Connection) -> NetWorth | None:
 
 def overview(conn: Connection, today: date) -> NetWorthOverview:
     """GET /net-worth/overview: today's figure, the latest stored month-end, and the last
-    month-end when no run holds it yet."""
+    month-end when no run holds it yet. When the stored month-end is the last one (the day
+    the button stores), its day is read again on read, and `month_end_now` carries that
+    total when it differs from the stored one (a statement or a price that arrived after the
+    capture; review of 15 Nov 2026, findings 2 and 3), so the card offers „Monatsabschluss
+    neu speichern“. The property's estimate and a loan's balance read today's „Wert heute“
+    and loan terms, so a change of those also shows as a difference."""
     due = last_month_end(today)
+    stored = latest_month_end(conn)
+    now = None
+    if stored is not None and stored.on == due:
+        current = net_worth(conn, due).total
+        now = current if current != stored.total else None
     return NetWorthOverview(
         today=net_worth(conn, today),
-        month_end=latest_month_end(conn),
+        month_end=stored,
         month_end_due=None if _latest_run(conn, due) is not None else due,
+        month_end_now=now,
     )
 
 
@@ -818,15 +832,11 @@ def _lock(ctx: CommandContext) -> None:
     ctx.conn.execute(select(func.pg_advisory_xact_lock(key)))
 
 
-def capture_month_end(
-    ctx: CommandContext, as_of: date, *, only_if_missing: bool = False
-) -> SnapshotResult:
-    """Store `as_of`'s figure as a run (see the module doc). `only_if_missing`: the periodic
-    task's mode, which never writes a month-end that has a run already."""
+def capture_month_end(ctx: CommandContext, as_of: date) -> SnapshotResult:
+    """Store `as_of`'s figure as a run (see the module doc): the button and the periodic task
+    alike, a new run only when the figures differ from the newest stored one."""
     _lock(ctx)
     existing = _latest_run(ctx.conn, as_of)
-    if existing is not None and only_if_missing:
-        return SnapshotResult(outcome=SnapshotOutcome.UNCHANGED, as_of=as_of, run=existing)
     figure = net_worth(ctx.conn, as_of)
     rows = [_line_key(line) for line in figure.lines if line.value_eur is not None]
     if not rows:

@@ -27,6 +27,8 @@ interface NetWorthOverview {
   today: NetWorth;
   month_end: NetWorth | null;
   month_end_due: string | null;
+  /** Today's reading of the stored month-end's day, when it differs from the stored total. */
+  month_end_now: string | null;
 }
 type SnapshotResult = components["schemas"]["SnapshotResult"];
 type Owner = components["schemas"]["Owner"];
@@ -47,6 +49,7 @@ async function loadNetWorth(): Promise<Loaded> {
       today: filled(overview.today),
       month_end: overview.month_end ? filled(overview.month_end) : null,
       month_end_due: overview.month_end_due ?? null,
+      month_end_now: overview.month_end_now ?? null,
     },
     owners,
   };
@@ -84,7 +87,7 @@ function unvaluedText(count: number | undefined): string {
 }
 
 function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverview; owners: Owner[]; onChanged: () => void }) {
-  const { today, month_end: monthEnd, month_end_due: due } = overview;
+  const { today, month_end: monthEnd, month_end_due: due, month_end_now: drifted } = overview;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<SnapshotResult | null>(null);
@@ -145,13 +148,22 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
       )}
       {due ? (
         <p>
-          Der Monatsabschluss zum {formatDate(due)} ist noch nicht festgehalten. Er wird am Monatsersten automatisch gespeichert; mit dem
-          Button sofort.
+          Der Monatsabschluss zum {formatDate(due)} ist noch nicht festgehalten. Hausbuch speichert ihn am Monatsersten automatisch,
+          nach dem morgendlichen Abruf der Kontoumsätze und Kurse.
         </p>
       ) : null}
+      {monthEnd && drifted ? (
+        <div className="notice notice-warn">
+          <p>
+            Das gespeicherte Monatsende weicht vom heutigen Stand ab: {formatMoney(monthEnd.total)} statt {formatMoney(drifted)}. Seit dem
+            Speichern ist für den {formatDate(monthEnd.on)} noch etwas dazugekommen (ein Kontoauszug, ein Kurs oder ein geänderter
+            Schätzwert).
+          </p>
+        </div>
+      ) : null}
       <div className="row">
-        <button type="button" className={due ? undefined : "secondary"} onClick={() => void capture()} disabled={busy}>
-          {busy ? "Hält fest …" : "Monatsabschluss festhalten"}
+        <button type="button" className={due || drifted ? undefined : "secondary"} onClick={() => void capture()} disabled={busy}>
+          {busy ? "Hält fest …" : drifted ? "Monatsabschluss neu speichern" : "Monatsabschluss festhalten"}
         </button>
       </div>
       {result ? (
