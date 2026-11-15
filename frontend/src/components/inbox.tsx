@@ -1154,7 +1154,9 @@ function rebookText(candidate: TransferLegView, leg: TransferLegView): string {
 /** The counterpart's picker of a transfer card: one candidate is pre-selected, several are
  * listed for the person to choose; „Verknüpfen“ posts the link (matched_by user). A candidate
  * booked otherwise but tied to the leg by an own IBAN (rebook_on_link) is re-booked as a
- * transfer first: the button says so, with one line why. */
+ * transfer first: the button says so, with one line why. A bank line an exchange credited up
+ * to 2 € short (D162 amended 15 Nov 2026) names the gap it keeps as a deposit fee; linking
+ * books that gap as bank fees, split by the API. */
 function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accounts: Map<string, Account>; onLinked: () => void }) {
   const [choice, setChoice] = useState(open.candidates.length === 1 ? (open.candidates[0]?.id ?? "") : "");
   const [busy, setBusy] = useState(false);
@@ -1184,6 +1186,7 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
         <label key={candidate.id}>
           <input type="radio" name={name} value={candidate.id} checked={choice === candidate.id} onChange={() => setChoice(candidate.id)} />{" "}
           {legText(candidate)}
+          {candidate.deposit_fee_text ? <span className="muted"> {candidate.deposit_fee_text}</span> : null}
         </label>
       ))}
       {rebook && chosen ? <p className="muted">{rebookText(chosen, open.leg)}</p> : null}

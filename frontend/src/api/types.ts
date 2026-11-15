@@ -10791,6 +10791,10 @@ export interface components {
              * @default false
              */
             rebook_on_link: boolean;
+            /** Deposit Fee */
+            deposit_fee?: string | null;
+            /** Deposit Fee Text */
+            deposit_fee_text?: string | null;
         };
         /** TransferLink */
         TransferLink: {

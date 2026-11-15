@@ -27857,6 +27857,29 @@
             "type": "boolean",
             "title": "Rebook On Link",
             "default": false
+          },
+          "deposit_fee": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Fee"
+          },
+          "deposit_fee_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit Fee Text"
           }
         },
         "additionalProperties": false,
