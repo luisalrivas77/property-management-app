@@ -1596,9 +1596,12 @@ def _identity(a: tuple[str, ...], b: tuple[str, ...]) -> str | None:
     """How surely two payees' words are one payee, both ways (review F2, 14 Nov 2026,
     principle 3): STRONG for the same words, a word prefix whose shorter side has two words or
     more, a one-word prefix of BRAND_WORD_MIN letters or more ("KAUFLAND …"), the same first two
-    words, or Booking's first three; WEAK for a shorter one-word prefix ("ALDI" and "ALDI
-    TALK") or only the same first word ("ADLER MODEMARKT" and "ADLER APOTHEKE",
-    "VOLKSWAGEN AUTOVERSICHERUNG AG" and "VOLKSWAGEN AUTOVERS AG"); None for two payees. Both
+    words, Booking's first three, or a first word that starts the other's with another word
+    shared ("BOOKINGCOMB BO MARKTPLEIN" and "BOOKING BOOKIN MARKTPLEIN", 15 Nov 2026); WEAK for
+    a shorter one-word prefix ("ALDI" and "ALDI TALK"), a first word that starts the other's
+    alone ("BOOKINGCOMB BO" and "BOOKING BOOKIN") or only the same first word ("ADLER
+    MODEMARKT" and "ADLER APOTHEKE", "VOLKSWAGEN AUTOVERSICHERUNG AG" and "VOLKSWAGEN
+    AUTOVERS AG"); None for two payees. Both
     are one payee for an IBAN's lines (shared_iban, the D49 history); a rule that hits a line
     only weakly proposes, it never books unseen (apply_rule).
 
@@ -1608,7 +1611,10 @@ def _identity(a: tuple[str, ...], b: tuple[str, ...]) -> str | None:
     linking second word, "HOTEL AT …", nor fewer than FIRST_WORD_MIN letters, "G A …"), or,
     after a linking second word, the first three words are, the third not linking and of
     FIRST_WORD_MIN letters or more ("HOTEL AT BOOKING …": every hotel Booking.com charges for
-    is one payee, Luis 14 Nov 2026; not "RESTAURANT AT THE …"), or the
+    is one payee, Luis 14 Nov 2026; not "RESTAURANT AT THE …"), or the first words differ but
+    one starts the other, the shorter not generic and of FIRST_WORD_MIN letters or more
+    (strong when the two also share another word of FIRST_WORD_MIN letters or more that is not
+    a linking word, the merchant's street), or the
     first word is, when it is not generic and has FIRST_WORD_MIN letters or more
     ("VOLKSWAGEN AUTOVERSICHERUNG AG" and "VOLKSWAGEN AUTOVERS AG"). Never for no payee."""
     if not a or not b:
@@ -1637,6 +1643,18 @@ def _identity(a: tuple[str, ...], b: tuple[str, ...]) -> str | None:
         and len(a[2]) >= FIRST_WORD_MIN
     ):
         return STRONG  # "HOTEL AT BOOKING …": the collector named after the linking word (Luis)
+    first_short, first_long = sorted((a[0], b[0]), key=len)
+    if (
+        first_short != first_long
+        and first_long.startswith(first_short)
+        and len(first_short) >= FIRST_WORD_MIN
+        and first_short not in GENERIC_FIRST_WORDS
+    ):
+        # 15 Nov 2026 (Luis: „For a booking.com bank line it didn't use the rule“): PayPal
+        # printed one merchant "BOOKINGCOMB BO <street>" and "BOOKING BOOKIN <street>"; one
+        # first word starts the other, and the street they share makes it sure.
+        shared = {w for w in a[1:] if len(w) >= FIRST_WORD_MIN and w not in _LINKING_WORDS}
+        return STRONG if shared & set(b[1:]) else WEAK
     if a[0] == b[0] and len(a[0]) >= FIRST_WORD_MIN and a[0] not in GENERIC_FIRST_WORDS:
         return WEAK
     return None
