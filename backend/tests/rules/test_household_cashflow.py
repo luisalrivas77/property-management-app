@@ -82,6 +82,33 @@ def test_an_investment_is_saved_not_spent():
     assert got.surplus == D("1940.00")
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        C.HH_INVESTMENT_PROPERTY,
+        C.HH_INVESTMENT_SECURITIES,
+        C.HH_INVESTMENT_CRYPTO,
+        C.HH_INVESTMENT_SAVINGS,
+    ],
+)
+def test_every_investment_subcategory_is_saved_like_its_fallback(code):
+    """D159 amended (6) 15 Nov 2026 (migration 0036): each Geldanlage subcategory counts as
+    hh_investment does: saved, never spending nor income; a payout back lowers it."""
+    rows = [
+        (C.HH_SALARY, D("2000.00")),
+        (code, D("-300.00")),
+        (code, D("50.00")),  # a payout back
+        (C.HH_INVESTMENT, D("-20.00")),
+        (C.HH_DINING, D("-60.00")),
+    ]
+    got = month_cashflow("2026-11", rows, saved=D("100.00"))
+    assert got.income == D("2000.00")
+    assert got.spending_by_group == {G.DINING: D("60.00")}
+    assert got.spending_by_category == {G.DINING: {C.HH_DINING: D("60.00")}}
+    assert got.saved == D("370.00")
+    assert got.surplus == D("1940.00")
+
+
 def test_each_group_is_split_by_its_codes():
     """D159 amended 14 Nov 2026 (migration 0032): spending_by_category gives each group's
     figure by its subcategories and its fallback, keyed by the group and signed as the

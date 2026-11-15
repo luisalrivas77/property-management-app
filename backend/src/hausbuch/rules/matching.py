@@ -364,10 +364,11 @@ DOWN_PAYMENT_QUESTION = "Anzahlung auf den Kaufpreis der Wohnung an den Verkäuf
 def match_down_payment(tx: MatchTransaction, context: MatchContext) -> AllocationSet | None:
     """A private debit to the seller's account (context.purchase_payees: the IBAN of a rental
     line confirmed as purchase_price) is a payment on the purchase price, so it is proposed as
-    hh_investment („Geldanlage“: neither income nor spending, the money went into the flat)
-    with the property when one is known. Never a Nebenkosten or private_cost row and never
-    anything the Anlage V reads: the AfA basis comes from the property record only (phase 3
-    D55). Always to review (hh_investment has no threshold)."""
+    hh_investment_property („Immobilien“ in the Geldanlage group since D159 amended (6), 15 Nov
+    2026: neither income nor spending, the money went into the flat) with the property when
+    one is known. Never a Nebenkosten or private_cost row and never anything the Anlage V
+    reads: the AfA basis comes from the property record only (phase 3 D55). Always to review
+    (no code of the Geldanlage group has a threshold)."""
     hmac = tx.counterparty_iban_hmac
     if hmac is None or tx.amount >= 0:
         return None
@@ -377,7 +378,7 @@ def match_down_payment(tx: MatchTransaction, context: MatchContext) -> Allocatio
     property_id = next(iter(properties)) if len(properties) == 1 else None
     draft = _draft(
         tx.amount,
-        C.HH_INVESTMENT,
+        C.HH_INVESTMENT_PROPERTY,
         service_period(tx.purpose, tx.booking_date, False),
         False,
         property_id=property_id,

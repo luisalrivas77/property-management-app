@@ -13,10 +13,18 @@ answer goes back to Zu prüfen as a proposal:
   first), and hands the line to the model when nothing answers;
 - finish_resort (after the model) writes the answer under the line's lock.
 
+D159 amended (6) 15 Nov 2026 (migration 0036, Luis: „Should we split the category into
+subcategories? Like Immobilien, Krypto, etf, etc...“): the Geldanlage group's fallback
+`hh_investment` („Sonstige Geldanlage“) is a fallback too, so its lines are re-sorted the same
+way into Immobilien, Wertpapiere & ETF, Krypto or Sparen & Tagesgeld; `--category hh_investment`
+limits a run to them (resort_household's `categories`).
+
 A waiting line (all rows proposed) is answered as a re-ask is (services.matching.
 reask_household): the model's answer supersedes the proposal and is never auto-confirmed. A
-confirmed line keeps its rows unless the answer is one part in another household spending
-code (taxonomy.HOUSEHOLD_SPENDING); then the proposal supersedes the confirmed rows
+confirmed line keeps its rows unless the answer is one part in another code its fallback may
+be re-sorted into (taxonomy.resort_targets: any household spending code for a spending
+fallback, only the Geldanlage subcategories for hh_investment); then the proposal supersedes
+the confirmed rows
 (append-only, allocations.record_set) and transaction.resort_proposed records it, since a
 proposal writes no other event. Never a booking without a person: on a confirmed line even a
 standing rule hit is only proposed.
@@ -25,9 +33,11 @@ Left alone (never queued): a line with more than one row (a split), a row with a
 unit, tenancy, loan or Beleg, a leg of a transfer link or a line with a depot movement, a
 possible cost of buying or financing the flat (matching.may_be_purchase_cost), a rental line,
 a line already answered with the current household prompt, and a line re-sorted before
-(it has a transaction.resort_proposed event, whichever path answered), so a second run asks
-nothing again. Nothing is queued while `ai_private_accounts` is off (D168). `uncategorized` is not a
-fallback: `hausbuch household-reask` re-asks those lines."""
+(it has a transaction.resort_proposed event, whichever path answered, that proposed a code
+its current fallback may be re-sorted into), so a second run asks nothing again. A line whose
+re-sort into a spending code a person corrected to hh_investment is still taken once for the
+Geldanlage subcategories. Nothing is queued while `ai_private_accounts` is off (D168).
+`uncategorized` is not a fallback: `hausbuch household-reask` re-asks those lines."""
 
 from dataclasses import dataclass
 from typing import Any
@@ -45,10 +55,10 @@ from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import transfer_link as transfer_link_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules.errors import ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT
-from hausbuch.rules.household.taxonomy import FALLBACK_CODES, HOUSEHOLD_SPENDING
+from hausbuch.rules.household.taxonomy import FALLBACK_CODES, resort_targets
 from hausbuch.rules.matching import EXACT
 from hausbuch.rules.review import no_match_reason
-from hausbuch.schemas.allocation import Allocation, AllocationSet
+from hausbuch.schemas.allocation import Allocation, AllocationCategory, AllocationSet
 from hausbuch.schemas.enums import (
     AccountPurpose,
     AllocationStatus,
@@ -85,14 +95,33 @@ class ResortResult:
 # --- Which lines --------------------------------------------------------------------------
 
 
-def _resorted(conn: Connection, transaction_ids: list[UUID] | None = None) -> set[UUID]:
-    """The lines with a transaction.resort_proposed event: re-sorted once, whichever path
-    answered (the model, or a rule without an ai_call), so never taken again."""
+def _resorted(
+    conn: Connection, transaction_ids: list[UUID] | None = None
+) -> dict[UUID, set[AllocationCategory]]:
+    """Per line with a transaction.resort_proposed event, the codes its re-sorts proposed:
+    re-sorted once, whichever path answered (the model, or a rule without an ai_call)."""
     e = event_table.c
-    query = select(e.entity_id).where(e.type == EventType.TRANSACTION_RESORT_PROPOSED.value)
+    query = select(e.entity_id, e.payload).where(
+        e.type == EventType.TRANSACTION_RESORT_PROPOSED.value
+    )
     if transaction_ids is not None:
         query = query.where(e.entity_id.in_(transaction_ids))
-    return set(conn.execute(query.distinct()).scalars())
+    out: dict[UUID, set[AllocationCategory]] = {}
+    for entity_id, payload in conn.execute(query):
+        codes = out.setdefault(entity_id, set())
+        codes.update(AllocationCategory(p["category"]) for p in payload.get("allocations", ()))
+    return out
+
+
+def _resorted_into(
+    resorted: dict[UUID, set[AllocationCategory]], transaction_id: UUID, fallback: str
+) -> bool:
+    """Whether the line was re-sorted before into a code its current fallback may be
+    re-sorted into: never taken again for that fallback. A re-sort into a spending code
+    that a person then corrected to hh_investment does not count for the Geldanlage group
+    (D159 amended (6)): the line is asked once for its subcategories."""
+    proposed = resorted.get(transaction_id)
+    return bool(proposed) and bool(proposed & resort_targets(AllocationCategory(fallback)))
 
 
 def _scoped(row: Any) -> bool:
@@ -129,12 +158,18 @@ def _linked(conn: Connection, transaction_ids: list[UUID]) -> set[UUID]:
     return found & set(transaction_ids)
 
 
-def resort_household(ctx: CommandContext) -> ResortResult:
+def resort_household(
+    ctx: CommandContext, categories: frozenset[AllocationCategory] = RESORT_CATEGORIES
+) -> ResortResult:
     """Queue the re-sort of every private-account line booked in a group's fallback (module
-    docstring). Run once by the operator after the deploy of migration 0032; no endpoint.
-    Writes no event: the jobs write the proposals (and transaction.resort_proposed), and each
-    categorization its ai_call row(s)."""
-    codes = sorted(c.value for c in RESORT_CATEGORIES)
+    docstring), or only in the fallbacks named in `categories` (`--category`, e.g.
+    hh_investment after migration 0036). Run once by the operator after the deploy of
+    migration 0032, and once with hh_investment after 0036; no endpoint. Writes no event: the
+    jobs write the proposals (and transaction.resort_proposed), and each categorization its
+    ai_call row(s)."""
+    if not categories <= RESORT_CATEGORIES:
+        raise ValueError("the re-sort takes a group's fallback codes only")
+    codes = sorted(c.value for c in categories)
     t = transaction_table.c
     a = allocation_table.c
     fallback = allocation_table.alias("fallback_row")
@@ -156,6 +191,7 @@ def resort_household(ctx: CommandContext) -> ResortResult:
             t.purpose,
             t.booking_text,
             a.status,
+            a.category,
             a.property_id,
             a.unit_id,
             a.tenancy_id,
@@ -180,7 +216,8 @@ def resort_household(ctx: CommandContext) -> ResortResult:
         by_line.setdefault(row.id, []).append(row)
     linked = _linked(ctx.conn, list(by_line))
     costs = matching.acquisition_cost_amounts(ctx.conn)
-    asked = matching.lines_asked_with_current_prompt(ctx.conn) | _resorted(ctx.conn)
+    asked = matching.lines_asked_with_current_prompt(ctx.conn)
+    resorted = _resorted(ctx.conn, list(by_line))
     split = scoped = purchase = already = 0
     taken: list[tuple[UUID, bool]] = []  # (line, its row is confirmed)
     for transaction_id, parts in by_line.items():
@@ -191,7 +228,7 @@ def resort_household(ctx: CommandContext) -> ResortResult:
             scoped += 1
         elif matching.may_be_purchase_cost(first, costs):
             purchase += 1
-        elif transaction_id in asked:
+        elif transaction_id in asked or _resorted_into(resorted, transaction_id, first.category):
             already += 1
         else:
             taken.append((transaction_id, first.status == AllocationStatus.CONFIRMED.value))
@@ -257,7 +294,9 @@ def resort_line(
         return matching.MatchPlan("skipped", NOT_RESORTABLE)
     if skip_if_asked and (
         matching.asked_with_current_prompt(ctx.conn, transaction_id)
-        or _resorted(ctx.conn, [transaction_id])
+        or _resorted_into(
+            _resorted(ctx.conn, [transaction_id]), transaction_id, line.current[0].category
+        )
     ):
         return matching.MatchPlan("skipped", "matching.asked_already")
     context = matching.build_context(
@@ -306,15 +345,17 @@ def finish_resort(
 def _propose_over_confirmed(
     ctx: CommandContext, line: matching.Line, found: AllocationSet
 ) -> matching.MatchPlan:
-    """A confirmed fallback line: only an answer of one part in another household spending
-    code is written, as a proposal superseding the confirmed row, with
-    transaction.resort_proposed. Anything else (the same code, a split, a transfer, income, a
-    tax-relevant code, „noch offen“) leaves the confirmed row as it is."""
+    """A confirmed fallback line: only an answer of one part in another code its fallback
+    may be re-sorted into (taxonomy.resort_targets: a household spending code for a spending
+    fallback, a Geldanlage subcategory for hh_investment) is written, as a proposal
+    superseding the confirmed row, with transaction.resort_proposed. Anything else (the same
+    code, a split, a transfer, income, a tax-relevant code, spending for an investment or an
+    investment for spending, „noch offen“) leaves the confirmed row as it is."""
     (current,) = line.current
     if len(found.allocations) != 1:
         return matching.MatchPlan("skipped", KEEPS_CONFIRMED)
     (part,) = found.allocations
-    if part.category is current.category or part.category not in HOUSEHOLD_SPENDING:
+    if part.category is current.category or part.category not in resort_targets(current.category):
         return matching.MatchPlan("skipped", KEEPS_CONFIRMED)
     written = allocations.record_set(ctx, found, confirm=False, auto=False)
     _record_event(ctx, line, written, current, found)

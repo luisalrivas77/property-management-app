@@ -93,6 +93,11 @@ TAX_TREATMENT = MappingProxyType(
         C.HH_SPORT: T.PRIVATE,
         C.HH_TRAVEL: T.PRIVATE,
         C.HH_INVESTMENT: T.PRIVATE,
+        # D159 amended (6) 15 Nov 2026 (migration 0036): the Geldanlage subcategories
+        C.HH_INVESTMENT_PROPERTY: T.PRIVATE,
+        C.HH_INVESTMENT_SECURITIES: T.PRIVATE,
+        C.HH_INVESTMENT_CRYPTO: T.PRIVATE,
+        C.HH_INVESTMENT_SAVINGS: T.PRIVATE,
         C.HH_REFUND: T.PRIVATE,
         C.HH_FUEL: T.PRIVATE,  # D159 amended 14 Nov 2026 (migration 0031)
         # D159 amended 14 Nov 2026 (migration 0032): the subcategories, private like their groups
@@ -229,7 +234,12 @@ CATEGORY_LABEL = MappingProxyType(
         C.HH_WORK_EDUCATION: "Arbeitsmittel & Fortbildung",
         C.HH_SPORT: "Sport & Fitness",
         C.HH_TRAVEL: "Sonstiges Reisen",  # the group's fallback since 0032
-        C.HH_INVESTMENT: "Geldanlage",
+        C.HH_INVESTMENT: "Sonstige Geldanlage",  # the group's fallback since 0036
+        # D159 amended (6) 15 Nov 2026 (migration 0036); Luis: „Immobilien, Krypto, etf, etc.“
+        C.HH_INVESTMENT_PROPERTY: "Immobilien",
+        C.HH_INVESTMENT_SECURITIES: "Wertpapiere & ETF",
+        C.HH_INVESTMENT_CRYPTO: "Krypto",
+        C.HH_INVESTMENT_SAVINGS: "Sparen & Tagesgeld",
         C.HH_REFUND: "Erstattung",
         C.HH_FUEL: "Tanken (Auto)",  # D159 amended 14 Nov 2026 (migration 0031)
         # D159 amended 14 Nov 2026 (migration 0032); Luis's labels

@@ -21,6 +21,9 @@ Readings of the spec (named in the fixture's header too):
   its credit lowers the spending total and shows as a negative group, never as income.
   hh_investment (a payment to an investment platform the app holds no account of) is a
   transfer: neither income nor spending, and the Haushalt month counts it as saved.
+- D159 amended (6) 15 Nov 2026 (migration 0036, Luis: „Should we split the category into
+  subcategories? Like Immobilien, Krypto, etf, etc...“): the Geldanlage group gains four
+  subcategories, transfers like hh_investment, which stays as the group's fallback.
 - `allowed_categories(purpose)` (D159): a private account takes the household codes, the
   transfer codes, the depot codes, bank_fees and uncategorized; the rental account takes
   every other code (phases 2-4), bank_fees and uncategorized included.
@@ -127,6 +130,12 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_INTERNET, G.TELECOM, R.SPENDING),
             _code(C.HH_POSTAGE, G.OTHER, R.SPENDING),
             _code(C.HH_INVESTMENT, G.INVESTMENT, R.TRANSFER),  # saved, not spent
+            # D159 amended (6) 15 Nov 2026 (migration 0036): the Geldanlage subcategories,
+            # saved like their fallback hh_investment
+            _code(C.HH_INVESTMENT_PROPERTY, G.INVESTMENT, R.TRANSFER),
+            _code(C.HH_INVESTMENT_SECURITIES, G.INVESTMENT, R.TRANSFER),
+            _code(C.HH_INVESTMENT_CRYPTO, G.INVESTMENT, R.TRANSFER),
+            _code(C.HH_INVESTMENT_SAVINGS, G.INVESTMENT, R.TRANSFER),
             # Tax-relevant spending: each proposes the input its form already reads
             _code(C.HH_DONATION, G.TAX, R.TAX, P.RETURN_SPECIAL_EXPENSE),
             _code(C.HH_HOUSEHOLD_SERVICES, G.TAX, R.TAX, P.RETURN_HOUSEHOLD_SERVICES),
@@ -183,7 +192,10 @@ BULK_CONFIRMABLE = frozenset(
 # D159 amended 14 Nov 2026 (migration 0032, Luis: „I want to be as detailed as possible“): a
 # spending group with subcategories keeps its old code as the fallback, „Sonstige …“, for what
 # fits no subcategory. Per group, that code; hh_fuel, the codes 0029 made a group of their own
-# and hh_interest_fees (a card's charges, booked by code) are no fallback.
+# and hh_interest_fees (a card's charges, booked by code) are no fallback. D159 amended (6)
+# 15 Nov 2026 (migration 0036): the Geldanlage group too, a transfer group, whose fallback
+# hh_investment („Sonstige Geldanlage“) is re-sorted only into its own subcategories
+# (resort_targets).
 FALLBACK = MappingProxyType(
     {
         G.SUBSCRIPTIONS: C.HH_SUBSCRIPTIONS,
@@ -198,12 +210,14 @@ FALLBACK = MappingProxyType(
         G.FAMILY_CHILD: C.HH_FAMILY_CHILD,
         G.TELECOM: C.HH_TELECOM,
         G.OTHER: C.HH_OTHER,
+        G.INVESTMENT: C.HH_INVESTMENT,
     }
 )
 FALLBACK_CODES = frozenset(FALLBACK.values())
-# The household spending codes a confirmed line may be re-sorted into (the one-off re-sort,
-# services.household_resort): spending outside the movement and depot groups (a refund too),
-# never a card's charges, never a tax-relevant code nor a payment to an investment.
+# The household spending codes a confirmed line in a spending fallback may be re-sorted into
+# (the one-off re-sort, services.household_resort): spending outside the movement and depot
+# groups (a refund too), never a card's charges, never a tax-relevant code nor a payment to an
+# investment.
 HOUSEHOLD_SPENDING = frozenset(
     c
     for c, row in TAXONOMY.items()
@@ -218,9 +232,9 @@ if any(TAXONOMY[c].group is not g for g, c in FALLBACK.items()):  # pragma: no c
 
 
 def fallback_of(category: C) -> C | None:
-    """The fallback code of the group a subcategory sits in (hh_supermarket → hh_groceries);
-    None for a fallback itself, for a code of a group without subcategories and for any code
-    outside the household spending groups."""
+    """The fallback code of the group a subcategory sits in (hh_supermarket → hh_groceries,
+    hh_investment_crypto → hh_investment); None for a fallback itself, for a code of a group
+    without subcategories and for any code outside the groups of FALLBACK."""
     row = TAXONOMY.get(category)
     if row is None or category in FALLBACK_CODES:
         return None
@@ -228,6 +242,19 @@ def fallback_of(category: C) -> C | None:
     if fallback is None or category in CARD_CODES:
         return None
     return fallback
+
+
+def resort_targets(fallback: C) -> frozenset[C]:
+    """The codes a confirmed line booked in `fallback` may be re-sorted into
+    (services.household_resort): a spending fallback any household spending code
+    (HOUSEHOLD_SPENDING, as 0032 decided), hh_investment only its own subcategories (D159
+    amended (6)), so a payment into an investment is never re-sorted into spending, nor
+    spending into an investment, without a person; empty for a code that is no fallback."""
+    if fallback not in FALLBACK_CODES:
+        return frozenset()
+    if TAXONOMY[fallback].relevance is R.SPENDING:
+        return HOUSEHOLD_SPENDING
+    return frozenset(c for c in TAXONOMY if fallback_of(c) is fallback)
 
 
 _ALLOWED = MappingProxyType(

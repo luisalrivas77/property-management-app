@@ -7,7 +7,9 @@ group); a transfer between own accounts or a depot trade is neither (D162). bank
 confirmed uncategorized line, the two codes both purposes share, count under „Sonstiges“.
 saved comes from the transfer links (services.transfers.saved_in) plus what hh_investment
 lines paid to an investment the app holds no account of (D159 amended 13 Nov 2026: saved, not
-spent; a payout back lowers it), surplus is income less
+spent; a payout back lowers it), and since D159 amended (6) (migration 0036) every code of the
+Geldanlage group the same way (Immobilien, Wertpapiere & ETF, Krypto, Sparen & Tagesgeld and
+the fallback „Sonstige Geldanlage“), surplus is income less
 spending, and the savings rate is surplus / income, (income - spending) / income as the
 household design defines it (docs/design/household-finances.md, Sparquote; mockup 10), None for
 a month without income.
@@ -43,10 +45,10 @@ def month_cashflow(
     by_spending: dict[HouseholdGroup, dict[AllocationCategory, Decimal]] = {}
     invested = Decimal("0.00")
     for category, amount in rows:
-        if category is AllocationCategory.HH_INVESTMENT:
+        code = TAXONOMY.get(category)
+        if code is not None and code.group is HouseholdGroup.INVESTMENT:
             invested -= amount
             continue
-        code = TAXONOMY.get(category)
         if code is None:  # bank_fees, uncategorized
             other = spending.get(HouseholdGroup.OTHER, Decimal("0.00"))
             spending[HouseholdGroup.OTHER] = other - amount
