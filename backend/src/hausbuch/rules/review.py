@@ -34,7 +34,7 @@ from hausbuch.schemas.allocation import (
     RoutingDecision,
     RoutingInput,
 )
-from hausbuch.schemas.chain import GroupRoutingInput
+from hausbuch.schemas.chain import GroupKind, GroupRoutingInput
 from hausbuch.schemas.enums import AccountPurpose, ImportStatus
 
 RULE_HIT = "routing.rule_hit"
@@ -305,8 +305,33 @@ def route_group(item: GroupRoutingInput) -> Routing:
     """D186 (1): a chain movement group confirmed by code or sent to a person; never a model
     answer (there is none on a chain). Fixture: phase 2 review_routing.yaml `chain_cases`;
     the order is stated in the comment above that key (and replayed by
-    tests/fixture_models_phase2.route_group_reference); built in step 2."""
-    raise NotImplementedError("phase 7 step 2")
+    tests/fixture_models_phase2.route_group_reference). Built in step 2: a failed or spam
+    group and a fee alone are booked; a wallet's first sync waits for a person, then a Bitcoin
+    output to an unregistered address; a transfer is booked once linked, a wrap once its
+    decoder is listed, a swap or reward once listed and priced (a swap only between registry
+    assets), a bridge once its pair is learned and linked; everything else waits."""
+    if item.kind in (GroupKind.FAILED, GroupKind.SPAM) or item.fee_only:
+        return Routing(decision=RoutingDecision.AUTO_CONFIRM, reason=DETERMINISTIC)
+    auto = Routing(decision=RoutingDecision.AUTO_CONFIRM, reason=DETERMINISTIC)
+    if item.first_sync:
+        return _review(CHAIN_FIRST_SYNC)
+    if item.unregistered_output:
+        return _review(CHAIN_CHANGE_CANDIDATE)
+    if item.kind in (GroupKind.TRANSFER, GroupKind.EXCHANGE_TRANSFER):
+        return auto if item.linked else _review(NO_MATCH)
+    if item.kind is GroupKind.WRAP:
+        return auto if item.decoder_listed else _review(CHAIN_NO_DECODER)
+    if item.kind in (GroupKind.SWAP, GroupKind.REWARD):
+        if not item.decoder_listed:
+            return _review(CHAIN_NO_DECODER)
+        if not item.priced:
+            return _review(CHAIN_UNPRICED)
+        if item.kind is GroupKind.SWAP and not item.registry_assets:
+            return _review(NEVER_AUTO)
+        return auto
+    if item.kind is GroupKind.BRIDGE and item.pair_learned and item.linked:
+        return auto
+    return _review(NEVER_AUTO)  # bridge, stake, airdrop, lp, contract_call, unknown
 
 
 def _zero_line(found: AllocationSet) -> bool:

@@ -495,115 +495,90 @@ cases:
 # waits (§6 example 10's card).
 chain_cases:
   - id: chain_failed_auto
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: failed}
     expect: {decision: auto_confirm, reason: routing.deterministic}
   - id: chain_spam_auto
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: spam}
     expect: {decision: auto_confirm, reason: routing.deterministic}
   - id: chain_fee_only_auto
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: transfer, fee_only: true}
     expect: {decision: auto_confirm, reason: routing.deterministic}
   - id: chain_first_sync_failed_still_auto
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: failed, first_sync: true}
     expect: {decision: auto_confirm, reason: routing.deterministic}
   - id: chain_transfer_linked_auto
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: transfer, linked: true}
     expect: {decision: auto_confirm, reason: routing.deterministic}
   - id: chain_exchange_withdrawal_by_hash_auto
     description: §6 example 2.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: exchange_transfer, linked: true, registry_assets: true}
     expect: {decision: auto_confirm, reason: routing.deterministic}
   - id: chain_wrap_registry_pair_auto
     description: §6 example 8.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: wrap, decoder_listed: true, linked: true, registry_assets: true}
     expect: {decision: auto_confirm, reason: routing.deterministic}
   - id: chain_swap_listed_priced_auto
     description: §6 example 3.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: swap, decoder_listed: true, priced: true, registry_assets: true}
     expect: {decision: auto_confirm, reason: routing.deterministic}
   - id: chain_reward_listed_priced_auto
     description: §6 example 10's reward.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: reward, decoder_listed: true, priced: true, registry_assets: true}
     expect: {decision: auto_confirm, reason: routing.deterministic}
   - id: chain_bridge_learned_pair_auto
     description: §6 example 9 after „Künftig immer so“.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: bridge, pair_learned: true, linked: true, priced: true, registry_assets: true}
     expect: {decision: auto_confirm, reason: routing.deterministic}
 
   - id: chain_first_sync_swap_review_although_priced
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: swap, decoder_listed: true, priced: true, registry_assets: true, first_sync: true}
     expect: {decision: review, reason: routing.chain_first_sync}
   - id: chain_first_sync_transfer_linked_review
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: transfer, linked: true, first_sync: true}
     expect: {decision: review, reason: routing.chain_first_sync}
   - id: chain_bitcoin_unregistered_output
     description: §6 example 12.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: unknown, unregistered_output: true}
     expect: {decision: review, reason: routing.chain_change_candidate}
   - id: chain_transfer_unmatched
     description: §6 example 1.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: transfer}
     expect: {decision: review, reason: routing.no_match}
   - id: chain_wrap_not_listed
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: wrap}
     expect: {decision: review, reason: routing.chain_no_decoder}
   - id: chain_swap_unpriced
     description: §6 example 4.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: swap, decoder_listed: true, registry_assets: true}
     expect: {decision: review, reason: routing.chain_unpriced}
   - id: chain_swap_unlisted_program
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: swap, priced: true, registry_assets: true}
     expect: {decision: review, reason: routing.chain_no_decoder}
   - id: chain_swap_token_not_in_registry
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: swap, decoder_listed: true, priced: true}
     expect: {decision: review, reason: routing.never_auto}
   - id: chain_reward_unpriced
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: reward, decoder_listed: true, registry_assets: true}
     expect: {decision: review, reason: routing.chain_unpriced}
   - id: chain_bridge_first_time
     description: §6 example 9 the first time.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: bridge, linked: true, priced: true, registry_assets: true}
     expect: {decision: review, reason: routing.never_auto}
   - id: chain_stake_card
     description: §6 example 10.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: stake, decoder_listed: true, registry_assets: true}
     expect: {decision: review, reason: routing.never_auto}
   - id: chain_airdrop_review
     description: §6 example 6 promoted; phase 8 asks whether a consideration was given.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: airdrop, priced: true, registry_assets: true}
     expect: {decision: review, reason: routing.never_auto}
   - id: chain_lp_review
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: lp, decoder_listed: true, priced: true, registry_assets: true}
     expect: {decision: review, reason: routing.never_auto}
   - id: chain_contract_call_review
     description: §6 example 11.
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: contract_call, priced: true, registry_assets: true}
     expect: {decision: review, reason: routing.never_auto}
   - id: chain_unknown_review
-    pending: "phase 7 step 2 (rules.review.route_group)"
     item: {kind: unknown}
     expect: {decision: review, reason: routing.never_auto}
