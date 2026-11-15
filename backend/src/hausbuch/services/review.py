@@ -68,6 +68,7 @@ from hausbuch.schemas.api import (
     ConfirmCategoryBody,
     ConfirmCategoryResult,
     ConfirmCategorySkip,
+    DepositIbanOffer,
     InboxItem,
     InboxItemKind,
     NameCategoryCount,
@@ -85,7 +86,7 @@ from hausbuch.schemas.enums import (
     ProposalStatus,
 )
 
-from . import allocations, matching, rules_learned, workspace_settings
+from . import allocations, matching, rules_learned, transfers, workspace_settings
 from .context import CommandContext
 from .errors import NotFoundError, RuleViolationError
 from .proposals import PROPOSAL_BANK_FILE_NOT_READ, PROPOSAL_EXCHANGE_EXPORT_NOT_READ
@@ -119,6 +120,9 @@ def allocate_transaction(
     drafts = body.allocation_set.allocations
     allocations.check_categories(ctx.conn, line.account_id, drafts)
     current = line.current
+    # D162 amended (8), review: the deposit the panel's box named, read before the answer is
+    # written, so a link the answer itself lets the matcher write teaches nothing.
+    offer = _deposit_iban_offer(ctx.conn, line) if body.learn_deposit_iban else None
     corrects = None
     if current and allocations.same_answer(drafts, current):
         if current[0].status is AllocationStatus.PROPOSED:
@@ -134,6 +138,9 @@ def allocate_transaction(
             confidence=USER_CONFIDENCE,
         )
         written = allocations.record_set(ctx, answer, confirm=True, auto=False)
+    if offer is not None:
+        # Also for the same answer on a confirmed line: the box was shown and ticked.
+        transfers.learn_deposit_iban_on_confirm(ctx, transaction_id, offer)
     confirmed = _as_set(transaction_id, written)
     context = _context(ctx.conn, ctx.now.date(), line, iban_key)
     names = _names(ctx.conn, line)
@@ -399,6 +406,14 @@ def _rebook_blockers(conn: Connection, tx: MatchTransaction) -> list[RebookBlock
     ]
 
 
+def _deposit_iban_offer(conn: Connection, line: matching.Line) -> DepositIbanOffer | None:
+    """The box „IBAN als Einzahlungskonto von <Börse> merken“ (D162 amended (8), review): only
+    for a private bank debit (transfers.deposit_iban_offer), so no other line reads the links."""
+    if not line.private or line.tx.amount >= 0:
+        return None
+    return transfers.deposit_iban_offer(conn, line.tx.id)
+
+
 def _booked_by_rule(current: list[Allocation]) -> UUID | None:
     """The rule whose booking an answer with another split corrects (D49, review F2): the
     line's current rows are all confirmed and all carry that rule's id. None for an open
@@ -539,6 +554,7 @@ def _response(
         payee_label=found.label if line.private else None,
         no_merchant=line.private and refusal == RULE_NO_MERCHANT,
         own_iban=own_iban,
+        deposit_iban_offer=_deposit_iban_offer(conn, line),
     )
 
 

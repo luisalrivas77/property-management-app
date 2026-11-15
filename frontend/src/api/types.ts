@@ -4680,6 +4680,12 @@ export interface components {
          *     only for the name's other confirmed lines (rule.conflicts, rule.too_broad), those lines
          *     are re-booked to this answer's category first, then the rule is learned; refused as
          *     before when one of them is not a single confirmed row of a learnable household code.
+         *     learn_deposit_iban (phase 6 D162 amended (8), review, 15 Nov 2026): the box „IBAN als
+         *     Einzahlungskonto von <Börse> merken“ the panel shows for TransactionAllocations.
+         *     deposit_iban_offer, ticked. Only when true, sent by a person, and the line, confirmed by
+         *     this answer as internal_transfer_out (alone or with its fee), is still the out leg of the
+         *     link to the deposit the offer named, does the exchange learn the line's counterparty IBAN;
+         *     false or missing (an older client, a bulk confirmation) learns nothing.
          */
         ConfirmAllocationsBody: {
             allocation_set: components["schemas"]["AllocationSet"];
@@ -4699,6 +4705,11 @@ export interface components {
              * @default false
              */
             rebook_earlier: boolean;
+            /**
+             * Learn Deposit Iban
+             * @default false
+             */
+            learn_deposit_iban: boolean;
         };
         /**
          * ConfirmCategoryBody
@@ -4882,6 +4893,39 @@ export interface components {
          * @enum {string}
          */
         DepositForm: "none" | "cash_account" | "bank_guarantee" | "surety";
+        /**
+         * DepositIbanOffer
+         * @description Phase 6 D162 amended (8), review (15 Nov 2026): a private bank debit that is the out
+         *     leg of a current link (the matcher's or a person's) to an exchange's EUR deposit, while
+         *     the exchange has no deposit IBAN and the line's IBAN could become it
+         *     (accounts.deposit_iban_outcome learned). The panel offers the box „IBAN als
+         *     Einzahlungskonto von <exchange_label> merken“, ticked, for an answer of
+         *     internal_transfer_out (alone or with bank_fees), and shows `text`: the paired deposit by
+         *     date and amount and what learning does (rules.matching.deposit_iban_offer_text).
+         */
+        DepositIbanOffer: {
+            /**
+             * Deposit Movement Id
+             * Format: uuid
+             */
+            deposit_movement_id: string;
+            /**
+             * Exchange Account Id
+             * Format: uuid
+             */
+            exchange_account_id: string;
+            /** Exchange Label */
+            exchange_label: string;
+            /**
+             * Deposit Date
+             * Format: date
+             */
+            deposit_date: string;
+            /** Deposit Amount */
+            deposit_amount: string;
+            /** Text */
+            text: string;
+        };
         /**
          * DepositReceipt
          * @description GET /tenancies/{id}/deposits: one Kaution payment received (a tenancy.deposit_received
@@ -10832,6 +10876,10 @@ export interface components {
          *     private line whose counterparty IBAN is another own account's, always a transfer, so no
          *     rule is learned from it, typed pattern or not (rule.not_learnable), and the panel shows
          *     no rule box, no suggested pattern and no pattern field, as for no_merchant.
+         *     deposit_iban_offer (phase 6 D162 amended (8), review, 15 Nov 2026): what the box „IBAN
+         *     als Einzahlungskonto von <Börse> merken“ names, None when no box is shown (no current link
+         *     to an exchange's deposit, or the IBAN would not be learned: the exchange holds one, it
+         *     carries other payees, another own account holds it).
          */
         TransactionAllocations: {
             transaction: components["schemas"]["Transaction"];
@@ -10886,6 +10934,7 @@ export interface components {
              * @default false
              */
             own_iban: boolean;
+            deposit_iban_offer?: components["schemas"]["DepositIbanOffer"] | null;
         };
         /**
          * TransferLegSource

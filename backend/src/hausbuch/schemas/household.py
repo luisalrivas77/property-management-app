@@ -529,7 +529,9 @@ class TransferMatchedBy(StrEnum):
 
 class DepositIbanOutcome(StrEnum):
     """D162 amended 15 Nov 2026, review: what the first link by hand of a deposit an exchange
-    credited short does with the bank line's counterparty IBAN, recorded on its
+    credited short (or, D162 amended (8), a person's confirmation, with the panel's box ticked,
+    of a bank line paired with an exchange's deposit) does with the bank line's counterparty
+    IBAN, recorded on its
     transfer.linked. learned: it became the exchange's deposit IBAN. shared_iban: not learned,
     the IBAN carries other payees too (rules.matching.shared_iban). own_account: not learned,
     another own account holds it."""
@@ -627,7 +629,9 @@ class TransferLegView(Schema):
     booked_as_transfer: bool = False
     rebook_on_link: bool = False
     # D162 amended 15 Nov 2026: a bank deposit the exchange credited short without recording
-    # a fee; linking books the gap as bank_fees, and deposit_fee_text says so in German.
+    # a fee; linking books the gap as bank_fees, and deposit_fee_text says so in German. D162
+    # amended (8): on an exact exchange deposit whose bank line a person confirmed as a
+    # transfer out, deposit_fee_text (deposit_fee null) says the link learns the line's IBAN.
     deposit_fee: Money | None = None
     deposit_fee_text: str | None = None
 

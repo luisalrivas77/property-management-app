@@ -75,6 +75,13 @@
 //   a private line naming another own account's IBAN (own_iban, D160 amended (5)'s review
 //   fixes): an own IBAN is always a transfer, so no rule is learned there (rule.not_learnable
 //   is the backstop).
+// - Phase 6 D162 amended (8), review (15 Nov 2026): when the line is the out leg of a link to an
+//   exchange's EUR deposit and the exchange could learn the line's IBAN as its deposit account
+//   (deposit_iban_offer, computed by the server), an answer of „Übertrag auf eigenes Konto“
+//   alone or with bank fees shows the box „IBAN als Einzahlungskonto von <Börse> merken“,
+//   ticked, with the offer's sentence naming the paired deposit by date and amount, so a pair
+//   the matcher made by amount and date alone is never learned without the person seeing it.
+//   learn_deposit_iban is sent true only while the box is shown and ticked.
 // - Phase 3 (§11 "Inputs"): under a confirmed line, its repairs and renovation rows get their
 //   tax questions (components/taxInputs.tsx), in their own form beside this one.
 import Link from "next/link";
@@ -352,12 +359,15 @@ function AllocationEditor({
   const [sameAmount, setSameAmount] = useState<{ category: AllocationCategory; only: boolean } | null>(null);
   // D160: „Diese auch auf … umbuchen“, off until ticked.
   const [rebook, setRebook] = useState(false);
+  // D162 amended (8): „IBAN als Einzahlungskonto von … merken“, ticked until unticked.
+  const [learnIban, setLearnIban] = useState(true);
   const [busy, setBusy] = useState(false);
   const learnId = useId();
   const patternId = useId();
   const allId = useId();
   const onlyId = useId();
   const rebookId = useId();
+  const ibanId = useId();
 
   const keys = useMemo(
     () => [
@@ -426,6 +436,12 @@ function AllocationEditor({
     earlier.length > 0 ? (view.rebook_blockers ?? []).filter((blocker) => blocker.category !== askedCategory) : [];
   const canRebook =
     earlier.length > 0 && blockers.length === 0 && earlier.every((entry) => !unlearnable.has(entry.category));
+  // D162 amended (8): the box only for the transfer out (alone or with its bank fee).
+  const ibanOffer = view.deposit_iban_offer ?? null;
+  const transferOut =
+    rows.some((row) => row.category === "internal_transfer_out") &&
+    rows.every((row) => row.category === "internal_transfer_out" || row.category === "bank_fees");
+  const showIbanBox = ibanOffer !== null && transferOut;
   const payeeLabel = view.payee_label ?? null;
   const payee = payeeLabel || line.counterparty_name?.trim() || "dieser Gegenseite";
 
@@ -503,6 +519,7 @@ function AllocationEditor({
             : typed,
       same_amount_only: asked !== null && sameAmountOnly === true,
       rebook_earlier: canRebook && rebook,
+      learn_deposit_iban: showIbanBox && learnIban,
     };
     setBusy(true);
     form.clear();
@@ -705,6 +722,16 @@ function AllocationEditor({
           />
         </Field>
       )}
+
+      {showIbanBox && ibanOffer !== null ? (
+        <div className="field">
+          <label className="inline" htmlFor={ibanId}>
+            <input id={ibanId} type="checkbox" checked={learnIban} onChange={(e) => setLearnIban(e.target.checked)} />
+            IBAN als Einzahlungskonto von {ibanOffer.exchange_label} merken
+          </label>
+          <p className="muted hint">{ibanOffer.text}</p>
+        </div>
+      ) : null}
 
       <div className="row">
         <button type="submit" disabled={busy || !balanced || unanswered}>
