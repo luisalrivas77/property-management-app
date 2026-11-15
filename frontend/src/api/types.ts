@@ -2091,6 +2091,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/returns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Returned Payment
+         * @description The link joining the debit and the credit that returned it (matched_by user).
+         */
+        post: operations["returned_payment_api_returns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/household/cashflow": {
         parameters: {
             query?: never;
@@ -3480,7 +3500,7 @@ export interface components {
          * @description §8.2. Default tax treatment in the comment (rules/categories.py is the source).
          * @enum {string}
          */
-        AllocationCategory: "rent_cold" | "operating_costs_prepayment" | "operating_costs_settlement" | "deposit_in" | "deposit_out" | "owner_transfer_in" | "owner_transfer_out" | "loan_interest" | "loan_principal" | "loan_fees" | "loan_disbursement" | "hausgeld_umlagefaehig" | "hausgeld_verwaltung" | "hausgeld_ruecklage" | "property_management" | "grundsteuer" | "insurance" | "electricity" | "repairs" | "renovation" | "purchase_price" | "acquisition_cost" | "professional_fees" | "bank_fees" | "other_income" | "other_expense" | "uncategorized" | "hh_salary" | "hh_child_benefit" | "hh_tax_refund" | "hh_capital_income" | "hh_other_income" | "hh_housing" | "hh_groceries" | "hh_family_child" | "hh_mobility" | "hh_insurance" | "hh_subscriptions" | "hh_leisure_travel" | "hh_health" | "hh_other" | "hh_donation" | "hh_household_services" | "hh_childcare" | "hh_property_cost" | "hh_tax_payment" | "internal_transfer_in" | "internal_transfer_out" | "hh_cash" | "hh_credit_card" | "hh_interest_fees" | "hh_personal_care" | "hh_clothing" | "hh_dining" | "hh_home" | "hh_electronics" | "hh_online_shopping" | "hh_fees" | "hh_gifts" | "hh_family_transfers" | "hh_telecom" | "hh_work_education" | "hh_sport" | "hh_travel" | "hh_investment" | "hh_investment_property" | "hh_investment_securities" | "hh_investment_crypto" | "hh_investment_savings" | "hh_refund" | "hh_fuel" | "hh_streaming" | "hh_pay_tv" | "hh_music_audio" | "hh_software" | "hh_cloud" | "hh_gaming" | "hh_news" | "hh_memberships" | "hh_public_transport" | "hh_taxi" | "hh_parking" | "hh_car_service" | "hh_car_tax" | "hh_supermarket" | "hh_drugstore" | "hh_bakery" | "hh_restaurant" | "hh_cafe" | "hh_bar" | "hh_sweets" | "hh_fast_food" | "hh_delivery" | "hh_rent" | "hh_energy" | "hh_broadcast_fee" | "hh_flat_search" | "hh_ins_car" | "hh_ins_liability_contents" | "hh_ins_health" | "hh_ins_life" | "hh_pharmacy" | "hh_doctor" | "hh_dental_optical" | "hh_outings" | "hh_books_media" | "hh_hobbies" | "hh_lodging" | "hh_flights" | "hh_kids_gear" | "hh_toys" | "hh_pregnancy_birth" | "hh_mobile_phone" | "hh_internet" | "hh_postage" | "security_purchase" | "security_sale" | "distribution" | "capital_income_tax" | "depot_fee";
+        AllocationCategory: "rent_cold" | "operating_costs_prepayment" | "operating_costs_settlement" | "deposit_in" | "deposit_out" | "owner_transfer_in" | "owner_transfer_out" | "loan_interest" | "loan_principal" | "loan_fees" | "loan_disbursement" | "hausgeld_umlagefaehig" | "hausgeld_verwaltung" | "hausgeld_ruecklage" | "property_management" | "grundsteuer" | "insurance" | "electricity" | "repairs" | "renovation" | "purchase_price" | "acquisition_cost" | "professional_fees" | "bank_fees" | "other_income" | "other_expense" | "uncategorized" | "hh_salary" | "hh_child_benefit" | "hh_wage_replacement" | "hh_tax_refund" | "hh_capital_income" | "hh_other_income" | "hh_housing" | "hh_groceries" | "hh_family_child" | "hh_mobility" | "hh_insurance" | "hh_subscriptions" | "hh_leisure_travel" | "hh_health" | "hh_other" | "hh_donation" | "hh_household_services" | "hh_childcare" | "hh_property_cost" | "hh_tax_payment" | "internal_transfer_in" | "internal_transfer_out" | "hh_cash" | "hh_credit_card" | "hh_interest_fees" | "hh_personal_care" | "hh_clothing" | "hh_dining" | "hh_home" | "hh_electronics" | "hh_online_shopping" | "hh_fees" | "hh_gifts" | "hh_family_transfers" | "hh_telecom" | "hh_work_education" | "hh_sport" | "hh_travel" | "hh_investment" | "hh_investment_property" | "hh_investment_securities" | "hh_investment_crypto" | "hh_investment_savings" | "hh_refund" | "hh_fuel" | "hh_streaming" | "hh_pay_tv" | "hh_music_audio" | "hh_software" | "hh_cloud" | "hh_gaming" | "hh_news" | "hh_memberships" | "hh_public_transport" | "hh_taxi" | "hh_parking" | "hh_car_service" | "hh_car_tax" | "hh_car_purchase" | "hh_supermarket" | "hh_drugstore" | "hh_bakery" | "hh_restaurant" | "hh_cafe" | "hh_bar" | "hh_sweets" | "hh_fast_food" | "hh_delivery" | "hh_rent" | "hh_energy" | "hh_broadcast_fee" | "hh_flat_search" | "hh_ins_car" | "hh_ins_liability_contents" | "hh_ins_health" | "hh_ins_life" | "hh_pharmacy" | "hh_doctor" | "hh_dental_optical" | "hh_outings" | "hh_books_media" | "hh_hobbies" | "hh_lodging" | "hh_flights" | "hh_kids_gear" | "hh_toys" | "hh_pregnancy_birth" | "hh_mobile_phone" | "hh_internet" | "hh_postage" | "security_purchase" | "security_sale" | "distribution" | "capital_income_tax" | "depot_fee";
         /**
          * AllocationDraft
          * @description What a matcher, a rule, the model or the user proposes for part of a transaction.
@@ -6543,6 +6563,7 @@ export interface components {
             /** Movement Id */
             movement_id?: string | null;
             transfer?: components["schemas"]["OpenTransfer"] | null;
+            returned?: components["schemas"]["OpenReturn"] | null;
             /** Asset Id */
             asset_id?: string | null;
             /** Private Costs */
@@ -6563,7 +6584,7 @@ export interface components {
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).
@@ -7544,6 +7565,18 @@ export interface components {
             owner_id?: string | null;
             /** Property Id */
             property_id?: string | null;
+        };
+        /**
+         * OpenReturn
+         * @description D162 amended (7), 15 Nov 2026: a credit on a private account that returns an earlier
+         *     debit of the same account (rules.household.returns), with the debits it may return: one
+         *     when the rule found one, several when it cannot tell which (never guessed). Booked by
+         *     POST /returns (ReturnedPaymentCreate).
+         */
+        OpenReturn: {
+            leg: components["schemas"]["TransferLegView"];
+            /** Candidates */
+            candidates: components["schemas"]["TransferLegView"][];
         };
         /**
          * OpenTransfer
@@ -9353,6 +9386,44 @@ export interface components {
          * @enum {string}
          */
         ReturnInputKind: "wage_certificate" | "payslip" | "commute" | "home_office" | "work_room" | "work_equipment" | "telecom" | "professional_association" | "training" | "other_expense" | "other_insurance" | "replacement_income" | "vorsorge_override" | "child" | "childcare_cost" | "household_services" | "special_expense";
+        /**
+         * ReturnedPartner
+         * @description Phase 6 D162 amended (7): the other line of a returned payment booked as such (the
+         *     debit that left, or the credit that brought it back, on the same account).
+         */
+        ReturnedPartner: {
+            /**
+             * Transaction Id
+             * Format: uuid
+             */
+            transaction_id: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Amount */
+            amount: string;
+        };
+        /**
+         * ReturnedPaymentCreate
+         * @description POST /returns' body (D162 amended (7)): the debit that left and the credit that brought
+         *     it back, both bank lines of one private account. Both are booked as transfer parts by the
+         *     person's answer and linked to each other (a transfer_link on one account), so together they
+         *     count as nothing.
+         */
+        ReturnedPaymentCreate: {
+            /**
+             * Out Transaction Id
+             * Format: uuid
+             */
+            out_transaction_id: string;
+            /**
+             * In Transaction Id
+             * Format: uuid
+             */
+            in_transaction_id: string;
+        };
         /** RoomRent */
         RoomRent: {
             /**
@@ -10681,6 +10752,7 @@ export interface components {
             allocation_status: components["schemas"]["TransactionAllocationStatus"];
             /** Allocation Categories */
             allocation_categories: components["schemas"]["AllocationCategory"][];
+            returned_with?: components["schemas"]["ReturnedPartner"] | null;
         };
         /**
          * TransactionAllocationStatus
@@ -11294,7 +11366,7 @@ export interface components {
          * WarningCode
          * @enum {string}
          */
-        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "limit.private_cost_undated" | "limit.private_cost_after_window" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "tax.private_cost_paid_from_account" | "payment_proof.missing" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "return.progression_provisional" | "return.benefit_possible_double" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
+        WarningCode: "year_end_straddle" | "afa.no_split" | "afa.cost_row_unpaid" | "afa.acquisition_cost_without_row" | "afa.purchase_price_mismatch" | "afa.useful_life_report" | "afa.movable_asset_no_evidence" | "afa.movable_asset_exceeds_building" | "limit.exceeded" | "limit.prior_year_amendment" | "limit.estimated_net" | "limit.private_cost_undated" | "limit.private_cost_after_window" | "anschaffungsnah.performance_date_check" | "renovation.undecided" | "interest.certificate_mismatch" | "hausgeld.abrechnung_pending" | "income.other_review" | "income.pre_handover" | "income.living_area_missing" | "umlagen.mixed_terms" | "reduced_rent.no_market_rent" | "reduced_rent.prognosis_needed" | "reduced_rent.partial" | "draft.open_lines_excluded" | "draft.form_provisional" | "draft.allocation_without_property" | "archive.finanzamt_copy_needed" | "tax.travel_frequency" | "tax.private_cost_paid_from_account" | "payment_proof.missing" | "anlage_n.certificate_missing" | "anlage_n.church_mismatch" | "anlage_n.tax_class_6" | "anlage_n.periods_overlap" | "anlage_n.days_implausible" | "anlage_n.home_office_capped" | "anlage_n.too_many_routes" | "anlage_n.receipt_missing" | "anlage_n.form_provisional" | "anlage_n.payslip_gap" | "anlage_n.payslip_no_ytd" | "anlage_n.work_room_records" | "anlage_n.work_room_centre" | "anlage_n.work_room_partial" | "anlage_n.first_workplace_check" | "return.progression_provisional" | "return.benefit_possible_double" | "return.benefit_booked" | "return.children_mismatch" | "return.kindergeld_apply" | "return.child_over_18" | "return.childcare_until_14" | "return.donation_over_cap" | "return.filing_required" | "return.questionnaire_open" | "return.not_modelled" | "questionnaire_provisional" | "tax_export.questions_open";
         /** WerbungskostenComponents */
         WerbungskostenComponents: {
             commute?: components["schemas"]["CommuteComponent"] | null;
@@ -15813,6 +15885,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TransferUnlinkBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferLink"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    returned_payment_api_returns_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnedPaymentCreate"];
             };
         };
         responses: {

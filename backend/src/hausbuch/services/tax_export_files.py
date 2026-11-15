@@ -420,6 +420,10 @@ WARNING_TEXT: dict[WarningCode, Callable[[dict[str, str]], str]] = {
         "Eine Lohnersatzleistung steht in der Bescheinigung und als eigene Angabe: bitte "
         "nur einmal erfassen."
     ),
+    WarningCode.RETURN_BENEFIT_BOOKED: lambda p: (
+        f"Lohnersatzleistungen {p.get('tax_year', '')}: {_p(p, 'difference')} auf dem Konto "
+        "gebucht, noch nicht als Lohnersatzleistung eingetragen."
+    ),
     WarningCode.RETURN_CHILDREN_MISMATCH: lambda p: (
         "Die Zahl der Kinderfreibeträge der Bescheinigung passt nicht zu den erfassten Kindern."
     ),

@@ -1,8 +1,9 @@
 """`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills |
 rematch-waiting | household-resort | follow-accounts | repair-periods | relink-transfers |
-store-report-prices` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41, D27 amended 15 Nov 2026;
-phase 6 D159 amended 13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended (4) 14 Nov
-2026, D165 (a) and D176 (3) amended 14 Nov 2026, D162 and D167 (c) amended 15 Nov 2026).
+pair-returns | store-report-prices` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41, D27 amended
+15 Nov 2026; phase 6 D159 amended 13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended
+(4) 14 Nov 2026, D165 (a) and D176 (3) amended 14 Nov 2026, D162 and D167 (c) amended 15 Nov
+2026, D162 amended (6) and (7) 15 Nov 2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -54,6 +55,13 @@ booked as that transfer's leg when it holds no confirmed answer; a line of a lin
 written, tied by an own IBAN, that holds only the model's proposal of the transfer is booked as
 its leg too (D162 amended (6)). It runs here, not in the worker: it reads and writes only the
 database. --dry-run rolls back and prints what it would link and book.
+
+`pair-returns` runs services.returns.count_pairs once for a workspace, with the same owner URL
+(phase 6 D162 amended (7), 15 Nov 2026): it prints how many returned payments of the private
+accounts the lines already imported hold, the „Rücküberweisung erkannt“ cards Zu prüfen shows,
+and how many of them offer more than one debit. It never books: the cards are computed when Zu
+prüfen is read, so a new import is recognised without it and there is nothing to write; it
+reads only, and --apply (accepted for symmetry with the other one-off commands) says so.
 
 `store-report-prices` runs services.depot.store_all_report_prices once for a workspace, with
 the same owner URL (phase 6 D167 amended (c), 15 Nov 2026): every current quarterly-report
@@ -424,6 +432,42 @@ def relink_transfers(args: argparse.Namespace, environ: Mapping[str, str]) -> in
     return EXIT_OK
 
 
+# --- pair-returns ---------------------------------------------------------------------
+
+
+def pair_returns(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.returns.count_pairs once for a workspace (phase 6 D162 amended (7)): the
+    returned payments the imported lines hold, never booked. Read-only, with or without
+    `--apply`: the cards are computed on read."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.services.returns import count_pairs
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                cards, several = count_pairs(conn)
+                raise _DryRun  # read-only: roll back whatever the read touched
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    print(f"found {cards} returned payment(s) on the private accounts")
+    print(f"{several} of them offer more than one debit to choose from")
+    if args.apply:
+        print(
+            "nothing to apply: Zu prüfen shows each one as „Rücküberweisung erkannt“ when it is "
+            "read, and only a person books it there"
+        )
+    return EXIT_OK
+
+
 # --- store-report-prices --------------------------------------------------------------
 
 
@@ -723,6 +767,20 @@ def _parser() -> argparse.ArgumentParser:
     relinked.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     relinked.add_argument("--dry-run", action="store_true", help="count only, change nothing")
     relinked.set_defaults(command=relink_transfers, command_name="relink-transfers")
+
+    returned = commands.add_parser(
+        "pair-returns",
+        help="count the returned payments (a recalled transfer credited back) the private "
+        "accounts' imported lines hold, as Zu prüfen shows them; never books (once, after the "
+        "deploy of D162 amended (7))",
+    )
+    returned.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    returned.add_argument(
+        "--apply",
+        action="store_true",
+        help="accepted, changes nothing: the cards are computed when Zu prüfen is read",
+    )
+    returned.set_defaults(command=pair_returns, command_name="pair-returns")
 
     report_prices = commands.add_parser(
         "store-report-prices",

@@ -34,6 +34,7 @@ from uuid import UUID
 from hausbuch.rules.errors import ANLAGE_N_NO_PAY, RuleError
 from hausbuch.rules.tax._common import unique, warning
 from hausbuch.rules.tax.anlage_n._base import ZERO, floor_euros, in_year
+from hausbuch.rules.tax.anlage_n.booked_benefits import booked_benefit_warnings
 from hausbuch.rules.tax.anlage_n.children import child_months, children_months
 from hausbuch.rules.tax.anlage_n.draft import RULE_SET_SOURCE, TARIFF_SOURCE, Itemised, itemise
 from hausbuch.rules.tax.anlage_n.summary import household_figures
@@ -43,6 +44,7 @@ from hausbuch.rules.tax.tariff import church_tax, income_tax, soli
 from hausbuch.schemas.employment import (
     AnlageNRuleSet,
     AssessedTax,
+    BookedBenefit,
     ChildMonthsDetail,
     ChildrenResult,
     EstimateLineSources,
@@ -263,16 +265,19 @@ def return_estimate(
     *,
     reminders: Sequence[str] = (),
     not_modelled: Sequence[str] = (),
+    booked_benefits: Sequence[BookedBenefit] = (),
 ) -> ReturnEstimate:
     """The whole-return estimate of `tax_year` (the module docstring).
 
     `owner_facts` are the owners' current return_input rows (with their expected pay);
     `household_rows` the household's current rows (children of earlier years included);
     `properties` the Anlage V results of the year (phase 3's draft); `answers` the year's
-    current questionnaire answers. An owner without any pay source counts with result 0 and
-    status none, and their typed wage-replacement benefits still enter the Progressionsvorbehalt
-    (D102 amended 15 Nov 2026). RuleError return.childcare_age, return.household_services_cash
-    and those of the Anlage N rules."""
+    current questionnaire answers; `booked_benefits` the confirmed wage-replacement lines on
+    the accounts (phase 6 D159 amended (8)), which add the to-do return.benefit_booked and
+    change no figure. An owner without any pay source counts with result 0 and status none,
+    and their typed wage-replacement benefits still enter the Progressionsvorbehalt (D102
+    amended 15 Nov 2026). RuleError return.childcare_age, return.household_services_cash and
+    those of the Anlage N rules."""
     items: dict[UUID, Itemised] = {}
     vorsorge_of: dict[UUID, VorsorgeResult] = {}
     income_n: list[OwnerIncome] = []
@@ -371,6 +376,7 @@ def return_estimate(
                         kind="benefit_letter", key="replacement_income", owner_id=f.owner_id
                     )
                 )
+    warnings += booked_benefit_warnings(tax_year, owner_facts, booked_benefits)
 
     child_rows = [
         ChildMonthsDetail(
