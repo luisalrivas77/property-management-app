@@ -5,10 +5,12 @@ A sync is a BankSource that produces the same camt ZIP the online-banking export
 the unchanged phase 2 import path (D115). These are the records and the pure rules' inputs and
 outputs; the services, the job and the routes are step 1.
 
-No model here carries a secret (D119): the PIN and the DK product id live only in Settings
-(container secrets), the TAN is never typed into the app, and the FinTS client state is stored
-MAC'd in bank_connection.client_data and is never part of a read model (only `state_present`).
-The login name is accepted on input and returned masked (`login_masked`), never in clear.
+No read model carries a secret (D119, D196): the DK product id lives only in Settings, a PIN
+in Settings (a container secret) or typed into the app through BankPinSet (a SecretStr) and
+stored encrypted, never returned; the TAN is never typed into the app, and the FinTS client
+state is stored MAC'd in bank_connection.client_data and is never part of a read model (only
+`state_present`). The login name is accepted on input, stored encrypted (D196) and returned
+masked (`login_masked`), never in clear.
 
 The sets stored in a CHECK'd column (SyncStatus, SyncTrigger) live here, as phase 2 keeps
 module-specific sets in their module (enums.py's docstring); tests/db/test_schema_consistency.py
@@ -20,7 +22,7 @@ from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 
 from .api import Patch
 from .common import Money, MutableRecord, Schema
@@ -41,6 +43,22 @@ LoginMasked = Annotated[str, Field(pattern=r"^(.{2}\*{3}.{2}|\*{3})$")]
 # secret; the bank_connection.credential_slot CHECK (migration 0025).
 CredentialSlot = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")]
 PRIMARY_SLOT = "primary"
+
+
+# Phase 6 D196: the PIN a person types on the Bankabruf card. Banks use 5 to 64 characters;
+# the message is fixed, so a 422 names neither the PIN nor its length.
+PIN_MIN_LENGTH = 5
+PIN_MAX_LENGTH = 64
+BANK_PIN_INVALID = "bank.pin_invalid"
+
+
+class CredentialSource(StrEnum):
+    """Where a connection's PIN comes from at the next sync (D196): typed in the app (stored
+    encrypted, it wins), the slot's container secret, or nowhere yet."""
+
+    APP = "app"
+    SERVER = "server"
+    NONE = "none"
 
 
 def mask_login(login: str) -> str:
@@ -137,6 +155,24 @@ class BankConnectionPatch(Patch):
         return _https_only(value)
 
 
+class BankPinSet(Schema):
+    """PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and
+    never returned, logged or echoed (a SecretStr: its repr is stars)."""
+
+    pin: SecretStr = Field(
+        json_schema_extra={"minLength": PIN_MIN_LENGTH, "maxLength": PIN_MAX_LENGTH}
+    )
+
+    @field_validator("pin")
+    @classmethod
+    def _length(cls, value: SecretStr) -> SecretStr:
+        if not PIN_MIN_LENGTH <= len(value.get_secret_value()) <= PIN_MAX_LENGTH:
+            raise ValueError(
+                f"{BANK_PIN_INVALID}: the PIN has {PIN_MIN_LENGTH} to {PIN_MAX_LENGTH} characters"
+            )
+        return value
+
+
 class StatementsRefusal(Schema):
     """The bank's latest unresolved refusal of the PDF statement fetch because the access may
     not fetch statements at all (account.statements_refused, 14 Nov 2026): its answer code,
@@ -179,6 +215,14 @@ class BankConnection(MutableRecord):
     # statement fetch was a refusal for lack of permission (e.g. 9370); the card says how to
     # get it unlocked.
     statements_refusal: StatementsRefusal | None = None
+    # Phase 6 D196: where the slot's PIN comes from (never the PIN), when it was typed into
+    # the app, and whether the stored PIN (credential_readable) and the stored Anmeldename
+    # (name_readable) still decrypt (false after the session key changed: the card asks to
+    # type them again). Named without "pin" and "login", which D119's guards reserve.
+    credential_source: CredentialSource = CredentialSource.NONE
+    credential_set_at: datetime | None = None
+    credential_readable: bool = True
+    name_readable: bool = True
 
 
 class BankParameters(Schema):
@@ -203,11 +247,22 @@ class BankParameters(Schema):
     )
 
 
+class AppCredential(Schema):
+    """A slot whose PIN was typed into the app (D196): its name and when; never the PIN."""
+
+    slot: CredentialSlot
+    set_at: datetime
+    readable: bool = True  # false once the session key changed: type it again
+
+
 class BankCredentialSlots(Schema):
     """GET /bank-credential-slots (phase 6 D163): the slots whose container secret is set,
-    names only, so the Bankabruf card can say which variable is still missing."""
+    names only, so the Bankabruf card can say which variable is still missing; and (D196) the
+    slots whose PIN was typed into the app, so „Bankabruf einrichten“ can say so before a
+    connection exists."""
 
     slots: list[CredentialSlot] = Field(default_factory=list)
+    app_slots: list[AppCredential] = Field(default_factory=list)
 
 
 class BankSync(MutableRecord):

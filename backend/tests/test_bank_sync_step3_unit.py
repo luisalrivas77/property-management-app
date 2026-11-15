@@ -13,7 +13,7 @@ from hausbuch.jobs import bank_sync as job
 from hausbuch.rules import errors as E
 from hausbuch.schemas import bank_sync as B
 from hausbuch.schemas.bank_sync import SyncTrigger
-from hausbuch.schemas.events import EVENT_CATALOG, BankParametersRead, EventType
+from hausbuch.schemas.events import EVENT_CATALOG, BankParametersRead, BankPinChanged, EventType
 from hausbuch.services import bank_sync as service
 from hausbuch.services.bank_sync import (
     _FAILED_CARD,
@@ -172,6 +172,8 @@ STEP3_MODELS = [
     B.BankConnection,
     B.BankConnectionPatch,
     BankParametersRead,
+    B.AppCredential,  # phase 6 D196: a slot whose PIN was typed into the app, never the PIN
+    BankPinChanged,
 ]
 
 
