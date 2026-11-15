@@ -5278,7 +5278,7 @@
     "/api/bank-credentials/{slot}": {
       "put": {
         "summary": "Bank Credential Set",
-        "description": "D196: the PIN is encrypted before it reaches the database; the answer names the slot\nand when, never the PIN.",
+        "description": "D196: the PIN is encrypted before it reaches the database; the answer names the slot\nand when, never the PIN. The PIN is bound to the FinTS address in the same body (D196\namended).",
         "operationId": "bank_credential_set_api_bank_credentials__slot__put",
         "parameters": [
           {
@@ -11661,6 +11661,11 @@
             "type": "boolean",
             "title": "Name Readable",
             "default": true
+          },
+          "credential_server_matches": {
+            "type": "boolean",
+            "title": "Credential Server Matches",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -11785,15 +11790,22 @@
             "format": "password",
             "title": "Pin",
             "writeOnly": true
+          },
+          "fints_url": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 9,
+            "title": "Fints Url"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "pin"
+          "pin",
+          "fints_url"
         ],
         "title": "BankPinSet",
-        "description": "PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and\nnever returned, logged or echoed (a SecretStr: its repr is stars). Surrounding blanks are\ntrimmed, as the container secret's are (settings._optional), so a PIN pasted with a space\nis the same PIN; the length counts after trimming."
+        "description": "PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and\nnever returned, logged or echoed (a SecretStr: its repr is stars). Surrounding blanks are\ntrimmed, as the container secret's are (settings._optional), so a PIN pasted with a space\nis the same PIN; the length counts after trimming.\n\nfints_url (D196 amended, 16 Nov 2026): the FinTS address the PIN is typed for, the\nconnection's as the card shows it. The PIN is stored bound to it and a sync to any other\naddress refuses it (bank.pin_server_changed), so changing a connection's address never\nsends the stored PIN elsewhere. Never echoed or stored readable."
       },
       "BankStatement": {
         "properties": {

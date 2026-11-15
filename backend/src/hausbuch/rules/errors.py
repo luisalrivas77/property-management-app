@@ -224,6 +224,9 @@ BANK_AUTO_SYNC_WAITS = "bank.auto_sync_waits"  # DKB: two manual syncs without a
 # Phase 6 D196: a PIN or login stored encrypted no longer decrypts (the session key changed)
 BANK_PIN_UNREADABLE = "bank.pin_unreadable"  # type the PIN on the Bankabruf card again
 BANK_LOGIN_UNREADABLE = "bank.login_unreadable"  # type the Anmeldename and the PIN again
+# D196 amended (16 Nov 2026): the PIN typed into the app was typed for another FinTS address
+# than the connection's (its address changed since, or the PIN predates the binding)
+BANK_PIN_SERVER_CHANGED = "bank.pin_server_changed"  # type the PIN again for this address
 # Phase 6 step 1 (D168): the second owner's own consent to ai_private_accounts.
 SETTINGS_CONSENT_SWITCH_OFF = "settings.consent_switch_off"  # nothing to consent to
 SETTINGS_CONSENT_ALREADY_RECORDED = "settings.consent_already_recorded"  # this member did

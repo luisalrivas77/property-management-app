@@ -15,6 +15,7 @@ from db.test_jobs_bank_sync import (  # the helpers only, never a test_* name
     PRODUCT_ID,
     T0,
     T1,
+    URL,
     Bank,
     _good,
     _settings,
@@ -49,9 +50,15 @@ def bank(run, read, app_engine, blob_store, tmp_path, fresh_workspaces):
     return Bank(run, read, app_engine, blob_store, tmp_path, ws)
 
 
-def _set_pin(bank, pin=APP_PIN, slot="primary", now=T0):
+def _set_pin(bank, pin=APP_PIN, slot="primary", now=T0, url=URL):
     return bank.run(
-        bank.ws, credentials.set_pin, slot, SecretStr(pin), settings=bank.settings, now=now
+        bank.ws,
+        credentials.set_pin,
+        slot,
+        SecretStr(pin),
+        fints_url=url,
+        settings=bank.settings,
+        now=now,
     )
 
 
@@ -110,7 +117,7 @@ def test_a_pin_is_stored_encrypted_and_its_event_names_the_slot_only(bank):
     assert stored.slot == "primary" and stored.set_at == T0
     (row,) = bank.rows(credential_table)
     assert APP_PIN.encode() not in bytes(row.ciphertext)
-    assert len(bytes(row.nonce)) == 12 and row.key_version == credentials.KEY_VERSION
+    assert len(bytes(row.nonce)) == 12 and row.key_version == credentials.PIN_KEY_VERSION
     (event,) = [
         e for e in bank.rows(event_table) if e.type == EventType.WORKSPACE_BANK_PIN_SET.value
     ]
@@ -126,7 +133,8 @@ def test_setting_again_replaces_the_row_with_a_new_nonce(bank):
     assert first.id == second.id and bytes(first.nonce) != bytes(second.nonce)
     assert second.updated_at == T1 and second.created_at == T0
     with workspace_transaction(bank.engine, bank.ws) as conn:
-        assert credentials.resolve_pin(conn, "primary", bank.settings) == "another-PIN-1234"
+        pin = credentials.resolve_pin(conn, "primary", bank.settings, fints_url=URL)
+    assert pin == "another-PIN-1234"
 
 
 def test_the_app_pin_wins_over_the_container_secret_and_deleting_it_falls_back(bank):
@@ -181,7 +189,7 @@ def test_a_pin_another_workspace_stored_is_invisible(bank, read, fresh_workspace
         assert conn.execute(select(credential_table)).all() == []
         no_pin = _settings_without_pin(bank)
         with pytest.raises(RuleError) as missing:
-            credentials.resolve_pin(conn, "primary", no_pin)
+            credentials.resolve_pin(conn, "primary", no_pin, fints_url=URL)
     assert missing.value.code == E.BANK_PIN_MISSING
 
 
@@ -196,8 +204,111 @@ def test_a_ciphertext_moved_to_another_slot_does_not_decrypt(bank):
     with workspace_transaction(bank.engine, bank.ws) as conn:
         conn.execute(update(credential_table).values(credential_slot="dkb"))
         with pytest.raises(RuleError) as unreadable:
-            credentials.resolve_pin(conn, "dkb", bank.settings)
+            credentials.resolve_pin(conn, "dkb", bank.settings, fints_url=URL)
     assert unreadable.value.code == E.BANK_PIN_UNREADABLE
+
+
+# --- The server a PIN is for (D196 amended, 16 Nov 2026) -----------------------------------
+
+OTHER_URL = "https://fints.example.net/other"  # an invented second FinTS address
+
+
+def _change_url(bank, url):
+    return bank.run(
+        bank.ws,
+        service.update_connection,
+        bank.account.id,
+        BankConnectionPatch(fints_url=url),
+        settings=bank.settings,
+        now=T1,
+    )
+
+
+def test_a_pin_is_used_while_the_connection_keeps_the_address_it_was_typed_for(bank):
+    _set_pin(bank)
+    assert _connection(bank).credential_server_matches is True
+    sync, outcome = _sync(bank)
+    assert outcome == "done"
+    assert bank.clients[0].init["pin"] == APP_PIN and bank.clients[0].init["url"] == URL
+
+
+def test_the_same_server_written_another_way_is_the_same_server(bank):
+    """Scheme and host case and the default https port do not make another server."""
+    _set_pin(bank, url="HTTPS://FINTS.Example.ORG:443/fints")
+    with workspace_transaction(bank.engine, bank.ws) as conn:
+        assert credentials.resolve_pin(conn, "primary", bank.settings, fints_url=URL) == APP_PIN
+
+
+def test_a_changed_address_refuses_the_stored_pin_before_any_dialog(bank):
+    """The stored PIN is never sent to the new address, and the container secret does not
+    silently take its place either: the run fails and the card asks to type the PIN again."""
+    _set_pin(bank)
+    _change_url(bank, OTHER_URL)
+    connection = _connection(bank)
+    assert connection.credential_source is CredentialSource.APP
+    assert (connection.credential_readable, connection.credential_server_matches) == (True, False)
+
+    sync, outcome = _sync(bank)
+    assert outcome == "failed" and bank.clients == []  # no network call at all
+    assert bank.sync(sync.id).error_code == E.BANK_PIN_SERVER_CHANGED
+    reasoning, question = service.failed_card_text(E.BANK_PIN_SERVER_CHANGED, None)
+    assert "PIN ändern" in question and "(bank.pin_server_changed)" in reasoning
+    assert OTHER_URL not in reasoning + question and URL not in reasoning + question
+    with workspace_transaction(bank.engine, bank.ws) as conn, pytest.raises(RuleError) as changed:
+        credentials.resolve_pin(conn, "primary", bank.settings, fints_url=OTHER_URL)
+    assert changed.value.code == E.BANK_PIN_SERVER_CHANGED
+    assert OTHER_URL not in str(changed.value) and APP_PIN not in str(changed.value)
+
+
+def test_a_pin_typed_again_for_the_new_address_is_used_there(bank):
+    _set_pin(bank)
+    _change_url(bank, OTHER_URL)
+    _set_pin(bank, now=T1, url=OTHER_URL)
+    assert _connection(bank).credential_server_matches is True
+    sync, outcome = _sync(bank, at=T1 + timedelta(minutes=1))
+    assert outcome == "done"
+    assert bank.clients[0].init["pin"] == APP_PIN and bank.clients[0].init["url"] == OTHER_URL
+
+
+def test_the_address_in_the_pin_request_binds_it_never_the_connections(bank):
+    """A PIN typed for another address than the connection's is refused for this connection,
+    though the connection names its slot: the request's address is what the PIN is for."""
+    _set_pin(bank, url=OTHER_URL)
+    assert _connection(bank).credential_server_matches is False
+    sync, _ = _sync(bank)
+    assert bank.clients == [] and bank.sync(sync.id).error_code == E.BANK_PIN_SERVER_CHANGED
+
+
+def test_a_pin_stored_before_the_binding_is_refused_until_typed_again(bank):
+    """A row of key version 1 (D196 as first built: the PIN alone) names no address. It still
+    decrypts, so the card says the PIN must be typed again rather than that it is unreadable;
+    it is never bound to whatever address the connection has at its first use."""
+    _set_pin(bank)
+    old_key = credentials.pin_key(bank.settings, credentials.KEY_VERSION)
+    sealed = credentials.seal(old_key, APP_PIN, credentials.pin_aad(bank.ws, "primary"))
+    with workspace_transaction(bank.engine, bank.ws) as conn:
+        conn.execute(
+            update(credential_table).values(
+                nonce=sealed.nonce, ciphertext=sealed.ciphertext, key_version=1
+            )
+        )
+    connection = _connection(bank)
+    assert (connection.credential_readable, connection.credential_server_matches) == (True, False)
+    sync, _ = _sync(bank)
+    assert bank.clients == [] and bank.sync(sync.id).error_code == E.BANK_PIN_SERVER_CHANGED
+    _set_pin(bank, now=T1)
+    (row,) = bank.rows(credential_table)
+    assert row.key_version == credentials.PIN_KEY_VERSION
+    _sync(bank, at=T1 + timedelta(minutes=1))
+    assert bank.clients[0].init["pin"] == APP_PIN
+
+
+def test_the_container_secret_follows_a_changed_address_as_before(bank):
+    """Only the PIN typed into the app is bound; the operator's container secret is not."""
+    _change_url(bank, OTHER_URL)
+    assert _connection(bank).credential_source is CredentialSource.SERVER
+    _sync(bank)
+    assert bank.clients[0].init["pin"] == PIN and bank.clients[0].init["url"] == OTHER_URL
 
 
 # --- A key that no longer opens them (the session key rotated) -----------------------------
@@ -208,7 +319,7 @@ def test_a_rotated_session_key_makes_the_pin_unreadable_never_a_crash(bank):
     rotated = dataclasses.replace(bank.settings, session_key=OTHER_KEY)
     with workspace_transaction(bank.engine, bank.ws) as conn:
         with pytest.raises(RuleError) as unreadable:
-            credentials.resolve_pin(conn, "primary", rotated)
+            credentials.resolve_pin(conn, "primary", rotated, fints_url=URL)
         assert credentials.pin_state(conn, "primary", rotated).readable is False
     assert unreadable.value.code == E.BANK_PIN_UNREADABLE
     connection = _connection(bank, rotated)
@@ -220,7 +331,7 @@ def test_a_rotated_session_key_makes_the_pin_unreadable_never_a_crash(bank):
 def test_a_stored_pin_that_no_longer_decrypts_fails_the_run_as_pin_unreadable(bank):
     _set_pin(bank)
     with workspace_transaction(bank.engine, bank.ws) as conn:
-        conn.execute(update(credential_table).values(key_version=2))  # a key this build lacks
+        conn.execute(update(credential_table).values(key_version=3))  # a key this build lacks
     sync, outcome = _sync(bank)
     assert outcome == "failed" and bank.clients == []  # before any dialog
     assert bank.sync(sync.id).error_code == E.BANK_PIN_UNREADABLE

@@ -231,6 +231,8 @@ def test_a_permission_refusal_is_on_the_connection_and_in_zu_pruefen(client_a, c
 # --- A PIN typed into the app (phase 6 D196) --------------------------------------------------
 
 APP_PIN = "app-PIN-90210-secret"
+FINTS_URL = "https://fints.example.org/fints"  # the connection's, as _connection makes it
+PIN_BODY = {"pin": APP_PIN, "fints_url": FINTS_URL}  # D196 amended: a PIN and its address
 
 
 @pytest.fixture
@@ -251,15 +253,16 @@ def test_a_pin_is_set_shown_by_its_source_and_deleted_never_returned(configured,
     created = create(configured, path, _connection(account["id"]))
     assert (created["credential_source"], created["credential_set_at"]) == ("server", None)
 
-    response = configured.put("/api/bank-credentials/primary", json={"pin": APP_PIN})
+    response = configured.put("/api/bank-credentials/primary", json=PIN_BODY)
     stored = ok(response)
     assert set(stored) == {"slot", "set_at", "readable", "used"} and stored["slot"] == "primary"
     assert stored["used"] is True
-    assert APP_PIN not in response.text
+    assert APP_PIN not in response.text and FINTS_URL not in response.text
     connection = ok(configured.get(path))
     assert connection["credential_source"] == "app"
     assert connection["credential_set_at"] == stored["set_at"]
     assert (connection["credential_readable"], connection["name_readable"]) == (True, True)
+    assert connection["credential_server_matches"] is True
     slots = ok(configured.get("/api/bank-credential-slots"))
     assert slots["slots"] == ["primary"]
     assert [(s["slot"], s["used"]) for s in slots["app_slots"]] == [("primary", True)]
@@ -279,7 +282,7 @@ def test_with_only_the_product_id_a_start_needs_the_pin_typed_into_the_app(produ
     assert create(product_only, path, _connection(account["id"]))["credential_source"] == "none"
     missing = product_only.post(f"/api/accounts/{account['id']}/syncs")
     assert (missing.status_code, missing.json()["code"]) == (422, E.BANK_PIN_MISSING)
-    ok(product_only.put("/api/bank-credentials/primary", json={"pin": APP_PIN}))
+    ok(product_only.put("/api/bank-credentials/primary", json=PIN_BODY))
     assert product_only.post(f"/api/accounts/{account['id']}/syncs").status_code == 202
 
 
@@ -287,12 +290,12 @@ def test_a_pin_under_a_slot_no_connection_uses_is_listed_as_unused_until_deleted
     """D196: a PIN saved under a slot nothing names (a refused setup, a renamed slot) is
     listed with used false, so the card can offer „PIN löschen“; it is never deleted by
     itself."""
-    stored = ok(product_only.put("/api/bank-credentials/spare_x", json={"pin": APP_PIN}))
+    stored = ok(product_only.put("/api/bank-credentials/spare_x", json=PIN_BODY))
     assert stored["used"] is False
     account = create(product_only, "/api/accounts", ACCOUNT)
     path = f"/api/accounts/{account['id']}/bank-connection"
     create(product_only, path, _connection(account["id"]) | {"credential_slot": "used_y"})
-    ok(product_only.put("/api/bank-credentials/used_y", json={"pin": APP_PIN}))
+    ok(product_only.put("/api/bank-credentials/used_y", json=PIN_BODY))
     slots = ok(product_only.get("/api/bank-credential-slots"))["app_slots"]
     assert [(s["slot"], s["used"]) for s in slots] == [("spare_x", False), ("used_y", True)]
     assert product_only.delete("/api/bank-credentials/spare_x").status_code == 204
@@ -304,14 +307,21 @@ def test_a_pin_under_a_slot_no_connection_uses_is_listed_as_unused_until_deleted
     "slot", ["Primary", "dkb-privat", "a" * 33], ids=["upper", "hyphen", "long"]
 )
 def test_a_slot_outside_its_pattern_is_refused(client_a, slot):
-    assert client_a.put(f"/api/bank-credentials/{slot}", json={"pin": APP_PIN}).status_code == 422
+    assert client_a.put(f"/api/bank-credentials/{slot}", json=PIN_BODY).status_code == 422
     assert client_a.delete(f"/api/bank-credentials/{slot}").status_code == 422
 
 
 @pytest.mark.parametrize(
     "body",
-    [{"pin": "1234"}, {"pin": "x" * 65}, {}, {"pin": APP_PIN, "extra": 1}],
-    ids=["short", "long", "missing", "extra_field"],
+    [
+        {"pin": "1234", "fints_url": FINTS_URL},
+        {"pin": "x" * 65, "fints_url": FINTS_URL},
+        {},
+        {"pin": APP_PIN},
+        {"pin": APP_PIN, "fints_url": "http://fints.example.org/fints"},
+        PIN_BODY | {"extra": 1},
+    ],
+    ids=["short", "long", "missing", "no_address", "not_https", "extra_field"],
 )
 def test_a_pin_body_outside_its_schema_is_refused(client_a, body):
     response = client_a.put("/api/bank-credentials/primary", json=body)

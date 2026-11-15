@@ -23,6 +23,7 @@ from hausbuch.services.bank_sync import RunPlan, state_key
 SESSION_KEY = bytes(range(1, 33))
 OTHER_KEY = bytes(range(101, 133))
 PIN = "app-PIN-90210-secret"
+FINTS_URL = "https://fints.example.org/fints"
 WS, OTHER_WS = uuid.uuid4(), uuid.uuid4()
 
 
@@ -93,7 +94,7 @@ def test_a_login_round_trips_bound_to_its_connection():
 @pytest.mark.parametrize("pin", ["1234", "x" * 65, ""], ids=["four", "sixty_five", "empty"])
 def test_a_pin_outside_5_to_64_characters_is_refused_without_naming_it(pin):
     with pytest.raises(ValidationError) as refused:
-        BankPinSet(pin=pin)
+        BankPinSet(pin=pin, fints_url=FINTS_URL)
     (error,) = refused.value.errors(include_input=False)
     assert error["msg"] == "Value error, bank.pin_invalid: the PIN has 5 to 64 characters"
     if pin:
@@ -101,11 +102,11 @@ def test_a_pin_outside_5_to_64_characters_is_refused_without_naming_it(pin):
 
 
 def test_a_pin_is_trimmed_and_only_blanks_count_as_empty():
-    assert BankPinSet(pin=f"  {PIN}\t\n").pin.get_secret_value() == PIN
-    assert BankPinSet(pin=" 12345 ").pin.get_secret_value() == "12345"
+    assert BankPinSet(pin=f"  {PIN}\t\n", fints_url=FINTS_URL).pin.get_secret_value() == PIN
+    assert BankPinSet(pin=" 12345 ", fints_url=FINTS_URL).pin.get_secret_value() == "12345"
     for pin in ("      ", " 1234 "):  # nothing, or four characters, once trimmed
         with pytest.raises(ValidationError) as refused:
-            BankPinSet(pin=pin)
+            BankPinSet(pin=pin, fints_url=FINTS_URL)
         (error,) = refused.value.errors(include_input=False)
         assert error["msg"] == "Value error, bank.pin_invalid: the PIN has 5 to 64 characters"
 
@@ -140,8 +141,49 @@ def test_a_run_plan_and_the_jobs_run_never_show_the_login():
     assert "loginname-xyz" not in repr(plan) and "loginname-xyz" not in repr(_Run(plan))
 
 
+@pytest.mark.parametrize(
+    ("url", "address"),
+    [
+        ("https://fints.example.org/fints", "https://fints.example.org:443/fints"),
+        ("HTTPS://FINTS.Example.ORG:443/fints", "https://fints.example.org:443/fints"),
+        ("https://fints.example.org", "https://fints.example.org:443/"),
+        ("https://fints.example.org/fints?x=1#top", "https://fints.example.org:443/fints"),
+        ("https://fints.example.org:8443/fints", "https://fints.example.org:8443/fints"),
+        ("https://fints.example.org@other.example/fints", "https://other.example:443/fints"),
+        ("https://[2001:db8::1]/fints", "https://[2001:db8::1]:443/fints"),
+    ],
+    ids=["plain", "case_and_port", "no_path", "query", "other_port", "user_info", "ipv6"],
+)
+def test_a_pins_server_is_its_scheme_host_port_and_path(url, address):
+    """D196 amended: the address a PIN is bound to is read by urlsplit, so a user-info part
+    before @ is not the host, and the path is kept (another path is another endpoint)."""
+    assert C.server_address(url) == address
+
+
+def test_another_host_port_or_path_is_another_server():
+    base = C.server_hash("https://fints.example.org/fints")
+    for other in (
+        "https://fints.example.net/fints",
+        "https://fints.example.org:8443/fints",
+        "https://fints.example.org/other",
+        "https://fints.example.org/FINTS",  # a path is case-sensitive
+        "https://fints.example.org:99999/fints",  # a port that does not parse
+    ):
+        assert C.server_hash(other) != base, other
+    assert C.server_hash("https://FINTS.example.org:443/fints") == base
+    assert len(base) == C.SERVER_HASH_BYTES
+
+
+def test_the_pin_request_needs_an_https_address():
+    with pytest.raises(ValidationError):
+        BankPinSet(pin=PIN)
+    with pytest.raises(ValidationError) as refused:
+        BankPinSet(pin=PIN, fints_url="http://fints.example.org/fints")
+    assert PIN not in str(refused.value)
+
+
 def test_the_pin_request_never_shows_the_pin():
-    body = BankPinSet(pin=PIN)
+    body = BankPinSet(pin=PIN, fints_url=FINTS_URL)
     assert body.pin.get_secret_value() == PIN
     assert PIN not in repr(body) and PIN not in str(body) and PIN not in body.model_dump_json()
 
