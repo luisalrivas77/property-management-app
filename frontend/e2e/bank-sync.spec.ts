@@ -192,5 +192,6 @@ test("a PIN under a name no connection uses is listed and can be deleted", async
   page.once("dialog", (dialog) => void dialog.accept());
   await unused.getByRole("button", { name: "PIN löschen" }).click();
   await expect(unused).toHaveCount(0);
-  await expect(card).toContainText("Noch keine PIN hinterlegt.");
+  const slots = await apiCall<{ app_slots: unknown[] }>(page, "GET", "/api/bank-credential-slots");
+  expect(slots.app_slots).toEqual([]); // deleted on the server, not only hidden
 });
