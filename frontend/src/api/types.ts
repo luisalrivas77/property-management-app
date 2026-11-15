@@ -2457,6 +2457,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wallets/{account_id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Wallet Sync Start */
+        post: operations["wallet_sync_start_api_wallets__account_id__sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/syncs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Wallet Sync List */
+        get: operations["wallet_sync_list_api_wallets__account_id__syncs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/anlage-v": {
         parameters: {
             query?: never;
@@ -5990,7 +6024,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "movement_group.proposed" | "movement_group.confirmed" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -11891,6 +11925,81 @@ export interface components {
             count: number;
         };
         /**
+         * WalletSyncQueued
+         * @description POST /wallets/{id}/sync: „Jetzt abrufen“ queued for the wallet's active addresses.
+         */
+        WalletSyncQueued: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Addresses */
+            addresses: number;
+        };
+        /**
+         * WalletSyncRun
+         * @description One address's run (a wallet_sync row). `balances` and `difference` are base units per
+         *     asset (the contract, or `native`), as strings. `reconciled` null with `balances` set: a
+         *     group waits for an answer („wartet auf Antwort“); `balances` null on a succeeded run: the
+         *     budget ended first (`wallet.sync_deferred`).
+         */
+        WalletSyncRun: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Address Id
+             * Format: uuid
+             */
+            address_id: string;
+            /** Address Masked */
+            address_masked: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            status: components["schemas"]["WalletSyncStatus"];
+            /** Source Host */
+            source_host: string;
+            /** Block */
+            block?: number | null;
+            /** Txs Seen */
+            txs_seen: number;
+            /** Movements New */
+            movements_new: number;
+            /** Balances */
+            balances?: {
+                [key: string]: string;
+            } | null;
+            /** Reconciled */
+            reconciled?: boolean | null;
+            /** Difference */
+            difference?: {
+                [key: string]: string;
+            } | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /**
+             * Deferred
+             * @default false
+             */
+            deferred: boolean;
+        };
+        /**
+         * WalletSyncStatus
+         * @description wallet_sync.status (D182 (1)): written running, finished once.
+         * @enum {string}
+         */
+        WalletSyncStatus: "running" | "succeeded" | "failed" | "throttled" | "refused";
+        /**
          * WarningCode
          * @enum {string}
          */
@@ -17064,6 +17173,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MovementAnswered"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_sync_start_api_wallets__account_id__sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletSyncQueued"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_sync_list_api_wallets__account_id__syncs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletSyncRun"][];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

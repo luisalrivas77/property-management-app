@@ -18,6 +18,13 @@ puts whatever it needs, such as Solana's deltas inputs, into `ChainTx.raw`).
 `register_family` replaces one for a test. A classifier returns None when the transaction
 moves nothing of the synced address (it is then only counted in `txs_seen`).
 
+The adapter owns its own reading: `ChainTx` carries no chain, so the chain, the account, its
+own addresses with their `wallet_address` ids, the native coin's asset id, the known asset
+ids, the decoders and the held tokens all come in the `ClassifyContext`. A family module's
+`classify_tx` wraps its own entry points (EVM's `normalise` and `classify_evm`, Bitcoin's
+`utxo` rules) and returns its group as a `ChainGroup`; a leg on another own address of the
+account names it in `ChainLeg.address`.
+
 The output is a `ChainGroup` with `ChainLeg`s keyed by `AssetKey` and in signed base units,
 not a `MovementGroupDraft`: a pure rule knows no asset id, account id or address HMAC.
 services/chain/sync.py resolves the assets (D180), converts the units by the asset's
@@ -25,11 +32,12 @@ decimals, hashes each leg (D182 (2)), fills the routing facts only the database 
 (`first_sync`, `priced`, `registry_assets`, `fee_only`) and routes the group (D186 (1)).
 """
 
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from importlib import import_module
 from typing import Literal
+from uuid import UUID
 
 from hausbuch.schemas.chain import (
     CHAIN_FAMILY,
@@ -55,6 +63,15 @@ class ClassifyContext:
     own_addresses: frozenset[str] = frozenset()  # every active own address on this chain
     decoders: Sequence[DecoderRow] = ()  # the workspace's own rows (D191; public rows built in)
     held: frozenset[AssetKey] = frozenset()  # tokens the workspace holds with a confirmed lot
+    account_id: UUID | None = None  # the wallet account being synced
+    # The account's own active addresses on this chain → their wallet_address.id (a Bitcoin
+    # spend's legs sit on its first input's address, not always the synced one).
+    own_address_ids: Mapping[str, UUID] = field(default_factory=dict)
+    native_asset_id: UUID | None = None  # the workspace's asset of this chain's native coin
+    # The workspace's assets on this chain known when the run starts, by (chain, contract),
+    # the native coin included. A token seen for the first time is not in it: the sync
+    # creates its asset from the leg's AssetKey, so a classifier never needs an id to emit one.
+    asset_ids: Mapping[AssetKey, UUID] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +90,9 @@ class ChainLeg:
     symbol: str | None = None
     decimals: int | None = None
     spam: bool = False
+    # The own address the movement sits on (a key of ClassifyContext.own_address_ids); None:
+    # the synced address. Its HMAC goes into the movement hash and its id into address_id.
+    address: str | None = None
 
     def __post_init__(self) -> None:
         if self.units <= 0:
@@ -91,7 +111,10 @@ class ChainGroup:
     name (or program) that decided the kind, None by shape alone; `decoder_listed`,
     `linked`, `pair_learned` and `unregistered_output` the routing facts the family knows
     (GroupRoutingInput); `question` the card's one question when it waits for a person,
-    never holding an address in clear."""
+    never holding an address in clear. A group with a question and no legs (a Bitcoin change
+    card, kind unknown) is written as proposed without movements; while one waits, the
+    sync records the run's difference as „wartet auf Antwort“ (reconciled null), not as a
+    mismatch."""
 
     tx_hash: str
     occurred_at: datetime

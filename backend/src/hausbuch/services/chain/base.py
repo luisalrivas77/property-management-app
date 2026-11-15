@@ -25,16 +25,27 @@ found as `make_source` in `services/chain/<kind>.py` (`solana_rpc.py`, `evm_ethe
   added yet), and wraps every `services.prices.http.SourceError` with `error_from`;
 - calls `budget.take()` before every request and, when it says no, ends the page there with
   the cursor at the last transaction it returned (the sync then stops: `wallet.sync_deferred`);
-- reads only up to the chain's tip minus `confirmations_final` (D182 (4));
-- returns `Page.next_cursor` = the opaque position to continue from (≤ 200 characters), never
-  None once it has moved; the sync calls again until a page brings no item or the same
-  cursor. Each `ChainTx.raw` is the provider's record as read: the sync stores the run's raws
+- reads only up to the chain's tip minus `confirmations_final` (D182 (4)), and returns from
+  `balances(address)` the balance *at that same height*, the one the movements are
+  reconciled against (Esplora's tip balance backed out of the last blocks, `utxo.balance_at`);
+  the sync never reads a balance of its own;
+- may set `reconcile_scope = "account"` (default `"address"`): the sync then reconciles Σ
+  the account's movements on the chain against Σ `balances(a)` over every active own address
+  `a` of the account on that chain (Bitcoin: a spend's movements sit on its first input's
+  address while its change lands on another own address, fixture `bitcoin_two_addresses`);
+- returns `Page.next_cursor` = the opaque position to continue from (≤ 200 characters); the
+  sync calls again with it until it is None or the cursor the sync passed in (the tip
+  reached), so a page with no item but a moved cursor (an empty block window) continues;
+- is built once per address run (`source_for` in the run's start): it may cache the chain's
+  tip so the history and the balances of that run read to the same block;
+- keeps each `ChainTx.raw` as the provider's record as read: the sync stores the run's raws
   as the NDJSON original (D182 (3)).
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import SecretStr
@@ -42,17 +53,13 @@ from pydantic import SecretStr
 from hausbuch.rules.chain.registry import ChainRegistryRow, registry
 from hausbuch.rules.errors import (
     WALLET_KEY_MISSING,
+    WALLET_SOURCE_FAILED,
     WALLET_SOURCE_REFUSED,
     WALLET_SOURCE_THROTTLED,
 )
 from hausbuch.schemas.chain import Chain, ChainSource, ChainSourceKind
 from hausbuch.services.prices.http import SourceError
 from hausbuch.settings import Settings
-
-# A provider's failure that is neither a refusal nor a throttle (a 5xx, a timeout, an answer
-# the source cannot read). Not in rules/errors.py, which step 0 wrote: the run's row needs a
-# code (wallet_sync's CHECK), and the wallet page shows it as „Abruf fehlgeschlagen“.
-WALLET_SOURCE_FAILED = "wallet.source_failed"
 
 
 class ChainSourceError(Exception):
@@ -118,6 +125,14 @@ def budget_limit(kind: ChainSourceKind, settings: Settings) -> int:
     return 1000
 
 
+ReconcileScope = Literal["address", "account"]
+
+
+def reconcile_scope(source: ChainSource) -> ReconcileScope:
+    """The source's declared reconcile scope (see the module docstring), address by default."""
+    return "account" if getattr(source, "reconcile_scope", "address") == "account" else "address"
+
+
 SourceFactory = Callable[[ChainRegistryRow, Settings, RequestBudget], ChainSource]
 
 _REGISTERED: dict[ChainSourceKind, SourceFactory] = {}
@@ -158,13 +173,16 @@ def source_for(
 
 __all__ = [
     "WALLET_KEY_MISSING",
+    "WALLET_SOURCE_FAILED",
     "ChainSourceError",
+    "ReconcileScope",
     "RequestBudget",
     "SourceFactory",
     "budget_limit",
     "error_from",
     "factory_for",
     "host_of",
+    "reconcile_scope",
     "register_source",
     "setting",
     "source_for",

@@ -235,6 +235,13 @@ WALLET_ADDRESS_TAKEN = "wallet.address_taken"  # registered on another own accou
 WALLET_KEY_MISSING = "wallet.key_missing"  # the chain's source needs a key that is unset
 WALLET_SOURCE_THROTTLED = "wallet.source_throttled"  # a 429: the sync resumes the next day
 WALLET_SOURCE_REFUSED = "wallet.source_refused"  # a 401/403: change the URL or key (D182 (1))
+# „Abruf fehlgeschlagen: der Anbieter hat nicht geantwortet oder eine unlesbare Antwort
+# geschickt. Der nächste Abruf versucht es erneut.“ (a timeout, a 5xx, an unreadable body;
+# phase 7 step 2 core, used by every source)
+WALLET_SOURCE_FAILED = "wallet.source_failed"
+# „Abruf abgebrochen: ein Fehler in Hausbuch beim Einlesen. Der nächste Abruf versucht es
+# erneut.“ (a classifier or a write of the sync failed after the provider answered)
+WALLET_SYNC_ERROR = "wallet.sync_error"
 WALLET_UNRECONCILED = "wallet.unreconciled"  # Σ movements != the chain's balance (D186 (2))
 WALLET_COINS_LEFT = "wallet.coins_left"  # a balance-only address below its linked deposits
 WALLET_SYNC_DEFERRED = "wallet.sync_deferred"  # the run's budget ran out; a page note, no card
