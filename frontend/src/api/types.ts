@@ -7980,7 +7980,7 @@ export interface components {
          * NetWorthTodoCode
          * @enum {string}
          */
-        NetWorthTodoCode: "net_worth.balance_unreconciled" | "net_worth.price_missing" | "net_worth.price_stale" | "net_worth.position_not_reconciled" | "net_worth.position_not_booked" | "net_worth.ownership_missing" | "net_worth.property_shares_missing" | "net_worth.loan_not_valued";
+        NetWorthTodoCode: "net_worth.balance_unreconciled" | "net_worth.balance_outdated" | "net_worth.price_missing" | "net_worth.price_stale" | "net_worth.position_not_reconciled" | "net_worth.position_not_booked" | "net_worth.ownership_missing" | "net_worth.property_shares_missing" | "net_worth.loan_not_valued";
         /**
          * NoPayFact
          * @description „Kein Arbeitslohn in <Jahr>“ (D195): the owner had no pay that year (e.g. a whole year of

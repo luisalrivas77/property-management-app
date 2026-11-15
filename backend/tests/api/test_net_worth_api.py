@@ -123,10 +123,18 @@ def test_net_worth_month_ends_and_isolation(client_a, client_b):
         "account",
         "2026-01-31",
     )
-    # No owner yet: counted in the total, in no owner, and a to-do with its button.
+    # No owner yet: counted in the total, in no owner, and a to-do with its button. Its
+    # balance is the opening one of 31 Jan, with no statement since: a to-do too.
     assert seen["unassigned"] == [created["id"]] and seen["by_owner"] == {}
-    [todo] = seen["todos"]
-    assert (todo["action"], todo["href"]) == ("Eigentümer festlegen", f"/accounts/{created['id']}")
+    outdated, owners = seen["todos"]
+    assert (outdated["code"], outdated["action"]) == (
+        "net_worth.balance_outdated",
+        "Kontoauszug hochladen",
+    )
+    assert (owners["action"], owners["href"]) == (
+        "Eigentümer festlegen",
+        f"/accounts/{created['id']}",
+    )
 
     view = ok(client_a.get("/api/net-worth/overview"))
     assert view["month_end"] is None and view["month_end_due"]

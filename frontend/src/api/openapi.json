@@ -20705,6 +20705,7 @@
         "type": "string",
         "enum": [
           "net_worth.balance_unreconciled",
+          "net_worth.balance_outdated",
           "net_worth.price_missing",
           "net_worth.price_stale",
           "net_worth.position_not_reconciled",

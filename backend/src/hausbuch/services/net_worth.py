@@ -11,7 +11,9 @@ NetWorth(on) = Σ balances + Σ positions × price + the properties' estimate �
   import reaches (D167 (4): the last reconciled balance on or before the day): when the
   newest reconciled import ends before `on`, the balance is the one at its last booking day,
   shown as „Stand vom …“; lines booked after it up to `on` are a to-do (Zu prüfen holds the
-  import's card). Without any reconciled import the balance is the anchor. An account whose
+  import's card), and with no line waiting a balance more than a week older than the day
+  (measured to the day the account's history reaches) is a to-do to import the next
+  statement or fetch it. Without any reconciled import the balance is the anchor. An account whose
   anchor is after `on` has no figure that day. A depot or a card with neither an import nor
   an opening balance has no balance line.
 - **Positions** of every depot, exchange and wallet account: the Anlagen overview's own
@@ -60,6 +62,7 @@ from sqlalchemy import Connection, func, insert, select
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import account_ownership as ownership_table
 from hausbuch.db.tables import asset as asset_table
+from hausbuch.db.tables import bank_connection as connection_table
 from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import owner as owner_table
 from hausbuch.db.tables import property_ as property_table
@@ -95,6 +98,7 @@ from .events import append_event
 from .loans import list_loans
 from .prices.overview import assets_overview
 from .scenarios import default_scenario
+from .transfers import _last_days as history_ends  # D162 amended (9)'s history end
 
 C = NetWorthClass
 L = NetWorthLineKind
@@ -211,6 +215,12 @@ def _balances(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTod
         )
     ):
         lines[r.account_id].append((r.booking_date, r.amount))
+    history = history_ends(conn)
+    connected = set(
+        conn.execute(
+            select(connection_table.c.account_id).where(connection_table.c.account_id.in_(ids))
+        ).scalars()
+    )
     items: list[_Item] = []
     todos: list[NetWorthTodo] = []
     for a in accounts:
@@ -259,7 +269,38 @@ def _balances(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTod
                     href="/inbox",
                 )
             )
+        elif (on - max(through, history.get(a.id, through))).days > valuation.STALE_AFTER_DAYS:
+            todos.append(_outdated(a.id, a.label, kind, through, on, a.id in connected))
     return items, todos
+
+
+def _outdated(
+    account_id: UUID, label: str, kind: AccountKind, through: date, on: date, connected: bool
+) -> NetWorthTodo:
+    """A balance older than the day asked with no line waiting after it: the statements (or
+    the fetch) stop before the day (review of 15 Nov 2026, finding 2). Only past the stale
+    limit and measured to the day the account's history reaches (a FinTS run that brought
+    nothing new counts, D162 amended (9)), so a quiet week or a fetch over the weekend is no
+    to-do; the actions are the account page's own („Kontoauszug hochladen“ on its
+    Kontoauszüge tab, as bank.statement_due links it, or the Bankabruf card's „Jetzt
+    abrufen“)."""
+    gap = f"Der Kontostand von „{label}“ ist vom {_german(through)}; bis zum {_german(on)} "
+    if connected:
+        return NetWorthTodo(
+            code=T.BALANCE_OUTDATED,
+            text=gap + "hat der Bankabruf nichts Neueres geholt. Im Bankabruf „Jetzt abrufen“ "
+            "wählen, sonst den Kontoauszug hochladen.",
+            action="Konto öffnen",
+            href=f"/accounts/{account_id}",
+        )
+    card = kind is AccountKind.CREDIT_CARD
+    return NetWorthTodo(
+        code=T.BALANCE_OUTDATED,
+        text=gap + f"fehlt noch {'die Abrechnung' if card else 'ein Kontoauszug'}; der Betrag "
+        "zählt bis dahin mit dem älteren Stand.",
+        action="Kreditkartenabrechnung hochladen" if card else "Kontoauszug hochladen",
+        href=f"/accounts/{account_id}?tab=kontoauszuege",
+    )
 
 
 def _positions(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTodo], int, int]:

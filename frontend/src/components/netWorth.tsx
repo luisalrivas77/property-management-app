@@ -74,6 +74,15 @@ const OUTCOME_TEXT: Record<SnapshotResult["outcome"], (asOf: string) => string> 
   empty: () => "Nichts festzuhalten: noch kein Konto, keine Anlage und keine Immobilie mit einem Wert.",
 };
 
+/** The capture's sentence on what the stored figure leaves out: a position without a price, or a
+ * fund the depot report lists with nothing booked (the to-dos below say what to do). */
+function unvaluedText(count: number | undefined): string {
+  if (!count) return "";
+  return count === 1
+    ? " 1 Position ohne Wert ist darin nicht enthalten (siehe offene Punkte)."
+    : ` ${count} Positionen ohne Wert sind darin nicht enthalten (siehe offene Punkte).`;
+}
+
 function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverview; owners: Owner[]; onChanged: () => void }) {
   const { today, month_end: monthEnd, month_end_due: due } = overview;
   const [busy, setBusy] = useState(false);
@@ -95,6 +104,7 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
   }
 
   const estimates = today.lines.filter((line) => line.estimate && line.value_eur != null);
+  const older = today.lines.filter((line) => line.kind === "account" && line.as_of != null && line.as_of < today.on);
   const names = new Map(owners.map((owner) => [owner.id, owner.full_name]));
   const byOwner = Object.entries(today.by_owner);
   return (
@@ -129,6 +139,7 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
               {today.unassigned.length > 0 ? " · ohne Eigentümer: siehe unten" : ""}
             </p>
           ) : null}
+          {older.length > 0 ? <BalanceDates lines={older} /> : null}
           {estimates.length > 0 ? <EstimateNote lines={estimates} /> : null}
         </>
       )}
@@ -143,10 +154,27 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
           {busy ? "Hält fest …" : "Monatsabschluss festhalten"}
         </button>
       </div>
-      {result ? <p className="muted">{OUTCOME_TEXT[result.outcome](result.as_of)}</p> : null}
+      {result ? (
+        <p className="muted">
+          {OUTCOME_TEXT[result.outcome](result.as_of)}
+          {unvaluedText(result.unvalued_positions)}
+        </p>
+      ) : null}
       <ErrorNotice error={error} />
       {today.todos.length > 0 ? <NetWorthTodos todos={today.todos} /> : null}
     </section>
+  );
+}
+
+/** The balances that count at an earlier day than the figure's: each with its „Stand vom …“ (the
+ * last day a reconciled statement covers, D167 (4)). */
+function BalanceDates({ lines }: { lines: NetWorthLine[] }) {
+  return (
+    <p className="muted">
+      {lines
+        .map((line) => `„${line.label}“ ${formatMoney(line.value_eur)} · Stand vom ${formatDate(line.as_of)}`)
+        .join("; ")}
+    </p>
   );
 }
 

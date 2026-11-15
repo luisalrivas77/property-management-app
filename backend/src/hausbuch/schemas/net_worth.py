@@ -52,6 +52,8 @@ class NetWorthLine(Schema):
 
 class NetWorthTodoCode(StrEnum):
     BALANCE_UNRECONCILED = "net_worth.balance_unreconciled"
+    # A balance older than the day, nothing waiting: the next statement (review 15 Nov 2026).
+    BALANCE_OUTDATED = "net_worth.balance_outdated"
     PRICE_MISSING = "net_worth.price_missing"
     PRICE_STALE = "net_worth.price_stale"
     POSITION_NOT_RECONCILED = "net_worth.position_not_reconciled"

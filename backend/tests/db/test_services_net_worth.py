@@ -421,6 +421,42 @@ def test_a_balance_stops_at_its_last_reconciled_statement(run, read, fresh_works
     }
 
 
+def test_a_balance_reconciled_only_to_the_previous_month_is_a_to_do(run, read, fresh_workspaces):
+    """Review of 15 Nov 2026, finding 2: statements up to 30 Sep, nothing waiting after them,
+    the figure asked for 31 Oct. The balance stays the September one, shown with its day, and
+    a to-do asks for the next statement on the account's Kontoauszüge tab (a card's for its
+    Abrechnung). A balance a few days old is no to-do."""
+    ws, _ = fresh_workspaces
+    owner = run(ws, create_owner, OwnerCreate(full_name="Eigentümer A"), now=NOW).id
+    account = _account(run, ws, "Girokonto", AccountKind.BANK_CURRENT, iban=JOINT_IBAN)
+    card = _account(run, ws, "Kreditkarte", AccountKind.CREDIT_CARD)
+    for own in (account, card):
+        _own(run, ws, own, {owner: Fraction(1)})
+
+    def stored(ctx):
+        statement = _import(ctx, account, date(2026, 7, 1), date(2026, 9, 30))
+        _line(ctx, account, statement, date(2026, 9, 30), "750.00")
+        billed = _import(ctx, card, date(2026, 9, 1), date(2026, 10, 27))
+        _line(ctx, card, billed, date(2026, 10, 27), "-40.00")
+
+    run(ws, stored, now=NOW)
+    seen = read(ws, net_worth.net_worth, ON)
+    line = next(line for line in seen.lines if line.account_id == account)
+    assert (line.value_eur, line.as_of, line.stale) == (Decimal("750.00"), date(2026, 9, 30), True)
+    assert seen.total == Decimal("710.00")
+    [todo] = seen.todos  # the card's statement of 27 Oct is 4 days old: none for it
+    assert todo.code is T.BALANCE_OUTDATED and "30.09.2026" in todo.text
+    assert (todo.action, todo.href) == (
+        "Kontoauszug hochladen",
+        f"/accounts/{account}?tab=kontoauszuege",
+    )
+    later = read(ws, net_worth.net_worth, date(2026, 11, 10))
+    assert {(t.code, t.action) for t in later.todos} == {
+        (T.BALANCE_OUTDATED, "Kontoauszug hochladen"),
+        (T.BALANCE_OUTDATED, "Kreditkartenabrechnung hochladen"),
+    }
+
+
 def test_a_fund_the_report_lists_with_nothing_booked_is_listed_unvalued(
     run, read, fresh_workspaces
 ):
