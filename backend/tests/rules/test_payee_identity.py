@@ -122,7 +122,9 @@ def test_identity_strength_reads_the_fixture(case):
     a, b = case.a, case.b
     assert matching.identity_strength(a.name, b.name, a.purpose, b.purpose) == case.strength
     assert matching.identity_strength(b.name, a.name, b.purpose, a.purpose) == case.strength
-    assert matching.same_payee(a.name, b.name, a.purpose, b.purpose)  # weak is one payee too
+    # weak is one payee too, except a first word that only starts the other's (one_payee)
+    assert matching.same_payee(a.name, b.name, a.purpose, b.purpose) is case.one_payee
+    assert matching.same_payee(b.name, a.name, b.purpose, a.purpose) is case.one_payee
 
 
 @pytest.mark.parametrize("case", FIXTURE.shared_ibans, ids=lambda c: c.id)
@@ -239,6 +241,23 @@ def test_a_klarna_merchant_rule_hits_only_klarnas_lines_of_the_merchant():
     # the same merchant through another service is not the rule's
     assert matching.apply_rule(rule, _tx(CARD_DISNEY, CARD_DISNEY, iban=None, n=2), PRIVATE) is None
     assert matching.apply_rule(rule, _tx(SHORT, DISNEY, n=3), PRIVATE) is None
+
+
+# 15 Nov 2026 (D160 amended (4), Luis: „For a booking.com bank line it didn't use the rule“):
+# PayPal printed one merchant two ways; a first word that starts the other's, with the street
+# shared, books; without the street it only proposes.
+BOOKING_A = "12345678 PAYPAL *BOOKING BOOKIN Marktplein 3 1011AB Beispielstad"
+BOOKING_B = "87654321 PAYPAL *BOOKINGCOMB BO Marktplein 3 1011AB Beispielstad"
+
+
+def test_a_paypal_merchant_rule_books_the_merchant_whose_first_word_it_starts():
+    rule = _learned(_tx(BOOKING_A, BOOKING_A, iban=None), C.HH_TRAVEL)
+    found = matching.apply_rule(rule, _tx(BOOKING_B, BOOKING_B, iban=None, n=2), PRIVATE)
+    assert found is not None and found.confidence == matching.EXACT
+    assert found.allocations[0].category is C.HH_TRAVEL
+    bare = "87654321 PAYPAL *BOOKINGCOMB BO"
+    weak = matching.apply_rule(rule, _tx(bare, bare, iban=None, n=3), PRIVATE)
+    assert weak is not None and matching.weak_proposal(weak)
 
 
 def test_a_typed_purpose_pattern_on_a_service_keeps_its_regular_expression_meaning():

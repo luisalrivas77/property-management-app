@@ -70,10 +70,16 @@ from hausbuch.schemas.allocation import (
     SplitMethod,
     TenancyFacts,
     TransferLeg,
+    TransferLegSource,
     WirtschaftsplanFacts,
 )
 from hausbuch.schemas.enums import AccountKind, AccountPurpose, AllocationStatus
-from hausbuch.schemas.household import TransferCandidate, TransferLinkKind, TransferMatch
+from hausbuch.schemas.household import (
+    DepositIbanOutcome,
+    TransferCandidate,
+    TransferLinkKind,
+    TransferMatch,
+)
 from hausbuch.schemas.loan import ScheduleEntry
 
 from . import proof_match
@@ -1588,19 +1594,28 @@ WEAK = "weak"
 
 
 def _same_words(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
-    """One payee (D160 amended (4)), strong or weak (_identity)."""
-    return _identity(a, b) is not None
+    """One payee (D160 amended (4)), strong or weak (_identity), for an IBAN's lines
+    (shared_iban, same_payee): a first word that only starts the other's (_identity's
+    `for_iban`) is two payees there."""
+    return _identity(a, b, for_iban=True) is not None
 
 
-def _identity(a: tuple[str, ...], b: tuple[str, ...]) -> str | None:
+def _identity(a: tuple[str, ...], b: tuple[str, ...], *, for_iban: bool = False) -> str | None:
     """How surely two payees' words are one payee, both ways (review F2, 14 Nov 2026,
     principle 3): STRONG for the same words, a word prefix whose shorter side has two words or
     more, a one-word prefix of BRAND_WORD_MIN letters or more ("KAUFLAND …"), the same first two
-    words, or Booking's first three; WEAK for a shorter one-word prefix ("ALDI" and "ALDI
-    TALK") or only the same first word ("ADLER MODEMARKT" and "ADLER APOTHEKE",
-    "VOLKSWAGEN AUTOVERSICHERUNG AG" and "VOLKSWAGEN AUTOVERS AG"); None for two payees. Both
-    are one payee for an IBAN's lines (shared_iban, the D49 history); a rule that hits a line
-    only weakly proposes, it never books unseen (apply_rule).
+    words, Booking's first three, or a first word that starts the other's when one name repeats
+    the merchant and the two share another word ("BOOKINGCOMB BO MARKTPLEIN" and "BOOKING
+    BOOKIN MARKTPLEIN", 15 Nov 2026, tightened in review the same day); WEAK for a shorter
+    one-word prefix ("ALDI" and "ALDI TALK"), a first word that starts the other's without both
+    of those ("BOOKINGCOMB BO" and "BOOKING BOOKIN"; "PENNY MARKT DUESSELDORF" and "PENNYLANE
+    PUB DUESSELDORF", whose shared word is the town a card line prints) or only the same first
+    word ("ADLER MODEMARKT" and "ADLER APOTHEKE", "VOLKSWAGEN AUTOVERSICHERUNG AG" and
+    "VOLKSWAGEN AUTOVERS AG"); None for two payees. Both are one payee for an IBAN's lines
+    (shared_iban, the D49 history), except a first word that starts the other's while neither
+    name repeats the merchant: with `for_iban` that pair is two payees, so an IBAN holding
+    both is shared and no IBAN rule books one payee's line for the other. A rule that hits a
+    line only weakly proposes, it never books unseen (apply_rule).
 
     One payee, both ways: either name's words start the other's ("EPRIMO
     GMBH" and "EPRIMO GMBH FLUGHAFENSTRASE"; one generic word alone, "HOTEL", is no payee), or
@@ -1608,7 +1623,12 @@ def _identity(a: tuple[str, ...], b: tuple[str, ...]) -> str | None:
     linking second word, "HOTEL AT …", nor fewer than FIRST_WORD_MIN letters, "G A …"), or,
     after a linking second word, the first three words are, the third not linking and of
     FIRST_WORD_MIN letters or more ("HOTEL AT BOOKING …": every hotel Booking.com charges for
-    is one payee, Luis 14 Nov 2026; not "RESTAURANT AT THE …"), or the
+    is one payee, Luis 14 Nov 2026; not "RESTAURANT AT THE …"), or the first words differ but
+    one starts the other, the shorter not generic and of FIRST_WORD_MIN letters or more
+    (strong when one name repeats the merchant, a later word of FIRST_WORD_MIN letters or more
+    that starts the other name's first word or is started by it, "BOOKIN" and "BOOKINGCOMB",
+    and the two also share another word of FIRST_WORD_MIN letters or more that is not a
+    linking word, the merchant's street), or the
     first word is, when it is not generic and has FIRST_WORD_MIN letters or more
     ("VOLKSWAGEN AUTOVERSICHERUNG AG" and "VOLKSWAGEN AUTOVERS AG"). Never for no payee."""
     if not a or not b:
@@ -1637,9 +1657,37 @@ def _identity(a: tuple[str, ...], b: tuple[str, ...]) -> str | None:
         and len(a[2]) >= FIRST_WORD_MIN
     ):
         return STRONG  # "HOTEL AT BOOKING …": the collector named after the linking word (Luis)
+    first_short, first_long = sorted((a[0], b[0]), key=len)
+    if (
+        first_short != first_long
+        and first_long.startswith(first_short)
+        and len(first_short) >= FIRST_WORD_MIN
+        and first_short not in GENERIC_FIRST_WORDS
+    ):
+        # 15 Nov 2026 (Luis: „For a booking.com bank line it didn't use the rule“): PayPal
+        # printed one merchant "BOOKINGCOMB BO <street>" and "BOOKING BOOKIN <street>"; one
+        # first word starts the other, "BOOKIN" repeats the merchant and the street they share
+        # makes it sure. A shared word alone is not enough (review, 15 Nov 2026): a card line
+        # prints the town, so "PENNY MARKT DUESSELDORF" and "PENNYLANE PUB DUESSELDORF" share
+        # one, and for an IBAN's lines such a pair is two payees.
+        repeats = _repeats_merchant(a, b[0]) or _repeats_merchant(b, a[0])
+        if not repeats and for_iban:
+            return None
+        shared = {w for w in a[1:] if len(w) >= FIRST_WORD_MIN and w not in _LINKING_WORDS}
+        return STRONG if repeats and shared & set(b[1:]) else WEAK
     if a[0] == b[0] and len(a[0]) >= FIRST_WORD_MIN and a[0] not in GENERIC_FIRST_WORDS:
         return WEAK
     return None
+
+
+def _repeats_merchant(words: tuple[str, ...], other_first: str) -> bool:
+    """Whether a later word of `words` (FIRST_WORD_MIN letters or more) repeats the merchant
+    the other name's first word names: it starts that word or that word starts it ("BOOKIN"
+    and "BOOKINGCOMB")."""
+    return any(
+        len(w) >= FIRST_WORD_MIN and (other_first.startswith(w) or w.startswith(other_first))
+        for w in words[1:]
+    )
 
 
 def identity_strength(
@@ -2197,6 +2245,15 @@ def add_banking_days(day: date, n: int) -> date:
     return day
 
 
+def subtract_banking_days(day: date, n: int) -> date:
+    """add_banking_days backwards: Monday to Friday, no holiday calendar."""
+    while n:
+        day = date.fromordinal(day.toordinal() - 1)
+        if day.weekday() < 5:
+            n -= 1
+    return day
+
+
 def transfer_window_end(booked_on: date) -> date:
     """The last day a counterpart of a leg booked on `booked_on` may be booked: three banking
     days later. A leg without one gets its card only after this day."""
@@ -2216,18 +2273,67 @@ def _ordered(a: TransferLeg, b: TransferLeg) -> tuple[TransferLeg, TransferLeg]:
     return (a, b) if a.amount < 0 else (b, a)
 
 
-def legs_fit(out: TransferLeg, in_: TransferLeg, *, exact: bool = False) -> bool:
+def names_the_other(a: TransferLeg, b: TransferLeg) -> bool:
+    """Whether one leg names the other's account by its IBAN (its counterparty IBAN is the
+    other's account IBAN, both known): the pair is a transfer by an own IBAN, not only by its
+    amount and date."""
+    return (
+        a.counterparty_iban_hmac is not None and a.counterparty_iban_hmac == b.account_iban_hmac
+    ) or (b.counterparty_iban_hmac is not None and b.counterparty_iban_hmac == a.account_iban_hmac)
+
+
+# D162 amended 15 Nov 2026 (T4): what an exchange may keep of a bank deposit without recording
+# a fee (an exchange credited each SEPA deposit 1 € less, with no fee row in its export).
+EXCHANGE_DEPOSIT_GAP = Decimal("2.00")
+
+
+def deposit_gap(out: TransferLeg, in_: TransferLeg) -> Decimal | None:
+    """D162 amended 15 Nov 2026: the amount an exchange kept of a deposit from a bank line
+    without recording a fee: `out` a private account's line (not an exchange's, never the
+    rental account's), `in_` an exchange's EUR
+    leg, neither recording a fee, and in_ smaller than out by more than 0 and at most
+    EXCHANGE_DEPOSIT_GAP. None otherwise (an exact pair, a recorded fee, a withdrawal)."""
+    if out.source is not TransferLegSource.TRANSACTION or out.account_kind is AccountKind.EXCHANGE:
+        return None
+    if out.account_purpose is not AccountPurpose.PRIVATE:
+        return None  # never the rental account's line (its bank fees are a tax figure)
+    if in_.account_kind is not AccountKind.EXCHANGE or out.fee_eur or in_.fee_eur:
+        return None
+    gap = -out.amount - in_.amount
+    return gap if Decimal("0") < gap <= EXCHANGE_DEPOSIT_GAP else None
+
+
+def legs_fit(out: TransferLeg, in_: TransferLeg, *, exact: bool = False, gap: bool = False) -> bool:
     """D162: the in-leg booked on or after the out-leg and within three banking days of it;
     the amounts equal to the cent, or, when one side is an exchange (and not `exact`), the
-    in-leg less than the out-leg by at most the fee either side recorded."""
-    if not out.booked_on <= in_.booked_on <= transfer_window_end(out.booked_on):
+    in-leg less than the out-leg by at most the fee either side recorded.
+
+    D162 amended 15 Nov 2026: when one leg names the other's account by IBAN
+    (names_the_other), the in-leg may also be booked up to three banking days *before* the
+    out-leg: a depot credits a direct debit on the day it collects it, the paying bank books
+    it days later (a quirion Einlage credited on the 5th, the DKB debit booked on the 7th).
+    Without that tie the in-leg is never earlier than the out-leg, and never for a credit
+    card's leg (review, 15 Nov 2026: only the depot's direct debit motivated the early window,
+    and no real card pair needs it). With `gap`, a deposit the
+    exchange credited up to EXCHANGE_DEPOSIT_GAP short without a fee fits too (deposit_gap):
+    match_transfer only proposes such a pair, and links it only when the bank line names the
+    exchange's deposit IBAN."""
+    earliest = (
+        subtract_banking_days(out.booked_on, TRANSFER_WINDOW_BANKING_DAYS)
+        if names_the_other(out, in_)
+        and AccountKind.CREDIT_CARD not in {out.account_kind, in_.account_kind}
+        else out.booked_on
+    )
+    if not earliest <= in_.booked_on <= transfer_window_end(out.booked_on):
         return False
-    gap = -out.amount - in_.amount  # what the exchange kept
+    if gap and deposit_gap(out, in_) is not None:
+        return True
+    kept = -out.amount - in_.amount  # what the exchange kept
     exchange = AccountKind.EXCHANGE in {out.account_kind, in_.account_kind}
     if exact or not exchange:
-        return gap == 0
+        return kept == 0
     fee = (out.fee_eur or Decimal("0")) + (in_.fee_eur or Decimal("0"))
-    return Decimal("0") <= gap <= fee
+    return Decimal("0") <= kept <= fee
 
 
 def ibans_agree(a: TransferLeg, b: TransferLeg) -> bool:
@@ -2249,7 +2355,10 @@ def ibans_agree(a: TransferLeg, b: TransferLeg) -> bool:
 def _candidate(a: TransferLeg, b: TransferLeg) -> TransferCandidate:
     out, in_ = _ordered(a, b)
     return TransferCandidate(
-        out_leg=out, in_leg=in_, kind=transfer_link_kind(out.account_kind, in_.account_kind)
+        out_leg=out,
+        in_leg=in_,
+        kind=transfer_link_kind(out.account_kind, in_.account_kind),
+        deposit_fee=deposit_gap(out, in_),
     )
 
 
@@ -2292,13 +2401,20 @@ def match_transfer(leg: TransferLeg, context: MatchContext, *, today: date) -> T
         fitting = [
             o
             for o in other
-            if o.account_kind in _CASH_KINDS and legs_fit(*_ordered(leg, o), exact=True)
+            if o.account_kind in _CASH_KINDS and legs_fit(*_ordered(leg, o), exact=True, gap=True)
         ]
         proposed = _candidate(leg, fitting[0]) if len(fitting) == 1 else None
         return TransferMatch(proposed_link=proposed)
     if leg.counterparty_iban_hmac in context.own_account_hmacs:
         other = [o for o in other if o.account_iban_hmac == leg.counterparty_iban_hmac]
-    fitting = [o for o in other if legs_fit(*_ordered(leg, o))]
+    # D162 amended 15 Nov 2026: a deposit the exchange credited short without a fee is linked
+    # only when the bank line names the exchange's deposit IBAN; otherwise it is proposed.
+    fitting = [
+        o
+        for o in other
+        if legs_fit(*_ordered(leg, o))
+        or (names_the_other(leg, o) and legs_fit(*_ordered(leg, o), gap=True))
+    ]
     result = TransferMatch(category=category, confidence=EXACT)
     if len(fitting) == 1:
         return result.model_copy(update={"link": _candidate(leg, fitting[0])})
@@ -2306,6 +2422,9 @@ def match_transfer(leg: TransferLeg, context: MatchContext, *, today: date) -> T
         return result.model_copy(
             update={"card": TRANSFER_AMBIGUOUS, "candidates": sorted(o.id for o in fitting)}
         )
+    short = [o for o in other if legs_fit(*_ordered(leg, o), gap=True)]
+    if len(short) == 1:
+        result = result.model_copy(update={"proposed_link": _candidate(leg, short[0])})
     if today > transfer_window_end(leg.booked_on):
         return result.model_copy(update={"card": TRANSFER_UNMATCHED_LEG})
     return result
@@ -2329,3 +2448,80 @@ def match_transfer_line(tx: MatchTransaction, context: MatchContext) -> Allocati
         allocations=[_draft(tx.amount, category, period, False)],
         reasoning="Überweisung zwischen zwei eigenen Konten.",
     )
+
+
+def named_transfer_set(tx: MatchTransaction, purpose: AccountPurpose) -> AllocationSet:
+    """D162 amended 15 Nov 2026: a line without an own IBAN (a depot's cash line carries
+    none) whose transfer's other leg names this line's account by IBAN is that transfer's leg,
+    internal_transfer_out|in at confidence 1.0, booked by services.transfers.link_leg when the
+    pair fits (equal to the cent) and the line holds no confirmed answer."""
+    category = TRANSFER_CODES[(purpose, tx.amount > 0)]
+    period = service_period(tx.purpose, tx.booking_date, False)
+    return AllocationSet(
+        transaction_id=tx.id,
+        method=AllocationMethod.MATCHER_TRANSFER,
+        confidence=EXACT,
+        allocations=[_draft(tx.amount, category, period, False)],
+        reasoning=(
+            "Überweisung zwischen zwei eigenen Konten: die Buchung auf dem anderen Konto "
+            "nennt dieses Konto."
+        ),
+    )
+
+
+def deposit_split_set(
+    tx: MatchTransaction,
+    fee: Decimal,
+    *,
+    method: AllocationMethod = AllocationMethod.MATCHER_TRANSFER,
+) -> AllocationSet:
+    """D162 amended 15 Nov 2026: a private bank line paying a deposit the exchange credited
+    `fee` short without recording a fee, as two parts computed by code: the credited amount
+    as internal_transfer_out and the rest as bank_fees (D159: the bank-fee code every account
+    takes). The line's amount is negative; the parts sum to it."""
+    if tx.amount >= 0 or not Decimal("0") < fee <= EXCHANGE_DEPOSIT_GAP:
+        raise ValueError("a deposit split needs a debit and a fee within the gap")
+    period = service_period(tx.purpose, tx.booking_date, False)
+    return AllocationSet(
+        transaction_id=tx.id,
+        method=method,
+        confidence=EXACT,
+        allocations=[
+            _draft(tx.amount + fee, AllocationCategory.INTERNAL_TRANSFER_OUT, period, False),
+            _draft(-fee, AllocationCategory.BANK_FEES, period, False),
+        ],
+        reasoning=(
+            "Einzahlung auf ein eigenes Börsenkonto: die Börse hat "
+            f"{euro_text(fee)} als Einzahlungsgebühr behalten, gebucht als Bankgebühr."
+        ),
+    )
+
+
+def deposit_fee_text(fee: Decimal) -> str:
+    """A transfer card's plain sentence for a deposit credited `fee` short (D162 amended
+    15 Nov 2026)."""
+    return f"{euro_text(fee)} behält die Börse als Einzahlungsgebühr."
+
+
+def deposit_link_text(fee: Decimal, exchange: str, iban: DepositIbanOutcome | None) -> str:
+    """The card's text for a bank line paying a deposit `exchange` credited `fee` short (D162
+    amended 15 Nov 2026, review): the gap, what „Als Einzahlung verknüpfen“ books, and, when
+    the exchange has no deposit IBAN yet (`iban`, the link's DepositIbanOutcome), that later
+    payments to the line's IBAN then count as deposits, or why the IBAN is not taken."""
+    text = (
+        f"{deposit_fee_text(fee)} „Als Einzahlung verknüpfen“ bucht diese Zahlung als "
+        f"Einzahlung auf {exchange} und die {euro_text(fee)} als Bankgebühren."
+    )
+    if iban is DepositIbanOutcome.LEARNED:
+        text += f" Spätere Zahlungen an dieselbe IBAN gelten dann als Einzahlungen auf {exchange}."
+    elif iban is DepositIbanOutcome.SHARED_IBAN:
+        text += " Die IBAN wird nicht übernommen, weil an sie auch andere Empfänger gehen."
+    elif iban is DepositIbanOutcome.OWN_ACCOUNT:
+        text += " Die IBAN wird nicht übernommen, weil sie zu einem anderen eigenen Konto gehört."
+    return text
+
+
+def euro_text(amount: Decimal) -> str:
+    """Decimal("1") → "1,00 €" (the amount's size; the sentence says which way it went)."""
+    whole, fraction = f"{abs(amount).quantize(CENT):,.2f}".split(".")
+    return f"{whole.replace(',', '.')},{fraction} €"

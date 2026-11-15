@@ -404,6 +404,9 @@ class PayeeStrength(_Case):
     a: PayeeLine
     b: PayeeLine
     strength: Literal["strong", "weak"]  # review F2: identity_strength of the pair
+    # same_payee of the pair, for an IBAN's lines: weak is one payee too, except a first word
+    # that only starts the other's (review, 15 Nov 2026)
+    one_payee: bool = True
     note: str | None = None
 
 
@@ -553,6 +556,8 @@ class LinkExpect(Schema):
     out_leg: UUID
     in_leg: UUID
     kind: TransferLinkKind
+    # D162 amended 15 Nov 2026: what the exchange kept of a bank deposit without a fee row.
+    deposit_fee: Money | None = None
 
 
 class TransferExpect(Schema):
@@ -582,15 +587,76 @@ def _link_kind(a: TransferAccount, b: TransferAccount) -> TransferLinkKind:
     return TransferLinkKind.BANK
 
 
-def _fits(out: LegRow, in_: LegRow, accounts: dict[str, TransferAccount], *, exact: bool) -> bool:
-    if not out.booked_on <= in_.booked_on <= _add_banking_days(out.booked_on, WINDOW_BANKING_DAYS):
+def _sub_banking_days(day: date, n: int) -> date:
+    while n:
+        day -= timedelta(days=1)
+        if day.weekday() < 5:
+            n -= 1
+    return day
+
+
+EXCHANGE_DEPOSIT_GAP = Decimal("2.00")
+
+
+def leg_account_iban(row: LegRow, accounts: dict[str, TransferAccount]) -> str | None:
+    """The account IBAN a leg carries: its account's, except an exchange's withdrawal (D162
+    amended 15 Nov 2026: an exchange's IBAN is the one deposits are paid to, so only its
+    deposit legs carry it; its payouts come from elsewhere)."""
+    account = accounts[row.account]
+    if account.kind is AccountKind.EXCHANGE and row.amount < 0:
+        return None
+    return account.iban_hmac
+
+
+def _deposit_gap(out: LegRow, in_: LegRow, accounts: dict[str, TransferAccount]) -> Decimal | None:
+    """D162 amended 15 Nov 2026: a private bank line's deposit the exchange credited short by
+    more than 0 and at most 2.00 €, neither side recording a fee."""
+    paying, credited = accounts[out.account], accounts[in_.account]
+    if out.source is not TransferLegSource.TRANSACTION or paying.kind is AccountKind.EXCHANGE:
+        return None
+    if paying.purpose is not AccountPurpose.PRIVATE or credited.kind is not AccountKind.EXCHANGE:
+        return None
+    if out.fee_eur or in_.fee_eur:
+        return None
+    gap = -out.amount - in_.amount
+    return gap if Decimal("0") < gap <= EXCHANGE_DEPOSIT_GAP else None
+
+
+def _tied(out: LegRow, in_: LegRow, accounts: dict[str, TransferAccount]) -> bool:
+    """D162 amended 15 Nov 2026: one leg names the other's account by its IBAN."""
+    out_iban, in_iban = leg_account_iban(out, accounts), leg_account_iban(in_, accounts)
+    return (out.counterparty_iban_hmac is not None and out.counterparty_iban_hmac == in_iban) or (
+        in_.counterparty_iban_hmac is not None and in_.counterparty_iban_hmac == out_iban
+    )
+
+
+def _fits(
+    out: LegRow,
+    in_: LegRow,
+    accounts: dict[str, TransferAccount],
+    *,
+    exact: bool,
+    gap: bool = False,
+) -> bool:
+    # D162 amended 15 Nov 2026: tied by an own IBAN, the in-leg may be booked up to three
+    # banking days before the out-leg (a depot credits a direct debit before the bank books it);
+    # never with a credit card's leg (review, 15 Nov 2026).
+    card = AccountKind.CREDIT_CARD in {accounts[out.account].kind, accounts[in_.account].kind}
+    earliest = (
+        _sub_banking_days(out.booked_on, WINDOW_BANKING_DAYS)
+        if _tied(out, in_, accounts) and not card
+        else out.booked_on
+    )
+    if not earliest <= in_.booked_on <= _add_banking_days(out.booked_on, WINDOW_BANKING_DAYS):
         return False
-    gap = -out.amount - in_.amount  # what the exchange kept
+    if gap and _deposit_gap(out, in_, accounts) is not None:
+        return True
+    kept = -out.amount - in_.amount  # what the exchange kept
     exchange = AccountKind.EXCHANGE in {accounts[out.account].kind, accounts[in_.account].kind}
     if exact or not exchange:
-        return gap == 0
+        return kept == 0
     fee = (out.fee_eur or Decimal("0")) + (in_.fee_eur or Decimal("0"))
-    return Decimal("0") <= gap <= fee
+    return Decimal("0") <= kept <= fee
 
 
 class TransferCase(_Case):
@@ -626,7 +692,9 @@ class TransfersFixture(_Fixture):
         other = [o for o in case.open_legs if o.account != leg.account and (o.amount > 0) != credit]
         if leg.counterparty_iban_hmac in by_iban:
             category = _TRANSFER_CODES[(own.purpose, credit)]
-            other = [o for o in other if o.account == by_iban[leg.counterparty_iban_hmac]]
+            other = [
+                o for o in other if leg_account_iban(o, accounts) == leg.counterparty_iban_hmac
+            ]
         elif leg.booked_as in _TRANSFER_CATEGORIES:
             category = leg.booked_as
         else:
@@ -636,11 +704,21 @@ class TransfersFixture(_Fixture):
                 o
                 for o in other
                 if accounts[o.account].kind in (AccountKind.EXCHANGE, AccountKind.DEPOT)
-                and _fits(*self._ordered(leg, o), accounts, exact=True)
+                and _fits(*self._ordered(leg, o), accounts, exact=True, gap=True)
             ]
             proposed = self._link(leg, fitting[0]) if len(fitting) == 1 else None
             return TransferExpect(category=None, proposed_link=proposed)
-        fitting = [o for o in other if _fits(*self._ordered(leg, o), accounts, exact=False)]
+        # D162 amended 15 Nov 2026: a deposit credited short without a fee row is linked only
+        # when the two legs are tied by the exchange's deposit IBAN; otherwise proposed.
+        fitting = [
+            o
+            for o in other
+            if _fits(*self._ordered(leg, o), accounts, exact=False)
+            or (
+                _tied(*self._ordered(leg, o), accounts)
+                and _fits(*self._ordered(leg, o), accounts, exact=False, gap=True)
+            )
+        ]
         result = TransferExpect(category=category, confidence=Decimal("1.000"))
         if len(fitting) == 1:
             return result.model_copy(update={"link": self._link(leg, fitting[0])})
@@ -651,6 +729,9 @@ class TransfersFixture(_Fixture):
                     "candidates": [o.id for o in fitting],
                 }
             )
+        short = [o for o in other if _fits(*self._ordered(leg, o), accounts, exact=False, gap=True)]
+        if len(short) == 1:
+            result = result.model_copy(update={"proposed_link": self._link(leg, short[0])})
         if case.today > _add_banking_days(leg.booked_on, WINDOW_BANKING_DAYS):
             return result.model_copy(
                 update={"card": RuleErrorExpect(code=E.TRANSFER_UNMATCHED_LEG)}
@@ -664,7 +745,12 @@ class TransfersFixture(_Fixture):
     def _link(self, a: LegRow, b: LegRow) -> LinkExpect:
         out, in_ = self._ordered(a, b)
         kind = _link_kind(self.accounts[out.account], self.accounts[in_.account])
-        return LinkExpect(out_leg=out.id, in_leg=in_.id, kind=kind)
+        return LinkExpect(
+            out_leg=out.id,
+            in_leg=in_.id,
+            kind=kind,
+            deposit_fee=_deposit_gap(out, in_, self.accounts),
+        )
 
 
 # --- private_cost_link.yaml: D161's three paths and D159's per-purpose category set --------

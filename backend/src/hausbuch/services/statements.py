@@ -274,6 +274,13 @@ def import_statement(
         # The follow imported the account's earlier files and re-checked this one, so its
         # status is read again rather than returned as it was before (review, 15 Nov 2026).
         checked = get_import(ctx.conn, imported) or checked
+    if account.kind == AccountKind.DEPOT.value:
+        # D162 amended 15 Nov 2026: a depot's cash lines carry no IBAN, so the bank debits
+        # naming the depot book and link them (follow-accounts and „Auf Konto importieren“
+        # import through here too). Only a reconciled import's lines are legs.
+        from .transfers import relink  # transfers imports the statement services
+
+        relink(ctx, account_id)
     return checked.model_copy(
         update={
             "stated_closing": statement.stated_balance,

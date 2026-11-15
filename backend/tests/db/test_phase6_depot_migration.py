@@ -41,7 +41,8 @@ def test_a_depot_may_carry_an_iban_and_only_a_bank_or_depot_does(connect, worksp
         with pytest.raises(errors.CheckViolation), conn.transaction():
             _depot(conn, a, iban_masked="DE00 **** 0027", iban_hmac=None)  # both or none
         with pytest.raises(errors.CheckViolation), conn.transaction():
-            _depot(conn, a, kind="exchange", external_ref_hmac=_hmac(), **_iban())
+            # An exchange may carry its deposit IBAN since 0035; a wallet still may not.
+            _depot(conn, a, kind="wallet", external_ref_hmac=_hmac(), **_iban())
         with pytest.raises(errors.CheckViolation), conn.transaction():
             _account(conn, a, iban_masked=None, iban_hmac=None)  # a bank account still needs one
         with pytest.raises(errors.CheckViolation), conn.transaction():

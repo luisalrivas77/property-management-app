@@ -24,12 +24,22 @@
 #      "HOTEL", is no payee); or the first two words are the same (not with a linking second
 #      word, "HOTEL AT …", nor fewer than 5 letters in the two, "G A …"); or the first word is,
 #      when it has 5 letters or more and is not a generic first word (DEUTSCHE, HOTEL, CAFE,
-#      GRUPO, HAUS, PRAXIS, SHOP, CITY, PARKPLATZ, BAHNHOF and the like).
+#      GRUPO, HAUS, PRAXIS, SHOP, CITY, PARKPLATZ, BAHNHOF and the like); or (15 Nov 2026)
+#      the first words differ but one starts the other ("BOOKINGCOMB" and "BOOKING"), the
+#      shorter of 5 letters or more and not a generic first word.
 #   6. how surely (review F2, 14 Nov 2026, `strengths`): STRONG for the same words, a word
-#      prefix whose shorter side has two words or more, the same first two words, or
-#      Booking's first three; WEAK for a one-word prefix ("ALDI", "ALDI TALK") or only the
-#      same first word. Both are one payee for same_payee and shared_iban; a learned rule that
-#      hits a line only weakly proposes it with a question, it never books it unseen.
+#      prefix whose shorter side has two words or more, the same first two words,
+#      Booking's first three, or a first word that starts the other's when one name repeats
+#      the merchant (a later word of 5 letters or more that starts the other's first word or
+#      is started by it, "BOOKIN" and "BOOKINGCOMB") and the two also share another word of 5
+#      letters or more that is not a linking word (the merchant's street, 15 Nov 2026,
+#      tightened in review the same day); WEAK for a one-word prefix ("ALDI", "ALDI TALK"), a
+#      first word that starts the other's without both (a shared town alone: "PENNY MARKT
+#      MUSTERSTADT" and "PENNYLANE PUB MUSTERSTADT"), or only the same first word. Both are
+#      one payee for same_payee and shared_iban, except a first word that starts the other's
+#      while neither name repeats the merchant: two payees there, so their IBAN is shared; a
+#      learned rule that hits a line only weakly proposes it with a question, it never books
+#      it unseen.
 # An IBAN is shared when its lines hold two payees that are not one payee (shared_iban).
 #
 # `same: null` is a pair the rules may read either way (two booking.com hotels; Amazon's two
@@ -194,6 +204,15 @@ different:
     a: {name: "Sky Deutschland Fernsehen GmbH Co. KG"}
     b: {name: "DAZN"}
     same: false
+  - id: short_first_word_starts_the_other  # D160 amended (4), 15 Nov 2026
+    note: the shorter first word has fewer than 5 letters, so no payee by its prefix
+    a: {name: "BACK BACKSTUBE MARKTPLEIN"}
+    b: {name: "BACKSTAGE CLUB MARKTPLEIN"}
+    same: false
+  - id: generic_first_word_starts_the_other  # D160 amended (4), 15 Nov 2026
+    a: {name: "HOTEL GRAND MARKTPLEIN"}
+    b: {name: "HOTELLERIE SUED MARKTPLEIN"}
+    same: false
   - id: paypal_two_merchants
     a: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: ", Ihr Einkauf bei DisneyPlus, "}
     b: {name: "PAYPAL EUROPE S A R L ET CIE S C A", purpose: ", Ihr Einkauf bei MicrosoftPay, "}
@@ -356,6 +375,30 @@ strengths:
     a: {name: "12345678 PAYPAL *DISNEYPLUS Taurusavenue 9 2132LS Hoofddorp", purpose: "12345678 PAYPAL *DISNEYPLUS Taurusavenue 9 2132LS Hoofddorp"}
     b: {name: "PayPal Europe S.a.r.l. et Cie S.C.A", purpose: "1041234567801 PP.1234.PP . DisneyPlus, Ihr Einkauf bei DisneyPlus"}
     strength: strong
+  - id: first_word_starts_the_other_with_a_shared_street  # D160 amended (4), 15 Nov 2026
+    note: one merchant printed two ways (Luis, „For a booking.com bank line it didn't use the rule“)
+    a: {name: "BOOKINGCOMB BO MARKTPLEIN"}
+    b: {name: "BOOKING BOOKIN MARKTPLEIN"}
+    strength: strong
+  - id: first_word_starts_the_other_alone  # D160 amended (4), 15 Nov 2026
+    a: {name: "BOOKINGCOMB BO"}
+    b: {name: "BOOKING BOOKIN"}
+    strength: weak
+  - id: paypal_card_first_word_starts_the_other_with_a_shared_street  # 15 Nov 2026
+    a: {name: "12345678 PAYPAL *BOOKINGCOMB BO Marktplein 3 1011AB Beispielstad"}
+    b: {name: "87654321 PAYPAL *BOOKING BOOKIN Marktplein 3 1011AB Beispielstad"}
+    strength: strong
+  - id: first_word_starts_the_other_with_only_the_town  # review, 15 Nov 2026
+    note: a card line prints the town; a shop and a pub are two merchants, a rule only proposes
+    a: {name: "PENNY MARKT MUSTERSTADT"}
+    b: {name: "PENNYLANE PUB MUSTERSTADT"}
+    strength: weak
+    one_payee: false  # two payees on one IBAN (shared_ibans)
+  - id: glued_first_word_with_only_the_town  # review, 15 Nov 2026
+    a: {name: "ADLER MODEMARKT MUSTERSTADT"}
+    b: {name: "ADLERAPOTHEKE MUSTERSTADT"}
+    strength: weak
+    one_payee: false  # two payees on one IBAN (shared_ibans)
 
 # Whether an IBAN hash is shared (two payees that are not one payee on its private lines).
 shared_ibans:
@@ -363,6 +406,16 @@ shared_ibans:
     lines:
       - {name: "EPRIMO GMBH"}
       - {name: "EPRIMO GMBH FLUGHAFENSTRASE 20"}
+    shared: false
+  - id: first_word_starts_the_other_with_only_the_town  # review, 15 Nov 2026
+    lines:
+      - {name: "PENNY MARKT MUSTERSTADT"}
+      - {name: "PENNYLANE PUB MUSTERSTADT"}
+    shared: true
+  - id: booking_two_spellings_one_iban  # the merchant repeated and the street shared
+    lines:
+      - {name: "BOOKINGCOMB BO MARKTPLEIN"}
+      - {name: "BOOKING BOOKIN MARKTPLEIN"}
     shared: false
   - id: dkb_clearing_iban
     lines:

@@ -229,10 +229,14 @@ class Line:
         return all(a.status is AllocationStatus.PROPOSED for a in self.current)
 
 
-def load_line(conn: Connection, transaction_id: UUID, *, lock: bool = False) -> Line | None:
+def load_line(
+    conn: Connection, transaction_id: UUID, *, lock: bool = False, skip_locked: bool = False
+) -> Line | None:
     """The line as matching sees it. With `lock`, the transaction row is locked (FOR UPDATE)
     for the rest of the caller's transaction, so a job and a person answering the same line
-    decide one after the other, the second on the first one's rows."""
+    decide one after the other, the second on the first one's rows. With `skip_locked` too,
+    a row another transaction holds is not waited for: None, as for a missing line
+    (services.transfers books another line only so, review of D162 amended 15 Nov 2026)."""
     query = (
         select(
             transaction_table,
@@ -245,7 +249,7 @@ def load_line(conn: Connection, transaction_id: UUID, *, lock: bool = False) -> 
         .where(transaction_table.c.id == transaction_id)
     )
     if lock:
-        query = query.with_for_update(of=transaction_table)
+        query = query.with_for_update(of=transaction_table, skip_locked=skip_locked)
     row = conn.execute(query).one_or_none()
     if row is None:
         return None
@@ -1526,6 +1530,15 @@ def _coarser(found: AllocationSet, current: list[Allocation]) -> bool:
     if row.status is AllocationStatus.CONFIRMED:
         return False
     return fallback_of(row.category) is found.allocations[0].category
+
+
+def own_code_set(line: Line) -> AllocationSet | None:
+    """The answer the line's own account kind books by code before any rule or model (a
+    card's interest, fee or payment line, a depot's headline), or None. services.transfers
+    never books a line as a transfer's leg when this answer is something else (review of D162
+    amended, 15 Nov 2026: a depot's „Wertpapier Verkauf“ next to an equal debit naming the
+    depot)."""
+    return _card_charge(line) or _depot_booking(line)
 
 
 def _card_charge(line: Line) -> AllocationSet | None:
