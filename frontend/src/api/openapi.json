@@ -11319,7 +11319,8 @@
           "ratio": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,4})?$"
               },
               {
                 "type": "null"
@@ -11329,6 +11330,7 @@
           },
           "target": {
             "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,4})?$",
             "title": "Target",
             "default": "0.80"
           },
@@ -11347,7 +11349,8 @@
           "criterion_ratio": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,4})?$"
               },
               {
                 "type": "null"
@@ -11415,7 +11418,8 @@
           "ratio": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,4})?$"
               },
               {
                 "type": "null"

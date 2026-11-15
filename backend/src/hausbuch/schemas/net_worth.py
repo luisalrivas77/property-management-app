@@ -5,11 +5,12 @@ household.ValuationSnapshot."""
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import Field
 
-from .common import Money, Schema
+from .common import _STRING_ONLY, Money, Schema, _string_schema
 from .enums import AccountKind
 from .household import NetWorthClass, PriceEur, PriceSourceKind, Quantity
 
@@ -128,6 +129,12 @@ class SnapshotResult(Schema):
 
 # --- GET /accounts/auto-rate (D172) ----------------------------------------------------------
 
+# A share of the confirmed allocations, 0 to 1 inclusive, to four places, as a string like
+# every figure (spec amendment 2): 1.0000 is a month booked wholly without a person.
+AutoRatio = Annotated[
+    Decimal, Field(ge=0, le=1, max_digits=5, decimal_places=4), _STRING_ONLY, _string_schema(4)
+]
+
 
 class AutoRateAccount(Schema):
     """A private bank account's confirmed allocations of the month, by the line's booking
@@ -144,7 +151,7 @@ class AutoRateAccount(Schema):
     auto: int = Field(ge=0)
     by_method: dict[str, int] = Field(default_factory=dict)
     by_routing: dict[str, int] = Field(default_factory=dict)
-    ratio: Decimal | None = None  # auto ÷ confirmed, four places; None without any
+    ratio: AutoRatio | None = None  # auto ÷ confirmed, four places; None without any
     first_import: int = Field(default=0, ge=0)
     first_import_auto: int = Field(default=0, ge=0)
 
@@ -159,9 +166,9 @@ class AutoRate(Schema):
     accounts: list[AutoRateAccount] = Field(default_factory=list)
     confirmed: int = Field(ge=0)
     auto: int = Field(ge=0)
-    ratio: Decimal | None = None
-    target: Decimal = Decimal("0.80")
+    ratio: AutoRatio | None = None
+    target: AutoRatio = Decimal("0.80")
     criterion_confirmed: int = Field(default=0, ge=0)
     criterion_auto: int = Field(default=0, ge=0)
-    criterion_ratio: Decimal | None = None
+    criterion_ratio: AutoRatio | None = None
     met: bool | None = None
