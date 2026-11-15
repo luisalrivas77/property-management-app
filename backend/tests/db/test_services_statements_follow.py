@@ -528,6 +528,30 @@ def test_a_printed_number_no_depot_holds_pre_selects_nothing(
     assert [o.value for o in holding.options["account_id"]] == [str(a.id)]
 
 
+def test_a_report_printing_two_existing_depots_pre_selects_nothing_and_has_no_note(
+    run, read, job, blob_store, fresh_workspaces
+):
+    """Review, 15 Nov 2026: a report over several depots (more than one labelled number)
+    names no single depot; both exist, so no „anderes Depot“ note either."""
+    ws, _ = fresh_workspaces
+    _depot(run, ws, number=DEPOT_A_NUMBER)
+    _depot(run, ws, label="Megatrends", number=DEPOT_B_NUMBER, n=1)
+    _, ready = _report(
+        run,
+        job,
+        ws,
+        blob_store,
+        DEPOT_A_NUMBER,
+        text=(
+            f"Finanzreport\nDepot-Nr. {DEPOT_A_NUMBER}\nDepot-Nr. {DEPOT_B_NUMBER}\nSeite 1 von 1"
+        ),
+    )
+    assert _account_field(ready).value is None
+    holding = next(r for r in ready.records if r.key == "holding:1")
+    assert ELSEWHERE_NOTE not in holding.notes
+    assert not any("Depot" in note for note in holding.notes)
+
+
 def test_a_printed_number_with_the_only_depot_unnumbered_falls_back_to_it(
     run, read, job, blob_store, fresh_workspaces
 ):

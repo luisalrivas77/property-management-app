@@ -148,7 +148,7 @@ def printed_depot_account(
     A labelled depot number decides alone: held by exactly one depot account, a MATCH; held by
     none while every depot account has a number, NAMED_ELSEWHERE (the document is another
     depot's, such as the receiving depot of an Einbuchung not created yet); more than one
-    labelled number (a financial report over several depots) is NAMED_ELSEWHERE too. The IBANs
+    labelled number (a financial report over several depots) is SEVERAL. The IBANs
     count only when no labelled number is printed, and only a MATCH comes of them. NOTHING when
     nothing tells: no depot account with a number or IBAN, no PDF, no text, nothing printed
     that a depot holds, or a printed number while a depot account without a number could be
@@ -173,7 +173,7 @@ def printed_depot_account(
     text = "\n".join(pages)
     numbers = rules.printed_depot_numbers(text)
     if len(numbers) > 1:
-        return PrintedDepot.NAMED_ELSEWHERE, None
+        return PrintedDepot.SEVERAL, None
     if numbers:
         printed = protect_ref(next(iter(numbers)), iban_key).hmac
         matched = [

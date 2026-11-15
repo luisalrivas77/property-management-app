@@ -310,9 +310,12 @@ class PrintedDepot(StrEnum):
     (services.depot.printed_depot_account)."""
 
     MATCH = "match"  # exactly one depot account holds what it prints
-    # A labelled depot number no depot account holds, or more than one labelled number:
-    # the document belongs to another depot, so none is pre-selected.
+    # One labelled depot number no depot account holds: the document belongs to another
+    # depot, so none is pre-selected and the note says to create it first.
     NAMED_ELSEWHERE = "named_elsewhere"
+    # More than one labelled depot number (a financial report over several depots): none is
+    # pre-selected, not even the only one, and no note is added.
+    SEVERAL = "several"
     # Nothing that tells: no labelled number or IBAN of a depot, no PDF, or no depot account
     # with a number to compare with. The earlier rule applies (the only depot).
     NOTHING = "nothing"

@@ -173,6 +173,19 @@ def test_a_document_that_names_no_depot_falls_back_to_the_only_depot(outcome):
     assert movement.fields["account_id"].confidence == "low"
 
 
+def test_a_report_over_several_depots_is_not_put_on_the_only_one_and_has_no_note():
+    records = _build(
+        ExtractionKind.TRADE_CONFIRMATION,
+        _trade(),
+        DocumentSubtype.TRADE_CONFIRMATION,
+        accounts=(DEPOT_A,),
+        outcome=PrintedDepot.SEVERAL,
+    )
+    movement = next(r for r in records if r.key == "movement:1")
+    assert movement.fields["account_id"].value is None
+    assert movement.notes == []
+
+
 def test_a_document_that_names_another_depot_is_not_put_on_the_only_one():
     # Review, 15 Nov 2026: the receiving depot of an Einbuchung is not created yet, and the
     # only depot under Konten is another one; the user creates the right depot first.

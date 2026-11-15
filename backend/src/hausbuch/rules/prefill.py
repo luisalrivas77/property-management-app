@@ -818,10 +818,12 @@ class _Builder:
         # A document that names another depot is never put on the only one (review,
         # 15 Nov 2026); one that could not be read just now falls back like one that says
         # nothing, since the reading itself had the file a moment ago.
+        # A report over several depots pre-selects none either, without a note.
         elsewhere = printed is None and self.ctx.printed_depot is PrintedDepot.NAMED_ELSEWHERE
+        several = printed is None and self.ctx.printed_depot is PrintedDepot.SEVERAL
         if printed is not None:
             account = _code_value(str(printed.id), "high")
-        elif len(accounts) == 1 and not elsewhere:
+        elif len(accounts) == 1 and not elsewhere and not several:
             account = _code_value(str(accounts[0].id), "low")
         else:
             account = ExtractedValue.missing()
