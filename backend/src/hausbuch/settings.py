@@ -230,11 +230,12 @@ class Settings:
         """Phase 5 (§9): each secret comes with its partner, or neither is set. The messages
         name the variables, never their values."""
         self._merge_fints_pins()
-        if bool(self.fints_pins) != (self.fints_product_id is not None):
+        # Phase 6 D196: a PIN may be typed in the app instead (bank_credential), so the product
+        # id alone is valid; a container PIN without the product id is still refused.
+        if self.fints_pins and self.fints_product_id is None:
             raise SettingsError(
-                "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID are set together or not at all "
-                "(a HAUSBUCH_FINTS_PIN_<SLOT> also needs the product id, and the product id at "
-                "least one PIN)"
+                "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID: a PIN needs the product id "
+                "(a HAUSBUCH_FINTS_PIN_<SLOT> too; the product id alone is valid, D196)"
             )
         if (self.inbox_imap_user is None) != (self.inbox_imap_password is None):
             raise SettingsError(

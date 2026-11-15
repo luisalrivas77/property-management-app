@@ -34,7 +34,10 @@ Logging: one line per run with the sync id, the outcome, codes and exception cla
 the camt formats the bank offers at INFO (they answer §16 Q-O34 on the first real run), and
 the bank's public parameters once per run (phase 6 D173 (7): its name, the camt formats,
 HIEKPS, the decoupled approval methods), recorded on the account when they change. The PIN
-is the one of the connection's credential slot (phase 6 D163). The
+is the one of the connection's credential slot (phase 6 D163): the one typed into the app,
+decrypted in process just before the dialog (_pin, its own short transaction), else the slot's
+container secret (D196); it is never in the job's arguments, the RunPlan, an event or a log
+line, and a stored PIN that no longer decrypts fails the run as bank.pin_unreadable. The
 facade adds one trace record per FinTS exchange, tagged with the sync id (D148).
 Never the PIN, the product id, the login, an IBAN, an amount or any text from the bank.
 """
@@ -53,6 +56,7 @@ from hausbuch.rules.bank_sync import LOCK_CODES, REFUSED_CODES_LOGGED, BankAnswe
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.bank_sync import StatementKey, StatementOutcome, StatementReading
 from hausbuch.schemas.enums import ActorType
+from hausbuch.services import bank_credentials as credentials
 from hausbuch.services import bank_sync as service
 from hausbuch.services.bank.fints import (
     Approval,
@@ -143,9 +147,7 @@ def run_bank_sync(
     run = _Run(plan, log=log)
     session: FintsSession | None = None
     try:
-        pin = deps.settings.fints_pins.get(plan.credential_slot)
-        if not pin:  # begin_run checked it; a secret gone since fails before any dialog
-            raise BankError(E.BANK_PIN_MISSING)
+        pin = _pin(deps, workspace_id, plan.credential_slot)
         session = open_session(
             bank_code=plan.bank_code,
             login_name=plan.login_name,
@@ -505,6 +507,18 @@ def _await(
     run.awaiting_approval = False
     run.approved = True
     return pending.value
+
+
+def _pin(deps: JobDeps, workspace_id: UUID, slot: str) -> str:
+    """The slot's PIN for this dialog (D196): the one typed into the app, decrypted, else the
+    container secret; read in its own transaction, kept in this frame only. begin_run checked
+    that one exists; one deleted since, or a stored one that no longer decrypts, fails the run
+    before any dialog (a RuleError's message never carries the PIN)."""
+    try:
+        with workspace_transaction(deps.engine, workspace_id) as conn:
+            return credentials.resolve_pin(conn, slot, deps.settings)
+    except RuleError as exc:
+        raise BankError(exc.code) from None
 
 
 def _bank_error(

@@ -100,6 +100,18 @@ def test_phase_5_defaults_leave_every_feature_off():
     assert settings.tem_region == "fr-par"
 
 
+@pytest.mark.parametrize(
+    "extra",
+    [{}, {"HAUSBUCH_FINTS_PIN_2ND": "12345"}],
+    ids=["product_id_alone", "with_an_ignored_variable"],
+)
+def test_the_product_id_alone_is_valid(extra):
+    """Phase 6 D196: the PINs may all be typed in the app (bank_credential), so the container
+    starts with the product id and no PIN variable; an ignored name adds no PIN."""
+    settings = load_settings(ENV | {"HAUSBUCH_FINTS_PRODUCT_ID": "P1"} | extra)
+    assert settings.fints_product_id == "P1" and dict(settings.fints_pins) == {}
+
+
 # Synthetic values only (public repo).
 PHASE_5_SECRETS = {
     "HAUSBUCH_FINTS_PIN": "pin-24680-synthetic",
@@ -317,14 +329,10 @@ def test_repr_hides_secrets():
         ({"HAUSBUCH_AI_TIMEOUT_S": "-5"}, "positive integer"),
         # Phase 5 §9: a secret without its partner is refused, naming variables only.
         ({"HAUSBUCH_FINTS_PIN": "12345"}, "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID"),
-        ({"HAUSBUCH_FINTS_PRODUCT_ID": "P1"}, "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID"),
-        # Phase 6 D163: a slot's PIN needs the product id too.
+        # Phase 6 D163: a slot's PIN needs the product id too. (Phase 6 D196 dropped the
+        # reverse: the product id alone is valid, test_the_product_id_alone_is_valid.)
         (
             {"HAUSBUCH_FINTS_PIN_OWNER_B": "12345"},
-            "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID",
-        ),
-        (
-            {"HAUSBUCH_FINTS_PIN_2ND": "12345", "HAUSBUCH_FINTS_PRODUCT_ID": "P1"},
             "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID",
         ),
         (

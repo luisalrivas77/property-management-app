@@ -299,3 +299,25 @@ def test_the_request_line_carries_no_body_and_the_route_template(client_a, logs,
     logged = logs()
     for value in ("Anna Geheim", EMAIL, tenant["id"]):
         assert value not in logged
+
+
+# --- A bank PIN typed into the app (phase 6 D196) ------------------------------------------
+
+BANK_PIN = "GEHEIM-PIN-31415"
+BANK_PIN_TOO_LONG = "GEHEIM-PIN-" + "9" * 60  # 71 characters
+
+
+@pytest.mark.parametrize(
+    ("pin", "status"), [(BANK_PIN, 200), (BANK_PIN_TOO_LONG, 422)], ids=["stored", "refused"]
+)
+def test_a_bank_pin_is_never_echoed_or_logged(client_a, logs, pin, status):
+    response = client_a.put("/api/bank-credentials/primary", json={"pin": pin})
+    assert response.status_code == status
+    if status == 422:
+        [error] = response.json()["detail"]
+        assert set(error) == {"loc", "msg", "type"} and "71" not in error["msg"]
+    assert logs.request_lines()[-1]["route"] == "/api/bank-credentials/{slot}"
+    assert_not_echoed(response, logs, pin)
+    deleted = client_a.delete("/api/bank-credentials/primary")
+    assert deleted.status_code == (204 if status == 200 else 404)
+    assert_not_echoed(deleted, logs, pin)
