@@ -8,7 +8,11 @@ sums the valuations into the net worth.
   beats a report value, but yesterday's NAV beats last quarter's trade price; D167 amended
   13 Nov 2026: a typed user price wins on its own day, the one way to correct a fetched
   price, which is unique per day in an append-only table), then the latest `fetched_at`
-  within one source. Older than STALE_AFTER_DAYS -> stale.
+  within one source. Older than STALE_AFTER_DAYS -> stale. A chain asset (phase 7 D180 (3),
+  §10) passes its `priced_as` asset's rows too: both read together, date first, then
+  SOURCE_PRECEDENCE, and on one day and source the chain asset's own row before the symbol's,
+  so a price typed on the chain asset wins its day and the symbol's newer rows value the days
+  after it (step 0's reading, §15.1 item 18). Without `priced_as` rows nothing changes.
 - `to_eur(amount, on, rates)`: a figure in another currency, divided by the ECB rate (units
   of the currency per euro) of the latest ECB day on or before the figure's day (a Saturday
   NAV by Friday's rate), 8 places half up.
@@ -61,15 +65,29 @@ CENT = Decimal("0.01")
 PRICE_PLACES = Decimal("0.00000001")  # price.price_eur numeric(20,8)
 
 
-def price_on(prices: Sequence[PricePoint], on: date) -> PricePoint | None:
-    """The row an asset is valued at on `on`, or None when no row is on or before it."""
-    eligible = [p for p in prices if p.on <= on]
+def price_on(
+    prices: Sequence[PricePoint], on: date, *, priced_as: Sequence[PricePoint] = ()
+) -> PricePoint | None:
+    """The row an asset is valued at on `on`, or None when no row is on or before it.
+    `priced_as`: a chain asset's symbol-level rows (D180 (3)); the row returned keeps its own
+    asset_id, so the caller can tell which asset priced it."""
+    eligible = [(p, False) for p in prices if p.on <= on]
+    eligible += [(p, True) for p in priced_as if p.on <= on]
     if not eligible:
         return None
-    day = max(p.on for p in eligible)
-    rows = [p for p in eligible if p.on == day]
-    # Best source first; within a source the latest fetched_at (a correction appended later).
-    return min(rows, key=lambda p: (SOURCE_PRECEDENCE.index(p.source), -p.fetched_at.timestamp()))
+    day = max(p.on for p, _ in eligible)
+    rows = [(p, twin) for p, twin in eligible if p.on == day]
+    # Best source first; the asset's own row before its symbol's; within a source the latest
+    # fetched_at (a correction appended later).
+    best, _ = min(
+        rows,
+        key=lambda pt: (
+            SOURCE_PRECEDENCE.index(pt[0].source),
+            pt[1],
+            -pt[0].fetched_at.timestamp(),
+        ),
+    )
+    return best
 
 
 def is_stale(price: PricePoint, on: date) -> bool:
