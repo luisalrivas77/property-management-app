@@ -20,7 +20,6 @@
 # Tangem's change with „Dynamic Addresses“ on); a foreign input bc1qmc3c…yhg.
 cases:
   - id: receive
-    pending: "phase 7 step 4 (rules/chain/normalise.utxo_net, classify)"
     own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
     tx:
       txid: a52568b62afb649b0fe2a9e6ae36cafe0d305fd5f5d405e029b1b0434e47f091
@@ -37,7 +36,6 @@ cases:
         - {kind: uncategorized, role: in, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 1000000, index: "0"}
 
   - id: spend_registered_change
-    pending: "phase 7 step 4 (rules/chain/normalise.utxo_net, classify)"
     own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, bc1qsdqk2xmw06qgn2589yjzthjlk368wfpq4pgz2k]
     tx:
       txid: c1fc6ec8750e91249f6f5584356d5eccf89344b9c285deb70170b6ed0367b0b0
@@ -56,7 +54,6 @@ cases:
 
   # §6 example 12: 0.05 BTC in, 0.02 to the payee, 0.0299 to an unregistered address, fee 0.0001.
   - id: spend_unregistered_output_card
-    pending: "phase 7 step 4 (classify, the change card)"
     own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
     tx: &example_12
       txid: 4ed07048b25495b2b12bd81488fd3597ce6840e19d2c03c201e6892ae5c82a07
@@ -73,7 +70,6 @@ cases:
       candidates: [bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf, bc1qn8duhwxyj87x0d2efhvv44p5r0f48jr6t94ngw]
       card: wallet.change_candidate
   - id: spend_unregistered_output_answered_yes
-    pending: "phase 7 step 4 (classify, „Ja, eigene Adresse“ re-derives the net movement)"
     own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
     answered_change: [bc1qn8duhwxyj87x0d2efhvv44p5r0f48jr6t94ngw]
     tx: *example_12
@@ -85,7 +81,6 @@ cases:
   # A „Nein“ on one output settles that address only: the other is still unanswered, so
   # the card asks about it alone (D185 amended 15 Nov 2026).
   - id: spend_unregistered_output_answered_no
-    pending: "phase 7 step 4 (classify, „Nein, Empfänger“)"
     own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
     answered_payee: [bc1qn8duhwxyj87x0d2efhvv44p5r0f48jr6t94ngw]
     tx: *example_12
@@ -95,7 +90,6 @@ cases:
       candidates: [bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf]
       card: wallet.change_candidate
   - id: spend_unregistered_outputs_both_answered_no
-    pending: "phase 7 step 4 (classify, „Nein, Empfänger“ on every output)"
     own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
     answered_payee: [bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf, bc1qn8duhwxyj87x0d2efhvv44p5r0f48jr6t94ngw]
     tx: *example_12
@@ -106,7 +100,6 @@ cases:
         - {kind: fee, role: fee, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 10000, index: fee}
 
   - id: spend_from_two_own_addresses
-    pending: "phase 7 step 4 (rules/chain/normalise.utxo_net, classify)"
     own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, bc1q0phhhvur8dmwqv48kmf6d7ck3s3zkfjksuzqrl, bc1qsdqk2xmw06qgn2589yjzthjlk368wfpq4pgz2k]
     tx:
       txid: a5e4ebfd217b4d0e63d332e1ae6458cc47140369c6b9e408fbbcacc417511657
@@ -125,7 +118,6 @@ cases:
         - {kind: fee, role: fee, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, sats: 5000, index: fee}
 
   - id: coinjoin_shaped_unknown
-    pending: "phase 7 step 4 (classify)"
     own: [bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz]
     tx:
       txid: b773602c4ee06da1bc10da8a3136f4888b2309d69d65a0cc4e8b35190a243783
@@ -141,9 +133,9 @@ cases:
 
 balances:
   # D185 (3): chain_stats.funded_txo_sum − spent_txo_sum per address.
-  - {id: balance_receive_address, pending: "phase 7 step 4 (services/chain/bitcoin_esplora.balances)", address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, chain_stats: {funded_txo_sum: 9000000, spent_txo_sum: 8000000}, expect_sats: 1000000}
-  - {id: balance_change_address, pending: "phase 7 step 4 (services/chain/bitcoin_esplora.balances)", address: bc1qsdqk2xmw06qgn2589yjzthjlk368wfpq4pgz2k, chain_stats: {funded_txo_sum: 2090000, spent_txo_sum: 0}, expect_sats: 2090000}
+  - {id: balance_receive_address, address: bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz, chain_stats: {funded_txo_sum: 9000000, spent_txo_sum: 8000000}, expect_sats: 1000000}
+  - {id: balance_change_address, address: bc1qsdqk2xmw06qgn2589yjzthjlk368wfpq4pgz2k, chain_stats: {funded_txo_sum: 2090000, spent_txo_sum: 0}, expect_sats: 2090000}
 
 errors:
-  - {id: throttled_429, pending: "phase 7 step 4 (services/chain/bitcoin_esplora)", status: 429, expect_error: wallet.source_throttled}
-  - {id: refused_403, pending: "phase 7 step 4 (services/chain/bitcoin_esplora)", status: 403, expect_error: wallet.source_refused}
+  - {id: throttled_429, status: 429, expect_error: wallet.source_throttled}
+  - {id: refused_403, status: 403, expect_error: wallet.source_refused}
