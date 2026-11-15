@@ -51,9 +51,11 @@ Row = Mapping[str, JsonValue]
 
 
 def _no_rows(message: str) -> bool:
-    """Etherscan's own words for an empty answer, the only `status "0"` that is no error."""
-    text = message.lower()
-    return "no transactions found" in text or "no records found" in text
+    """Etherscan's words for an empty answer, the only `status "0"` that is no error: „No
+    transactions found“, „No records found“ and their variants („No token transfers found“).
+    A bare „NOTOK“ is never one."""
+    text = message.strip().lower()
+    return text.startswith("no ") and text.endswith(" found")
 
 
 def _refusal(message: str) -> ChainSourceError:

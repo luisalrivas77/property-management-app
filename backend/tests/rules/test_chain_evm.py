@@ -382,6 +382,7 @@ def test_not_an_evm_chain():
 # --- review fixes (PR #371) -----------------------------------------------------------------
 
 UNLISTED = "0x3333333333333333333333333333333333333333"  # in no registry, held by no one
+JUNK = "0x4444444444444444444444444444444444444444"  # another unlisted token
 PAD = "0x" + "0" * 24
 
 
@@ -435,16 +436,21 @@ def test_an_unlisted_token_from_another_own_address_is_a_transfer():
             _row(
                 **{"from": OTHER_OWN, "to": ME}, contractAddress=UNLISTED, value="9", logIndex="1"
             ),
+            _row(**{"from": FOREIGN, "to": ME}, contractAddress=JUNK, value="4", logIndex="2"),
         ],
         "tokennfttx": [_row(**{"from": FOREIGN, "to": ME}, contractAddress=NFT, tokenID="4")],
     }
     (tx,) = evm.normalise(Chain.ETHEREUM, rows, ME)
     group = evm.classify_evm(Chain.ETHEREUM, tx, ME, own=[ME, OTHER_OWN])
     assert group.kind is GroupKind.TRANSFER and group.card is None
-    assert [(g.kind, g.asset_key.contract) for g in group.legs] == [
-        (MovementKind.INTERNAL_TRANSFER_IN, UNLISTED),
-        (MovementKind.SPAM, NFT),  # a third party's junk in the same transaction stays spam
-    ]
+    # a third party's junk in the same transaction stays spam: the NFT and the unlisted token
+    assert sorted((g.kind, g.asset_key.contract) for g in group.legs) == sorted(
+        [
+            (MovementKind.INTERNAL_TRANSFER_IN, UNLISTED),
+            (MovementKind.SPAM, NFT),
+            (MovementKind.SPAM, JUNK),
+        ]
+    )
     # seen alone, without the other own address, it is spam
     assert evm.classify_evm(Chain.ETHEREUM, tx, ME).kind is GroupKind.SPAM
 

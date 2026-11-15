@@ -484,7 +484,9 @@ def test_notok_with_an_empty_list_is_a_refusal_not_an_empty_window():
     assert KEY not in str(caught.value)
 
 
-@pytest.mark.parametrize("message", ["No transactions found", "No records found"])
+@pytest.mark.parametrize(
+    "message", ["No transactions found", "No records found", "No token transfers found"]
+)
 def test_no_rows_messages_are_an_empty_window(message):
     body = json.dumps({"status": "0", "message": message, "result": []}).encode()
     fetch = Etherscan(tokentx=(200, body))

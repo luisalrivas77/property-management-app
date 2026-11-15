@@ -309,7 +309,7 @@ def token_label(chain: Chain, contract: str, symbol: str) -> str:
 
 def is_spam(key: AssetKey, *, held: bool, fee_paid: bool, bought: bool) -> bool:
     """D187 (1), (4): a token the registry does not list, the workspace holds with no confirmed
-    lot, credited in a transaction the address did not pay for and did not buy it in."""
+    lot, moved in a transaction the address did not pay for and did not buy it in."""
     if key.contract is None:
         return False  # the native coin is never spam
     listed = asset_registry().token(key.chain, key.contract)
@@ -444,7 +444,9 @@ def classify_evm(
     with an `uncategorized` leg and `transfer.unmatched_leg`; (e) a token credited with no own
     action → `airdrop` when minted to the address, `spam` when D187 says so; an ERC-721/1155
     record is always a `spam` leg until promoted; (f) the rest → `contract_call` (the address
-    signed) or `unknown`. A failed transaction is `failed` with its fee only (D183 (2))."""
+    signed) or `unknown`. A failed transaction is `failed` with its fee only (D183 (2)). (a) and
+    (b) are decided before the spam test, so their legs are never spam; an unlisted, unheld
+    token moved in or out in a transaction the address did not sign is (§15.1)."""
     _evm(chain)
     rows = public_decoders() if decoders is None else decoders
     me = address.lower()
