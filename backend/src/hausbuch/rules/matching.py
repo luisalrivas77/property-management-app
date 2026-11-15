@@ -95,6 +95,11 @@ from .statements import norm
 # The shared code (D159) a private account may learn a rule for, beside its household codes:
 # its own bank fees. uncategorized stays unlearnable (no threshold).
 LEARNABLE_SHARED = frozenset({AllocationCategory.BANK_FEES})
+# Household codes without a threshold that a person may still turn into a rule (15 Nov 2026,
+# Luis: „Künftig immer so zuordnen“ was greyed on the monthly money to family). The model
+# never books them alone (their threshold stays None); a rule only repeats the person's own
+# answer for that payee, and the line keeps its code, so a later Unterhalt check loses nothing.
+LEARNABLE_WITHOUT_THRESHOLD = frozenset({AllocationCategory.HH_FAMILY_TRANSFERS})
 
 EXACT = Decimal("1.000")
 DOCUMENT_CONFIDENCE = Decimal("0.950")
@@ -1969,11 +1974,13 @@ def learnable_household(category: AllocationCategory) -> bool:
     shared code a private account's own fee lines take; they carry no counterparty, so their
     rule is a typed purpose pattern). A tax-relevant code proposes a return input a person
     confirms each time; a transfer or depot code is booked by its matcher only; a code
-    without a threshold (hh_other, hh_credit_card, uncategorized) is never booked unseen."""
+    without a threshold (hh_other, hh_credit_card, uncategorized) is never booked unseen,
+    except LEARNABLE_WITHOUT_THRESHOLD (money to family), whose rule repeats a person's own
+    answer."""
     return (
         (category in HOUSEHOLD_CODES or category in LEARNABLE_SHARED)
         and category not in TAX_RELEVANT
-        and THRESHOLDS[category] is not None
+        and (THRESHOLDS[category] is not None or category in LEARNABLE_WITHOUT_THRESHOLD)
     )
 
 

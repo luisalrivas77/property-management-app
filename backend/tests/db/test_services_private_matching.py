@@ -489,7 +489,7 @@ def test_the_line_view_names_the_categories_no_rule_is_learned_for(world, privat
         "hh_other",
         "uncategorized",
     } <= unlearnable
-    assert not {"hh_groceries", "hh_salary", "bank_fees"} & unlearnable
+    assert not {"hh_groceries", "hh_salary", "bank_fees", "hh_family_transfers"} & unlearnable
     # Each one is refused by the PUT, so the list says what the server does.
     for category in unlearnable:
         assert not matchers.learnable_household(category)
@@ -498,6 +498,23 @@ def test_the_line_view_names_the_categories_no_rule_is_learned_for(world, privat
         review.transaction_allocations, rental, iban_key=TEST_IBAN_KEY, today=NOW.date()
     )
     assert rental_view.unlearnable_categories == []
+
+
+def test_money_to_family_learns_a_rule_that_books_the_next_month(
+    world, private, app_engine, tmp_path
+):
+    """15 Nov 2026 (Luis): the monthly money to family can be ticked „Künftig immer so
+    zuordnen“. Its threshold stays None, so the model never books it alone; the rule repeats
+    the person's answer for that payee and the line keeps its code."""
+    first = private.line(date(2026, 9, 1), "-300.00", iban=PAINTER_IBAN, name="A. Beispiel")
+    result = _answer_line(world, first, "-300.00", "hh_family_transfers", learn=True)
+    assert result.rule is not None
+    deps = _deps(app_engine, tmp_path, FakeModelClient())
+    second = private.line(date(2026, 10, 1), "-300.00", iban=PAINTER_IBAN, name="A. Beispiel")
+    plan = _run(deps, world, second)
+    assert (plan.outcome, plan.reason) == ("written", "routing.auto_confirm")
+    (row,) = _rows(world, second)
+    assert (row.category, row.method, row.status) == ("hh_family_transfers", "rule", "confirmed")
 
 
 def test_uncategorized_on_a_private_line_still_learns_no_rule(world, private):
