@@ -8,10 +8,10 @@ fuel, public transport, taxi, parking, the workshop, car tax and car insurance o
 `hh_car_tax`, on no tax form.
 
 D159 amended (8): `hh_wage_replacement` („Elterngeld & Lohnersatz“) is income in the income
-group after `hh_child_benefit`: Elterngeld, Mutterschaftsgeld, Krankengeld, Arbeitslosengeld or
-Kurzarbeitergeld. It is on no Anlage V line; its confirmed lines propose the year's
-Lohnersatzleistung (`return_input` kind `replacement_income`, phase 4b D102), which a person
-confirms.
+group after `hh_child_benefit`: Elterngeld, Mutterschaftsgeld, Krankengeld or Arbeitslosengeld
+(Kurzarbeitergeld stays pay: it is the wage certificate's Nr. 15). It is on no Anlage V line;
+its confirmed lines propose the year's Lohnersatzleistung (`return_input` kind
+`replacement_income`, phase 4b D102), which a person confirms.
 
 Both join the category CHECKs of `allocation.category`, `matching_rule.category` and
 `matching_rule_categories_check` (0012's element CHECK), the 0031, 0033, 0034 and 0036 pattern;

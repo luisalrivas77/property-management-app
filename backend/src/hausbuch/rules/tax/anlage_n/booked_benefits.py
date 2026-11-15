@@ -2,30 +2,38 @@
 D159 amended (8), 15 Nov 2026; phase 4b D102). Pure, no I/O, Decimal throughout.
 
 The household's private lines categorised `hh_wage_replacement` (Elterngeld, Mutterschaftsgeld,
-Krankengeld, Arbeitslosengeld, Kurzarbeitergeld) are evidence of the year's
-Lohnersatzleistungen, which only the `replacement_income` return inputs count (the
-Progressionsvorbehalt). Principle 7: when the confirmed lines booked in the tax year (by booking
-date) sum to more than the typed rows, the estimate carries the to-do `return.benefit_booked`
-with the difference, and the person confirms it through the existing return-input form; nothing
-is written here, and the estimate's figures are unchanged.
+Krankengeld, Arbeitslosengeld) are evidence of the year's Lohnersatzleistungen, which only the
+`replacement_income` return inputs count (the Progressionsvorbehalt). Principle 7: when the
+confirmed lines booked in the tax year (by booking date) sum to more than the typed rows, the
+estimate carries the to-do `return.benefit_booked` with the difference, and the person confirms
+it through the existing return-input form; nothing is written here, and the estimate's figures
+are unchanged.
 
-- A line's owner is its account's only current owner. A line on an account with several
-  owners (or none recorded) has no owner: those lines form one group whose to-do asks the
-  person to pick the owner, and they count as covered only by what the owners typed beyond
-  their own lines.
-- Per owner: booked = Σ the owner's lines (signed, so a payment back lowers it), typed = Σ the
-  owner's current `replacement_income` rows of the year; a to-do when booked > typed, with
-  difference = booked − typed.
-- The unowned group: difference = Σ its lines − Σ over the owners of max(0, typed − booked).
+- Kurzarbeitergeld is never counted, on either side: the employer pays it with the pay and it is
+  the wage certificate's Nr. 15, which already enters the Progressionsvorbehalt (D102), so a
+  booked line whose text names it (or a typed `kurzarbeitergeld` row) would count it twice.
+- The spouses are assessed jointly, so the gate is the household's: a to-do only while
+  Σ booked > Σ typed over every owner of the year, whichever owner the lines or the rows are on.
+  The to-dos' differences sum to exactly that gap.
+- The lines are grouped by owner: a line's owner is its account's only current owner; a line on
+  an account with several owners (or none recorded) is in the one group without an owner. Each
+  group's booked sum is signed (a payment back lowers it) and then clamped at zero, so a payment
+  back larger than the benefits never counts as typed. An owner's group falls short by
+  max(0, booked − the owner's typed rows); the group without an owner by its booked sum.
+- The gap is handed to the groups that fall short, owners first (in `owner_facts` order, then
+  owners without facts), then the group without an owner, each capped by its shortfall: one
+  to-do per group that gets part of it. The owner is only the pre-fill's suggestion (the person
+  may save it on the other spouse); the group without an owner asks the person to pick.
 - The benefit kind is read by code from the lines' text: a kind only when every line of the
   group names exactly one kind and all name the same; otherwise none, and the person picks
   (Mutterschaftsgeld and Krankengeld both come from the Krankenkasse, so a line naming
-  neither is never guessed). „Arbeitslosengeld II“ is not a Lohnersatzleistung and reads as no
-  kind.
+  neither is never guessed). „Arbeitslosengeld II“ (also „-II“, „2“) is not a
+  Lohnersatzleistung and reads as no kind.
 
-The warning's params are strings: `tax_year`, `booked`, `typed`, `difference` (cents) and,
-when known, `owner_id` and `benefit`; never the lines' text. Its refs are the lines'
-allocations with their amounts and the typed rows.
+The warning's params are strings: `tax_year`, `booked`, `typed` (booked − difference, what
+counts as covered for the group), `difference` (cents) and, when known, `owner_id` and
+`benefit`; never the lines' text. Its refs are the group's allocations with their amounts and
+the typed rows that cover it (the owner's own, or every owner's when other rows count).
 """
 
 import re
@@ -44,9 +52,17 @@ _KINDS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("elterngeld", re.compile(r"elterngeld")),
     ("mutterschaftsgeld", re.compile(r"mutterschaftsgeld")),
     ("krankengeld", re.compile(r"krankengeld")),
-    ("arbeitslosengeld", re.compile(r"arbeitslosengeld(?!\s*(?:ii|2)\b)")),
-    ("kurzarbeitergeld", re.compile(r"kurzarbeitergeld")),
+    ("arbeitslosengeld", re.compile(r"arbeitslosengeld(?!\s*-?\s*(?:ii|2)\b)")),
 )
+
+# Kurzarbeitergeld (also „Kurzarbeit“, „KUG“): on the wage certificate's Nr. 15, never counted here.
+_SHORT_TIME = re.compile(r"kurzarbeit|\bkug\b")
+_SHORT_TIME_BENEFIT = "kurzarbeitergeld"
+
+
+def is_short_time_allowance(text: str) -> bool:
+    """Whether `text` names Kurzarbeitergeld, which the wage certificate already carries."""
+    return _SHORT_TIME.search(text.lower()) is not None
 
 
 def kind_of_text(text: str) -> str | None:
@@ -68,7 +84,9 @@ def _typed(facts: OwnerReturnFacts, tax_year: int) -> list[ReturnInputFact]:
     return [
         r
         for r in in_year(facts.inputs, tax_year)
-        if r.tax_year == tax_year and r.kind is ReturnInputKind.REPLACEMENT_INCOME
+        if r.tax_year == tax_year
+        and r.kind is ReturnInputKind.REPLACEMENT_INCOME
+        and r.value.benefit != _SHORT_TIME_BENEFIT
     ]
 
 
@@ -104,10 +122,13 @@ def booked_benefit_warnings(
     owner_facts: Sequence[OwnerReturnFacts],
     booked: Sequence[BookedBenefit],
 ) -> list[DraftWarning]:
-    """The `return.benefit_booked` to-dos of `tax_year` (the module docstring): one per owner
-    whose booked lines exceed the typed rows, in `owner_facts` order (then owners without
-    facts), and one for the lines without an owner."""
-    of_year = [x for x in booked if x.booking_date.year == tax_year]
+    """The `return.benefit_booked` to-dos of `tax_year` (the module docstring): while the
+    household's booked lines exceed its typed rows, one per group that falls short, owners
+    first (in `owner_facts` order, then owners without facts), then the lines without an
+    owner; their differences sum to the household's gap."""
+    of_year = [
+        x for x in booked if x.booking_date.year == tax_year and not is_short_time_allowance(x.text)
+    ]
     if not of_year:
         return []
     by_owner: dict[UUID, list[BookedBenefit]] = {}
@@ -119,23 +140,36 @@ def booked_benefit_warnings(
             unowned.append(line)
 
     typed_rows = {f.owner_id: _typed(f, tax_year) for f in owner_facts}
+    all_rows = [r for rows in typed_rows.values() for r in rows]
     order = [f.owner_id for f in owner_facts]
     order += [o for o in by_owner if o not in typed_rows]
 
-    out: list[DraftWarning] = []
-    surplus = ZERO
+    # (owner, lines, own rows, booked, shortfall) per group, the group without an owner last.
+    groups: list[tuple[UUID | None, list[BookedBenefit], list[ReturnInputFact], Decimal, Decimal]]
+    groups = []
     for owner_id in order:
         lines = by_owner.get(owner_id, [])
         rows = typed_rows.get(owner_id, [])
-        booked_sum = sum((x.amount for x in lines), ZERO)
+        booked_sum = max(ZERO, sum((x.amount for x in lines), ZERO))
         typed_sum = sum((r.value.amount for r in rows), ZERO)
-        if booked_sum > typed_sum:
-            out.append(_todo(tax_year, lines, rows, booked_sum, typed_sum, owner_id))
-        else:
-            surplus += typed_sum - booked_sum
+        groups.append((owner_id, lines, rows, booked_sum, max(ZERO, booked_sum - typed_sum)))
     if unowned:
-        booked_sum = sum((x.amount for x in unowned), ZERO)
-        if booked_sum > surplus:
-            rows = [r for rows in typed_rows.values() for r in rows]
-            out.append(_todo(tax_year, unowned, rows, booked_sum, surplus, None))
+        booked_sum = max(ZERO, sum((x.amount for x in unowned), ZERO))
+        groups.append((None, unowned, [], booked_sum, booked_sum))
+
+    booked_total = sum((g[3] for g in groups), ZERO)
+    typed_total = sum((r.value.amount for r in all_rows), ZERO)
+    gap = booked_total - typed_total
+    out: list[DraftWarning] = []
+    for owner_id, lines, rows, booked_sum, shortfall in groups:
+        if gap <= ZERO:
+            break
+        difference = min(gap, shortfall)
+        if difference <= ZERO:
+            continue
+        gap -= difference
+        typed = booked_sum - difference
+        own_rows_cover = owner_id is not None and difference == shortfall
+        refs_rows = rows if own_rows_cover else all_rows
+        out.append(_todo(tax_year, lines, refs_rows, booked_sum, typed, owner_id))
     return out

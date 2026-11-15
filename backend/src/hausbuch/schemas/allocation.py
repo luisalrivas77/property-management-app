@@ -70,8 +70,8 @@ class AllocationCategory(StrEnum):
     HH_SALARY = "hh_salary"  # private
     HH_CHILD_BENEFIT = "hh_child_benefit"  # private
     # Phase 6 D159 amended (8) 15 Nov 2026 (migration 0037, Luis): a wage-replacement benefit
-    # (Elterngeld, Mutterschaftsgeld, Krankengeld, Arbeitslosengeld, Kurzarbeitergeld), which
-    # proposes the year's replacement_income return input (phase 4b D102).
+    # (Elterngeld, Mutterschaftsgeld, Krankengeld, Arbeitslosengeld; Kurzarbeitergeld stays
+    # pay), which proposes the year's replacement_income return input (phase 4b D102).
     HH_WAGE_REPLACEMENT = "hh_wage_replacement"  # private (Elterngeld & Lohnersatz)
     HH_TAX_REFUND = "hh_tax_refund"  # private
     HH_CAPITAL_INCOME = "hh_capital_income"  # private (Zinsen, Dividenden; read in phase 8)

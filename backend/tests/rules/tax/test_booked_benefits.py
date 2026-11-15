@@ -155,11 +155,16 @@ def test_joint_lines_count_as_covered_by_what_an_owner_typed_beyond_their_own_li
         ("Krankenkasse Mutterschaftsgeld 01.02.-15.05.2026", "mutterschaftsgeld"),
         ("Krankenkasse Kinderkrankengeld", "krankengeld"),
         ("Bundesagentur für Arbeit Arbeitslosengeld 04/2026", "arbeitslosengeld"),
-        ("Muster GmbH Kurzarbeitergeld", "kurzarbeitergeld"),
+        ("Bundesagentur für Arbeit Arbeitslosengeld 02/2026", "arbeitslosengeld"),
+        # Kurzarbeitergeld is the wage certificate's Nr. 15 (phase 4b D102), never a kind here.
+        ("Muster GmbH Kurzarbeitergeld", None),
         # The Krankenkasse names no kind: Mutterschaftsgeld or Krankengeld is never guessed.
         ("Krankenkasse Leistung von 01.03.2026 bis 31.03.2026", None),
         ("Mutterschaftsgeld und Krankengeld", None),
         ("Jobcenter Arbeitslosengeld II", None),
+        ("Jobcenter Arbeitslosengeld-II", None),
+        ("Jobcenter Arbeitslosengeld-2", None),
+        ("Jobcenter Arbeitslosengeld 2", None),
         ("", None),
     ],
 )
@@ -177,6 +182,69 @@ def test_the_kind_is_given_only_when_every_line_names_the_same():
     assert benefit_kind(unnamed) is None
     (got,) = booked_benefit_warnings(2026, [_facts()], unnamed)
     assert "benefit" not in got.params
+
+
+def test_kurzarbeitergeld_on_the_certificate_is_never_asked_for_again():
+    """B's certificate carries 4,000.00 Kurzarbeitergeld on Nr. 15, which is already in the
+    Progressionsvorbehalt; the same money booked on B's account must not ask to type it."""
+    lines = [
+        _line("4000.00", [B], text="Muster GmbH Kurzarbeitergeld 04/2026"),
+        _line("150.00", [B], text="Muster GmbH KUG Nachzahlung"),
+        _line("300.00", [A, B], text="Kurzarbeit Erstattung 05/2026"),
+    ]
+    assert booked_benefit_warnings(2026, [_facts(), _facts(owner=B)], lines) == []
+
+
+def test_a_typed_kurzarbeitergeld_row_covers_no_other_benefit():
+    facts = [_facts(_typed(A, "1000.00", benefit="kurzarbeitergeld")), _facts(owner=B)]
+    (got,) = booked_benefit_warnings(2026, facts, [_line("1000.00", [A])])
+    assert (got.params["typed"], got.params["difference"]) == ("0.00", "1000.00")
+
+
+def test_a_line_on_one_owners_account_typed_under_the_other_owner_is_covered():
+    """The spouses are assessed jointly: Elterngeld of B paid into A's own account and typed
+    under B is on the return once, so no to-do asks to type it again under A."""
+    lines = [_line("1800.00", [A])]
+    facts = [_facts(), _facts(_typed(B, "1800.00"), owner=B)]
+    assert booked_benefit_warnings(2026, facts, lines) == []
+
+
+def test_the_differences_sum_to_the_households_gap():
+    """A's own lines 1,000, B's own lines 400, 1,200 typed under A: 200 are missing, all of
+    them B's, never B's whole 400."""
+    lines = [_line("1000.00", [A]), _line("400.00", [B])]
+    typed = _typed(A, "1200.00")
+    (got,) = booked_benefit_warnings(2026, [_facts(typed), _facts(owner=B)], lines)
+    assert got.params == {
+        "tax_year": "2026",
+        "booked": "400.00",
+        "typed": "200.00",
+        "difference": "200.00",
+        "owner_id": str(B),
+        "benefit": "elterngeld",
+    }
+    assert ("return_input", typed.id) in [(r.kind, r.id) for r in got.refs]
+
+
+def test_owners_short_first_then_the_joint_lines():
+    lines = [_line("400.00", [B]), _line("500.00", [A, B])]
+    facts = [_facts(_typed(A, "300.00")), _facts(owner=B)]
+    got = booked_benefit_warnings(2026, facts, lines)
+    assert [(w.params.get("owner_id"), w.params["difference"]) for w in got] == [
+        (str(B), "400.00"),
+        (None, "200.00"),
+    ]
+
+
+def test_a_payment_back_larger_than_the_benefits_never_counts_as_typed():
+    """A's own sum is −500 (a payment back); it must not cover the joint +500."""
+    lines = [
+        _line("-500.00", [A], text="Rückforderung Elterngeld"),
+        _line("500.00", [A, B]),
+    ]
+    (got,) = booked_benefit_warnings(2026, [_facts(), _facts(owner=B)], lines)
+    assert "owner_id" not in got.params
+    assert (got.params["booked"], got.params["difference"]) == ("500.00", "500.00")
 
 
 def test_nothing_booked_needs_nothing():
