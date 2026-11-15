@@ -3,9 +3,14 @@ rows (docs/phases/phase-6.md D172; phase 6 step 6).
 
 Per private bank account (current and savings; the card's and the depot's lines are booked by
 their own matchers and are not in the criterion), the confirmed allocations of the lines
-booked in the month, lines excluded as duplicates left out. „Auto-categorised“ is D172's
-wording: the method is rule, matcher_transfer or document_match, or llm with no person's
-confirmation (confirmed_by null: the routing auto-confirmed it). A line of the account's
+booked in the month, lines excluded as duplicates left out. „Auto-categorised“ (D172 amended
+15 Nov 2026) is what the app booked without a person: the method is rule, matcher_transfer,
+document_match or llm, and no person confirmed it (confirmed_by null: a rule, a matcher or
+the routing confirmed it). A proposal a person confirmed keeps its proposer's method
+(confirm_proposed), so until that day a rule's near-miss proposal or a bill-payment
+proposal confirmed by a person counted as automatic. Every person's command in the app
+records confirmed_by (record_set with auto false, confirm_proposed); the CLI commands run
+as the system and only book by rules and matchers. A line of the account's
 first import (the earliest by creation, services.matching.in_first_import's definition, the
 history D26 never auto-confirms) counts in the totals but not in the criterion.
 """
@@ -38,7 +43,7 @@ def _ratio(auto: int, confirmed: int) -> Decimal | None:
 
 
 def _auto(method: str, confirmed_by: UUID | None) -> bool:
-    return method in AUTO_METHODS or (method == M.LLM.value and confirmed_by is None)
+    return confirmed_by is None and (method in AUTO_METHODS or method == M.LLM.value)
 
 
 def auto_rate(conn: Connection, month: str) -> AutoRate:

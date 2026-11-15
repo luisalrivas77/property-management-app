@@ -145,12 +145,12 @@ AutoRatio = Annotated[
 
 class AutoRateAccount(Schema):
     """A private bank account's confirmed allocations of the month, by the line's booking
-    day (lines excluded as duplicates left out): `auto` those whose method is rule,
-    matcher_transfer or document_match, or an llm answer the routing confirmed (confirmed_by
-    null); `by_routing` splits them by who confirmed (auto_confirm: no person, person: a
-    member). `first_import`: of `confirmed`, those on lines of the account's first import
-    (the history, D26: the model never auto-confirms there), which D172 leaves out of the
-    criterion."""
+    day (lines excluded as duplicates left out): `auto` those the app booked without a
+    person (D172 amended 15 Nov 2026): the method is rule, matcher_transfer, document_match
+    or llm and no person confirmed it (confirmed_by null); `by_routing` splits them by who
+    confirmed (auto_confirm: no person, person: a member). `first_import`: of `confirmed`,
+    those on lines of the account's first import (the history, D26: the model never
+    auto-confirms there), which D172 leaves out of the criterion."""
 
     account_id: UUID
     label: str

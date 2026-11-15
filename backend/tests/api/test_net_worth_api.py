@@ -69,6 +69,10 @@ def test_the_auto_rate_leaves_the_first_import_out(app_engine, auth_a, person, c
         (M.LLM, True),  # the routing confirmed it
         (M.LLM, False),  # a person confirmed the model's proposal
         (M.USER, False),
+        # D172 amended 15 Nov 2026: a matcher's or a bill-payment proposal a person
+        # confirmed keeps its method, and is not automatic.
+        (M.MATCHER_TRANSFER, False),
+        (M.DOCUMENT_MATCH, False),
     ):
         line = private.line(date(2026, 10, 20), "-10.00", import_id=later)
         _book(world, line, method, auto=auto, actor=None if auto else person)
@@ -86,12 +90,17 @@ def test_the_auto_rate_leaves_the_first_import_out(app_engine, auth_a, person, c
     got = ok(client_a.get("/api/accounts/auto-rate", params={"month": "2026-10"}))
     [account] = got["accounts"]
     assert account["account_id"] == str(private.account_id)
-    assert (account["confirmed"], account["auto"], account["ratio"]) == (7, 3, "0.4286")
-    assert account["by_method"] == {"document_match": 1, "llm": 2, "matcher_transfer": 1, "user": 3}
-    assert account["by_routing"] == {"auto_confirm": 3, "person": 4}
+    assert (account["confirmed"], account["auto"], account["ratio"]) == (9, 3, "0.3333")
+    assert account["by_method"] == {
+        "document_match": 2,
+        "llm": 2,
+        "matcher_transfer": 2,
+        "user": 3,
+    }
+    assert account["by_routing"] == {"auto_confirm": 3, "person": 6}
     assert (account["first_import"], account["first_import_auto"]) == (2, 0)
-    assert (got["criterion_confirmed"], got["criterion_auto"]) == (5, 3)
-    assert (got["criterion_ratio"], got["target"], got["met"]) == ("0.6000", "0.80", False)
+    assert (got["criterion_confirmed"], got["criterion_auto"]) == (7, 3)
+    assert (got["criterion_ratio"], got["target"], got["met"]) == ("0.4286", "0.80", False)
 
     empty = ok(client_a.get("/api/accounts/auto-rate", params={"month": "2026-09"}))
     assert (empty["confirmed"], empty["ratio"], empty["met"]) == (0, None, None)
