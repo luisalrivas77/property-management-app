@@ -44,11 +44,12 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Connection, Row, Select, func, insert, or_, select, update
+from sqlalchemy import Connection, Row, Select, and_, func, insert, or_, select, update
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import asset_movement as movement_table
+from hausbuch.db.tables import bank_sync as sync_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import transfer_link as link_table
@@ -77,6 +78,7 @@ from hausbuch.schemas.allocation import (
     MatchContext,
 )
 from hausbuch.schemas.api import ConfirmAllocationsBody, InboxItem, InboxItemKind
+from hausbuch.schemas.bank_sync import SyncStatus
 from hausbuch.schemas.enums import AccountKind, AccountPurpose, AllocationStatus, ImportStatus
 from hausbuch.schemas.events import EventType, TransferLinked, TransferUnlinked
 from hausbuch.schemas.household import (
@@ -1315,11 +1317,13 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
         min(leg.leg.booked_on for leg in waiting) - _BY_HAND,
         max(leg.leg.booked_on for leg in waiting) + _BY_HAND,
     )
-    # Read once, only when a leg has no counterpart: each account's first bank line, and the
-    # account each own IBAN belongs to.
+    # Read once, only when a leg has no counterpart: each account's first and last bank line,
+    # and the account(s) each own IBAN belongs to.
     firsts: dict[UUID, date] | None = None
     own: dict[str, UUID] = {}
     payers: dict[UUID, set[UUID]] = {}
+    lasts: dict[UUID, date] = {}
+    named_by: dict[str, set[UUID]] = {}
     for leg in waiting:
         start, end = leg.leg.booked_on - _BY_HAND, leg.leg.booked_on + _BY_HAND
         others = [
@@ -1356,7 +1360,10 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
                 if firsts is None:
                     firsts, own = _first_days(conn), _own_accounts(conn)
                     payers = _card_payers(conn)
+                    lasts, named_by = _last_days(conn), _own_account_sets(conn)
                 if _before_every_history(leg, firsts, own, payers):
+                    continue
+                if _after_every_history(leg, lasts, named_by, payers):
                     continue
             code, candidates = OpenTransferCode.UNMATCHED_LEG, same
         else:
@@ -1406,6 +1413,45 @@ def _first_days(conn: Connection) -> dict[UUID, date]:
     return {account_id: day for account_id, day in rows}
 
 
+def _last_days(conn: Connection) -> dict[UUID, date]:
+    """D162 amended (9), 15 Nov 2026: the day each account's imported history reaches, per
+    account id: its latest line of a reconciled import (the filters of _first_days), or for an
+    account synced over FinTS the end of its latest successful run (`requested_to` of a run that
+    ended nothing_new, or done with a reconciled import), whichever is later. A run that brings
+    no new line keeps no import (phase 5 D127), so the lines alone would never move forward for
+    a quiet account. Movements are left out, as in _first_days."""
+    t = transaction_table.c
+    rows = conn.execute(
+        select(t.account_id, func.max(t.booking_date))
+        .join(import_table, import_table.c.id == t.import_id)
+        .where(
+            t.excluded_as_duplicate_of.is_(None),
+            import_table.c.status == ImportStatus.RECONCILED.value,
+        )
+        .group_by(t.account_id)
+    ).all()
+    found: dict[UUID, date] = {account_id: day for account_id, day in rows}
+    s = sync_table.c
+    synced = conn.execute(
+        select(s.account_id, func.max(s.requested_to))
+        .outerjoin(import_table, import_table.c.id == s.import_id)
+        .where(
+            s.requested_to.is_not(None),
+            or_(
+                s.status == SyncStatus.NOTHING_NEW.value,
+                and_(
+                    s.status == SyncStatus.DONE.value,
+                    import_table.c.status == ImportStatus.RECONCILED.value,
+                ),
+            ),
+        )
+        .group_by(s.account_id)
+    ).all()
+    for account_id, day in synced:
+        found[account_id] = max(found.get(account_id, day), day)
+    return found
+
+
 def _own_accounts(conn: Connection) -> dict[str, UUID]:
     """The account each own IBAN belongs to (hex HMAC → account id): an account's own IBAN, a
     credit card's payment IBAN, an exchange's learned deposit IBAN."""
@@ -1416,6 +1462,20 @@ def _own_accounts(conn: Connection) -> dict[str, UUID]:
         for value in (iban, payment):
             if (key := _hex(value)) is not None:
                 found[key] = account_id
+    return found
+
+
+def _own_account_sets(conn: Connection) -> dict[str, set[UUID]]:
+    """D162 amended (9): every account each own IBAN belongs to (hex HMAC → account ids), as
+    _own_accounts reads them, but keeping all of them: two credit cards can share one payment
+    IBAN, and a debit naming it may pay either."""
+    acc = account_table.c
+    rows = conn.execute(select(acc.id, acc.iban_hmac, acc.payment_iban_hmac)).all()
+    found: dict[str, set[UUID]] = {}
+    for account_id, iban, payment in rows:
+        for value in (iban, payment):
+            if (key := _hex(value)) is not None:
+                found.setdefault(key, set()).add(account_id)
     return found
 
 
@@ -1485,6 +1545,40 @@ def _before_every_history(
         return first is not None and leg.leg.booked_on + _BY_HAND < first
     others = [day for account_id, day in firsts.items() if account_id != leg.leg.account_id]
     return bool(others) and leg.leg.booked_on + _BY_HAND < min(others)
+
+
+def _after_every_history(
+    leg: _Leg,
+    lasts: dict[UUID, date],
+    named_by: dict[str, set[UUID]],
+    payers: dict[UUID, set[UUID]] | None = None,
+) -> bool:
+    """D162 amended (9), 15 Nov 2026 (Luis: „There are two transfers from the dkb account to the
+    Quirion Depot that weren't automatically booked.“), the mirror of _before_every_history: a
+    leg without a counterpart and without a same-amount line in its by-hand window gets no card
+    while the account it names has no imported history up to the leg's D162 window
+    (transfer_window_end): a monthly savings debit of 3 Nov naming a depot whose cash statements
+    are imported up to 31 Oct cannot be paired before the November statement is uploaded.
+
+    The accounts are those holding the IBAN the leg names (_own_account_sets, the leg's own
+    account left out), or for a credit card's leg, which names no IBAN, the accounts that pay
+    the card (_card_payers). No card only when there is at least one such account and every one
+    has a history (_last_days) that ends before the window end; an account with no line and no
+    sync keeps the card, as in _before_every_history. A leg naming no own account keeps its
+    card: an unrelated account whose statements stop would otherwise hide every card. Nothing
+    is stored: once the named account's next import reaches the window end without a
+    counterpart, the card shows again on the next read."""
+    end = transfer_window_end(leg.leg.booked_on)
+    paying = (payers or {}).get(leg.leg.account_id)
+    if leg.leg.account_kind is AccountKind.CREDIT_CARD and paying:
+        accounts = set(paying)
+    else:
+        named = leg.leg.counterparty_iban_hmac
+        accounts = set() if named is None else named_by.get(named, set()) - {leg.leg.account_id}
+    if not accounts:
+        return False
+    days = [lasts.get(account) for account in accounts]
+    return all(day is not None and day < end for day in days)
 
 
 def lines_on_cards(conn: Connection, items: Iterable[InboxItem]) -> set[UUID]:
