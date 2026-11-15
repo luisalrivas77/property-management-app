@@ -498,6 +498,44 @@ def test_the_tax_rate_takes_the_certified_pay(world):
     assert got.zve.household is not None
 
 
+def test_the_tax_rate_counts_a_marked_owner_with_gross_0_that_year_only(world):
+    """D195 through the service: an expected pay typed for 2025 carries into 2026 and 2027;
+    „Kein Arbeitslohn in 2026“ makes 2026 gross 0 and leaves 2027 on the carried pay."""
+    owner = _owner(world)
+    other = _owner(world, "Person B")
+    for who, amount in ((owner, "50000.00"), (other, "40000.00")):
+        world.cmd(
+            create_income_input,
+            IncomeInputCreate.model_validate(
+                {
+                    "owner_id": who.id,
+                    "kind": "expected_gross_pay",
+                    "tax_year": 2025,
+                    "value": {"amount": amount},
+                }
+            ),
+            now=_later(world),
+        )
+    _create(world, **_no_pay(owner.id))
+
+    def per_owner(year: int):
+        got = world.query(
+            tax_rate, tax_year=year, result=Decimal("-5000.00"), today=date(2026, 11, 9)
+        )
+        return {o.owner_id: (o.gross, o.gross_source) for o in got.zve.per_owner}
+
+    marked = per_owner(2026)
+    assert marked[owner.id] == (Decimal("0"), "declared_none")
+    assert marked[other.id] == (Decimal("40000.00"), "expected")
+    later = per_owner(2027)
+    assert later[owner.id] == (Decimal("50000.00"), "expected")
+
+
+def test_kein_arbeitslohn_before_the_first_rule_set_is_refused(world):
+    owner = _owner(world)
+    _refused(world, "tax.no_rule_set", **_no_pay(owner.id, tax_year=2025))
+
+
 def test_the_household_estimate_is_computed_on_read(world):
     owner = _owner(world)
     _create(world, **_certificate(owner.id, _document(world)))

@@ -470,10 +470,14 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     title: () => "„Kein Arbeitslohn“ aufheben",
     text: () =>
       "Für dieses Jahr liegt eine Lohnsteuerbescheinigung oder Gehaltsabrechnung vor, und sie zählt. Die Angabe „Kein Arbeitslohn“ aufheben, damit sie nicht mehr widerspricht.",
-    action: (warning) => ({
-      kind: "withdraw_no_pay",
-      returnInputId: (warning.refs ?? []).find((ref) => ref.kind === "return_input")?.id ?? null,
-    }),
+    // The button needs the owner; without one (a household list) the screen links instead.
+    action: (warning, ctx) =>
+      ctx.ownerId
+        ? {
+            kind: "withdraw_no_pay",
+            returnInputId: (warning.refs ?? []).find((ref) => ref.kind === "return_input")?.id ?? null,
+          }
+        : null,
   },
   "anlage_n.payslip_no_ytd": {
     todo: false,

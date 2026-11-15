@@ -12,7 +12,8 @@
 // - WithdrawNoPayButton: „Aufheben“, beside the marker and on the warning that a pay document
 //   of the year overrules it (anlage_n.no_pay_overruled).
 // - NoPayMarker: the Eigentümer page's per-owner and per-year cell: the button, or
-//   „Kein Arbeitslohn angegeben“ with „Aufheben“.
+//   „Kein Arbeitslohn angegeben“ with „Aufheben“; nothing for a year without an Anlage N rule
+//   set, for which the server refuses the row (tax.no_rule_set).
 import { useCallback, useState } from "react";
 
 import { api, ok } from "@/api/client";
@@ -139,17 +140,23 @@ export function WithdrawNoPayButton({
   );
 }
 
+/** The owner's marker for the year, or "no_rules" when the year has no Anlage N rule set. */
+async function markerOfYear(ownerId: string, year: number): Promise<ReturnInput | null | "no_rules"> {
+  const { years } = await ok(api.GET("/api/tax/anlage-n/years"));
+  return years.includes(year) ? currentNoPay(ownerId, year) : "no_rules";
+}
+
 /** The Eigentümer page's cell: the marker in force („Kein Arbeitslohn angegeben“ with
  * „Aufheben“), or the button that sets it. `onChanged` reloads the page's estimates. */
 export function NoPayMarker({ ownerId, year, onChanged }: { ownerId: string; year: number; onChanged?: () => void }) {
-  const load = useCallback(() => currentNoPay(ownerId, year), [ownerId, year]);
+  const load = useCallback(() => markerOfYear(ownerId, year), [ownerId, year]);
   const marker = useLoad(load);
   const reload = marker.reload;
   const changed = useCallback(() => {
     reload();
     onChanged?.();
   }, [reload, onChanged]);
-  if (marker.data === undefined) return null;
+  if (marker.data === undefined || marker.data === "no_rules") return null;
   if (marker.data) {
     return (
       <span className="row">

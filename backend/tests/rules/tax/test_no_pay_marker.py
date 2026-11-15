@@ -152,6 +152,27 @@ def test_an_overruled_marker_cites_itself():
     assert draft.gross_source == "certificate"
 
 
+@pytest.mark.rule
+def test_a_payslip_overrules_the_marker_too():
+    """As a certificate: a payslip of the year counts, the marker raises the warning that
+    cites it, and the D98 contexts make no declared summary for that owner."""
+    case = next(c for c in load("anlage_n").cases if c.id == "estimate_from_payslips")
+    plain = draft_n(case.facts, 2026, rules_for(2026), registry.tariff(2026))
+    marker = _row(5, case.facts.owner_id, "no_pay", {})
+    facts = case.facts.model_copy(update={"inputs": [*case.facts.inputs, marker]})
+    draft = draft_n(facts, 2026, rules_for(2026), registry.tariff(2026))
+    assert (draft.gross_source, draft.gross, draft.result) == (
+        "payslip",
+        plain.gross,
+        plain.result,
+    )
+    overruled = [w for w in draft.warnings if w.code.value == "anlage_n.no_pay_overruled"]
+    assert [[ref.id for ref in w.refs] for w in overruled] == [[marker.id]]
+    assert [w for w in draft.warnings if w not in overruled] == plain.warnings
+    tc = TaxContexts([facts], [], rules_for, registry.tariff, [])
+    assert tc.declared(2026) == []
+
+
 def _expected(n: int, owner_id: UUID, year: int, amount: str) -> IncomeInputFact:
     return IncomeInputFact.model_validate(
         {
