@@ -962,6 +962,15 @@ def current_extraction(conn: Connection, document_id: UUID) -> DocumentExtractio
     return None if row is None else DocumentExtraction.model_validate(dict(row._mapping))
 
 
+def extraction_by_id(conn: Connection, extraction_id: UUID) -> DocumentExtraction | None:
+    """One extraction row by its id (a proposal names the reading it was built from), None
+    when no such row is visible."""
+    row = conn.execute(
+        select(extraction_table).where(extraction_table.c.id == extraction_id)
+    ).one_or_none()
+    return None if row is None else DocumentExtraction.model_validate(dict(row._mapping))
+
+
 def lock_document(conn: Connection, document_id: UUID) -> None:
     """Take the document row's lock (FOR UPDATE), as every extraction write does, so no new
     extraction version can be written until the caller's transaction ends."""

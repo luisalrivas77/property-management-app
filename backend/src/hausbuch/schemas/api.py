@@ -694,6 +694,10 @@ class InboxItem(Schema):
     # keeps it out, the list shows it, Luis 14 Nov 2026).
     category: AllocationCategory | None = None
     bulk_confirmable: bool = False
+    # holdings_mismatch (phase 6 D165 amended 15 Nov 2026): how many trades of the depot's
+    # reports no movement carries, which „Umsätze aus dem Bericht buchen“ books
+    # (POST /accounts/{id}/report-trades); None when there are none.
+    report_trades: int | None = None
 
 
 class AiRetryResult(Schema):
