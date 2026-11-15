@@ -55,6 +55,43 @@ def test_a_wallet_account_is_taken_since_step_1(client_a):
     assert turned["code"] == "account.kind_not_available"
 
 
+@pytest.mark.db
+def test_a_wallet_keeps_a_provider_on_create_and_patch(client_a):
+    """D179 (review of PR #374): a wallet's provider is required and not blank after trimming,
+    at create and on PATCH; a card's provider may still be cleared with null."""
+    body = {
+        "label": "Hardware-Wallet",
+        "bank": "Testwallet",
+        "kind": "wallet",
+        "provider": "Testwallet",
+        "opening_balance": "0.00",
+        "opening_balance_on": "2026-03-31",
+    }
+    refused = ok(client_a.post("/api/accounts", json=body | {"provider": " "}), 422)
+    assert refused["code"] == "account.kind_not_available"
+    assert ok(client_a.get("/api/accounts")) == []
+
+    wallet = ok(client_a.post("/api/accounts", json=body), 201)
+    for provider in (None, "  "):
+        refused = ok(
+            client_a.patch(f"/api/accounts/{wallet['id']}", json={"provider": provider}), 422
+        )
+        assert refused["code"] == "account.kind_not_available"
+    assert ok(client_a.get(f"/api/accounts/{wallet['id']}"))["provider"] == "Testwallet"
+    renamed = ok(client_a.patch(f"/api/accounts/{wallet['id']}", json={"provider": "Tangem"}))
+    assert renamed["provider"] == "Tangem"
+
+    card = ok(
+        client_a.post(
+            "/api/accounts",
+            json=body | {"label": "Kreditkarte", "kind": "credit_card", "provider": "Testbank"},
+        ),
+        201,
+    )
+    cleared = ok(client_a.patch(f"/api/accounts/{card['id']}", json={"provider": None}))
+    assert cleared["provider"] is None
+
+
 def test_no_pair_of_account_kinds_gives_a_chain_link():
     """services.transfers links by hand only the kind transfer_link_kind gives the accounts."""
     given = {transfer_link_kind(a, b) for a in AccountKind for b in AccountKind}

@@ -176,7 +176,7 @@ def create_account(
             raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a wallet is a private account")
         if data.external_ref is not None:
             raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a wallet takes no number")
-        if data.provider is None:
+        if not _names_provider(data.provider):
             raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a wallet names its provider")
         purpose = AccountPurpose.PRIVATE
         identity = {}
@@ -267,6 +267,11 @@ def create_account(
     return created
 
 
+def _names_provider(provider: str | None) -> bool:
+    """A wallet's provider is required and not blank after trimming (D179)."""
+    return provider is not None and provider.strip() != ""
+
+
 def update_account(
     ctx: CommandContext,
     account_id: UUID,
@@ -328,6 +333,14 @@ def update_account(
             # D179: a wallet is always private, as create_account sets it.
             raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a wallet is a private account")
         _require_bookings_fit(ctx.conn, account_id, AccountPurpose(new_values["purpose"]))
+    if (
+        "provider" in changes
+        and before.kind is AccountKind.WALLET
+        and not _names_provider(new_values["provider"])
+    ):
+        # D179: a wallet names its provider on PATCH too (review of PR #374); a card's provider
+        # may still be cleared with null.
+        raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "a wallet names its provider")
 
     row = ctx.conn.execute(
         update(account_table)
