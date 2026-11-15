@@ -71,7 +71,7 @@ const OUTCOME_TEXT: Record<SnapshotResult["outcome"], (asOf: string) => string> 
   written: (asOf) => `Monatsabschluss zum ${formatDate(asOf)} festgehalten.`,
   recaptured: (asOf) => `Monatsabschluss zum ${formatDate(asOf)} neu festgehalten: die Zahlen hatten sich seitdem geändert.`,
   unchanged: (asOf) => `Der Monatsabschluss zum ${formatDate(asOf)} ist schon mit genau diesen Zahlen festgehalten.`,
-  empty: () => "Nichts festzuhalten: noch kein Konto mit einem Kontostand.",
+  empty: () => "Nichts festzuhalten: noch kein Konto, keine Anlage und keine Immobilie mit einem Wert.",
 };
 
 function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverview; owners: Owner[]; onChanged: () => void }) {

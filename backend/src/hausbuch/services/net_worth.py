@@ -28,21 +28,21 @@ NetWorth(on) = Σ balances + Σ positions × price + the properties' estimate �
   recorded set whose effective_from is on or before `on`), the property and its loans by
   the property's shares; split to the cent by rules.net_worth.split.
 
-**Month-ends (D167 (5)).** `capture_month_end` writes one valuation_snapshot row per account
-balance and per valued position (asset null for a balance), all under one net_worth_run_id,
-and the event workspace.valuation_snapshot_written. The table is immutable, so a run is never
-changed. The periodic task `month_end` (1st, 05:00 UTC) writes a month-end only when no run
-holds it yet. „Monatsabschluss festhalten“ writes a new run for the same month-end when the
-figures read now differ from the newest stored run (a statement or a price that arrived
-after the task, which runs before the 06:30 bank fetch and the 07:00 price fetch), and
+**Month-ends (D167 (5) amended, migration 0040).** `capture_month_end` writes one
+valuation_snapshot row per valued figure, all under one net_worth_run_id: per account balance
+and per position (asset null for a balance), per property (its estimate) and per loan (its
+balance, negative), and the event workspace.valuation_snapshot_written. The table is
+immutable, so a run is never changed. The periodic task `month_end` (1st, 08:00 UTC, after
+the 06:30 bank fetch and the 07:00 price fetch) writes a month-end only when no run holds it
+yet. „Monatsabschluss festhalten“ writes a new run for the same month-end when the figures
+read now differ from the newest stored run (a statement or a price that arrived late), and
 nothing when they are the same; the newest run of a month-end is the one shown, the older
 runs stay. Captures of one workspace run one at a time (an advisory lock).
 
-What a run does not hold: the property's estimate and the loans' balances, since
-valuation_snapshot has one row per account (its account_id is required) and no migration
-adds a run table in this step; a stored month-end recomputes both for its day on read, with
-the owner shares in force that day. So the accounts and positions of a month-end are fixed,
-while its estimate follows a later change of the scenario's „Wert heute“ or of a loan's terms.
+A stored month-end is read from its rows alone: every euro figure, the classes and the total
+are the stored values, never recomputed (a later „Wert heute“ or loan change leaves it as
+it was). Only what the rows do not hold is looked up: the labels, and the owner split by the
+account shares in force on the month-end and the property's shares.
 """
 
 from collections import defaultdict
@@ -58,6 +58,7 @@ from sqlalchemy import Connection, func, insert, select
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import account_ownership as ownership_table
 from hausbuch.db.tables import asset as asset_table
+from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import owner as owner_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import property_ownership as property_ownership_table
@@ -538,31 +539,105 @@ def _latest_run(conn: Connection, as_of: date | None = None) -> NetWorthRun | No
 def _stored(conn: Connection, run_id: UUID) -> list:
     s = snapshot_table.c
     return conn.execute(
-        select(s.account_id, s.asset_id, s.units, s.price_eur, s.price_source, s.value_eur)
+        select(
+            s.account_id,
+            s.asset_id,
+            s.property_id,
+            s.loan_id,
+            s.units,
+            s.price_eur,
+            s.price_source,
+            s.value_eur,
+        )
         .where(s.net_worth_run_id == run_id)
-        .order_by(s.account_id, s.asset_id.nulls_first())
+        .order_by(
+            s.account_id.nulls_last(),
+            s.asset_id.nulls_first(),
+            s.property_id.nulls_last(),
+            s.loan_id.nulls_last(),
+        )
     ).all()
 
 
-def _row_key(account_id, asset_id, units, price_eur, price_source, value_eur) -> tuple:
-    return (account_id, asset_id, units, price_eur, price_source, value_eur)
+def _row_key(
+    account_id, asset_id, property_id, loan_id, units, price_eur, price_source, value_eur
+) -> tuple:
+    return (account_id, asset_id, property_id, loan_id, units, price_eur, price_source, value_eur)
+
+
+def _line_key(line: NetWorthLine) -> tuple:
+    """A valued line as its row: an account's balance or position by its account, a property
+    by itself, a loan by itself alone (its line also names its property, for the shares)."""
+    loan = line.kind is L.LOAN
+    return _row_key(
+        line.account_id if line.kind in (L.ACCOUNT, L.POSITION) else None,
+        line.asset_id,
+        line.property_id if line.kind is L.PROPERTY else None,
+        line.loan_id if loan else None,
+        line.units,
+        line.price_eur,
+        None if line.price_source is None else line.price_source.value,
+        line.value_eur,
+    )
+
+
+STORED_PROPERTY_NOTE = "Schätzwert, zum Monatsende gespeichert"
+STORED_LOAN_NOTE = "Restschuld laut Tilgungsplan, zum Monatsende gespeichert"
 
 
 def month_end_figure(conn: Connection, run: NetWorthRun) -> NetWorth:
-    """A stored month-end: its accounts and positions as stored, the properties' estimate
-    and loans recomputed for its day (see the module doc)."""
+    """A stored month-end, from its rows alone (see the module doc)."""
     rows = _stored(conn, run.net_worth_run_id)
-    acc, a = account_table.c, asset_table.c
+    acc, a, p, ln = account_table.c, asset_table.c, property_table.c, loan_table.c
+    account_ids = {r.account_id for r in rows if r.account_id is not None}
     accounts = {
         r.id: r
-        for r in conn.execute(
-            select(acc.id, acc.label, acc.kind).where(acc.id.in_({r.account_id for r in rows}))
-        )
+        for r in conn.execute(select(acc.id, acc.label, acc.kind).where(acc.id.in_(account_ids)))
     }
     asset_ids = {r.asset_id for r in rows if r.asset_id is not None}
     assets = {r.id: r.name for r in conn.execute(select(a.id, a.name).where(a.id.in_(asset_ids)))}
+    loans = {
+        r.id: r
+        for r in conn.execute(
+            select(ln.id, ln.lender, ln.property_id).where(
+                ln.id.in_({r.loan_id for r in rows if r.loan_id is not None})
+            )
+        )
+    }
+    property_ids = {r.property_id for r in rows if r.property_id is not None} | {
+        loan.property_id for loan in loans.values()
+    }
+    properties = {
+        r.id: r.label for r in conn.execute(select(p.id, p.label).where(p.id.in_(property_ids)))
+    }
     items = []
     for r in rows:
+        if r.property_id is not None:
+            line = NetWorthLine(
+                kind=L.PROPERTY,
+                net_worth_class=C.PROPERTY,
+                label=properties[r.property_id],
+                property_id=r.property_id,
+                value_eur=r.value_eur,
+                estimate=True,
+                note=STORED_PROPERTY_NOTE,
+            )
+            items.append(_Item(line, r.property_id))
+            continue
+        if r.loan_id is not None:
+            loan = loans[r.loan_id]
+            line = NetWorthLine(
+                kind=L.LOAN,
+                net_worth_class=C.LIABILITIES,
+                label=loan.lender,
+                property_id=loan.property_id,
+                loan_id=r.loan_id,
+                value_eur=r.value_eur,
+                estimate=True,
+                note=STORED_LOAN_NOTE,
+            )
+            items.append(_Item(line, loan.property_id))
+            continue
         account = accounts[r.account_id]
         kind = AccountKind(account.kind)
         items.append(
@@ -585,8 +660,9 @@ def month_end_figure(conn: Connection, run: NetWorthRun) -> NetWorth:
                 r.account_id,
             )
         )
-    properties, _, property_shares = _properties(conn, run.as_of)
-    return _figure(conn, run.as_of, items + properties, [], property_shares, run=run)
+    return _figure(
+        conn, run.as_of, items, [], _property_shares(conn, sorted(property_ids)), run=run
+    )
 
 
 def latest_month_end(conn: Connection) -> NetWorth | None:
@@ -633,18 +709,7 @@ def capture_month_end(
     if existing is not None and only_if_missing:
         return SnapshotResult(outcome=SnapshotOutcome.UNCHANGED, as_of=as_of, run=existing)
     figure = net_worth(ctx.conn, as_of)
-    rows = [
-        _row_key(
-            line.account_id,
-            line.asset_id,
-            line.units,
-            line.price_eur,
-            None if line.price_source is None else line.price_source.value,
-            line.value_eur,
-        )
-        for line in figure.lines
-        if line.kind in (L.ACCOUNT, L.POSITION) and line.value_eur is not None
-    ]
+    rows = [_line_key(line) for line in figure.lines if line.value_eur is not None]
     if not rows:
         return SnapshotResult(
             outcome=SnapshotOutcome.EMPTY, as_of=as_of, unvalued_positions=figure.unvalued_positions
@@ -666,6 +731,8 @@ def capture_month_end(
                 "workspace_id": ctx.workspace_id,
                 "account_id": account_id,
                 "asset_id": asset_id,
+                "property_id": property_id,
+                "loan_id": loan_id,
                 "as_of": as_of,
                 "units": units,
                 "price_eur": price_eur,
@@ -674,7 +741,16 @@ def capture_month_end(
                 "net_worth_run_id": run_id,
                 "created_at": ctx.now,
             }
-            for account_id, asset_id, units, price_eur, price_source, value_eur in rows
+            for (
+                account_id,
+                asset_id,
+                property_id,
+                loan_id,
+                units,
+                price_eur,
+                price_source,
+                value_eur,
+            ) in rows
         ],
     )
     append_event(

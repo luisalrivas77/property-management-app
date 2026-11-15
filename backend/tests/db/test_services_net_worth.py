@@ -35,12 +35,14 @@ from hausbuch.schemas.events import EventType
 from hausbuch.schemas.household import NetWorthClass, OwnershipShare, SetOwnershipBody
 from hausbuch.schemas.loan import LoanCreate
 from hausbuch.schemas.net_worth import NetWorthLineKind, NetWorthTodoCode, SnapshotOutcome
+from hausbuch.schemas.performance import Levers, ScenarioCreate
 from hausbuch.schemas.property import Address, OwnerCreate, OwnerShare, PropertyCreate
 from hausbuch.services import net_worth
 from hausbuch.services.accounts import create_account, set_account_ownership
-from hausbuch.services.loans import create_loan
+from hausbuch.services.loans import create_loan, update_loan
 from hausbuch.services.owners import create_owner
 from hausbuch.services.properties import create_property, set_ownership
+from hausbuch.services.scenarios import create_scenario
 
 pytestmark = pytest.mark.db
 C = NetWorthClass
@@ -313,7 +315,15 @@ def _snapshot_rows(read, ws):
     return read(
         ws,
         lambda conn: conn.execute(
-            select(s.net_worth_run_id, s.account_id, s.asset_id, s.value_eur, s.price_source)
+            select(
+                s.net_worth_run_id,
+                s.account_id,
+                s.asset_id,
+                s.property_id,
+                s.loan_id,
+                s.value_eur,
+                s.price_source,
+            )
         ).all(),
     )
 
@@ -446,10 +456,16 @@ def test_a_month_end_is_stored_once_and_recaptured_only_when_it_changed(
     ws, other = fresh_workspaces
     ids = _ledger(run, ws)
     first = run(ws, net_worth.capture_month_end, ON, now=NOW)
-    assert first.outcome is SnapshotOutcome.WRITTEN and first.run.rows == 7
+    # Seven account rows (two balances, five positions), the flat and its loan.
+    assert first.outcome is SnapshotOutcome.WRITTEN and first.run.rows == 9
     rows = _snapshot_rows(read, ws)
-    assert len(rows) == 7 and {r.net_worth_run_id for r in rows} == {first.run.net_worth_run_id}
-    balances = [r for r in rows if r.asset_id is None]
+    assert len(rows) == 9 and {r.net_worth_run_id for r in rows} == {first.run.net_worth_run_id}
+    assert {(r.property_id, r.value_eur) for r in rows if r.account_id is None} == {
+        (ids["property"], Decimal("320000.00")),
+        (None, Decimal("-240000.00")),
+    }
+    assert [r.loan_id for r in rows if r.loan_id is not None] == [ids["loan"]]
+    balances = [r for r in rows if r.account_id is not None and r.asset_id is None]
     assert {r.account_id for r in balances} == {
         ids["accounts"]["joint_current"],
         ids["accounts"]["savings_a"],
@@ -459,7 +475,7 @@ def test_a_month_end_is_stored_once_and_recaptured_only_when_it_changed(
     assert payload == {
         "net_worth_run_id": str(first.run.net_worth_run_id),
         "as_of": ON.isoformat(),
-        "rows": 7,
+        "rows": 9,
     }
 
     # The same figures again: nothing written, by the task or by the button.
@@ -467,7 +483,7 @@ def test_a_month_end_is_stored_once_and_recaptured_only_when_it_changed(
     assert again.outcome is SnapshotOutcome.UNCHANGED and again.run == first.run
     task = run(ws, net_worth.capture_month_end, ON, only_if_missing=True, now=NOW)
     assert task.outcome is SnapshotOutcome.UNCHANGED
-    assert len(_snapshot_rows(read, ws)) == 7
+    assert len(_snapshot_rows(read, ws)) == 9
 
     # A price typed for the month-end after the capture: the button stores a new run, the
     # task still does not, and the old run stays.
@@ -480,8 +496,8 @@ def test_a_month_end_is_stored_once_and_recaptured_only_when_it_changed(
         SnapshotOutcome.UNCHANGED
     )
     later = run(ws, net_worth.capture_month_end, ON, now=NOW.replace(hour=10))
-    assert later.outcome is SnapshotOutcome.RECAPTURED and later.run.rows == 7
-    assert len(_snapshot_rows(read, ws)) == 14
+    assert later.outcome is SnapshotOutcome.RECAPTURED and later.run.rows == 9
+    assert len(_snapshot_rows(read, ws)) == 18
     assert len(_events(read, ws, EventType.WORKSPACE_VALUATION_SNAPSHOT_WRITTEN)) == 2
 
     runs = read(ws, net_worth.list_runs)
@@ -492,7 +508,7 @@ def test_a_month_end_is_stored_once_and_recaptured_only_when_it_changed(
     stored = read(ws, net_worth.latest_month_end)
     assert stored.run.net_worth_run_id == later.run.net_worth_run_id
     assert stored.total == FIXTURE.expect.total + Decimal("20.00")  # 20 units x 1.00 more
-    assert stored.by_class[C.PROPERTY] == Decimal("320000.00")  # recomputed for its day
+    assert stored.by_class[C.PROPERTY] == Decimal("320000.00")
     assert stored.by_class[C.LIABILITIES] == Decimal("-240000.00")
 
     view = read(ws, net_worth.overview, date(2026, 11, 15))
@@ -502,6 +518,62 @@ def test_a_month_end_is_stored_once_and_recaptured_only_when_it_changed(
     # Other workspace: no runs.
     assert read(other, net_worth.list_runs) == []
     assert read(other, net_worth.latest_month_end) is None
+
+
+def test_a_stored_month_end_is_read_from_its_rows_alone(run, read, fresh_workspaces):
+    """D167 (5) amended (migration 0040): after the capture the flat's value and the loan
+    change; the figure on read follows them, the stored month-end does not."""
+    ws, _ = fresh_workspaces
+    ids = _ledger(run, ws)
+    run(ws, net_worth.capture_month_end, ON, now=NOW)
+    before = read(ws, net_worth.latest_month_end)
+    run(
+        ws,
+        create_scenario,
+        ids["property"],
+        ScenarioCreate(
+            property_id=ids["property"],
+            name="Höherer Wert",
+            is_default=True,
+            levers=Levers(
+                value_growth=Decimal("0.05"), sale_year=2036, today_value=Decimal("400000.00")
+            ),
+        ),
+        now=NOW,
+    )
+    run(
+        ws,
+        update_loan,
+        ids["loan"],
+        first_payment_on=date(2026, 2, 28),
+        monthly_payment=Decimal("2000.00"),
+        now=NOW,
+    )
+    now_read = read(ws, net_worth.net_worth, ON)
+    assert now_read.property_estimate == Decimal("400000.00")
+    assert now_read.loan_balances < Decimal("240000.00")
+
+    after = read(ws, net_worth.latest_month_end)
+    assert after.run == before.run
+    assert (after.total, after.by_class, after.by_owner) == (
+        before.total,
+        before.by_class,
+        before.by_owner,
+    )
+    assert (after.property_estimate, after.loan_balances, after.property_net) == (
+        Decimal("320000.00"),
+        Decimal("240000.00"),
+        Decimal("80000.00"),
+    )
+    flat = next(line for line in after.lines if line.kind is NetWorthLineKind.PROPERTY)
+    loan = next(line for line in after.lines if line.kind is NetWorthLineKind.LOAN)
+    assert flat.estimate and flat.property_id == ids["property"]
+    assert loan.estimate and (loan.loan_id, loan.property_id) == (ids["loan"], ids["property"])
+    # A button press now stores the new figures as a new run; the old run stays.
+    later = run(ws, net_worth.capture_month_end, ON, now=NOW.replace(hour=11))
+    assert later.outcome is SnapshotOutcome.RECAPTURED
+    assert read(ws, net_worth.latest_month_end).property_estimate == Decimal("400000.00")
+    assert read(ws, net_worth.stored_run, before.run.net_worth_run_id).total == before.total
 
 
 def test_a_stored_month_end_cannot_be_changed_or_deleted(run, read, app_engine, fresh_workspaces):
@@ -518,7 +590,7 @@ def test_a_stored_month_end_cannot_be_changed_or_deleted(run, read, app_engine, 
         read(
             ws, lambda conn: conn.execute(select(func.count()).select_from(snapshot_table)).scalar()
         )
-        == 7
+        == 9
     )
 
 
@@ -555,7 +627,7 @@ def test_the_month_end_task_stores_each_workspace_once(run, read, app_engine, fr
     assert first.outcomes == {"written": 1, "empty": 1} and first.failed_workspaces == 0
     again = run_month_end(deps, workspace_ids=[ws, empty])
     assert again.outcomes == {"unchanged": 1, "empty": 1}
-    assert len(_snapshot_rows(read, ws)) == 7 and _snapshot_rows(read, empty) == []
+    assert len(_snapshot_rows(read, ws)) == 9 and _snapshot_rows(read, empty) == []
     [stored] = read(ws, net_worth.list_runs)
     assert stored.as_of == ON
     e = event_table.c

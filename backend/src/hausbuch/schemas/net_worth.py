@@ -114,7 +114,7 @@ class SnapshotOutcome(StrEnum):
     WRITTEN = "written"  # the first run for the month-end
     RECAPTURED = "recaptured"  # a new run: the figures changed since the stored one
     UNCHANGED = "unchanged"  # the stored run already holds these figures; nothing written
-    EMPTY = "empty"  # nothing to store (no account with a figure)
+    EMPTY = "empty"  # nothing to store (no account, position, property or loan with a value)
 
 
 class SnapshotResult(Schema):
