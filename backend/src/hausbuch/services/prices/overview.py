@@ -71,6 +71,7 @@ from hausbuch.schemas.prices import (
 )
 from hausbuch.services.context import CommandContext
 from hausbuch.services.depot import _movements as depot_movements
+from hausbuch.services.depot import latest_report_agreement
 from hausbuch.services.events import append_event, diff_changes
 from hausbuch.services.lookup import require_row
 
@@ -437,6 +438,9 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
         return items
     last_run = _last_run_at(conn)
     since = now - timedelta(days=STREAK_WINDOW_DAYS)
+    # D167 amended (c): a fund a depot's latest report lists while that report disagrees
+    # gets no card of its own; the holdings card names the fix, which also prices the fund.
+    in_reports = latest_report_agreement(conn)
     for row in held:
         kind = AssetKind(row.kind)
         if kind is AssetKind.CRYPTO:
@@ -465,13 +469,20 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
         if fund is None:
             if _any_price(conn, row.id):
                 continue  # „Kurs aus dem letzten Bericht“, no card (D174 (4))
+            if in_reports.get(row.id) is False:
+                continue  # the holdings card („Depotbericht stimmt nicht“) covers it
+            report = (
+                "der letzte Depotbericht nennt für ihn keinen Wert, aus dem sich ein Kurs ergibt"
+                if row.id in in_reports
+                else "bisher nennt ihn kein Depotbericht"
+            )
             items.append(
                 InboxItem(
                     kind=InboxItemKind.PRICE_NO_SOURCE,
                     created_at=row.created_at,
                     reasoning=(
                         f"Für {row.name} veröffentlicht die Fondsgesellschaft keinen Kurs, den "
-                        "Hausbuch abrufen kann, und es liegt noch kein Depotbericht vor."
+                        f"Hausbuch abrufen kann, und {report}."
                     ),
                     question=(
                         "Der nächste Depotbericht unter Dokumente bewertet den Fonds von "

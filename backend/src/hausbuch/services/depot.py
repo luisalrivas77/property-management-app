@@ -11,6 +11,7 @@ applied twice is refused (record_movement). Every read of holdings ignores super
 """
 
 import hmac
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -388,7 +389,7 @@ def record_holding(ctx: CommandContext, values: DepotHoldingValues, document_id:
     asset_id = asset_for_isin(ctx, values.isin, values.name)
     h = holding_table.c
     twin = ctx.conn.execute(
-        select(h.id, h.declared_units, h.declared_value_eur, h.document_id).where(
+        select(*_POSITION_COLUMNS).where(
             h.account_id == values.account_id,
             h.asset_id == asset_id,
             h.as_of == values.as_of,
@@ -401,6 +402,9 @@ def record_holding(ctx: CommandContext, values: DepotHoldingValues, document_id:
         values.declared_value_eur,
     ):
         if twin.document_id == document_id:
+            # „Neu auslesen“: a position that did not agree when it came in and agrees now
+            # (its trade confirmation applied since) gets the price it never stored.
+            _price_position(ctx, twin, _movements(ctx.conn, values.account_id, asset_id))
             return twin.id
         raise RuleViolationError(
             [DEPOT_HOLDING_EXISTS], "this report's position is stored on the account already"
@@ -438,7 +442,14 @@ def record_holding(ctx: CommandContext, values: DepotHoldingValues, document_id:
         )
     # A value of 0 for units held is no price (price_eur > 0); the position stays as stored.
     if check.price_stored and values.declared_value_eur:
-        _store_price(ctx, asset_id, values, document_id)
+        _store_price(
+            ctx,
+            asset_id,
+            values.as_of,
+            values.declared_units,
+            values.declared_value_eur,
+            document_id,
+        )
     return holding_id
 
 
@@ -492,18 +503,20 @@ def _insert_holding(
 
 
 def _store_price(
-    ctx: CommandContext, asset_id: UUID, values: DepotHoldingValues, document_id: UUID
+    ctx: CommandContext,
+    asset_id: UUID,
+    as_of: date,
+    units: Decimal,
+    value_eur: Decimal,
+    document_id: UUID | None,
 ) -> None:
-    assert values.declared_value_eur is not None
-    price = (values.declared_value_eur / values.declared_units).quantize(
-        PRICE_PLACES, rounding=ROUND_HALF_UP
-    )
+    price = (value_eur / units).quantize(PRICE_PLACES, rounding=ROUND_HALF_UP)
     price_id = ctx.conn.execute(
         insert(price_table)
         .values(
             workspace_id=ctx.workspace_id,
             asset_id=asset_id,
-            on=values.as_of,
+            on=as_of,
             price_eur=price,
             source=PriceSourceKind.STATEMENT.value,
             fetched_at=ctx.now,
@@ -518,11 +531,107 @@ def _store_price(
         asset_id,
         PriceRecorded(
             price_id=price_id,
-            on=values.as_of,
+            on=as_of,
             source=PriceSourceKind.STATEMENT,
             document_id=document_id,
         ),
     )
+
+
+_hc = holding_table.c
+# A stored report position as the later pricing reads it.
+_POSITION_COLUMNS = (
+    _hc.id,
+    _hc.account_id,
+    _hc.asset_id,
+    _hc.as_of,
+    _hc.declared_units,
+    _hc.declared_value_eur,
+    _hc.document_id,
+    _hc.created_at,
+)
+
+
+def _price_position(
+    ctx: CommandContext, row: Any, movements: Sequence[rules.UnitsMovement]
+) -> bool:
+    """The report's price for one stored position (value ÷ units, as record_holding stores
+    it) when the position agrees with the confirmed movements now and no price of this
+    reading is stored yet: one from the same document, asset and day, fetched at or after the
+    position's row was written (the price _positions shows; an older one belongs to a
+    superseded reading). True when it stored one. The row's `reconciled` flag is not touched:
+    it keeps what the check said when the report came in."""
+    if not row.declared_units or not row.declared_value_eur:
+        return False
+    [check] = rules.reconcile_holdings(
+        row.as_of,
+        {row.asset_id: row.declared_units},
+        [m for m in movements if m.asset == row.asset_id],
+    )
+    if not check.price_stored:
+        return False
+    p = price_table.c
+    stored = ctx.conn.execute(
+        select(p.id)
+        .where(
+            p.asset_id == row.asset_id,
+            p.on == row.as_of,
+            p.source == PriceSourceKind.STATEMENT.value,
+            p.document_id.is_not_distinct_from(row.document_id),
+            p.fetched_at >= row.created_at,
+        )
+        .limit(1)
+    ).first()
+    if stored is not None:
+        return False
+    _store_price(
+        ctx, row.asset_id, row.as_of, row.declared_units, row.declared_value_eur, row.document_id
+    )
+    return True
+
+
+def store_report_prices(ctx: CommandContext, account_id: UUID) -> int:
+    """D167 amended (c), 15 Nov 2026: the price of every current report position of a depot
+    account that agrees with its confirmed movements now and has none stored yet. A report
+    usually arrives before some of its trade confirmations, so its position did not agree when
+    it was taken over and stored no price; this runs after a depot movement is confirmed (a
+    trade, distribution or transfer note applied through the pre-filled form) and from
+    `hausbuch store-report-prices`. Idempotent. Returns how many prices it stored."""
+    h = holding_table.c
+    rows = ctx.conn.execute(
+        select(*_POSITION_COLUMNS)
+        .where(
+            h.account_id == account_id,
+            h.source == HoldingSource.REPORT.value,
+            h.superseded_by.is_(None),
+            h.declared_units > 0,
+            h.declared_value_eur > 0,
+        )
+        .order_by(h.as_of, h.created_at, h.id)
+    ).all()
+    if not rows:
+        return 0
+    movements = _movements(ctx.conn, account_id)
+    return sum(1 for row in rows if _price_position(ctx, row, movements))
+
+
+def store_report_prices_after(ctx: CommandContext, movement_ids: Sequence[UUID]) -> int:
+    """store_report_prices for every depot account one of these movements was written on."""
+    if not movement_ids:
+        return 0
+    m = movement_table.c
+    accounts = (
+        ctx.conn.execute(select(m.account_id).where(m.id.in_(list(movement_ids))).distinct())
+        .scalars()
+        .all()
+    )
+    return sum(store_report_prices(ctx, a) for a in sorted(accounts, key=str))
+
+
+def store_all_report_prices(ctx: CommandContext) -> int:
+    """`hausbuch store-report-prices`: store_report_prices over every depot account of the
+    workspace, oldest first."""
+    return sum(store_report_prices(ctx, a.id) for a in depot_accounts(ctx.conn))
 
 
 class ReportChecked(Schema):
@@ -636,14 +745,8 @@ def _missing_trades(
     return found
 
 
-def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
-    """One card per depot account whose latest report (source = report) disagrees with the
-    confirmed movements to its date (§14.1, principle 7). Re-checked on every read against
-    today's movements, so a trade confirmation applied later clears the card without a
-    person closing it; the stored rows keep what the check said when the report came in.
-    D165 (3): the card names each fund with the report's and the booked units, and the
-    days of the trades the report lists that no confirmation covers; never an amount, a
-    reference or an account number."""
+def _latest_report_rows(conn: Connection) -> list[Any]:
+    """Every depot account's current positions of its latest report (source = report)."""
     h = holding_table.c
     report = HoldingSource.REPORT.value
     latest = (
@@ -652,11 +755,44 @@ def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
         .group_by(h.account_id)
         .subquery()
     )
-    rows = conn.execute(
-        select(h.account_id, h.asset_id, h.as_of, h.declared_units, h.document_id, h.created_at)
-        .join(latest, (h.account_id == latest.c.account_id) & (h.as_of == latest.c.as_of))
-        .where(h.source == report, h.superseded_by.is_(None))
-    ).all()
+    return list(
+        conn.execute(
+            select(h.account_id, h.asset_id, h.as_of, h.declared_units, h.document_id, h.created_at)
+            .join(latest, (h.account_id == latest.c.account_id) & (h.as_of == latest.c.as_of))
+            .where(h.source == report, h.superseded_by.is_(None))
+        ).all()
+    )
+
+
+def latest_report_agreement(conn: Connection) -> dict[UUID, bool]:
+    """Per fund that a depot account's latest report lists: whether every such listing agrees
+    with the confirmed movements to the report's date, re-checked on read as
+    holdings_inbox_items does. A fund held but not listed (0 by omission) is not in it."""
+    rows = _latest_report_rows(conn)
+    agreed: dict[UUID, bool] = {}
+    for account_id in {r.account_id for r in rows}:
+        mine = [r for r in rows if r.account_id == account_id]
+        checks = rules.reconcile_holdings(
+            mine[0].as_of,
+            {r.asset_id: r.declared_units for r in mine},
+            _movements(conn, account_id),
+        )
+        for c in checks:
+            if c.listed:
+                agreed[c.asset] = agreed.get(c.asset, True) and c.reconciled
+    return agreed
+
+
+def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
+    """One card per depot account whose latest report (source = report) disagrees with the
+    confirmed movements to its date (§14.1, principle 7). Re-checked on every read against
+    today's movements, so a trade confirmation applied later clears the card without a
+    person closing it; the stored rows keep what the check said when the report came in.
+    D165 (3): the card names each fund with the report's and the booked units, and the
+    days of the trades the report lists that no confirmation covers; never an amount, a
+    reference or an account number. Since D167 amended (c) the question also says that the
+    report prices its funds once it agrees (the fund gets no „Kein Kurs“ card meanwhile)."""
+    rows = _latest_report_rows(conn)
     items = []
     for account_id in sorted({r.account_id for r in rows}, key=str):
         mine = [r for r in rows if r.account_id == account_id]
@@ -691,13 +827,15 @@ def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
             question = (
                 f"Der Bericht nennt Umsätze vom {days}, zu denen keine Wertpapierabrechnung "
                 "gebucht ist. Bitte die Abrechnung unter Dokumente hochladen und übernehmen; "
-                "der Abgleich läuft dann von selbst neu."
+                "der Abgleich läuft dann von selbst neu. Sobald der Bericht stimmt, liefert er "
+                "auch die Kurse der Fonds."
             )
         else:
             question = (
                 "Fehlt eine Wertpapierabrechnung oder eine Umbuchung zwischen eigenen Depots? "
                 "Bitte das Dokument unter Dokumente hochladen und übernehmen; der Abgleich "
-                "läuft dann von selbst neu."
+                "läuft dann von selbst neu. Sobald der Bericht stimmt, liefert er auch die "
+                "Kurse der Fonds."
             )
         items.append(
             InboxItem(
@@ -877,7 +1015,11 @@ __all__ = [
     "etf_overview",
     "finish_report",
     "holdings_inbox_items",
+    "latest_report_agreement",
     "record_holding",
     "record_movement",
+    "store_all_report_prices",
+    "store_report_prices",
+    "store_report_prices_after",
     "transfer_pair",
 ]

@@ -335,3 +335,50 @@ def test_a_fund_the_report_omits_is_unvalued(run, read, app_engine, fresh_worksp
     # Before the report's day the report does not apply.
     earlier = read(ws, overview.assets_overview, date(2026, 6, 24))
     assert all(p.reconciled_through is None for p in earlier.accounts[0].positions)
+
+
+def test_a_fund_in_a_report_that_disagrees_gets_no_price_card_of_its_own(
+    run, read, fresh_workspaces
+):
+    """D167 amended (c): the holdings card covers a fund its depot's latest report lists while
+    the report disagrees; a fund no report lists keeps its card, which says so."""
+    ws, _ = fresh_workspaces
+
+    def seed(ctx):
+        created = create_account(
+            ctx,
+            AccountCreate(
+                label="Depot",
+                bank="Beispiel",
+                kind=AccountKind.DEPOT,
+                opening_balance=Decimal("0.00"),
+                opening_balance_on=date(2026, 6, 1),
+            ),
+            iban_key=TEST_IBAN_KEY,
+        )
+        listed = _asset(ctx, kind="etf", isin="IE000INVENT8", name="Fonds im Bericht")
+        unlisted = _asset(ctx, kind="etf", isin="IE000INVENT9", name="Fonds ohne Bericht")
+        for asset_id in (listed, unlisted):
+            _held(ctx, created.id, asset_id)
+        return created.id, listed, unlisted
+
+    account, listed, unlisted = run(ws, seed, now=FIRST)
+    # The report says 3 units of the listed fund; 2 are booked. It does not list the other.
+    run(ws, _report, account, listed, date(2026, 6, 25), "3", now=NOW)
+
+    cards = _cards(read, ws, NOW, InboxItemKind.PRICE_NO_SOURCE)
+    assert [c.asset_id for c in cards] == [unlisted]
+    assert cards[0].reasoning == (
+        "Für Fonds ohne Bericht veröffentlicht die Fondsgesellschaft keinen Kurs, den Hausbuch "
+        "abrufen kann, und bisher nennt ihn kein Depotbericht."
+    )
+    (holdings,) = _cards(read, ws, NOW, InboxItemKind.HOLDINGS_MISMATCH)
+    assert "liefert er auch die Kurse der Fonds" in holdings.question
+
+    # Once the report agrees but states no value, the card comes back and says why.
+    run(ws, _held, account, listed, "1", datetime(2026, 6, 25, 9, 0, tzinfo=UTC), now=NOW)
+    cards = _cards(read, ws, NOW, InboxItemKind.PRICE_NO_SOURCE)
+    listed_card = next(c for c in cards if c.asset_id == listed)
+    assert listed_card.reasoning.endswith(
+        "der letzte Depotbericht nennt für ihn keinen Wert, aus dem sich ein Kurs ergibt."
+    )
