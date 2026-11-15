@@ -1058,8 +1058,9 @@ class WalletSyncRecorded(Schema):
     movements_new: int = Field(ge=0)
     reconciled: bool | None = None  # None: not checked (failed, or the history not read yet)
     deferred: bool = False  # the run's budget ended before the history did (wallet.sync_deferred)
-    # Balances read but not compared: a group of the account waits for a person's answer
-    # with no movements yet (a Bitcoin change card), so a difference is „wartet auf Antwort“.
+    # Balances read, and every asset that differs is named by an open question of the run's
+    # scope (a Bitcoin change card's native coin, a question's legs), so the difference is
+    # „wartet auf Antwort“, not a mismatch.
     waiting: bool = False
     error_code: str | None = None
     document_id: UUID | None = None  # the run's stored original (D182 (3))

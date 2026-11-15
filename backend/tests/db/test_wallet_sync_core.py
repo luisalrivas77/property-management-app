@@ -13,10 +13,17 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from db.db_support import _admin
-from db.test_phase7_migration import _address, _wallet
+from db.test_phase7_migration import BECH32, EVM, _address, _wallet
 
+from hausbuch.db.session import workspace_transaction
 from hausbuch.rules.chain.classify import ChainGroup, ChainLeg, register_family
-from hausbuch.rules.errors import WALLET_KEY_MISSING, WALLET_SOURCE_THROTTLED
+from hausbuch.rules.errors import (
+    WALLET_KEY_MISSING,
+    WALLET_SOURCE_THROTTLED,
+    WALLET_SOURCE_UNAVAILABLE,
+    WALLET_SYNC_DEFERRED,
+)
+from hausbuch.rules.review import CHAIN_UNSTORABLE
 from hausbuch.schemas.chain import (
     AssetBalance,
     AssetKey,
@@ -37,6 +44,8 @@ from hausbuch.services.chain.base import (
 )
 from hausbuch.services.chain.sync import WALLET_SYNC_ERROR, sync_address, sync_wallets
 from hausbuch.services.context import Actor
+from hausbuch.services.prices.assets import price_ids
+from hausbuch.services.prices.fetch import held_assets
 from hausbuch.services.prices.http import SourceError
 from hausbuch.settings import Settings
 
@@ -75,6 +84,7 @@ class World:
     def __init__(self) -> None:
         self.txs: dict[str, list[ChainTx]] = {SOL_A: [], SOL_B: []}
         self.balance: dict[str, int] = {SOL_A: 0, SOL_B: 0}
+        self.tokens: dict[str, dict[str, int]] = {}  # address -> mint -> units
         self.error: dict[str, Exception] = {}
         self.scope = "address"
         self.key_missing = False
@@ -98,12 +108,21 @@ class FakeSource:
         return Page[ChainTx](items=items, next_cursor=str(start + len(items)))
 
     def balances(self, address: str) -> list[AssetBalance]:
-        return [AssetBalance(asset_key=SOL, units=self.world.balance[address], at_block=2000)]
+        tokens = [
+            AssetBalance(
+                asset_key=AssetKey(chain=Chain.SOLANA, contract=mint), units=units, at_block=2000
+            )
+            for mint, units in self.world.tokens.get(address, {}).items()
+        ]
+        native = AssetBalance(asset_key=SOL, units=self.world.balance[address], at_block=2000)
+        return [native, *tokens]
 
 
 def fake_classifier(tx, ctx):
     """raw: in / out / fee units for the synced address, `on` another own address for the
-    legs, `question` for a legless card."""
+    legs, `question` for a legless card, `ask` a question beside the legs, `tok` token legs
+    (dicts of ChainLeg's fields: mint, units, index, symbol, decimals, spam), `linked` a
+    transfer D186 (1) confirms after the first sync."""
     if "question" in tx.raw:
         return ChainGroup(
             tx.hash, tx.occurred_at, tx.block, GroupKind.UNKNOWN, question=tx.raw["question"]
@@ -118,9 +137,32 @@ def fake_classifier(tx, ctx):
         legs.append(ChainLeg(SOL, tx.raw["out"], "out", kind, "0", address=on))
     if tx.raw.get("fee"):
         legs.append(ChainLeg(SOL, tx.raw["fee"], "fee", MovementKind.FEE, "fee", address=on))
+    for t in tx.raw.get("tok", []):
+        key = AssetKey(chain=Chain.SOLANA, contract=t["mint"])
+        kind = MovementKind.SPAM if t.get("spam") else MovementKind.AIRDROP
+        legs.append(
+            ChainLeg(
+                key,
+                t["units"],
+                "in",
+                kind,
+                t.get("index", "1"),
+                symbol=t.get("symbol"),
+                decimals=t.get("decimals"),
+                spam=bool(t.get("spam")),
+            )
+        )
     if tx.raw.get("boom"):
         raise RuntimeError(f"classifier failed on {ctx.address}")  # must never be logged
-    return ChainGroup(tx.hash, tx.occurred_at, tx.block, GroupKind.TRANSFER, legs)
+    return ChainGroup(
+        tx.hash,
+        tx.occurred_at,
+        tx.block,
+        GroupKind.TRANSFER,
+        legs,
+        linked=bool(tx.raw.get("linked")),
+        question=tx.raw.get("ask"),
+    )
 
 
 @pytest.fixture
@@ -392,3 +434,376 @@ def test_no_plaintext_address_in_events_logs_or_rows(dbname, world, wallet, sync
     for text in [logged, *(e[1] for e in events), *(s[0] for s in syncs), *(g[0] for g in groups)]:
         assert SOL_A not in text and SOL_B not in text
     assert "RuntimeError" in logged  # the class name only
+
+
+# --- Review fixes (PR #375): one address, one asset or one transaction never blocks the rest -
+
+# Invented mints: Solana program ids, valid base58, no token the registry lists.
+MINT_X = "Vote111111111111111111111111111111111111111"
+MINT_Y = "Config1111111111111111111111111111111111111"
+USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # the registry's Solana USDC row
+
+
+def _run(app_engine, blob_store, ws, account, *, day=1, budgets=None):
+    return sync_wallets(
+        app_engine,
+        ws,
+        settings=SETTINGS,
+        store=blob_store,
+        actor=ACTOR,
+        clock=lambda: T0 + timedelta(days=day),
+        account_id=account,
+        budgets=budgets,
+    )
+
+
+def test_an_address_without_a_source_is_skipped_and_the_others_run(
+    dbname, world, wallet, app_engine, blob_store
+):
+    """Finding 1: a chain whose reader is not built (base.factory_for's NotImplementedError)
+    is skipped with an outcome and no row, like a missing key; any other failure of an
+    address's start ends that address only."""
+    ws, account, a, b = wallet
+    with _admin(dbname) as conn:
+        btc = _address(
+            conn, ws, account, chain="bitcoin", address=BECH32, address_masked="bc1q…f3t4"
+        )
+        eth = _address(conn, ws, account, chain="ethereum", address=EVM)
+    world.txs[SOL_A] = [_tx(1, **{"in": 5})]
+    world.txs[SOL_B] = [_tx(2, **{"in": 7})]
+    world.balance[SOL_A], world.balance[SOL_B] = 5, 7
+
+    def not_built(row, settings, budget):
+        raise NotImplementedError("services/chain: no make_source in bitcoin_esplora")
+
+    def broken(row, settings, budget):
+        raise RuntimeError("a start that fails for another reason")
+
+    register_source(ChainSourceKind.BITCOIN_ESPLORA, not_built)
+    register_source(ChainSourceKind.EVM_ETHERSCAN, broken)
+    try:
+        run = _run(app_engine, blob_store, ws, account)
+    finally:
+        register_source(ChainSourceKind.BITCOIN_ESPLORA, None)
+        register_source(ChainSourceKind.EVM_ETHERSCAN, None)
+    by_address = {o.address_id: o for o in run}
+    assert set(by_address) == {a, b, btc, eth}
+    assert (by_address[a].status, by_address[a].reconciled) == (WalletSyncStatus.SUCCEEDED, True)
+    assert (by_address[b].status, by_address[b].reconciled) == (WalletSyncStatus.SUCCEEDED, True)
+    assert (by_address[btc].sync_id, by_address[btc].status, by_address[btc].error_code) == (
+        None,
+        None,
+        WALLET_SOURCE_UNAVAILABLE,
+    )
+    assert (by_address[eth].sync_id, by_address[eth].error_code) == (None, WALLET_SYNC_ERROR)
+    rows = _rows(
+        dbname,
+        "SELECT count(*) FROM wallet_sync WHERE address_id IN (%s, %s)",
+        btc,
+        eth,
+    )
+    assert rows[0][0] == 0
+
+
+def test_a_spent_budget_defers_and_an_address_it_never_reached_writes_no_row(
+    dbname, world, wallet, app_engine, blob_store
+):
+    """Finding 2: a page refused by a spent budget comes back with the cursor unmoved, which
+    reads like the tip. Deferred is the budget's verdict: no balance read with a spent
+    budget, never a first sync finished by it, and an address the budget never reached
+    writes no row, so it runs first the next day and its first sync waits for a person."""
+    ws, account, a, b = wallet
+    world.txs[SOL_A] = [_tx(n, linked=True, **{"in": n}) for n in range(1, 5)]
+    world.balance[SOL_A] = 10
+    world.txs[SOL_B] = [_tx(9, linked=True, **{"in": 700})]
+    world.balance[SOL_B] = 700
+    budgets = {ChainSourceKind.SOLANA_RPC: RequestBudget(2)}
+
+    first = {o.address_id: o for o in _run(app_engine, blob_store, ws, account, budgets=budgets)}
+    assert (first[a].txs_seen, first[a].deferred, first[a].reconciled) == (4, True, None)
+    assert (first[b].sync_id, first[b].status, first[b].deferred, first[b].error_code) == (
+        None,
+        None,
+        True,
+        WALLET_SYNC_DEFERRED,
+    )
+    assert _rows(dbname, "SELECT count(*) FROM wallet_sync WHERE address_id = %s", b)[0][0] == 0
+    (row,) = _rows(
+        dbname, "SELECT balances, cursor_after FROM wallet_sync WHERE address_id = %s", a
+    )
+    assert row == (None, "4")
+
+    second = _run(app_engine, blob_store, ws, account, day=2)
+    assert [o.address_id for o in second] == [b, a]  # B, never synced, first
+    by_address = {o.address_id: o for o in second}
+    assert (by_address[b].movements_new, by_address[b].reconciled) == (1, True)
+    assert (by_address[a].movements_new, by_address[a].reconciled) == (0, True)
+    statuses = _rows(
+        dbname,
+        "SELECT g.status, m.status FROM asset_movement m JOIN movement_group g"
+        " ON g.id = m.group_id WHERE m.address_id = %s",
+        b,
+    )
+    # B's first sync, though D186 (1) would confirm a linked transfer after it
+    assert statuses == [("proposed", "proposed")]
+
+
+def test_an_unlisted_token_has_no_symbol_and_its_told_name_is_cleaned(
+    dbname, world, wallet, sync, app_engine
+):
+    """Finding 3 (D180 amended (a)): every token the registry does not list is stored with
+    symbol NULL, so a token calling itself „BTC“ never reaches a price by that symbol; what
+    it tells is kept inside its name only, without control characters, capped."""
+    ws, account, a, _ = wallet
+    world.txs[SOL_A] = [
+        _tx(1, **{"in": 5}),
+        _tx(2, tok=[{"mint": MINT_X, "units": 5, "symbol": "BTC", "decimals": 6}]),
+        _tx(3, tok=[{"mint": MINT_Y, "units": 5, "symbol": "AB\x85C\x00", "decimals": 6}]),
+        _tx(
+            4,
+            tok=[
+                {
+                    "mint": "Sysvar1111111111111111111111111111111111111",
+                    "units": 1,
+                    "symbol": "FREE\x00\x00" + "x" * 40,
+                    "decimals": 0,
+                    "spam": True,
+                }
+            ],
+        ),
+    ]
+    world.balance[SOL_A] = 5
+    world.tokens[SOL_A] = {MINT_X: 5, MINT_Y: 5}
+    outcome = sync(ws, a)
+    assert (outcome.status, outcome.movements_new, outcome.reconciled) == (
+        WalletSyncStatus.SUCCEEDED,
+        4,
+        True,
+    )
+    assets = dict(
+        _rows(
+            dbname,
+            "SELECT contract_address, row(symbol, name, spam)::text FROM asset"
+            " WHERE contract_address IS NOT NULL AND workspace_id = %s",
+            ws,
+        )
+    )
+    assert assets[MINT_X] == '(,"Token Vote…1111 (nennt sich BTC)",f)'
+    assert assets[MINT_Y] == '(,"Token Conf…1111 (nennt sich ABC)",f)'
+    spam_name = "Token Sysv…1111 (nennt sich FREE" + "x" * 28 + ")"
+    assert assets["Sysvar1111111111111111111111111111111111111"] == f'(,"{spam_name}",t)'
+    assert price_ids(None, None, None, chain="solana") == price_ids(None, None, None)
+    with _admin(dbname) as conn:  # a person's „Bestätigen“ on the airdrop cards
+        conn.execute(
+            "UPDATE asset_movement SET status = 'confirmed' WHERE account_id = %s", (account,)
+        )
+    with workspace_transaction(app_engine, ws) as conn:
+        held = {h.name: h for h in held_assets(conn)}
+    told_btc = held["Token Vote…1111 (nennt sich BTC)"]
+    assert told_btc.symbol is None
+    assert (told_btc.ids.coingecko_id, told_btc.ids.kraken_pair) == (None, None)
+
+
+def test_an_unstorable_spam_leg_is_left_out_and_the_history_goes_on(dbname, world, wallet, sync):
+    """Finding 4: a spam leg beyond numeric(38,18) (10^30 units of a 0-decimal token, or a
+    token telling 24 decimals) is dropped and counted (D187: hidden, never priced, never a
+    lot); the address's other transactions are stored and the cursor moves past it."""
+    ws, account, a, _ = wallet
+    world.txs[SOL_A] = [
+        _tx(1, **{"in": 5}),
+        _tx(2, tok=[{"mint": MINT_X, "units": 10**30, "decimals": 0, "spam": True}]),
+        _tx(3, tok=[{"mint": MINT_Y, "units": 1, "decimals": 24, "spam": True}], fee=1),
+        _tx(4, **{"in": 7}),
+    ]
+    world.balance[SOL_A] = 11
+    outcome = sync(ws, a)
+    assert (outcome.status, outcome.spam_dropped, outcome.unstorable) == (
+        WalletSyncStatus.SUCCEEDED,
+        2,
+        0,
+    )
+    assert (outcome.movements_new, outcome.reconciled) == (3, True)
+    assert _rows(dbname, "SELECT cursor_after FROM wallet_sync WHERE address_id = %s", a) == [
+        ("4",)
+    ]
+    assets = _rows(
+        dbname,
+        "SELECT count(*) FROM asset WHERE contract_address IS NOT NULL AND workspace_id = %s",
+        ws,
+    )
+    assert assets[0][0] == 0  # neither spam token became an asset
+    groups = _rows(dbname, "SELECT tx_hash FROM movement_group WHERE account_id = %s", account)
+    assert world.txs[SOL_A][1].hash not in {g[0] for g in groups}
+    assert world.txs[SOL_A][2].hash in {g[0] for g in groups}  # its fee leg stays
+
+
+def test_an_unstorable_transaction_becomes_a_group_without_movements(dbname, world, wallet, sync):
+    """Finding 4: a non-spam transaction Hausbuch cannot store (a quantity beyond the column,
+    two assets on one leg's place, a group the database refuses) becomes a proposed group
+    with no movements, no question and reason routing.chain_unstorable; the cursor moves on,
+    the run's original is kept, and its difference stays a mismatch, never „wartet“."""
+    ws, account, a, _ = wallet
+    world.txs[SOL_A] = [
+        _tx(1, **{"in": 5}),
+        _tx(2, tok=[{"mint": MINT_X, "units": 10**30, "decimals": 0}]),
+        _tx(3, tok=[{"mint": MINT_Y, "units": 2, "decimals": 6, "index": "0"}], **{"in": 1}),
+        _tx(4, ask="x" * 600, **{"in": 3}),  # a question the column cannot hold
+        _tx(5, **{"in": 7}),
+    ]
+    world.balance[SOL_A] = 5 + 1 + 3 + 7
+    world.tokens[SOL_A] = {MINT_X: 10**30}
+    outcome = sync(ws, a)
+    assert (outcome.status, outcome.unstorable, outcome.movements_new) == (
+        WalletSyncStatus.SUCCEEDED,
+        3,
+        2,
+    )
+    assert (outcome.reconciled, outcome.waiting) == (False, False)
+    (row,) = _rows(
+        dbname,
+        "SELECT cursor_after, difference, document_id IS NOT NULL FROM wallet_sync"
+        " WHERE address_id = %s",
+        a,
+    )
+    assert row == ("5", {"native": "4", MINT_X: str(10**30)}, True)
+    groups = _rows(
+        dbname,
+        "SELECT g.tx_hash, g.status, g.question, e.payload->>'reason',"
+        " (SELECT count(*) FROM asset_movement m WHERE m.group_id = g.id)"
+        " FROM movement_group g JOIN event e ON e.entity_id = g.id"
+        " AND e.type = 'movement_group.proposed' WHERE g.account_id = %s",
+        account,
+    )
+    unstorable = {g[0] for g in groups if g[3] == CHAIN_UNSTORABLE}
+    assert unstorable == {t.hash for t in world.txs[SOL_A][1:4]}
+    assert {g[1:3] + (g[4],) for g in groups if g[0] in unstorable} == {("proposed", None, 0)}
+
+    again = sync(ws, a)  # from the cursor: nothing new, no second card
+    assert (again.movements_new, again.unstorable, again.reconciled) == (0, 0, False)
+    count = _rows(dbname, "SELECT count(*) FROM movement_group WHERE account_id = %s", account)
+    assert count[0][0] == len(groups)
+
+
+def test_a_quantity_of_more_than_28_digits_is_stored_exactly(dbname, world, wallet, sync):
+    """numeric(38,18) holds 38 digits; Decimal arithmetic rounds to 28, so the conversion
+    builds the quantity from its digits both ways and the balance reconciles to the unit."""
+    ws, account, a, _ = wallet
+    units = 10**37 + 1  # 10,000,000,000,000,000,000.000000000000000001 at 18 decimals
+    world.txs[SOL_A] = [_tx(1, tok=[{"mint": MINT_X, "units": units, "decimals": 18}])]
+    world.tokens[SOL_A] = {MINT_X: units}
+    outcome = sync(ws, a)
+    assert (outcome.movements_new, outcome.reconciled, outcome.unstorable) == (1, True, 0)
+    (quantity,) = _rows(
+        dbname, "SELECT quantity::text FROM asset_movement WHERE address_id = %s", a
+    )
+    assert quantity[0] == "10000000000000000000.000000000000000001"
+
+
+def test_only_the_assets_a_question_names_wait(dbname, world, wallet, sync):
+    """Finding 5: „wartet auf Antwort“ is narrow: a legless question on A never hides B's
+    mismatch, and on one address only the assets of a question's legs wait; a difference in
+    any other asset makes the run a mismatch with the whole difference stored."""
+    ws, account, a, b = wallet
+    world.txs[SOL_A] = [_tx(1, **{"in": 300}), _tx(3, question="Ist die Ausgabe 2 eigen?")]
+    world.balance[SOL_A] = 300
+    world.txs[SOL_B] = [_tx(2, **{"in": 700})]
+    world.balance[SOL_B] = 123
+    on_a, on_b = sync(ws, a), sync(ws, b)
+    assert (on_a.reconciled, on_a.waiting) == (True, False)
+    assert (on_b.reconciled, on_b.waiting) == (False, False)
+    (row,) = _rows(
+        dbname, "SELECT reconciled, difference FROM wallet_sync WHERE address_id = %s", b
+    )
+    assert row == (False, {"native": str(123 - 700)})
+
+    # B: a question beside a token leg; only the token's difference waits
+    world.txs[SOL_B].append(
+        _tx(4, ask="Ist das ein Airdrop?", tok=[{"mint": MINT_X, "units": 5, "decimals": 6}])
+    )
+    world.balance[SOL_B] = 700
+    world.tokens[SOL_B] = {MINT_X: 9}
+    waiting = sync(ws, b)
+    assert (waiting.reconciled, waiting.waiting) == (None, True)
+    world.txs[SOL_B].append(_tx(5, **{"in": 1}))  # and a native difference beside it
+    mixed = sync(ws, b)
+    assert (mixed.reconciled, mixed.waiting) == (False, False)
+    (row,) = _rows(
+        dbname,
+        "SELECT reconciled, difference FROM wallet_sync WHERE address_id = %s"
+        " ORDER BY started_at DESC LIMIT 1",
+        b,
+    )
+    assert row == (False, {"native": "-1", MINT_X: "4"})
+
+
+def test_account_scope_the_last_address_failing_leaves_the_earlier_rows_open(
+    dbname, world, wallet, app_engine, blob_store
+):
+    """Finding 6 (pinned, no change): when the account's last address of the run fails, the
+    earlier addresses' rows keep reconciled NULL and the failed row is what the account
+    shows; WalletSyncRun's verdict is the newest non-NULL row of the account on the chain."""
+    ws, account, a, b = wallet
+    world.scope = "account"
+    world.txs[SOL_A] = [_tx(1, **{"in": 300})]
+    world.balance[SOL_A], world.balance[SOL_B] = 999, 0
+    world.error[SOL_B] = SourceError("HTTPError", 500)
+    run = _run(app_engine, blob_store, ws, account)
+    assert [(o.address_id, o.status, o.reconciled) for o in run] == [
+        (a, WalletSyncStatus.SUCCEEDED, None),
+        (b, WalletSyncStatus.FAILED, None),
+    ]
+    rows = _rows(
+        dbname,
+        "SELECT address_id, status, reconciled, difference FROM wallet_sync"
+        " WHERE account_id = %s ORDER BY started_at, created_at",
+        account,
+    )
+    assert rows == [(a, "succeeded", None, None), (b, "failed", None, None)]
+
+
+def test_a_leg_joining_a_confirmed_group_is_routed_on_its_own(dbname, world, wallet, sync):
+    """Finding 7: A (the fee payer) writes a fee-only group, confirmed by code; B's leg of the
+    same transaction joins that group but is routed on its own: proposed on B's first sync,
+    confirmed only when D186 (1) would confirm it."""
+    ws, account, a, b = wallet
+    shared = _tx(1, fee=5000)
+    shared_b = ChainTx(
+        hash=shared.hash,
+        block=shared.block,
+        occurred_at=shared.occurred_at,
+        status="ok",
+        raw={"n": 1, "in": 700},
+    )
+    world.txs[SOL_A], world.txs[SOL_B] = [shared], [shared_b]
+    world.balance[SOL_A], world.balance[SOL_B] = 0, 700  # A's fee is a mismatch here
+    sync(ws, a)
+    sync(ws, b)
+    rows = _rows(
+        dbname,
+        "SELECT m.address_id, m.status, g.status FROM asset_movement m"
+        " JOIN movement_group g ON g.id = m.group_id WHERE m.account_id = %s",
+        account,
+    )
+    assert sorted(rows) == sorted([(a, "confirmed", "confirmed"), (b, "proposed", "confirmed")])
+
+    # after B's first sync, a linked transfer leg joining a confirmed group is confirmed
+    later = _tx(2, fee=5000)
+    later_b = ChainTx(
+        hash=later.hash,
+        block=later.block,
+        occurred_at=later.occurred_at,
+        status="ok",
+        raw={"n": 2, "in": 300, "linked": True},
+    )
+    world.txs[SOL_A].append(later)
+    world.txs[SOL_B].append(later_b)
+    world.balance[SOL_B] = 1000
+    sync(ws, a)
+    sync(ws, b)
+    (status,) = _rows(
+        dbname,
+        "SELECT m.status FROM asset_movement m WHERE m.address_id = %s AND m.tx_hash = %s",
+        b,
+        later.hash,
+    )
+    assert status == ("confirmed",)

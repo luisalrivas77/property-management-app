@@ -7,27 +7,41 @@ open while a provider answers:
    `cursor_after`), whether its history was ever read to the end, the context the family
    classifier needs (every own address on the chain, the account's own addresses with their
    ids, the native coin's asset, the workspace's decoders, the held tokens), the source
-   (services/chain/base.source_for; an unset key ends here with `wallet.key_missing` and no
-   row), and the `wallet_sync` row as `running`.
+   (services/chain/base.source_for; an unset key ends here with `wallet.key_missing`, a chain
+   whose source is not built yet with `wallet.source_unavailable`, and a budget the run has
+   already spent with `wallet.sync_deferred`, each with no row), and the `wallet_sync` row as
+   `running`.
 2. *Read* (no transaction): the source's pages from the cursor until a page brings nothing
    new or the run's budget ends (`deferred`, the page note `wallet.sync_deferred`), each
    transaction classified by its family (rules/chain/classify); then, when the history is
    read to its end, the balances the source reconciles against (of the address, or of every
-   own address of the account when the source's `reconcile_scope` is `account`).
-3. *Write* (one transaction): each leg hashed (D182 (2)) with the HMAC of the own address it
-   sits on, and only legs not stored yet written, joining the live group of the same
-   transaction when another own address already wrote one; each new group routed by D186 (1)
-   and written proposed or confirmed with its movements (a group with a question and no legs
-   is written once, without movements); when at least one movement is new, the provider's
-   records stored as the run's original (`document(subtype = chain_sync)`, NDJSON) with its
-   `movement_import(format = chain_sync)` row (D182 (3)); Σ movements reconciled against the
-   balances in base units (D186 (2)); the row finished once.
+   own address of the account when the source's `reconcile_scope` is `account`). Deferred is
+   decided by the budget, never by the cursor: a spent budget after any page, or after the
+   balance calls, ends the run deferred with no balance.
+3. *Write* (one transaction, a savepoint per group): each leg hashed (D182 (2)) with the
+   HMAC of the own address it sits on, and only legs not stored yet written, joining the live
+   group of the same transaction when another own address already wrote one (the joining
+   legs routed on their own, so a first sync never confirms them); each new group routed by
+   D186 (1) and written proposed or confirmed with its movements (a group with a question and
+   no legs is written once, without movements); when at least one movement or
+   CHAIN_UNSTORABLE group is new, the provider's records stored as the run's original
+   (`document(subtype = chain_sync)`, NDJSON) with its `movement_import(format = chain_sync)`
+   row (D182 (3)); Σ movements reconciled against the balances in base units (D186 (2)); the
+   row finished once.
+
+One transaction never blocks the address's history: a spam leg whose quantity
+numeric(38,18) cannot hold is left out (D187, counted as `spam_dropped`), and a non-spam
+transaction Hausbuch cannot store (a quantity beyond the column, two legs of different assets
+on one (address, index, role), a row the database refuses) becomes a group without movements
+or question, reason `routing.chain_unstorable` (counted as `unstorable`); its difference
+stays a mismatch. No quantity is ever rounded.
 
 A failure ends its own address's row only (`failed`, `throttled` on a 429, `refused` on a
 401 or 403) and writes nothing else: the cursor does not move, so the next run reads the same
-range again. Nothing logged, raised or stored in an event holds an address, a cursor, a
-transaction hash, a URL or a key: the logs carry the chain, the outcome, counts and the
-exception class.
+range again. A start that fails otherwise (the address gone) ends that address only in
+`sync_wallets`, and the next address runs. Nothing logged, raised or stored in an event
+holds an address, a cursor, a transaction hash, a URL or a key: the logs carry the chain,
+the outcome, counts and the exception class.
 
 How a run's row reads (step 1's wallet page):
 
@@ -35,9 +49,12 @@ How a run's row reads (step 1's wallet page):
   reconciled, since a half-read history cannot match the balance.
 - `succeeded`, `balances` set, `reconciled` true or false: the history is read to its end;
   false raises `wallet.unreconciled` with `difference` = balance − Σ per asset.
-- `succeeded`, `balances` set, `reconciled` null: a group of the account waits for a person's
-  answer with no movements yet (a Bitcoin change card), so the difference is not a mismatch
-  but „wartet auf Antwort“ (the event's `waiting`); or, on an account-scope source, another
+- `succeeded`, `balances` set, `reconciled` null: every asset that differs is named by an
+  open question of the run's scope (the assets of its legs on the scope's addresses, the
+  native coin of the address whose run asked a question without legs, such as a Bitcoin
+  change card), so the difference is not a mismatch but „wartet auf Antwort“ (the event's
+  `waiting`); a difference in any other asset is `reconciled` false; or, on an account-scope
+  source, another
   address of the same account is read after this one in the same job (`sync_wallets`), and
   that last address's run carries the account's verdict once every address's movements are
   stored (a receive on address B is in B's history only, so A's run cannot have it yet).
@@ -50,26 +67,32 @@ Readings of the spec (step 2 core):
   or a registry token, the assets a price source covers (D180 (3)); the price rows
   themselves are step 6's.
 - A chain asset is created on first sight: the native coin by the chain registry, a registry
-  token by its row, any other token with the symbol the chain gives it (spam: no symbol and
-  the masked label, D187 (2)). `priced_as_asset_id` points at the off-chain asset of the
+  token by its row, any other token, spam or not, without a symbol (D180 amended (a)) and
+  named by its masked contract with the symbol the chain tells, cleaned of control
+  characters and capped (`told_symbol`, D187 (2)), so a token calling itself „BTC“ never
+  meets a price by that symbol. `priced_as_asset_id` points at the off-chain asset of the
   coin when the workspace has it; creating that asset is task "assets"'s.
 """
 
 import json
 import logging
 import re
+import unicodedata
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Connection, Engine, and_, exists, func, insert, null, select, update
+from sqlalchemy import Connection, Engine, and_, cast, exists, func, insert, null, select, update
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.exc import DBAPIError
 
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import chain_decoder as decoder_table
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import movement_group as group_table
 from hausbuch.db.tables import movement_import as import_table
 from hausbuch.db.tables import wallet_address as address_table
@@ -83,10 +106,12 @@ from hausbuch.rules.errors import (
     WALLET_KEY_MISSING,
     WALLET_SOURCE_REFUSED,
     WALLET_SOURCE_THROTTLED,
+    WALLET_SOURCE_UNAVAILABLE,
+    WALLET_SYNC_DEFERRED,
     WALLET_SYNC_ERROR,
 )
 from hausbuch.rules.household.assets import registry as asset_registry
-from hausbuch.rules.review import route_group
+from hausbuch.rules.review import CHAIN_UNSTORABLE, route_group
 from hausbuch.schemas.allocation import RoutingDecision
 from hausbuch.schemas.chain import (
     AssetBalance,
@@ -141,10 +166,12 @@ _STATUS_OF = {
 _HOST = re.compile(r"^[a-z0-9.-]{1,253}$")
 _MAX_CURSOR = 200
 _NDJSON = "application/x-ndjson"
-# asset_movement.quantity's scale: an asset with more decimals cannot be stored exactly
-# (numeric(28,10) until task "assets"'s migration 0042 widens it); such a run fails rather
-# than round a quantity.
+# asset_movement.quantity is numeric(38,18) since migration 0042 (asset.decimals 0..18): a
+# quantity with more places, or 10^20 units or more, cannot be stored exactly, and nothing is
+# ever rounded (D186 (2) reconciles to the base unit).
 _QUANTITY_SCALE = movement_table.c.quantity.type.scale
+_QUANTITY_INTEGER_DIGITS = movement_table.c.quantity.type.precision - _QUANTITY_SCALE
+_TOLD_SYMBOL_MAX = 32  # what a chain says a token is called, kept in its name only (D180 (a))
 
 Clock = Callable[[], datetime]
 
@@ -163,6 +190,8 @@ class SyncOutcome:
     deferred: bool = False
     reconciled: bool | None = None
     waiting: bool = False
+    spam_dropped: int = 0  # spam legs whose quantity cannot be stored, left out (D187)
+    unstorable: int = 0  # transactions written as a group without movements (CHAIN_UNSTORABLE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,57 +244,85 @@ def _priced_as(conn: Connection, symbol: str) -> UUID | None:
     ).scalar_one_or_none()
 
 
-def _label_ok(symbol: str | None) -> bool:
-    return (
-        bool(symbol) and len(symbol) <= 32 and not any(ord(c) < 32 or ord(c) == 127 for c in symbol)
-    )
+def told_symbol(symbol: str | None) -> str | None:
+    """What a chain says an unlisted token is called, fit for its name only: every control,
+    format and surrogate character dropped (a NUL, C0 and C1 controls, bidi overrides),
+    trimmed and capped; None when nothing is left. Never a stored symbol (D180 amended (a))."""
+    if not symbol:
+        return None
+    kept = "".join(c for c in symbol if unicodedata.category(c) not in ("Cc", "Cf", "Cs"))
+    return kept.strip()[:_TOLD_SYMBOL_MAX].strip() or None
+
+
+@dataclass(frozen=True, slots=True)
+class _NewAsset:
+    symbol: str | None
+    name: str
+    decimals: int
+    priced: UUID | None
+    spam: bool
+
+
+def _find_asset(conn: Connection, key: AssetKey) -> ChainAsset | None:
+    found = conn.execute(
+        select(asset_table.c.id, asset_table.c.decimals, asset_table.c.spam).where(
+            asset_table.c.chain == key.chain.value,
+            asset_table.c.contract_address.is_(None)
+            if key.contract is None
+            else asset_table.c.contract_address == key.contract,
+        )
+    ).one_or_none()
+    return None if found is None else ChainAsset(found.id, found.decimals, found.spam)
+
+
+def _new_asset(conn: Connection, key: AssetKey, leg: ChainLeg | None) -> _NewAsset:
+    """The row a chain asset seen for the first time gets (nothing written): the native coin
+    by the chain registry, a registry token by its row; any other token has no symbol (D180
+    amended (a): a token is its contract, its symbol a label), its name the masked contract
+    with the symbol the chain tells, cleaned (D187 (2)), and no price."""
+    if key.contract is None:
+        chain_row = registry().chain(key.chain)
+        symbol = chain_row.native_symbol
+        return _NewAsset(
+            symbol,
+            f"{symbol} ({key.chain.value})",
+            chain_row.native_decimals,
+            _priced_as(conn, symbol),
+            False,
+        )
+    token = asset_registry().token(key.chain, key.contract)
+    if token is not None:
+        return _NewAsset(
+            token.symbol,
+            token.name or f"{token.symbol} ({key.chain.value})",
+            token.decimals,
+            _priced_as(conn, asset_registry().priced_as(token).symbol),
+            False,
+        )
+    told = told_symbol(leg.symbol) if leg else None
+    decimals = (leg.decimals if leg else None) or 0
+    return _NewAsset(None, token_label(key, told), decimals, None, bool(leg and leg.spam))
 
 
 def chain_asset(ctx: CommandContext, key: AssetKey, leg: ChainLeg | None = None) -> ChainAsset:
     """The workspace's asset of a chain and contract, created on first sight (D180, D187)."""
-    by_key = and_(
-        asset_table.c.chain == key.chain.value,
-        asset_table.c.contract_address.is_(None)
-        if key.contract is None
-        else asset_table.c.contract_address == key.contract,
-    )
-    found = ctx.conn.execute(
-        select(asset_table.c.id, asset_table.c.decimals, asset_table.c.spam).where(by_key)
-    ).one_or_none()
+    found = _find_asset(ctx.conn, key)
     if found is not None:
-        return ChainAsset(found.id, found.decimals, found.spam)
-    spam = False
-    if key.contract is None:
-        chain_row = registry().chain(key.chain)
-        symbol, decimals = chain_row.native_symbol, chain_row.native_decimals
-        name = f"{symbol} ({key.chain.value})"
-        priced = _priced_as(ctx.conn, symbol)
-    else:
-        token = asset_registry().token(key.chain, key.contract)
-        if token is not None:
-            symbol, decimals = token.symbol, token.decimals
-            name = token.name or f"{token.symbol} ({key.chain.value})"
-            priced = _priced_as(ctx.conn, asset_registry().priced_as(token).symbol)
-        else:
-            spam = bool(leg and leg.spam)
-            told = leg.symbol if leg else None
-            decimals = (leg.decimals if leg else None) or 0
-            name = token_label(key, told)
-            symbol = None if spam or not _label_ok(told) else told
-            priced = None
-    name = name[:200]
+        return found
+    new = _new_asset(ctx.conn, key, leg)
+    name = new.name[:200]
     asset_id = ctx.conn.execute(
         insert(asset_table)
         .values(
             workspace_id=ctx.workspace_id,
             kind=AssetKind.CRYPTO.value,
-            symbol=symbol,
+            symbol=new.symbol,
             name=name,
-            decimals=decimals,
+            decimals=new.decimals,
             chain=key.chain.value,
             contract_address=key.contract,
-            priced_as_asset_id=priced,
-            spam=spam,
+            priced_as_asset_id=new.priced,
+            spam=new.spam,
             created_at=ctx.now,
             updated_at=ctx.now,
         )
@@ -275,22 +332,45 @@ def chain_asset(ctx: CommandContext, key: AssetKey, leg: ChainLeg | None = None)
         ctx,
         EventType.ASSET_CREATED,
         asset_id,
-        AssetRecorded(kind=AssetKind.CRYPTO, symbol=symbol, name=name),
+        AssetRecorded(kind=AssetKind.CRYPTO, symbol=new.symbol, name=name),
     )
-    return ChainAsset(asset_id, decimals, spam)
+    return ChainAsset(asset_id, new.decimals, new.spam)
+
+
+class _Unstorable(Exception):
+    """A leg asset_movement cannot hold exactly; its transaction becomes CHAIN_UNSTORABLE."""
+
+
+def _storable(units: int, decimals: int) -> bool:
+    """numeric(38,18) holds the quantity units × 10^-decimals exactly: at most 18 places
+    (asset.decimals 0..18) and fewer than 10^20 whole units."""
+    return 0 <= decimals <= _QUANTITY_SCALE and abs(units) < 10 ** (
+        _QUANTITY_INTEGER_DIGITS + decimals
+    )
 
 
 def _units_to_quantity(units: int, decimals: int) -> Decimal:
-    if decimals > _QUANTITY_SCALE:
-        raise ValueError("a chain asset with more decimals than a stored quantity holds")
-    return Decimal(units).scaleb(-decimals)
+    if not _storable(units, decimals):
+        raise _Unstorable("a quantity numeric(38,18) cannot hold exactly")
+    # The string constructor is exact; Decimal arithmetic would round to the context's 28
+    # digits, and a numeric(38,18) quantity has up to 38.
+    return Decimal(f"{units}E-{decimals}")
 
 
 def _quantity_to_units(quantity: Decimal, decimals: int) -> int:
-    scaled = quantity.scaleb(decimals)
-    if scaled != scaled.to_integral_value():
-        raise ValueError("a chain quantity below its asset's smallest unit")
-    return int(scaled)
+    """Exact, by the digits: scaleb would round to the context's 28 digits."""
+    sign, digits, exponent = quantity.as_tuple()
+    if not isinstance(exponent, int):
+        raise ValueError("a chain quantity that is not a number")
+    whole = int("".join(map(str, digits)) or "0")
+    shift = exponent + decimals
+    if shift >= 0:
+        units = whole * 10**shift
+    else:
+        units, rest = divmod(whole, 10**-shift)
+        if rest:
+            raise ValueError("a chain quantity below its asset's smallest unit")
+    return -units if sign else units
 
 
 # --- Step 1: start ---------------------------------------------------------------------------
@@ -410,14 +490,19 @@ def _read(source: ChainSource, start: _Start, ctx: ClassifyContext, budget: Requ
             if len(page.next_cursor) > _MAX_CURSOR:
                 raise ChainSourceError(WALLET_SOURCE_FAILED)
             out.cursor = page.next_cursor
-        if not moved:  # the tip reached: None, or the cursor it was given
-            break
+        # Deferred is the budget's verdict, not the cursor's: a source refused by a spent
+        # budget ends its page with the cursor where it stood, which reads like the tip.
         if budget.exhausted:
             out.deferred = True
+            return out
+        if not moved:  # the tip reached: None, or the cursor it was given
             break
-    if not out.deferred:
-        addresses = list(start.own) if start.scope == "account" else [start.address]
-        out.balances = [b for a in addresses for b in source.balances(a)]
+    addresses = list(start.own) if start.scope == "account" else [start.address]
+    balances = [b for a in addresses for b in source.balances(a)]
+    if budget.exhausted:  # a balance call may have been refused: the next run reads them
+        out.deferred = True
+        return out
+    out.balances = balances
     return out
 
 
@@ -426,10 +511,13 @@ def _read(source: ChainSource, start: _Start, ctx: ClassifyContext, budget: Requ
 
 @dataclass(slots=True)
 class _Plan:
-    """A group's legs not stored yet, with their own address and hash."""
+    """A group's legs not stored yet, with their own address and hash. `unstorable`: the
+    classifier gave two legs of different assets the same (address, index, role), so one
+    movement hash for two movements; the transaction is written as CHAIN_UNSTORABLE."""
 
     group: ChainGroup
     legs: list[tuple[ChainLeg, _Own, str]]
+    unstorable: bool = False
 
 
 def _own_for(start: _Start, leg: ChainLeg) -> _Own:
@@ -457,25 +545,42 @@ def _plan(ctx: CommandContext, start: _Start, read: _Read) -> list[_Plan]:
     plans: list[_Plan] = []
     hashes: list[str] = []
     for group in read.groups:
-        legs = []
+        legs: list[tuple[ChainLeg, _Own, str]] = []
+        by_hash: dict[str, ChainLeg] = {}
+        collided = False
         for leg in group.legs:
             own = _own_for(start, leg)
             digest = movement_hash(start.chain, group.tx_hash, own.hmac, leg.index, leg.role)
+            first = by_hash.get(digest)
+            if first is not None:
+                # the same leg twice is one movement; two assets on one place are a
+                # classifier error, refused here, never left to the unique index
+                collided = collided or first.asset_key != leg.asset_key
+                continue
+            by_hash[digest] = leg
             legs.append((leg, own, digest))
-        plans.append(_Plan(group, legs))
+        if collided:
+            _log_refused(start, "leg_collision")
+        plans.append(_Plan(group, legs, unstorable=collided))
         hashes.extend(h for _, _, h in legs)
     stored = _stored_hashes(ctx, start.account_id, hashes)
     out: list[_Plan] = []
     planned: set[str] = set()
     for plan in plans:
-        if not plan.legs:  # a question without movements: written once (see _write_group)
-            out.append(plan)
+        if plan.unstorable or not plan.legs:  # written once (see _write_group)
+            out.append(_Plan(plan.group, [], plan.unstorable))
             continue
         new = [(leg, own, h) for leg, own, h in plan.legs if h not in stored and h not in planned]
         planned.update(h for _, _, h in new)
         if new:
             out.append(_Plan(plan.group, new))
     return out
+
+
+def _log_refused(start: _Start, reason: str) -> None:
+    """A transaction written as CHAIN_UNSTORABLE: the chain and why only (no hash, address)."""
+    fields = {"event": "wallet_sync_unstorable", "chain": start.chain.value, "reason": reason}
+    logger.warning("a chain transaction could not be stored", extra={"fields": fields})
 
 
 def _live_group(ctx: CommandContext, start: _Start, tx_hash: str):
@@ -509,55 +614,116 @@ def _route(start: _Start, group: ChainGroup):
     )
 
 
-def _write_group(ctx: CommandContext, start: _Start, plan: _Plan, document_id: UUID | None) -> int:
-    group = plan.group
-    live = _live_group(ctx, start, group.tx_hash)
-    if live is not None and not plan.legs:
-        return 0  # the question is already asked
-    assets = [chain_asset(ctx, leg.asset_key, leg) for leg, _, _ in plan.legs]
-    if live is not None:
-        group_id, status = live.id, GroupStatus(live.status)
-    else:
-        routing = _route(start, group)
-        status = (
-            GroupStatus.CONFIRMED
-            if routing.decision is RoutingDecision.AUTO_CONFIRM
-            else GroupStatus.PROPOSED
+@dataclass(slots=True)
+class _Original:
+    """The run's stored original, created by the first group that needs it (inside that
+    group's savepoint, so a group rolled back takes it along and the next one stores it)."""
+
+    store: BlobStore
+    read: _Read
+    last: datetime | None
+    id: UUID | None = None
+
+    def ensure(self, ctx: CommandContext, start: _Start) -> UUID:
+        if self.id is None:
+            self.id = _store_original(ctx, self.store, start, self.read, self.last)
+        return self.id
+
+
+@dataclass(slots=True)
+class _Written:
+    movements: int = 0
+    spam_dropped: int = 0
+    unstorable: int = 0
+    occurred_at: datetime | None = None  # set when the group wrote a row
+
+
+def _savepoint(ctx: CommandContext, original: _Original, write: Callable[[], int]) -> int:
+    """`write` in a savepoint: a refusal (_Unstorable, or the database's DBAPIError) rolls
+    back its rows, events, assets and an original it stored, and is raised on."""
+    had_original = original.id is not None
+    try:
+        with ctx.conn.begin_nested():
+            return write()
+    except (_Unstorable, DBAPIError):
+        if not had_original:
+            original.id = None
+        raise
+
+
+def _insert_group(
+    ctx: CommandContext,
+    start: _Start,
+    group: ChainGroup,
+    status: GroupStatus,
+    reason: str,
+    question: str | None,
+    decoder: str | None,
+) -> UUID:
+    group_id = ctx.conn.execute(
+        insert(group_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            account_id=start.account_id,
+            chain=start.chain.value,
+            tx_hash=group.tx_hash,
+            occurred_at=group.occurred_at,
+            kind=group.kind.value,
+            decoder=decoder,
+            status=status.value,
+            question=question,
+            created_at=ctx.now,
         )
-        group_id = ctx.conn.execute(
-            insert(group_table)
-            .values(
-                workspace_id=ctx.workspace_id,
-                account_id=start.account_id,
-                chain=start.chain.value,
-                tx_hash=group.tx_hash,
-                occurred_at=group.occurred_at,
-                kind=group.kind.value,
-                decoder=group.decoder,
-                status=status.value,
-                question=None if status is GroupStatus.CONFIRMED else group.question,
-                created_at=ctx.now,
-            )
-            .returning(group_table.c.id)
-        ).scalar_one()
-        append_event(
-            ctx,
-            EventType.MOVEMENT_GROUP_CONFIRMED
-            if status is GroupStatus.CONFIRMED
-            else EventType.MOVEMENT_GROUP_PROPOSED,
-            group_id,
-            MovementGroupRecorded(
-                account_id=start.account_id,
-                chain=start.chain.value,
-                kind=group.kind.value,
-                reason=routing.reason,
-                sync_id=start.sync_id,
-            ),
-        )
-    movement_status = (
-        MovementStatus.CONFIRMED if status is GroupStatus.CONFIRMED else MovementStatus.PROPOSED
+        .returning(group_table.c.id)
+    ).scalar_one()
+    append_event(
+        ctx,
+        EventType.MOVEMENT_GROUP_CONFIRMED
+        if status is GroupStatus.CONFIRMED
+        else EventType.MOVEMENT_GROUP_PROPOSED,
+        group_id,
+        MovementGroupRecorded(
+            account_id=start.account_id,
+            chain=start.chain.value,
+            kind=group.kind.value,
+            reason=reason,
+            sync_id=start.sync_id,
+        ),
     )
-    for (leg, own, digest), asset in zip(plan.legs, assets, strict=True):
+    return group_id
+
+
+def _write_movements(
+    ctx: CommandContext, start: _Start, plan: _Plan, live, original: _Original
+) -> int:
+    """The group (or the live group of the same transaction) and its new legs' movements."""
+    group = plan.group
+    routing = _route(start, group)  # the new legs alone when they join a live group
+    auto = routing.decision is RoutingDecision.AUTO_CONFIRM
+    if live is not None:
+        # D186 (1) per leg: a leg joining a confirmed group is confirmed only when its own
+        # routing would confirm it (never by the group it joins, nor on a first sync); a
+        # proposed group's legs wait with it.
+        group_id = live.id
+        confirmed = GroupStatus(live.status) is GroupStatus.CONFIRMED and auto
+    else:
+        status = GroupStatus.CONFIRMED if auto else GroupStatus.PROPOSED
+        group_id = _insert_group(
+            ctx,
+            start,
+            group,
+            status,
+            routing.reason,
+            None if auto else group.question,
+            group.decoder,
+        )
+        confirmed = auto
+    if not plan.legs:
+        return 0
+    movement_status = MovementStatus.CONFIRMED if confirmed else MovementStatus.PROPOSED
+    document_id = original.ensure(ctx, start)
+    for leg, own, digest in plan.legs:
+        asset = chain_asset(ctx, leg.asset_key, leg)
         movement_id = ctx.conn.execute(
             insert(movement_table)
             .values(
@@ -594,6 +760,75 @@ def _write_group(ctx: CommandContext, start: _Start, plan: _Plan, document_id: U
             ),
         )
     return len(plan.legs)
+
+
+def _write_unstorable(
+    ctx: CommandContext, start: _Start, group: ChainGroup, original: _Original, reason: str
+) -> _Written:
+    """A transaction Hausbuch cannot store as movements: one group without movements and
+    without a question, status proposed, reason CHAIN_UNSTORABLE, so the cursor moves on and
+    the address's history is read past it. Its difference stays visible: Σ movements misses
+    it, so the run reads reconciled = false (it is no question, so never „wartet auf
+    Antwort“). The run's original is stored with it (D182 (3), D192)."""
+    _log_refused(start, reason)
+    no_movement = ~exists().where(movement_table.c.group_id == group_table.c.id)
+    recorded = ctx.conn.execute(
+        select(
+            exists().where(
+                group_table.c.account_id == start.account_id,
+                group_table.c.chain == start.chain.value,
+                group_table.c.tx_hash == group.tx_hash,
+                group_table.c.superseded_by.is_(None),
+                group_table.c.question.is_(None),
+                no_movement,
+            )
+        )
+    ).scalar_one()
+    if recorded:
+        return _Written(unstorable=1)
+
+    def write() -> int:
+        original.ensure(ctx, start)
+        _insert_group(ctx, start, group, GroupStatus.PROPOSED, CHAIN_UNSTORABLE, None, None)
+        return 0
+
+    try:
+        _savepoint(ctx, original, write)
+    except (_Unstorable, DBAPIError):  # not even the group fits (a hash over 200 characters)
+        _log_refused(start, "group_refused")
+        return _Written(unstorable=1)
+    return _Written(unstorable=1, occurred_at=group.occurred_at)
+
+
+def _write_group(ctx: CommandContext, start: _Start, plan: _Plan, original: _Original) -> _Written:
+    group = plan.group
+    if plan.unstorable:
+        return _write_unstorable(ctx, start, group, original, "leg_collision")
+    live = _live_group(ctx, start, group.tx_hash)
+    if live is not None and not plan.legs:
+        return _Written()  # the question is already asked
+    keep: list[tuple[ChainLeg, _Own, str]] = []
+    dropped = 0
+    for leg, own, digest in plan.legs:
+        asset = _find_asset(ctx.conn, leg.asset_key) or _new_asset(ctx.conn, leg.asset_key, leg)
+        if _storable(leg.signed, asset.decimals):
+            keep.append((leg, own, digest))
+        elif asset.spam:  # hidden, never priced, never a lot (D187): left out, counted
+            dropped += 1
+        else:
+            written = _write_unstorable(ctx, start, group, original, "quantity")
+            written.spam_dropped = dropped
+            return written
+    if dropped and not keep and (group.question is None or live is not None):
+        return _Written(spam_dropped=dropped)  # nothing of the transaction is left to write
+    kept = _Plan(replace(group, legs=[leg for leg, _, _ in keep]), keep)
+    try:
+        n = _savepoint(ctx, original, lambda: _write_movements(ctx, start, kept, live, original))
+    except (_Unstorable, DBAPIError):  # a leg or the group the database refuses
+        written = _write_unstorable(ctx, start, group, original, "refused")
+        written.spam_dropped = dropped
+        return written
+    return _Written(movements=n, spam_dropped=dropped, occurred_at=group.occurred_at)
 
 
 def _store_original(
@@ -683,23 +918,63 @@ def _reconcile(
     return stored, {_key_text(k): str(v) for k, v in diff.items()}
 
 
-def _waiting(ctx: CommandContext, start: _Start) -> bool:
-    """A live proposed group of the account on the chain with a question and no movement."""
-    no_movement = ~exists().where(movement_table.c.group_id == group_table.c.id)
-    return bool(
-        ctx.conn.execute(
-            select(
-                exists().where(
-                    group_table.c.account_id == start.account_id,
-                    group_table.c.chain == start.chain.value,
-                    group_table.c.superseded_by.is_(None),
-                    group_table.c.status == GroupStatus.PROPOSED.value,
-                    group_table.c.question.is_not(None),
-                    no_movement,
+def _scope_ids(start: _Start) -> list[UUID]:
+    if start.scope == "account":
+        return [o.id for o in start.own.values()]
+    return [start.address_id]
+
+
+def _waiting_keys(ctx: CommandContext, start: _Start) -> set[str]:
+    """The assets of the run's scope that wait for a person's answer („wartet auf Antwort“),
+    as _reconcile keys them: those named by a live proposed group with a question, the
+    assets of its legs on an address of the scope, and for a question without legs (a
+    Bitcoin change card) the native coin of the address whose run asked it (its
+    movement_group.proposed event's sync). Nothing else waits: any other difference is a
+    mismatch. A CHAIN_UNSTORABLE group has no question, so it never waits."""
+    g, m, e, w = group_table.c, movement_table.c, event_table.c, sync_table.c
+    scope = _scope_ids(start)
+    open_question = and_(
+        g.account_id == start.account_id,
+        g.chain == start.chain.value,
+        g.superseded_by.is_(None),
+        g.status == GroupStatus.PROPOSED.value,
+        g.question.is_not(None),
+    )
+    keys = {
+        _key_text(AssetKey(chain=start.chain, contract=contract))
+        for contract in ctx.conn.execute(
+            select(asset_table.c.contract_address)
+            .distinct()
+            .select_from(
+                movement_table.join(group_table, m.group_id == g.id).join(
+                    asset_table, m.asset_id == asset_table.c.id
                 )
             )
-        ).scalar_one()
-    )
+            .where(open_question, m.superseded_by.is_(None), m.address_id.in_(scope))
+        ).scalars()
+    }
+    legless = ctx.conn.execute(
+        select(
+            exists()
+            .select_from(
+                group_table.join(
+                    event_table,
+                    and_(
+                        e.entity_id == g.id,
+                        e.type == EventType.MOVEMENT_GROUP_PROPOSED.value,
+                    ),
+                ).join(sync_table, w.id == cast(e.payload["sync_id"].astext, PG_UUID))
+            )
+            .where(
+                open_question,
+                ~exists().where(m.group_id == g.id),
+                w.address_id.in_(scope),
+            )
+        )
+    ).scalar_one()
+    if legless:
+        keys.add(_key_text(AssetKey(chain=start.chain)))
+    return keys
 
 
 def _finish(ctx: CommandContext, start: _Start, values: dict, payload: WalletSyncRecorded) -> None:
@@ -724,13 +999,21 @@ def _write(
     account_pending: bool = False,
 ) -> SyncOutcome:
     plans = _plan(ctx, start, read)
-    moving = [p for p in plans if p.legs]
-    document_id = import_id = None
-    new = sum(len(p.legs) for p in moving)
-    if moving:
-        last = max(p.group.occurred_at for p in moving)
-        first = min(p.group.occurred_at for p in moving)
-        document_id = _store_original(ctx, store, start, read, last)
+    writing = [p for p in plans if p.legs or p.unstorable]
+    original = _Original(store, read, max((p.group.occurred_at for p in writing), default=None))
+    new = spam_dropped = unstorable = 0
+    written_at: list[datetime] = []
+    for plan in plans:  # each group in its own savepoint: one refusal never blocks the rest
+        written = _write_group(ctx, start, plan, original)
+        new += written.movements
+        spam_dropped += written.spam_dropped
+        unstorable += written.unstorable
+        if written.occurred_at is not None:
+            written_at.append(written.occurred_at)
+    document_id = original.id
+    import_id = None
+    if document_id is not None:
+        last, first = max(written_at), min(written_at)
         total = sum(len(g.legs) for g in read.groups)
         import_id = ctx.conn.execute(
             insert(import_table)
@@ -764,15 +1047,13 @@ def _write(
             ),
             effective_date=last.date(),
         )
-    for plan in plans:
-        _write_group(ctx, start, plan, document_id if plan.legs else None)
     balances = difference = reconciled = None
     waiting = False
     block = max((tx.block for tx in read.txs), default=None)
     if read.balances is not None:
         balances, difference = _reconcile(ctx, start, read.balances)
         reconciled = not difference
-        if difference and _waiting(ctx, start):
+        if difference and set(difference) <= _waiting_keys(ctx, start):
             reconciled, difference, waiting = None, None, True
         elif difference and start.scope == "account" and account_pending:
             reconciled, difference = None, None  # the account's last address decides
@@ -816,6 +1097,8 @@ def _write(
         deferred=read.deferred,
         reconciled=reconciled,
         waiting=waiting,
+        spam_dropped=spam_dropped,
+        unstorable=unstorable,
     )
 
 
@@ -833,10 +1116,13 @@ def _log(outcome: SyncOutcome, exc: BaseException | None = None) -> None:
         "deferred": outcome.deferred,
         "reconciled": outcome.reconciled,
         "waiting": outcome.waiting,
+        "spam_dropped": outcome.spam_dropped,
+        "unstorable": outcome.unstorable,
     }
     if exc is not None:
         fields["exc_type"] = type(exc).__name__
-    level = logging.INFO if outcome.error_code is None else logging.WARNING
+    quiet = outcome.error_code in (None, WALLET_SYNC_DEFERRED) and not outcome.unstorable
+    level = logging.INFO if quiet else logging.WARNING
     logger.log(level, "a wallet address was read from its chain", extra={"fields": fields})
 
 
@@ -899,6 +1185,20 @@ def _begin(
             outcome = SyncOutcome(address_id, chain, None, None, error_code=exc.code)
             _log(outcome)
             return outcome
+        except NotImplementedError:  # base.factory_for: no source of this kind is built yet
+            outcome = SyncOutcome(
+                address_id, chain, None, None, error_code=WALLET_SOURCE_UNAVAILABLE
+            )
+            _log(outcome)
+            return outcome
+        if budget.exhausted:
+            # The run's budget ended before this address: no row, so the address keeps its
+            # place (never synced, or synced longest ago) and is read first the next day.
+            outcome = SyncOutcome(
+                address_id, chain, None, None, error_code=WALLET_SYNC_DEFERRED, deferred=True
+            )
+            _log(outcome)
+            return outcome
         now = clock()
         native = chain_asset(new_command(conn, workspace_id, actor, now=now), AssetKey(chain=chain))
         own = _own_of(conn, row.account_id, chain)
@@ -948,8 +1248,9 @@ def sync_address(
     budgets: dict | None = None,
     account_pending: bool = False,
 ) -> SyncOutcome:
-    """One run of one address (see the module docstring). Never raises for the provider's or
-    its own failure: the address's row says it, and the next address runs. `budgets` holds
+    """One run of one address (see the module docstring). Never raises for the provider's,
+    the classifier's or the write's failure: the address's row says it. A start that fails
+    (an address not found) raises; sync_wallets ends that address only. `budgets` holds
     one RequestBudget per source kind, shared by the addresses of one job run.
     `account_pending`: another address of the same account and chain runs after this one in
     the same job, so an account-scope difference is left to that run."""
@@ -1040,21 +1341,29 @@ def sync_wallets(
     groups: dict[tuple, list[UUID]] = {}
     for address_id in ids:  # dicts keep order: each group where its oldest address stood
         groups.setdefault(keys[address_id], []).append(address_id)
-    return [
-        sync_address(
-            engine,
-            workspace_id,
-            address_id,
-            settings=settings,
-            store=store,
-            actor=actor,
-            clock=clock,
-            budgets=budgets,
-            account_pending=n < len(group) - 1,
-        )
-        for group in groups.values()
-        for n, address_id in enumerate(group)
-    ]
+    outcomes: list[SyncOutcome] = []
+    for group in groups.values():
+        for n, address_id in enumerate(group):
+            try:
+                outcome = sync_address(
+                    engine,
+                    workspace_id,
+                    address_id,
+                    settings=settings,
+                    store=store,
+                    actor=actor,
+                    clock=clock,
+                    budgets=budgets,
+                    account_pending=n < len(group) - 1,
+                )
+            except Exception as exc:  # noqa: BLE001 - the start failed (the address gone): this
+                # address only, the next one runs; its class name only
+                outcome = SyncOutcome(
+                    address_id, Chain(keys[address_id][1]), None, None, error_code=WALLET_SYNC_ERROR
+                )
+                _log(outcome, exc)
+            outcomes.append(outcome)
+    return outcomes
 
 
 __all__ = [

@@ -239,9 +239,16 @@ WALLET_SOURCE_REFUSED = "wallet.source_refused"  # a 401/403: change the URL or 
 # geschickt. Der nächste Abruf versucht es erneut.“ (a timeout, a 5xx, an unreadable body;
 # phase 7 step 2 core, used by every source)
 WALLET_SOURCE_FAILED = "wallet.source_failed"
-# „Abruf abgebrochen: ein Fehler in Hausbuch beim Einlesen. Der nächste Abruf versucht es
-# erneut.“ (a classifier or a write of the sync failed after the provider answered)
+# „Abruf abgebrochen: ein Fehler in Hausbuch beim Einlesen. Nichts davon ist gespeichert;
+# der nächste Abruf liest dieselben Transaktionen noch einmal. Bleibt der Fehler, braucht es
+# eine Korrektur in Hausbuch, kein Klick hier.“ (a classifier or a write of the sync failed
+# after the provider answered; a transaction Hausbuch cannot store no longer ends here but
+# becomes its own card, routing.chain_unstorable, so this repeats only for a bug in code)
 WALLET_SYNC_ERROR = "wallet.sync_error"
+# „Diese Blockchain liest Hausbuch noch nicht: die Adresse ist gespeichert und wird gelesen,
+# sobald es das kann.“ (no services/chain/<kind>.py source is built yet; no row, like
+# wallet.key_missing, and the other addresses of the run go on)
+WALLET_SOURCE_UNAVAILABLE = "wallet.source_unavailable"
 WALLET_UNRECONCILED = "wallet.unreconciled"  # Σ movements != the chain's balance (D186 (2))
 WALLET_COINS_LEFT = "wallet.coins_left"  # a balance-only address below its linked deposits
 WALLET_SYNC_DEFERRED = "wallet.sync_deferred"  # the run's budget ran out; a page note, no card

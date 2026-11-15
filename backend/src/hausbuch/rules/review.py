@@ -53,6 +53,15 @@ CHAIN_FIRST_SYNC = "routing.chain_first_sync"
 CHAIN_UNPRICED = "routing.chain_unpriced"
 CHAIN_NO_DECODER = "routing.chain_no_decoder"
 CHAIN_CHANGE_CANDIDATE = "routing.chain_change_candidate"
+# Written by the sync itself, never by route_group (phase 7 step 2 core, §15.1): a transaction
+# Hausbuch cannot store as movements (an amount beyond asset_movement.quantity's
+# numeric(38,18), more decimals than an asset holds, two legs a classifier gave the same
+# place) becomes a group without movements and without a question, so the address's history
+# goes on. Card: „Hausbuch konnte diese Transaktion nicht speichern: ein Betrag ist größer
+# oder feiner, als Hausbuch ihn speichern kann, oder sie ist nicht lesbar aufgeteilt. Die
+# übrigen Transaktionen der Adresse sind eingelesen; der Kontostand weicht um diese
+# Transaktion ab, bis Hausbuch sie lesen kann.“
+CHAIN_UNSTORABLE = "routing.chain_unstorable"
 
 EXACT = Decimal("1.000")
 _RECURRING = Decimal("0.900")

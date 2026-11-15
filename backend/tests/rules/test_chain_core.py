@@ -113,7 +113,9 @@ def test_decoder_for_lower_cases_an_evm_program():
     assert row is not None and row.kind is DecoderKind.SWAP
 
 
-RECONCILE_STEP2 = [c for c in RECONCILE.cases if c.pending is None]
+# The balance-only cases (BSC) are the EVM task's, replayed by tests/rules/test_chain_evm.py
+# with evm.reconcile_balance_only since they lost their `pending` on main.
+RECONCILE_STEP2 = [c for c in RECONCILE.cases if c.pending is None and not c.balance_only]
 
 
 def test_the_step2_reconcile_case_is_replayed():
@@ -122,7 +124,6 @@ def test_the_step2_reconcile_case_is_replayed():
 
 @pytest.mark.parametrize("case", RECONCILE_STEP2, ids=lambda c: c.id)
 def test_reconcile(case):
-    assert not case.balance_only  # the balance-only rule is step 3's
     movements = sum_movements((m.asset, m.units) for m in case.movements if not m.spam)
     balances = sum_balance_parts((a, u) for a, parts in case.balance.items() for u in parts)
     diff = reconcile(movements, balances)

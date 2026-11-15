@@ -22,10 +22,13 @@ class WalletSyncQueued(Schema):
 
 class WalletSyncRun(Schema):
     """One address's run (a wallet_sync row). `balances` and `difference` are base units per
-    asset (the contract, or `native`), as strings. `reconciled` null with `balances` set: a
-    group waits for an answer („wartet auf Antwort“), or the account's next address in the
-    same run carries the account's verdict; `balances` null on a succeeded run: the budget
-    ended first (`wallet.sync_deferred`)."""
+    asset (the contract, or `native`), as strings. `reconciled` null with `balances` set:
+    every differing asset is named by an open question („wartet auf Antwort“), or the
+    account's next address in the same run carries the account's verdict; `balances` null on
+    a succeeded run: the budget ended first (`wallet.sync_deferred`). On an account-scope
+    source (Bitcoin) the account's verdict is the newest row with `reconciled` not null among
+    the account's addresses on that chain; when the run's last address failed, the earlier
+    rows stay null and the failed row is what the wallet shows."""
 
     id: UUID
     address_id: UUID
