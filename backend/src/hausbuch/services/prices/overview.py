@@ -217,6 +217,8 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
             m.status == MovementStatus.CONFIRMED.value,
             m.superseded_by.is_(None),
             m.occurred_at < end,
+            # A spam token is hidden from Anlagen and the net worth, never priced (D187 (1)).
+            m.asset_id.not_in(select(a.id).where(a.spam.is_(True))),
         )
         .group_by(m.account_id, m.asset_id)
     ).all()

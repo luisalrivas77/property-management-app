@@ -301,7 +301,7 @@ def test_a_chain_asset_is_valued_through_its_priced_as_asset_and_a_typed_price_w
     # The same Kraken row the phase 6 coin test reads, stored under the chainless INV.
     assert (eth.price.source, eth.price.price_eur) == (S.KRAKEN_DAILY, Decimal("92.40000001"))
     assert eth.value_eur == Decimal("184.80")
-    assert ids["spam"] not in seen or seen[ids["spam"]].value_eur is None
+    assert ids["spam"] not in seen  # hidden from Anlagen and the net worth (D187 (1))
     assert seen[ids["lookalike"]].value_eur is None  # no registry price by its label
 
     # A price typed on the chain asset wins its own day, and only that day.
