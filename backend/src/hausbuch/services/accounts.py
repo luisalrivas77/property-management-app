@@ -239,9 +239,12 @@ def create_account(
     # A new account with an IBAN makes the lines on the other accounts that name it transfers
     # (D162): before, they waited with the model's answer or none, or a rule learned on that
     # IBAN booked them, which _own_iban switches off (D160 amended (5)).
+    rematch = created.is_owner_account or (
+        created.purpose is AccountPurpose.PRIVATE and created.iban_masked is not None
+    )
     if identity.get("iban_hmac") is not None:
-        _own_iban(ctx, created.id, identity["iban_hmac"])
-    elif created.is_owner_account:
+        _own_iban(ctx, created.id, identity["iban_hmac"], rematch=rematch)
+    elif rematch:
         _rematch_waiting(ctx, created.id)
     if store is not None and (
         created.iban_masked is not None
@@ -601,7 +604,9 @@ def _account(conn: Connection, account_id: UUID) -> Account:
     return account
 
 
-def _own_iban(ctx: CommandContext, account_id: UUID, iban_hmac: bytes) -> int:
+def _own_iban(
+    ctx: CommandContext, account_id: UUID, iban_hmac: bytes, *, rematch: bool = True
+) -> int:
     """An IBAN has just become the household's own (D160 amended (5), 15 Nov 2026): an
     account created with it, a card's payment IBAN confirmed (D176 (4)), a depot's IBAN
     confirmed (D156 amended) or an exchange's deposit IBAN learned (D162 amended). Every
@@ -609,13 +614,15 @@ def _own_iban(ctx: CommandContext, account_id: UUID, iban_hmac: bytes) -> int:
     investment with „Künftig immer so zuordnen“ before the account was in Hausbuch) is
     switched off (rules_learned.disable_rule, rule.disabled): a rule books before the
     transfer matcher, so it would keep the line out of the transfer. The lines waiting in
-    Zu prüfen that name the IBAN are matched again; lines a rule already booked stay as they
-    are. Returns how many rules were switched off."""
+    Zu prüfen that name the IBAN are matched again (not with `rematch=False`: a rental
+    account created without the owner flag, which create_account never re-checked); lines a
+    rule already booked stay as they are. Returns how many rules were switched off."""
     named = iban_hmac.hex()
     rules = [r for r in enabled_rules(ctx.conn) if r.matcher.counterparty_iban_hmac == named]
     for rule in rules:
         disable_rule(ctx, rule.id)
-    _rematch_waiting(ctx, account_id)
+    if rematch:
+        _rematch_waiting(ctx, account_id)
     return len(rules)
 
 
