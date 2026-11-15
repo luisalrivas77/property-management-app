@@ -1608,6 +1608,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/{account_id}/report-trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Account Report Trades
+         * @description „Umsätze aus dem Bericht buchen“ on the depot's holdings card (phase 6 D165 amended,
+         *     15 Nov 2026): the trades of the depot's current reports' confirmed readings that no
+         *     movement carries are booked from the report (units and amount, source report, the report
+         *     as its document), in one transaction under the depot's lock, then the reports' prices that
+         *     now agree are stored. A fund is booked only when its units then equal the latest report's
+         *     (else named in left_out), and a row that cannot be read is left out (review of 15 Nov
+         *     2026). The list is computed here again, never sent by the page. 404 for no such account,
+         *     422 depot.account_required for an account that is no depot; nothing to book is
+         *     booked=0.
+         */
+        post: operations["account_report_trades_api_accounts__account_id__report_trades_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/imports": {
         parameters: {
             query?: never;
@@ -6527,6 +6555,8 @@ export interface components {
              * @default false
              */
             bulk_confirmable: boolean;
+            /** Report Trades */
+            report_trades?: number | null;
         };
         /**
          * InboxItemKind
@@ -9052,6 +9082,20 @@ export interface components {
             period_from?: string | null;
             /** Period To */
             period_to?: string | null;
+        };
+        /**
+         * ReportTradesBooked
+         * @description POST /accounts/{id}/report-trades: how many trades were booked from the reports, how
+         *     many report prices that stored (D167 amended (c)), and the funds left out because their
+         *     holdings would not match the report (review of 15 Nov 2026).
+         */
+        ReportTradesBooked: {
+            /** Booked */
+            booked: number;
+            /** Prices Stored */
+            prices_stored: number;
+            /** Left Out */
+            left_out?: string[];
         };
         /**
          * RequirementCode
@@ -14806,6 +14850,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EtfOverview"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    account_report_trades_api_accounts__account_id__report_trades_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportTradesBooked"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

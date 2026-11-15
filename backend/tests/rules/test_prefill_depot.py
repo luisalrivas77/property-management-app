@@ -2,6 +2,7 @@
 (3), D132): one `movement:<n>` per movement and one `holding:<n>` per position, each with the
 depot account to book it on. All ISINs, names and figures are invented."""
 
+from decimal import Decimal
 from uuid import UUID
 
 import pytest
@@ -15,7 +16,13 @@ from hausbuch.schemas.extraction import (
     SecuritiesTransferExtraction,
     TradeConfirmationExtraction,
 )
-from hausbuch.schemas.proposal import ExistingDepotAccount, PrefillContext, ProposalRecord
+from hausbuch.schemas.household import MovementKind, MovementSource
+from hausbuch.schemas.proposal import (
+    BookedDepotTrade,
+    ExistingDepotAccount,
+    PrefillContext,
+    ProposalRecord,
+)
 
 DOC = UUID("00000000-0000-0000-0000-00000000d0c1")
 DEPOT_A = ExistingDepotAccount(
@@ -219,3 +226,53 @@ def test_a_report_proposes_one_holding_per_position():
 )
 def test_an_empty_reading_proposes_only_its_typing(kind, extraction, subtype):
     assert _records(kind, extraction, subtype) == {}
+
+
+# --- A trade confirmation of a trade a report booked (D165 amended, review of 15 Nov 2026)
+
+
+def _booked_on(account: ExistingDepotAccount) -> BookedDepotTrade:
+    return BookedDepotTrade(
+        account_id=account.id,
+        isin=ISIN,
+        external_ref="REF0001",
+        kind=MovementKind.ACQUISITION,
+        quantity=Decimal("2.5000"),
+        eur_amount=Decimal("-250.00"),
+        source=MovementSource.REPORT,
+    )
+
+
+def _confirmation_notes(booked_on, accounts, printed=None) -> list[str]:
+    context = _context(DocumentSubtype.TRADE_CONFIRMATION, accounts=accounts).model_copy(
+        update={
+            "booked_depot_trades": [_booked_on(booked_on)],
+            "printed_depot_account_id": None if printed is None else printed.id,
+        }
+    )
+    records = build_proposal(ExtractionKind.TRADE_CONFIRMATION, _trade(), context)
+    return [n for r in records if r.key == "movement:1" for n in r.notes]
+
+
+def test_a_confirmation_booked_by_a_report_on_the_preselected_depot_books_nothing_twice():
+    notes = _confirmation_notes(DEPOT_A, (DEPOT_A,))
+    assert notes == [
+        "Bereits aus dem Quartalsbericht gebucht. „Übernehmen“ bucht nichts ein zweites Mal; "
+        "die Abrechnung bleibt unter Dokumente abgelegt."
+    ]
+
+
+def test_a_confirmation_booked_by_a_report_on_another_depot_says_it_books_again():
+    # The confirmation prints depot B's number; the report booked the trade on depot A.
+    notes = _confirmation_notes(DEPOT_A, (DEPOT_A, DEPOT_B), printed=DEPOT_B)
+    (note,) = [n for n in notes if n.startswith("Bereits aus dem Quartalsbericht")]
+    assert "nichts ein zweites Mal" not in note
+    assert "auf einem anderen Depot (Depot Beispiel (****1234))" in note
+    assert "ein zweites Mal" in note
+
+
+def test_a_confirmation_booked_by_a_report_with_no_depot_preselected_names_its_depot():
+    notes = _confirmation_notes(DEPOT_A, (DEPOT_A, DEPOT_B))
+    (note,) = notes
+    assert note.startswith("Bereits aus dem Quartalsbericht gebucht, auf dem Depot Depot Beispiel")
+    assert "mit einem anderen Depot wird der Umsatz dort noch einmal gebucht" in note

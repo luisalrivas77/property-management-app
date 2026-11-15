@@ -1092,6 +1092,9 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
     case "holdings_mismatch":
       return (
         <>
+          {item.account_id ? (
+            <ReportTradesButton accountId={item.account_id} count={item.report_trades ?? 0} onDone={onChanged} />
+          ) : null}
           <Link href="/documents">Abrechnung hochladen</Link>
           {item.document_id ? <Link href={`/documents/${item.document_id}`}>Bericht öffnen</Link> : null}
           {item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zum Depot</Link> : null}
@@ -1104,6 +1107,55 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
     default:
       return null;
   }
+}
+
+/** „Umsätze aus dem Bericht buchen“ on the depot's holdings card (phase 6 D165 amended,
+ * 15 Nov 2026): books the trades the depot's reports list and nothing carries, from the
+ * reports themselves (POST /accounts/{id}/report-trades); the server finds them again. It
+ * stays mounted when nothing is left to book, so the sentence naming the funds it left out
+ * (review of 15 Nov 2026: their holdings would not match the report) survives the reload. */
+function ReportTradesButton({ accountId, count, onDone }: { accountId: string; count: number; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [leftOut, setLeftOut] = useState<string[]>([]);
+
+  async function book() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await ok(api.POST("/api/accounts/{account_id}/report-trades", { params: { path: { account_id: accountId } } }));
+      setLeftOut(result.left_out ?? []);
+      notifyInboxChanged();
+      onDone();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      {count > 0 ? (
+        <button type="button" onClick={() => void book()} disabled={busy}>
+          {busy ? "Bucht …" : `Umsätze aus dem Bericht buchen (${count})`}
+        </button>
+      ) : null}
+      {leftOut.length > 0 ? (
+        <p className="muted">
+          Nicht aus dem Bericht gebucht: {joinNames(leftOut)} (Bestand würde nicht zum Bericht passen). Dafür bitte die
+          Wertpapierabrechnungen unter Dokumente hochladen.
+        </p>
+      ) : null}
+      <ErrorNotice error={error} />
+    </>
+  );
+}
+
+/** ["A"] -> "A"; ["A", "B", "C"] -> "A, B und C". */
+function joinNames(names: string[]): string {
+  const last = names.at(-1) ?? "";
+  return names.length === 1 ? last : `${names.slice(0, -1).join(", ")} und ${last}`;
 }
 
 // --- Phase 6: transfers between own accounts (D162) and privately paid property costs (D161)

@@ -91,10 +91,12 @@ kinds:
       - 'Er listet {umsaetze} Käufe und Verkäufe.'
       - 'Depot: {konto}.'
     aktion: >-
-      Hausbuch schlägt im Vorschlag zu diesem Dokument die Bestände vor; mit „Übernehmen“
-      werden sie gespeichert und mit den gebuchten Käufen und Verkäufen verglichen. Passt
-      etwas nicht zusammen, erscheint unter „Zu prüfen“ eine Karte, die sagt, welcher Fonds
-      und welche Abrechnung fehlt.
+      Hausbuch schlägt im Vorschlag zu diesem Dokument die Käufe und Verkäufe des Berichts
+      vor, die noch nicht gebucht sind, und die Bestände; mit „Übernehmen“ werden zuerst die
+      Käufe und Verkäufe mit Stückzahl, Betrag und Referenz aus dem Bericht gebucht, dann die
+      Bestände gespeichert und mit allen gebuchten Käufen und Verkäufen verglichen. Eine
+      einzelne Abrechnung, die später kommt, bucht nichts doppelt. Passt etwas nicht
+      zusammen, erscheint unter „Zu prüfen“ eine Karte, die sagt, welcher Fonds abweicht.
 
   - kind: ertraegnisabrechnung
     titles: ['(?m)^[ \t]*Erträgnisabrechnung\b']
