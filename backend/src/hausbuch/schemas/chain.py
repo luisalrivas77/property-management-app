@@ -19,13 +19,25 @@ carries the mask or the HMAC (D179 (1)), and none reaches a model (D189).
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Literal, Protocol, Self
+from typing import Annotated, Literal, Protocol, Self
 from uuid import UUID
 
 from pydantic import Field, JsonValue, model_validator
 
-from .common import Money, Schema
+from .common import _STRING_ONLY, Money, Schema, _string_schema
 from .household import AssetMovementDraft, AssetSymbol, NonNegativeQuantity, Quantity
+
+# --- Value types (decimal strings on the wire, phase 1 spec amendment 2) ----------------
+
+# numeric(5,4), [0, 1): a bridge's fee share (chain_pair.max_fee_share, D184 (2)).
+FeeShare = Annotated[
+    Decimal, Field(ge=0, lt=1, max_digits=5, decimal_places=4), _STRING_ONLY, _string_schema(4)
+]
+# A lot's cost per unit in EUR, computed on read (D188): PriceEur's 8 places, but 0 allowed,
+# since a reward lot may carry no cost (phase 8 decides, LotSource.REWARD).
+CostPerUnit = Annotated[
+    Decimal, Field(ge=0, max_digits=20, decimal_places=8), _STRING_ONLY, _string_schema(8)
+]
 
 # --- Value sets (the CHECKs of migration 0041) -------------------------------------------
 
@@ -161,7 +173,7 @@ class BridgePair(Schema):
     from_contract: ContractId | None = None  # None: the chain's native coin
     to_chain: Chain
     to_contract: ContractId | None = None
-    max_fee_share: Decimal = Field(ge=0, lt=1, max_digits=5, decimal_places=4)
+    max_fee_share: FeeShare
 
     @model_validator(mode="after")
     def _two_chains(self) -> Self:
@@ -411,7 +423,7 @@ class Lot(Schema):
     units: NonNegativeQuantity
     units_open: NonNegativeQuantity
     cost_eur: Money | None = None
-    cost_per_unit: Decimal | None = None
+    cost_per_unit: CostPerUnit | None = None
     source: LotSource
     moved_through: list[UUID] = Field(default_factory=list)  # transfer_link ids
     tax_free_from: date
