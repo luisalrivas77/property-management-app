@@ -105,7 +105,14 @@ LEARNABLE_SHARED = frozenset({AllocationCategory.BANK_FEES})
 # Luis: „Künftig immer so zuordnen“ was greyed on the monthly money to family). The model
 # never books them alone (their threshold stays None); a rule only repeats the person's own
 # answer for that payee, and the line keeps its code, so a later Unterhalt check loses nothing.
-LEARNABLE_WITHOUT_THRESHOLD = frozenset({AllocationCategory.HH_FAMILY_TRANSFERS})
+# The same for a card's monthly settlement (15 Nov 2026, Luis: „Can't click immer so für the
+# credit card payments“): a card whose statements are not in the app is paid each month at a
+# different amount to one issuer IBAN. Once the card is an account, confirming its payment
+# IBAN switches off every learned rule on that IBAN (D176 (4)), and a line a rule booked
+# hh_credit_card is re-booked as the transfer when linked (D176, rebook_on_link).
+LEARNABLE_WITHOUT_THRESHOLD = frozenset(
+    {AllocationCategory.HH_FAMILY_TRANSFERS, AllocationCategory.HH_CREDIT_CARD}
+)
 
 EXACT = Decimal("1.000")
 DOCUMENT_CONFIDENCE = Decimal("0.950")
@@ -2046,9 +2053,9 @@ def learnable_household(category: AllocationCategory) -> bool:
     shared code a private account's own fee lines take; they carry no counterparty, so their
     rule is a typed purpose pattern). A tax-relevant code proposes a return input a person
     confirms each time; a transfer or depot code is booked by its matcher only; a code
-    without a threshold (hh_other, hh_credit_card, uncategorized) is never booked unseen,
-    except LEARNABLE_WITHOUT_THRESHOLD (money to family), whose rule repeats a person's own
-    answer."""
+    without a threshold (hh_other, uncategorized) is never booked unseen, except
+    LEARNABLE_WITHOUT_THRESHOLD (money to family, a card's settlement), whose rule repeats a
+    person's own answer."""
     return (
         (category in HOUSEHOLD_CODES or category in LEARNABLE_SHARED)
         and category not in TAX_RELEVANT
