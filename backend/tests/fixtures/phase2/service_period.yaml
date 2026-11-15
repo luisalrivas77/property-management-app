@@ -10,8 +10,8 @@
 #      gives the first day of its first month to the last day of its last month.
 #   2. else a bare four-digit year (2000-2100) in the purpose: that calendar year
 #      ("Nachzahlung NK 2026": a settlement for the year 2026);
-#   Amended 15 Nov 2026 (D27 amended): a quarter „Q4/2025“ (Q1-Q4, then a two- or four-digit
-#   year after „/“ or a space) is its three months, read before a month, so it is never
+#   Amended 15 Nov 2026 (D27 amended): a quarter „Q4/2025“ (Q1-Q4 or „Quartal 4“, then a two-
+#   or four-digit year after „/“, „.“ or „-“, or a four-digit year after a space) is its three months, read before a month, so it is never
 #   month 4; and a period read from the text counts only when its years lie from ten years
 #   before the booking year to one year after it, else the next candidate is read: a street
 #   number in a card line („2093 Market Pike“) is not the year a payment is for.
@@ -78,11 +78,48 @@ cases:
     recurring: false
     expect: {start: 2025-10-01, end: 2025-12-31}
 
-  - id: quarter_with_space_two_digit_year
-    purpose: Beitrag Q1 27
+  - id: quarter_two_digit_year
+    purpose: Beitrag Q1/27
     booking_date: 2026-12-28
     recurring: false
     expect: {start: 2027-01-01, end: 2027-03-31}
+
+  - id: quarter_with_dot
+    purpose: Abrechnung Q4.2025
+    booking_date: 2026-01-15
+    recurring: false
+    expect: {start: 2025-10-01, end: 2025-12-31}
+
+  - id: quarter_word
+    purpose: Beitrag Quartal 4/2025
+    booking_date: 2026-01-15
+    recurring: false
+    expect: {start: 2025-10-01, end: 2025-12-31}
+
+  - id: quarter_space_four_digit_year
+    purpose: Beitrag Q2 2026
+    booking_date: 2026-04-02
+    recurring: false
+    expect: {start: 2026-04-01, end: 2026-06-30}
+
+  - id: shop_code_after_q_not_a_quarter
+    description: A space and two digits after Q1-Q4 is a shop or branch code, not a quarter.
+    purpose: EXAMPLE MARKT Q3 24 BERLIN
+    booking_date: 2026-07-17
+    recurring: false
+    expect: null
+
+  - id: price_after_q_not_a_quarter
+    purpose: Parkhaus Q2 19,50
+    booking_date: 2026-07-17
+    recurring: false
+    expect: null
+
+  - id: rent_month_not_hidden_by_room_code
+    purpose: Miete 11/2026 Zimmer Q2 17
+    booking_date: 2026-11-02
+    recurring: true
+    expect: {start: 2026-11-01, end: 2026-11-30}
 
   - id: street_number_not_a_year
     description: A four-digit house number far from the booking year is no period (D27 amended).

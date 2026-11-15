@@ -67,7 +67,13 @@ _MONTH = re.compile(
     + _END,
     re.IGNORECASE,
 )
-_QUARTER = re.compile(r"(?<![A-Za-z0-9])Q([1-4])(?:/|\s+)(\d{4}|\d{2})" + _END, re.IGNORECASE)
+# „Q4/2025“, „Q4/25“, „Q4.2025“, „Q4-2025“, „Quartal 4/2025“, „Q4 2025“; after a space only a
+# four-digit year, so „LIDL Q3 24 BERLIN“ or „Parkhaus Q2 19,50“ is no quarter (review F2, F3).
+_QUARTER = re.compile(
+    r"(?<![A-Za-z0-9])(?:Q|Quartal\s*)([1-4])"
+    + r"(?:[/.-]\s*(\d{4}|\d{2})|\s+(\d{4}))(?![.,/-]?\d)",
+    re.IGNORECASE,
+)
 _YEAR = re.compile(_START + r"(\d{4})" + _END)
 # A card and its expiry month, as a Sparkasse card purpose ends: "Debitk.1 2028-12".
 _CARD_EXPIRY = re.compile(r"\b(?:Debitk|Kreditk)\.\s*\d+\s+\d{4}-\d{1,2}" + _END, re.IGNORECASE)
@@ -86,7 +92,7 @@ def service_period(purpose: str, booking_date: date, recurring: bool) -> Service
         if first and last and last >= first and plausible(first[0], last[0]):
             return _months(first, last)
     for m in _QUARTER.finditer(text):
-        if (year := _year(m.group(2))) is not None and plausible(year):
+        if (year := _year(m.group(2) or m.group(3))) is not None and plausible(year):
             quarter = int(m.group(1))
             return _months((year, 3 * quarter - 2), (year, 3 * quarter))
     for m in _MONTH.finditer(text):

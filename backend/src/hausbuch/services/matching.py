@@ -112,6 +112,7 @@ from hausbuch.schemas.allocation import (
     RentInForce,
     RoutingDecision,
     RoutingInput,
+    ServicePeriod,
     SplitMethod,
     TenancyFacts,
     WirtschaftsplanFacts,
@@ -1784,7 +1785,9 @@ def repair_periods(ctx: CommandContext) -> int:
     its categories, amounts, links, method, confidence, reasoning, question, rule and model
     call; it supersedes the old one through allocations.record_set, as a re-proposal by the
     matching job does (no event: a proposed set writes none). A line with a confirmed row is a
-    person's answer and is never taken. Run by the operator after the deploy; no endpoint.
+    person's answer and is never taken; each line is re-checked under its lock, so an answer
+    given meanwhile is never turned back into a proposal. A row whose period is plausible keeps
+    it. Run by the operator after the deploy; no endpoint.
     The number of lines re-proposed."""
     a = allocation_table.c
     t = transaction_table.c
@@ -1807,12 +1810,25 @@ def repair_periods(ctx: CommandContext) -> int:
         )
         .order_by(t.booking_date, t.id)
     ).all()
+    written = 0
     for line in lines:
+        # Under the line's lock (review F1): a person's answer or a job's auto-confirm that
+        # committed since the candidate read is seen here, and the line is left alone.
+        load_line(ctx.conn, line.id, lock=True)
         current = allocations.current_allocations(ctx.conn, line.id)
+        if not current or any(r.status != AllocationStatus.PROPOSED.value for r in current):
+            continue
+        if not any(_outside(r, line.booking_date) for r in current):
+            continue
         first = current[0]
         drafts = []
         for row in current:
-            period = service_period(line.purpose or "", line.booking_date, row.recurring)
+            # Only an implausible period is read again (review F4); the others are kept.
+            period = (
+                service_period(line.purpose or "", line.booking_date, row.recurring)
+                if _outside(row, line.booking_date)
+                else _kept(row)
+            )
             drafts.append(
                 AllocationDraft(
                     amount=row.amount,
@@ -1842,7 +1858,21 @@ def repair_periods(ctx: CommandContext) -> int:
             confirm=False,
             auto=False,
         )
-    return len(lines)
+        written += 1
+    return written
+
+
+def _outside(row: Any, booked_on: date) -> bool:
+    """A row's period outside the plausible years of its line's booking date (D27 amended)."""
+    lowest, highest = booked_on.year - PAST_YEARS, booked_on.year + FUTURE_YEARS
+    start, end = row.service_period_start, row.service_period_end
+    return start is not None and (start.year < lowest or end is None or end.year > highest)
+
+
+def _kept(row: Any) -> ServicePeriod | None:
+    if row.service_period_start is None or row.service_period_end is None:
+        return None
+    return ServicePeriod(start=row.service_period_start, end=row.service_period_end)
 
 
 # --- Which lines a new document affects ---------------------------------------------------

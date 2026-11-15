@@ -6,6 +6,7 @@ its period read by the current rule, keeping everything else; a confirmed line a
 period are left alone. Invented names only."""
 
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from db.matching_support import World
@@ -13,6 +14,8 @@ from db.test_cli_evals_report import _owner_url
 from db.test_services_private_matching import NOW, Private, _answer_line, _propose, _rows
 
 from hausbuch import cli
+from hausbuch.schemas.allocation import AllocationDraft, AllocationMethod, AllocationSet
+from hausbuch.services import allocations, matching
 
 pytestmark = pytest.mark.db
 
@@ -81,3 +84,47 @@ def test_repair_periods_reproposes_a_far_period_and_leaves_the_rest(dbname, worl
 
     assert cli.main(argv, environ) == cli.EXIT_OK  # a second run finds nothing
     assert "proposed 0 line(s) again" in capsys.readouterr().out
+
+
+def test_an_answer_given_meanwhile_is_never_reproposed(world, private, monkeypatch):
+    """Review F1: a person's answer that commits after the candidate read is seen under the
+    line's lock, and the line is left alone."""
+    line = private.line(date(2026, 8, 17), "-44.06", name="EXAMPLE CLOUD", purpose=STREET)
+    _propose(world, line, "-44.06", "uncategorized", **FAR)
+    real = matching.load_line
+    answered = []
+
+    def answer_first(conn, transaction_id, *, lock=False):
+        if not answered:
+            answered.append(True)
+            _answer_line(world, line, "-44.06", "hh_cloud")  # commits on another connection
+        return real(conn, transaction_id, lock=lock)
+
+    monkeypatch.setattr(matching, "load_line", answer_first)
+    assert world.cmd(matching.repair_periods) == 0
+    (row,) = _rows(world, line)
+    assert (row.status, row.category) == ("confirmed", "hh_cloud")
+
+
+def test_a_plausible_period_beside_a_far_one_is_kept(world, private):
+    """Review F4: only the row whose period is implausible is read again."""
+    line = private.line(date(2026, 7, 17), "-100.00", name="EXAMPLE CLOUD", purpose=STREET)
+    july = {"service_period_start": date(2026, 7, 1), "service_period_end": date(2026, 7, 31)}
+    two = AllocationSet(
+        transaction_id=line,
+        method=AllocationMethod.LLM,
+        confidence=Decimal("0.700"),
+        reasoning="Zwei Teile.",
+        allocations=[
+            AllocationDraft(amount=Decimal("-60.00"), category="hh_cloud", **july),
+            AllocationDraft(amount=Decimal("-40.00"), category="uncategorized", **FAR),
+        ],
+    )
+    world.cmd(allocations.record_set, two, confirm=False, auto=False)
+    assert world.cmd(matching.repair_periods) == 1
+    rows = {r.category: r for r in _rows(world, line)}
+    assert (rows["hh_cloud"].service_period_start, rows["hh_cloud"].service_period_end) == (
+        date(2026, 7, 1),
+        date(2026, 7, 31),
+    )
+    assert rows["uncategorized"].service_period_start is None
