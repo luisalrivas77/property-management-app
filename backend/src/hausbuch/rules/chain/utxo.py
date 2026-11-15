@@ -183,13 +183,26 @@ def _mask(address: str) -> str:
     return f"{address[:4]}…{address[-4:]}"
 
 
+QUESTION_LIMIT = 500  # MovementGroupDraft.question
+
+
 def change_question(candidates: Sequence[ChangeCandidate]) -> str:
     """The card's question (D185 (2)): the masked addresses and their amounts, never the
-    plaintext."""
-    listed = ", ".join(f"{_mask(c.address)} ({btc_text(c.sats)})" for c in candidates)
-    if len(candidates) == 1:
-        return f"Ist diese Adresse Ihr Wechselgeld? {listed}"
-    return f"Ist eine dieser Adressen Ihr Wechselgeld? {listed}"
+    plaintext. A spend with very many outputs names as many as fit the question's 500
+    characters and how many more there are; the card lists them all from the stored
+    original."""
+    head = (
+        "Ist diese Adresse Ihr Wechselgeld?"
+        if len(candidates) == 1
+        else "Ist eine dieser Adressen Ihr Wechselgeld?"
+    )
+    named = [f"{_mask(c.address)} ({btc_text(c.sats)})" for c in candidates]
+    for shown in range(len(named), 0, -1):
+        rest = len(named) - shown
+        text = f"{head} {', '.join(named[:shown])}" + (f" und {rest} weitere" if rest else "")
+        if len(text) <= QUESTION_LIMIT:
+            return text
+    return f"{head} {len(named)} Adressen"
 
 
 def classify_utxo(

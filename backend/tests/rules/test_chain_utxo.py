@@ -263,3 +263,79 @@ def test_btc_text():
     assert utxo.btc_text(2_990_000) == "0,0299 BTC"
     assert utxo.btc_text(100_000_000) == "1 BTC"
     assert utxo.btc_text(1) == "0,00000001 BTC"
+
+
+@pytest.mark.rule
+def test_a_confirmed_change_address_changes_earlier_readings():
+    """„Ja, eigene Adresse“ grows the own set, so a transaction read before from another own
+    address can read differently afterwards (reported for the wiring: every stored Bitcoin
+    transaction naming the new address is re-read from the originals)."""
+    record = {
+        "txid": "2" * 64,
+        "vin": [
+            {
+                "txid": "1" * 64,
+                "vout": 0,
+                "prevout": {"scriptpubkey_address": "bc1qx", "value": 1000},
+            }
+        ],
+        "vout": [{"scriptpubkey_address": "bc1qb", "value": 900}],
+        "fee": 100,
+        "status": {"confirmed": True, "block_height": 5, "block_time": 1777000000},
+    }
+    tx = to_chain_tx(record)
+    before = utxo.read_utxo(tx, ["bc1qb"])  # X unknown: a receive at B
+    assert [(leg.role, leg.sats) for leg in before.legs] == [("in", 900)]
+    after = utxo.read_utxo(tx, ["bc1qb", "bc1qx"])  # X confirmed change: a fee-only spend
+    assert [(leg.role, leg.sats, leg.address) for leg in after.legs] == [("fee", 100, "bc1qx")]
+    mixed = dict(
+        record,
+        txid="3" * 64,
+        vin=[
+            *record["vin"],
+            {
+                "txid": "0" * 64,
+                "vout": 1,
+                "prevout": {"scriptpubkey_address": "bc1qa", "value": 500},
+            },
+        ],
+        vout=[{"scriptpubkey_address": "bc1qpayee", "value": 1400}],
+    )
+    mixed_tx = to_chain_tx(mixed)
+    assert utxo.read_utxo(mixed_tx, ["bc1qa"]).card == E.GROUP_UNKNOWN  # X foreign
+    spend = utxo.read_utxo(mixed_tx, ["bc1qa", "bc1qx"])
+    assert [(leg.role, leg.sats) for leg in spend.legs] == [("out", 1400), ("fee", 100)]
+
+
+@pytest.mark.rule
+def test_two_outputs_to_one_unregistered_address_are_one_payee():
+    """Deviation from the loader's reference, which counts outputs: two outputs to the same
+    unregistered address are one candidate, so the spend has paid it and nothing is asked."""
+    own = ["bc1qa"]
+    record = {
+        "txid": "a" * 64,
+        "vin": [
+            {
+                "txid": "b" * 64,
+                "vout": 0,
+                "prevout": {"scriptpubkey_address": "bc1qa", "value": 1000},
+            }
+        ],
+        "vout": [
+            {"scriptpubkey_address": "bc1qpayee", "value": 400},
+            {"scriptpubkey_address": "bc1qpayee", "value": 500},
+        ],
+        "fee": 100,
+        "status": {"confirmed": True, "block_height": 6, "block_time": 1777000000},
+    }
+    reading = utxo.read_utxo(to_chain_tx(record), own)
+    assert reading.card is None
+    assert [(leg.role, leg.sats) for leg in reading.legs] == [("out", 900), ("fee", 100)]
+
+
+@pytest.mark.rule
+def test_the_question_fits_its_column():
+    many = [utxo.ChangeCandidate(address=f"bc1q{n:040d}", sats=1000 + n, vout=n) for n in range(60)]
+    text = utxo.change_question(many)
+    assert len(text) <= utxo.QUESTION_LIMIT and text.endswith("weitere")
+    assert text.startswith("Ist eine dieser Adressen Ihr Wechselgeld? bc1q…0000 (0,00001 BTC)")

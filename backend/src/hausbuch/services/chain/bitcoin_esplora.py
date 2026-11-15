@@ -33,6 +33,7 @@ from urllib.parse import urlsplit
 
 from pydantic import JsonValue
 
+from hausbuch.rules import errors
 from hausbuch.rules.chain.utxo import VIN
 from hausbuch.schemas.chain import (
     AssetBalance,
@@ -53,8 +54,8 @@ MIN_INTERVAL_S = 1.0  # one request a second (D181 (a): the limits are undisclos
 # A failure that is neither a 429 nor a refusal: no code of its own in rules/errors.py yet
 # (phase 7 step 4 report), so the sync can tell it apart from the two that are.
 SOURCE_FAILED = "wallet.source_failed"
-_THROTTLED = "wallet.source_throttled"
-_REFUSED = "wallet.source_refused"
+_THROTTLED = errors.WALLET_SOURCE_THROTTLED
+_REFUSED = errors.WALLET_SOURCE_REFUSED
 
 BTC = AssetKey(chain=Chain.BITCOIN)
 
