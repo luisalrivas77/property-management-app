@@ -63,8 +63,16 @@ class HeliusLabels:
             if not isinstance(entry, dict):
                 continue
             sig, text = entry.get("signature"), entry.get("description")
-            if sig in wanted and isinstance(text, str) and text.strip():
-                found[sig] = ProviderLabel(
+            if not (isinstance(sig, str) and sig in wanted and isinstance(text, str)):
+                continue
+            if not text.strip():
+                continue
+            try:
+                label = ProviderLabel(
                     provider="helius", text=text.strip()[:MAX_TEXT], fetched_at=at
                 )
+            except Exception as exc:  # noqa: BLE001 - one odd entry costs its label only
+                self.failures.append(type(exc).__name__)
+                continue
+            found[sig] = label
         return found

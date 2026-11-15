@@ -69,3 +69,18 @@ def test_batches_of_a_hundred_and_empty_descriptions_dropped():
     helius, sent = _labels(payload=[{"signature": "s0", "description": "  "}])
     assert helius.labels([f"s{i}" for i in range(150)]) == {}
     assert [len(body["transactions"]) for _, body in sent] == [100, 50]
+
+
+def test_a_malformed_entry_is_skipped_not_raised():
+    helius, _ = _labels(
+        payload=[
+            {"signature": ["x"], "description": "d"},
+            {"signature": {"a": 1}, "description": "d"},
+            {"signature": SIG, "description": 7},
+            "noise",
+            {"signature": SIG, "description": "Transferred 1 SOL"},
+        ]
+    )
+    assert {sig: label.text for sig, label in helius.labels([SIG]).items()} == {
+        SIG: "Transferred 1 SOL"
+    }
