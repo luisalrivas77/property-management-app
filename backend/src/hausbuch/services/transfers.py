@@ -1261,6 +1261,7 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
     # account each own IBAN belongs to.
     firsts: dict[UUID, date] | None = None
     own: dict[str, UUID] = {}
+    payers: dict[UUID, set[UUID]] = {}
     for leg in waiting:
         start, end = leg.leg.booked_on - _BY_HAND, leg.leg.booked_on + _BY_HAND
         others = [
@@ -1296,7 +1297,8 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
             if not same:
                 if firsts is None:
                     firsts, own = _first_days(conn), _own_accounts(conn)
-                if _before_every_history(leg, firsts, own):
+                    payers = _card_payers(conn)
+                if _before_every_history(leg, firsts, own, payers):
                     continue
             code, candidates = OpenTransferCode.UNMATCHED_LEG, same
         else:
@@ -1359,7 +1361,37 @@ def _own_accounts(conn: Connection) -> dict[str, UUID]:
     return found
 
 
-def _before_every_history(leg: _Leg, firsts: dict[UUID, date], own: dict[str, UUID]) -> bool:
+def _card_payers(conn: Connection) -> dict[UUID, set[UUID]]:
+    """D162 amended (6), 15 Nov 2026: the accounts that pay each credit card, per card account
+    id: the other accounts with a line of a reconciled import whose counterparty IBAN is the
+    card's confirmed payment IBAN (the card's settlements are debited there). A card whose
+    payment IBAN is unknown, or that no line pays yet, is absent."""
+    t, card = transaction_table.c, account_table.c
+    rows = conn.execute(
+        select(card.id, t.account_id)
+        .distinct()
+        .select_from(transaction_table)
+        .join(import_table, import_table.c.id == t.import_id)
+        .join(account_table, card.payment_iban_hmac == t.counterparty_iban_hmac)
+        .where(
+            card.kind == AccountKind.CREDIT_CARD.value,
+            t.account_id != card.id,
+            t.excluded_as_duplicate_of.is_(None),
+            import_table.c.status == ImportStatus.RECONCILED.value,
+        )
+    ).all()
+    found: dict[UUID, set[UUID]] = {}
+    for card_id, account_id in rows:
+        found.setdefault(card_id, set()).add(account_id)
+    return found
+
+
+def _before_every_history(
+    leg: _Leg,
+    firsts: dict[UUID, date],
+    own: dict[str, UUID],
+    payers: dict[UUID, set[UUID]] | None = None,
+) -> bool:
     """D162 amended (5), 15 Nov 2026 (Luis: „There are some credit card deposits that were not
     directly linked. Can you check?“): a leg without a counterpart and without a same-amount
     line in its by-hand window (±_BY_HAND), whose window ends before the first bank line of
@@ -1374,7 +1406,20 @@ def _before_every_history(leg: _Leg, firsts: dict[UUID, date], own: dict[str, UU
     (`own`) is decided by that account alone: the card stays while that account has no bank
     line yet (a debit to the other owner's account, whose statements are not imported), and
     goes only when that account's first line is after the window. Every other account counts
-    only for a leg that names none, or an unrelated account with later lines would hide it."""
+    only for a leg that names none, or an unrelated account with later lines would hide it.
+
+    D162 amended (6), 15 Nov 2026 (Luis: a card payment from before the uploaded bank
+    statements): a credit card's line names no IBAN, so it fell to every other account and the
+    ±31 days, and a settlement credit of 2 Dec 2025 kept its card while the account paying the
+    card starts on 2 Jan 2026 (the household's history starts 1 Jan 2026). Such a leg is
+    decided by the accounts that pay the card (_card_payers): no card when every one's first
+    line is after the leg's D162 window (transfer_window_end: the latest day its counterpart
+    could be booked, the debit up to three banking days after an early credit). A card whose
+    payer is unknown keeps the rule above."""
+    paying = (payers or {}).get(leg.leg.account_id)
+    if leg.leg.account_kind is AccountKind.CREDIT_CARD and paying:
+        days = [firsts[a] for a in paying if a in firsts]
+        return bool(days) and transfer_window_end(leg.leg.booked_on) < min(days)
     named = leg.leg.counterparty_iban_hmac
     account = None if named is None else own.get(named)
     if account is not None and account != leg.leg.account_id:

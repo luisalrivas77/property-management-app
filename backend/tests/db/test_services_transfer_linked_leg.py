@@ -274,3 +274,32 @@ def test_relink_transfers_command_books_the_linked_legs(dbname, world, bank, mon
     assert _booked(world, in_) == [NAMED]
     assert cli.main(argv, environ) == cli.EXIT_OK  # a second run books nothing more
     assert "booked 0 linked line(s)" in capsys.readouterr().out
+
+
+# --- A card's settlement before the paying account's history ------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("payer_first", "card_kept"),
+    [(date(2026, 1, 2), False), (date(2025, 12, 3), True), (None, True)],
+)
+def test_a_card_settlement_before_the_paying_accounts_history_gets_no_card(
+    world, bank, payer_first, card_kept
+):
+    """D162 amended (6): a card's payment credit of Tuesday 2 Dec 2025 can be paid by a debit
+    booked up to Friday 5 Dec (the D162 window). The account paying the card (its lines name
+    the card's payment IBAN) starts on 2 Jan 2026: no card, although the rental account's lines
+    start before it. Its first line on 3 Dec keeps the card; a card no line pays yet keeps the
+    rule of every other account (the rental account's earlier line keeps the card)."""
+    world.line(date(2025, 11, 20), "-5.00", name="Bank")  # the rental account, before it
+    card = Card(world, PAYMENT_IBAN)
+    paid = card.payment(date(2025, 12, 2), "250.00")
+    _match(world, paid)
+    assert [b[:2] for b in _booked(world, paid)] == [("internal_transfer_in", "confirmed")]
+    if payer_first is not None:
+        settlement = bank.line(payer_first, "-100.00", iban=PAYMENT_IBAN, purpose="Kreditkarte")
+        _match(world, settlement)
+    else:
+        bank.line(date(2026, 1, 2), "-30.00", name="Beispiel Markt")
+    cards = [c for c in world.query(transfers.open_transfers, TODAY) if c.leg.id == paid]
+    assert [c.code for c in cards] == ([OpenTransferCode.UNMATCHED_LEG] if card_kept else [])
