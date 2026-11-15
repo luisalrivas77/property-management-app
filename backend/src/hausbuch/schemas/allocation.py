@@ -69,6 +69,10 @@ class AllocationCategory(StrEnum):
     # Income
     HH_SALARY = "hh_salary"  # private
     HH_CHILD_BENEFIT = "hh_child_benefit"  # private
+    # Phase 6 D159 amended (8) 15 Nov 2026 (migration 0037, Luis): a wage-replacement benefit
+    # (Elterngeld, Mutterschaftsgeld, Krankengeld, Arbeitslosengeld; Kurzarbeitergeld stays
+    # pay), which proposes the year's replacement_income return input (phase 4b D102).
+    HH_WAGE_REPLACEMENT = "hh_wage_replacement"  # private (Elterngeld & Lohnersatz)
     HH_TAX_REFUND = "hh_tax_refund"  # private
     HH_CAPITAL_INCOME = "hh_capital_income"  # private (Zinsen, Dividenden; read in phase 8)
     HH_OTHER_INCOME = "hh_other_income"  # private
@@ -141,6 +145,9 @@ class AllocationCategory(StrEnum):
     HH_PARKING = "hh_parking"  # private (Parken & Maut)
     HH_CAR_SERVICE = "hh_car_service"  # private (Auto: Werkstatt & Wartung)
     HH_CAR_TAX = "hh_car_tax"  # private (Auto: Kfz-Steuer & Zulassung)
+    # Phase 6 D159 amended (7) 15 Nov 2026 (migration 0037, Luis): buying or financing a car
+    # (down payment, car-loan instalments and Schlussrate, leasing) apart from the other car codes.
+    HH_CAR_PURCHASE = "hh_car_purchase"  # private (Auto: Kauf & Finanzierung)
     # group groceries
     HH_SUPERMARKET = "hh_supermarket"  # private (Supermarkt)
     HH_DRUGSTORE = "hh_drugstore"  # private (Drogerie & Kosmetik)

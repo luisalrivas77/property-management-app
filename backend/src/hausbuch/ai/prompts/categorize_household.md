@@ -13,6 +13,7 @@ quarterly, yearly), false for a one-off payment.
 `category`, one of:
 - `hh_salary`: pay from an employer (Gehalt, Lohn)
 - `hh_child_benefit`: Kindergeld from the Familienkasse
+- `hh_wage_replacement`: a benefit that replaces pay: Elterngeld (from the Elterngeldstelle), Mutterschaftsgeld paid by the Krankenkasse (often „Leistung von <date> bis <date>“), Krankengeld or Arbeitslosengeld; a Krankenkasse's „Kostenerstattung“ or a private insurer's „Leistungsabrechnung“ refunds a health cost and is never this code, and the employer's Zuschuss zum Mutterschaftsgeld and Kurzarbeitergeld arrive with the pay and stay `hh_salary`
 - `hh_tax_refund`: a refund from the Finanzamt
 - `hh_capital_income`: interest or dividends credited to this account
 - `hh_other_income`: any other money received
@@ -47,6 +48,7 @@ leisure.
   - `hh_parking`: parking, car parks, tolls, vignettes
   - `hh_car_service`: a garage, car repairs, servicing, tyres, the TÜV inspection, a car wash
   - `hh_car_tax`: the motor vehicle tax (Kfz-Steuer from the Hauptzollamt) and the car's registration
+  - `hh_car_purchase`: buying a car or financing it: the purchase price, a car's down payment (Anzahlung), the instalments or final payment (Schlussrate) of a car loan, and leasing rates; a car insurance paid to the same bank's insurance arm stays `hh_ins_car`, and a workshop bill stays `hh_car_service`
   - `hh_mobility`: (fallback) other mobility costs: bicycle, scooter rental, car sharing
 - Insurance (Versicherungen):
   - `hh_ins_car`: car insurance (Kfz-Versicherung)

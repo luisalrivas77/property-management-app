@@ -527,7 +527,8 @@ function matchesFilter(line: Transaction, filter: LineFilter): boolean {
 
 /** Where a line stands (Transaction.allocation_status, computed by the API), as a link to
  * where it is decided: the allocation panel on the review page (/inbox?umsatz=…, which also
- * corrects a confirmed allocation), the account's possible duplicates, or its Kontoauszüge. A
+ * corrects a confirmed allocation), the account's possible duplicates, or its Kontoauszüge. One
+ * half of a returned payment (returned_with, D162 amended (7)) names the other half's date. A
  * merged duplicate has no link; its pill sits under the purpose. */
 function LineStatus({ line }: { line: Transaction }) {
   const subject = `${line.counterparty_name ?? "Umsatz"} am ${formatDate(line.booking_date)}`;
@@ -536,8 +537,15 @@ function LineStatus({ line }: { line: Transaction }) {
     case "excluded":
       return null;
     case "confirmed": {
+      // D162 amended (7): one half of a returned payment names the other, since together they
+      // count as nothing (not a transfer to another account).
+      const partner = line.returned_with;
       const categories = line.allocation_categories.map((category) => ALLOCATION_CATEGORY[category]).join(" + ");
-      const text = categories ? `Gebucht: ${categories}` : "Gebucht";
+      const text = partner
+        ? `Gebucht: Rücküberweisung (${line.amount.startsWith("-") ? "zurück am" : "von der Abbuchung am"} ${formatDate(partner.booking_date)})`
+        : categories
+          ? `Gebucht: ${categories}`
+          : "Gebucht";
       return (
         <Link href={panel} aria-label={`${text} – ${subject}`}>
           {text}

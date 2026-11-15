@@ -430,6 +430,7 @@ PHASE4B_CASES = {
         "church_tax_as_special_expense",
         "benefit_double_warning",
         "mutterschutz_pay_stop",
+        "benefits_without_pay",
         "filing_required_rental_positive",
         "filing_optional",
         "questions_open",

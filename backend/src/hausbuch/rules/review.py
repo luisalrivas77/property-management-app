@@ -100,6 +100,7 @@ THRESHOLDS = MappingProxyType(
         C.HH_CAPITAL_INCOME: None,
         C.HH_TAX_REFUND: None,
         C.HH_OTHER_INCOME: None,
+        C.HH_WAGE_REPLACEMENT: None,  # D159 amended (8) (0037): a return input, a person confirms
         C.HH_DONATION: None,
         C.HH_HOUSEHOLD_SERVICES: None,
         C.HH_CHILDCARE: None,
@@ -153,6 +154,7 @@ THRESHOLDS = MappingProxyType(
         C.HH_PARKING: _RECURRING,
         C.HH_CAR_SERVICE: _RECURRING,
         C.HH_CAR_TAX: _RECURRING,
+        C.HH_CAR_PURCHASE: _RECURRING,  # D159 amended (7) (migration 0037), as hh_car_tax
         C.HH_SUPERMARKET: _RECURRING,
         C.HH_DRUGSTORE: _RECURRING,
         C.HH_BAKERY: _RECURRING,
@@ -227,6 +229,8 @@ ZERO_EXCLUDED = frozenset(
         C.HH_CHILDCARE,
         C.HH_PROPERTY_COST,
         C.HH_TAX_PAYMENT,
+        # D159 amended (8) (migration 0037): proposes the year's replacement_income input
+        C.HH_WAGE_REPLACEMENT,
     }
 )
 

@@ -84,6 +84,7 @@ CATEGORY_LINES = {
     # Phase 6: every household and depot code, never on the form (D159, D161, D165).
     C.HH_SALARY: None,
     C.HH_CHILD_BENEFIT: None,
+    C.HH_WAGE_REPLACEMENT: None,
     C.HH_TAX_REFUND: None,
     C.HH_CAPITAL_INCOME: None,
     C.HH_OTHER_INCOME: None,
@@ -139,6 +140,7 @@ CATEGORY_LINES = {
     C.HH_PARKING: None,
     C.HH_CAR_SERVICE: None,
     C.HH_CAR_TAX: None,
+    C.HH_CAR_PURCHASE: None,
     C.HH_SUPERMARKET: None,
     C.HH_DRUGSTORE: None,
     C.HH_BAKERY: None,

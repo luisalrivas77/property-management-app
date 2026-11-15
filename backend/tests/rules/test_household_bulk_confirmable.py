@@ -51,6 +51,7 @@ def test_the_plain_household_income_and_spending_codes():
         "hh_parking",
         "hh_car_service",
         "hh_car_tax",
+        "hh_car_purchase",
         "hh_supermarket",
         "hh_drugstore",
         "hh_bakery",

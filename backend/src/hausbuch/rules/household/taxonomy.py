@@ -51,6 +51,9 @@ TAXONOMY = MappingProxyType(
             # Income
             _code(C.HH_SALARY, G.INCOME, R.INCOME),
             _code(C.HH_CHILD_BENEFIT, G.INCOME, R.INCOME),
+            # D159 amended (8) 15 Nov 2026 (migration 0037): a wage-replacement benefit, income
+            # that proposes the year's Lohnersatzleistung (phase 4b D102, Progressionsvorbehalt)
+            _code(C.HH_WAGE_REPLACEMENT, G.INCOME, R.INCOME, P.RETURN_REPLACEMENT_INCOME),
             _code(C.HH_TAX_REFUND, G.INCOME, R.INCOME),
             _code(C.HH_CAPITAL_INCOME, G.INCOME, R.INCOME),  # read by phase 8's KAP
             _code(C.HH_OTHER_INCOME, G.INCOME, R.INCOME),
@@ -97,6 +100,8 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_PARKING, G.MOBILITY, R.SPENDING),
             _code(C.HH_CAR_SERVICE, G.MOBILITY, R.SPENDING),
             _code(C.HH_CAR_TAX, G.MOBILITY, R.SPENDING),
+            # D159 amended (7) 15 Nov 2026 (migration 0037): buying or financing a car
+            _code(C.HH_CAR_PURCHASE, G.MOBILITY, R.SPENDING),
             _code(C.HH_SUPERMARKET, G.GROCERIES, R.SPENDING),
             _code(C.HH_DRUGSTORE, G.GROCERIES, R.SPENDING),
             _code(C.HH_BAKERY, G.GROCERIES, R.SPENDING),
@@ -179,17 +184,24 @@ if set(TAXONOMY) != PRIVATE_ONLY:  # pragma: no cover - a code without its row
 
 # „Alle bestätigen“ in Zu prüfen (D159 amended 13 Nov 2026): the plain income and spending
 # codes whose waiting proposals a person may confirm as a group (POST /inbox/confirm-category).
-# Never a tax-relevant code, a movement or depot code, uncategorized, nor three codes that may
-# matter for a return later and are confirmed one by one: capital income (phase 8's KAP), a
-# tax refund (a church-tax refund lowers the Sonderausgaben), money to family (Unterhalt) and
-# work costs (Werbungskosten on Anlage N).
+# Never a tax-relevant code, a movement or depot code, uncategorized, nor the codes that may
+# matter for a return and are confirmed one by one: capital income (phase 8's KAP), a
+# tax refund (a church-tax refund lowers the Sonderausgaben), money to family (Unterhalt),
+# work costs (Werbungskosten on Anlage N) and a wage-replacement benefit (the
+# Progressionsvorbehalt, D159 amended (8)).
 BULK_CONFIRMABLE = frozenset(
     c
     for c, row in TAXONOMY.items()
     if c in HOUSEHOLD_CODES
     and row.relevance in (R.INCOME, R.SPENDING)
     and row.group not in (G.TAX, G.MOVEMENTS, G.DEPOT)
-) - {C.HH_CAPITAL_INCOME, C.HH_TAX_REFUND, C.HH_FAMILY_TRANSFERS, C.HH_WORK_EDUCATION}
+) - {
+    C.HH_CAPITAL_INCOME,
+    C.HH_TAX_REFUND,
+    C.HH_FAMILY_TRANSFERS,
+    C.HH_WORK_EDUCATION,
+    C.HH_WAGE_REPLACEMENT,
+}
 
 # D159 amended 14 Nov 2026 (migration 0032, Luis: „I want to be as detailed as possible“): a
 # spending group with subcategories keeps its old code as the fallback, „Sonstige …“, for what

@@ -43,6 +43,7 @@ categories:
   #   internal_transfer_in/out: pass_through, like the owner transfers they generalise.
   - {category: hh_salary, treatment: private}
   - {category: hh_child_benefit, treatment: private}
+  - {category: hh_wage_replacement, treatment: private}  # phase 6 D159 amended (8) 15 Nov 2026 (migration 0037)
   - {category: hh_tax_refund, treatment: private}
   - {category: hh_capital_income, treatment: private}
   - {category: hh_other_income, treatment: private}
@@ -100,6 +101,7 @@ categories:
   - {category: hh_parking, treatment: private}
   - {category: hh_car_service, treatment: private}
   - {category: hh_car_tax, treatment: private}
+  - {category: hh_car_purchase, treatment: private}  # phase 6 D159 amended (7) 15 Nov 2026 (migration 0037)
   - {category: hh_supermarket, treatment: private}
   - {category: hh_drugstore, treatment: private}
   - {category: hh_bakery, treatment: private}

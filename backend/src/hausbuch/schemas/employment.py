@@ -711,6 +711,22 @@ class OwnerReturnFacts(Schema):
         return self
 
 
+class BookedBenefit(Schema):
+    """A confirmed `hh_wage_replacement` allocation on a private account (phase 6 D159
+    amended (8)), as rules/tax/anlage_n/booked_benefits reads it. Internal to the rule: no
+    response carries it, since `text` is the line's payee and purpose; the warning it yields
+    carries the year, amounts, an owner id and a benefit code only.
+
+    `amount` is signed (a payment back lowers the year's sum); `owner_ids` are the account's
+    current owners, and only an account with exactly one names the benefit's owner."""
+
+    allocation_id: UUID
+    booking_date: date
+    amount: Money
+    text: str = ""
+    owner_ids: list[UUID] = Field(default_factory=list)
+
+
 # --- The questionnaire (D110, §4.2) ----------------------------------------------------
 
 QuestionScope = Literal["owner", "household", "property"]

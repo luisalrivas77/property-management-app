@@ -130,6 +130,7 @@ from hausbuch.schemas.enums import (
     RentModel,
 )
 from hausbuch.schemas.extraction import GENERAL_LINK, _Typing
+from hausbuch.schemas.household import MovementSource
 from hausbuch.schemas.proposal import (
     CarriedField,
     ExistingCost,
@@ -840,21 +841,33 @@ class _Builder:
         if not accounts:
             notes.append(_NO_DEPOT_NOTE)
         name = self.ev("security_name").value
-        rows: list[tuple[str, str, dict[str, object], tuple[str, ...]]] = [
+        movements = list(proposal.movements)
+        movement_sources = sources
+        if self.kind is ExtractionKind.DEPOT_REPORT:
+            # D165 amended, 15 Nov 2026: the report's trades no depot has booked yet are
+            # proposed as the movements their trade confirmations would write, before the
+            # positions, so one „Übernehmen“ books them first and the positions then agree.
+            movements, trade_notes = self._report_trades(proposal)
+            notes += trade_notes
+            movement_sources = _REPORT_TRADE_SOURCES
+        elif self.kind is ExtractionKind.TRADE_CONFIRMATION and movements:
+            notes += self._booked_from_report(movements[0], account.value)
+        rows: list[tuple[str, str, dict[str, object], tuple[str, ...], dict]] = [
             (
                 f"movement:{n}",
                 "asset_movement",
                 movement.model_dump() | {"name": movement.name or name},
                 _MOVEMENT_FIELDS,
+                movement_sources,
             )
-            for n, movement in enumerate(proposal.movements, start=1)
+            for n, movement in enumerate(movements, start=1)
         ] + [
-            (f"holding:{n}", "holding_statement", holding.model_dump(), _HOLDING_FIELDS)
+            (f"holding:{n}", "holding_statement", holding.model_dump(), _HOLDING_FIELDS, sources)
             for n, holding in enumerate(proposal.holdings, start=1)
         ]
-        for key, entity_type, row, names in rows:
+        for key, entity_type, row, names, row_sources in rows:
             fields = {"account_id": account} | {
-                field: self._depot_value(row[field], sources.get(field, ())) for field in names
+                field: self._depot_value(row[field], row_sources.get(field, ())) for field in names
             }
             self.records.append(
                 ProposalRecord(
@@ -867,6 +880,76 @@ class _Builder:
                 )
             )
             notes = []
+
+    def _report_trades(
+        self, proposal: depot_rules.DepotProposal
+    ) -> tuple[list[depot_rules.ProposedMovement], list[str]]:
+        """A report's trades to book (D165 amended, 15 Nov 2026): those up to its date with a
+        reference no depot carries yet (context.booked_depot_trades; a later report repeats
+        the earlier ones), each as the movement its confirmation would propose, named as the
+        report names the fund; and the note that says how many."""
+        as_of = _iso_date(self.ev("report_date").value)
+        if as_of is None or not proposal.trades:
+            return [], []
+        booked = {t.external_ref for t in self.ctx.booked_depot_trades}
+        listed = depot_rules.bookable_trades(proposal.trades, as_of)
+        trades = [t for t in listed if t.reference.strip() not in booked]
+        names = {h.isin: h.name for h in proposal.holdings if h.name}
+        movements = [depot_rules.report_trade_movement(t, names.get(t.isin)) for t in trades]
+        notes = []
+        if trades:
+            notes.append(
+                _REPORT_TRADES_NOTE.format(
+                    count="einen Kauf oder Verkauf"
+                    if len(trades) == 1
+                    else f"{len(trades)} Käufe und Verkäufe"
+                )
+            )
+        if len(listed) > len(trades):
+            notes.append(_REPORT_TRADES_BOOKED_NOTE.format(count=len(listed) - len(trades)))
+        return movements, notes
+
+    def _booked_from_report(
+        self, movement: depot_rules.ProposedMovement, account: object
+    ) -> list[str]:
+        """A trade confirmation whose trade a report booked already (D165 amended, 15 Nov
+        2026): on that depot „Übernehmen“ books nothing a second time
+        (services.depot.record_movement), and the note promises that only when it is the
+        depot pre-selected here (`account`); otherwise it names the depot the trade is booked
+        on and says that another depot books it again there (review of 15 Nov 2026). A
+        difference between the two readings is named, the report's booking staying."""
+        matching = [
+            t
+            for t in self.ctx.booked_depot_trades
+            if t.source is MovementSource.REPORT
+            and t.external_ref == movement.external_ref
+            and t.isin == movement.isin
+            and t.kind is movement.kind
+        ]
+        if not matching:
+            return []
+        here = next((t for t in matching if str(t.account_id) == account), None)
+        booked = here or matching[0]
+        if here is not None:
+            notes = [_BOOKED_FROM_REPORT_NOTE]
+        else:
+            label = next(
+                (a.label for a in self.ctx.depot_accounts if a.id == booked.account_id),
+                "einem anderen Depot",
+            )
+            notes = [
+                (_BOOKED_ELSEWHERE_NOTE if account else _BOOKED_ON_DEPOT_NOTE).format(label=label)
+            ]
+        if booked.quantity != movement.quantity or booked.eur_amount != movement.eur_amount:
+            notes.append(
+                _BOOKED_FROM_REPORT_DIFFERS.format(
+                    units=_german_number(movement.quantity),
+                    amount=_money_text(movement.eur_amount),
+                    report_units=_german_number(booked.quantity),
+                    report_amount=_money_text(booked.eur_amount),
+                )
+            )
+        return notes
 
     def _depot_value(self, value: object, inputs: tuple[str, ...]) -> ExtractedValue:
         """The reading's own value, with its quote, when its first field states it as is; else
@@ -2763,6 +2846,62 @@ _NO_DEPOT_NOTE = (
     "Es gibt noch kein Depot unter Konten. Bitte zuerst das Depot anlegen (Konten › „Konto "
     "anlegen“, Kontoart „Depot“), dann hier das Depot wählen."
 )
+# D165 amended, 15 Nov 2026: a report's trades booked from the report. Every movement field
+# of such a record is computed by code from one row of the reading's Umsätze list.
+_REPORT_TRADE_SOURCES: dict[str, tuple[str, ...]] = {
+    "isin": ("trades",),
+    "name": ("positions",),
+    "kind": ("trades",),
+    "quantity": ("trades",),
+    "eur_amount": ("trades",),
+    "occurred_on": ("trades",),
+    "external_ref": ("trades",),
+}
+_REPORT_TRADES_NOTE = (
+    "Der Bericht nennt {count}, zu denen noch nichts gebucht ist. Mit „Übernehmen“ werden sie "
+    "mit Stückzahl, Betrag, Tag und Referenz aus dem Bericht gebucht, vor den Beständen, die "
+    "dann damit abgeglichen werden. Gebühren und Steuern stehen nicht im Bericht; sie kommen "
+    "aus der Jahressteuerbescheinigung. Eine Wertpapierabrechnung, die später kommt, bucht "
+    "nichts doppelt."
+)
+_REPORT_TRADES_BOOKED_NOTE = (
+    "{count} weitere Umsätze des Berichts sind schon gebucht und werden nicht noch einmal "
+    "vorgeschlagen."
+)
+_BOOKED_FROM_REPORT_NOTE = (
+    "Bereits aus dem Quartalsbericht gebucht. „Übernehmen“ bucht nichts ein zweites Mal; "
+    "die Abrechnung bleibt unter Dokumente abgelegt."
+)
+# Review of 15 Nov 2026: the report booked the trade on another depot than the one
+# pre-selected here, or none is pre-selected.
+_BOOKED_ELSEWHERE_NOTE = (
+    "Bereits aus dem Quartalsbericht gebucht, aber auf einem anderen Depot ({label}). Bleibt "
+    "das hier gewählte Depot, bucht „Übernehmen“ den Umsatz dort ein zweites Mal; mit dem "
+    "Depot {label} bucht es nichts doppelt."
+)
+_BOOKED_ON_DEPOT_NOTE = (
+    "Bereits aus dem Quartalsbericht gebucht, auf dem Depot {label}. Mit diesem Depot bucht "
+    "„Übernehmen“ nichts ein zweites Mal; mit einem anderen Depot wird der Umsatz dort noch "
+    "einmal gebucht."
+)
+_BOOKED_FROM_REPORT_DIFFERS = (
+    "Die Abrechnung nennt {units} Anteile und {amount}, aus dem Bericht gebucht sind "
+    "{report_units} Anteile und {report_amount}. Die Buchung aus dem Bericht bleibt; bitte "
+    "beide Dokumente vergleichen."
+)
+
+
+def _money_text(value: Decimal | None) -> str:
+    """-1000 -> "-1.000,00 €"; None -> "kein Betrag"."""
+    return "kein Betrag" if value is None else _euro_de(value)
+
+
+def _german_number(value: Decimal | None) -> str:
+    """-1234.5 -> "-1.234,5"; None -> "–"."""
+    if value is None:
+        return "–"
+    text = f"{value.normalize():,f}" if value else "0"
+    return text.replace(",", "_").replace(".", ",").replace("_", ".")
 
 
 def _code_value(value: JsonValue, confidence: ConfidenceLevel) -> ExtractedValue:

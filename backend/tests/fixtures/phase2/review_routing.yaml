@@ -71,6 +71,7 @@ per_category:
   - {category: hh_tax_refund, decision: review}
   - {category: hh_capital_income, decision: review}
   - {category: hh_other_income, decision: review}
+  - {category: hh_wage_replacement, decision: review}  # D159 amended (8) 15 Nov 2026 (migration 0037)
   - {category: hh_housing, decision: auto_confirm}
   - {category: hh_groceries, decision: auto_confirm}
   - {category: hh_family_child, decision: auto_confirm}
@@ -125,6 +126,7 @@ per_category:
   - {category: hh_parking, decision: auto_confirm}
   - {category: hh_car_service, decision: auto_confirm}
   - {category: hh_car_tax, decision: auto_confirm}
+  - {category: hh_car_purchase, decision: auto_confirm}  # D159 amended (7) 15 Nov 2026 (migration 0037)
   - {category: hh_supermarket, decision: auto_confirm}
   - {category: hh_drugstore, decision: auto_confirm}
   - {category: hh_bakery, decision: auto_confirm}

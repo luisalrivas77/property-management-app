@@ -55,7 +55,7 @@ from .enums import (
     RentModel,
     StateCode,
 )
-from .household import OpenTransfer
+from .household import OpenReturn, OpenTransfer
 from .loan import LoanCreate
 from .property import Address, OwnerShare, reject_raw_tax_number
 from .proposal import Proposal, RecordEntity
@@ -659,6 +659,10 @@ class InboxItemKind(StrEnum):
     EXCHANGE_UNRECONCILED = "exchange_unreconciled"
     EXCHANGE_WITHDRAWALS = "exchange_withdrawals"
     EXCHANGE_MOVEMENT = "exchange_movement"
+    # Phase 6 D162 amended (7), 15 Nov 2026: a credit on a private account that returns an
+    # earlier debit of it (a recalled transfer, a returned direct debit), computed on read;
+    # `returned` carries the credit and the debits it may return, `transaction_id` the credit.
+    RETURNED_PAYMENT = "returned_payment"
 
 
 class InboxItem(Schema):
@@ -681,6 +685,7 @@ class InboxItem(Schema):
     property_id: UUID | None = None  # phase 6: the property_cost_* kinds
     movement_id: UUID | None = None  # phase 6 step 5a: exchange_movement
     transfer: OpenTransfer | None = None  # phase 6: the transfer_* kinds
+    returned: OpenReturn | None = None  # phase 6 D162 amended (7): returned_payment
     asset_id: UUID | None = None  # phase 6 step 5b: the price_* kinds
     private_costs: list[TaxInputCreate] = Field(default_factory=list)  # property_cost_row
     # read_failed: the proposal's error code; proposal.bank_file_not_read (a card or depot
@@ -693,6 +698,10 @@ class InboxItem(Schema):
     # keeps it out, the list shows it, Luis 14 Nov 2026).
     category: AllocationCategory | None = None
     bulk_confirmable: bool = False
+    # holdings_mismatch (phase 6 D165 amended 15 Nov 2026): how many trades of the depot's
+    # reports no movement carries, which „Umsätze aus dem Bericht buchen“ books
+    # (POST /accounts/{id}/report-trades); None when there are none.
+    report_trades: int | None = None
 
 
 class AiRetryResult(Schema):

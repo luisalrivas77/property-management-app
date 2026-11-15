@@ -21,6 +21,7 @@ import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatArea, formatDate, formatFraction, formatMoney, formatShare } from "./format";
 import { decimalInput, toDecimalString, toFraction, toMoneyString, type Parsed } from "./input";
 import { BelegLink } from "./returnInputEvidence";
+import type { BenefitPrefill } from "./taxYear";
 import {
   COMMUTE_KIND,
   EQUIPMENT_CLASS,
@@ -240,7 +241,7 @@ const KINDS: KindSpec[] = [
     kind: "replacement_income",
     single: false,
     document: "Bescheid (optional)",
-    help: "Elterngeld, Mutterschaftsgeld der Krankenkasse, Krankengeld oder Arbeitslosengeld: steuerfrei, erhöht aber den Steuersatz (Progressionsvorbehalt). Den Zuschuss des Arbeitgebers zum Mutterschaftsgeld nicht hier eintragen: er steht auf der Lohnsteuerbescheinigung.",
+    help: "Elterngeld, Mutterschaftsgeld der Krankenkasse, Krankengeld oder Arbeitslosengeld: steuerfrei, erhöht aber den Steuersatz (Progressionsvorbehalt). Den Zuschuss des Arbeitgebers zum Mutterschaftsgeld nicht hier eintragen: er steht auf der Lohnsteuerbescheinigung. Maßgeblich ist der Betrag im Leistungsnachweis oder Bescheid der zahlenden Stelle: weicht er von den gebuchten Zahlungen ab, gilt der Bescheid. Ein vorgeschlagener Betrag ist das, was auf dem Konto eingegangen ist. Beim Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag (vor Abzug der Beiträge zur Sozialversicherung): diesen Betrag eintragen.",
     fields: [
       { name: "benefit", label: "Leistung", type: "select", options: options(REPLACEMENT_BENEFIT), initial: "elterngeld" },
       { name: "amount", label: "Betrag im Jahr", type: "money" },
@@ -303,6 +304,11 @@ function parseField(field: FieldSpec, raw: string): Parsed<unknown> {
       if (text === "") return { ok: true, value: null };
       return /^\d{4}-\d{2}-\d{2}$/.test(text) ? { ok: true, value: text } : { ok: false, message: NOT_A_DATE };
     case "select":
+      // "" is a choice only where the field offers it; otherwise nothing is picked yet (a
+      // pre-filled form whose benefit kind the payments did not name).
+      if (text === "" && !(field.options ?? []).some(([code]) => code === "")) {
+        return { ok: false, message: "Bitte auswählen." };
+      }
       return { ok: true, value: text === "" ? null : text };
     case "bool":
       return { ok: true, value: text === "true" };
@@ -342,6 +348,16 @@ function record(body: ReturnInputCreate): Promise<ReturnInput> {
 
 // --- the panel ------------------------------------------------------------------------------
 
+/** The Lohnersatzleistungen form pre-filled from the to-do return.benefit_booked (phase 6 D159
+ * amended (8)): `open` when the URL names this owner (or there is only one), else the block
+ * asks to pick the owner first; `clear` drops the pre-fill from the URL after a save or a
+ * cancel, so a reload never offers the same amount again. */
+export interface BenefitForm {
+  prefill: BenefitPrefill;
+  open: boolean;
+  clear: () => void;
+}
+
 /**
  * Eingaben: one block per kind with its current rows (as typed), "ändern" and "Entfernen",
  * and a form to add one. `rows` are the owner's current rows of the year (GET
@@ -353,11 +369,13 @@ export function InputsPanel({
   year,
   rows,
   onChanged,
+  benefitForm = null,
 }: {
   ownerId: string;
   year: number;
   rows: ReturnInput[];
   onChanged: () => void;
+  benefitForm?: BenefitForm | null;
 }) {
   return (
     <section className="card stack tax-inputs" aria-labelledby="tax-inputs-title">
@@ -368,16 +386,25 @@ export function InputsPanel({
       </p>
       {KINDS.map((kind) => (
         <KindBlock
-          key={kind.kind}
+          // A new or newly opened pre-fill remounts its block, so the form opens with it even
+          // when the to-do's button names the owner already on screen (same page, no remount).
+          key={
+            kind.kind === "replacement_income" && benefitForm ? `${kind.kind}:${benefitKey(benefitForm)}` : kind.kind
+          }
           spec={kind}
           ownerId={ownerId}
           year={year}
           rows={rows.filter((row) => row.kind === kind.kind)}
           onChanged={onChanged}
+          benefitForm={kind.kind === "replacement_income" ? benefitForm : null}
         />
       ))}
     </section>
   );
+}
+
+function benefitKey(form: BenefitForm): string {
+  return `${form.open ? "open" : "ask"}:${form.prefill.amount}:${form.prefill.benefit ?? ""}`;
 }
 
 function KindBlock({
@@ -386,15 +413,20 @@ function KindBlock({
   year,
   rows,
   onChanged,
+  benefitForm,
 }: {
   spec: KindSpec;
   ownerId: string;
   year: number;
   rows: ReturnInput[];
   onChanged: () => void;
+  benefitForm: BenefitForm | null;
 }) {
-  // null: no form open; "new": adding; a row id: changing that row.
-  const [editing, setEditing] = useState<string | null>(null);
+  // null: no form open; "new": adding; a row id: changing that row. A pre-fill for this owner
+  // opens the new form at once (the block is keyed by the pre-fill, so this runs again when it
+  // arrives or changes).
+  const [editing, setEditing] = useState<string | null>(benefitForm?.open ? "new" : null);
+  const prefilled = benefitForm?.open ? benefitForm : null;
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const title = RETURN_INPUT_KIND[kind.kind];
@@ -429,6 +461,14 @@ function KindBlock({
     setEditing(null);
     onChanged();
   };
+  const doneNew = () => {
+    done();
+    prefilled?.clear();
+  };
+  const cancelNew = () => {
+    setEditing(null);
+    prefilled?.clear();
+  };
   const canAdd = !kind.single || rows.length === 0;
 
   return (
@@ -461,8 +501,22 @@ function KindBlock({
           )}
         </ul>
       ) : null}
+      {benefitForm && !benefitForm.open ? (
+        <p className="notice notice-info" role="status">
+          Auf einem gemeinsamen Konto sind {formatMoney(benefitForm.prefill.amount)} als Lohnersatzleistung gebucht. Bitte oben die Person
+          wählen, die die Leistung bekommen hat; dann öffnet sich hier das Formular mit dem Betrag.
+        </p>
+      ) : null}
       {editing === "new" ? (
-        <InputForm spec={kind} ownerId={ownerId} year={year} replaces={null} onDone={done} onCancel={() => setEditing(null)} />
+        <InputForm
+          spec={kind}
+          ownerId={ownerId}
+          year={year}
+          replaces={null}
+          prefill={prefilled ? { amount: decimalInput(prefilled.prefill.amount), benefit: prefilled.prefill.benefit ?? "" } : null}
+          onDone={doneNew}
+          onCancel={cancelNew}
+        />
       ) : canAdd ? (
         <button type="button" className="secondary" onClick={() => setEditing("new")} disabled={busy || editing !== null}>
           {kind.single ? `${title} eintragen` : `${title} hinzufügen`}
@@ -484,6 +538,7 @@ function InputForm({
   ownerId,
   year,
   replaces,
+  prefill = null,
   onDone,
   onCancel,
 }: {
@@ -491,12 +546,16 @@ function InputForm({
   ownerId: string;
   year: number;
   replaces: ReturnInput | null;
+  /** Texts a new form starts with instead of the defaults (the booked benefit, D159 (8)). */
+  prefill?: Record<string, string> | null;
   onDone: () => void;
   onCancel: () => void;
 }) {
   const old = (replaces?.value as Record<string, unknown> | undefined) ?? null;
   const [texts, setTexts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(kind.fields.map((field) => [field.name, initialText(field, old, year)])),
+    Object.fromEntries(
+      kind.fields.map((field) => [field.name, prefill?.[field.name] ?? initialText(field, old, year)]),
+    ),
   );
   const [documentId, setDocumentId] = useState<string | null>(replaces?.document_id ?? null);
   const [busy, setBusy] = useState(false);
@@ -549,6 +608,12 @@ function InputForm({
   return (
     <form className="stack tax-input-form" onSubmit={submit} noValidate aria-label={`${RETURN_INPUT_KIND[kind.kind]} ${replaces ? "ändern" : "eintragen"}`}>
       <p className="muted hint">{kind.help}</p>
+      {prefill ? (
+        <p className="notice notice-info" role="status">
+          Vorgeschlagen aus den Zahlungen, die auf dem Konto als Lohnersatzleistung gebucht sind. Bitte Betrag und Leistung prüfen; erst
+          „Speichern“ trägt sie ein.
+        </p>
+      ) : null}
       <div className="grid">
         {kind.fields.map((field) => (
           <Field
@@ -561,6 +626,9 @@ function InputForm({
           >
             {field.type === "select" ? (
               <select value={texts[field.name] ?? ""} onChange={(e) => set(field.name, e.target.value)}>
+                {texts[field.name] === "" && !(field.options ?? []).some(([code]) => code === "") ? (
+                  <option value="">Bitte wählen</option>
+                ) : null}
                 {(field.options ?? []).map(([code, label]) => (
                   <option key={code} value={code}>
                     {label}

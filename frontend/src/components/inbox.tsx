@@ -45,6 +45,13 @@
 //   gingen an eigene Wallets“ (POST /movement-imports/{id}/withdrawals/confirm), and a link to
 //   answer them one by one; any other proposed movement (a crypto deposit) gets its answers
 //   (POST /movements/{id}/confirm or /answer), from GET /accounts/{id}/movements.
+// - a returned payment on a private account (returned_payment, phase 6 D162 amended (7)): a
+//   credit whose purpose says the money came back (a recall, „Rücküberweisung“) and the equal
+//   debit it returns, both named; „Als Rücküberweisung verbuchen“ (POST /returns) books the two
+//   as one returned payment that counts as nothing. Several debits that fit are listed to pick
+//   one, never guessed. „Keine Rücküberweisung – Zahlung anders zuordnen“ opens the credit in
+//   the allocation panel (?umsatz=…). The card's own lines are not listed again under
+//   Zahlungen zuordnen or as „Überweisung ohne Gegenstück“ (GET /inbox leaves them out).
 //
 // GET /inbox names ids only, so the lines, imports, accounts, duplicates and documents are
 // loaded alongside to show what each item is about. Amounts are shown as the API returns them.
@@ -157,6 +164,8 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   exchange_unreconciled: "exchanges",
   exchange_withdrawals: "exchanges",
   exchange_movement: "exchanges",
+  // Phase 6 D162 amended (7): a returned payment, beside the transfers it was shown as before.
+  returned_payment: "transfers",
 };
 
 /** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
@@ -197,6 +206,7 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   exchange_unreconciled: "badge badge-danger",
   exchange_withdrawals: "badge badge-info",
   exchange_movement: "badge badge-info",
+  returned_payment: "badge badge-info",
 };
 
 export interface InboxData {
@@ -879,6 +889,19 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
       </>
     );
   }
+  if (item.kind === "returned_payment" && item.returned) {
+    const { leg } = item.returned;
+    return (
+      <>
+        <strong>
+          {leg.account_label} · {signedMoney(leg.amount)}
+        </strong>
+        <span className="inbox-detail">
+          {[formatDate(leg.booked_on), leg.counterparty_name ?? ""].filter(Boolean).join(" · ")}
+        </span>
+      </>
+    );
+  }
   if (item.kind.startsWith("property_cost_")) {
     const line = item.transaction_id ? data.transactions.get(item.transaction_id) : undefined;
     const account = line ? data.accounts.get(line.account_id) : undefined;
@@ -1059,6 +1082,8 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
         </span>
       );
     }
+    case "returned_payment":
+      return item.returned ? <ReturnBook open={item.returned} onBooked={onChanged} /> : null;
     case "property_cost_row":
       return item.transaction_id && (item.private_costs ?? []).length > 0 ? (
         <PrivateCostApply transactionId={item.transaction_id} onApplied={onChanged} />
@@ -1092,6 +1117,9 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
     case "holdings_mismatch":
       return (
         <>
+          {item.account_id ? (
+            <ReportTradesButton accountId={item.account_id} count={item.report_trades ?? 0} onDone={onChanged} />
+          ) : null}
           <Link href="/documents">Abrechnung hochladen</Link>
           {item.document_id ? <Link href={`/documents/${item.document_id}`}>Bericht öffnen</Link> : null}
           {item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zum Depot</Link> : null}
@@ -1106,9 +1134,59 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
   }
 }
 
+/** „Umsätze aus dem Bericht buchen“ on the depot's holdings card (phase 6 D165 amended,
+ * 15 Nov 2026): books the trades the depot's reports list and nothing carries, from the
+ * reports themselves (POST /accounts/{id}/report-trades); the server finds them again. It
+ * stays mounted when nothing is left to book, so the sentence naming the funds it left out
+ * (review of 15 Nov 2026: their holdings would not match the report) survives the reload. */
+function ReportTradesButton({ accountId, count, onDone }: { accountId: string; count: number; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [leftOut, setLeftOut] = useState<string[]>([]);
+
+  async function book() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await ok(api.POST("/api/accounts/{account_id}/report-trades", { params: { path: { account_id: accountId } } }));
+      setLeftOut(result.left_out ?? []);
+      notifyInboxChanged();
+      onDone();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      {count > 0 ? (
+        <button type="button" onClick={() => void book()} disabled={busy}>
+          {busy ? "Bucht …" : `Umsätze aus dem Bericht buchen (${count})`}
+        </button>
+      ) : null}
+      {leftOut.length > 0 ? (
+        <p className="muted">
+          Nicht aus dem Bericht gebucht: {joinNames(leftOut)} (Bestand würde nicht zum Bericht passen). Dafür bitte die
+          Wertpapierabrechnungen unter Dokumente hochladen.
+        </p>
+      ) : null}
+      <ErrorNotice error={error} />
+    </>
+  );
+}
+
+/** ["A"] -> "A"; ["A", "B", "C"] -> "A, B und C". */
+function joinNames(names: string[]): string {
+  const last = names.at(-1) ?? "";
+  return names.length === 1 ? last : `${names.slice(0, -1).join(", ")} und ${last}`;
+}
+
 // --- Phase 6: transfers between own accounts (D162) and privately paid property costs (D161)
 
 type OpenTransfer = components["schemas"]["OpenTransfer"];
+type OpenReturn = components["schemas"]["OpenReturn"];
 type TransferLegView = components["schemas"]["TransferLegView"];
 type TransferLinkRequest = components["schemas"]["TransferLinkRequest"];
 type TransferLinkKind = components["schemas"]["TransferLinkKind"];
@@ -1216,6 +1294,62 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
           Keine Überweisung – Zahlung anders zuordnen
         </Link>
       ) : null}
+      <ErrorNotice error={error} />
+    </fieldset>
+  );
+}
+
+/** D162 amended (7): „Rücküberweisung erkannt“. The credit came back from the debit it names
+ * (one is pre-selected; several that fit are listed to pick one, never guessed), and the text
+ * says the two together count as nothing. „Als Rücküberweisung verbuchen“ posts both lines
+ * (POST /returns), which books them through the person's answer and links them; a debit a
+ * person already booked otherwise is re-booked with it. A credit that is no return is answered
+ * in the allocation panel: „Keine Rücküberweisung – Zahlung anders zuordnen“ selects it. */
+function ReturnBook({ open, onBooked }: { open: OpenReturn; onBooked: () => void }) {
+  const [choice, setChoice] = useState(open.candidates.length === 1 ? (open.candidates[0]?.id ?? "") : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const name = `return-${open.leg.id}`;
+  const chosen = open.candidates.find((candidate) => candidate.id === choice);
+
+  async function book() {
+    if (!chosen) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.POST("/api/returns", { body: { out_transaction_id: chosen.id, in_transaction_id: open.leg.id } }));
+      onBooked();
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <fieldset className="stack">
+      <legend className="visually-hidden">Zurückgekommene Abbuchung</legend>
+      {open.candidates.length === 1 && chosen ? (
+        <p>Kam zurück: {legText(chosen)}</p>
+      ) : (
+        open.candidates.map((candidate) => (
+          <label key={candidate.id}>
+            <input type="radio" name={name} value={candidate.id} checked={choice === candidate.id} onChange={() => setChoice(candidate.id)} />{" "}
+            {legText(candidate)}
+          </label>
+        ))
+      )}
+      <p className="muted">
+        Abbuchung und Gutschrift heben sich auf: Zusammen zählen sie weder als Ausgabe noch als Einnahme noch als Überweisung.
+        {chosen?.booked_category && !chosen.booked_as_transfer
+          ? ` Die Abbuchung ist bisher als „${ALLOCATION_CATEGORY[chosen.booked_category]}“ gebucht und wird umgebucht.`
+          : ""}
+      </p>
+      <button type="button" onClick={() => void book()} disabled={busy || !chosen}>
+        {busy ? "Wird gebucht …" : "Als Rücküberweisung verbuchen"}
+      </button>
+      <Link href={`/inbox?umsatz=${open.leg.id}`} scroll={false}>
+        Keine Rücküberweisung – Zahlung anders zuordnen
+      </Link>
       <ErrorNotice error={error} />
     </fieldset>
   );

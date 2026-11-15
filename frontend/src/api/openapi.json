@@ -4472,6 +4472,47 @@
         }
       }
     },
+    "/api/accounts/{account_id}/report-trades": {
+      "post": {
+        "summary": "Account Report Trades",
+        "description": "„Umsätze aus dem Bericht buchen“ on the depot's holdings card (phase 6 D165 amended,\n15 Nov 2026): the trades of the depot's current reports' confirmed readings that no\nmovement carries are booked from the report (units and amount, source report, the report\nas its document), in one transaction under the depot's lock, then the reports' prices that\nnow agree are stored. A fund is booked only when its units then equal the latest report's\n(else named in left_out), and a row that cannot be read is left out (review of 15 Nov\n2026). The list is computed here again, never sent by the page. 404 for no such account,\n422 depot.account_required for an account that is no depot; nothing to book is\nbooked=0.",
+        "operationId": "account_report_trades_api_accounts__account_id__report_trades_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportTradesBooked"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/imports": {
       "post": {
         "summary": "Account Import",
@@ -5746,6 +5787,45 @@
               }
             }
           }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferLink"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/returns": {
+      "post": {
+        "summary": "Returned Payment",
+        "description": "The link joining the debit and the credit that returned it (matched_by user).",
+        "operationId": "returned_payment_api_returns_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnedPaymentCreate"
+              }
+            }
+          },
+          "required": true
         },
         "responses": {
           "201": {
@@ -9551,6 +9631,7 @@
           "uncategorized",
           "hh_salary",
           "hh_child_benefit",
+          "hh_wage_replacement",
           "hh_tax_refund",
           "hh_capital_income",
           "hh_other_income",
@@ -9606,6 +9687,7 @@
           "hh_parking",
           "hh_car_service",
           "hh_car_tax",
+          "hh_car_purchase",
           "hh_supermarket",
           "hh_drugstore",
           "hh_bakery",
@@ -17274,6 +17356,16 @@
               }
             ]
           },
+          "returned": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpenReturn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "asset_id": {
             "anyOf": [
               {
@@ -17318,6 +17410,17 @@
             "type": "boolean",
             "title": "Bulk Confirmable",
             "default": false
+          },
+          "report_trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Trades"
           }
         },
         "additionalProperties": false,
@@ -17361,7 +17464,8 @@
           "exchange_pending_balance",
           "exchange_unreconciled",
           "exchange_withdrawals",
-          "exchange_movement"
+          "exchange_movement",
+          "returned_payment"
         ],
         "title": "InboxItemKind",
         "description": "GET /inbox (§8.3): one list, newest first."
@@ -19697,6 +19801,28 @@
           "scope"
         ],
         "title": "OpenQuestion"
+      },
+      "OpenReturn": {
+        "properties": {
+          "leg": {
+            "$ref": "#/components/schemas/TransferLegView"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/TransferLegView"
+            },
+            "type": "array",
+            "title": "Candidates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "leg",
+          "candidates"
+        ],
+        "title": "OpenReturn",
+        "description": "D162 amended (7), 15 Nov 2026: a credit on a private account that returns an earlier\ndebit of the same account (rules.household.returns), with the debits it may return: one\nwhen the rule found one, several when it cannot tell which (never guessed). Booked by\nPOST /returns (ReturnedPaymentCreate)."
       },
       "OpenTransfer": {
         "properties": {
@@ -23370,6 +23496,33 @@
         "title": "ReplacementFact",
         "description": "A benefit paid by an authority (D102); the employer's Zuschuss is on the certificate."
       },
+      "ReportTradesBooked": {
+        "properties": {
+          "booked": {
+            "type": "integer",
+            "title": "Booked"
+          },
+          "prices_stored": {
+            "type": "integer",
+            "title": "Prices Stored"
+          },
+          "left_out": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Left Out"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "booked",
+          "prices_stored"
+        ],
+        "title": "ReportTradesBooked",
+        "description": "POST /accounts/{id}/report-trades: how many trades were booked from the reports, how\nmany report prices that stored (D167 amended (c)), and the funds left out because their\nholdings would not match the report (review of 15 Nov 2026)."
+      },
       "RequirementCode": {
         "type": "string",
         "enum": [
@@ -24244,6 +24397,56 @@
         ],
         "title": "ReturnInputKind",
         "description": "return_input.kind (migration 0018, phase 4b D97). Owner-scoped unless listed in\nHOUSEHOLD_KINDS; read per year unless listed in SPANNING_KINDS (D110)."
+      },
+      "ReturnedPartner": {
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Transaction Id"
+          },
+          "booking_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Booking Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "transaction_id",
+          "booking_date",
+          "amount"
+        ],
+        "title": "ReturnedPartner",
+        "description": "Phase 6 D162 amended (7): the other line of a returned payment booked as such (the\ndebit that left, or the credit that brought it back, on the same account)."
+      },
+      "ReturnedPaymentCreate": {
+        "properties": {
+          "out_transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Out Transaction Id"
+          },
+          "in_transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "In Transaction Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "out_transaction_id",
+          "in_transaction_id"
+        ],
+        "title": "ReturnedPaymentCreate",
+        "description": "POST /returns' body (D162 amended (7)): the debit that left and the credit that brought\nit back, both bank lines of one private account. Both are booked as transfer parts by the\nperson's answer and linked to each other (a transfer_link on one account), so together they\ncount as nothing."
       },
       "RoomRent": {
         "properties": {
@@ -27626,6 +27829,16 @@
             },
             "type": "array",
             "title": "Allocation Categories"
+          },
+          "returned_with": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReturnedPartner"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -28908,6 +29121,7 @@
           "anlage_n.first_workplace_check",
           "return.progression_provisional",
           "return.benefit_possible_double",
+          "return.benefit_booked",
           "return.children_mismatch",
           "return.kindergeld_apply",
           "return.child_over_18",

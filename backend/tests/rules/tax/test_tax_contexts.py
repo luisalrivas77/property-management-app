@@ -120,3 +120,19 @@ def test_no_yearly_row_leaves_phase_4_unchanged():
     assert tc.source_year(2026) is None
     assert tc(2026, RENTAL) == (None, None)
     assert _contexts(case, [])(2025, RENTAL) == (None, None)
+
+
+@pytest.mark.rule
+def test_an_owner_without_pay_still_brings_typed_benefits():
+    """D102 amended 15 Nov 2026: B has no pay source at all (a year of parental leave), so no
+    Anlage N summary, but her typed Elterngeld less the whole Pauschbetrag enters the
+    context's benefits, as in the whole-return estimate (D98: the two must agree)."""
+    case = next(c for c in load("return_estimate").cases if c.id == "benefits_without_pay")
+    employment, household = _contexts(case, [])(2026, RENTAL)
+    assert household is not None and employment is not None
+    assert [e.owner_id for e in employment] == [case.owners[0].owner_id]
+    # A's 1,800.00 + B's 10,000.00 less the 1,230 B cannot use against pay
+    assert household.replacement_benefits == Decimal("10570.00")
+    assert household.replacement_benefits == case.expect.assessed.progression.benefits
+    b_row = case.resolved_owners()[1].inputs[0]
+    assert any(s.kind == "return_input" and s.id == b_row.id for s in household.sources)
