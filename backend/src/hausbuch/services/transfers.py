@@ -28,6 +28,8 @@ links and computes the cards on read.
   A candidate booked otherwise but tied to the leg by an own IBAN (a card bill answered
   hh_credit_card before the card account existed) is marked rebook_on_link: the card's
   button re-books it as a transfer, then links (link_by_hand with rebook, D176 (4)).
+- lines_on_cards: the candidates Zu prüfen shows on their card only (D162 amended (5)): the
+  card's button books them, and they hold only the model's proposal.
 
 Every link and every replacement writes its event (transfer.linked, transfer.unlinked). Reads
 and writes run under the workspace's row-level security."""
@@ -1216,6 +1218,37 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
     return items
 
 
+def lines_on_cards(conn: Connection, items: Iterable[InboxItem]) -> set[UUID]:
+    """D162 amended (5), 15 Nov 2026 (Luis: „Aren't the zu prüfen the bank lines that are also
+    in transfers between own accounts redundant?“): the bank lines among the transfer cards'
+    candidates (`items`, transfer_inbox_items) that Zu prüfen lists on their card only, not
+    among the lines to allocate. A candidate is one when the card's own button books it: an
+    exchange deposit credited short (deposit_fee: the link books the split) or a line tied to
+    the leg by an own IBAN (rebook_on_link: the link re-books it as a transfer); and the line
+    holds only the model's proposal, never a person's or a rule's answer, current or superseded
+    (_free_for_matcher with at least one row, so a line holding nothing stays listed for
+    „KI-Vorschläge holen“). An untied candidate of the same amount is not one: a plain
+    „Verknüpfen“ leaves the model's proposal on it, so it would come back after the link.
+    Reads two small queries per such candidate line, each line once."""
+    from . import allocations  # allocations imports services that import this module
+
+    found: set[UUID] = set()
+    seen: set[UUID] = set()
+    for item in items:
+        if item.transfer is None:
+            continue
+        for candidate in item.transfer.candidates:
+            if candidate.source is not TransferLegSource.TRANSACTION or candidate.id in seen:
+                continue
+            if candidate.deposit_fee is None and not candidate.rebook_on_link:
+                continue
+            seen.add(candidate.id)
+            current = allocations.current_allocations(conn, candidate.id)
+            if current and _free_for_matcher(conn, candidate.id, current):
+                found.add(candidate.id)
+    return found
+
+
 _LINK_REASON = {
     OpenTransferCode.AMBIGUOUS: (
         "Für diese Überweisung zwischen zwei eigenen Konten passen mehrere Gegenbuchungen."
@@ -1296,6 +1329,7 @@ __all__ = [
     "own_account_hmacs",
     "link_by_hand",
     "link_leg",
+    "lines_on_cards",
     "list_links",
     "open_transfers",
     "relink",
