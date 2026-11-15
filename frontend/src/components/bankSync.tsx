@@ -2,8 +2,9 @@
 
 // Bankabruf (phase-5.md §11, D115–D120): the account's FinTS connection and its runs.
 //
-// - No connection yet: the form (BLZ, FinTS-Adresse, Anmeldename). The PIN is never asked for
-//   here; it and the product id are server secrets (D119), and the card says so.
+// - No connection yet: the form (BLZ, FinTS-Adresse, Anmeldename, Name des Zugangs and, while
+//   the slot has no PIN from either place, „PIN (Online-Banking)“). The product id stays a
+//   server secret (D119).
 // - A connection: its facts, "Zugang ändern", the **Jetzt abrufen** button, the current run
 //   in plain words, and the run history. While a run is queued, running, waiting for the
 //   pushTAN approval or importing, the card polls GET /syncs/{id} every 2 s; a run waiting for
@@ -33,12 +34,28 @@
 //   names only). The approval texts are the connection's `approval_text` (the DKB app for a
 //   DKB connection), and the daily switch stays locked while `auto_sync_allowed` is false
 //   (DKB before two manual syncs in a row without an approval).
+// - Phase 6 D196: the PIN can instead be typed here (PUT /bank-credentials/{slot}); the API
+//   stores it encrypted and it wins over the variable. The input is a password field that is
+//   never prefilled and is emptied once saved; no response carries the PIN back, so the card
+//   shows only where it comes from (`credential_source`) and since when. „PIN löschen“
+//   (DELETE) falls back to the variable. After the server's key changed, a stored PIN or
+//   Anmeldename no longer decrypts (`credential_readable`, `name_readable` false) and the card
+//   asks for it again.
 import Link from "next/link";
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodeText } from "@/api/errors";
-import type { Account, BankConnection, BankStatement, BankSync, StatementsRefusal, SyncStatus } from "@/api/schemas";
+import type {
+  Account,
+  AppCredential,
+  BankConnection,
+  BankStatement,
+  BankSync,
+  CredentialSource,
+  StatementsRefusal,
+  SyncStatus,
+} from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { Field, FormBanner, Submit, useFormErrors } from "./form";
@@ -116,13 +133,18 @@ export function pinVariable(slot: string): string {
   return slot === PRIMARY_SLOT ? "HAUSBUCH_FINTS_PIN" : `HAUSBUCH_FINTS_PIN_${slot.toUpperCase()}`;
 }
 
-async function loadSlots(): Promise<string[]> {
-  return (await ok(api.GET("/api/bank-credential-slots"))).slots ?? [];
+/** The slots with a PIN, by place: the server's variables and the PINs typed into the app
+ * (names and dates only, never a PIN). */
+type Slots = { server: string[]; app: AppCredential[] };
+
+async function loadSlots(): Promise<Slots> {
+  const answer = await ok(api.GET("/api/bank-credential-slots"));
+  return { server: answer.slots ?? [], app: answer.app_slots ?? [] };
 }
 
 async function loadBankSync(
   accountId: string,
-): Promise<{ connection: BankConnection | null; syncs: BankSync[]; statements: BankStatement[]; slots: string[] }> {
+): Promise<{ connection: BankConnection | null; syncs: BankSync[]; statements: BankStatement[]; slots: Slots }> {
   const path = { params: { path: { account_id: accountId } } };
   let connection: BankConnection | null;
   try {
@@ -137,6 +159,24 @@ async function loadBankSync(
     loadSlots(),
   ]);
   return { connection, syncs, statements, slots };
+}
+
+/** Where a slot's PIN comes from at the next sync (D196's precedence: the app's, then the
+ * server's variable). */
+type PinInfo = { source: CredentialSource; setAt: string | null; readable: boolean };
+
+function slotPin(slot: string, slots: Slots): PinInfo {
+  const app = slots.app.find((c) => c.slot === slot);
+  if (app) return { source: "app", setAt: app.set_at, readable: app.readable };
+  return { source: slots.server.includes(slot) ? "server" : "none", setAt: null, readable: true };
+}
+
+function connectionPin(connection: BankConnection): PinInfo {
+  return {
+    source: connection.credential_source,
+    setAt: connection.credential_set_at ?? null,
+    readable: connection.credential_readable,
+  };
 }
 
 /** The later of two views of the runs: the one the card polled, or the list's newest. */
@@ -213,7 +253,10 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
   return (
     <section className="card stack" aria-labelledby="bank-sync-title">
       <h2 id="bank-sync-title">Bankabruf</h2>
-      <p className="muted">PIN und Produkt-ID liegen in der Serverkonfiguration; Hausbuch fragt hier nie nach der PIN.</p>
+      <p className="muted">
+        Die PIN Ihres Online-Bankings speichert Hausbuch nur verschlüsselt und zeigt sie nie wieder an; die Produkt-ID liegt in
+        der Serverkonfiguration.
+      </p>
       {state.error ? <ErrorNotice error={state.error} /> : null}
       {state.data === undefined ? (
         state.error ? null : <p className="muted">Lädt …</p>
@@ -221,7 +264,13 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
         <ConnectionCreateForm account={account} slots={state.data.slots} onCreated={reload} />
       ) : (
         <>
-          <ConnectionFacts connection={state.data.connection} slots={state.data.slots} />
+          <ConnectionFacts connection={state.data.connection} />
+          <PinPanel
+            slot={state.data.connection.credential_slot}
+            pin={connectionPin(state.data.connection)}
+            serverSet={state.data.slots.server.includes(state.data.connection.credential_slot)}
+            onChanged={reload}
+          />
           <ConnectionSwitch
             connection={state.data.connection}
             field="auto_sync"
@@ -291,36 +340,199 @@ function dayAfter(timestamp: string, days: number): string {
   return localDay.format(day);
 }
 
-/** Where a slot's PIN goes and whether the server has it (names only, never a PIN). */
-function PinPlace({ slot, slots }: { slot: string; slots: string[] }) {
-  const variable = pinVariable(slot);
-  return slots.includes(slot) ? (
-    <>
-      <code>{variable}</code>: auf dem Server gesetzt.
-    </>
-  ) : (
-    <>
-      <code>{variable}</code>: <strong>noch nicht gesetzt.</strong> In der Scaleway-Konsole beim API-Container als geheime
-      Umgebungsvariable (Secret) mit genau diesem Namen anlegen, als Wert die PIN dieses Online-Banking-Zugangs, und den
-      Container neu bereitstellen (Runbook Schritt 17). Bis dahin endet jeder Abruf mit „PIN fehlt“.
-    </>
+/** Where a slot's PIN comes from, in one sentence (names and dates only, never a PIN). */
+function pinSentence(slot: string, pin: PinInfo): ReactNode {
+  if (pin.source === "app") {
+    return pin.readable ? (
+      <>PIN in der App gespeichert am {pin.setAt ? dayAfter(pin.setAt, 0) : "–"} (verschlüsselt).</>
+    ) : (
+      <>
+        <strong>Die gespeicherte PIN lässt sich nicht mehr lesen</strong>: der Schlüssel des Servers wurde gewechselt. Bitte
+        „PIN ändern“ wählen und die PIN neu eingeben.
+      </>
+    );
+  }
+  if (pin.source === "server") {
+    return (
+      <>
+        PIN auf dem Server gesetzt (<code>{pinVariable(slot)}</code>).
+      </>
+    );
+  }
+  return <strong>Noch keine PIN hinterlegt.</strong>;
+}
+
+const PIN_LABEL = "PIN (Online-Banking)";
+const PIN_HINT =
+  "Die PIN, mit der Sie sich im Online-Banking anmelden. Hausbuch speichert sie verschlüsselt und zeigt sie nie wieder an, auch Ihnen nicht.";
+const PIN_LENGTH = "Die PIN hat 5 bis 64 Zeichen.";
+const PIN_KEYS = ["pin"] as const;
+
+/** A PIN's length in characters, as the API counts them (code points, not UTF-16 units). */
+function checkPin(pin: string): string | null {
+  const length = [...pin].length;
+  return length >= 5 && length <= 64 ? null : PIN_LENGTH;
+}
+
+/** The password input of a PIN: never prefilled, no browser autofill of a saved password. */
+function PinInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <input
+      type="password"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      autoComplete="new-password"
+      autoCapitalize="off"
+      spellCheck={false}
+    />
   );
 }
 
-function ConnectionFacts({ connection, slots }: { connection: BankConnection; slots: string[] }) {
+/** PUT the slot's PIN (D196). The PIN goes out in this one request body and is never read back;
+ * the input is emptied once it is saved. */
+async function savePin(slot: string, pin: string): Promise<void> {
+  await ok(api.PUT("/api/bank-credentials/{slot}", { params: { path: { slot } }, body: { pin } }));
+}
+
+function PinForm({ slot, onSaved }: { slot: string; onSaved: () => void }) {
+  const id = useId();
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const form = useFormErrors(PIN_KEYS);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    const message = checkPin(pin);
+    if (message) return form.invalid({ pin: [message] });
+    setBusy(true);
+    form.clear();
+    try {
+      await savePin(slot, pin);
+      setPin("");
+      onSaved();
+    } catch (error) {
+      form.fail(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={submit} noValidate aria-label="PIN speichern">
+      <Field id={`${id}-pin`} label={PIN_LABEL} hint={PIN_HINT} errors={form.of("pin")}>
+        <PinInput value={pin} onChange={setPin} />
+      </Field>
+      <FormBanner errors={form.errors} />
+      <div className="row">
+        <Submit busy={busy}>PIN speichern</Submit>
+      </div>
+    </form>
+  );
+}
+
+/** The connection's PIN (D196): where it comes from and the buttons to set, change or delete
+ * the one typed into the app. */
+function PinPanel({
+  slot,
+  pin,
+  serverSet,
+  onChanged,
+}: {
+  slot: string;
+  pin: PinInfo;
+  serverSet: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function remove() {
+    const after = serverSet
+      ? "Danach nutzt der Abruf wieder die PIN auf dem Server."
+      : "Danach endet jeder Abruf mit „PIN fehlt“, bis wieder eine PIN gespeichert ist.";
+    if (!window.confirm(`Die in Hausbuch gespeicherte PIN für den Zugang „${slot}“ löschen? ${after}`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.DELETE("/api/bank-credentials/{slot}", { params: { path: { slot } } }));
+      onChanged();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const change = (label: string) => (
+    <ActionDialog label={label} title={`Bankabruf: ${label}`}>
+      {(close) => (
+        <PinForm
+          slot={slot}
+          onSaved={() => {
+            close();
+            onChanged();
+          }}
+        />
+      )}
+    </ActionDialog>
+  );
+
+  return (
+    <div className="stack">
+      <h3>PIN</h3>
+      {pin.source === "none" ? (
+        <>
+          <p>
+            {pinSentence(slot, pin)} Hausbuch speichert die PIN verschlüsselt und zeigt sie danach nie wieder an. Ohne PIN endet
+            jeder Abruf mit „PIN fehlt“.
+          </p>
+          <PinForm slot={slot} onSaved={onChanged} />
+        </>
+      ) : (
+        <>
+          <p className={pin.readable ? undefined : "notice notice-warn"}>
+            {pinSentence(slot, pin)}
+            {pin.source === "app" && pin.readable && serverSet ? " Sie gilt vor der PIN auf dem Server." : ""}
+          </p>
+          <div className="row">
+            {pin.source === "app" ? (
+              <>
+                {change("PIN ändern")}
+                <button type="button" className="danger" onClick={() => void remove()} disabled={busy}>
+                  PIN löschen
+                </button>
+              </>
+            ) : (
+              change("PIN in der App speichern")
+            )}
+          </div>
+          <ErrorNotice error={error} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function ConnectionFacts({ connection }: { connection: BankConnection }) {
   return (
     <Facts
       rows={[
         ["BLZ", connection.bank_code],
         ...(connection.bank_name ? ([["Bank (laut FinTS)", connection.bank_name]] as [string, ReactNode][]) : []),
         ["FinTS-Adresse", connection.fints_url],
-        ["Anmeldename", connection.login_masked],
         [
-          "PIN-Variable",
-          <>
-            Zugang „{connection.credential_slot}“, <PinPlace slot={connection.credential_slot} slots={slots} />
-          </>,
+          "Anmeldename",
+          connection.name_readable ? (
+            connection.login_masked
+          ) : (
+            <>
+              <strong>lässt sich nicht mehr lesen</strong>: der Schlüssel des Servers wurde gewechselt. „Zugang ändern“ wählen,
+              den Anmeldenamen neu eingeben.
+            </>
+          ),
         ],
+        ["Zugang", `„${connection.credential_slot}“`],
         [
           "Freigabe",
           connection.sca_confirmed_at
@@ -650,15 +862,16 @@ function RunHistory({ runs }: { runs: BankSync[] }) {
 
 // --- the connection's forms -------------------------------------------------------------
 
-const CREATE_KEYS = ["bank_code", "fints_url", "login_name", "credential_slot"] as const;
-const CODE_FIELDS = { "bank.url_not_https": "fints_url" };
+const CREATE_KEYS = ["bank_code", "fints_url", "login_name", "credential_slot", "pin"] as const;
+const CODE_FIELDS = { "bank.url_not_https": "fints_url", "bank.pin_invalid": "pin" };
 
 const BLZ_HINT = "8 Ziffern: in Ihrer IBAN die Stellen 5 bis 12, nach „DE“ und den zwei Prüfziffern. Sie können auch die ganze IBAN einfügen.";
 const URL_HINT =
   "Beginnt mit https://. Ihre Sparkasse nennt sie auf ihrer Website unter „FinTS“ oder „HBCI PIN/TAN“; sonst steht sie in der Bankenliste der Deutschen Kreditwirtschaft.";
-const LOGIN_HINT = "Der Anmeldename oder die Legitimations-ID, mit dem Sie sich im Online-Banking anmelden. Wird nur gekürzt angezeigt.";
+const LOGIN_HINT =
+  "Der Anmeldename oder die Legitimations-ID, mit dem Sie sich im Online-Banking anmelden. Hausbuch speichert ihn verschlüsselt und zeigt ihn nur gekürzt an.";
 const SLOT_HINT =
-  "Ein kurzer Name für diesen Online-Banking-Zugang, klein geschrieben, z. B. „dkb“ oder „sparkasse_b“; „primary“ ist der Zugang des Mietkontos. Konten unter demselben Zugang tragen denselben Namen. Die PIN geben Sie hier nie ein.";
+  "Ein kurzer Name für diesen Online-Banking-Zugang, klein geschrieben, z. B. „dkb“ oder „sparkasse_b“; „primary“ ist der Zugang des Mietkontos. Konten unter demselben Zugang tragen denselben Namen und nutzen dieselbe PIN.";
 
 function checkSlot(slot: string): string | null {
   return SLOT_PATTERN.test(slot.trim())
@@ -671,14 +884,27 @@ function checkUrl(url: string): string | null {
   return url.trim().startsWith("https://") ? null : "Die FinTS-Adresse muss mit https:// beginnen.";
 }
 
-function ConnectionCreateForm({ account, slots, onCreated }: { account: Account; slots: string[]; onCreated: () => void }) {
+/** A slot with no usable PIN yet: none from either place, or a stored one that no longer
+ * decrypts. */
+function pinNeeded(pin: PinInfo): boolean {
+  return pin.source === "none" || !pin.readable;
+}
+
+function ConnectionCreateForm({ account, slots, onCreated }: { account: Account; slots: Slots; onCreated: () => void }) {
   const ids = useId();
   const [bankCode, setBankCode] = useState("");
   const [url, setUrl] = useState("");
   const [login, setLogin] = useState("");
   const [slot, setSlot] = useState(PRIMARY_SLOT);
+  const [pin, setPin] = useState("");
+  // The slot whose PIN this form already saved, when the connection's POST then failed.
+  const [savedFor, setSavedFor] = useState<{ slot: string; at: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(CREATE_KEYS, CODE_FIELDS);
+  const slotValid = checkSlot(slot) === null;
+  const current: PinInfo =
+    savedFor && savedFor.slot === slot.trim() ? { source: "app", setAt: savedFor.at, readable: true } : slotPin(slot.trim(), slots);
+  const askPin = slotValid && pinNeeded(current);
 
   function changeBankCode(value: string) {
     setBankCode(bankCodeFromIban(value) ?? value);
@@ -693,14 +919,24 @@ function ConnectionCreateForm({ account, slots, onCreated }: { account: Account;
     if (!login.trim()) messages.login_name = ["Bitte den Anmeldenamen eingeben."];
     const slotMessage = checkSlot(slot);
     if (slotMessage) messages.credential_slot = [slotMessage];
+    // The PIN may also stay empty: it can be saved later on the card, or set on the server.
+    const pinMessage = askPin && pin ? checkPin(pin) : null;
+    if (pinMessage) messages.pin = [pinMessage];
     if (Object.keys(messages).length > 0) return form.invalid(messages);
     setBusy(true);
     form.clear();
     try {
+      if (askPin && pin) {
+        // The PIN first (D196): it is stored by slot, so a refused connection keeps it and
+        // the form says so; the input is emptied either way once it is saved.
+        await savePin(slot.trim(), pin);
+        setPin("");
+        setSavedFor({ slot: slot.trim(), at: new Date().toISOString() });
+      }
       await ok(
         api.POST("/api/accounts/{account_id}/bank-connection", {
           params: { path: { account_id: account.id } },
-          // The slot names the PIN's container secret (phase 6 D163); the PIN itself never comes here.
+          // The slot names the login's PIN (phase 6 D163, D196); the PIN itself never comes here.
           body: {
             account_id: account.id,
             bank_code: bankCode.trim(),
@@ -737,10 +973,22 @@ function ConnectionCreateForm({ account, slots, onCreated }: { account: Account;
         <Field id={`${ids}-slot`} label="Name des Zugangs" hint={SLOT_HINT} errors={form.of("credential_slot")}>
           <input type="text" value={slot} onChange={(e) => setSlot(e.target.value)} autoComplete="off" spellCheck={false} />
         </Field>
+        {askPin ? (
+          <Field id={`${ids}-pin`} label={PIN_LABEL} hint={PIN_HINT} errors={form.of("pin")}>
+            <PinInput value={pin} onChange={setPin} />
+          </Field>
+        ) : null}
       </div>
-      {checkSlot(slot) === null ? (
-        <p>
-          Die PIN dieses Zugangs liegt nur auf dem Server, in der Variable <PinPlace slot={slot.trim()} slots={slots} />
+      {slotValid ? (
+        <p className={current.readable ? "muted" : "notice notice-warn"}>
+          {askPin && current.source === "none" ? (
+            <>
+              Die PIN wird verschlüsselt gespeichert und danach nie wieder angezeigt. Sie können das Feld auch leer lassen und die
+              PIN später speichern; ohne PIN endet jeder Abruf mit „PIN fehlt“.
+            </>
+          ) : (
+            pinSentence(slot.trim(), current)
+          )}
         </p>
       ) : null}
       <FormBanner errors={form.errors} />
@@ -754,15 +1002,16 @@ function ConnectionCreateForm({ account, slots, onCreated }: { account: Account;
 const EDIT_KEYS = ["fints_url", "login_name", "credential_slot"] as const;
 
 /** PATCH the URL, the login and/or the slot; an empty login keeps the stored one (it is shown
- * masked only). The BLZ cannot change: another BLZ is another bank. A new slot keeps the
- * stored connection: only the PIN's variable changes. */
+ * masked only), unless the stored one no longer decrypts (D196). The BLZ cannot change:
+ * another BLZ is another bank. A new slot keeps the stored connection: only the PIN it uses
+ * changes. */
 function ConnectionEditForm({
   connection,
   slots,
   onSaved,
 }: {
   connection: BankConnection;
-  slots: string[];
+  slots: Slots;
   onSaved: () => void;
 }) {
   const ids = useId();
@@ -777,6 +1026,9 @@ function ConnectionEditForm({
     event.stopPropagation();
     const urlMessage = checkUrl(url);
     if (urlMessage) return form.invalid({ fints_url: [urlMessage] });
+    if (!connection.name_readable && !login.trim()) {
+      return form.invalid({ login_name: ["Bitte den Anmeldenamen neu eingeben: der gespeicherte lässt sich nicht mehr lesen."] });
+    }
     const slotMessage = checkSlot(slot);
     if (slotMessage) return form.invalid({ credential_slot: [slotMessage] });
     const body: { fints_url?: string; login_name?: string; credential_slot?: string } = {};
@@ -805,8 +1057,8 @@ function ConnectionEditForm({
     <form className="stack" onSubmit={submit} noValidate aria-label="Zugang ändern">
       <p className="muted">
         Eine neue Adresse oder ein neuer Anmeldename verwirft die gespeicherte Verbindung: der nächste Abruf fragt wieder nach
-        einer Freigabe („{connection.approval_text}“). Ein neuer Name des Zugangs ändert nur, aus welcher Variable der Server
-        die PIN liest.
+        einer Freigabe („{connection.approval_text}“). Ein neuer Name des Zugangs ändert nur, welche PIN der Abruf nutzt. Die PIN
+        selbst ändern Sie auf der Karte mit „PIN ändern“.
       </p>
       <Field id={`${ids}-url`} label="FinTS-Adresse" hint={URL_HINT} errors={form.of("fints_url")}>
         <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" spellCheck={false} />
@@ -814,7 +1066,11 @@ function ConnectionEditForm({
       <Field
         id={`${ids}-login`}
         label="Neuer Anmeldename"
-        hint={`Leer lassen, um ${connection.login_masked} zu behalten.`}
+        hint={
+          connection.name_readable
+            ? `Leer lassen, um ${connection.login_masked} zu behalten.`
+            : "Der gespeicherte Anmeldename lässt sich nicht mehr lesen (der Schlüssel des Servers wurde gewechselt); bitte neu eingeben."
+        }
         errors={form.of("login_name")}
       >
         <input type="text" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" spellCheck={false} />
@@ -822,11 +1078,7 @@ function ConnectionEditForm({
       <Field id={`${ids}-slot`} label="Name des Zugangs" hint={SLOT_HINT} errors={form.of("credential_slot")}>
         <input type="text" value={slot} onChange={(e) => setSlot(e.target.value)} autoComplete="off" spellCheck={false} />
       </Field>
-      {checkSlot(slot) === null ? (
-        <p className="muted">
-          PIN-Variable: <PinPlace slot={slot.trim()} slots={slots} />
-        </p>
-      ) : null}
+      {checkSlot(slot) === null ? <p className="muted">{pinSentence(slot.trim(), slotPin(slot.trim(), slots))}</p> : null}
       <FormBanner errors={form.errors} />
       <div className="row">
         <Submit busy={busy}>Speichern</Submit>

@@ -5034,7 +5034,7 @@
     "/api/bank-credential-slots": {
       "get": {
         "summary": "Bank Credential Slots",
-        "description": "Signed-in members only, as every domain route; names only, never a PIN (D119).",
+        "description": "Signed-in members only, as every domain route; names only, never a PIN (D119, D196).",
         "operationId": "bank_credential_slots_api_bank_credential_slots_get",
         "responses": {
           "200": {
@@ -5046,6 +5046,90 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bank-credentials/{slot}": {
+      "put": {
+        "summary": "Bank Credential Set",
+        "description": "D196: the PIN is encrypted before it reaches the database; the answer names the slot\nand when, never the PIN.",
+        "operationId": "bank_credential_set_api_bank_credentials__slot__put",
+        "parameters": [
+          {
+            "name": "slot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^[a-z][a-z0-9_]{0,31}$",
+              "title": "Slot"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BankPinSet"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppCredential"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Bank Credential Delete",
+        "operationId": "bank_credential_delete_api_bank_credentials__slot__delete",
+        "parameters": [
+          {
+            "name": "slot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^[a-z][a-z0-9_]{0,31}$",
+              "title": "Slot"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "default": {
             "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
@@ -10458,6 +10542,33 @@
         "title": "AnswerMovementBody",
         "description": "POST /movements/{id}/answer: what the movement really was. The movement is replaced\nby a confirmed row of that kind (the old one kept, superseded_by)."
       },
+      "AppCredential": {
+        "properties": {
+          "slot": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,31}$",
+            "title": "Slot"
+          },
+          "set_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Set At"
+          },
+          "readable": {
+            "type": "boolean",
+            "title": "Readable",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "slot",
+          "set_at"
+        ],
+        "title": "AppCredential",
+        "description": "A slot whose PIN was typed into the app (D196): its name and when; never the PIN."
+      },
       "AppUser": {
         "properties": {
           "id": {
@@ -11146,6 +11257,32 @@
                 "type": "null"
               }
             ]
+          },
+          "credential_source": {
+            "$ref": "#/components/schemas/CredentialSource",
+            "default": "none"
+          },
+          "credential_set_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Set At"
+          },
+          "credential_readable": {
+            "type": "boolean",
+            "title": "Credential Readable",
+            "default": true
+          },
+          "name_readable": {
+            "type": "boolean",
+            "title": "Name Readable",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -11247,12 +11384,38 @@
             },
             "type": "array",
             "title": "Slots"
+          },
+          "app_slots": {
+            "items": {
+              "$ref": "#/components/schemas/AppCredential"
+            },
+            "type": "array",
+            "title": "App Slots"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "BankCredentialSlots",
-        "description": "GET /bank-credential-slots (phase 6 D163): the slots whose container secret is set,\nnames only, so the Bankabruf card can say which variable is still missing."
+        "description": "GET /bank-credential-slots (phase 6 D163): the slots whose container secret is set,\nnames only, so the Bankabruf card can say which variable is still missing; and (D196) the\nslots whose PIN was typed into the app, so „Bankabruf einrichten“ can say so before a\nconnection exists."
+      },
+      "BankPinSet": {
+        "properties": {
+          "pin": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 5,
+            "format": "password",
+            "title": "Pin",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pin"
+        ],
+        "title": "BankPinSet",
+        "description": "PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and\nnever returned, logged or echoed (a SecretStr: its repr is stars)."
       },
       "BankStatement": {
         "properties": {
@@ -12871,6 +13034,16 @@
           "months_covered"
         ],
         "title": "Coverage"
+      },
+      "CredentialSource": {
+        "type": "string",
+        "enum": [
+          "app",
+          "server",
+          "none"
+        ],
+        "title": "CredentialSource",
+        "description": "Where a connection's PIN comes from at the next sync (D196): typed in the app (stored\nencrypted, it wins), the slot's container secret, or nowhere yet."
       },
       "Currency": {
         "type": "string",
@@ -15270,6 +15443,8 @@
           "workspace.ai_consent_recorded",
           "workspace.prices_fetched",
           "workspace.valuation_snapshot_written",
+          "workspace.bank_pin_set",
+          "workspace.bank_pin_deleted",
           "proposal.created",
           "proposal.superseded",
           "proposal.rejected",

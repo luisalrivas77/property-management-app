@@ -173,6 +173,9 @@ export type BankStatement = Schemas["BankStatement"];
 export type StatementsRefusal = Schemas["StatementsRefusal"]; // 14 Nov 2026: 9370 on HKEKP
 export type SyncStatus = Schemas["SyncStatus"];
 export type SyncTrigger = Schemas["SyncTrigger"];
+// a bank PIN typed into the app, stored encrypted (phase 6 D196); the PIN is never in a response
+export type AppCredential = Schemas["AppCredential"];
+export type CredentialSource = Schemas["CredentialSource"];
 export type TransactionAllocationStatus = Schemas["TransactionAllocationStatus"];
 export type PossibleDuplicate = Schemas["PossibleDuplicate"];
 export type DuplicateStatus = Schemas["DuplicateStatus"];
