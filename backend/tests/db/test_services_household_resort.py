@@ -7,9 +7,12 @@ proposal, and on a confirmed line it supersedes the confirmed row with
 transaction.resort_proposed. The same answer, or one of another relevance, leaves a confirmed
 line as it is. Split, scoped and possible purchase-cost lines are left alone, a rule learned on
 a fallback is skipped while another rule still answers, nothing is ever auto-confirmed by the
-model, and a second run asks nothing again. Then, for the person: confirming a re-sorted line
-with „Künftig immer so zuordnen“ replaces the payee's fallback rule (D49), and „Diese auch auf
-<Kategorie> umbuchen“ (D160 amended (2)) re-books the payee's lines the re-sort left confirmed.
+model, and a second run asks nothing again. D159 amended (6) 15 Nov 2026 (migration 0036):
+the Geldanlage group's fallback hh_investment is re-sorted the same way, only into its own
+subcategories, and `--category hh_investment` limits a run to it. Then, for the person:
+confirming a re-sorted line with „Künftig immer so zuordnen“ replaces the payee's fallback rule
+(D49), and „Diese auch auf <Kategorie> umbuchen“ (D160 amended (2)) re-books the payee's lines
+the re-sort left confirmed.
 Invented names and amounts only; the model is a FakeModelClient."""
 
 import uuid
@@ -40,7 +43,12 @@ from hausbuch import cli
 from hausbuch.ai.fake import FakeModelClient, text_response
 from hausbuch.db.tables import matching_rule as rule_table
 from hausbuch.jobs.matching import run_match_transaction
-from hausbuch.rules.household.taxonomy import FALLBACK_CODES, HOUSEHOLD_SPENDING, fallback_of
+from hausbuch.rules.household.taxonomy import (
+    FALLBACK_CODES,
+    HOUSEHOLD_SPENDING,
+    fallback_of,
+    resort_targets,
+)
 from hausbuch.schemas.allocation import (
     AllocationCategory,
     AllocationDraft,
@@ -105,11 +113,13 @@ def _client(*answers: tuple[str, str]) -> FakeModelClient:
 
 
 def test_the_resort_targets_and_the_fallbacks():
-    """HOUSEHOLD_SPENDING: the codes a confirmed line may be re-sorted into. Every fallback
-    and subcategory is in; movements, income, tax-relevant codes, the card's charges and a
-    payment to an investment are out. fallback_of names a subcategory's fallback only."""
-    assert len(FALLBACK_CODES) == 12
-    assert FALLBACK_CODES <= HOUSEHOLD_SPENDING
+    """HOUSEHOLD_SPENDING: the codes a confirmed line in a spending fallback may be re-sorted
+    into. Every spending fallback and subcategory is in; movements, income, tax-relevant
+    codes, the card's charges and a payment to an investment are out. fallback_of names a
+    subcategory's fallback only. D159 amended (6): hh_investment is the thirteenth fallback,
+    re-sorted only into the Geldanlage subcategories (resort_targets)."""
+    assert len(FALLBACK_CODES) == 13
+    assert FALLBACK_CODES - {C.HH_INVESTMENT} <= HOUSEHOLD_SPENDING
     for code in (C.HH_SUPERMARKET, C.HH_STREAMING, C.HH_POSTAGE, C.HH_FUEL, C.HH_CLOTHING):
         assert code in HOUSEHOLD_SPENDING
     assert C.HH_REFUND in HOUSEHOLD_SPENDING  # lowers spending, never income
@@ -133,6 +143,18 @@ def test_the_resort_targets_and_the_fallbacks():
     assert fallback_of(C.HH_POSTAGE) is C.HH_OTHER
     for code in (C.HH_GROCERIES, C.HH_CLOTHING, C.HH_INTEREST_FEES, C.HH_DONATION, C.REPAIRS):
         assert fallback_of(code) is None, code
+    investment = {
+        C.HH_INVESTMENT_PROPERTY,
+        C.HH_INVESTMENT_SECURITIES,
+        C.HH_INVESTMENT_CRYPTO,
+        C.HH_INVESTMENT_SAVINGS,
+    }
+    assert not investment & HOUSEHOLD_SPENDING
+    assert all(fallback_of(code) is C.HH_INVESTMENT for code in investment)
+    assert fallback_of(C.HH_INVESTMENT) is None
+    assert resort_targets(C.HH_INVESTMENT) == investment
+    assert resort_targets(C.HH_GROCERIES) == HOUSEHOLD_SPENDING
+    assert resort_targets(C.HH_SUPERMARKET) == frozenset()
 
 
 # --- A confirmed line -----------------------------------------------------------------------
@@ -538,6 +560,123 @@ def test_rebooking_the_payees_earlier_lines_after_a_re_sort(world, private, app_
     assert (row.category, row.status, row.method) == ("hh_delivery", "confirmed", "rule")
 
 
+# --- The Geldanlage group (D159 amended (6), migration 0036) ---------------------------------
+
+
+def test_a_confirmed_investment_is_re_proposed_in_its_subcategory(
+    world, private, app_engine, tmp_path
+):
+    _consent_both(world)
+    tx = private.line(date(2026, 10, 7), "-150.00", name="Krypto-Börse Beispiel")
+    _confirmed(world, tx, "-150.00", "hh_investment")
+
+    assert world.cmd(resort_household, frozenset({C.HH_INVESTMENT})) == _result(
+        confirmed=1, queued=1
+    )
+    client = _client(("hh_investment_crypto", "-150.00"))
+    plan = _resort(world, tx, _deps(app_engine, tmp_path, client))
+    assert (plan.outcome, plan.reason) == ("written", "routing.review")
+    old, new = _all_rows(world, tx)
+    assert (old.category, old.status) == ("hh_investment", "superseded")
+    assert (new.category, new.method, new.status) == ("hh_investment_crypto", "llm", "proposed")
+    assert new.supersedes_id == old.id
+    assert _events(world, tx)[-1] == ("transaction.resort_proposed", "ai")
+
+    # The person confirms it; the line has left the fallback, a second run takes nothing.
+    _confirmed(world, tx, "-150.00", "hh_investment_crypto")
+    assert world.cmd(resort_household, frozenset({C.HH_INVESTMENT})) == _result()
+
+
+@pytest.mark.parametrize("answer", ["hh_other", "hh_online_shopping", "hh_investment", "hh_cash"])
+def test_a_confirmed_investment_keeps_its_row_for_any_other_answer(
+    world, private, app_engine, tmp_path, answer
+):
+    """Spending, a movement or the same fallback never replaces a confirmed investment."""
+    _consent_both(world)
+    tx = private.line(date(2026, 10, 8), "-75.00", name="Anlage Beispiel")
+    _confirmed(world, tx, "-75.00", "hh_investment")
+    world.cmd(resort_household, frozenset({C.HH_INVESTMENT}))
+    client = _client((answer, "-75.00"))
+    plan = _resort(world, tx, _deps(app_engine, tmp_path, client))
+    assert (plan.outcome, plan.reason) == ("skipped", household_resort.KEEPS_CONFIRMED)
+    (row,) = _rows(world, tx)
+    assert (row.category, row.status) == ("hh_investment", "confirmed")
+
+
+def test_a_confirmed_spending_fallback_is_never_re_sorted_into_an_investment(
+    world, private, app_engine, tmp_path
+):
+    _consent_both(world)
+    tx = private.line(date(2026, 10, 9), "-90.00", name="Empfänger Beispiel")
+    _confirmed(world, tx, "-90.00", "hh_other")
+    world.cmd(resort_household)
+    client = _client(("hh_investment_securities", "-90.00"))
+    plan = _resort(world, tx, _deps(app_engine, tmp_path, client))
+    assert (plan.outcome, plan.reason) == ("skipped", household_resort.KEEPS_CONFIRMED)
+    (row,) = _rows(world, tx)
+    assert (row.category, row.status) == ("hh_other", "confirmed")
+
+
+def test_a_waiting_investment_takes_the_new_proposal(world, private, app_engine, tmp_path):
+    _consent_both(world)
+    tx = private.line(date(2026, 10, 10), "-500.00", name="Tagesgeld Bank Beispiel")
+    _propose(world, tx, "-500.00", "hh_investment")
+    assert world.cmd(resort_household, frozenset({C.HH_INVESTMENT})) == _result(
+        proposed=1, queued=1
+    )
+    client = _client(("hh_investment_savings", "-500.00"))
+    plan = _resort(world, tx, _deps(app_engine, tmp_path, client))
+    assert (plan.outcome, plan.reason) == ("written", "routing.review")
+    (row,) = _rows(world, tx)
+    assert (row.category, row.status) == ("hh_investment_savings", "proposed")
+
+
+def test_the_category_limits_a_run_to_its_fallback(world, private):
+    _consent_both(world)
+    invested = private.line(date(2026, 10, 21), "-250.00", name="Broker Beispiel")
+    _confirmed(world, invested, "-250.00", "hh_investment")
+    groceries = private.line(date(2026, 10, 22), "-35.00", name="Markt Beispiel")
+    _confirmed(world, groceries, "-35.00", "hh_groceries")
+
+    assert world.cmd(resort_household, frozenset({C.HH_INVESTMENT})) == _result(
+        confirmed=1, queued=1
+    )
+    queued = {uuid.UUID(args["transaction_id"]) for _, args in _jobs(world)}
+    assert queued == {invested}
+    with pytest.raises(ValueError):
+        world.cmd(resort_household, frozenset({C.HH_SUPERMARKET}))
+
+
+def test_a_spending_re_sort_a_person_corrected_to_an_investment_is_taken_once(
+    world, private, app_engine, tmp_path, monkeypatch
+):
+    """The first re-sort proposed hh_online_shopping over a confirmed hh_other; the person
+    corrected it to hh_investment. That earlier re-sort never proposed a Geldanlage code, so
+    the Geldanlage run (with the next prompt, as after the deploy of 0036) takes the line
+    once; after its own re-sort, never again."""
+    _consent_both(world)
+    tx = private.line(date(2026, 10, 23), "-300.00", name="Plattform Beispiel")
+    _confirmed(world, tx, "-300.00", "hh_other")
+    world.cmd(resort_household)
+    client = _client(("hh_online_shopping", "-300.00"), ("hh_investment_securities", "-300.00"))
+    deps = _deps(app_engine, tmp_path, client)
+    assert _resort(world, tx, deps).outcome == "written"
+    _confirmed(world, tx, "-300.00", "hh_investment")
+    assert world.cmd(resort_household, frozenset({C.HH_OTHER})) == _result()
+
+    # The first re-sort ran with an earlier prompt (14 Nov 2026); 0036 changed it.
+    monkeypatch.setattr(matching, "household_prompt_version", lambda: "next-prompt")
+    assert world.cmd(resort_household, frozenset({C.HH_INVESTMENT})) == _result(
+        confirmed=1, queued=1
+    )
+    assert _resort(world, tx, deps).outcome == "written"
+    (row,) = _rows(world, tx)
+    assert (row.category, row.status) == ("hh_investment_securities", "proposed")
+    _confirmed(world, tx, "-300.00", "hh_investment")
+    assert world.cmd(resort_household, frozenset({C.HH_INVESTMENT})) == _result(already_asked=1)
+    assert len(client.requests) == 2
+
+
 # --- The command -------------------------------------------------------------------------------
 
 
@@ -565,3 +704,25 @@ def test_the_command_counts_with_dry_run_and_then_queues(dbname, world, private,
     queued = {uuid.UUID(job.args["transaction_id"]) for job in _jobs(world)}
     assert queued == {waiting, booked}
     assert all(job.args["resort"] == "1" for job in _jobs(world))
+
+
+def test_the_command_takes_a_fallback_category(dbname, world, private, capsys):
+    _consent_both(world)
+    invested = private.line(date(2026, 10, 24), "-60.00", name="Sparplan Beispiel")
+    _confirmed(world, invested, "-60.00", "hh_investment")
+    booked = private.line(date(2026, 10, 25), "-7.50", name="Kino Beispiel")
+    _confirmed(world, booked, "-7.50", "hh_leisure_travel")
+    environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}
+    argv = ["household-resort", "--workspace", str(world.ws), "--category", "hh_investment"]
+
+    assert cli.main([*argv, "--dry-run"], environ) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "taken 1 line(s) in a group's fallback: 0 proposed, 1 confirmed" in out
+    assert _jobs(world) == []
+    assert cli.main(argv, environ) == cli.EXIT_OK
+    queued = {uuid.UUID(job.args["transaction_id"]) for job in _jobs(world)}
+    assert queued == {invested}
+
+    wrong = ["household-resort", "--workspace", str(world.ws), "--category", "hh_supermarket"]
+    assert cli.main(wrong, environ) != cli.EXIT_OK
+    assert "cannot re-sort hh_supermarket" in capsys.readouterr().err

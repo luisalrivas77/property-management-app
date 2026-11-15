@@ -874,6 +874,12 @@ class HouseholdCashflow(Schema):
     spending_by_category: dict[HouseholdGroup, dict[AllocationCategory, Money]] = Field(
         default_factory=dict
     )
+    # D159 amended (6) 15 Nov 2026 (migration 0036): the part of `saved` booked in the
+    # Geldanlage group (its four subcategories and the fallback hh_investment), by code and
+    # signed as `saved` (a payout back lowers it), codes that net to zero left out, so the
+    # „Gespart, nicht ausgegeben“ figure opens to its subcategories; the transfer links' part
+    # of `saved` is not here.
+    invested_by_category: dict[AllocationCategory, Money] = Field(default_factory=dict)
 
 
 # --- The Anlagen ETF tab (phase 6 step 4, §13, mockup 09b) ------------------------------

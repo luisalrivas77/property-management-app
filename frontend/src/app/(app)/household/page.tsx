@@ -23,6 +23,7 @@ import {
   openLinesText,
   signedMoney,
   spent,
+  sumMoney,
   toCents,
 } from "@/components/cashflow";
 import { formatMoney, formatMonth, formatPercent, todayIso } from "@/components/format";
@@ -51,6 +52,9 @@ async function loadYear(month: string): Promise<Year> {
   ]);
   return { months, transfers };
 }
+
+/** The Geldanlage group's fallback („Sonstige Geldanlage“), listed last when the group opens. */
+const INVESTMENT_FALLBACK: AllocationCategory = "hh_investment";
 
 function groupLabel(group: string): string {
   return HOUSEHOLD_GROUP[group as HouseholdGroup] ?? group;
@@ -337,9 +341,23 @@ function IncomeCard({ month }: { month: HouseholdCashflow }) {
 /** „Gespart, nicht ausgegeben“ (D162): what went to own savings, depot or exchange accounts,
  * from the transfer links, plus payments booked „Geldanlage“ to an investment the app holds no
  * account of (D159 amended 13 Nov 2026, in `saved` from the API), and what of the surplus
- * stayed on the current accounts. */
+ * stayed on the current accounts. Since D159 amended (6) (migration 0036) the Geldanlage part
+ * is its own row that opens to its subcategories (Immobilien, Wertpapiere & ETF, Krypto,
+ * Sparen & Tagesgeld, „Sonstige Geldanlage“ last), as a spending group opens in the table;
+ * only codes with an amount this month are listed. */
 function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: TransferLinkView[] }) {
+  const [open, setOpen] = useState(false);
   const stayed = fromCents(toCents(month.surplus) - toCents(month.saved));
+  const invested = Object.entries(month.invested_by_category ?? {}).filter(([, amount]) => toCents(amount) !== 0n);
+  invested.sort(([a, x], [b, y]) => {
+    if (a === INVESTMENT_FALLBACK || b === INVESTMENT_FALLBACK) return a === INVESTMENT_FALLBACK ? 1 : -1;
+    const diff = toCents(y) - toCents(x);
+    return diff > 0n ? 1 : diff < 0n ? -1 : categoryLabel(a).localeCompare(categoryLabel(b));
+  });
+  const investedTotal = sumMoney(invested.map(([, amount]) => amount));
+  // As groupCodes: the row opens when its codes say more than the row does.
+  const opens = invested.length > 1 || (invested.length === 1 && invested[0]?.[0] !== INVESTMENT_FALLBACK);
+  const rowId = "saved-investment";
   return (
     <section className="card stack notice-info" aria-labelledby="saved-title">
       <h2 id="saved-title">Gespart, nicht ausgegeben</h2>
@@ -347,8 +365,34 @@ function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: T
         Überweisungen an eigene Konten zählen nicht als Ausgaben.
         {toCents(month.saved) > 0n ? ` Auf Spar-, Depot- und Börsenkonten und in Geldanlagen gingen ${formatMoney(month.saved)}.` : ""}
       </p>
-      {transfers.length > 0 ? (
+      {invested.length > 0 || transfers.length > 0 ? (
         <ul className="household-rows">
+          {invested.length > 0 ? (
+            <li>
+              {opens ? (
+                <button
+                  type="button"
+                  className="household-toggle"
+                  aria-expanded={open}
+                  aria-controls={invested.map(([code]) => `${rowId}-${code}`).join(" ")}
+                  onClick={() => setOpen((current) => !current)}
+                >
+                  <span aria-hidden="true">{open ? "▾" : "▸"}</span> {HOUSEHOLD_GROUP.investment}
+                </button>
+              ) : (
+                <span>{HOUSEHOLD_GROUP.investment}</span>
+              )}
+              <span>{formatMoney(investedTotal)}</span>
+            </li>
+          ) : null}
+          {opens && open
+            ? invested.map(([code, amount]) => (
+                <li key={code} id={`${rowId}-${code}`} className="household-subitem">
+                  <span>{categoryLabel(code)}</span>
+                  <span>{formatMoney(amount)}</span>
+                </li>
+              ))
+            : null}
           {transfers.map((link) => (
             <li key={link.id}>
               <span>

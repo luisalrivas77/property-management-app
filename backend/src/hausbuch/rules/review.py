@@ -128,6 +128,12 @@ THRESHOLDS = MappingProxyType(
         C.HH_SPORT: _RECURRING,
         C.HH_TRAVEL: _RECURRING,
         C.HH_INVESTMENT: None,
+        # D159 amended (6) 15 Nov 2026 (migration 0036): none like hh_investment, so a
+        # person confirms each payment into an investment and no rule is learned on one.
+        C.HH_INVESTMENT_PROPERTY: None,
+        C.HH_INVESTMENT_SECURITIES: None,
+        C.HH_INVESTMENT_CRYPTO: None,
+        C.HH_INVESTMENT_SAVINGS: None,
         C.HH_REFUND: None,
         # D159 amended 14 Nov 2026 (migration 0031): fuel at 0.9 like hh_mobility.
         C.HH_FUEL: _RECURRING,

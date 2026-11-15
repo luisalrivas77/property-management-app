@@ -111,7 +111,13 @@ class AllocationCategory(StrEnum):
     HH_WORK_EDUCATION = "hh_work_education"  # private (maybe Werbungskosten later, Anlage N)
     HH_SPORT = "hh_sport"  # private (Sport & Fitness)
     HH_TRAVEL = "hh_travel"  # private (Reisen; hh_leisure_travel is now Freizeit & Hobbys)
-    HH_INVESTMENT = "hh_investment"  # private (Geldanlage on a platform the app does not hold)
+    HH_INVESTMENT = "hh_investment"  # private (Sonstige Geldanlage: the group's fallback)
+    # Phase 6 D159 amended (6) 15 Nov 2026 (migration 0036, Luis: „Should we split the category
+    # into subcategories?“): the Geldanlage group's subcategories, saved like hh_investment.
+    HH_INVESTMENT_PROPERTY = "hh_investment_property"  # private (Immobilien)
+    HH_INVESTMENT_SECURITIES = "hh_investment_securities"  # private (Wertpapiere & ETF)
+    HH_INVESTMENT_CRYPTO = "hh_investment_crypto"  # private (Krypto)
+    HH_INVESTMENT_SAVINGS = "hh_investment_savings"  # private (Sparen & Tagesgeld)
     HH_REFUND = "hh_refund"  # private (Erstattung: lowers spending, never income)
     # Phase 6 D159 amended 14 Nov 2026 (migration 0031, Luis): fuel apart from hh_mobility.
     HH_FUEL = "hh_fuel"  # private (Tanken (Auto); group mobility)
