@@ -15,9 +15,12 @@
 # - WETH's `deposit()` (selector 0xd0e30db0) emits Deposit, not Transfer, so Etherscan's
 #   tokentx does not list the received WETH: the wrap's in-leg is the decoder's reading of
 #   the call (index `deposit`), its units the call's value;
-# - amounts: `asset_movement.quantity` is numeric(28,10), which cannot hold every wei of an
-#   18-decimal asset; every case here is exact at 10 decimals except
-#   `fee_below_numeric_scale`, which pins the gap for step 3 to decide (§15.1).
+# - amounts: `asset_movement.quantity` is numeric(28,10) as 0041 leaves it, which cannot
+#   hold every wei of an 18-decimal asset; every case here is exact at 10 decimals except
+#   `fee_below_numeric_scale`, which pins the gap. Decided in the step 0 review (15 Nov 2026,
+#   §15.1 item 9, §16): step 2's own migration widens `quantity` to numeric(38,18),
+#   `asset.decimals` to 0..18 and the `Quantity` wire alias, before step 2 writes its first
+#   movement; the case's `precision_note` describes the column before that migration.
 #
 # Own: A's address 0x627f…46f6 (Ethereum and Arbitrum), the hardware wallet's 0xed05…70e1
 # (BSC); foreign 0x96d8…b831; an exchange's hot wallet 0xb70f…158a; a spam contract
@@ -247,9 +250,10 @@ cases:
     expect: {error: wallet.key_missing}
 
   # The precision gap (§15.1): a fee of 21,000,000,147,000 wei is 0.000021000000147 ETH,
-  # 15 decimals; numeric(28,10) keeps 0.0000210000. Step 3 decides (scale 18 recommended).
+  # 15 decimals; numeric(28,10) keeps 0.0000210000. Step 2's migration widens the column to
+  # numeric(38,18) (§16); the EVM normaliser that reads this record is step 3's.
   - id: fee_below_numeric_scale
-    pending: "phase 7 step 3 (the quantity scale decision)"
+    pending: "phase 7 step 2 (the numeric(38,18) migration) and step 3 (evm_etherscan)"
     chain: ethereum
     own: ["0x627f3684df28ba04ebecf523c815218a0f4346f6"]
     records:

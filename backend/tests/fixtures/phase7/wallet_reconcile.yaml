@@ -14,7 +14,7 @@
 cases:
   # An EVM address: native in wei and a registry token's balanceOf, both equal.
   - id: evm_equal
-    pending: "phase 7 step 2 (rules/chain/reconcile)"
+    pending: "phase 7 step 3 (rules/chain/reconcile)"
     chain: ethereum
     movements:
       - {asset: ETH, units: 1000000000000000000, status: confirmed}
@@ -26,7 +26,7 @@ cases:
 
   # A sync that skipped a failed transaction's fee: the chain holds 21000000147000 wei less.
   - id: evm_missing_fee
-    pending: "phase 7 step 2 (rules/chain/reconcile)"
+    pending: "phase 7 step 3 (rules/chain/reconcile)"
     chain: ethereum
     movements:
       - {asset: ETH, units: 1000000000000000000, status: confirmed}
@@ -73,7 +73,7 @@ cases:
 
   # A balance-only BSC address: Σ linked deposits equal to the balance → reconciled.
   - id: bsc_balance_only_equal
-    pending: "phase 7 step 2 (rules/chain/reconcile, D181 (c))"
+    pending: "phase 7 step 3 (rules/chain/reconcile, D181 (c))"
     chain: bsc
     balance_only: true
     balance: {BNB: [600000000000000000]}
@@ -82,7 +82,7 @@ cases:
 
   # Σ linked deposits above the balance → coins left the address; the card's answers.
   - id: bsc_balance_only_below_deposits
-    pending: "phase 7 step 2 (rules/chain/reconcile, D181 (c))"
+    pending: "phase 7 step 3 (rules/chain/reconcile, D181 (c))"
     chain: bsc
     balance_only: true
     balance: {BNB: [500000000000000000]}
@@ -91,7 +91,7 @@ cases:
 
   # A spam token's balance is not asked for (D187 (1)), its movement not counted.
   - id: spam_token_not_asked
-    pending: "phase 7 step 2 (rules/chain/reconcile)"
+    pending: "phase 7 step 3 (rules/chain/reconcile)"
     chain: ethereum
     movements:
       - {asset: ETH, units: 1000000000000000000, status: confirmed}

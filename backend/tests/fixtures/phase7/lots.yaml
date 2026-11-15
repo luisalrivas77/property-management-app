@@ -15,8 +15,8 @@
 # (5): nothing is cached). Step 0's readings (§15.1):
 # - §8's „10 units on 1 Feb 2026 at 100 €“ is read as 100 € per unit (1,000 € for the lot);
 # - a swap's received leg is a lot with `source: acquisition` (LotSource has no `swap`; the
-#   screen's „Swap“ label comes from the group, step 3);
-# - a moved lot keeps its source and is marked `moved` (its `moved_through` chain is step 3's).
+#   screen's „Swap“ label comes from the group, step 2);
+# - a moved lot keeps its source and is marked `moved` (its `moved_through` chain is step 5's).
 # Added from the step 0 review (15 Nov 2026), after the five cases above it:
 # - a case that holds two assets names each event's `asset` (and each lot's): a `wrap` or a
 #   `bridge` consumes the oldest lots of its asset and re-creates them on `to_asset` of the
@@ -28,7 +28,7 @@
 cases:
   # §8: three acquisitions, a transfer of 12 out, a disposal of 5, a reward and a fee.
   - id: fifo_transfer_disposal_reward_fee
-    pending: "phase 7 step 3 (rules/lots.lots, consume)"
+    pending: "phase 7 step 6 (rules/lots.lots, consume)"
     events:
       - {name: buy_feb, at: "2026-02-01T09:00:00Z", account: exchange, kind: acquisition, units: "10", cost_eur: "1000.00", fee_eur: "1.00"}
       - {name: buy_jun, at: "2026-06-01T09:00:00Z", account: exchange, kind: acquisition, units: "10", cost_eur: "2000.00", fee_eur: "2.00"}
@@ -51,7 +51,7 @@ cases:
 
   # An unpriced acquisition: the lot's cost and the disposal's cost are null, never 0 €.
   - id: unpriced_acquisition
-    pending: "phase 7 step 3 (rules/lots.lots, consume)"
+    pending: "phase 7 step 6 (rules/lots.lots, consume)"
     events:
       - {name: airdrop_mar, at: "2026-03-01T09:00:00Z", account: wallet, kind: reward, units: "4"}
       - {name: buy_apr, at: "2026-04-01T09:00:00Z", account: wallet, kind: acquisition, units: "2", cost_eur: "300.00"}
@@ -64,7 +64,7 @@ cases:
 
   # A swap's received leg at 23:30 UTC on 31 Dec: a new lot dated the swap's Berlin day.
   - id: swap_received_leg_new_lot
-    pending: "phase 7 step 3 (rules/lots.lots)"
+    pending: "phase 7 step 6 (rules/lots.lots)"
     events:
       - {name: swap_in, at: "2026-12-31T23:30:00Z", account: wallet, kind: swap_in, units: "150", cost_eur: "138.00", fee_eur: "0.70"}
     expect_lots:
@@ -74,7 +74,7 @@ cases:
   # The same ledger read twice: first with the disposal, then with it superseded (re-booked).
   # The lots differ; nothing was cached.
   - id: before_rebooking
-    pending: "phase 7 step 3 (rules/lots.lots)"
+    pending: "phase 7 step 6 (rules/lots.lots)"
     events:
       - {name: buy_a, at: "2026-02-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1000.00"}
       - {name: buy_b, at: "2026-03-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1200.00"}
@@ -85,7 +85,7 @@ cases:
       - {event: pay, acquired_on: 2026-02-01, units: "10", cost_eur: "1000.00"}
       - {event: pay, acquired_on: 2026-03-01, units: "2", cost_eur: "240.00"}
   - id: after_rebooking_superseded
-    pending: "phase 7 step 3 (rules/lots.lots)"
+    pending: "phase 7 step 6 (rules/lots.lots)"
     events:
       - {name: buy_a, at: "2026-02-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1000.00"}
       - {name: buy_b, at: "2026-03-01T09:00:00Z", account: wallet, kind: acquisition, units: "10", cost_eur: "1200.00"}

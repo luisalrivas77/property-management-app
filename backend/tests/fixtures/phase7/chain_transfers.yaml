@@ -26,7 +26,7 @@ cases:
   # §6 example 2: Binance's withdrawal of 0.3 ETH (fee 0.0005, network „ETH“) arrives as
   # 0.2995 ETH in the same transaction → linked by hash, the lot moves to the wallet.
   - id: exchange_withdrawal_by_hash
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: chain
     leg: {name: binance_out, account: binance, asset: ETH, units: "0.3", fee: "0.0005", at: "2026-03-01T10:00:00Z", tx_hash: "0x9eb1266fee703db2c7d42db52e23b5bb7fdb3fb9e77433aea7730af93792918e", network: ETH}
     candidates:
@@ -35,7 +35,7 @@ cases:
 
   # §6 example 8: 1 ETH to the registry's WETH contract, 1 WETH back in the same block.
   - id: wrap_eth_to_weth
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: wrap
     leg: {name: eth_out, account: wallet_a, chain: ethereum, asset: ETH, units: "1", at: "2026-03-02T09:00:00Z", tx_hash: "0x3e6bf59d0db9da41113556e7b604ed433fa9104b9ee8c2309b0b9535441d3611"}
     candidates:
@@ -45,7 +45,7 @@ cases:
   # §6 example 9: 0.5 ETH out on Ethereum at 10:00, 0.4985 ETH in on Arbitrum at 10:20 (the
   # bridge kept 0.3 %, inside the pair's 1 %).
   - id: bridge_ethereum_to_arbitrum
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: bridge
     leg: {name: eth_out, account: wallet_a, chain: ethereum, asset: ETH, units: "0.5", at: "2026-03-03T10:00:00Z", tx_hash: "0x518319fb7036d3b987b7203233f0a8525fe166cec67e1c71b0eda1f10849ac85"}
     candidates:
@@ -53,7 +53,7 @@ cases:
     expect: {result: linked, link: bridge, with_leg: arb_in, lots_move: false}
 
   - id: bridge_fee_above_share
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: bridge
     leg: {name: eth_out, account: wallet_a, chain: ethereum, asset: ETH, units: "0.5", at: "2026-03-03T10:00:00Z", tx_hash: "0x518319fb7036d3b987b7203233f0a8525fe166cec67e1c71b0eda1f10849ac85"}
     candidates:
@@ -62,7 +62,7 @@ cases:
 
   # §6 example 10 answered yes: the stake account is A's; the 10 SOL stay in the account.
   - id: stake_delegation_own
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: chain
     leg: {name: sol_out, account: wallet_a, chain: solana, asset: SOL, units: "10", at: "2026-03-04T12:00:00Z", tx_hash: 3mspNtrMQqQ1vFQNzFfQK9vaFZihjLMTT1RTKF3yMqjosLFHL1emj8XRem6CnMQsTqSKPfz5a1zNdYRWxTyj9ex7}
     candidates:
@@ -71,7 +71,7 @@ cases:
 
   # §7: 1 SOL from A's Solana wallet to the Tangem's Solana address, one transaction.
   - id: wallet_to_wallet_by_hash
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: chain
     leg: {name: sol_out, account: wallet_a, chain: solana, asset: SOL, units: "1", at: "2026-03-05T08:00:00Z", tx_hash: 5EfKsYTdUGotNe7CybcAaG4NscuXP89dLAhJtZbDQ8nJcFpV37kyAuENBawzA7zDHkcCdYQrikMBCLpsX3rD86rf}
     candidates:
@@ -81,7 +81,7 @@ cases:
   # §7: a BISON withdrawal has no hash (Q-O76) and no network: asset, quantity − fee and the
   # 48 hours, one candidate → linked.
   - id: bison_without_hash_one_candidate
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: chain
     leg: {name: bison_out, account: bison, asset: BTC, units: "0.01", fee: "0.0002", at: "2026-03-06T15:00:00Z"}
     candidates:
@@ -90,7 +90,7 @@ cases:
 
   # §7: two deposits of the same amount on the same day → ambiguous, both on the card.
   - id: bison_two_candidates_ambiguous
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: chain
     leg: {name: bison_out, account: bison, asset: BTC, units: "0.01", fee: "0.0002", at: "2026-03-06T15:00:00Z"}
     candidates:
@@ -100,7 +100,7 @@ cases:
 
   # §7: the right amount 50 hours after the withdrawal → outside the window, open leg.
   - id: outside_window_50_hours
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: chain
     leg: {name: bison_out, account: bison, asset: BTC, units: "0.01", fee: "0.0002", at: "2026-03-06T15:00:00Z"}
     candidates:
@@ -109,7 +109,7 @@ cases:
 
   # §7: a third party's credit of the same amount inside the window is never the counterpart.
   - id: third_party_same_amount
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: chain
     leg: {name: binance_out, account: binance, asset: SOL, units: "2", fee: "0.01", at: "2026-03-07T11:00:00Z", tx_hash: 22SftPdYNv5x6c2wUSB75PBu51NfELuEuoFsDkMjnVuqtVoeooniifEfJvueVcYCL9SkFt6NimU4z2pbnh4TfCZk, network: SOL}
     candidates:
@@ -119,16 +119,16 @@ cases:
   # Binance's withdrawal without a hash in its row: matched by amount, window and the network
   # „SOL“ mapped to solana.
   - id: binance_network_mapped
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: chain
     leg: {name: binance_out, account: binance, asset: SOL, units: "2", fee: "0.01", at: "2026-03-07T11:00:00Z", network: SOL}
     candidates:
       - {name: wallet_in, account: wallet_a, chain: solana, asset: SOL, units: "1.99", at: "2026-03-07T11:01:30Z", tx_hash: JCKY5W4Qxdoitt4XhMa4fTY2YVaVssq9GVTmWVpxbbdBDcmVQ2YX9hBP2EWeQKW5jTVY18u91BzAL9r6XB8FEep}
     expect: {result: linked, link: chain, with_leg: wallet_in, lots_move: true}
 
-  # An unknown network name → no candidate; the card names it (step 3).
+  # An unknown network name → no candidate; the card names it (step 5).
   - id: unknown_network_name
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: chain
     leg: {name: binance_out, account: binance, asset: SOL, units: "2", fee: "0.01", at: "2026-03-07T11:00:00Z", network: SOLANA_NEW}
     candidates:
@@ -137,7 +137,7 @@ cases:
 
   # D184 (1)(b): the wallet's 2 SOL out against the exchange's Deposit row within 48 hours.
   - id: wallet_to_exchange_deposit
-    pending: "phase 7 step 3 (rules/chain/match_transfer)"
+    pending: "phase 7 step 5 (rules/chain/match_transfer)"
     kind: chain
     leg: {name: wallet_out, account: wallet_a, chain: solana, asset: SOL, units: "2", at: "2026-03-09T18:00:00Z"}
     candidates:
@@ -147,7 +147,7 @@ cases:
   # D184 (5): the receiving leg re-booked (superseded) → the link ends, the leg is open again
   # and the lots are recomputed on read without it.
   - id: link_ended_by_rebooking
-    pending: "phase 7 step 3 (rules/chain/match_transfer, rules/lots on read)"
+    pending: "phase 7 step 6 (rules/chain/match_transfer, rules/lots on read)"
     kind: chain
     leg: {name: bison_out, account: bison, asset: BTC, units: "0.01", fee: "0.0002", at: "2026-03-06T15:00:00Z"}
     candidates:

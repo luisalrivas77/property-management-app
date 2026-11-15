@@ -5,7 +5,7 @@
   `rules/household/assets.yaml` (D180 (4)).
 - `decoders.yaml` and `decoders`: protocol decoders as data (D183 (4), D191).
 - `address`: validation and the mask (D179, §4), step 1.
-- `sync_window`: the block range a sync reads (D182 (4)), step 2.
+- `sync_window`: the block range a sync reads (D182 (4)), step 3 or 4 (Solana has none).
 - `normalise`, `classify`: a transaction to its movement group (D181 (d), D183, D185, D187),
   steps 2 to 4.
 - `match_transfer`: chain, bridge and wrap links (D184), step 5.

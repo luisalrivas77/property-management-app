@@ -14,31 +14,31 @@
 # the orchestrator decides.
 days:
   - id: mid_month
-    pending: "phase 7 step 3 (rules/lots.tax_free_from)"
+    pending: "phase 7 step 6 (rules/lots.tax_free_from)"
     acquired_at: "2026-03-15T10:00:00Z"
     expect_acquired_on: 2026-03-15
     expect_tax_free_from: 2027-03-16
   # D188 (3): 23:30 UTC on 31 Dec is 1 Jan in Berlin.
   - id: new_year_boundary_after
-    pending: "phase 7 step 3 (rules/lots.tax_free_from)"
+    pending: "phase 7 step 6 (rules/lots.tax_free_from)"
     acquired_at: "2026-12-31T23:30:00Z"
     expect_acquired_on: 2027-01-01
     expect_tax_free_from: 2028-01-02
   # 22:30 UTC on 31 Dec is still 31 Dec in Berlin (UTC+1 in winter).
   - id: new_year_boundary_before
-    pending: "phase 7 step 3 (rules/lots.tax_free_from)"
+    pending: "phase 7 step 6 (rules/lots.tax_free_from)"
     acquired_at: "2026-12-31T22:30:00Z"
     expect_acquired_on: 2026-12-31
     expect_tax_free_from: 2028-01-01
   # Summer time (UTC+2): 22:30 UTC on 30 Jun is 1 Jul in Berlin.
   - id: summer_time_boundary
-    pending: "phase 7 step 3 (rules/lots.tax_free_from)"
+    pending: "phase 7 step 6 (rules/lots.tax_free_from)"
     acquired_at: "2026-06-30T22:30:00Z"
     expect_acquired_on: 2026-07-01
     expect_tax_free_from: 2027-07-02
   # §188 Abs. 3 BGB: 29 Feb 2028 → the period ends 28 Feb 2029 → tax-free from 1 Mar 2029.
   - id: leap_day
-    pending: "phase 7 step 3 (rules/lots.tax_free_from)"
+    pending: "phase 7 step 6 (rules/lots.tax_free_from)"
     acquired_at: "2028-02-29T12:00:00Z"
     expect_acquired_on: 2028-02-29
     expect_tax_free_from: 2029-03-01
@@ -52,10 +52,10 @@ days:
     expect_tax_free_from: 2028-06-02
 
 sales:
-  - {id: sold_on_anniversary_taxable, pending: "phase 7 step 3 (rules/lots)", acquired_on: 2026-03-15, sold_on: 2027-03-15, expect_taxable: true}
-  - {id: sold_day_after_free, pending: "phase 7 step 3 (rules/lots)", acquired_on: 2026-03-15, sold_on: 2027-03-16, expect_taxable: false}
-  - {id: leap_day_sold_28_feb_taxable, pending: "phase 7 step 3 (rules/lots)", acquired_on: 2028-02-29, sold_on: 2029-02-28, expect_taxable: true}
-  - {id: leap_day_sold_1_mar_free, pending: "phase 7 step 3 (rules/lots)", acquired_on: 2028-02-29, sold_on: 2029-03-01, expect_taxable: false}
+  - {id: sold_on_anniversary_taxable, pending: "phase 7 step 6 (rules/lots)", acquired_on: 2026-03-15, sold_on: 2027-03-15, expect_taxable: true}
+  - {id: sold_day_after_free, pending: "phase 7 step 6 (rules/lots)", acquired_on: 2026-03-15, sold_on: 2027-03-16, expect_taxable: false}
+  - {id: leap_day_sold_28_feb_taxable, pending: "phase 7 step 6 (rules/lots)", acquired_on: 2028-02-29, sold_on: 2029-02-28, expect_taxable: true}
+  - {id: leap_day_sold_1_mar_free, pending: "phase 7 step 6 (rules/lots)", acquired_on: 2028-02-29, sold_on: 2029-03-01, expect_taxable: false}
   # The year that holds 29 Feb 2028 (the days case leap_year_spanned): the anniversary, 366
   # days after, is still taxable; the day after it is free.
   - {id: leap_year_sold_anniversary_taxable, pending: "phase 7 step 6 (rules/lots)", acquired_on: 2027-06-01, sold_on: 2028-06-01, expect_taxable: true}
@@ -64,14 +64,14 @@ sales:
 kept:
   # A lot moved to another account keeps its acquisition day (D184 (4)).
   - id: moved_lot_keeps_day
-    pending: "phase 7 step 3 (rules/lots.lots)"
+    pending: "phase 7 step 6 (rules/lots.lots)"
     acquired_at: "2026-02-01T09:00:00Z"
     moved_or_swapped_at: "2026-10-01T09:00:00Z"
     kind: moved
     expect_acquired_on: 2026-02-01
   # A swap's received leg gets the swap's Berlin day (Rn. 55).
   - id: swap_new_lot_gets_swap_day
-    pending: "phase 7 step 3 (rules/lots.lots)"
+    pending: "phase 7 step 6 (rules/lots.lots)"
     acquired_at: "2026-02-01T09:00:00Z"
     moved_or_swapped_at: "2026-12-31T23:30:00Z"
     kind: swap

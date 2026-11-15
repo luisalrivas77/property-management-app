@@ -1,16 +1,18 @@
 """Wallets, chains, movement groups, lots and the year-end holdings statement
 (docs/phases/phase-7.md §11, §12; migration 0041).
 
-Phase 7 step 0 writes the shapes; the steps that build each rule fill them (step 1: the
-registry, addresses and Bitcoin; step 2: EVM; step 3: Solana and the classifier; step 4:
-groups and review; step 5: chain transfers; step 6: lots and the holding period; step 7: the
-holdings statement and its export).
+Phase 7 step 0 writes the shapes; the steps of §16 fill them (step 1: wallets and
+addresses; step 2: Solana, the classifier's groups, D186's routing and D187's spam; step 3:
+EVM and BNB Smart Chain's balance; step 4: Bitcoin; step 5: chain transfers; step 6: lots,
+the holding period, the Krypto tab, the holdings statement and `priced_as`; step 7: closing).
 
 What a chain reports is held in **integer base units** (satoshi, wei, lamports, a token's
-smallest unit) up to the point where a movement is written: an 18-decimal EVM amount does not
-fit numeric(28,10), and a chain balance must reconcile to the unit (D185, §9). The conversion
-to `Quantity` happens once, in the step that writes the movement, and §15.1 records what it
-does with a remainder below 10⁻¹⁰ (open: step 2).
+smallest unit) up to the point where a movement is written, since a chain balance must
+reconcile to the unit (D185, §9). The conversion to `Quantity` happens once, in the step that
+writes the movement. An 18-decimal EVM amount does not fit numeric(28,10), the column as 0041
+leaves it, so step 2's own migration widens `asset_movement.quantity` to numeric(38,18),
+`asset.decimals` to 0..18 and the `Quantity` wire alias with it, before step 2 writes its
+first movement (§15.1 item 9, §16; decided in the step 0 review, 15 Nov 2026).
 
 No address in clear leaves `wallet_address`: every shape here that a screen or an event sees
 carries the mask or the HMAC (D179 (1)), and none reaches a model (D189).

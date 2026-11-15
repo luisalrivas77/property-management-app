@@ -6,10 +6,10 @@
 # its Berlin day is on or before the statement's day; positions per account, address and
 # asset (units, not base units); a spam token is no position and is listed in the appendix
 # „nicht bewertete Token“; an address whose last sync did not reconcile is marked so. The
-# open lots with `tax_free_from` come from lots.yaml's rule (step 5 joins them).
+# open lots with `tax_free_from` come from lots.yaml's rule (step 6 joins them).
 cases:
   - id: end_of_2026
-    pending: "phase 7 step 5 (services/holdings.statement)"
+    pending: "phase 7 step 6 (services/holdings.statement)"
     "on": 2026-12-31
     movements:
       - {name: sol_in, account: wallet_a, address: "BU8o…jsJP", asset: SOL, units: "2.5", at: "2026-03-08T09:00:00Z"}
