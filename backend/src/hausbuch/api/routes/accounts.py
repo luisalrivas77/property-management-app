@@ -138,11 +138,14 @@ def _book_report_trades(ctx: CommandContext, account_id: UUID) -> depot.ReportTr
 @router.post("/accounts/{account_id}/report-trades")
 def account_report_trades(account_id: UUID, cmd: Cmd) -> depot.ReportTradesBooked:
     """„Umsätze aus dem Bericht buchen“ on the depot's holdings card (phase 6 D165 amended,
-    15 Nov 2026): every trade the depot's current reports list that no movement carries is
-    booked from the report (units and amount, source report, the report as its document), in
-    one transaction, then the reports' prices that now agree are stored. The list is computed
-    here again, never sent by the page. 404 for no such account, 422 depot.account_required
-    for an account that is no depot; nothing to book is booked=0."""
+    15 Nov 2026): the trades of the depot's current reports' confirmed readings that no
+    movement carries are booked from the report (units and amount, source report, the report
+    as its document), in one transaction under the depot's lock, then the reports' prices that
+    now agree are stored. A fund is booked only when its units then equal the latest report's
+    (else named in left_out), and a row that cannot be read is left out (review of 15 Nov
+    2026). The list is computed here again, never sent by the page. 404 for no such account,
+    422 depot.account_required for an account that is no depot; nothing to book is
+    booked=0."""
     return cmd.run(_book_report_trades, account_id)
 
 
