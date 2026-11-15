@@ -22,6 +22,7 @@ from db.test_services_prices_fetch import funds as funds  # noqa: F401 (a fixtur
 from sqlalchemy import insert, select
 
 from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import holding_statement as holding_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.rules import errors as E
@@ -399,3 +400,70 @@ def test_a_fund_in_a_report_that_disagrees_gets_no_price_card_of_its_own(
     assert cards[later].reasoning.endswith("keinen Wert, aus dem sich ein Kurs ergibt.")
     (holdings,) = _cards(read, ws, NOW, InboxItemKind.HOLDINGS_MISMATCH)
     assert "Fonds im Bericht: laut Bericht 0, gebucht 3 Anteile" in holdings.reasoning
+
+
+def _moved(ctx, account_id, asset_id, kind, units, eur=None, status="confirmed"):
+    ctx.conn.execute(
+        insert(movement_table).values(
+            workspace_id=ctx.workspace_id,
+            account_id=account_id,
+            asset_id=asset_id,
+            kind=kind,
+            quantity=Decimal(units),
+            eur_amount=None if eur is None else Decimal(eur),
+            occurred_at=FIRST,
+            source="csv",
+            status=status,
+            created_at=ctx.now,
+        )
+    )
+
+
+def test_an_exchanges_euro_takes_its_trades_euro_legs(run, read, fresh_workspaces):
+    """15 Nov 2026 (Luis: „It says that Binance has 4k in euros which is not the case“): a
+    trade's EUR leg is the coin movement's eur_amount (D178 (3)), so an exchange's EUR is its
+    EUR movements plus every confirmed trade's eur_amount, as rules.exchange.positions; a
+    trade quoted in another coin (no eur_amount) and a proposed one change nothing; a depot's
+    trades never touch EUR (its cash is its bank lines)."""
+    ws, _ = fresh_workspaces
+    exchange = run(
+        ws,
+        create_account,
+        AccountCreate(
+            label="Börse",
+            bank="Beispiel",
+            kind=AccountKind.EXCHANGE,
+            provider="Binance",
+            opening_balance=Decimal("0.00"),
+            opening_balance_on=date(2026, 6, 1),
+        ),
+        iban_key=TEST_IBAN_KEY,
+        now=FIRST,
+    )
+    ids = _setup(run, ws)
+
+    def seed(ctx):
+        euro = _asset(ctx, kind="cash", symbol="EUR", name="Euro", currency="EUR")
+        stable = _asset(ctx, kind="crypto", symbol="USDX", name="Invented Stable")
+        _moved(ctx, exchange.id, euro, "internal_transfer_in", "1000")
+        _moved(ctx, exchange.id, ids["coin"], "acquisition", "2", eur="-600.40")
+        _moved(ctx, exchange.id, ids["coin"], "disposal", "-0.5", eur="200.00")
+        _moved(ctx, exchange.id, stable, "acquisition", "100")  # quoted in a coin
+        _moved(ctx, exchange.id, ids["coin"], "acquisition", "1", eur="-99", status="proposed")
+        return euro
+
+    euro = run(ws, seed, now=NOW)
+    seen = read(ws, overview.assets_overview, date(2026, 6, 27))
+    by_account = {a.account_id: a for a in seen.accounts}
+    cash = {p.asset_id: p for p in by_account[exchange.id].positions}[euro]
+    assert cash.units == Decimal("599.60") and cash.value_eur == Decimal("599.60")
+    depot_assets = {p.asset_id for a in seen.accounts if a.kind == "depot" for p in a.positions}
+    assert euro not in depot_assets
+
+    def spend_the_rest(ctx):
+        _moved(ctx, exchange.id, ids["coin"], "acquisition", "3", eur="-599.60")
+
+    run(ws, spend_the_rest, now=NOW)
+    seen = read(ws, overview.assets_overview, date(2026, 6, 27))
+    positions = next(a for a in seen.accounts if a.account_id == exchange.id).positions
+    assert euro not in {p.asset_id for p in positions}  # 0 € is no position
