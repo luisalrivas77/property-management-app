@@ -181,7 +181,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   // exports of the draft (phase-3.md §10, §12)
   // the FinTS sync (phase-5.md §4.4)
   "bank.not_configured":
-    "Der Bankabruf ist auf dem Server nicht eingerichtet: PIN oder Produkt-ID fehlen in der Serverkonfiguration (Runbook Schritt 14).",
+    "Der Bankabruf ist auf dem Server nicht eingerichtet: die Produkt-ID fehlt in der Serverkonfiguration (Runbook Schritt 14).",
   "bank.rate_limited": "Höchstens vier Abrufe pro Stunde von Hand. Bitte etwas später noch einmal.",
   "bank.sync_running": "Für dieses Konto läuft schon ein Abruf.",
   "bank.window_invalid":
@@ -200,7 +200,12 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "bank.failed": "Der Abruf ist an einem unerwarteten Fehler gescheitert. Erneut abrufen; hält es an, als Datei hochladen.",
   // one PIN per online-banking login, a private account's history first, DKB's daily fetch (phase-6.md D163, D173)
   "bank.pin_missing":
-    "Für den Zugang dieses Kontos ist keine PIN auf dem Server hinterlegt. In der Scaleway-Konsole beim API-Container die geheime Umgebungsvariable anlegen, die beim Bankabruf unter „PIN-Variable“ steht, und den Container neu bereitstellen (Runbook Schritt 17).",
+    "Für den Zugang dieses Kontos ist noch keine PIN hinterlegt. Beim Bankabruf unter „PIN (Online-Banking)“ die PIN eingeben und „PIN speichern“ drücken, dann erneut abrufen.",
+  "bank.pin_unreadable":
+    "Die in Hausbuch gespeicherte PIN lässt sich nicht mehr lesen, weil der Schlüssel des Servers gewechselt wurde. Beim Bankabruf „PIN ändern“ wählen, die PIN neu eingeben und erneut abrufen.",
+  "bank.login_unreadable":
+    "Der gespeicherte Anmeldename lässt sich nicht mehr lesen, weil der Schlüssel des Servers gewechselt wurde. Beim Bankabruf „Zugang ändern“ wählen, den Anmeldenamen neu eingeben und erneut abrufen.",
+  "bank.pin_invalid": "Die PIN hat 5 bis 64 Zeichen.",
   "bank.history_missing": "Laden Sie zuerst den Kontoauszug-Export für 2026 hoch, dann verbinden Sie das Konto.",
   "bank.auto_sync_waits":
     "Der tägliche Abruf lässt sich erst einschalten, wenn zwei Abrufe von Hand nacheinander ohne Freigabe in der DKB-App durchgelaufen sind; sonst käme jeden Morgen eine Anfrage aufs Handy.",

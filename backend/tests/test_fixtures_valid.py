@@ -632,6 +632,20 @@ PHASE5_CASES = {
         "rent_missing_cleared_by_allocation",
         "rent_missing_label_names_unit_only",
         "sync_stale_after_35_days",
+        # D122 amended (15 Nov 2026): bank.statement_due.
+        "statement_due_tenth_of_the_month_after_next",
+        "statement_due_card_from_its_last_line",
+        "statement_due_moves_with_a_later_import",
+        "statement_due_depot_overdue",
+        "statement_due_manual_fetch_counts_the_sync",
+        "statement_due_none_with_daily_fetch",
+        "statement_due_none_for_an_exchange",
+        "statement_due_none_without_a_reconciled_import",
+        # D122 amended (6), 15 Nov 2026: a card closed at 0.
+        "statement_due_none_for_a_card_closed_at_zero",
+        "statement_due_card_closed_at_zero_used_again",
+        "statement_due_card_closed_at_zero_settlement_in_window",
+        "statement_due_card_closed_owing_as_before",
         "snoozed_hidden_until_date",
         "done_hides_instance_only",
         "ids_stable_across_days",
@@ -648,6 +662,9 @@ PHASE5_CASES = {
         # The PR #125 review's retry decision: a failed send is retried, three attempts in all.
         "failed_send_retried_next_day",
         "third_failure_gives_up",
+        # D122 amended (15 Nov 2026).
+        "statement_due_mailed_on_its_day",
+        "statement_due_not_mailed_before_its_day",
     },
     # Step 2b, D154 (§4.8).
     "bank_statements": {

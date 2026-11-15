@@ -36,21 +36,28 @@ account.bank_parameters_read when they change (D173 (7)); their bank name picks 
 (DKB's app, D173 (1)) and the daily-fetch guard (two manual syncs without an approval first,
 D173 (5)).
 
-Secrets (D119): the PIN and the product id are read from Settings by the job only, never
-stored. The client state is stored with a MAC (HMAC-SHA256 under a key derived from the
-session key) over the connection id, the account id, the BLZ, the URL, the login and the
-blob: a state written for another login, URL or row is rejected (bank.state_rejected) and
-dropped. The login is returned and logged only masked; no event carries a secret, an amount
-or a name.
+Secrets (D119, D196): the product id is read from Settings by the job only, never stored. A
+slot's PIN is the one typed into the app (bank_credential, AES-256-GCM, services.bank_credentials)
+or else its container secret, resolved by the job in process just before the dialog; never in a
+RunPlan, a job's arguments, an event or a log. The login is stored encrypted under its own key
+(a connection made before migration 0039 has its readable login encrypted at the first sync or
+change, and at the API's start-up), decrypted in process only. A PIN or login that no longer
+decrypts (the session key changed) fails the run with bank.pin_unreadable or
+bank.login_unreadable before any dialog. The client state is stored with a MAC (HMAC-SHA256
+under a key derived from the session key) over the connection id, the account id, the BLZ, the
+URL, the decrypted login and the blob: a state written for another login, URL or row is
+rejected (bank.state_rejected) and dropped; encrypting the login changes no MAC input, so a
+live connection's state keeps verifying. The login is returned and logged only masked; no
+event carries a secret, an amount or a name.
 """
 
 import hashlib
 import hmac
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import Connection, Row, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -113,6 +120,7 @@ from hausbuch.schemas.events import (
 from hausbuch.settings import Settings
 from hausbuch.storage import BlobStore
 
+from . import bank_credentials as credentials
 from .allocations import user_id
 from .context import CommandContext
 from .documents import LOCAL_TIME_ZONE, type_document, upload_document
@@ -129,7 +137,7 @@ from .statements import (
 
 _STATE_KEY_LABEL = b"hausbuch-fints-state-v1"
 _CONNECTION_TAKEN = "bank_connection_account_id_key"
-_SECRET_COLUMNS = {"client_data", "client_data_mac", "login_name"}
+_SECRET_COLUMNS = {"client_data", "client_data_mac"} | credentials.LOGIN_COLUMNS
 _LIST_LIMIT = 20
 _S = SyncStatus
 _HELD = frozenset({_S.QUEUED, _S.RUNNING, _S.IMPORTING})
@@ -144,15 +152,16 @@ def state_key(session_key: bytes) -> bytes:
     return hmac.new(session_key, _STATE_KEY_LABEL, hashlib.sha256).digest()
 
 
-def state_mac(key: bytes, connection: Row | Any, blob: bytes) -> bytes:
-    """HMAC-SHA256 over the connection's identity and the blob, each part length-prefixed."""
+def state_mac(key: bytes, connection: Row | Any, login: str, blob: bytes) -> bytes:
+    """HMAC-SHA256 over the connection's identity, its login (decrypted, D196: the same bytes
+    as before the login was encrypted) and the blob, each part length-prefixed."""
     mac = hmac.new(key, digestmod=hashlib.sha256)
     for part in (
         str(connection.id).encode(),
         str(connection.account_id).encode(),
         connection.bank_code.encode(),
         connection.fints_url.encode(),
-        connection.login_name.encode(),
+        login.encode(),
         blob,
     ):
         mac.update(len(part).to_bytes(8, "big"))
@@ -160,24 +169,27 @@ def state_mac(key: bytes, connection: Row | Any, blob: bytes) -> bytes:
     return mac.digest()
 
 
-def verified_state(key: bytes, connection: Row) -> bytes | None:
+def verified_state(key: bytes, connection: Row, login: str) -> bytes | None:
     """The stored client state if its MAC verifies, else None (also when none is stored)."""
     blob, mac = connection.client_data, connection.client_data_mac
     if blob is None or mac is None:
         return None
-    expected = state_mac(key, connection, bytes(blob))
+    expected = state_mac(key, connection, login, bytes(blob))
     return bytes(blob) if hmac.compare_digest(expected, bytes(mac)) else None
 
 
 # --- The connection --------------------------------------------------------------------------
 
 
-def create_connection(ctx: CommandContext, data: BankConnectionCreate) -> BankConnection:
+def create_connection(
+    ctx: CommandContext, data: BankConnectionCreate, *, settings: Settings
+) -> BankConnection:
     """One connection per account; the account's source becomes fints (D125). Phase 6
     step 3 lifts phase 5's guard on private accounts: a private account gets one once its
     statement export is imported and reconciled (bank.history_missing otherwise), so the
     first window starts after that history (D173 (4), §15 step 3). The rental account is
-    unchanged."""
+    unchanged. The login is stored encrypted (D196); its AAD names the row's id, so the id is
+    made here."""
     account = require_row(
         ctx.conn, account_table, EntityType.ACCOUNT, data.account_id, for_update=True
     )
@@ -188,15 +200,18 @@ def create_connection(ctx: CommandContext, data: BankConnectionCreate) -> BankCo
             E.BANK_HISTORY_MISSING, "import and reconcile the account's statement export first"
         )
     try:
+        connection_id = uuid4()
+        login = credentials.sealed_login(settings, ctx.workspace_id, connection_id, data.login_name)
         row = ctx.conn.execute(
             insert(connection_table)
             .values(
+                id=connection_id,
                 workspace_id=ctx.workspace_id,
                 account_id=data.account_id,
                 bank_code=data.bank_code,
                 fints_url=data.fints_url,
-                login_name=data.login_name,
                 credential_slot=data.credential_slot,
+                **login,
                 created_at=ctx.now,
                 updated_at=ctx.now,
             )
@@ -217,33 +232,44 @@ def create_connection(ctx: CommandContext, data: BankConnectionCreate) -> BankCo
         ctx,
         EventType.ACCOUNT_CONNECTION_CREATED,
         data.account_id,
-        _recorded(row, changed=[]),
+        _recorded(row, changed=[], login=data.login_name),
     )
-    return _to_connection(ctx.conn, row)
+    return _to_connection(ctx.conn, row, settings)
 
 
 def update_connection(
-    ctx: CommandContext, account_id: UUID, patch: BankConnectionPatch
+    ctx: CommandContext, account_id: UUID, patch: BankConnectionPatch, *, settings: Settings
 ) -> BankConnection:
     """Change the fields sent. A new URL or login invalidates the stored client state (its MAC
     covers both), so the state, the TAN mechanism and the last approval are dropped with it:
     the next run starts like a first one. Switching the daily fetch on is refused with
     bank.auto_sync_waits while the bank asks for an approval too often (D173 (5)). A new
-    credential slot keeps the state (its MAC covers the login and the URL, not the PIN)."""
+    credential slot keeps the state (its MAC covers the login and the URL, not the PIN).
+
+    D196: the login is compared decrypted and stored encrypted; a readable login left from
+    before migration 0039 is encrypted here too. A login that no longer decrypts differs from
+    any new one, so typing it again drops the state, which its MAC no longer verifies anyway."""
     current = _connection_row(ctx.conn, account_id, for_update=True)
+    current = credentials.encrypt_login_if_readable(ctx.conn, current, settings)
+    stored_login = credentials.connection_login(current, settings)
     requested = patch.changes()
     values: dict[str, Any] = {
-        name: value for name, value in requested.items() if getattr(current, name) != value
+        name: value
+        for name, value in requested.items()
+        if (stored_login if name == "login_name" else getattr(current, name)) != value
     }
     if not values:
-        return _to_connection(ctx.conn, current)
+        return _to_connection(ctx.conn, current, settings)
     if values.get("auto_sync") is True and not _auto_sync_allowed(ctx.conn, current):
         raise RuleError(
             E.BANK_AUTO_SYNC_WAITS,
             "the daily fetch waits for two manual syncs in a row without an approval",
         )
     changed = sorted(values)
-    if {"fints_url", "login_name"} & set(values):
+    login = values.pop("login_name", None)
+    if login is not None:
+        values |= credentials.sealed_login(settings, ctx.workspace_id, current.id, login)
+    if "fints_url" in values or login is not None:
         values |= {"client_data": None, "client_data_mac": None, "sca_confirmed_at": None}
         if current.tan_mechanism is not None:
             values["tan_mechanism"] = None
@@ -254,17 +280,18 @@ def update_connection(
         .values(**values, updated_at=ctx.now)
         .returning(connection_table)
     ).one()
-    append_event(
-        ctx, EventType.ACCOUNT_CONNECTION_UPDATED, account_id, _recorded(row, changed=changed)
-    )
-    return _to_connection(ctx.conn, row)
+    recorded = _recorded(row, changed=changed, login=login or stored_login)
+    append_event(ctx, EventType.ACCOUNT_CONNECTION_UPDATED, account_id, recorded)
+    return _to_connection(ctx.conn, row, settings)
 
 
-def get_connection(conn: Connection, account_id: UUID) -> BankConnection | None:
+def get_connection(
+    conn: Connection, account_id: UUID, *, settings: Settings
+) -> BankConnection | None:
     row = conn.execute(
         select(connection_table).where(connection_table.c.account_id == account_id)
     ).one_or_none()
-    return None if row is None else _to_connection(conn, row)
+    return None if row is None else _to_connection(conn, row, settings)
 
 
 def _connection_row(conn: Connection, account_id: UUID, *, for_update: bool = False) -> Row:
@@ -277,12 +304,17 @@ def _connection_row(conn: Connection, account_id: UUID, *, for_update: bool = Fa
     return row
 
 
-def _recorded(row: Row, *, changed: list[str]) -> BankConnectionRecorded:
+def _masked(login: str | None) -> str:
+    """mask_login, or its stars for a login that no longer decrypts (D196)."""
+    return "***" if login is None else mask_login(login)
+
+
+def _recorded(row: Row, *, changed: list[str], login: str | None) -> BankConnectionRecorded:
     return BankConnectionRecorded(
         connection_id=row.id,
         account_id=row.account_id,
         bank_code=row.bank_code,
-        login_masked=mask_login(row.login_name),
+        login_masked=_masked(login),
         credential_slot=row.credential_slot,
         auto_sync=row.auto_sync,
         fetch_statements=row.fetch_statements,
@@ -290,13 +322,19 @@ def _recorded(row: Row, *, changed: list[str]) -> BankConnectionRecorded:
     )
 
 
-def _to_connection(conn: Connection, row: Row) -> BankConnection:
+def _to_connection(conn: Connection, row: Row, settings: Settings) -> BankConnection:
     values = {k: v for k, v in row._mapping.items() if k not in _SECRET_COLUMNS}
     bank_name = recorded_bank_name(conn, row.id)
+    login = credentials.connection_login(row, settings)
+    pin = credentials.pin_state(conn, row.credential_slot, settings)
     return BankConnection.model_validate(
         values
         | {
-            "login_masked": mask_login(row.login_name),
+            "login_masked": _masked(login),
+            "name_readable": login is not None,
+            "credential_source": pin.source,
+            "credential_set_at": pin.set_at,
+            "credential_readable": pin.readable,
             "state_present": row.client_data is not None,
             "credential_variable": rules.pin_variable(row.credential_slot),
             "bank_name": bank_name,
@@ -428,9 +466,10 @@ def _auto_sync_allowed(conn: Connection, row: Row, *, bank_name: str | None = No
 
 
 def configured(settings: Settings) -> bool:
-    """A usable product id and at least one slot's PIN are set (§4.4 bank.not_configured).
-    Whether the connection's own slot has its PIN is check_slot's (bank.pin_missing)."""
-    return bool(settings.fints_pins) and rules.product_id_usable(settings.fints_product_id)
+    """A usable product id is set (§4.4 bank.not_configured). Since D196 a PIN may be typed
+    into the app, so whether the connection's slot has a PIN from either source is
+    check_slot's (bank.pin_missing)."""
+    return rules.product_id_usable(settings.fints_product_id)
 
 
 def configured_slots(settings: Settings) -> list[str]:
@@ -446,8 +485,8 @@ def start_sync(ctx: CommandContext, account_id: UUID, *, settings: Settings) -> 
     account = require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
     connection = _connection_row(ctx.conn, account_id)
     if not configured(settings):
-        raise RuleError(E.BANK_NOT_CONFIGURED, "the FinTS PIN or product id is not configured")
-    rules.check_slot(set(settings.fints_pins), connection.credential_slot)
+        raise RuleError(E.BANK_NOT_CONFIGURED, "the FinTS product id is not configured")
+    rules.check_slot(credentials.available_slots(ctx.conn, settings), connection.credential_slot)
     if _manual_starts_last_hour(ctx, account_id) >= rules.MANUAL_STARTS_PER_HOUR:
         raise RuleError(E.BANK_RATE_LIMITED, "at most four manual syncs per hour")
     window = _window(ctx, account, connection)
@@ -678,9 +717,20 @@ def _to_sync(row: Row) -> BankSync:
 # What a bank_sync_failed card says per code: what happened, and what to do (principle 7).
 _FAILED_CARD = {
     E.BANK_NOT_CONFIGURED: (
-        "Der Bankabruf ist nicht eingerichtet: PIN oder Produkt-ID fehlen in der"
-        " Serverkonfiguration.",
-        "Beide als Secret hinterlegen (Runbook Schritt 14), dann erneut abrufen.",
+        "Der Bankabruf ist nicht eingerichtet: die Produkt-ID fehlt in der Serverkonfiguration.",
+        "Sie als Secret hinterlegen (Runbook Schritt 14), dann erneut abrufen.",
+    ),
+    # D196: the stored PIN or login no longer decrypts (the server's session key changed).
+    E.BANK_PIN_UNREADABLE: (
+        "Die in Hausbuch gespeicherte PIN lässt sich nicht mehr lesen: der Schlüssel des"
+        " Servers wurde gewechselt.",
+        "Im Bankabruf „PIN ändern“ wählen, die PIN neu eingeben und erneut abrufen.",
+    ),
+    E.BANK_LOGIN_UNREADABLE: (
+        "Der gespeicherte Anmeldename lässt sich nicht mehr lesen: der Schlüssel des Servers"
+        " wurde gewechselt.",
+        "Im Bankabruf unter „Zugang ändern“ den Anmeldenamen und die PIN neu eingeben, dann"
+        " erneut abrufen.",
     ),
     E.BANK_TAN_NOT_DECOUPLED: (
         "Die Bank bietet für diesen Zugang keine Freigabe per App (pushTAN) an.",
@@ -850,15 +900,17 @@ _REFUSED_CARD: dict[str, tuple[str, str]] = {
 }
 
 
-# Phase 6 D163: the slot's PIN is missing; the card names the variable to set (never a value).
+# Phase 6 D163, D196: the slot's PIN is missing; the card says where to type it (the app
+# first) and names the variable as the alternative (never a value).
 def _pin_missing_card(credential_slot: str) -> tuple[str, str]:
     variable = rules.pin_variable(credential_slot)
     return (
-        f"Für den Zugang „{credential_slot}“ ist keine PIN hinterlegt: die Variable {variable}"
-        " fehlt im API-Container.",
-        f"In der Scaleway-Konsole (Serverless › Containers › API-Container › Einstellungen)"
-        f" die geheime Umgebungsvariable (Secret) {variable} mit der PIN dieses Zugangs anlegen"
-        " und den Container neu bereitstellen (Runbook Schritt 17), dann erneut abrufen.",
+        f"Für den Zugang „{credential_slot}“ ist keine PIN hinterlegt, weder in Hausbuch noch"
+        f" als Variable {variable} im API-Container.",
+        "Im Bankabruf des Kontos die PIN unter „PIN (Online-Banking)“ eingeben und „PIN"
+        " speichern“ wählen, dann erneut abrufen. Alternativ in der Scaleway-Konsole"
+        f" (Serverless › Containers › API-Container › Einstellungen) das Secret {variable}"
+        " anlegen und den Container neu bereitstellen (Runbook Schritt 17).",
     )
 
 
@@ -1101,7 +1153,9 @@ def bank_sync_items(conn: Connection) -> list[InboxItem]:
 @dataclass(frozen=True)
 class RunPlan:
     """What the job needs for the network part, read at begin. The PIN and product id are
-    not in it: the job reads them from Settings, the PIN by `credential_slot` (D163)."""
+    not in it: the job reads the product id from Settings and resolves the PIN by
+    `credential_slot` just before the dialog (D163, D196: the app's, else the container's).
+    The login is the decrypted one (D196), in process only."""
 
     sync_id: UUID
     account_id: UUID
@@ -1112,7 +1166,7 @@ class RunPlan:
     requested_to: date
     bank_code: str
     fints_url: str
-    login_name: str
+    login_name: str = field(repr=False)  # D196: never in a repr, a traceback or a log
     client_data: bytes | None  # verified against its MAC
     tan_mechanism: str | None
     iban_hmac: bytes
@@ -1130,8 +1184,10 @@ def begin_run(
 ) -> RunPlan | None:
     """Take the row for this job. None when there is nothing to run: the row is gone or
     final; a retried job (attempt > 0) of a `needs_approval` row leaves it restartable
-    (WORKER_LOST, D118); not configured, a slot without its PIN (bank.pin_missing, D163)
-    or a state whose MAC fails records `failed`."""
+    (WORKER_LOST, D118); not configured, a slot without its PIN from either source
+    (bank.pin_missing, D163, D196), a login that no longer decrypts (bank.login_unreadable,
+    D196) or a state whose MAC fails records `failed`. A readable login left from before
+    migration 0039 is encrypted here (D196); the MAC is checked over the same login bytes."""
     row = _sync_row(ctx.conn, sync_id)
     if row is None:
         return None
@@ -1150,12 +1206,18 @@ def begin_run(
     if not configured(settings):
         _fail(ctx, row, E.BANK_NOT_CONFIGURED)
         return None
-    if connection.credential_slot not in settings.fints_pins:  # before any dialog (D163)
+    # before any dialog (D163, D196); whether a stored PIN decrypts is the job's, at the dialog
+    if connection.credential_slot not in credentials.available_slots(ctx.conn, settings):
         _fail(ctx, row, E.BANK_PIN_MISSING)
+        return None
+    connection = credentials.encrypt_login_if_readable(ctx.conn, connection, settings)
+    login = credentials.connection_login(connection, settings)
+    if login is None:
+        _fail(ctx, row, E.BANK_LOGIN_UNREADABLE)
         return None
     client_data: bytes | None = None
     if connection.client_data is not None:
-        client_data = verified_state(state_key(settings.session_key), connection)
+        client_data = verified_state(state_key(settings.session_key), connection, login)
         if client_data is None:
             ctx.conn.execute(
                 update(connection_table)
@@ -1176,7 +1238,7 @@ def begin_run(
         requested_to=row.requested_to,
         bank_code=connection.bank_code,
         fints_url=connection.fints_url,
-        login_name=connection.login_name,
+        login_name=login,
         client_data=client_data,
         tan_mechanism=connection.tan_mechanism,
         iban_hmac=bytes(account.iban_hmac),
@@ -1436,10 +1498,12 @@ def _store_state(
     ctx: CommandContext, plan: RunPlan, connection: Row, fetched: Fetched, settings: Settings
 ) -> None:
     """The client state with its MAC (D119), only while the connection is the one the run
-    started with (a login or URL changed meanwhile would make it another login's state)."""
+    started with (a login or URL changed meanwhile would make it another login's state). The
+    login is compared decrypted (D196)."""
     if fetched.state is None:
         return
-    same = (connection.bank_code, connection.fints_url, connection.login_name) == (
+    login = credentials.connection_login(connection, settings)
+    same = (connection.bank_code, connection.fints_url, login) == (
         plan.bank_code,
         plan.fints_url,
         plan.login_name,
@@ -1448,7 +1512,9 @@ def _store_state(
         return
     values: dict[str, Any] = {
         "client_data": fetched.state,
-        "client_data_mac": state_mac(state_key(settings.session_key), connection, fetched.state),
+        "client_data_mac": state_mac(
+            state_key(settings.session_key), connection, plan.login_name, fetched.state
+        ),
         "tan_mechanism": fetched.tan_mechanism,
         "updated_at": ctx.now,
     }

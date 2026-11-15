@@ -1130,6 +1130,14 @@ class AiConsentRecorded(Schema):
     consented_by: UUID
 
 
+class BankPinChanged(Schema):
+    """workspace.bank_pin_set and workspace.bank_pin_deleted (phase 6 D196): a credential
+    slot's PIN typed into the app (stored encrypted) or deleted, by the actor of the event.
+    The slot's name only: never the PIN, its ciphertext, its length or the login."""
+
+    credential_slot: CredentialSlot
+
+
 # --- Catalog -----------------------------------------------------------------
 
 EffectiveDate = Literal["required", "optional", "forbidden"]
@@ -1210,6 +1218,8 @@ class EventType(StrEnum):
     WORKSPACE_AI_CONSENT_RECORDED = "workspace.ai_consent_recorded"
     WORKSPACE_PRICES_FETCHED = "workspace.prices_fetched"
     WORKSPACE_VALUATION_SNAPSHOT_WRITTEN = "workspace.valuation_snapshot_written"
+    WORKSPACE_BANK_PIN_SET = "workspace.bank_pin_set"  # D196
+    WORKSPACE_BANK_PIN_DELETED = "workspace.bank_pin_deleted"  # D196
 
     PROPOSAL_CREATED = "proposal.created"
     PROPOSAL_SUPERSEDED = "proposal.superseded"
@@ -1387,6 +1397,12 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.WORKSPACE_PRICES_FETCHED: EventSpec(PricesFetched, "forbidden", "Daily prices fetched"),
     E.WORKSPACE_VALUATION_SNAPSHOT_WRITTEN: EventSpec(
         ValuationSnapshotWritten, "forbidden", "Month-end net worth snapshot written"
+    ),
+    E.WORKSPACE_BANK_PIN_SET: EventSpec(
+        BankPinChanged, "forbidden", "Bank PIN stored in the app, encrypted (D196)"
+    ),
+    E.WORKSPACE_BANK_PIN_DELETED: EventSpec(
+        BankPinChanged, "forbidden", "Bank PIN deleted from the app (D196)"
     ),
     E.PROPOSAL_CREATED: EventSpec(ProposalNoted, "forbidden", "Pre-fill proposal created"),
     E.PROPOSAL_SUPERSEDED: EventSpec(ProposalNoted, "forbidden", "Proposal replaced by a re-run"),

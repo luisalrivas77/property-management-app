@@ -42,6 +42,7 @@ from fixture_models import Lenient, RuleErrorExpect
 from pydantic import Field, model_validator
 
 from hausbuch.rules import errors as E
+from hausbuch.rules.matching import transfer_window_end
 from hausbuch.rules.statements import (
     ARCHIVE_REJECTED,
     MAX_ARCHIVE_BYTES,
@@ -655,6 +656,14 @@ _CATALOGUE = {
         cleared_by="auto",
         args=frozenset({"account"}),
     ),
+    K.STATEMENT_DUE: _Row(
+        scope=ReminderScope.ACCOUNT,
+        in_app=0,
+        email=(0,),
+        severity="action",
+        cleared_by="auto",
+        args=frozenset({"account", "covered_until"}),
+    ),
 }
 
 
@@ -739,6 +748,26 @@ def _check_against_facts(r: Reminder, facts: ReminderFacts) -> None:
         if args["account"] != subject.label:
             raise ValueError(f"{r.id}: label_args name the account")
         want = (subject.last_sync_on or subject.connected_on) + timedelta(days=35)
+    elif r.kind is K.STATEMENT_DUE:
+        # D122 amended: kinds bank, credit_card, depot with a reconciled import, never with
+        # the daily fetch on; due 10 days after the end of the month after the covered day's.
+        if subject.kind not in ("bank_current", "bank_savings", "credit_card", "depot"):
+            raise ValueError(f"{r.id}: only an account fed by statements")
+        if subject.reconciled_until is None or (subject.connection and subject.auto_sync):
+            raise ValueError(f"{r.id}: needs a reconciled import and no daily fetch")
+        covered = max(d for d in (subject.reconciled_until, subject.history_until) if d)
+        if args != {"account": subject.label, "covered_until": str(covered)}:
+            raise ValueError(f"{r.id}: label_args are the account and the covered day")
+        counted_from = covered
+        if subject.kind == "credit_card" and subject.closed_at_zero:
+            # D122 amended (6): a card closed at 0 counts from its first debit after the D162
+            # window following the covered day (three banking days).
+            later = [d for d in subject.paid_on if d > transfer_window_end(covered)]
+            if not later:
+                raise ValueError(f"{r.id}: a card closed at 0 needs a later debit paying it")
+            counted_from = min(later)
+        following = _add_months(counted_from.replace(day=1), 2)
+        want = following - timedelta(days=1) + timedelta(days=10)
     if want is not None and due != want:
         raise ValueError(f"{r.id}: the §6.2 formula gives {want}")
 

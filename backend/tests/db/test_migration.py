@@ -77,6 +77,8 @@ MIGRATION_TABLES = {
     "transfer_link",
     "price",
     "valuation_snapshot",
+    # Phase 6 D196 (migration 0039)
+    "bank_credential",
 }
 # Procrastinate's own tables (0005): not RLS'd, no workspace_id (D20). The one exclusion.
 QUEUE_TABLE_PREFIX = "procrastinate_"

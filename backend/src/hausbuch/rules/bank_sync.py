@@ -338,8 +338,8 @@ def deciding_code(answers: Sequence[BankAnswer]) -> str | None:
 def product_id_usable(product_id: str | None) -> bool:
     """The DK registration number fits HKVVB's product name: set, not blank, at most 25
     characters, no surrounding blanks. Anything else fails a sync with bank.not_configured;
-    it never stops the container (Settings only refuses a PIN without a product id, or the
-    reverse)."""
+    it never stops the container (Settings only refuses a PIN without a product id; the
+    product id alone is valid since D196, a PIN may be typed into the app)."""
     return (
         product_id is not None
         and 0 < len(product_id) <= PRODUCT_ID_MAX
@@ -370,8 +370,9 @@ def pin_variable(slot: str) -> str:
 
 def check_slot(configured: Collection[str], slot: str) -> None:
     """The sync's check before any dialog (D163): the connection's slot must have its secret.
-    `configured` holds the names of the slots whose variable is set (never a PIN). Raises
-    bank.pin_missing, whose message names the variable to set (a name, not a secret)."""
+    `configured` holds the names of the slots with a PIN (never a PIN): since D196 those whose
+    variable is set and those whose PIN was typed into the app. Raises bank.pin_missing, whose
+    message names the variable to set (a name, not a secret)."""
     if slot not in configured:
         raise RuleError(E.BANK_PIN_MISSING, f"the container secret {pin_variable(slot)} is not set")
 

@@ -299,6 +299,8 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "workspace.ai_consent_recorded": "Zustimmung zur KI-Zuordnung privater Konten erfasst",
   "workspace.prices_fetched": "Kurse abgerufen",
   "workspace.valuation_snapshot_written": "Monatsendstand des Vermögens gespeichert",
+  "workspace.bank_pin_set": "PIN eines Online-Banking-Zugangs gespeichert (verschlüsselt)",
+  "workspace.bank_pin_deleted": "PIN eines Online-Banking-Zugangs gelöscht",
   "proposal.created": "Vorschlag erstellt",
   "proposal.superseded": "Vorschlag ersetzt",
   "proposal.rejected": "Vorschlag abgelehnt",

@@ -70,6 +70,8 @@ export function reminderLabel(reminder: Reminder): string {
       return `Miete ${arg(reminder, "unit")} für ${formatMonth(arg(reminder, "month"))} fehlt`;
     case "bank.sync_stale":
       return `Bankabruf ${arg(reminder, "account")} lange nicht erfolgreich`;
+    case "bank.statement_due":
+      return `Kontoauszug fällig: ${arg(reminder, "account")}`;
     default:
       return "Termin";
   }
@@ -102,10 +104,16 @@ export function reminderLink(reminder: Reminder): { href: string; label: string 
       return { href: `/tenancies/${id}`, label: "Mietverhältnis öffnen" };
     case "bank.sync_stale":
       return { href: `/accounts/${id}`, label: "Konto öffnen" };
+    case "bank.statement_due":
+      // D122 amended: the Kontoauszüge tab holds the account's statement upload.
+      return { href: `/accounts/${id}?tab=kontoauszuege`, label: "Kontoauszug hochladen" };
     default:
       return null;
   }
 }
+
+/** Kinds whose day moves with every fetch or import: listed under Nächste Termine once due. */
+const WATCHDOGS = new Set<Reminder["kind"]>(["bank.sync_stale", "bank.statement_due"]);
 
 /** "Erledigt": POST /reminders/{id}/ack with action done, which hides this instance only. */
 export function ReminderDone({ reminder, onDone }: { reminder: Reminder; onDone: () => void }) {
@@ -150,10 +158,11 @@ const NEXT_DATES = 10;
  */
 export function NextDates({ reminders, onChanged }: { reminders: Reminder[]; onChanged: () => void }) {
   // bank.sync_stale is a watchdog, not a date: its day moves on with every good fetch, so it
-  // is listed only once it is due (then it is also a to-do and a Zu prüfen card).
+  // is listed only once it is due (then it is also a to-do and a Zu prüfen card). So is
+  // bank.statement_due (D122 amended): its day moves on with every import.
   const today = todayIso();
   const rows = reminders
-    .filter((reminder) => reminder.kind !== "bank.sync_stale" || reminder.visible_from <= today)
+    .filter((reminder) => !WATCHDOGS.has(reminder.kind) || reminder.visible_from <= today)
     .slice(0, NEXT_DATES);
   return (
     <section className="card stack" aria-labelledby="next-dates">

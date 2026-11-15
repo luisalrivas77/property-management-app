@@ -72,12 +72,15 @@ def _slot(bank, slot: str):
         service.update_connection,
         bank.account.id,
         BankConnectionPatch(credential_slot=slot),
+        settings=bank.settings,
         now=T0,
     )
 
 
 def _connection(bank, account_id=None):
-    return bank.read(bank.ws, service.get_connection, account_id or bank.account.id)
+    return bank.read(
+        bank.ws, service.get_connection, account_id or bank.account.id, settings=bank.settings
+    )
 
 
 # --- Slots (D163) -----------------------------------------------------------------------------
@@ -205,6 +208,7 @@ def _connect(bank, account_id, slot="dkb"):
             login_name=DKB_LOGIN,
             credential_slot=slot,
         ),
+        settings=bank.settings,
         now=T0,
     )
 

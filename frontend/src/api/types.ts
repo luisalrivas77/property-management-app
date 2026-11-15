@@ -1884,12 +1884,34 @@ export interface paths {
         };
         /**
          * Bank Credential Slots
-         * @description Signed-in members only, as every domain route; names only, never a PIN (D119).
+         * @description Signed-in members only, as every domain route; names only, never a PIN (D119, D196).
          */
         get: operations["bank_credential_slots_api_bank_credential_slots_get"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-credentials/{slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Bank Credential Set
+         * @description D196: the PIN is encrypted before it reaches the database; the answer names the slot
+         *     and when, never the PIN.
+         */
+        put: operations["bank_credential_set_api_bank_credentials__slot__put"];
+        post?: never;
+        /** Bank Credential Delete */
+        delete: operations["bank_credential_delete_api_bank_credentials__slot__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3849,6 +3871,29 @@ export interface components {
             kind: components["schemas"]["MovementKind"];
         };
         /**
+         * AppCredential
+         * @description A slot whose PIN was typed into the app (D196): its name and when; never the PIN.
+         */
+        AppCredential: {
+            /** Slot */
+            slot: string;
+            /**
+             * Set At
+             * Format: date-time
+             */
+            set_at: string;
+            /**
+             * Readable
+             * @default true
+             */
+            readable: boolean;
+            /**
+             * Used
+             * @default true
+             */
+            used: boolean;
+        };
+        /**
          * AppUser
          * @description A person who can sign in. Auth credentials (passkey / TOTP) land with the API PR.
          */
@@ -4247,6 +4292,20 @@ export interface components {
              */
             auto_sync_allowed: boolean;
             statements_refusal?: components["schemas"]["StatementsRefusal"] | null;
+            /** @default none */
+            credential_source: components["schemas"]["CredentialSource"];
+            /** Credential Set At */
+            credential_set_at?: string | null;
+            /**
+             * Credential Readable
+             * @default true
+             */
+            credential_readable: boolean;
+            /**
+             * Name Readable
+             * @default true
+             */
+            name_readable: boolean;
         };
         /**
          * BankConnectionCreate
@@ -4291,11 +4350,29 @@ export interface components {
         /**
          * BankCredentialSlots
          * @description GET /bank-credential-slots (phase 6 D163): the slots whose container secret is set,
-         *     names only, so the Bankabruf card can say which variable is still missing.
+         *     names only, so the Bankabruf card can say which variable is still missing; and (D196) the
+         *     slots whose PIN was typed into the app, so „Bankabruf einrichten“ can say so before a
+         *     connection exists.
          */
         BankCredentialSlots: {
             /** Slots */
             slots?: string[];
+            /** App Slots */
+            app_slots?: components["schemas"]["AppCredential"][];
+        };
+        /**
+         * BankPinSet
+         * @description PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and
+         *     never returned, logged or echoed (a SecretStr: its repr is stars). Surrounding blanks are
+         *     trimmed, as the container secret's are (settings._optional), so a PIN pasted with a space
+         *     is the same PIN; the length counts after trimming.
+         */
+        BankPinSet: {
+            /**
+             * Pin
+             * Format: password
+             */
+            pin: string;
         };
         /**
          * BankStatement
@@ -5000,6 +5077,13 @@ export interface components {
             /** Covered Through */
             covered_through?: string | null;
         };
+        /**
+         * CredentialSource
+         * @description Where a connection's PIN comes from at the next sync (D196): typed in the app (stored
+         *     encrypted, it wins), the slot's container secret, or nowhere yet.
+         * @enum {string}
+         */
+        CredentialSource: "app" | "server" | "none";
         /**
          * Currency
          * @description transaction.currency. v1 is EUR only (one value, kept as a CHECK'd set like
@@ -5906,7 +5990,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -9385,10 +9469,10 @@ export interface components {
         };
         /**
          * ReminderKind
-         * @description The catalogue's eleven kinds (§6.2); the value is the reminder key.
+         * @description The catalogue's twelve kinds (§6.2); the value is the reminder key.
          * @enum {string}
          */
-        ReminderKind: "grundsteuer.instalment" | "checklist.due" | "tax.return_deadline" | "tax.questionnaire_open" | "tax.wage_certificate_missing" | "loan.fixed_rate_end" | "loan.special_termination" | "property.speculation_end" | "tenancy.settlement_deadline" | "tenancy.rent_missing" | "bank.sync_stale";
+        ReminderKind: "grundsteuer.instalment" | "checklist.due" | "tax.return_deadline" | "tax.questionnaire_open" | "tax.wage_certificate_missing" | "loan.fixed_rate_end" | "loan.special_termination" | "property.speculation_end" | "tenancy.settlement_deadline" | "tenancy.rent_missing" | "bank.sync_stale" | "bank.statement_due";
         /**
          * ReminderScope
          * @description reminder_ack.scope_type (migration 0019). WORKSPACE is §6.2's "household".
@@ -15935,6 +16019,70 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BankCredentialSlots"];
                 };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    bank_credential_set_api_bank_credentials__slot__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slot: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankPinSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppCredential"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    bank_credential_delete_api_bank_credentials__slot__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slot: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
             default: {

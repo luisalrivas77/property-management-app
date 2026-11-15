@@ -32,7 +32,7 @@ from pydantic import Field, model_validator
 
 from .checklist import ChecklistFacts
 from .common import Money, Schema, TaxYear
-from .enums import OperatingCostsTerms
+from .enums import AccountKind, OperatingCostsTerms
 from .tax import GrundsteuerInstalment
 from .tenancy import RentDueDay
 
@@ -42,7 +42,7 @@ ReminderId = Annotated[str, Field(min_length=1, max_length=160)]  # notification
 
 
 class ReminderKind(StrEnum):
-    """The catalogue's eleven kinds (§6.2); the value is the reminder key."""
+    """The catalogue's twelve kinds (§6.2); the value is the reminder key."""
 
     GRUNDSTEUER_INSTALMENT = "grundsteuer.instalment"
     CHECKLIST_DUE = "checklist.due"
@@ -55,6 +55,8 @@ class ReminderKind(StrEnum):
     SETTLEMENT_DEADLINE = "tenancy.settlement_deadline"
     RENT_MISSING = "tenancy.rent_missing"
     SYNC_STALE = "bank.sync_stale"
+    # D122 amended (15 Nov 2026): the next statement of an account fed by upload is due.
+    STATEMENT_DUE = "bank.statement_due"
 
 
 class ReminderScope(StrEnum):
@@ -240,7 +242,9 @@ class ReminderOwner(Schema):
 class ReminderAccount(Schema):
     """An account with its reconciled coverage and its connection (if any). The rent kind
     needs every non-owner account's reconciled lines to reach a date before it calls rent
-    missing; the stale kind needs the connection's last success (days in Europe/Berlin)."""
+    missing; the stale kind needs the connection's last success (days in Europe/Berlin).
+    The statement kind (D122 amended) needs the account's kind, whether its connection's daily
+    fetch is on, and the day its imported history reaches."""
 
     id: UUID
     label: str
@@ -250,13 +254,29 @@ class ReminderAccount(Schema):
     connection: bool = False  # a bank_connection exists
     connected_on: date | None = None  # its created_at's day
     last_sync_on: date | None = None  # its last_sync_at's day
+    # D122 amended: account.kind; None only where the facts do not say (the fixture's cases
+    # older than bank.statement_due), which no statement reminder reads. The service always
+    # passes it.
+    kind: AccountKind | None = None
+    auto_sync: bool = False  # the connection's „Täglich automatisch abrufen“
+    # services/transfers._last_days: its latest line of a reconciled import, or the
+    # requested_to of its latest successful FinTS run, whichever is later.
+    history_until: date | None = None
+    # D122 amended (6), 15 Nov 2026: a credit card's latest reconciled import (by its last
+    # booking day) declares a closing balance of exactly 0: nothing owed, so an issuer that
+    # sends no statement for an idle month may send none. False when the closing is unknown.
+    closed_at_zero: bool = False
+    # And the booking days of the debits on the other own accounts that pay this card (they
+    # name its payment IBAN, services/transfers.card_payments_after), after its covered day and
+    # not a leg of a current transfer link. Only read for a credit card closed at zero.
+    paid_on: list[date] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _connection(self) -> Self:
         if self.connection != (self.connected_on is not None):
             raise ValueError("connected_on is set exactly when a connection exists")
-        if not self.connection and self.last_sync_on is not None:
-            raise ValueError("last_sync_on needs a connection")
+        if not self.connection and (self.last_sync_on is not None or self.auto_sync):
+            raise ValueError("last_sync_on and auto_sync need a connection")
         return self
 
 

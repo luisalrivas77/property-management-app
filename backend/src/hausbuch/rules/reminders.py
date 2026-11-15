@@ -25,6 +25,7 @@ from typing import Literal
 from uuid import UUID
 
 from hausbuch.rules.document_checklist import build_checklist
+from hausbuch.rules.matching import transfer_window_end
 from hausbuch.rules.tax import registry
 from hausbuch.rules.tax._common import add_months, add_years
 from hausbuch.rules.tax.return_estimate import filing_deadline
@@ -35,13 +36,14 @@ from hausbuch.schemas.checklist import (
     ChecklistStatus,
     RequirementCode,
 )
-from hausbuch.schemas.enums import OperatingCostsTerms
+from hausbuch.schemas.enums import BANK_ACCOUNT_KINDS, AccountKind, OperatingCostsTerms
 from hausbuch.schemas.reminders import (
     HORIZON_DAYS,
     MAX_NOTIFICATION_ATTEMPTS,
     NotificationDue,
     NotificationStatus,
     Reminder,
+    ReminderAccount,
     ReminderAck,
     ReminderAckAction,
     ReminderFacts,
@@ -62,6 +64,12 @@ AMOUNT_TOLERANCE = Decimal("0.01")  # and, with a schedule row, at the instalmen
 RENT_GRACE_DAYS = 5  # rent is missing 5 days after its due day
 SYNC_STALE_DAYS = 35  # a connection without a success for 35 days (D120's daily schedule)
 SPECIAL_TERMINATION_YEARS = 10  # §489 Abs. 1 Nr. 2 BGB
+# D122 amended (15 Nov 2026): the next statement is due 10 days after the end of the month
+# that follows the last day the account's statements cover.
+STATEMENT_DUE_DAYS = 10
+# The kinds fed by statements with a fixed period; an exchange's export has none (and a quiet
+# exchange has no lines), a wallet is phase 7's.
+STATEMENT_ACCOUNT_KINDS = BANK_ACCOUNT_KINDS | {AccountKind.CREDIT_CARD, AccountKind.DEPOT}
 _DATED_SCOPES = {ChecklistScopeType.PROPERTY: ReminderScope.PROPERTY}
 
 
@@ -89,6 +97,7 @@ CATALOGUE: dict[ReminderKind, _Row] = {
     K.SETTLEMENT_DEADLINE: _Row(90, (90, 30), "action", "ack"),
     K.RENT_MISSING: _Row(0, (0,), "action", "auto"),
     K.SYNC_STALE: _Row(0, (0,), "info", "auto"),
+    K.STATEMENT_DUE: _Row(0, (0,), "action", "auto"),
 }
 _S = ReminderScope
 # The scopes each kind's instances carry (§6.2); an acknowledgement names one of them.
@@ -104,6 +113,7 @@ KIND_SCOPES: dict[ReminderKind, tuple[ReminderScope, ...]] = {
     K.SETTLEMENT_DEADLINE: (_S.TENANCY,),
     K.RENT_MISSING: (_S.TENANCY,),
     K.SYNC_STALE: (_S.ACCOUNT,),
+    K.STATEMENT_DUE: (_S.ACCOUNT,),
 }
 del _S
 
@@ -401,6 +411,41 @@ def _rent_missing(
         month = add_months(month, 1)
 
 
+def _statement_due(a: ReminderAccount) -> Reminder | None:
+    """D122 amended: an account fed by statements with a reconciled import, unless its
+    connection fetches daily (bank.sync_stale watches that one). Covered through the later of
+    its reconciled imports' last booking day and its history (a successful FinTS run's
+    requested_to); the next statement is due 10 days after the end of the following month.
+    D122 amended (6): a credit card whose latest statement closed at 0 is due only once a later
+    debit pays it, from that debit's month; covered_until stays the statements' end."""
+    if a.kind not in STATEMENT_ACCOUNT_KINDS or a.reconciled_until is None:
+        return None
+    if a.connection and a.auto_sync:
+        return None
+    covered = max(a.reconciled_until, a.history_until or a.reconciled_until)
+    counted_from = covered
+    if a.kind is AccountKind.CREDIT_CARD and a.closed_at_zero:
+        # D122 amended (6): a card whose last statement closed at exactly 0 owes nothing, and
+        # an issuer may send no statement for an idle month. It is due again only once a debit
+        # on another own account pays it, counted from that debit's day. A debit inside the
+        # D162 window after the covered day may settle the balance the last statement already
+        # shows as paid (its credit up to three banking days before the debit), so it proves
+        # no new use.
+        window_end = transfer_window_end(covered)
+        later = [day for day in a.paid_on if day > window_end]
+        if not later:
+            return None
+        counted_from = min(later)
+    following_end = add_months(counted_from.replace(day=1), 2) - timedelta(days=1)
+    return _reminder(
+        K.STATEMENT_DUE,
+        ReminderScope.ACCOUNT,
+        a.id,
+        following_end + timedelta(days=STATEMENT_DUE_DAYS),
+        {"account": a.label, "covered_until": covered.isoformat()},
+    )
+
+
 def _accounts(facts: ReminderFacts) -> Iterator[Reminder]:
     for a in facts.accounts:
         since = a.last_sync_on or a.connected_on
@@ -412,6 +457,9 @@ def _accounts(facts: ReminderFacts) -> Iterator[Reminder]:
                 since + timedelta(days=SYNC_STALE_DAYS),
                 {"account": a.label},
             )
+        due = _statement_due(a)
+        if due is not None:
+            yield due
 
 
 # --- Acknowledgements (§6.3) ---------------------------------------------------------------
