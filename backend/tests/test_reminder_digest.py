@@ -80,6 +80,11 @@ def test_every_fixture_code_has_a_line():
             "Grundsteuerbescheid für 2027 erwartet (Wohnung A)",
         ),
         ("tax.return_deadline", {"year": 2026}, "Steuererklärung 2026 abgeben"),
+        (
+            "bank.statement_due",
+            {"account": "Kreditkarte", "covered_until": "2026-10-28"},
+            "Kontoauszug fällig: Kreditkarte",
+        ),
     ],
 )
 def test_lines_match_the_cards(label_code, args, expected):
