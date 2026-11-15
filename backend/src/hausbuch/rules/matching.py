@@ -479,7 +479,9 @@ def apply_rule(
     if cross is not None and (
         cross == WEAK
         or rule.same_amount_only
-        or cross_iban_reference(rule, tx, history) != tx.amount
+        or (
+            not cash_across_ibans(rule, tx) and cross_iban_reference(rule, tx, history) != tx.amount
+        )
     ):
         return found.model_copy(
             update={"confidence": GUARDED_CONFIDENCE, "question": _cross_question(rule)}
@@ -1922,6 +1924,27 @@ def cross_iban_hit(rule: MatchingRule, tx: MatchTransaction, context: MatchConte
     if matcher_owns(own, context) or matcher_owns(line, context):
         return None
     return cross_iban_candidate(rule, tx)
+
+
+# 15 Nov 2026 (Luis: the „Künftig immer so zuordnen“ on a Sparkasse cash withdrawal left a
+# later one waiting): cash is another amount each time and one bank's machines print several
+# IBANs, so F1's amount check never lets a cash rule book a withdrawal on another IBAN. A
+# STRONG hit of a cash rule books at any amount when the line it was learned from and this
+# line both read as a card withdrawal (_CARD_WITHDRAWAL in the purpose); any other debit to
+# the same bank on another IBAN keeps F1's check.
+_CARD_WITHDRAWAL = re.compile(r"Debitk|girocard|Debitkarte|Geldautomat|Bargeld", re.IGNORECASE)
+
+
+def cash_across_ibans(rule: MatchingRule, tx: MatchTransaction) -> bool:
+    """Whether a cross-IBAN hit of `rule` on `tx` skips F1's amount check: a cash rule
+    (`hh_cash`) whose origin line and `tx` both carry a card-withdrawal mark."""
+    origin = rule.learned_from
+    return (
+        rule.category is AllocationCategory.HH_CASH
+        and origin is not None
+        and _CARD_WITHDRAWAL.search(origin[1] or "") is not None
+        and _CARD_WITHDRAWAL.search(tx.purpose or "") is not None
+    )
 
 
 def cross_iban_reference(
