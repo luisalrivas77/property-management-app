@@ -177,7 +177,7 @@ def test_a_new_account_is_a_private_current_account_in_euro(scope):
         {"iban_masked": None, "iban_hmac": None},  # a bank kind has an IBAN
         {"iban_hmac": None},  # masked and HMAC together
         {"external_ref_masked": "**** 1234", "external_ref_hmac": b"\x00" * 32},  # bank: no ref
-        {"kind": "exchange"},  # any other kind has no IBAN (a depot may since 0027, D156)
+        {"kind": "wallet"},  # no IBAN (a depot may since 0027, an exchange since 0035)
         {"currency": "USD"},  # EUR only in this phase
         {"provider": ""},
         {"kind": "savings"},
