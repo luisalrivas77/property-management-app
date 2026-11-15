@@ -47,7 +47,11 @@ from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.rules.errors import TRANSFER_LEGS_INVALID
 from hausbuch.rules.matching import (
+    EXCHANGE_DEPOSIT_GAP,
     TRANSFER_CATEGORIES,
+    deposit_fee_text,
+    deposit_gap,
+    deposit_split_set,
     ibans_agree,
     legs_fit,
     match_transfer,
@@ -122,7 +126,9 @@ class _Leg:
         self.booked = booked  # the line's current transfer category, None when booked otherwise
         self.category = booked or category  # its one live category of any kind, None for a split
 
-    def view(self, *, rebook_on_link: bool = False) -> TransferLegView:
+    def view(
+        self, *, rebook_on_link: bool = False, deposit_fee: Decimal | None = None
+    ) -> TransferLegView:
         return TransferLegView(
             source=self.leg.source,
             id=self.leg.id,
@@ -135,6 +141,8 @@ class _Leg:
             booked_category=self.category,
             booked_as_transfer=self.booked is not None,
             rebook_on_link=rebook_on_link,
+            deposit_fee=deposit_fee,
+            deposit_fee_text=None if deposit_fee is None else deposit_fee_text(deposit_fee),
         )
 
 
@@ -202,23 +210,39 @@ def _linked_ids(conn: Connection) -> set[UUID]:
     return {i for r in _current_links(conn) for i in _leg_ids(r)}
 
 
+# D162 amended 15 Nov 2026: a deposit an exchange credited short without a fee row is booked
+# on the bank line as these two parts (rules.matching.deposit_split_set); the line is still the
+# transfer's out leg.
+_DEPOSIT_SPLIT = frozenset(
+    {AllocationCategory.INTERNAL_TRANSFER_OUT.value, AllocationCategory.BANK_FEES.value}
+)
+
+
 def _one_category(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, AllocationCategory]:
-    """The lines among `ids` whose live rows are one category, with that category."""
+    """The lines among `ids` whose live rows are one category, with that category. D162
+    amended 15 Nov 2026: a line whose live rows are exactly internal_transfer_out and bank_fees,
+    the fee more than 0 and at most EXCHANGE_DEPOSIT_GAP, counts as internal_transfer_out (a
+    deposit the exchange credited short, _split_and_link), and nothing else of two parts."""
     if not ids:
         return {}
     a = allocation_table.c
     cats: dict[UUID, set[str]] = {}
-    for tx_id, category in conn.execute(
-        select(a.transaction_id, a.category).where(
+    fees: dict[UUID, Decimal] = {}
+    for tx_id, category, amount in conn.execute(
+        select(a.transaction_id, a.category, a.amount).where(
             a.transaction_id.in_(ids), a.status.in_(_LIVE), a.amount != 0
         )
     ):
         cats.setdefault(tx_id, set()).add(category)
-    return {
-        tx_id: AllocationCategory(next(iter(found)))
-        for tx_id, found in cats.items()
-        if len(found) == 1
-    }
+        if category == AllocationCategory.BANK_FEES.value:
+            fees[tx_id] = fees.get(tx_id, Decimal("0")) + amount
+    found_one: dict[UUID, AllocationCategory] = {}
+    for tx_id, found in cats.items():
+        if len(found) == 1:
+            found_one[tx_id] = AllocationCategory(next(iter(found)))
+        elif found == _DEPOSIT_SPLIT and Decimal("0") < -fees[tx_id] <= EXCHANGE_DEPOSIT_GAP:
+            found_one[tx_id] = AllocationCategory.INTERNAL_TRANSFER_OUT
+    return found_one
 
 
 def _transfer_booked(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, AllocationCategory]:
@@ -285,6 +309,7 @@ def _line_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
                 amount=r.amount,
                 counterparty_iban_hmac=_hex(r.counterparty_iban_hmac),
                 category=booked.get(r.id),
+                account_purpose=AccountPurpose(r.purpose),
             ),
             r.label,
             r.counterparty_name,
@@ -309,6 +334,7 @@ def _movement_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
             acc.kind.label("account_kind"),
             acc.purpose,
             acc.label,
+            acc.iban_hmac,
         )
         .join(account_table, acc.id == m.account_id)
         .where(
@@ -325,19 +351,26 @@ def _movement_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
     for r in rows:
         category = _MOVEMENT_KINDS[r.kind]
         amount = abs(r.eur_amount)
+        kind = AccountKind(r.account_kind)
+        deposit = category is AllocationCategory.INTERNAL_TRANSFER_IN
         legs.append(
             _Leg(
                 TransferLeg(
                     source=TransferLegSource.MOVEMENT,
                     id=r.id,
                     account_id=r.account_id,
-                    account_kind=AccountKind(r.account_kind),
+                    account_kind=kind,
                     booked_on=r.occurred_at.date(),
-                    amount=amount
-                    if category is AllocationCategory.INTERNAL_TRANSFER_IN
-                    else -amount,
+                    amount=amount if deposit else -amount,
                     fee_eur=r.fee_eur,
                     category=category,
+                    # D162 amended 15 Nov 2026: an exchange's IBAN is the one its deposits are
+                    # paid to (learned from the first link by hand), so only a deposit carries
+                    # it; a withdrawal comes from another IBAN and stays untied.
+                    account_iban_hmac=_hex(r.iban_hmac)
+                    if deposit and kind is AccountKind.EXCHANGE
+                    else None,
+                    account_purpose=AccountPurpose(r.purpose),
                 ),
                 r.label,
                 None,
@@ -539,9 +572,67 @@ def link_leg(
         return None
     if other.booked is None:
         return _book_named_leg(ctx, leg, other, found.link)
+    if found.link.deposit_fee is not None:
+        bank = leg if leg.leg.id == found.link.out_leg.id else other
+        return _split_and_link(ctx, bank, found.link)
     return _write(
         ctx, found.link.out_leg, found.link.in_leg, found.link.kind, TransferMatchedBy.MATCHER
     )
+
+
+def _deposit_state(line_rows: Sequence, amount: Decimal, fee: Decimal) -> str | None:
+    """How a bank line paying a deposit credited `fee` short is booked: "split" (already
+    internal_transfer_out plus bank_fees of exactly the fee), "whole" (one internal_transfer_out
+    row of the whole amount the matcher wrote, or only a proposal), None otherwise (a person's
+    or a rule's answer, which the matcher never replaces)."""
+    rows = [r for r in line_rows if r.amount != 0]
+    categories = {r.category for r in rows}
+    if categories == {AllocationCategory.INTERNAL_TRANSFER_OUT, AllocationCategory.BANK_FEES}:
+        kept = -sum(
+            (r.amount for r in rows if r.category == AllocationCategory.BANK_FEES), Decimal(0)
+        )
+        return "split" if kept == fee else None
+    whole = (
+        categories == {AllocationCategory.INTERNAL_TRANSFER_OUT}
+        and sum((r.amount for r in rows), Decimal(0)) == amount
+    )
+    by_matcher = all(
+        r.method == AllocationMethod.MATCHER_TRANSFER or r.status == AllocationStatus.PROPOSED
+        for r in rows
+    )
+    return "whole" if whole and by_matcher else None
+
+
+def _split_and_link(
+    ctx: CommandContext, bank: _Leg, pair: TransferCandidate
+) -> TransferLink | None:
+    """D162 amended 15 Nov 2026: the pair is tied by the exchange's deposit IBAN and the
+    exchange credited the deposit `pair.deposit_fee` short without a fee row. The bank line,
+    booked as one internal_transfer_out by the matcher (or only proposed), is booked again by
+    code as the credited amount internal_transfer_out plus the gap as bank_fees
+    (rules.matching.deposit_split_set, method matcher_transfer, auto-confirmed), then the pair
+    is linked. A line a person or a rule booked otherwise is never replaced: no link, and the
+    card proposes it for a link by hand (link_by_hand splits it as the person's answer)."""
+    from . import allocations, matching  # matching imports this module
+
+    fee = pair.deposit_fee
+    assert fee is not None
+    line = matching.load_line(ctx.conn, bank.leg.id, lock=True)
+    if line is None:
+        return None
+    state = _deposit_state(line.current, line.tx.amount, fee)
+    if state is None:
+        return None
+    if state == "whole":
+        allocations.record_set(ctx, deposit_split_set(line.tx, fee), confirm=True, auto=True)
+        # record_set's hook (after_booking) links the pair itself when it sees it.
+        found = _link_of(ctx.conn, pair.out_leg.id, pair.in_leg.id)
+        if found is not None:
+            return found
+        linked = _linked_ids(ctx.conn)
+        if pair.out_leg.id in linked or pair.in_leg.id in linked:
+            return None
+    return _write(ctx, pair.out_leg, pair.in_leg, pair.kind, TransferMatchedBy.MATCHER)
 
 
 def _book_named_leg(
@@ -557,19 +648,33 @@ def _book_named_leg(
     button). The rental account is left to its phase 2 matchers."""
     from . import allocations, matching  # matching imports this module
 
-    named = (
+    fee = pair.deposit_fee
+    private_line = (
         other.leg.source is TransferLegSource.TRANSACTION
         and other.purpose is AccountPurpose.PRIVATE
-        and leg.leg.counterparty_iban_hmac is not None
+    )
+    names_other = (
+        leg.leg.counterparty_iban_hmac is not None
         and leg.leg.counterparty_iban_hmac == other.leg.account_iban_hmac
         and leg.leg.amount == -other.leg.amount
     )
-    if not named:
+    # D162 amended 15 Nov 2026: an exchange's deposit row and the bank line that names the
+    # exchange's deposit IBAN, the deposit credited short without a fee row: the bank line is
+    # booked as the credited transfer plus the gap as bank fees.
+    deposit = (
+        fee is not None and other.leg.id == pair.out_leg.id and names_the_other(leg.leg, other.leg)
+    )
+    if not private_line or not (names_other or deposit):
         return None
     line = matching.load_line(ctx.conn, other.leg.id, lock=True)
     if line is None or not line.waiting or not line.open_for(rematch=True):
         return None
-    allocations.record_set(ctx, named_transfer_set(line.tx, other.purpose), confirm=True, auto=True)
+    answer = (
+        deposit_split_set(line.tx, fee)
+        if deposit and fee is not None
+        else named_transfer_set(line.tx, other.purpose)
+    )
+    allocations.record_set(ctx, answer, confirm=True, auto=True)
     # record_set's hook (after_booking) links the pair itself when it sees it: that link is
     # returned, never a second row.
     found = _link_of(ctx.conn, pair.out_leg.id, pair.in_leg.id)
@@ -716,6 +821,13 @@ def link_by_hand(
     written."""
     _lock(ctx)
     out, in_ = _pair(ctx.conn, body)
+    # D162 amended 15 Nov 2026: a private bank line paying a deposit the exchange credited up
+    # to 2 € short without a fee row. Linking it books the line as the credited transfer plus
+    # the gap as bank fees (the person's answer, whatever `rebook` says) and records the line's
+    # counterparty IBAN as the exchange's deposit IBAN, so the next deposits link by it.
+    fee = deposit_gap(out.leg, in_.leg)
+    if fee is not None:
+        return _link_deposit_by_hand(ctx, body, out, in_, fee, iban_key)
     # The matcher may have linked exactly this pair since the card was shown (a re-check after
     # an import reconciled): the user's answer is already true, so it is not a conflict.
     already = _link_of(ctx.conn, out.leg.id, in_.leg.id)
@@ -746,6 +858,64 @@ def link_by_hand(
         if out.leg.id in linked or in_.leg.id in linked:
             raise ConflictError("a leg of this transfer is linked already")
     return _write(ctx, out.leg, in_.leg, body.kind, TransferMatchedBy.USER)
+
+
+def _link_deposit_by_hand(
+    ctx: CommandContext,
+    body: TransferLinkCreate,
+    out: _Leg,
+    in_: _Leg,
+    fee: Decimal,
+    iban_key: bytes | None,
+) -> TransferLink:
+    """link_by_hand for a bank line (`out`, private) and an exchange's deposit row (`in_`)
+    credited `fee` short without a fee row (D162 amended 15 Nov 2026). Unless the line is
+    booked as that split already, it is booked as internal_transfer_out of the credited amount
+    and bank_fees of the gap through the person's answer (review.allocate_transaction: method
+    user, the old rows superseded, its events), whatever `rebook` says: the click confirms both
+    parts. Then the pair is linked (matched_by user) and the line's counterparty IBAN is
+    recorded as the exchange's deposit IBAN (accounts.learn_exchange_deposit_iban), when the
+    exchange has none yet and no other account holds it. The same two legs linked already
+    return their link; 409 when either is linked to another counterpart."""
+    from . import accounts, matching  # matching imports this module
+
+    already = _link_of(ctx.conn, out.leg.id, in_.leg.id)
+    linked = _linked_ids(ctx.conn)
+    if already is None and (out.leg.id in linked or in_.leg.id in linked):
+        raise ConflictError("a leg of this transfer is linked already")
+    line = matching.load_line(ctx.conn, out.leg.id, lock=True)
+    assert line is not None  # _pair read it
+    if (
+        _deposit_state(
+            [r for r in line.current if r.status == AllocationStatus.CONFIRMED],
+            line.tx.amount,
+            fee,
+        )
+        != "split"
+    ):
+        if iban_key is None:
+            raise ValueError("re-booking a leg needs the IBAN key")
+        _answer(ctx, deposit_split_set(line.tx, fee, method=AllocationMethod.USER), iban_key)
+    found = already or _link_of(ctx.conn, out.leg.id, in_.leg.id)
+    if found is None:
+        linked = _linked_ids(ctx.conn)
+        if out.leg.id in linked or in_.leg.id in linked:
+            raise ConflictError("a leg of this transfer is linked already")
+        found = _write(ctx, out.leg, in_.leg, body.kind, TransferMatchedBy.USER)
+    accounts.learn_exchange_deposit_iban(ctx, in_.leg.account_id, out.leg.id)
+    return found
+
+
+def _answer(ctx: CommandContext, answer: AllocationSet, iban_key: bytes) -> None:
+    """The person's answer for a line, no rule learned (review.allocate_transaction)."""
+    from . import review  # imports services.matching, which imports this module
+
+    review.allocate_transaction(
+        ctx,
+        answer.transaction_id,
+        ConfirmAllocationsBody(allocation_set=answer, learn_rule=False),
+        iban_key=iban_key,
+    )
 
 
 def _rebook(ctx: CommandContext, leg: _Leg, iban_key: bytes) -> None:
@@ -881,7 +1051,13 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
             same = [
                 o
                 for o in others
-                if o.leg.amount == -leg.leg.amount
+                if (
+                    o.leg.amount == -leg.leg.amount
+                    or (
+                        (o.leg.amount > 0) != (leg.leg.amount > 0)
+                        and deposit_gap(*_out_in(leg.leg, o.leg)) is not None
+                    )
+                )
                 and (named is None or o.leg.account_iban_hmac in (None, named))
             ]
             code, candidates = OpenTransferCode.UNMATCHED_LEG, same
@@ -891,7 +1067,13 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
             OpenTransfer(
                 code=code,
                 leg=leg.view(),
-                candidates=[c.view(rebook_on_link=_rebook_on_link(c, leg)) for c in candidates],
+                candidates=[
+                    c.view(
+                        rebook_on_link=_rebook_on_link(c, leg),
+                        deposit_fee=deposit_gap(*_out_in(leg.leg, c.leg)),
+                    )
+                    for c in candidates
+                ],
                 window_end=transfer_window_end(leg.leg.booked_on),
             )
         )
@@ -906,6 +1088,10 @@ _LINK_REASON = {
         "Diese Buchung passt genau zu einer Buchung auf einem anderen eigenen Konto."
     ),
 }
+_DEPOSIT_REASON = (
+    "Diese Einzahlung auf ein eigenes Börsenkonto passt bis auf eine kleine Einzahlungsgebühr "
+    "zu einer Buchung auf einem anderen eigenen Konto."
+)
 _UNMATCHED_REASON = (
     "Zu dieser Überweisung zwischen zwei eigenen Konten fehlt nach drei Bankarbeitstagen die "
     "Gegenbuchung auf dem anderen Konto."
@@ -922,7 +1108,11 @@ def transfer_inbox_items(conn: Connection, today: date) -> list[InboxItem]:
             InboxItem(
                 kind=InboxItemKind.TRANSFER_UNMATCHED if unmatched else InboxItemKind.TRANSFER_LINK,
                 created_at=datetime.combine(item.window_end, time(), tzinfo=UTC),
-                reasoning=_UNMATCHED_REASON if unmatched else _LINK_REASON[item.code],
+                reasoning=_UNMATCHED_REASON
+                if unmatched
+                else _DEPOSIT_REASON
+                if any(c.deposit_fee is not None for c in item.candidates)
+                else _LINK_REASON[item.code],
                 question=(
                     "Welche Buchung ist die Gegenbuchung?"
                     if item.candidates

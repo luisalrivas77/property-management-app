@@ -829,6 +829,73 @@ def confirm_depot_iban(
     return PaymentIbanConfirmed(account=_account(ctx.conn, account_id), rules_disabled=len(rules))
 
 
+# --- The exchange's deposit IBAN (D162 amended 15 Nov 2026) ---------------------------------
+
+
+def learn_exchange_deposit_iban(
+    ctx: CommandContext, account_id: UUID, transaction_id: UUID
+) -> bool:
+    """services.transfers' link by hand of a bank line and an exchange's deposit row the
+    exchange credited up to 2 € short without a fee row (D162 amended 15 Nov 2026, migration
+    0035): the bank line's counterparty IBAN, as the bank stored it (masked + HMAC'd, never
+    read from a request), becomes the exchange account's IBAN, recorded as account.updated, the
+    confirm_depot_iban pattern. It then joins the household's own IBANs, so the next deposits
+    to it are transfers by IBAN, linked by it and split by code (rules.matching.match_transfer
+    with the tie). Every enabled learned rule on that IBAN (a deposit answered as spending or
+    an investment before) is switched off and the lines waiting in Zu prüfen that name it are
+    matched again.
+
+    Nothing happens (False) for an account that is no exchange or holds an IBAN already, for a
+    line without a counterparty IBAN or of the rental account, or when another account of the
+    workspace holds that IBAN (the link stands either way)."""
+    account = _lock(ctx, account_id)
+    if account.kind != AccountKind.EXCHANGE.value or account.iban_hmac is not None:
+        return False
+    t = transaction_table.c
+    line = ctx.conn.execute(
+        select(t.counterparty_iban_hmac, t.counterparty_iban_masked, account_table.c.purpose)
+        .join(account_table, account_table.c.id == t.account_id)
+        .where(t.id == transaction_id)
+    ).one_or_none()
+    if (
+        line is None
+        or line.purpose != AccountPurpose.PRIVATE.value
+        or line.counterparty_iban_hmac is None
+        or line.counterparty_iban_masked is None
+    ):
+        return False
+    try:
+        with ctx.conn.begin_nested():
+            ctx.conn.execute(
+                update(account_table)
+                .where(account_table.c.id == account_id)
+                .values(
+                    iban_masked=line.counterparty_iban_masked,
+                    iban_hmac=line.counterparty_iban_hmac,
+                    updated_at=ctx.now,
+                )
+            )
+    except IntegrityError as exc:
+        if violated_constraint(exc) == _IBAN_TAKEN:
+            return False
+        raise
+    append_event(
+        ctx,
+        EventType.ACCOUNT_UPDATED,
+        account_id,
+        Updated(
+            changes=diff_changes(
+                {"iban_masked": None}, {"iban_masked": line.counterparty_iban_masked}
+            )
+        ),
+    )
+    named = bytes(line.counterparty_iban_hmac).hex()
+    for rule in [r for r in enabled_rules(ctx.conn) if r.matcher.counterparty_iban_hmac == named]:
+        disable_rule(ctx, rule.id)
+    _rematch_waiting(ctx, account_id)
+    return True
+
+
 def _with_statement_facts(conn: Connection, accounts: list[Account]) -> list[Account]:
     return _with_depot_facts(conn, _with_card_facts(conn, accounts))
 
