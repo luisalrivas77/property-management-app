@@ -241,7 +241,7 @@ const KINDS: KindSpec[] = [
     kind: "replacement_income",
     single: false,
     document: "Bescheid (optional)",
-    help: "Elterngeld, Mutterschaftsgeld der Krankenkasse, Krankengeld oder Arbeitslosengeld: steuerfrei, erhöht aber den Steuersatz (Progressionsvorbehalt). Den Zuschuss des Arbeitgebers zum Mutterschaftsgeld nicht hier eintragen: er steht auf der Lohnsteuerbescheinigung. Maßgeblich ist der Betrag im Leistungsnachweis oder Bescheid der zahlenden Stelle: weicht er von den gebuchten Zahlungen ab, gilt der Bescheid.",
+    help: "Elterngeld, Mutterschaftsgeld der Krankenkasse, Krankengeld oder Arbeitslosengeld: steuerfrei, erhöht aber den Steuersatz (Progressionsvorbehalt). Den Zuschuss des Arbeitgebers zum Mutterschaftsgeld nicht hier eintragen: er steht auf der Lohnsteuerbescheinigung. Maßgeblich ist der Betrag im Leistungsnachweis oder Bescheid der zahlenden Stelle: weicht er von den gebuchten Zahlungen ab, gilt der Bescheid. Ein vorgeschlagener Betrag ist das, was auf dem Konto eingegangen ist. Beim Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag (vor Abzug der Beiträge zur Sozialversicherung): diesen Betrag eintragen.",
     fields: [
       { name: "benefit", label: "Leistung", type: "select", options: options(REPLACEMENT_BENEFIT), initial: "elterngeld" },
       { name: "amount", label: "Betrag im Jahr", type: "money" },
@@ -386,7 +386,11 @@ export function InputsPanel({
       </p>
       {KINDS.map((kind) => (
         <KindBlock
-          key={kind.kind}
+          // A new or newly opened pre-fill remounts its block, so the form opens with it even
+          // when the to-do's button names the owner already on screen (same page, no remount).
+          key={
+            kind.kind === "replacement_income" && benefitForm ? `${kind.kind}:${benefitKey(benefitForm)}` : kind.kind
+          }
           spec={kind}
           ownerId={ownerId}
           year={year}
@@ -397,6 +401,10 @@ export function InputsPanel({
       ))}
     </section>
   );
+}
+
+function benefitKey(form: BenefitForm): string {
+  return `${form.open ? "open" : "ask"}:${form.prefill.amount}:${form.prefill.benefit ?? ""}`;
 }
 
 function KindBlock({
@@ -415,7 +423,8 @@ function KindBlock({
   benefitForm: BenefitForm | null;
 }) {
   // null: no form open; "new": adding; a row id: changing that row. A pre-fill for this owner
-  // opens the new form at once.
+  // opens the new form at once (the block is keyed by the pre-fill, so this runs again when it
+  // arrives or changes).
   const [editing, setEditing] = useState<string | null>(benefitForm?.open ? "new" : null);
   const prefilled = benefitForm?.open ? benefitForm : null;
   const [busy, setBusy] = useState(false);

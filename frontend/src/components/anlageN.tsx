@@ -7,7 +7,7 @@
 // the backend's (principle 1): this screen picks, names and formats, it adds nothing up.
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useId } from "react";
+import { useCallback, useEffect, useId } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
@@ -29,6 +29,7 @@ import { ExportCard, SourcesButton, type ExportButton } from "./tax";
 import { WarningActionView, WhatToDo, resolveAction } from "./todos";
 import {
   benefitPrefill,
+  benefitPrefillBacked,
   questionnaireHref,
   TaxTabs,
   taxFormHref,
@@ -130,13 +131,25 @@ function OwnerScreen({
   // The Lohnersatzleistungen pre-fill of the to-do return.benefit_booked (phase 6 D159 amended
   // (8)): kept on the owner switch, and opened as a form only for the owner the URL names (or
   // the only owner), so a joint account's amount is never saved on an owner picked by default.
+  // It counts only while a current to-do of the loaded estimate offers its amount: a stale
+  // entry (Back after the save) is dropped from the URL, and nothing opens before the estimate
+  // first loads (a reload keeps the previous estimate, so an open form stays open).
   const search = useSearchParams();
-  const prefill = benefitPrefill((key) => search.get(key), Object.keys(REPLACEMENT_BENEFIT));
+  const urlPrefill = benefitPrefill((key) => search.get(key), Object.keys(REPLACEMENT_BENEFIT));
+  const backed =
+    urlPrefill && estimate.data !== undefined
+      ? benefitPrefillBacked(urlPrefill, estimate.data?.warnings ?? [])
+      : null;
+  const prefill = backed ? urlPrefill : null;
   const ownerNamed = search.get("eigentuemer") === owner.id;
   const clearPrefill = useCallback(
     () => router.replace(taxFormHref("n", state), { scroll: false }),
     [router, state],
   );
+  const stale = backed === false;
+  useEffect(() => {
+    if (stale) clearPrefill();
+  }, [stale, clearPrefill]);
   const benefitForm: BenefitForm | null = prefill
     ? { prefill, open: ownerNamed || owners.length === 1, clear: clearPrefill }
     : null;
@@ -223,7 +236,10 @@ function OwnerScreen({
           {owners.map((o) => (
             <Link
               key={o.id}
-              href={withBenefitPrefill(taxFormHref("n", { ...state, ownerId: o.id }), prefill)}
+              href={withBenefitPrefill(
+                taxFormHref("n", { ...state, ownerId: o.id }),
+                stale ? null : urlPrefill,
+              )}
               aria-current={o.id === owner.id ? "page" : undefined}
               scroll={false}
             >

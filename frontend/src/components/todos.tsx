@@ -506,8 +506,8 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
     title: (p) => `Lohnersatzleistungen ${p.tax_year ?? ""} eintragen`,
     text: (p) =>
       p.owner_id
-        ? `Auf dem Konto sind ${formatMoney(p.difference)} Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld eingegangen, die noch nicht als Lohnersatzleistung eingetragen sind. Sie erhöhen den Steuersatz auf das übrige Einkommen. Den Betrag prüfen und bei den Lohnersatzleistungen speichern.`
-        : `Auf einem gemeinsamen Konto sind ${formatMoney(p.difference)} Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld eingegangen, die noch nicht als Lohnersatzleistung eingetragen sind. Sie erhöhen den Steuersatz auf das übrige Einkommen. Zuerst die Person wählen, die die Leistung bekommen hat, dann den Betrag prüfen und speichern.`,
+        ? `Auf dem Konto sind ${formatMoney(p.difference)} Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld eingegangen, die noch nicht als Lohnersatzleistung eingetragen sind. Sie erhöhen den Steuersatz auf das übrige Einkommen. Vorgeschlagen wird der Betrag, der auf dem Konto eingegangen ist. Bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag: diesen eintragen. Den Betrag prüfen und bei den Lohnersatzleistungen speichern.`
+        : `Auf einem gemeinsamen Konto sind ${formatMoney(p.difference)} Elterngeld, Mutterschaftsgeld, Krankengeld oder Arbeitslosengeld eingegangen, die noch nicht als Lohnersatzleistung eingetragen sind. Sie erhöhen den Steuersatz auf das übrige Einkommen. Vorgeschlagen wird der Betrag, der auf dem Konto eingegangen ist. Bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag: diesen eintragen. Zuerst die Person wählen, die die Leistung bekommen hat, dann den Betrag prüfen und speichern.`,
     action: benefitBooked,
   },
   "return.children_mismatch": {

@@ -46,6 +46,18 @@ export function benefitPrefill(get: (key: string) => string | null, benefits: re
   return { amount, benefit: benefit && benefits.includes(benefit) ? benefit : null };
 }
 
+/** Whether a current to-do return.benefit_booked of the loaded estimate offers `prefill`'s
+ * amount (phase 6 D159 amended (8)). A pre-fill no to-do backs, such as a Back-button entry
+ * after the amount was saved, is dropped, so the same amount is never offered twice. The owner
+ * is not compared: the to-do's owner is only a suggestion, and the pre-fill is kept on the
+ * owner switch. */
+export function benefitPrefillBacked(
+  prefill: BenefitPrefill,
+  warnings: readonly { code: string; params?: { [key: string]: string } | null }[],
+): boolean {
+  return warnings.some((w) => w.code === "return.benefit_booked" && w.params?.difference === prefill.amount);
+}
+
 /** `href` (an Anlage N URL, which always has a query) with the prefill's params added. */
 export function withBenefitPrefill(href: string, prefill: BenefitPrefill | null): string {
   if (!prefill) return href;
