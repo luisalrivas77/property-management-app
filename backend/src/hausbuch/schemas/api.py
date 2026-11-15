@@ -483,7 +483,13 @@ class ConfirmAllocationsBody(Schema):
     rebook_earlier (phase 6 D160, 14 Nov 2026): with learn_rule, when the name rule is refused
     only for the name's other confirmed lines (rule.conflicts, rule.too_broad), those lines
     are re-booked to this answer's category first, then the rule is learned; refused as
-    before when one of them is not a single confirmed row of a learnable household code."""
+    before when one of them is not a single confirmed row of a learnable household code.
+    learn_deposit_iban (phase 6 D162 amended (8), review, 15 Nov 2026): the box „IBAN als
+    Einzahlungskonto von <Börse> merken“ the panel shows for TransactionAllocations.
+    deposit_iban_offer, ticked. Only when true, sent by a person, and the line, confirmed by
+    this answer as internal_transfer_out (alone or with its fee), is still the out leg of the
+    link to the deposit the offer named, does the exchange learn the line's counterparty IBAN;
+    false or missing (an older client, a bulk confirmation) learns nothing."""
 
     allocation_set: AllocationSet
     learn_rule: bool | None = None
@@ -491,6 +497,7 @@ class ConfirmAllocationsBody(Schema):
     purpose_pattern: str | None = Field(default=None, max_length=200)
     same_amount_only: bool = False
     rebook_earlier: bool = False
+    learn_deposit_iban: bool = False
 
 
 class WaitingAmount(Schema):
@@ -533,6 +540,23 @@ class RebookBlocker(Schema):
     amount: Money
     reason: RebookBlockReason
     category: AllocationCategory | None = None
+
+
+class DepositIbanOffer(Schema):
+    """Phase 6 D162 amended (8), review (15 Nov 2026): a private bank debit that is the out
+    leg of a current link (the matcher's or a person's) to an exchange's EUR deposit, while
+    the exchange has no deposit IBAN and the line's IBAN could become it
+    (accounts.deposit_iban_outcome learned). The panel offers the box „IBAN als
+    Einzahlungskonto von <exchange_label> merken“, ticked, for an answer of
+    internal_transfer_out (alone or with bank_fees), and shows `text`: the paired deposit by
+    date and amount and what learning does (rules.matching.deposit_iban_offer_text)."""
+
+    deposit_movement_id: UUID
+    exchange_account_id: UUID
+    exchange_label: str
+    deposit_date: date
+    deposit_amount: Money
+    text: str
 
 
 class TransactionAllocations(Schema):
@@ -582,7 +606,11 @@ class TransactionAllocations(Schema):
     panel shows no rule box. own_iban (D160 amended (5), review fixes, 15 Nov 2026): a
     private line whose counterparty IBAN is another own account's, always a transfer, so no
     rule is learned from it, typed pattern or not (rule.not_learnable), and the panel shows
-    no rule box, no suggested pattern and no pattern field, as for no_merchant."""
+    no rule box, no suggested pattern and no pattern field, as for no_merchant.
+    deposit_iban_offer (phase 6 D162 amended (8), review, 15 Nov 2026): what the box „IBAN
+    als Einzahlungskonto von <Börse> merken“ names, None when no box is shown (no current link
+    to an exchange's deposit, or the IBAN would not be learned: the exchange holds one, it
+    carries other payees, another own account holds it)."""
 
     transaction: Transaction
     allocations: list[Allocation]
@@ -602,6 +630,7 @@ class TransactionAllocations(Schema):
     payee_label: str | None = None
     no_merchant: bool = False
     own_iban: bool = False
+    deposit_iban_offer: DepositIbanOffer | None = None
 
 
 class InboxItemKind(StrEnum):
