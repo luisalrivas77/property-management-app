@@ -195,6 +195,35 @@ def test_three_outputs_need_every_answer():
 
 
 @pytest.mark.rule
+def test_unregistered_is_counted_against_the_own_set_with_its_confirmed_change():
+    """The reading of „two or more unregistered“ (§15.1 item 19): counted against the own set
+    as it is now, a change confirmed with „Ja“ included. So with three unregistered outputs,
+    two „Ja“ leave one, which is the payee, and nothing more is asked (as a spend with one
+    unregistered output from the start; the fixture's answered_yes case needs this reading)."""
+    payer = RAW["spend_unregistered_output_card"]["own"][0]
+    record = {
+        "txid": "4" * 64,
+        "vin": [
+            {
+                "txid": "3" * 64,
+                "vout": 0,
+                "prevout": {"scriptpubkey_address": payer, "value": 6_000_000},
+            }
+        ],
+        "vout": [
+            {"scriptpubkey_address": "bc1qx", "value": 1_000_000},
+            {"scriptpubkey_address": "bc1qy", "value": 2_000_000},
+            {"scriptpubkey_address": "bc1qz", "value": 2_990_000},
+        ],
+        "fee": 10_000,
+        "status": {"confirmed": True, "block_height": 900800, "block_time": 1777000000},
+    }
+    reading = utxo.read_utxo(to_chain_tx(record), [payer, "bc1qx", "bc1qy"])
+    assert reading.kind is GroupKind.TRANSFER and reading.card is None
+    assert [(leg.role, leg.sats) for leg in reading.legs] == [("out", 2_990_000), ("fee", 10_000)]
+
+
+@pytest.mark.rule
 def test_a_consolidation_moves_only_the_fee():
     own = ["bc1qa", "bc1qb"]
     record = {
