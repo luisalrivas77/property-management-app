@@ -73,3 +73,30 @@ def test_an_unreadable_report_row_is_left_out_with_a_warning():
     proposal = depot.propose("depot_report", values)
     assert proposal.warnings == [depot.ROW_UNREADABLE]
     assert [h.isin for h in proposal.holdings] == ["IE00BEISPL01"]
+
+
+def test_a_report_row_with_eur_after_its_amounts_is_read():
+    """15 Nov 2026: the reading kept „EUR“ after the price, value and trade amount, and every
+    such row was left out as unreadable."""
+    values = {
+        "report_date": "2026-09-30",
+        "positions": ["IE00BEISPL01 | Beispiel ETF | 30,05110 | 78,5800 EUR | 2.361,42 EUR | EUR"],
+        "trades": ["IE00BEISPL01 | 05.03.2026 | 2,38840 | -136,07 € | 4711"],
+    }
+    proposal = depot.propose("depot_report", values)
+    assert proposal.warnings == []
+    [holding] = proposal.holdings
+    assert holding.declared_value_eur == Decimal("2361.42")
+    [trade] = proposal.trades
+    assert trade.amount == Decimal("-136.07")
+
+
+def test_a_report_row_in_another_currency_stays_unreadable():
+    values = {
+        "report_date": "2026-09-30",
+        "positions": ["IE00BEISPL01 | Beispiel ETF | 1,0000 | 10,00 USD | 10,00 USD | USD"],
+        "trades": [],
+    }
+    proposal = depot.propose("depot_report", values)
+    assert proposal.warnings == [depot.ROW_UNREADABLE]
+    assert proposal.holdings == []

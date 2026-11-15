@@ -249,8 +249,14 @@ class DepotProposal(Schema):
     warnings: list[str] = Field(default_factory=list)
 
 
+# A reading sometimes keeps the document's „EUR“ (or „€“) after an amount: „-136,07 EUR“.
+# Only the euro is dropped; any other currency after a figure leaves it unreadable (15 Nov
+# 2026: two quarterly reports lost every position and three their Umsätze list to it).
+_EURO_SUFFIX = re.compile(r"\s*(?:EUR|€)$")
+
+
 def _german(text: str) -> Decimal:
-    return Decimal(text.strip().replace(".", "").replace(",", "."))
+    return Decimal(_EURO_SUFFIX.sub("", text.strip()).replace(".", "").replace(",", "."))
 
 
 def _german_date(text: str) -> date:
