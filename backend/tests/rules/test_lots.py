@@ -669,6 +669,8 @@ def test_a_transfer_and_its_fee_at_one_instant_never_depend_on_the_ids():
 
 
 def test_takes_at_one_instant_go_disposal_before_fee_then_by_index():
+    """At one instant the disposals go before the fee, and between the disposals the lower
+    index first, an all-digit index by its number (9 before 10, not as text)."""
     acct, sol = uuid4(), uuid4()
     first = movement(K.ACQUISITION, "1", AT, account=acct, asset=sol, eur_amount=D("-100"))
     second = movement(
@@ -677,12 +679,15 @@ def test_takes_at_one_instant_go_disposal_before_fee_then_by_index():
     at = AT + timedelta(hours=2)
     for _ in range(20):
         fee = movement(K.FEE, "-0.5", at, account=acct, asset=sol, index="0")
-        sale_b = movement(K.DISPOSAL, "-0.5", at, account=acct, asset=sol, index="2")
-        sale_a = movement(K.DISPOSAL, "-0.5", at, account=acct, asset=sol, index="1")
-        got = L.book([first, second, fee, sale_b, sale_a], [], [], DAY)
-        assert [u.lot_id for u in got.uses[sale_a.id]] == [first.id]
-        assert [u.lot_id for u in got.uses[sale_b.id]] == [first.id]
-        assert [u.lot_id for u in got.uses[fee.id]] == [second.id]
+        sale_10 = movement(K.DISPOSAL, "-0.6", at, account=acct, asset=sol, index="10")
+        sale_9 = movement(K.DISPOSAL, "-0.6", at, account=acct, asset=sol, index="9")
+        got = L.book([first, second, fee, sale_10, sale_9], [], [], DAY)
+        assert [(u.lot_id, u.units) for u in got.uses[sale_9.id]] == [(first.id, D("0.6"))]
+        assert [(u.lot_id, u.units) for u in got.uses[sale_10.id]] == [
+            (first.id, D("0.4")),
+            (second.id, D("0.2")),
+        ]
+        assert [(u.lot_id, u.units) for u in got.uses[fee.id]] == [(second.id, D("0.5"))]
 
 
 def test_a_pair_and_a_sale_on_the_receiver_at_one_instant_leave_nothing_unfilled():

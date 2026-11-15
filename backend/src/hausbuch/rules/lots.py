@@ -60,9 +60,11 @@ spec leaves them open; listed in the step 6 report):
   the matcher refuses a second link, so this only keeps a bad row from depending on order;
 - at equal instants: what adds units first, then the linked moves (one whose receiving
   account and asset is another's sending side before that other: a chain of moves within one
-  instant runs in its order), then what takes units (a disposal, a transfer out or a
-  correction before a fee, then the movement's `index`, then its id), so the result never
-  depends on the random ids.
+  instant runs in its order; else by the sender's `index`), then what takes units (a
+  disposal, a transfer out or a correction before a fee, then the movement's `index`, an
+  all-digit one by its number, then its id), so the result depends on the random ids only
+  when two movements at one instant share kind class and index (e.g. a hand entry without
+  an index).
 
 Every amount is exact until output: a lot keeps its exact cost per unit (the total over its
 units), moved parts carry it unchanged, and a cost is quantized to the cent half up only when
@@ -475,16 +477,26 @@ _Key = tuple[datetime, int, int, str, str]
 _Step = tuple[_Key, AssetMovement, TransferLink | None, AssetMovement | None]
 
 
+def _index(m: AssetMovement) -> str:
+    """The movement's index in its transaction as a sort key: an all-digit index (a log index,
+    a vout, an instruction) by its number, so 9 goes before 10; any other (`fee`, `net`,
+    `internal:<trace>`) after the numbers, by its text; none first."""
+    if m.index is None:
+        return ""
+    return m.index.zfill(64) if m.index.isdigit() else f"~{m.index}"
+
+
 def _step(m: AssetMovement) -> _Step:
     if _adds(m):
         return ((m.occurred_at, 0, 0, "", str(m.id)), m, None, None)
     fee_last = 1 if m.kind is MovementKind.FEE else 0
-    return ((m.occurred_at, 2, fee_last, m.index or "", str(m.id)), m, None, None)
+    return ((m.occurred_at, 2, fee_last, _index(m), str(m.id)), m, None, None)
 
 
 def _chain_order(moves: list[_Step]) -> list[_Step]:
     """Linked moves at one instant: a move whose receiving account and asset is another's
-    sending side goes before it (A→B before B→C); otherwise, and in a cycle, by id."""
+    sending side goes before it (A→B before B→C); otherwise, and in a cycle, by the sender's
+    index, then its id."""
 
     def sends(s: _Step) -> tuple[UUID, UUID]:
         return (s[1].account_id, s[1].asset_id)
@@ -552,7 +564,8 @@ def book(
             receiver = confirmed[link.in_movement_id]  # type: ignore[index]
             at = min(sender.occurred_at, receiver.occurred_at)
             if berlin_day(at) <= on:
-                steps.append(((at, 1, 0, "", str(sender.id)), sender, link, receiver))
+                key = (at, 1, 0, _index(sender), str(sender.id))
+                steps.append((key, sender, link, receiver))
                 read += [sender, receiver]
     groups: dict[UUID, list[AssetMovement]] = defaultdict(list)
     for m in read:
