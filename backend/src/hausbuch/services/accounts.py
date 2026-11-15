@@ -236,11 +236,12 @@ def create_account(
             external_ref_masked=created.external_ref_masked,
         ),
     )
-    # A new private account with an IBAN makes the lines on the other accounts that name it
-    # transfers (D162): before, they waited with the model's answer or none.
-    if created.is_owner_account or (
-        created.purpose is AccountPurpose.PRIVATE and created.iban_masked is not None
-    ):
+    # A new account with an IBAN makes the lines on the other accounts that name it transfers
+    # (D162): before, they waited with the model's answer or none, or a rule learned on that
+    # IBAN booked them, which _own_iban switches off (D160 amended (5)).
+    if identity.get("iban_hmac") is not None:
+        _own_iban(ctx, created.id, identity["iban_hmac"])
+    elif created.is_owner_account:
         _rematch_waiting(ctx, created.id)
     if store is not None and (
         created.iban_masked is not None
@@ -600,13 +601,31 @@ def _account(conn: Connection, account_id: UUID) -> Account:
     return account
 
 
+def _own_iban(ctx: CommandContext, account_id: UUID, iban_hmac: bytes) -> int:
+    """An IBAN has just become the household's own (D160 amended (5), 15 Nov 2026): an
+    account created with it, a card's payment IBAN confirmed (D176 (4)), a depot's IBAN
+    confirmed (D156 amended) or an exchange's deposit IBAN learned (D162 amended). Every
+    enabled learned rule on that IBAN (a payment to the account answered as spending or an
+    investment with „Künftig immer so zuordnen“ before the account was in Hausbuch) is
+    switched off (rules_learned.disable_rule, rule.disabled): a rule books before the
+    transfer matcher, so it would keep the line out of the transfer. The lines waiting in
+    Zu prüfen that name the IBAN are matched again; lines a rule already booked stay as they
+    are. Returns how many rules were switched off."""
+    named = iban_hmac.hex()
+    rules = [r for r in enabled_rules(ctx.conn) if r.matcher.counterparty_iban_hmac == named]
+    for rule in rules:
+        disable_rule(ctx, rule.id)
+    _rematch_waiting(ctx, account_id)
+    return len(rules)
+
+
 def _rematch_waiting(ctx: CommandContext, account_id: UUID) -> None:
     """Queue rematch_waiting for the lines naming this account's IBAN that wait in the inbox
-    (phase-2.md §8.1). Three triggers: a private account created with an IBAN (the lines on the
-    other accounts that name it are transfers now, D162), an account becoming an owner account
-    (the owner-transfer matcher books its transfers now; an account's IBAN never changes after
-    creation), and a credit card's payment IBAN being confirmed (D176 (4): the debits to it
-    are transfers now; matching.waiting_lines reads the payment IBAN for a card)."""
+    (phase-2.md §8.1). The triggers: an IBAN becoming the household's own (_own_iban: an
+    account created with one, the lines on the other accounts that name it being transfers
+    now, D162; a card's payment IBAN, D176 (4), matching.waiting_lines reading the payment
+    IBAN for a card; a depot's or an exchange's IBAN), an account becoming an owner account
+    or changing its purpose (the owner-transfer matcher books its transfers now)."""
     enqueue.enqueue_rematch_waiting(
         ctx.conn, workspace_id=ctx.workspace_id, kind=enqueue.TRIGGER_ACCOUNT, entity_id=account_id
     )
@@ -700,13 +719,9 @@ def confirm_payment_iban(
             )
         ),
     )
-    named = iban.hmac.hex()
-    rules = [r for r in enabled_rules(ctx.conn) if r.matcher.counterparty_iban_hmac == named]
-    for rule in rules:
-        disable_rule(ctx, rule.id)
     # D176 (4): the debits to this IBAN waiting in Zu prüfen are transfers now.
-    _rematch_waiting(ctx, account_id)
-    return PaymentIbanConfirmed(account=_account(ctx.conn, account_id), rules_disabled=len(rules))
+    disabled = _own_iban(ctx, account_id, iban.hmac)
+    return PaymentIbanConfirmed(account=_account(ctx.conn, account_id), rules_disabled=disabled)
 
 
 def _with_card_facts(conn: Connection, accounts: list[Account]) -> list[Account]:
@@ -822,16 +837,12 @@ def confirm_depot_iban(
             changes=diff_changes({"iban_masked": account.iban_masked}, {"iban_masked": iban.masked})
         ),
     )
-    named = iban.hmac.hex()
-    rules = [r for r in enabled_rules(ctx.conn) if r.matcher.counterparty_iban_hmac == named]
-    for rule in rules:
-        disable_rule(ctx, rule.id)
-    _rematch_waiting(ctx, account_id)
+    disabled = _own_iban(ctx, account_id, iban.hmac)
     # 14 Nov 2026: a depot document that prints this IBAN now finds the depot.
     from .proposals import rebuild_depot_proposals  # proposals imports matching
 
     rebuild_depot_proposals(ctx, store, iban_key=iban_key)
-    return PaymentIbanConfirmed(account=_account(ctx.conn, account_id), rules_disabled=len(rules))
+    return PaymentIbanConfirmed(account=_account(ctx.conn, account_id), rules_disabled=disabled)
 
 
 # --- The exchange's deposit IBAN (D162 amended 15 Nov 2026) ---------------------------------
@@ -935,10 +946,7 @@ def learn_exchange_deposit_iban(
             )
         ),
     )
-    named = bytes(line.counterparty_iban_hmac).hex()
-    for rule in [r for r in enabled_rules(ctx.conn) if r.matcher.counterparty_iban_hmac == named]:
-        disable_rule(ctx, rule.id)
-    _rematch_waiting(ctx, account_id)
+    _own_iban(ctx, account_id, bytes(line.counterparty_iban_hmac))
     return DepositIbanOutcome.LEARNED
 
 
