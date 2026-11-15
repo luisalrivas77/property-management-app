@@ -8,6 +8,7 @@ once by tenant erasure (D19).
 """
 
 from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Literal, Self
 from uuid import UUID
@@ -36,6 +37,7 @@ from .enums import (
     ProposalStatus,
     ProposalTargetMode,
 )
+from .household import MovementKind, MovementSource
 from .property import Address
 from .tenancy import RentDueDay
 
@@ -304,6 +306,20 @@ class ExistingDepotAccount(Schema):
     label: str
 
 
+class BookedDepotTrade(Schema):
+    """D165 amended, 15 Nov 2026: a current purchase or sale on a depot account that carries
+    a reference, as a depot reading's pre-fill reads it: a report's trade with that reference
+    is not proposed again, and a trade confirmation of a trade a report booked says so."""
+
+    account_id: UUID
+    isin: str
+    external_ref: str
+    kind: MovementKind
+    quantity: Decimal
+    eur_amount: Decimal | None = None
+    source: MovementSource
+
+
 class PrintedDepot(StrEnum):
     """What a depot document's own text layer says about its depot (14 Nov 2026, D165 (a)
     amended; outcomes split in the review of 15 Nov 2026), read by code
@@ -374,3 +390,6 @@ class PrefillContext(Schema):
     # D177), None for any other document: a depot letter read as `general` (a rebalancing)
     # is filed by its date's year, a year-end report by the year it reports on.
     depot_kind: DepotDocumentKind | None = None
+    # D165 amended, 15 Nov 2026: for a report or a trade confirmation, the purchases and sales
+    # booked with a reference on any depot account (services.proposals.prefill_context).
+    booked_depot_trades: list[BookedDepotTrade] = Field(default_factory=list)

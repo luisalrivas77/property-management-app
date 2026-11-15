@@ -4472,6 +4472,47 @@
         }
       }
     },
+    "/api/accounts/{account_id}/report-trades": {
+      "post": {
+        "summary": "Account Report Trades",
+        "description": "„Umsätze aus dem Bericht buchen“ on the depot's holdings card (phase 6 D165 amended,\n15 Nov 2026): every trade the depot's current reports list that no movement carries is\nbooked from the report (units and amount, source report, the report as its document), in\none transaction, then the reports' prices that now agree are stored. The list is computed\nhere again, never sent by the page. 404 for no such account, 422 depot.account_required\nfor an account that is no depot; nothing to book is booked=0.",
+        "operationId": "account_report_trades_api_accounts__account_id__report_trades_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportTradesBooked"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/imports": {
       "post": {
         "summary": "Account Import",
@@ -17318,6 +17359,17 @@
             "type": "boolean",
             "title": "Bulk Confirmable",
             "default": false
+          },
+          "report_trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Trades"
           }
         },
         "additionalProperties": false,
@@ -23369,6 +23421,26 @@
         ],
         "title": "ReplacementFact",
         "description": "A benefit paid by an authority (D102); the employer's Zuschuss is on the certificate."
+      },
+      "ReportTradesBooked": {
+        "properties": {
+          "booked": {
+            "type": "integer",
+            "title": "Booked"
+          },
+          "prices_stored": {
+            "type": "integer",
+            "title": "Prices Stored"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "booked",
+          "prices_stored"
+        ],
+        "title": "ReportTradesBooked",
+        "description": "POST /accounts/{id}/report-trades: how many trades were booked from the reports and\nhow many report prices that stored (D167 amended (c))."
       },
       "RequirementCode": {
         "type": "string",

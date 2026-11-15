@@ -118,6 +118,7 @@ from hausbuch.schemas.events import (
     ProposalNoted,
 )
 from hausbuch.schemas.extraction import EXTRACTION_MODELS, _Typing
+from hausbuch.schemas.household import MovementSource
 from hausbuch.schemas.loan import LoanTerms
 from hausbuch.schemas.performance import IncomeInputCreate
 from hausbuch.schemas.property import (
@@ -566,6 +567,10 @@ DEPOT_EXTRACTION_KINDS = frozenset(
         ExtractionKind.SECURITIES_TRANSFER,
     }
 )
+# D165 amended, 15 Nov 2026: the documents whose pre-fill reads the depots' booked trades.
+_BOOKED_TRADES_SUBTYPES = frozenset(
+    {DocumentSubtype.DEPOT_REPORT, DocumentSubtype.TRADE_CONFIRMATION}
+)
 
 
 def _depot_kind(conn: Connection, document_id: UUID) -> DepotDocumentKind | None:
@@ -1002,6 +1007,9 @@ def prefill_context(
         printed_depot=printed_depot[0],
         printed_depot_account_id=printed_depot[1],
         depot_kind=_depot_kind(conn, document_id),
+        booked_depot_trades=(
+            depot.booked_trades(conn) if classification.subtype in _BOOKED_TRADES_SUBTYPES else []
+        ),
     )
 
 
@@ -1909,7 +1917,12 @@ class _Apply:
         """A depot reading's movement (phase 6 step 4) through services/depot, confirmed on
         the account the user chose, with its cash line when exactly one fits."""
         data = _validate(record.key, depot.DepotMovementValues, values)
-        return depot.record_movement(self.ctx, data, self.document_id)
+        # D165 amended, 15 Nov 2026: a report's movement is a trade of its Umsätze list,
+        # booked from the report; one whose reference is booked already writes nothing.
+        source = (
+            MovementSource.REPORT if self.proposal.kind is ExtractionKind.DEPOT_REPORT else None
+        )
+        return depot.record_movement(self.ctx, data, self.document_id, source=source)
 
     def _holding(self, record: ProposalRecord, values: dict[str, Any]) -> UUID:
         """A report's position (phase 6 step 4), reconciled against the account's movements."""
