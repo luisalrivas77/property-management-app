@@ -612,8 +612,9 @@ def _own_iban(
     confirmed (D156 amended) or an exchange's deposit IBAN learned (D162 amended). Every
     enabled learned rule on that IBAN (a payment to the account answered as spending or an
     investment with „Künftig immer so zuordnen“ before the account was in Hausbuch) is
-    switched off (rules_learned.disable_rule, rule.disabled): a rule books before the
-    transfer matcher, so it would keep the line out of the transfer. The lines waiting in
+    switched off (rules_learned.disable_rule, rule.disabled): such a rule never books a line
+    naming an own IBAN any more (rules.matching.own_rule_blind, the same amendment), so this
+    only keeps a dead rule out of the rules list (defence in depth). The lines waiting in
     Zu prüfen that name the IBAN are matched again (not with `rematch=False`: a rental
     account created without the owner flag, which create_account never re-checked); lines a
     rule already booked stay as they are. Returns how many rules were switched off."""
@@ -686,9 +687,10 @@ def confirm_payment_iban(
 
     Every enabled learned rule on that IBAN (typically the card bill answered as spending with
     „Künftig immer so zuordnen“ before the card account existed) is switched off
-    (rules_learned.disable_rule, rule.disabled): a rule books before the transfer matcher, so
-    it would keep the payment to the card as spending; the result counts them. Lines a rule
-    booked before stay as they are."""
+    (rules_learned.disable_rule, rule.disabled): before D160 amended (5) a rule booked before
+    the transfer matcher and would have kept the payment to the card as spending; since then
+    the transfer by an own IBAN comes first (rules.matching.own_rule_blind) and the switch-off
+    is defence in depth. The result counts them. Lines a rule booked before stay as they are."""
     account = _lock(ctx, account_id)
     if account.kind != AccountKind.CREDIT_CARD.value:
         raise RuleError(ACCOUNT_KIND_NOT_AVAILABLE, "only a credit card has a payment IBAN")

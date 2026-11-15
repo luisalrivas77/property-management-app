@@ -251,3 +251,29 @@ def test_a_name_rule_learned_before_the_card_was_in_the_app_never_books_its_tran
             .all()
         )
     ) == [None, None]
+
+
+def test_settlements_to_an_own_iban_not_yet_linked_are_no_earlier_answer_either(world):
+    """The card's statement lags: his settlements are booked internal_transfer_out by the
+    card's IBAN but no link exists yet. Only their own IBAN keeps them out of the checks."""
+    giro = Private(world)
+    Card(world, CARD_IBAN)
+    debits = []
+    for n, day in enumerate(SETTLED):
+        debit = giro.line(day, f"-{200 + n * 37}.15", name=ISSUER, iban=CARD_IBAN)
+        _match(world, debit)
+        debits.append(debit)
+    assert all(_booked(world, d) == [("internal_transfer_out", "confirmed")] for d in debits)
+    assert _links(world) == []
+    second = _second(world, shared=True)
+    first = second.line(date(2026, 9, 8), "-189.76", name=ISSUER, iban=ISSUER_IBAN)
+    view = world.query(
+        lambda c: review.transaction_allocations(
+            c, first, iban_key=TEST_IBAN_KEY, today=world.now.date()
+        )
+    )
+    assert view is not None
+    assert (view.name_history, view.rebook_blockers) == ([], [])
+    result = _answer_rebook(world, first, "-189.76", "hh_credit_card")
+    assert result.rule is not None and result.rebooked == 0
+    assert all(_booked(world, d) == [("internal_transfer_out", "confirmed")] for d in debits)

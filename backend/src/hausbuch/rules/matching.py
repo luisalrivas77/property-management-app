@@ -108,11 +108,12 @@ LEARNABLE_SHARED = frozenset({AllocationCategory.BANK_FEES})
 # interest, and the tax-relevant donations, childcare and household services. Their
 # threshold stays None, so the model never books them alone; a rule only repeats a person's
 # own answer for that payee, and the line keeps its code, so whatever later reads it (a
-# return input, an Unterhalt check) reads it the same. A rule on an IBAN that later becomes
-# an own account's is switched off then (services.accounts._own_iban: a card's payment IBAN,
-# a depot's or an exchange's IBAN, an account created with one), so it never outranks the
-# transfer matcher, and a line a rule booked hh_credit_card is re-booked as the transfer when
-# linked (D176, rebook_on_link).
+# return input, an Unterhalt check) reads it the same. A line naming an own account's IBAN
+# is never a rule's (own_rule_blind: the transfer matcher comes first on a private account),
+# a rule on an IBAN that later becomes an own account's is also switched off then
+# (services.accounts._own_iban: a card's payment IBAN, a depot's or an exchange's IBAN, an
+# account created with one), and a line a rule booked hh_credit_card is re-booked as the
+# transfer when linked (D176, rebook_on_link).
 NEVER_LEARNED = frozenset(
     {
         AllocationCategory.UNCATEGORIZED,  # no answer to repeat
@@ -2204,10 +2205,11 @@ _RENTAL_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | 
     match_loan,
     match_document,
 )
-# D158 on a private account: the transfer by an own IBAN (D162), a payment to the seller
-# (14 Nov 2026), a bill already recorded as a Nebenkosten or private_cost row (D161 widened),
-# the document match (a bill of the property becomes hh_property_cost, D161), then the
-# tenant / lender question.
+# D158 on a private account (after the learned rules, which never answer a line naming an
+# own IBAN, D160 amended (5): own_rule_blind): the transfer by an own IBAN (D162), a payment
+# to the seller (14 Nov 2026), a bill already recorded as a Nebenkosten or private_cost row
+# (D161 widened), the document match (a bill of the property becomes hh_property_cost, D161),
+# then the tenant / lender question.
 _PRIVATE_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet | None], ...] = (
     lambda tx, context: match_transfer_line(tx, context),  # defined below
     match_down_payment,
