@@ -635,13 +635,11 @@ def _free_for_matcher(conn: Connection, line_id: UUID, current: Sequence) -> boo
     return _held_answer(conn, line_id) is None
 
 
-# The answers a bank line may hold for an untied deposit link by hand (review, 15 Nov 2026).
-_DEPOSIT_ANSWER = frozenset(
-    {
-        AllocationCategory.INTERNAL_TRANSFER_OUT,
-        AllocationCategory.INTERNAL_TRANSFER_IN,
-        AllocationCategory.BANK_FEES,
-    }
+# The answers a bank line may hold for an untied deposit link by hand (review, 15 Nov 2026):
+# the whole line a transfer out, or the transfer plus its fee; a fee alone is another answer.
+_DEPOSIT_ANSWERS = (
+    frozenset({AllocationCategory.INTERNAL_TRANSFER_OUT}),
+    frozenset({AllocationCategory.INTERNAL_TRANSFER_OUT, AllocationCategory.BANK_FEES}),
 )
 
 
@@ -657,7 +655,7 @@ def _answered_otherwise(conn: Connection, a: TransferLeg, b: TransferLeg) -> boo
     if deposit_gap(out, in_) is None or names_the_other(out, in_):
         return False
     held = _held_answer(conn, out.id)
-    return held is not None and not held <= _DEPOSIT_ANSWER
+    return held is not None and held not in _DEPOSIT_ANSWERS
 
 
 def _deposit_text(conn: Connection, leg: _Leg, other: _Leg, fee: Decimal | None) -> str | None:
