@@ -571,11 +571,17 @@ def _confirm_leg(ctx: CommandContext, leg: TransferLeg, other: TransferLeg) -> b
     if own is None and line.account_kind == AccountKind.CREDIT_CARD.value:
         return False
     fee = deposit_gap(leg, other) if leg.amount < 0 else None
-    answer = (
-        deposit_split_set(line.tx, fee)
-        if fee is not None
-        else named_transfer_set(line.tx, AccountPurpose.PRIVATE)
-    )
+    if fee is not None:
+        answer = deposit_split_set(line.tx, fee)
+    else:
+        answer = named_transfer_set(line.tx, AccountPurpose.PRIVATE)
+        if leg.counterparty_iban_hmac is not None and (
+            leg.counterparty_iban_hmac == other.account_iban_hmac
+        ):
+            # This line names the other account itself: match_transfer_line's wording.
+            answer = answer.model_copy(
+                update={"reasoning": "Überweisung zwischen zwei eigenen Konten."}
+            )
     allocations.record_set(ctx, answer, confirm=True, auto=True)
     return True
 

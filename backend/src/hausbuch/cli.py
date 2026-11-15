@@ -716,8 +716,9 @@ def _parser() -> argparse.ArgumentParser:
     relinked = commands.add_parser(
         "relink-transfers",
         help="link the transfers between own accounts once more on every account, booking a "
-        "depot's cash line the bank's debit names as its transfer (once, after the deploy of "
-        "D162 amended 15 Nov 2026)",
+        "depot's cash line the bank's debit names as its transfer, and book the lines of links "
+        "tied by an own IBAN that hold only the model's proposal of the transfer (once, after "
+        "the deploy of D162 amended 15 Nov 2026 and again after D162 amended (6))",
     )
     relinked.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     relinked.add_argument("--dry-run", action="store_true", help="count only, change nothing")
