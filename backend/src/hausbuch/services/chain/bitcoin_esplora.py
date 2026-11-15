@@ -17,14 +17,19 @@ The UTXO accounting is rules/chain/utxo (D185).
 
 Requests are paced one a second through an injectable `sleep`. A failure is a
 ChainSourceError carrying the code and the HTTP status only, never the URL (it names the
-address) or the body: a 429 is `wallet.source_throttled` (the sync resumes the next day from
-its cursor), a 401 or 403 `wallet.source_refused`, both without trying the fallback (the
-provider answered; another one asked at once would only add load); a transport failure, a
-5xx or an answer the parser cannot read tries the fallback, and fails with
-`wallet.source_failed` when it fails too.
+address) or the body. A 429 is `wallet.source_throttled` at once, without the fallback (the
+sync resumes the next day from its cursor; another provider asked at once would only add
+load). A 401 or 403 tries the fallback (D181 (a) amended 15 Nov 2026: with no key, a refusal
+is an IP block at that host, which must not stop Bitcoin while the other answers); when no
+host answers, it is `wallet.source_refused` if any host refused (the one a person can act
+on: the runbook step for changing the URL), else `wallet.source_failed`. A transport
+failure, any other status or an answer the parser cannot read tries the fallback too.
+Everything a record's content can cause while it is read is an unreadable answer, never an
+exception of its own (the record's content never reaches the error).
 """
 
 import json
+import re
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -58,6 +63,7 @@ _THROTTLED = errors.WALLET_SOURCE_THROTTLED
 _REFUSED = errors.WALLET_SOURCE_REFUSED
 
 BTC = AssetKey(chain=Chain.BITCOIN)
+_TXID = re.compile(r"[0-9a-f]{64}")  # Esplora's txid: 32 bytes, lower-case hex
 
 
 class _Unreadable(Exception):
@@ -84,14 +90,18 @@ def to_chain_tx(record: Mapping[str, JsonValue], address: str | None = None) -> 
     sync asked about) spent one of the inputs, else None (ChainTx.fee: paid by the own
     address; utxo_net computes the fee from the inputs and outputs itself). Raises
     _Unreadable for a record that is not a confirmed transaction whose inputs equal its
-    outputs plus its fee."""
+    outputs plus its fee, and for anything else its content can cause while it is read (a
+    txid that is not 64 lower-case hex characters, a block time no date can hold, a value
+    the ChainTx refuses)."""
     try:
         txid = record["txid"]
         status = record["status"]
         vin = record["vin"]
         vout = record["vout"]
         fee = _int(record.get("fee", 0))
-        if not isinstance(txid, str) or not isinstance(status, Mapping):
+        if not isinstance(txid, str) or not _TXID.fullmatch(txid):
+            raise _Unreadable
+        if not isinstance(status, Mapping):
             raise _Unreadable
         if status.get("confirmed") is not True:
             raise _Unreadable
@@ -127,24 +137,26 @@ def to_chain_tx(record: Mapping[str, JsonValue], address: str | None = None) -> 
                     asset_key=BTC, to_addr=_address(item), units=_int(item["value"]), index=str(n)
                 )
             )
-    except (KeyError, TypeError, ValueError, OverflowError):
+        spent = sum(t.units for t in transfers if t.index.startswith(VIN))
+        paid = sum(t.units for t in transfers if not t.index.startswith(VIN))
+        if not coinbase and spent != paid + fee:
+            raise _Unreadable
+        paid_by_address = address is not None and any(
+            t.from_addr == address for t in transfers if t.index.startswith(VIN)
+        )
+        return ChainTx(
+            hash=txid,
+            block=block,
+            occurred_at=at,
+            status="ok",
+            fee=(BTC, fee) if paid_by_address and fee else None,
+            transfers=transfers,
+            raw=dict(record),
+        )
+    # ValueError covers pydantic's ValidationError; OSError and OverflowError a block time
+    # beyond what a date holds.
+    except (KeyError, TypeError, ValueError, OverflowError, OSError):
         raise _Unreadable from None
-    spent = sum(t.units for t in transfers if t.index.startswith(VIN))
-    paid = sum(t.units for t in transfers if not t.index.startswith(VIN))
-    if not coinbase and spent != paid + fee:
-        raise _Unreadable
-    paid_by_address = address is not None and any(
-        t.from_addr == address for t in transfers if t.index.startswith(VIN)
-    )
-    return ChainTx(
-        hash=txid,
-        block=block,
-        occurred_at=at,
-        status="ok",
-        fee=(BTC, fee) if paid_by_address and fee else None,
-        transfers=transfers,
-        raw=dict(record),
-    )
 
 
 def balance_units(record: Mapping[str, JsonValue]) -> int:
@@ -185,8 +197,11 @@ class BitcoinEsplora:
         return urls
 
     def _get(self, path: str, parse: Callable[[bytes], object]) -> object:
-        """One request, paced, on the configured URL and then on the fallback."""
+        """One request, paced, on the configured URL and then on the fallback. A 429 stops
+        at once; a refusal (401, 403) tries the next host and wins over other failures when
+        no host answers."""
         failure: ChainSourceError | None = None
+        refused: ChainSourceError | None = None
         for base in self._urls():
             if self._calls:
                 self.sleep(MIN_INTERVAL_S)
@@ -197,8 +212,9 @@ class BitcoinEsplora:
                 if exc.status == 429:
                     raise ChainSourceError(_THROTTLED, 429) from None
                 if exc.status in (401, 403):
-                    raise ChainSourceError(_REFUSED, exc.status) from None
-                failure = ChainSourceError(SOURCE_FAILED, exc.status)
+                    refused = refused or ChainSourceError(_REFUSED, exc.status)
+                else:
+                    failure = ChainSourceError(SOURCE_FAILED, exc.status)
                 continue
             try:
                 value = parse(body)
@@ -207,8 +223,9 @@ class BitcoinEsplora:
                 continue
             self.host = urlsplit(base).hostname
             return value
-        assert failure is not None
-        raise failure
+        error = refused or failure
+        assert error is not None
+        raise error
 
     def tip(self) -> int:
         """The chain's tip height (plain text)."""

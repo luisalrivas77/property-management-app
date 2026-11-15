@@ -9,6 +9,7 @@ import json
 import fixture_models_phase7 as phase7
 import pytest
 
+from hausbuch.rules import errors as E
 from hausbuch.schemas.chain import AssetKey, Chain, ChainSourceKind
 from hausbuch.services.chain.base import ChainSourceError
 from hausbuch.services.chain.bitcoin_esplora import (
@@ -165,20 +166,93 @@ def test_both_failing_is_a_source_failure_without_the_url():
 
 
 @pytest.mark.parametrize("case", BTC.errors, ids=lambda c: c.id)
-def test_throttled_and_refused_stop_without_the_fallback(case):
+def test_throttled_and_refused(case):
+    """btc_utxo.yaml `errors`, with every host answering the status: a 429 stops at once
+    without the fallback; a refusal tries the fallback first (D181 (a) amended 15 Nov 2026)
+    and is `wallet.source_refused` when it refuses too."""
     assert case.pending is None
     path = f"/address/{OWN}/txs/chain"
+    body = b"slow down " + OWN.encode()
     fetch = FakeEsplora(
-        {
-            MEMPOOL_URL + path: (case.status, b"slow down " + OWN.encode()),
-            BLOCKSTREAM_URL + path: _body([]),
-        }
+        {MEMPOOL_URL + path: (case.status, body), BLOCKSTREAM_URL + path: (case.status, body)}
     )
     with pytest.raises(ChainSourceError) as caught:
         _source(fetch).transactions(OWN, None)
     assert caught.value.code == case.expect_error and caught.value.status == case.status
+    if case.status == 429:
+        assert fetch.calls == [MEMPOOL_URL + path]
+    else:
+        assert fetch.calls == [MEMPOOL_URL + path, BLOCKSTREAM_URL + path]
+    assert OWN not in str(caught.value) and "slow" not in str(caught.value)
+
+
+def test_a_429_does_not_ask_the_fallback():
+    path = f"/address/{OWN}/txs/chain"
+    fetch = FakeEsplora({MEMPOOL_URL + path: (429, b""), BLOCKSTREAM_URL + path: _body([])})
+    with pytest.raises(ChainSourceError) as caught:
+        _source(fetch).transactions(OWN, None)
+    assert caught.value.code == E.WALLET_SOURCE_THROTTLED
     assert fetch.calls == [MEMPOOL_URL + path]
-    assert OWN not in str(caught.value)
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_a_refusal_at_one_host_reads_from_the_other(status):
+    """No key, so a refusal is an IP block at that host: the other host answers."""
+    record = CASES["receive"]["tx"]
+    path = f"/address/{OWN}/txs/chain"
+    fetch = FakeEsplora(
+        {MEMPOOL_URL + path: (status, b""), BLOCKSTREAM_URL + path: _body([record])}
+    )
+    source = _source(fetch)
+    page = source.transactions(OWN, None)
+    assert [tx.hash for tx in page.items] == [record["txid"]]
+    assert source.host == "blockstream.info"
+
+
+def test_a_refusal_wins_over_another_failure_when_no_host_answers():
+    path = f"/address/{OWN}/txs/chain"
+    for routes in (
+        {MEMPOOL_URL + path: (403, b""), BLOCKSTREAM_URL + path: (502, b"")},
+        {MEMPOOL_URL + path: (502, b""), BLOCKSTREAM_URL + path: (401, b"")},
+    ):
+        fetch = FakeEsplora(routes)
+        with pytest.raises(ChainSourceError) as caught:
+            _source(fetch).transactions(OWN, None)
+        assert caught.value.code == E.WALLET_SOURCE_REFUSED
+        assert caught.value.status in (401, 403) and len(fetch.calls) == 2
+
+
+_BAD_RECORDS = {
+    "empty_txid": {"txid": ""},
+    "long_txid": {"txid": "a" * 300},
+    "txid_with_slash": {"txid": "a" * 30 + "/" + "a" * 33},
+    "upper_case_txid": {"txid": "A" * 64},
+    "block_time_beyond_a_date": {
+        "status": {"confirmed": True, "block_height": 1, "block_time": 10**18}
+    },
+}
+
+
+@pytest.mark.parametrize("change", _BAD_RECORDS.values(), ids=list(_BAD_RECORDS))
+def test_whatever_a_record_holds_is_an_unreadable_answer(change):
+    """Review fix 1: a record's content never escapes as its own exception. With a healthy
+    fallback the page comes from the fallback; with both hosts sending it, the sync fails
+    with `wallet.source_failed` after two calls, and nothing of the record is in the error."""
+    good = CASES["receive"]["tx"]
+    bad = dict(good, **change)
+    path = f"/address/{OWN}/txs/chain"
+    fetch = FakeEsplora({MEMPOOL_URL + path: _body([bad]), BLOCKSTREAM_URL + path: _body([good])})
+    page = _source(fetch).transactions(OWN, None)
+    assert [tx.hash for tx in page.items] == [good["txid"]]
+
+    fetch = FakeEsplora({MEMPOOL_URL + path: _body([bad]), BLOCKSTREAM_URL + path: _body([bad])})
+    with pytest.raises(ChainSourceError) as caught:
+        _source(fetch).transactions(OWN, None)
+    assert caught.value.code == SOURCE_FAILED and caught.value.status is None
+    assert len(fetch.calls) == 2
+    text = str(caught.value) + repr(caught.value)
+    assert OWN not in text and good["txid"] not in text
+    assert all(str(v) not in text for v in change.values() if v)
 
 
 def test_an_unconfirmed_or_unbalanced_record_is_unreadable():
