@@ -415,11 +415,277 @@ def test_rent_a_third_party_paid_into_a_new_own_account_is_its_own_leg():
         (USDC, 25000000, False),
     ]
     group = solana.classify_solana(tx, {A}, _lookup(False))
-    assert group.kind is GroupKind.TRANSFER
+    assert group.kind is GroupKind.TRANSFER and group.card == E.TRANSFER_UNMATCHED_LEG
+    # The rent is received without anything given: an airdrop leg (a lot), beside the receive.
     assert [(m.kind, m.role, m.units, m.index) for m in group.legs] == [
         (MovementKind.UNCATEGORIZED, "in", 25000000, "1"),
-        (MovementKind.UNCATEGORIZED, "in", 2039280, "rent"),
+        (MovementKind.AIRDROP, "in", 2039280, "rent"),
     ]
+
+
+def test_rent_a_spammer_paid_into_a_new_own_account_stays_in_the_hidden_group():
+    case = CASES["first_spl_receive_creates_account"]
+    tx = deepcopy(case.tx)
+    keys = tx["transaction"]["message"]["accountKeys"]
+    keys[0], keys[1] = keys[1], keys[0]
+    keys[0]["signer"], keys[1]["signer"] = True, False
+    meta = tx["meta"]
+    meta["preBalances"][0], meta["preBalances"][1] = 7499990000, 1000000000
+    meta["postBalances"][0], meta["postBalances"][1] = 7499990000 - 2044280, 1000000000
+    spam_mint = SPAM["symbol_lookalike_usdc_solana"].token.contract
+    for key in ("preTokenBalances", "postTokenBalances"):
+        for row in meta[key]:
+            row["mint"] = spam_mint
+    group = solana.classify_solana(tx, {A}, _lookup(False))
+    assert group.kind is GroupKind.SPAM and group.hidden
+    assert group.card is None and group.question is None
+    assert [(m.kind, m.role, m.units, m.index) for m in group.legs] == [
+        (MovementKind.SPAM, "in", 25000000, "1"),
+        (MovementKind.AIRDROP, "in", 2039280, "rent"),
+    ]
+
+
+# --- a new foreign wSOL account (review fix A1) ----------------------------------------------
+
+W = "CKHQ7MJ8nXvaCQGzWBPvhvVQgR7bmo6WUozX6PyTWdBk"  # a new wSOL account of R's
+R = "4TWAd4qAFgtVpQ9gCsSZkdUkp3VY9EyqCbFdSqh8yoeM"
+MY_USDC = "Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU"
+POOL_USDC = "41frPyR5ATwWweP1VzSdHDY82VbWy3Dt6mViHk9a1nD4"
+RENT = 2039280
+
+
+def _key(pubkey: str, signer: bool = False) -> dict:
+    return {"pubkey": pubkey, "signer": signer, "writable": True, "source": "transaction"}
+
+
+def _token_row(i: int, mint: str, owner: str | None, amount: int, decimals: int = 6) -> dict:
+    row = {
+        "accountIndex": i,
+        "mint": mint,
+        "uiTokenAmount": {"amount": str(amount), "decimals": decimals},
+    }
+    if owner is not None:
+        row["owner"] = owner
+    return row
+
+
+def _sol_into_new_foreign_wsol(ins: list[dict]) -> dict:
+    """A sends 3 SOL into a wSOL account of R's it opens in the same transaction: the account
+    holds the rent plus the 3 SOL as lamports, and 3 wSOL as tokens."""
+    sent = 3 * 10**9
+    return {
+        "version": 0,
+        "slot": 300009201,
+        "blockTime": 1773300000,
+        "transaction": {
+            "signatures": ["4wsolSignatureInventedForThisTestOnly111111111111111111111111111"],
+            "message": {
+                "accountKeys": [
+                    _key(A, signer=True),
+                    _key(W),
+                    _key(R),
+                    _key(solana.SYSTEM_PROGRAM),
+                    _key(solana.TOKEN_PROGRAM),
+                    _key(solana.ATA_PROGRAM),
+                ],
+                "instructions": ins,
+            },
+        },
+        "meta": {
+            "err": None,
+            "fee": 5000,
+            "preBalances": [5 * 10**9, 0, 10**9, 1, 1, 1],
+            "postBalances": [5 * 10**9 - sent - RENT - 5000, sent + RENT, 10**9, 1, 1, 1],
+            "preTokenBalances": [],
+            "postTokenBalances": [_token_row(1, solana.native_mint(), R, sent, 9)],
+        },
+    }
+
+
+def test_sol_sent_into_a_new_foreign_wsol_account_is_a_leg_and_only_its_rent_a_fee():
+    tx = _sol_into_new_foreign_wsol(
+        [
+            {"programId": solana.ATA_PROGRAM, "parsed": {"type": "create"}},
+            {"programId": solana.SYSTEM_PROGRAM, "parsed": {"type": "transfer"}},
+            {"programId": solana.TOKEN_PROGRAM, "parsed": {"type": "syncNative"}},
+        ]
+    )
+    assert solana.foreign_rent(tx, {A}) == RENT
+    group = solana.classify_solana(tx, {A}, _lookup(False))
+    assert group.kind is GroupKind.TRANSFER and group.card == E.TRANSFER_UNMATCHED_LEG
+    assert [(m.kind, m.role, m.units, m.asset_key.contract) for m in group.legs] == [
+        (MovementKind.UNCATEGORIZED, "out", 3 * 10**9, None),
+        (MovementKind.FEE, "fee", 2044280, None),
+    ]
+
+
+def test_sol_sent_into_a_new_foreign_wsol_account_through_an_unlisted_program():
+    """The same leg and fee; the shape of one leg through a program no row reads is a contract
+    call (D183 (4)), so the card asks by the masked program."""
+    tx = _sol_into_new_foreign_wsol([{"programId": AMM_ROW.program, "data": "x"}])
+    group = solana.classify_solana(tx, {A}, _lookup(False))
+    assert group.kind is GroupKind.CONTRACT_CALL and group.card == E.GROUP_CONTRACT_CALL
+    assert [(m.kind, m.role, m.units, m.asset_key.contract) for m in group.legs] == [
+        (MovementKind.UNCATEGORIZED, "out", 3 * 10**9, None),
+        (MovementKind.FEE, "fee", 2044280, None),
+    ]
+
+
+def test_a_swap_into_a_new_pool_wsol_account_keeps_the_sol_given():
+    """SOL for USDC, the pool's wSOL account opened by the own payer: the SOL given stays the
+    disposal, the new account's rent alone joins the fee."""
+    given, bought = 10**9, 150 * 10**6
+    tx = {
+        "version": 0,
+        "slot": 300009301,
+        "blockTime": 1773400000,
+        "transaction": {
+            "signatures": ["2swapSignatureInventedForThisTestOnly111111111111111111111111111"],
+            "message": {
+                "accountKeys": [
+                    _key(A, signer=True),
+                    _key(W),
+                    _key(MY_USDC),
+                    _key(POOL_USDC),
+                    _key(AMM_ROW.program),
+                    _key(solana.TOKEN_PROGRAM),
+                ],
+                "instructions": [{"programId": AMM_ROW.program, "data": "x"}],
+            },
+        },
+        "meta": {
+            "err": None,
+            "fee": 5000,
+            "preBalances": [5 * 10**9, 0, RENT, RENT, 1, 1],
+            "postBalances": [5 * 10**9 - given - RENT - 5000, given + RENT, RENT, RENT, 1, 1],
+            "preTokenBalances": [
+                _token_row(2, USDC, A, 0),
+                _token_row(3, USDC, R, 1000 * 10**6),
+            ],
+            "postTokenBalances": [
+                _token_row(1, solana.native_mint(), R, given, 9),
+                _token_row(2, USDC, A, bought),
+                _token_row(3, USDC, R, 1000 * 10**6 - bought),
+            ],
+        },
+    }
+    group = solana.classify_solana(tx, {A}, _lookup(True))
+    assert group.kind is GroupKind.SWAP
+    assert [(m.kind, m.role, m.units, m.asset_key.contract) for m in group.legs] == [
+        (MovementKind.DISPOSAL, "out", given, None),
+        (MovementKind.ACQUISITION, "in", bought, USDC),
+        (MovementKind.FEE, "fee", 5000 + RENT, None),
+    ]
+
+
+# --- token balance rows without an owner (review fix A2) ------------------------------------
+
+
+def _without_owner(case_id: str) -> dict:
+    tx = deepcopy(CASES[case_id].tx)
+    for key in ("preTokenBalances", "postTokenBalances"):
+        for row in tx["meta"][key]:
+            row.pop("owner", None)
+    return tx
+
+
+def _legs(group: solana.SolanaGroup) -> list[tuple]:
+    return [(m.kind, m.role, m.units, m.asset_key.contract, m.index) for m in group.legs]
+
+
+@pytest.mark.parametrize(
+    ("case_id", "own_account"),
+    [
+        ("spl_out", MY_USDC),
+        ("spl_in", MY_USDC),
+        ("first_spl_receive_creates_account", "AtcK14U2KY2hvegt1GqcTEXSeWDBjQUPsnukPCacuyej"),
+    ],
+)
+def test_a_row_without_owner_is_placed_by_the_own_token_accounts(case_id, own_account):
+    case = CASES[case_id]
+    tx = _without_owner(case_id)
+    want = _legs(_classify(case))
+    got = solana.classify_solana(
+        tx, {case.own}, _lookup(case.decoder_listed), own_token_accounts={own_account}
+    )
+    assert _legs(got) == want
+    deltas = solana.solana_deltas(tx, {case.own}, {own_account})
+    assert [(d.asset_key.contract, d.units) for d in deltas] == [
+        (d.mint, d.units) for d in case.expect.deltas
+    ]
+
+
+@pytest.mark.parametrize("case_id", ["spl_out", "spl_in", "first_spl_receive_creates_account"])
+def test_a_row_without_owner_and_no_own_token_accounts_is_unreadable(case_id):
+    case = CASES[case_id]
+    tx = _without_owner(case_id)
+    with pytest.raises(E.RuleError) as raised:
+        solana.classify_solana(tx, {case.own}, _lookup(False))
+    assert raised.value.code == E.WALLET_RECORD_UNREADABLE
+    signature = tx["transaction"]["signatures"][0]
+    assert signature in str(raised.value) and case.own not in str(raised.value)
+
+
+def test_a_new_account_without_owner_the_caller_does_not_know_is_unreadable():
+    """A token account opened in this record and missing from the set may be the own one: the
+    record is unreadable, never read as someone else's."""
+    case = CASES["first_spl_receive_creates_account"]
+    tx = _without_owner("first_spl_receive_creates_account")
+    with pytest.raises(E.RuleError) as raised:
+        solana.solana_deltas(tx, {case.own}, own_token_accounts=set())
+    assert raised.value.code == E.WALLET_RECORD_UNREADABLE
+
+
+def test_a_token_program_call_without_token_balances_is_unreadable():
+    case = CASES["spl_out"]
+    tx = deepcopy(case.tx)
+    del tx["meta"]["preTokenBalances"], tx["meta"]["postTokenBalances"]
+    with pytest.raises(E.RuleError) as raised:
+        solana.classify_solana(tx, {case.own}, _lookup(False), own_token_accounts={MY_USDC})
+    assert raised.value.code == E.WALLET_RECORD_UNREADABLE
+
+
+# --- the leg index (review fix A4) -----------------------------------------------------------
+
+
+def _without_info(tx: dict) -> dict:
+    tx = deepcopy(tx)
+    groups = [tx["transaction"]["message"]["instructions"]]
+    groups += [g["instructions"] for g in tx["meta"].get("innerInstructions") or []]
+    for group in groups:
+        for ins in group:
+            parsed = ins.get("parsed")
+            if isinstance(parsed, dict):
+                parsed.pop("info", None)
+    return tx
+
+
+@pytest.mark.parametrize("case", [c for c in FIXTURE.cases if not c.pending], ids=lambda c: c.id)
+def test_the_index_does_not_depend_on_the_parsed_info(case):
+    plain = solana.classify_solana(_without_info(case.tx), {case.own}, _lookup(case.decoder_listed))
+    assert _legs(plain) == _legs(_classify(case))
+
+
+def test_the_index_of_a_wrap_with_and_without_info():
+    ins = [
+        {
+            "programId": solana.SYSTEM_PROGRAM,
+            "parsed": {
+                "type": "transfer",
+                "info": {"source": A, "destination": WSOL_ACCOUNT, "lamports": 10**9},
+            },
+        },
+        {
+            "programId": solana.TOKEN_PROGRAM,
+            "parsed": {"type": "syncNative", "info": {"account": WSOL_ACCOUNT}},
+        },
+    ]
+    tx = _wsol(2039280, 2039280 + 10**9, 0, 10**9, 5 * 10**9, 4 * 10**9 - 5000, ins)
+    with_info = solana.classify_solana(tx, {A}, _lookup(False))
+    without = solana.classify_solana(_without_info(tx), {A}, _lookup(False))
+    # The SOL leg on the System call, the wSOL leg on the Token call.
+    assert [m.index for m in with_info.legs] == ["0", "1", "fee"]
+    assert _legs(without) == _legs(with_info)
 
 
 def test_two_legs_on_one_index_and_role_stay_apart():

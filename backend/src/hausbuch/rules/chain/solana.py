@@ -21,14 +21,22 @@ Readings of step 2 (docs/phases/phase-7.md §15.1, reported with the step):
 - the rent of a third party's token account the own address opened beside a token leg (a send
   that creates the recipient's account) is read from the record: the new account's own lamports,
   folded into the `fee` movement (D181 (d) „the rent as fee“), never fetched from the RPC;
+  a new foreign account of the native mint counts only its lamports beyond the wrapped amount
+  (the amount is a SOL leg that was sent, never fee);
 - the rent a third party paid into an own token account it opened is a SOL `in` leg of its own
-  (index `rent`, uncategorized), never part of the shape and never spam: the own address can
-  close the account and keep it, and the reconciliation counts it (D186 (2));
+  (index `rent`, kind `airdrop`: received without anything given), never part of the shape: in
+  a spam group a leg of that hidden group, beside a normal receive the same `airdrop` leg; the
+  own address can close the account and keep it, and the reconciliation counts it (D186 (2));
 - a token credited through the Token programs alone is a transfer; through any other program,
   without a decoder that reads it, an `airdrop` (review); spam by D187 (1) either way;
-- a leg's index is the first top-level instruction that names one of its accounts, else the
-  first transfer of its kind, else the first instruction that is not a compute-budget, memo or
-  account-creation call, else "0"; a second leg on the same index and role gets ".2", ".3".
+- a token balance row without an `owner` is resolved by its account's address against the own
+  token accounts the caller knows; a row that stays unresolved, or a Token program call with no
+  token balance rows at all, raises `wallet.record_unreadable` (never a leg dropped);
+- a leg's index uses only the top-level instructions' positions and program ids (never parsed
+  `type` or `info`): a token leg's is the first Token program call, a SOL leg's the first
+  System program call, else the first call that is not a compute-budget, memo or
+  account-creation call, else "0"; besides `fee` and `rent`; a second leg on the same index and
+  role gets ".2", ".3".
 """
 
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -77,12 +85,8 @@ PLAIN_PROGRAMS = frozenset(
         MEMO_PROGRAM,
     }
 )
-# Calls that set a transaction up and never carry a leg (the third step of the index rule).
+# Calls that set a transaction up and never carry a leg (the second step of the index rule).
 _SETUP_PROGRAMS = frozenset({COMPUTE_BUDGET_PROGRAM, MEMO_PROGRAM, ATA_PROGRAM})
-_TOKEN_MOVES = frozenset(
-    {"transfer", "transferChecked", "mintTo", "mintToChecked", "burn", "burnChecked"}
-)
-_SOL_MOVES = frozenset({"transfer", "transferWithSeed", "createAccount", "createAccountWithSeed"})
 
 QUESTION_UNKNOWN = "Was ist diese Transaktion?"
 
@@ -164,20 +168,12 @@ def block_time(tx: Mapping[str, JsonValue]) -> datetime:
 
 @dataclass(frozen=True)
 class Instruction:
-    """One instruction, top-level or inner, as jsonParsed gives it."""
+    """One instruction, top-level or inner, as jsonParsed gives it (its parsed `info` is never
+    read: a provider may leave it out)."""
 
     position: int  # the top-level instruction it belongs to
     program: str
     type: str | None
-    accounts: frozenset[str]  # every address its parsed info names
-
-
-def _named(info: object) -> set[str]:
-    if isinstance(info, Mapping):
-        return {v for value in info.values() for v in _named(value)}
-    if isinstance(info, list):
-        return {v for value in info for v in _named(value)}
-    return {info} if isinstance(info, str) else set()
 
 
 def _instruction(position: int, raw: object, keys: Sequence[str]) -> Instruction:
@@ -187,9 +183,7 @@ def _instruction(position: int, raw: object, keys: Sequence[str]) -> Instruction
         program = keys[cast(int, ins["programIdIndex"])]
     parsed = ins.get("parsed")
     kind = _obj(parsed).get("type") if isinstance(parsed, Mapping) else None
-    info = _obj(parsed).get("info") if isinstance(parsed, Mapping) else None
-    named = _named(info) | {str(a) for a in _list(ins.get("accounts")) if isinstance(a, str)}
-    return Instruction(position, str(program), str(kind) if kind else None, frozenset(named))
+    return Instruction(position, str(program), str(kind) if kind else None)
 
 
 def instructions(tx: Mapping[str, JsonValue]) -> tuple[list[Instruction], list[Instruction]]:
@@ -217,20 +211,51 @@ def program_calls(tx: Mapping[str, JsonValue]) -> list[tuple[str, str | None]]:
 class _TokenRow:
     index: int
     mint: str
-    owner: str | None
+    mine: bool  # the token account belongs to an own address
     amount: int
 
 
-def _token_rows(meta: Mapping[str, JsonValue], key: str) -> list[_TokenRow]:
+def _unreadable(tx: Mapping[str, JsonValue]) -> E.RuleError:
+    """A record whose token legs cannot be read: never a group with a leg dropped. The message
+    names the signature only (no address, no amount)."""
+    return E.RuleError(
+        E.WALLET_RECORD_UNREADABLE,
+        f"Die Transaktion {signature(tx)} lässt sich nicht vollständig lesen.",
+    )
+
+
+def _token_rows(
+    tx: Mapping[str, JsonValue],
+    key: str,
+    keys: Sequence[str],
+    own: Collection[str],
+    own_token_accounts: Collection[str] | None,
+    opened: Callable[[int], bool],
+) -> list[_TokenRow]:
+    """The token balance rows, each resolved as own or not: by its `owner` when the record
+    carries one; else by the token account's address against the own token accounts the caller
+    knows (`own_token_accounts`, the sync's getTokenAccountsByOwner set and every token account
+    of its stored groups). A row without an owner stays unresolved, and the record unreadable,
+    when the caller passed no set, or when its account is opened in this transaction and is
+    not in the set (a new account the set cannot know yet)."""
     rows = []
-    for raw in _list(meta.get(key)):
+    for raw in _list(_obj(tx["meta"]).get(key)):
         row = _obj(raw)
+        index = cast(int, row["accountIndex"])
         owner = row.get("owner")
+        if isinstance(owner, str):
+            mine = owner in own
+        elif own_token_accounts is not None and keys[index] in own_token_accounts:
+            mine = True
+        elif own_token_accounts is not None and not opened(index):
+            mine = False
+        else:
+            raise _unreadable(tx)
         rows.append(
             _TokenRow(
-                index=cast(int, row["accountIndex"]),
+                index=index,
                 mint=str(row["mint"]),
-                owner=str(owner) if isinstance(owner, str) else None,
+                mine=mine,
                 amount=int(str(_obj(row["uiTokenAmount"])["amount"])),
             )
         )
@@ -255,27 +280,47 @@ class _Balances:
         return before, after
 
 
-def _balances(tx: Mapping[str, JsonValue]) -> _Balances:
+def _calls_a_token_program(tx: Mapping[str, JsonValue]) -> bool:
+    top, inner = instructions(tx)
+    return any(i.program in TOKEN_PROGRAMS for i in [*top, *inner])
+
+
+def _balances(
+    tx: Mapping[str, JsonValue],
+    own: Collection[str],
+    own_token_accounts: Collection[str] | None = None,
+) -> _Balances:
     meta = _obj(tx["meta"])
     keys = account_keys(tx)
     pre = [int(cast(int, v)) for v in _list(meta["preBalances"])]
     post = [int(cast(int, v)) for v in _list(meta["postBalances"])]
     if len(keys) != len(pre) or len(keys) != len(post):
         raise ValueError("a balance per account key")
+    raw_pre = _list(meta.get("preTokenBalances"))
+    raw_post = _list(meta.get("postTokenBalances"))
+    if not raw_pre and not raw_post and _calls_a_token_program(tx):
+        # A Token program call leaves a balance row behind (the account it touched); a record
+        # without either array cannot say which token moved.
+        raise _unreadable(tx)
+    before = {cast(int, _obj(r)["accountIndex"]) for r in raw_pre}
+
+    def opened(i: int) -> bool:
+        return i not in before and pre[i] == 0
+
     return _Balances(
         keys=keys,
         pre=pre,
         post=post,
-        pre_tokens=_token_rows(meta, "preTokenBalances"),
-        post_tokens=_token_rows(meta, "postTokenBalances"),
+        pre_tokens=_token_rows(tx, "preTokenBalances", keys, own, own_token_accounts, opened),
+        post_tokens=_token_rows(tx, "postTokenBalances", keys, own, own_token_accounts, opened),
         fee=int(cast(int, meta["fee"])),
     )
 
 
-def _own_token_accounts(b: _Balances, own: Collection[str]) -> dict[int, str]:
+def _own_token_accounts(b: _Balances) -> dict[int, str]:
     """Each token account an own address owns before or after the transaction, by its index,
     with its mint (a closed account appears only before, a new one only after)."""
-    return {r.index: r.mint for r in b.pre_tokens + b.post_tokens if r.owner in own}
+    return {r.index: r.mint for r in b.pre_tokens + b.post_tokens if r.mine}
 
 
 def _sol_of_token_account(b: _Balances, i: int, mint: str) -> int:
@@ -288,12 +333,18 @@ def _sol_of_token_account(b: _Balances, i: int, mint: str) -> int:
     return delta
 
 
-def solana_deltas(tx: Mapping[str, JsonValue], own: Collection[str]) -> list[SolanaDelta]:
+def solana_deltas(
+    tx: Mapping[str, JsonValue],
+    own: Collection[str],
+    own_token_accounts: Collection[str] | None = None,
+) -> list[SolanaDelta]:
     """D181 (d): the own addresses' SOL delta over their main accounts and their token accounts
     (so a token account's rent moving from the main account is no delta), without the fee they
-    paid; one delta per mint over the token balances they own. SOL first, then by mint."""
-    b = _balances(tx)
-    tokens = _own_token_accounts(b, own)
+    paid; one delta per mint over the token balances they own. SOL first, then by mint.
+    `own_token_accounts` resolves a token balance row that carries no `owner` (_token_rows);
+    a row it cannot resolve raises `wallet.record_unreadable`, never a dropped leg."""
+    b = _balances(tx, own, own_token_accounts)
+    tokens = _own_token_accounts(b)
     mains = {i for i, k in enumerate(b.keys) if k in own and i not in tokens}
     sol = sum(b.lamports(i) for i in mains)
     sol += sum(_sol_of_token_account(b, i, mint) for i, mint in tokens.items())
@@ -301,13 +352,13 @@ def solana_deltas(tx: Mapping[str, JsonValue], own: Collection[str]) -> list[Sol
         sol += b.fee
     deltas: list[SolanaDelta] = []
     if sol:
-        rent = sol == -foreign_rent(tx, own) or sol == received_rent(tx, own)
+        rent = sol == -_foreign_rent(b, own) or sol == _received_rent(b, own)
         deltas.append(SolanaDelta(asset_key=AssetKey(chain=Chain.SOLANA), units=sol, rent=rent))
     per_mint: dict[str, int] = {}
     per_account: dict[str, dict[int, int]] = {}
     for sign, rows in ((-1, b.pre_tokens), (1, b.post_tokens)):
         for r in rows:
-            if r.owner in own:
+            if r.mine:
                 per_mint[r.mint] = per_mint.get(r.mint, 0) + sign * r.amount
                 accounts = per_account.setdefault(r.mint, {})
                 accounts[r.index] = accounts.get(r.index, 0) + sign * r.amount
@@ -324,29 +375,45 @@ def solana_deltas(tx: Mapping[str, JsonValue], own: Collection[str]) -> list[Sol
     return deltas
 
 
-def foreign_rent(tx: Mapping[str, JsonValue], own: Collection[str]) -> int:
+def foreign_rent(
+    tx: Mapping[str, JsonValue],
+    own: Collection[str],
+    own_token_accounts: Collection[str] | None = None,
+) -> int:
     """The lamports the own fee payer placed in token accounts of others it opened in this
     transaction (a send that creates the recipient's account): D181 (d)'s rent as fee."""
-    b = _balances(tx)
+    return _foreign_rent(_balances(tx, own, own_token_accounts), own)
+
+
+def _foreign_rent(b: _Balances, own: Collection[str]) -> int:
+    """Each new foreign account's SOL as _sol_of_token_account counts it: its lamports, less
+    the wrapped amount of a wSOL account (that amount was sent, it is no rent)."""
     if not b.keys or b.keys[0] not in own:
         return 0
-    opened = {r.index for r in b.post_tokens if r.owner not in own} - {
-        r.index for r in b.pre_tokens
-    }
-    return sum(b.post[i] for i in opened if b.pre[i] == 0 and b.keys[i] not in own)
-
-
-def received_rent(tx: Mapping[str, JsonValue], own: Collection[str]) -> int:
-    """The rent a third party paid into own token accounts it opened in this transaction."""
-    b = _balances(tx)
-    if b.keys and b.keys[0] in own:
-        return 0
-    opened = {r.index for r in b.post_tokens if r.owner in own} - {r.index for r in b.pre_tokens}
+    before = {r.index for r in b.pre_tokens}
+    opened = {r.index: r.mint for r in b.post_tokens if not r.mine and r.index not in before}
     return sum(
         _sol_of_token_account(b, i, mint)
-        for i, mint in _own_token_accounts(b, own).items()
-        if i in opened and b.pre[i] == 0
+        for i, mint in opened.items()
+        if b.pre[i] == 0 and b.keys[i] not in own
     )
+
+
+def received_rent(
+    tx: Mapping[str, JsonValue],
+    own: Collection[str],
+    own_token_accounts: Collection[str] | None = None,
+) -> int:
+    """The rent a third party paid into own token accounts it opened in this transaction."""
+    return _received_rent(_balances(tx, own, own_token_accounts), own)
+
+
+def _received_rent(b: _Balances, own: Collection[str]) -> int:
+    if b.keys and b.keys[0] in own:
+        return 0
+    before = {r.index for r in b.pre_tokens}
+    opened = {r.index: r.mint for r in b.post_tokens if r.mine and r.index not in before}
+    return sum(_sol_of_token_account(b, i, mint) for i, mint in opened.items() if b.pre[i] == 0)
 
 
 # --- the group (D183, D187) ---------------------------------------------------------------
@@ -418,20 +485,16 @@ def known_token(mint: str, held: Collection[str]) -> bool:
     return asset_registry().token(Chain.SOLANA, mint) is not None or mint in held
 
 
-def _leg_index(
-    leg: SolanaDelta,
-    accounts: set[str],
-    top: Sequence[Instruction],
-    inner: Sequence[Instruction],
-) -> str:
-    for ins in sorted([*top, *inner], key=lambda i: i.position):
-        if ins.accounts & accounts:
-            return str(ins.position)
-    token = leg.asset_key.contract is not None
+def _leg_index(leg: SolanaDelta, top: Sequence[Instruction]) -> str:
+    """The leg's index in movement_hash (D182 (2)), from what every jsonParsed record carries:
+    the top-level instructions' positions and program ids, never a parsed `type` or `info`
+    (a provider may leave either out, and the hash must not change with it). A token leg's
+    index is the first call to a Token program, a SOL leg's the first call to the System
+    program; else the first call that is not a compute-budget, memo or account-creation call;
+    else "0"."""
+    wanted = TOKEN_PROGRAMS if leg.asset_key.contract is not None else {SYSTEM_PROGRAM}
     for ins in top:
-        if token and ins.program in TOKEN_PROGRAMS and ins.type in _TOKEN_MOVES:
-            return str(ins.position)
-        if not token and ins.program == SYSTEM_PROGRAM and ins.type in _SOL_MOVES:
+        if ins.program in wanted:
             return str(ins.position)
     for ins in top:
         if ins.program not in _SETUP_PROGRAMS:
@@ -471,12 +534,14 @@ def classify_solana(
     *,
     held: Collection[str] = (),
     label: ProviderLabel | None = None,
+    own_token_accounts: Collection[str] | None = None,
 ) -> SolanaGroup:
     """D183's shape rules over one record of the own addresses (the main address and its
     registered stake accounts). The caller links own counterparts and exchange hashes
-    afterwards (D184) and routes the group (D186); nothing here is priced."""
-    b = _balances(tx)
-    top, inner = instructions(tx)
+    afterwards (D184) and routes the group (D186); nothing here is priced.
+    `own_token_accounts` as in solana_deltas."""
+    b = _balances(tx, own, own_token_accounts)
+    top, _ = instructions(tx)
     payer = bool(b.keys) and b.keys[0] in own
     signed = bool(signers(tx) & set(own))
     base = dict(
@@ -492,28 +557,20 @@ def classify_solana(
         legs = (_fee_leg(fee),) if fee else ()
         return SolanaGroup(status="failed", kind=GroupKind.FAILED, legs=legs, **base)
 
-    deltas = solana_deltas(tx, own)
+    deltas = solana_deltas(tx, own, own_token_accounts)
     sol = next((d for d in deltas if d.asset_key.contract is None), None)
     rest = [d for d in deltas if d.asset_key.contract is not None]
     rent_in = 0
     if sol is not None and sol.units < 0:
-        folded = min(-sol.units, foreign_rent(tx, own))
+        folded = min(-sol.units, _foreign_rent(b, own))
         fee += folded
         units = sol.units + folded
         sol = sol.model_copy(update={"units": units, "rent": False}) if units else None
     elif sol is not None and sol.units > 0:
-        rent_in = min(sol.units, received_rent(tx, own))
+        rent_in = min(sol.units, _received_rent(b, own))
         units = sol.units - rent_in
         sol = sol.model_copy(update={"units": units, "rent": False}) if units else None
     shaped = ([sol] if sol is not None else []) + rest
-
-    tokens = _own_token_accounts(b, own)
-    mains = {k for k in b.keys if k in own}
-
-    def accounts(d: SolanaDelta) -> set[str]:
-        if d.asset_key.contract is None:
-            return set(mains)
-        return {b.keys[i] for i, mint in tokens.items() if mint == d.asset_key.contract}
 
     def leg(d: SolanaDelta, kind: MovementKind) -> SolanaLeg:
         return SolanaLeg(
@@ -521,7 +578,7 @@ def classify_solana(
             kind=kind,
             role="in" if d.units > 0 else "out",
             units=abs(d.units),
-            index=_leg_index(d, accounts(d), top, inner),
+            index=_leg_index(d, top),
         )
 
     # D187 (1): a token credited while the own address signed nothing, neither listed nor held.
@@ -603,10 +660,12 @@ def classify_solana(
 
     legs += [leg(d, MovementKind.SPAM) for d in spam]
     if rent_in:
+        # Received without anything given: an airdrop (a lot); in a spam group a leg of that
+        # hidden group, never a card of its own (it recurs with every spam attack).
         legs.append(
             SolanaLeg(
                 asset_key=AssetKey(chain=Chain.SOLANA),
-                kind=MovementKind.UNCATEGORIZED,
+                kind=MovementKind.AIRDROP,
                 role="in",
                 units=rent_in,
                 index="rent",

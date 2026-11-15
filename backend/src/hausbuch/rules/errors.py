@@ -239,6 +239,9 @@ WALLET_UNRECONCILED = "wallet.unreconciled"  # Σ movements != the chain's balan
 WALLET_COINS_LEFT = "wallet.coins_left"  # a balance-only address below its linked deposits
 WALLET_SYNC_DEFERRED = "wallet.sync_deferred"  # the run's budget ran out; a page note, no card
 WALLET_CHANGE_CANDIDATE = "wallet.change_candidate"  # an own spend's unregistered output (D185)
+# A record whose token legs cannot be read (a token balance row without an owner the sync can
+# place, or a Token program call without token balances): the sync stops, never drops a leg.
+WALLET_RECORD_UNREADABLE = "wallet.record_unreadable"
 GROUP_UNKNOWN = "group.unknown"  # no rule reads the transaction (D183 (3f))
 GROUP_CONTRACT_CALL = "group.contract_call"  # a shape no rule reads (D183 (4))
 GROUP_UNPRICED = "group.unpriced"  # a leg without the day's price (D188 (4))
