@@ -500,6 +500,9 @@ def test_a_fund_the_report_lists_with_nothing_booked_is_listed_unvalued(
     # The month-end stores the cash only and says one position is missing.
     captured = run(ws, net_worth.capture_month_end, ON, now=NOW)
     assert captured.run.rows == 1 and captured.unvalued_positions == 1
+    # The unvalued line stores no row, so a second capture finds nothing changed.
+    again = run(ws, net_worth.capture_month_end, ON, now=NOW)
+    assert again.outcome is SnapshotOutcome.UNCHANGED and again.unvalued_positions == 1
     # A report dated after the day asked does not reach back.
     before = read(ws, net_worth.net_worth, date(2026, 9, 29))
     assert before.unvalued_positions == 0 and fund not in {line.asset_id for line in before.lines}
