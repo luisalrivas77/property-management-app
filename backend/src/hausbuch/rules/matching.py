@@ -2217,6 +2217,17 @@ _PRIVATE_ORDER: tuple[Callable[[MatchTransaction, MatchContext], AllocationSet |
 )
 
 
+def own_rule_blind(tx: MatchTransaction, context: MatchContext) -> bool:
+    """D160 amended (5): a private line whose counterparty IBAN is another own account's (an
+    account's IBAN, a card's confirmed payment IBAN, a depot's or an exchange's deposit IBAN:
+    context.own_account_hmacs) is booked by the transfer matcher, never by a learned rule."""
+    return (
+        context.account_purpose is AccountPurpose.PRIVATE
+        and tx.counterparty_iban_hmac is not None
+        and tx.counterparty_iban_hmac in context.own_account_hmacs
+    )
+
+
 def deterministic_answer(
     rules: Sequence[MatchingRule],
     tx: MatchTransaction,
@@ -2230,8 +2241,13 @@ def deterministic_answer(
     D158's question; the rent, loan, Hausgeld and
     owner-transfer matchers never run there. A standing rule hit (confidence 1) wins at once;
     a rule's near-miss proposal (D49) only when no matcher answers. Every answer is one the
-    account's purpose takes (D159)."""
-    found = rule_answer(rules, tx, context, history)
+    account's purpose takes (D159).
+
+    D160 amended (5), 15 Nov 2026: on a private account a line whose counterparty IBAN is
+    another own account's (own_rule_blind) is never a rule's: its transfer by that IBAN comes
+    first, whatever a learned rule on its payee's name or another IBAN would say (a card not
+    in the app paid to the same issuer as a card that is). The rental order is unchanged."""
+    found = None if own_rule_blind(tx, context) else rule_answer(rules, tx, context, history)
     if found is not None and found.confidence == EXACT:
         return found
     order = _PRIVATE_ORDER if context.account_purpose is AccountPurpose.PRIVATE else _RENTAL_ORDER

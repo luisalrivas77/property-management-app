@@ -221,6 +221,18 @@ def _current_links(conn: Connection) -> list[Row]:
     return current
 
 
+def matcher_linked_ids(conn: Connection) -> set[UUID]:
+    """Every leg of a current link the matcher wrote (_current_links: its legs still booked
+    as a transfer). D160 amended (5): such a line is no earlier answer for a name rule
+    (services.matching.name_lines)."""
+    return {
+        i
+        for r in _current_links(conn)
+        if r.matched_by == TransferMatchedBy.MATCHER.value
+        for i in _leg_ids(r)
+    }
+
+
 def _linked_ids(conn: Connection) -> set[UUID]:
     """Every leg of a current link (_current_links)."""
     return {i for r in _current_links(conn) for i in _leg_ids(r)}

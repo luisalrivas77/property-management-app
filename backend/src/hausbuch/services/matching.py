@@ -135,7 +135,7 @@ from . import allocations, rules_learned, workspace_settings
 from .context import CommandContext
 from .documents import DOCUMENT_EVIDENCE_KINDS, EVIDENCE_KINDS
 from .tenancies import _rows_in_force, rent_on  # rent rows no correction supersedes
-from .transfers import own_account_hmacs
+from .transfers import matcher_linked_ids, own_account_hmacs
 
 C = AllocationCategory
 
@@ -1001,7 +1001,9 @@ def deterministic_set(
     Rental: learned rules, then the matchers, then the document match (§8.1); the rules'
     answer is either a standing hit (confidence 1, used at once) or a near-miss proposal
     (D49), which the matchers come before: an exact rent, loan, owner or document match wins
-    over it. Private: learned rules, the document match, then the tenant / lender question.
+    over it. Private: learned rules, the document match, then the tenant / lender question;
+    a line naming another own account's IBAN is the transfer matcher's, never a rule's (D160
+    amended (5), rules.matching.own_rule_blind).
     `skip_rule_categories`: a rule booking one of these codes is left out (the re-sort into
     the subcategories, services.household_resort: a rule learned on a group's fallback would
     only book the line back where it is)."""
@@ -1194,11 +1196,29 @@ def name_lines(conn: Connection, tx: MatchTransaction) -> list[NameLine]:
     name, each with its current rows (none superseded), oldest first. Every private account,
     since a name rule hits the lines of all of them. Lines merged away as a duplicate are left
     out; whether the line's name rule hits one is the caller's (rules.matching.name_hits,
-    rule_name_hits)."""
+    rule_name_hits).
+
+    D160 amended (5), 15 Nov 2026: a line that is a transfer between own accounts is no
+    earlier answer for its payee's name and is left out, so it neither refuses a rule
+    (rule.too_broad, rule.conflicts) nor is named or re-booked by „Diese auch auf …
+    umbuchen“: a line whose counterparty IBAN is another own account's (no rule ever books
+    it, rules.matching.own_rule_blind), and a confirmed line the transfer matcher linked
+    (a current matcher link, services.transfers.matcher_linked_ids). A card not in the app
+    paid to the same issuer as a card that is: the other card's settlements are not the
+    payee's answers. A link a person made still counts (rebook_blockers names it)."""
     if not tx.counterparty_name or tx.amount == 0:
         return []
     t = transaction_table.c
     a = allocation_table.c
+    own = account_table.alias("own")
+    own_iban = (
+        exists()
+        .where(
+            own.c.id != t.account_id,
+            func.coalesce(own.c.iban_hmac, own.c.payment_iban_hmac) == t.counterparty_iban_hmac,
+        )
+        .correlate(transaction_table)
+    )
     rows = conn.execute(
         select(
             t.id,
@@ -1227,13 +1247,14 @@ def name_lines(conn: Connection, tx: MatchTransaction) -> list[NameLine]:
             t.id != tx.id,
             t.excluded_as_duplicate_of.is_(None),
             a.status != AllocationStatus.SUPERSEDED.value,
+            ~own_iban,
         )
         .order_by(t.booking_date, t.id, a.recorded_at, a.id)
     ).all()
     lines: dict[UUID, list[Row]] = {}
     for row in rows:
         lines.setdefault(row.id, []).append(row)
-    return [
+    found = [
         NameLine(
             transaction_id=line_id,
             counterparty_name=parts[0].counterparty_name,
@@ -1243,6 +1264,10 @@ def name_lines(conn: Connection, tx: MatchTransaction) -> list[NameLine]:
         )
         for line_id, parts in lines.items()
     ]
+    if not any(line.confirmed for line in found):
+        return found
+    linked = matcher_linked_ids(conn)
+    return [line for line in found if not (line.confirmed and line.transaction_id in linked)]
 
 
 def name_history(conn: Connection, tx: MatchTransaction) -> list[NameHistory]:
