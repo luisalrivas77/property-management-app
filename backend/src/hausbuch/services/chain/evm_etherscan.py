@@ -83,6 +83,15 @@ def _no_rows(message: str) -> bool:
     return text.startswith("no ") and text.endswith(" found")
 
 
+def _reverted(error: object, message: object) -> bool:
+    """A reverted call (JSON-RPC error code 3, or a message starting „execution reverted“):
+    an in-band answer of the contract, read before the refusal keywords so a token's own
+    revert reason never reads as the provider refusing the key."""
+    if isinstance(error, dict) and error.get("code") == 3:
+        return True
+    return isinstance(message, str) and message.strip().lower().startswith("execution reverted")
+
+
 def _refusal(message: str) -> ChainSourceError:
     text = message.lower()
     if "rate limit" in text:
@@ -142,6 +151,10 @@ class EtherscanSource:
         if "error" in answer:  # the proxy module's JSON-RPC error
             error = answer["error"]
             message = error.get("message") if isinstance(error, dict) else error
+            if _reverted(error, message):
+                # the contract's own answer, whatever its revert text says („execution
+                # reverted: Access denied“ is no key refusal; review of PR #397)
+                raise _InBand(SOURCE_FAILED)
             refused = _refusal(str(message or ""))
             if refused.code == SOURCE_FAILED:
                 raise _InBand(SOURCE_FAILED)
