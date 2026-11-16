@@ -94,6 +94,9 @@ from .events import append_event
 PERSON = "routing.person"
 # The reason „Antwort zurücknehmen“ records the re-proposed group under.
 PERSON_UNDONE = "routing.person_undone"
+# The reason a spam verdict's sweep (demote, promote, the „Spam“ answer's other receipts)
+# records the groups it marks under: no person answered those, so none is listed as answered.
+PERSON_SPAM = "routing.person_spam"
 _LIMIT = 200
 _ANSWERED_LIMIT = 50
 
@@ -427,6 +430,20 @@ def _answered_by_person():
     )
 
 
+def _spam_leg_clause():
+    """The group holds a live spam leg (a hidden token's receipt): „Kein Spam“ shows it."""
+    g, m = group_table.c, movement_table.c
+    return (
+        select(m.id)
+        .where(
+            m.group_id == g.id,
+            m.superseded_by.is_(None),
+            m.kind == MovementKind.SPAM.value,
+        )
+        .exists()
+    )
+
+
 def _linked_clause():
     """A transfer link not superseded touches one of the group's live legs."""
     g, m, k = group_table.c, movement_table.c, link_table.c
@@ -466,6 +483,7 @@ def answered_groups(
             g.superseded_by.is_(None),
             g.status == GroupStatus.CONFIRMED.value,
             g.kind != GroupKind.SPAM.value,
+            ~_spam_leg_clause(),
             _answered_by_person(),
         )
         .order_by(g.occurred_at.desc(), g.id)
@@ -810,6 +828,8 @@ def undo_group(ctx: CommandContext, group_id: UUID) -> UUID:
         .limit(1)
     ).first()
     moves = _live_movements(ctx, group_id)
+    if any(m.kind == MovementKind.SPAM.value for m in moves):
+        raise RuleError(WALLET_ANSWER_UNFIT, _UNDO_SPAM)
     if answered is None or row.status != GroupStatus.CONFIRMED.value or not moves:
         raise RuleError(WALLET_ANSWER_UNFIT, _NOT_ANSWERED)
     if _linked(ctx, [m.id for m in moves]):
@@ -821,19 +841,23 @@ def undo_group(ctx: CommandContext, group_id: UUID) -> UUID:
     ).first()
     question = first.question if had_legs is not None else None  # never a change question
 
+    # A token the sync first read as spam and „Kein Spam“ showed again goes back to what
+    # promote made of it (an airdrop to answer), never to a proposed spam leg.
     def change(m) -> _Change:
         root = roots[m.id]
+        kind = MovementKind.AIRDROP.value if root.kind == MovementKind.SPAM.value else root.kind
         return {
-            "kind": root.kind,
+            "kind": kind,
             "status": MovementStatus.PROPOSED.value,
             "eur_amount": root.eur_amount,
         }
 
+    first_kind = GroupKind.AIRDROP if first.kind == GroupKind.SPAM.value else GroupKind(first.kind)
     return _supersede(
         ctx,
         row,
         moves,
-        kind=GroupKind(first.kind),
+        kind=first_kind,
         change=change,
         reason=PERSON_UNDONE,
         question=question,
@@ -961,6 +985,7 @@ def _retarget(ctx: CommandContext, asset_id: UUID, targets_of, new_kind, group_k
             moves,
             kind=group_kind(row) if only else GroupKind(row.kind),
             change=lambda m, targets=targets: new_kind if m.id in targets else None,
+            reason=PERSON_SPAM,
         )
         n += 1
     return n

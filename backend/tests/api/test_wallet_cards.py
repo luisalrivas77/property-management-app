@@ -699,6 +699,7 @@ def test_demote_then_promote_leave_the_swap_and_the_payment_as_they_were(client_
     assert ok(client_a.post(f"/api/assets/{token}/demote"))["groups"] == 2
     assert _legs_of(dbname, swap, pay) == before
     assert ok(client_a.get(f"/api/wallets/{account}/groups")) == []
+    assert ok(client_a.get(f"/api/wallets/{account}/answered")) == []  # a sweep is no answer
     assert _position(client_a, "USDC") is None  # hidden until „Kein Spam“
 
     assert ok(client_a.post(f"/api/assets/{token}/promote"))["groups"] == 2
@@ -842,6 +843,48 @@ def test_a_spam_group_is_not_taken_back_by_undo(client_a, token_wallet, dbname):
     assert ok(client_a.get(f"/api/wallets/{account}/answered")) == []
     refused = client_a.post(f"/api/groups/{spam}/undo")
     assert refused.status_code == 422 and refused.json()["code"] == "wallet.answer_unfit"
+
+
+def test_a_confirmation_is_taken_back_too(client_a, token_wallet, dbname):
+    """„Bestätigen“ is an answer as well: taken back, the card shows again as the sync read it."""
+    ws, account, asset, group, _ = token_wallet
+    ok(client_a.post(f"/api/groups/{group}/confirm"))
+    assert ok(client_a.get(f"/api/wallets/{account}/groups")) == []
+    (listed,) = ok(client_a.get(f"/api/wallets/{account}/answered"))
+    assert listed["id"] == str(group) and listed["undoable"] is True
+    again = ok(client_a.post(f"/api/groups/{group}/undo"))["group_id"]
+    (card,) = ok(client_a.get(f"/api/wallets/{account}/groups"))
+    assert card["id"] == again and card["kind"] == "airdrop" and card["confirmable"] is True
+    assert [(leg["kind"], leg["status"]) for leg in card["legs"]] == [("airdrop", "proposed")]
+
+
+def test_undo_after_kein_spam_proposes_an_airdrop_not_spam(client_a, fresh_workspaces, dbname):
+    """A token the sync read as spam, shown again with „Kein Spam“ and answered: taking the
+    answer back proposes the airdrop „Kein Spam“ made of it, never a proposed spam leg."""
+    ws = fresh_workspaces[0]
+    with _admin(dbname) as conn:
+        account = _wallet(conn, ws)
+        address = _address(conn, ws, account)
+        token = _token(conn, ws, "JUNK", HELD, 18)
+        conn.execute("UPDATE asset SET spam = true WHERE id = %s", (token,))
+        _seed_group(
+            conn,
+            ws,
+            account,
+            address,
+            [(token, "spam", "confirmed", "9")],
+            kind="spam",
+            status="confirmed",
+        )
+    ok(client_a.post(f"/api/assets/{token}/promote"))
+    (card,) = ok(client_a.get(f"/api/wallets/{account}/groups"))
+    answered = ok(client_a.post(f"/api/groups/{card['id']}/answer", json={"answer": "reward"}))
+    again = ok(client_a.post(f"/api/groups/{answered['group_id']}/undo"))["group_id"]
+    (card,) = ok(client_a.get(f"/api/wallets/{account}/groups"))
+    assert card["id"] == again and card["kind"] == "airdrop"
+    assert [(leg["kind"], leg["status"]) for leg in card["legs"]] == [("airdrop", "proposed")]
+    (row,) = _rows(dbname, "SELECT spam FROM asset WHERE id = %s", token)
+    assert row.spam is False
 
 
 def test_a_throttled_run_and_an_error_inside_hausbuch_stay_off_zu_pruefen(
