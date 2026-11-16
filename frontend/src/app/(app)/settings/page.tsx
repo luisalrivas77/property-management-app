@@ -3,7 +3,8 @@
 // Einstellungen (§9.1, §6.7): the user's passkeys (list, add, rename, remove), the household's
 // members (invite → one-time enrollment link, pending invites), the two AI switches
 // (docs/phases/phase-2.md D42), the reminder email switch (docs/phases/phase-5.md D123), the
-// email-in address (docs/phases/phase-5.md §5.2) and signing out.
+// email-in address (docs/phases/phase-5.md §5.2), the provider keys typed in the app
+// (docs/phases/phase-6.md D260) and signing out.
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
@@ -13,6 +14,7 @@ import { addPasskey, defaultPasskeyLabel } from "@/auth/passkeys";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { AiSettings } from "./AiSettings";
+import { AppSecrets } from "./AppSecrets";
 import { InboxAddress } from "./InboxAddress";
 import { Members } from "./Members";
 import { ReminderSettings } from "./ReminderSettings";
@@ -152,6 +154,9 @@ export default function SettingsPage() {
 
       <h2>Posteingang-Adresse</h2>
       <InboxAddress />
+
+      <h2>Zugangsschlüssel (API keys)</h2>
+      <AppSecrets />
 
       <h2>Abmelden</h2>
       <div className="row">

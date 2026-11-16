@@ -1970,6 +1970,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/app-secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** App Secrets Get */
+        get: operations["app_secrets_get_api_app_secrets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/app-secrets/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * App Secret Set
+         * @description The value is encrypted before it reaches the database; the answer names its source.
+         */
+        put: operations["app_secret_set_api_app_secrets__name__put"];
+        post?: never;
+        /** App Secret Delete */
+        delete: operations["app_secret_delete_api_app_secrets__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports/{import_id}": {
         parameters: {
             query?: never;
@@ -3323,7 +3361,8 @@ export interface paths {
         /**
          * Inbound Mail Address
          * @description Signed-in members only, as every domain route: the token is what keeps strangers'
-         *     mail out of the label, so it is shown to members and nowhere else.
+         *     mail out of the label, so it is shown to members and nowhere else. The workspace's
+         *     values: the container's, or the ones typed in the app (phase 6 D260).
          */
         get: operations["inbound_mail_address_api_inbound_mail_address_get"];
         put?: never;
@@ -4422,6 +4461,68 @@ export interface components {
              * @default true
              */
             used: boolean;
+        };
+        /**
+         * AppSecretGroup
+         * @enum {string}
+         */
+        AppSecretGroup: "ai" | "chains" | "bank" | "mail";
+        /**
+         * AppSecretName
+         * @description app_secret.name (migration 0045's CHECK), in the card's order.
+         * @enum {string}
+         */
+        AppSecretName: "anthropic_api_key" | "etherscan_key" | "solana_rpc_url" | "bsc_rpc_url" | "helius_key" | "coingecko_key" | "fints_product_id" | "tem_secret_key" | "tem_project_id" | "mail_from" | "inbox_imap_user" | "inbox_imap_password" | "inbox_address" | "inbox_label";
+        /**
+         * AppSecretPut
+         * @description PUT /app-secrets/{name}: the value, stored encrypted and never logged or echoed (a
+         *     SecretStr: its repr is stars; hide_input_in_errors keeps a 422 from quoting it). Checked
+         *     by services.app_secrets.checked_value per name (app_secret.invalid, app_secret.url_invalid).
+         */
+        AppSecretPut: {
+            /**
+             * Value
+             * Format: password
+             */
+            value: string;
+        };
+        /**
+         * AppSecretSource
+         * @description Where a name's value comes from now: typed in the app (it wins), the container
+         *     variable, nowhere (a URL then uses its public default), or typed in the app but no longer
+         *     readable (the session key changed): the consumer then uses nothing, never the variable.
+         * @enum {string}
+         */
+        AppSecretSource: "app" | "container" | "none" | "unreadable";
+        /**
+         * AppSecretState
+         * @description One row of the card „Zugangsschlüssel (API keys)“. `value` only for a name that is not
+         *     secret; a secret's value and its length are never returned.
+         */
+        AppSecretState: {
+            name: components["schemas"]["AppSecretName"];
+            group: components["schemas"]["AppSecretGroup"];
+            /** Label */
+            label: string;
+            /** Purpose */
+            purpose: string;
+            /** Secret */
+            secret: boolean;
+            /** Variable */
+            variable: string;
+            source: components["schemas"]["AppSecretSource"];
+            /** Updated At */
+            updated_at?: string | null;
+            /** Value */
+            value?: string | null;
+        };
+        /**
+         * AppSecrets
+         * @description GET /app-secrets: every allowlisted name, in a fixed order.
+         */
+        AppSecrets: {
+            /** Secrets */
+            secrets: components["schemas"]["AppSecretState"][];
         };
         /**
          * AppUser
@@ -6787,7 +6888,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -13030,7 +13131,7 @@ export interface components {
          *     its chain's source as configured now (services/wallet_cards.address_statuses).
          * @enum {string}
          */
-        WalletAddressState: "retired" | "key_missing" | "source_unavailable" | "not_synced" | "failed" | "throttled" | "refused" | "deferred" | "reconciled" | "waiting" | "pending" | "unreconciled" | "coins_left";
+        WalletAddressState: "retired" | "key_missing" | "key_unreadable" | "source_unavailable" | "not_synced" | "failed" | "throttled" | "refused" | "deferred" | "reconciled" | "waiting" | "pending" | "unreconciled" | "coins_left";
         /**
          * WalletAddressStatus
          * @description An address's state in plain German (`text`) with what to do (`todo`), and the
@@ -17689,6 +17790,99 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BankStatement"][];
                 };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    app_secrets_get_api_app_secrets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSecrets"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    app_secret_set_api_app_secrets__name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: components["schemas"]["AppSecretName"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppSecretPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSecretState"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    app_secret_delete_api_app_secrets__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: components["schemas"]["AppSecretName"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
             default: {

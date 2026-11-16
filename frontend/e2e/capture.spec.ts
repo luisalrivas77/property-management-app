@@ -72,7 +72,7 @@ test("one photo becomes a one-page PDF with source photo, listed with its status
   const row = list.getByRole("listitem");
   await expect(row).toHaveCount(1);
   await expect(row).toContainText("Nicht ausgelesen");
-  await expect(row).toContainText("Automatisches Auslesen ist auf dem Server nicht eingeschaltet.");
+  await expect(row).toContainText("Automatisches Auslesen ist nicht eingerichtet");
 
   const link = row.getByRole("link", { name: /^Beleg .*\.pdf$/ });
   const href = await link.getAttribute("href");

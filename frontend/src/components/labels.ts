@@ -298,6 +298,8 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "workspace.questionnaire_answered": "Jahresfrage beantwortet",
   "workspace.reminder_acknowledged": "Erinnerung erledigt, verschoben oder stumm geschaltet",
   "workspace.notification_sent": "Erinnerung per E-Mail verschickt",
+  "workspace.app_secret_set": "Zugangsschlüssel eingetragen",
+  "workspace.app_secret_deleted": "Zugangsschlüssel gelöscht",
   "workspace.inbox_poll_failed": "Posteingang per E-Mail gestört",
   "workspace.inbox_poll_recovered": "Posteingang per E-Mail läuft wieder",
   "workspace.ai_consent_recorded": "Zustimmung zur KI-Zuordnung privater Konten erfasst",
