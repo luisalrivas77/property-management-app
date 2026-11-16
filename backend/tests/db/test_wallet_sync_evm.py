@@ -868,7 +868,7 @@ def test_a_reverted_balance_of_an_unlisted_token_marks_it_unreadable_and_the_run
     token) no longer fails every run: the run's movements are written, the token is left out
     of both sides, the row stores the balances read, and the run reads unreconciled with the
     card wallet.token_unreadable. A registry token that reverts still fails the balance read
-    (the run's pages kept, nothing reconciled)."""
+    (a run with nothing new is then a failed row, review of PR #397)."""
     scan, _ = http
     ws, _ = fresh_workspaces
     account, ids = _wallet(app_engine, ws)
