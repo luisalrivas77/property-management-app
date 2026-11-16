@@ -40,7 +40,16 @@ from typing import Literal
 from uuid import UUID
 
 from hausbuch.rules import errors
-from hausbuch.schemas.chain import Chain, ChainTx, GroupKind, MovementGroupDraft, RawTransfer
+from hausbuch.rules.chain.address import mask
+from hausbuch.rules.chain.classify import ChainGroup, ChainLeg, ClassifyContext
+from hausbuch.schemas.chain import (
+    AssetKey,
+    Chain,
+    ChainTx,
+    GroupKind,
+    MovementGroupDraft,
+    RawTransfer,
+)
 from hausbuch.schemas.household import AssetMovementDraft, MovementKind, MovementSource
 
 VIN = "vin:"  # the index prefix of an input's RawTransfer; an output's index is its vout
@@ -198,12 +207,6 @@ def btc_text(sats: int) -> str:
     return f"{value.replace('.', ',')} BTC"
 
 
-def _mask(address: str) -> str:
-    """D179: the first four and the last four characters (migration 0041's CHECK). The same
-    as rules/chain/address.mask for Bitcoin, which step 1 builds."""
-    return f"{address[:4]}…{address[-4:]}"
-
-
 QUESTION_LIMIT = 500  # MovementGroupDraft.question
 
 
@@ -217,7 +220,7 @@ def change_question(candidates: Sequence[ChangeCandidate]) -> str:
         if len(candidates) == 1
         else "Ist eine dieser Adressen Ihr Wechselgeld?"
     )
-    named = [f"{_mask(c.address)} ({btc_text(c.sats)})" for c in candidates]
+    named = [f"{mask(Chain.BITCOIN, c.address)} ({btc_text(c.sats)})" for c in candidates]
     for shown in range(len(named), 0, -1):
         rest = len(named) - shown
         text = f"{head} {', '.join(named[:shown])}" + (f" und {rest} weitere" if rest else "")
@@ -323,3 +326,88 @@ def balance_at(units_at_tip: int, txs: Sequence[ChainTx], address: str, block: i
         later += sum(t.units for t in outputs(tx) if t.to_addr == address)
         later -= sum(t.units for t in inputs(tx) if t.from_addr == address)
     return units_at_tip - later
+
+
+# --- The family classifier the sync calls (rules/chain/classify, step 4 wiring) ----------
+
+BTC = AssetKey(chain=Chain.BITCOIN)
+
+# A group without movements waits for a person; its question names no address or amount.
+FOREIGN_INPUTS_QUESTION = (
+    "Diese Bitcoin-Transaktion hat auch Eingänge fremder Adressen (etwa ein CoinJoin oder "
+    "eine gemeinsam signierte Zahlung). Was ist hier passiert?"
+)
+NO_MOVEMENT_QUESTION = (
+    "Diese Bitcoin-Transaktion berührt eine eigene Adresse, bewegt aber kein Guthaben. "
+    "Was ist hier passiert?"
+)
+
+
+def settled_outputs(tx: ChainTx, own: Collection[str], ctx: ClassifyContext) -> set[str]:
+    """The outputs to unregistered addresses settled as not this account's change: a
+    „Nein, Empfänger“ answer stored for the account (`ctx.answered_payee`), and an own address
+    of another wallet of the workspace (it is no change of this account; D184 links it as a
+    transfer between own accounts). An address the account registers later is in `own` and
+    so wins over an earlier „Nein“."""
+    found: set[str] = set()
+    for t in outputs(tx):
+        address = t.to_addr
+        if not address or address in own:
+            continue
+        if address in ctx.own_addresses or (
+            ctx.answered_payee is not None and ctx.answered_payee(address)
+        ):
+            found.add(address)
+    return found
+
+
+def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
+    """D185 for the sync: `read_utxo` over every own Bitcoin address of the account (so a
+    spend's legs sit on its first own input's address, `ChainLeg.address`, and the change to
+    a second own address is no movement), with the stored „Nein“ answers and the other
+    wallets' addresses as answered payees.
+
+    - a change card (two or more unregistered outputs, one of them unanswered) is a group of
+      kind `unknown` without legs, its question the card's (masked addresses only), flagged
+      `unregistered_output` so rules/review routes it `routing.chain_change_candidate`;
+    - a reading without movements (foreign inputs, or nothing moved) is `unknown` without
+      legs and with a question, so the sync keeps it and a person sees it (`group.unknown`);
+    - a transaction that touches no own address of the account gives None."""
+    own = set(ctx.own_address_ids) | {ctx.address}
+    ins = inputs(tx)
+    own_in = [t for t in ins if t.from_addr in own]
+    if not own_in and not any(t.to_addr in own for t in outputs(tx)):
+        return None
+    reading = read_utxo(tx, own, settled_outputs(tx, own, ctx))
+    if reading.card == errors.WALLET_CHANGE_CANDIDATE:
+        return ChainGroup(
+            tx_hash=tx.hash,
+            occurred_at=tx.occurred_at,
+            block=tx.block,
+            kind=GroupKind.UNKNOWN,
+            question=change_question(reading.candidates),
+            unregistered_output=True,
+        )
+    if not reading.legs:
+        foreign = bool(own_in) and len(own_in) != len(ins)
+        return ChainGroup(
+            tx_hash=tx.hash,
+            occurred_at=tx.occurred_at,
+            block=tx.block,
+            kind=GroupKind.UNKNOWN,
+            question=FOREIGN_INPUTS_QUESTION if foreign else NO_MOVEMENT_QUESTION,
+        )
+    legs = [
+        ChainLeg(
+            asset_key=BTC,
+            units=leg.sats,
+            role=leg.role,
+            kind=leg.kind,
+            index=leg.index,
+            address=leg.address,
+        )
+        for leg in reading.legs
+    ]
+    return ChainGroup(
+        tx_hash=tx.hash, occurred_at=tx.occurred_at, block=tx.block, kind=reading.kind, legs=legs
+    )

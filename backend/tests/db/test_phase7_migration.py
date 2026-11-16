@@ -14,6 +14,7 @@ are valid in format and belong to nobody; every hash, balance and label is inven
 
 import hashlib
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from db.db_support import (
@@ -299,7 +300,10 @@ def test_a_sync_outside_its_checks_is_refused(scope, change):
         _insert(conn, "wallet_sync", _sync_row(a, ids, **change))
 
 
-def test_a_sync_stores_an_original_only_with_new_movements(scope):
+def test_a_sync_stores_an_original_only_on_a_succeeded_run(scope):
+    """0044 (D182 (3) amended, review of PR #387): a run keeps its original with a new
+    movement or without one (a question card, an unstorable transaction), but only once it
+    succeeded and with both ids. Until 0044 it needed a new movement (`movements_new > 0`)."""
     conn, a, ids = scope
     document = _document(conn, a, type="statement", subtype="chain_sync")
     imported = _insert(
@@ -314,10 +318,16 @@ def test_a_sync_stores_an_original_only_with_new_movements(scope):
     )
     row = _sync_row(a, ids, import_id=imported, document_id=document)
     with pytest.raises(errors.CheckViolation), conn.transaction():
-        _insert(conn, "wallet_sync", row)  # no new movement
+        _insert(conn, "wallet_sync", row)  # still running
+    done = row | {
+        "status": "succeeded",
+        "finished_at": datetime.now(UTC) + timedelta(hours=1),
+        "cursor_after": "120",
+    }
     with pytest.raises(errors.CheckViolation), conn.transaction():
-        _insert(conn, "wallet_sync", row | {"document_id": None, "movements_new": 1})
-    _insert(conn, "wallet_sync", row | {"movements_new": 1})
+        _insert(conn, "wallet_sync", done | {"document_id": None, "movements_new": 1})
+    _insert(conn, "wallet_sync", done)  # a question card only: no new movement
+    _insert(conn, "wallet_sync", done | {"movements_new": 1})
 
 
 def test_a_sync_reads_an_address_of_its_own_account(scope):
