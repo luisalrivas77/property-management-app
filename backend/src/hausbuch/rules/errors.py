@@ -238,7 +238,9 @@ WALLET_ADDRESS_TAKEN = "wallet.address_taken"  # registered on another own accou
 # „Diese Adresse hält laut dem letzten Abruf noch Coins. Erst die Coins wegsenden und den
 # nächsten Abruf abwarten, dann die Adresse stilllegen.“ (retiring an address whose newest
 # read balance is not zero; for Bitcoin, which is reconciled per wallet, the wallet's
-# newest balance on the chain; a sync follow-up of the Bitcoin wiring's review)
+# newest balance on the chain; a sync follow-up of the Bitcoin wiring's review). Bitcoin, and
+# an address with movements whose balance was never read, refuse with their own texts
+# (services/wallets._retire_refusal; review of PR #397).
 WALLET_ADDRESS_HOLDS_COINS = "wallet.address_holds_coins"
 WALLET_KEY_MISSING = "wallet.key_missing"  # the chain's source needs a key that is unset
 WALLET_SOURCE_THROTTLED = "wallet.source_throttled"  # a 429: the sync resumes the next day
