@@ -5,7 +5,7 @@ imported before it through the supersede path, changing no balance, check or car
 Invented texts only; the pure half is tests/test_exchange_trade_groups.py."""
 
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import fixture_models_phase6 as fixtures
@@ -22,8 +22,10 @@ from hausbuch.db.tables import movement_group as group_table
 from hausbuch.rules import exchange
 from hausbuch.schemas.enums import ImportStatus
 from hausbuch.schemas.household import DeclareHoldingsBody, MovementKind
-from hausbuch.services import review
+from hausbuch.services import net_worth, review
+from hausbuch.services.accounts import update_account
 from hausbuch.services.exchange import imports
+from hausbuch.services.prices.overview import assets_overview
 
 pytestmark = pytest.mark.db
 
@@ -214,3 +216,143 @@ def test_group_exchange_trades_ties_earlier_imports_once_and_changes_no_check(
     assert len(groups) == 3
     [new] = [leg for leg in _legs(read, ws, account.id) if leg.occurred_at.day == 10]
     assert new.group_id is not None and new.group_id not in {g for g in _by_group(after)}
+
+
+def test_group_exchange_trades_skips_an_account_whose_provider_it_does_not_know(
+    dbname, run, read, blob_store, fresh_workspaces, monkeypatch, capsys
+):
+    """PATCH /accounts takes any provider text; an exchange account renamed to one the trade
+    rule does not know is skipped and named by its label, and the other accounts are still
+    grouped (the rule itself stays strict)."""
+    ws, _ = fresh_workspaces
+    renamed = _exchange(run, ws, label="Zweites Konto")
+    binance = _exchange(run, ws, provider="Binance")
+    with monkeypatch.context() as patched:
+        patched.setattr(exchange, "trade_groups", lambda movements, provider: [])
+        text = next(c for c in BISON.parse_cases if c.id == "real_layout").text
+        _upload(run, blob_store, ws, renamed.id, text.encode())
+        _upload(run, blob_store, ws, binance.id, _zip(HEADER + ROWS), n=1)
+    run(ws, update_account, renamed.id, provider="Bison App")
+
+    result = run(ws, imports.group_stored_trades, now=T0 + timedelta(minutes=5))
+    assert (result.groups, result.movements, result.skipped) == (2, 5, ("Zweites Konto",))
+    assert {g.account_id for g in _all(read, ws, group_table)} == {binance.id}
+    assert all(leg.group_id is None for leg in _legs(read, ws, renamed.id))
+
+    environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}
+    argv = ["group-exchange-trades", "--workspace", str(ws)]
+    assert cli.main(argv, environ) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "grouped 0 exchange trade(s) of 0 movement(s)" in out
+    assert "skipped the exchange account Zweites Konto" in out
+    assert str(renamed.id) not in out
+
+
+# Invented, fuller: a coin-for-coin trade (fee in BNB), a EUR buy whose fee is in the coin
+# bought, a sale with its fee in EUR, a EUR buy with a EUR fee, and a BTC withdrawal.
+FULL_ROWS = (
+    "111111111,2026-03-01 09:00:00,Spot,Deposit,EUR,500,\n"
+    "111111111,2026-03-01 09:05:00,Spot,Deposit,USDC,300,\n"
+    "111111111,2026-03-01 09:10:00,Spot,Deposit,BNB,0.01,\n"
+    "111111111,2026-03-02 10:15:00,Spot,Transaction Fee,BNB,-0.002,\n"
+    "111111111,2026-03-02 10:15:00,Spot,Transaction Spend,USDC,-200,\n"
+    "111111111,2026-03-02 10:15:00,Spot,Transaction Buy,SOL,1.5,\n"
+    "111111111,2026-03-03 08:00:00,Spot,Transaction Fee,ETH,-0.00004,\n"
+    "111111111,2026-03-03 08:00:00,Spot,Transaction Spend,EUR,-100,\n"
+    "111111111,2026-03-03 08:00:00,Spot,Transaction Buy,ETH,0.04,\n"
+    "111111111,2026-03-04 12:30:00,Spot,Transaction Fee,EUR,-0.1,\n"
+    "111111111,2026-03-04 12:30:00,Spot,Transaction Sold,ETH,-0.02,\n"
+    "111111111,2026-03-04 12:30:00,Spot,Transaction Revenue,EUR,51.2,\n"
+    "111111111,2026-03-04 15:00:00,Spot,Transaction Fee,EUR,-0.25,\n"
+    "111111111,2026-03-04 15:00:00,Spot,Transaction Spend,EUR,-50,\n"
+    "111111111,2026-03-04 15:00:00,Spot,Transaction Buy,SOL,0.3,\n"
+    "111111111,2026-03-05 12:20:00,Spot,Withdraw,BTC,-0.0105,Withdraw fee is included\n"
+    "111111111,2026-03-05 12:00:00,Spot,Deposit,BTC,0.0105,\n"
+)
+WITHDRAWAL_HISTORY = (
+    "Time,Coin,Network,Amount,Fee,Address,TXID,Status\n"
+    "2026-03-05 12:05:00,BTC,BTC,0.0100,0.0005,"
+    "bc1qinventedaddressqq7k3m9x2v5c8n4w6e0r1t3y5u7i9o0p,"
+    "c8e9e7ce98e98cdbb4b0dd51563e5713145ad9b98617dcebe12676ee885902a0,Completed\n"
+)
+ON = date(2026, 11, 13)
+
+
+def _figures(read, ws, account_ids):
+    """Every figure the backfill must leave alone: each exchange page, the Anlagen overview,
+    the net worth and Zu prüfen."""
+    out: dict = {
+        ("overview", a): read(ws, imports.exchange_overview, a).model_dump() for a in account_ids
+    }
+    out["assets"] = read(ws, assets_overview, ON).model_dump()
+    out["net_worth"] = read(ws, net_worth.net_worth, ON).model_dump()
+    out["cards"] = _cards(read, ws)
+    return out
+
+
+def _current(read, ws):
+    m, a = movement_table.c, asset_table.c
+    rows = read(
+        ws,
+        lambda c: c.execute(
+            select(
+                m.account_id,
+                a.symbol,
+                m.kind,
+                m.quantity,
+                m.eur_amount,
+                m.fee_quantity,
+                m.status,
+                m.occurred_at,
+                m.document_id,
+                m.tx_hash,
+                m.network,
+                m.external_ref,
+            )
+            .join(asset_table, a.id == m.asset_id)
+            .where(m.superseded_by.is_(None))
+        ).all(),
+    )
+    return sorted(map(repr, rows))
+
+
+def test_group_exchange_trades_changes_no_figure_on_binance_and_bison(
+    run, read, blob_store, fresh_workspaces, monkeypatch
+):
+    ws, _ = fresh_workspaces
+    binance = _exchange(run, ws, provider="Binance")
+    bison = _exchange(run, ws)
+    with monkeypatch.context() as patched:
+        patched.setattr(exchange, "trade_groups", lambda movements, provider: [])
+        binance_import = _upload(
+            run, blob_store, ws, binance.id, _zip(HEADER + FULL_ROWS)
+        ).movement_import
+        text = next(c for c in BISON.parse_cases if c.id == "real_layout").text
+        bison_import = _upload(run, blob_store, ws, bison.id, text.encode(), n=1).movement_import
+    assert _all(read, ws, group_table) == []
+    for account, imported in ((binance, binance_import), (bison, bison_import)):
+        positions = read(ws, imports.exchange_overview, account.id).positions
+        run(
+            ws,
+            imports.declare_holdings,
+            imported.id,
+            DeclareHoldingsBody(
+                balances=[{"asset_id": p.asset_id, "units": str(p.units)} for p in positions]
+            ),
+            now=T0 + timedelta(minutes=5),
+        )
+    before = _figures(read, ws, [binance.id, bison.id])
+    movements = _current(read, ws)
+
+    run(ws, imports.group_stored_trades, now=T0 + timedelta(minutes=9))
+    after = _figures(read, ws, [binance.id, bison.id])
+    for key in before:
+        assert after[key] == before[key], key
+    assert _current(read, ws) == movements
+    assert {g.account_id for g in _all(read, ws, group_table)} == {binance.id, bison.id}
+    again = run(ws, imports.group_stored_trades, now=T0 + timedelta(minutes=10))
+    assert (again.groups, again.movements, again.fees) == (0, 0, 0)
+
+    # The withdrawal history uploaded after the backfill still completes the withdrawal.
+    done = _upload(run, blob_store, ws, binance.id, _zip(WITHDRAWAL_HISTORY), n=2)
+    assert (done.withdrawals_completed, done.withdrawals_open) == (1, 0)

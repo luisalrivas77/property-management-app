@@ -352,10 +352,10 @@ def trade_groups(movements: Sequence["Moved"], provider: str) -> list[list[int]]
     """Which movements are one trade, by index, oldest first. Binance: the acquisition,
     disposal and fee movements of one second (`binance_movements` writes those kinds only for
     a trade's legs and refuses a second with two trades); BISON: each Buy or Sell row alone
-    (its EUR leg and fee are on the row, D166 amended). A group holds at least one acquisition
-    or disposal; any other movement is in none. The caller passes the movements an export
-    wrote (the import's new ones, or the stored ones `hausbuch group-exchange-trades` reads),
-    never a person's answer."""
+    (its EUR leg is on the row, D166 amended; its fee is the row's fee_quantity, never a lot
+    cost). A group holds at least one acquisition or disposal; any other movement is in none.
+    The caller passes the movements an export wrote (the import's new ones, or the stored ones
+    `hausbuch group-exchange-trades` reads), never a person's answer."""
     if provider == BISON:
         return [[i] for i, m in enumerate(movements) if m.kind in TRADE_KINDS]
     if provider != BINANCE:

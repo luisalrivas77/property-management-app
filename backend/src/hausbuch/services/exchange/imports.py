@@ -403,11 +403,13 @@ def _insert_movements(
 @dataclass(frozen=True)
 class GroupedTrades:
     """`group_stored_trades`'s answer: the groups written, the movements superseded into
-    them, and how many acquisitions gained a fee_eur from their trade's EUR fee."""
+    them, how many acquisitions gained a fee_eur from their trade's EUR fee, and the labels of
+    the exchange accounts skipped because their provider is neither BISON nor Binance."""
 
     groups: int
     movements: int
     fees: int
+    skipped: tuple[str, ...] = ()
 
 
 def group_stored_trades(ctx: CommandContext) -> GroupedTrades:
@@ -419,15 +421,21 @@ def group_stored_trades(ctx: CommandContext) -> GroupedTrades:
     acquisition whose trade paid a fee in EUR also gets that fee as its fee_eur, as the import
     writes it now. Only the export's own legs are read: current, confirmed, ungrouped rows
     that still carry their movement_hash (a person's answer or a completed withdrawal is a
-    superseding row without one), so a second run finds nothing."""
+    superseding row without one), so a second run finds nothing. An exchange account whose
+    provider was changed to one the trade rule does not know (PATCH /accounts takes any text)
+    is skipped and named by its label, so the other accounts are still grouped."""
     m, a, acc = movement_table.c, asset_table.c, account_table.c
     accounts = ctx.conn.execute(
-        select(acc.id, acc.provider)
+        select(acc.id, acc.provider, acc.label)
         .where(acc.kind == AccountKind.EXCHANGE.value)
         .order_by(acc.created_at, acc.id)
     ).all()
     groups = movements = fees = 0
+    skipped: list[str] = []
     for account in accounts:
+        if account.provider not in (rules.BISON, rules.BINANCE):
+            skipped.append(account.label)
+            continue
         rows = ctx.conn.execute(
             select(m.id, m.kind, m.quantity, m.eur_amount, m.fee_eur, m.occurred_at, a.symbol)
             .join(asset_table, a.id == m.asset_id)
@@ -454,7 +462,7 @@ def group_stored_trades(ctx: CommandContext) -> GroupedTrades:
             )
             for r in rows
         ]
-        for legs in rules.trade_groups(stored, account.provider or ""):
+        for legs in rules.trade_groups(stored, account.provider):
             trade = [stored[i] for i in legs]
             fee = rules.trade_fee_eur(trade)
             group_id = _insert_group(ctx, account.id, min(t.occurred_at for t in trade))
@@ -468,7 +476,7 @@ def group_stored_trades(ctx: CommandContext) -> GroupedTrades:
             _group_recorded(ctx, group_id, account.id, new_ids, None)
             groups += 1
             movements += len(trade)
-    return GroupedTrades(groups=groups, movements=movements, fees=fees)
+    return GroupedTrades(groups=groups, movements=movements, fees=fees, skipped=tuple(skipped))
 
 
 @dataclass(frozen=True)

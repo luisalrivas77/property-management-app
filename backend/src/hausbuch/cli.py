@@ -76,7 +76,8 @@ with the same owner URL (phase 6 D178 amended (3), migration 0043): every exchan
 imported before 0043 (Binance: the acquisition, disposal and fee movements of one second;
 BISON: a Buy or Sell row) gets its movement group, each leg a grouped row that supersedes the
 stored one (amounts and status unchanged), and an acquisition whose trade paid a fee in EUR
-that fee as its fee_eur, as an import writes them now. A second run finds nothing. --dry-run
+that fee as its fee_eur, as an import writes them now. A second run finds nothing. An exchange
+account whose provider is neither BISON nor Binance is skipped and named by its label. --dry-run
 rolls back and prints what it would group.
 
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
@@ -546,6 +547,11 @@ def group_exchange_trades(args: argparse.Namespace, environ: Mapping[str, str]) 
     print(f"{verb} {result.groups} exchange trade(s) of {result.movements} movement(s)")
     verb = "would give" if args.dry_run else "gave"
     print(f"{verb} {result.fees} acquisition(s) the fee their trade paid in EUR")
+    for label in result.skipped:
+        print(
+            f"skipped the exchange account {label}: its provider is neither BISON nor Binance, "
+            "so its trades were not grouped"
+        )
     return EXIT_OK
 
 
