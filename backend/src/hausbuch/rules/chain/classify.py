@@ -72,6 +72,10 @@ class ClassifyContext:
     # the native coin included. A token seen for the first time is not in it: the sync
     # creates its asset from the leg's AssetKey, so a classifier never needs an id to emit one.
     asset_ids: Mapping[AssetKey, UUID] = field(default_factory=dict)
+    # Bitcoin (D185 (2)): whether a person answered „Nein, Empfänger“ for this address on
+    # the account (the sync compares the address's HMAC with the stored answers, so no
+    # plaintext is kept for them); None: no answer is known.
+    answered_payee: Callable[[str], bool] | None = None
     # The transaction hashes the workspace's own exchange withdrawals name (D183 (3)(b)), as
     # stored on the exchange's asset_movement rows. Held in memory only: a hash is never put
     # into an event, a log line or a ChainGroup's text fields.
