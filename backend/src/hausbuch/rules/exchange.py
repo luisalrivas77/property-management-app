@@ -9,6 +9,10 @@ phase 6 step 5a.
 - `binance_movements(rows)`: Binance's transaction history to movements: the trade rows of
   one second summed per coin and role, a EUR leg folded into the coin leg's eur_amount; every
   other row one movement.
+- `trade_groups(movements, provider)`, `trade_fee_eur(legs)`: which movements are one trade
+  (phase 6 D178 amended (3), migration 0043: one `movement_group` of kind swap per trade, so
+  phase 7's lots read its legs together, D188 (1), (4)), and the fee a trade paid in EUR, which
+  its acquisition carries as `fee_eur` (a EUR movement has no price for the lots to value).
 - `match_withdrawals(withdrawals, history)`: the withdrawal history's row that completes each
   withdrawal (same coin, Amount + Fee = the amount sent, within one hour before).
 - `positions(movements)`, `reconcile(held, typed)`: the typed balance per asset (D166, D178
@@ -30,6 +34,7 @@ from pydantic import ValidationError
 
 from hausbuch.rules import errors as E
 from hausbuch.rules.errors import RuleError
+from hausbuch.schemas.chain import GroupKind
 from hausbuch.schemas.household import (
     AssetCheck,
     BinanceRow,
@@ -63,6 +68,10 @@ _INWARD = frozenset(
     }
 )
 TRADE_KINDS = frozenset({MovementKind.ACQUISITION, MovementKind.DISPOSAL})
+# Phase 6 D178 amended (3), migration 0043: the kinds of a trade's legs, and the kind of the
+# movement group that ties them (a group without a chain is always this kind, a CHECK).
+TRADE_LEG_KINDS = TRADE_KINDS | {MovementKind.FEE}
+TRADE_GROUP_KIND = GroupKind.SWAP
 
 # Binance's trade operations by role (D178 (3)); a Convert row's role is its sign.
 _BINANCE_IN = frozenset({"Transaction Buy", "Transaction Revenue"})
@@ -326,7 +335,50 @@ def binance_movements(rows: Sequence[BinanceRow]) -> list[ExchangeMovement]:
                 **fields,
             )
         )
+    # D178 amended (3): a fee paid in EUR is also the acquisition's fee_eur (D188 (1)); the
+    # EUR fee movement stays, since the EUR position counts it (D178 (6)).
+    for legs in trade_groups(out, BINANCE):
+        fee = trade_fee_eur([out[i] for i in legs])
+        for i in legs:
+            if fee is not None and out[i].kind is MovementKind.ACQUISITION:
+                out[i] = out[i].model_copy(update={"fee_eur": fee})
     return out
+
+
+# --- Trades as groups (D178 amended (3), migration 0043) -----------------------------------
+
+
+def trade_groups(movements: Sequence["Moved"], provider: str) -> list[list[int]]:
+    """Which movements are one trade, by index, oldest first. Binance: the acquisition,
+    disposal and fee movements of one second (`binance_movements` writes those kinds only for
+    a trade's legs and refuses a second with two trades); BISON: each Buy or Sell row alone
+    (its EUR leg is on the row, D166 amended; its fee is the row's fee_quantity, never a lot
+    cost). A group holds at least one acquisition or disposal; any other movement is in none.
+    The caller passes the movements an export wrote (the import's new ones, or the stored ones
+    `hausbuch group-exchange-trades` reads), never a person's answer."""
+    if provider == BISON:
+        return [[i] for i, m in enumerate(movements) if m.kind in TRADE_KINDS]
+    if provider != BINANCE:
+        raise ValueError(f"no trade rule for the exchange {provider!r}")
+    by_second: dict[datetime, list[int]] = {}
+    for i, m in enumerate(movements):
+        if m.kind in TRADE_LEG_KINDS:
+            by_second.setdefault(m.occurred_at, []).append(i)
+    return [
+        legs for legs in by_second.values() if any(movements[i].kind in TRADE_KINDS for i in legs)
+    ]
+
+
+def trade_fee_eur(legs: Sequence["Moved"]) -> Decimal | None:
+    """The fee one trade paid in EUR, to the cent, as its acquisition's `fee_eur` (D188 (1):
+    the cost includes the fee). None when the trade paid no fee in EUR or acquired no coin
+    (a sale's EUR fee lowers its proceeds, phase 8's to read from the group). A fee in a coin
+    stays a fee movement of the group only, valued on the day by the lots (D188 (4))."""
+    fees = [m for m in legs if m.kind is MovementKind.FEE and m.asset == EUR]
+    acquired = any(m.kind is MovementKind.ACQUISITION and m.asset != EUR for m in legs)
+    if not fees or not acquired:
+        return None
+    return cents(-sum((m.quantity for m in fees), Decimal(0)))
 
 
 class Moved(Protocol):

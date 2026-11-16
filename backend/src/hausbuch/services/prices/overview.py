@@ -82,8 +82,8 @@ from hausbuch.services.depot import latest_report_agreement
 from hausbuch.services.events import append_event, diff_changes
 from hausbuch.services.lookup import require_row
 
-from .assets import fund_source, price_ids
-from .fetch import STREAK_WINDOW_DAYS, failure_runs
+from .assets import FundSource, NavSource, fund_source, nav_source, price_ids, stored_nav_sources
+from .fetch import STREAK_WINDOW_DAYS, failure_runs, held_subquery
 from .issuer_nav import issuer_name
 
 S = PriceSourceKind
@@ -149,11 +149,18 @@ def _latest_prices(conn: Connection, asset_ids: set[UUID], on: date) -> dict[UUI
     return {k: v for k, v in chosen.items() if v is not None}
 
 
-def _label(point: PricePoint, isin: str | None) -> PriceLabel:
+def _fund(kind: AssetKind, isin: str | None, stored: NavSource | None) -> FundSource | None:
+    """A fund's issuer source as the fetch sees it: the registry, else the stored reference
+    from the issuer's catalogue (D174 amended 16 Nov 2026)."""
+    if kind is not AssetKind.ETF:
+        return None
+    return nav_source(fund_source(isin), isin, stored)
+
+
+def _label(point: PricePoint, fund: FundSource | None) -> PriceLabel:
     issuer = None
-    if point.source is S.ISSUER_NAV and isin:
-        fund = fund_source(isin)
-        issuer = issuer_name(fund.issuer) if fund else None
+    if point.source is S.ISSUER_NAV and fund is not None:
+        issuer = issuer_name(fund.issuer)
     return PriceLabel(source=point.source, on=point.on, price_eur=point.price_eur, issuer=issuer)
 
 
@@ -258,6 +265,7 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
         )
     }
     prices = _latest_prices(conn, asset_ids, on)
+    stored = stored_nav_sources(conn, asset_ids)
     by_account: dict[UUID, list[Any]] = defaultdict(list)
     for u in held:
         by_account[u.account_id].append(u)
@@ -290,11 +298,12 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
                 cash=_is_euro(asset),
             )
             kind = AssetKind(asset.kind)
+            fund = _fund(kind, asset.isin, stored.get(u.asset_id))
             from_report = (
                 point is not None
                 and point.source is S.STATEMENT
                 and kind in (AssetKind.ETF, AssetKind.STOCK)
-                and fund_source(asset.isin) is None
+                and fund is None
             )
             positions.append(
                 OverviewPosition(
@@ -304,7 +313,7 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
                     symbol=asset.symbol,
                     isin=asset.isin,
                     units=u.units,
-                    price=None if valued.price is None else _label(valued.price, asset.isin),
+                    price=None if valued.price is None else _label(valued.price, fund),
                     value_eur=valued.value_eur,
                     stale=valued.stale,
                     not_valued_reason=valued.not_valued_reason,
@@ -339,10 +348,10 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
     )
 
 
-def _asset_row(row: Any, latest: PricePoint | None) -> AssetRow:
+def _asset_row(row: Any, latest: PricePoint | None, stored: NavSource | None) -> AssetRow:
     kind = AssetKind(row.kind)
     ids = price_ids(row.symbol, row.coingecko_id, row.kraken_pair, chain=row.chain)
-    fund = fund_source(row.isin) if kind is AssetKind.ETF else None
+    fund = _fund(kind, row.isin, stored)
     if kind is AssetKind.CRYPTO:
         # A chain asset is also priced through its priced_as asset (phase 7 D180 (3)).
         has_source = ids.any or row.priced_as_asset_id is not None
@@ -365,7 +374,7 @@ def _asset_row(row: Any, latest: PricePoint | None) -> AssetRow:
         kraken_pair=ids.kraken_pair if kind is AssetKind.CRYPTO else None,
         issuer=fund.issuer if fund else None,
         has_source=has_source,
-        latest_price=None if latest is None else _label(latest, row.isin),
+        latest_price=None if latest is None else _label(latest, fund),
         updated_at=row.updated_at,
     )
 
@@ -373,7 +382,8 @@ def _asset_row(row: Any, latest: PricePoint | None) -> AssetRow:
 def list_assets(conn: Connection, today: date) -> list[AssetRow]:
     rows = conn.execute(select(asset_table).order_by(asset_table.c.kind, asset_table.c.name)).all()
     latest = _latest_prices(conn, {r.id for r in rows}, today)
-    return [_asset_row(r, latest.get(r.id)) for r in rows]
+    stored = stored_nav_sources(conn)
+    return [_asset_row(r, latest.get(r.id), stored.get(r.id)) for r in rows]
 
 
 # --- commands -------------------------------------------------------------------------------
@@ -382,8 +392,8 @@ def list_assets(conn: Connection, today: date) -> list[AssetRow]:
 def update_asset(ctx: CommandContext, asset_id: UUID, body: AssetPatch) -> AssetRow:
     """The name, and a coin's own CoinGecko id or Kraken pair („Kursquelle wählen“): the
     next 07:00 run fetches by them. A fund or a cash asset takes no ids (422
-    asset.not_crypto); an ETF's issuer comes from the registry only (a fund reference per
-    workspace would need a column, so it is a repo change, D174 (2))."""
+    asset.not_crypto); an ETF's issuer comes from the registry, else from the issuer's
+    catalogue, found by the daily fetch (D174 amended 16 Nov 2026), never typed."""
     current = require_row(ctx.conn, asset_table, EntityType.ASSET, asset_id, for_update=True)
     requested = body.model_dump(exclude_unset=True)
     if current.kind != AssetKind.CRYPTO.value and (
@@ -403,7 +413,8 @@ def update_asset(ctx: CommandContext, asset_id: UUID, body: AssetPatch) -> Asset
         append_event(ctx, EventType.ASSET_UPDATED, asset_id, Updated(changes=changes))
     row = require_row(ctx.conn, asset_table, EntityType.ASSET, asset_id)
     latest = _latest_prices(ctx.conn, {asset_id}, ctx.now.astimezone(UTC).date()).get(asset_id)
-    return _asset_row(row, latest)
+    stored = stored_nav_sources(ctx.conn, [asset_id]).get(asset_id)
+    return _asset_row(row, latest, stored)
 
 
 def record_price(ctx: CommandContext, asset_id: UUID, body: TypedPriceBody) -> AssetPriceRow:
@@ -447,13 +458,8 @@ def record_price(ctx: CommandContext, asset_id: UUID, body: TypedPriceBody) -> A
 
 
 def _held(conn: Connection) -> list[Any]:
-    a, m = asset_table.c, movement_table.c
-    sums = (
-        select(m.asset_id, func.sum(m.quantity).label("units"))
-        .where(m.status == MovementStatus.CONFIRMED.value, m.superseded_by.is_(None))
-        .group_by(m.asset_id)
-        .subquery()
-    )
+    a = asset_table.c
+    sums = held_subquery()  # the fetch's own rule: positive on some account
     return conn.execute(
         select(
             a.id,
@@ -469,7 +475,7 @@ def _held(conn: Connection) -> list[Any]:
         )
         .join(sums, sums.c.asset_id == a.id)
         # Phase 7: a spam token is hidden, never a card (D187).
-        .where(sums.c.units > 0, a.spam.is_(False))
+        .where(a.spam.is_(False))
         .order_by(a.name, a.id)
     ).all()
 
@@ -528,6 +534,7 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
     # D167 amended (c): a fund a depot's latest report lists while that report disagrees
     # gets no card of its own; the holdings card names the fix, which also prices the fund.
     in_reports = latest_report_agreement(conn)
+    stored = stored_nav_sources(conn, [r.id for r in held])
     for row in held:
         kind = AssetKind(row.kind)
         if kind is AssetKind.CRYPTO:
@@ -554,7 +561,7 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
             continue
         if kind not in (AssetKind.ETF, AssetKind.STOCK):
             continue
-        fund = fund_source(row.isin) if kind is AssetKind.ETF else None
+        fund = _fund(kind, row.isin, stored.get(row.id))
         if fund is None:
             if _any_price(conn, row.id):
                 continue  # „Kurs aus dem letzten Bericht“, no card (D174 (4))

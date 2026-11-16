@@ -9,6 +9,11 @@ Adapters written (each from the issuer's real file, read 13 Nov 2026; the URLs a
 module and in assets.yaml): `spdr` (State Street's XLSX), `ishares` (BlackRock's
 SpreadsheetML download). No other issuer of quirion's universe publishes a file the app can
 read (Q-O74); their funds are priced from the depot's reports.
+
+A held fund the registry does not list is found by its ISIN in its issuer's own catalogue
+(D174 amended 16 Nov 2026): an adapter with a `catalogue_url` maps every ISIN it lists to its
+fund reference, asked only for a fund whose name carries the adapter's brand; the reference
+found is stored with the price (price.raw) and the file's own ISIN still decides.
 """
 
 from .base import IssuerAdapter, NavFile, read_points

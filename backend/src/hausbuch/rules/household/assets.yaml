@@ -30,7 +30,13 @@
 # The universe's other issuers (Amundi, Xtrackers, Invesco, UBS, HSBC, BNP Paribas, Assenagon)
 # publish no NAV history file the app can read (pages drawn by script, monthly PDFs only), so
 # their funds are not listed: a fund missing here is priced from the reports exactly like a
-# listed one with fund_ref null.
+# listed one with fund_ref null, unless its issuer has an adapter with a catalogue.
+#
+# This list is a seed, not the whole coverage (D174 amended 16 Nov 2026): a held fund missing
+# here whose name carries an adapter's brand (iShares, SPDR) is looked up by its ISIN in that
+# issuer's own list of funds (each adapter's catalogue_url) when it has no price yet; the
+# reference found is checked against the ISIN the NAV file states and stored with the price
+# (price.raw: issuer, fund_ref), so the next run asks no catalogue. A row here always wins.
 #
 # tokens (phase 7 D180 (4), added 15 Nov 2026): a token on one chain, identified by its
 #   contract (EVM, written lower-case, D180 amended 15 Nov 2026) or its mint (Solana, as
