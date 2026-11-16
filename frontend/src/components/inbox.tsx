@@ -1125,7 +1125,10 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
         return (
           <span className="stack">
             <span>{ruleCodeText(open.history_todo)}</span>
-            <Link href={`/accounts/${open.leg.account_id}`}>Auszahlungsverlauf hochladen</Link>
+            {/* a history already checked against it cannot help again: the page says why */}
+            <Link href={`/accounts/${open.leg.account_id}`}>
+              {open.history_todo === "exchange.withdrawal_history_no_match" ? "Konto öffnen" : "Auszahlungsverlauf hochladen"}
+            </Link>
           </span>
         );
       }

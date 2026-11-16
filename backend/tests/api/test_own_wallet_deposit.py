@@ -39,3 +39,18 @@ def test_the_route_books_once_and_maps_each_refusal(client_a, client_b, dbname, 
     )
     assert client_a.post(URL, json=_body(bison, seed.address)).status_code == 409
     assert len(_deposits(dbname, seed.address)) == 1
+
+
+def test_a_binance_row_without_its_history_is_refused_by_the_route(
+    client_a, dbname, fresh_workspaces
+):
+    """Review of 16 Nov 2026: Binance's gross row with no fee, network or hash waits for its
+    withdrawal history; the route refuses it as legs that do not fit and writes nothing."""
+    ws = fresh_workspaces[0]
+    seed = Seed(dbname, ws, provider="Binance")
+    gross = seed.withdrawal("1.0005", fee=None, tx_hash=None, network=None)
+
+    refused = client_a.post(URL, json=_body(gross, seed.address))
+    assert refused.status_code == 422
+    assert "transfer.legs_invalid" in refused.text
+    assert _deposits(dbname, seed.address) == []
