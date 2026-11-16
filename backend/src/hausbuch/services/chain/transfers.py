@@ -24,8 +24,8 @@ fit and:
 2. the two legs share their transaction hash, the link is of kind chain, and each proposed leg
    may be confirmed by code (D186 (1): an exchange's withdrawal by hash, own address to own
    address): an exchange row with a transfer kind, or a leg whose group is a transfer or
-   exchange_transfer that waits only for its link (routed routing.no_match, so never a
-   wallet's first sync, which waits for a person) and holds no leg but the pair's, its fees
+   exchange_transfer that waits only for its link (routed routing.no_match, or since D261 a
+   wallet's first sync, routing.chain_first_sync) and holds no leg but the pair's, its fees
    and the rent of a token account the send opened. The link confirms them in the same
    transaction (the group, its legs and its fees, each with its event; a group with its rent
    leg stays proposed for a person), so the sync's `linked` (which the classifiers leave
@@ -36,7 +36,7 @@ less the exchange's fee_quantity equal the received units within the chain's dus
 one hash: a hash names the transaction, not what each own address got of it. A bridge's units
 are the matcher's fee-share fit, a wrap's its unit fit.
 
-Anything else (an amount-only fit, a bridge, a wrap, a first sync, an ambiguous fit) waits for
+Anything else (an amount-only fit, a bridge, a wrap, an ambiguous fit) waits for
 a person on a card of GET /transfers/open: transfer.proposed with the one fit,
 transfer.ambiguous with every fit, transfer.partial when the transaction's hash names own legs
 of other units (part of the coins went elsewhere, or one send paid several own receipts: they
@@ -67,9 +67,10 @@ quantity and the symbol, never an address or a hash.
 import hashlib
 import logging
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
-from datetime import date, datetime
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -97,7 +98,7 @@ from hausbuch.rules.chain.match_transfer import (
 from hausbuch.rules.chain.registry import registry
 from hausbuch.rules.errors import TRANSFER_LEGS_INVALID, TRANSFER_UNITS_DIFFER
 from hausbuch.rules.household.assets import registry as asset_registry
-from hausbuch.rules.review import DETERMINISTIC, NO_MATCH
+from hausbuch.rules.review import CHAIN_FIRST_SYNC, DETERMINISTIC, NO_MATCH
 from hausbuch.schemas.allocation import AllocationCategory, TransferLegSource
 from hausbuch.schemas.chain import (
     BridgePair,
@@ -114,6 +115,7 @@ from hausbuch.schemas.events import (
     MovementRecorded,
     MovementSuperseded,
     TransferLinked,
+    TransferUnlinked,
 )
 from hausbuch.schemas.household import (
     AssetKind,
@@ -148,6 +150,10 @@ _CONFIRMABLE_GROUPS = frozenset({GroupKind.TRANSFER, GroupKind.EXCHANGE_TRANSFER
 _TRANSFER_KINDS = frozenset({MovementKind.INTERNAL_TRANSFER_OUT, MovementKind.INTERNAL_TRANSFER_IN})
 _CHAIN_KINDS = _TRANSFER_KINDS | {MovementKind.UNCATEGORIZED}
 _LIVE = (MovementStatus.PROPOSED.value, MovementStatus.CONFIRMED.value)
+# The routing reasons of a group that waits only for its link (D186 (1)): routing.no_match,
+# and since D261 (16 Nov 2026) a wallet's first sync too, whose history arrives in that one
+# sync; a pair under one hash with fitting units is proof enough there as well.
+_LINK_WAITS = frozenset({NO_MATCH, CHAIN_FIRST_SYNC})
 
 
 # --- Reading legs ---------------------------------------------------------------------------
@@ -178,6 +184,11 @@ class _Row:
     group_status: GroupStatus | None
     group_kind: GroupKind | None
     group_question: bool
+    # D261: the own address a wallet leg is on, its group's chain, and the HMAC of the one
+    # external address a plain send paid (never the plaintext).
+    address_id: UUID | None = None
+    group_chain: Chain | None = None
+    counterparty_hmac: bytes | None = field(default=None, repr=False)
 
     @property
     def sends(self) -> bool:
@@ -240,7 +251,13 @@ def _priced(symbol: str | None, chain: str | None, contract: str | None) -> str 
     return None if token is None else asset_registry().priced_as(token).symbol
 
 
-def _read_legs(conn: Connection, *where) -> list[_Row]:  # noqa: ANN002
+def _read_legs(
+    conn: Connection,
+    *where,  # noqa: ANN002
+    exchange_kinds: frozenset[MovementKind] = _TRANSFER_KINDS,
+) -> list[_Row]:
+    """The coin legs (module docstring). exchange_kinds: the kinds an exchange row may have
+    (D261's deposit pass also reads a proposed crypto Deposit, cashback_reward)."""
     m, a, acc, g = movement_table.c, asset_table.c, account_table.c, group_table.c
     twin = aliased(asset_table)
     rows = conn.execute(
@@ -268,6 +285,9 @@ def _read_legs(conn: Connection, *where) -> list[_Row]:  # noqa: ANN002
             g.kind.label("group_kind"),
             g.question.label("group_question"),
             g.superseded_by.label("group_superseded_by"),
+            g.chain.label("group_chain"),
+            m.address_id,
+            m.counterparty_hmac,
         )
         .select_from(
             movement_table.join(asset_table, a.id == m.asset_id)
@@ -282,7 +302,7 @@ def _read_legs(conn: Connection, *where) -> list[_Row]:  # noqa: ANN002
             a.kind == AssetKind.CRYPTO.value,
             a.spam.is_(False),
             acc.kind.in_([AccountKind.EXCHANGE.value, AccountKind.WALLET.value]),
-            m.kind.in_([k.value for k in _CHAIN_KINDS]),
+            m.kind.in_([k.value for k in _CHAIN_KINDS | exchange_kinds]),
             *where,
         )
         .order_by(m.occurred_at, m.id)
@@ -292,7 +312,7 @@ def _read_legs(conn: Connection, *where) -> list[_Row]:  # noqa: ANN002
         kind = MovementKind(r.kind)
         exchange = AccountKind(r.account_kind) is AccountKind.EXCHANGE
         if exchange:
-            if kind not in _TRANSFER_KINDS:
+            if kind not in exchange_kinds:
                 continue
         elif (
             r.group_id is None
@@ -326,6 +346,11 @@ def _read_legs(conn: Connection, *where) -> list[_Row]:  # noqa: ANN002
                 group_status=None if r.group_status is None else GroupStatus(r.group_status),
                 group_kind=None if r.group_kind is None else GroupKind(r.group_kind),
                 group_question=r.group_question is not None,
+                address_id=r.address_id,
+                group_chain=None if r.group_chain is None else Chain(r.group_chain),
+                counterparty_hmac=(
+                    None if r.counterparty_hmac is None else bytes(r.counterparty_hmac)
+                ),
             )
         )
     return legs
@@ -476,12 +501,16 @@ def _group_rest(conn: Connection, group_id: UUID) -> list:
     ).all()
 
 
-def _code_may_confirm(conn: Connection, leg: _Row, pair: set[UUID]) -> bool:
-    """D186 (1): a proposed leg the matcher may confirm with a hash link."""
+def _code_may_confirm(
+    conn: Connection, leg: _Row, pair: set[UUID], *, learned: bool = False
+) -> bool:
+    """D186 (1): a proposed leg the matcher may confirm with a hash link, or (learned, D261)
+    with a learned deposit address or withdrawal pair: an exchange's crypto deposit read as a
+    possible bonus too, which the link re-books as a transfer."""
     if leg.confirmed:
         return True
     if leg.account_kind is AccountKind.EXCHANGE:
-        return leg.kind in _TRANSFER_KINDS
+        return learned or leg.kind in _TRANSFER_KINDS
     if (
         leg.group_id is None
         or leg.group_kind not in _CONFIRMABLE_GROUPS
@@ -489,8 +518,8 @@ def _code_may_confirm(conn: Connection, leg: _Row, pair: set[UUID]) -> bool:
         or leg.group_status is not GroupStatus.PROPOSED
     ):
         return False
-    if _group_reason(conn, leg.group_id) != NO_MATCH:
-        return False  # a first sync (or anything but a missing link) waits for a person
+    if _group_reason(conn, leg.group_id) not in _LINK_WAITS:
+        return False  # anything but a missing link (a question, a decoder) waits for a person
     return {r.id for r in _group_rest(conn, leg.group_id) if not _rent(r)} <= pair
 
 
@@ -632,7 +661,10 @@ def _confirm(
     return count
 
 
-# --- Writing links --------------------------------------------------------------------------
+# --- Writing links -----------------------------------------------------------------------
+
+# Why a matcher's coin link was written, on its transfer.linked event (D261).
+LinkReason = Literal["hash", "deposit_address", "withdrawal_pair", "confirmed"]
 
 
 def _write(
@@ -642,6 +674,7 @@ def _write(
     kind: TransferLinkKind,
     matched_by: TransferMatchedBy,
     confirmed: _Confirmed | None = None,
+    reason: LinkReason | None = None,
 ) -> TransferLink:
     """One transfer_link row of two coin movements and its transfer.linked event (ids only),
     as services.transfers._write writes a EUR link, without its bank-line hooks; `confirmed`
@@ -669,6 +702,7 @@ def _write(
             matched_by=matched_by,
             confirmed_movements=confirmed.movements if confirmed else [],
             confirmed_groups=confirmed.groups if confirmed else [],
+            reason=reason,
             **legs,
         ),
     )
@@ -706,16 +740,24 @@ def _reopened_hash(old: str, new_id: UUID) -> str:
 
 
 def _copy_movement(
-    ctx: CommandContext, old, *, group_id: UUID | None, status: MovementStatus
-) -> UUID:  # noqa: ANN001
+    ctx: CommandContext,
+    old,  # noqa: ANN001
+    *,
+    group_id: UUID | None,
+    status: MovementStatus,
+    kind: MovementKind | None = None,
+) -> UUID:
     """A copy of the live row `old` with `status` in `group_id` that supersedes it, with its
     events: movement.superseded on the old row, movement.proposed (or .confirmed) on the
     new. A chain row gets a hash of its own (_reopened_hash); an exchange's row none, as
-    services.exchange.imports._supersede writes its corrections."""
+    services.exchange.imports._supersede writes its corrections. `kind` re-books the copy
+    (D261: a learned transfer's legs), else the old row's kind."""
     m = movement_table.c
     new_id = uuid4()
     skip = {"id", "superseded_by", "created_at", "movement_hash", "status", "group_id"}
     values = {c.name: getattr(old, c.name) for c in movement_table.c if c.name not in skip}
+    if kind is not None:
+        values["kind"] = kind.value
     chain = old.source == MovementSource.CHAIN.value and old.movement_hash is not None
     ctx.conn.execute(
         insert(movement_table).values(
@@ -740,7 +782,7 @@ def _copy_movement(
         MovementRecorded(
             account_id=old.account_id,
             asset_id=old.asset_id,
-            kind=MovementKind(old.kind),
+            kind=MovementKind(values["kind"]),
             source=MovementSource(old.source),
             document_id=old.document_id,
         ),
@@ -916,6 +958,203 @@ class RelinkResult:
     reopened: int = 0  # movements a dead matcher link had confirmed, back to proposed
 
 
+# --- What a person's link taught (D261) -------------------------------------------------------
+
+# D261 (2), (3): the windows of a learned pair, the deposit after the send, the receipt after
+# the withdrawal. A learned pair is directional, so the matcher's WINDOW (both ways) is not
+# used here.
+DEPOSIT_WINDOW = timedelta(hours=48)
+WITHDRAWAL_WINDOW = timedelta(hours=24)
+_DEPOSIT_KINDS = frozenset({MovementKind.CASHBACK_REWARD, MovementKind.INTERNAL_TRANSFER_IN})
+
+
+def _network_fits(exchange_leg: _Row, wallet_leg: _Row) -> bool:
+    """An exchange row naming a network fits only a wallet leg on that network's chain."""
+    if exchange_leg.network is None:
+        return True
+    return registry().network(exchange_leg.network) is wallet_leg.group_chain
+
+
+def _within(first: _Row, then: _Row, window: timedelta) -> bool:
+    return first.occurred_at <= then.occurred_at <= first.occurred_at + window
+
+
+def _hashes_agree(a: _Row, b: _Row) -> bool:
+    """A learned fit never pairs two legs that both name a transaction hash and name different
+    ones: the hash proves they are two transactions (the matcher and a person's pick refuse
+    such a pair too; review of D261, 16 Nov 2026). Without a hash on either leg, units decide."""
+    return not (a.tx_hash and b.tx_hash) or _same_hash(a, b)
+
+
+def _deposit_fits(send: _Row, deposit: _Row) -> bool:
+    """D261 (2): a wallet send and an exchange's crypto deposit of the same asset, the units
+    equal within the chain's dust (the exchange credits what arrived), the deposit at or after
+    the send and within 48 hours, never under another transaction hash (_hashes_agree)."""
+    return (
+        send.priced == deposit.priced
+        and _network_fits(deposit, send)
+        and _within(send, deposit, DEPOSIT_WINDOW)
+        and _units_fit(send.leg(), deposit.leg())
+        and _hashes_agree(send, deposit)
+    )
+
+
+def _withdrawal_fits(withdrawal: _Row, receipt: _Row) -> bool:
+    """D261 (3): the received units equal the sent units less the exchange's fee_quantity
+    within the chain's dust, the receipt at or after the withdrawal and within 24 hours, never
+    under another transaction hash (_hashes_agree)."""
+    return (
+        withdrawal.priced == receipt.priced
+        and _network_fits(withdrawal, receipt)
+        and _within(withdrawal, receipt, WITHDRAWAL_WINDOW)
+        and _units_fit(withdrawal.leg(), receipt.leg())
+        and _hashes_agree(withdrawal, receipt)
+    )
+
+
+def _rebook(ctx: CommandContext, leg: _Row, kind: MovementKind) -> _Row:
+    """The leg re-booked as `kind` by a proposed copy that supersedes it (an uncategorized
+    wallet leg, an exchange's crypto Deposit read as a possible bonus); the leg itself when it
+    has that kind already."""
+    if leg.kind is kind:
+        return leg
+    m = movement_table.c
+    old = ctx.conn.execute(select(movement_table).where(m.id == leg.id)).one()
+    new_id = _copy_movement(
+        ctx, old, group_id=leg.group_id, status=MovementStatus.PROPOSED, kind=kind
+    )
+    return replace(leg, id=new_id, kind=kind, status=MovementStatus.PROPOSED)
+
+
+def _link_learned(
+    ctx: CommandContext,
+    world: _World,
+    result: RelinkResult,
+    out: _Row,
+    in_: _Row,
+    reason: LinkReason,
+) -> None:
+    """Write one learned pair: each leg re-booked as a transfer when it is not one yet, both
+    confirmed (their groups once nothing else of them waits), the link matched_by matcher with
+    the reason on its event. A leg a person is answering right now is left for the next run."""
+    pair = {out.id, in_.id}
+    if not (
+        _code_may_confirm(ctx.conn, out, pair, learned=True)
+        and _code_may_confirm(ctx.conn, in_, pair, learned=True)
+    ):
+        return  # a question, another leg of the transaction or a decoder waits for a person
+    if not _lock_rows(ctx, (out, in_), wait_for_none=True) or not _still(ctx.conn, (out, in_)):
+        result.skipped_locked += 1
+        return
+    world.linked |= pair
+    out = _rebook(ctx, out, MovementKind.INTERNAL_TRANSFER_OUT)
+    in_ = _rebook(ctx, in_, MovementKind.INTERNAL_TRANSFER_IN)
+    pair = {out.id, in_.id}
+    done = _Confirmed()
+    result.confirmed += _confirm(ctx, out, pair, done) + _confirm(ctx, in_, pair, done)
+    _write(ctx, out, in_, TransferLinkKind.CHAIN, TransferMatchedBy.MATCHER, done, reason)
+    world.linked |= pair
+    result.linked += 1
+
+
+def _deposit_pass(ctx: CommandContext, world: _World, result: RelinkResult) -> None:
+    """D261 (2): a wallet send to a learned deposit address linked to that exchange's crypto
+    deposit when exactly one deposit fits the send and no other open send fits the deposit."""
+    from .learned import deposit_addresses
+
+    learned = deposit_addresses(ctx.conn)
+    if not learned:
+        return
+    deposits = [
+        d
+        for d in _read_legs(
+            ctx.conn,
+            account_table.c.kind == AccountKind.EXCHANGE.value,
+            movement_table.c.quantity > 0,
+            exchange_kinds=_DEPOSIT_KINDS,
+        )
+        # a bonus a person confirmed is their answer: never re-booked by code
+        if d.kind is MovementKind.INTERNAL_TRANSFER_IN or not d.confirmed
+    ]
+    sends = [
+        s
+        for s in world.open()
+        if s.sends
+        and s.account_kind is AccountKind.WALLET
+        and s.kind in (MovementKind.UNCATEGORIZED, MovementKind.INTERNAL_TRANSFER_OUT)
+    ]
+    for send in sends:
+        if send.counterparty_hmac is None or send.group_chain is None or send.id in world.linked:
+            continue
+        exchange = learned.get((send.group_chain.value, send.counterparty_hmac))
+        if exchange is None:
+            continue
+        fits = [
+            d
+            for d in deposits
+            if d.id not in world.linked and d.account_id == exchange and _deposit_fits(send, d)
+        ]
+        if len(fits) != 1:
+            continue  # none, or several: the card asks which
+        (deposit,) = fits
+        if any(
+            s.id != send.id and s.id not in world.linked and _deposit_fits(s, deposit)
+            for s in world.open()
+            if s.sends and s.account_kind is AccountKind.WALLET
+        ) or any(s.id not in world.linked for s in world.rivals(send, deposit)):
+            # another open send fits the deposit too, a wallet's (by this pass's fit, whatever
+            # it was booked as) or an own exchange's withdrawal (by the matcher's, as
+            # _withdrawal_pass): the card asks which (review of D261, 16 Nov 2026)
+            continue
+        _link_learned(ctx, world, result, send, deposit, "deposit_address")
+
+
+def _withdrawal_pass(ctx: CommandContext, world: _World, result: RelinkResult) -> None:
+    """D261 (3): an exchange's withdrawal linked to a receipt on an own address the person
+    paired with that exchange, when exactly one receipt fits the withdrawal and no other open
+    send fits the receipt. Never by the chain's sender address."""
+    from .learned import withdrawal_pairs
+
+    pairs = withdrawal_pairs(ctx.conn)
+    if not pairs:
+        return
+    open_legs = world.open()
+    withdrawals = [
+        w
+        for w in open_legs
+        if w.sends
+        and w.account_kind is AccountKind.EXCHANGE
+        and w.kind is MovementKind.INTERNAL_TRANSFER_OUT
+    ]
+    receipts = [
+        r
+        for r in open_legs
+        if not r.sends
+        and r.account_kind is AccountKind.WALLET
+        and r.address_id is not None
+        and r.kind in (MovementKind.UNCATEGORIZED, MovementKind.INTERNAL_TRANSFER_IN)
+    ]
+    for w in withdrawals:
+        if w.id in world.linked:
+            continue
+        fits = [
+            r
+            for r in receipts
+            if r.id not in world.linked
+            and (w.account_id, r.address_id) in pairs
+            and _withdrawal_fits(w, r)
+        ]
+        if len(fits) != 1:
+            continue  # none, or several: the card asks which
+        (receipt,) = fits
+        if any(
+            x.id != w.id and x.id not in world.linked and _withdrawal_fits(x, receipt)
+            for x in withdrawals
+        ) or any(s.id not in world.linked for s in world.rivals(w, receipt)):
+            continue  # another open send fits the receipt too: the card asks which
+        _link_learned(ctx, world, result, w, receipt, "withdrawal_pair")
+
+
 def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
     """Every open coin leg of the workspace linked where the module docstring says; the
     counts. Idempotent: a second run finds every written pair linked.
@@ -946,7 +1185,9 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
         if found.link is not TransferLinkKind.CHAIN and not _learned(world, leg, other, found.link):
             continue  # a bridge or wrap the workspace has not confirmed: a person's pick
         pair = {leg.id, other.id}
+        reason: LinkReason = "confirmed"
         if not (leg.confirmed and other.confirmed):
+            reason = "hash"
             if found.link is not TransferLinkKind.CHAIN or not _same_hash(leg, other):
                 continue  # an amount-only fit, a bridge or a wrap waits for a person
             if not (
@@ -960,9 +1201,11 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
             continue
         done = _Confirmed()
         result.confirmed += _confirm(ctx, leg, pair, done) + _confirm(ctx, other, pair, done)
-        _write(ctx, leg, other, found.link, TransferMatchedBy.MATCHER, done)
+        _write(ctx, leg, other, found.link, TransferMatchedBy.MATCHER, done, reason)
         world.linked |= pair
         result.linked += 1
+    _deposit_pass(ctx, world, result)
+    _withdrawal_pass(ctx, world, result)
     if result.linked or result.skipped_locked or result.reopened:
         logger.info(
             "chain transfers relinked",
@@ -1043,7 +1286,7 @@ def link_by_hand(
         raise NotFoundError("movement", body.in_movement_id)
     already = None if freed else _link_of(ctx.conn, out.id, in_.id)
     if already is not None:
-        return already
+        return _learn_on_link(ctx, body, out, in_, already)
     linked = world.linked - freed
     if out.id in linked or in_.id in linked:
         raise ConflictError("a leg of this transfer is linked already")
@@ -1062,7 +1305,133 @@ def link_by_hand(
     pair = {out.id, in_.id}
     _confirm(ctx, out, pair)
     _confirm(ctx, in_, pair)
-    return _write(ctx, out, in_, found.link, TransferMatchedBy.USER)
+    link = _write(ctx, out, in_, found.link, TransferMatchedBy.USER)
+    return _learn_on_link(ctx, body, out, in_, link)
+
+
+def _learn_on_link(
+    ctx: CommandContext, body: TransferLinkCreate, out: _Row, in_: _Row, link: TransferLink
+) -> TransferLink:
+    """D261 (2), (3): the remember box of a person's link. A wallet send linked to an
+    exchange's deposit teaches the exchange's deposit address; an exchange's withdrawal linked
+    to a receipt on an own address teaches the pair. Then the relink runs at once in the same
+    transaction (the transfer lock is held already), so what waits clears itself (D261 (4)).
+    The link carries the outcome; a box that does not apply to the pair is ignored. An address
+    learned for another exchange raises the plain ConflictError, and nothing is written."""
+    from .learned import learn_deposit_address, learn_withdrawal_pair
+
+    outcome = None
+    wallet, exchange = AccountKind.WALLET, AccountKind.EXCHANGE
+    if (
+        getattr(body, "remember_deposit_address", False)
+        and out.account_kind is wallet
+        and in_.account_kind is exchange
+    ):
+        outcome = learn_deposit_address(ctx, in_.account_id, out.id)
+    elif (
+        getattr(body, "remember_withdrawal_pair", False)
+        and out.account_kind is exchange
+        and in_.account_kind is wallet
+        and in_.address_id is not None
+    ):
+        outcome = learn_withdrawal_pair(ctx, out.account_id, in_.address_id, out.id)
+    if outcome == "learned":
+        relink(ctx)
+    return link if outcome is None else link.model_copy(update={"learned": outcome})
+
+
+# --- Releasing a link code wrote from a learned row (D261, review fixes 16 Nov 2026) ----------
+
+LEARNED_REASONS: frozenset[str] = frozenset({"deposit_address", "withdrawal_pair"})
+
+
+def _link_payloads(conn: Connection, link_ids: Sequence[UUID]) -> dict[UUID, dict]:
+    """Each link's transfer.linked payload (its reason, what it confirmed)."""
+    if not link_ids:
+        return {}
+    e = event_table.c
+    return {
+        r.entity_id: (r.payload or {})
+        for r in conn.execute(
+            select(e.entity_id, e.payload).where(
+                e.type == EventType.TRANSFER_LINKED.value, e.entity_id.in_(list(link_ids))
+            )
+        )
+    }
+
+
+def learned_links(conn: Connection, movement_ids: Iterable[UUID]) -> dict[UUID, UUID]:
+    """movement id → the current link code wrote from a learned row that it is a leg of: what
+    „Verknüpfung lösen“ offers on the exchange's movement rows."""
+    from ..transfers import _current_links
+
+    ids = set(movement_ids)
+    rows = [
+        r
+        for r in _current_links(conn)
+        if r.kind == TransferLinkKind.CHAIN.value
+        and r.matched_by == TransferMatchedBy.MATCHER.value
+        and (r.out_movement_id in ids or r.in_movement_id in ids)
+    ]
+    payloads = _link_payloads(conn, [r.id for r in rows])
+    out: dict[UUID, UUID] = {}
+    for r in rows:
+        if payloads.get(r.id, {}).get("reason") in LEARNED_REASONS:
+            out[r.out_movement_id] = r.id
+            out[r.in_movement_id] = r.id
+    return out
+
+
+def release_learned_link(ctx: CommandContext, link_id: UUID) -> None:
+    """POST /transfers/{id}/release, „Verknüpfung lösen“ (D261, review fixes 16 Nov 2026): a
+    chain link code wrote from a learned deposit address or withdrawal pair ends. Both legs go
+    back to proposed (their groups too when the link confirmed them), as a dead matcher link's
+    legs do (_reopen_side), so they show again as a card; the learned row that produced the
+    link ends with it, its account.*_forgotten event naming the link, so the next relink cannot
+    write the pair again; a person may teach again with a correct link. transfer.unlinked on
+    the link (no replacement). The caller holds the transfer lock (services.transfers.release).
+
+    404 for an unknown link; 409 for a link that is no longer current, a link proven by its
+    transaction hash (the hash is the proof: one transaction), any link a person or the matcher
+    wrote otherwise (a person's link is replaced through „Verknüpfung ändern“), and when a leg
+    is being answered right now."""
+    from ..transfers import _current_links, _leg_ids
+    from .learned import forget_for_link
+
+    c = link_table.c
+    link = ctx.conn.execute(select(link_table).where(c.id == link_id)).one_or_none()
+    if link is None:
+        raise NotFoundError("transfer", link_id)
+    current = _current_links(ctx.conn)
+    if link.id not in {r.id for r in current}:
+        raise ConflictError("Diese Verknüpfung besteht nicht mehr.")
+    payload = _link_payloads(ctx.conn, [link.id]).get(link.id, {})
+    reason = payload.get("reason")
+    if link.kind == TransferLinkKind.CHAIN.value and reason == "hash":
+        raise ConflictError(
+            "Diese Verknüpfung beruht auf derselben Transaktion (gleicher Hash); "
+            "sie lässt sich nicht lösen."
+        )
+    if (
+        link.kind != TransferLinkKind.CHAIN.value
+        or link.matched_by != TransferMatchedBy.MATCHER.value
+        or reason not in LEARNED_REASONS
+    ):
+        raise ConflictError(
+            "Nur eine Verknüpfung, die die App über eine gemerkte Adresse gesetzt hat, "
+            "lässt sich hier lösen."
+        )
+    out_id, in_id = link.out_movement_id, link.in_movement_id
+    forget_for_link(ctx, reason, out_id, in_id, link.id)
+    linked = {i for r in current if r.id != link.id for i in _leg_ids(r)}
+    movements = {UUID(i) for i in payload.get("confirmed_movements") or []} | {out_id, in_id}
+    groups = {UUID(i) for i in payload.get("confirmed_groups") or []}
+    for side in (out_id, in_id):
+        _reopen_side(ctx, side, movements, groups, linked, set())
+    if link.id in {r.id for r in _current_links(ctx.conn)}:
+        # neither leg could be reopened: one is being answered right now (nothing is kept)
+        raise ConflictError("Eine Seite wird gerade bearbeitet. Bitte noch einmal versuchen.")
+    append_event(ctx, EventType.TRANSFER_UNLINKED, link.id, TransferUnlinked())
 
 
 # --- Cards ----------------------------------------------------------------------------------

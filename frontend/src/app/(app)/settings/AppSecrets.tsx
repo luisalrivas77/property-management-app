@@ -22,6 +22,7 @@ const GROUPS: Record<AppSecretGroup, string> = {
   chains: "Blockchains & Kurse",
   bank: "Bank",
   mail: "E-Mail",
+  elster: "ELSTER",
 };
 
 const SOURCE_TEXT: Record<AppSecretSource, string> = {

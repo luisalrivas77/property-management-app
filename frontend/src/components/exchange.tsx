@@ -26,7 +26,7 @@ import { storeAsDocument, StoredAsDocument, UPLOAD_ACCEPT, type Uploaded as Stor
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatDate, formatDateTime, formatDecimal, formatMoney } from "./format";
 import { toDecimalString } from "./input";
-import { IMPORT_STATUS, MOVEMENT_KIND } from "./labels";
+import { CHAIN, IMPORT_STATUS, MOVEMENT_KIND } from "./labels";
 import { ActionDialog, Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -264,6 +264,7 @@ export function ExchangeSection({ accountId }: { accountId: string }) {
           <ExchangeImportsTable imports={overview.imports ?? []} movements={movements} onChanged={state.reload} />
           <h2>Bewegungen</h2>
           <MovementsTable movements={movements} onChanged={state.reload} />
+          <LearnedAddresses overview={overview} onChanged={state.reload} />
         </div>
       )}
     </Loading>
@@ -782,7 +783,10 @@ export function ConfirmWithdrawals({ importId, count, onDone }: { importId: stri
 }
 
 /** The answers to one proposed movement: „Stimmt“ keeps its kind, every other allowed kind
- * replaces it (POST /movements/{id}/confirm or /answer). */
+ * replaces it (POST /movements/{id}/confirm or /answer). An answer never teaches a deposit
+ * address (D261, review fixes 16 Nov 2026): the answer does not show which wallet send it would
+ * come from. A deposit answered „Übertrag von eigenem Konto“ waits on a transfer card in Zu
+ * prüfen with its fitting send, whose pick carries the box „Adresse … merken“. */
 export function MovementAnswers({ movement, onDone }: { movement: ExchangeMovementRow; onDone: () => void }) {
   const [busy, setBusy] = useState<MovementKind | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -833,6 +837,45 @@ export function MovementAnswers({ movement, onDone }: { movement: ExchangeMoveme
   );
 }
 
+/** „Verknüpfung lösen“ (D261, review fixes 16 Nov 2026) on a movement the app linked by
+ * itself from a learned deposit address or withdrawal pair: the link ends, both sides wait in
+ * Zu prüfen again, and what the app had learned is forgotten, so it does not link them again.
+ * A correct link by hand (with its box) teaches it anew. */
+function ReleaseLearnedLink({ linkId, deposit, onDone }: { linkId: string; deposit: boolean; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const learned = deposit ? "die gemerkte Einzahlungsadresse" : "die gemerkte Wallet für Abhebungen";
+
+  async function release() {
+    if (
+      !window.confirm(
+        `Diese automatische Verknüpfung lösen? Beide Seiten warten dann wieder in „Zu prüfen“, und ${learned} wird vergessen, damit die App sie nicht wieder verknüpft.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.POST("/api/transfers/{link_id}/release", { params: { path: { link_id: linkId } } }));
+      onDone();
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <p className="cell-detail">Automatisch verknüpft (gemerkte Adresse)</p>
+      <button type="button" className="secondary" onClick={() => void release()} disabled={busy}>
+        {busy ? "Löst …" : "Verknüpfung lösen"}
+      </button>
+      <ErrorNotice error={error} />
+    </div>
+  );
+}
+
 function MovementsTable({ movements, onChanged }: { movements: ExchangeMovementRow[]; onChanged: () => void }) {
   if (movements.length === 0) return <p className="muted">Noch keine Bewegungen.</p>;
   return (
@@ -871,11 +914,87 @@ function MovementsTable({ movements, onChanged }: { movements: ExchangeMovementR
                 ) : (
                   <MovementAnswers movement={movement} onDone={onChanged} />
                 )}
+                {movement.learned_link_id ? (
+                  <ReleaseLearnedLink linkId={movement.learned_link_id} deposit={!movement.quantity.startsWith("-")} onDone={onChanged} />
+                ) : null}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+type LearnedRow = NonNullable<ExchangeOverview["learned"]>[number];
+
+/** D261: what the app learned from the person's links, each with „Vergessen“. A deposit
+ * address is shown masked with its chain (never in clear, D179); a withdrawal pair names the
+ * wallet and its masked address. Forgetting stops the automatic links; the links already made
+ * stay. Nothing shows while nothing is learned. */
+function LearnedAddresses({ overview, onChanged }: { overview: ExchangeOverview; onChanged: () => void }) {
+  const rows = overview.learned ?? [];
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <h2>Gelernte Adressen</h2>
+      <p className="muted">
+        Überträge an diese Adressen und von hier an diese Wallets verknüpft die App selbst, wenn genau eine Bewegung passt.
+      </p>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Art</th>
+              <th>Netzwerk</th>
+              <th>Adresse</th>
+              <th>Seit</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <LearnedLine key={row.id} accountId={overview.account_id} row={row} onChanged={onChanged} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function LearnedLine({ accountId, row, onChanged }: { accountId: string; row: LearnedRow; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function forget() {
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(
+        api.POST("/api/accounts/{account_id}/learned/{learned_id}/forget", {
+          params: { path: { account_id: accountId, learned_id: row.id } },
+        }),
+      );
+      onChanged();
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <tr>
+      <td>{row.kind === "deposit_address" ? "Einzahlungsadresse" : `Abhebungen an ${row.wallet_label ?? "eigene Wallet"}`}</td>
+      <td>{CHAIN[row.chain as keyof typeof CHAIN] ?? row.chain}</td>
+      <td>{row.address_masked}</td>
+      <td>{formatDate(row.created_at)}</td>
+      <td>
+        <button type="button" className="secondary" onClick={() => void forget()} disabled={busy}>
+          {busy ? "Vergisst …" : "Vergessen"}
+        </button>
+        <ErrorNotice error={error} />
+      </td>
+    </tr>
   );
 }

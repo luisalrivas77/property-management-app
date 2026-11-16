@@ -31,6 +31,7 @@ NAMES = (
     "inbox_imap_password",
     "inbox_address",
     "inbox_label",
+    "elster_hersteller_id",  # 0047
 )
 
 

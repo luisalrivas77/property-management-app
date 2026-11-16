@@ -2226,6 +2226,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/transfers/{link_id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transfer Release
+         * @description „Verknüpfung lösen“ (phase 7 D261): ends a coin link the app wrote from a learned
+         *     exchange address or withdrawal pair, reopens both legs and forgets what produced it. 404,
+         *     409 for a hash link, a person's link or any other link, or one no longer current.
+         */
+        post: operations["transfer_release_api_transfers__link_id__release_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transfers/{link_id}/unlink": {
         parameters: {
             query?: never;
@@ -2364,6 +2386,28 @@ export interface paths {
         get: operations["exchange_overview_api_accounts__account_id__exchange_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{account_id}/learned/{learned_id}/forget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange Learned Forget
+         * @description „Vergessen“ (D261): ends a learned deposit address or withdrawal pair of the exchange;
+         *     the links already written stay. 404 for none of this exchange's; 409 when forgotten
+         *     already.
+         */
+        post: operations["exchange_learned_forget_api_accounts__account_id__learned__learned_id__forget_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4466,13 +4510,13 @@ export interface components {
          * AppSecretGroup
          * @enum {string}
          */
-        AppSecretGroup: "ai" | "chains" | "bank" | "mail";
+        AppSecretGroup: "ai" | "chains" | "bank" | "mail" | "elster";
         /**
          * AppSecretName
-         * @description app_secret.name (migration 0045's CHECK), in the card's order.
+         * @description app_secret.name (migration 0045's CHECK, widened by 0047), in the card's order.
          * @enum {string}
          */
-        AppSecretName: "anthropic_api_key" | "etherscan_key" | "solana_rpc_url" | "bsc_rpc_url" | "helius_key" | "coingecko_key" | "fints_product_id" | "tem_secret_key" | "tem_project_id" | "mail_from" | "inbox_imap_user" | "inbox_imap_password" | "inbox_address" | "inbox_label";
+        AppSecretName: "anthropic_api_key" | "etherscan_key" | "solana_rpc_url" | "bsc_rpc_url" | "helius_key" | "coingecko_key" | "fints_product_id" | "tem_secret_key" | "tem_project_id" | "mail_from" | "inbox_imap_user" | "inbox_imap_password" | "inbox_address" | "inbox_label" | "elster_hersteller_id";
         /**
          * AppSecretPut
          * @description PUT /app-secrets/{name}: the value, stored encrypted and never logged or echoed (a
@@ -6892,7 +6936,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "account.deposit_address_learned" | "account.deposit_address_forgotten" | "account.withdrawal_pair_learned" | "account.withdrawal_pair_forgotten" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -7022,12 +7066,15 @@ export interface components {
             question?: string | null;
             /** Answers */
             answers?: components["schemas"]["MovementKind"][];
+            /** Learned Link Id */
+            learned_link_id?: string | null;
         };
         /**
          * ExchangeOverview
          * @description GET /accounts/{id}/exchange: the exchange account's page. `withdrawals_open` counts
          *     the crypto withdrawals without network and hash; on Binance they are the to-do
-         *     „Auszahlungsverlauf hochladen“ (D178 (4)), named by `todos`.
+         *     „Auszahlungsverlauf hochladen“ (D178 (4)), named by `todos`. `learned` the live deposit
+         *     addresses and withdrawal pairs (D261), oldest first.
          */
         ExchangeOverview: {
             /**
@@ -7053,6 +7100,8 @@ export interface components {
             movements_to_answer: number;
             /** Todos */
             todos?: string[];
+            /** Learned */
+            learned?: components["schemas"]["LearnedExchangeAddress"][];
         };
         /**
          * ExchangePosition
@@ -8058,6 +8107,35 @@ export interface components {
             cost_lines?: components["schemas"]["ExtractedValue"];
         };
         JsonValue: unknown;
+        /**
+         * LearnedExchangeAddress
+         * @description D261: what a person's link taught about the exchange, as its page lists it with
+         *     „Vergessen“: a deposit address on a chain (masked, never in clear, D179), or an own wallet
+         *     address its withdrawals arrive on (`wallet_label` names the wallet).
+         */
+        LearnedExchangeAddress: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "deposit_address" | "withdrawal_pair";
+            /** Chain */
+            chain: string;
+            /** Address Masked */
+            address_masked: string;
+            /** Wallet Label */
+            wallet_label?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /**
          * LeaseExtraction
          * @description Mietvertrag (contract / lease). Step 2, gated by ai_tenant_documents (D16).
@@ -12633,6 +12711,8 @@ export interface components {
             matched_by: components["schemas"]["TransferMatchedBy"];
             /** Superseded By */
             superseded_by?: string | null;
+            /** Learned */
+            learned?: ("learned" | "already" | "no_counterparty" | "own_address" | "balance_only") | null;
         };
         /**
          * TransferLinkCreate
@@ -12682,6 +12762,16 @@ export interface components {
              * @default false
              */
             rebook: boolean;
+            /**
+             * Remember Deposit Address
+             * @default false
+             */
+            remember_deposit_address: boolean;
+            /**
+             * Remember Withdrawal Pair
+             * @default false
+             */
+            remember_withdrawal_pair: boolean;
         };
         /**
          * TransferLinkView
@@ -18364,6 +18454,35 @@ export interface operations {
             };
         };
     };
+    transfer_release_api_transfers__link_id__release_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     transfer_unlink_api_transfers__link_id__unlink_post: {
         parameters: {
             query?: never;
@@ -18588,6 +18707,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ExchangeOverview"];
                 };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exchange_learned_forget_api_accounts__account_id__learned__learned_id__forget_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+                learned_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
             default: {

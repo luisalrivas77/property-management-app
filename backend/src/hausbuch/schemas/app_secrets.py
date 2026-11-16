@@ -18,7 +18,7 @@ from .common import Schema
 
 
 class AppSecretName(StrEnum):
-    """app_secret.name (migration 0045's CHECK), in the card's order."""
+    """app_secret.name (migration 0045's CHECK, widened by 0047), in the card's order."""
 
     # KI
     ANTHROPIC_API_KEY = "anthropic_api_key"
@@ -38,6 +38,9 @@ class AppSecretName(StrEnum):
     INBOX_IMAP_PASSWORD = "inbox_imap_password"
     INBOX_ADDRESS = "inbox_address"
     INBOX_LABEL = "inbox_label"
+    # ELSTER: the Hersteller-ID ELSTER assigned Hausbuch as a software maker (D260 amended
+    # (10)); nothing reads it yet (the ERiC spike comes next)
+    ELSTER_HERSTELLER_ID = "elster_hersteller_id"
 
     @property
     def variable(self) -> str:
@@ -72,6 +75,7 @@ class AppSecretGroup(StrEnum):
     CHAINS = "chains"  # „Blockchains & Kurse“
     BANK = "bank"  # „Bank“
     MAIL = "mail"  # „E-Mail“
+    ELSTER = "elster"  # „ELSTER“
 
 
 class AppSecretSource(StrEnum):

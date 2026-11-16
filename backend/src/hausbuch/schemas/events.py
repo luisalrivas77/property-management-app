@@ -1152,6 +1152,49 @@ class ExchangeTradeGrouped(Schema):
     document_id: UUID | None = None
 
 
+class ExchangeDepositAddressLearned(Schema):
+    """account.deposit_address_learned (phase 7 D261 (2)), on the exchange account: a person
+    linked a wallet's plain send to this exchange's deposit with „Adresse als
+    Einzahlungsadresse von <Börse> merken“ ticked, so the address the send paid is the
+    exchange's deposit address on its chain. Ids and the masked address only, never the
+    address or its HMAC (D179); the HMAC sits on the row."""
+
+    learned_id: UUID
+    chain: Chain
+    address_masked: str
+    learned_from: UUID  # the wallet's send
+
+
+class ExchangeDepositAddressForgotten(Schema):
+    """account.deposit_address_forgotten (D261 (2)): „Vergessen“ ended the learned row; the
+    links already written stay. unlinked_link_id: the row ended because a person released the
+    link code wrote from it („Verknüpfung lösen“, D261 review fixes 16 Nov 2026)."""
+
+    learned_id: UUID
+    chain: Chain
+    address_masked: str
+    unlinked_link_id: UUID | None = None
+
+
+class ExchangeWithdrawalPairLearned(Schema):
+    """account.withdrawal_pair_learned (D261 (3)), on the exchange account: a person linked an
+    exchange withdrawal to a receipt on the own wallet address `address_id` with „Abhebungen
+    von <Börse> an diese Adresse künftig automatisch verknüpfen“ ticked."""
+
+    learned_id: UUID
+    address_id: UUID
+    learned_from: UUID  # the exchange's withdrawal
+
+
+class ExchangeWithdrawalPairForgotten(Schema):
+    """account.withdrawal_pair_forgotten (D261 (3)): „Vergessen“ ended the pair, or (with
+    unlinked_link_id) „Verknüpfung lösen“ on a link code wrote from it."""
+
+    learned_id: UUID
+    address_id: UUID
+    unlinked_link_id: UUID | None = None
+
+
 class TransferLinked(Schema):
     """transfer.linked (D162): the two legs, by id only. deposit_iban (D162 amended 15 Nov
     2026, review): on the first link by hand of a deposit an exchange credited short, or (D162
@@ -1172,6 +1215,12 @@ class TransferLinked(Schema):
     # them to proposed once the link is no longer current. Empty on every other link.
     confirmed_movements: list[UUID] = Field(default_factory=list)
     confirmed_groups: list[UUID] = Field(default_factory=list)
+    # Phase 7 D261 (16 Nov 2026): why a matcher's coin link was written: `hash` (both legs
+    # under one transaction hash), `deposit_address` (a send to an exchange's learned deposit
+    # address), `withdrawal_pair` (an exchange's withdrawal to an own address it was linked to
+    # before), `confirmed` (both legs confirmed already). None on a person's link and on
+    # every EUR link.
+    reason: Literal["hash", "deposit_address", "withdrawal_pair", "confirmed"] | None = None
 
 
 class TransferUnlinked(Schema):
@@ -1392,6 +1441,10 @@ class EventType(StrEnum):
     ACCOUNT_HOLDINGS_MISMATCH = "account.holdings_mismatch"
     ACCOUNT_HOLDING_CORRECTED = "account.holding_corrected"  # step 4, 0027
     ACCOUNT_HOLDINGS_EXPORTED = "account.holdings_exported"  # phase 7 D190, step 6
+    ACCOUNT_DEPOSIT_ADDRESS_LEARNED = "account.deposit_address_learned"  # phase 7 D261
+    ACCOUNT_DEPOSIT_ADDRESS_FORGOTTEN = "account.deposit_address_forgotten"  # phase 7 D261
+    ACCOUNT_WITHDRAWAL_PAIR_LEARNED = "account.withdrawal_pair_learned"  # phase 7 D261
+    ACCOUNT_WITHDRAWAL_PAIR_FORGOTTEN = "account.withdrawal_pair_forgotten"  # phase 7 D261
 
     # Phase 7 (entity_type wallet, entity_id = the wallet account)
     WALLET_ADDRESS_ADDED = "wallet.address_added"
@@ -1627,6 +1680,18 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.ACCOUNT_HOLDINGS_EXPORTED: EventSpec(
         HoldingsExported, "required", "Year-end holdings statement exported (date = as of)"
+    ),
+    E.ACCOUNT_DEPOSIT_ADDRESS_LEARNED: EventSpec(
+        ExchangeDepositAddressLearned, "forbidden", "Exchange deposit address learned"
+    ),
+    E.ACCOUNT_DEPOSIT_ADDRESS_FORGOTTEN: EventSpec(
+        ExchangeDepositAddressForgotten, "forbidden", "Exchange deposit address forgotten"
+    ),
+    E.ACCOUNT_WITHDRAWAL_PAIR_LEARNED: EventSpec(
+        ExchangeWithdrawalPairLearned, "forbidden", "Exchange withdrawals to an address learned"
+    ),
+    E.ACCOUNT_WITHDRAWAL_PAIR_FORGOTTEN: EventSpec(
+        ExchangeWithdrawalPairForgotten, "forbidden", "Exchange withdrawals to an address forgotten"
     ),
     # Phase 7
     E.WALLET_ADDRESS_ADDED: EventSpec(WalletAddressAdded, "forbidden", "Wallet address added"),

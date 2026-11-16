@@ -185,6 +185,15 @@ def test_phase_5_values_load_and_the_secret_ones_stay_out_of_repr():
     assert "owner.a" not in text  # neither the account nor the token address
 
 
+def test_the_elster_hersteller_id_loads_and_stays_out_of_repr():
+    """Phase 6 D260 amended (10): the container variable of the app secret of the same name.
+    An invented number."""
+    assert load_settings(ENV).elster_hersteller_id is None
+    settings = load_settings(ENV | {"HAUSBUCH_ELSTER_HERSTELLER_ID": "98765431"})
+    assert settings.elster_hersteller_id == "98765431"
+    assert "98765431" not in repr(settings)
+
+
 # Phase 6 D163: one PIN per named slot. Synthetic values only (public repo).
 SLOT_PINS = {
     "HAUSBUCH_FINTS_PIN": "pin-primary-synthetic",

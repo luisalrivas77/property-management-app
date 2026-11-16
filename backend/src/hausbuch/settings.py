@@ -171,6 +171,9 @@ class Settings:
     tem_project_id: str | None = None
     tem_region: str = DEFAULT_TEM_REGION
     mail_from: str | None = None  # the sending address on the verified domain
+    # ERiC (not built): the Hersteller-ID ELSTER assigned Hausbuch as a software maker; or
+    # typed in the app (phase 6 D260 amended (10)). Nothing reads it yet.
+    elster_hersteller_id: str | None = field(default=None, repr=False)
     # Phase 6 prices (D167 (3)): the CoinGecko Demo key, sent only in its request header;
     # without it the coin prices come from Kraken alone.
     coingecko_key: SecretStr | None = field(default=None, repr=False)
@@ -419,6 +422,7 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
         tem_project_id=_optional(environ, "HAUSBUCH_TEM_PROJECT_ID"),
         tem_region=_optional(environ, "HAUSBUCH_TEM_REGION") or DEFAULT_TEM_REGION,
         mail_from=_optional(environ, "HAUSBUCH_MAIL_FROM"),
+        elster_hersteller_id=_optional(environ, "HAUSBUCH_ELSTER_HERSTELLER_ID"),
         coingecko_key=_secret(environ, "HAUSBUCH_COINGECKO_KEY"),
         etherscan_key=_secret(environ, "HAUSBUCH_ETHERSCAN_KEY"),
         solana_rpc_url=_secret(environ, "HAUSBUCH_SOLANA_RPC_URL")
