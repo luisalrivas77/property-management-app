@@ -570,34 +570,31 @@ class ExchangeMovementRow(AssetMovement):
     symbol: str
     question: str | None = None
     answers: list[MovementKind] = Field(default_factory=list)
+    # D261 (review fixes 16 Nov 2026): the current link the app wrote from a learned deposit
+    # address or withdrawal pair, which „Verknüpfung lösen“ (POST /transfers/{id}/release) ends
+    learned_link_id: UUID | None = None
 
 
 # D261: what a ticked box „Adresse als Einzahlungsadresse von <Börse> merken“ or
-# „Abhebungen von <Börse> an diese Adresse künftig automatisch verknüpfen“ did. learned: a row
-# was stored; already: it was learned before; no_counterparty: the send names no single
-# external address (a Bitcoin spend paying several outputs), or no single open send fits the
-# answered deposit; own_address: the address is an own wallet address; balance_only: BNB Smart
-# Chain, whose sends are not read. Only `learned` stores anything; the link stands either way.
+# „Abhebungen von <Börse> an diese Adresse künftig automatisch verknüpfen“ on a person's pick
+# of two legs did. learned: a row was stored; already: it was learned before; no_counterparty:
+# the send names no single external address (a Bitcoin spend paying several outputs);
+# own_address: the address is an own wallet address; balance_only: BNB Smart Chain, whose
+# sends are not read. Only `learned` stores anything; the link stands either way.
 LearnOutcome = Literal["learned", "already", "no_counterparty", "own_address", "balance_only"]
 
 
 class AnswerMovementBody(Schema):
     """POST /movements/{id}/answer: what the movement really was. The movement is replaced
-    by a confirmed row of that kind (the old one kept, superseded_by).
-
-    remember_deposit_address (D261 (2)): with kind internal_transfer_in, the address the one
-    fitting open wallet send paid becomes the exchange's deposit address on its chain."""
+    by a confirmed row of that kind (the old one kept, superseded_by)."""
 
     kind: MovementKind
-    remember_deposit_address: bool = False
 
 
 class MovementAnswered(Schema):
-    """POST /movements/{id}/answer: the movement that now stands for the answered one;
-    `learned` what the deposit box did (None when it was not ticked or did not apply)."""
+    """POST /movements/{id}/answer: the movement that now stands for the answered one."""
 
     movement_id: UUID
-    learned: LearnOutcome | None = None
 
 
 class WithdrawalsConfirmed(Schema):

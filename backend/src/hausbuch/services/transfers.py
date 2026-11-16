@@ -1527,6 +1527,24 @@ def unlink(ctx: CommandContext, link_id: UUID, replacement: TransferLinkCreate) 
     return new
 
 
+def release(ctx: CommandContext, link_id: UUID) -> None:
+    """POST /transfers/{id}/release: „Verknüpfung lösen“ on a coin link code wrote from a
+    learned exchange address or withdrawal pair (phase 7 D261, review fixes 16 Nov 2026,
+    chain_transfers.release_learned_link). The exchange's row is locked before the transfer
+    lock, as unlink's order."""
+    from .chain import transfers as chain_transfers  # it imports this module
+
+    c = link_table.c
+    legs = ctx.conn.execute(
+        select(c.out_movement_id, c.in_movement_id).where(c.id == link_id)
+    ).one_or_none()
+    if legs is None:
+        raise NotFoundError("transfer", link_id)
+    _lock_exchanges(ctx, (legs.out_movement_id, legs.in_movement_id))
+    _lock(ctx)
+    chain_transfers.release_learned_link(ctx, link_id)
+
+
 # --- Reading links and cards ----------------------------------------------------------------
 
 

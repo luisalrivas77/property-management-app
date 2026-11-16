@@ -25,12 +25,13 @@ from db.test_services_chain_transfers import (
     _open,
 )
 from psycopg.types.json import Jsonb
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import exchange_deposit_address as deposit_table
 from hausbuch.db.tables import exchange_withdrawal_pair as pair_table
-from hausbuch.rules.review import NO_MATCH
+from hausbuch.rules.review import CHAIN_FIRST_SYNC, NO_MATCH
 from hausbuch.schemas.household import (
     AnswerMovementBody,
     MovementKind,
@@ -134,8 +135,18 @@ class LearnSeed(Seed):
             fee = leg("-0.0001", "fee", "fee")
         return group, out, fee
 
-    def deposit(self, units: str, *, at, exchange=None, kind="cashback_reward", status="proposed"):
-        """An exchange's crypto Deposit row as its import writes it (a possible bonus)."""
+    def deposit(
+        self,
+        units: str,
+        *,
+        at,
+        exchange=None,
+        kind="cashback_reward",
+        status="proposed",
+        tx_hash=None,
+    ):
+        """An exchange's crypto Deposit row as its import writes it (a possible bonus); a
+        hash when the exchange's export names the transaction."""
         with _admin(self.dbname) as conn:
             return _insert(
                 conn,
@@ -147,6 +158,7 @@ class LearnSeed(Seed):
                     "kind": kind,
                     "quantity": units,
                     "occurred_at": at,
+                    "tx_hash": tx_hash,
                     "source": "csv",
                     "status": status,
                     "movement_hash": hashlib.sha256(uuid.uuid4().bytes).hexdigest(),
@@ -208,6 +220,13 @@ def _pick(run, ws, out_id, in_id, **flags):
 
 def _learned_rows(read, ws, table=deposit_table):
     return read(ws, lambda conn: conn.execute(select(table)).all())
+
+
+def _links_current(read, ws):
+    """The links that count now (services.transfers._current_links)."""
+    from hausbuch.services.transfers import _current_links
+
+    return read(ws, _current_links)
 
 
 def _reason(read, ws, link_id):
@@ -506,34 +525,110 @@ def test_another_workspace_neither_sees_nor_uses_a_learned_address(
     assert run(b.ws, chain_transfers.relink).linked == 0
 
 
-# --- the answer path ---------------------------------------------------------------------------
+# --- the answer path (review fixes 16 Nov 2026: it never learns) -----------------------------
 
 
-def test_answering_the_deposit_as_a_transfer_learns_from_the_one_fitting_send(seed, run, read):
+def test_the_answer_has_no_remember_box(seed, run, read):
+    """„Übertrag von eigenem Konto“ never shows which wallet send an address would come from,
+    so a payment to a third party could be learned as the exchange's deposit address: the
+    answer takes no box (principle 3)."""
+    with pytest.raises(ValidationError):
+        AnswerMovementBody(kind=MovementKind.INTERNAL_TRANSFER_IN, remember_deposit_address=True)
+
+
+def _card_ids(card):
+    return {card.leg.id, *[x.id for x in card.candidates]}
+
+
+def test_an_answered_deposit_learns_nothing_and_its_card_offers_the_fitting_send(seed, run, read):
+    """The answered deposit waits on a transfer card whose candidate is the one fitting send,
+    so the first teaching link (the person's pick, with the box) is one click away."""
     _, out, _ = seed.send("1")
     bonus = seed.deposit("1", at=T0 + timedelta(hours=1))
-    body = AnswerMovementBody(kind=MovementKind.INTERNAL_TRANSFER_IN, remember_deposit_address=True)
-
-    answered = run(seed.ws, imports.answer_movement, bonus, body)
-
-    assert answered.learned == "learned"
-    [row] = _learned_rows(read, seed.ws)
-    assert row.learned_from == out
-    [link] = _links(read, seed.ws)  # the relink after the answer linked the pair
-    assert (link.out_movement_id, link.in_movement_id) == (
-        _live(read, seed.ws, out).id,
-        _live(read, seed.ws, answered.movement_id).id,
+    answered = run(
+        seed.ws,
+        imports.answer_movement,
+        bonus,
+        AnswerMovementBody(kind=MovementKind.INTERNAL_TRANSFER_IN),
     )
-    assert _reason(read, seed.ws, link.id) == "deposit_address"
-
-
-def test_answering_with_two_fitting_sends_learns_nothing(seed, run, read):
-    seed.send("1")
-    seed.send("1", at=T0 + timedelta(minutes=5))
-    bonus = seed.deposit("1", at=T0 + timedelta(hours=1))
-    body = AnswerMovementBody(kind=MovementKind.INTERNAL_TRANSFER_IN, remember_deposit_address=True)
-    assert run(seed.ws, imports.answer_movement, bonus, body).learned == "no_counterparty"
     assert _learned_rows(read, seed.ws) == []
+    assert _links(read, seed.ws) == []
+    cards = [c for c in _open(read, seed.ws) if answered in _card_ids(c)]
+    assert cards, "the answered deposit waits on a transfer card"
+    assert any(_card_ids(c) >= {out, answered} for c in cards), "it offers the fitting send"
+
+    picked = _pick(run, seed.ws, out, answered, remember_deposit_address=True)
+    assert picked.learned == "learned"
+
+
+# --- review fixes 16 Nov 2026: two hashes, rivals --------------------------------------------
+
+
+def test_a_withdrawal_and_a_receipt_under_two_hashes_are_never_linked_by_a_pair(seed, run, read):
+    """A Binance-style withdrawal names its transaction hash; a receipt under another hash is
+    another transaction, whatever its units: the matcher and a person's pick refuse that pair,
+    so the learned pair does too, and the legs wait on a card."""
+    _pair(seed)
+    seed.exchange_out("1", fee="0.001", tx_hash=_hash("withdrawal H1"))
+    seed.receipt("0.999", at=T0 + timedelta(hours=1))  # its own (other) hash
+    assert run(seed.ws, chain_transfers.relink).linked == 0
+    assert _links(read, seed.ws) == []
+    assert _open(read, seed.ws) != []  # never a silent dead end
+
+
+def test_a_withdrawal_without_a_hash_still_links_by_its_pair(seed, run, read):
+    _pair(seed)
+    seed.exchange_out("1", fee="0.001")  # BISON's export names no hash
+    seed.receipt("0.999", at=T0 + timedelta(hours=1))
+    assert run(seed.ws, chain_transfers.relink).linked == 1
+
+
+def test_a_deposit_under_another_hash_is_never_linked_by_the_address(seed, run, read):
+    seed.learn_deposit()
+    seed.send("1")
+    seed.deposit("1", at=T0 + timedelta(hours=1), tx_hash=_hash("another deposit"))
+    assert run(seed.ws, chain_transfers.relink).linked == 0
+    assert _links(read, seed.ws) == []
+    assert read(seed.ws, wallet_groups.proposed_counts)[seed.wallet][0] >= 1
+
+
+def test_a_wallet_send_and_another_exchanges_withdrawal_fitting_one_deposit_link_nothing(
+    seed, run, read
+):
+    """Exchange B's withdrawal could be what exchange A credited as much as the wallet's send
+    to A's learned address: two fits, so code links nothing. No transfer card names both
+    candidates: the send waits on its wallet's line, B's withdrawal on the card
+    `transfer.unmatched_leg`, and the deposit as its own proposed movement in Zu prüfen
+    („Eingang … ohne Kauf“), which a person answers."""
+    seed.learn_deposit()
+    seed.send("1")
+    withdrawal_b = uuid.uuid4()
+    with _admin(seed.dbname) as conn:
+        _insert(
+            conn,
+            "asset_movement",
+            {
+                "id": withdrawal_b,
+                "workspace_id": seed.ws,
+                "account_id": seed.exchange_b,
+                "asset_id": seed.eth_plain,
+                "kind": "internal_transfer_out",
+                "quantity": "-1",
+                "occurred_at": T0 + timedelta(minutes=10),
+                "source": "csv",
+                "status": "confirmed",
+                "movement_hash": hashlib.sha256(uuid.uuid4().bytes).hexdigest(),
+            },
+        )
+    deposit = seed.deposit("1", at=T0 + timedelta(hours=1))
+    assert run(seed.ws, chain_transfers.relink).linked == 0
+    assert _links(read, seed.ws) == []
+    assert [r.ended_at for r in _learned_rows(read, seed.ws)] == [None]
+    # nothing waits silently
+    assert read(seed.ws, wallet_groups.proposed_counts)[seed.wallet][0] >= 1
+    assert [c.leg.id for c in _open(read, seed.ws)] == [withdrawal_b]
+    items = read(seed.ws, imports.exchange_inbox_items)
+    assert [i.movement_id for i in items if i.movement_id == deposit] == [deposit]
 
 
 # --- (3) a learned withdrawal pair -------------------------------------------------------------
@@ -656,6 +751,104 @@ def test_replacing_a_learned_link_reopens_the_dropped_leg_and_keeps_the_address(
     dropped = _live(read, seed.ws, bonus)
     assert (dropped.kind, dropped.status) == ("internal_transfer_in", "proposed")
     assert _learned_rows(read, seed.ws)[0].ended_at is None
+
+
+def _released(read, ws, table=deposit_table):
+    return [r for r in _learned_rows(read, ws, table) if r.ended_at is not None]
+
+
+def test_releasing_a_learned_deposit_link_reopens_both_legs_and_forgets_the_address(
+    seed, run, read
+):
+    """„Verknüpfung lösen“: the code's link ends, both legs go back to proposed and the address
+    that produced it is forgotten with an event naming the link, so the next relink cannot
+    write the pair again."""
+    learned_id = seed.learn_deposit()
+    group, out, _ = seed.send("1")
+    bonus = seed.deposit("1", at=T0 + timedelta(hours=1))
+    assert run(seed.ws, chain_transfers.relink).linked == 1
+    [code] = _links(read, seed.ws)
+    rows = read(seed.ws, imports.exchange_movements, seed.exchange)
+    assert [r.learned_link_id for r in rows if r.id == code.in_movement_id] == [code.id]
+
+    run(seed.ws, transfers.release, code.id)
+
+    assert _links_current(read, seed.ws) == []
+    sent, got = _live(read, seed.ws, out), _live(read, seed.ws, bonus)
+    assert (sent.status, got.status) == ("proposed", "proposed")
+    assert _group_status(read, seed.ws, _live(read, seed.ws, out).group_id) == "proposed"
+    [ended] = _released(read, seed.ws)
+    assert ended.id == learned_id
+    forgotten = [p for t, p in _events(read, seed.ws, seed.exchange) if t.endswith("_forgotten")]
+    assert [p["unlinked_link_id"] for p in forgotten] == [str(code.id)]
+    assert [t for t, _ in _events(read, seed.ws, code.id)] == [
+        "transfer.linked",
+        "transfer.unlinked",
+    ]
+
+    assert run(seed.ws, chain_transfers.relink).linked == 0  # not re-formed
+    assert _links_current(read, seed.ws) == []
+    assert read(seed.ws, wallet_groups.proposed_counts)[seed.wallet][0] >= 1  # it waits again
+    rows = read(seed.ws, imports.exchange_movements, seed.exchange)
+    assert all(r.learned_link_id is None for r in rows)
+    with pytest.raises(ConflictError, match="besteht nicht mehr"):
+        run(seed.ws, transfers.release, code.id)
+    assert group  # the original group is superseded by its reopened copy
+
+
+def test_releasing_a_learned_withdrawal_link_forgets_the_pair(seed, run, read):
+    _pair(seed)
+    out = seed.exchange_out("1", fee="0.001", status="proposed")
+    _, [receipt] = seed.receipt("0.999", at=T0 + timedelta(hours=1))
+    assert run(seed.ws, chain_transfers.relink).linked == 1
+    [code] = _links(read, seed.ws)
+
+    run(seed.ws, transfers.release, code.id)
+
+    assert len(_released(read, seed.ws, pair_table)) == 1
+    assert _live(read, seed.ws, out).status == "proposed"
+    assert _live(read, seed.ws, receipt).status == "proposed"
+    assert run(seed.ws, chain_transfers.relink).linked == 0
+    assert _links_current(read, seed.ws) == []
+    assert _open(read, seed.ws) != []
+
+
+def test_a_hash_link_and_a_persons_link_are_not_released(seed, run, read):
+    tx = _hash("one transaction")
+    seed.exchange_out("0.3", fee="0.0005", tx_hash=tx, network="ETH")
+    seed.group(
+        [(seed.eth, seed.address, "0.2995", "uncategorized", "proposed")],
+        tx_hash=tx,
+        reason=CHAIN_FIRST_SYNC,
+    )
+    assert run(seed.ws, chain_transfers.relink).linked == 1
+    [by_hash] = _links(read, seed.ws)
+    with pytest.raises(ConflictError, match="gleicher Hash"):
+        run(seed.ws, transfers.release, by_hash.id)
+
+    _, sent, _ = seed.send("1", at=LATER)
+    deposit = seed.deposit(
+        "1", at=LATER + timedelta(hours=1), kind="internal_transfer_in", status="confirmed"
+    )
+    by_person = _pick(run, seed.ws, sent, deposit)
+    with pytest.raises(ConflictError, match="gemerkte Adresse"):
+        run(seed.ws, transfers.release, by_person.id)
+    with pytest.raises(NotFoundError):
+        run(seed.ws, transfers.release, uuid.uuid4())
+    assert len(_links_current(read, seed.ws)) == 2
+
+
+# --- review fixes 16 Nov 2026: two learns of one address ------------------------------------
+
+
+def test_learning_an_address_another_exchange_holds_is_a_plain_409(seed, run, read):
+    """The learn on one connection: an address exchange B holds is B's (409 for A, "already"
+    for B). The ON CONFLICT path of two learns at once is not raced on two connections here."""
+    seed.learn_deposit(exchange=seed.exchange_b)
+    _, out, _ = seed.send("1", at=LATER)
+    with pytest.raises(ConflictError, match="einer anderen Börse"):
+        run(seed.ws, learned.learn_deposit_address, seed.exchange, out)
+    assert run(seed.ws, learned.learn_deposit_address, seed.exchange_b, out) == "already"
 
 
 # --- the lots read a teaching link and a code link alike (D184 (4)) ------------------------------

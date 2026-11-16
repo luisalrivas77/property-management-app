@@ -2226,6 +2226,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/transfers/{link_id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transfer Release
+         * @description „Verknüpfung lösen“ (phase 7 D261): ends a coin link the app wrote from a learned
+         *     exchange address or withdrawal pair, reopens both legs and forgets what produced it. 404,
+         *     409 for a hash link, a person's link or any other link, or one no longer current.
+         */
+        post: operations["transfer_release_api_transfers__link_id__release_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transfers/{link_id}/unlink": {
         parameters: {
             query?: never;
@@ -4457,17 +4479,9 @@ export interface components {
          * AnswerMovementBody
          * @description POST /movements/{id}/answer: what the movement really was. The movement is replaced
          *     by a confirmed row of that kind (the old one kept, superseded_by).
-         *
-         *     remember_deposit_address (D261 (2)): with kind internal_transfer_in, the address the one
-         *     fitting open wallet send paid becomes the exchange's deposit address on its chain.
          */
         AnswerMovementBody: {
             kind: components["schemas"]["MovementKind"];
-            /**
-             * Remember Deposit Address
-             * @default false
-             */
-            remember_deposit_address: boolean;
         };
         /**
          * AppCredential
@@ -7048,6 +7062,8 @@ export interface components {
             question?: string | null;
             /** Answers */
             answers?: components["schemas"]["MovementKind"][];
+            /** Learned Link Id */
+            learned_link_id?: string | null;
         };
         /**
          * ExchangeOverview
@@ -8857,8 +8873,7 @@ export interface components {
         };
         /**
          * MovementAnswered
-         * @description POST /movements/{id}/answer: the movement that now stands for the answered one;
-         *     `learned` what the deposit box did (None when it was not ticked or did not apply).
+         * @description POST /movements/{id}/answer: the movement that now stands for the answered one.
          */
         MovementAnswered: {
             /**
@@ -8866,8 +8881,6 @@ export interface components {
              * Format: uuid
              */
             movement_id: string;
-            /** Learned */
-            learned?: ("learned" | "already" | "no_counterparty" | "own_address" | "balance_only") | null;
         };
         /**
          * MovementImport
@@ -18381,6 +18394,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OpenTransfer"][];
                 };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transfer_release_api_transfers__link_id__release_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
             default: {

@@ -142,4 +142,4 @@ def movement_confirm(movement_id: UUID, cmd: Cmd) -> Response:
 def movement_answer(movement_id: UUID, body: AnswerMovementBody, cmd: Cmd) -> MovementAnswered:
     """What the proposed movement really was, and the id of the movement that now stands for
     it. 422 exchange.answer_invalid, exchange.movement_done."""
-    return cmd.run(imports.answer_movement, movement_id, body)
+    return MovementAnswered(movement_id=cmd.run(imports.answer_movement, movement_id, body))

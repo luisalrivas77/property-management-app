@@ -1163,8 +1163,7 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       ) : null;
     case "exchange_movement": {
       const movement = item.movement_id ? data.movements.get(item.movement_id) : undefined;
-      const exchange = item.account_id ? data.accounts.get(item.account_id)?.label : undefined;
-      if (movement) return <MovementAnswers movement={movement} exchange={exchange} onDone={onChanged} />;
+      if (movement) return <MovementAnswers movement={movement} onDone={onChanged} />;
       return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zum Börsenkonto</Link> : null;
     }
     case "wallet_change":
@@ -1305,20 +1304,22 @@ function linkBody(accounts: Map<string, Account>, leg: TransferLegView, other: T
 /** D261: the box a coin link between an own wallet and an exchange offers, ticked by default.
  * A wallet's send to the exchange's deposit teaches its deposit address, an exchange's
  * withdrawal to a wallet address teaches that pair; from then on code links the next ones. The
- * box names the exchange, the date and the units, never the address (D179). */
+ * box names both sides, the wallet's send or receipt with its date and units included (review
+ * fixes 16 Nov 2026: the person sees which send the address is taken from), never the address
+ * (D179). */
 function learnBox(leg: TransferLegView, other: TransferLegView): { kind: "deposit" | "withdrawal"; text: string } | null {
   if (leg.source !== "movement" || other.source !== "movement") return null;
   const [out, in_] = legSends(leg) ? [leg, other] : [other, leg];
   if (out.account_kind === "wallet" && in_.account_kind === "exchange") {
     return {
       kind: "deposit",
-      text: `Adresse als Einzahlungsadresse von ${in_.account_label} merken (Einzahlung vom ${formatDate(in_.booked_on)}, ${legFigure(in_)}); weitere Einzahlungen dorthin verknüpft die App dann selbst`,
+      text: `Die Adresse, an die ${out.account_label} am ${formatDate(out.booked_on)} ${legFigure(out)} gesendet hat, als Einzahlungsadresse von ${in_.account_label} merken (Einzahlung vom ${formatDate(in_.booked_on)}, ${legFigure(in_)}); weitere Einzahlungen dorthin verknüpft die App dann selbst`,
     };
   }
   if (out.account_kind === "exchange" && in_.account_kind === "wallet") {
     return {
       kind: "withdrawal",
-      text: `Abhebungen von ${out.account_label} an diese Adresse künftig automatisch verknüpfen (Abhebung vom ${formatDate(out.booked_on)}, ${legFigure(out)})`,
+      text: `Abhebungen von ${out.account_label} an diese Adresse von ${in_.account_label} künftig automatisch verknüpfen (Abhebung vom ${formatDate(out.booked_on)}, ${legFigure(out)}; Eingang vom ${formatDate(in_.booked_on)}, ${legFigure(in_)})`,
     };
   }
   return null;

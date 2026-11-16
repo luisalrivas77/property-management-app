@@ -1167,11 +1167,13 @@ class ExchangeDepositAddressLearned(Schema):
 
 class ExchangeDepositAddressForgotten(Schema):
     """account.deposit_address_forgotten (D261 (2)): „Vergessen“ ended the learned row; the
-    links already written stay."""
+    links already written stay. unlinked_link_id: the row ended because a person released the
+    link code wrote from it („Verknüpfung lösen“, D261 review fixes 16 Nov 2026)."""
 
     learned_id: UUID
     chain: Chain
     address_masked: str
+    unlinked_link_id: UUID | None = None
 
 
 class ExchangeWithdrawalPairLearned(Schema):
@@ -1185,10 +1187,12 @@ class ExchangeWithdrawalPairLearned(Schema):
 
 
 class ExchangeWithdrawalPairForgotten(Schema):
-    """account.withdrawal_pair_forgotten (D261 (3)): „Vergessen“ ended the pair."""
+    """account.withdrawal_pair_forgotten (D261 (3)): „Vergessen“ ended the pair, or (with
+    unlinked_link_id) „Verknüpfung lösen“ on a link code wrote from it."""
 
     learned_id: UUID
     address_id: UUID
+    unlinked_link_id: UUID | None = None
 
 
 class TransferLinked(Schema):

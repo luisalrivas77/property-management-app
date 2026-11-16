@@ -115,10 +115,10 @@ from hausbuch.schemas.events import (
     MovementRecorded,
     MovementSuperseded,
     TransferLinked,
+    TransferUnlinked,
 )
 from hausbuch.schemas.household import (
     AssetKind,
-    LearnOutcome,
     MovementKind,
     MovementSource,
     MovementStatus,
@@ -979,26 +979,36 @@ def _within(first: _Row, then: _Row, window: timedelta) -> bool:
     return first.occurred_at <= then.occurred_at <= first.occurred_at + window
 
 
+def _hashes_agree(a: _Row, b: _Row) -> bool:
+    """A learned fit never pairs two legs that both name a transaction hash and name different
+    ones: the hash proves they are two transactions (the matcher and a person's pick refuse
+    such a pair too; review of D261, 16 Nov 2026). Without a hash on either leg, units decide."""
+    return not (a.tx_hash and b.tx_hash) or _same_hash(a, b)
+
+
 def _deposit_fits(send: _Row, deposit: _Row) -> bool:
     """D261 (2): a wallet send and an exchange's crypto deposit of the same asset, the units
     equal within the chain's dust (the exchange credits what arrived), the deposit at or after
-    the send and within 48 hours."""
+    the send and within 48 hours, never under another transaction hash (_hashes_agree)."""
     return (
         send.priced == deposit.priced
         and _network_fits(deposit, send)
         and _within(send, deposit, DEPOSIT_WINDOW)
         and _units_fit(send.leg(), deposit.leg())
+        and _hashes_agree(send, deposit)
     )
 
 
 def _withdrawal_fits(withdrawal: _Row, receipt: _Row) -> bool:
     """D261 (3): the received units equal the sent units less the exchange's fee_quantity
-    within the chain's dust, the receipt at or after the withdrawal and within 24 hours."""
+    within the chain's dust, the receipt at or after the withdrawal and within 24 hours, never
+    under another transaction hash (_hashes_agree)."""
     return (
         withdrawal.priced == receipt.priced
         and _network_fits(withdrawal, receipt)
         and _within(withdrawal, receipt, WITHDRAWAL_WINDOW)
         and _units_fit(withdrawal.leg(), receipt.leg())
+        and _hashes_agree(withdrawal, receipt)
     )
 
 
@@ -1089,9 +1099,13 @@ def _deposit_pass(ctx: CommandContext, world: _World, result: RelinkResult) -> N
         (deposit,) = fits
         if any(
             s.id != send.id and s.id not in world.linked and _deposit_fits(s, deposit)
-            for s in sends
-        ):
-            continue  # another open send fits the deposit too: the card asks which
+            for s in world.open()
+            if s.sends and s.account_kind is AccountKind.WALLET
+        ) or any(s.id not in world.linked for s in world.rivals(send, deposit)):
+            # another open send fits the deposit too, a wallet's (by this pass's fit, whatever
+            # it was booked as) or an own exchange's withdrawal (by the matcher's, as
+            # _withdrawal_pass): the card asks which (review of D261, 16 Nov 2026)
+            continue
         _link_learned(ctx, world, result, send, deposit, "deposit_address")
 
 
@@ -1326,31 +1340,98 @@ def _learn_on_link(
     return link if outcome is None else link.model_copy(update={"learned": outcome})
 
 
-def learn_from_deposit(ctx: CommandContext, deposit_id: UUID) -> LearnOutcome:
-    """D261 (2), the answer path: a person answered an exchange's crypto deposit as a transfer
-    from an own wallet with the box ticked. The deposit address is learned from the one open
-    wallet send that fits the deposit (same asset, equal units within the dust, the deposit
-    at or after the send within 48 hours) and names its counterparty; with none or several,
-    nothing is learned ("no_counterparty"). The caller's relink links the pair."""
-    from .learned import learn_deposit_address
+# --- Releasing a link code wrote from a learned row (D261, review fixes 16 Nov 2026) ----------
 
-    m = movement_table.c
-    found = _read_legs(ctx.conn, m.id == deposit_id)
-    if not found or found[0].account_kind is not AccountKind.EXCHANGE:
-        return "no_counterparty"
-    (deposit,) = found
-    world = _World.read(ctx.conn)
-    sends = [
-        s
-        for s in world.open()
-        if s.sends
-        and s.account_kind is AccountKind.WALLET
-        and s.counterparty_hmac is not None
-        and _deposit_fits(s, deposit)
+LEARNED_REASONS: frozenset[str] = frozenset({"deposit_address", "withdrawal_pair"})
+
+
+def _link_payloads(conn: Connection, link_ids: Sequence[UUID]) -> dict[UUID, dict]:
+    """Each link's transfer.linked payload (its reason, what it confirmed)."""
+    if not link_ids:
+        return {}
+    e = event_table.c
+    return {
+        r.entity_id: (r.payload or {})
+        for r in conn.execute(
+            select(e.entity_id, e.payload).where(
+                e.type == EventType.TRANSFER_LINKED.value, e.entity_id.in_(list(link_ids))
+            )
+        )
+    }
+
+
+def learned_links(conn: Connection, movement_ids: Iterable[UUID]) -> dict[UUID, UUID]:
+    """movement id → the current link code wrote from a learned row that it is a leg of: what
+    „Verknüpfung lösen“ offers on the exchange's movement rows."""
+    from ..transfers import _current_links
+
+    ids = set(movement_ids)
+    rows = [
+        r
+        for r in _current_links(conn)
+        if r.kind == TransferLinkKind.CHAIN.value
+        and r.matched_by == TransferMatchedBy.MATCHER.value
+        and (r.out_movement_id in ids or r.in_movement_id in ids)
     ]
-    if len(sends) != 1:
-        return "no_counterparty"
-    return learn_deposit_address(ctx, deposit.account_id, sends[0].id)
+    payloads = _link_payloads(conn, [r.id for r in rows])
+    out: dict[UUID, UUID] = {}
+    for r in rows:
+        if payloads.get(r.id, {}).get("reason") in LEARNED_REASONS:
+            out[r.out_movement_id] = r.id
+            out[r.in_movement_id] = r.id
+    return out
+
+
+def release_learned_link(ctx: CommandContext, link_id: UUID) -> None:
+    """POST /transfers/{id}/release, „Verknüpfung lösen“ (D261, review fixes 16 Nov 2026): a
+    chain link code wrote from a learned deposit address or withdrawal pair ends. Both legs go
+    back to proposed (their groups too when the link confirmed them), as a dead matcher link's
+    legs do (_reopen_side), so they show again as a card; the learned row that produced the
+    link ends with it, its account.*_forgotten event naming the link, so the next relink cannot
+    write the pair again; a person may teach again with a correct link. transfer.unlinked on
+    the link (no replacement). The caller holds the transfer lock (services.transfers.release).
+
+    404 for an unknown link; 409 for a link that is no longer current, a link proven by its
+    transaction hash (the hash is the proof: one transaction), any link a person or the matcher
+    wrote otherwise (a person's link is replaced through „Verknüpfung ändern“), and when a leg
+    is being answered right now."""
+    from ..transfers import _current_links, _leg_ids
+    from .learned import forget_for_link
+
+    c = link_table.c
+    link = ctx.conn.execute(select(link_table).where(c.id == link_id)).one_or_none()
+    if link is None:
+        raise NotFoundError("transfer", link_id)
+    current = _current_links(ctx.conn)
+    if link.id not in {r.id for r in current}:
+        raise ConflictError("Diese Verknüpfung besteht nicht mehr.")
+    payload = _link_payloads(ctx.conn, [link.id]).get(link.id, {})
+    reason = payload.get("reason")
+    if link.kind == TransferLinkKind.CHAIN.value and reason == "hash":
+        raise ConflictError(
+            "Diese Verknüpfung beruht auf derselben Transaktion (gleicher Hash); "
+            "sie lässt sich nicht lösen."
+        )
+    if (
+        link.kind != TransferLinkKind.CHAIN.value
+        or link.matched_by != TransferMatchedBy.MATCHER.value
+        or reason not in LEARNED_REASONS
+    ):
+        raise ConflictError(
+            "Nur eine Verknüpfung, die die App über eine gemerkte Adresse gesetzt hat, "
+            "lässt sich hier lösen."
+        )
+    out_id, in_id = link.out_movement_id, link.in_movement_id
+    forget_for_link(ctx, reason, out_id, in_id, link.id)
+    linked = {i for r in current if r.id != link.id for i in _leg_ids(r)}
+    movements = {UUID(i) for i in payload.get("confirmed_movements") or []} | {out_id, in_id}
+    groups = {UUID(i) for i in payload.get("confirmed_groups") or []}
+    for side in (out_id, in_id):
+        _reopen_side(ctx, side, movements, groups, linked, set())
+    if link.id in {r.id for r in _current_links(ctx.conn)}:
+        # neither leg could be reopened: one is being answered right now (nothing is kept)
+        raise ConflictError("Eine Seite wird gerade bearbeitet. Bitte noch einmal versuchen.")
+    append_event(ctx, EventType.TRANSFER_UNLINKED, link.id, TransferUnlinked())
 
 
 # --- Cards ----------------------------------------------------------------------------------

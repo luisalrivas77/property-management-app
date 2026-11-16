@@ -263,7 +263,7 @@ export function ExchangeSection({ accountId }: { accountId: string }) {
           <h2>Eingelesene Exporte</h2>
           <ExchangeImportsTable imports={overview.imports ?? []} movements={movements} onChanged={state.reload} />
           <h2>Bewegungen</h2>
-          <MovementsTable movements={movements} exchange={overview.provider} onChanged={state.reload} />
+          <MovementsTable movements={movements} onChanged={state.reload} />
           <LearnedAddresses overview={overview} onChanged={state.reload} />
         </div>
       )}
@@ -783,18 +783,14 @@ export function ConfirmWithdrawals({ importId, count, onDone }: { importId: stri
 }
 
 /** The answers to one proposed movement: „Stimmt“ keeps its kind, every other allowed kind
- * replaces it (POST /movements/{id}/confirm or /answer). A crypto deposit that may be answered
- * „Übertrag von eigenem Konto“ offers the box „Adresse als Einzahlungsadresse … merken“, ticked
- * by default (D261): with that answer the app learns the exchange's deposit address from the
- * one wallet send that fits and links the next sends there by itself. */
-export function MovementAnswers({ movement, exchange, onDone }: { movement: ExchangeMovementRow; exchange?: string; onDone: () => void }) {
+ * replaces it (POST /movements/{id}/confirm or /answer). An answer never teaches a deposit
+ * address (D261, review fixes 16 Nov 2026): the answer does not show which wallet send it would
+ * come from. A deposit answered „Übertrag von eigenem Konto“ waits on a transfer card in Zu
+ * prüfen with its fitting send, whose pick carries the box „Adresse … merken“. */
+export function MovementAnswers({ movement, onDone }: { movement: ExchangeMovementRow; onDone: () => void }) {
   const [busy, setBusy] = useState<MovementKind | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [remember, setRemember] = useState(true);
   if (movement.status !== "proposed") return null;
-  // a deposit already proposed as a transfer in is confirmed, not answered: its box would teach nothing
-  const canLearn =
-    !movement.quantity.startsWith("-") && movement.kind !== "internal_transfer_in" && (movement.answers ?? []).includes("internal_transfer_in");
 
   async function answer(kind: MovementKind) {
     setBusy(kind);
@@ -806,7 +802,7 @@ export function MovementAnswers({ movement, exchange, onDone }: { movement: Exch
         await ok(
           api.POST("/api/movements/{movement_id}/answer", {
             params: { path: { movement_id: movement.id } },
-            body: { kind, remember_deposit_address: canLearn && remember && kind === "internal_transfer_in" },
+            body: { kind },
           }),
         );
       }
@@ -836,20 +832,51 @@ export function MovementAnswers({ movement, exchange, onDone }: { movement: Exch
           </button>
         ))}
       </div>
-      {canLearn ? (
-        <label className="cell-detail">
-          <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Bei „
-          {MOVEMENT_KIND.internal_transfer_in}“: Adresse als Einzahlungsadresse{exchange ? ` von ${exchange}` : ""} merken (Einzahlung vom{" "}
-          {formatDate(movement.occurred_at)}, {formatUnits(movement.quantity)} {movement.symbol}); weitere Einzahlungen dorthin verknüpft die
-          App dann selbst
-        </label>
-      ) : null}
       <ErrorNotice error={error} />
     </div>
   );
 }
 
-function MovementsTable({ movements, exchange, onChanged }: { movements: ExchangeMovementRow[]; exchange: string; onChanged: () => void }) {
+/** „Verknüpfung lösen“ (D261, review fixes 16 Nov 2026) on a movement the app linked by
+ * itself from a learned deposit address or withdrawal pair: the link ends, both sides wait in
+ * Zu prüfen again, and what the app had learned is forgotten, so it does not link them again.
+ * A correct link by hand (with its box) teaches it anew. */
+function ReleaseLearnedLink({ linkId, deposit, onDone }: { linkId: string; deposit: boolean; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const learned = deposit ? "die gemerkte Einzahlungsadresse" : "die gemerkte Wallet für Abhebungen";
+
+  async function release() {
+    if (
+      !window.confirm(
+        `Diese automatische Verknüpfung lösen? Beide Seiten warten dann wieder in „Zu prüfen“, und ${learned} wird vergessen, damit die App sie nicht wieder verknüpft.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(api.POST("/api/transfers/{link_id}/release", { params: { path: { link_id: linkId } } }));
+      onDone();
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <p className="cell-detail">Automatisch verknüpft (gemerkte Adresse)</p>
+      <button type="button" className="secondary" onClick={() => void release()} disabled={busy}>
+        {busy ? "Löst …" : "Verknüpfung lösen"}
+      </button>
+      <ErrorNotice error={error} />
+    </div>
+  );
+}
+
+function MovementsTable({ movements, onChanged }: { movements: ExchangeMovementRow[]; onChanged: () => void }) {
   if (movements.length === 0) return <p className="muted">Noch keine Bewegungen.</p>;
   return (
     <div className="table-wrap">
@@ -885,8 +912,11 @@ function MovementsTable({ movements, exchange, onChanged }: { movements: Exchang
                 {movement.status === "confirmed" ? (
                   <span className="badge">bestätigt</span>
                 ) : (
-                  <MovementAnswers movement={movement} exchange={exchange} onDone={onChanged} />
+                  <MovementAnswers movement={movement} onDone={onChanged} />
                 )}
+                {movement.learned_link_id ? (
+                  <ReleaseLearnedLink linkId={movement.learned_link_id} deposit={!movement.quantity.startsWith("-")} onDone={onChanged} />
+                ) : null}
               </td>
             </tr>
           ))}

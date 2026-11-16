@@ -31,7 +31,8 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset_movement as movement_table
@@ -164,26 +165,39 @@ def learn_deposit_address(ctx: CommandContext, exchange_id: UUID, send_id: UUID)
     if _own_hmac(ctx.conn, chain, hmac):
         return "own_address"
     current = deposit_exchange(ctx.conn, chain, hmac)
-    if current == exchange_id:
-        return "already"
-    if current is not None:
+    if current is None:
+        # Two learns of one address at once (two people, two tabs): the live index lets one
+        # insert; the other writes nothing and re-reads who holds the address, so it answers
+        # "already" or the plain 409 below, never a unique violation (review fixes 16 Nov 2026)
+        d = deposit_table.c
+        row_id = ctx.conn.execute(
+            pg_insert(deposit_table)
+            .values(
+                workspace_id=ctx.workspace_id,
+                account_id=exchange_id,
+                chain=chain,
+                address_hmac=hmac,
+                address_masked=send.counterparty_masked,
+                learned_from=send_id,
+                set_by=user_id(ctx),
+                created_at=ctx.now,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[d.workspace_id, d.chain, d.address_hmac],
+                index_where=d.ended_at.is_(None),
+            )
+            .returning(d.id)
+        ).scalar_one_or_none()
+        if row_id is None:
+            current = deposit_exchange(ctx.conn, chain, hmac)
+    else:
+        row_id = None
+    if row_id is None:
+        if current == exchange_id:
+            return "already"
         raise ConflictError(
             "Diese Adresse ist schon als Einzahlungsadresse einer anderen Börse gemerkt."
         )
-    row_id = ctx.conn.execute(
-        insert(deposit_table)
-        .values(
-            workspace_id=ctx.workspace_id,
-            account_id=exchange_id,
-            chain=chain,
-            address_hmac=hmac,
-            address_masked=send.counterparty_masked,
-            learned_from=send_id,
-            set_by=user_id(ctx),
-            created_at=ctx.now,
-        )
-        .returning(deposit_table.c.id)
-    ).scalar_one()
     append_event(
         ctx,
         EventType.ACCOUNT_DEPOSIT_ADDRESS_LEARNED,
@@ -209,8 +223,9 @@ def learn_withdrawal_pair(
         return "balance_only"
     if paired(ctx.conn, exchange_id, address_id):
         return "already"
+    p = pair_table.c
     row_id = ctx.conn.execute(
-        insert(pair_table)
+        pg_insert(pair_table)
         .values(
             workspace_id=ctx.workspace_id,
             account_id=exchange_id,
@@ -219,8 +234,14 @@ def learn_withdrawal_pair(
             set_by=user_id(ctx),
             created_at=ctx.now,
         )
-        .returning(pair_table.c.id)
-    ).scalar_one()
+        .on_conflict_do_nothing(  # learned at the same moment elsewhere: the same pair
+            index_elements=[p.workspace_id, p.account_id, p.address_id],
+            index_where=p.ended_at.is_(None),
+        )
+        .returning(p.id)
+    ).scalar_one_or_none()
+    if row_id is None:
+        return "already"
     append_event(
         ctx,
         EventType.ACCOUNT_WITHDRAWAL_PAIR_LEARNED,
@@ -271,6 +292,36 @@ def learned_of(conn: Connection, exchange_id: UUID) -> list[LearnedRow]:
     return sorted(out, key=lambda r: (r.created_at, str(r.id)))
 
 
+def _end(ctx: CommandContext, table, row, exchange_id: UUID, unlinked: UUID | None = None) -> None:  # noqa: ANN001 - a learned table and its locked row
+    """End one live learned row with its account.*_forgotten event; `unlinked` the link whose
+    „Verknüpfung lösen“ ended it."""
+    c = table.c
+    ctx.conn.execute(
+        update(table).where(c.id == row.id).values(ended_at=ctx.now, ended_by=user_id(ctx))
+    )
+    if table is deposit_table:
+        append_event(
+            ctx,
+            EventType.ACCOUNT_DEPOSIT_ADDRESS_FORGOTTEN,
+            exchange_id,
+            ExchangeDepositAddressForgotten(
+                learned_id=row.id,
+                chain=Chain(row.chain),
+                address_masked=row.address_masked,
+                unlinked_link_id=unlinked,
+            ),
+        )
+    else:
+        append_event(
+            ctx,
+            EventType.ACCOUNT_WITHDRAWAL_PAIR_FORGOTTEN,
+            exchange_id,
+            ExchangeWithdrawalPairForgotten(
+                learned_id=row.id, address_id=row.address_id, unlinked_link_id=unlinked
+            ),
+        )
+
+
 def forget(ctx: CommandContext, exchange_id: UUID, learned_id: UUID) -> None:
     """„Vergessen“: end a live learned row of the exchange (a deposit address or a withdrawal
     pair); the links already written stay. 404 for a row of another exchange or none; 409
@@ -289,26 +340,52 @@ def forget(ctx: CommandContext, exchange_id: UUID, learned_id: UUID) -> None:
             continue
         if row.ended_at is not None:
             raise ConflictError("Schon vergessen.")
-        ctx.conn.execute(
-            update(table).where(c.id == learned_id).values(ended_at=ctx.now, ended_by=user_id(ctx))
-        )
-        if table is deposit_table:
-            append_event(
-                ctx,
-                EventType.ACCOUNT_DEPOSIT_ADDRESS_FORGOTTEN,
-                exchange_id,
-                ExchangeDepositAddressForgotten(
-                    learned_id=learned_id,
-                    chain=Chain(row.chain),
-                    address_masked=row.address_masked,
-                ),
-            )
-        else:
-            append_event(
-                ctx,
-                EventType.ACCOUNT_WITHDRAWAL_PAIR_FORGOTTEN,
-                exchange_id,
-                ExchangeWithdrawalPairForgotten(learned_id=learned_id, address_id=row.address_id),
-            )
+        _end(ctx, table, row, exchange_id)
         return
     raise NotFoundError("learned address", learned_id)
+
+
+def forget_for_link(
+    ctx: CommandContext,
+    reason: Literal["deposit_address", "withdrawal_pair"],
+    out_id: UUID,
+    in_id: UUID,
+    link_id: UUID,
+) -> UUID | None:
+    """„Verknüpfung lösen“ on a link code wrote from a learned row (review fixes 16 Nov 2026):
+    the live row that produced it ends with it, its event naming the link, so the next relink
+    cannot write the pair again. A deposit address: the exchange of the deposit (`in_id`), the
+    chain and counterparty of the wallet send (`out_id`). A withdrawal pair: the exchange of the
+    withdrawal (`out_id`) and the own address of the receipt (`in_id`). The row's id, or None
+    when it was forgotten already."""
+    m, g = movement_table.c, group_table.c
+    legs = {
+        r.id: r
+        for r in ctx.conn.execute(
+            select(m.id, m.account_id, m.address_id, m.counterparty_hmac, g.chain)
+            .select_from(movement_table.outerjoin(group_table, m.group_id == g.id))
+            .where(m.id.in_([out_id, in_id]))
+        )
+    }
+    out, in_ = legs[out_id], legs[in_id]
+    if reason == "deposit_address":
+        if out.counterparty_hmac is None or out.chain is None:
+            return None
+        exchange_id, table, c = in_.account_id, deposit_table, deposit_table.c
+        where = (
+            c.account_id == exchange_id,
+            c.chain == out.chain,
+            c.address_hmac == bytes(out.counterparty_hmac),
+        )
+    else:
+        if in_.address_id is None:
+            return None
+        exchange_id, table, c = out.account_id, pair_table, pair_table.c
+        where = (c.account_id == exchange_id, c.address_id == in_.address_id)
+    row = ctx.conn.execute(
+        select(table).where(*where, c.ended_at.is_(None)).with_for_update()
+    ).one_or_none()
+    if row is None:
+        return None
+    _end(ctx, table, row, exchange_id, unlinked=link_id)
+    return row.id
