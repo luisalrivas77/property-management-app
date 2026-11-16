@@ -890,22 +890,23 @@ def token_decimals(record: Mapping[str, JsonValue]) -> dict[str, int]:
 
 
 def _unreadable_group(record: Mapping[str, JsonValue], address: str) -> SolanaGroup:
-    """wallet.record_unreadable as a card: the fee the address paid (meta.fee is always
-    readable) and the question; never a stopped sync, never a token leg guessed. Its token
-    difference stays a mismatch on the wallet page until a person answers (D186 (2))."""
+    """wallet.record_unreadable as a card: the question without legs; never a stopped sync,
+    never a token leg guessed. Not even the fee as a leg: a group of a fee alone is booked by
+    code (rules/review.route_group, D186 (1)) and its question dropped, so the card would
+    vanish. Without legs the address's SOL waits for the answer („wartet auf Antwort“, as a
+    Bitcoin change card), and a token the record moved is a mismatch on the wallet page until
+    a person answers (D186 (2))."""
     keys = account_keys(record)
-    payer = bool(keys) and keys[0] == address
-    fee = int(cast(int, _obj(record["meta"])["fee"])) if payer else 0
     return SolanaGroup(
         tx_hash=signature(record),
         slot=cast(int, record["slot"]),
         occurred_at=block_time(record),
         status="ok",
         kind=GroupKind.UNKNOWN,
-        legs=(_fee_leg(fee),) if fee else (),
+        legs=(),
         question=QUESTION_UNREADABLE,
         card=E.GROUP_UNKNOWN,
-        fee_payer=payer,
+        fee_payer=bool(keys) and keys[0] == address,
     )
 
 
