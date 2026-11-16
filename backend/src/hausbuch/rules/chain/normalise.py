@@ -18,8 +18,13 @@ from hausbuch.rules.chain import solana, utxo
 from hausbuch.schemas.chain import ChainTx, SolanaDelta
 
 
-def solana_deltas(tx: Mapping[str, JsonValue], own: Collection[str]) -> list[SolanaDelta]:
-    return solana.solana_deltas(tx, own)
+def solana_deltas(
+    tx: Mapping[str, JsonValue],
+    own: Collection[str],
+    own_token_accounts: Collection[str] | None = None,
+) -> list[SolanaDelta]:
+    """`own_token_accounts` resolves a token balance row without an `owner` (solana.py)."""
+    return solana.solana_deltas(tx, own, own_token_accounts)
 
 
 def utxo_net(tx: ChainTx, own: Collection[str]) -> tuple[int, int, list[str]]:

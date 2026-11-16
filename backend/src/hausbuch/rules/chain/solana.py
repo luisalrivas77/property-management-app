@@ -51,11 +51,14 @@ from zoneinfo import ZoneInfo
 from pydantic import JsonValue
 
 from hausbuch.rules import errors as E
+from hausbuch.rules.chain.classify import ChainGroup, ChainLeg, ClassifyContext
+from hausbuch.rules.chain.decoders import decoder_for
 from hausbuch.rules.chain.registry import registry as chain_registry
 from hausbuch.rules.household.assets import registry as asset_registry
 from hausbuch.schemas.chain import (
     AssetKey,
     Chain,
+    ChainTx,
     DecoderKind,
     DecoderRow,
     GroupKind,
@@ -90,6 +93,16 @@ PLAIN_PROGRAMS = frozenset(
 _SETUP_PROGRAMS = frozenset({COMPUTE_BUDGET_PROGRAM, MEMO_PROGRAM, ATA_PROGRAM})
 
 QUESTION_UNKNOWN = "Was ist diese Transaktion?"
+# A record whose token legs cannot be read (wallet.record_unreadable): a card for a person,
+# never a stopped sync (classify_tx).
+QUESTION_UNREADABLE = (
+    "Hausbuch kann diese Transaktion nicht vollständig lesen. Welche Token hat sie bewegt?"
+)
+# The key under which the sync's source keeps, beside a stored record, the own token accounts
+# it knew, only when a token balance row of the record has no `owner` (every other record is
+# stored exactly as the provider served it). The classifier reads it from the stored
+# original, so a replay needs no provider (D192).
+SYNC_KEY = "_hausbuch"
 
 Role = Literal["in", "out", "fee"]
 DecoderLookup = Callable[[str, str | None], DecoderRow | None]
@@ -819,4 +832,136 @@ def to_draft(group: SolanaGroup, ctx: DraftContext) -> MovementGroupDraft:
         movements=movements,
         question=group.question,
         label=group.label,
+    )
+
+
+# --- the sync's classifier (classify.classifier_for) ----------------------------------------
+
+
+def has_ownerless_token_row(record: Mapping[str, JsonValue]) -> bool:
+    """Whether a token balance row of the record carries no `owner` (records from before the
+    field existed): only then does the source keep the own token accounts beside it."""
+    meta = record.get("meta")
+    if not isinstance(meta, Mapping):
+        return False
+    rows = [*(meta.get("preTokenBalances") or []), *(meta.get("postTokenBalances") or [])]
+    return any(isinstance(r, Mapping) and not isinstance(r.get("owner"), str) for r in rows)
+
+
+def with_token_accounts(
+    record: Mapping[str, JsonValue], accounts: Collection[str]
+) -> dict[str, JsonValue]:
+    """The record as the sync stores it: with the own token accounts under SYNC_KEY when a
+    token row has no owner, else unchanged."""
+    out = dict(record)
+    if has_ownerless_token_row(record):
+        out[SYNC_KEY] = {"own_token_accounts": sorted(accounts)}
+    return out
+
+
+def recorded_token_accounts(record: Mapping[str, JsonValue]) -> list[str] | None:
+    """The own token accounts the source kept beside the record, None when it kept none."""
+    kept = record.get(SYNC_KEY)
+    if not isinstance(kept, Mapping):
+        return None
+    accounts = kept.get("own_token_accounts")
+    if not isinstance(accounts, list):
+        return None
+    return [a for a in accounts if isinstance(a, str)]
+
+
+def token_decimals(record: Mapping[str, JsonValue]) -> dict[str, int]:
+    """Each mint's decimals as the record's token balance rows state them (an unlisted
+    token's asset row takes them, D180 amended (a))."""
+    meta = record.get("meta")
+    found: dict[str, int] = {}
+    if not isinstance(meta, Mapping):
+        return found
+    for key in ("preTokenBalances", "postTokenBalances"):
+        for row in meta.get(key) or []:
+            if not isinstance(row, Mapping):
+                continue
+            amount = row.get("uiTokenAmount")
+            decimals = amount.get("decimals") if isinstance(amount, Mapping) else None
+            mint = row.get("mint")
+            if isinstance(mint, str) and isinstance(decimals, int) and 0 <= decimals <= 18:
+                found.setdefault(mint, decimals)
+    return found
+
+
+def _unreadable_group(record: Mapping[str, JsonValue], address: str) -> SolanaGroup:
+    """wallet.record_unreadable as a card: the fee the address paid (meta.fee is always
+    readable) and the question; never a stopped sync, never a token leg guessed. Its token
+    difference stays a mismatch on the wallet page until a person answers (D186 (2))."""
+    keys = account_keys(record)
+    payer = bool(keys) and keys[0] == address
+    fee = int(cast(int, _obj(record["meta"])["fee"])) if payer else 0
+    return SolanaGroup(
+        tx_hash=signature(record),
+        slot=cast(int, record["slot"]),
+        occurred_at=block_time(record),
+        status="ok",
+        kind=GroupKind.UNKNOWN,
+        legs=(_fee_leg(fee),) if fee else (),
+        question=QUESTION_UNREADABLE,
+        card=E.GROUP_UNKNOWN,
+        fee_payer=payer,
+    )
+
+
+def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
+    """The sync's Solana classifier, over the stored record (`tx.raw`) of the synced address.
+
+    Each own address is its own run, its movements hashed and reconciled per address, so the
+    deltas are those of `ctx.address` alone: a payment between two own addresses is an `out`
+    on one run and an `in` on the other, never one leg twice. The other own addresses only
+    answer the stake question: a delegation to (or from) an address the wallet already holds
+    asks nothing. A record whose token legs cannot be read is a card (`_unreadable_group`),
+    never a stopped sync. Helius's labels are not read: they set no kind, amount or
+    confirmation (D192)."""
+    record = tx.raw
+    held = {k.contract for k in ctx.held if k.chain is Chain.SOLANA and k.contract}
+    decoders = list(ctx.decoders)
+
+    def lookup(program: str, method: str | None) -> DecoderRow | None:
+        return decoder_for(Chain.SOLANA, program, method, decoders)
+
+    try:
+        group = classify_solana(
+            record,
+            {ctx.address},
+            lookup,
+            held=held,
+            own_token_accounts=recorded_token_accounts(record),
+        )
+    except E.RuleError as exc:
+        if exc.code != E.WALLET_RECORD_UNREADABLE:
+            raise
+        group = _unreadable_group(record, ctx.address)
+    question = group.question
+    if group.stake_account is not None and group.stake_account in ctx.own_addresses:
+        question = None
+    decimals = token_decimals(record)
+    legs = [
+        ChainLeg(
+            asset_key=leg.asset_key,
+            units=leg.units,
+            role=leg.role,
+            kind=leg.kind,
+            index=leg.index,
+            decimals=decimals.get(leg.asset_key.contract) if leg.asset_key.contract else None,
+            spam=leg.kind is MovementKind.SPAM,
+        )
+        for leg in group.legs
+    ]
+    row = group.decoder
+    return ChainGroup(
+        tx_hash=group.tx_hash,
+        occurred_at=group.occurred_at,
+        block=group.slot,
+        kind=group.kind,
+        legs=legs,
+        decoder=None if row is None else (row.name or row.program),
+        decoder_listed=group.decoder_listed,
+        question=question,
     )
