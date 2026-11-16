@@ -197,6 +197,11 @@ def _leg_ids(row: Row) -> tuple[UUID, ...]:
     )
 
 
+_COIN_LINK_KINDS = frozenset(
+    {TransferLinkKind.CHAIN.value, TransferLinkKind.BRIDGE.value, TransferLinkKind.WRAP.value}
+)
+
+
 def _current_links(conn: Connection) -> list[Row]:
     """The current links (review F3, no migration): not superseded, and, for a link the
     matcher wrote, both legs still booked as a transfer: a line whose live (confirmed or
@@ -218,6 +223,9 @@ def _current_links(conn: Connection) -> list[Row]:
         .order_by(c.created_at.desc(), c.id.desc())
     ).all()
     returns = _return_link_ids(conn, rows)
+    # Phase 7 step 5 (D184 (5)): a chain, bridge or wrap link counts only while both coin legs
+    # are live, whoever wrote it, so re-booking a leg ends a person's link too.
+    returns = returns | {r.id for r in rows if r.kind in _COIN_LINK_KINDS}
     matcher = [
         r for r in rows if r.matched_by == TransferMatchedBy.MATCHER.value or r.id in returns
     ]
@@ -1148,6 +1156,11 @@ def link_by_hand(
     (8)), so a link by hand and an exchange import never wait for each other in a circle."""
     _lock_exchanges(ctx, (body.out_movement_id, body.in_movement_id))
     _lock(ctx)
+    from .chain import transfers as chain_transfers  # it imports this module
+
+    if chain_transfers.is_coin_link(ctx.conn, body):
+        # Phase 7 step 5 (D184): two coin legs, linked by the chain matcher's rules.
+        return chain_transfers.link_by_hand(ctx, body)
     out, in_ = _pair(ctx.conn, body)
     # D162 amended 15 Nov 2026: a private bank line paying a deposit the exchange credited up
     # to 2 € short without a fee row. Linking it books the line as the credited transfer plus
@@ -1529,7 +1542,14 @@ def list_links(conn: Connection, *, start: date, end: date) -> list[TransferLink
 
 def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
     """Every transfer leg that waits for a person, computed now (D162): never a leg inside
-    its window without a counterpart."""
+    its window without a counterpart. The coin legs' cards (phase 7 step 5, D184) follow the
+    EUR legs'."""
+    from .chain import transfers as chain_transfers  # it imports this module
+
+    return _open_eur_transfers(conn, today) + chain_transfers.open_transfers(conn, today)
+
+
+def _open_eur_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
     linked = _linked_ids(conn)
     waiting = [
         leg
@@ -1907,6 +1927,21 @@ _UNMATCHED_REASON = (
     "Zu dieser Überweisung zwischen zwei eigenen Konten fehlt nach drei Bankarbeitstagen die "
     "Gegenbuchung auf dem anderen Konto."
 )
+# Phase 7 step 5 (D184): a coin leg's cards. A chain transfer arrives within hours, so its
+# window is 48 hours, not three banking days.
+_COIN_LINK_REASON = {
+    OpenTransferCode.AMBIGUOUS: (
+        "Für diese Krypto-Überweisung zwischen zwei eigenen Konten passen mehrere Gegenbuchungen."
+    ),
+    OpenTransferCode.PROPOSED: (
+        "Diese Krypto-Buchung passt nach Menge und Zeit zu einer Buchung auf einem anderen "
+        "eigenen Konto."
+    ),
+}
+_COIN_UNMATCHED_REASON = (
+    "Zu dieser Krypto-Überweisung zwischen zwei eigenen Konten fehlt nach 48 Stunden die "
+    "Gegenbuchung auf dem anderen Konto oder Wallet."
+)
 
 
 def transfer_inbox_items(conn: Connection, today: date) -> list[InboxItem]:
@@ -1915,11 +1950,14 @@ def transfer_inbox_items(conn: Connection, today: date) -> list[InboxItem]:
     items = []
     for item in open_transfers(conn, today):
         unmatched = item.code is OpenTransferCode.UNMATCHED_LEG
+        coin = item.leg.amount is None
         items.append(
             InboxItem(
                 kind=InboxItemKind.TRANSFER_UNMATCHED if unmatched else InboxItemKind.TRANSFER_LINK,
                 created_at=datetime.combine(item.window_end, time(), tzinfo=UTC),
-                reasoning=_UNMATCHED_REASON
+                reasoning=(_COIN_UNMATCHED_REASON if unmatched else _COIN_LINK_REASON[item.code])
+                if coin
+                else _UNMATCHED_REASON
                 if unmatched
                 else _DEPOSIT_REASON
                 if any(c.deposit_fee is not None for c in item.candidates)

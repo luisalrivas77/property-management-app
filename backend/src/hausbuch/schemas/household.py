@@ -592,8 +592,9 @@ class BalanceCorrectionBody(Schema):
 
 class TransferLinkKind(StrEnum):
     """transfer_link.kind (migration 0025; chain, bridge and wrap since 0041, phase 7 D184).
-    A link by hand (TransferLinkCreate) still only takes the kind rules.matching
-    .transfer_link_kind gives the two accounts, so the chain kinds wait for step 5."""
+    A link by hand (TransferLinkCreate) of two EUR legs takes the kind rules.matching
+    .transfer_link_kind gives the two accounts; of two coin legs (phase 7 step 5,
+    services.chain.transfers) the kind rules.chain.match_transfer reads from the legs."""
 
     BANK = "bank"
     EXCHANGE_EUR = "exchange_eur"
@@ -699,7 +700,10 @@ class TransferLegView(Schema):
     account_id: UUID
     account_label: str
     booked_on: date
-    amount: Money
+    # None only on a coin leg (phase 7 step 5: a chain or exchange coin movement has no EUR
+    # amount, and the screens never show an invented 0 €, D188); quantity and asset_symbol
+    # then say what moved.
+    amount: Money | None
     counterparty_name: str | None = None
     account_kind: AccountKind | None = None
     # The line's one live category (None for a split or an unbooked line) and whether it is a
@@ -715,6 +719,14 @@ class TransferLegView(Schema):
     # transfer out, deposit_fee_text (deposit_fee null) says the link learns the line's IBAN.
     deposit_fee: Money | None = None
     deposit_fee_text: str | None = None
+    # Phase 7 step 5 (D184): a coin leg's signed quantity, its symbol (a token without a
+    # registry symbol shows its name), the chain (None for an exchange row), and on a candidate
+    # of GET /transfers/open the kind a link to it takes (chain, bridge or wrap), which POST
+    # /transfers must name. Never an address or a transaction hash (D179).
+    quantity: Quantity | None = None
+    asset_symbol: str | None = None
+    chain: str | None = None
+    link_kind: TransferLinkKind | None = None
 
 
 class TransferLinkView(Schema):
