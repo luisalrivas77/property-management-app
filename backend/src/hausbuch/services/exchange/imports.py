@@ -826,9 +826,30 @@ def _history_todo(conn: Connection, account_id: UUID, open_rows: list[_Stored]) 
             ev.type == EventType.ACCOUNT_WITHDRAWAL_HISTORY_CHECKED.value,
         )
     ).scalar_one()
-    if checked is not None and all(row.created_at <= checked for row in open_rows):
+    read_at = _first_read(conn, account_id, [row.id for row in open_rows])
+    if checked is not None and all(read_at[row.id] <= checked for row in open_rows):
         return E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH
     return E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING
+
+
+def _first_read(conn: Connection, account_id: UUID, ids: Sequence[UUID]) -> dict[UUID, datetime]:
+    """When each movement was first read: the created_at of the row it descends from (its
+    superseded_by chain walked back), since a copy the repair wrote (D178 amended (4), review
+    D) is no row read later."""
+    m = movement_table.c
+    rows = conn.execute(
+        select(m.id, m.superseded_by, m.created_at).where(m.account_id == account_id)
+    ).all()
+    back = {r.superseded_by: r.id for r in rows if r.superseded_by is not None}
+    created = {r.id: r.created_at for r in rows}
+    out = {}
+    for movement_id in ids:
+        at, seen = movement_id, set()
+        while at in back and at not in seen:
+            seen.add(at)
+            at = back[at]
+        out[movement_id] = created[at]
+    return out
 
 
 # --- Typed balances (D166, D178 (6)) ---------------------------------------------------------

@@ -1024,3 +1024,29 @@ def test_confirming_withdrawals_and_the_repair_at_once_both_commit(
         r for r in _live(read, ws, account.id) if r.kind == MovementKind.INTERNAL_TRANSFER_OUT.value
     )
     assert (withdrawal.occurred_at, withdrawal.status) == (WITHDRAWN, "confirmed")
+
+
+def test_a_history_checked_before_the_repair_still_names_why(
+    run, read, blob_store, fresh_workspaces, monkeypatch
+):
+    """Review D: a withdrawal history that fits no withdrawal names the reason; the repair's
+    copy of the open withdrawal is no withdrawal read after that check, so the reason stays
+    instead of asking for the history again."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    other = "0x" + hashlib.sha256(b"invented withdrawal of another amount").hexdigest()
+    history = (
+        "Time,Coin,Network,Amount,Fee,Address,TXID,Status\n"
+        f"2026-03-02 14:59:00,ETH,ETH,0.5,0.0005,{EVM},{other},Completed\n"
+    )
+    with _legacy(monkeypatch) as m:
+        _no_zone(m)
+        _upload(run, blob_store, ws, account.id, _zip(TX, TX_MEMBER), TX_NAME)
+        checked = _upload(run, blob_store, ws, account.id, _zip(history), WD_NAME, n=1)
+    assert checked.withdrawals_reason == E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH
+    no_match = [E.EXCHANGE_TIME_ZONE_UNKNOWN, E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH]
+    assert read(ws, imports.exchange_overview, account.id).todos == no_match
+
+    assert _repair(run, ws).corrected.movements == 3
+
+    assert read(ws, imports.exchange_overview, account.id).todos == no_match[1:]
