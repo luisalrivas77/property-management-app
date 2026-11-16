@@ -82,12 +82,12 @@ function Crypto({ data, owners }: { data: CryptoHoldings; owners: Owner[] }) {
       {data.unfilled_movements ? (
         <Notice>
           {data.unfilled_movements === 1 ? "1 Abgang übersteigt" : `${data.unfilled_movements} Abgänge übersteigen`} den gebuchten
-          Bestand davor; es fehlt eine Einzahlung oder ein Übertrag. Die Umsätze des Kontos prüfen und die fehlende Bewegung
+          Bestand davor; es fehlt eine Einzahlung oder ein Übertrag. Die Bewegungen des Kontos prüfen und die fehlende Bewegung
           einlesen; bis dahin bleibt der Einstand dieses Abgangs offen.{" "}
           {(data.unfilled_account_ids ?? []).map((id, i) => (
             <span key={id}>
               {i > 0 ? " · " : ""}
-              <Link href={`/accounts/${id}?tab=umsaetze`}>Umsätze {accountOf(id)?.label ?? "des Kontos"} öffnen</Link>
+              <Link href={`/accounts/${id}`}>Bewegungen {accountOf(id)?.label ?? "des Kontos"} öffnen</Link>
             </span>
           ))}
         </Notice>
@@ -273,8 +273,8 @@ function LotsPanel({ coin, account, owners }: { coin: CryptoCoin; account: Crypt
       <h2 id="lots-title">{coinLabel(coin)}</h2>
       {!coin.reconciled ? (
         <Notice>
-          Der letzte Abgleich einer Adresse dieses Kontos ergab einen anderen Bestand als die Kette. Die Wallet öffnen und den
-          Abgleich prüfen; bis dahin können Posten fehlen. <Link href={`/accounts/${coin.account_id}`}>Wallet öffnen</Link>
+          Der letzte Abgleich einer Adresse dieses Kontos ergab einen anderen Bestand als die Kette. Die Wallet öffnen und ihre
+          Adressen prüfen; bis dahin können Posten fehlen. <Link href={`/accounts/${coin.account_id}`}>Wallet öffnen</Link>
         </Notice>
       ) : null}
       <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
