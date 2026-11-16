@@ -142,7 +142,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "settings.consent_already_recorded": "Ihre Zustimmung ist schon gespeichert.",
   // POST /inbox/ai-retry (D50); a proposal's ai.disabled has its own text in AI_ERROR_TEXT.
   "ai.disabled":
-    "Die KI ist nicht eingerichtet: sie ist auf dem Server ausgeschaltet, oder es ist kein Anthropic-Schlüssel eingetragen (Einstellungen › Zugangsschlüssel). Zahlungen lassen sich bis dahin nur von Hand zuordnen.",
+    "Die KI ist nicht eingerichtet: sie ist auf dem Server ausgeschaltet, oder es gibt keinen lesbaren Anthropic-Schlüssel (unter Einstellungen › Zugangsschlüssel eintragen; steht dort „Kann nicht gelesen werden“, neu eintragen). Zahlungen lassen sich bis dahin nur von Hand zuordnen.",
   // the Anlage V draft (phase-3.md §10)
   "tax.year_not_available": "Für dieses Jahr gibt es zu dieser Immobilie keinen Entwurf (vor dem Kauf oder in der Zukunft).",
   "tax.no_rule_set": "Für dieses Steuerjahr gibt es noch kein Regelwerk, also keinen Entwurf.",
@@ -347,7 +347,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
  * stopped (phase-2.md §5.5, §12; the job's extra codes in backend rules/errors.py). */
 export const AI_ERROR_TEXT: Record<string, string> = {
   "ai.disabled":
-    "Automatisches Auslesen ist nicht eingerichtet: die KI ist auf dem Server ausgeschaltet, oder es ist kein Anthropic-Schlüssel eingetragen (Einstellungen › Zugangsschlüssel). Danach das Dokument erneut auslesen.",
+    "Automatisches Auslesen ist nicht eingerichtet: die KI ist auf dem Server ausgeschaltet, oder es gibt keinen lesbaren Anthropic-Schlüssel (unter Einstellungen › Zugangsschlüssel eintragen; steht dort „Kann nicht gelesen werden“, neu eintragen). Danach das Dokument erneut auslesen.",
   "ai.blocked_tenant_data": "Dokumente mit Mieterdaten werden nicht an die KI geschickt, solange das nicht freigegeben ist.",
   "ai.unparsable": "Die Antwort der KI ließ sich auch beim zweiten Versuch nicht auswerten.",
   "ai.refused": "Die KI hat das Auslesen abgelehnt, oder ihre Antwort wurde auch im zweiten Versuch mit mehr Platz zu lang.",

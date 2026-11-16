@@ -45,6 +45,10 @@
 //   gingen an eigene Wallets“ (POST /movement-imports/{id}/withdrawals/confirm), and a link to
 //   answer them one by one; any other proposed movement (a crypto deposit) gets its answers
 //   (POST /movements/{id}/confirm or /answer), from GET /accounts/{id}/movements.
+// - a key, address or mail setting typed under Einstellungen › Zugangsschlüssel that no longer
+//   decrypts (app_secret_unreadable, phase 6 D260 amended (9)): the reasoning names the groups
+//   and what does not run; „Zugangsschlüssel öffnen“ leads to that card, where it is typed
+//   again or deleted, and the card goes.
 // - a returned payment on a private account (returned_payment, phase 6 D162 amended (7)): a
 //   credit whose purpose says the money came back (a recall, „Rücküberweisung“) and the equal
 //   debit it returns, both named; „Als Rücküberweisung verbuchen“ (POST /returns) books the two
@@ -93,7 +97,7 @@ import { BalanceForm, DuplicateCard, OpeningFromClosing } from "./accounts";
 import { documentLabel, ImportStoredStatement, UploadControl } from "./documents";
 import { ConfirmWithdrawals, ExchangeUnreconciledActions, formatUnits, MovementAnswers } from "./exchange";
 import { formatDate, formatDateTime, formatMoney } from "./format";
-import { ALLOCATION_CATEGORY, INBOX_ITEM_KIND } from "./labels";
+import { ALLOCATION_CATEGORY, APP_SECRETS_ANCHOR, INBOX_ITEM_KIND } from "./labels";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
 import { reminderTodo } from "./todos";
 import { ActionDialog, Notice } from "./ui";
@@ -175,6 +179,8 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   wallet_sync: "wallets",
   wallet_unreconciled: "wallets",
   wallet_coins_left: "wallets",
+  // Phase 6 D260 amended (9): a key typed in the app that no longer decrypts stops a daily job.
+  app_secret_unreadable: "automatic",
 };
 
 /** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
@@ -222,6 +228,7 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   wallet_sync: "badge badge-danger",
   wallet_unreconciled: "badge badge-danger",
   wallet_coins_left: "badge badge-danger",
+  app_secret_unreadable: "badge badge-danger",
 };
 
 export interface InboxData {
@@ -849,6 +856,9 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
   if (item.kind === "email_inbox_failed") {
     return <strong>Posteingang per E-Mail</strong>;
   }
+  if (item.kind === "app_secret_unreadable") {
+    return <strong>Gespeicherte Zugangsschlüssel lassen sich nicht mehr lesen</strong>;
+  }
   if (item.kind.startsWith("exchange_")) {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
     const movement = item.movement_id ? data.movements.get(item.movement_id) : undefined;
@@ -1185,6 +1195,8 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       return item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>Kurs eintragen</Link> : null;
     case "price_no_source":
       return item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>Kursquelle wählen</Link> : null;
+    case "app_secret_unreadable":
+      return <Link href={`/settings#${APP_SECRETS_ANCHOR}`}>Zugangsschlüssel öffnen</Link>;
     default:
       return null;
   }

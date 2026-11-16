@@ -11,6 +11,7 @@ import { api, ok } from "@/api/client";
 import type { Passkey } from "@/api/schemas";
 import { useAuth } from "@/auth/AuthGate";
 import { addPasskey, defaultPasskeyLabel } from "@/auth/passkeys";
+import { APP_SECRETS_ANCHOR } from "@/components/labels";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { AiSettings } from "./AiSettings";
@@ -155,7 +156,7 @@ export default function SettingsPage() {
       <h2>Posteingang-Adresse</h2>
       <InboxAddress />
 
-      <h2>Zugangsschlüssel (API keys)</h2>
+      <h2 id={APP_SECRETS_ANCHOR}>Zugangsschlüssel (API keys)</h2>
       <AppSecrets />
 
       <h2>Abmelden</h2>

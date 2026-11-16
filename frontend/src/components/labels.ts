@@ -912,7 +912,13 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   wallet_sync: "Abruf",
   wallet_unreconciled: "Saldo weicht ab",
   wallet_coins_left: "Coins abgegangen",
+  // phase 6 D260 amended (9)
+  app_secret_unreadable: "Schlüssel unlesbar",
 };
+
+/** The id of the heading „Zugangsschlüssel (API keys)“ on Einstellungen (phase 6 D260), the
+ * target of the links that send a person there. */
+export const APP_SECRETS_ANCHOR = "zugangsschluessel";
 
 /** asset_movement.kind (phase 6 D165, D166): what a coin or fund movement was, in plain words. */
 export const MOVEMENT_KIND: Record<MovementKind, string> = {

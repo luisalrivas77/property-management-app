@@ -299,3 +299,27 @@ test("a folded section opens on a click of its heading, and the choice is rememb
   await page.getByRole("button", { name: "Alle aufklappen" }).click();
   await expect(pairs.getByRole("listitem").first()).toBeVisible();
 });
+
+// Phase 6 D260 amended (9): a key typed under Zugangsschlüssel that no longer decrypts. The e2e
+// API cannot rotate its session key mid-run, so GET /inbox answers with the card as the API
+// builds it (backend tests/db/test_app_secrets.py checks its text).
+test("an unreadable typed key shows its card under Automatisch, linking to Zugangsschlüssel", async ({ page, signedIn }) => {
+  void signedIn;
+  const card = {
+    kind: "app_secret_unreadable",
+    created_at: "2026-11-16T09:00:00Z",
+    reasoning:
+      "In der App gespeicherte Zugangsschlüssel lassen sich nicht mehr lesen, meist weil der Sitzungsschlüssel des Servers gewechselt wurde. Betroffen – Bank: FinTS-Produkt-ID. Der Bankabruf läuft nicht, weder täglich noch mit „Jetzt abrufen“. Hausbuch nimmt dafür nicht den Wert aus der Server-Konfiguration.",
+    question: "Unter Einstellungen › Zugangsschlüssel neu eintragen oder löschen.",
+  };
+  await page.route("**/api/inbox", (route) => (route.request().method() === "GET" ? route.fulfill({ json: [card] }) : route.fallback()));
+  await page.goto("/inbox");
+  await expect(sectionToggle(page, "Automatisch")).toHaveAttribute("aria-expanded", "true");
+  const queue = page.getByRole("region", { name: "Zu erledigen" });
+  await expect(queue.getByText("Gespeicherte Zugangsschlüssel lassen sich nicht mehr lesen")).toBeVisible();
+  await expect(queue.getByText("Schlüssel unlesbar")).toBeVisible();
+  await expect(queue).toContainText("Der Bankabruf läuft nicht");
+  await queue.getByRole("link", { name: "Zugangsschlüssel öffnen" }).click();
+  await expect(page).toHaveURL(/\/settings#zugangsschluessel$/);
+  await expect(page.getByRole("heading", { name: "Zugangsschlüssel (API keys)" })).toBeInViewport();
+});
