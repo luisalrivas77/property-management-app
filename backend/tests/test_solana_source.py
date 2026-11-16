@@ -367,11 +367,108 @@ def _three_hundred_and_six() -> FakeChain:
     return FakeChain(records)
 
 
+# Invented own token accounts for the many-accounts histories (Q-O162), never a real key.
+MANY = [f"T{i:02d}c1osedManyInventedAaaaa" for i in range(40)]
+
+
+def _thirty_closed(count: int = 30) -> FakeChain:
+    """Q-O162: `count` own token accounts, each opened, credited without naming A and closed
+    early, then SOL credits; once a cut run stored them, one run's start used to list every
+    one of them, which a daily budget of 25 never covered."""
+    r = Records(A)
+    records = [r.sol_in(1)]
+    for i, account in enumerate(MANY[:count]):
+        records += [r.open(10 + 3 * i, account), r.token_in(11 + 3 * i, account)]
+        records += [r.close(12 + 3 * i, account)]
+    records += [r.sol_in(200 + j) for j in range(40)]
+    return FakeChain(records)
+
+
+def _one_busy_closed() -> FakeChain:
+    """Q-O162: one closed own token account credited 60 times without naming A, more than a
+    run at the floor serves, then SOL credits; the cursor's `at` carries how far the sweep
+    got inside it, so a cut run does not start that account over."""
+    r = Records(A)
+    records = [r.sol_in(1), r.open(3, MANY[0])]
+    records += [r.token_in(10 + i, MANY[0]) for i in range(60)]
+    records += [r.close(80, MANY[0]), r.open(81, MANY[1]), r.close(82, MANY[1])]
+    records += [r.sol_in(100 + j) for j in range(30)]
+    return FakeChain(records)
+
+
+def test_thirty_closed_token_accounts_at_a_budget_of_25_reach_the_tip():
+    """Q-O162 reproduced: 30 closed own token accounts, a daily budget of 25. The start no
+    longer lists every stored token account at once; the cursor carries an index into them
+    (never a token account itself), so every run moves on and the history is served whole,
+    read as one unlimited run reads it."""
+    want = _legs_by_hash(_Daily(_thirty_closed()).to_tip(10**6))
+    daily = _Daily(_thirty_closed()).to_tip(25, most=200)
+    assert _legs_by_hash(daily) == want
+    assert len(daily.served) == len(_thirty_closed().records)
+    assert ";" not in daily.cursor  # the tip: the plain form again, no sweep left
+
+
+def test_a_cursor_names_no_token_account_and_stays_short():
+    """D179: a cursor carries an index into the stored token accounts, never one of them."""
+    daily = _Daily(_thirty_closed())
+    seen = []
+    for _ in range(200):
+        tip = daily.run(25)
+        seen.append(daily.cursor)
+        if tip:
+            break
+    assert daily.tip
+    for cursor in seen:
+        assert not any(account in cursor for account in MANY)
+        assert "c1osed" not in cursor
+    # the longest a real one gets: 10-digit slots, an 88-character signature, a 5-digit
+    # index, within services/chain/sync's 200 (a longer one fails the run)
+    real = SourceCursor(
+        4_000_000_000, "5" * 88, 3_999_000_000, True, 99_999, 3_999_500_000, 4_000_000_001
+    )
+    assert len(real.text()) <= 140
+    assert SourceCursor.parse(real.text()) == real
+
+
+# The pinned floors: before the sweep (Q-O162) the mixed history needed 12, a start then
+# listing every stored token account; the 30 closed accounts froze below about 34.
+FLOORS = {"_mixed": 10, "_three_hundred_and_six": 9, "_thirty_closed": 9, "_one_busy_closed": 9}
+
+
+def test_a_sweep_inside_one_busy_account_moves_on_by_its_at():
+    """Q-O162: a run cut inside one stored token account's transactions writes how far it got
+    in that account (`at`), and the next run lists it from there; it never starts it over."""
+    daily = _Daily(_one_busy_closed())
+    ats = []
+    for _ in range(200):
+        tip = daily.run(9)
+        cursor = SourceCursor.parse(daily.cursor)
+        if cursor.split and cursor.index == 0 and cursor.at != cursor.closed:
+            ats.append(cursor.at)
+        if tip:
+            break
+    assert daily.tip and len(daily.served) == len(_one_busy_closed().records)
+    assert ";" not in daily.cursor
+    assert len(ats) >= 2 and ats == sorted(ats) and len(set(ats)) == len(ats)
+
+
+def test_the_sweep_cursor_round_trips_and_a_malformed_one_starts_over():
+    sweep = SourceCursor(90, "abc", 12, True, 3, 40, 95)
+    assert sweep.text() == "90:abc;12;3;40;95"
+    assert SourceCursor.parse("90:abc;12;3;40;95") == sweep
+    assert SourceCursor.parse("90:abc;;0;;") == SourceCursor(90, "abc", None, True)
+    assert SourceCursor(90, "abc", 12, True, 0, 12).text() == "90:abc;12"  # the old form
+    assert SourceCursor.parse("90:abc;12;0;30;") == SourceCursor(90, "abc", 12, True, 0, 30)
+    for bad in ("90:abc;12;3;40;", "90:abc;12;0;40;95", "90:abc;12;;40;95", "90:abc;1;2;x;4"):
+        assert SourceCursor.parse(bad) == SourceCursor(), bad
+
+
 def _smallest_workable(build) -> int:
     """The smallest budget every run can work with: the costliest start (a cursor at the tip
-    that owes every token account an earlier run stored from its first transaction) and one
-    transaction; and at the tip one request more than the run takes, since the sync counts a
-    budget used to its last request as spent."""
+    that owes every token account an earlier run stored from its first transaction, which the
+    sweep lists one at a time, Q-O162) up to its first transaction; and at the tip one
+    request more than the run takes, since the sync counts a budget used to its last request
+    as spent."""
     full = _Daily(build()).to_tip(10**6)
     slot = full.cursor.split(":")[0]
     starts = []
@@ -386,24 +483,35 @@ def _smallest_workable(build) -> int:
 
 @pytest.mark.parametrize(
     ("build", "page_size"),
-    [(_mixed, None), (_mixed, 1), (_mixed, 3), (_three_hundred_and_six, None)],
-    ids=["mixed", "mixed-page-1", "mixed-page-3", "306"],
+    [
+        (_mixed, None),
+        (_mixed, 1),
+        (_mixed, 3),
+        (_three_hundred_and_six, None),
+        (_thirty_closed, None),
+        (_thirty_closed, 2),
+        (_one_busy_closed, None),
+    ],
+    ids=["mixed", "mixed-page-1", "mixed-page-3", "306", "30-closed", "30-closed-page-2", "busy"],
 )
 def test_every_daily_budget_reaches_the_tip_with_what_one_run_serves(build, page_size):
     """Property (finding 1): whatever the same budget every day, from the smallest one a run
     can work with to an unlimited one, the runs reach the tip and serve the same transactions,
     read the same way, as one unlimited run; no run hands back its cursor while something it
     listed waits, and the cursor never cycles (the long sequence at a sample of budgets).
-    The floor is pinned, so a run's start growing dearer fails here, not silently."""
+    The floor is pinned, so a run's start growing dearer fails here, not silently; since the
+    sweep (Q-O162) it no longer grows with the stored token accounts (30 closed ones: 9)."""
     full = _Daily(build(), page_size).to_tip(10**6)
     want = _legs_by_hash(full)
     assert len(want) == len(build().records)
     needed = len(full.chain.requests)
     smallest = _smallest_workable(build)
-    assert smallest == (12 if build is _mixed else 9)
+    assert smallest == FLOORS[build.__name__]
     limits = range(smallest, needed + 3)
     if build is _three_hundred_and_six:
         limits = [smallest, smallest + 1, smallest + 3, 12, 60, 2400]
+    elif build is not _mixed:  # the long sweeps, at a sample of budgets
+        limits = [smallest, smallest + 1, smallest + 2, smallest + 5, 25, 40, needed + 2]
     for limit in limits:
         daily = _Daily(build(), page_size).to_tip(limit)
         assert _legs_by_hash(daily) == want, limit

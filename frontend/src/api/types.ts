@@ -12729,10 +12729,13 @@ export interface components {
          *     asset (the contract, or `native`), as strings. `reconciled` null with `balances` set:
          *     every differing asset is named by an open question („wartet auf Antwort“), or the
          *     account's next address in the same run carries the account's verdict; `balances` null on
-         *     a succeeded run: the budget ended first (`wallet.sync_deferred`). On an account-scope
-         *     source (Bitcoin) the account's verdict is the newest row with `reconciled` not null among
-         *     the account's addresses on that chain; when the run's last address failed, the earlier
-         *     rows stay null and the failed row is what the wallet shows.
+         *     a succeeded run: the budget ended first (`wallet.sync_deferred`), or the balance read
+         *     failed after a run that stored something new (its code is in the run's event and log,
+         *     not on the row); a balance read that fails with nothing new is a failed, throttled or
+         *     refused row with its `error_code`. On an account-scope source (Bitcoin) the account's
+         *     verdict is the newest row with `reconciled` not null among the account's addresses on
+         *     that chain; when the run's last address failed, the earlier rows stay null and the
+         *     failed row is what the wallet shows.
          */
         WalletSyncRun: {
             /**

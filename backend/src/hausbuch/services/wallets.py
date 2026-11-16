@@ -25,9 +25,11 @@ from sqlalchemy import Connection, Row, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import wallet_address as address_table
 from hausbuch.db.tables import wallet_sync as sync_table
 from hausbuch.jobs.sync_wallets import enqueue_sync_wallet
+from hausbuch.rules import errors as E
 from hausbuch.rules.chain.address import EVM_CHAINS, address_hmac, mask, validate
 from hausbuch.rules.errors import WALLET_ADDRESS_INVALID, WALLET_ADDRESS_TAKEN, RuleError
 from hausbuch.schemas.chain import AddressKind, Chain, WalletAddress, WalletSyncSummary
@@ -203,6 +205,9 @@ def update_address(
     changes = diff_changes(current.model_dump(include=set(requested)), requested)
     if not changes:
         return current
+    refusal = _retire_refusal(ctx.conn, current) if requested.get("active") is False else None
+    if "active" in changes and refusal is not None:
+        raise RuleError(E.WALLET_ADDRESS_HOLDS_COINS, refusal)
     row = ctx.conn.execute(
         update(address_table)
         .where(address_table.c.id == address_id)
@@ -222,6 +227,60 @@ def update_address(
         ),
     )
     return updated
+
+
+_HOLDS_COINS = (
+    "Diese Adresse hält laut dem letzten Abruf noch Coins. Erst die Coins wegsenden und den "
+    "nächsten Abruf abwarten, dann die Adresse stilllegen."
+)
+_HOLDS_BITCOIN = (
+    "Diese Wallet hält laut dem letzten Abruf noch Bitcoin. Bitcoin wird je Wallet abgeglichen, "
+    "nicht je Adresse, deshalb lässt sich eine einzelne Bitcoin-Adresse erst stilllegen, wenn "
+    "die Wallet keine Bitcoin mehr hält. Erst die Bitcoin wegsenden und den nächsten Abruf "
+    "abwarten."
+)
+_NEVER_READ = (
+    "Für diese Adresse sind Bewegungen gespeichert, aber ihr Kontostand wurde noch nie "
+    "abgerufen. Erst den nächsten vollständigen Abruf abwarten; zeigt er keine Coins mehr, "
+    "lässt sich die Adresse stilllegen."
+)
+
+
+def _retire_refusal(conn: Connection, address: WalletAddress) -> str | None:
+    """Why the address may not be retired, or None (the Bitcoin wiring's review, and the
+    review of PR #397: a retired address is no longer synced, so coins on it would leave the
+    wallet's figures unseen). The newest succeeded row with balances that covers the address
+    decides: its own, or on a UTXO chain (Bitcoin, reconciled per wallet, D185) the wallet's
+    newest on the chain, whose balances are the sum over its addresses, since no per-address
+    figure is stored; any value other than 0 refuses (dust too), on Bitcoin with its own text,
+    which says the wallet holds bitcoin, not this address. With no such row, an address that
+    has live movements refuses (its coins were never read); one with none does not. Spam is
+    never in a stored balance."""
+    s, a, m = sync_table.c, address_table.c, movement_table.c
+    bitcoin = address.chain is Chain.BITCOIN  # the one UTXO chain (schemas/chain.CHAIN_FAMILY)
+    if bitcoin:
+        covers = s.address_id.in_(
+            select(a.id).where(a.account_id == address.account_id, a.chain == address.chain)
+        )
+    else:
+        covers = s.address_id == address.id
+    read = conn.execute(
+        select(s.balances)
+        .where(covers, s.status == "succeeded", s.balances.is_not(None))
+        .order_by(s.started_at.desc(), s.created_at.desc())
+        .limit(1)
+    ).one_or_none()
+    if read is not None:
+        balances = read.balances or {}
+        if any(str(units) != "0" for units in balances.values()):
+            return _HOLDS_BITCOIN if bitcoin else _HOLDS_COINS
+        return None
+    moved = conn.execute(
+        select(func.count())
+        .select_from(movement_table)
+        .where(m.address_id == address.id, m.superseded_by.is_(None))
+    ).scalar_one()
+    return _NEVER_READ if moved else None
 
 
 def reveal_address(ctx: CommandContext, account_id: UUID, address_id: UUID) -> WalletAddressPlain:
