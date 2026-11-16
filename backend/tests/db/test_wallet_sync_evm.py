@@ -1017,3 +1017,79 @@ def test_a_revert_reason_is_never_read_as_a_provider_refusal(
         WalletSyncStatus.FAILED,
         E.WALLET_SOURCE_FAILED,
     )
+
+
+# --- D261: a plain send's counterparty, and a send to a learned deposit address ------------
+
+SENT_TO = "0x96d82db02c1fdeb860fcb6c58f11625348b9b831"  # native_send_with_fee's invented `to`
+
+
+def _send_leg(dbname, address_id):
+    """The native_send_with_fee value leg: (kind, counterparty_hmac, counterparty_masked,
+    the group's kind)."""
+    tx_hash = CASES["native_send_with_fee"].records["txlist"][0]["hash"]  # type: ignore[index]
+    (row,) = _q(
+        dbname,
+        "SELECT m.kind, m.counterparty_hmac, m.counterparty_masked, g.kind"
+        " FROM asset_movement m JOIN movement_group g ON g.id = m.group_id"
+        " WHERE m.address_id = %s AND g.tx_hash = %s AND m.index = 'value'"
+        " AND m.superseded_by IS NULL",
+        address_id,
+        tx_hash,
+    )
+    return row
+
+
+def test_a_plain_send_stores_its_counterparty_as_hmac_and_masked_only(
+    dbname, app_engine, blob_store, fresh_workspaces, http
+):
+    """D261 (2): the sync keeps a plain send's single external recipient as its HMAC (the
+    IBAN key) and masked form, never in clear (D179), so a learned deposit address can be
+    matched later."""
+    from hausbuch.rules.chain.address import address_hmac, mask
+
+    ws, _ = fresh_workspaces
+    account, ids = _wallet(app_engine, ws)
+    _run(app_engine, blob_store, ws, account)
+
+    kind, hmac, masked, group_kind = _send_leg(dbname, ids[Chain.ETHEREUM])
+    assert (kind, group_kind) == ("uncategorized", "transfer")
+    assert bytes(hmac) == address_hmac(SENT_TO, _settings().iban_hmac_key)
+    assert masked == mask(Chain.ETHEREUM, SENT_TO)
+    events = _q(dbname, "SELECT payload::text FROM event WHERE workspace_id = %s", ws)
+    assert not any(SENT_TO in e[0] or SENT_TO[2:] in e[0] for e in events)
+
+
+def test_a_send_to_a_learned_deposit_address_is_an_exchange_transfer(
+    dbname, app_engine, blob_store, fresh_workspaces, http
+):
+    """D261 (2): once the address is learned for an exchange, the sync reads a send to it as
+    an exchange transfer whose value leg is internal_transfer_out (the linker then pairs it
+    with the exchange's deposit)."""
+    from db.test_phase6_migration import _asset, _depot
+
+    from hausbuch.rules.chain.address import address_hmac, mask
+
+    ws, _ = fresh_workspaces
+    account, ids = _wallet(app_engine, ws)
+    with _admin(dbname) as conn:
+        exchange = _depot(conn, ws, kind="exchange", label="Börse")
+        coin = _asset(conn, ws, symbol="ETH", name="Ether")
+        earlier = _insert(conn, "asset_movement", _movement(ws, exchange, coin))
+        _insert(
+            conn,
+            "exchange_deposit_address",
+            {
+                "workspace_id": ws,
+                "account_id": exchange,
+                "chain": "ethereum",
+                "address_hmac": address_hmac(SENT_TO, _settings().iban_hmac_key),
+                "address_masked": mask(Chain.ETHEREUM, SENT_TO),
+                "learned_from": earlier,
+            },
+        )
+    _run(app_engine, blob_store, ws, account)
+
+    kind, hmac, _, group_kind = _send_leg(dbname, ids[Chain.ETHEREUM])
+    assert (kind, group_kind) == ("internal_transfer_out", "exchange_transfer")
+    assert hmac is not None
