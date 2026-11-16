@@ -76,7 +76,7 @@ _MONTHS = {
     "nov": 11,
     "dez": 12,
 }
-# The file writes a fund name's „&“ unescaped (an S&P index fund's file, read live 16 Nov
+# The file writes a fund name's „&“ unescaped (a real fund's file, read live 16 Nov
 # 2026), which is not XML: an ampersand that starts no entity or character reference is
 # escaped before parsing; nothing else is repaired.
 _BARE_AMPERSAND = re.compile(rb"&(?![A-Za-z][A-Za-z0-9]*;|#[0-9]+;|#x[0-9A-Fa-f]+;)")

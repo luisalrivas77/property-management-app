@@ -50,7 +50,7 @@ class IssuerAdapter:
     max_bytes: ClassVar[int] = MAX_BYTES
     catalogue_url: ClassVar[str | None] = None  # the issuer's list of its funds, if any
     # How a fund's name names the issuer (lower case, a word starting so: the banks' short
-    # names such as „iShsIII-Core MSCI World“ too): the catalogue is asked only for a fund so
+    # names such as „iShsIII-Example Fund“ too): the catalogue is asked only for a fund so
     # named, so a fund of another issuer costs no catalogue download. A false match costs one
     # download at most; the catalogue must still list the ISIN.
     brands: ClassVar[tuple[str, ...]] = ()

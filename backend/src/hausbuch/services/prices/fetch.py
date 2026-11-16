@@ -2,7 +2,7 @@
 
 In the order D167 (3) gives: the ECB rates first (the NAVs in another currency need them),
 then each held coin, then each held ETF's NAV. "Held" is a positive sum of confirmed,
-current movements over all the workspace's accounts; the first of those movements bounds
+current movements on at least one of the workspace's accounts; the first of those movements bounds
 every source (no price before it). Three phases, so no network call runs inside a database
 transaction:
 
