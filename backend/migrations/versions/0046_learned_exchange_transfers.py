@@ -84,10 +84,11 @@ ALTER TABLE asset_movement
         CHECK (octet_length(counterparty_hmac) = 32),
     ADD COLUMN counterparty_masked text
         CHECK (counterparty_masked ~ {_MASKED}),
-    -- D261: the HMAC and its masked form together, and only on a movement read from a chain.
+    -- D261: the HMAC and its masked form together, and only on a chain leg (one naming its
+    -- own address: read from a chain, or re-created by a person's answer on its group).
     ADD CONSTRAINT asset_movement_counterparty_check CHECK (
         (counterparty_hmac IS NULL) = (counterparty_masked IS NULL)
-        AND (counterparty_hmac IS NULL OR source = 'chain')
+        AND (counterparty_hmac IS NULL OR address_id IS NOT NULL)
     );
 
 CREATE TABLE exchange_deposit_address (

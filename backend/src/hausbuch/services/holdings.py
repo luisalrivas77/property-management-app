@@ -108,6 +108,9 @@ def _assets(conn: Connection) -> dict[UUID, _Asset]:
     return {r.id: _Asset(r.id, r.symbol, r.name, r.spam, r.priced_as_asset_id) for r in rows}
 
 
+_COUNTERPARTY = frozenset({"counterparty_hmac", "counterparty_masked"})
+
+
 def _movements(
     conn: Connection, account_ids: Sequence[UUID], assets: Iterable[UUID]
 ) -> list[AssetMovement]:
@@ -115,8 +118,11 @@ def _movements(
     asset_ids = list(assets)
     if not account_ids or not asset_ids:
         return []
+    # D261 (0046): a send's counterparty (its HMAC and masked form) is the matcher's, never
+    # the lots'; the record schema has no field for it, so it is not read here.
+    read = [c for c in movement_table.c if c.name not in _COUNTERPARTY]
     rows = conn.execute(
-        select(movement_table).where(
+        select(*read).where(
             m.account_id.in_(account_ids),
             m.asset_id.in_(asset_ids),
             m.status == MovementStatus.CONFIRMED.value,

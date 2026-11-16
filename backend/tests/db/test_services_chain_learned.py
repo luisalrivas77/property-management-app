@@ -9,7 +9,8 @@ quantity is invented, the addresses are EIP-55's published examples."""
 import hashlib
 import os
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 from db.db_support import _admin, _insert, insert_event
@@ -38,7 +39,7 @@ from hausbuch.schemas.household import (
     TransferLinkRequest,
     TransferMatchedBy,
 )
-from hausbuch.services import transfers
+from hausbuch.services import transfers, wallet_groups
 from hausbuch.services.chain import learned
 from hausbuch.services.chain import transfers as chain_transfers
 from hausbuch.services.errors import ConflictError, NotFoundError
@@ -282,6 +283,8 @@ def test_a_deposit_outside_the_window_is_not_linked(seed, run, read, deposit_at)
     seed.send("1")
     seed.deposit("1", at=deposit_at)
     assert run(seed.ws, chain_transfers.relink).linked == 0
+    # never a silent dead end: the send still counts on the wallet's line in Zu prüfen
+    assert read(seed.ws, wallet_groups.proposed_counts)[seed.wallet][0] >= 1
     assert _links(read, seed.ws) == []
 
 
@@ -290,6 +293,8 @@ def test_units_off_by_more_than_the_dust_are_not_linked(seed, run, read):
     seed.send("1")
     seed.deposit("0.999999999999999998", at=T0 + timedelta(hours=1))  # two units of dust off
     assert run(seed.ws, chain_transfers.relink).linked == 0
+    # never a silent dead end: the send still counts on the wallet's line in Zu prüfen
+    assert read(seed.ws, wallet_groups.proposed_counts)[seed.wallet][0] >= 1
 
 
 def test_units_within_the_dust_are_linked(seed, run, read):
@@ -305,6 +310,8 @@ def test_two_deposits_that_fit_link_nothing(seed, run, read):
     seed.deposit("1", at=T0 + timedelta(hours=1))
     seed.deposit("1", at=T0 + timedelta(hours=2))
     assert run(seed.ws, chain_transfers.relink).linked == 0
+    # never a silent dead end: the send still counts on the wallet's line in Zu prüfen
+    assert read(seed.ws, wallet_groups.proposed_counts)[seed.wallet][0] >= 1
 
 
 def test_two_sends_that_fit_one_deposit_link_nothing(seed, run, read):
@@ -313,6 +320,8 @@ def test_two_sends_that_fit_one_deposit_link_nothing(seed, run, read):
     seed.send("1", at=T0 + timedelta(minutes=5))
     seed.deposit("1", at=T0 + timedelta(hours=1))
     assert run(seed.ws, chain_transfers.relink).linked == 0
+    # never a silent dead end: the send still counts on the wallet's line in Zu prüfen
+    assert read(seed.ws, wallet_groups.proposed_counts)[seed.wallet][0] >= 1
 
 
 def test_an_address_learned_for_exchange_a_never_links_a_deposit_on_b(seed, run, read):
@@ -375,6 +384,39 @@ def test_the_exchange_page_lists_and_forgets_its_learned_address(seed, run, read
 
 
 # --- what is never learned --------------------------------------------------------------------
+
+
+def test_an_answered_and_undone_send_keeps_its_counterparty_and_still_links(seed, run, read):
+    """A person's answer on the send's group, and „Antwort zurücknehmen“, re-create its legs;
+    the counterparty goes with them. The group a person reopened is never confirmed by code
+    (D186 (1), as for a hash link), but the person's pick of it still teaches the address."""
+    from hausbuch.schemas.wallet_cards import WalletAnswer, WalletGroupAnswerBody
+
+    group, out, _ = seed.send("1")
+    answered = run(
+        seed.ws,
+        wallet_groups.answer_group,
+        group,
+        WalletGroupAnswerBody(answer=WalletAnswer.PAYMENT),
+    )
+    paid = _live(read, seed.ws, out)
+    assert (paid.kind, bytes(paid.counterparty_hmac)) == ("disposal", DEPOSIT)
+    run(seed.ws, wallet_groups.undo_group, answered)
+    back = _live(read, seed.ws, out)
+    assert (back.kind, back.status, bytes(back.counterparty_hmac)) == (
+        "uncategorized",
+        "proposed",
+        DEPOSIT,
+    )
+    assert back.counterparty_masked == MASKED
+
+    deposit = seed.deposit(
+        "1", at=T0 + timedelta(hours=1), kind="internal_transfer_in", status="confirmed"
+    )
+    picked = _pick(run, seed.ws, back.id, deposit, remember_deposit_address=True)
+    assert picked.learned == "learned"
+    [row] = _learned_rows(read, seed.ws)
+    assert (row.account_id, bytes(row.address_hmac)) == (seed.exchange, DEPOSIT)
 
 
 def test_an_own_address_is_never_learned_and_the_link_stands(seed, run, read):
@@ -551,6 +593,7 @@ def test_a_receipt_outside_24_hours_is_not_linked(seed, run, read, receipt_at):
     seed.exchange_out("1", fee="0.001")
     seed.receipt("0.999", at=receipt_at)
     assert run(seed.ws, chain_transfers.relink).linked == 0
+    assert _open(read, seed.ws) != []  # never a silent dead end: a card waits
 
 
 def test_a_receipt_on_another_address_is_not_linked(seed, run, read):
@@ -558,6 +601,7 @@ def test_a_receipt_on_another_address_is_not_linked(seed, run, read):
     seed.exchange_out("1", fee="0.001")
     seed.receipt("0.999", at=T0 + timedelta(hours=1), address=seed.address_b, account=seed.wallet_b)
     assert run(seed.ws, chain_transfers.relink).linked == 0
+    assert _open(read, seed.ws) != []  # never a silent dead end: a card waits
 
 
 def test_a_receipt_of_other_units_is_not_linked(seed, run, read):
@@ -565,6 +609,7 @@ def test_a_receipt_of_other_units_is_not_linked(seed, run, read):
     seed.exchange_out("1", fee="0.001")
     seed.receipt("1", at=T0 + timedelta(hours=1))  # the fee was not taken from it
     assert run(seed.ws, chain_transfers.relink).linked == 0
+    assert _open(read, seed.ws) != []  # never a silent dead end: a card waits
 
 
 def test_two_receipts_that_fit_link_nothing(seed, run, read):
@@ -573,6 +618,7 @@ def test_two_receipts_that_fit_link_nothing(seed, run, read):
     seed.receipt("0.999", at=T0 + timedelta(hours=1))
     seed.receipt("0.999", at=T0 + timedelta(hours=2))
     assert run(seed.ws, chain_transfers.relink).linked == 0
+    assert _open(read, seed.ws) != []  # never a silent dead end: a card waits
 
 
 def test_two_withdrawals_that_fit_one_receipt_link_nothing(seed, run, read):
@@ -581,6 +627,7 @@ def test_two_withdrawals_that_fit_one_receipt_link_nothing(seed, run, read):
     seed.exchange_out("1", fee="0.001", at=T0 + timedelta(minutes=10))
     seed.receipt("0.999", at=T0 + timedelta(hours=1))
     assert run(seed.ws, chain_transfers.relink).linked == 0
+    assert _open(read, seed.ws) != []  # never a silent dead end: a card waits
 
 
 # --- (5) undo -----------------------------------------------------------------------------------
@@ -609,3 +656,49 @@ def test_replacing_a_learned_link_reopens_the_dropped_leg_and_keeps_the_address(
     dropped = _live(read, seed.ws, bonus)
     assert (dropped.kind, dropped.status) == ("internal_transfer_in", "proposed")
     assert _learned_rows(read, seed.ws)[0].ended_at is None
+
+
+# --- the lots read a teaching link and a code link alike (D184 (4)) ------------------------------
+
+
+def test_the_lots_move_through_the_persons_link_and_the_code_link_alike(seed, run, read):
+    """The link that teaches (a person's pick, its receipt still uncategorized) and the link
+    code writes from what it learned both move the exchange's lot to the wallet with its
+    acquisition day and source: the lots read a live link whatever its legs' kinds."""
+    from hausbuch.services import holdings
+
+    with _admin(seed.dbname) as conn:
+        bought = _insert(
+            conn,
+            "asset_movement",
+            {
+                "workspace_id": seed.ws,
+                "account_id": seed.exchange,
+                "asset_id": seed.eth_plain,
+                "kind": "acquisition",
+                "quantity": "5",
+                "occurred_at": T0 - timedelta(days=10),
+                "source": "csv",
+                "status": "confirmed",
+                "movement_hash": hashlib.sha256(uuid.uuid4().bytes).hexdigest(),
+            },
+        )
+    first = seed.exchange_out("1", fee="0.001")
+    _, [first_in] = seed.receipt("0.999", at=T0 + timedelta(minutes=30))
+    taught = _pick(run, seed.ws, first, first_in, remember_withdrawal_pair=True)
+    assert taught.learned == "learned"
+    seed.exchange_out("2", fee="0.002", at=LATER, status="proposed")
+    seed.receipt("1.998", at=LATER + timedelta(hours=1))
+    assert run(seed.ws, chain_transfers.relink).linked == 1
+    [code] = [
+        lk for lk in _links(read, seed.ws) if lk.matched_by == TransferMatchedBy.MATCHER.value
+    ]
+
+    today = date(2026, 3, 20)
+    lots = read(seed.ws, holdings.account_lots, seed.wallet, today)
+    assert sorted(lot.units_open for lot in lots) == [Decimal("0.999"), Decimal("1.998")]
+    assert {(lot.movement_id, lot.source.value) for lot in lots} == {(bought, "acquisition")}
+    assert {lot.acquired_on for lot in lots} == {(T0 - timedelta(days=10)).date()}
+    assert sorted(tuple(lot.moved_through) for lot in lots) == sorted([(taught.id,), (code.id,)])
+    left = read(seed.ws, holdings.account_lots, seed.exchange, today)
+    assert [lot.units_open for lot in left] == [Decimal("2")]  # 5 − 1 − 2, the fees inside
