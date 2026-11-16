@@ -546,6 +546,15 @@ def import_export(
         )
     ).one_or_none()
     if existing is not None:
+        if (
+            offset is not None
+            and times.correct_same_file(ctx, account_id, existing.id, offset, document.id).imports
+        ):
+            # D178 amended (4): the same file again under a name that names its zone.
+            existing = ctx.conn.execute(
+                select(*_IMPORT_COLUMNS).where(import_table.c.id == existing.id)
+            ).one()
+            _relink_after_import(ctx, account_id)
         return ExchangeUpload(movement_import=_to_import(existing))
 
     m = movement_table.c
@@ -604,12 +613,7 @@ def import_export(
         ),
         effective_date=last.date(),
     )
-    from ..chain import transfers as chain_transfers
-    from ..transfers import relink  # transfers imports the statement services
-
-    relink(ctx, account_id)  # an EUR deposit or withdrawal finds its bank leg (D162)
-    chain_transfers.relink(ctx)  # a coin withdrawal or deposit finds its chain leg (D184)
-    queue_deposit_lookups(ctx)  # D181 (c) amended: a BSC withdrawal's deposit, read by hash
+    _relink_after_import(ctx, account_id)
     return ExchangeUpload(
         movement_import=_to_import(imported),
         withdrawals_open=len(_open_withdrawals(_current(ctx.conn, account_id))),
@@ -679,6 +683,15 @@ def _supersede(
         ),
     )
     return new_id
+
+
+def _relink_after_import(ctx: CommandContext, account_id: UUID) -> None:
+    from ..chain import transfers as chain_transfers
+    from ..transfers import relink  # transfers imports the statement services
+
+    relink(ctx, account_id)  # an EUR deposit or withdrawal finds its bank leg (D162)
+    chain_transfers.relink(ctx)  # a coin withdrawal or deposit finds its chain leg (D184)
+    queue_deposit_lookups(ctx)  # D181 (c) amended: a BSC withdrawal's deposit, read by hash
 
 
 def _zone_fields(kind: ExportKind, offset: timedelta | None) -> dict:

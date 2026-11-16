@@ -478,6 +478,9 @@ def _correct_import(
         payloads = _link_payloads(ctx.conn, [r.id for r in links])
         _move_rows(ctx, targets | deposits, document_id, moves)
         _move_links(ctx, links, moves, payloads)
+    if offset:
+        # Also when no row moved (all of the import's rows were an earlier import's): its
+        # bounds are file time too. Run once per import, since it is known afterwards.
         ctx.conn.execute(
             update(import_table)
             .where(import_table.c.id == imported.id)
@@ -578,6 +581,18 @@ def correct_overlapping(
             moved += _correct_import(ctx, imported, offset, document_id)
             imports += 1
     return TimesCorrected(imports, moved)
+
+
+def correct_same_file(
+    ctx: CommandContext, account_id: UUID, import_id: UUID, offset: timedelta, document_id: UUID
+) -> TimesCorrected:
+    """The import of a file uploaded again (the same bytes, so its stored import) under a name
+    that names its zone, moved by that zone when its own was unknown: the to-do's answer when
+    the export is uploaded unchanged but for its name."""
+    for imported in unknown_imports(ctx.conn, account_id):
+        if imported.id == import_id:
+            return TimesCorrected(1, _correct_import(ctx, imported, offset, document_id))
+    return TimesCorrected()
 
 
 @dataclass(frozen=True)
