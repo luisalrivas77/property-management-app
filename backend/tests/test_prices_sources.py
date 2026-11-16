@@ -230,6 +230,20 @@ def test_ecb_daily_reads_the_three_currencies_and_ignores_the_rest():
     assert rates["GBP"][0].per_eur == Decimal("0.84500")
 
 
+def test_ecb_reads_every_currency_when_asked_and_drops_only_an_unreadable_other_one():
+    """D174 amended 16 Nov 2026 (follow-up C): the fetch reads every currency the file lists,
+    so a NAV in yen is converted; an unreadable rate of a currency outside the three drops
+    that currency only, while one of the three still refuses the file."""
+    body = _sample("ecb_daily.xml")
+    rates = ecb_fx.parse(body, currencies=None)
+    assert set(rates) == {"USD", "GBP", "CHF", "JPY"}
+    assert rates["JPY"][0].per_eur == Decimal("170.10")
+    broken = ecb_fx.parse(body.replace(b"rate='170.10'", b"rate='x'"), currencies=None)
+    assert set(broken) == {"USD", "GBP", "CHF"}
+    with pytest.raises(SourceError):
+        ecb_fx.parse(body.replace(b"rate='1.0850'", b"rate='NaN'"), currencies=None)
+
+
 def test_ecb_history_is_sorted_oldest_first():
     rates = ecb_fx.parse(_sample("ecb_hist_90d.xml"))
     assert [r.on for r in rates["USD"]] == [date(2026, 6, 24), date(2026, 6, 25), date(2026, 6, 26)]

@@ -12,18 +12,22 @@ import pytest
 from db.db_support import TEST_IBAN_KEY
 from sqlalchemy import insert, select
 
+from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.rules.household.assets import registry
+from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import AccountKind, ActorType
+from hausbuch.schemas.prices import TypedPriceBody
 from hausbuch.services.accounts import create_account
 from hausbuch.services.context import Actor
 from hausbuch.services.depot import asset_for_isin
 from hausbuch.services.prices import fetch as prices_fetch
 from hausbuch.services.prices import overview as prices_overview
 from hausbuch.services.prices.fetch import Sources, run_workspace
-from hausbuch.services.prices.issuer_nav import ADAPTERS
+from hausbuch.services.prices.issuer_nav import ADAPTERS, ISharesAdapter
+from hausbuch.services.prices.overview import record_price
 
 pytestmark = pytest.mark.db
 
@@ -281,3 +285,216 @@ def test_a_catalogue_reference_naming_another_isin_stores_nothing(
     assert ("issuer_nav:ishares", "isin_mismatch", None) in sources.errors
     assert wrong_id not in {r.asset_id for r in _nav_rows(read, ws)}
     assert ids[ISHARES_ISIN] not in {r.asset_id for r in _nav_rows(read, ws)}
+
+
+# --- follow-ups of the PR #381 review (D174 amended 16 Nov 2026) ----------------------------
+
+
+class Served(Recorded):
+    """Recorded, with some URL parts answered by other bodies or statuses (checked first)."""
+
+    def __init__(self, served: dict[str, tuple[int, bytes]], down: tuple[str, ...] = ()):
+        super().__init__(down)
+        self.served = served
+
+    def __call__(self, url, headers, timeout, max_bytes):
+        for part, answer in self.served.items():
+            if part in url:
+                self.urls.append(url)
+                return answer
+        return super().__call__(url, headers, timeout, max_bytes)
+
+
+def _ishares_file(*, day: bytes = b"26.Juni2026", currency: bytes = b"USD") -> bytes:
+    """The synthetic iShares file (IE000INVENT2), its newest NAV day or its NAV currency
+    replaced in memory (the fixture file itself is unchanged)."""
+    body = (SAMPLES / "ishares_fund_download.xls").read_bytes()
+    body = body.replace(b">26.Juni2026<", b">" + day + b"<")
+    return body.replace(b">USD 81,20<", b">" + currency + b" 81,20<")
+
+
+def _cards(read, ws, now):
+    return read(ws, prices_overview.price_inbox_items, now)
+
+
+def _run(app_engine, ws, fetch, now):
+    return run_workspace(app_engine, ws, ACTOR, Sources(fetch=fetch, coingecko=None), now)
+
+
+def test_a_stored_reference_that_stopped_working_is_found_again_in_the_catalogue(
+    run, read, app_engine, fresh_workspaces, monkeypatch
+):
+    """Follow-up A: day 1 prices the fund through the catalogue's reference 1; on day 2 that
+    file is gone (404) and the catalogue lists 2: the same run reads 2 and its row keeps 2;
+    day 3 reads 2 at once, no catalogue."""
+    ws, _ = fresh_workspaces
+    ids = _unlisted_funds(run, ws)
+    fund = ids[ISHARES_ISIN]
+    _run(app_engine, ws, Recorded(), NOW)
+    assert {r.raw["fund_ref"] for r in _nav_rows(read, ws) if r.asset_id == fund} == {"1"}
+
+    monkeypatch.setattr(
+        ISharesAdapter, "parse_catalogue", staticmethod(lambda body: {ISHARES_ISIN: "2"})
+    )
+    moved = Served(
+        {
+            "portfolioId=1&": (404, b""),
+            "portfolioId=2&": (200, _ishares_file(day=b"27.Juni2026")),
+        }
+    )
+    sources = Sources(fetch=moved, coingecko=None)
+    _, out = run_workspace(app_engine, ws, ACTOR, sources, NOW + timedelta(days=1))
+    assert moved.asked("product-screener") == 1
+    assert moved.asked("portfolioId=1&") == moved.asked("portfolioId=2&") == 1
+    assert out.failed == [] and out.discovered[fund].fund_ref == "2"
+    assert dict(sources.errors) == {("issuer_nav:ishares", "HTTPError", 404): 1}
+    [new_row] = [r for r in _nav_rows(read, ws) if r.asset_id == fund and r.on == TODAY]
+    assert (new_row.raw["issuer"], new_row.raw["fund_ref"]) == ("ishares", "2")
+
+    third = Served(
+        {
+            "portfolioId=1&": (404, b""),
+            "portfolioId=2&": (200, _ishares_file(day=b"27.Juni2026")),
+        }
+    )
+    _run(app_engine, ws, third, NOW + timedelta(days=2))
+    assert third.asked("product-screener") == third.asked("portfolioId=1&") == 0
+    assert third.asked("portfolioId=2&") == 1
+
+
+def test_an_outage_of_a_stored_reference_asks_no_catalogue(run, read, app_engine, fresh_workspaces):
+    """A 503 is an outage, not a moved fund: the fund fails for the day, nothing else."""
+    ws, _ = fresh_workspaces
+    ids = _unlisted_funds(run, ws)
+    _run(app_engine, ws, Recorded(), NOW)
+    down = Recorded(down=("portfolioId=1&",))
+    _, out = _run(app_engine, ws, down, NOW + timedelta(days=1))
+    assert down.asked("product-screener") == 0 and down.asked("portfolioId=1&") == 1
+    assert out.failed == [ids[ISHARES_ISIN]] and out.discovered == {}
+
+
+def _fail_for(app_engine, ws, days: int, start: datetime) -> datetime:
+    """`days` daily runs from `start` on which the iShares file answers 503."""
+    now = start
+    for n in range(days):
+        now = start + timedelta(days=n)
+        _run(app_engine, ws, Recorded(down=("portfolioId=1&",)), now)
+    return now
+
+
+def test_a_catalogue_fund_whose_file_never_worked_gets_the_source_failed_card(
+    run, read, app_engine, fresh_workspaces
+):
+    """Follow-up B: the catalogue names the fund but its file fails from the first day, so
+    no row ever keeps the reference. The card is D174's („kam nicht von iShares“) after
+    seven days, never „veröffentlicht keinen Kurs“; the fund no catalogue names keeps that."""
+    ws, _ = fresh_workspaces
+    ids = _unlisted_funds(run, ws)
+    fund, other = ids[ISHARES_ISIN], ids[OTHER_ISIN]
+    first = _fail_for(app_engine, ws, 1, NOW)
+    by_asset = {c.asset_id: c for c in _cards(read, ws, first)}
+    assert fund not in by_asset  # under seven days: no card, and never the false one
+    assert by_asset[other].kind is InboxItemKind.PRICE_NO_SOURCE
+
+    last = _fail_for(app_engine, ws, 7, NOW)
+    by_asset = {c.asset_id: c for c in _cards(read, ws, last)}
+    card = by_asset[fund]
+    assert card.kind is InboxItemKind.PRICE_SOURCE_FAILED
+    assert "nicht von iShares" in card.reasoning and "fehlt sein Wert" in card.reasoning
+    assert by_asset[other].kind is InboxItemKind.PRICE_NO_SOURCE
+
+
+def test_a_stored_reference_that_fails_gets_the_source_failed_card(
+    run, read, app_engine, fresh_workspaces
+):
+    """Follow-up B, the other way: a fund priced once through its catalogue reference, then
+    failing seven days, gets D174's card naming the issuer and its older price."""
+    ws, _ = fresh_workspaces
+    ids = _unlisted_funds(run, ws)
+    _run(app_engine, ws, Recorded(), NOW)
+    last = _fail_for(app_engine, ws, 7, NOW + timedelta(days=1))
+    [card] = [c for c in _cards(read, ws, last) if c.asset_id == ids[ISHARES_ISIN]]
+    assert card.kind is InboxItemKind.PRICE_SOURCE_FAILED
+    assert "nicht von iShares" in card.reasoning and "älteren Kurs" in card.reasoning
+
+
+def _ecb_rows(read, ws, symbol):
+    def query(conn):
+        p, a = price_table.c, asset_table.c
+        return conn.execute(
+            select(p.on, p.raw)
+            .join(asset_table, a.id == p.asset_id)
+            .where(p.source == "ecb_fx", a.symbol == symbol)
+            .order_by(p.on)
+        ).all()
+
+    return read(ws, query)
+
+
+def _issuer_price(read, ws, asset_id):
+    def query(conn):
+        p = price_table.c
+        return conn.execute(
+            select(p.price_eur).where(p.asset_id == asset_id, p.source == "issuer_nav")
+        ).scalar_one()
+
+    return read(ws, query)
+
+
+def test_a_nav_in_another_ecb_currency_is_converted_by_its_ecb_rate(
+    run, read, app_engine, fresh_workspaces
+):
+    """Follow-up C: a workspace that already has its dollar rates holds a fund quoted in
+    yen. The run stores the ECB's yen rate (the 90-day file asked too, for the first need)
+    and the NAV converted by it, raw keeping the yen figure."""
+    ws, _ = fresh_workspaces
+    ids = _unlisted_funds(run, ws)
+    fund = ids[ISHARES_ISIN]
+    _run(app_engine, ws, Recorded(down=("portfolioId=1&",)), NOW)
+    assert _ecb_rows(read, ws, "USD") and _ecb_rows(read, ws, "JPY") == []
+
+    yen = Served({"portfolioId=1&": (200, _ishares_file(currency=b"JPY"))})
+    _, out = _run(app_engine, ws, yen, NOW + timedelta(days=1))
+    assert out.failed == [] and out.unconverted == {}
+    assert yen.asked("eurofxref-daily") == yen.asked("eurofxref-hist-90d") == 1
+    assert [(r.on, r.raw) for r in _ecb_rows(read, ws, "JPY")] == [
+        (date(2026, 6, 26), {"per_eur": "170.10"})
+    ]
+    rows = [r for r in _nav_rows(read, ws) if r.asset_id == fund]
+    # The 25th has no yen rate on or before it in the files: nothing stored for it.
+    assert [r.on for r in rows] == [date(2026, 6, 26)]
+    assert rows[0].raw == {
+        "nav": "81.20000000",
+        "currency": "JPY",
+        "rate_on": "2026-06-26",
+        "issuer": "ishares",
+        "fund_ref": "1",
+    }
+    expected = (Decimal("81.20") / Decimal("170.10")).quantize(Decimal("0.00000001"))
+    assert _issuer_price(read, ws, fund) == expected
+    assert not [c for c in _cards(read, ws, NOW + timedelta(days=1)) if c.asset_id == fund]
+
+
+def test_a_nav_in_a_currency_the_ecb_does_not_publish_is_a_card_never_a_price(
+    run, read, app_engine, fresh_workspaces
+):
+    """Follow-up C, the rest: no ECB rate converts the NAV, so nothing is stored and a card
+    names the fund and the currency at once; a typed price ends it."""
+    ws, _ = fresh_workspaces
+    ids = _unlisted_funds(run, ws)
+    fund = ids[ISHARES_ISIN]
+    odd = Served({"portfolioId=1&": (200, _ishares_file(currency=b"SEK"))})
+    _, out = _run(app_engine, ws, odd, NOW)
+    assert out.unconverted == {fund: "SEK"} and fund not in out.failed
+    assert fund not in {r.asset_id for r in _nav_rows(read, ws)}
+    [card] = [c for c in _cards(read, ws, NOW) if c.asset_id == fund]
+    assert card.kind is InboxItemKind.PRICE_SOURCE_FAILED
+    assert "in SEK" in card.reasoning and "iShsIII-Invented USD U.ETF" in card.reasoning
+    assert "Kurs eintragen" in card.question
+
+    def typed(ctx):
+        return record_price(ctx, fund, TypedPriceBody(on=TODAY, price_eur=Decimal("7.5")))
+
+    later = NOW + timedelta(hours=1)
+    run(ws, typed, now=later)
+    assert not [c for c in _cards(read, ws, later) if c.asset_id == fund]
