@@ -116,6 +116,11 @@ def allocate_transaction(
     (rule.not_learnable) or a pattern that does not compile (rule.invalid_pattern)."""
     if body.allocation_set.transaction_id != transaction_id:
         raise RuleViolationError([TRANSACTION_MISMATCH], "the set is for another transaction")
+    # D162 amended (8), lock order: the exchange's row before the line and before the transfer
+    # lock this answer's hook may take, as an exchange import takes them.
+    locked = None
+    if body.learn_deposit_iban:
+        locked = transfers.lock_deposit_exchange(ctx, transaction_id)
     line = _open_line(ctx.conn, transaction_id)
     drafts = body.allocation_set.allocations
     allocations.check_categories(ctx.conn, line.account_id, drafts)
@@ -123,6 +128,8 @@ def allocate_transaction(
     # D162 amended (8), review: the deposit the panel's box named, read before the answer is
     # written, so a link the answer itself lets the matcher write teaches nothing.
     offer = _deposit_iban_offer(ctx.conn, line) if body.learn_deposit_iban else None
+    if offer is not None and offer.exchange_account_id != locked:
+        offer = None  # a link written since names another exchange, whose row is not locked
     corrects = None
     if current and allocations.same_answer(drafts, current):
         if current[0].status is AllocationStatus.PROPOSED:
