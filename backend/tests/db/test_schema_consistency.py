@@ -9,6 +9,7 @@ from db.db_support import OWNER
 from hausbuch.schemas import enums as E
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import AllocationCategory, AllocationMethod, SplitMethod
+from hausbuch.schemas.app_secrets import AppSecretName
 from hausbuch.schemas.bank import StatementFormat
 from hausbuch.schemas.bank_sync import SyncStatus, SyncTrigger
 from hausbuch.schemas.chain import (
@@ -120,6 +121,8 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("chain_pair", "kind"): ChainPairKind,
     ("chain_pair", "from_chain"): Chain,
     ("chain_pair", "to_chain"): Chain,
+    # Phase 6 D260 (0045, widened by 0047)
+    ("app_secret", "name"): AppSecretName,
 }
 
 
