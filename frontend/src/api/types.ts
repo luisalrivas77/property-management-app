@@ -11596,7 +11596,7 @@ export interface components {
              */
             booked_on: string;
             /** Amount */
-            amount: string;
+            amount: string | null;
             /** Counterparty Name */
             counterparty_name?: string | null;
             account_kind?: components["schemas"]["AccountKind"] | null;
@@ -11615,6 +11615,13 @@ export interface components {
             deposit_fee?: string | null;
             /** Deposit Fee Text */
             deposit_fee_text?: string | null;
+            /** Quantity */
+            quantity?: string | null;
+            /** Asset Symbol */
+            asset_symbol?: string | null;
+            /** Chain */
+            chain?: string | null;
+            link_kind?: components["schemas"]["TransferLinkKind"] | null;
         };
         /** TransferLink */
         TransferLink: {
@@ -11664,8 +11671,9 @@ export interface components {
         /**
          * TransferLinkKind
          * @description transfer_link.kind (migration 0025; chain, bridge and wrap since 0041, phase 7 D184).
-         *     A link by hand (TransferLinkCreate) still only takes the kind rules.matching
-         *     .transfer_link_kind gives the two accounts, so the chain kinds wait for step 5.
+         *     A link by hand (TransferLinkCreate) of two EUR legs takes the kind rules.matching
+         *     .transfer_link_kind gives the two accounts; of two coin legs (phase 7 step 5,
+         *     services.chain.transfers) the kind rules.chain.match_transfer reads from the legs.
          * @enum {string}
          */
         TransferLinkKind: "bank" | "exchange_eur" | "depot_cash" | "chain" | "bridge" | "wrap";
