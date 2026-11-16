@@ -76,6 +76,10 @@ class ClassifyContext:
     # the account (the sync compares the address's HMAC with the stored answers, so no
     # plaintext is kept for them); None: no answer is known.
     answered_payee: Callable[[str], bool] | None = None
+    # The transaction hashes the workspace's own exchange withdrawals name (D183 (3)(b)), as
+    # stored on the exchange's asset_movement rows. Held in memory only: a hash is never put
+    # into an event, a log line or a ChainGroup's text fields.
+    exchange_hashes: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)

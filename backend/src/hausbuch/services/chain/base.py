@@ -33,6 +33,10 @@ found as `make_source` in `services/chain/<kind>.py` (`solana_rpc.py`, `evm_ethe
   the account's movements on the chain against Σ `balances(a)` over every active own address
   `a` of the account on that chain (Bitcoin: a spend's movements sit on its first input's
   address while its change lands on another own address, fixture `bitcoin_two_addresses`);
+- may set `reads_tokens = True`: the sync then calls `balances(a, tokens=...)` with every
+  non-spam token `a` has movements in (stored, or read in the same run), and the source reads
+  those balances besides its own list (EVM over Etherscan, so a token the registry does not
+  list is reconciled); a source without it is called with the address alone;
 - returns `Page.next_cursor` = the opaque position to continue from (≤ 200 characters); the
   sync calls again with it until it is None or the cursor the sync passed in (the tip
   reached), so a page with no item but a moved cursor (an empty block window) continues;

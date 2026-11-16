@@ -175,9 +175,10 @@ class Settings:
     coingecko_key: SecretStr | None = field(default=None, repr=False)
     # Phase 7 chain sources (D181, D192). Secrets: the Etherscan V2 key (Ethereum, Arbitrum),
     # the Solana RPC URL (a provider's URL carries its key; unset = the public endpoint, D181
-    # (d): Solana works without any secret) and the optional Helius key (labels only). Plain:
-    # the Esplora base URLs tried in order (mempool.space, then Blockstream), the
-    # Etherscan-shaped API's URL, BNB Smart Chain's JSON-RPC URL (balances only) and the Solana
+    # (d): Solana works without any secret), BNB Smart Chain's JSON-RPC URL (balances only;
+    # unset = BNB Chain's public node, a provider's URL carries its key in the path like
+    # Solana's) and the optional Helius key (labels only). Plain: the Esplora base URLs tried
+    # in order (mempool.space, then Blockstream), the Etherscan-shaped API's URL and the Solana
     # request pace.
     etherscan_key: SecretStr | None = field(default=None, repr=False)
     solana_rpc_url: SecretStr = field(
@@ -186,7 +187,9 @@ class Settings:
     helius_key: SecretStr | None = field(default=None, repr=False)
     esplora_urls: tuple[str, ...] = DEFAULT_ESPLORA_URLS
     etherscan_url: str = DEFAULT_ETHERSCAN_URL
-    bsc_rpc_url: str = DEFAULT_BSC_RPC_URL
+    bsc_rpc_url: SecretStr = field(
+        default_factory=lambda: SecretStr(DEFAULT_BSC_RPC_URL), repr=False
+    )
     solana_rpc_rps: int = DEFAULT_SOLANA_RPC_RPS
 
     def __post_init__(self) -> None:
@@ -234,7 +237,7 @@ class Settings:
         urls = [("HAUSBUCH_ESPLORA_URL", url) for url in self.esplora_urls]
         urls += [
             ("HAUSBUCH_ETHERSCAN_URL", self.etherscan_url),
-            ("HAUSBUCH_BSC_RPC_URL", self.bsc_rpc_url),
+            ("HAUSBUCH_BSC_RPC_URL", self.bsc_rpc_url.get_secret_value()),
         ]
         urls.append(("HAUSBUCH_SOLANA_RPC_URL", self.solana_rpc_url.get_secret_value()))
         for name, url in urls:
@@ -438,7 +441,7 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
         helius_key=_secret(environ, "HAUSBUCH_HELIUS_KEY"),
         esplora_urls=_url_list(environ, "HAUSBUCH_ESPLORA_URL", DEFAULT_ESPLORA_URLS),
         etherscan_url=_optional(environ, "HAUSBUCH_ETHERSCAN_URL") or DEFAULT_ETHERSCAN_URL,
-        bsc_rpc_url=_optional(environ, "HAUSBUCH_BSC_RPC_URL") or DEFAULT_BSC_RPC_URL,
+        bsc_rpc_url=_secret(environ, "HAUSBUCH_BSC_RPC_URL") or SecretStr(DEFAULT_BSC_RPC_URL),
         solana_rpc_rps=_int(environ, "HAUSBUCH_SOLANA_RPC_RPS", DEFAULT_SOLANA_RPC_RPS),
     )
 

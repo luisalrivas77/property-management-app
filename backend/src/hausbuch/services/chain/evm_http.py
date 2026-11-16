@@ -6,8 +6,11 @@ replay recorded answers without a network.
 A failure is a ChainSourceError carrying an error code and the HTTP status only: never the
 URL (Etherscan's key is a query parameter, an RPC provider's often sits in its path), a body
 or an exception's message. A 429 is `wallet.source_throttled`, a 401 or 403
-`wallet.source_refused`; anything else `wallet.source_failed` (SOURCE_FAILED below: errors.py
-has no such code yet, the report asks for it).
+`wallet.source_refused`; anything else `wallet.source_failed` (rules/errors.py since the step 2
+core; SOURCE_FAILED below is that code).
+
+`BudgetSpent` is what a source's own call raises when the run's RequestBudget says no
+(services/chain/base): never a ChainSourceError, so the sync ends the run deferred, not failed.
 """
 
 import json
@@ -28,7 +31,13 @@ from hausbuch.services.prices.http import (
     get,
 )
 
-SOURCE_FAILED = "wallet.source_failed"  # no answer the sync can use; errors.py lacks the code
+SOURCE_FAILED = E.WALLET_SOURCE_FAILED  # no answer the sync can use
+
+
+class BudgetSpent(Exception):
+    """The run's request budget refused the next call (D182 (1)): the source ends its page
+    or its balances there, and the sync records the run as deferred."""
+
 
 # (url, headers, body, timeout, max_bytes) -> (HTTP status, body); an HTTP error status is
 # returned, not raised; a body over max_bytes raises ResponseTooLarge.
