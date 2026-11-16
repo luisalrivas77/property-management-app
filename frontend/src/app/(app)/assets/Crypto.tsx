@@ -124,7 +124,7 @@ function Crypto({ data, owners }: { data: CryptoHoldings; owners: Owner[] }) {
                       <tr
                         key={key(coin)}
                         aria-selected={isCurrent}
-                        style={isCurrent ? { background: "var(--surface-2, rgba(0,0,0,0.04))" } : undefined}
+                        style={isCurrent ? { background: "var(--accent-tint)" } : undefined}
                       >
                         <td>
                           <button type="button" className="link" onClick={() => setSelected(key(coin))}>
@@ -294,7 +294,7 @@ function LotRow({ lot, coin }: { lot: CryptoLot; coin: CryptoCoin }) {
   const moved = (lot.moved_through ?? []).length > 0;
   const origin = `${SOURCE[lot.source] ?? lot.source}${moved ? " · übertragen, Erwerbstag behalten" : ""}`;
   return (
-    <li className="stack" style={{ gap: 2, borderBottom: "1px solid var(--line, #ddd)", paddingBottom: 6 }}>
+    <li className="stack" style={{ gap: 2, borderBottom: "1px solid var(--border)", paddingBottom: 6 }}>
       <div className="row" style={{ justifyContent: "space-between", gap: 8 }}>
         <strong>
           {formatDate(lot.acquired_on)} · {formatDecimal(lot.units_open)} {coin.symbol ?? ""}
