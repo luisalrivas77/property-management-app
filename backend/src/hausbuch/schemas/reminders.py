@@ -42,7 +42,7 @@ ReminderId = Annotated[str, Field(min_length=1, max_length=160)]  # notification
 
 
 class ReminderKind(StrEnum):
-    """The catalogue's twelve kinds (§6.2); the value is the reminder key."""
+    """The catalogue's thirteen kinds (§6.2); the value is the reminder key."""
 
     GRUNDSTEUER_INSTALMENT = "grundsteuer.instalment"
     CHECKLIST_DUE = "checklist.due"
@@ -57,6 +57,8 @@ class ReminderKind(StrEnum):
     SYNC_STALE = "bank.sync_stale"
     # D122 amended (15 Nov 2026): the next statement of an account fed by upload is due.
     STATEMENT_DUE = "bank.statement_due"
+    # Phase 7 D190 (step 6): „Bestandsnachweis 31.12. erstellen“, from 1 Jan, due 31 Jan.
+    HOLDINGS_STATEMENT = "crypto.holdings_statement"
 
 
 class ReminderScope(StrEnum):
@@ -311,6 +313,14 @@ class ReminderAck(Schema):
         return self
 
 
+class ReminderCryptoYear(Schema):
+    """Phase 7 D190: a year whose 31 Dec some wallet or exchange account had a confirmed
+    movement on or before; `accounts_missing` of them have no `holdings_export` for that day."""
+
+    year: int
+    accounts_missing: int = Field(ge=0)
+
+
 class ReminderFacts(Schema):
     """Everything build_reminders reads (§6.1). Every list is order-independent."""
 
@@ -320,6 +330,7 @@ class ReminderFacts(Schema):
     owners: list[ReminderOwner] = Field(default_factory=list)
     accounts: list[ReminderAccount] = Field(default_factory=list)
     tax_years: list[ReminderTaxYear] = Field(default_factory=list)
+    crypto_years: list[ReminderCryptoYear] = Field(default_factory=list)  # phase 7 D190
     acks: list[ReminderAck] = Field(default_factory=list)
 
     @model_validator(mode="after")

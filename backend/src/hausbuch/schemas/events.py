@@ -1065,6 +1065,16 @@ class HoldingCorrected(Schema):
     document_id: UUID | None = None
 
 
+class HoldingsExported(Schema):
+    """account.holdings_exported (phase 7 D190, step 6): a year-end holdings statement written
+    as a `holdings_export` row. Ids and hashes only; never an address."""
+
+    holdings_export_id: UUID
+    as_of: date
+    pdf_sha256: str
+    csv_sha256: str
+
+
 class MovementRecorded(Schema):
     """movement.proposed and movement.confirmed (D165, D166)."""
 
@@ -1365,6 +1375,7 @@ class EventType(StrEnum):
     ACCOUNT_HOLDINGS_RECONCILED = "account.holdings_reconciled"
     ACCOUNT_HOLDINGS_MISMATCH = "account.holdings_mismatch"
     ACCOUNT_HOLDING_CORRECTED = "account.holding_corrected"  # step 4, 0027
+    ACCOUNT_HOLDINGS_EXPORTED = "account.holdings_exported"  # phase 7 D190, step 6
 
     # Phase 7 (entity_type wallet, entity_id = the wallet account)
     WALLET_ADDRESS_ADDED = "wallet.address_added"
@@ -1591,6 +1602,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.ACCOUNT_HOLDING_CORRECTED: EventSpec(
         HoldingCorrected, "optional", "A report's position corrected (date = as of)"
+    ),
+    E.ACCOUNT_HOLDINGS_EXPORTED: EventSpec(
+        HoldingsExported, "required", "Year-end holdings statement exported (date = as of)"
     ),
     # Phase 7
     E.WALLET_ADDRESS_ADDED: EventSpec(WalletAddressAdded, "forbidden", "Wallet address added"),

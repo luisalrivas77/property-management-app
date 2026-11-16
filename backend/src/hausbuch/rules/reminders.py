@@ -98,6 +98,8 @@ CATALOGUE: dict[ReminderKind, _Row] = {
     K.RENT_MISSING: _Row(0, (0,), "action", "auto"),
     K.SYNC_STALE: _Row(0, (0,), "info", "auto"),
     K.STATEMENT_DUE: _Row(0, (0,), "action", "auto"),
+    # Phase 7 D190: visible from 1 Jan (30 days before 31 Jan), cleared by the export rows.
+    K.HOLDINGS_STATEMENT: _Row(30, (14, 0), "action", "auto"),
 }
 _S = ReminderScope
 # The scopes each kind's instances carry (§6.2); an acknowledgement names one of them.
@@ -114,6 +116,7 @@ KIND_SCOPES: dict[ReminderKind, tuple[ReminderScope, ...]] = {
     K.RENT_MISSING: (_S.TENANCY,),
     K.SYNC_STALE: (_S.ACCOUNT,),
     K.STATEMENT_DUE: (_S.ACCOUNT,),
+    K.HOLDINGS_STATEMENT: (_S.WORKSPACE,),
 }
 del _S
 
@@ -343,6 +346,20 @@ def _tax_years(facts: ReminderFacts) -> Iterator[Reminder]:
             )
 
 
+def _crypto_years(facts: ReminderFacts) -> Iterator[Reminder]:
+    """Phase 7 D190: „Bestandsnachweis 31.12.<Jahr> erstellen“ until every wallet and
+    exchange account held on 31 Dec has its holdings_export row for that day."""
+    for y in facts.crypto_years:
+        if y.accounts_missing > 0:
+            yield _reminder(
+                K.HOLDINGS_STATEMENT,
+                ReminderScope.WORKSPACE,
+                None,
+                date(y.year + 1, 1, 31),
+                {"year": y.year, "accounts": y.accounts_missing},
+            )
+
+
 # --- Tenancies ------------------------------------------------------------------------------
 
 
@@ -504,6 +521,7 @@ def build_reminders(facts: ReminderFacts, today: date) -> list[Reminder]:
             yield from _settlements(t, properties[t.property_id], last_year)
             yield from _rent_missing(t, properties[t.property_id], facts, horizon)
         yield from _accounts(facts)
+        yield from _crypto_years(facts)
 
     instances, muted = _hidden(facts.acks, today)
     out: dict[str, Reminder] = {}

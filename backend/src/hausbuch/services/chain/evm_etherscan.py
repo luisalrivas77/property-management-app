@@ -69,12 +69,27 @@ BALANCE_OF = "0x70a08231"  # balanceOf(address)
 Row = Mapping[str, JsonValue]
 
 
+class _InBand(ChainSourceError):
+    """An answer Etherscan sent whole (HTTP 200) that holds no usable value: the proxy
+    module's JSON-RPC error that is no rate limit or key refusal (a reverted `eth_call`), or a
+    result that is no hex. Still `wallet.source_failed` wherever it is not caught."""
+
+
 def _no_rows(message: str) -> bool:
     """Etherscan's words for an empty answer, the only `status "0"` that is no error: „No
     transactions found“, „No records found“ and their variants („No token transfers found“).
     A bare „NOTOK“ is never one."""
     text = message.strip().lower()
     return text.startswith("no ") and text.endswith(" found")
+
+
+def _reverted(error: object, message: object) -> bool:
+    """A reverted call (JSON-RPC error code 3, or a message starting „execution reverted“):
+    an in-band answer of the contract, read before the refusal keywords so a token's own
+    revert reason never reads as the provider refusing the key."""
+    if isinstance(error, dict) and error.get("code") == 3:
+        return True
+    return isinstance(message, str) and message.strip().lower().startswith("execution reverted")
 
 
 def _refusal(message: str) -> ChainSourceError:
@@ -97,6 +112,12 @@ class EtherscanSource:
     kind: ChainSourceKind = ChainSourceKind.EVM_ETHERSCAN
     # the sync passes `balances` the tokens the address has movements in (schemas/chain)
     reads_tokens: ClassVar[bool] = True
+    # The tokens asked for by `tokens` (none of the registry's) whose `balanceOf` the last
+    # `balances` call could not read: a reverted call or an answer with no 32-byte value (a
+    # contract the classifier took for a token that is not one). The sync leaves them out
+    # of the address's reconciliation and marks the run unreconciled with
+    # `wallet.token_unreadable`; the rest of the run goes on.
+    unreadable: set[AssetKey] = field(default_factory=set, repr=False)
     _calls: int = field(default=0, init=False, repr=False)
     _tip: int | None = field(default=None, init=False, repr=False)
     _read_to: str | None = field(default=None, init=False, repr=False)
@@ -130,7 +151,14 @@ class EtherscanSource:
         if "error" in answer:  # the proxy module's JSON-RPC error
             error = answer["error"]
             message = error.get("message") if isinstance(error, dict) else error
-            raise _refusal(str(message or ""))
+            if _reverted(error, message):
+                # the contract's own answer, whatever its revert text says („execution
+                # reverted: Access denied“ is no key refusal; review of PR #397)
+                raise _InBand(SOURCE_FAILED)
+            refused = _refusal(str(message or ""))
+            if refused.code == SOURCE_FAILED:
+                raise _InBand(SOURCE_FAILED)
+            raise refused
         result = answer.get("result")
         if str(answer.get("status", "1")) == "0":
             message = str(answer.get("message") or "")
@@ -145,8 +173,11 @@ class EtherscanSource:
     def _hex(self, params: Mapping[str, str | int]) -> int:
         result = self._call(params)
         if not isinstance(result, str) or not result.startswith("0x"):
-            raise ChainSourceError(SOURCE_FAILED)
-        return int(result, 16) if result != "0x" else 0
+            raise _InBand(SOURCE_FAILED)
+        try:
+            return int(result, 16) if result != "0x" else 0
+        except ValueError:
+            raise _InBand(SOURCE_FAILED) from None
 
     def tip(self) -> int:
         """The chain's tip, read once per instance: the history, the balances and a deposit
@@ -210,6 +241,7 @@ class EtherscanSource:
 
     def balances(self, address: str, *, tokens: Sequence[AssetKey] = ()) -> list[AssetBalance]:
         out: list[AssetBalance] = []
+        self.unreadable = set()
         # a spent budget stops the reading: the sync defers and reads the balances next run
         with contextlib.suppress(BudgetSpent):
             self._balances(address.lower(), out, self._contracts(tokens))
@@ -237,18 +269,41 @@ class EtherscanSource:
             raise ChainSourceError(SOURCE_FAILED) from None
         out.append(AssetBalance(asset_key=evm.native(self.chain), units=units, at_block=at))
         data = BALANCE_OF + address[2:].rjust(64, "0")
+        listed = {t.contract for t in asset_registry().tokens if t.chain is self.chain}
         for contract in contracts:
-            held = self._hex(
-                {
-                    "module": "proxy",
-                    "action": "eth_call",
-                    "to": contract,
-                    "data": data,
-                    "tag": tag,
-                }
-            )
             key = AssetKey(chain=self.chain, contract=contract)
+            params = {
+                "module": "proxy",
+                "action": "eth_call",
+                "to": contract,
+                "data": data,
+                "tag": tag,
+            }
+            if contract in listed:  # a registry token answers, or the balance read fails
+                held = self._hex(params)
+            else:
+                try:
+                    result = self._call(params)
+                except _InBand:
+                    self.unreadable.add(key)
+                    continue
+                held = _word(result)
+                if held is None:
+                    self.unreadable.add(key)
+                    continue
             out.append(AssetBalance(asset_key=key, units=held, at_block=at))
+
+
+def _word(result: JsonValue) -> int | None:
+    """A `balanceOf` answer: at most one 32-byte word of hex, else None (a longer answer is
+    no uint256). An empty „0x“ (an address with no code) reads 0, as it did before, so a
+    contract the classifier misread shows as a difference (`wallet.unreconciled`)."""
+    if not isinstance(result, str) or not result.startswith("0x") or len(result) > 66:
+        return None
+    try:
+        return int(result, 16) if result != "0x" else 0
+    except ValueError:
+        return None
 
 
 def make_source(

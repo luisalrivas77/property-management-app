@@ -85,6 +85,11 @@ def test_every_fixture_code_has_a_line():
             {"account": "Kreditkarte", "covered_until": "2026-10-28"},
             "Kontoauszug fällig: Kreditkarte",
         ),
+        (
+            "crypto.holdings_statement",
+            {"year": 2026, "accounts": 2},
+            "Bestandsnachweis 31.12.2026 erstellen",
+        ),
     ],
 )
 def test_lines_match_the_cards(label_code, args, expected):

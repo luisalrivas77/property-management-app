@@ -19,6 +19,8 @@ from hausbuch.db.session import workspace_transaction
 from hausbuch.rules.chain.classify import ChainGroup, ChainLeg, register_family
 from hausbuch.rules.errors import (
     WALLET_KEY_MISSING,
+    WALLET_SOURCE_FAILED,
+    WALLET_SOURCE_REFUSED,
     WALLET_SOURCE_THROTTLED,
     WALLET_SOURCE_UNAVAILABLE,
     WALLET_SYNC_DEFERRED,
@@ -86,6 +88,7 @@ class World:
         self.balance: dict[str, int] = {SOL_A: 0, SOL_B: 0}
         self.tokens: dict[str, dict[str, int]] = {}  # address -> mint -> units
         self.error: dict[str, Exception] = {}
+        self.balance_error: dict[str, Exception] = {}  # raised by balances() only
         self.scope = "address"
         self.key_missing = False
 
@@ -108,6 +111,8 @@ class FakeSource:
         return Page[ChainTx](items=items, next_cursor=str(start + len(items)))
 
     def balances(self, address: str) -> list[AssetBalance]:
+        if address in self.world.balance_error:
+            raise self.world.balance_error[address]
         tokens = [
             AssetBalance(
                 asset_key=AssetKey(chain=Chain.SOLANA, contract=mint), units=units, at_block=2000
@@ -344,6 +349,146 @@ def test_a_spent_budget_defers_without_reconciling(dbname, world, wallet, sync):
     assert row == ("succeeded", None, "2")
     rest = sync(ws, a)  # the next day: from the cursor, to the end
     assert (rest.movements_new, rest.reconciled, rest.deferred) == (3, True, False)
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (ChainSourceError(WALLET_SOURCE_FAILED, 500), WALLET_SOURCE_FAILED),
+        (SourceError("HTTPError", 429), WALLET_SOURCE_THROTTLED),
+    ],
+)
+def test_a_failed_balance_read_keeps_the_pages_and_reconciles_nothing(
+    dbname, world, wallet, sync, error, code
+):
+    """Follow-up of the EVM wiring's review: when the balance read after the history fails,
+    the run's pages and movements are written, the row is succeeded with no balance and never
+    reconciled, and the next run, from the tip, reads the balance and reconciles."""
+    ws, _, a, _ = wallet
+    world.txs[SOL_A] = [_tx(n, **{"in": n}) for n in range(1, 4)]
+    world.balance[SOL_A] = 6
+    world.balance_error[SOL_A] = error
+    first = sync(ws, a)
+    assert (first.status, first.error_code, first.movements_new, first.txs_seen) == (
+        WalletSyncStatus.SUCCEEDED,
+        code,
+        3,
+        3,
+    )
+    assert first.reconciled is None and not first.deferred and not first.waiting
+    (row,) = _rows(
+        dbname,
+        "SELECT status, error_code, balances, reconciled, difference, cursor_after,"
+        " document_id IS NOT NULL FROM wallet_sync WHERE address_id = %s",
+        a,
+    )
+    assert row == ("succeeded", None, None, None, None, "3", True)
+    (event,) = _rows(
+        dbname,
+        "SELECT payload FROM event WHERE type = 'wallet.sync_completed' AND workspace_id = %s",
+        ws,
+    )
+    assert (event[0]["error_code"], event[0]["deferred"], event[0]["reconciled"]) == (
+        code,
+        False,
+        None,
+    )
+
+    world.balance_error.clear()
+    second = sync(ws, a)
+    assert (second.status, second.error_code, second.movements_new, second.txs_seen) == (
+        WalletSyncStatus.SUCCEEDED,
+        None,
+        0,
+        0,
+    )
+    assert second.reconciled is True
+    # a wrong balance after the unread one is a mismatch, never carried over as reconciled
+    world.balance[SOL_A] = 7
+    assert sync(ws, a).reconciled is False
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "code"),
+    [
+        (ChainSourceError(WALLET_SOURCE_FAILED, 500), "failed", WALLET_SOURCE_FAILED),
+        (SourceError("HTTPError", 429), "throttled", WALLET_SOURCE_THROTTLED),
+        (SourceError("HTTPError", 403), "refused", WALLET_SOURCE_REFUSED),
+    ],
+)
+def test_a_failed_balance_read_with_nothing_new_is_a_failed_row(
+    dbname, world, wallet, sync, error, status, code
+):
+    """Review of PR #397: a balance read that fails on a run that stores nothing new (no
+    movement, no card, no original) ends the run as before the pages were kept: a failed,
+    throttled or refused row with its code, the cursor unmoved, never a succeeded row with no
+    balance that reads deferred day after day."""
+    ws, _, a, _ = wallet
+    world.txs[SOL_A] = [_tx(n, **{"in": n}) for n in range(1, 4)]
+    world.balance[SOL_A] = 6
+    world.balance_error[SOL_A] = error
+    first = sync(ws, a)  # new movements: kept, succeeded with no balance
+    assert (first.status, first.error_code, first.movements_new) == (
+        WalletSyncStatus.SUCCEEDED,
+        code,
+        3,
+    )
+
+    second = sync(ws, a)  # nothing new, the balance still failing
+    assert (second.status, second.error_code, second.movements_new, second.reconciled) == (
+        WalletSyncStatus(status),
+        code,
+        0,
+        None,
+    )
+    rows = _rows(
+        dbname,
+        "SELECT status, error_code, cursor_before, cursor_after, balances, document_id"
+        " FROM wallet_sync WHERE address_id = %s ORDER BY started_at",
+        a,
+    )
+    assert rows[1] == (status, code, "3", None, None, None)
+    (event,) = _rows(
+        dbname,
+        "SELECT payload FROM event WHERE type = 'wallet.sync_failed' AND workspace_id = %s",
+        ws,
+    )
+    assert (event[0]["status"], event[0]["error_code"]) == (status, code)
+
+    world.balance_error.clear()  # the next day: from the last succeeded run's cursor
+    third = sync(ws, a)
+    assert (third.status, third.error_code, third.movements_new, third.reconciled) == (
+        WalletSyncStatus.SUCCEEDED,
+        None,
+        0,
+        True,
+    )
+    assert _rows(
+        dbname,
+        "SELECT cursor_before, cursor_after FROM wallet_sync WHERE address_id = %s"
+        " ORDER BY started_at DESC LIMIT 1",
+        a,
+    ) == [("3", "3")]
+
+
+def test_a_failed_balance_read_on_a_first_run_with_nothing_to_read_is_a_failed_row(
+    dbname, world, wallet, sync
+):
+    """An address with no history and a balance read that fails: nothing new, so the run is
+    a failed row, and the address's first sync is still ahead of it."""
+    ws, _, a, _ = wallet
+    world.balance_error[SOL_A] = SourceError("HTTPError", 403)
+    out = sync(ws, a)
+    assert (out.status, out.error_code, out.txs_seen) == (
+        WalletSyncStatus.REFUSED,
+        WALLET_SOURCE_REFUSED,
+        0,
+    )
+    assert _rows(
+        dbname,
+        "SELECT status, error_code, cursor_after FROM wallet_sync WHERE address_id = %s",
+        a,
+    ) == [("refused", WALLET_SOURCE_REFUSED, None)]
 
 
 def test_account_scope_and_a_waiting_question(dbname, world, wallet, sync):

@@ -409,3 +409,34 @@ def test_a_first_sync_cut_short_stores_all_306_transactions(dbname, chain, walle
     cursors = _rows(dbname, "SELECT cursor_after FROM wallet_sync WHERE address_id = %s", a)
     assert len({c for (c,) in cursors[1:]}) == 1  # the tip: unchanged by the last run
     assert all(closed not in (c or "") for (c,) in cursors)
+
+
+def test_many_closed_token_accounts_are_swept_through_the_stored_originals(
+    dbname, chain, wallet, sync
+):
+    """Q-O162 through the database: twelve closed own token accounts and a daily budget far
+    below one listing each. The runs sweep the token accounts the stored originals name one
+    at a time, the cursor carrying an index into them (its five-part form is written and read
+    back from `wallet_sync`), and every transaction is stored; at the tip the cursor is plain
+    again. No cursor names a token account."""
+    ws, account, a = wallet
+    many = [f"T{i:02d}c1osedManyInventedAaaaa" for i in range(12)]
+    r = Records(A)
+    records = [r.sol_in(1)]
+    for i, closed in enumerate(many):
+        records += [r.open(10 + 3 * i, closed), r.token_in(11 + 3 * i, closed)]
+        records += [r.close(12 + 3 * i, closed)]
+    records += [r.sol_in(100 + j) for j in range(20)]
+    for record in records:
+        chain.add(record)
+    for _ in range(80):
+        out = sync(ws, a, budgets={ChainSourceKind.SOLANA_RPC: RequestBudget(10)})
+        if not out.deferred:
+            break
+    assert not out.deferred
+    assert set(_groups(dbname, account)) == {signature(rec) for rec in records}
+    query = "SELECT cursor_after FROM wallet_sync WHERE address_id = %s ORDER BY started_at"
+    cursors = [c or "" for (c,) in _rows(dbname, query, a)]
+    assert any(c.count(";") == 4 for c in cursors)  # the sweep's form, read back by a run
+    assert ";" not in cursors[-1]
+    assert not any(t in c for t in many for c in cursors)
