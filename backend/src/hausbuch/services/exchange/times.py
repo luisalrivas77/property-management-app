@@ -123,9 +123,12 @@ def _known(conn: Connection, account_id: UUID) -> set[UUID]:
 
 
 def unknown_imports(conn: Connection, account_id: UUID) -> list[Row]:
-    """The account's Binance imports whose zone is unknown, oldest first."""
+    """The account's Binance imports whose zone is unknown, oldest first. An import that wrote
+    no row (every row of its file was stored already) is never one: it owns no movement to
+    move, and its first and last row follow the clock of the rows it matched (`live_bounds`,
+    and `_follow_bounds` when those rows move), so it never asks for its export again."""
     known = _known(conn, account_id)
-    return [r for r in _binance_imports(conn, account_id) if r.id not in known]
+    return [r for r in _binance_imports(conn, account_id) if r.id not in known and r.rows_new]
 
 
 def zone_unknown(conn: Connection, account_id: UUID) -> bool:
@@ -162,6 +165,24 @@ def account_offset(conn: Connection, account_id: UUID) -> timedelta | None:
         ):
             offset = timedelta(minutes=minutes)
     return offset
+
+
+def live_bounds(
+    conn: Connection, account_id: UUID, root_ids: Iterable[UUID]
+) -> tuple[datetime, datetime] | None:
+    """The first and last time of the live rows descending from `root_ids` (the stored rows a
+    file matched), for an import that wrote no row: its bounds on the clock of the rows it
+    matched, so it is never later than the import that wrote them (book_correction's latest
+    rule). None when no root is given."""
+    m = movement_table.c
+    roots = conn.execute(
+        select(m.id, m.occurred_at).where(m.account_id == account_id, m.id.in_(list(root_ids)))
+    ).all()
+    if not roots:
+        return None
+    tips = list(_tips(conn, account_id, roots))
+    times = conn.execute(select(m.occurred_at).where(m.id.in_(tips))).scalars().all()
+    return min(times), max(times)
 
 
 # --- Moving one import ------------------------------------------------------------------------
@@ -479,8 +500,8 @@ def _correct_import(
         _move_rows(ctx, targets | deposits, document_id, moves)
         _move_links(ctx, links, moves, payloads)
     if offset:
-        # Also when no row moved (all of the import's rows were an earlier import's): its
-        # bounds are file time too. Run once per import, since it is known afterwards.
+        # Also when no row moved (each was moved already): its bounds are file time too. Run
+        # once per import, since it is known afterwards.
         ctx.conn.execute(
             update(import_table)
             .where(import_table.c.id == imported.id)
@@ -490,6 +511,7 @@ def _correct_import(
                 updated_at=ctx.now,
             )
         )
+        _follow_bounds(ctx, imported, targets, now_at)
     append_event(
         ctx,
         EventType.ACCOUNT_MOVEMENT_TIMES_CORRECTED,
@@ -503,6 +525,32 @@ def _correct_import(
         ),
     )
     return len(moves.movements)
+
+
+def _follow_bounds(
+    ctx: CommandContext,
+    imported: Row,
+    targets: dict[UUID, datetime],
+    old_at: dict[UUID, datetime],
+) -> None:
+    """The bounds of the account's imports that wrote no row (`live_bounds`) follow the rows
+    just moved: a first or last row whose time is the old time of a moved row takes its new
+    time, so such an import, read while the rows it matched were still on file time, never
+    stays later than the import moved here."""
+    moved = {old_at[tip]: at for tip, at in targets.items() if tip in old_at}
+    if not moved:
+        return
+    for other in _binance_imports(ctx.conn, imported.account_id):
+        if other.id == imported.id or other.rows_new:
+            continue
+        first = moved.get(other.first_at, other.first_at)
+        last = moved.get(other.last_at, other.last_at)
+        if (first, last) != (other.first_at, other.last_at):
+            ctx.conn.execute(
+                update(import_table)
+                .where(import_table.c.id == other.id)
+                .values(first_at=first, last_at=last, updated_at=ctx.now)
+            )
 
 
 def _tip_ids(conn: Connection, imported: Row) -> list[UUID]:

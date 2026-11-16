@@ -582,6 +582,17 @@ def import_export(
             continue
         stored.add(mv.movement_hash)
         new.append(mv)
+    if export.kind is ExportKind.BINANCE_TRANSACTIONS and not new:
+        # D178 amended (4), review: a file whose every row was stored already wrote none, so
+        # its bounds are those of the rows it matched, on their clock (never later than the
+        # import that wrote them), and its zone is never asked for (times.live_bounds).
+        matched = ctx.conn.execute(
+            select(m.id).where(
+                m.account_id == account_id,
+                m.movement_hash.in_([mv.movement_hash for mv in movements]),
+            )
+        ).scalars()
+        first, last = times.live_bounds(ctx.conn, account_id, matched) or (first, last)
     imported = ctx.conn.execute(
         insert(import_table)
         .values(

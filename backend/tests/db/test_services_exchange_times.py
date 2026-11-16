@@ -802,3 +802,91 @@ def test_a_renamed_history_after_the_repair_is_read_in_the_import_s_zone(
     )
     assert (withdrawal.occurred_at, withdrawal.tx_hash) == (WITHDRAWN, TX_HASH)
     assert withdrawal.fee_quantity == Decimal("0.0005")
+
+
+# --- Review fixes (16 Nov 2026) --------------------------------------------------------------
+
+
+def _unreconciled(run, read, ws, account_id, import_id, n=2):
+    """The exchange's balances typed for the import with one ETH short, so a correction may
+    be booked on it."""
+    ids = {r.symbol: r.asset_id for r in read(ws, imports.exchange_overview, account_id).positions}
+    run(
+        ws,
+        imports.declare_holdings,
+        import_id,
+        DeclareHoldingsBody(
+            balances=[
+                {"asset_id": ids["EUR"], "units": "100"},
+                {"asset_id": ids["ETH"], "units": "0.0001"},
+            ]
+        ),
+        now=T0 + timedelta(minutes=n),
+    )
+    return ids
+
+
+def _correct(run, ws, import_id, ids, n=3):
+    return run(
+        ws,
+        imports.book_correction,
+        import_id,
+        BalanceCorrectionBody(asset_id=ids["ETH"], reason="Gutschrift fehlt im Export"),
+        now=T0 + timedelta(minutes=n),
+    )
+
+
+def test_an_export_whose_rows_are_all_stored_never_asks_for_its_zone(
+    run, read, blob_store, fresh_workspaces
+):
+    """Review A: the zone-named ZIP, then the same rows as a CSV whose name names no zone. The
+    CSV writes no row, so it owns nothing to move: no to-do, nothing unknown for the command,
+    and its bounds are the stored rows' (UTC), so it is not later than the ZIP's import."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    first = _upload(run, blob_store, ws, account.id, _zip(TX, TX_MEMBER), TX_NAME).movement_import
+    plain = run(
+        ws,
+        imports.import_export,
+        blob_store,
+        account.id,
+        TX.replace("\n", "\r\n").encode(),
+        media_type="text/csv",
+        original_filename="export.csv",
+        now=T0 + timedelta(minutes=1),
+    ).movement_import
+    assert (plain.rows_new, plain.rows_skipped) == (0, 3)
+    assert (plain.first_at, plain.last_at) == (first.first_at, first.last_at)
+    assert E.EXCHANGE_TIME_ZONE_UNKNOWN not in read(ws, imports.exchange_overview, account.id).todos
+    assert _repair(run, ws).corrected.unknown == 0
+    ids = _unreconciled(run, read, ws, account.id, first.id)
+    assert _correct(run, ws, first.id, ids).status.value == "reconciled"
+
+
+def test_an_export_whose_rows_are_all_stored_follows_their_repair(
+    run, read, blob_store, fresh_workspaces, monkeypatch
+):
+    """Review A, the other order: an import read as UTC, then the same rows under a name that
+    names no zone, both before the amendment. The second's bounds are the stored rows' file
+    time; the repair moves those rows and the second's bounds with them, so a correction on the
+    first is still accepted."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    with _legacy(monkeypatch) as m:
+        _no_zone(m)
+        first = _upload(
+            run, blob_store, ws, account.id, _zip(TX, TX_MEMBER), TX_NAME
+        ).movement_import
+        plain = _upload(run, blob_store, ws, account.id, _zip(TX), "export.zip", n=1)
+    assert plain.movement_import.rows_new == 0
+    assert plain.movement_import.last_at == first.last_at  # file time, both
+
+    result = _repair(run, ws)
+
+    assert (result.corrected.imports, result.corrected.unknown) == (1, 0)
+    rows = {r.id: r for r in read(ws, lambda c: c.execute(select(import_table)).all())}
+    assert rows[plain.movement_import.id].last_at == rows[first.id].last_at == WITHDRAWN
+    assert rows[plain.movement_import.id].first_at == rows[first.id].first_at
+    assert E.EXCHANGE_TIME_ZONE_UNKNOWN not in read(ws, imports.exchange_overview, account.id).todos
+    ids = _unreconciled(run, read, ws, account.id, first.id, n=40)
+    assert _correct(run, ws, first.id, ids, n=41).status.value == "reconciled"
