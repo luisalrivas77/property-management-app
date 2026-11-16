@@ -293,6 +293,12 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Diese Frage ist schon beantwortet oder hat sich geändert, etwa durch eine andere Antwort. Bitte die Seite neu laden und die aktuelle Frage beantworten.",
   "wallet.original_missing":
     "Die Daten zu dieser Zahlung wurden bei ihrem Abruf nicht gespeichert, deshalb lässt sich die Frage hier nicht beantworten. Die Zahlung bleibt als offene Frage auf der Wallet stehen.",
+  // Phase 7 wallet screens: „Bestätigen“ and the answers on a wallet's transactions.
+  "wallet.group_done": "Diese Transaktion ist schon beantwortet oder bestätigt. Bitte die Seite neu laden.",
+  "wallet.group_needs_answer":
+    "Diese Transaktion braucht eine Antwort, bevor sie gebucht werden kann: bitte auswählen, was sie war.",
+  "wallet.answer_unfit":
+    "Diese Antwort passt nicht zu der Transaktion (etwa „Bezahlung“ bei einem Eingang oder „Spam“ bei der eigenen Währung der Blockchain).",
   // D193: why a document cannot be deleted; each names what still depends on it.
   "document.delete_blocked.statement_import": "Aus diesem Auszug wurden Umsätze eingelesen; sie bleiben unverändert im Konto.",
   "document.delete_blocked.bank_statement": "Es ist ein Kontoauszug, den die Bank über den Bankabruf geliefert hat; er gehört ins Jahresarchiv.",

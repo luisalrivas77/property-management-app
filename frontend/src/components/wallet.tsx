@@ -6,18 +6,20 @@
 // clipboard, so no page ever renders it and no state keeps it. „Adresse hinzufügen“ takes the
 // chain and the pasted address, and for an Ethereum address offers „Auch auf Arbitrum und BNB
 // Smart Chain lesen“ (one row per chain). A label can be changed, an address retired
-// („Adresse stilllegen“, its movements stay) and reactivated. The balances, the syncs and
-// „Jetzt abrufen“ come with step 2: until then every address reads „noch nicht abgerufen“.
+// („Adresse stilllegen“, its movements stay) and reactivated. Each address shows its last
+// read in plain words with what to do (wallet screens, §13); the holdings, „Jetzt abrufen“,
+// the transactions to confirm or answer and the hidden spam tokens are in ./wallet-cards.
 import { useCallback, useId, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { Chain, WalletAddress } from "@/api/schemas";
+import type { Chain, WalletAddress, WalletAddressStatus } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { ADDRESS_KIND, CHAIN } from "./labels";
 import { Loading, Notice } from "./ui";
 import { useLoad } from "./useLoad";
+import { GroupCards, HiddenTokens, STATE_BADGE, SyncPanel, useWalletState } from "./wallet-cards";
 
 /** The chains a 0x address is read on with one click besides Ethereum (D179 (2)). */
 const EVM_EXTRA: Chain[] = ["arbitrum", "bsc"];
@@ -30,8 +32,6 @@ const SHAPE: Record<Chain, string> = {
   bsc: "0x und 40 Hex-Zeichen (0–9, a–f), wie die Wallet sie anzeigt.",
   solana: "32 bis 44 Zeichen in Base58 (ohne 0, O, I und l).",
 };
-
-const NOT_YET = "noch nicht abgerufen";
 
 /** „4 Chains · 5 Adressen“ over the active addresses (Konten, mockup 08); retired ones are
  * not read and not counted. */
@@ -52,6 +52,15 @@ export function walletChains(addresses: WalletAddress[]): Chain[] {
 export function WalletSection({ accountId }: { accountId: string }) {
   const load = useCallback(() => ok(api.GET("/api/wallets/{account_id}", { params: { path: { account_id: accountId } } })), [accountId]);
   const page = useLoad(load);
+  const state = useWalletState(accountId);
+  // Bumped after an answer or a sync, so the cards and the hidden tokens load again.
+  const [version, setVersion] = useState(0);
+  const changed = () => {
+    page.reload();
+    state.reload();
+    setVersion((value) => value + 1);
+  };
+  const statuses = new Map((state.data?.statuses ?? []).map((status) => [status.address_id, status]));
   return (
     <Loading state={page}>
       {(data) => {
@@ -70,7 +79,7 @@ export function WalletSection({ accountId }: { accountId: string }) {
               {data.addresses.length === 0 ? (
                 <p className="muted">Noch keine Adresse. Fügen Sie unten die erste hinzu.</p>
               ) : (
-                <AddressTable accountId={accountId} addresses={data.addresses} onChanged={page.reload} />
+                <AddressTable accountId={accountId} addresses={data.addresses} statuses={statuses} onChanged={changed} />
               )}
               {bitcoinUnsynced ? (
                 <div className="notice notice-info">
@@ -81,12 +90,12 @@ export function WalletSection({ accountId }: { accountId: string }) {
                   </p>
                 </div>
               ) : null}
-              <p className="muted">
-                Bestand und Bewegungen: {NOT_YET}. Hausbuch liest die Chains erst mit dem nächsten Ausbauschritt; bis dahin
-                sind die Adressen nur eingetragen.
-              </p>
+              <ErrorNotice error={state.error} />
             </div>
-            <AddAddress accountId={accountId} onAdded={page.reload} />
+            {state.data ? <SyncPanel accountId={accountId} state={state.data} onSynced={changed} /> : null}
+            <GroupCards accountId={accountId} version={version} onChanged={changed} />
+            <HiddenTokens accountId={accountId} version={version} onChanged={changed} />
+            <AddAddress accountId={accountId} onAdded={changed} />
           </div>
         );
       }}
@@ -94,7 +103,17 @@ export function WalletSection({ accountId }: { accountId: string }) {
   );
 }
 
-function AddressTable({ accountId, addresses, onChanged }: { accountId: string; addresses: WalletAddress[]; onChanged: () => void }) {
+function AddressTable({
+  accountId,
+  addresses,
+  statuses,
+  onChanged,
+}: {
+  accountId: string;
+  addresses: WalletAddress[];
+  statuses: Map<string, WalletAddressStatus>;
+  onChanged: () => void;
+}) {
   return (
     <div className="table-wrap">
       <table>
@@ -109,7 +128,7 @@ function AddressTable({ accountId, addresses, onChanged }: { accountId: string; 
         </thead>
         <tbody>
           {addresses.map((address) => (
-            <AddressRow key={address.id} accountId={accountId} address={address} onChanged={onChanged} />
+            <AddressRow key={address.id} accountId={accountId} address={address} status={statuses.get(address.id)} onChanged={onChanged} />
           ))}
         </tbody>
       </table>
@@ -117,7 +136,17 @@ function AddressTable({ accountId, addresses, onChanged }: { accountId: string; 
   );
 }
 
-function AddressRow({ accountId, address, onChanged }: { accountId: string; address: WalletAddress; onChanged: () => void }) {
+function AddressRow({
+  accountId,
+  address,
+  status,
+  onChanged,
+}: {
+  accountId: string;
+  address: WalletAddress;
+  status: WalletAddressStatus | undefined;
+  onChanged: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -198,7 +227,7 @@ function AddressRow({ accountId, address, onChanged }: { accountId: string; addr
       </td>
       <td>{ADDRESS_KIND[address.kind]}</td>
       <td>
-        <span className="muted">{address.active ? NOT_YET : "wird nicht abgerufen"}</span>
+        {status ? <AddressStatusCell status={status} /> : <span className="muted">{address.active ? "…" : "wird nicht abgerufen"}</span>}
       </td>
       <td>
         <div className="row">
@@ -222,6 +251,24 @@ function AddressRow({ accountId, address, onChanged }: { accountId: string; addr
         </div>
       </td>
     </tr>
+  );
+}
+
+/** The last read of one address in plain words, with what to do and, when the cure is a
+ * Scaleway container variable, its name (never its value). */
+function AddressStatusCell({ status }: { status: WalletAddressStatus }) {
+  const badge = STATE_BADGE[status.state];
+  return (
+    <>
+      <span className={badge.className}>{badge.label}</span>
+      <p className="cell-detail">{status.text}</p>
+      {status.todo ? <p className="cell-detail todo-text">Was tun: {status.todo}</p> : null}
+      {status.setting ? (
+        <p className="cell-detail">
+          Einstellung im Scaleway-Container: <code>{status.setting}</code>
+        </p>
+      ) : null}
+    </>
   );
 }
 
