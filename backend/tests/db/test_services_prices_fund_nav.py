@@ -14,6 +14,7 @@ from sqlalchemy import insert, select
 
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
+from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.rules.household.assets import registry
 from hausbuch.schemas.api import InboxItemKind
@@ -402,6 +403,43 @@ def test_a_catalogue_fund_whose_file_never_worked_gets_the_source_failed_card(
     assert card.kind is InboxItemKind.PRICE_SOURCE_FAILED
     assert "nicht von iShares" in card.reasoning and "fehlt sein Wert" in card.reasoning
     assert by_asset[other].kind is InboxItemKind.PRICE_NO_SOURCE
+
+    def raised(conn):
+        e = event_table.c
+        return conn.execute(
+            select(e.entity_id, e.payload).where(e.type == "asset.price_source_failed")
+        ).all()
+
+    [(entity, payload)] = read(ws, raised)
+    assert entity == fund and payload["failed_days"] == 7
+    assert payload["last_price_on"] is None
+
+
+def test_a_stored_reference_naming_another_isin_is_found_again_in_the_catalogue(
+    run, read, app_engine, fresh_workspaces, monkeypatch
+):
+    """Follow-up A, the other trigger: the stored reference's file now states another ISIN
+    (the issuer renumbered its funds), so the catalogue is asked and its reference read."""
+    ws, _ = fresh_workspaces
+    ids = _unlisted_funds(run, ws)
+    fund = ids[ISHARES_ISIN]
+    _run(app_engine, ws, Recorded(), NOW)
+    monkeypatch.setattr(
+        ISharesAdapter, "parse_catalogue", staticmethod(lambda body: {ISHARES_ISIN: "2"})
+    )
+    other_fund = _ishares_file(day=b"27.Juni2026").replace(b"IE000INVENT2", b"IE000INVENT8")
+    renumbered = Served(
+        {
+            "portfolioId=1&": (200, other_fund),
+            "portfolioId=2&": (200, _ishares_file(day=b"27.Juni2026")),
+        }
+    )
+    sources = Sources(fetch=renumbered, coingecko=None)
+    _, out = run_workspace(app_engine, ws, ACTOR, sources, NOW + timedelta(days=1))
+    assert renumbered.asked("product-screener") == 1
+    assert out.failed == [] and out.discovered[fund].fund_ref == "2"
+    [new_row] = [r for r in _nav_rows(read, ws) if r.asset_id == fund and r.on == TODAY]
+    assert new_row.raw["fund_ref"] == "2"
 
 
 def test_a_stored_reference_that_fails_gets_the_source_failed_card(

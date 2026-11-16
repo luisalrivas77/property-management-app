@@ -1177,8 +1177,9 @@ class PriceSourceFailed(Schema):
 
 
 class FundSourceNote(Schema):
-    """A fund a daily run asked its issuer for and stored no row for (D174 amended 16 Nov
-    2026, follow-ups B and C): the issuer and reference asked, so the card names the source
+    """A fund whose issuer file failed in a daily run, or whose NAV currency no ECB rate
+    converts (D174 amended 16 Nov 2026, follow-ups B and C; a fund read fine with no new NAV
+    day is not named): the issuer and reference asked, so the card names the source
     of a fund whose reference came from the issuer's catalogue and has no stored row yet; and
     `currency` when the file was read but the ECB publishes no rate for the NAV's currency.
     Never a price or an amount."""
@@ -1193,7 +1194,8 @@ class PricesFetched(Schema):
     """workspace.prices_fetched: one per daily run (§11). Step 5b adds the failed assets' ids
     (never a price or an amount): D174's card counts an asset's failed days from these
     events, on read, so no table holds a fetch's state. `fund_sources` (16 Nov 2026) names,
-    per fund that stored nothing, the issuer source asked (FundSourceNote)."""
+    per fund whose issuer file failed or whose NAV currency could not be converted, the
+    issuer source asked (FundSourceNote); a fund read fine with no new NAV day is not named."""
 
     sources: list[PriceSourceKind] = Field(min_length=1)
     assets: int = Field(ge=0)

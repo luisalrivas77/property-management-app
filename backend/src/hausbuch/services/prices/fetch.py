@@ -40,8 +40,9 @@ Follow-ups of the same day's review:
   ISIN: the issuer moved or renumbered the fund) asks that issuer's catalogue once in the
   same run, and a different reference listed there for the ISIN is read at once; its rows
   keep the new reference. A timeout or a 5xx is an outage, not a moved fund: no catalogue.
-- (B) Every fund that stores nothing is named in the run's event with the issuer source
-  asked (`PricesFetched.fund_sources`), so D174's card („Kurs kam nicht von …“) also reaches
+- (B) Every fund whose issuer file fails (or whose currency, (C), cannot be converted) is
+  named in the run's event with the issuer source asked (`PricesFetched.fund_sources`; a
+  file read fine with no new day names nothing), so D174's card („Kurs kam nicht von …“) reaches
   a fund whose catalogue reference never stored a row (services.prices.overview).
 - (C) A NAV in a currency other than EUR and FX_CURRENCIES is converted by the ECB's rate of
   that currency, read from the same file and stored as its cash asset's row (the 90-day
@@ -134,7 +135,7 @@ class Collected:
     failed: list[UUID] = field(default_factory=list)
     discovered: dict[UUID, NavSource] = field(default_factory=dict)  # found this run
     unconverted: dict[UUID, str] = field(default_factory=dict)  # NAV currency the ECB lacks
-    notes: list[FundSourceNote] = field(default_factory=list)  # the funds that stored nothing
+    notes: list[FundSourceNote] = field(default_factory=list)  # failed or unconverted funds
 
 
 @dataclass
@@ -633,7 +634,7 @@ def failure_runs(conn: Connection, asset_id: UUID, since: datetime) -> list[tupl
 
 @dataclass(frozen=True)
 class RunNote:
-    """What the recent runs said of a fund that stored nothing (FundSourceNote, read back):
+    """What the recent runs said of a failed or unconverted fund (FundSourceNote, read back):
     the issuer source last asked, and, when the latest run could not convert its NAV, the
     currency and the first day of the runs in a row up to the latest that said so."""
 
