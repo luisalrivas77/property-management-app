@@ -4496,13 +4496,13 @@ export interface components {
          * AppSecretGroup
          * @enum {string}
          */
-        AppSecretGroup: "ai" | "chains" | "bank" | "mail";
+        AppSecretGroup: "ai" | "chains" | "bank" | "mail" | "elster";
         /**
          * AppSecretName
-         * @description app_secret.name (migration 0045's CHECK), in the card's order.
+         * @description app_secret.name (migration 0045's CHECK, widened by 0047), in the card's order.
          * @enum {string}
          */
-        AppSecretName: "anthropic_api_key" | "etherscan_key" | "solana_rpc_url" | "bsc_rpc_url" | "helius_key" | "coingecko_key" | "fints_product_id" | "tem_secret_key" | "tem_project_id" | "mail_from" | "inbox_imap_user" | "inbox_imap_password" | "inbox_address" | "inbox_label";
+        AppSecretName: "anthropic_api_key" | "etherscan_key" | "solana_rpc_url" | "bsc_rpc_url" | "helius_key" | "coingecko_key" | "fints_product_id" | "tem_secret_key" | "tem_project_id" | "mail_from" | "inbox_imap_user" | "inbox_imap_password" | "inbox_address" | "inbox_label" | "elster_hersteller_id";
         /**
          * AppSecretPut
          * @description PUT /app-secrets/{name}: the value, stored encrypted and never logged or echoed (a
