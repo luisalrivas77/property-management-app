@@ -16,10 +16,12 @@ from hausbuch.db.tables import app_secret as secret_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.rules import errors as E
 from hausbuch.rules.errors import RuleError
+from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.app_secrets import AppSecretName as N
 from hausbuch.schemas.app_secrets import AppSecretSource as Src
 from hausbuch.schemas.events import EventType
 from hausbuch.services import app_secrets as secrets
+from hausbuch.services import review
 from hausbuch.settings import SOLANA_PUBLIC_RPC_URL, Settings
 
 pytestmark = pytest.mark.db
@@ -330,3 +332,66 @@ def test_workspace_settings_puts_the_typed_values_in_place(
     other = read(b, secrets.workspace_settings, env_settings, names)
     assert other is env_settings
     assert other.solana_rpc_url.get_secret_value() == SOLANA_PUBLIC_RPC_URL
+
+
+# --- D260 amended (9): the Zu prüfen card for a value that no longer decrypts ---------------
+
+
+def _card(read, ws, settings):
+    return [
+        item
+        for item in read(ws, review.inbox, settings=settings)
+        if item.kind is InboxItemKind.APP_SECRET_UNREADABLE
+    ]
+
+
+def test_no_card_with_nothing_typed_or_only_the_containers_value(
+    read, fresh_workspaces, env_settings
+):
+    ws, _ = fresh_workspaces
+    rotated = dataclasses.replace(env_settings, session_key=OTHER_KEY)
+    assert _card(read, ws, rotated) == []  # ENV_KEY is set, nothing typed
+    assert read(ws, secrets.unreadable_names, rotated, list(N)) == []
+
+
+def test_the_card_names_each_group_and_what_stopped_never_a_value(
+    run, read, fresh_workspaces, env_settings
+):
+    a, b = fresh_workspaces
+    _set(run, a, N.ETHERSCAN_KEY, APP_KEY, env_settings)
+    _set(run, a, N.ANTHROPIC_API_KEY, APP_AI, env_settings)
+    _set(run, a, N.HELIUS_KEY, "typed-helius-0001", env_settings)
+    later = datetime(2026, 11, 16, 10, 0, tzinfo=UTC)
+    run(
+        a,
+        secrets.set_secret,
+        N.SOLANA_RPC_URL,
+        SecretStr(APP_URL),
+        settings=env_settings,
+        now=later,
+    )
+    assert _card(read, a, env_settings) == []  # all readable
+    rotated = dataclasses.replace(env_settings, session_key=OTHER_KEY)
+    (card,) = _card(read, a, rotated)
+    assert card.created_at == later  # the newest of the unreadable values
+    assert card.reasoning.startswith("In der App gespeicherte Zugangsschlüssel lassen sich nicht")
+    assert (
+        "Betroffen – KI: Anthropic-API-Schlüssel (Claude); Blockchains & Kurse: Etherscan, "
+        "Solana-RPC-Adresse, Helius." in card.reasoning
+    )
+    assert "Dokumente werden nicht automatisch ausgelesen" in card.reasoning
+    assert "Ethereum- und Arbitrum-Adressen werden nicht gelesen." in card.reasoning
+    assert "Solana-Adressen werden nicht gelesen." in card.reasoning
+    assert "nicht den Wert aus der Server-Konfiguration" in card.reasoning
+    assert card.question == "Unter Einstellungen › Zugangsschlüssel neu eintragen oder löschen."
+    dumped = card.model_dump_json()
+    assert not any(s in dumped for s in SECRETS)
+    assert "etherscan_key" not in dumped and "HAUSBUCH_" not in dumped
+    assert _card(read, b, rotated) == []  # the other workspace typed nothing
+    # Typed again under the new key, or deleted: the card goes once none is left.
+    _set(run, a, N.ETHERSCAN_KEY, APP_KEY, rotated)
+    (card,) = _card(read, a, rotated)
+    assert "Etherscan" not in card.reasoning
+    for name in (N.ANTHROPIC_API_KEY, N.SOLANA_RPC_URL, N.HELIUS_KEY):
+        assert run(a, secrets.delete_secret, name) is True
+    assert _card(read, a, rotated) == []

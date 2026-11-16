@@ -164,6 +164,30 @@ def test_a_rotated_session_key_makes_the_wallet_say_type_it_again(
         client.close()
 
 
+def test_zu_pruefen_shows_one_card_for_a_value_that_no_longer_decrypts(
+    client_a, app_engine, blob_store, sessions, tmp_path, logs
+):
+    """D260 amended (9): GET /inbox carries the card, naming the group and its label, never
+    the value; it goes once the value is deleted."""
+    product_id = "TYPEDPRODUCTID0099"
+    ok(client_a.put("/api/app-secrets/fints_product_id", json={"value": product_id}))
+    assert not [i for i in ok(client_a.get("/api/inbox")) if i["kind"] == "app_secret_unreadable"]
+    rotated = make_settings(tmp_path, session_key=OTHER_KEY)
+    app = create_app(rotated, app_engine, blob_store, FakeResolver(sessions), worker=None)
+    client = client_for(app, TOKEN_A)
+    try:
+        response = client.get("/api/inbox")
+        (card,) = [i for i in ok(response) if i["kind"] == "app_secret_unreadable"]
+        assert "Bank: FinTS-Produkt-ID" in card["reasoning"]
+        assert "Einstellungen › Zugangsschlüssel" in card["question"]
+        assert product_id not in response.text and product_id not in logs()
+        assert client.delete("/api/app-secrets/fints_product_id").status_code == 204
+        kinds = [i["kind"] for i in ok(client.get("/api/inbox"))]
+        assert "app_secret_unreadable" not in kinds
+    finally:
+        client.close()
+
+
 def test_the_settings_page_and_the_inbox_address_read_the_typed_values(client_a, client_b):
     assert ok(client_a.get("/api/workspace/settings"))["reminder_emails_available"] is False
     for name, value in (

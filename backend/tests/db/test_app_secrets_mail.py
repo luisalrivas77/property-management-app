@@ -2,10 +2,12 @@
 its Transactional Email client from the workspace's typed key, project and sender, an
 incomplete set sends nothing, a typed piece that no longer decrypts sends nothing (never the
 container's piece); the email-in poll logs in with the typed user and password, reads the
-typed label, and stays off when a typed piece cannot be read. Over the fakes of
-test_jobs_notify and test_services_inbound_mail; invented values only."""
+typed label, and stays off when a typed piece cannot be read, both runs then logging a WARNING
+(D260 amended (9)). Over the fakes of test_jobs_notify and test_services_inbound_mail;
+invented values only."""
 
 import dataclasses
+import logging
 
 import pytest
 from db.test_jobs_notify import (  # noqa: F401  (setup is a fixture)
@@ -144,3 +146,60 @@ def test_an_unreadable_typed_password_keeps_the_poll_off(inbox, run):  # noqa: F
     )
     assert poll(rotated).status == "not_configured"
     assert poll.connects == []  # never the container's password
+
+
+def _lines(caplog, logger):
+    return [r for r in caplog.records if r.name == logger]
+
+
+def test_an_unreadable_typed_piece_makes_the_digest_run_warn(
+    setup,  # noqa: F811
+    app_engine,
+    tmp_path,
+    built,
+    read,
+    caplog,
+):
+    """D260 amended (9): the run sends nothing and says why at WARNING; a run with nothing
+    typed stays at INFO; Zu prüfen names E-Mail and the digest."""
+    world, *_ = setup
+    _, mailer = built
+    deps = _deps(app_engine, tmp_path)
+    caplog.set_level(logging.INFO)
+    assert _run(world, deps).status == "not_configured"
+    (quiet,) = _lines(caplog, "hausbuch.jobs.notify")
+    assert quiet.levelno == logging.INFO
+    assert read(world.ws, app_secrets.unreadable_inbox_items, deps.settings) == []
+    for name, value in ((N.TEM_SECRET_KEY, TEM_KEY), (N.TEM_PROJECT_ID, PROJECT)):
+        _type(world, name, value, deps.settings)
+    _type(world, N.MAIL_FROM, SENDER, deps.settings)
+    rotated = dataclasses.replace(
+        deps, settings=dataclasses.replace(deps.settings, session_key=OTHER_KEY)
+    )
+    caplog.clear()
+    result = _run(world, rotated)
+    assert result.status == "not_configured" and dict(result.codes) == {"key_unreadable": 1}
+    assert mailer.sent == []
+    (line,) = _lines(caplog, "hausbuch.jobs.notify")
+    assert line.levelno == logging.WARNING
+    assert not any(secret in caplog.text for secret in (TEM_KEY, PROJECT, SENDER))
+    (card,) = read(world.ws, app_secrets.unreadable_inbox_items, rotated.settings)
+    assert "E-Mail: Scaleway-TEM-Schlüssel, Scaleway-Projekt-ID, Absenderadresse" in card.reasoning
+    assert card.reasoning.count("Erinnerungs-E-Mail wird nicht verschickt") == 1
+    assert not any(secret in card.model_dump_json() for secret in (TEM_KEY, PROJECT, SENDER))
+
+
+def test_an_unreadable_typed_inbox_piece_makes_the_poll_warn(inbox, run, caplog):  # noqa: F811
+    poll, _, ws, deps = inbox
+    caplog.set_level(logging.INFO)
+    assert poll(_bare(deps)).status == "not_configured"
+    assert _lines(caplog, "hausbuch.jobs.inbound_mail") == []  # never set up: silent
+    run(ws, app_secrets.set_secret, N.INBOX_LABEL, SecretStr(LABEL), settings=deps.settings)
+    rotated = dataclasses.replace(
+        deps, settings=dataclasses.replace(deps.settings, session_key=OTHER_KEY)
+    )
+    result = poll(rotated)
+    assert result.status == "not_configured" and dict(result.codes) == {"key_unreadable": 1}
+    (line,) = _lines(caplog, "hausbuch.jobs.inbound_mail")
+    assert line.levelno == logging.WARNING and LABEL not in caplog.text
+    assert poll.connects == []

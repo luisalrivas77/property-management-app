@@ -16,7 +16,10 @@ bank.unreachable), so a wrong PIN is never tried again on the next morning.
 
 A workspace without a usable product id (the container's, or one typed under Einstellungen ›
 Zugangsschlüssel, phase 6 D260) is skipped; a run in which no workspace has one ends as
-not_configured: one log line, no sync queued.
+not_configured: one log line, no sync queued. A workspace whose typed product id no longer
+decrypts is skipped the same way (never with the container's), but counted under the code
+key_unreadable, so the line is a WARNING (D260 amended (9)); a workspace that never had one
+stays silent.
 
 Each account is queued in a transaction of its own, so one account's error (e.g.
 bank.window_invalid) is logged by its code and the others still run. Nothing personal is
@@ -33,7 +36,9 @@ from uuid import UUID
 from hausbuch.auth.lookup import provisioned_workspace_ids
 from hausbuch.db.session import workspace_transaction
 from hausbuch.rules.errors import RuleError
+from hausbuch.schemas.app_secrets import AppSecretName as N
 from hausbuch.schemas.enums import ActorType
+from hausbuch.services import app_secrets
 from hausbuch.services import bank_sync as service
 from hausbuch.services.context import Actor, new_command
 
@@ -86,7 +91,12 @@ def run_bank_sync_scheduled(
         try:
             with workspace_transaction(deps.engine, workspace_id) as conn:
                 if not service.configured(service.bank_settings(conn, deps.settings)):
-                    continue  # no product id for this workspace (D260): nothing to queue
+                    # no product id for this workspace (D260): nothing to queue; one typed in
+                    # the app that no longer decrypts makes the run's line a WARNING (D260
+                    # amended (9)), and Zu prüfen shows app_secret_unreadable
+                    if app_secrets.unreadable_names(conn, deps.settings, [N.FINTS_PRODUCT_ID]):
+                        result.codes[app_secrets.KEY_UNREADABLE] += 1
+                    continue
                 accounts = service.auto_sync_accounts(conn)
         except Exception as exc:  # class name only: a driver message can quote parameters
             result.failed_workspaces += 1
