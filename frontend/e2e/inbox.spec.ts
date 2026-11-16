@@ -316,8 +316,8 @@ test("an unreadable typed key shows its card under Automatisch, linking to Zugan
   await page.goto("/inbox");
   await expect(sectionToggle(page, "Automatisch")).toHaveAttribute("aria-expanded", "true");
   const queue = page.getByRole("region", { name: "Zu erledigen" });
-  await expect(queue.getByText("Gespeicherte Zugangsschlüssel lassen sich nicht mehr lesen")).toBeVisible();
-  await expect(queue.getByText("Schlüssel unlesbar")).toBeVisible();
+  await expect(queue.getByText("Gespeicherte Zugangsschlüssel lassen sich nicht mehr lesen", { exact: true })).toBeVisible();
+  await expect(queue.getByText("Schlüssel unlesbar", { exact: true })).toBeVisible();
   await expect(queue).toContainText("Der Bankabruf läuft nicht");
   await queue.getByRole("link", { name: "Zugangsschlüssel öffnen" }).click();
   await expect(page).toHaveURL(/\/settings#zugangsschluessel$/);
