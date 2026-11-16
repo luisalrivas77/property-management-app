@@ -26,9 +26,11 @@ from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import wallet_address as address_table
+from hausbuch.db.tables import wallet_sync as sync_table
+from hausbuch.jobs.sync_wallets import enqueue_sync_wallet
 from hausbuch.rules.chain.address import EVM_CHAINS, address_hmac, mask, validate
 from hausbuch.rules.errors import WALLET_ADDRESS_INVALID, WALLET_ADDRESS_TAKEN, RuleError
-from hausbuch.schemas.chain import AddressKind, Chain, WalletAddress
+from hausbuch.schemas.chain import AddressKind, Chain, WalletAddress, WalletSyncSummary
 from hausbuch.schemas.enums import AccountKind, EntityType
 from hausbuch.schemas.events import (
     EventType,
@@ -59,19 +61,53 @@ _ALSO_ON_EVM_ONLY = (
 
 
 def wallet_page(conn: Connection, account_id: UUID) -> WalletPage | None:
-    """GET /wallets/{id}: None when there is no such account or it is no wallet. Balances,
-    syncs and each address's last_sync stay empty until step 2 reads a chain."""
+    """GET /wallets/{id}: None when there is no such account or it is no wallet. Each
+    address's last_sync is its newest finished wallet_sync row (any status, a deferred run
+    included). The page's balances and syncs stay empty: the runs are GET
+    /wallets/{id}/syncs, and the balances wait for the screens step (an account-scope chain's
+    rows each carry the account's balances, so they are not summed per address)."""
     account = get_account(conn, account_id)
     if account is None or account.kind is not AccountKind.WALLET:
         return None
     rows = conn.execute(
         select(*_READ_COLUMNS).where(address_table.c.account_id == account_id)
     ).all()
+    last = _last_syncs(conn, account_id)
     addresses = sorted(
-        (_to_address(row) for row in rows),
+        (_to_address(row).model_copy(update={"last_sync": last.get(row.id)}) for row in rows),
         key=lambda a: (not a.active, _CHAIN_ORDER[a.chain]),
     )
     return WalletPage(account=account, addresses=addresses)
+
+
+def _last_syncs(conn: Connection, account_id: UUID) -> dict[UUID, WalletSyncSummary]:
+    rows = conn.execute(
+        select(
+            sync_table.c.address_id,
+            sync_table.c.finished_at,
+            sync_table.c.block,
+            sync_table.c.reconciled,
+            sync_table.c.error_code,
+            sync_table.c.movements_new,
+        )
+        .distinct(sync_table.c.address_id)
+        .where(sync_table.c.account_id == account_id, sync_table.c.finished_at.is_not(None))
+        .order_by(
+            sync_table.c.address_id,
+            sync_table.c.started_at.desc(),
+            sync_table.c.created_at.desc(),
+        )
+    ).all()
+    return {
+        r.address_id: WalletSyncSummary(
+            finished_at=r.finished_at,
+            block=r.block,
+            reconciled=r.reconciled,
+            error_code=r.error_code,
+            movements_new=r.movements_new,
+        )
+        for r in rows
+    }
 
 
 def add_address(
@@ -138,15 +174,16 @@ def add_address(
             ),
         )
         created.append(address)
-    enqueue_first_sync(ctx, [address.id for address in created])
+    enqueue_first_sync(ctx, account_id)
     return created
 
 
-def enqueue_first_sync(ctx: CommandContext, address_ids: list[UUID]) -> None:
-    """The hook where an added address gets its first sync (D182). Step 1 reads no chain, so
-    this enqueues nothing yet; phase 7 step 2 fills it with the sync job of each address, in
-    the caller's transaction."""
-    del ctx, address_ids
+def enqueue_first_sync(ctx: CommandContext, account_id: UUID) -> None:
+    """An added address gets its first sync (D182): one `sync_wallet` job for its wallet,
+    deferred on the caller's connection, so it commits with the address and a rolled-back
+    add queues nothing. The job syncs every active address of the wallet; one call however
+    many chains the address was added on."""
+    enqueue_sync_wallet(ctx.conn, workspace_id=ctx.workspace_id, account_id=account_id)
 
 
 def update_address(
