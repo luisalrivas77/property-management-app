@@ -94,6 +94,7 @@ from hausbuch.schemas.household import (
 from hausbuch.storage import BlobStore
 
 from ..chain import learned
+from ..chain.sync import queue_deposit_lookups
 from ..context import CommandContext
 from ..documents import type_document, upload_document
 from ..errors import RuleViolationError
@@ -595,6 +596,7 @@ def import_export(
 
     relink(ctx, account_id)  # an EUR deposit or withdrawal finds its bank leg (D162)
     chain_transfers.relink(ctx)  # a coin withdrawal or deposit finds its chain leg (D184)
+    queue_deposit_lookups(ctx)  # D181 (c) amended: a BSC withdrawal's deposit, read by hash
     return ExchangeUpload(
         movement_import=_to_import(imported),
         withdrawals_open=len(_open_withdrawals(_current(ctx.conn, account_id))),
@@ -722,6 +724,7 @@ def _complete_withdrawals(
     from ..chain import transfers as chain_transfers  # D184: a completed one has its hash
 
     chain_transfers.relink(ctx)
+    queue_deposit_lookups(ctx)  # D181 (c) amended: a hash completed on a balance-only chain
     return ExchangeUpload(
         withdrawals_completed=len(found),
         withdrawals_open=still_open,

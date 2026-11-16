@@ -1224,8 +1224,13 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
 
 def relink_after_answer(ctx: CommandContext) -> None:
     """The hook after a person confirms or answers an exchange's coin movement: relink in the
-    caller's transaction, without waiting for the transfer lock (relink's wait=False)."""
+    caller's transaction, without waiting for the transfer lock (relink's wait=False); a
+    withdrawal confirmed on a balance-only chain queues its wallet's sync, which looks the
+    deposit up by its hash (D181 (c) amended 16 Nov 2026)."""
+    from .sync import queue_deposit_lookups
+
     relink(ctx, wait=False)
+    queue_deposit_lookups(ctx)
 
 
 def relink_after_sync(

@@ -7,7 +7,10 @@ reads `eth_getBalance` and each registry token's `balanceOf` (`eth_call`) at
 its hash (`eth_getTransactionByHash`, `eth_getTransactionReceipt`, the block's timestamp by
 `eth_getBlockByNumber`) into the deposit legs rules/chain/evm.deposit_from_receipt finds
 (None when the transaction is unknown, not yet final, failed or credited the address
-nothing); step 5 links it to the exchange's leg.
+nothing); `lookup` is the same read with the reason (found, absent, unknown, pending, not
+asked). The sync calls `lookup` for the workspace's exchange withdrawals on this chain after
+the balances (services/chain/sync, D181 (c) amended 16 Nov 2026: until then nothing called
+it), and step 5's matcher links the deposit it writes to the exchange's leg by the hash.
 
 The RPC URL comes from Settings (a public node by default; a provider's key often sits in the
 URL's path), so it is never logged or put into an exception: a failure carries its code and
@@ -32,6 +35,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Literal
 
 from pydantic import JsonValue
 
@@ -134,26 +138,57 @@ class RpcBalanceSource:
             out.append(AssetBalance(asset_key=key, units=held, at_block=at))
 
     def deposit(self, tx_hash: str, address: str) -> ChainTx | None:
-        try:
-            return self._deposit(tx_hash, address)
-        except BudgetSpent:
-            return None  # the budget is spent: the next sync reads it
+        """The deposit legs a withdrawal named by its hash credited to the address, or None
+        (lookup's every other outcome)."""
+        return self.lookup(tx_hash, address).tx
 
-    def _deposit(self, tx_hash: str, address: str) -> ChainTx | None:
+    def lookup(self, tx_hash: str, address: str) -> "DepositLookup":
+        """One exchange withdrawal read by its hash, with why nothing was found: `found` (the
+        deposit legs, the block header kept in the record so the stored original replays
+        without the node, D182 (3)), `absent` (final, and it failed or credited this address
+        nothing: the one definitive no), `unknown` (the node does not know the hash: another
+        chain, or a hash the exchange printed wrong), `pending` (not mined, not final, no
+        receipt yet) or `not_asked` (the run's budget is spent). A node's error raises
+        ChainSourceError as every call does."""
+        try:
+            return self._lookup(tx_hash, address)
+        except BudgetSpent:
+            return DepositLookup("not_asked")  # the budget is spent: the next sync reads it
+
+    def _lookup(self, tx_hash: str, address: str) -> "DepositLookup":
         transaction = self._rpc("eth_getTransactionByHash", [tx_hash])
-        if not isinstance(transaction, dict) or transaction.get("blockNumber") is None:
-            return None  # unknown or still pending
+        if not isinstance(transaction, dict):
+            return DepositLookup("unknown")
+        if transaction.get("blockNumber") is None:
+            return DepositLookup("pending")  # in the mempool
         block = int(str(transaction["blockNumber"]), 16)
         if block > self.tip() - self._final:
-            return None  # not final yet: the next sync reads it
+            return DepositLookup("pending")  # not final yet: the next sync reads it
         receipt = self._rpc("eth_getTransactionReceipt", [tx_hash])
         if not isinstance(receipt, dict):
-            return None
+            return DepositLookup("pending")
         header = self._rpc("eth_getBlockByNumber", [hex(block), False])
         if not isinstance(header, dict) or not isinstance(header.get("timestamp"), str):
             raise ChainSourceError(SOURCE_FAILED)
         at = datetime.fromtimestamp(int(str(header["timestamp"]), 16), tz=UTC)
-        return evm.deposit_from_receipt(self.chain, transaction, receipt, at, address)
+        found = evm.deposit_from_receipt(self.chain, transaction, receipt, at, address)
+        if found is None:
+            return DepositLookup("absent")
+        block_record = {"number": hex(block), "timestamp": str(header["timestamp"])}
+        return DepositLookup(
+            "found", found.model_copy(update={"raw": {**found.raw, "block": block_record}})
+        )
+
+
+DepositOutcome = Literal["found", "absent", "unknown", "pending", "not_asked"]
+
+
+@dataclass(frozen=True, slots=True)
+class DepositLookup:
+    """RpcBalanceSource.lookup's answer: the outcome and, when `found`, the deposit's legs."""
+
+    outcome: DepositOutcome
+    tx: ChainTx | None = None
 
 
 def make_source(

@@ -457,20 +457,28 @@ def relink_transfers(args: argparse.Namespace, environ: Mapping[str, str]) -> in
 def relink_chain(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     """services.chain.transfers.relink once for a workspace (phase 7 step 5, D184): the coin
     transfers between own accounts linked as an import or sync links them. `--dry-run` rolls
-    everything back."""
+    everything back. Then (D181 (c) amended 16 Nov 2026) a sync is queued for each wallet on
+    a balance-only chain with an exchange withdrawal to look up by its hash; the job reads
+    the node, never this command."""
     from hausbuch.db.session import workspace_transaction
     from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.chain.sync import queue_deposit_lookups
     from hausbuch.services.chain.transfers import relink
     from hausbuch.services.context import Actor, new_command
 
     engine = owner_engine(environ)
+    queued = 0
     try:
         try:
             with workspace_transaction(engine, args.workspace) as conn:
                 actor = Actor(ActorType.SYSTEM, "cli:relink-chain")
-                result = relink(new_command(conn, args.workspace, actor))
+                ctx = new_command(conn, args.workspace, actor)
+                result = relink(ctx)
                 if args.dry_run:
                     raise _DryRun
+                # D181 (c) amended: a wallet on a balance-only chain looks its deposits up by
+                # hash in its next sync, queued now (never under --dry-run)
+                queued = queue_deposit_lookups(ctx)
         except _DryRun:
             pass
     except SQLAlchemyError as exc:
@@ -490,6 +498,8 @@ def relink_chain(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
         print(f"{verb} {result.reopened} movement(s) a link no longer current had confirmed")
     if result.skipped_locked:
         print(f"left {result.skipped_locked} for the next run (a leg was being answered)")
+    if queued:
+        print(f"queued {queued} wallet sync(s) to look up exchange withdrawals by their hash")
     return EXIT_OK
 
 

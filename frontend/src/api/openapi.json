@@ -18111,6 +18111,7 @@
           "wallet.sync_completed",
           "wallet.sync_failed",
           "wallet.payee_answered",
+          "wallet.deposit_looked_up",
           "movement_group.proposed",
           "movement_group.confirmed",
           "movement_group.trade_recorded",
