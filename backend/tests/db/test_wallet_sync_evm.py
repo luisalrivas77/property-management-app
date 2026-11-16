@@ -26,6 +26,7 @@ from db.test_phase7_migration import _chain_movement, _group_row
 from fixture_models_phase7 import load
 from pydantic import SecretStr
 
+from hausbuch.api.routes.wallet_sync import list_wallet_syncs
 from hausbuch.db.session import workspace_transaction
 from hausbuch.rules import errors as E
 from hausbuch.rules.chain import evm
@@ -187,10 +188,13 @@ class FakeRpc:
     def __init__(self, native: int) -> None:
         self.native = native
         self.urls: list[str] = []
+        self.fail = None  # a callable(payload) -> (status, body): the node refuses
 
     def __call__(self, url, headers, body, timeout, max_bytes):
         self.urls.append(url)
         payload = json.loads(body)
+        if self.fail is not None:
+            return self.fail(payload)
         result = {
             "eth_blockNumber": hex(BSC_TIP),
             "eth_getBalance": hex(self.native),
@@ -568,6 +572,60 @@ def test_bsc_is_reconciled_against_its_linked_deposits(
     assert _sync_row(dbname, bsc_id)[7] is None
 
 
+def _rpc_error(payload):
+    error = {"code": -32000, "message": "invented node failure"}
+    return 200, json.dumps({"jsonrpc": "2.0", "id": payload["id"], "error": error}).encode()
+
+
+@pytest.mark.parametrize(
+    ("answer", "status", "code"),
+    [
+        (lambda payload: (403, b""), "refused", E.WALLET_SOURCE_REFUSED),
+        (lambda payload: (429, b""), "throttled", E.WALLET_SOURCE_THROTTLED),
+        (_rpc_error, "failed", E.WALLET_SOURCE_FAILED),
+    ],
+    ids=["http403", "http429", "rpc_error"],
+)
+def test_a_bsc_node_that_refuses_every_call_is_a_failed_row_each_day(
+    dbname, app_engine, blob_store, fresh_workspaces, http, answer, status, code
+):
+    """Review of PR #397: a balance-only address reads no history, so a node refusing every
+    call stores nothing new. Each day is a refused, throttled or failed row with its code,
+    on the row, on GET /wallets/{id}/syncs and on the wallet page's last_sync, never a
+    succeeded row with no balance that reads deferred."""
+    _, rpc = http
+    ws, _ = fresh_workspaces
+    account, ids = _wallet(app_engine, ws)
+    bsc_id = ids[Chain.BSC]
+    rpc.fail = answer
+    for day in (1, 2):
+        out = _run(app_engine, blob_store, ws, account, day=day)[Chain.BSC]
+        assert (out.status, out.error_code, out.deferred, out.reconciled) == (
+            WalletSyncStatus(status),
+            code,
+            False,
+            None,
+        )
+        row = _sync_row(dbname, bsc_id)
+        assert (row[0], row[2], row[5], row[6], row[9]) == (status, None, None, None, code)
+    with workspace_transaction(app_engine, ws) as conn:
+        runs = [r for r in list_wallet_syncs(conn, account) if r.address_id == bsc_id]
+        page = wallet_svc.wallet_page(conn, account)
+    assert len(runs) == 2
+    assert {(r.status.value, r.error_code, r.deferred) for r in runs} == {(status, code, False)}
+    (last,) = [a.last_sync for a in page.addresses if a.id == bsc_id]
+    assert (last.error_code, last.reconciled) == (code, None)
+
+    rpc.fail = None  # the node answers again: the address reconciles
+    rpc.native = 0
+    back = _run(app_engine, blob_store, ws, account, day=3)[Chain.BSC]
+    assert (back.status, back.error_code, back.reconciled) == (
+        WalletSyncStatus.SUCCEEDED,
+        None,
+        True,
+    )
+
+
 def test_bsc_settings_url_is_used_and_only_its_host_recorded(
     dbname, app_engine, blob_store, fresh_workspaces, http, caplog
 ):
@@ -875,11 +933,12 @@ def test_a_reverted_balance_of_an_unlisted_token_marks_it_unreadable_and_the_run
     eth_chain["tokens"][token] = 5 * 10**18
     assert _run(app_engine, blob_store, ws, account, day=3)[Chain.ETHEREUM].reconciled is True
 
-    # a registry token that reverts is no misread contract: the balance read fails
+    # a registry token that reverts is no misread contract: the balance read fails, and with
+    # nothing new the run is a failed row (review of PR #397)
     eth_chain["revert"] = {USDC}
     listed = _run(app_engine, blob_store, ws, account, day=4)[Chain.ETHEREUM]
     assert (listed.status, listed.error_code, listed.reconciled) == (
-        WalletSyncStatus.SUCCEEDED,
+        WalletSyncStatus.FAILED,
         E.WALLET_SOURCE_FAILED,
         None,
     )
