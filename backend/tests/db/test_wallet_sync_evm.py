@@ -13,6 +13,7 @@ import functools
 import hashlib
 import itertools
 import json
+import logging
 import urllib.parse
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -564,12 +565,16 @@ def test_bsc_is_reconciled_against_its_linked_deposits(
 
 
 def test_bsc_settings_url_is_used_and_only_its_host_recorded(
-    dbname, app_engine, blob_store, fresh_workspaces, http
+    dbname, app_engine, blob_store, fresh_workspaces, http, caplog
 ):
     _, rpc = http
     ws, _ = fresh_workspaces
     account, _ = _wallet(app_engine, ws)
-    _run(app_engine, blob_store, ws, account)
+    with caplog.at_level(logging.DEBUG):
+        _run(app_engine, blob_store, ws, account)
+    logged = caplog.text + "".join(repr(getattr(r, "fields", "")) for r in caplog.records)
+    assert sum(getattr(r, "fields", {}).get("event") == "wallet_sync" for r in caplog.records) == 3
+    assert "INVENTEDPATHKEY" not in logged and KEY not in logged
     assert set(rpc.urls) == {RPC_URL}
     hosts = _q(
         dbname,
