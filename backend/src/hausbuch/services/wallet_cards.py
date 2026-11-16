@@ -26,7 +26,7 @@ from hausbuch.rules.chain.registry import registry
 from hausbuch.rules.errors import WALLET_KEY_MISSING, WALLET_SYNC_ERROR
 from hausbuch.rules.household.assets import registry as asset_registry
 from hausbuch.schemas.api import InboxItem, InboxItemKind
-from hausbuch.schemas.chain import Chain, ChainSourceKind, GroupStatus, WalletSyncStatus
+from hausbuch.schemas.chain import Chain, ChainSourceKind, WalletSyncStatus
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.wallet_cards import (
     WalletAddressState,
@@ -230,7 +230,9 @@ def _last_balances(conn: Connection, account_id: UUID) -> dict[UUID, object]:
 
 
 def open_groups(conn: Connection, account_id: UUID) -> dict[Chain, tuple[int, int]]:
-    """Per chain, (live proposed groups, those of them with a question)."""
+    """Per chain, (open groups: proposed or holding a proposed leg, those with a question)."""
+    from .wallet_groups import open_clause  # it reads this module's neighbours
+
     g = group_table.c
     rows = conn.execute(
         select(
@@ -238,12 +240,7 @@ def open_groups(conn: Connection, account_id: UUID) -> dict[Chain, tuple[int, in
             func.count(),
             func.count().filter(g.question.is_not(None)),
         )
-        .where(
-            g.account_id == account_id,
-            g.chain.is_not(None),
-            g.status == GroupStatus.PROPOSED.value,
-            g.superseded_by.is_(None),
-        )
+        .where(g.account_id == account_id, open_clause())
         .group_by(g.chain)
     ).all()
     return {Chain(chain): (n, asked) for chain, n, asked in rows}
@@ -457,11 +454,12 @@ __all__ = [
 # --- Zu prüfen ----------------------------------------------------------------------------
 
 # The address states a person must act on, and the card each one becomes. Deferred, waiting,
-# pending, not yet synced and a source Hausbuch cannot read yet are shown on the page only.
+# pending, not yet synced and a source Hausbuch cannot read yet are shown on the page only; so
+# are a throttled run and a run that failed inside Hausbuch (wallet.sync_error): the next run
+# retries both, and no click of the person changes either (review of PR #398, finding 6).
 _SYNC_CARDS = {
     S.KEY_MISSING: InboxItemKind.WALLET_SYNC,
     S.FAILED: InboxItemKind.WALLET_SYNC,
-    S.THROTTLED: InboxItemKind.WALLET_SYNC,
     S.REFUSED: InboxItemKind.WALLET_SYNC,
     S.UNRECONCILED: InboxItemKind.WALLET_UNRECONCILED,
     S.COINS_LEFT: InboxItemKind.WALLET_COINS_LEFT,
@@ -520,6 +518,8 @@ def wallet_inbox_items(conn: Connection, settings: Settings, now: datetime) -> l
         state = wallet_state(conn, account_id, settings)
         by_state: dict[WalletAddressState, list[WalletAddressStatus]] = {}
         for status in state.statuses:
+            if status.state is S.FAILED and status.error_code == WALLET_SYNC_ERROR:
+                continue
             if status.state in _SYNC_CARDS:
                 by_state.setdefault(status.state, []).append(status)
         for address_state, statuses in by_state.items():

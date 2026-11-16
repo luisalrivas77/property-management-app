@@ -14,7 +14,7 @@ from pydantic import Field
 
 from .chain import Chain, GroupKind, GroupStatus
 from .common import NonNegativeMoney, Schema
-from .household import MovementKind, Quantity
+from .household import MovementKind, MovementStatus, Quantity
 
 
 class WalletAddressState(StrEnum):
@@ -84,8 +84,9 @@ class WalletCardKind(StrEnum):
 class WalletAnswer(StrEnum):
     """A person's answer to a proposed group (D183 (5)), built for groups whose legs all go
     one way: „Bezahlung“ (out: a disposal), „Geschenk oder Zahlung erhalten“ (in: an
-    acquisition at a typed cost or 0), „Belohnung“ (in: a staking reward) and „Spam“ (in,
-    tokens only: hidden from then on, D187). „Tausch“ and
+    acquisition at a typed cost, 0 when 0 is typed, unknown (NULL, D188) when none is),
+    „Belohnung“ (in: a staking reward) and „Spam“ (in, tokens the registry does not list and
+    the household does not hold only: hidden from then on, D187). „Tausch“ and
     „Übertrag an eigene Wallet/Börse“ need the legs picked and a transfer link (step 5)."""
 
     PAYMENT = "payment"
@@ -100,13 +101,16 @@ class WalletLeg(Schema):
     asset_id: UUID
     symbol: str
     kind: MovementKind
+    status: MovementStatus
     quantity: Quantity
 
 
 class WalletGroup(Schema):
-    """GET /wallets/{id}/groups: one card per live proposed group (D183 (1)). `confirmable`:
-    „Bestätigen“ keeps it as it stands (no question, no leg left uncategorized); `answers`:
-    the corrections that fit its legs."""
+    """GET /wallets/{id}/groups: one card per open group (D183 (1)): live and proposed, or
+    holding a live proposed leg (a leg a later sync added to an answered group). `text`,
+    `confirmable` and `answers` are about its proposed legs: „Bestätigen“ keeps them as they
+    stand (no question, no leg left uncategorized); `answers` are the corrections that fit
+    them. `legs` lists every live leg, each with its status."""
 
     id: UUID
     account_id: UUID
@@ -123,8 +127,9 @@ class WalletGroup(Schema):
 
 
 class WalletGroupAnswerBody(Schema):
-    """POST /groups/{gid}/answer. `cost_eur` only with `gift` (the acquisition's cost; 0 for
-    a gift, D183 (5))."""
+    """POST /groups/{gid}/answer. `cost_eur` only with `gift` and one leg: the acquisition's
+    cost; a gift is typed as 0. Without it the cost stays unknown (NULL): the lots price it by
+    the day or show „Kurs fehlt“ (D183 (5), D188)."""
 
     answer: WalletAnswer
     cost_eur: NonNegativeMoney | None = None
@@ -134,6 +139,21 @@ class WalletGroupDone(Schema):
     """The group that now stands for the transaction (the same id after „Bestätigen“)."""
 
     group_id: UUID
+
+
+class WalletAnsweredGroup(Schema):
+    """GET /wallets/{id}/answered: a live group a person answered or confirmed, its legs in
+    plain words. `undoable`: „Antwort zurücknehmen“ applies (no transfer link touches its
+    legs); it re-proposes the transaction as the sync first classified it."""
+
+    id: UUID
+    account_id: UUID
+    chain: Chain
+    kind: GroupKind
+    occurred_at: datetime
+    text: str
+    legs: list[WalletLeg] = Field(default_factory=list)
+    undoable: bool = False
 
 
 class ChangeCandidateOut(Schema):

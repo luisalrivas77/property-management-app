@@ -6,6 +6,8 @@ D185, D186, D187; the wallet screens).
 - GET /wallets/{id}/groups: the live proposed groups, one card each.
 - POST /groups/{gid}/confirm („Bestätigen“), POST /groups/{gid}/answer (Bezahlung, Geschenk
   oder Zahlung erhalten, Belohnung, Spam).
+- GET /wallets/{id}/answered: the groups a person answered or confirmed; POST
+  /groups/{gid}/undo („Antwort zurücknehmen“) proposes one again as the sync classified it.
 - GET /groups/{gid}/change: the outputs a Bitcoin change card asks about, read again from
   the stored original; POST /groups/{gid}/change/payee („Nein, Empfänger“) and
   /change/own („Ja, eigene Adresse“).
@@ -27,6 +29,7 @@ from hausbuch.schemas.wallet_cards import (
     ChangeCard,
     HiddenToken,
     SpamVerdict,
+    WalletAnsweredGroup,
     WalletGroup,
     WalletGroupAnswerBody,
     WalletGroupDone,
@@ -76,6 +79,20 @@ def wallet_group_answer(group_id: UUID, body: WalletGroupAnswerBody, cmd: Cmd) -
     """The group that now stands for the transaction. 422 wallet.answer_unfit when the
     answer does not fit its legs."""
     return WalletGroupDone(group_id=cmd.run(wallet_groups.answer_group, group_id, body))
+
+
+@router.get("/wallets/{account_id}/answered")
+def wallet_answered_groups(account_id: UUID, cmd: Cmd) -> list[WalletAnsweredGroup]:
+    """The groups a person answered or confirmed, newest first (at most 50); no spam group."""
+    return cmd.read(wallet_groups.answered_groups, account_id)
+
+
+@router.post("/groups/{group_id}/undo")
+def wallet_group_undo(group_id: UUID, cmd: Cmd) -> WalletGroupDone:
+    """„Antwort zurücknehmen“: the new proposed group with the sync's classification. 422
+    wallet.answer_unfit for a group no person answered, a spam group or one a transfer link
+    touches; wallet.group_done for one no longer live."""
+    return WalletGroupDone(group_id=cmd.run(wallet_groups.undo_group, group_id))
 
 
 @router.get("/groups/{group_id}/change")

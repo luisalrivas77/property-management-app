@@ -509,3 +509,365 @@ def test_an_answer_during_a_syncs_write_leaves_no_leg_under_a_superseded_group(
         account,
     )
     assert orphans == []
+
+
+# --- Review of PR #398: spam on known tokens, demote/promote, joined legs, undo, inbox ------
+
+USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"  # the public registry's USDC on Ethereum
+HELD = "0x" + "9d" * 20  # an invented token the registry does not list
+
+
+def _insert(conn, table: str, row: dict):
+    columns = ", ".join(f'"{k}"' for k in row)
+    values = ", ".join(f"%({k})s" for k in row)
+    return conn.execute(
+        f"INSERT INTO {table} ({columns}) VALUES ({values}) RETURNING id", row
+    ).fetchone()[0]
+
+
+def _token(conn, ws, symbol: str, contract: str, decimals: int = 6):
+    return conn.execute(
+        "INSERT INTO asset (workspace_id, kind, symbol, name, chain, contract_address,"
+        " decimals) VALUES (%s, 'crypto', %s, %s, 'ethereum', %s, %s) RETURNING id",
+        (ws, symbol, f"{symbol} Token", contract, decimals),
+    ).fetchone()[0]
+
+
+def _seed_group(conn, ws, account, address, legs, **group):
+    """One movement group with its legs: (asset, kind, status, quantity) each."""
+    group_id = _insert(conn, "movement_group", _group_row(ws, account, **group))
+    for index, (asset, kind, status, quantity) in enumerate(legs):
+        _insert(
+            conn,
+            "asset_movement",
+            _chain_movement(
+                ws,
+                account,
+                asset,
+                address,
+                kind=kind,
+                status=status,
+                group_id=group_id,
+                quantity=quantity,
+                index=str(index),
+            ),
+        )
+    return group_id
+
+
+@pytest.fixture
+def usdc(dbname, fresh_workspaces):
+    """An Ethereum wallet that holds 460 USDC (a confirmed swap from ETH, a confirmed 40 USDC
+    payment) and two proposed dust receipts of the same, listed USDC."""
+    ws = fresh_workspaces[0]
+    with _admin(dbname) as conn:
+        account = _wallet(conn, ws)
+        address = _address(conn, ws, account)
+        eth = conn.execute(
+            "INSERT INTO asset (workspace_id, kind, symbol, name, chain, decimals) VALUES"
+            " (%s, 'crypto', 'ETH', 'Ether', 'ethereum', 18) RETURNING id",
+            (ws,),
+        ).fetchone()[0]
+        token = _token(conn, ws, "USDC", USDC)
+        swap = _seed_group(
+            conn,
+            ws,
+            account,
+            address,
+            [(eth, "disposal", "confirmed", "-0.2"), (token, "acquisition", "confirmed", "500")],
+            kind="swap",
+            status="confirmed",
+            occurred_at="2026-03-01T10:00:00Z",
+        )
+        pay = _seed_group(
+            conn,
+            ws,
+            account,
+            address,
+            [(token, "disposal", "confirmed", "-40")],
+            status="confirmed",
+            occurred_at="2026-04-01T10:00:00Z",
+        )
+        dust = [
+            _seed_group(
+                conn,
+                ws,
+                account,
+                address,
+                [(token, "uncategorized", "proposed", "0.000001")],
+                status="proposed",
+                occurred_at=f"2026-05-0{day}T10:00:00Z",
+            )
+            for day in (5, 6)
+        ]
+    return ws, account, address, token, swap, pay, dust
+
+
+def _legs_of(dbname, *groups):
+    return _rows(
+        dbname,
+        "SELECT id, group_id, kind, status, source, quantity FROM asset_movement"
+        ' WHERE group_id = ANY(%s) AND superseded_by IS NULL ORDER BY group_id, "index"',
+        list(groups),
+    )
+
+
+def _position(client, symbol: str):
+    overview = ok(client.get("/api/assets/overview"))
+    found = [p for a in overview["accounts"] for p in a["positions"] if p["symbol"] == symbol]
+    return Decimal(found[0]["units"]) if found else None
+
+
+def test_spam_is_neither_offered_nor_accepted_for_a_listed_or_held_token(client_a, usdc, dbname):
+    """Finding 1: „Spam“ on a dust receipt of a listed token (or one held by a confirmed
+    movement) would hide the whole position; it is not offered and refused."""
+    ws, account, address, token, swap, pay, dust = usdc
+    cards = ok(client_a.get(f"/api/wallets/{account}/groups"))
+    assert {c["id"] for c in cards} == {str(g) for g in dust}
+    assert all(c["answers"] == ["gift", "reward"] for c in cards)
+    refused = client_a.post(f"/api/groups/{dust[0]}/answer", json={"answer": "spam"})
+    assert refused.status_code == 422 and refused.json()["code"] == "wallet.answer_unfit"
+
+    with _admin(dbname) as conn:  # an unlisted token, held by a confirmed acquisition
+        held = _token(conn, ws, "HLD", HELD, 18)
+        _seed_group(
+            conn,
+            ws,
+            account,
+            address,
+            [(held, "acquisition", "confirmed", "3")],
+            status="confirmed",
+        )
+        receipt = _seed_group(
+            conn,
+            ws,
+            account,
+            address,
+            [(held, "airdrop", "proposed", "0.1")],
+            status="proposed",
+        )
+    card = next(
+        c for c in ok(client_a.get(f"/api/wallets/{account}/groups")) if c["id"] == str(receipt)
+    )
+    assert "spam" not in card["answers"]
+    refused = client_a.post(f"/api/groups/{receipt}/answer", json={"answer": "spam"})
+    assert refused.status_code == 422 and refused.json()["code"] == "wallet.answer_unfit"
+    (row,) = _rows(dbname, "SELECT count(*) AS n FROM asset WHERE spam AND workspace_id = %s", ws)
+    assert row.n == 0
+    assert _position(client_a, "USDC") == Decimal(460)
+
+
+def test_a_spam_answer_marks_every_receipt_of_the_token(client_a, token_wallet, dbname):
+    """Finding 1: where „Spam“ fits, every live receipt group of the token is marked as
+    demote does, so no card stays open for a hidden token."""
+    ws, account, asset, group, _ = token_wallet
+    with _admin(dbname) as conn:
+        address = conn.execute(
+            "SELECT address_id FROM asset_movement WHERE group_id = %s", (group,)
+        ).fetchone()[0]
+        _seed_group(
+            conn,
+            ws,
+            account,
+            address,
+            [(asset, "uncategorized", "proposed", "7")],
+            status="proposed",
+            occurred_at="2026-06-01T10:00:00Z",
+        )
+    assert len(ok(client_a.get(f"/api/wallets/{account}/groups"))) == 2
+    ok(client_a.post(f"/api/groups/{group}/answer", json={"answer": "spam"}))
+    assert ok(client_a.get(f"/api/wallets/{account}/groups")) == []
+    live = _rows(
+        dbname,
+        "SELECT g.kind, g.status, m.kind AS leg, m.status AS leg_status FROM movement_group g"
+        " JOIN asset_movement m ON m.group_id = g.id AND m.superseded_by IS NULL"
+        " WHERE g.account_id = %s AND g.superseded_by IS NULL",
+        account,
+    )
+    assert sorted(tuple(r) for r in live) == [("spam", "confirmed", "spam", "confirmed")] * 2
+    (token,) = ok(client_a.get(f"/api/wallets/{account}/hidden-tokens"))
+    assert (Decimal(token["units"]), token["groups"]) == (12, 2)
+
+
+def test_demote_then_promote_leave_the_swap_and_the_payment_as_they_were(client_a, usdc, dbname):
+    """Finding 4: demote and promote touch only the token's incoming airdrop, uncategorised
+    or spam legs; a swap's and a payment's confirmed legs keep their rows (same id, source
+    chain), and the position comes back in Anlagen."""
+    ws, account, address, token, swap, pay, dust = usdc
+    before = _legs_of(dbname, swap, pay)
+    assert {r.source for r in before} == {"chain"}
+    assert ok(client_a.post(f"/api/assets/{token}/demote"))["groups"] == 2
+    assert _legs_of(dbname, swap, pay) == before
+    assert ok(client_a.get(f"/api/wallets/{account}/groups")) == []
+    assert _position(client_a, "USDC") is None  # hidden until „Kein Spam“
+
+    assert ok(client_a.post(f"/api/assets/{token}/promote"))["groups"] == 2
+    assert _legs_of(dbname, swap, pay) == before
+    cards = ok(client_a.get(f"/api/wallets/{account}/groups"))
+    assert len(cards) == 2
+    for card in cards:
+        assert card["kind"] == "airdrop"
+        assert [(leg["kind"], leg["status"]) for leg in card["legs"]] == [("airdrop", "proposed")]
+    assert _position(client_a, "USDC") == Decimal(460)
+
+
+def _one_receive(dbname, fresh_workspaces, esplora, app_engine, blob_store):  # noqa: F811
+    """A Bitcoin wallet whose one transaction pays its own address and a second address the
+    wallet does not know yet, after its first sync: (workspace, account, sync)."""
+    ws = fresh_workspaces[0]
+    with _admin(dbname) as conn:
+        account = _wallet(conn, ws)
+        _address(conn, ws, account, chain="bitcoin", address=OWN, address_masked="bc1q…rtxz")
+    esplora.records = [record(1, 100, [(STRANGER, 200_000)], [(OWN, 100_000), (SECOND, 50_000)])]
+    esplora.tip = 112
+    ticks = itertools.count()
+
+    def sync():
+        return sync_wallets(
+            app_engine,
+            ws,
+            settings=SETTINGS,
+            store=blob_store,
+            actor=ACTOR,
+            clock=lambda: T0 + timedelta(days=1, seconds=next(ticks)),
+        )
+
+    sync()
+    return ws, account, sync
+
+
+def test_a_leg_a_later_sync_adds_to_an_answered_group_is_a_card(
+    client_a,
+    fresh_workspaces,
+    esplora,  # noqa: F811
+    app_engine,
+    blob_store,
+    dbname,
+):
+    """Finding 2: a proposed leg inside a confirmed group is a card; answering it handles that
+    leg only, and Anlagen then equals the wallet page."""
+    ws, account, sync = _one_receive(dbname, fresh_workspaces, esplora, app_engine, blob_store)
+    (card,) = ok(client_a.get(f"/api/wallets/{account}/groups"))
+    body = {"answer": "gift", "cost_eur": "10"}
+    first = ok(client_a.post(f"/api/groups/{card['id']}/answer", json=body))["group_id"]
+    (answered,) = _legs_of(dbname, first)
+    with _admin(dbname) as conn:  # the second address is registered later
+        _address(conn, ws, account, chain="bitcoin", address=SECOND, address_masked="bc1q…zqrl")
+    sync()
+
+    (card,) = ok(client_a.get(f"/api/wallets/{account}/groups"))
+    assert card["id"] == first and card["status"] == "confirmed"
+    assert card["text"] == "0,0005 BTC erhalten (bc1q…zqrl). Was war das?"
+    assert card["confirmable"] is False and card["answers"] == ["gift", "reward"]
+    assert sorted((leg["kind"], leg["status"]) for leg in card["legs"]) == [
+        ("acquisition", "confirmed"),
+        ("uncategorized", "proposed"),
+    ]
+    assert ok(client_a.get(f"/api/wallets/{account}/state"))["open_groups"] == 1
+    kinds = [i["kind"] for i in ok(client_a.get("/api/inbox")) if i["kind"].startswith("wallet")]
+    assert kinds == ["wallet_groups"]
+    assert _position(client_a, "BTC") == Decimal("0.001")
+
+    body = {"answer": "gift", "cost_eur": "5"}
+    done = ok(client_a.post(f"/api/groups/{first}/answer", json=body))["group_id"]
+    assert ok(client_a.get(f"/api/wallets/{account}/groups")) == []
+    legs = _rows(
+        dbname,
+        "SELECT kind, status, quantity, eur_amount FROM asset_movement WHERE group_id = %s"
+        " AND superseded_by IS NULL ORDER BY quantity",
+        done,
+    )
+    assert [(r.kind, r.status, r.quantity, r.eur_amount) for r in legs] == [
+        ("acquisition", "confirmed", Decimal("0.0005"), Decimal("-5.00")),
+        ("acquisition", "confirmed", Decimal("0.001"), Decimal("-10.00")),
+    ]
+    assert answered.quantity == Decimal("0.001")
+    (holding,) = ok(client_a.get(f"/api/wallets/{account}/state"))["holdings"]
+    assert _position(client_a, "BTC") == Decimal(holding["booked_units"]) == Decimal("0.0015")
+
+
+def test_antwort_zuruecknehmen_proposes_the_syncs_classification_again(
+    client_a,
+    client_b,
+    fresh_workspaces,
+    esplora,  # noqa: F811
+    app_engine,
+    blob_store,
+    dbname,
+):
+    """Finding 5: an answer can be taken back; the answer stays in the history, and a new
+    group with the sync's classification and every leg proposed shows the card again."""
+    ws, account, _ = _one_receive(dbname, fresh_workspaces, esplora, app_engine, blob_store)
+    (card,) = ok(client_a.get(f"/api/wallets/{account}/groups"))
+    assert ok(client_a.get(f"/api/wallets/{account}/answered")) == []
+    assert client_a.post(f"/api/groups/{card['id']}/undo").status_code == 422
+    body = {"answer": "gift", "cost_eur": "10"}
+    answered = ok(client_a.post(f"/api/groups/{card['id']}/answer", json=body))["group_id"]
+    response = client_a.get(f"/api/wallets/{account}/answered")
+    (listed,) = ok(response)
+    _private(response.text, *ADDRESSES, *_tx_hashes())
+    assert listed["id"] == answered and listed["undoable"] is True
+    assert listed["text"] == "0,001 BTC erhalten (bc1q…rtxz)"
+    assert client_b.get(f"/api/wallets/{account}/answered").status_code == 404
+    assert client_b.post(f"/api/groups/{answered}/undo").status_code == 404
+
+    again = ok(client_a.post(f"/api/groups/{answered}/undo"))["group_id"]
+    (card,) = ok(client_a.get(f"/api/wallets/{account}/groups"))
+    assert card["id"] == again and card["status"] == "proposed" and card["confirmable"] is False
+    (leg,) = _rows(
+        dbname,
+        "SELECT kind, status, eur_amount, source FROM asset_movement WHERE group_id = %s",
+        again,
+    )
+    assert (leg.kind, leg.status, leg.eur_amount, leg.source) == (
+        "uncategorized",
+        "proposed",
+        None,
+        "user",
+    )
+    (event,) = _rows(
+        dbname,
+        "SELECT payload FROM event WHERE entity_id = %s AND type = 'movement_group.proposed'",
+        again,
+    )
+    assert event.payload["reason"] == "routing.person_undone"
+    assert ok(client_a.get(f"/api/wallets/{account}/answered")) == []
+    gone = client_a.post(f"/api/groups/{answered}/undo")
+    assert gone.status_code == 422 and gone.json()["code"] == "wallet.group_done"
+
+
+def test_a_spam_group_is_not_taken_back_by_undo(client_a, token_wallet, dbname):
+    ws, account, asset, group, _ = token_wallet
+    spam = ok(client_a.post(f"/api/groups/{group}/answer", json={"answer": "spam"}))["group_id"]
+    assert ok(client_a.get(f"/api/wallets/{account}/answered")) == []
+    refused = client_a.post(f"/api/groups/{spam}/undo")
+    assert refused.status_code == 422 and refused.json()["code"] == "wallet.answer_unfit"
+
+
+def test_a_throttled_run_and_an_error_inside_hausbuch_stay_off_zu_pruefen(
+    client_a, fresh_workspaces, dbname
+):
+    """Finding 6: no click of a person changes a throttled run or a run that failed inside
+    Hausbuch, so both show on the wallet page only; a provider's failure stays a card."""
+    ws = fresh_workspaces[0]
+    with _admin(dbname) as conn:
+        account = _wallet(conn, ws)
+        runs = (
+            (OWN, "bc1q…rtxz", "throttled", "wallet.source_throttled"),
+            (SECOND, "bc1q…zqrl", "failed", "wallet.sync_error"),
+            (CHANGE, "bc1q…chg1", "failed", "wallet.source_failed"),
+        )
+        for plain, masked, status, code in runs:
+            address = _address(
+                conn, ws, account, chain="bitcoin", address=plain, address_masked=masked
+            )
+            conn.execute(
+                "INSERT INTO wallet_sync (workspace_id, account_id, address_id, started_at,"
+                " finished_at, status, source_host, error_code) VALUES (%s, %s, %s, now(),"
+                " now(), %s, 'esplora.example.invalid', %s)",
+                (ws, account, address, status, code),
+            )
+    cards = [i for i in ok(client_a.get("/api/inbox")) if i["kind"] == "wallet_sync"]
+    assert [(c["error_code"], "bc1q…chg1" in c["reasoning"]) for c in cards] == [("failed", True)]
+    state = ok(client_a.get(f"/api/wallets/{account}/state"))
+    assert sorted(s["state"] for s in state["statuses"]) == ["failed", "failed", "throttled"]
