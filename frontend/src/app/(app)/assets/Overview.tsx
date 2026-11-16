@@ -31,12 +31,12 @@ type AccountKind = components["schemas"]["AccountKind"];
 
 const ATTRIBUTION = "Kurse: CoinGecko, Kraken, EZB, NAV der Fondsgesellschaften.";
 
-export function OverviewTab({ priceFor }: { priceFor: string | null }) {
+export function OverviewTab({ priceFor, priceDay = null }: { priceFor: string | null; priceDay?: string | null }) {
   const load = useCallback(() => ok(api.GET("/api/assets/overview")), []);
   const overview = useLoad(load);
   return (
     <div className="stack planning">
-      {priceFor ? <PriceCard assetId={priceFor} onSaved={overview.reload} /> : null}
+      {priceFor ? <PriceCard assetId={priceFor} day={priceDay} onSaved={overview.reload} /> : null}
       <Loading state={overview}>{(data) => <Overview data={data} />}</Loading>
     </div>
   );
@@ -210,7 +210,7 @@ function positionTodo(position: OverviewPosition): { text: string; action: strin
 
 // --- „Kursquelle wählen“ and „Kurs eintragen“ (?kurs=<asset id>) ---------------------------
 
-function PriceCard({ assetId, onSaved }: { assetId: string; onSaved: () => void }) {
+function PriceCard({ assetId, day, onSaved }: { assetId: string; day: string | null; onSaved: () => void }) {
   const load = useCallback(() => ok(api.GET("/api/assets")), []);
   const assets: Loaded<AssetRow[]> = useLoad(load);
   return (
@@ -247,6 +247,7 @@ function PriceCard({ assetId, onSaved }: { assetId: string; onSaved: () => void 
             {asset.kind === "cash" && asset.currency === "EUR" ? null : (
               <TypedPriceForm
                 asset={asset}
+                day={day}
                 onSaved={() => {
                   assets.reload();
                   onSaved();
@@ -335,8 +336,9 @@ function SourceForm({ asset, onSaved }: { asset: AssetRow; onSaved: () => void }
   );
 }
 
-function TypedPriceForm({ asset, onSaved }: { asset: AssetRow; onSaved: () => void }) {
-  const [on, setOn] = useState(todayIso());
+function TypedPriceForm({ asset, day, onSaved }: { asset: AssetRow; day: string | null; onSaved: () => void }) {
+  // `?tag=<day>` from a lot's „Kurs fehlt“ on the Krypto tab (phase 7 D188 (4)).
+  const [on, setOn] = useState(day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : todayIso());
   const [price, setPrice] = useState(decimalInput(null));
   const [invalid, setInvalid] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
