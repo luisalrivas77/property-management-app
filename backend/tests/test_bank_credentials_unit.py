@@ -23,6 +23,7 @@ from hausbuch.services.bank_sync import RunPlan, state_key
 SESSION_KEY = bytes(range(1, 33))
 OTHER_KEY = bytes(range(101, 133))
 PIN = "app-PIN-90210-secret"
+FINTS_URL = "https://fints.example.org/fints"
 WS, OTHER_WS = uuid.uuid4(), uuid.uuid4()
 
 
@@ -93,7 +94,7 @@ def test_a_login_round_trips_bound_to_its_connection():
 @pytest.mark.parametrize("pin", ["1234", "x" * 65, ""], ids=["four", "sixty_five", "empty"])
 def test_a_pin_outside_5_to_64_characters_is_refused_without_naming_it(pin):
     with pytest.raises(ValidationError) as refused:
-        BankPinSet(pin=pin)
+        BankPinSet(pin=pin, fints_url=FINTS_URL)
     (error,) = refused.value.errors(include_input=False)
     assert error["msg"] == "Value error, bank.pin_invalid: the PIN has 5 to 64 characters"
     if pin:
@@ -101,11 +102,11 @@ def test_a_pin_outside_5_to_64_characters_is_refused_without_naming_it(pin):
 
 
 def test_a_pin_is_trimmed_and_only_blanks_count_as_empty():
-    assert BankPinSet(pin=f"  {PIN}\t\n").pin.get_secret_value() == PIN
-    assert BankPinSet(pin=" 12345 ").pin.get_secret_value() == "12345"
+    assert BankPinSet(pin=f"  {PIN}\t\n", fints_url=FINTS_URL).pin.get_secret_value() == PIN
+    assert BankPinSet(pin=" 12345 ", fints_url=FINTS_URL).pin.get_secret_value() == "12345"
     for pin in ("      ", " 1234 "):  # nothing, or four characters, once trimmed
         with pytest.raises(ValidationError) as refused:
-            BankPinSet(pin=pin)
+            BankPinSet(pin=pin, fints_url=FINTS_URL)
         (error,) = refused.value.errors(include_input=False)
         assert error["msg"] == "Value error, bank.pin_invalid: the PIN has 5 to 64 characters"
 
@@ -140,8 +141,107 @@ def test_a_run_plan_and_the_jobs_run_never_show_the_login():
     assert "loginname-xyz" not in repr(plan) and "loginname-xyz" not in repr(_Run(plan))
 
 
+@pytest.mark.parametrize(
+    ("url", "address"),
+    [
+        ("https://fints.example.org/fints", "https://fints.example.org:443/fints"),
+        ("HTTPS://FINTS.Example.ORG:443/fints", "https://fints.example.org:443/fints"),
+        ("https://fints.example.org", "https://fints.example.org:443/"),
+        ("https://fints.example.org:8443/fints", "https://fints.example.org:8443/fints"),
+        ("https://[2001:db8::1]/fints", "https://[2001:db8::1]:443/fints"),
+        ("https://fints.example.org/fints?x=1", "verbatim https://fints.example.org/fints?x=1"),
+        (
+            "https://fints.example.org@other.example/fints",
+            "verbatim https://fints.example.org@other.example/fints",
+        ),
+    ],
+    ids=["plain", "case_and_port", "no_path", "other_port", "ipv6", "query", "user_info"],
+)
+def test_a_pins_server_is_its_host_port_and_path_or_the_address_itself(url, address):
+    """D196 amended: a plain https address is normalised (host case, the default port), the
+    path kept (another path is another endpoint); any other shape is bound verbatim."""
+    assert C.server_address(url) == address
+
+
+# URLs on which urlsplit and urllib3 (what python-fints' requests session dials) read
+# different hosts, or which only look like the bound address: none may hash like it.
+LOOKALIKES = (
+    "https://evil.example\\@fints.example.org/fints",  # urllib3 dials evil.example
+    "https://evil.example#@fints.example.org/fints",
+    "https://evil.example?@fints.example.org/fints",
+    "https://fints.example.org@evil.example/fints",
+    "https://user:pw@fints.example.org/fints",
+    "https://fints.example.org:99999/fints",  # a port that does not parse
+    "https://fints.example.org/fints\\..\\x",
+)
+
+
+def test_another_host_port_or_path_is_another_server():
+    base = C.server_hash("https://fints.example.org/fints")
+    for other in (
+        "https://fints.example.net/fints",
+        "https://fints.example.org:8443/fints",
+        "https://fints.example.org/other",
+        "https://fints.example.org/FINTS",  # a path is case-sensitive
+        *LOOKALIKES,
+    ):
+        assert C.server_hash(other) != base, other
+    assert C.server_hash("https://FINTS.example.org:443/fints") == base
+    assert len(base) == C.SERVER_HASH_BYTES
+
+
+@pytest.mark.parametrize("url", LOOKALIKES)
+def test_a_url_parsers_disagree_on_is_bound_verbatim(url):
+    """Whatever host such a URL dials, its binding is the URL itself, so it matches only a
+    PIN typed for exactly that string."""
+    assert C.server_address(url) == f"verbatim {url}"
+
+
+@pytest.mark.parametrize(
+    "url", ["https://[1.2.3.4]/fints", "https://[12345]/fints", "https://[::::]/fints"]
+)
+def test_a_bracketed_host_that_is_no_ipv6_literal_is_bound_verbatim(url):
+    """urlsplit refuses such a host; the binding must not raise (it would answer 500 on
+    every read of the connection) but bind the address verbatim."""
+    assert C.server_address(url) == f"verbatim {url}"
+
+
+def test_only_an_ascii_https_scheme_is_normalised():
+    """The long s matches „s“ case-insensitively; such a scheme is bound verbatim, so two
+    hosts never share one binding."""
+    a, b = "http\u017f://evil.example/fints", "http\u017f://bank.example/fints"
+    assert C.server_address(a) == f"verbatim {a}"
+    assert C.server_hash(a) != C.server_hash(b)
+
+
+def test_the_fints_session_never_follows_a_redirect(monkeypatch):
+    """A 307/308 would re-send the message, PIN included, to another address."""
+    import requests
+
+    from hausbuch.services.bank import fints
+
+    seen = {}
+
+    def fake(self, *args, **kwargs):
+        seen.update(kwargs)
+        raise requests.ConnectionError("stop")
+
+    monkeypatch.setattr(requests.Session, "request", fake)
+    with pytest.raises(requests.ConnectionError):
+        fints._TimeoutSession(5).post("https://bank.example/fints", data=b"x")
+    assert seen["allow_redirects"] is False
+
+
+def test_the_pin_request_needs_an_https_address():
+    with pytest.raises(ValidationError):
+        BankPinSet(pin=PIN)
+    with pytest.raises(ValidationError) as refused:
+        BankPinSet(pin=PIN, fints_url="http://fints.example.org/fints")
+    assert PIN not in str(refused.value)
+
+
 def test_the_pin_request_never_shows_the_pin():
-    body = BankPinSet(pin=PIN)
+    body = BankPinSet(pin=PIN, fints_url=FINTS_URL)
     assert body.pin.get_secret_value() == PIN
     assert PIN not in repr(body) and PIN not in str(body) and PIN not in body.model_dump_json()
 

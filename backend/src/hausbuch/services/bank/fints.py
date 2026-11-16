@@ -351,6 +351,9 @@ class _TimeoutSession(requests.Session):
 
     def request(self, *args: Any, **kwargs: Any) -> requests.Response:  # type: ignore[override]
         kwargs.setdefault("timeout", self._timeout_s)
+        # Never follow a redirect: a 307/308 would re-send the message, PIN included, to an
+        # address the PIN is not bound to (D196 amended); a 3xx fails the dialog instead.
+        kwargs["allow_redirects"] = False
         self.last_http = {}
         started = time.perf_counter()
         try:
