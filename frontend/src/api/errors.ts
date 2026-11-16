@@ -205,7 +205,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Die in Hausbuch gespeicherte PIN lässt sich nicht mehr lesen, weil der Schlüssel des Servers gewechselt wurde. Beim Bankabruf „PIN ändern“ wählen, die PIN neu eingeben und erneut abrufen.",
   // a PIN is sent only to the FinTS address it was typed for (phase-6.md D196 amended)
   "bank.pin_server_changed":
-    "Die in Hausbuch gespeicherte PIN wurde für eine andere FinTS-Adresse eingegeben; Hausbuch sendet sie nur an diese Adresse. Beim Bankabruf die FinTS-Adresse prüfen, „PIN ändern“ wählen, die PIN neu eingeben und erneut abrufen.",
+    "Die gespeicherte PIN muss einmal neu eingegeben werden: Hausbuch sendet sie nur an die FinTS-Adresse, für die sie eingegeben wurde, und eine vor dem 16.11.2026 eingegebene PIN nennt noch keine Adresse. Beim Bankabruf „PIN ändern“ wählen, die PIN neu eingeben und erneut abrufen.",
   "bank.login_unreadable":
     "Der gespeicherte Anmeldename lässt sich nicht mehr lesen, weil der Schlüssel des Servers gewechselt wurde. Beim Bankabruf „Zugang ändern“ wählen, den Anmeldenamen neu eingeben und erneut abrufen.",
   "bank.pin_invalid": "Die PIN hat 5 bis 64 Zeichen.",
