@@ -720,7 +720,9 @@ def test_an_unlisted_token_an_exchange_sent_is_an_exchange_transfer_not_spam(
         app_engine, dbname, ws, sent_hash.upper().replace("0X", "0x"), native_hash
     )
 
-    _run(app_engine, blob_store, ws, account)
+    eth = _run(app_engine, blob_store, ws, account)[Chain.ETHEREUM]
+    # finding 1 was also "left out of the reconciliation": the token's balance is read
+    assert eth.reconciled is True
 
     groups = _groups(dbname, ids[Chain.ETHEREUM])
     kind, status, legs = groups[sent_hash]
@@ -742,21 +744,18 @@ def test_an_unlisted_token_an_exchange_sent_is_an_exchange_transfer_not_spam(
     assert not [p for (p,) in events if any(h in p.lower() for h in hashes)]
 
 
-# --- a known gap, for the orchestrator (§15.1) --------------------------------------------
+# --- an unlisted token reconciles (review finding 3, option (a)) ---------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="balances() reads balanceOf for registry tokens only: a non-spam token the "
-    "registry does not list (an airdrop the address claimed) has movements but no balance "
-    "row, so _reconcile counts its balance as 0 and the address never reconciles again",
-)
 def test_a_claimed_unlisted_token_reconciles(
     dbname, app_engine, blob_store, fresh_workspaces, http
 ):
+    """A non-spam token the registry does not list (an airdrop the address signed for) has
+    its `balanceOf` read in the same run as its first movement, and again on the next run
+    from the stored movements, so the address reconciles both times."""
     scan, _ = http
     ws, _ = fresh_workspaces
-    account, _ = _wallet(app_engine, ws)
+    account, ids = _wallet(app_engine, ws)
     token = "0x" + "cd" * 20
     claim = {
         "hash": _hash("invented claim"),
@@ -786,5 +785,12 @@ def test_a_claimed_unlisted_token_reconciles(
     eth_chain["rows"]["txlist"].append(claim)
     eth_chain["rows"]["tokentx"].append(credited)
     eth_chain["native"] = ETH_BALANCE - 50000 * 10_000_000_000
+    eth_chain["tokens"][token] = 5 * 10**18
     eth = _run(app_engine, blob_store, ws, account)[Chain.ETHEREUM]
     assert eth.reconciled is True
+    assert _sync_row(dbname, ids[Chain.ETHEREUM])[6][token] == str(5 * 10**18)
+
+    # the next run: nothing new, the token's balance read again from its stored movement
+    again = _run(app_engine, blob_store, ws, account, day=2)[Chain.ETHEREUM]
+    assert (again.reconciled, again.movements_new) == (True, 0)
+    assert _sync_row(dbname, ids[Chain.ETHEREUM])[6][token] == str(5 * 10**18)

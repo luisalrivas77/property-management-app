@@ -229,6 +229,10 @@ class _Start:
     host: str
     scope: str
     balance_only: bool = False  # the source's `balance_only` (D181 (c): BNB Smart Chain)
+    # The source's `reads_tokens` (EVM over Etherscan): `balances` is passed the non-spam
+    # tokens each own address has movements in, these stored ones and the run's own legs.
+    reads_tokens: bool = False
+    stored_tokens: dict[str, frozenset[AssetKey]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -498,6 +502,57 @@ def _context(
     )
 
 
+def _stored_tokens(
+    conn: Connection, chain: Chain, own: dict[str, _Own]
+) -> dict[str, frozenset[AssetKey]]:
+    """Per own address, the tokens (contract assets, spam left out) it has live movements in:
+    a source that `reads_tokens` reads their balances too, so a token the registry does not
+    list is reconciled like a listed one."""
+    by_id = {o.id: a for a, o in own.items()}
+    rows = conn.execute(
+        select(movement_table.c.address_id, asset_table.c.contract_address)
+        .distinct()
+        .select_from(
+            movement_table.join(asset_table, movement_table.c.asset_id == asset_table.c.id)
+        )
+        .where(
+            movement_table.c.address_id.in_(list(by_id)),
+            movement_table.c.superseded_by.is_(None),
+            asset_table.c.chain == chain.value,
+            asset_table.c.contract_address.is_not(None),
+            asset_table.c.spam.is_(False),
+        )
+    ).all()
+    out: dict[str, set[AssetKey]] = {}
+    for r in rows:
+        out.setdefault(by_id[r.address_id], set()).add(
+            AssetKey(chain=chain, contract=r.contract_address)
+        )
+    return {a: frozenset(keys) for a, keys in out.items()}
+
+
+def _balances(source: ChainSource, start: _Start, out: _Read) -> list[AssetBalance]:
+    """The balances the run reconciles against, of the address or of every own address of
+    the account (`reconcile_scope`). A source that `reads_tokens` is also asked for each
+    non-spam token the address has movements in, stored or read in this run; the others are
+    called with the address alone."""
+    addresses = list(start.own) if start.scope == "account" else [start.address]
+    if not start.reads_tokens:
+        return [b for a in addresses for b in source.balances(a)]
+    read: dict[str, set[AssetKey]] = {}
+    for group in out.groups:
+        for leg in group.legs:
+            if leg.spam or leg.asset_key.contract is None:
+                continue
+            read.setdefault(leg.address or start.address, set()).add(leg.asset_key)
+    balances = []
+    for a in addresses:
+        tokens = read.get(a, set()) | start.stored_tokens.get(a, frozenset())
+        ordered = tuple(sorted(tokens, key=lambda k: k.contract or ""))
+        balances.extend(source.balances(a, tokens=ordered))
+    return balances
+
+
 def _host(source: ChainSource) -> str:
     host = str(getattr(source, "host", "") or "").lower()
     return host if _HOST.fullmatch(host) else "unknown"
@@ -531,8 +586,7 @@ def _read(source: ChainSource, start: _Start, ctx: ClassifyContext, budget: Requ
             return out
         if not moved:  # the tip reached: None, or the cursor it was given
             break
-    addresses = list(start.own) if start.scope == "account" else [start.address]
-    balances = [b for a in addresses for b in source.balances(a)]
+    balances = _balances(source, start, out)
     if budget.exhausted:  # a balance call may have been refused: the next run reads them
         out.deferred = True
         return out
@@ -1259,6 +1313,8 @@ def _begin(
         own.setdefault(row.address, _Own(row.id, bytes(row.address_hmac).hex()))
         cursor, caught_up = _last_cursor(conn, address_id)
         ctx = _context(conn, chain, row.address, row.account_id, own, native.id)
+        reads_tokens = getattr(source, "reads_tokens", False) is True
+        stored_tokens = _stored_tokens(conn, chain, own) if reads_tokens else {}
         host = _host(source)
         sync_id = conn.execute(
             insert(sync_table)
@@ -1287,6 +1343,8 @@ def _begin(
         host=host,
         scope=reconcile_scope(source),
         balance_only=getattr(source, "balance_only", False) is True,
+        reads_tokens=reads_tokens,
+        stored_tokens=stored_tokens,
     )
     return start, source, ctx, budget
 

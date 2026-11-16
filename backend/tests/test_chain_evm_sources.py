@@ -299,6 +299,28 @@ def test_balances_at_the_window_end():
     assert all(q["data"] == "0x70a08231" + ME[2:].rjust(64, "0") for q in calls[1:])
 
 
+def test_balances_read_the_tokens_the_sync_asks_for_once_each():
+    """`tokens` (the non-spam tokens the address has movements in) adds a `balanceOf` per
+    token the registry does not list, lower-cased and once; a registry token or another
+    chain's token asked for adds no call."""
+    fetch = Etherscan()
+    source = _source(fetch)
+    assert source.reads_tokens is True
+    unlisted = "0x" + "cd" * 20
+    asked = (
+        AssetKey(chain=Chain.ETHEREUM, contract=("0x" + "CD" * 20).lower()),
+        AssetKey(chain=Chain.ETHEREUM, contract=USDC),
+        AssetKey(chain=Chain.ARBITRUM, contract="0x" + "ef" * 20),
+    )
+    got = source.balances(ME, tokens=asked)
+    listed = {t.contract for t in asset_registry().tokens if t.chain is Chain.ETHEREUM}
+    read = [b.asset_key.contract for b in got[1:]]
+    assert sorted(read) == sorted([*listed, unlisted])
+    calls = [q["to"] for q in fetch.queries if q["action"] == "eth_call"]
+    assert sorted(calls) == sorted([*listed, unlisted])
+    assert {q["tag"] for q in fetch.queries if q["action"] == "eth_call"} == {hex(TIP - 12)}
+
+
 def test_paced_at_two_and_a_half_calls_a_second():
     sleeps: list[float] = []
     fetch = Etherscan()
