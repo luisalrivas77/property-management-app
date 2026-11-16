@@ -1146,8 +1146,11 @@ daily read of the chains comes with step 2, so until then they change nothing vi
 | `HAUSBUCH_ETHERSCAN_KEY` | A free Etherscan API key (etherscan.io → sign up → „API Keys“; the free tier covers Ethereum and Arbitrum) | Ethereum and Arbitrum addresses are not read; from step 2 the wallet page names the missing key |
 | `HAUSBUCH_SOLANA_RPC_URL` | The Solana JSON-RPC URL of a provider, its key included (Helius Developer today; any provider's URL serves the same calls) | The public endpoint `https://api.mainnet-beta.solana.com`, slower and possibly not back to an address's first transaction |
 | `HAUSBUCH_HELIUS_KEY` (optional) | A Helius key, used only to show Helius's description of a transaction as a label on its card | No labels; nothing else changes |
+| `HAUSBUCH_BSC_RPC_URL` (optional) | The BNB Smart Chain node's URL (balances only, no history), its key included when the provider puts one in the URL | The public node `https://bsc-dataseed.bnbchain.org` |
 
-The Solana URL is a secret because a provider's key sits in it. Once the app reads the chains
+The Solana and BNB Smart Chain URLs are secrets because a provider's key can sit in them (the
+app reads `HAUSBUCH_BSC_RPC_URL` as a secret since the EVM wiring, PR #386; add it as a
+**secret**, never a plain variable, even for a public node's URL). Once the app reads the chains
 (step 2), it logs a request's host and path only, never its query string, and never puts a key
 or URL into an event or an error; a refused setting at start names the variable only.
 
@@ -1157,7 +1160,6 @@ or URL into an event or an error; a refused setting at start names the variable 
 | --- | --- | --- |
 | `HAUSBUCH_ESPLORA_URL` | `https://mempool.space/api,https://blockstream.info/api` | The Bitcoin source (the Esplora API); several URLs, comma-separated, tried in order |
 | `HAUSBUCH_ETHERSCAN_URL` | `https://api.etherscan.io/v2/api` | Another indexer with an Etherscan-shaped API |
-| `HAUSBUCH_BSC_RPC_URL` | `https://bsc-dataseed.bnbchain.org` | The BNB Smart Chain node (balances only, no history) |
 | `HAUSBUCH_SOLANA_RPC_RPS` | `4` | Solana requests per second: 4 suits the public endpoint, 40 the Helius Developer plan |
 
 Every URL must start with `http://` or `https://` and name a host; the container refuses to

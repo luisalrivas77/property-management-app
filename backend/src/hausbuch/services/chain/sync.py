@@ -26,8 +26,10 @@ open while a provider answers:
    no legs is written once, without movements); when at least one movement or
    CHAIN_UNSTORABLE group is new, the provider's records stored as the run's original
    (`document(subtype = chain_sync)`, NDJSON) with its `movement_import(format = chain_sync)`
-   row (D182 (3)); Σ movements reconciled against the balances in base units (D186 (2)); the
-   row finished once.
+   row (D182 (3)); Σ movements reconciled against the balances in base units (D186 (2)), or,
+   for a source that declares `balance_only` (BNB Smart Chain, D181 (c)), the balance against
+   the deposits linked to the address by rules/chain/evm.reconcile_balance_only; the row
+   finished once.
 
 One transaction never blocks the address's history: a spam leg whose quantity
 numeric(38,18) cannot hold is left out (D187, counted as `spam_dropped`), and a non-spam
@@ -90,6 +92,7 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.exc import DataError, IntegrityError
 
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import chain_decoder as decoder_table
@@ -100,6 +103,7 @@ from hausbuch.db.tables import wallet_address as address_table
 from hausbuch.db.tables import wallet_sync as sync_table
 from hausbuch.rules.chain import movement_hash
 from hausbuch.rules.chain.classify import ChainGroup, ChainLeg, ClassifyContext, classify
+from hausbuch.rules.chain.evm import reconcile_balance_only
 from hausbuch.rules.chain.reconcile import reconcile, sum_balance_parts
 from hausbuch.rules.chain.registry import registry
 from hausbuch.rules.chain.spam import listed, token_label
@@ -127,7 +131,13 @@ from hausbuch.schemas.chain import (
 )
 from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.document import DocumentTyping
-from hausbuch.schemas.enums import DocumentSource, DocumentSubtype, DocumentType, ImportStatus
+from hausbuch.schemas.enums import (
+    AccountKind,
+    DocumentSource,
+    DocumentSubtype,
+    DocumentType,
+    ImportStatus,
+)
 from hausbuch.schemas.events import (
     AssetRecorded,
     EventType,
@@ -139,6 +149,7 @@ from hausbuch.schemas.events import (
 from hausbuch.schemas.household import (
     AssetKind,
     MovementImportFormat,
+    MovementKind,
     MovementSource,
     MovementStatus,
 )
@@ -193,6 +204,10 @@ class SyncOutcome:
     waiting: bool = False
     spam_dropped: int = 0  # spam legs whose quantity cannot be stored, left out (D187)
     unstorable: int = 0  # transactions written as a group without movements (CHAIN_UNSTORABLE)
+    # A balance-only address's verdict card (D181 (c)): wallet.coins_left (also stored as
+    # reconciled false with the negative difference) or transfer.unmatched_leg (a balance
+    # above its linked deposits, reconciled); logged only, nothing renders it yet.
+    card: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +229,11 @@ class _Start:
     started_at: datetime
     host: str
     scope: str
+    balance_only: bool = False  # the source's `balance_only` (D181 (c): BNB Smart Chain)
+    # The source's `reads_tokens` (EVM over Etherscan): `balances` is passed the non-spam
+    # tokens each own address has movements in, these stored ones and the run's own legs.
+    reads_tokens: bool = False
+    stored_tokens: dict[str, frozenset[AssetKey]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -452,6 +472,23 @@ def _context(
             )
         )
     }
+    # D183 (3)(b): the hashes the workspace's own exchange withdrawals name, so a token an
+    # exchange sent to an own address is an exchange_transfer, never spam. Read under RLS
+    # like every query here; kept as stored (a base58 signature is case-sensitive; the EVM
+    # classifier lower-cases), held in memory only, never logged or put into an event.
+    exchange_hashes = conn.execute(
+        select(movement_table.c.tx_hash)
+        .distinct()
+        .select_from(
+            movement_table.join(account_table, movement_table.c.account_id == account_table.c.id)
+        )
+        .where(
+            account_table.c.kind == AccountKind.EXCHANGE.value,
+            movement_table.c.kind == MovementKind.INTERNAL_TRANSFER_OUT.value,
+            movement_table.c.tx_hash.is_not(None),
+            movement_table.c.superseded_by.is_(None),
+        )
+    ).scalars()
     return ClassifyContext(
         chain=chain,
         address=address,
@@ -462,7 +499,59 @@ def _context(
         own_address_ids={a: o.id for a, o in own.items()},
         native_asset_id=native_asset_id,
         asset_ids=asset_ids,
+        exchange_hashes=frozenset(h.strip() for h in exchange_hashes if h.strip()),
     )
+
+
+def _stored_tokens(
+    conn: Connection, chain: Chain, own: dict[str, _Own]
+) -> dict[str, frozenset[AssetKey]]:
+    """Per own address, the tokens (contract assets, spam left out) it has live movements in:
+    a source that `reads_tokens` reads their balances too, so a token the registry does not
+    list is reconciled like a listed one."""
+    by_id = {o.id: a for a, o in own.items()}
+    rows = conn.execute(
+        select(movement_table.c.address_id, asset_table.c.contract_address)
+        .distinct()
+        .select_from(
+            movement_table.join(asset_table, movement_table.c.asset_id == asset_table.c.id)
+        )
+        .where(
+            movement_table.c.address_id.in_(list(by_id)),
+            movement_table.c.superseded_by.is_(None),
+            asset_table.c.chain == chain.value,
+            asset_table.c.contract_address.is_not(None),
+            asset_table.c.spam.is_(False),
+        )
+    ).all()
+    out: dict[str, set[AssetKey]] = {}
+    for r in rows:
+        out.setdefault(by_id[r.address_id], set()).add(
+            AssetKey(chain=chain, contract=r.contract_address)
+        )
+    return {a: frozenset(keys) for a, keys in out.items()}
+
+
+def _balances(source: ChainSource, start: _Start, out: _Read) -> list[AssetBalance]:
+    """The balances the run reconciles against, of the address or of every own address of
+    the account (`reconcile_scope`). A source that `reads_tokens` is also asked for each
+    non-spam token the address has movements in, stored or read in this run; the others are
+    called with the address alone."""
+    addresses = list(start.own) if start.scope == "account" else [start.address]
+    if not start.reads_tokens:
+        return [b for a in addresses for b in source.balances(a)]
+    read: dict[str, set[AssetKey]] = {}
+    for group in out.groups:
+        for leg in group.legs:
+            if leg.spam or leg.asset_key.contract is None:
+                continue
+            read.setdefault(leg.address or start.address, set()).add(leg.asset_key)
+    balances = []
+    for a in addresses:
+        tokens = read.get(a, set()) | start.stored_tokens.get(a, frozenset())
+        ordered = tuple(sorted(tokens, key=lambda k: k.contract or ""))
+        balances.extend(source.balances(a, tokens=ordered))
+    return balances
 
 
 def _host(source: ChainSource) -> str:
@@ -508,8 +597,7 @@ def _read(
             return out
         if not moved:  # the tip reached: None, or the cursor it was given
             break
-    addresses = list(start.own) if start.scope == "account" else [start.address]
-    balances = [b for a in addresses for b in source.balances(a)]
+    balances = _balances(source, start, out)
     if budget.exhausted:  # a balance call may have been refused: the next run reads them
         out.deferred = True
         return out
@@ -922,10 +1010,18 @@ def _spam_keys(conn: Connection, chain: Chain, keys: set[AssetKey]) -> set[Asset
 
 def _reconcile(
     ctx: CommandContext, start: _Start, balances: list[AssetBalance]
-) -> tuple[dict[str, str], dict[str, str]]:
+) -> tuple[dict[str, str], dict[str, str], str | None]:
     """D186 (2): Σ confirmed and proposed movements (spam left out) of the address, or of the
     account's addresses on the chain when the source reconciles per account, against the
-    balance's parts, per asset in base units. Returns (balances, difference) as stored."""
+    balance's parts, per asset in base units. Returns (balances, difference) as stored, and
+    a balance-only address's card.
+
+    A balance-only source (D181 (c)) has no history, so its address's movements are only the
+    deposits linked to it (step 5): rules/chain/evm.reconcile_balance_only compares the
+    balance with them, over the assets the source read a balance of (a deposit in an asset
+    it did not read is no shortfall). A balance above them is reconciled (the card
+    transfer.unmatched_leg), one below is reconciled false with the negative shortfall as
+    the difference (wallet.coins_left)."""
     scope = (
         movement_table.c.address_id.in_([o.id for o in start.own.values()])
         if start.scope == "account"
@@ -956,9 +1052,15 @@ def _reconcile(
     have = sum_balance_parts(
         (b.asset_key, b.units) for b in balances if b.asset_key not in spam_keys
     )
-    diff = reconcile(sums, have)
     stored = {_key_text(k): str(v) for k, v in sorted(have.items(), key=lambda i: _key_text(i[0]))}
-    return stored, {_key_text(k): str(v) for k, v in diff.items()}
+    if start.balance_only:
+        verdict = reconcile_balance_only(
+            {_key_text(k): v for k, v in have.items()},
+            {_key_text(k): v for k, v in sums.items() if k in have},
+        )
+        return stored, {k: str(v) for k, v in verdict.difference.items()}, verdict.card
+    diff = reconcile(sums, have)
+    return stored, {_key_text(k): str(v) for k, v in diff.items()}, None
 
 
 def _scope_ids(start: _Start) -> list[UUID]:
@@ -1090,11 +1192,11 @@ def _write(
             ),
             effective_date=last.date(),
         )
-    balances = difference = reconciled = None
+    balances = difference = reconciled = card = None
     waiting = False
     block = max((tx.block for tx in read.txs), default=None)
     if read.balances is not None:
-        balances, difference = _reconcile(ctx, start, read.balances)
+        balances, difference, card = _reconcile(ctx, start, read.balances)
         reconciled = not difference
         if difference and set(difference) <= _waiting_keys(ctx, start):
             reconciled, difference, waiting = None, None, True
@@ -1142,6 +1244,7 @@ def _write(
         waiting=waiting,
         spam_dropped=spam_dropped,
         unstorable=unstorable,
+        card=card,
     )
 
 
@@ -1161,6 +1264,7 @@ def _log(outcome: SyncOutcome, exc: BaseException | None = None) -> None:
         "waiting": outcome.waiting,
         "spam_dropped": outcome.spam_dropped,
         "unstorable": outcome.unstorable,
+        "card": outcome.card,
     }
     if exc is not None:
         fields["exc_type"] = type(exc).__name__
@@ -1248,6 +1352,8 @@ def _begin(
         own.setdefault(row.address, _Own(row.id, bytes(row.address_hmac).hex()))
         cursor, caught_up = _last_cursor(conn, address_id)
         ctx = _context(conn, chain, row.address, row.account_id, own, native.id)
+        reads_tokens = getattr(source, "reads_tokens", False) is True
+        stored_tokens = _stored_tokens(conn, chain, own) if reads_tokens else {}
         host = _host(source)
         sync_id = conn.execute(
             insert(sync_table)
@@ -1275,6 +1381,9 @@ def _begin(
         started_at=now,
         host=host,
         scope=reconcile_scope(source),
+        balance_only=getattr(source, "balance_only", False) is True,
+        reads_tokens=reads_tokens,
+        stored_tokens=stored_tokens,
     )
     return start, source, ctx, budget
 
