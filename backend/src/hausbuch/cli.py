@@ -1,9 +1,10 @@
 """`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills |
 rematch-waiting | household-resort | follow-accounts | repair-periods | relink-transfers |
-pair-returns | store-report-prices` (phase 1 step 3, §5, §6.5, §6.7; phase 2 D41, D27 amended
-15 Nov 2026; phase 6 D159 amended 13 and 14 Nov 2026, D161 widened 14 Nov 2026, D160 amended
-(4) 14 Nov 2026, D165 (a) and D176 (3) amended 14 Nov 2026, D162 and D167 (c) amended 15 Nov
-2026, D162 amended (6) and (7) 15 Nov 2026).
+pair-returns | store-report-prices | group-exchange-trades` (phase 1 step 3, §5, §6.5, §6.7;
+phase 2 D41, D27 amended 15 Nov 2026; phase 6 D159 amended 13 and 14 Nov 2026, D161 widened 14
+Nov 2026, D160 amended (4) 14 Nov 2026, D165 (a) and D176 (3) amended 14 Nov 2026, D162 and
+D167 (c) amended 15 Nov 2026, D162 amended (6) and (7) 15 Nov 2026, D178 amended (3) 16 Nov
+2026).
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -69,6 +70,15 @@ position of every depot that agrees with the confirmed movements now and has no 
 stores the report's price (value ÷ units), as a trade confirmation applied after the report
 does since that change. It reads and writes only the database. --dry-run rolls back and prints
 what it would store.
+
+`group-exchange-trades` runs services.exchange.imports.group_stored_trades once for a workspace,
+with the same owner URL (phase 6 D178 amended (3), migration 0043): every exchange trade
+imported before 0043 (Binance: the acquisition, disposal and fee movements of one second;
+BISON: a Buy or Sell row) gets its movement group, each leg a grouped row that supersedes the
+stored one (amounts and status unchanged), and an acquisition whose trade paid a fee in EUR
+that fee as its fee_eur, as an import writes them now. A second run finds nothing. An exchange
+account whose provider is neither BISON nor Binance is skipped and named by its label. --dry-run
+rolls back and prints what it would group.
 
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
 14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
@@ -503,6 +513,48 @@ def store_report_prices(args: argparse.Namespace, environ: Mapping[str, str]) ->
     return EXIT_OK
 
 
+# --- group-exchange-trades ------------------------------------------------------------
+
+
+def group_exchange_trades(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.exchange.imports.group_stored_trades once for a workspace (phase 6 D178
+    amended (3), migration 0043): every exchange trade imported before 0043 tied as one
+    movement group, its legs superseded by grouped rows. `--dry-run` rolls everything back."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.exchange.imports import group_stored_trades
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:group-exchange-trades")
+                result = group_stored_trades(new_command(conn, args.workspace, actor))
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    verb = "would group" if args.dry_run else "grouped"
+    print(f"{verb} {result.groups} exchange trade(s) of {result.movements} movement(s)")
+    verb = "would give" if args.dry_run else "gave"
+    print(f"{verb} {result.fees} acquisition(s) the fee their trade paid in EUR")
+    for label in result.skipped:
+        print(
+            f"skipped the exchange account {label}: its provider is neither BISON nor Binance, "
+            "so its trades were not grouped"
+        )
+    return EXIT_OK
+
+
 # --- repair-periods -------------------------------------------------------------------
 
 
@@ -790,6 +842,16 @@ def _parser() -> argparse.ArgumentParser:
     report_prices.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     report_prices.add_argument("--dry-run", action="store_true", help="count only, change nothing")
     report_prices.set_defaults(command=store_report_prices, command_name="store-report-prices")
+
+    trades = commands.add_parser(
+        "group-exchange-trades",
+        help="tie each exchange trade imported before migration 0043 (its acquisition, "
+        "disposal and fee movements) as one movement group, so the lots read its given leg "
+        "and its fee (once, after the deploy of D178 amended (3))",
+    )
+    trades.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    trades.add_argument("--dry-run", action="store_true", help="count only, change nothing")
+    trades.set_defaults(command=group_exchange_trades, command_name="group-exchange-trades")
 
     follow = commands.add_parser(
         "follow-accounts",

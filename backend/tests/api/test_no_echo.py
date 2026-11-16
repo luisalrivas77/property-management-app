@@ -311,7 +311,10 @@ BANK_PIN_TOO_LONG = "GEHEIM-PIN-" + "9" * 60  # 71 characters
     ("pin", "status"), [(BANK_PIN, 200), (BANK_PIN_TOO_LONG, 422)], ids=["stored", "refused"]
 )
 def test_a_bank_pin_is_never_echoed_or_logged(client_a, logs, pin, status):
-    response = client_a.put("/api/bank-credentials/primary", json={"pin": pin})
+    response = client_a.put(
+        "/api/bank-credentials/primary",
+        json={"pin": pin, "fints_url": "https://fints.example.org/fints"},
+    )
     assert response.status_code == status
     if status == 422:
         [error] = response.json()["detail"]

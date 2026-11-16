@@ -111,8 +111,9 @@ def bank_credential_set(
     slot: Slot, body: BankPinSet, cmd: Cmd, settings: SettingsDep
 ) -> AppCredential:
     """D196: the PIN is encrypted before it reaches the database; the answer names the slot
-    and when, never the PIN."""
-    return cmd.run(set_pin, slot, body.pin, settings=settings)
+    and when, never the PIN. The PIN is bound to the FinTS address in the same body (D196
+    amended)."""
+    return cmd.run(set_pin, slot, body.pin, fints_url=body.fints_url, settings=settings)
 
 
 @router.delete("/bank-credentials/{slot}", status_code=204)

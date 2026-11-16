@@ -1906,7 +1906,8 @@ export interface paths {
         /**
          * Bank Credential Set
          * @description D196: the PIN is encrypted before it reaches the database; the answer names the slot
-         *     and when, never the PIN.
+         *     and when, never the PIN. The PIN is bound to the FinTS address in the same body (D196
+         *     amended).
          */
         put: operations["bank_credential_set_api_bank_credentials__slot__put"];
         post?: never;
@@ -4460,6 +4461,11 @@ export interface components {
              * @default true
              */
             name_readable: boolean;
+            /**
+             * Credential Server Matches
+             * @default true
+             */
+            credential_server_matches: boolean;
         };
         /**
          * BankConnectionCreate
@@ -4520,6 +4526,11 @@ export interface components {
          *     never returned, logged or echoed (a SecretStr: its repr is stars). Surrounding blanks are
          *     trimmed, as the container secret's are (settings._optional), so a PIN pasted with a space
          *     is the same PIN; the length counts after trimming.
+         *
+         *     fints_url (D196 amended, 16 Nov 2026): the FinTS address the PIN is typed for, the
+         *     connection's as the card shows it. The PIN is stored bound to it and a sync to any other
+         *     address refuses it (bank.pin_server_changed), so changing a connection's address never
+         *     sends the stored PIN elsewhere. Never echoed or stored readable.
          */
         BankPinSet: {
             /**
@@ -4527,6 +4538,8 @@ export interface components {
              * Format: password
              */
             pin: string;
+            /** Fints Url */
+            fints_url: string;
         };
         /**
          * BankStatement
@@ -6151,7 +6164,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "movement_group.proposed" | "movement_group.confirmed" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.

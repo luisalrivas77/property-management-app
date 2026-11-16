@@ -544,9 +544,36 @@ def _context(
 
 def _lock(ctx: CommandContext) -> None:
     """One linker at a time per workspace, so two lines booked at once never both link the
-    same counterpart (released at commit or rollback)."""
+    same counterpart (released at commit or rollback).
+
+    Lock order (D162 amended (8), fixed 16 Nov 2026): an exchange account's row is always
+    taken before this lock, never after it. An exchange import locks its account's row and
+    then takes this lock in its relink, so a command that may learn an exchange's deposit IBAN
+    (accounts.learn_exchange_deposit_iban locks that row) takes the row first too:
+    link_by_hand through _lock_exchanges, a person's answer with the deposit box ticked through
+    lock_deposit_exchange."""
     key = func.hashtextextended(f"transfer_link:{ctx.workspace_id}", 0)
     ctx.conn.execute(select(func.pg_advisory_xact_lock(key)))
+
+
+def _lock_exchanges(ctx: CommandContext, movement_ids: Iterable[UUID | None]) -> None:
+    """The rows of the exchange accounts the movements `movement_ids` belong to, locked in id
+    order before the transfer lock (_lock's lock order): a link by hand of an exchange's
+    deposit may learn its IBAN, which locks that row, while an exchange import holds it and
+    waits for the transfer lock in its relink. Other accounts are not locked."""
+    ids = [m for m in movement_ids if m is not None]
+    if not ids:
+        return
+    acc, m = account_table.c, movement_table.c
+    ctx.conn.execute(
+        select(acc.id)
+        .where(
+            acc.id.in_(select(m.account_id).where(m.id.in_(ids))),
+            acc.kind == AccountKind.EXCHANGE.value,
+        )
+        .order_by(acc.id)
+        .with_for_update()
+    ).all()
 
 
 def _columns(out: TransferLeg, in_: TransferLeg) -> dict[str, UUID]:
@@ -1115,7 +1142,11 @@ def link_by_hand(
     422 transfer.legs_invalid when such a leg is not tied to the other by an own IBAN. The
     re-booking may let the matcher link the pair itself (allocations.record_set's hook): that
     link is returned; a link of either leg to another counterpart is a 409 and nothing is
-    written."""
+    written.
+
+    The exchange's row is locked before the transfer lock (_lock's lock order, D162 amended
+    (8)), so a link by hand and an exchange import never wait for each other in a circle."""
+    _lock_exchanges(ctx, (body.out_movement_id, body.in_movement_id))
     _lock(ctx)
     out, in_ = _pair(ctx.conn, body)
     # D162 amended 15 Nov 2026: a private bank line paying a deposit the exchange credited up
@@ -1307,6 +1338,23 @@ def deposit_iban_offer(conn: Connection, transaction_id: UUID) -> DepositIbanOff
     )
 
 
+def lock_deposit_exchange(ctx: CommandContext, transaction_id: UUID) -> UUID | None:
+    """D162 amended (8), lock order (fixed 16 Nov 2026): review.allocate_transaction calls it
+    first, before the line's lock, when a person's answer ticks the box „IBAN als
+    Einzahlungskonto von <Börse> merken“: the row of the exchange the panel would name
+    (deposit_iban_offer, read only) is locked, so learn_deposit_iban_on_confirm takes no row
+    lock after the transfer lock the answer's own hook may take (_lock's lock order). The
+    exchange's id, or None when no box would be shown (nothing locked: an exchange that holds
+    an IBAN already is never locked by a person's answer). The caller learns only for the
+    exchange locked here: a link committed between this read and the line's lock names
+    another or none, and teaches nothing this time (the box shows again)."""
+    offer = deposit_iban_offer(ctx.conn, transaction_id)
+    if offer is None:
+        return None
+    _lock_exchanges(ctx, (offer.deposit_movement_id,))
+    return offer.exchange_account_id
+
+
 def learn_deposit_iban_on_confirm(
     ctx: CommandContext, transaction_id: UUID, offer: DepositIbanOffer
 ) -> DepositIbanOutcome | None:
@@ -1318,11 +1366,11 @@ def learn_deposit_iban_on_confirm(
     internal_transfer_out (the whole line or the transfer plus its fee), is still the out leg
     of the current link to that same deposit, the line's counterparty IBAN becomes the
     exchange's deposit IBAN. The outcome is read first (accounts.deposit_iban_outcome, no
-    lock) and the exchange's row is locked only to learn (accounts.learn_exchange_deposit_iban
-    reads it again under the lock): an exchange that holds an IBAN already is never locked by
-    a person's answer. A link the answer itself lets the matcher write was not on the panel
-    and teaches nothing. Only a person's command. The outcome, or None when nothing was to
-    learn."""
+    lock) and learned under the exchange's row lock (accounts.learn_exchange_deposit_iban reads
+    it again there), which lock_deposit_exchange took before the line's (the lock order): an
+    exchange that holds an IBAN already is never locked by a person's answer. A link the
+    answer itself lets the matcher write was not on the panel and teaches nothing. Only a
+    person's command. The outcome, or None when nothing was to learn."""
     from . import accounts  # accounts imports services that import this module
 
     if ctx.actor.actor_type is not ActorType.USER:

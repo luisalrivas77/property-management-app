@@ -147,7 +147,7 @@ def run_bank_sync(
     run = _Run(plan, log=log)
     session: FintsSession | None = None
     try:
-        pin = _pin(deps, workspace_id, plan.credential_slot)
+        pin = _pin(deps, workspace_id, plan.credential_slot, plan.fints_url)
         session = open_session(
             bank_code=plan.bank_code,
             login_name=plan.login_name,
@@ -509,14 +509,15 @@ def _await(
     return pending.value
 
 
-def _pin(deps: JobDeps, workspace_id: UUID, slot: str) -> str:
+def _pin(deps: JobDeps, workspace_id: UUID, slot: str, fints_url: str) -> str:
     """The slot's PIN for this dialog (D196): the one typed into the app, decrypted, else the
     container secret; read in its own transaction, kept in this frame only. begin_run checked
-    that one exists; one deleted since, or a stored one that no longer decrypts, fails the run
-    before any dialog (a RuleError's message never carries the PIN)."""
+    that one exists; one deleted since, a stored one that no longer decrypts, or one typed for
+    another FinTS address than `fints_url`, the one this dialog dials (D196 amended), fails
+    the run before any dialog (a RuleError's message never carries the PIN or the address)."""
     try:
         with workspace_transaction(deps.engine, workspace_id) as conn:
-            return credentials.resolve_pin(conn, slot, deps.settings)
+            return credentials.resolve_pin(conn, slot, deps.settings, fints_url=fints_url)
     except RuleError as exc:
         raise BankError(exc.code) from None
 
