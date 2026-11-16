@@ -19,7 +19,7 @@ import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
 import { ADDRESS_KIND, CHAIN } from "./labels";
 import { Loading, Notice } from "./ui";
 import { useLoad } from "./useLoad";
-import { GroupCards, HiddenTokens, STATE_BADGE, SyncPanel, useWalletState } from "./wallet-cards";
+import { AnsweredGroups, GroupCards, HiddenTokens, STATE_BADGE, SyncPanel, useWalletState } from "./wallet-cards";
 
 /** The chains a 0x address is read on with one click besides Ethereum (D179 (2)). */
 const EVM_EXTRA: Chain[] = ["arbitrum", "bsc"];
@@ -92,9 +92,10 @@ export function WalletSection({ accountId }: { accountId: string }) {
               ) : null}
               <ErrorNotice error={state.error} />
             </div>
-            {state.data ? <SyncPanel accountId={accountId} state={state.data} onSynced={changed} /> : null}
+            {state.data ? <SyncPanel accountId={accountId} state={state.data} onPoll={state.reload} onSynced={changed} /> : null}
             <GroupCards accountId={accountId} version={version} onChanged={changed} />
             <HiddenTokens accountId={accountId} version={version} onChanged={changed} />
+            <AnsweredGroups accountId={accountId} version={version} onChanged={changed} />
             <AddAddress accountId={accountId} onAdded={changed} />
           </div>
         );

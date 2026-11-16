@@ -2661,6 +2661,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wallets/{account_id}/answered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet Answered Groups
+         * @description The groups a person answered or confirmed, newest first (at most 50); no spam group.
+         */
+        get: operations["wallet_answered_groups_api_wallets__account_id__answered_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Group Undo
+         * @description „Antwort zurücknehmen“: the new proposed group with the sync's classification. 422
+         *     wallet.answer_unfit for a group no person answered, a spam group or one a transfer link
+         *     touches; wallet.group_done for one no longer live.
+         */
+        post: operations["wallet_group_undo_api_groups__group_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/groups/{group_id}/change": {
         parameters: {
             query?: never;
@@ -12458,12 +12500,47 @@ export interface components {
          * WalletAnswer
          * @description A person's answer to a proposed group (D183 (5)), built for groups whose legs all go
          *     one way: „Bezahlung“ (out: a disposal), „Geschenk oder Zahlung erhalten“ (in: an
-         *     acquisition at a typed cost or 0), „Belohnung“ (in: a staking reward) and „Spam“ (in,
-         *     tokens only: hidden from then on, D187). „Tausch“ and
+         *     acquisition at a typed cost, 0 when 0 is typed, unknown (NULL, D188) when none is),
+         *     „Belohnung“ (in: a staking reward) and „Spam“ (in, tokens the registry does not list and
+         *     the household does not hold only: hidden from then on, D187). „Tausch“ and
          *     „Übertrag an eigene Wallet/Börse“ need the legs picked and a transfer link (step 5).
          * @enum {string}
          */
         WalletAnswer: "payment" | "gift" | "reward" | "spam";
+        /**
+         * WalletAnsweredGroup
+         * @description GET /wallets/{id}/answered: a live group a person answered or confirmed, its legs in
+         *     plain words. `undoable`: „Antwort zurücknehmen“ applies (no transfer link touches its
+         *     legs); it re-proposes the transaction as the sync first classified it.
+         */
+        WalletAnsweredGroup: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            chain: components["schemas"]["Chain"];
+            kind: components["schemas"]["GroupKind"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Text */
+            text: string;
+            /** Legs */
+            legs?: components["schemas"]["WalletLeg"][];
+            /**
+             * Undoable
+             * @default false
+             */
+            undoable: boolean;
+        };
         /**
          * WalletCardKind
          * @description What a live proposed movement group asks of a person.
@@ -12472,9 +12549,11 @@ export interface components {
         WalletCardKind: "proposed" | "change" | "unreadable" | "question" | "unstorable";
         /**
          * WalletGroup
-         * @description GET /wallets/{id}/groups: one card per live proposed group (D183 (1)). `confirmable`:
-         *     „Bestätigen“ keeps it as it stands (no question, no leg left uncategorized); `answers`:
-         *     the corrections that fit its legs.
+         * @description GET /wallets/{id}/groups: one card per open group (D183 (1)): live and proposed, or
+         *     holding a live proposed leg (a leg a later sync added to an answered group). `text`,
+         *     `confirmable` and `answers` are about its proposed legs: „Bestätigen“ keeps them as they
+         *     stand (no question, no leg left uncategorized); `answers` are the corrections that fit
+         *     them. `legs` lists every live leg, each with its status.
          */
         WalletGroup: {
             /**
@@ -12512,8 +12591,9 @@ export interface components {
         };
         /**
          * WalletGroupAnswerBody
-         * @description POST /groups/{gid}/answer. `cost_eur` only with `gift` (the acquisition's cost; 0 for
-         *     a gift, D183 (5)).
+         * @description POST /groups/{gid}/answer. `cost_eur` only with `gift` and one leg: the acquisition's
+         *     cost; a gift is typed as 0. Without it the cost stays unknown (NULL): the lots price it by
+         *     the day or show „Kurs fehlt“ (D183 (5), D188).
          */
         WalletGroupAnswerBody: {
             answer: components["schemas"]["WalletAnswer"];
@@ -12575,6 +12655,7 @@ export interface components {
             /** Symbol */
             symbol: string;
             kind: components["schemas"]["MovementKind"];
+            status: components["schemas"]["MovementStatus"];
             /** Quantity */
             quantity: string;
         };
@@ -18200,6 +18281,68 @@ export interface operations {
                 "application/json": components["schemas"]["WalletGroupAnswerBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroupDone"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_answered_groups_api_wallets__account_id__answered_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletAnsweredGroup"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_group_undo_api_groups__group_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

@@ -162,6 +162,7 @@ export type WalletHolding = Schemas["WalletHolding"];
 export type WalletGroup = Schemas["WalletGroup"];
 export type WalletLeg = Schemas["WalletLeg"];
 export type WalletAnswer = Schemas["WalletAnswer"];
+export type WalletAnsweredGroup = Schemas["WalletAnsweredGroup"];
 export type WalletCardKind = Schemas["WalletCardKind"];
 export type ChangeCard = Schemas["ChangeCard"];
 export type HiddenToken = Schemas["HiddenToken"];

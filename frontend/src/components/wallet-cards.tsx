@@ -9,10 +9,11 @@
 // - GroupCards: each transaction Hausbuch proposes or asks about, with „Bestätigen“ and the
 //   answers that fit its legs (D183 (5)); a Bitcoin change card asks per output (D185 (2)).
 // - HiddenTokens: tokens hidden as spam, with „Kein Spam“ (D187 (3)).
-import { useCallback, useId, useState } from "react";
+// - AnsweredGroups: the transactions a person answered, with „Antwort zurücknehmen“.
+import { useCallback, useEffect, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
-import type { WalletAddressState, WalletAnswer, WalletGroup, WalletHolding, WalletState } from "@/api/schemas";
+import type { WalletAddressState, WalletAnswer, WalletAnsweredGroup, WalletGroup, WalletHolding, WalletState } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { notifyInboxChanged } from "@/lib/inboxCount";
 
@@ -63,16 +64,62 @@ export function useWalletState(accountId: string) {
   return useLoad(load);
 }
 
-/** „Jetzt abrufen“ and the holdings table. */
-export function SyncPanel({ accountId, state, onSynced }: { accountId: string; state: WalletState; onSynced: () => void }) {
+/** How often and how long the page re-reads the state after „Jetzt abrufen“. */
+const POLL_MS = 4000;
+const POLL_TICKS = 45;
+
+type Poll = {
+  queued: number;
+  /** Each address's last finished run when the sync was started. */
+  before: Record<string, string | null>;
+  ticks: number;
+  done: boolean;
+};
+
+/** „Jetzt abrufen“ and the holdings table. After a queued sync the state is re-read every few
+ * seconds (`onPoll`) until every queued address has a newer run, then the page's cards load
+ * again (`onSynced`), so nobody has to reload the page. */
+export function SyncPanel({
+  accountId,
+  state,
+  onPoll,
+  onSynced,
+}: {
+  accountId: string;
+  state: WalletState;
+  onPoll: () => void;
+  onSynced: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [queued, setQueued] = useState<number | null>(null);
+  const [poll, setPoll] = useState<Poll | null>(null);
+  const statuses = state.statuses ?? [];
+  const finished = poll ? statuses.filter((status) => (status.finished_at ?? null) !== (poll.before[status.address_id] ?? null)).length : 0;
+  const running = poll !== null && !poll.done && finished < poll.queued && poll.ticks < POLL_TICKS;
+
+  useEffect(() => {
+    if (!poll || poll.done) return;
+    const timer = setTimeout(
+      () => {
+        if (running) {
+          setPoll((current) => current && { ...current, ticks: current.ticks + 1 });
+          onPoll();
+        } else {
+          setPoll((current) => current && { ...current, done: true });
+          onSynced();
+        }
+      },
+      running ? POLL_MS : 0,
+    );
+    return () => clearTimeout(timer);
+  });
 
   async function sync() {
     setBusy(true);
     setError(null);
     setQueued(null);
+    setPoll(null);
     try {
       const answer = await ok(
         api.POST("/api/wallets/{account_id}/sync", {
@@ -80,6 +127,10 @@ export function SyncPanel({ accountId, state, onSynced }: { accountId: string; s
         }),
       );
       setQueued(answer.addresses);
+      if (answer.addresses > 0) {
+        const before = Object.fromEntries(statuses.map((status) => [status.address_id, status.finished_at ?? null]));
+        setPoll({ queued: answer.addresses, before, ticks: 0, done: false });
+      }
       onSynced();
     } catch (caught) {
       setError(caught);
@@ -87,6 +138,7 @@ export function SyncPanel({ accountId, state, onSynced }: { accountId: string; s
       setBusy(false);
     }
   }
+  const late = poll !== null && poll.done && finished < poll.queued;
 
   return (
     <div className="card stack">
@@ -97,15 +149,22 @@ export function SyncPanel({ accountId, state, onSynced }: { accountId: string; s
       </p>
       {(state.holdings ?? []).length === 0 ? <p className="muted">Noch kein Bestand gelesen.</p> : <HoldingsTable holdings={state.holdings ?? []} />}
       <div className="row">
-        <button type="button" onClick={() => void sync()} disabled={busy}>
-          {busy ? "Startet …" : "Jetzt abrufen"}
+        <button type="button" onClick={() => void sync()} disabled={busy || running}>
+          {busy ? "Startet …" : running ? "Abruf läuft …" : "Jetzt abrufen"}
         </button>
       </div>
       {queued === 0 ? <Notice>Diese Wallet hat keine aktive Adresse; es gibt nichts abzurufen.</Notice> : null}
-      {queued !== null && queued > 0 ? (
+      {queued !== null && queued > 0 && !late ? (
         <Notice>
-          Abruf gestartet für {queued === 1 ? "1 Adresse" : `${queued} Adressen`}. Das Ergebnis erscheint hier, sobald er fertig ist; bitte
-          die Seite dann neu laden.
+          {poll?.done
+            ? "Abruf fertig; Bestand und Transaktionen auf dieser Seite sind aktualisiert."
+            : `Abruf läuft für ${queued === 1 ? "1 Adresse" : `${queued} Adressen`}. Das Ergebnis erscheint hier von selbst, sobald er fertig ist.`}
+        </Notice>
+      ) : null}
+      {late ? (
+        <Notice>
+          Der Abruf dauert länger als üblich, etwa weil eine Wallet viele Transaktionen hat. Er läuft weiter; das Ergebnis erscheint, wenn
+          Sie diese Seite später wieder öffnen.
         </Notice>
       ) : null}
       <ErrorNotice error={error} />
@@ -200,7 +259,11 @@ function GroupCard({ group, onDone }: { group: WalletGroup; onDone: () => void }
   const path = { params: { path: { group_id: group.id } } };
   const legs = group.legs ?? [];
   const answers = group.answers ?? [];
-  const moving = legs.filter((leg) => leg.kind !== "fee");
+  // A later sync can add a leg to a transaction already answered: the answer is about the
+  // proposed legs only, the confirmed ones stay as they are.
+  const proposed = legs.filter((leg) => leg.status === "proposed");
+  const moving = (proposed.length > 0 ? proposed : legs).filter((leg) => leg.kind !== "fee");
+  const transferHint = answers.includes("payment") || answers.includes("gift") || answers.includes("reward");
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -246,6 +309,7 @@ function GroupCard({ group, onDone }: { group: WalletGroup; onDone: () => void }
             {legs.map((leg) => (
               <li key={leg.movement_id}>
                 {formatUnits(leg.quantity)} {leg.symbol} · {MOVEMENT_KIND[leg.kind]}
+                {proposed.length > 0 && leg.status === "confirmed" ? " (bereits bestätigt)" : null}
                 {leg.address_masked ? (
                   <>
                     {" "}
@@ -279,6 +343,12 @@ function GroupCard({ group, onDone }: { group: WalletGroup; onDone: () => void }
               </button>
             ))}
           </div>
+        ) : null}
+        {transferHint ? (
+          <p className="muted hint">
+            Ging das an eine eigene Börse oder Wallet oder kam es von dort, lassen Sie die Transaktion vorerst offen: Hausbuch verknüpft
+            solche Überträge bald selbst, und eine Antwort hier würde sie als Kauf oder Ausgabe zählen.
+          </p>
         ) : null}
         {answers.includes("gift") && moving.length === 1 ? (
           <div className="field">
@@ -449,6 +519,84 @@ export function HiddenTokens({ accountId, version, onChanged }: { accountId: str
                 </tbody>
               </table>
             </div>
+            <ErrorNotice error={error} />
+          </details>
+        )
+      }
+    </Loading>
+  );
+}
+
+/** The transactions a person answered or confirmed (newest first). „Antwort zurücknehmen“
+ * keeps the answer in the history and proposes the transaction again as the sync first read
+ * it, so the card shows above once more; not while a transfer link uses its legs. */
+export function AnsweredGroups({ accountId, version, onChanged }: { accountId: string; version: number; onChanged: () => void }) {
+  const load = useCallback(
+    () =>
+      ok(
+        api.GET("/api/wallets/{account_id}/answered", {
+          params: { path: { account_id: accountId } },
+        }),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accountId, version],
+  );
+  const groups = useLoad(load);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  async function undo(group: WalletAnsweredGroup) {
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(
+        api.POST("/api/groups/{group_id}/undo", {
+          params: { path: { group_id: group.id } },
+        }),
+      );
+      groups.reload();
+      onChanged();
+      notifyInboxChanged();
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Loading state={groups}>
+      {(list) =>
+        list.length === 0 ? null : (
+          <details className="card stack">
+            <summary>
+              <strong>Beantwortete Transaktionen ({list.length})</strong>
+            </summary>
+            <p className="muted">
+              Hier stehen die Transaktionen, die Sie bestätigt oder beantwortet haben. War eine Antwort falsch, „Antwort zurücknehmen“
+              wählen: die Transaktion erscheint dann oben wieder zum Prüfen; Ihre frühere Antwort bleibt im Verlauf.
+            </p>
+            <ul className="checklist-items">
+              {list.map((group) => (
+                <li key={group.id} className="checklist-item">
+                  <div className="row">
+                    <span>
+                      <strong>
+                        {CHAIN[group.chain]} · {formatDateTime(group.occurred_at)}
+                      </strong>{" "}
+                      {group.text}
+                    </span>
+                    {group.undoable ? (
+                      <button type="button" className="secondary" onClick={() => void undo(group)} disabled={busy}>
+                        Antwort zurücknehmen
+                      </button>
+                    ) : (
+                      <span className="muted">mit einem Übertrag verknüpft, nicht zurücknehmbar</span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
             <ErrorNotice error={error} />
           </details>
         )

@@ -7125,6 +7125,92 @@
         }
       }
     },
+    "/api/wallets/{account_id}/answered": {
+      "get": {
+        "summary": "Wallet Answered Groups",
+        "description": "The groups a person answered or confirmed, newest first (at most 50); no spam group.",
+        "operationId": "wallet_answered_groups_api_wallets__account_id__answered_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WalletAnsweredGroup"
+                  },
+                  "title": "Response Wallet Answered Groups Api Wallets  Account Id  Answered Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/{group_id}/undo": {
+      "post": {
+        "summary": "Wallet Group Undo",
+        "description": "„Antwort zurücknehmen“: the new proposed group with the sync's classification. 422\nwallet.answer_unfit for a group no person answered, a spam group or one a transfer link\ntouches; wallet.group_done for one no longer live.",
+        "operationId": "wallet_group_undo_api_groups__group_id__undo_post",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletGroupDone"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/groups/{group_id}/change": {
       "get": {
         "summary": "Wallet Change Card",
@@ -31585,7 +31671,60 @@
           "spam"
         ],
         "title": "WalletAnswer",
-        "description": "A person's answer to a proposed group (D183 (5)), built for groups whose legs all go\none way: „Bezahlung“ (out: a disposal), „Geschenk oder Zahlung erhalten“ (in: an\nacquisition at a typed cost or 0), „Belohnung“ (in: a staking reward) and „Spam“ (in,\ntokens only: hidden from then on, D187). „Tausch“ and\n„Übertrag an eigene Wallet/Börse“ need the legs picked and a transfer link (step 5)."
+        "description": "A person's answer to a proposed group (D183 (5)), built for groups whose legs all go\none way: „Bezahlung“ (out: a disposal), „Geschenk oder Zahlung erhalten“ (in: an\nacquisition at a typed cost, 0 when 0 is typed, unknown (NULL, D188) when none is),\n„Belohnung“ (in: a staking reward) and „Spam“ (in, tokens the registry does not list and\nthe household does not hold only: hidden from then on, D187). „Tausch“ and\n„Übertrag an eigene Wallet/Börse“ need the legs picked and a transfer link (step 5)."
+      },
+      "WalletAnsweredGroup": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/Chain"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GroupKind"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/WalletLeg"
+            },
+            "type": "array",
+            "title": "Legs"
+          },
+          "undoable": {
+            "type": "boolean",
+            "title": "Undoable",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "chain",
+          "kind",
+          "occurred_at",
+          "text"
+        ],
+        "title": "WalletAnsweredGroup",
+        "description": "GET /wallets/{id}/answered: a live group a person answered or confirmed, its legs in\nplain words. `undoable`: „Antwort zurücknehmen“ applies (no transfer link touches its\nlegs); it re-proposes the transaction as the sync first classified it."
       },
       "WalletCardKind": {
         "type": "string",
@@ -31676,7 +31815,7 @@
           "text"
         ],
         "title": "WalletGroup",
-        "description": "GET /wallets/{id}/groups: one card per live proposed group (D183 (1)). `confirmable`:\n„Bestätigen“ keeps it as it stands (no question, no leg left uncategorized); `answers`:\nthe corrections that fit its legs."
+        "description": "GET /wallets/{id}/groups: one card per open group (D183 (1)): live and proposed, or\nholding a live proposed leg (a leg a later sync added to an answered group). `text`,\n`confirmable` and `answers` are about its proposed legs: „Bestätigen“ keeps them as they\nstand (no question, no leg left uncategorized); `answers` are the corrections that fit\nthem. `legs` lists every live leg, each with its status."
       },
       "WalletGroupAnswerBody": {
         "properties": {
@@ -31702,7 +31841,7 @@
           "answer"
         ],
         "title": "WalletGroupAnswerBody",
-        "description": "POST /groups/{gid}/answer. `cost_eur` only with `gift` (the acquisition's cost; 0 for\na gift, D183 (5))."
+        "description": "POST /groups/{gid}/answer. `cost_eur` only with `gift` and one leg: the acquisition's\ncost; a gift is typed as 0. Without it the cost stays unknown (NULL): the lots price it by\nthe day or show „Kurs fehlt“ (D183 (5), D188)."
       },
       "WalletGroupDone": {
         "properties": {
@@ -31849,6 +31988,9 @@
           "kind": {
             "$ref": "#/components/schemas/MovementKind"
           },
+          "status": {
+            "$ref": "#/components/schemas/MovementStatus"
+          },
           "quantity": {
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
@@ -31862,6 +32004,7 @@
           "asset_id",
           "symbol",
           "kind",
+          "status",
           "quantity"
         ],
         "title": "WalletLeg"
