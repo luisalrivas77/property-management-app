@@ -59,6 +59,8 @@ German; their numbers are sample data, never fixtures.
   - `uv run ruff check . && uv run ruff format --check .`
   - `uv run pytest -q -rs -n auto` (parallel with pytest-xdist, one throwaway database per
     worker; drop `-n auto` to run serially; db tests need `HAUSBUCH_TEST_ADMIN_URL`, a superuser URL).
+    `--shard i/n` runs one of n disjoint parts by whole test files (`tests/conftest.py`); CI runs
+    the suite as three parts in parallel jobs (since 16 Nov 2026; one job took about 4m40s)
     On the shared dev box use `-n 4`: `auto` starts 8 workers there, each importing the app for
     tens of seconds, and with other agents on the same cores that ran slower than 4
   - `uv run alembic upgrade head` (needs `HAUSBUCH_DATABASE_URL`; run as the schema owner,
