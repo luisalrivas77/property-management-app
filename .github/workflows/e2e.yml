@@ -12,9 +12,15 @@ on:
       - ".github/workflows/e2e.yml"
 
 jobs:
+  # Two parallel parts (Playwright's own --shard over single tests, fullyParallel), three
+  # workers each: one job of two workers took about 3m30s.
   playwright:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     services:
       postgres:
         image: postgres:16
@@ -43,9 +49,23 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      # node_modules and the browser downloads are cached by the lockfile; npm ci runs only on
+      # a miss (it took about 30 s).
+      - name: Cache node_modules
+        id: node-modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: e2e-node-modules-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
       - name: Frontend dependencies
+        if: steps.node-modules.outputs.cache-hit != 'true'
         working-directory: frontend
         run: npm ci
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
       - name: Chromium for Playwright
         working-directory: frontend
         # The browser itself comes from Playwright's CDN; its system libraries come from apt,
@@ -62,12 +82,13 @@ jobs:
         working-directory: frontend
         env:
           HAUSBUCH_E2E_ARTIFACTS: ${{ runner.temp }}/e2e
-        run: npx playwright test
+          HAUSBUCH_E2E_WORKERS: "3"
+        run: npx playwright test --shard=${{ matrix.shard }}/2
       - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/e2e/report
             ${{ runner.temp }}/e2e/results

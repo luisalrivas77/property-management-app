@@ -49,7 +49,8 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0, // a flaky e2e test is a bug to fix, not to retry
-  workers: process.env.CI ? 2 : 3,
+  // CI sets HAUSBUCH_E2E_WORKERS (e2e.yml); a GitHub runner has four cores.
+  workers: Number(process.env.HAUSBUCH_E2E_WORKERS ?? (process.env.CI ? 2 : 3)),
   timeout: 90_000,
   expect: { timeout: 10_000 },
   reporter: [
