@@ -378,6 +378,25 @@ def test_account_scope_and_a_waiting_question(dbname, world, wallet, sync):
     )
     assert groups == [("unknown", "proposed", True)]
 
+    # the run that wrote the card kept its original (D182 (3) amended, migration 0044) ...
+    def documents():
+        return [
+            r[0]
+            for r in _rows(
+                dbname,
+                "SELECT document_id IS NOT NULL FROM wallet_sync WHERE address_id = %s"
+                " ORDER BY started_at",
+                a,
+            )
+        ]
+
+    assert documents() == [True, True]
+    # ... and a run that reads the same card again (an overlapping cursor) keeps none
+    world.txs[SOL_A].append(_tx(3, question="Ist die Ausgabe 2 eine eigene Adresse?"))
+    sync(ws, a)
+    assert documents() == [True, True, False]
+    assert len(_rows(dbname, "SELECT 1 FROM movement_group WHERE account_id = %s", account)) == 3
+
 
 def test_account_scope_the_last_address_of_the_run_decides(
     dbname, world, wallet, app_engine, blob_store

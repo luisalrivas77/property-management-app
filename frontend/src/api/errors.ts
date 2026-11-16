@@ -288,6 +288,11 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Das ist keine gültige Adresse für die gewählte Chain. Bitte die öffentliche Adresse unverändert aus der Wallet kopieren; das Format steht unter dem Feld.",
   "wallet.address_taken":
     "Diese Adresse ist schon eingetragen: auf einem anderen eigenen Konto, oder auf dieser Wallet schon für jede gewählte Chain. Eine stillgelegte Adresse lässt sich in der Liste mit „Wieder aktivieren“ zurückholen.",
+  // Phase 7 step 4 (D185 amended): „Nein, Empfänger“ on a Bitcoin change card.
+  "wallet.change_answered":
+    "Diese Frage ist schon beantwortet oder hat sich geändert, etwa durch eine andere Antwort. Bitte die Seite neu laden und die aktuelle Frage beantworten.",
+  "wallet.original_missing":
+    "Die Daten zu dieser Zahlung wurden bei ihrem Abruf nicht gespeichert, deshalb lässt sich die Frage hier nicht beantworten. Die Zahlung bleibt als offene Frage auf der Wallet stehen.",
   // D193: why a document cannot be deleted; each names what still depends on it.
   "document.delete_blocked.statement_import": "Aus diesem Auszug wurden Umsätze eingelesen; sie bleiben unverändert im Konto.",
   "document.delete_blocked.bank_statement": "Es ist ein Kontoauszug, den die Bank über den Bankabruf geliefert hat; er gehört ins Jahresarchiv.",

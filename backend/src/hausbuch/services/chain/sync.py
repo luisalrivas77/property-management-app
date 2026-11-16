@@ -161,6 +161,7 @@ from hausbuch.services.chain.base import (
     reconcile_scope,
     source_for,
 )
+from hausbuch.services.chain.payee_answers import answered_payee
 from hausbuch.services.context import Actor, CommandContext, new_command
 from hausbuch.services.documents import type_document, upload_document
 from hausbuch.services.events import append_event
@@ -435,6 +436,7 @@ def _context(
     account_id: UUID,
     own: dict[str, _Own],
     native_asset_id: UUID,
+    answered_payee: Callable[[str], bool] | None = None,
 ) -> ClassifyContext:
     every_own = conn.execute(
         select(address_table.c.address).where(
@@ -498,6 +500,7 @@ def _context(
         own_address_ids={a: o.id for a, o in own.items()},
         native_asset_id=native_asset_id,
         asset_ids=asset_ids,
+        answered_payee=answered_payee,
         exchange_hashes=frozenset(h.strip() for h in exchange_hashes if h.strip()),
     )
 
@@ -672,8 +675,15 @@ def _log_refused(start: _Start, reason: str) -> None:
 
 
 def _live_group(ctx: CommandContext, start: _Start, tx_hash: str):
+    """The transaction's live group: id, status, question and whether it has no movement."""
+    no_movement = ~exists().where(movement_table.c.group_id == group_table.c.id)
     return ctx.conn.execute(
-        select(group_table.c.id, group_table.c.status)
+        select(
+            group_table.c.id,
+            group_table.c.status,
+            group_table.c.question,
+            no_movement.label("legless"),
+        )
         .where(
             group_table.c.account_id == start.account_id,
             group_table.c.chain == start.chain.value,
@@ -785,9 +795,17 @@ def _insert_group(
 
 
 def _write_movements(
-    ctx: CommandContext, start: _Start, plan: _Plan, live, original: _Original
+    ctx: CommandContext,
+    start: _Start,
+    plan: _Plan,
+    live,
+    original: _Original,
+    replaces: UUID | None = None,
 ) -> int:
-    """The group (or the live group of the same transaction) and its new legs' movements."""
+    """The group (or the live group of the same transaction) and its new legs' movements.
+    `replaces`: a live legless card the new group supersedes (its legs arrived). A new card
+    without legs keeps the run's original too, so it can be answered from the stored
+    original alone (D182 (3) amended, D192; review of PR #387)."""
     group = plan.group
     routing = _route(start, group)  # the new legs alone when they join a live group
     auto = routing.decision is RoutingDecision.AUTO_CONFIRM
@@ -809,6 +827,14 @@ def _write_movements(
             group.decoder,
         )
         confirmed = auto
+        if replaces is not None:
+            ctx.conn.execute(
+                update(group_table)
+                .where(group_table.c.id == replaces, group_table.c.superseded_by.is_(None))
+                .values(superseded_by=group_id)
+            )
+        if not plan.legs and not auto and group.question is not None:
+            original.ensure(ctx, start)  # the question's transaction, for its answer
     if not plan.legs:
         return 0
     movement_status = MovementStatus.CONFIRMED if confirmed else MovementStatus.PROPOSED
@@ -913,9 +939,17 @@ def _write_group(ctx: CommandContext, start: _Start, plan: _Plan, original: _Ori
             return written
     if dropped and not keep and (group.question is None or live is not None):
         return _Written(spam_dropped=dropped)  # nothing of the transaction is left to write
+    replaces = None
+    if live is not None and keep and live.legless and live.question is not None:
+        # legs arrived for a question card (an output's address registered since): the card
+        # gives way to the group derived now, never a card with legs joined into it (review
+        # of PR #387). A group that already has legs is joined as before (D182 (2)).
+        replaces, live = live.id, None
     kept = _Plan(replace(group, legs=[leg for leg, _, _ in keep]), keep)
     try:
-        n = _savepoint(ctx, original, lambda: _write_movements(ctx, start, kept, live, original))
+        n = _savepoint(
+            ctx, original, lambda: _write_movements(ctx, start, kept, live, original, replaces)
+        )
     except (_Unstorable, DataError, IntegrityError):  # a leg or the group the database refuses
         written = _write_unstorable(ctx, start, group, original, "refused")
         written.spam_dropped = dropped
@@ -1105,7 +1139,7 @@ def _write(
     account_pending: bool = False,
 ) -> SyncOutcome:
     plans = _plan(ctx, start, read)
-    writing = [p for p in plans if p.legs or p.unstorable]
+    writing = [p for p in plans if p.legs or p.unstorable or p.group.question is not None]
     original = _Original(store, read, max((p.group.occurred_at for p in writing), default=None))
     new = spam_dropped = unstorable = 0
     written_at: list[datetime] = []
@@ -1312,7 +1346,13 @@ def _begin(
         own = _own_of(conn, row.account_id, chain)
         own.setdefault(row.address, _Own(row.id, bytes(row.address_hmac).hex()))
         cursor, caught_up = _last_cursor(conn, address_id)
-        ctx = _context(conn, chain, row.address, row.account_id, own, native.id)
+        # Bitcoin: the account's „Nein, Empfänger“ answers (D185 (2)), so none is asked again
+        payees = (
+            answered_payee(conn, row.account_id, settings.iban_hmac_key)
+            if chain is Chain.BITCOIN
+            else None
+        )
+        ctx = _context(conn, chain, row.address, row.account_id, own, native.id, payees)
         reads_tokens = getattr(source, "reads_tokens", False) is True
         stored_tokens = _stored_tokens(conn, chain, own) if reads_tokens else {}
         host = _host(source)
