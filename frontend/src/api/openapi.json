@@ -21393,7 +21393,8 @@
         "enum": [
           "transfer.ambiguous",
           "transfer.unmatched_leg",
-          "transfer.proposed"
+          "transfer.proposed",
+          "transfer.partial"
         ],
         "title": "OpenTransferCode",
         "description": "GET /transfers/open: why a leg waits for a person (D162). proposed: a counterpart\nfits but no link was written (a leg without an own IBAN, or one booked before the\nother)."

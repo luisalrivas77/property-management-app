@@ -748,6 +748,10 @@ class OpenTransferCode(StrEnum):
     AMBIGUOUS = "transfer.ambiguous"
     UNMATCHED_LEG = "transfer.unmatched_leg"
     PROPOSED = "transfer.proposed"
+    # Phase 7 step 5 review (D184 (1)(a)): a coin leg whose transaction pays an own leg of
+    # other units (part of the coins went elsewhere, or one send paid several own receipts).
+    # The candidates are shown, never offered as a pick: no link of them is right.
+    PARTIAL = "transfer.partial"
 
 
 class OpenTransfer(Schema):

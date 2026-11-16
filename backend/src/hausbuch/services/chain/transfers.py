@@ -16,24 +16,35 @@ registry's, else its own symbol); an asset with none is never a leg.
 
 relink(ctx) runs the matcher over every open sending leg (not in a current link) with every
 open receiving leg as a candidate, the workspace's chain_pair rows (D191) as extra bridges and
-wraps. A linked result is written (matched_by matcher) when:
+wraps. A linked result with no rival send is written (matched_by matcher) only when its units
+fit and:
 
-1. both legs are confirmed; or
-2. the two legs share their transaction hash, the link is of kind chain, nothing else fits the
-   receiving leg, and each proposed leg may be confirmed by code (D186 (1): an exchange's
-   withdrawal by hash, own address to own address): an exchange row with a transfer kind, or
-   a leg whose group is a transfer or exchange_transfer that waits only for its link (routed
-   routing.no_match, so never a wallet's first sync, which waits for a person) and holds no
-   leg but the pair's and its fees. The link confirms them in the same transaction (the
-   group, its legs and its fees, each with its event), so the sync's `linked` (which the
-   classifiers leave false, §15.1) is filled here, after the fact.
+1. both legs are confirmed, and a bridge or wrap is one the workspace's chain_pair holds
+   (D186 (1); a pair the registry alone knows is always a person's pick); or
+2. the two legs share their transaction hash, the link is of kind chain, and each proposed leg
+   may be confirmed by code (D186 (1): an exchange's withdrawal by hash, own address to own
+   address): an exchange row with a transfer kind, or a leg whose group is a transfer or
+   exchange_transfer that waits only for its link (routed routing.no_match, so never a
+   wallet's first sync, which waits for a person) and holds no leg but the pair's, its fees
+   and the rent of a token account the send opened. The link confirms them in the same
+   transaction (the group, its legs and its fees, each with its event; a group with its rent
+   leg stays proposed for a person), so the sync's `linked` (which the classifiers leave
+   false, §15.1) is filled here, after the fact.
 
-Anything else (an amount-only fit, a bridge, a first sync, an ambiguous fit) waits for a person
-on a card of GET /transfers/open: transfer.proposed with the one fit, transfer.ambiguous with
-every fit, transfer.unmatched_leg once a transfer leg's 48 hours have passed and a wallet that
-could hold its counterpart exists. The person's pick (POST /transfers, link_by_hand) confirms
-both legs as the person's answer and writes the link (matched_by user), only for a pair the
-matcher itself fits, of the kind it reads.
+The units fit (D184 (1)(a), review of PR #396) for a pair of kind chain when the sent units
+less the exchange's fee_quantity equal the received units within the chain's dust, also under
+one hash: a hash names the transaction, not what each own address got of it. A bridge's units
+are the matcher's fee-share fit, a wrap's its unit fit.
+
+Anything else (an amount-only fit, a bridge, a wrap, a first sync, an ambiguous fit) waits for
+a person on a card of GET /transfers/open: transfer.proposed with the one fit,
+transfer.ambiguous with every fit, transfer.partial when the transaction's hash names own legs
+of other units (part of the coins went elsewhere, or one send paid several own receipts: they
+are shown, no pick is offered, and the wallet's answer for it is not built yet), and
+transfer.unmatched_leg once a transfer leg's 48 hours have passed and a wallet that could hold
+its counterpart exists. The person's pick (POST /transfers, link_by_hand) confirms both legs
+as the person's answer and writes the link (matched_by user), only for a pair the matcher
+itself fits, of the kind it reads, whose units fit (else 422 transfer.units_differ).
 
 Currentness is decided on read, as phase 6's: services.transfers._current_links counts a chain,
 bridge or wrap link only while both legs are live, whoever wrote it, so re-booking a leg
@@ -70,9 +81,17 @@ from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import movement_group as group_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.db.tables import wallet_address as address_table
-from hausbuch.rules.chain.match_transfer import WINDOW, ChainLeg, ChainMatch, match
+from hausbuch.rules.chain.match_transfer import (
+    WINDOW,
+    ChainLeg,
+    ChainMatch,
+    _contract,
+    _joins,
+    _units_fit,
+    match,
+)
 from hausbuch.rules.chain.registry import registry
-from hausbuch.rules.errors import TRANSFER_LEGS_INVALID
+from hausbuch.rules.errors import TRANSFER_LEGS_INVALID, TRANSFER_UNITS_DIFFER
 from hausbuch.rules.household.assets import registry as asset_registry
 from hausbuch.rules.review import DETERMINISTIC, NO_MATCH
 from hausbuch.schemas.allocation import AllocationCategory, TransferLegSource
@@ -397,6 +416,35 @@ def _same_hash(a: _Row, b: _Row) -> bool:
     return same(a.leg(), b.leg())
 
 
+def _fits(out: _Row, in_: _Row, kind: TransferLinkKind | None) -> bool:
+    """D184 (1)(a) for a pair of kind chain: the sent units less the exchange's fee_quantity
+    against the received units, within the chain's dust (match_transfer._units_fit, the one
+    formula). The matcher compares units only without a hash: a hash names the transaction,
+    not what each own address got of it, so 1.0 sent and 0.4 received under one hash (0.6 to a
+    third party in the same transaction, or a second own receipt) is no transfer of 1.0 (review
+    of PR #396). A bridge's units are the matcher's fee-share fit, a wrap's its unit fit."""
+    return kind is not TransferLinkKind.CHAIN or _units_fit(out.leg(), in_.leg())
+
+
+def _learned(world: "_World", out: _Row, in_: _Row, kind: TransferLinkKind) -> bool:
+    """D186 (1): a bridge or a wrap is linked by code only once the workspace's chain_pair
+    (D191) holds its pair, even with both legs confirmed; a pair the registry alone knows waits
+    for a person's pick (review of PR #396). chain_pair is not written yet (§15.1), so today
+    this is never true."""
+    sent = (out.chain, _contract(out.contract))
+    got = (in_.chain, _contract(in_.contract))
+    if kind is TransferLinkKind.BRIDGE:
+        return any(_joins(p, sent, got) for p in world.bridges)  # type: ignore[arg-type]
+    if kind is TransferLinkKind.WRAP:
+        return any(
+            chain is out.chain
+            and w.native == out.priced
+            and {sent[1], got[1]} == {None, _contract(w.wrapped)}
+            for chain, w in world.wraps
+        )
+    return True
+
+
 # --- Confirming legs ------------------------------------------------------------------------
 
 
@@ -412,10 +460,10 @@ def _group_reason(conn: Connection, group_id: UUID) -> str | None:
 
 
 def _group_rest(conn: Connection, group_id: UUID) -> list:
-    """The group's live movements that are not a fee: id, status."""
+    """The group's live movements that are not a fee: id, status, kind, index."""
     m = movement_table.c
     return conn.execute(
-        select(m.id, m.status).where(
+        select(m.id, m.status, m.kind, m.index).where(
             m.group_id == group_id,
             m.superseded_by.is_(None),
             m.kind != MovementKind.FEE.value,
@@ -438,7 +486,16 @@ def _code_may_confirm(conn: Connection, leg: _Row, pair: set[UUID]) -> bool:
         return False
     if _group_reason(conn, leg.group_id) != NO_MATCH:
         return False  # a first sync (or anything but a missing link) waits for a person
-    return {r.id for r in _group_rest(conn, leg.group_id)} <= pair
+    return {r.id for r in _group_rest(conn, leg.group_id) if not _rent(r)} <= pair
+
+
+def _rent(row) -> bool:  # noqa: ANN001 - a _group_rest row
+    """The SOL rent an account opener paid into a new own token account (rules/chain/solana:
+    an airdrop leg of index `rent`): an own send that creates the receiving wallet's token
+    account brings one beside the token. It does not keep the hash link from confirming the
+    pair, and it is not confirmed by it: it stays proposed, and its group with it, for a
+    person on the wallet's page (review of PR #396)."""
+    return row.index == "rent" and row.kind == MovementKind.AIRDROP.value
 
 
 def _lock_rows(ctx: CommandContext, legs: Iterable[_Row], *, wait_for_none: bool) -> bool:
@@ -622,6 +679,10 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
         other = next(r for r in world.legs if str(r.id) == found.counterpart.ref)
         if world.rivals(leg, other):
             continue  # two sends fit one receipt: the card asks which
+        if not _fits(leg, other, found.link):
+            continue  # part of the coins went elsewhere: a transfer.partial card
+        if found.link is not TransferLinkKind.CHAIN and not _learned(world, leg, other, found.link):
+            continue  # a bridge or wrap the workspace has not confirmed: a person's pick
         pair = {leg.id, other.id}
         if not (leg.confirmed and other.confirmed):
             if found.link is not TransferLinkKind.CHAIN or not _same_hash(leg, other):
@@ -692,14 +753,20 @@ def is_coin_link(conn: Connection, body: TransferLinkCreate) -> bool:
     return any(k == AssetKind.CRYPTO.value for k in kinds)
 
 
-def link_by_hand(ctx: CommandContext, body: TransferLinkCreate) -> TransferLink:
+def link_by_hand(
+    ctx: CommandContext, body: TransferLinkCreate, *, freed: frozenset[UUID] = frozenset()
+) -> TransferLink:
     """POST /transfers for two coin legs (services.transfers.link_by_hand calls it after its
     locks): the person's pick on a transfer.proposed or transfer.ambiguous card. 404 for a leg
     that is no open coin leg; the pair linked already returns its link; 409 when a leg is in
     another link or being answered right now; 422 transfer.legs_invalid when the matcher does
     not fit the pair or reads another kind than the body names. Both legs are confirmed by the
     person's answer (their groups too, once nothing else of them waits), then linked
-    (matched_by user)."""
+    (matched_by user).
+
+    freed: the legs of the link services.transfers.unlink replaces (that link still current
+    while the replacement is written): counted as free, and a replacement of the same pair is
+    written anew rather than returned."""
     from ..transfers import _link_of
 
     assert body.out_movement_id is not None and body.in_movement_id is not None
@@ -710,15 +777,20 @@ def link_by_hand(ctx: CommandContext, body: TransferLinkCreate) -> TransferLink:
         raise NotFoundError("movement", body.out_movement_id)
     if in_ is None:
         raise NotFoundError("movement", body.in_movement_id)
-    already = _link_of(ctx.conn, out.id, in_.id)
+    already = None if freed else _link_of(ctx.conn, out.id, in_.id)
     if already is not None:
         return already
-    if out.id in world.linked or in_.id in world.linked:
+    linked = world.linked - freed
+    if out.id in linked or in_.id in linked:
         raise ConflictError("a leg of this transfer is linked already")
     found = world.match(out, [in_]) if out.sends and not in_.sends else None
     if found is None or found.result != "linked" or found.link is not body.kind:
         raise RuleViolationError(
             [TRANSFER_LEGS_INVALID], "these two coin legs are no transfer of this kind"
+        )
+    if not _fits(out, in_, found.link):
+        raise RuleViolationError(
+            [TRANSFER_UNITS_DIFFER], "the receiving leg holds other units than were sent"
         )
     _lock_rows(ctx, (out, in_), wait_for_none=False)
     if not _still(ctx.conn, (out, in_)):
@@ -767,14 +839,22 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
         by_ref = {str(r.id): r for r in world.legs}
         if found.result == "linked" and found.counterpart is not None:
             other = by_ref[found.counterpart.ref]
-            rivals = world.rivals(leg, other)
-            code = OpenTransferCode.AMBIGUOUS if rivals else OpenTransferCode.PROPOSED
+            if not _fits(leg, other, found.link):
+                code = OpenTransferCode.PARTIAL
+            elif world.rivals(leg, other):
+                code = OpenTransferCode.AMBIGUOUS
+            else:
+                code = OpenTransferCode.PROPOSED
             candidates = [other.view(found.link)]
         elif found.result == "ambiguous":
-            code = OpenTransferCode.AMBIGUOUS
-            candidates = [
-                by_ref[c.ref].view(world.match(leg, [by_ref[c.ref]]).link) for c in found.candidates
+            fits = [
+                (by_ref[c.ref], world.match(leg, [by_ref[c.ref]]).link) for c in found.candidates
             ]
+            kept = [(c, kind) for c, kind in fits if _fits(leg, c, kind)]
+            # one send that paid several own receipts under its hash (none of them all of it):
+            # every receipt shown, no pick offered (review of PR #396)
+            code = OpenTransferCode.AMBIGUOUS if kept else OpenTransferCode.PARTIAL
+            candidates = [c.view(kind) for c, kind in (kept or fits)]
         elif (
             leg.kind is MovementKind.INTERNAL_TRANSFER_OUT
             and _window_end(leg) < today

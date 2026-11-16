@@ -293,6 +293,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Diese Frage ist schon beantwortet oder hat sich geändert, etwa durch eine andere Antwort. Bitte die Seite neu laden und die aktuelle Frage beantworten.",
   "wallet.original_missing":
     "Die Daten zu dieser Zahlung wurden bei ihrem Abruf nicht gespeichert, deshalb lässt sich die Frage hier nicht beantworten. Die Zahlung bleibt als offene Frage auf der Wallet stehen.",
+  // Phase 7 step 5, review of PR #396 (D184 (1)(a)): a coin pair whose units do not fit.
+  "transfer.units_differ":
+    "Auf dem anderen Konto kam eine andere Menge an, als hier abging: ein Teil der Coins ging in derselben Transaktion an eine andere Adresse. Deshalb sind die beiden kein Übertrag; die Transaktion wird auf der Seite der Wallet beantwortet.",
   // D193: why a document cannot be deleted; each names what still depends on it.
   "document.delete_blocked.statement_import": "Aus diesem Auszug wurden Umsätze eingelesen; sie bleiben unverändert im Konto.",
   "document.delete_blocked.bank_statement": "Es ist ein Kontoauszug, den die Bank über den Bankabruf geliefert hat; er gehört ins Jahresarchiv.",

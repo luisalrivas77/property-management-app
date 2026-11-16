@@ -1074,6 +1074,19 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
     case "transfer_unmatched": {
       const open = item.transfer;
       if (!open) return null;
+      if (open.code === "transfer.partial") {
+        // Phase 7 step 5, review of PR #396: the transaction's own legs of other units are
+        // shown, never offered as a pick (no link of them is right); it is answered on the
+        // wallet's page.
+        return (
+          <span className="stack">
+            {open.candidates.map((candidate) => (
+              <span key={candidate.id}>{legText(candidate)}</span>
+            ))}
+            <Link href={`/accounts/${open.leg.account_id}`}>Konto öffnen</Link>
+          </span>
+        );
+      }
       if (open.candidates.length > 0) return <TransferPick open={open} accounts={data.accounts} onLinked={onChanged} />;
       if (open.leg.amount == null) {
         // Phase 7 step 5: a coin leg's other side is a wallet (added and fetched under Konten)

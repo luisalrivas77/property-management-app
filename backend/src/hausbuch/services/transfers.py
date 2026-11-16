@@ -1486,7 +1486,17 @@ def unlink(ctx: CommandContext, link_id: UUID, replacement: TransferLinkCreate) 
     """POST /transfers/{id}/unlink: the wrong link is replaced by the one the user picks; the
     old row names the new one in superseded_by (append-only), events transfer.unlinked and
     transfer.linked. 404 for an unknown link; 409 when it is superseded already or a leg of
-    the replacement belongs to another current link."""
+    the replacement belongs to another current link.
+
+    Phase 7 step 5, review of PR #396: a replacement of two coin legs is checked and written as
+    a coin link by hand (chain_transfers.link_by_hand, the old link's legs counted as free),
+    whatever kind the old link was; the exchange's row is locked before the transfer lock, as
+    link_by_hand's order."""
+    from .chain import transfers as chain_transfers  # it imports this module
+
+    coin = chain_transfers.is_coin_link(ctx.conn, replacement)
+    if coin:
+        _lock_exchanges(ctx, (replacement.out_movement_id, replacement.in_movement_id))
     _lock(ctx)
     c = link_table.c
     old = ctx.conn.execute(select(link_table).where(c.id == link_id)).one_or_none()
@@ -1494,7 +1504,6 @@ def unlink(ctx: CommandContext, link_id: UUID, replacement: TransferLinkCreate) 
         raise NotFoundError("transfer", link_id)
     if old.superseded_by is not None:
         raise ConflictError("this link was replaced already")
-    out, in_ = _pair(ctx.conn, replacement)
     freed = {
         i
         for i in (
@@ -1505,10 +1514,14 @@ def unlink(ctx: CommandContext, link_id: UUID, replacement: TransferLinkCreate) 
         )
         if i is not None
     }
-    linked = _linked_ids(ctx.conn) - freed
-    if out.leg.id in linked or in_.leg.id in linked:
-        raise ConflictError("a leg of the replacement is linked already")
-    new = _write(ctx, out.leg, in_.leg, replacement.kind, TransferMatchedBy.USER)
+    if coin:
+        new = chain_transfers.link_by_hand(ctx, replacement, freed=frozenset(freed))
+    else:
+        out, in_ = _pair(ctx.conn, replacement)
+        linked = _linked_ids(ctx.conn) - freed
+        if out.leg.id in linked or in_.leg.id in linked:
+            raise ConflictError("a leg of the replacement is linked already")
+        new = _write(ctx, out.leg, in_.leg, replacement.kind, TransferMatchedBy.USER)
     ctx.conn.execute(update(link_table).where(c.id == link_id).values(superseded_by=new.id))
     append_event(ctx, EventType.TRANSFER_UNLINKED, link_id, TransferUnlinked(superseded_by=new.id))
     return new
@@ -1949,6 +1962,28 @@ _COIN_UNMATCHED_REASON = (
     "Zu dieser Krypto-Überweisung zwischen zwei eigenen Konten fehlt nach 48 Stunden die "
     "Gegenbuchung auf dem anderen Konto oder Wallet."
 )
+# Review of PR #396 (D184 (1)(a)): the transaction's hash names an own leg of other units, so no
+# link is offered; one candidate or several, said plainly. The wallet's own answer for such a
+# transaction is not built yet (docs/phases/phase-7.md §15.1).
+_COIN_PARTIAL_REASON = (
+    "In derselben Transaktion kam auf dem anderen eigenen Konto eine andere Menge an, als hier "
+    "abging: ein Teil der Coins ging an eine andere Adresse. Ein Übertrag verbindet nur gleich "
+    "große Mengen, deshalb wird hier nichts verknüpft; die Transaktion wird auf der Seite der "
+    "Wallet beantwortet."
+)
+_COIN_SPLIT_REASON = (
+    "Diese Sendung ging in einer Transaktion an mehrere eigene Empfänge (unten aufgeführt). Ein "
+    "Übertrag verbindet eine Sendung mit genau einem gleich großen Empfang, deshalb ist keine "
+    "Auswahl richtig; die Transaktion wird auf der Seite der Wallet beantwortet."
+)
+
+
+def _coin_reason(item: OpenTransfer) -> str:
+    if item.code is OpenTransferCode.UNMATCHED_LEG:
+        return _COIN_UNMATCHED_REASON
+    if item.code is OpenTransferCode.PARTIAL:
+        return _COIN_SPLIT_REASON if len(item.candidates) > 1 else _COIN_PARTIAL_REASON
+    return _COIN_LINK_REASON[item.code]
 
 
 def transfer_inbox_items(conn: Connection, today: date) -> list[InboxItem]:
@@ -1962,7 +1997,7 @@ def transfer_inbox_items(conn: Connection, today: date) -> list[InboxItem]:
             InboxItem(
                 kind=InboxItemKind.TRANSFER_UNMATCHED if unmatched else InboxItemKind.TRANSFER_LINK,
                 created_at=datetime.combine(item.window_end, time(), tzinfo=UTC),
-                reasoning=(_COIN_UNMATCHED_REASON if unmatched else _COIN_LINK_REASON[item.code])
+                reasoning=_coin_reason(item)
                 if coin
                 else _UNMATCHED_REASON
                 if unmatched
@@ -1970,7 +2005,9 @@ def transfer_inbox_items(conn: Connection, today: date) -> list[InboxItem]:
                 if any(c.deposit_fee is not None for c in item.candidates)
                 else _LINK_REASON[item.code],
                 question=(
-                    "Welche Buchung ist die Gegenbuchung?"
+                    "Wohin gingen die Coins dieser Transaktion?"
+                    if item.code is OpenTransferCode.PARTIAL
+                    else "Welche Buchung ist die Gegenbuchung?"
                     if item.candidates
                     else "Ist das Konto der Gegenbuchung schon importiert?"
                 ),
