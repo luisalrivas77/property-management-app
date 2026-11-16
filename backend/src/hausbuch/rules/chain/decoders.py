@@ -8,13 +8,13 @@ an amount, which DecoderRow's extra="forbid" refuses on load. The workspace's ow
 from collections.abc import Sequence
 from functools import cache
 from importlib.resources import files
-from typing import Self
+from typing import Literal, Self
 
 import yaml
 from pydantic import model_validator
 
 from hausbuch.rules.chain.registry import registry
-from hausbuch.schemas.chain import Chain, DecoderKind, DecoderRow
+from hausbuch.schemas.chain import CHAIN_FAMILY, Chain, ChainFamily, DecoderKind, DecoderRow
 from hausbuch.schemas.common import Schema
 
 
@@ -49,13 +49,40 @@ def public_decoders() -> tuple[DecoderRow, ...]:
     return tuple(parse(text).decoders)
 
 
+DecoderSource = Literal["workspace", "public"]
+
+
+def decoder_lookup(
+    chain: Chain,
+    program: str,
+    method: str | None,
+    workspace_rows: Sequence[DecoderRow] = (),
+    public_rows: Sequence[DecoderRow] | None = None,
+) -> tuple[DecoderRow, DecoderSource] | None:
+    """`decoder_for` with where the row came from. `public_rows` defaults to decoders.yaml; a
+    test passes its own."""
+    public = public_decoders() if public_rows is None else public_rows
+    if CHAIN_FAMILY[chain] is ChainFamily.EVM:
+        program = program.lower()  # D180 amended (b): EVM addresses are stored lower-case
+    methods = [None] if method is None else [method, None]
+    for wanted in methods:
+        for source, rows in (("workspace", workspace_rows), ("public", public)):
+            for row in rows:
+                if row.chain is chain and row.program == program and row.method == wanted:
+                    return row, source
+    return None
+
+
 def decoder_for(
     chain: Chain,
     program: str,
     method: str | None,
     workspace_rows: Sequence[DecoderRow] = (),
+    public_rows: Sequence[DecoderRow] | None = None,
 ) -> DecoderRow | None:
     """D191: the row for one program call, a workspace row winning over a public one with the
-    same chain, program and method, a method-specific row over a method-less one. Fixture
-    tests/fixtures/phase7/decoders.yaml; built in step 2."""
-    raise NotImplementedError("phase 7 step 2")
+    same chain, program and method, a method-specific row over a method-less one (a
+    method-less row covers any method of its program). Fixture
+    tests/fixtures/phase7/decoders.yaml."""
+    found = decoder_lookup(chain, program, method, workspace_rows, public_rows)
+    return None if found is None else found[0]

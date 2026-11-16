@@ -52,6 +52,14 @@ from .matching import (
 from .month_end import MONTH_END_CRON, MONTH_END_LOCK, MONTH_END_TASK, run_month_end
 from .notify import NOTIFY_CRON, NOTIFY_LOCK, NOTIFY_TASK, run_send_reminders
 from .scrub import SCRUB_CRON, SCRUB_TASK, run_scrub_proposals
+from .sync_wallets import (
+    SYNC_WALLET_TASK,
+    SYNC_WALLETS_CRON,
+    SYNC_WALLETS_LOCK,
+    SYNC_WALLETS_TASK,
+    run_sync_wallet,
+    run_sync_wallets,
+)
 from .tax_export import run_tax_export
 
 DEPS_KEY = "hausbuch_deps"
@@ -227,6 +235,18 @@ def month_end(context: JobContext, *, timestamp: int) -> None:
     run_month_end(deps)
 
 
+def sync_wallets(context: JobContext, *, timestamp: int) -> None:
+    """Phase 7 D182 (1), daily at 06:45: every active wallet address, oldest sync first."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_sync_wallets(deps)
+
+
+def sync_wallet(context: JobContext, *, workspace_id: str, account_id: str) -> None:
+    """„Jetzt abrufen“ on a wallet's page: that wallet's addresses."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_sync_wallet(deps, workspace_id=UUID(workspace_id), account_id=UUID(account_id))
+
+
 def register_tasks(app: procrastinate.App) -> procrastinate.App:
     """The queued tasks, plus scrub_proposals as a periodic task: the worker's periodic
     deferrer queues it at SCRUB_CRON. Procrastinate skips a schedule missed by more than
@@ -274,4 +294,11 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     # a time; each capture takes its workspace's advisory lock and writes only a missing one.
     worth = app.task(name=MONTH_END_TASK, pass_context=True, lock=MONTH_END_LOCK)(month_end)
     app.periodic(cron=MONTH_END_CRON, periodic_id=MONTH_END_TASK)(worth)
+    # No retry: a failed address is read again the next day from the same cursor. One lock
+    # for the daily run and „Jetzt abrufen“, so no address is read twice at once.
+    wallets = app.task(name=SYNC_WALLETS_TASK, pass_context=True, lock=SYNC_WALLETS_LOCK)(
+        sync_wallets
+    )
+    app.periodic(cron=SYNC_WALLETS_CRON, periodic_id=SYNC_WALLETS_TASK)(wallets)
+    app.task(name=SYNC_WALLET_TASK, pass_context=True, lock=SYNC_WALLETS_LOCK)(sync_wallet)
     return app
