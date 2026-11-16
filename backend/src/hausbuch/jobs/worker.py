@@ -183,8 +183,7 @@ def build_worker(
 ) -> JobWorker:
     """The production worker. With the AI layer off there is no model client and every
     document_read ends at gate 1 (ai.disabled); the worker still runs the queue."""
-    if model_client is None and settings.ai_enabled:
-        assert settings.anthropic_api_key  # Settings checks it
+    if model_client is None and settings.ai_enabled and settings.anthropic_api_key:
         model_client = AnthropicModelClient(
             settings.anthropic_api_key, timeout_s=settings.ai_timeout_s
         )

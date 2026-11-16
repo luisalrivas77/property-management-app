@@ -14,7 +14,9 @@ one request and then none until a person presses „Jetzt abrufen“, which rest
 a manual run with the approval polled. A failed latest run also waits for a person (except
 bank.unreachable), so a wrong PIN is never tried again on the next morning.
 
-Inert while the FinTS PIN or product id is not configured: one log line, nothing read.
+A workspace without a usable product id (the container's, or one typed under Einstellungen ›
+Zugangsschlüssel, phase 6 D260) is skipped; a run in which no workspace has one ends as
+not_configured: one log line, no sync queued.
 
 Each account is queued in a transaction of its own, so one account's error (e.g.
 bank.window_invalid) is logged by its code and the others still run. Nothing personal is
@@ -47,7 +49,8 @@ logger = logging.getLogger("hausbuch.jobs.bank_sync_schedule")
 
 @dataclass
 class ScheduleResult:
-    """What one run did: `status` is done or not_configured; `outcomes` counts the accounts
+    """What one run did: `status` is done, or not_configured when no visited workspace has a
+    usable product id (D260: resolved per workspace); `outcomes` counts the accounts
     by what happened to them (queued, or rules.schedule_skip's reason, or off); `codes`
     counts the rule codes of accounts that could not be queued."""
 
@@ -76,21 +79,20 @@ def run_bank_sync_scheduled(
 ) -> ScheduleResult:
     """One daily run. `workspace_ids` is for tests; the task passes none, so every provisioned
     workspace is visited. Never raises for one workspace's or one account's failure."""
-    if not service.configured(deps.settings):
-        result = ScheduleResult("not_configured")
-        _log(result)
-        return result
-    result = ScheduleResult("done")
+    result = ScheduleResult("not_configured")
     now = deps.clock()
     ids = provisioned_workspace_ids(deps.engine) if workspace_ids is None else workspace_ids
     for workspace_id in sorted(ids):
         try:
             with workspace_transaction(deps.engine, workspace_id) as conn:
+                if not service.configured(service.bank_settings(conn, deps.settings)):
+                    continue  # no product id for this workspace (D260): nothing to queue
                 accounts = service.auto_sync_accounts(conn)
         except Exception as exc:  # class name only: a driver message can quote parameters
             result.failed_workspaces += 1
             result.codes[type(exc).__name__] += 1
             continue
+        result.status = "done"
         result.workspaces += 1
         for account_id in accounts:
             try:

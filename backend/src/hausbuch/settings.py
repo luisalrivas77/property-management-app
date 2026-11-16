@@ -139,7 +139,8 @@ class Settings:
     run_worker: bool = True  # the in-process job worker (§3.7)
     worker_concurrency: int = DEFAULT_WORKER_CONCURRENCY
     shutdown_grace_s: int = DEFAULT_SHUTDOWN_GRACE_S
-    # AI layer (phase 2). Off by default: production turns it on with the key.
+    # AI layer (phase 2). Off by default: production turns it on; the key is this variable or
+    # typed in the app (D260, services.app_secrets), resolved per job.
     ai_enabled: bool = False
     anthropic_api_key: str | None = field(default=None, repr=False)
     ai_model_classify: str = DEFAULT_AI_MODEL_CLASSIFY
@@ -272,12 +273,9 @@ class Settings:
         name the variables, never their values."""
         self._merge_fints_pins()
         # Phase 6 D196: a PIN may be typed in the app instead (bank_credential), so the product
-        # id alone is valid; a container PIN without the product id is still refused.
-        if self.fints_pins and self.fints_product_id is None:
-            raise SettingsError(
-                "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID: a PIN needs the product id "
-                "(a HAUSBUCH_FINTS_PIN_<SLOT> too; the product id alone is valid, D196)"
-            )
+        # id alone is valid. Phase 6 D260: the product id may be typed in the app too
+        # (app_secret), so a container PIN alone is valid as well; a sync whose workspace has
+        # no usable product id from either source fails with bank.not_configured.
         if (self.inbox_imap_user is None) != (self.inbox_imap_password is None):
             raise SettingsError(
                 "HAUSBUCH_INBOX_IMAP_USER and HAUSBUCH_INBOX_IMAP_PASSWORD are set together or "
@@ -306,8 +304,9 @@ class Settings:
             raise SettingsError("HAUSBUCH_TEM_REGION must be a Scaleway region such as fr-par")
 
     def _check_ai(self) -> None:
-        if self.ai_enabled and not self.anthropic_api_key:
-            raise SettingsError("HAUSBUCH_AI_ENABLED=true needs HAUSBUCH_ANTHROPIC_API_KEY")
+        # Phase 6 D260: HAUSBUCH_AI_ENABLED=true no longer needs HAUSBUCH_ANTHROPIC_API_KEY;
+        # the key may be typed in the app per workspace, and a job whose workspace has neither
+        # ends at gate 1 (ai.disabled), as with the AI layer off.
         if self.ai_inference_geo not in INFERENCE_GEOS:
             raise SettingsError(
                 f"HAUSBUCH_AI_INFERENCE_GEO must be one of {', '.join(INFERENCE_GEOS)}"
