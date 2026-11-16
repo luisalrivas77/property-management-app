@@ -60,19 +60,16 @@ providers:
     urls: ["https://esplora.example.invalid/api", "https://mirror.example.invalid/api"]
     expect: {same_as_first: true}
   - id: solana_two_urls
-    pending: "phase 7 step 2 (services/chain/solana_rpc)"
     chain: solana
     records_from: solana_tx.native_send_with_fee
     urls: ["https://rpc-one.example.invalid", "https://rpc-two.example.invalid"]
     expect: {same_as_first: true}
   - id: solana_replay_without_source
-    pending: "phase 7 step 2 (replay over wallet_sync originals)"
     chain: solana
     records_from: solana_tx.swap_listed_amm
     urls: []
     expect: {same_as_first: true}
   - id: refused_provider
-    pending: "phase 7 step 2 (services/chain/base.ChainSourceError)"
     chain: solana
     records_from: solana_tx.native_receive
     urls: ["https://rpc-one.example.invalid"]
