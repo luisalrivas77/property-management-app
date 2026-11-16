@@ -730,11 +730,10 @@ _FAILED_CARD = {
     ),
     # D196 amended: a PIN typed into the app is sent only to the address it was typed for.
     E.BANK_PIN_SERVER_CHANGED: (
-        "Die in Hausbuch gespeicherte PIN wurde für eine andere FinTS-Adresse eingegeben als die"
-        " dieses Bankabrufs: Hausbuch sendet sie nur an die Adresse, für die sie eingegeben"
-        " wurde.",
-        "Im Bankabruf die FinTS-Adresse prüfen, „PIN ändern“ wählen, die PIN neu eingeben und"
-        " erneut abrufen.",
+        "Die in Hausbuch gespeicherte PIN muss einmal neu eingegeben werden: Hausbuch sendet sie"
+        " nur an die FinTS-Adresse, für die sie eingegeben wurde. Eine vor dem 16.11.2026"
+        " eingegebene PIN nennt noch keine Adresse; sonst wurde die Adresse seither geändert.",
+        "Im Bankabruf „PIN ändern“ wählen, die PIN neu eingeben und erneut abrufen.",
     ),
     E.BANK_LOGIN_UNREADABLE: (
         "Der gespeicherte Anmeldename lässt sich nicht mehr lesen: der Schlüssel des Servers"

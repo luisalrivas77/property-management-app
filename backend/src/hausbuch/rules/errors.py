@@ -281,3 +281,7 @@ GROUP_UNKNOWN = "group.unknown"  # no rule reads the transaction (D183 (3f))
 GROUP_CONTRACT_CALL = "group.contract_call"  # a shape no rule reads (D183 (4))
 GROUP_UNPRICED = "group.unpriced"  # a leg without the day's price (D188 (4))
 GROUP_LP_UNDECIDED = "group.lp_undecided"  # a pool position, phase 8 decides (D183 (4))
+# Phase 7 step 6 (D190): „Bestandsnachweis 31.12.<Jahr> erstellen“ before that day is over in
+# Berlin, or for a year in which no wallet or exchange account had a confirmed movement.
+HOLDINGS_EXPORT_YEAR_OPEN = "holdings_export.year_open"
+HOLDINGS_EXPORT_NOTHING_HELD = "holdings_export.nothing_held"

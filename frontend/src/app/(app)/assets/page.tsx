@@ -8,7 +8,10 @@
 // are the latest depot report's, shown only while that report agrees with the booked trades and
 // nothing was traded after it (D165 (3)); Einstand is the plain sum of the purchases while a
 // fund was only bought (lots are phase 7). The Sparer-Pauschbetrag and Vorabpauschale cards are
-// phase 8 (D170) and carry no figure. The Krypto tab comes with phase 7.
+// phase 8 (D170) and carry no figure.
+//
+// Anlagen › Krypto (phase 7 step 6, ./Crypto.tsx, mockup 09c): lots and the holding period;
+// its „Kurs eintragen“ opens Übersicht's price card with `?kurs=<asset>&tag=<day>`.
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback } from "react";
@@ -21,6 +24,7 @@ import { DOCUMENT_SUBTYPE, PROPOSAL_STATUS } from "@/components/labels";
 import { Loading, TabBar, type Tab } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
+import { CryptoTab } from "./Crypto";
 import { OverviewTab } from "./Overview";
 
 type EtfOverview = components["schemas"]["EtfOverview"];
@@ -32,11 +36,12 @@ type ProposalStatus = components["schemas"]["ProposalStatus"];
 
 const PHASE_8 = "Kommt mit Anlage KAP (Phase 8)";
 
-type TabKey = "uebersicht" | "etf";
+type TabKey = "uebersicht" | "etf" | "krypto";
 
 const TABS: Tab<TabKey>[] = [
   { key: "uebersicht", label: "Übersicht" },
   { key: "etf", label: "ETF" },
+  { key: "krypto", label: "Krypto" },
 ];
 
 export default function AssetsPage() {
@@ -50,17 +55,20 @@ export default function AssetsPage() {
 function Assets() {
   const search = useSearchParams();
   const priceFor = search.get("kurs");
-  const tab: TabKey = search.get("tab") === "etf" && !priceFor ? "etf" : "uebersicht";
+  const priceDay = search.get("tag");
+  const asked = search.get("tab");
+  const tab: TabKey = priceFor ? "uebersicht" : asked === "etf" ? "etf" : asked === "krypto" ? "krypto" : "uebersicht";
+  const heading = tab === "etf" ? "ETF" : tab === "krypto" ? "Krypto" : "Übersicht";
   return (
     <section>
       <div className="page-head">
         <div>
-          <p className="eyebrow">Anlagen · {tab === "etf" ? "ETF" : "Übersicht"}</p>
+          <p className="eyebrow">Anlagen · {heading}</p>
           <h1>Anlagen</h1>
         </div>
       </div>
       <TabBar tabs={TABS} current={tab} href={(key) => (key === "uebersicht" ? "/assets" : `/assets?tab=${key}`)} />
-      {tab === "etf" ? <EtfTab /> : <OverviewTab priceFor={priceFor} />}
+      {tab === "etf" ? <EtfTab /> : tab === "krypto" ? <CryptoTab /> : <OverviewTab priceFor={priceFor} priceDay={priceDay} />}
     </section>
   );
 }

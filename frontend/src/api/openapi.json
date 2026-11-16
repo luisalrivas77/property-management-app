@@ -6655,6 +6655,345 @@
         }
       }
     },
+    "/api/holdings/crypto": {
+      "get": {
+        "summary": "Crypto Holdings",
+        "description": "Every wallet and exchange account with its coins and their open lots (FIFO per account\nand coin), each lot with its day, units, cost and „steuerfrei ab“, or the prices whose\nabsence leaves it without a cost („Kurs fehlt“); the four cards of the tab.",
+        "operationId": "crypto_holdings_api_holdings_crypto_get",
+        "parameters": [
+          {
+            "name": "on",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "On"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CryptoHoldings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wallets/holdings": {
+      "get": {
+        "summary": "Wallets Holdings",
+        "description": "D190's statement at the end of the Berlin day `on`: per account its addresses' units,\nits positions with their open lots and value, the spam tokens (never valued) and the\naddresses whose last sync on or before the day did not reconcile.",
+        "operationId": "wallets_holdings_api_wallets_holdings_get",
+        "parameters": [
+          {
+            "name": "on",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "On"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldingsStatement"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wallets/{account_id}/lots": {
+      "get": {
+        "summary": "Wallet Lots",
+        "description": "The account's open lots on `on`, of one coin with `asset`, in FIFO order. An account\nwith nothing held (or of another workspace) answers an empty list.",
+        "operationId": "wallet_lots_api_wallets__account_id__lots_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "asset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Asset"
+            }
+          },
+          {
+            "name": "on",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "On"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CryptoLot"
+                  },
+                  "title": "Response Wallet Lots Api Wallets  Account Id  Lots Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/holdings": {
+      "post": {
+        "summary": "Holdings Export Create",
+        "description": "„Bestandsnachweis 31.12.<Jahr> erstellen“: one immutable row per wallet and exchange\naccount held on 31 Dec of `year`, its PDF and CSV stored, with signed download links. A\nsecond call writes new rows. 422 holdings_export.year_open before 1 Jan of the next year,\nholdings_export.nothing_held when no such account had a confirmed movement by then.",
+        "operationId": "holdings_export_create_api_exports_holdings_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldingsExportCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HoldingsExport"
+                  },
+                  "title": "Response Holdings Export Create Api Exports Holdings Post"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Holdings Exports List",
+        "description": "The stored statements, newest first, each with download links valid a few minutes.",
+        "operationId": "holdings_exports_list_api_exports_holdings_get",
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 2100,
+                  "minimum": 2009
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HoldingsExport"
+                  },
+                  "title": "Response Holdings Exports List Api Exports Holdings Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/holdings/{export_id}/file": {
+      "get": {
+        "summary": "Holdings Export File",
+        "description": "The PDF or CSV, SHA-256 verified, as an attachment. A wrong or expired signature answers\n404, like an export of another workspace.",
+        "operationId": "holdings_export_file_api_exports_holdings__export_id__file_get",
+        "parameters": [
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Export Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pdf",
+                "csv"
+              ],
+              "type": "string",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "expires",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Expires"
+            }
+          },
+          {
+            "name": "signature",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "title": "Signature"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The statement's bytes",
+            "content": {
+              "application/pdf": {},
+              "text/csv": {}
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/wallets/{account_id}/sync": {
       "post": {
         "summary": "Wallet Sync Start",
@@ -9316,6 +9655,86 @@
         ],
         "title": "AccountCreate"
       },
+      "AccountHoldings": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": ""
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "addresses": {
+            "items": {
+              "$ref": "#/components/schemas/AddressHoldings"
+            },
+            "type": "array",
+            "title": "Addresses"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/PositionHoldings"
+            },
+            "type": "array",
+            "title": "Positions"
+          },
+          "unvalued_tokens": {
+            "items": {
+              "$ref": "#/components/schemas/UnvaluedToken"
+            },
+            "type": "array",
+            "title": "Unvalued Tokens"
+          },
+          "unreconciled_addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unreconciled Addresses"
+          },
+          "movement_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Movement Ids"
+          },
+          "unsynced_addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unsynced Addresses"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id"
+        ],
+        "title": "AccountHoldings",
+        "description": "One wallet or exchange account. `addresses[].units_by_asset` is keyed by the asset id\n(a chain token's symbol is not unique); `movement_ids` are the confirmed movements the\nstatement summed (D190: the statement's source list)."
+      },
       "AccountKind": {
         "type": "string",
         "enum": [
@@ -9758,6 +10177,32 @@
           "city"
         ],
         "title": "Address"
+      },
+      "AddressHoldings": {
+        "properties": {
+          "address_masked": {
+            "type": "string",
+            "title": "Address Masked"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/Chain"
+          },
+          "units_by_asset": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$"
+            },
+            "type": "object",
+            "title": "Units By Asset"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "address_masked",
+          "chain"
+        ],
+        "title": "AddressHoldings"
       },
       "AddressKind": {
         "type": "string",
@@ -13839,6 +14284,445 @@
         "title": "CredentialSource",
         "description": "Where a connection's PIN comes from at the next sync (D196): typed in the app (stored\nencrypted, it wins), the slot's container secret, or nowhere yet."
       },
+      "CryptoAccount": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "ownership": {
+            "items": {
+              "$ref": "#/components/schemas/OwnershipShare"
+            },
+            "type": "array",
+            "title": "Ownership"
+          },
+          "value_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Value Eur"
+          },
+          "unvalued_coins": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unvalued Coins",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "label",
+          "kind",
+          "value_eur"
+        ],
+        "title": "CryptoAccount"
+      },
+      "CryptoCoin": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Units"
+          },
+          "price_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,8})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Eur"
+          },
+          "price_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price On"
+          },
+          "value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Eur"
+          },
+          "cost_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Eur"
+          },
+          "cost_priced_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cost Priced Eur"
+          },
+          "unpriced_lots": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unpriced Lots"
+          },
+          "unrealized_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unrealized Eur"
+          },
+          "tax_free_units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Tax Free Units"
+          },
+          "tax_free_value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Free Value Eur"
+          },
+          "next_tax_free_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Tax Free From"
+          },
+          "next_tax_free_units": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Tax Free Units"
+          },
+          "reconciled": {
+            "type": "boolean",
+            "title": "Reconciled",
+            "default": true
+          },
+          "lots": {
+            "items": {
+              "$ref": "#/components/schemas/CryptoLot"
+            },
+            "type": "array",
+            "title": "Lots"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "asset_id",
+          "units",
+          "cost_priced_eur",
+          "unpriced_lots",
+          "tax_free_units"
+        ],
+        "title": "CryptoCoin",
+        "description": "One coin on one account (FIFO is per account and coin, D188 (1))."
+      },
+      "CryptoHoldings": {
+        "properties": {
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          },
+          "total_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total Eur"
+          },
+          "unvalued_coins": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unvalued Coins",
+            "default": 0
+          },
+          "unrealized_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Unrealized Eur"
+          },
+          "unrealized_excluded": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unrealized Excluded",
+            "default": 0
+          },
+          "tax_free_today_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Tax Free Today Eur"
+          },
+          "tax_free_today_excluded": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Tax Free Today Excluded",
+            "default": 0
+          },
+          "next_tranche": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NextTranche"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/CryptoAccount"
+            },
+            "type": "array",
+            "title": "Accounts"
+          },
+          "coins": {
+            "items": {
+              "$ref": "#/components/schemas/CryptoCoin"
+            },
+            "type": "array",
+            "title": "Coins"
+          },
+          "unfilled_movements": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unfilled Movements",
+            "default": 0
+          },
+          "unfilled_account_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Unfilled Account Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "on",
+          "total_eur",
+          "unrealized_eur",
+          "tax_free_today_eur"
+        ],
+        "title": "CryptoHoldings",
+        "description": "GET /holdings/crypto: the Krypto tab on `on` (today by default)."
+      },
+      "CryptoLot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "movement_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Movement Id"
+          },
+          "acquired_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Acquired At"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "acquired_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Acquired On"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Units"
+          },
+          "units_open": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Units Open"
+          },
+          "cost_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Eur"
+          },
+          "cost_per_unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,8})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Per Unit"
+          },
+          "source": {
+            "$ref": "#/components/schemas/LotSource"
+          },
+          "moved_through": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Moved Through"
+          },
+          "tax_free_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Tax Free From"
+          },
+          "tax_free": {
+            "type": "boolean",
+            "title": "Tax Free"
+          },
+          "value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Eur"
+          },
+          "price_needs": {
+            "items": {
+              "$ref": "#/components/schemas/LotPriceNeed"
+            },
+            "type": "array",
+            "title": "Price Needs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "movement_id",
+          "acquired_at",
+          "account_id",
+          "asset_id",
+          "acquired_on",
+          "units",
+          "units_open",
+          "source",
+          "tax_free_from",
+          "tax_free"
+        ],
+        "title": "CryptoLot",
+        "description": "An open lot as the tab shows it: tax-free today or from `tax_free_from`, its value at\nthe coin's price, and what resolves a missing cost. A lot of source `unknown` (an in-leg\nno transfer explains, a correction) has no price need: its cost is unknown for another\nreason, and the tab names that instead."
+      },
       "Currency": {
         "type": "string",
         "enum": [
@@ -16278,6 +17162,7 @@
           "account.holdings_reconciled",
           "account.holdings_mismatch",
           "account.holding_corrected",
+          "account.holdings_exported",
           "wallet.address_added",
           "wallet.address_updated",
           "wallet.address_revealed",
@@ -17705,6 +18590,118 @@
           "units"
         ],
         "title": "HoldingBalance"
+      },
+      "HoldingsExport": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "account_label": {
+            "type": "string",
+            "title": "Account Label"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "pdf_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Pdf Sha256"
+          },
+          "csv_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Csv Sha256"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "pdf_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Url"
+          },
+          "csv_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csv Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "account_label",
+          "as_of",
+          "pdf_sha256",
+          "csv_sha256",
+          "created_at"
+        ],
+        "title": "HoldingsExport",
+        "description": "A `holdings_export` row (immutable, D190) without its statement, with signed download\nURLs valid a few minutes (fetch the list right before downloading)."
+      },
+      "HoldingsExportCreate": {
+        "properties": {
+          "year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2009.0,
+            "title": "Year"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "year"
+        ],
+        "title": "HoldingsExportCreate",
+        "description": "POST /exports/holdings: the statement of 31 Dec of `year` for every wallet and exchange\naccount with a confirmed movement on or before it (D190)."
+      },
+      "HoldingsStatement": {
+        "properties": {
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/AccountHoldings"
+            },
+            "type": "array",
+            "title": "Accounts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "on"
+        ],
+        "title": "HoldingsStatement"
       },
       "HomeOfficeComponent": {
         "properties": {
@@ -19893,6 +20890,149 @@
         "title": "LoginVerifyRequest",
         "description": "POST /auth/login/verify (POST /auth/login/options takes an empty body)."
       },
+      "Lot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "movement_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Movement Id"
+          },
+          "acquired_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Acquired At"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "acquired_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Acquired On"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Units"
+          },
+          "units_open": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Units Open"
+          },
+          "cost_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Eur"
+          },
+          "cost_per_unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,8})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Per Unit"
+          },
+          "source": {
+            "$ref": "#/components/schemas/LotSource"
+          },
+          "moved_through": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Moved Through"
+          },
+          "tax_free_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Tax Free From"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "movement_id",
+          "acquired_at",
+          "account_id",
+          "asset_id",
+          "acquired_on",
+          "units",
+          "units_open",
+          "source",
+          "tax_free_from"
+        ],
+        "title": "Lot",
+        "description": "A lot, computed on read (D188 (1)). `id` is derived from its origin (the creating\nmovement, or a moved part's origin and link), so a re-read gives the same id; `movement_id`\nis the movement that created it, kept through every move (principle 2: a lot links to its\nmovements); `acquired_at` is the instant, FIFO's second key after `acquired_on`. Folded in\nfrom rules/lots.HeldLot in step 6."
+      },
+      "LotPriceNeed": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "on"
+        ],
+        "title": "LotPriceNeed",
+        "description": "„Kurs eintragen“ for this coin and day prices the lot (a typed `user` price, D167)."
+      },
+      "LotSource": {
+        "type": "string",
+        "enum": [
+          "acquisition",
+          "reward",
+          "transfer",
+          "unknown"
+        ],
+        "title": "LotSource"
+      },
       "ManagementContractExtraction": {
         "properties": {
           "title": {
@@ -21200,6 +22340,41 @@
         ],
         "title": "NetWorthTodoCode"
       },
+      "NextTranche": {
+        "properties": {
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/TranchePart"
+            },
+            "type": "array",
+            "title": "Parts"
+          },
+          "value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Eur"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "on"
+        ],
+        "title": "NextTranche",
+        "description": "„Nächste Tranche steuerfrei“: the earliest future `tax_free_from` over every open lot,\nwith the units of every coin that becomes free that day (D188 (5))."
+      },
       "NoPayFact": {
         "properties": {},
         "additionalProperties": false,
@@ -22455,6 +23630,92 @@
         "type": "object",
         "title": "PayslipExtraction",
         "description": "Gehaltsabrechnung: one month, with the month column and the year-to-date column\n(Jahreswerte / kumuliert). Net pay and the bank account are not read."
+      },
+      "PositionHoldings": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Units"
+          },
+          "lots": {
+            "items": {
+              "$ref": "#/components/schemas/Lot"
+            },
+            "type": "array",
+            "title": "Lots"
+          },
+          "price_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,8})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Eur"
+          },
+          "price_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price On"
+          },
+          "value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Eur"
+          },
+          "reconciled": {
+            "type": "boolean",
+            "title": "Reconciled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "units",
+          "reconciled"
+        ],
+        "title": "PositionHoldings",
+        "description": "An account's position in one asset at the end of the statement's day. `symbol` and\n`name` label it (a chain token's symbol is a label, D180 amended); `price_eur` and\n`price_on` the price `value_eur` used (phase 6 D167's `price_on`, a chain token through\nits `priced_as` asset); `reconciled` is false when the last sync on or before the day of an\naddress holding it did not reconcile (an exchange has no sync: true)."
       },
       "PossibleDuplicate": {
         "properties": {
@@ -24747,10 +26008,11 @@
           "tenancy.settlement_deadline",
           "tenancy.rent_missing",
           "bank.sync_stale",
-          "bank.statement_due"
+          "bank.statement_due",
+          "crypto.holdings_statement"
         ],
         "title": "ReminderKind",
-        "description": "The catalogue's twelve kinds (§6.2); the value is the reminder key."
+        "description": "The catalogue's thirteen kinds (§6.2); the value is the reminder key."
       },
       "ReminderScope": {
         "type": "string",
@@ -29286,6 +30548,56 @@
         ],
         "title": "TrainingFact"
       },
+      "TranchePart": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Units"
+          },
+          "value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Eur"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "asset_id",
+          "units"
+        ],
+        "title": "TranchePart"
+      },
       "Transaction": {
         "properties": {
           "id": {
@@ -30292,6 +31604,37 @@
         ],
         "title": "UnitRow",
         "description": "One Z13 row per Wohnung (D71): the flat (wohnung = property) with its rooms listed, or an\nMFH unit (wohnung = unit). pre_handover: the part booked before the handover (D63).\narea_m2 None: an ETW or EFH with no Wohnfläche and no units, so no area is known; the\nto-do income.living_area_missing asks for it (phase 2 D139)."
+      },
+      "UnvaluedToken": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Units"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "spam",
+              "no_price"
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "units",
+          "reason"
+        ],
+        "title": "UnvaluedToken",
+        "description": "A token held but not shown in the value (spam, or no price source), listed so the\nstatement still accounts for every unit (D187)."
       },
       "UsefulLife": {
         "properties": {

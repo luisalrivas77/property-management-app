@@ -60,6 +60,7 @@ from hausbuch.schemas.reminders import (
     ReminderAck,
     ReminderAckAction,
     ReminderAckCreate,
+    ReminderCryptoYear,
     ReminderFacts,
     ReminderGrundsteuerPayment,
     ReminderGrundsteuerSchedule,
@@ -117,6 +118,7 @@ def facts(conn: Connection, today: date) -> ReminderFacts:
         owners=owners,
         accounts=_accounts(conn),
         tax_years=_tax_years(conn, today, min(first_years) if first_years else None),
+        crypto_years=_crypto_years(conn, today),
         acks=_acks(conn),
     )
 
@@ -384,6 +386,13 @@ def _tax_years(conn: Connection, today: date, first_year: int | None) -> list[Re
             complete = True
         out.append(ReminderTaxYear(tax_year=year, questionnaire_complete=complete))
     return out
+
+
+def _crypto_years(conn: Connection, today: date) -> list[ReminderCryptoYear]:
+    """Phase 7 D190: the last two closed years' holdings statements still to export."""
+    from .holdings_export import crypto_years  # it imports the price and account services
+
+    return crypto_years(conn, today, years_back=_TAX_YEARS_BACK)
 
 
 def _acks(conn: Connection) -> list[ReminderAck]:
