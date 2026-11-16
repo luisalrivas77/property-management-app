@@ -136,46 +136,97 @@ def add_address(
     if not chains:
         raise RuleError(WALLET_ADDRESS_TAKEN, _TAKEN_HERE)
     masked = mask(body.chain, normalised)
-    created = []
-    for chain in chains:
-        try:
-            row = ctx.conn.execute(
-                insert(address_table)
-                .values(
-                    workspace_id=ctx.workspace_id,
-                    account_id=account_id,
-                    chain=chain.value,
-                    address=normalised,
-                    address_masked=masked,
-                    address_hmac=digest,
-                    label=body.label,
-                    kind=AddressKind.RECEIVE.value,
-                    created_at=ctx.now,
-                )
-                .returning(*_READ_COLUMNS)
-            ).one()
-        except IntegrityError as exc:
-            # A concurrent add of the same address to another wallet; the DBAPI text names the
-            # values, so it is never chained.
-            if violated_constraint(exc) == _TAKEN:
-                raise RuleError(WALLET_ADDRESS_TAKEN, _TAKEN_ELSEWHERE) from None
-            raise
-        address = _to_address(row)
-        append_event(
-            ctx,
-            EventType.WALLET_ADDRESS_ADDED,
-            account_id,
-            WalletAddressAdded(
-                address_id=address.id,
-                chain=address.chain,
-                address_masked=address.address_masked,
-                label=address.label,
-                kind=address.kind,
-            ),
+    created = [
+        _insert_address(
+            ctx, account_id, chain, normalised, masked, digest, body.label, AddressKind.RECEIVE
         )
-        created.append(address)
+        for chain in chains
+    ]
     enqueue_first_sync(ctx, account_id)
     return created
+
+
+def register_change_address(
+    ctx: CommandContext, account_id: UUID, address: str, *, key: bytes
+) -> WalletAddress:
+    """„Ja, eigene Adresse“ on a Bitcoin change card (D185 (2)): an output of an own spend,
+    read from the stored original, registered on the same wallet as kind change, with the
+    add path's checks, event and first sync. The caller holds the wallet's lock
+    (_lock_wallet). `discovered_from` stays empty: the card has no movement to name, and
+    the row cannot be changed afterwards (D179)."""
+    normalised = validate(Chain.BITCOIN, address)
+    digest = address_hmac(normalised, key)
+    _lock_address(ctx, digest)
+    known = ctx.conn.execute(
+        select(address_table.c.account_id, address_table.c.chain).where(
+            address_table.c.address_hmac == digest
+        )
+    ).all()
+    if any(row.account_id != account_id for row in known):
+        raise RuleError(WALLET_ADDRESS_TAKEN, _TAKEN_ELSEWHERE)
+    if any(Chain(row.chain) is Chain.BITCOIN for row in known):
+        raise RuleError(WALLET_ADDRESS_TAKEN, _TAKEN_HERE)
+    created = _insert_address(
+        ctx,
+        account_id,
+        Chain.BITCOIN,
+        normalised,
+        mask(Chain.BITCOIN, normalised),
+        digest,
+        None,
+        AddressKind.CHANGE,
+    )
+    enqueue_first_sync(ctx, account_id)
+    return created
+
+
+def _insert_address(
+    ctx: CommandContext,
+    account_id: UUID,
+    chain: Chain,
+    normalised: str,
+    masked: str,
+    digest: bytes,
+    label: str | None,
+    kind: AddressKind,
+) -> WalletAddress:
+    """One wallet_address row and its wallet.address_added event (masked form only)."""
+    try:
+        row = ctx.conn.execute(
+            insert(address_table)
+            .values(
+                workspace_id=ctx.workspace_id,
+                account_id=account_id,
+                chain=chain.value,
+                address=normalised,
+                address_masked=masked,
+                address_hmac=digest,
+                label=label,
+                kind=kind.value,
+                created_at=ctx.now,
+            )
+            .returning(*_READ_COLUMNS)
+        ).one()
+    except IntegrityError as exc:
+        # A concurrent add of the same address to another wallet; the DBAPI text names the
+        # values, so it is never chained.
+        if violated_constraint(exc) == _TAKEN:
+            raise RuleError(WALLET_ADDRESS_TAKEN, _TAKEN_ELSEWHERE) from None
+        raise
+    address = _to_address(row)
+    append_event(
+        ctx,
+        EventType.WALLET_ADDRESS_ADDED,
+        account_id,
+        WalletAddressAdded(
+            address_id=address.id,
+            chain=address.chain,
+            address_masked=address.address_masked,
+            label=address.label,
+            kind=address.kind,
+        ),
+    )
+    return address
 
 
 def enqueue_first_sync(ctx: CommandContext, account_id: UUID) -> None:

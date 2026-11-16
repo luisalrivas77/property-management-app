@@ -692,6 +692,19 @@ class InboxItemKind(StrEnum):
     # earlier debit of it (a recalled transfer, a returned direct debit), computed on read;
     # `returned` carries the credit and the debits it may return, `transaction_id` the credit.
     RETURNED_PAYMENT = "returned_payment"
+    # Phase 7 wallet screens (D183, D185, D186; principle 7), computed on read; `account_id`
+    # is the wallet. wallet_groups: one card per wallet for its proposed groups without a
+    # question (a first sync proposes the whole history, answered on the wallet page);
+    # wallet_change: a Bitcoin change card (`group_id`, answered by „Ja, eigene Adresse“ or
+    # „Nein, Empfänger“); wallet_question: another group a person must look at (`group_id`);
+    # wallet_sync: addresses whose source needs a person (a missing key, a refused, failed or
+    # throttled run; `error_code` is the state); wallet_unreconciled, wallet_coins_left.
+    WALLET_GROUPS = "wallet_groups"
+    WALLET_CHANGE = "wallet_change"
+    WALLET_QUESTION = "wallet_question"
+    WALLET_SYNC = "wallet_sync"
+    WALLET_UNRECONCILED = "wallet_unreconciled"
+    WALLET_COINS_LEFT = "wallet_coins_left"
 
 
 class InboxItem(Schema):
@@ -731,6 +744,8 @@ class InboxItem(Schema):
     # reports no movement carries, which „Umsätze aus dem Bericht buchen“ books
     # (POST /accounts/{id}/report-trades); None when there are none.
     report_trades: int | None = None
+    # the phase 7 wallet cards: wallet_change and wallet_question's movement group
+    group_id: UUID | None = None
 
 
 class AiRetryResult(Schema):

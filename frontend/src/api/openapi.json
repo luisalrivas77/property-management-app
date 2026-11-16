@@ -5762,7 +5762,7 @@
     "/api/inbox": {
       "get": {
         "summary": "Inbox List",
-        "description": "Plus, from 1 January, last year's open Jahresfragen (phase 4b D110), and the email-in\ncards (phase 5 §5.4).",
+        "description": "Plus, from 1 January, last year's open Jahresfragen (phase 4b D110), and the email-in\ncards (phase 5 §5.4), and the wallet cards (phase 7; `settings` sees a missing key).",
         "operationId": "inbox_list_api_inbox_get",
         "responses": {
           "200": {
@@ -6930,6 +6930,453 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WalletAddressPlain"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wallets/{account_id}/state": {
+      "get": {
+        "summary": "Wallet State",
+        "description": "404 for an account that is no wallet of this workspace.",
+        "operationId": "wallet_state_api_wallets__account_id__state_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletState"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wallets/{account_id}/groups": {
+      "get": {
+        "summary": "Wallet Groups List",
+        "description": "The open groups, those asking a question first, then the newest (at most 200).",
+        "operationId": "wallet_groups_list_api_wallets__account_id__groups_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WalletGroup"
+                  },
+                  "title": "Response Wallet Groups List Api Wallets  Account Id  Groups Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/{group_id}/confirm": {
+      "post": {
+        "summary": "Wallet Group Confirm",
+        "description": "422 wallet.group_needs_answer for a group that needs an answer, wallet.group_done for\none no longer open.",
+        "operationId": "wallet_group_confirm_api_groups__group_id__confirm_post",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletGroupDone"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/{group_id}/answer": {
+      "post": {
+        "summary": "Wallet Group Answer",
+        "description": "The group that now stands for the transaction. 422 wallet.answer_unfit when the\nanswer does not fit its legs.",
+        "operationId": "wallet_group_answer_api_groups__group_id__answer_post",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WalletGroupAnswerBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletGroupDone"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/{group_id}/change": {
+      "get": {
+        "summary": "Wallet Change Card",
+        "description": "422 wallet.change_answered when it is no open change card.",
+        "operationId": "wallet_change_card_api_groups__group_id__change_get",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeCard"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/{group_id}/change/payee": {
+      "post": {
+        "summary": "Wallet Change Payee",
+        "description": "„Nein, Empfänger“: the output is a payee; the card gives way to the group derived.",
+        "operationId": "wallet_change_payee_api_groups__group_id__change_payee_post",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeAnswerBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletGroupDone"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/groups/{group_id}/change/own": {
+      "post": {
+        "summary": "Wallet Change Own",
+        "description": "„Ja, eigene Adresse“: the output's address is registered on the wallet as a change\naddress; the card gives way to the group derived.",
+        "operationId": "wallet_change_own_api_groups__group_id__change_own_post",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeAnswerBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletGroupDone"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wallets/{account_id}/hidden-tokens": {
+      "get": {
+        "summary": "Wallet Hidden Tokens",
+        "operationId": "wallet_hidden_tokens_api_wallets__account_id__hidden_tokens_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HiddenToken"
+                  },
+                  "title": "Response Wallet Hidden Tokens Api Wallets  Account Id  Hidden Tokens Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/assets/{asset_id}/promote": {
+      "post": {
+        "summary": "Wallet Token Promote",
+        "description": "„Kein Spam“: `groups` is the number of groups now waiting as a card.",
+        "operationId": "wallet_token_promote_api_assets__asset_id__promote_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpamVerdict"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/assets/{asset_id}/demote": {
+      "post": {
+        "summary": "Wallet Token Demote",
+        "description": "„Als Spam verbergen“: `groups` is the number of groups changed.",
+        "operationId": "wallet_token_demote_api_assets__asset_id__demote_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpamVerdict"
                 }
               }
             }
@@ -12729,6 +13176,76 @@
         "title": "Chain",
         "description": "The registry codes (rules/chain/chains.yaml): wallet_address.chain, asset.chain,\nmovement_group.chain, chain_decoder.chain, chain_pair.from_chain / to_chain."
       },
+      "ChangeAnswerBody": {
+        "properties": {
+          "vout": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Vout"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "vout"
+        ],
+        "title": "ChangeAnswerBody",
+        "description": "POST /groups/{gid}/change/payee and /change/own: the output answered."
+      },
+      "ChangeCandidateOut": {
+        "properties": {
+          "vout": {
+            "type": "integer",
+            "title": "Vout"
+          },
+          "address_masked": {
+            "type": "string",
+            "title": "Address Masked"
+          },
+          "amount_btc": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Amount Btc"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "vout",
+          "address_masked",
+          "amount_btc"
+        ],
+        "title": "ChangeCandidateOut",
+        "description": "One output a change card asks about: its vout, masked address and amount in BTC."
+      },
+      "ChangeCard": {
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Group Id"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeCandidateOut"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "original_missing": {
+            "type": "boolean",
+            "title": "Original Missing",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "group_id"
+        ],
+        "title": "ChangeCard",
+        "description": "GET /groups/{gid}/change: the outputs the card asks about, read again from the stored\noriginal (D182 (3)); `original_missing` when no stored original holds the spend."
+      },
       "ChecklistBankLine": {
         "properties": {
           "allocation_id": {
@@ -17412,6 +17929,35 @@
         "title": "GeneralExtraction",
         "description": "The general reading (D130): title and date for every document without a reader of its\nown, plus the one field set its subtype's group needs to find its link (D131): the\nproperty's address for the property, WEG, running-costs and tenancy groups, the lender and\ncontract number for the loan group. A request asks only those (asked_fields); an\nowner's home address is never asked. A Wohnflächenberechnung (building_records) is also\nasked its list of dwellings (D139), a Gutachten (appraisal) its remaining useful life and\nStichtag (D147)."
       },
+      "GroupKind": {
+        "type": "string",
+        "enum": [
+          "transfer",
+          "exchange_transfer",
+          "swap",
+          "wrap",
+          "bridge",
+          "stake",
+          "reward",
+          "airdrop",
+          "lp",
+          "contract_call",
+          "failed",
+          "spam",
+          "unknown"
+        ],
+        "title": "GroupKind",
+        "description": "movement_group.kind (D183 (2)): the thirteen shapes a transaction is classified as."
+      },
+      "GroupStatus": {
+        "type": "string",
+        "enum": [
+          "proposed",
+          "confirmed"
+        ],
+        "title": "GroupStatus",
+        "description": "movement_group.status: proposed -> confirmed only (the trigger group_forward)."
+      },
       "GrundsteuerInstalment": {
         "properties": {
           "due_on": {
@@ -17684,6 +18230,42 @@
         "type": "object",
         "title": "HausgeldabrechnungExtraction",
         "description": "Hausgeldabrechnung: the year's settlement (read by phase 3's Hausgeld rule)."
+      },
+      "HiddenToken": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/Chain"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Units"
+          },
+          "groups": {
+            "type": "integer",
+            "title": "Groups"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "chain",
+          "name",
+          "units",
+          "groups"
+        ],
+        "title": "HiddenToken",
+        "description": "GET /wallets/{id}/hidden-tokens (D187 (3)): a token held as spam, by its asset's name\n(the masked contract with the symbol the chain tells), never priced."
       },
       "HoldingBalance": {
         "properties": {
@@ -18490,6 +19072,18 @@
               }
             ],
             "title": "Report Trades"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
           }
         },
         "additionalProperties": false,
@@ -18534,7 +19128,13 @@
           "exchange_unreconciled",
           "exchange_withdrawals",
           "exchange_movement",
-          "returned_payment"
+          "returned_payment",
+          "wallet_groups",
+          "wallet_change",
+          "wallet_question",
+          "wallet_sync",
+          "wallet_unreconciled",
+          "wallet_coins_left"
         ],
         "title": "InboxItemKind",
         "description": "GET /inbox (§8.3): one list, newest first."
@@ -26701,6 +27301,32 @@
         "title": "SnapshotResult",
         "description": "POST /net-worth/snapshots: what „Monatsabschluss festhalten“ did."
       },
+      "SpamVerdict": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "spam": {
+            "type": "boolean",
+            "title": "Spam"
+          },
+          "groups": {
+            "type": "integer",
+            "title": "Groups"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "spam",
+          "groups"
+        ],
+        "title": "SpamVerdict",
+        "description": "POST /assets/{id}/promote and /demote: the token's verdict now and the number of\ngroups the flip changed (D187 (3))."
+      },
       "SpecialExpenseFact": {
         "properties": {
           "expense_class": {
@@ -30829,6 +31455,417 @@
         "title": "WalletAddressPlain",
         "description": "GET /wallets/{id}/addresses/{aid}/plain: the full address for „kopieren“, sent with\nCache-Control: no-store and audited as wallet.address_revealed. The page writes it to the\nclipboard and never renders it."
       },
+      "WalletAddressState": {
+        "type": "string",
+        "enum": [
+          "retired",
+          "key_missing",
+          "source_unavailable",
+          "not_synced",
+          "failed",
+          "throttled",
+          "refused",
+          "deferred",
+          "reconciled",
+          "waiting",
+          "pending",
+          "unreconciled",
+          "coins_left"
+        ],
+        "title": "WalletAddressState",
+        "description": "One address's state on the wallet page, from its last finished `wallet_sync` row and\nits chain's source as configured now (services/wallet_cards.address_statuses)."
+      },
+      "WalletAddressStatus": {
+        "properties": {
+          "address_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Address Id"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/Chain"
+          },
+          "address_masked": {
+            "type": "string",
+            "title": "Address Masked"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WalletAddressState"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Todo"
+          },
+          "setting": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setting"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "block": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block"
+          },
+          "movements_new": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Movements New"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "address_id",
+          "chain",
+          "address_masked",
+          "state",
+          "text"
+        ],
+        "title": "WalletAddressStatus",
+        "description": "An address's state in plain German (`text`) with what to do (`todo`), and the\nScaleway container variable to set or check (`setting`) when the cure is one."
+      },
+      "WalletAnswer": {
+        "type": "string",
+        "enum": [
+          "payment",
+          "gift",
+          "reward",
+          "spam"
+        ],
+        "title": "WalletAnswer",
+        "description": "A person's answer to a proposed group (D183 (5)), built for groups whose legs all go\none way: „Bezahlung“ (out: a disposal), „Geschenk oder Zahlung erhalten“ (in: an\nacquisition at a typed cost or 0), „Belohnung“ (in: a staking reward) and „Spam“ (in,\ntokens only: hidden from then on, D187). „Tausch“ and\n„Übertrag an eigene Wallet/Börse“ need the legs picked and a transfer link (step 5)."
+      },
+      "WalletCardKind": {
+        "type": "string",
+        "enum": [
+          "proposed",
+          "change",
+          "unreadable",
+          "question",
+          "unstorable"
+        ],
+        "title": "WalletCardKind",
+        "description": "What a live proposed movement group asks of a person."
+      },
+      "WalletGroup": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/Chain"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/GroupKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GroupStatus"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "card": {
+            "$ref": "#/components/schemas/WalletCardKind"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/WalletLeg"
+            },
+            "type": "array",
+            "title": "Legs"
+          },
+          "confirmable": {
+            "type": "boolean",
+            "title": "Confirmable",
+            "default": false
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/WalletAnswer"
+            },
+            "type": "array",
+            "title": "Answers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "chain",
+          "kind",
+          "status",
+          "occurred_at",
+          "card",
+          "text"
+        ],
+        "title": "WalletGroup",
+        "description": "GET /wallets/{id}/groups: one card per live proposed group (D183 (1)). `confirmable`:\n„Bestätigen“ keeps it as it stands (no question, no leg left uncategorized); `answers`:\nthe corrections that fit its legs."
+      },
+      "WalletGroupAnswerBody": {
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/WalletAnswer"
+          },
+          "cost_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Eur"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "answer"
+        ],
+        "title": "WalletGroupAnswerBody",
+        "description": "POST /groups/{gid}/answer. `cost_eur` only with `gift` (the acquisition's cost; 0 for\na gift, D183 (5))."
+      },
+      "WalletGroupDone": {
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Group Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "group_id"
+        ],
+        "title": "WalletGroupDone",
+        "description": "The group that now stands for the transaction (the same id after „Bestätigen“)."
+      },
+      "WalletHolding": {
+        "properties": {
+          "chain": {
+            "$ref": "#/components/schemas/Chain"
+          },
+          "address_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Id"
+          },
+          "address_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Masked"
+          },
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "chain_units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Chain Units"
+          },
+          "booked_units": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booked Units"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WalletAddressState"
+          },
+          "at_block": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At Block"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "chain",
+          "symbol",
+          "chain_units",
+          "state"
+        ],
+        "title": "WalletHolding",
+        "description": "One asset's balance on the chain at the last read beside what Hausbuch books for it\n(D186 (2)). `address_id` is None when the chain reconciles the wallet's addresses\ntogether (Bitcoin). `booked_units` is the chain's balance less the stored difference,\nNone while the run waits for an answer (the difference is then not stored)."
+      },
+      "WalletLeg": {
+        "properties": {
+          "movement_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Movement Id"
+          },
+          "address_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Masked"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MovementKind"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Quantity"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "movement_id",
+          "asset_id",
+          "symbol",
+          "kind",
+          "quantity"
+        ],
+        "title": "WalletLeg"
+      },
       "WalletPage": {
         "properties": {
           "account": {
@@ -30864,6 +31901,38 @@
         ],
         "title": "WalletPage",
         "description": "GET /wallets/{id}: the wallet account with its owner shares, its addresses (masked,\nactive first, then by chain and the order added, each with its last finished sync), and\nthe balances and syncs, still empty: the runs are GET /wallets/{id}/syncs, the balances\nthe screens step's."
+      },
+      "WalletState": {
+        "properties": {
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/WalletAddressStatus"
+            },
+            "type": "array",
+            "title": "Statuses"
+          },
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/WalletHolding"
+            },
+            "type": "array",
+            "title": "Holdings"
+          },
+          "open_groups": {
+            "type": "integer",
+            "title": "Open Groups",
+            "default": 0
+          },
+          "open_questions": {
+            "type": "integer",
+            "title": "Open Questions",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WalletState",
+        "description": "GET /wallets/{id}/state: each address's state, the holdings per asset at the last\nread, and the live proposed groups of the wallet (those with a question among them)."
       },
       "WalletSyncQueued": {
         "properties": {
