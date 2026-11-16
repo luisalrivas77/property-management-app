@@ -78,6 +78,7 @@ large balance subtract exactly once the quantity type is widened (migration 0042
 Fixtures tests/fixtures/phase7/lots.yaml, holding_period.yaml.
 """
 
+import bisect
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -236,11 +237,15 @@ def _cost(per: Decimal | None, units: Decimal) -> Decimal | None:
 
 
 @_exact
-def _fifo(parts: Iterable[_Part], units: Decimal) -> list[tuple[_Part, Decimal]]:
-    """The parts `units` takes, oldest first, and how much of each; mutates nothing."""
+def _fifo(
+    parts: Iterable[_Part], units: Decimal, *, ordered: bool = False
+) -> list[tuple[_Part, Decimal]]:
+    """The parts `units` takes, oldest first, and how much of each; mutates nothing.
+    `ordered`: the parts are already in `_Part.key` order (the book's lists)."""
     out: list[tuple[_Part, Decimal]] = []
     left = units
-    for part in sorted((p for p in parts if p.open > 0), key=_Part.key):
+    candidates = (p for p in parts if p.open > 0)
+    for part in candidates if ordered else sorted(candidates, key=_Part.key):
         if left <= 0:
             break
         take = min(left, part.open)
@@ -299,12 +304,23 @@ def cost_total(lots: Iterable[Lot]) -> CostTotal:
 
 @dataclass
 class _Book:
+    """The parts per (account, asset), kept in FIFO order (`_Part.key`, unique by the part's
+    id) as they are added, so a take never sorts; `head` is the first part that may still be
+    open: a take empties parts from the front only, and an older part added later (a lot
+    moved in with its original day) moves it back."""
+
     parts: dict[tuple[UUID, UUID], list[_Part]] = field(default_factory=lambda: defaultdict(list))
+    head: dict[tuple[UUID, UUID], int] = field(default_factory=lambda: defaultdict(int))
     uses: dict[UUID, list[LotUse]] = field(default_factory=lambda: defaultdict(list))
     unfilled: dict[UUID, Decimal] = field(default_factory=dict)
 
     def add(self, part: _Part) -> None:
-        self.parts[(part.account_id, part.asset_id)].append(part)
+        key = (part.account_id, part.asset_id)
+        parts = self.parts[key]
+        at = bisect.bisect_right(parts, part.key(), key=_Part.key)
+        parts.insert(at, part)
+        if at < self.head[key]:
+            self.head[key] = at
 
     @_exact
     def take(
@@ -312,9 +328,16 @@ class _Book:
     ) -> list[tuple[_Part, Decimal]]:
         """Take `units` FIFO from the movement's account and asset; record the uses and any
         shortfall under the movement. Returns what was taken."""
-        taken = _fifo(self.parts[(movement.account_id, movement.asset_id)], units)
+        key = (movement.account_id, movement.asset_id)
+        parts = self.parts[key]
+        head = self.head[key]
+        taken = _fifo(parts[head:], units, ordered=True)
         for part, n in taken:
             part.open -= n
+        while head < len(parts) and parts[head].open <= 0:
+            head += 1
+        self.head[key] = head
+        for part, n in taken:
             if record:
                 self.uses[movement.id].append(
                     LotUse(lot_id=part.id, units=n, cost_eur=_cost(part.per, n))
@@ -707,7 +730,7 @@ def book(
         lots=[
             _out(part)
             for key in sorted(lots.parts, key=lambda k: (str(k[0]), str(k[1])))
-            for part in sorted(lots.parts[key], key=_Part.key)
+            for part in lots.parts[key]  # kept in FIFO order by _Book.add
         ],
         uses=dict(lots.uses),
         unfilled=dict(lots.unfilled),
