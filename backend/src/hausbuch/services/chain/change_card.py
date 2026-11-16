@@ -48,6 +48,7 @@ from hausbuch.services.chain.payee_answers import answered_payee
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import read_original
 from hausbuch.services.events import append_event
+from hausbuch.services.wallets import _lock_wallet
 from hausbuch.settings import Settings
 from hausbuch.storage import BlobStore
 
@@ -202,7 +203,12 @@ def answer_payee(
         account_id = conn.execute(select(g.account_id).where(g.id == group_id)).scalar_one_or_none()
         if account_id is None:
             raise RuleError(WALLET_CHANGE_ANSWERED)
-        # every open card of the account, locked in one order, so two answers never deadlock
+        # the wallet account first (services/wallets' lock): two answers on one account run
+        # one after the other, so the second reads the open cards in a statement that sees
+        # the cards the first wrote (review of PR #387: it had kept a snapshot from before
+        # them and left a narrower card naming its own payee)
+        _lock_wallet(conn, account_id)
+        # every open card of the account, locked in one order
         cards = _open_cards(conn, account_id)
         card = next((c for c in cards if c.id == group_id), None)
         if card is None:

@@ -9,6 +9,8 @@ addresses, BIP-173's example address); no household fact."""
 import hashlib
 import itertools
 import json
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -364,3 +366,84 @@ def test_a_card_from_the_first_sync_is_answered_from_its_original(dbname, esplor
     assert live.question == (
         f"Ist diese Adresse Ihr Wechselgeld? bc1q…{CHANGE2[-4:]} (0,00028 BTC)"
     )
+
+
+class _SlowStore:
+    """The blob store, held at its first read until released: the first answer then holds
+    its locks while the second one starts."""
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def get(self, key):
+        self.entered.set()
+        self.release.wait(20)
+        return self.inner.get(key)
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
+def test_two_answers_at_once_leave_no_card_naming_an_answered_payee(
+    dbname, esplora, btc_wallet, run, app_engine, blob_store
+):
+    """Review of PR #387 (F3): two cards share an output address; two answers run at once.
+    The second waits on the wallet account's lock and then reads the cards the first wrote,
+    so no live card names an address either of them answered „Nein, Empfänger“."""
+    ws, account, a, b = btc_wallet
+    sync, answer = run
+    esplora.records = [
+        record(1, 100, [(STRANGER, 101_000)], [(OWN, 100_000)]),
+        record(4, 101, [(OWN, 100_000)], [(PAYEE, 20_000), (CHANGE, 79_000)]),
+        record(3, 102, [(STRANGER, 51_000)], [(OWN, 50_000)]),
+        record(7, 103, [(OWN, 50_000)], [(CHANGE, 20_000), (CHANGE3, 29_000)]),
+    ]
+    sync(ws)
+    groups = _live_groups(dbname, account)
+    (one,) = [g for g in groups if g.tx_hash == txid(4)]  # asks PAYEE and CHANGE
+    (two,) = [g for g in groups if g.tx_hash == txid(7)]  # asks CHANGE and CHANGE3
+    slow = _SlowStore(blob_store)
+    out = {}
+
+    def call(name, card, store, second):
+        try:
+            out[name] = answer_payee(
+                app_engine,
+                ws,
+                card.id,
+                0,  # PAYEE on the first card, CHANGE on the second
+                settings=SETTINGS,
+                store=store,
+                actor=ACTOR,
+                clock=lambda: T0 + timedelta(days=2, seconds=second),
+            )
+        except Exception as exc:  # noqa: BLE001 - the thread's outcome, asserted below
+            out[name] = exc
+
+    first = threading.Thread(target=call, args=("one", one, slow, 0))
+    first.start()
+    assert slow.entered.wait(20)  # the first answer holds its locks
+    later = threading.Thread(target=call, args=("two", two, blob_store, 1))
+    later.start()
+    time.sleep(1.5)
+    assert "two" not in out  # waits on the wallet account
+    slow.release.set()
+    first.join(30)
+    later.join(30)
+    assert not any(isinstance(v, Exception) for v in out.values()), out
+    answered = {
+        e.m
+        for e in _rows(
+            dbname,
+            "SELECT payload->>'address_masked' AS m FROM event"
+            " WHERE type = 'wallet.payee_answered' AND entity_id = %s",
+            account,
+        )
+    }
+    assert answered == {"bc1q…atuf", "bc1q…gz2k"}
+    live = [g for g in _live_groups(dbname, account) if g.tx_hash in (txid(4), txid(7))]
+    assert [(g.tx_hash, g.kind) for g in live] == [(txid(4), "transfer"), (txid(7), "unknown")]
+    assert live[1].question == "Ist diese Adresse Ihr Wechselgeld? bc1q…kyhg (0,00029 BTC)"
+    assert not any(m in (g.question or "") for g in live for m in answered)
