@@ -6655,6 +6655,214 @@
         }
       }
     },
+    "/api/wallets/{account_id}": {
+      "get": {
+        "summary": "Wallet Get",
+        "description": "The wallet account with its owner shares and its addresses, masked; balances and syncs\nare empty until a chain is read (step 2). 404 for an account that is no wallet.",
+        "operationId": "wallet_get_api_wallets__account_id__get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletPage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wallets/{account_id}/addresses": {
+      "post": {
+        "summary": "Wallet Address Add",
+        "description": "The rows written: the chain given, and with `also_on` the same 0x address on the other\nEVM chains („Auch auf Arbitrum und BNB Smart Chain lesen“), a chain already registered on\nthis wallet skipped. 422 wallet.address_invalid (not the chain's format, or `also_on` for a\nnon-EVM address) or wallet.address_taken (on another own account, or already on every\nchain asked for here); 404 for an account that is no wallet.",
+        "operationId": "wallet_address_add_api_wallets__account_id__addresses_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WalletAddressBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WalletAddress"
+                  },
+                  "title": "Response Wallet Address Add Api Wallets  Account Id  Addresses Post"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wallets/{account_id}/addresses/{address_id}": {
+      "patch": {
+        "summary": "Wallet Address Update",
+        "description": "The label (null clears it) and active: false retires the address („Adresse\nstilllegen“), true reactivates it. 404 for an address of another wallet.",
+        "operationId": "wallet_address_update_api_wallets__account_id__addresses__address_id__patch",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "address_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Address Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WalletAddressPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletAddress"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wallets/{account_id}/addresses/{address_id}/plain": {
+      "get": {
+        "summary": "Wallet Address Plain",
+        "description": "„kopieren“: the full address, for the clipboard only. Never cached; each call writes\nwallet.address_revealed. 404 for an address of another wallet.",
+        "operationId": "wallet_address_plain_api_wallets__account_id__addresses__address_id__plain_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "address_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Address Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletAddressPlain"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/anlage-v": {
       "get": {
         "summary": "Property Anlage V",
@@ -9035,7 +9243,7 @@
           "credit_card"
         ],
         "title": "AccountKind",
-        "description": "account.kind (migration 0025, phase 6 D156). `wallet` is in the CHECK so phase 7 adds\nno migration for it; create_account refuses it (account.kind_not_available) until then,\nas AccountSource.AGGREGATOR is refused."
+        "description": "account.kind (migration 0025, phase 6 D156). `wallet` was in the CHECK from the start\nso phase 7 adds no migration for it; create_account takes it since phase 7 step 1 (D179).\nAccountSource.AGGREGATOR stays refused (account.kind_not_available)."
       },
       "AccountOwnership": {
         "properties": {
@@ -9466,6 +9674,16 @@
           "city"
         ],
         "title": "Address"
+      },
+      "AddressKind": {
+        "type": "string",
+        "enum": [
+          "receive",
+          "change",
+          "stake"
+        ],
+        "title": "AddressKind",
+        "description": "wallet_address.kind: change only on Bitcoin (D185), stake only on Solana (D183 (4))."
       },
       "AfaLine": {
         "properties": {
@@ -10987,6 +11205,55 @@
         ],
         "title": "AssessedTax",
         "description": "§5.10: the tax as assessed. est = est_with + kindergeld when the allowances win, else\nest_without; Soli and church tax on est_with minus the §35a credit (§51a Abs. 2 S. 1)."
+      },
+      "AssetBalance": {
+        "properties": {
+          "asset_key": {
+            "$ref": "#/components/schemas/AssetKey"
+          },
+          "units": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Units"
+          },
+          "at_block": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "At Block"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_key",
+          "units",
+          "at_block"
+        ],
+        "title": "AssetBalance"
+      },
+      "AssetKey": {
+        "properties": {
+          "chain": {
+            "$ref": "#/components/schemas/Chain"
+          },
+          "contract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "chain"
+        ],
+        "title": "AssetKey"
       },
       "AssetKind": {
         "type": "string",
@@ -15915,6 +16182,9 @@
           "account.holdings_reconciled",
           "account.holdings_mismatch",
           "account.holding_corrected",
+          "wallet.address_added",
+          "wallet.address_updated",
+          "wallet.address_revealed",
           "asset.created",
           "asset.updated",
           "asset.price_recorded",
@@ -30306,6 +30576,251 @@
         ],
         "title": "WaitingAmount",
         "description": "An amount other lines from the same IBAN and sign are waiting with, and how many."
+      },
+      "WalletAddress": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/Chain"
+          },
+          "address_masked": {
+            "type": "string",
+            "title": "Address Masked"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AddressKind"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "last_sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WalletSyncSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "chain",
+          "address_masked",
+          "kind",
+          "active"
+        ],
+        "title": "WalletAddress"
+      },
+      "WalletAddressBody": {
+        "properties": {
+          "chain": {
+            "$ref": "#/components/schemas/Chain"
+          },
+          "address": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 20,
+            "title": "Address"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "also_on": {
+            "items": {
+              "$ref": "#/components/schemas/Chain"
+            },
+            "type": "array",
+            "title": "Also On"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "chain",
+          "address"
+        ],
+        "title": "WalletAddressBody",
+        "description": "POST /wallets/{id}/addresses (WalletAddressCreate's fields): a validation error never\nechoes the pasted address. `also_on` takes EVM chains only, for an Ethereum address the\nshortcut „Auch auf Arbitrum und BNB Smart Chain lesen“ (D179 (2))."
+      },
+      "WalletAddressPatch": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WalletAddressPatch",
+        "description": "PATCH /wallets/{id}/addresses/{aid}: the label (null clears it) and active (false\nretires the address, true reactivates it). Nothing else of a row ever changes (0041's\ntrigger)."
+      },
+      "WalletAddressPlain": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "chain": {
+            "$ref": "#/components/schemas/Chain"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "chain",
+          "address"
+        ],
+        "title": "WalletAddressPlain",
+        "description": "GET /wallets/{id}/addresses/{aid}/plain: the full address for „kopieren“, sent with\nCache-Control: no-store and audited as wallet.address_revealed. The page writes it to the\nclipboard and never renders it."
+      },
+      "WalletPage": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/Account"
+          },
+          "addresses": {
+            "items": {
+              "$ref": "#/components/schemas/WalletAddress"
+            },
+            "type": "array",
+            "title": "Addresses"
+          },
+          "balances": {
+            "items": {
+              "$ref": "#/components/schemas/AssetBalance"
+            },
+            "type": "array",
+            "title": "Balances"
+          },
+          "syncs": {
+            "items": {
+              "$ref": "#/components/schemas/WalletSyncSummary"
+            },
+            "type": "array",
+            "title": "Syncs"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account",
+          "addresses"
+        ],
+        "title": "WalletPage",
+        "description": "GET /wallets/{id}: the wallet account with its owner shares, its addresses (masked,\nactive first, then by chain and the order added), and the balances and syncs, empty until\nthe sync of step 2 reads a chain."
+      },
+      "WalletSyncSummary": {
+        "properties": {
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "block": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block"
+          },
+          "reconciled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconciled"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "movements_new": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Movements New",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WalletSyncSummary"
       },
       "WarningCode": {
         "type": "string",

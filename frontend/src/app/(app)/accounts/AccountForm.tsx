@@ -13,31 +13,51 @@
 // IBAN (the Verrechnungskonto's) is optional and its account number comes with its first cash
 // statement. An exchange (phase 6 step 5a, D166, D178) is always private and has no IBAN and no
 // opening balance: it is BISON or Binance, its coins come from its exports, and its balances are
-// typed per coin on its page („Bestand laut Börse eingeben“). Wallets come with phase 7.
+// typed per coin on its page („Bestand laut Börse eingeben“). A wallet (phase 7 step 1, D179)
+// is always private too, with no IBAN and no opening balance: it names its provider (Tangem,
+// Phantom, …), and a new one is given its owner shares here, „Gemeinsam (je 1/2)“ with the
+// reason „Coins vom Gemeinschaftskonto bezahlt“ pre-filled, or one owner at 100 %, recorded right
+// after the account (POST /accounts/{id}/ownership); its addresses are added on its page.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError } from "@/api/errors";
-import type { Account, AccountKind, AccountPatch, AccountPurpose } from "@/api/schemas";
+import type { Account, AccountKind, AccountPatch, AccountPurpose, Owner, OwnershipShare } from "@/api/schemas";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { todayIso } from "@/components/format";
 import { decimalInput, toSignedMoneyString } from "@/components/input";
 import { ACCOUNT_KIND, ACCOUNT_PURPOSE } from "@/components/labels";
 import { Facts } from "@/components/ui";
+import { useLoad } from "@/components/useLoad";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-const KEYS = ["label", "bank", "iban", "opening_balance", "opening_balance_on", "kind", "purpose", "provider"] as const;
+const KEYS = ["label", "bank", "iban", "opening_balance", "opening_balance_on", "kind", "purpose", "provider", "owners", "reason"] as const;
 
 const CODE_FIELDS = { "iban.": "iban", "allocation.category_not_for_account": "purpose" };
 
 /** The kinds this form offers: the bank kinds (D156), the credit card (D176), the depot
- * (step 4, D165) and the exchange (step 5a, D166); the wallet comes with phase 7. */
+ * (step 4, D165), the exchange (step 5a, D166) and the wallet (phase 7 step 1, D179). */
 const BANK_KINDS: AccountKind[] = ["bank_current", "bank_savings"];
-const NEW_KINDS: AccountKind[] = [...BANK_KINDS, "credit_card", "depot", "exchange"];
+const NEW_KINDS: AccountKind[] = [...BANK_KINDS, "credit_card", "depot", "exchange", "wallet"];
+/** Kinds that keep their kind once created. */
+const FIXED_KINDS: AccountKind[] = ["credit_card", "depot", "exchange", "wallet"];
 /** The exchanges whose exports Hausbuch reads (backend rules/exchange.EXCHANGE_PROVIDERS). */
 const EXCHANGES = ["BISON", "Binance"] as const;
+/** A joint wallet's reason, as the household design records it (6 Nov 2026). */
+const JOINT_REASON = "Coins vom Gemeinschaftskonto bezahlt";
+const JOINT = "joint";
+
+const loadOwners = () => ok(api.GET("/api/owners"));
+
+/** The owner shares of a new wallet: both owners 1/2 each, or one owner 1/1. */
+function walletShares(choice: string, owners: Owner[], reason: string | null): OwnershipShare[] {
+  if (choice === JOINT) {
+    return owners.map((owner) => ({ owner_id: owner.id, share_numerator: 1, share_denominator: 2, reason }));
+  }
+  return [{ owner_id: choice, share_numerator: 1, share_denominator: 1, reason }];
+}
 
 /** `initialKind` pre-selects the Kontoart of a new account (a link „Konto anlegen“ for a card or
  * depot statement waiting on its document page, phase 6 D176 (3)); a kind this form does not
@@ -61,13 +81,16 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
   const card = kind === "credit_card";
   const depot = kind === "depot";
   const exchange = kind === "exchange";
-  // An existing card stays a card, a depot a depot, an exchange an exchange, an existing bank
-  // account a bank account.
-  const kinds: AccountKind[] = account
-    ? account.kind === "credit_card" || account.kind === "depot" || account.kind === "exchange"
-      ? [account.kind]
-      : BANK_KINDS
-    : NEW_KINDS;
+  const wallet = kind === "wallet";
+  // A new wallet's owners: null until the person picks, then JOINT or an owner's id.
+  const owners = useLoad(loadOwners);
+  const [ownerPick, setOwnerPick] = useState<string | null>(null);
+  const [ownerReason, setOwnerReason] = useState(JOINT_REASON);
+  const ownerList = owners.data ?? [];
+  const ownerChoice = ownerPick ?? (ownerList.length === 2 ? JOINT : ownerList.length === 1 ? (ownerList[0]?.id ?? null) : null);
+  // An existing card stays a card, a depot a depot, an exchange an exchange, a wallet a wallet,
+  // an existing bank account a bank account.
+  const kinds: AccountKind[] = account ? (FIXED_KINDS.includes(account.kind) ? [account.kind] : BANK_KINDS) : NEW_KINDS;
 
   // A 409 on create means the IBAN is taken; the generic conflict sentence would not say so.
   const conflictText = (error: unknown) =>
@@ -78,23 +101,29 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
           ? "Ein Depot mit dieser IBAN gibt es in diesem Haushalt schon."
           : exchange
             ? "Dieses Börsenkonto gibt es in diesem Haushalt schon."
+          : wallet
+            ? "Diese Wallet gibt es in diesem Haushalt schon."
           : "Ein Konto mit dieser IBAN gibt es in diesem Haushalt schon."
       : null;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = collector();
-    // An exchange has no cash balance to anchor (its coins are checked per import, D166): its
-    // anchor is 0,00 on the day it is created, and its bank is the exchange.
-    const openingBalance = exchange ? (account?.opening_balance ?? "0.00") : values.take("opening_balance", toSignedMoneyString(opening));
-    const openingDay = exchange ? (account?.opening_balance_on ?? todayIso()) : openingOn;
+    // An exchange or a wallet has no cash balance to anchor (an exchange's coins are checked per
+    // import, D166; a wallet's against the chain, D186): its anchor is 0,00 on the day it is
+    // created, and its bank is the exchange or the wallet's provider.
+    const noAnchor = exchange || wallet;
+    const openingBalance = noAnchor ? (account?.opening_balance ?? "0.00") : values.take("opening_balance", toSignedMoneyString(opening));
+    const openingDay = noAnchor ? (account?.opening_balance_on ?? todayIso()) : openingOn;
     if (!openingDay) values.messages.opening_balance_on = ["Bitte das Datum des Anfangssaldos eingeben."];
     if (exchange && !account && !provider) values.messages.provider = ["Bitte die Börse wählen."];
-    if (!account && !card && !depot && !exchange && iban.trim() === "") values.messages.iban = ["Bitte die IBAN des Kontos eingeben."];
+    if (wallet && provider.trim() === "") values.messages.provider = ["Bitte den Anbieter der Wallet eingeben, z. B. Tangem."];
+    if (wallet && !account && ownerList.length > 0 && ownerChoice === null) values.messages.owners = ["Bitte wählen, wem die Wallet gehört."];
+    if (!account && !card && !depot && !noAnchor && iban.trim() === "") values.messages.iban = ["Bitte die IBAN des Kontos eingeben."];
     if (!values.ok || openingBalance === undefined) return form.invalid(values.messages);
     const common = {
       label: label.trim(),
-      bank: exchange ? (account?.bank ?? provider) : bank.trim(),
+      bank: exchange ? (account?.bank ?? provider) : wallet ? (account?.bank ?? provider.trim()) : bank.trim(),
       opening_balance: openingBalance,
       opening_balance_on: openingDay,
     };
@@ -107,7 +136,7 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         const body: AccountPatch = { ...common };
         if (kind !== account.kind) body.kind = kind;
         if (purpose !== account.purpose) body.purpose = purpose;
-        if (card && provider.trim() !== (account.provider ?? "")) body.provider = provider.trim() || null;
+        if ((card || wallet) && provider.trim() !== (account.provider ?? "")) body.provider = provider.trim() || null;
         await ok(api.PATCH("/api/accounts/{account_id}", { params: { path: { account_id: account.id } }, body }));
         router.push(`/accounts/${account.id}`);
       } else {
@@ -118,11 +147,28 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
           : exchange
             ? // An exchange is always private and has no IBAN (D166).
               { ...common, is_owner_account: true, kind, purpose: "private" as const, provider }
+          : wallet
+            ? // A wallet is always private and has no IBAN or number (D179).
+              { ...common, is_owner_account: true, kind, purpose: "private" as const, provider: provider.trim() }
           : depot
             ? // A depot is always private; its IBAN is optional (its cash statement offers it, D156).
               { ...common, iban: iban.trim() || null, is_owner_account: true, kind, purpose: "private" as const }
             : { ...common, iban: iban.trim(), is_owner_account: true, kind, purpose };
         const created = await ok(api.POST("/api/accounts", { body }));
+        if (wallet && ownerChoice !== null) {
+          // The shares are a second write; if it fails, the wallet's page shows the to-do
+          // „Eigentümer festlegen“ with its own form, so nothing is lost.
+          try {
+            await ok(
+              api.POST("/api/accounts/{account_id}/ownership", {
+                params: { path: { account_id: created.id } },
+                body: { shares: walletShares(ownerChoice, ownerList, ownerReason.trim() || null), effective_from: null },
+              }),
+            );
+          } catch {
+            // the to-do on the wallet's page takes over
+          }
+        }
         router.push(`/accounts/${created.id}`);
       }
     } catch (error) {
@@ -138,7 +184,7 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         <Field
           id="account-kind"
           label="Kontoart"
-          description="Girokonto, Sparkonto (auch Tagesgeld), Kreditkarte, Depot oder Börse. Eine Kreditkarte wird aus ihren monatlichen Abrechnungen (PDF) gefüllt, ein Depot aus den Dokumenten seiner Bank (Kontoauszüge, Abrechnungen, Berichte), eine Krypto-Börse (BISON, Binance) aus ihren Exporten."
+          description="Girokonto, Sparkonto (auch Tagesgeld), Kreditkarte, Depot, Börse oder Wallet. Eine Kreditkarte wird aus ihren monatlichen Abrechnungen (PDF) gefüllt, ein Depot aus den Dokumenten seiner Bank (Kontoauszüge, Abrechnungen, Berichte), eine Krypto-Börse (BISON, Binance) aus ihren Exporten, eine Wallet (z. B. Tangem, Phantom) aus ihren öffentlichen Adressen."
           errors={form.of("kind")}
         >
           <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)} disabled={kinds.length === 1}>
@@ -149,7 +195,7 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
             ))}
           </select>
         </Field>
-        {card || depot || exchange ? null : (
+        {card || depot || exchange || wallet ? null : (
           <Field
             id="account-purpose"
             label="Wofür"
@@ -170,7 +216,9 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         <Field
           id="account-label"
           label="Bezeichnung"
-          hint={card ? "z. B. Kreditkarte" : depot ? "z. B. Depot" : exchange ? "z. B. BISON" : "z. B. Mietkonto Musterstraße"}
+          hint={
+            card ? "z. B. Kreditkarte" : depot ? "z. B. Depot" : exchange ? "z. B. BISON" : wallet ? "z. B. Tangem" : "z. B. Mietkonto Musterstraße"
+          }
           description="Ein frei wählbarer Name, unter dem Sie das Konto in Hausbuch wiederfinden."
           errors={form.of("label")}
         >
@@ -191,6 +239,16 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
                 </option>
               ))}
             </select>
+          </Field>
+        ) : wallet ? (
+          <Field
+            id="account-provider"
+            label="Anbieter"
+            hint="z. B. Tangem, Phantom, Ledger"
+            description="Die Wallet-App oder das Gerät, in dem die Coins liegen. Hausbuch liest nur die öffentlichen Adressen, die Sie auf der Seite der Wallet eintragen."
+            errors={form.of("provider")}
+          >
+            <input type="text" value={provider} onChange={(e) => setProvider(e.target.value)} required maxLength={100} autoComplete="off" />
           </Field>
         ) : (
           <Field
@@ -219,7 +277,7 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
             <input type="text" value={provider} onChange={(e) => setProvider(e.target.value)} maxLength={100} autoComplete="off" />
           </Field>
         ) : null}
-        {account || card || exchange ? null : (
+        {account || card || exchange || wallet ? null : (
           <Field
             id="account-iban"
             label="IBAN"
@@ -234,7 +292,7 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
             <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} required={!depot} autoComplete="off" spellCheck={false} />
           </Field>
         )}
-        {exchange ? null : (
+        {exchange || wallet ? null : (
           <>
             <Field
               id="account-opening"
@@ -289,7 +347,71 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
           Person, auf deren Namen es läuft), legen Sie nach dem Anlegen auf seiner Seite fest.
         </p>
       ) : null}
-      {account && !card && !depot && !exchange ? (
+      {wallet && !account ? (
+        <>
+          {ownerList.length > 0 ? (
+            <fieldset className={form.of("owners").length > 0 ? "field field-invalid" : "field"}>
+              <legend>Wem gehört die Wallet?</legend>
+              <div className="stack" role="radiogroup">
+                {ownerList.length === 2 ? (
+                  <label className="inline" htmlFor="wallet-owner-joint">
+                    <input
+                      id="wallet-owner-joint"
+                      type="radio"
+                      name="wallet-owner"
+                      checked={ownerChoice === JOINT}
+                      onChange={() => {
+                        setOwnerPick(JOINT);
+                        setOwnerReason(JOINT_REASON);
+                      }}
+                    />{" "}
+                    Gemeinsam, je 1/2 (50/50)
+                  </label>
+                ) : null}
+                {ownerList.map((owner) => (
+                  <label key={owner.id} className="inline" htmlFor={`wallet-owner-${owner.id}`}>
+                    <input
+                      id={`wallet-owner-${owner.id}`}
+                      type="radio"
+                      name="wallet-owner"
+                      checked={ownerChoice === owner.id}
+                      onChange={() => {
+                        setOwnerPick(owner.id);
+                        if (ownerReason === JOINT_REASON) setOwnerReason("");
+                      }}
+                    />{" "}
+                    {owner.full_name} allein (100 %)
+                  </label>
+                ))}
+              </div>
+              {form.of("owners").length > 0 ? (
+                <ul className="field-errors">
+                  {form.of("owners").map((message, index) => (
+                    <li key={index}>{message}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </fieldset>
+          ) : null}
+          {ownerList.length > 0 ? (
+            <Field
+              id="wallet-owner-reason"
+              label="Begründung (optional)"
+              hint={ownerChoice === JOINT ? "Vorgeschlagen, weil die Coins meist vom gemeinsamen Konto bezahlt wurden." : undefined}
+              description="Warum die Wallet diesen Personen zu diesen Anteilen gehört, z. B. von welchem Konto die Coins bezahlt wurden. Hausbuch speichert es mit den Anteilen, damit es später nachvollziehbar bleibt."
+              errors={form.of("reason")}
+            >
+              <input type="text" value={ownerReason} onChange={(e) => setOwnerReason(e.target.value)} maxLength={500} autoComplete="off" />
+            </Field>
+          ) : null}
+          <p className="muted">
+            Eine Wallet ist immer ein Privatkonto und hat keine IBAN und keinen Anfangssaldo. Nach dem Anlegen tragen Sie auf
+            ihrer Seite die öffentlichen Adressen ein (nie die Seed-Phrase oder einen privaten Schlüssel).
+            {ownerList.length === 0 ? " Wem sie gehört, legen Sie nach dem Anlegen auf ihrer Seite fest." : null}
+          </p>
+        </>
+      ) : null}
+      {account && !card && !depot && !exchange && !wallet ? (
         <>
           <Facts rows={[["IBAN", account.iban_masked ?? "–"]]} />
           <p className="muted">

@@ -13,7 +13,9 @@
 // for confirmation (the card „Zahlungs-IBAN bestätigen“, principle 3). An exchange account
 // (phase 6 step 5a, D166, D178) has no statements or bank lines: its page is the export upload,
 // its to-dos, the coins it holds, the imports with „Bestand laut Börse eingeben“ and the
-// movements with their answers (components/exchange.tsx).
+// movements with their answers (components/exchange.tsx). A wallet (phase 7 step 1, §4) has
+// none either: its page is its addresses, masked, with „Adresse hinzufügen“, „kopieren“ and
+// „Adresse stilllegen“ (components/wallet.tsx).
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useState, type FormEvent } from "react";
@@ -27,6 +29,7 @@ import { formatDate, formatMoney } from "@/components/format";
 import { ACCOUNT_KIND, ACCOUNT_PURPOSE } from "@/components/labels";
 import { Breadcrumbs, Facts, Loading, Notice, TabBar, type Tab } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { WalletSection } from "@/components/wallet";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { AccountOwnership } from "./AccountOwnership";
@@ -98,7 +101,7 @@ function AccountDetail() {
               </Link>
             </div>
             <AccountFacts account={data} />
-            {data.purpose === "private" && data.kind !== "exchange" ? (
+            {data.purpose === "private" && data.kind !== "exchange" && data.kind !== "wallet" ? (
               <p className="muted">
                 Privatkonto: seine Umsätze bekommen Haushaltskategorien und zählen nie in die Anlage V. Überweisungen zwischen
                 diesem Konto und dem Mietkonto sind Privateinlagen und -entnahmen.
@@ -141,7 +144,8 @@ function AccountDetail() {
                 <ExchangeSection accountId={data.id} />
               </>
             ) : null}
-            {data.kind === "exchange" ? null : (
+            {data.kind === "wallet" ? <WalletSection accountId={data.id} /> : null}
+            {data.kind === "exchange" || data.kind === "wallet" ? null : (
               <>
                 <TabBar tabs={tabs} current={tab} href={(key) => `/accounts/${id}?tab=${key}`} />
                 {tab === "kontoauszuege" ? (
@@ -209,6 +213,16 @@ function AccountFacts({ account }: { account: Account }) {
       <Facts
         rows={[
           ["Börse", account.provider ?? account.bank],
+          ["Kontoart", ACCOUNT_KIND[account.kind]],
+        ]}
+      />
+    );
+  }
+  if (account.kind === "wallet") {
+    return (
+      <Facts
+        rows={[
+          ["Anbieter", account.provider ?? account.bank],
           ["Kontoart", ACCOUNT_KIND[account.kind]],
         ]}
       />
