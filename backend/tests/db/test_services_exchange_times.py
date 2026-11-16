@@ -26,6 +26,7 @@ from db.test_phase6_migration import _asset
 from db.test_phase7_migration import EVM, _address, _wallet
 from db.test_services_private_matching import Private
 from db.test_services_transfers import _book
+from db.test_wallet_sync_bsc_deposits import node  # noqa: F401 - the fake BSC node fixture
 from psycopg.types.json import Jsonb
 from sqlalchemy import func, select
 
@@ -576,3 +577,130 @@ def test_a_learned_withdrawal_pair_after_the_repair(
             live.id: code.id,
             code.in_movement_id: code.id,
         }
+
+
+# --- A deposit the app wrote for a withdrawal on a balance-only chain ----------------------
+
+
+def test_a_written_deposit_moves_with_its_withdrawal(
+    dbname,
+    app_engine,
+    blob_store,
+    fresh_workspaces,
+    node,  # noqa: F811 - the fixture imported above
+    run,
+    read,
+    monkeypatch,
+):
+    """Phase 7 D181 (c) amended, two Binance withdrawals to the own BSC address, both completed
+    by the history. The node knows the first hash: its deposit is written at the block's own
+    time, which is UTC already, so the repair leaves it alone. The node never knew the second
+    hash, so a person picked the address and the deposit was written at the withdrawal's time.
+    The repair moves that deposit with the withdrawal (a new group, still routed as written)
+    and keeps both links. Neither the relink nor the next sync ends a link or writes a second
+    deposit."""
+    from db.test_wallet_sync_bsc_deposits import (
+        BNB,
+        OWN,
+        Seed,
+        _deposits,
+        _hash,
+        _links,
+        _own_wallet,
+        _run,
+    )
+
+    from hausbuch.services.exchange.imports import confirm_movement
+
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    binance = _binance(run, ws).id
+    tx_hash = _hash("binance bsc withdrawal in UTC+1")
+    unknown_hash = _hash("a hash the node never saw")
+    files = [
+        (
+            HEADER + "100000001,2026-05-04 11:00:20,Spot,Withdraw,BNB,-2.001,"
+            "Withdraw fee is included\n"
+            "100000001,2026-05-04 13:00:00,Spot,Withdraw,BNB,-1.001,"
+            "Withdraw fee is included\n",
+            "Transaction-History-202611161200(UTC+1)-part1-of1.csv",
+        ),
+        (
+            "Time,Coin,Network,Amount,Fee,Address,TXID,Status\n"
+            f"2026-05-04 10:55:00,BNB,BSC,2.000,0.001,{OWN},{tx_hash},Completed\n"
+            f"2026-05-04 12:55:00,BNB,BSC,1.000,0.001,{OWN},{unknown_hash},Completed\n",
+            "Withdraw-History-202611161200(UTC+1)-part1-of1.csv",
+        ),
+    ]
+    with _legacy(monkeypatch) as m:
+        _no_zone(m)
+        for n, (text, name) in enumerate(files):
+            run(
+                ws,
+                imports.import_export,
+                blob_store,
+                binance,
+                text.replace("\n", "\r\n").encode(),
+                media_type="text/csv",
+                original_filename=name,
+                now=T0 + timedelta(minutes=n),
+            )
+    rows = read(ws, imports.exchange_movements, binance)
+    for row in rows:
+        run(ws, lambda ctx, row=row: confirm_movement(ctx, row.id))
+    hashed, picked = sorted(rows, key=lambda r: r.occurred_at)
+    node.send(tx_hash, OWN, 2 * BNB)
+    node.native = 3 * BNB
+    _run(app_engine, blob_store, ws, seed.wallet)  # months later: the unknown hash remembered
+    run(ws, _own_wallet(picked.id, seed.address, remember=False))
+    assert len(_deposits(dbname, seed.address)) == 2 and len(_links(dbname, ws)) == 2
+    block = datetime(2026, 5, 4, 10, 0, 30, tzinfo=UTC)  # the fake node's block time
+    stamp = datetime(2026, 5, 4, 13, 0, tzinfo=UTC)  # the second withdrawal read as UTC
+
+    def deposits():
+        m = movement_table.c
+        return {
+            r.tx_hash: r
+            for r in read(
+                ws,
+                lambda c: c.execute(
+                    select(movement_table).where(
+                        m.address_id == seed.address, m.superseded_by.is_(None)
+                    )
+                ).all(),
+            )
+        }
+
+    before = deposits()
+    assert before[tx_hash].occurred_at == block and before[unknown_hash].occurred_at == stamp
+
+    result = _repair(run, ws)
+
+    # The two withdrawals, and the deposit written at the second one's time.
+    assert result.corrected.movements == 3
+    assert (result.linked, result.reopened, result.ended) == (0, 0, 0)
+    after = deposits()
+    assert after[tx_hash].id == before[tx_hash].id  # the block's time is true already
+    moved = after[unknown_hash]
+    assert moved.id != before[unknown_hash].id and moved.occurred_at == stamp - HOUR
+    assert moved.group_id != before[unknown_hash].group_id and moved.status == "confirmed"
+    group = read(
+        ws,
+        lambda c: c.execute(select(group_table).where(group_table.c.id == moved.group_id)).one(),
+    )
+    assert (group.occurred_at, group.tx_hash, group.status) == (
+        stamp - HOUR,
+        unknown_hash,
+        "confirmed",
+    )
+    live = {r.tx_hash: r for r in read(ws, imports.exchange_movements, binance)}
+    assert live[unknown_hash].occurred_at == stamp - HOUR
+    links = {in_id: (out_id, matched_by) for out_id, in_id, matched_by, _ in _links(dbname, ws)}
+    assert links[moved.id][0] == live[unknown_hash].id
+    assert links[after[tx_hash].id][0] == live[tx_hash].id
+    assert len(links) == 2
+    # The chain's relink and the next sync find both pairs linked: nothing ended, no third.
+    assert run(ws, chain_transfers.relink).ended == 0
+    _run(app_engine, blob_store, ws, seed.wallet, day=1)
+    assert {r.id for r in deposits().values()} == {after[tx_hash].id, moved.id}
+    assert len(_links(dbname, ws)) == 2
