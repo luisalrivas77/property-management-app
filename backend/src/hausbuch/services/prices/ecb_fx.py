@@ -6,8 +6,16 @@ currency (`rate` = units of the currency per euro; checked live 13 Nov 2026). Th
 the currencies in FX_CURRENCIES are stored as `price` rows of the workspace's cash asset of
 that currency: `price_eur` is 1 / rate (8 places, half up) and `raw` keeps the exact rate as
 published, which is what conversions use (rules.valuation.to_eur divides by it).
+
+The fetch job reads every currency the file lists (`currencies=None`) and stores, besides
+FX_CURRENCIES, the rates of any other currency a held fund's NAV is quoted in (D174 amended
+16 Nov 2026, follow-up C): a NAV in yen or Swedish crowns is converted like one in dollars.
+A rate the reader cannot read fails the file for FX_CURRENCIES; for any other currency it
+only drops that currency, so a currency no held fund needs never stops the prices.
 """
 
+import re
+from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -34,14 +42,22 @@ _PARSER = etree.XMLParser(
 )
 
 
-def parse(body: bytes) -> dict[str, list[FxRate]]:
-    """Currency -> its rates, oldest first, for FX_CURRENCIES. SourceError("parse") when
-    the file is not the ECB's envelope or names no day."""
+_CODE = re.compile(r"[A-Z]{3}")
+
+
+def parse(body: bytes, currencies: Iterable[str] | None = FX_CURRENCIES) -> dict[str, list[FxRate]]:
+    """Currency -> its rates, oldest first, for `currencies` (None: every currency the file
+    lists; FX_CURRENCIES are always keys). SourceError("parse") when the file is not the
+    ECB's envelope or names no day, or a rate of FX_CURRENCIES is not a positive number."""
     try:
         root = etree.fromstring(body, _PARSER)
     except etree.XMLSyntaxError:
         raise SourceError("parse") from None
+    wanted = None if currencies is None else set(currencies)
     rates: dict[str, list[FxRate]] = {code: [] for code in FX_CURRENCIES}
+    if wanted is not None:
+        rates = {code: [] for code in wanted}
+    dropped: set[str] = set()
     days = root.findall(f"{_NS}Cube/{_NS}Cube[@time]")
     if not days:
         raise SourceError("parse")
@@ -51,21 +67,28 @@ def parse(body: bytes) -> dict[str, list[FxRate]]:
         except ValueError:
             raise SourceError("parse") from None
         for cube in day.findall(f"{_NS}Cube[@currency]"):
-            code = cube.get("currency")
-            if code not in rates:
+            code = cube.get("currency") or ""
+            if (wanted is not None and code not in wanted) or not _CODE.fullmatch(code):
                 continue
             try:
                 rate = Decimal(cube.get("rate", ""))
             except InvalidOperation:
-                raise SourceError("parse") from None
-            if rate <= 0:
-                raise SourceError("parse")
-            rates[code].append(FxRate(on=on, per_eur=rate))
+                rate = Decimal(0)
+            if not rate.is_finite() or rate <= 0:
+                if code in FX_CURRENCIES:
+                    raise SourceError("parse")
+                dropped.add(code)
+                continue
+            rates.setdefault(code, []).append(FxRate(on=on, per_eur=rate))
+    for code in dropped:
+        rates.pop(code, None)
     for listed in rates.values():
         listed.sort(key=lambda r: r.on)
     return rates
 
 
-def fetch(fetch: Fetch, *, backfill: bool) -> dict[str, list[FxRate]]:
+def fetch(
+    fetch: Fetch, *, backfill: bool, currencies: Iterable[str] | None = FX_CURRENCIES
+) -> dict[str, list[FxRate]]:
     """The daily file, or the 90-day file when `backfill`."""
-    return parse(get(fetch, HIST_90D_URL if backfill else DAILY_URL))
+    return parse(get(fetch, HIST_90D_URL if backfill else DAILY_URL), currencies)

@@ -9,7 +9,8 @@ Keys (no new secret): HKDF-SHA256 over the session key (Settings.session_key), n
 info `hausbuch/fints-pin/v1` for PINs and `hausbuch/fints-login/v1` for logins. The client
 state's MAC key (services.bank_sync.state_key, D119) is derived from the same session key by
 one labelled HMAC; it is left as it is, so the stored state of a live connection keeps
-verifying. Each row stores KEY_VERSION; a row of another version, or one the key no longer
+verifying. Each row stores its key version (a login 1, a PIN 2 since the server binding
+below); a row of a version this build lacks, or one the key no longer
 opens (the session key was rotated), is unreadable: the sync fails with bank.pin_unreadable or
 bank.login_unreadable and the card asks to type it again. Never a crash, never a log line with
 the ciphertext.
@@ -18,6 +19,20 @@ Cipher: AES-256-GCM with a random 96-bit nonce per write. The AAD binds a PIN to
 and slot, a login to its workspace and connection id, rebuilt from the row's own columns: a
 ciphertext copied to another row or workspace does not decrypt.
 
+A PIN is sent only to the server it was typed for (D196 amended, 16 Nov 2026): whoever can
+edit a bank connection could otherwise change its FinTS address and make the next sync send
+the stored PIN to another host. The PUT that carries the PIN names the FinTS address it is
+for; the row (key version 2, info `hausbuch/fints-pin/v2`) seals the SHA-256 of that address,
+normalised (server_address: a plain https address by its host, port and path, any other
+shape verbatim), before the PIN, so the binding is authenticated by the same tag and needs
+no column. A sync compares it with the address it is about to dial and refuses with
+bank.pin_server_changed before any request when they differ: the PIN must be typed again
+for the new address. A row of key version 1 (typed before the binding; this said "none on
+the live data, checked 15 Nov 2026", but two were typed that evening and had to be typed
+again) names no address and is refused the same way, never bound at its first use. Only the
+PIN typed into the app is bound; a container secret is the operator's and follows the
+connection.
+
 A PIN is a secret, not history: setting it replaces the row, deleting it removes it. Each act
 is an event (workspace.bank_pin_set, workspace.bank_pin_deleted) naming the slot and its actor
 only. A readable login (a connection made before migration 0039) is encrypted at the API's
@@ -25,11 +40,14 @@ start-up (encrypt_all_logins) and at the first sync or change of its connection
 (encrypt_login_if_readable), the readable column nulled in the same UPDATE.
 """
 
+import hashlib
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from cryptography.exceptions import InvalidTag
@@ -55,10 +73,13 @@ from .events import append_event
 
 logger = logging.getLogger("hausbuch.services.bank_credentials")
 
-PIN_INFO = b"hausbuch/fints-pin/v1"
+PIN_INFO = b"hausbuch/fints-pin/v1"  # key version 1: the PIN alone (D196 as first built)
+PIN_INFO_V2 = b"hausbuch/fints-pin/v2"  # key version 2: the server's hash, then the PIN
 LOGIN_INFO = b"hausbuch/fints-login/v1"
-KEY_VERSION = 1
+KEY_VERSION = 1  # the login's, and a PIN row typed before the server binding
+PIN_KEY_VERSION = 2  # every PIN written since D196 amended (16 Nov 2026)
 NONCE_BYTES = 12  # 96 bits, AES-GCM's standard nonce
+SERVER_HASH_BYTES = 32  # SHA-256 of server_address
 
 # The login columns a read model never carries (with login_name, services.bank_sync).
 LOGIN_COLUMNS = frozenset({"login_name", "login_nonce", "login_ciphertext", "login_key_version"})
@@ -72,8 +93,9 @@ def derive_key(session_key: bytes, info: bytes) -> bytes:
     return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=info).derive(session_key)
 
 
-def pin_key(settings: Settings) -> bytes:
-    return derive_key(settings.session_key, PIN_INFO)
+def pin_key(settings: Settings, version: int = PIN_KEY_VERSION) -> bytes:
+    info = PIN_INFO_V2 if version == PIN_KEY_VERSION else PIN_INFO
+    return derive_key(settings.session_key, info)
 
 
 def login_key(settings: Settings) -> bytes:
@@ -121,6 +143,47 @@ def unseal(key: bytes, nonce: bytes, ciphertext: bytes, aad: bytes) -> str | Non
         return None
 
 
+# --- The server a PIN is for (D196 amended, 16 Nov 2026) --------------------------------------
+
+
+# A plain https address: a host of letters, digits, dots and hyphens (or a bracketed IPv6
+# literal), an optional numeric port, and a path of ordinary characters; no user info, no
+# backslash, no query, no fragment. Only this shape is normalised: on it every URL parser
+# (urlsplit here, urllib3 under python-fints' requests session) reads the same host.
+_PLAIN_ADDRESS = re.compile(
+    r"[Hh][Tt][Tt][Pp][Ss]://(?P<host>[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::(?P<port>[0-9]{1,5}))?"
+    r"(?P<path>/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?"
+)
+
+
+def server_address(url: str) -> str:
+    """The FinTS address a PIN is bound to. A plain https address (_PLAIN_ADDRESS) becomes
+    `https://<host lower-cased>:<port, 443 when none>` plus its path ("/" when empty), so
+    the same server written another way stays the same server. Anything else (user info, a
+    backslash, a query, a fragment, a port above 65535) is bound verbatim and can only
+    equal itself: parsers disagree on such URLs (urlsplit reads
+    `https://a.example\\@b.example/` as host b.example, urllib3 dials a.example), and a
+    normalised form must never let a changed address hash like the bound one."""
+    raw = url.strip()
+    plain = _PLAIN_ADDRESS.fullmatch(raw)
+    if plain is not None:
+        port = int(plain["port"] or 443)
+        try:
+            # urlsplit agrees with the regex on this shape; it lower-cases the host
+            host = (urlsplit(raw).hostname or "").lower() if port <= 65535 else None
+        except ValueError:  # a bracketed host that is no IPv6 literal, e.g. „[1.2.3.4]“
+            host = None
+        if host:
+            if ":" in host:
+                host = f"[{host}]"  # an IPv6 literal keeps its brackets
+            return f"https://{host}:{port}{plain['path'] or '/'}"
+    return f"verbatim {raw}"  # never starts with https://, so never equals a plain one
+
+
+def server_hash(url: str) -> bytes:
+    return hashlib.sha256(server_address(url).encode()).digest()
+
+
 # --- The PIN typed into the app ---------------------------------------------------------------
 
 
@@ -130,23 +193,54 @@ def _credential_row(conn: Connection, slot: str) -> Row | None:
     ).one_or_none()
 
 
-def _open_pin(row: Row, settings: Settings) -> str | None:
-    if row.key_version != KEY_VERSION:
-        return None
+@dataclass(frozen=True)
+class _OpenedPin:
+    """A stored PIN, decrypted, and the hash of the server it was typed for (None: a row of
+    key version 1, typed before the binding); repr shows neither."""
+
+    pin: str
+    server: bytes | None
+
+    def __repr__(self) -> str:
+        return "_OpenedPin(…)"
+
+
+def _open_pin(row: Row, settings: Settings) -> _OpenedPin | None:
+    """The row's PIN and server, or None when it does not decrypt (a key version this build
+    does not know, a rotated session key, a row moved to another slot or workspace)."""
     aad = pin_aad(row.workspace_id, row.credential_slot)
-    return unseal(pin_key(settings), row.nonce, row.ciphertext, aad)
+    if row.key_version == KEY_VERSION:
+        pin = unseal(pin_key(settings, KEY_VERSION), row.nonce, row.ciphertext, aad)
+        return None if pin is None else _OpenedPin(pin, None)
+    if row.key_version != PIN_KEY_VERSION:
+        return None
+    try:
+        raw = AESGCM(pin_key(settings)).decrypt(bytes(row.nonce), bytes(row.ciphertext), aad)
+        if len(raw) <= SERVER_HASH_BYTES:
+            return None
+        return _OpenedPin(raw[SERVER_HASH_BYTES:].decode(), raw[:SERVER_HASH_BYTES])
+    except (InvalidTag, ValueError):  # ValueError: a malformed nonce, or not UTF-8
+        return None
 
 
-def set_pin(ctx: CommandContext, slot: str, pin: SecretStr, *, settings: Settings) -> AppCredential:
-    """Store (or replace) the slot's PIN, encrypted; one event naming the slot. The caller
-    validated the slot (the path pattern) and the PIN's length (BankPinSet)."""
+def set_pin(
+    ctx: CommandContext, slot: str, pin: SecretStr, *, fints_url: str, settings: Settings
+) -> AppCredential:
+    """Store (or replace) the slot's PIN, encrypted and bound to the FinTS address it was
+    typed for (`fints_url`, from the same request, never read from a connection, so a later
+    edit of a connection cannot re-bind it); one event naming the slot only. The caller
+    validated the slot (the path pattern), the PIN's length and the address (BankPinSet)."""
     if not rules.valid_slot(slot):
         raise RuleError(E.INVALID, "a credential slot is lower-case letters, digits and _")
-    sealed = seal(pin_key(settings), pin.get_secret_value(), pin_aad(ctx.workspace_id, slot))
+    nonce = os.urandom(NONCE_BYTES)
+    plaintext = server_hash(fints_url) + pin.get_secret_value().encode()
+    ciphertext = AESGCM(pin_key(settings)).encrypt(
+        nonce, plaintext, pin_aad(ctx.workspace_id, slot)
+    )
     values = {
-        "nonce": sealed.nonce,
-        "ciphertext": sealed.ciphertext,
-        "key_version": KEY_VERSION,
+        "nonce": nonce,
+        "ciphertext": ciphertext,
+        "key_version": PIN_KEY_VERSION,
         "set_by": user_id(ctx),
         "updated_at": ctx.now,
     }
@@ -211,18 +305,26 @@ def app_pins(conn: Connection, settings: Settings) -> list[AppCredential]:
 
 @dataclass(frozen=True)
 class PinState:
-    """Where a slot's PIN comes from (never the PIN)."""
+    """Where a slot's PIN comes from (never the PIN). server_matches is False when the PIN
+    typed into the app is readable but was typed for another FinTS address than the one
+    asked about, or before the binding, so a sync refuses it (D196 amended)."""
 
     source: CredentialSource
     set_at: datetime | None = None
     readable: bool = True
+    server_matches: bool = True
 
 
-def pin_state(conn: Connection, slot: str, settings: Settings) -> PinState:
-    """D196's precedence: the PIN typed into the app, then the slot's container secret."""
+def pin_state(
+    conn: Connection, slot: str, settings: Settings, *, fints_url: str | None = None
+) -> PinState:
+    """D196's precedence: the PIN typed into the app, then the slot's container secret. With
+    `fints_url` (a connection's address), whether the app's PIN is bound to that address."""
     row = _credential_row(conn, slot)
     if row is not None:
-        return PinState(CredentialSource.APP, row.updated_at, _open_pin(row, settings) is not None)
+        opened = _open_pin(row, settings)
+        matches = fints_url is None or opened is None or opened.server == server_hash(fints_url)
+        return PinState(CredentialSource.APP, row.updated_at, opened is not None, matches)
     if slot in settings.fints_pins:
         return PinState(CredentialSource.SERVER)
     return PinState(CredentialSource.NONE)
@@ -234,18 +336,25 @@ def available_slots(conn: Connection, settings: Settings) -> set[str]:
     return set(stored) | set(settings.fints_pins)
 
 
-def resolve_pin(conn: Connection, slot: str, settings: Settings) -> str:
-    """The slot's PIN for a sync, in process only: the one typed into the app, else the
-    container secret. bank.pin_unreadable when a stored PIN no longer decrypts (the stored one
-    still wins: falling back silently would use a PIN the person replaced);
-    bank.pin_missing when neither exists. The value never leaves the caller's frame into a
-    log, an event, a payload or a row."""
+def resolve_pin(conn: Connection, slot: str, settings: Settings, *, fints_url: str) -> str:
+    """The slot's PIN for a sync to `fints_url` (the address the dialog is about to dial), in
+    process only: the one typed into the app, else the container secret.
+    bank.pin_unreadable when a stored PIN no longer decrypts (the stored one still wins:
+    falling back silently would use a PIN the person replaced); bank.pin_server_changed when
+    the stored PIN was typed for another address or before the binding (D196 amended: never
+    sent elsewhere, and never silently replaced by the container secret either);
+    bank.pin_missing when neither exists. The PIN never leaves the caller's frame into a
+    log, an event, a payload or a row, and neither address is named in the error."""
     row = _credential_row(conn, slot)
     if row is not None:
-        pin = _open_pin(row, settings)
-        if pin is None:
+        opened = _open_pin(row, settings)
+        if opened is None:
             raise RuleError(E.BANK_PIN_UNREADABLE, "the stored PIN no longer decrypts")
-        return pin
+        if opened.server is None or opened.server != server_hash(fints_url):
+            raise RuleError(
+                E.BANK_PIN_SERVER_CHANGED, "the stored PIN was typed for another FinTS address"
+            )
+        return opened.pin
     rules.check_slot(set(settings.fints_pins), slot)  # bank.pin_missing, naming the variable
     return settings.fints_pins[slot]
 

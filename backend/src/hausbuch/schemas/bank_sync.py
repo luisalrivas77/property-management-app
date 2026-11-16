@@ -160,11 +160,22 @@ class BankPinSet(Schema):
     """PUT /bank-credentials/{slot} (D196): the slot's online-banking PIN, stored encrypted and
     never returned, logged or echoed (a SecretStr: its repr is stars). Surrounding blanks are
     trimmed, as the container secret's are (settings._optional), so a PIN pasted with a space
-    is the same PIN; the length counts after trimming."""
+    is the same PIN; the length counts after trimming.
+
+    fints_url (D196 amended, 16 Nov 2026): the FinTS address the PIN is typed for, the
+    connection's as the card shows it. The PIN is stored bound to it and a sync to any other
+    address refuses it (bank.pin_server_changed), so changing a connection's address never
+    sends the stored PIN elsewhere. Never echoed or stored readable."""
 
     pin: SecretStr = Field(
         json_schema_extra={"minLength": PIN_MIN_LENGTH, "maxLength": PIN_MAX_LENGTH}
     )
+    fints_url: FintsUrl
+
+    @field_validator("fints_url")
+    @classmethod
+    def _https(cls, value: str | None) -> str | None:
+        return _https_only(value)
 
     @field_validator("pin")
     @classmethod
@@ -227,6 +238,10 @@ class BankConnection(MutableRecord):
     credential_set_at: datetime | None = None
     credential_readable: bool = True
     name_readable: bool = True
+    # D196 amended (16 Nov 2026): false when the PIN typed into the app was typed for another
+    # FinTS address than this connection's (or before the binding): the next sync refuses it
+    # with bank.pin_server_changed and the card asks to type it again. Never the address.
+    credential_server_matches: bool = True
 
 
 class BankParameters(Schema):

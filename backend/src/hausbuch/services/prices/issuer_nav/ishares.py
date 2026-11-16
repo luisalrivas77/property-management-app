@@ -18,8 +18,14 @@ every cell a String, German formats), 1 to 4 MB:
     sheet „Key Facts“        rows label | value, among them „ISIN“ and „Basiswährung“
                              (the fund's, not always the NAV's: a hedged class's NAV is EUR)
 The NAV's currency is the Fund Header's prefix, else Key Facts' „Währung der Reihe“.
+
+Catalogue (read live 16 Nov 2026: the data the „Produktliste“ page
+https://www.ishares.com/de/privatanleger/de/produkte/produktliste loads, named in the page's
+own configuration as `productScreenerDataApi`): one JSON object, about 4 MB, keyed by the
+product number, each value with `portfolioId` (that number) and `isin`, 1,323 share classes.
 """
 
+import json
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -30,12 +36,16 @@ from lxml import etree
 from hausbuch.schemas.prices import NavPoint
 
 from ..http import SourceError
-from .base import IssuerAdapter, NavFile, nav
+from .base import IssuerAdapter, NavFile, nav, unique_refs
 
 URL = (
     "https://www.blackrock.com/varnish-api/uk-retail01-product-data/product-data/api/v1/"
     "get-fund-document?appType=PRODUCT_PAGE&appSubType=ISHARES&targetSite=de-ishares-v2"
     "&locale=de_DE&portfolioId={ref}&component=fundDownloadV2&userType=individual"
+)
+CATALOGUE_URL = (
+    "https://www.ishares.com/varnish-api/blk-product-screener-server/api/v1/product-screener/"
+    "product-data?country=de&language=de&siteName=de-ishares-v2&userType=individual"
 )
 _SS = "urn:schemas-microsoft-com:office:spreadsheet"
 _NS = {"ss": _SS}
@@ -66,6 +76,10 @@ _MONTHS = {
     "nov": 11,
     "dez": 12,
 }
+# The file writes a fund name's „&“ unescaped (a real fund's file, read live 16 Nov
+# 2026), which is not XML: an ampersand that starts no entity or character reference is
+# escaped before parsing; nothing else is repaired.
+_BARE_AMPERSAND = re.compile(rb"&(?![A-Za-z][A-Za-z0-9]*;|#[0-9]+;|#x[0-9A-Fa-f]+;)")
 _DAY = re.compile(r"^(\d{1,2})\.([^\d.]+)\.?(\d{4})$")
 _PREFIX = re.compile(r"^([A-Z]{3})\s+[\d.,]+$")
 
@@ -119,6 +133,8 @@ class ISharesAdapter(IssuerAdapter):
     # The files are 1 to 4 MB today (13 Nov 2026) and grow by a row a day: 5 MB would fail
     # the larger ones within a few years, so this issuer reads up to 10 MB.
     max_bytes: ClassVar[int] = 10 * 1024 * 1024
+    catalogue_url: ClassVar[str | None] = CATALOGUE_URL
+    brands: ClassVar[tuple[str, ...]] = ("ishares", "ishs")
 
     def url(self, fund_ref: str) -> str:
         if not fund_ref.isdigit():
@@ -126,12 +142,24 @@ class ISharesAdapter(IssuerAdapter):
         return URL.format(ref=fund_ref)
 
     @staticmethod
+    def parse_catalogue(body: bytes) -> dict[str, str]:
+        products = json.loads(body)
+        pairs = []
+        for product in products.values():
+            if not isinstance(product, dict):
+                continue
+            ref, isin = str(product.get("portfolioId") or ""), product.get("isin")
+            if ref.isdigit() and isinstance(isin, str):
+                pairs.append((isin, ref))
+        return unique_refs(pairs)
+
+    @staticmethod
     def parse(body: bytes) -> NavFile:
         start = body.find(b"<")
         if start < 0:
             raise SourceError("parse")
         try:
-            root = etree.fromstring(body[start:], _PARSER)
+            root = etree.fromstring(_BARE_AMPERSAND.sub(b"&amp;", body[start:]), _PARSER)
         except etree.XMLSyntaxError:
             raise SourceError("parse") from None
         sheets = _sheets(root)

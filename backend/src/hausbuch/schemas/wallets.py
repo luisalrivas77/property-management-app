@@ -49,8 +49,9 @@ class WalletAddressPlain(Schema):
 
 class WalletPage(Schema):
     """GET /wallets/{id}: the wallet account with its owner shares, its addresses (masked,
-    active first, then by chain and the order added), and the balances and syncs, empty until
-    the sync of step 2 reads a chain."""
+    active first, then by chain and the order added, each with its last finished sync), and
+    the balances and syncs, still empty: the runs are GET /wallets/{id}/syncs, the balances
+    the screens step's."""
 
     account: Account
     addresses: list[WalletAddress]

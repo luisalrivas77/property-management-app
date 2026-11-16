@@ -26,7 +26,6 @@ rows:
 
 override_cases:
   - id: workspace_wins_same_key
-    pending: "phase 7 step 2 (decoders.decoder_for)"
     public:
       - {chain: solana, program: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL, kind: swap, legs: swap}
     workspace:
@@ -34,13 +33,11 @@ override_cases:
     call: {chain: solana, program: DKFJmmt9yC54LaYnKzbrondoiMWE9GQDAJ7MtqdcTarL}
     expect: {kind: lp, source: workspace}
   - id: public_when_no_workspace_row
-    pending: "phase 7 step 2 (decoders.decoder_for)"
     public:
       - {chain: solana, program: Stake11111111111111111111111111111111111111, kind: stake, legs: stake}
     call: {chain: solana, program: Stake11111111111111111111111111111111111111}
     expect: {kind: stake, source: public}
   - id: method_row_before_method_less
-    pending: "phase 7 step 2 (decoders.decoder_for)"
     public:
       - {chain: solana, program: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, method: syncNative, kind: wrap, legs: wrap}
     workspace:
@@ -48,13 +45,11 @@ override_cases:
     call: {chain: solana, program: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA, method: syncNative}
     expect: {kind: wrap, source: public}
   - id: method_less_row_covers_other_methods
-    pending: "phase 7 step 2 (decoders.decoder_for)"
     public:
       - {chain: ethereum, program: "0xbac1b60215808a2bce58af79feb1efcaebbcdb3a", kind: swap, legs: swap}
     call: {chain: ethereum, program: "0xbac1b60215808a2bce58af79feb1efcaebbcdb3a", method: "0x7ff36ab5"}
     expect: {kind: swap, source: public}
   - id: other_chain_no_row
-    pending: "phase 7 step 2 (decoders.decoder_for)"
     public:
       - {chain: ethereum, program: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", kind: wrap, legs: wrap}
     call: {chain: arbitrum, program: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"}

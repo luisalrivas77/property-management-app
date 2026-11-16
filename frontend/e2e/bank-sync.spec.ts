@@ -173,7 +173,10 @@ test("a PIN typed into the app is saved, never shown, and can be deleted", async
 test("a PIN under a name no connection uses is listed and can be deleted", async ({ page, signedIn }) => {
   void signedIn;
   const accountId = await createAccountViaApi(page);
-  await apiCall(page, "PUT", "/api/bank-credentials/spare_x", { pin: SAMPLE_PIN });
+  await apiCall(page, "PUT", "/api/bank-credentials/spare_x", {
+    pin: SAMPLE_PIN,
+    fints_url: "https://fints.example.org/fints",
+  });
   await page.goto(`/accounts/${accountId}`);
   const card = page.getByRole("region", { name: "Bankabruf" });
   await card.getByLabel("BLZ").fill("10000000");

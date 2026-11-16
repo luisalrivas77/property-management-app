@@ -203,6 +203,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Für den Zugang dieses Kontos ist noch keine PIN hinterlegt. Beim Bankabruf unter „PIN (Online-Banking)“ die PIN eingeben und „PIN speichern“ drücken, dann erneut abrufen.",
   "bank.pin_unreadable":
     "Die in Hausbuch gespeicherte PIN lässt sich nicht mehr lesen, weil der Schlüssel des Servers gewechselt wurde. Beim Bankabruf „PIN ändern“ wählen, die PIN neu eingeben und erneut abrufen.",
+  // a PIN is sent only to the FinTS address it was typed for (phase-6.md D196 amended)
+  "bank.pin_server_changed":
+    "Die gespeicherte PIN muss einmal neu eingegeben werden: Hausbuch sendet sie nur an die FinTS-Adresse, für die sie eingegeben wurde, und eine vor dem 16.11.2026 eingegebene PIN nennt noch keine Adresse. Beim Bankabruf „PIN ändern“ wählen, die PIN neu eingeben und erneut abrufen.",
   "bank.login_unreadable":
     "Der gespeicherte Anmeldename lässt sich nicht mehr lesen, weil der Schlüssel des Servers gewechselt wurde. Beim Bankabruf „Zugang ändern“ wählen, den Anmeldenamen neu eingeben und erneut abrufen.",
   "bank.pin_invalid": "Die PIN hat 5 bis 64 Zeichen.",
@@ -285,6 +288,11 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Das ist keine gültige Adresse für die gewählte Chain. Bitte die öffentliche Adresse unverändert aus der Wallet kopieren; das Format steht unter dem Feld.",
   "wallet.address_taken":
     "Diese Adresse ist schon eingetragen: auf einem anderen eigenen Konto, oder auf dieser Wallet schon für jede gewählte Chain. Eine stillgelegte Adresse lässt sich in der Liste mit „Wieder aktivieren“ zurückholen.",
+  // Phase 7 step 4 (D185 amended): „Nein, Empfänger“ on a Bitcoin change card.
+  "wallet.change_answered":
+    "Diese Frage ist schon beantwortet oder hat sich geändert, etwa durch eine andere Antwort. Bitte die Seite neu laden und die aktuelle Frage beantworten.",
+  "wallet.original_missing":
+    "Die Daten zu dieser Zahlung wurden bei ihrem Abruf nicht gespeichert, deshalb lässt sich die Frage hier nicht beantworten. Die Zahlung bleibt als offene Frage auf der Wallet stehen.",
   // D193: why a document cannot be deleted; each names what still depends on it.
   "document.delete_blocked.statement_import": "Aus diesem Auszug wurden Umsätze eingelesen; sie bleiben unverändert im Konto.",
   "document.delete_blocked.bank_statement": "Es ist ein Kontoauszug, den die Bank über den Bankabruf geliefert hat; er gehört ins Jahresarchiv.",
