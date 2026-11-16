@@ -129,3 +129,53 @@ cases:
       - {account: wallet, acquired_on: 2026-02-01, units_open: "2", cost_eur: "200.00", source: acquisition, tax_free_from: 2027-02-02}
     expect_uses:
       - {event: sell, acquired_on: 2026-02-01, units: "8", cost_eur: "800.00"}
+  # D188 amended (16 Nov 2026, decided by the orchestrator; a spec amendment by decision,
+  # not a change to make a test pass): a trade's fee. A `trade_fee` is a fee movement in the
+  # trade's group (the exchange's trade group, phase 6 D178 amended (3)), naming its trade.
+  # - In the coin bought (Binance's default): valued at the trade's own euro price per unit
+  #   (EUR paid ÷ units received), so it adds nothing to the lot: the lot's cost is the EUR
+  #   paid (plus any `fee_eur`), and no market price of the day is needed. The fee movement
+  #   then takes its units FIFO at cost like every fee (D188 (1)): from the trade's own lot
+  #   when it is the oldest, else from the oldest lot (the second case), so the trade's lot
+  #   then keeps the whole EUR paid on its units.
+  # - In another coin (BNB): valued at that coin's price on the Berlin day and added to the
+  #   lot's cost; without that price the lot is unpriced (null), never 0 €.
+  # - A EUR fee (`fee_eur`) and a fee in another coin both count; neither replaces the other.
+  - id: trade_fee_in_the_coin_bought
+    events:
+      - {name: buy, at: "2026-03-02T10:00:00Z", account: exchange, kind: acquisition, units: "1", cost_eur: "100.00"}
+      - {name: buy_fee, at: "2026-03-02T10:00:00Z", account: exchange, kind: trade_fee, trade: buy, units: "0.001"}
+    expect_lots:
+      - {account: exchange, acquired_on: 2026-03-02, units_open: "0.999", cost_eur: "99.90", source: acquisition, tax_free_from: 2027-03-03}
+    expect_uses:
+      - {event: buy_fee, acquired_on: 2026-03-02, units: "0.001", cost_eur: "0.10"}
+  - id: trade_fee_in_the_coin_bought_after_an_older_lot
+    events:
+      - {name: buy_jan, at: "2026-01-15T10:00:00Z", account: exchange, kind: acquisition, units: "1", cost_eur: "80.00"}
+      - {name: buy, at: "2026-03-02T10:00:00Z", account: exchange, kind: acquisition, units: "1", cost_eur: "100.00"}
+      - {name: buy_fee, at: "2026-03-02T10:00:00Z", account: exchange, kind: trade_fee, trade: buy, units: "0.001"}
+    expect_lots:
+      - {account: exchange, acquired_on: 2026-01-15, units_open: "0.999", cost_eur: "79.92", source: acquisition, tax_free_from: 2027-01-16}
+      - {account: exchange, acquired_on: 2026-03-02, units_open: "1", cost_eur: "100.00", source: acquisition, tax_free_from: 2027-03-03}
+    expect_uses:
+      - {event: buy_fee, acquired_on: 2026-01-15, units: "0.001", cost_eur: "0.08"}
+  - id: trade_fees_in_eur_and_another_coin
+    events:
+      - {name: buy_bnb, at: "2026-02-01T10:00:00Z", account: exchange, asset: BNB, kind: acquisition, units: "1", cost_eur: "500.00"}
+      - {name: buy_sol, at: "2026-03-02T10:00:00Z", account: exchange, asset: SOL, kind: acquisition, units: "2", cost_eur: "300.00", fee_eur: "0.50"}
+      - {name: sol_fee, at: "2026-03-02T10:00:00Z", account: exchange, asset: BNB, kind: trade_fee, trade: buy_sol, units: "0.002", price_eur: "500.00"}
+    expect_lots:
+      - {account: exchange, asset: BNB, acquired_on: 2026-02-01, units_open: "0.998", cost_eur: "499.00", source: acquisition, tax_free_from: 2027-02-02}
+      - {account: exchange, asset: SOL, acquired_on: 2026-03-02, units_open: "2", cost_eur: "301.50", source: acquisition, tax_free_from: 2027-03-03}
+    expect_uses:
+      - {event: sol_fee, acquired_on: 2026-02-01, units: "0.002", cost_eur: "1.00"}
+  - id: trade_fee_in_another_coin_unpriced
+    events:
+      - {name: buy_bnb, at: "2026-02-01T10:00:00Z", account: exchange, asset: BNB, kind: acquisition, units: "1", cost_eur: "500.00"}
+      - {name: buy_sol, at: "2026-03-02T10:00:00Z", account: exchange, asset: SOL, kind: acquisition, units: "2", cost_eur: "300.00", fee_eur: "0.50"}
+      - {name: sol_fee, at: "2026-03-02T10:00:00Z", account: exchange, asset: BNB, kind: trade_fee, trade: buy_sol, units: "0.002"}
+    expect_lots:
+      - {account: exchange, asset: BNB, acquired_on: 2026-02-01, units_open: "0.998", cost_eur: "499.00", source: acquisition, tax_free_from: 2027-02-02}
+      - {account: exchange, asset: SOL, acquired_on: 2026-03-02, units_open: "2", cost_eur: null, source: acquisition, tax_free_from: 2027-03-03}
+    expect_uses:
+      - {event: sol_fee, acquired_on: 2026-02-01, units: "0.002", cost_eur: "1.00"}

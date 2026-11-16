@@ -124,13 +124,28 @@ def _ledger(case):
     links: list[TransferLink] = []
     prices: list[PricePoint] = []
     by_event: dict[str, AssetMovement] = {}
+    # D188 amended: a trade and its fees share one group (the exchange's trade group, phase 6
+    # D178 amended (3)); a fee in another coin brings its day's price row.
+    groups = {ev.trade: uuid4() for ev in case.events if ev.trade is not None}
     for ev in case.events:
         account, asset = accounts(ev.account), assets(ev.asset or "X")
         fee = ev.fee_eur or None
         cost = None if ev.cost_eur is None else -ev.cost_eur
         common = {"account": account, "asset": asset, "superseded": ev.superseded}
         if ev.kind == "acquisition":
-            m = movement(K.ACQUISITION, ev.units, ev.at, eur_amount=cost, fee_eur=fee, **common)
+            m = movement(
+                K.ACQUISITION,
+                ev.units,
+                ev.at,
+                eur_amount=cost,
+                fee_eur=fee,
+                group=groups.get(ev.name),
+                **common,
+            )
+        elif ev.kind == "trade_fee":
+            m = movement(K.FEE, -ev.units, ev.at, group=groups[ev.trade], **common)
+            if ev.price_eur is not None:
+                prices.append(price(asset, L.berlin_day(ev.at), str(ev.price_eur)))
         elif ev.kind == "swap_in":
             m = movement(
                 K.ACQUISITION,
@@ -833,3 +848,78 @@ def test_units_of_18_decimals_on_a_large_balance_subtract_exactly():
     ledger.take(holder, big, record=False)
     assert part.open == 0
     assert ledger.unfilled == {holder.id: tiny}
+
+
+# --- D188 amended (16 Nov 2026): a trade's fee; priced_as; the prices a lot needs ---------
+
+
+def test_a_fee_in_the_coin_bought_needs_no_price_and_the_eur_fee_leg_counts_once():
+    """Binance's trade group: the EUR leg on the acquisition, the EUR fee both as `fee_eur` and
+    as its own EUR fee movement, a fee in the coin bought and one in BNB. The lot's cost is
+    the EUR paid + the EUR fee + the BNB fee at its day's price; the SOL fee adds nothing."""
+    acct, sol, bnb, eur, group = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
+    buy_bnb = movement(
+        K.ACQUISITION, "1", AT - timedelta(days=9), account=acct, asset=bnb, eur_amount=D("-500")
+    )
+    buy = movement(
+        K.ACQUISITION,
+        "1.5",
+        AT,
+        account=acct,
+        asset=sol,
+        group=group,
+        eur_amount=D("-200.00"),
+        fee_eur=D("0.25"),
+    )
+    eur_fee = movement(
+        K.FEE, "-0.25", AT, account=acct, asset=eur, group=group, eur_amount=D("-0.25")
+    )
+    sol_fee = movement(K.FEE, "-0.0015", AT, account=acct, asset=sol, group=group)
+    bnb_fee = movement(K.FEE, "-0.002", AT, account=acct, asset=bnb, group=group)
+    rows = [buy_bnb, buy, eur_fee, sol_fee, bnb_fee]
+    got = L.book(rows, [], [price(bnb, DAY, "500.00")], DAY)
+    sol_lot = next(lot for lot in got.lots if lot.asset_id == sol)
+    assert sol_lot.units_open == D("1.4985")
+    # 200.00 + 0.25 + 0.002 × 500 = 201.25 for 1.5 units; the SOL fee takes 0.0015 at cost.
+    assert [u.cost_eur for u in got.uses[sol_fee.id]] == [D("0.20")]
+    assert sol_lot.cost_eur == D("201.05")
+    assert got.price_needs == {}
+    # Without the BNB price the lot is unpriced and names the price that resolves it.
+    got = L.book(rows, [], [], DAY)
+    assert next(lot for lot in got.lots if lot.asset_id == sol).cost_eur is None
+    assert got.price_needs == {buy.id: [L.PriceNeed(asset_id=bnb, on=DAY)]}
+
+
+def test_an_ungrouped_acquisition_keeps_its_eur_leg_and_fee():
+    acct, sol = uuid4(), uuid4()
+    buy = movement(
+        K.ACQUISITION, "2", AT, account=acct, asset=sol, eur_amount=D("-300"), fee_eur=D("1.5")
+    )
+    assert [lot.cost_eur for lot in L.lots([buy], [], [], DAY)] == [D("301.50")]
+
+
+def test_a_chain_token_is_priced_through_its_priced_as_asset():
+    """D180 (3), §15.1 item 18: the token's own row first on its day, else its twin's."""
+    acct, usdc_sol, usdc = uuid4(), uuid4(), uuid4()
+    reward = movement(K.AIRDROP, "10", AT, account=acct, asset=usdc_sol)
+    twin = {usdc_sol: usdc}
+    got = L.book([reward], [], [price(usdc, DAY, "0.92")], DAY, priced_as=twin)
+    assert [lot.cost_eur for lot in got.lots] == [D("9.20")]
+    own = [price(usdc, DAY, "0.92"), price(usdc_sol, DAY, "0.90")]
+    assert [lot.cost_eur for lot in L.lots([reward], [], own, DAY, priced_as=twin)] == [D("9.00")]
+    got = L.book([reward], [], [price(usdc, DAY, "0.92")], DAY)
+    assert [lot.cost_eur for lot in got.lots] == [None]
+    assert got.price_needs == {reward.id: [L.PriceNeed(asset_id=usdc_sol, on=DAY)]}
+
+
+def test_a_swap_unpriced_names_the_received_and_the_given_coin():
+    acct, sol, usdc, group = uuid4(), uuid4(), uuid4(), uuid4()
+    buy_sol = movement(
+        K.ACQUISITION, "2", AT - timedelta(days=30), account=acct, asset=sol, eur_amount=D("-200")
+    )
+    given = movement(K.DISPOSAL, "-1", AT, account=acct, asset=sol, group=group)
+    received = movement(K.ACQUISITION, "150", AT, account=acct, asset=usdc, group=group)
+    got = L.book([buy_sol, given, received], [], [], DAY)
+    assert got.price_needs == {
+        received.id: [L.PriceNeed(asset_id=usdc, on=DAY), L.PriceNeed(asset_id=sol, on=DAY)]
+    }

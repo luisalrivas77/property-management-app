@@ -1012,6 +1012,7 @@ class LedgerEvent(Schema):
         "fee",
         "lp_deposit",
         "lp_withdrawal",
+        "trade_fee",
     ]
     units: Decimal = Field(gt=0)
     cost_eur: Money | None = None  # acquisition, reward, swap_in; None: unpriced
@@ -1019,6 +1020,20 @@ class LedgerEvent(Schema):
     to_account: str | None = None  # transfer_out
     to_asset: str | None = None  # wrap, bridge: the same account, the other asset
     superseded: bool = False
+    # D188 amended (16 Nov 2026): a `trade_fee` is a fee movement of the trade named here (an
+    # acquisition of the same account), paid in `asset`. In the coin bought it is valued at the
+    # trade's own price (inside the EUR paid, nothing added); in another coin at `price_eur`
+    # per unit on the day (None: no price, the trade's lot unpriced).
+    trade: str | None = None
+    price_eur: Decimal | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _trade_fee(self) -> Self:
+        if (self.kind == "trade_fee") != (self.trade is not None):
+            raise ValueError(f"{self.name}: a trade fee, and only one, names its trade")
+        if self.price_eur is not None and self.kind != "trade_fee":
+            raise ValueError(f"{self.name}: only a trade fee carries a price")
+        return self
 
     @model_validator(mode="after")
     def _moves(self) -> Self:
@@ -1062,12 +1077,36 @@ class LotsCase(_Case):
             "reward": LotSource.REWARD,
             "swap_in": LotSource.ACQUISITION,  # a swap's received leg (LotSource has no swap)
         }
+        # D188 amended (16 Nov 2026): a trade's fees in another coin join its lot's cost at
+        # their day's price; a fee in the coin bought joins nothing (inside the EUR paid).
+        live = [e for e in self.events if not e.superseded]
+        by_name = {e.name: e for e in live}
+        coin_fees: dict[str, Decimal | None] = {}
+        for ev in live:
+            if ev.kind != "trade_fee":
+                continue
+            trade = by_name.get(ev.trade or "")
+            if trade is None or trade.kind != "acquisition" or trade.account != ev.account:
+                raise ValueError(f"{self.id}: {ev.name} names no acquisition of its account")
+            if ev.asset == trade.asset:
+                if ev.price_eur is not None:
+                    raise ValueError(f"{self.id}: {ev.name} in the coin bought needs no price")
+                continue
+            before = coin_fees.get(trade.name, Decimal(0))
+            coin_fees[trade.name] = (
+                None if before is None or ev.price_eur is None else before + ev.units * ev.price_eur
+            )
         for ev in sorted((e for e in self.events if not e.superseded), key=lambda e: e.at):
             lots = books.setdefault((ev.account, ev.asset), [])
             if ev.kind in ("lp_deposit", "lp_withdrawal"):
                 continue  # D188 (1): lp_* consumes nothing (phase 8 decides), and creates none
             if ev.kind in source_of:
-                cost = None if ev.cost_eur is None else ev.cost_eur + ev.fee_eur
+                extra = coin_fees.get(ev.name, Decimal(0))
+                cost = (
+                    None
+                    if ev.cost_eur is None or extra is None
+                    else ev.cost_eur + ev.fee_eur + extra
+                )
                 per = None if cost is None else cost / ev.units
                 day = berlin_day(ev.at)
                 lots.append(
