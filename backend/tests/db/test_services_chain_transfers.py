@@ -942,6 +942,14 @@ def test_unlinking_a_matcher_link_reopens_the_dropped_receipt(seed, run, read):
     assert _live_successor(read, seed.ws, out).id == out  # in the person's link
     assert _movement(read, seed.ws, out).status == "confirmed"
 
+    # The person re-books their receipt: their link ends too, and the withdrawal they picked
+    # stays as their answer confirmed it (it was a person's pick, though the matcher first
+    # confirmed it).
+    seed.rebook(second, "airdrop")
+    assert run(seed.ws, chain_transfers.relink).reopened == 0
+    assert _live_successor(read, seed.ws, out).id == out
+    assert _movement(read, seed.ws, out).status == "confirmed"
+
 
 def test_reopened_exchange_row_carries_no_hash(seed, run, read):
     """An exchange's withdrawal the link confirmed is copied as its corrections are, without

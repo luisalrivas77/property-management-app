@@ -754,16 +754,19 @@ def _reopen_side(
     movements: set[UUID],
     groups: set[UUID],
     linked: set[UUID],
+    picked: set[UUID],
 ) -> int:
     """One leg's side of a dead matcher link: the movements of the leg's transaction the
     link confirmed back to proposed, and the group with them when the link confirmed it and no
-    leg of it is in a current link. Nothing when the leg was answered by a person (superseded)
-    or is in a current link again. The count of movements reopened."""
+    leg of it is in a current link or was ever a person's pick. Nothing when the leg was
+    answered by a person (superseded), is in a current link again, or was ever in a person's
+    link (`picked`, current or not: the person's pick confirmed it too). The count of
+    movements reopened."""
     m, g = movement_table.c, group_table.c
     side = ctx.conn.execute(
         select(movement_table).where(m.id == side_id, m.superseded_by.is_(None))
     ).one_or_none()
-    if side is None or side.id in linked:
+    if side is None or side.id in linked or side.id in picked:
         return 0
     same = m.id == side.id if side.group_id is None else m.group_id == side.group_id
     rows = ctx.conn.execute(
@@ -772,7 +775,10 @@ def _reopen_side(
     reopen = {
         r.id
         for r in rows
-        if r.id in movements and r.id not in linked and r.status == MovementStatus.CONFIRMED.value
+        if r.id in movements
+        and r.id not in linked
+        and r.id not in picked
+        and r.status == MovementStatus.CONFIRMED.value
     }
     group = None
     if side.group_id in groups:
@@ -783,8 +789,8 @@ def _reopen_side(
                 g.status == GroupStatus.CONFIRMED.value,
             )
         ).one_or_none()
-    if group is not None and any(r.id in linked for r in rows):
-        group = None  # a leg of it is in another current link: only the legs, in place
+    if group is not None and any(r.id in linked or r.id in picked for r in rows):
+        group = None  # a leg of it is in another link: only the legs, in place
     if not reopen and group is None:
         return 0
     copied = [r for r in rows if group is not None or r.id in reopen]
@@ -819,12 +825,23 @@ def _reopen_side(
             .returning(g.id)
         ).scalar_one()
         ctx.conn.execute(update(group_table).where(g.id == group.id).values(superseded_by=group_id))
+        e = event_table.c
+        sync_id = ctx.conn.execute(  # the run that read it, which the sync's lookups follow
+            select(e.payload["sync_id"].astext)
+            .where(e.entity_id == group.id, e.type == EventType.MOVEMENT_GROUP_PROPOSED.value)
+            .order_by(e.seq)
+            .limit(1)
+        ).scalar_one_or_none()
         append_event(
             ctx,
             EventType.MOVEMENT_GROUP_PROPOSED,
             group_id,
             MovementGroupRecorded(
-                account_id=group.account_id, chain=group.chain, kind=group.kind, reason=NO_MATCH
+                account_id=group.account_id,
+                chain=group.chain,
+                kind=group.kind,
+                reason=NO_MATCH,
+                sync_id=UUID(sync_id) if sync_id else None,
             ),
         )
     for r in copied:
@@ -848,6 +865,16 @@ def _reopen(ctx: CommandContext) -> int:
     current = _current_links(ctx.conn)
     current_ids = {r.id for r in current}
     linked = {i for r in current for i in _leg_ids(r)}
+    picked = {
+        i
+        for r in ctx.conn.execute(
+            select(c.out_movement_id, c.in_movement_id).where(
+                c.matched_by == TransferMatchedBy.USER.value
+            )
+        )
+        for i in r
+        if i is not None
+    }
     dead = [
         r
         for r in ctx.conn.execute(
@@ -876,7 +903,7 @@ def _reopen(ctx: CommandContext) -> int:
         if not movements and not groups:
             continue  # it confirmed nothing (both legs were confirmed), or a link before this
         for side in (link.out_movement_id, link.in_movement_id):
-            count += _reopen_side(ctx, side, movements, groups, linked)
+            count += _reopen_side(ctx, side, movements, groups, linked, picked)
     return count
 
 

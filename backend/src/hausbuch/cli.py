@@ -485,6 +485,9 @@ def relink_chain(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     print(f"{verb} {result.linked} coin transfer(s)")
     verb = "would confirm" if args.dry_run else "confirmed"
     print(f"{verb} {result.confirmed} movement(s) by their transaction hash")
+    if result.reopened:
+        verb = "would reopen" if args.dry_run else "reopened"
+        print(f"{verb} {result.reopened} movement(s) a link no longer current had confirmed")
     if result.skipped_locked:
         print(f"left {result.skipped_locked} for the next run (a leg was being answered)")
     return EXIT_OK
