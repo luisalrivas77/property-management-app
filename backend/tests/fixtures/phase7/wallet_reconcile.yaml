@@ -99,7 +99,6 @@ cases:
 
   # A proposed group counts, so an unanswered card does not read as a mismatch.
   - id: proposed_group_counted
-    pending: "phase 7 step 2 (rules/chain/reconcile)"
     chain: solana
     movements:
       - {asset: SOL, units: 2500000000, status: confirmed}

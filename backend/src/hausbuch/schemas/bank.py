@@ -50,8 +50,9 @@ class AccountCreate(Schema):
     # One of the owners' private accounts: recognized by IBAN for owner transfers (phase 2
     # input point 1). It never holds transactions.
     is_owner_account: bool = False
-    # Phase 6 D156. kind: create_account accepts the bank kinds only until the steps that
-    # build the depot (4) and the exchange (5); a wallet is refused until phase 7. purpose:
+    # Phase 6 D156. kind: the bank kinds, a credit card, a depot (step 4), an exchange (5a)
+    # and since phase 7 step 1 a wallet (D179, its provider required); an aggregator is
+    # refused. purpose:
     # None derives it from is_owner_account (an owner account is private, any other the
     # rental account), so a caller of phases 2-5 keeps its meaning until step 1. A credit card
     # (step 2b, D176) is taken too; it is always a private account.

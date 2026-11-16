@@ -1464,13 +1464,24 @@ def _lock_account(ctx: CommandContext, account_id: UUID) -> Row:
     return require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
 
 
+_STATEMENT_KINDS = frozenset(
+    kind.value for kind in (*BANK_ACCOUNT_KINDS, AccountKind.CREDIT_CARD, AccountKind.DEPOT)
+)
+
+
 def _route(conn: Connection, account: Row, statement: ParsedStatement, key: bytes) -> None:
     """Whether the file is this account's statement (D164). A card statement goes onto a
     card account only, and a card account takes card statements only (phase 6 D176 (3)); a
     card statement is routed by the number its issuer prints (account.external_ref), every
     other file by its own IBAN when it names one. The same holds for a depot and its cash
     statement (phase 6 step 4): routed by the account number it prints, and, once the depot
-    carries the IBAN a person confirmed (D156 amended), by that IBAN too."""
+    carries the IBAN a person confirmed (D156 amended), by that IBAN too.
+
+    Only a bank account, a card and a depot take statements (review of PR #374, 16 Nov 2026):
+    a wallet is read from its chains (phase 7) and an exchange from its own export (D178), so
+    a bank file that names no IBAN of its own is refused there instead of booking its lines."""
+    if account.kind not in _STATEMENT_KINDS:
+        raise RuleError(rules.ACCOUNT_MISMATCH, "this kind of account takes no statement")
     is_card = account.kind == AccountKind.CREDIT_CARD.value
     is_depot = account.kind == AccountKind.DEPOT.value
     if (statement.format is StatementFormat.CARD_PDF) != is_card:

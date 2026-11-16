@@ -283,6 +283,11 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "exchange.correction_no_difference": "Dieser Coin stimmt mit dem Bestand laut Börse überein; es gibt nichts zu korrigieren.",
   "exchange.correction_stale":
     "Seit der Eingabe des Bestands haben sich die Bewegungen geändert. Bitte den Bestand laut Börse neu eingeben und dann die Differenz buchen.",
+  // Phase 7 step 1 (D179): a wallet's addresses. Neither text repeats the pasted address.
+  "wallet.address_invalid":
+    "Das ist keine gültige Adresse für die gewählte Chain. Bitte die öffentliche Adresse unverändert aus der Wallet kopieren; das Format steht unter dem Feld.",
+  "wallet.address_taken":
+    "Diese Adresse ist schon eingetragen: auf einem anderen eigenen Konto, oder auf dieser Wallet schon für jede gewählte Chain. Eine stillgelegte Adresse lässt sich in der Liste mit „Wieder aktivieren“ zurückholen.",
   // D193: why a document cannot be deleted; each names what still depends on it.
   "document.delete_blocked.statement_import": "Aus diesem Auszug wurden Umsätze eingelesen; sie bleiben unverändert im Konto.",
   "document.delete_blocked.bank_statement": "Es ist ein Kontoauszug, den die Bank über den Bankabruf geliefert hat; er gehört ins Jahresarchiv.",

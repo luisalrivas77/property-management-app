@@ -15,11 +15,17 @@
 Step 0 writes the registries and their loaders; every rule is a stub until its step.
 """
 
+import hashlib
+
 from hausbuch.schemas.chain import Chain
 
 
 def movement_hash(chain: Chain, tx_hash: str, address_hmac: str, index: str, role: str) -> str:
     """D182 (2): SHA-256 over chain, tx hash, the own address's HMAC, index and role, joined by
-    "\\x1f" like rules/exchange.movement_hash. Fixture tests/fixtures/phase7/movement_hash.yaml;
-    built in step 2."""
-    raise NotImplementedError("phase 7 step 2")
+    "\\x1f" like rules/exchange.movement_hash, lower-case hex. The tx hash is taken as the
+    chain writes it (a Solana signature is case-sensitive base58). Fixture
+    tests/fixtures/phase7/movement_hash.yaml."""
+    if role not in ("in", "out", "fee"):
+        raise ValueError(f"movement_hash: role {role!r}")
+    text = "\x1f".join([str(chain), tx_hash, address_hmac, index, role])
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
