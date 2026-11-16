@@ -142,6 +142,10 @@ def _exact[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
     return run
 
 
+# For the modules that sum or print the lots' units (rules.holdings, the statement, its files).
+exact = _exact
+
+
 # The lot with its id, creating movement and instant: folded into `schemas/chain.Lot` in
 # step 6; the name stays for the callers of step 0's rules. PriceNeed lives there too.
 HeldLot = Lot
@@ -594,27 +598,15 @@ def _ordered(steps: list[_Step]) -> list[_Step]:
     return out
 
 
-@_exact
-def book(
-    movements: Sequence[AssetMovement],
-    links: Sequence[TransferLink],
-    prices: Sequence[PricePoint],
-    on: date,
-    *,
-    priced_as: Mapping[UUID, UUID] | None = None,
-) -> LotBook:
-    """Every lot of the movements read at the end of the Berlin day `on`, and what took them.
-    `movements` and `prices` may hold several accounts and assets; FIFO is per account and
-    asset. The caller passes only assets that are lots (not EUR, whose fee legs the
-    acquisitions' `fee_eur` already carry). `priced_as` maps a chain asset to the asset it is
-    priced as (D180 (3)); `prices` then holds that asset's rows too."""
+def _reading(
+    movements: Sequence[AssetMovement], links: Sequence[TransferLink], on: date
+) -> tuple[list[_Step], list[AssetMovement]]:
+    """The steps of the book at the end of `on` and the movements they read: one step per
+    unlinked confirmed movement of a Berlin day on or before `on`; a linked pair one step at
+    its earlier leg, read whole (both legs) when that leg's Berlin day is on or before `on`,
+    the later leg possibly after it."""
     confirmed = {m.id: m for m in movements if _confirmed(m)}
     linked = _live_links(links, confirmed)
-    priced = _Prices(prices, priced_as)
-    needs: dict[UUID, list[PriceNeed]] = {}
-
-    # One step per movement read; a linked pair one step at its earlier leg, read whole when
-    # that leg's Berlin day is on or before `on` (the later leg may be after it).
     steps: list[_Step] = []
     read: list[AssetMovement] = []
     done: set[UUID] = set()
@@ -633,6 +625,48 @@ def book(
                 key = (at, 1, 0, _index(sender), str(sender.id))
                 steps.append((key, sender, link, receiver))
                 read += [sender, receiver]
+    return steps, read
+
+
+def read_through(
+    movements: Sequence[AssetMovement], links: Sequence[TransferLink], on: date
+) -> list[AssetMovement]:
+    """The confirmed, unsuperseded movements the book reads at the end of the Berlin day `on`
+    (an unlinked one of that day or before; a linked pair whole when its earlier leg's day is),
+    so the units a statement shows and the lots it lists read a transfer across the day the
+    same way (a pair across 31 Dec counts once, on the receiver). Order as given."""
+    return _reading(movements, links, on)[1]
+
+
+@_exact
+def units_through(
+    movements: Sequence[AssetMovement], links: Sequence[TransferLink], on: date
+) -> dict[tuple[UUID, UUID], Decimal]:
+    """Σ quantity per (account, asset) of `read_through`, with PRECISION digits; equal to the
+    open lots' units wherever no movement took more than its account held."""
+    out: dict[tuple[UUID, UUID], Decimal] = defaultdict(Decimal)
+    for m in read_through(movements, links, on):
+        out[(m.account_id, m.asset_id)] += m.quantity
+    return dict(out)
+
+
+@_exact
+def book(
+    movements: Sequence[AssetMovement],
+    links: Sequence[TransferLink],
+    prices: Sequence[PricePoint],
+    on: date,
+    *,
+    priced_as: Mapping[UUID, UUID] | None = None,
+) -> LotBook:
+    """Every lot of the movements read at the end of the Berlin day `on`, and what took them.
+    `movements` and `prices` may hold several accounts and assets; FIFO is per account and
+    asset. The caller passes only assets that are lots (not EUR, whose fee legs the
+    acquisitions' `fee_eur` already carry). `priced_as` maps a chain asset to the asset it is
+    priced as (D180 (3)); `prices` then holds that asset's rows too."""
+    steps, read = _reading(movements, links, on)
+    priced = _Prices(prices, priced_as)
+    needs: dict[UUID, list[PriceNeed]] = {}
     groups: dict[UUID, list[AssetMovement]] = defaultdict(list)
     for m in read:
         if m.group_id is not None:

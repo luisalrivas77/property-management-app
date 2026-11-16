@@ -349,6 +349,85 @@ def test_an_unlinked_in_leg_is_a_lot_of_unknown_cost_without_a_price_need(
     assert lot.source.value == "unknown"
 
 
+# --- one reading of a linked transfer across the day ----------------------------------------
+
+ON = date(2026, 12, 31)
+BEFORE_MIDNIGHT = _at("2026-12-31T22:00:00Z")  # 23:00 in Berlin, 31 Dec
+AFTER_MIDNIGHT = _at("2026-12-31T23:30:00Z")  # 00:30 in Berlin, 1 Jan
+
+
+@pytest.mark.parametrize("credit_first", [False, True], ids=["debit_first", "credit_first"])
+def test_a_transfer_across_the_day_counts_once_in_units_and_lots(
+    run, read, fresh_workspaces, credit_first
+):
+    """2 SOL move from the exchange to the wallet with one leg on each side of midnight in
+    Berlin, in both orders. The pair is read whole at its earlier leg (rules.lots), so the
+    statement holds 2 SOL in all (never 0, never 4), on the receiver, and every account's
+    units equal its open lots' units."""
+    ws, _ = fresh_workspaces
+
+    def setup(ctx):
+        exchange = _account(ctx, AccountKind.EXCHANGE, "Börse")
+        wallet = _account(ctx, AccountKind.WALLET, "Wallet")
+        sol = _asset(ctx, "SOL", "Solana", chain="solana")
+        address = _address(ctx, wallet, "solana", "So1x…xxxx")
+        _movement(ctx, exchange, sol, "2", _at("2026-06-01T10:00:00Z"), eur_amount=Decimal("-200"))
+        debit_at, credit_at = (
+            (AFTER_MIDNIGHT, BEFORE_MIDNIGHT) if credit_first else (BEFORE_MIDNIGHT, AFTER_MIDNIGHT)
+        )
+        out = _movement(ctx, exchange, sol, "-2", debit_at, kind="internal_transfer_out")
+        into = _movement(ctx, wallet, sol, "2", credit_at, address_id=address)
+        ctx.conn.execute(
+            insert(link_table).values(
+                workspace_id=ctx.workspace_id,
+                kind="chain",
+                out_movement_id=out,
+                in_movement_id=into,
+                matched_by="matcher",
+            )
+        )
+        return exchange, wallet, sol
+
+    exchange, wallet, sol = run(ws, setup, now=NOW)
+    seen = read(ws, holdings.statement, ON)
+    units = {(a.account_id, p.asset_id): p.units for a in seen.accounts for p in a.positions}
+    assert sum(units.values()) == Decimal("2")
+    assert units == {(wallet, sol): Decimal("2")}
+    # The receiver is listed although its own leg falls after the day (debit first), and
+    # its address shows the units the lots hold.
+    [wallet_seen] = [a for a in seen.accounts if a.account_id == wallet]
+    assert [a.units_by_asset for a in wallet_seen.addresses] == [{str(sol): Decimal("2")}]
+    for acc in seen.accounts:
+        for p in acc.positions:
+            assert sum((lot.units_open for lot in p.lots), Decimal(0)) == p.units
+    tab = read(ws, holdings.crypto_holdings, ON)
+    assert [(c.account_id, c.units) for c in tab.coins] == [(wallet, Decimal("2"))]
+    assert sum((lot.units_open for lot in tab.coins[0].lots), Decimal(0)) == Decimal("2")
+
+
+def test_a_thirty_digit_quantity_is_summed_and_printed_exactly(run, read, fresh_workspaces):
+    """numeric(38,18) units: Python's default 28 digits would round the last decimals of
+    123456789012.123456789012345678 − 0.000000000000000001; the statement, the lots and the
+    CSV keep every digit."""
+    ws, _ = fresh_workspaces
+    exact = Decimal("123456789012.123456789012345677")
+
+    def setup(ctx):
+        exchange = _account(ctx, AccountKind.EXCHANGE, "Börse")
+        token = _asset(ctx, "PEPE", "Pepe", chain="ethereum")
+        _movement(ctx, exchange, token, "123456789012.123456789012345678", BOUGHT)
+        _movement(ctx, exchange, token, "-0.000000000000000001", MOVED)
+        return exchange, token
+
+    exchange, token = run(ws, setup, now=NOW)
+    [acc] = read(ws, holdings.statement, ON).accounts
+    [position] = acc.positions
+    assert position.units == exact
+    assert [lot.units_open for lot in position.lots] == [exact]
+    lines = holdings_export.render_csv(acc, {token: "PEPE"}).decode("utf-8-sig").splitlines()
+    assert any(line.startswith("Bestand;PEPE;;123456789012,123456789012345677;") for line in lines)
+
+
 # --- the year-end statement as a snapshot (D190) -------------------------------------------
 
 KEY = b"k" * 32

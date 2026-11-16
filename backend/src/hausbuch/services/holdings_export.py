@@ -28,7 +28,7 @@ import hmac
 import io
 from collections.abc import Mapping
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Context, Decimal
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 from xml.sax.saxutils import escape
@@ -48,6 +48,7 @@ from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import document_file as file_table
 from hausbuch.db.tables import holdings_export as export_table
 from hausbuch.rules.errors import HOLDINGS_EXPORT_NOTHING_HELD, HOLDINGS_EXPORT_YEAR_OPEN, RuleError
+from hausbuch.rules.lots import PRECISION
 from hausbuch.schemas.chain import AccountHoldings, Lot
 from hausbuch.schemas.events import EventType, HoldingsExported
 from hausbuch.schemas.holdings import HoldingsExport, HoldingsExportCreate, HoldingsFileFormat
@@ -78,6 +79,9 @@ NOTE = (
 # --- Formatting --------------------------------------------------------------------------
 
 
+_WIDE = Context(prec=PRECISION)
+
+
 def _money(value: Decimal | None) -> str:
     if value is None:
         return "–"
@@ -86,7 +90,8 @@ def _money(value: Decimal | None) -> str:
 
 
 def _units(value: Decimal) -> str:
-    text = f"{value.normalize():f}"
+    # At the lots' precision: the default context would round a 30-digit quantity.
+    text = f"{value.normalize(_WIDE):f}"
     return text.replace(".", ",")
 
 

@@ -189,13 +189,16 @@ def _book(ledger: _Ledger, on: date) -> lot_rules.LotBook:
     return lot_rules.book(lotted, ledger.links, ledger.prices, on, priced_as=twins)
 
 
-def _units(movements: Iterable[AssetMovement], on: date) -> dict[tuple[UUID, UUID], Decimal]:
-    """Σ quantity per (account, asset) through the end of the Berlin day `on`."""
-    out: dict[tuple[UUID, UUID], Decimal] = defaultdict(Decimal)
-    for mv in movements:
-        if berlin_day(mv.occurred_at) <= on:
-            out[(mv.account_id, mv.asset_id)] += mv.quantity
-    return out
+def _through(ledger: _Ledger, on: date) -> list[AssetMovement]:
+    """The movements read at the end of the Berlin day `on`, as the lots read them
+    (`rules.lots.read_through`): a linked pair whole at its earlier leg, so the units and the
+    open lots never disagree about a transfer across the day; spam included (the appendix)."""
+    return lot_rules.read_through(ledger.movements, ledger.links, on)
+
+
+def _units(ledger: _Ledger, on: date) -> dict[tuple[UUID, UUID], Decimal]:
+    """Σ quantity per (account, asset) of `_through`, at the lots' precision."""
+    return lot_rules.units_through(ledger.movements, ledger.links, on)
 
 
 def _open_lots(book: lot_rules.LotBook) -> dict[tuple[UUID, UUID], list[Lot]]:
@@ -254,7 +257,7 @@ def _symbols(ledger: _Ledger) -> dict[UUID, str | None]:
 def _coins(
     conn: Connection, ledger: _Ledger, on: date, book: lot_rules.LotBook
 ) -> list[CryptoCoin]:
-    units = _units(ledger.movements, on)
+    units = _units(ledger, on)
     open_lots = _open_lots(book)
     keys = sorted(
         {
@@ -266,7 +269,7 @@ def _coins(
     )
     prices = _latest_prices(conn, {asset_id for _, asset_id in keys}, on)
     addresses = _addresses(conn, [a.id for a in ledger.accounts], on)
-    unreconciled = _unreconciled_positions(ledger.movements, addresses, on)
+    unreconciled = _unreconciled_positions(_through(ledger, on), addresses)
     symbols = _symbols(ledger)
     return [
         figures.coin(
@@ -287,12 +290,14 @@ def _coins(
 
 
 def _unreconciled_positions(
-    movements: Iterable[AssetMovement], addresses: dict[UUID, _Address], on: date
+    through: Iterable[AssetMovement], addresses: dict[UUID, _Address]
 ) -> set[tuple[UUID, UUID]]:
+    """The positions with a movement read on the day (`_through`) at an address whose last
+    sync on or before the day did not reconcile."""
     out = set()
-    for mv in movements:
+    for mv in through:
         address = addresses.get(mv.address_id) if mv.address_id is not None else None
-        if address is not None and not address.reconciled and berlin_day(mv.occurred_at) <= on:
+        if address is not None and not address.reconciled:
             out.add((mv.account_id, mv.asset_id))
     return out
 
@@ -336,15 +341,17 @@ def account_lots(
 
 
 def statement(conn: Connection, on: date) -> HoldingsStatement:
-    """GET /wallets/holdings?on=: per wallet and exchange account with a confirmed movement on
-    or before `on`, its addresses' units per asset, its positions with their open lots and
-    value, the spam tokens in the appendix, and the addresses whose last sync on or before the
-    day did not reconcile. Positions of zero units are left out."""
+    """GET /wallets/holdings?on=: per wallet and exchange account with a movement read on the
+    day (`_through`: a linked pair whole at its earlier leg, so an account that received a
+    transfer whose own leg is after the day is listed with the lots it holds), its addresses'
+    units per asset, its positions with their open lots and value, the spam tokens in the
+    appendix, and the addresses whose last sync on or before the day did not reconcile.
+    Positions of zero units are left out."""
     ledger = _ledger(conn)
     book = _book(ledger, on)
     coins = {(c.account_id, c.asset_id): c for c in _coins(conn, ledger, on, book)}
     addresses = _addresses(conn, [a.id for a in ledger.accounts], on)
-    through = [mv for mv in ledger.movements if berlin_day(mv.occurred_at) <= on]
+    through = _through(ledger, on)
     out = []
     for account in ledger.accounts:
         mine = [mv for mv in through if mv.account_id == account.id]
@@ -354,6 +361,7 @@ def statement(conn: Connection, on: date) -> HoldingsStatement:
     return HoldingsStatement(on=on, accounts=out)
 
 
+@lot_rules.exact
 def _account_statement(
     account: Account,
     movements: list[AssetMovement],
