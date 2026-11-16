@@ -12259,7 +12259,8 @@
           "ai",
           "chains",
           "bank",
-          "mail"
+          "mail",
+          "elster"
         ],
         "title": "AppSecretGroup"
       },
@@ -12279,10 +12280,11 @@
           "inbox_imap_user",
           "inbox_imap_password",
           "inbox_address",
-          "inbox_label"
+          "inbox_label",
+          "elster_hersteller_id"
         ],
         "title": "AppSecretName",
-        "description": "app_secret.name (migration 0045's CHECK), in the card's order."
+        "description": "app_secret.name (migration 0045's CHECK, widened by 0047), in the card's order."
       },
       "AppSecretPut": {
         "properties": {

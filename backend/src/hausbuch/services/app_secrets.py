@@ -26,6 +26,7 @@ event (workspace.app_secret_set, workspace.app_secret_deleted) naming the name a
 """
 
 import dataclasses
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -89,6 +90,14 @@ def _text(value: str) -> bool:
 def _mail(value: str) -> bool:
     local, at, domain = value.rpartition("@")
     return _token(value) and bool(at and local and "." in domain.strip("."))
+
+
+_HERSTELLER_ID = re.compile(r"[0-9]{1,10}")
+
+
+def _hersteller_id(value: str) -> bool:
+    """An ELSTER Hersteller-ID: a short number, ASCII digits only (ERiC's sample is 74931)."""
+    return _HERSTELLER_ID.fullmatch(value) is not None
 
 
 def _uuid(value: str) -> bool:
@@ -186,6 +195,13 @@ SPECS: dict[AppSecretName, Spec] = {
         "Gmail-Label",
         "Das Label, in das Gmail die weitergeleiteten Belege legt.",
         _text,
+    ),
+    N.ELSTER_HERSTELLER_ID: Spec(
+        G.ELSTER,
+        "ELSTER-Hersteller-ID",
+        "Die Nummer, die ELSTER Hausbuch als Software-Hersteller zugeteilt hat; nötig, sobald "
+        "Hausbuch Steuererklärungen über ELSTER prüft oder sendet (noch nicht gebaut).",
+        _hersteller_id,
     ),
 }
 assert list(SPECS) == list(N)
@@ -353,6 +369,7 @@ GROUP_LABELS: dict[AppSecretGroup, str] = {
     G.CHAINS: "Blockchains & Kurse",
     G.BANK: "Bank",
     G.MAIL: "E-Mail",
+    G.ELSTER: "ELSTER",
 }
 
 _DIGEST = "Die tägliche Erinnerungs-E-Mail wird nicht verschickt."
@@ -376,6 +393,7 @@ STOPPED: dict[AppSecretName, str | None] = {
     N.INBOX_IMAP_PASSWORD: _EMAIL_IN,
     N.INBOX_ADDRESS: _EMAIL_IN,
     N.INBOX_LABEL: _EMAIL_IN,
+    N.ELSTER_HERSTELLER_ID: None,
 }
 assert list(STOPPED) == list(N)
 
@@ -448,7 +466,8 @@ def checked_value(name: AppSecretName, value: SecretStr) -> str:
     """The value to store: trimmed, 1 to 512 bytes, and of its name's form (SPECS): a key
     printable ASCII without a blank, a URL as Settings checks the container variable
     (settings._is_http_url), a product id as the sync does (product_id_usable), a mail address,
-    a UUID, a label or password without a control character. Fixed messages: never the value."""
+    a UUID, a label or password without a control character, an ELSTER Hersteller-ID 1 to 10
+    ASCII digits. Fixed messages: never the value."""
     plain = value.get_secret_value().strip()
     if not plain or len(plain.encode()) > MAX_BYTES:
         raise RuleError(E.APP_SECRET_INVALID, f"a value is 1 to {MAX_BYTES} bytes")

@@ -80,6 +80,45 @@ def test_a_setting_that_is_not_secret_is_shown_back_a_password_never(client_a, l
     assert PASSWORD not in json.dumps(states) and PASSWORD not in logs()
 
 
+def test_the_elster_hersteller_id_is_stored_never_returned_and_digits_only(
+    client_a, client_b, fresh_workspaces, dbname, logs
+):
+    """D260 amended (10): the ID ELSTER assigned Hausbuch as a software maker, typed under
+    Einstellungen › Zugangsschlüssel („ELSTER“), is kept as a secret like the FinTS product
+    id: the card says it is stored in the app („In der App gespeichert“) and never shows it.
+    An invented number."""
+    hersteller_id = "40123"
+    before = _states(client_a)["elster_hersteller_id"]
+    assert list(_states(client_a))[-1] == "elster_hersteller_id"
+    assert (before["group"], before["label"], before["secret"]) == (
+        "elster",
+        "ELSTER-Hersteller-ID",
+        True,
+    )
+    assert (before["source"], before["variable"]) == ("none", "HAUSBUCH_ELSTER_HERSTELLER_ID")
+    response = client_a.put(
+        "/api/app-secrets/elster_hersteller_id", json={"value": f" {hersteller_id}\n"}
+    )
+    stored = ok(response)
+    assert (stored["source"], stored["value"]) == ("app", None)
+    listed = client_a.get("/api/app-secrets")
+    assert _states(client_a)["elster_hersteller_id"]["source"] == "app"
+    assert _states(client_b)["elster_hersteller_id"]["source"] == "none"
+    assert hersteller_id not in response.text and hersteller_id not in listed.text
+    with _admin(dbname) as conn:
+        payloads = conn.execute(
+            "SELECT payload FROM event WHERE workspace_id = %s AND type = %s",
+            (str(fresh_workspaces[0]), "workspace.app_secret_set"),
+        ).fetchall()
+    assert payloads == [({"name": "elster_hersteller_id"},)]
+    for value in ("HID40123QUOTEME", "40 123", "12345678901"):
+        refused = client_a.put("/api/app-secrets/elster_hersteller_id", json={"value": value})
+        assert (refused.status_code, refused.json()["code"]) == (422, E.APP_SECRET_INVALID)
+        assert value not in refused.text
+    assert _states(client_a)["elster_hersteller_id"]["source"] == "app"  # the stored one stays
+    assert hersteller_id not in logs()
+
+
 @pytest.mark.parametrize(
     ("name", "value", "code"),
     [
