@@ -1,11 +1,12 @@
 """`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills |
 rematch-waiting | household-resort | follow-accounts | repair-periods | relink-transfers |
-pair-returns | store-report-prices | group-exchange-trades | relink-chain` (phase 1 step 3,
-§5, §6.5, §6.7;
+pair-returns | store-report-prices | group-exchange-trades` (phase 1 step 3, §5, §6.5, §6.7;
 phase 2 D41, D27 amended 15 Nov 2026; phase 6 D159 amended 13 and 14 Nov 2026, D161 widened 14
 Nov 2026, D160 amended (4) 14 Nov 2026, D165 (a) and D176 (3) amended 14 Nov 2026, D162 and
 D167 (c) amended 15 Nov 2026, D162 amended (6) and (7) 15 Nov 2026, D178 amended (3) 16 Nov
-2026; phase 7 D184, step 5).
+2026).
+
+Also `hausbuch relink-chain` (phase 7 D184, step 5), described below.
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the

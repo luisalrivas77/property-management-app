@@ -417,14 +417,14 @@ Loaded by `tests/fixture_models_phase7.py` (the phase 6 loader's pattern: loadin
    - `ambiguous`, with every candidate. Each candidate carries the `link_kind` its link takes.
    - `unmatched`, only for an outgoing leg (`internal_transfer_out`) whose 48-hour window has passed and whose counterpart could be in the app. That is a wallet leg, or an exchange withdrawal whose network names a chain on which the workspace holds an active address (or any address when it names no network). A balance-only chain is excluded (BNB Smart Chain, D181 (c)): no movement could ever pair with the withdrawal, so the card would be a dead end, and the sync's balance check shows the unexplained deposit instead.
 
-   The card shows the account, the date and the signed quantity with its symbol, never an address or a hash. `POST /transfers` with two movement ids of which one is a crypto asset goes to `chain_transfers.link_by_hand`. That function:
+   The card shows the account, the date and the signed quantity with its symbol, never an address or a hash. A coin card without a candidate offers „Wallet anlegen oder abrufen“ (Konten) and „Konto öffnen“ (the leg's account, where an exchange's movement is answered). `POST /transfers` with two movement ids of which one is a crypto asset goes to `chain_transfers.link_by_hand`. That function:
    - accepts only a pair the matcher fits with that kind, and refuses any other pair (`transfer.legs_invalid`): another hash, the wrong kind, the wrong quantity or the wrong window;
    - confirms both legs and their group;
    - writes the link with `matched_by = user`.
 4. **Currentness on read, never `superseded_by`.** A coin link counts only while both its movements are live (`superseded_by IS NULL`), whoever wrote it. Phase 6's `_current_links` now treats the kinds `chain`, `bridge` and `wrap` as it treats a returned payment's link. So re-booking a leg ends the link without a write, and the leg is open again.
 5. **Hooks.**
    - The wallet sync jobs (`jobs/sync_wallets.py`, both the daily task and „Jetzt abrufen“) call `relink_after_sync` once per workspace after its addresses ran. It runs in its own transaction, never fails the sync, and logs a failure by its exception class only. The hook is in the job, not in `services/chain/sync.py`.
-   - An exchange import and a Binance withdrawal history call `relink` in their own transaction.
+   - An exchange import and a Binance withdrawal history call `relink` inside the import's own transaction, after phase 6's EUR relink. Unlike the sync hook, a relink error there rolls the import back.
    - A person's confirmation or answer on an exchange's coin movement (`confirm_movement`, `answer_movement`, `confirm_withdrawals`) calls `relink(wait=False)`. It takes the transfer lock with `pg_try_advisory_xact_lock` and does nothing when another linker holds the lock. The reason is lock order: that command holds the movement's row, not the exchange account's row, and phase 6's `_lock` order (D162 amended (8)) takes the account row before the lock.
    - `hausbuch relink-chain --workspace <id> [--dry-run]` runs the relink once.
 6. **The `transfer_link` contract the lots read.** Column by column:
@@ -435,7 +435,9 @@ Loaded by `tests/fixture_models_phase7.py` (the phase 6 loader's pattern: loadin
    - `created_at` is the command's time;
    - `superseded_by` is never set by this step.
 
-   Each write appends `transfer.linked` (kind, matched_by, both movement ids, no address or hash). A link is current while both movements are live. The fee stays on the sender: an exchange row's `fee_quantity`, or a wallet group's `fee` movement.
+   Each write appends `transfer.linked` (kind, matched_by, both movement ids, no address or hash). The fee stays on the sender: an exchange row's `fee_quantity`, or a wallet group's `fee` movement.
+
+   **Which rows are current.** A link is current while both of its movements are live. A plain `WHERE superseded_by IS NULL` on `transfer_link` also returns dead coin links whose leg was re-booked. A leg that is re-booked and then linked again leaves its old row in the table beside the new one. So a reader must use phase 6's `services.transfers._current_links` / `_linked_ids`, or join both movement ids to `asset_movement` with `superseded_by IS NULL`.
 7. **Tests:** `tests/db/test_services_chain_transfers.py`, 19 tests:
    - §6 example 2: 0.3 ETH out, a fee of 0.0005 and 0.2995 in, under one hash. Code links the pair and confirms both legs.
    - idempotence;
@@ -453,6 +455,7 @@ Loaded by `tests/fixture_models_phase7.py` (the phase 6 loader's pattern: loadin
 
    The adjacent phase 6 transfer, returns and exchange suites pass, and so do the wallet sync suites.
 8. **Not built:**
+   - The sync's `linked` flag is met only in part. `services/chain/sync.py` still never sets it, so the sync proposes every transfer group. The link and the confirmation come afterwards, from the hook. Only a group the sync routed `routing.no_match` is confirmed by code, when its hash ties it to the other leg. A first sync's groups wait for a person's pick. This makes EVM item 5 („`linked` stays false … until then“) and Solana item 8 („step 5's transfer matcher“ not wired) above partly out of date on this branch.
    - Nothing writes `chain_pair` yet. Its rows are read as extras (a bridge pair with `max_fee_share`, a wrap pair) but never learned from a person's pick, so a learned bridge is never confirmed by code.
    - The deposit movement on a BNB Smart Chain address is not built. That chain is read by balance only (D181 (c)). `services/chain/sync.py`'s balance check compares the balance with „the deposits linked to the address (step 5)“, but nothing writes such a deposit movement from an exchange withdrawal yet. Until it does, every BNB coin there reads as an unexplained deposit (`transfer.unmatched_leg` on the wallet), and the lots cannot carry a BISON purchase onto that chain.
    - The lots-on-read service that reads these links is another agent's.

@@ -1075,6 +1075,16 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       const open = item.transfer;
       if (!open) return null;
       if (open.candidates.length > 0) return <TransferPick open={open} accounts={data.accounts} onLinked={onChanged} />;
+      if (open.leg.amount == null) {
+        // Phase 7 step 5: a coin leg's other side is a wallet (added and fetched under Konten)
+        // or the exchange's movement, answered on its account's page.
+        return (
+          <span className="inbox-links">
+            <Link href="/accounts">Wallet anlegen oder abrufen</Link>
+            <Link href={`/accounts/${open.leg.account_id}`}>Konto öffnen</Link>
+          </span>
+        );
+      }
       return (
         <span className="inbox-links">
           <Link href="/accounts">Anderes Konto importieren</Link>
