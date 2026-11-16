@@ -393,12 +393,14 @@ def test_every_daily_budget_reaches_the_tip_with_what_one_run_serves(build, page
     """Property (finding 1): whatever the same budget every day, from the smallest one a run
     can work with to an unlimited one, the runs reach the tip and serve the same transactions,
     read the same way, as one unlimited run; no run hands back its cursor while something it
-    listed waits, and the cursor never cycles (the long sequence at a sample of budgets)."""
+    listed waits, and the cursor never cycles (the long sequence at a sample of budgets).
+    The floor is pinned, so a run's start growing dearer fails here, not silently."""
     full = _Daily(build(), page_size).to_tip(10**6)
     want = _legs_by_hash(full)
     assert len(want) == len(build().records)
     needed = len(full.chain.requests)
     smallest = _smallest_workable(build)
+    assert smallest == (12 if build is _mixed else 9)
     limits = range(smallest, needed + 3)
     if build is _three_hundred_and_six:
         limits = [smallest, smallest + 1, smallest + 3, 12, 60, 2400]

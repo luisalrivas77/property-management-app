@@ -625,8 +625,12 @@ class SolanaSource:
     from the listing is dropped before its record and block time are in hand. A run the budget
     cut writes `closed`: the next run lists every token account an earlier run stored from
     there, so a closed one with transactions still unserved is found without the record that
-    names it, and a daily budget that always ends at the same place still moves on. A listing
-    of 1,000 signatures a page needs its pages within one run's budget (§15.1).
+    names it, and a daily budget that always ends at the same place still moves on, as long
+    as it covers one run's start. That start lists every stored token account, one request
+    each at least, so a daily budget below the height, the address's listing, both token
+    programs, one listing per stored token account and one transaction freezes the address
+    on that `closed` cursor for good (Q-O162). Likewise a listing of 1,000 signatures a page
+    needs its pages within one run's budget (§15.1).
 
     **Per address.** Each own address is its own run, read and reconciled alone (the
     `transfers` of a ChainTx are the address's own), as solana.classify_tx reads it. A stake

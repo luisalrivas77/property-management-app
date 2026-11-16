@@ -80,7 +80,7 @@ import json
 import logging
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
@@ -567,7 +567,7 @@ def _read(
     start: _Start,
     ctx: ClassifyContext,
     budget: RequestBudget,
-    stored: Callable[[], list[dict[str, Any]]] | None = None,
+    stored: Callable[[], Iterator[dict[str, Any]]] | None = None,
 ) -> _Read:
     out = _Read(cursor=start.cursor)
     seen: set[str] = set()
@@ -716,13 +716,13 @@ def _route(start: _Start, group: ChainGroup):
 
 def _stored_records(
     engine: Engine, workspace_id: UUID, store: BlobStore, address_id: UUID
-) -> Callable[[], list[dict[str, Any]]]:
+) -> Callable[[], Iterator[dict[str, Any]]]:
     """The address's stored originals, every record as the runs kept it, read on demand in a
-    transaction of its own (a source that `reads_stored` asks once per run at most). Held in
-    memory only: nothing read here is logged or put into an event."""
+    transaction of its own (a source that `reads_stored` asks once per run at most), one
+    original at a time and one record at a time, so a long history is never held whole.
+    Nothing read here is logged or put into an event."""
 
-    def load() -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
+    def load() -> Iterator[dict[str, Any]]:
         with workspace_transaction(engine, workspace_id) as conn:
             documents = conn.execute(
                 select(sync_table.c.document_id)
@@ -733,10 +733,11 @@ def _stored_records(
                 .order_by(sync_table.c.started_at, sync_table.c.id)
             ).scalars()
             for document_id in list(documents):
-                for line in read_original(conn, store, document_id).decode().splitlines():
-                    if line:
-                        records.append(json.loads(line))
-        return records
+                original = read_original(conn, store, document_id)
+                for line in original.splitlines():
+                    if line.strip():
+                        yield json.loads(line)
+                del original
 
     return load
 
