@@ -19,6 +19,7 @@ from hausbuch.db.session import workspace_transaction
 from hausbuch.rules.chain.classify import ChainGroup, ChainLeg, register_family
 from hausbuch.rules.errors import (
     WALLET_KEY_MISSING,
+    WALLET_SOURCE_FAILED,
     WALLET_SOURCE_THROTTLED,
     WALLET_SOURCE_UNAVAILABLE,
     WALLET_SYNC_DEFERRED,
@@ -86,6 +87,7 @@ class World:
         self.balance: dict[str, int] = {SOL_A: 0, SOL_B: 0}
         self.tokens: dict[str, dict[str, int]] = {}  # address -> mint -> units
         self.error: dict[str, Exception] = {}
+        self.balance_error: dict[str, Exception] = {}  # raised by balances() only
         self.scope = "address"
         self.key_missing = False
 
@@ -108,6 +110,8 @@ class FakeSource:
         return Page[ChainTx](items=items, next_cursor=str(start + len(items)))
 
     def balances(self, address: str) -> list[AssetBalance]:
+        if address in self.world.balance_error:
+            raise self.world.balance_error[address]
         tokens = [
             AssetBalance(
                 asset_key=AssetKey(chain=Chain.SOLANA, contract=mint), units=units, at_block=2000
@@ -344,6 +348,63 @@ def test_a_spent_budget_defers_without_reconciling(dbname, world, wallet, sync):
     assert row == ("succeeded", None, "2")
     rest = sync(ws, a)  # the next day: from the cursor, to the end
     assert (rest.movements_new, rest.reconciled, rest.deferred) == (3, True, False)
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (ChainSourceError(WALLET_SOURCE_FAILED, 500), WALLET_SOURCE_FAILED),
+        (SourceError("HTTPError", 429), WALLET_SOURCE_THROTTLED),
+    ],
+)
+def test_a_failed_balance_read_keeps_the_pages_and_reconciles_nothing(
+    dbname, world, wallet, sync, error, code
+):
+    """Follow-up of the EVM wiring's review: when the balance read after the history fails,
+    the run's pages and movements are written, the row is succeeded with no balance and never
+    reconciled, and the next run, from the tip, reads the balance and reconciles."""
+    ws, _, a, _ = wallet
+    world.txs[SOL_A] = [_tx(n, **{"in": n}) for n in range(1, 4)]
+    world.balance[SOL_A] = 6
+    world.balance_error[SOL_A] = error
+    first = sync(ws, a)
+    assert (first.status, first.error_code, first.movements_new, first.txs_seen) == (
+        WalletSyncStatus.SUCCEEDED,
+        code,
+        3,
+        3,
+    )
+    assert first.reconciled is None and not first.deferred and not first.waiting
+    (row,) = _rows(
+        dbname,
+        "SELECT status, error_code, balances, reconciled, difference, cursor_after,"
+        " document_id IS NOT NULL FROM wallet_sync WHERE address_id = %s",
+        a,
+    )
+    assert row == ("succeeded", None, None, None, None, "3", True)
+    (event,) = _rows(
+        dbname,
+        "SELECT payload FROM event WHERE type = 'wallet.sync_completed' AND workspace_id = %s",
+        ws,
+    )
+    assert (event[0]["error_code"], event[0]["deferred"], event[0]["reconciled"]) == (
+        code,
+        False,
+        None,
+    )
+
+    world.balance_error.clear()
+    second = sync(ws, a)
+    assert (second.status, second.error_code, second.movements_new, second.txs_seen) == (
+        WalletSyncStatus.SUCCEEDED,
+        None,
+        0,
+        0,
+    )
+    assert second.reconciled is True
+    # a wrong balance after the unread one is a mismatch, never carried over as reconciled
+    world.balance[SOL_A] = 7
+    assert sync(ws, a).reconciled is False
 
 
 def test_account_scope_and_a_waiting_question(dbname, world, wallet, sync):

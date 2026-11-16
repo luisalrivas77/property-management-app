@@ -48,7 +48,12 @@ the outcome, counts and the exception class.
 How a run's row reads (step 1's wallet page):
 
 - `succeeded`, `balances` null: the budget ended first (`wallet.sync_deferred`); nothing was
-  reconciled, since a half-read history cannot match the balance.
+  reconciled, since a half-read history cannot match the balance. Or the history was read to
+  its end and the balance read failed (refused, throttled, failed): the pages and movements
+  are written all the same, the row is never reconciled (`reconciled` null, so the address's
+  first sync is still ahead of it), the code is on the outcome, the log line and the
+  wallet.sync_completed event (`error_code`, `deferred` false), and the next run, starting at
+  the tip, reads the balance again (a follow-up of the EVM wiring's review).
 - `succeeded`, `balances` set, `reconciled` true or false: the history is read to its end;
   false raises `wallet.unreconciled` with `difference` = balance − Σ per asset.
 - `succeeded`, `balances` set, `reconciled` null: every asset that differs is named by an
@@ -197,6 +202,8 @@ class SyncOutcome:
     chain: Chain
     sync_id: UUID | None  # None: no row (wallet.key_missing)
     status: WalletSyncStatus | None
+    # On a succeeded run: the balance read failed after the history was read (the pages are
+    # written, the row has no balance and is never reconciled; the next run reads it again).
     error_code: str | None = None
     txs_seen: int = 0
     movements_new: int = 0
@@ -244,6 +251,9 @@ class _Read:
     cursor: str | None = None
     deferred: bool = False
     balances: list[AssetBalance] | None = None
+    # The source refused or failed the balance read after the history was read to its end:
+    # the pages are written, nothing is reconciled, the next run reads the balance again.
+    balance_error: str | None = None
 
 
 # --- Assets ----------------------------------------------------------------------------------
@@ -600,12 +610,32 @@ def _read(
             return out
         if not moved:  # the tip reached: None, or the cursor it was given
             break
-    balances = _balances(source, start, out)
+    try:
+        balances = _balances(source, start, out)
+    except (ChainSourceError, SourceError) as exc:
+        # The history is read: a failed balance read never discards it. The run is written
+        # with no balance (never reconciled), and the next run, at the tip, reads it again.
+        code = exc.code if isinstance(exc, ChainSourceError) else error_from(exc).code
+        out.balance_error = code
+        _log_balance_unread(start, code, exc)
+        return out
     if budget.exhausted:  # a balance call may have been refused: the next run reads them
         out.deferred = True
         return out
     out.balances = balances
     return out
+
+
+def _log_balance_unread(start: _Start, code: str, exc: BaseException) -> None:
+    """A balance read that failed after the history was read: the chain, the code and the
+    exception class only (no address, URL or cursor)."""
+    fields = {
+        "event": "wallet_sync_balance_unread",
+        "chain": start.chain.value,
+        "error_code": code,
+        "exc_type": type(exc).__name__,
+    }
+    logger.warning("a wallet balance could not be read", extra={"fields": fields})
 
 
 # --- Step 3: write ---------------------------------------------------------------------------
@@ -1265,6 +1295,7 @@ def _write(
             deferred=read.deferred,
             waiting=waiting,
             document_id=document_id,
+            error_code=read.balance_error,
         ),
     )
     return SyncOutcome(
@@ -1280,6 +1311,7 @@ def _write(
         spam_dropped=spam_dropped,
         unstorable=unstorable,
         card=card,
+        error_code=read.balance_error,
     )
 
 
