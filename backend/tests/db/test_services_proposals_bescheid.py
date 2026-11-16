@@ -18,7 +18,7 @@ from db.test_jobs_document_read import setup as setup  # noqa: F401 (a fixture)
 from db.test_services_proposals import _accept_all, _ai_call, _read_ready, _v
 from db.test_services_proposals import enqueued as enqueued  # noqa: F401 (a fixture)
 from db.test_services_proposals import job as job  # noqa: F401 (a fixture)
-from db.test_services_proposals_return_inputs import _everything_stored
+from db.test_services_proposals_return_inputs import _HEX, _TIMESTAMP, _UUID, _everything_stored
 from sqlalchemy import select
 
 from hausbuch.ai.fake import FakeModelClient, cited_response, text_response
@@ -145,7 +145,11 @@ def _stored_with_income_inputs(read, ws) -> str:
         rows = [r._asdict() for r in conn.execute(select(income_input_table)).all()]
         return json.dumps(rows, default=str, ensure_ascii=False)
 
-    return _everything_stored(read, ws) + read(ws, query)
+    # Ids, hashes and timestamps removed, as _everything_stored does: a random id can hold a
+    # short forbidden fragment such as "0532" by chance (CI failed so on 16 Nov 2026).
+    text = _UUID.sub("<id>", read(ws, query))
+    text = _HEX.sub("<hash>", text)
+    return _everything_stored(read, ws) + _TIMESTAMP.sub("<time>", text)
 
 
 def _tax_rate(read, ws):
