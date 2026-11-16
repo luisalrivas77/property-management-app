@@ -11,10 +11,14 @@ confirmed legs stay as they are.
   address and the asset's symbol, never a transaction hash or a full address.
 - `confirm_group`: „Bestätigen“ keeps a group as the sync proposed it: the group and its
   proposed movements become confirmed (the triggers allow only that change). Refused for a
-  group that needs an answer: one with a question (other than „nothing moved“), one with a
-  proposed leg still `uncategorized` (a first sync's receive or send: confirming it as is
-  would put an uncategorised leg into the lots), and one without legs (a change card, a
-  transaction Hausbuch could not store).
+  group that needs an answer: one with a question (other than „nothing moved“ and, D262, the
+  question which program a swap code read by its legs went through), one with a proposed leg
+  still `uncategorized` (a first sync's receive or send: confirming it as is would put an
+  uncategorised leg into the lots), and one without legs (a change card, a transaction
+  Hausbuch could not store). `confirmable` is that one rule, shared with the card. A
+  stranger's tiny receipt (address-poisoning dust, D262, `dust_groups`, decided on read) is
+  the exception: „Bestätigen“ books it as a 0 € acquisition for that movement only, never by
+  flagging the asset.
 - `answer_group`: the answers of D183 (5) that need no leg picked and no link: Bezahlung (out
   legs → `disposal`), Geschenk/Zahlung erhalten (in legs → `acquisition`; a typed cost is its
   cost, a typed 0 is 0, and no cost leaves it NULL, unknown: the lots price it by the day or
@@ -43,7 +47,8 @@ confirmed legs stay as they are.
   API only; it hides the token, held or not, until „Kein Spam“.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, localcontext
 from uuid import UUID
@@ -55,9 +60,16 @@ from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import movement_group as group_table
+from hausbuch.db.tables import price as price_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.db.tables import wallet_address as address_table
-from hausbuch.rules.chain.solana import QUESTION_UNREADABLE
+from hausbuch.rules import valuation
+from hausbuch.rules.chain.dust import dust_rule, is_dust
+from hausbuch.rules.chain.solana import (
+    QUESTION_PROGRAM,
+    QUESTION_UNREADABLE,
+    is_program_question,
+)
 from hausbuch.rules.chain.spam import listed
 from hausbuch.rules.chain.utxo import FOREIGN_INPUTS_QUESTION, NO_MOVEMENT_QUESTION
 from hausbuch.rules.errors import (
@@ -66,7 +78,7 @@ from hausbuch.rules.errors import (
     WALLET_GROUP_NEEDS_ANSWER,
     RuleError,
 )
-from hausbuch.rules.lots import BERLIN
+from hausbuch.rules.lots import BERLIN, berlin_day
 from hausbuch.schemas.chain import (
     AssetKey,
     Chain,
@@ -84,7 +96,13 @@ from hausbuch.schemas.events import (
     MovementSuperseded,
     Updated,
 )
-from hausbuch.schemas.household import MovementKind, MovementSource, MovementStatus
+from hausbuch.schemas.household import (
+    MovementKind,
+    MovementSource,
+    MovementStatus,
+    PricePoint,
+    PriceSourceKind,
+)
 from hausbuch.schemas.wallet_cards import (
     HiddenToken,
     WalletAnswer,
@@ -213,14 +231,50 @@ def _answers(legs: list[WalletLeg], spam_unfit: set[UUID]) -> list[WalletAnswer]
     return []
 
 
-def _confirmable(question: str | None, legs: list[WalletLeg]) -> bool:
-    if not legs:
+def confirmable(question: str | None, kinds: Sequence[MovementKind], *, dust: bool = False) -> bool:
+    """Whether „Bestätigen“ books the card's legs (`kinds`, its proposed legs) as they stand:
+    the one rule the card, its text and `confirm_group` share. „Nothing moved“ without legs
+    is noted; a dust receipt (D262) is booked as a Kleinstbetrag; otherwise every leg must be
+    of a known kind and the group may ask at most which program it went through (a swap code
+    read by its legs, D262: confirming the proposal answers that question). Any other question
+    (the stake account, the unknown or unreadable transaction) needs its own answer."""
+    if not kinds:
         return question == NO_MOVEMENT_QUESTION  # „nothing moved“: noted, nothing to book
-    return question is None and all(leg.kind is not MovementKind.UNCATEGORIZED for leg in legs)
+    if dust:
+        return True
+    if any(k is MovementKind.UNCATEGORIZED for k in kinds):
+        return False
+    return question is None or is_program_question(question)
 
 
-def card_text(card: WalletCardKind, kind: GroupKind, legs: list[WalletLeg]) -> str:
-    """The card's sentence in plain German: what happened (principle 7)."""
+def _euro(value: Decimal) -> str:
+    return f"{_amount(value)} €"
+
+
+def _dust_text(legs: list[WalletLeg]) -> str:
+    """D262: the receipt, what it likely is and what never to do (principle 7)."""
+    (leg,) = [leg for leg in legs if not _fee(leg)]
+    return (
+        f"{_leg_words(leg)}: ein Kleinstbetrag von einer fremden Adresse, weniger als "
+        f"{_euro(dust_rule().below_eur)} wert. Das ist vermutlich Adress-Spam („Address "
+        "Poisoning“): Jemand schickt einen winzigen Betrag von einer Adresse, die einer echten "
+        "zum Verwechseln ähnlich sieht, und hofft, dass sie später aus dem Verlauf kopiert und "
+        "Geld dorthin geschickt wird. Kopieren Sie nie eine Adresse aus dem Verlauf. Vorschlag "
+        "von Hausbuch: als Kleinstbetrag (Spam) buchen; er zählt im Bestand mit 0 € Kaufpreis "
+        "und ist kein Einkommen. Stimmt das, „Bestätigen“."
+    )
+
+
+def card_text(
+    card: WalletCardKind,
+    kind: GroupKind,
+    legs: list[WalletLeg],
+    *,
+    question: str | None = None,
+    dust: bool = False,
+) -> str:
+    """The card's sentence in plain German: what happened (principle 7). It asks for
+    „Bestätigen“ exactly when `confirmable` holds, otherwise it asks the group's question."""
     match card:
         case WalletCardKind.CHANGE:
             return (
@@ -247,9 +301,21 @@ def card_text(card: WalletCardKind, kind: GroupKind, legs: list[WalletLeg]) -> s
                 "Diese Transaktion berührt eine eigene Adresse, Hausbuch kann aber nicht sagen, "
                 "was sie für die Wallet bedeutet."
             )
+    if dust:
+        return _dust_text(legs)
     words = _words(legs)
-    if all(leg.kind is not MovementKind.UNCATEGORIZED for leg in legs):
+    if confirmable(question, [leg.kind for leg in legs]):
+        if is_program_question(question):
+            program = question[len(QUESTION_PROGRAM) :].rstrip("?")  # type: ignore[index]
+            what = "einen Tausch" if kind is GroupKind.SWAP else "diese Bewegungen"
+            return (
+                f"Vorschlag von Hausbuch: {words}. Das Programm {program} kennt Hausbuch "
+                f"nicht, liest die Transaktion an ihren Beträgen aber als {what}. Stimmt das, "
+                "„Bestätigen“."
+            )
         return f"Vorschlag von Hausbuch: {words}. Stimmt das, „Bestätigen“."
+    if question is not None and all(leg.kind is not MovementKind.UNCATEGORIZED for leg in legs):
+        return f"{words}. {question}"
     return f"{words}. Was war das?"
 
 
@@ -338,10 +404,124 @@ def spam_unfit(conn: Connection, asset_ids: set[UUID]) -> set[UUID]:
     return unfit
 
 
-def _to_card(row, legs: list[WalletLeg], unfit: set[UUID]) -> WalletGroup:
+# --- Dust (D262) ----------------------------------------------------------------------------
+
+# A leg as the dust check reads it: (movement id, asset id, kind, status, quantity).
+_LegFacts = tuple[UUID, UUID, MovementKind, MovementStatus, Decimal]
+
+
+@dataclass(frozen=True)
+class DustCandidate:
+    """A group whose shape fits address-poisoning dust: a proposed transfer without a
+    question whose only live leg is one proposed, uncategorised receipt (no fee: the own
+    address signed nothing). Whether it IS dust needs the database (`dust_groups`)."""
+
+    group_id: UUID
+    movement_id: UUID
+    asset_id: UUID
+    quantity: Decimal
+    day: date
+    tx_hash: str | None
+
+
+def _dust_candidate(row, legs: Sequence[_LegFacts]) -> DustCandidate | None:
+    if (
+        row.status != GroupStatus.PROPOSED.value
+        or row.question is not None
+        or row.kind != GroupKind.TRANSFER.value
+        or len(legs) != 1
+    ):
+        return None
+    ((movement_id, asset_id, kind, status, quantity),) = legs
+    if (
+        kind is not MovementKind.UNCATEGORIZED
+        or status is not MovementStatus.PROPOSED
+        or quantity <= 0
+    ):
+        return None
+    return DustCandidate(
+        group_id=row.id,
+        movement_id=movement_id,
+        asset_id=asset_id,
+        quantity=quantity,
+        day=berlin_day(row.occurred_at),
+        tx_hash=row.tx_hash,
+    )
+
+
+def dust_groups(conn: Connection, candidates: Sequence[DustCandidate]) -> set[UUID]:
+    """D262: the candidates that are dust: the asset is not hidden as spam, no transfer link
+    touches the leg, no other live movement (an own account's, an exchange's) carries the
+    transaction's hash, and the units are worth less than `dust.yaml`'s limit at the price of
+    the Berlin day itself (the asset's own row, else its `priced_as` asset's, D180 (3));
+    without a price of that day it is not dust (never guessed)."""
+    if not candidates:
+        return set()
+    t, m, k, p = asset_table.c, movement_table.c, link_table.c, price_table.c
+    asset_ids = {c.asset_id for c in candidates}
+    assets = {
+        r.id: r
+        for r in conn.execute(
+            select(t.id, t.spam, t.priced_as_asset_id).where(t.id.in_(asset_ids))
+        ).all()
+    }
+    movement_ids = [c.movement_id for c in candidates]
+    linked = set()
+    for out_id, in_id in conn.execute(
+        select(k.out_movement_id, k.in_movement_id).where(
+            k.superseded_by.is_(None),
+            or_(k.out_movement_id.in_(movement_ids), k.in_movement_id.in_(movement_ids)),
+        )
+    ).all():
+        linked |= {out_id, in_id}
+    hashes = {c.tx_hash for c in candidates if c.tx_hash is not None}
+    elsewhere: dict[str, set[UUID | None]] = {}
+    if hashes:
+        for tx_hash, group_id in conn.execute(
+            select(m.tx_hash, m.group_id).where(m.tx_hash.in_(hashes), m.superseded_by.is_(None))
+        ).all():
+            elsewhere.setdefault(tx_hash, set()).add(group_id)
+    priced = asset_ids | {r.priced_as_asset_id for r in assets.values() if r.priced_as_asset_id}
+    days = {c.day for c in candidates}
+    rows: dict[UUID, list[PricePoint]] = {}
+    for r in conn.execute(
+        select(p.asset_id, p.on, p.price_eur, p.source, p.fetched_at).where(
+            p.asset_id.in_(priced), p.on.in_(days)
+        )
+    ).all():
+        rows.setdefault(r.asset_id, []).append(
+            PricePoint(
+                asset_id=r.asset_id,
+                on=r.on,
+                price_eur=r.price_eur,
+                source=PriceSourceKind(r.source),
+                fetched_at=r.fetched_at,
+            )
+        )
+    out: set[UUID] = set()
+    for c in candidates:
+        asset = assets.get(c.asset_id)
+        if asset is None or asset.spam or c.movement_id in linked:
+            continue
+        if elsewhere.get(c.tx_hash or "", set()) - {c.group_id}:
+            continue
+        twin = asset.priced_as_asset_id
+        point = valuation.price_on(
+            [r for r in rows.get(c.asset_id, []) if r.on == c.day],
+            c.day,
+            priced_as=[r for r in rows.get(twin, []) if r.on == c.day] if twin else (),
+        )
+        price = point.price_eur if point is not None and point.on == c.day else None
+        if is_dust(c.quantity, price):
+            out.add(c.group_id)
+    return out
+
+
+def _to_card(row, legs: list[WalletLeg], unfit: set[UUID], dust: bool = False) -> WalletGroup:
     card = card_kind(row.question, bool(legs))
     kind = GroupKind(row.kind)
     pending = _pending(legs)
+    dust = dust and card is WalletCardKind.PROPOSED
     return WalletGroup(
         id=row.id,
         account_id=row.account_id,
@@ -351,9 +531,9 @@ def _to_card(row, legs: list[WalletLeg], unfit: set[UUID]) -> WalletGroup:
         occurred_at=row.occurred_at,
         card=card,
         question=None if card is WalletCardKind.CHANGE else row.question,
-        text=card_text(card, kind, pending),
+        text=card_text(card, kind, pending, question=row.question, dust=dust),
         legs=legs,
-        confirmable=_confirmable(row.question, pending),
+        confirmable=confirmable(row.question, [leg.kind for leg in pending], dust=dust),
         answers=_answers(pending, unfit) if card is WalletCardKind.PROPOSED else [],
     )
 
@@ -361,14 +541,29 @@ def _to_card(row, legs: list[WalletLeg], unfit: set[UUID]) -> WalletGroup:
 def _cards(conn: Connection, rows: list) -> list[WalletGroup]:
     legs = _legs(conn, [r.id for r in rows])
     unfit = spam_unfit(conn, {leg.asset_id for group in legs.values() for leg in group})
-    return [_to_card(r, legs.get(r.id, []), unfit) for r in rows]
+    candidates = [
+        found
+        for r in rows
+        if (
+            found := _dust_candidate(
+                r,
+                [
+                    (leg.movement_id, leg.asset_id, leg.kind, leg.status, leg.quantity)
+                    for leg in legs.get(r.id, [])
+                ],
+            )
+        )
+        is not None
+    ]
+    dust = dust_groups(conn, candidates)
+    return [_to_card(r, legs.get(r.id, []), unfit, r.id in dust) for r in rows]
 
 
 def _open_groups(account_id: UUID | None = None):
     g = group_table.c
-    query = select(g.id, g.account_id, g.chain, g.kind, g.status, g.occurred_at, g.question).where(
-        open_clause()
-    )
+    query = select(
+        g.id, g.account_id, g.chain, g.kind, g.status, g.occurred_at, g.question, g.tx_hash
+    ).where(open_clause())
     if account_id is not None:
         query = query.where(g.account_id == account_id)
     return query
@@ -740,16 +935,39 @@ def _group_event(
     )
 
 
+def _dust_now(ctx: CommandContext, row, moves: list) -> bool:
+    """D262 under the group's lock: the same check the card made (`dust_groups`)."""
+    facts = [
+        (m.id, m.asset_id, MovementKind(m.kind), MovementStatus(m.status), m.quantity)
+        for m in moves
+    ]
+    candidate = _dust_candidate(row, facts)
+    return candidate is not None and bool(dust_groups(ctx.conn, [candidate]))
+
+
+def _as_dust(move) -> dict:
+    """A dust receipt booked (D262): an acquisition at a cost of 0 €, so the units count on
+    the address and in a lot of 0 € (no price to-do), never income and never spam (the asset
+    is not flagged, D187)."""
+    return {
+        "kind": MovementKind.ACQUISITION.value,
+        "status": MovementStatus.CONFIRMED.value,
+        "eur_amount": Decimal(0),
+    }
+
+
 def confirm_group(ctx: CommandContext, group_id: UUID) -> UUID:
     """POST /groups/{gid}/confirm: „Bestätigen“. Confirms the group's proposed legs (and a
-    proposed group itself); its confirmed legs stay as they are."""
+    proposed group itself) as they stand and returns the group's id; its confirmed legs stay
+    as they are. On a swap that asks only which program it went through, confirming answers
+    that question (D262; the group keeps it as the record of what was asked). On a dust
+    receipt (D262) it books the receipt as a 0 € acquisition: a new group that supersedes
+    this one, whose id it returns."""
     row, moves = _open_group(ctx, group_id)
     pending = _pending_moves(row, moves)
-    kinds = {MovementKind(m.kind) for m in pending}
-    if pending:
-        if row.question is not None or MovementKind.UNCATEGORIZED in kinds:
-            raise RuleError(WALLET_GROUP_NEEDS_ANSWER, _NEEDS_ANSWER)
-    elif row.question != NO_MOVEMENT_QUESTION:
+    if pending and _dust_now(ctx, row, moves):
+        return _supersede(ctx, row, moves, kind=GroupKind.TRANSFER, change=_as_dust)
+    if not confirmable(row.question, [MovementKind(m.kind) for m in pending]):
         raise RuleError(WALLET_GROUP_NEEDS_ANSWER, _NEEDS_ANSWER)
     g, m = group_table.c, movement_table.c
     if row.status == GroupStatus.PROPOSED.value:  # the trigger refuses confirmed → confirmed

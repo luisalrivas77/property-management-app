@@ -93,6 +93,10 @@ PLAIN_PROGRAMS = frozenset(
 _SETUP_PROGRAMS = frozenset({COMPUTE_BUDGET_PROGRAM, MEMO_PROGRAM, ATA_PROGRAM})
 
 QUESTION_UNKNOWN = "Was ist diese Transaktion?"
+# The question of a transaction through a program no decoder row reads (D183 (5)); the
+# masked program follows. On a swap whose legs code already knows, confirming the proposal
+# answers it (D262).
+QUESTION_PROGRAM = "Was war diese Transaktion bei "
 # A record whose token legs cannot be read (wallet.record_unreadable): a card for a person,
 # never a stopped sync (classify_tx).
 QUESTION_UNREADABLE = (
@@ -570,7 +574,13 @@ def _decoder(top: Sequence[Instruction], lookup: DecoderLookup) -> DecoderRow | 
 
 
 def _contract_question(program: str | None) -> str:
-    return f"Was war diese Transaktion bei {mask(program)}?" if program else QUESTION_UNKNOWN
+    return f"{QUESTION_PROGRAM}{mask(program)}?" if program else QUESTION_UNKNOWN
+
+
+def is_program_question(question: str | None) -> bool:
+    """D262: the question asks only which program a transaction went through (never the
+    unknown, unreadable or stake question)."""
+    return question is not None and question.startswith(QUESTION_PROGRAM)
 
 
 def _stake_counterpart(b: _Balances, own: Collection[str], outgoing: bool) -> str | None:
