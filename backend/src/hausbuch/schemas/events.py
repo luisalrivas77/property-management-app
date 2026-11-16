@@ -42,7 +42,7 @@ from .bank_sync import (
     SyncStatus,
     SyncTrigger,
 )
-from .chain import AddressKind, Chain
+from .chain import AddressKind, Chain, GroupKind
 from .common import (
     Area,
     BuildingShare,
@@ -1075,11 +1075,69 @@ class MovementRecorded(Schema):
     document_id: UUID | None = None
 
 
+class WalletSyncRecorded(Schema):
+    """wallet.sync_completed and wallet.sync_failed (phase 7 D182 (1)): one run of one
+    address, by ids and counts only. No address, cursor, transaction hash or URL: the host
+    name is the provider's, never the household's (D181)."""
+
+    sync_id: UUID
+    address_id: UUID
+    status: Literal["succeeded", "failed", "throttled", "refused"]
+    source_host: str
+    txs_seen: int = Field(ge=0)
+    movements_new: int = Field(ge=0)
+    reconciled: bool | None = None  # None: not checked (failed, or the history not read yet)
+    deferred: bool = False  # the run's budget ended before the history did (wallet.sync_deferred)
+    # Balances read, and every asset that differs is named by an open question of the run's
+    # scope (a Bitcoin change card's native coin, a question's legs), so the difference is
+    # „wartet auf Antwort“, not a mismatch.
+    waiting: bool = False
+    error_code: str | None = None
+    document_id: UUID | None = None  # the run's stored original (D182 (3))
+
+
+class WalletPayeeAnswered(Schema):
+    """wallet.payee_answered (phase 7 D185 (2), step 4), on the wallet account: a person
+    answered „Nein, Empfänger“ on a Bitcoin change card, so this address is a payee of the
+    account and never asked about again there, in a later spend or a replay. The address is
+    kept as its masked form and its keyed HMAC (as rules/chain/address.address_hmac gives it,
+    the form a learned rule keeps a counterparty IBAN in, `RuleRecorded`), never in clear: it
+    is no own address, so it has no wallet_address row. `group_id` the card answered."""
+
+    group_id: UUID
+    chain: Chain
+    address_masked: str
+    address_hmac: HmacHex = Field(pattern=HMAC_PATTERN)
+
+
+class MovementGroupRecorded(Schema):
+    """movement_group.proposed and movement_group.confirmed (phase 7 D183, D186 (1)): the
+    group's kind and how it was routed; its transaction hash stays in the row only."""
+
+    account_id: UUID
+    chain: str
+    kind: str
+    reason: str  # the routing reason (rules.review)
+    sync_id: UUID | None = None
+
+
 class MovementSuperseded(Schema):
     """movement.superseded: the row that replaces it (D23 pattern); `document_id` the file
     that corrected it, when one did (Binance's withdrawal history, D178 (4))."""
 
     superseded_by: UUID
+    document_id: UUID | None = None
+
+
+class ExchangeTradeGrouped(Schema):
+    """movement_group.trade_recorded: one exchange trade's legs tied as one group (phase 6
+    D178 amended (3), migration 0043), by id only: the movements it holds, the export they
+    came from. Its own type, not movement_group.confirmed, which phase 7 step 2 gives a chain
+    transaction's routing (a chain and a reason an exchange trade has not)."""
+
+    account_id: UUID
+    kind: GroupKind
+    movement_ids: list[UUID] = Field(min_length=1)
     document_id: UUID | None = None
 
 
@@ -1132,16 +1190,33 @@ class PriceSourceFailed(Schema):
     last_price_on: date | None = None
 
 
+class FundSourceNote(Schema):
+    """A fund whose issuer file failed in a daily run, or whose NAV currency no ECB rate
+    converts (D174 amended 16 Nov 2026, follow-ups B and C; a fund read fine with no new NAV
+    day is not named): the issuer and reference asked, so the card names the source
+    of a fund whose reference came from the issuer's catalogue and has no stored row yet; and
+    `currency` when the file was read but the ECB publishes no rate for the NAV's currency.
+    Never a price or an amount."""
+
+    asset_id: UUID
+    issuer: str = Field(min_length=1, max_length=40)
+    fund_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+
+
 class PricesFetched(Schema):
     """workspace.prices_fetched: one per daily run (§11). Step 5b adds the failed assets' ids
     (never a price or an amount): D174's card counts an asset's failed days from these
-    events, on read, so no table holds a fetch's state."""
+    events, on read, so no table holds a fetch's state. `fund_sources` (16 Nov 2026) names,
+    per fund whose issuer file failed or whose NAV currency could not be converted, the
+    issuer source asked (FundSourceNote); a fund read fine with no new NAV day is not named."""
 
     sources: list[PriceSourceKind] = Field(min_length=1)
     assets: int = Field(ge=0)
     rows_new: int = Field(ge=0)
     assets_failed: int = Field(ge=0)
     failed_asset_ids: list[UUID] = Field(default_factory=list)
+    fund_sources: list[FundSourceNote] = Field(default_factory=list)
 
 
 class ValuationSnapshotWritten(Schema):
@@ -1304,6 +1379,13 @@ class EventType(StrEnum):
     MOVEMENT_PROPOSED = "movement.proposed"  # phase 6
     MOVEMENT_CONFIRMED = "movement.confirmed"
     MOVEMENT_SUPERSEDED = "movement.superseded"
+
+    WALLET_SYNC_COMPLETED = "wallet.sync_completed"  # phase 7 step 2 (core)
+    WALLET_SYNC_FAILED = "wallet.sync_failed"
+    WALLET_PAYEE_ANSWERED = "wallet.payee_answered"  # phase 7 step 4 (Bitcoin change card)
+    MOVEMENT_GROUP_PROPOSED = "movement_group.proposed"
+    MOVEMENT_GROUP_CONFIRMED = "movement_group.confirmed"
+    MOVEMENT_GROUP_TRADE_RECORDED = "movement_group.trade_recorded"  # phase 6 D178 amended (3)
 
     TRANSFER_LINKED = "transfer.linked"  # phase 6
     TRANSFER_UNLINKED = "transfer.unlinked"
@@ -1527,6 +1609,22 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.MOVEMENT_PROPOSED: EventSpec(MovementRecorded, "optional", "Movement proposed"),
     E.MOVEMENT_CONFIRMED: EventSpec(MovementRecorded, "optional", "Movement confirmed"),
     E.MOVEMENT_SUPERSEDED: EventSpec(MovementSuperseded, "forbidden", "Movement corrected"),
+    E.WALLET_SYNC_COMPLETED: EventSpec(
+        WalletSyncRecorded, "forbidden", "Wallet address read from its chain"
+    ),
+    E.WALLET_SYNC_FAILED: EventSpec(WalletSyncRecorded, "forbidden", "Wallet sync failed"),
+    E.WALLET_PAYEE_ANSWERED: EventSpec(
+        WalletPayeeAnswered, "forbidden", "Bitcoin output answered „Nein, Empfänger“"
+    ),
+    E.MOVEMENT_GROUP_PROPOSED: EventSpec(
+        MovementGroupRecorded, "forbidden", "Chain transaction waiting for review"
+    ),
+    E.MOVEMENT_GROUP_CONFIRMED: EventSpec(
+        MovementGroupRecorded, "forbidden", "Chain transaction confirmed"
+    ),
+    E.MOVEMENT_GROUP_TRADE_RECORDED: EventSpec(
+        ExchangeTradeGrouped, "optional", "Exchange trade grouped"
+    ),
     E.TRANSFER_LINKED: EventSpec(TransferLinked, "forbidden", "Transfer legs linked"),
     E.TRANSFER_UNLINKED: EventSpec(TransferUnlinked, "forbidden", "Transfer link undone"),
     E.STATEMENT_IMPORTED: EventSpec(

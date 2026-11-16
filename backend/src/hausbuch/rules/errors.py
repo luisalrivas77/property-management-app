@@ -224,6 +224,9 @@ BANK_AUTO_SYNC_WAITS = "bank.auto_sync_waits"  # DKB: two manual syncs without a
 # Phase 6 D196: a PIN or login stored encrypted no longer decrypts (the session key changed)
 BANK_PIN_UNREADABLE = "bank.pin_unreadable"  # type the PIN on the Bankabruf card again
 BANK_LOGIN_UNREADABLE = "bank.login_unreadable"  # type the Anmeldename and the PIN again
+# D196 amended (16 Nov 2026): the PIN typed into the app was typed for another FinTS address
+# than the connection's (its address changed since, or the PIN predates the binding)
+BANK_PIN_SERVER_CHANGED = "bank.pin_server_changed"  # type the PIN again for this address
 # Phase 6 step 1 (D168): the second owner's own consent to ai_private_accounts.
 SETTINGS_CONSENT_SWITCH_OFF = "settings.consent_switch_off"  # nothing to consent to
 SETTINGS_CONSENT_ALREADY_RECORDED = "settings.consent_already_recorded"  # this member did
@@ -235,6 +238,20 @@ WALLET_ADDRESS_TAKEN = "wallet.address_taken"  # registered on another own accou
 WALLET_KEY_MISSING = "wallet.key_missing"  # the chain's source needs a key that is unset
 WALLET_SOURCE_THROTTLED = "wallet.source_throttled"  # a 429: the sync resumes the next day
 WALLET_SOURCE_REFUSED = "wallet.source_refused"  # a 401/403: change the URL or key (D182 (1))
+# „Abruf fehlgeschlagen: der Anbieter hat nicht geantwortet oder eine unlesbare Antwort
+# geschickt. Der nächste Abruf versucht es erneut.“ (a timeout, a 5xx, an unreadable body;
+# phase 7 step 2 core, used by every source)
+WALLET_SOURCE_FAILED = "wallet.source_failed"
+# „Abruf abgebrochen: ein Fehler in Hausbuch beim Einlesen. Nichts davon ist gespeichert;
+# der nächste Abruf liest dieselben Transaktionen noch einmal. Bleibt der Fehler, braucht es
+# eine Korrektur in Hausbuch, kein Klick hier.“ (a classifier or a write of the sync failed
+# after the provider answered; a transaction Hausbuch cannot store no longer ends here but
+# becomes its own card, routing.chain_unstorable, so this repeats only for a bug in code)
+WALLET_SYNC_ERROR = "wallet.sync_error"
+# „Diese Blockchain liest Hausbuch noch nicht: die Adresse ist gespeichert und wird gelesen,
+# sobald es das kann.“ (no services/chain/<kind>.py source is built yet; no row, like
+# wallet.key_missing, and the other addresses of the run go on)
+WALLET_SOURCE_UNAVAILABLE = "wallet.source_unavailable"
 WALLET_UNRECONCILED = "wallet.unreconciled"  # Σ movements != the chain's balance (D186 (2))
 WALLET_COINS_LEFT = "wallet.coins_left"  # a balance-only address below its linked deposits
 WALLET_SYNC_DEFERRED = "wallet.sync_deferred"  # the run's budget ran out; a page note, no card
@@ -242,6 +259,11 @@ WALLET_CHANGE_CANDIDATE = "wallet.change_candidate"  # an own spend's unregister
 # A record whose token legs cannot be read (a token balance row without an owner the sync can
 # place, or a Token program call without token balances): the sync stops, never drops a leg.
 WALLET_RECORD_UNREADABLE = "wallet.record_unreadable"
+# A change card's answer (D185 (2), step 4): the group is no open card, or the output named is
+# not one it asks about; the transaction is in no stored original of the account, so the
+# address cannot be read again (a run whose only new item was the card stores none, D182 (3)).
+WALLET_CHANGE_ANSWERED = "wallet.change_answered"
+WALLET_ORIGINAL_MISSING = "wallet.original_missing"
 GROUP_UNKNOWN = "group.unknown"  # no rule reads the transaction (D183 (3f))
 GROUP_CONTRACT_CALL = "group.contract_call"  # a shape no rule reads (D183 (4))
 GROUP_UNPRICED = "group.unpriced"  # a leg without the day's price (D188 (4))

@@ -18,6 +18,7 @@ No address in clear leaves `wallet_address`: every shape here that a screen or a
 carries the mask or the HMAC (D179 (1)), and none reaches a model (D189).
 """
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -360,7 +361,10 @@ class ChainSource(Protocol):
 
     kind: ChainSourceKind
 
-    def balances(self, address: str) -> list[AssetBalance]: ...
+    # `tokens`: token assets to read a balance of besides the source's own list (the tokens
+    # the address has non-spam movements in). Passed only to a source that declares
+    # `reads_tokens = True` (EVM over Etherscan); the other sources are called without it.
+    def balances(self, address: str, *, tokens: Sequence[AssetKey] = ()) -> list[AssetBalance]: ...
 
     def transactions(self, address: str, cursor: str | None) -> Page[ChainTx]: ...
 

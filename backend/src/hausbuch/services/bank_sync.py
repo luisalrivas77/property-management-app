@@ -327,7 +327,7 @@ def _to_connection(conn: Connection, row: Row, settings: Settings) -> BankConnec
     values = {k: v for k, v in row._mapping.items() if k not in _SECRET_COLUMNS}
     bank_name = recorded_bank_name(conn, row.id)
     login = credentials.connection_login(row, settings)
-    pin = credentials.pin_state(conn, row.credential_slot, settings)
+    pin = credentials.pin_state(conn, row.credential_slot, settings, fints_url=row.fints_url)
     return BankConnection.model_validate(
         values
         | {
@@ -336,6 +336,7 @@ def _to_connection(conn: Connection, row: Row, settings: Settings) -> BankConnec
             "credential_source": pin.source,
             "credential_set_at": pin.set_at,
             "credential_readable": pin.readable,
+            "credential_server_matches": pin.server_matches,
             "state_present": row.client_data is not None,
             "credential_variable": rules.pin_variable(row.credential_slot),
             "bank_name": bank_name,
@@ -726,6 +727,14 @@ _FAILED_CARD = {
         "Die in Hausbuch gespeicherte PIN lässt sich nicht mehr lesen: der Schlüssel des"
         " Servers wurde gewechselt.",
         "Im Bankabruf „PIN ändern“ wählen, die PIN neu eingeben und erneut abrufen.",
+    ),
+    # D196 amended: a PIN typed into the app is sent only to the address it was typed for.
+    E.BANK_PIN_SERVER_CHANGED: (
+        "Die in Hausbuch gespeicherte PIN wurde für eine andere FinTS-Adresse eingegeben als die"
+        " dieses Bankabrufs: Hausbuch sendet sie nur an die Adresse, für die sie eingegeben"
+        " wurde.",
+        "Im Bankabruf die FinTS-Adresse prüfen, „PIN ändern“ wählen, die PIN neu eingeben und"
+        " erneut abrufen.",
     ),
     E.BANK_LOGIN_UNREADABLE: (
         "Der gespeicherte Anmeldename lässt sich nicht mehr lesen: der Schlüssel des Servers"

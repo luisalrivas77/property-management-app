@@ -569,6 +569,7 @@ def test_a_card_settlement_learns_a_rule_that_books_the_next_month_at_another_am
 KITA_IBAN = "DE39100000000000003012"
 SAVINGS_PAYEE_IBAN = "DE12100000000000003013"
 TAX_IBAN = "DE82100000000000003014"
+BENEFITS_IBAN = "DE55100000000000003015"
 
 
 @pytest.mark.parametrize(
@@ -578,6 +579,10 @@ TAX_IBAN = "DE82100000000000003014"
         ("hh_childcare", KITA_IBAN, "Kita Beispiel e.V.", "-180.00", "-180.00"),
         # A standing order to a savings account at another bank, not (yet) in the app.
         ("hh_investment_savings", SAVINGS_PAYEE_IBAN, "Tagesgeld Beispiel", "-150.00", "-150.00"),
+        # The monthly Elterngeld (D159 amended (8)): a return input a person confirms once, then
+        # the rule books the next months; the to-do „Lohnersatzleistungen <Jahr> eintragen“
+        # reads the confirmed lines whoever booked them.
+        ("hh_wage_replacement", BENEFITS_IBAN, "Elterngeldstelle Beispiel", "1200.00", "1200.00"),
     ],
 )
 def test_a_code_without_a_threshold_learns_a_rule_that_books_the_next_month(
