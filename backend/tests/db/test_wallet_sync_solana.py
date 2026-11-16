@@ -230,23 +230,21 @@ def test_three_runs_from_a_first_sync_to_the_tip(dbname, chain, wallet, sync, bl
     sol, usdc = _sums(*FIRST, *LATER)
     _set_balance(chain, sol - unreadable["meta"]["fee"], usdc)
     second = sync(ws, a)
-    # the card has no leg, not even its fee (solana._unreadable_group): the chain's SOL is
-    # that fee short of the movements, and the SOL waits for the answer, never a plug
+    # the card keeps its fee beside the question (solana._unreadable_group), proposed: the
+    # chain's SOL matches the movements; the token the record moved waits for the answer
     assert (second.status, second.reconciled, second.waiting) == (
         WalletSyncStatus.SUCCEEDED,
-        None,
         True,
+        False,
     )
-    (difference,) = _rows(
-        dbname, "SELECT difference FROM wallet_sync WHERE id = %s", second.sync_id
-    )[0]
-    assert difference is None
-    want |= set().union(*(_signed(i) for i in LATER))
+    fee = Decimal(-unreadable["meta"]["fee"]).scaleb(-9).normalize()
+    want |= set().union(*(_signed(i) for i in LATER)) | {(signature(unreadable), "fee", fee)}
     assert _movements(dbname, account) == want
     groups = _groups(dbname, account)
     assert groups[signature(_record("failed_transaction"))] == ("failed", "confirmed", False)
     assert groups[signature(_record("swap_listed_amm"))] == ("swap", "confirmed", False)
-    # one record never blocks its address: it is a card with its question, the rest booked
+    # one record never blocks its address: it is a card with its question, the rest booked;
+    # its fee alone never books it (rules/review.route_group), so the question stays open
     assert groups[signature(unreadable)] == ("unknown", "proposed", True)
     (question,) = _rows(
         dbname, "SELECT question FROM movement_group WHERE tx_hash = %s", signature(unreadable)
@@ -255,7 +253,7 @@ def test_three_runs_from_a_first_sync_to_the_tip(dbname, chain, wallet, sync, bl
 
     # the third run: nothing new, the cursor stays, nothing stored
     third = sync(ws, a)
-    assert (third.movements_new, third.reconciled, third.waiting) == (0, None, True)
+    assert (third.movements_new, third.reconciled, third.waiting) == (0, True, False)
     rows = _rows(
         dbname,
         "SELECT cursor_before, cursor_after, document_id FROM wallet_sync"

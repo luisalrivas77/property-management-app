@@ -22,7 +22,17 @@ from hausbuch.rules.chain import solana
 from hausbuch.rules.chain.classify import ClassifyContext
 from hausbuch.rules.chain.reconcile import reconcile, sum_balance_parts, sum_movements
 from hausbuch.rules.chain.registry import registry
-from hausbuch.schemas.chain import AssetKey, Chain, ChainSourceKind, DecoderRow, GroupKind
+from hausbuch.rules.review import route_group
+from hausbuch.schemas.allocation import RoutingDecision
+from hausbuch.schemas.chain import (
+    AssetKey,
+    Chain,
+    ChainSourceKind,
+    DecoderRow,
+    GroupKind,
+    GroupRoutingInput,
+)
+from hausbuch.schemas.household import MovementKind
 from hausbuch.services.chain.base import ChainSourceError, RequestBudget
 from hausbuch.services.chain.solana_rpc import SolanaRpc, SourceCursor, make_source
 from hausbuch.settings import Settings
@@ -408,6 +418,30 @@ def test_a_record_without_meta_or_block_time_is_a_card_and_never_blocks_the_addr
         solana.QUESTION_UNREADABLE,
     )
     assert group.occurred_at.timestamp() == 1_767_225_600
+
+
+def test_an_unreadable_card_keeps_the_fee_the_address_paid():
+    """`spl_out` without its token rows: no token leg is guessed, the fee A paid stays beside
+    the question, and the group is never booked as „a fee“ (rules/review.route_group)."""
+    record = _record("spl_out")
+    for key in ("preTokenBalances", "postTokenBalances"):
+        record["meta"].pop(key)
+    group = solana.classify_tx(SolanaRpc.chain_tx(record, {A}, strict=False), _ctx())
+    assert (group.kind, group.question) == (GroupKind.UNKNOWN, solana.QUESTION_UNREADABLE)
+    assert _legs(group) == [(MovementKind.FEE, "fee", record["meta"]["fee"], None, "fee")]
+    assert group.fee_only
+    routing = route_group(GroupRoutingInput(kind=group.kind, fee_only=True, question=True))
+    assert routing.decision is RoutingDecision.REVIEW
+    # the same record received by another address: that address paid nothing, no leg
+    other = solana.classify_tx(
+        SolanaRpc.chain_tx(record, {"ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J"}, strict=False),
+        ClassifyContext(
+            chain=Chain.SOLANA,
+            address="ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J",
+            own_addresses=frozenset({"ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J"}),
+        ),
+    )
+    assert (other.legs, other.question) == ([], solana.QUESTION_UNREADABLE)
 
 
 def test_a_slot_without_any_block_time_fails_the_run_as_the_ledger_s_end():

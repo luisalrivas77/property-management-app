@@ -906,23 +906,27 @@ def token_decimals(record: Mapping[str, JsonValue]) -> dict[str, int]:
 
 
 def _unreadable_group(record: Mapping[str, JsonValue], address: str) -> SolanaGroup:
-    """wallet.record_unreadable as a card: the question without legs; never a stopped sync,
-    never a token leg guessed. Not even the fee as a leg: a group of a fee alone is booked by
-    code (rules/review.route_group, D186 (1)) and its question dropped, so the card would
-    vanish. Without legs the address's SOL waits for the answer („wartet auf Antwort“, as a
-    Bitcoin change card), and a token the record moved is a mismatch on the wallet page until
-    a person answers (D186 (2))."""
+    """wallet.record_unreadable as a card: the question, and the fee when the address paid it
+    and the record states it; never a stopped sync, never a token leg guessed. A group with a
+    question is never booked as „a fee“ (rules/review.route_group), so the fee waits with the
+    card and is booked once a person answers; the address's SOL waits too („wartet auf
+    Antwort“), and a token the record moved is a mismatch on the wallet page until then
+    (D186 (2)). A record without its meta states no fee: the card has no leg."""
     keys = account_keys(record)
+    payer = bool(keys) and keys[0] == address
+    meta = record.get("meta")
+    fee = meta.get("fee") if isinstance(meta, Mapping) else None
+    paid = payer and isinstance(fee, int) and not isinstance(fee, bool) and fee > 0
     return SolanaGroup(
         tx_hash=signature(record),
         slot=cast(int, record["slot"]),
         occurred_at=block_time(record),
         status="ok",
         kind=GroupKind.UNKNOWN,
-        legs=(),
+        legs=(_fee_leg(cast(int, fee)),) if paid else (),
         question=QUESTION_UNREADABLE,
         card=E.GROUP_UNKNOWN,
-        fee_payer=bool(keys) and keys[0] == address,
+        fee_payer=payer,
     )
 
 

@@ -610,6 +610,7 @@ def _route(start: _Start, group: ChainGroup):
             linked=group.linked,
             pair_learned=group.pair_learned,
             unregistered_output=group.unregistered_output,
+            question=group.question is not None,
         )
     )
 
