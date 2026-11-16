@@ -1,6 +1,6 @@
 # Hausbuch as a household-finance app ("super app")
 
-**Phase 6 is specced in `docs/phases/phase-6.md` (12 Nov 2026); where it differs from this plan (three current accounts at three institutes, ETF prices from the issuers, the migration number, the Freistellungsauftrag moved to phase 8), the spec wins.** **Status: design plan, not built. 6 Nov 2026 (architect, from the orchestrator's brief).
+**Phase 6 is specced in `docs/phases/phase-6.md` (12 Nov 2026); where it differs from this plan (three current accounts at three institutes, ETF prices from the issuers, the migration number, the Freistellungsauftrag moved to phase 8), the spec wins.** **Phase 9 is specced in `docs/phases/phase-9.md` (16 Nov 2026, merged in PR #388, not built); where it differs from this plan (§6.1's reserve, investable figure, levers and savings rate, the slots and the validator of §6.2, the marks and the net-worth projection that Luis asked for on 16 Nov 2026, the fixture files and the migration of §9.3), the spec wins; the differences are noted in §6, §9.3 and §10.** **Status: design plan, not built. 6 Nov 2026 (architect, from the orchestrator's brief).
 Agreed by Luis the same day, with two changes to the proposal: phases 4 and 5 stay before 6–9,
 and there are no bot wallets yet. His answers to §10 are under "Luis's answers" there; where an
 answer differs from a default further down, the answer wins.** Nothing
@@ -372,6 +372,50 @@ Levers (Planung · Haushalt): reserve target in months (default 3), horizon, exp
 changes (e.g. Elternzeit months with reduced income), target savings rate. All stored as a
 scenario, like phase 4's property levers.
 
+**As specced for phase 9 (16 Nov 2026, `docs/phases/phase-9.md`; not built).** The spec keeps
+the table's metrics and corrects it in four places; the table above is left as it was agreed
+on 6 Nov 2026.
+
+1. **Liquiditätsreserve.** The reserve is divided by the *monthly need*: the mean regular
+   spending of the private accounts plus the flat's monthly shortfall when the rental account
+   does not carry itself. Not by the median of "essential" spending, which would need a
+   verdict per category. The reserve itself is the private current and savings accounts less
+   the credit cards' debt; an exchange's euros are not in it (phase 9 D237). The target's
+   default is 6 months, not 3 (D238, Luis 16 Nov 2026).
+2. **Anlegbarer Überschuss.** The figure is the free cash per month (mean private income less
+   mean regular private spending plus the flat's mean cash after interest and repayment) less
+   a buffer, never below 0. The savings plans that already run are their own row beside it,
+   detected by code from the transfers; they are not subtracted as "committed savings", and
+   no top-up toward the reserve is subtracted either: the ways to reach the reserve target are
+   shown as paths, none of them recommended (D244, D245, D246).
+3. **Levers.** "Target savings rate" is dropped: Luis ruled out budgets, and a target rate
+   is one (D249). The levers are the reserve target, the buffer, the horizon, the reserve's
+   accounts, the savings plans, income changes and one-offs, and for the two additions below
+   the typed yearly rates and the confirmed limits (D248).
+4. **Sparquote.** The "rental net result added once" is defined: it is the rental account's
+   cash result R (rent, other income and Umlagen received, less Umlagen paid, running costs
+   and interest), by booking month and not by §11; the loan's repayment is not spending, so
+   it counts as saving and is shown beside the rate (D230, D233, D235). Flow figures run over
+   complete months only, at least 3 and up to 12, so "the trailing 12 months" holds once
+   twelve are complete (D231).
+
+Two additions from Luis's answers of 16 Nov 2026, neither in the table above:
+
+- **Marks (Ampel).** A key figure gets a green, amber or red mark, only against limits the
+  household confirmed. The limits are rule data; because no source that was read sets a limit
+  for a household's own figures, each proposed limit is marked as the household's own lever,
+  with its reference points, and stays editable. Each colour comes with a plain sentence. The
+  reserve is measured against the household's own target; the split of the assets
+  ("Konzentration" above) never gets a mark, because a colour there could only mean "move
+  money from one kind of investment to another" (D240, D250).
+- **A projection of the net worth.** Over some years, on a yearly rate a member types for
+  funds and one for crypto. The app proposes no rate and shows no default; the flat's value
+  and loan come from phase 4's projection, and the projection ends the year before that
+  scenario's sale year (D247 amended).
+
+The rules live in three packages, `rules/health/`, `rules/plan/` and `rules/advice/`, not in
+one `rules/health.py`, and their fixtures are the files named in §9.3.
+
 ### 6.2 What the AI does and does not do
 
 The AI job "explain the plan" receives the metrics, their derivation, the levers and the
@@ -383,6 +427,28 @@ erwartete Rendite") and the trade-off of each. A validator rejects any output na
 ticker, token or product the household does not already hold, any output with a figure that is
 not one of the metrics passed in, and any imperative to buy or sell. Nothing is executed; there
 is no write access to any account.
+
+**As specced for phase 9 (16 Nov 2026; not built).** The rule "a figure that is not one of the
+metrics passed in" is made stricter: the model writes no figure and no name at all. Its text
+holds *slots*, and code fills them after the text passed: `{f:…}` a figure, `{k:…}` an
+existing account, `{p:…}` a detected savings plan, `{c:…}` an asset class, `{a:…}` an asset
+the household holds (phase 9 D252). The request carries the facts as keys with values and
+kinds; no account label, no asset name and no text a person typed is sent, and the job runs
+only while „Private Konten mit KI zuordnen“ is on (D253). The example options above are
+narrower in the spec: no sentence with a held asset's slot may hold a recommendation or a
+transaction word (D256), and no path is marked as the better one (D246).
+
+The validator is deterministic and fails closed. Its thirteen checks, in order (D255, phase 9
+§9): the characters (an allow-list after NFKC); the slots (grammar, known key, a type allowed
+in the mode); no digit outside a slot; no number or fraction word; no short upper-case token
+outside a short list; no link; no phrase of the instrument lexicon, also when spaced or
+hyphenated; every word in a vocabulary or a German compound of its words, with product nouns
+held to a permitted list; no recommendation word beside a held asset; no phrase that
+contradicts the figure's state; the shape (one to four paragraphs, a topic used once); the
+projection's wording (it names the typed rate as an assumption and never forecasts); and the
+marks' wording (no transaction word beside an asset class or a marked figure). A text that
+fails is asked for once more and then replaced by the app's own template text, marked
+„Standardtext“ (D257).
 
 ### 6.3 The regulatory boundary
 
@@ -498,7 +564,16 @@ wanted for the SO pot (it is a planning figure, not a filing need, so I would no
   `certificate_sum.yaml`.
 - **Phase 9**: `schemas/health.py`, no migration beyond scenarios (`household_scenario`),
   fixtures `health.yaml`, `surplus.yaml`, `explain_validator.yaml` (rejects an ISIN, a ticker, a
-  "kaufe"), and recorded evals for the explain job.
+  "kaufe"), and recorded evals for the explain job. As specced (16 Nov 2026, not built; step 0
+  not started): `schemas/health.py`, `schemas/plan.py` and `schemas/advice.py`; migration
+  `0046_household_plan` (`workspace.advice_mode` and the tables `household_scenario`,
+  `health_snapshot` and `plan_explanation`, so not "no migration beyond scenarios"); and the
+  seventeen fixture files of phase 9 §15.1 under `tests/fixtures/phase9/`:
+  `closed_month.yaml`, `household_month.yaml`, `savings_rate.yaml`, `reserve.yaml`,
+  `debt.yaml`, `net_worth_series.yaml`, `lights.yaml`, `surplus.yaml`, `savings_plans.yaml`,
+  `paths.yaml`, `plan_levers.yaml`, `net_worth_projection.yaml`, `explain_facts.yaml`,
+  `explain_validator.yaml`, `instrument_names.yaml`, `explain_render.yaml` and
+  `health_worked.yaml`; `health.yaml` is split into the first seven.
 
 ## 10. Open questions for Luis
 
@@ -548,9 +623,46 @@ wanted for the SO pot (it is a planning figure, not a filing need, so I would no
    and the full BISON export, because coins sold in 2026 need their original purchase dates and
    costs; movements before 2026 are used for lots only.
 8. **Advice mode:** `own_use`.
-9. **Budgets:** none; measured figures only.
+9. **Budgets:** none; measured figures only. *Amended by his answers of 16 Nov 2026 below:
+   still no budget and no savings target, but marks against his own limits and a net-worth
+   projection on his own rates now go beyond measured figures (phase 9 D247, D249, D250).*
 10. **Adviser:** none; Luis files 2026 himself (deadline 31 Jul 2027). The Steuerreport export
     still documents the settings and positions taken (BMF letter), in case the Finanzamt asks.
+
+**Luis's answers for phase 9 (16 Nov 2026)**
+
+The questions, with the recommendation each one carried, are in `docs/phases/phase-9.md` §18
+and §18.1. Six answers followed the recommendation; 6 and 7 went against it.
+
+1. **Reserve target:** 6 months as the starting value of the lever (D238).
+2. **Loan repayment:** it counts as saving and is shown separately beside the rate (D235).
+3. **Which money is the reserve:** the private current and savings accounts, less what is
+   owed on the credit cards; not the rental account, not the cash at the depot or the
+   exchange, not funds or coins (D237).
+4. **Selling the flat:** not part of the household plan; it stays on Planung › Immobilie
+   (D247).
+5. **Marking a single payment as a one-off:** not yet (D236).
+6. **A projection of the net worth:** yes, on a yearly rate he types himself; never a figure
+   from the app, no instrument named, the flat from its own projection, and the screen says
+   plainly that the rate is his assumption (D247 amended).
+7. **Colours on the key figures:** yes, traffic lights; the thresholds are rule data with a
+   cited source where one exists, or else marked as his own levers; each editable; each
+   colour with its plain sentence; the reserve against his target; no colour names a product
+   or tells him to buy or sell (D250 amended).
+8. **The explanation text:** written automatically once a month, plus the button
+   „Neu erklären“ (D257).
+
+Three points his answers opened, answered the same day as proposed:
+
+9. **Starting limits for the colours:** the proposed ones, as his own limits: the reserve
+   red below half of his own target; the loan against the flat's estimated value green up to
+   60 % and red above 100 %; the share of income that goes to the loan green up to 30 % and
+   red above 40 %.
+10. **Savings rate and asset split:** the savings rate gets one proposed colour only, red
+    when more was spent than earned; no green limit is proposed (he may type one); the split
+    of the assets gets no colour.
+11. **Rates for the projection:** two fields, one for funds and one for crypto; the flat
+    keeps the growth of its own scenario.
 
 **Do now, regardless (no code needed):** (a) request the BISON transaction history for every year
 since the account opened and keep the files (the BMF letter puts missing exchange data on the
