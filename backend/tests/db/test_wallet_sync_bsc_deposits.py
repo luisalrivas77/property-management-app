@@ -568,6 +568,7 @@ def test_release_ends_the_written_deposit_and_forgets_the_pair(
         withdrawal,
     )
     assert copy == "proposed"
+    assert [c.own_wallets[0].address_id for c in _cards(read, ws).values()] == [seed.address]
     node.native = 0
     out = _run(app_engine, blob_store, ws, seed.wallet)
     assert (out.reconciled, out.card) == (True, None)
@@ -652,3 +653,114 @@ def test_a_pick_is_refused_where_it_does_not_apply(dbname, fresh_workspaces, run
     with pytest.raises(ConflictError):  # linked already
         run(ws, _own_wallet(bison, seed.address))
     assert len(_deposits(dbname, seed.address)) == 1
+
+
+def test_a_released_pick_can_be_picked_again(dbname, fresh_workspaces, run, read):
+    """A withdrawal confirmed before the pick keeps its id through the release: its card comes
+    back, and a second pick writes a clean second deposit beside the ended one."""
+    from hausbuch.services import transfers
+
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    withdrawal = seed.withdrawal("2.001", fee="0.001", tx_hash=None, network=None)
+    first = run(ws, _own_wallet(withdrawal, seed.address))
+    run(ws, lambda ctx: transfers.release(ctx, first.id))
+    assert _cards(read, ws)[withdrawal].own_wallets  # the card is back, on the same row
+
+    second = run(ws, _own_wallet(withdrawal, seed.address))
+    assert second.id != first.id and _current(read, ws) == [second.id]
+    assert sorted(r[4] for r in _deposits(dbname, seed.address)) == [Decimal("0"), Decimal("2")]
+    assert _wallet_units(read, ws, seed.wallet) == [Decimal("2")]
+
+
+def test_an_unknown_hash_released_and_picked_again(
+    dbname, app_engine, blob_store, fresh_workspaces, node, run, read
+):
+    from hausbuch.services import transfers
+
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    withdrawal = seed.withdrawal(tx_hash=_hash("never mined"))
+    _run(app_engine, blob_store, ws, seed.wallet)  # the node does not know it a day later
+    first = run(ws, _own_wallet(withdrawal, seed.address))
+    run(ws, lambda ctx: transfers.release(ctx, first.id))
+    assert _cards(read, ws)[withdrawal].own_wallets
+    run(ws, _own_wallet(withdrawal, seed.address))
+    live = [r for r in _deposits(dbname, seed.address) if r[4] != 0]
+    assert [(r[0], r[4]) for r in live] == [(_hash("never mined"), Decimal("2"))]
+
+
+def test_a_balance_read_before_the_withdrawal_never_links_it(
+    dbname, app_engine, blob_store, fresh_workspaces, node, run, read
+):
+    """The balance must have been read after the withdrawal left the exchange: an older read
+    that happens to cover the amount proves nothing about it."""
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    first = seed.withdrawal("2.001", fee="0.001", tx_hash=None, network=None)
+    run(ws, _own_wallet(first, seed.address))
+    node.native = 5 * BNB
+    _run(app_engine, blob_store, ws, seed.wallet)  # read on NOW
+    later = seed.withdrawal("1", fee=None, tx_hash=None, network=None, at=NOW + timedelta(days=1))
+    assert run(ws, _relink).written == 0
+    assert later not in {r[0] for r in _links(dbname, ws)}
+    _run(app_engine, blob_store, ws, seed.wallet, day=2)  # read after it: now it counts
+    assert later in {r[0] for r in _links(dbname, ws)}
+
+
+def test_an_exchange_paired_with_two_addresses_links_nothing_by_code(
+    dbname, app_engine, blob_store, fresh_workspaces, node, run, read
+):
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    with _admin(dbname) as conn:
+        from db.test_phase7_migration import _wallet
+
+        other_wallet = _wallet(conn, ws, label="Zweite Wallet")
+        second = _address(conn, ws, other_wallet, chain="bsc", address=OTHER)
+    one = seed.withdrawal("2.001", fee="0.001", tx_hash=None, network=None)
+    two = seed.withdrawal(
+        "1.001", fee="0.001", tx_hash=None, network=None, at=SENT_AT + timedelta(days=1)
+    )
+    run(ws, _own_wallet(one, seed.address))
+    run(ws, _own_wallet(two, second))
+    assert len(_pairs(read, ws)) == 2
+    third = seed.withdrawal(
+        "1", fee=None, tx_hash=None, network=None, at=SENT_AT + timedelta(days=2)
+    )
+    node.native = 10 * BNB
+    _run(app_engine, blob_store, ws, seed.wallet)
+    assert third not in {r[0] for r in _links(dbname, ws)}
+    card = _cards(read, ws)[third]
+    assert card.paired_address_id is None and len(card.own_wallets) == 2
+
+
+def test_releasing_a_link_code_wrote_ends_its_deposit(
+    dbname, app_engine, blob_store, fresh_workspaces, node, run, read
+):
+    from hausbuch.services import transfers
+
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    first = seed.withdrawal("2.001", fee="0.001", tx_hash=None, network=None)
+    run(ws, _own_wallet(first, seed.address))
+    second = seed.withdrawal(
+        "1", fee=None, tx_hash=None, network=None, at=SENT_AT + timedelta(days=1)
+    )
+    node.native = 3 * BNB
+    _run(app_engine, blob_store, ws, seed.wallet)
+    (coded,) = [r for r in _links(dbname, ws) if r[0] == second]
+    assert coded[2:] == ("matcher", "withdrawal_pair")
+    link_id = read(ws, lambda conn: {r.out_movement_id: r.id for r in _current_rows(conn)})[second]
+
+    run(ws, lambda ctx: transfers.release(ctx, link_id))
+    assert _pairs(read, ws) == set()
+    assert sorted(r[4] for r in _deposits(dbname, seed.address)) == [Decimal("0"), Decimal("2")]
+    assert _wallet_units(read, ws, seed.wallet) == [Decimal("2")]
+    assert len(_current(read, ws)) == 1  # the person's pick stands
+
+
+def _current_rows(conn):
+    from hausbuch.services.transfers import _current_links
+
+    return _current_links(conn)
