@@ -1166,6 +1166,11 @@ class TransferLinked(Schema):
     in_transaction_id: UUID | None = None
     in_movement_id: UUID | None = None
     deposit_iban: DepositIbanOutcome | None = None
+    # Phase 7 step 5, review of PR #396: the coin movements and chain groups a matcher's link
+    # confirmed (proposed until it), by id only, so services.chain.transfers.relink returns
+    # them to proposed once the link is no longer current. Empty on every other link.
+    confirmed_movements: list[UUID] = Field(default_factory=list)
+    confirmed_groups: list[UUID] = Field(default_factory=list)
 
 
 class TransferUnlinked(Schema):

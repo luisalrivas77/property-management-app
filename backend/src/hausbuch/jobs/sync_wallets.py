@@ -12,6 +12,10 @@ Both take one lock, so two runs never read the same address at once (a second wr
 same movement hash would fail its row). No retry: a failed address is read again the next
 day from the same cursor. Logged per address by services.chain.sync (chain, outcome, counts,
 exception class), never an address, cursor, hash, URL or key; one line per run here.
+
+After a workspace's addresses ran, its coin transfers are relinked once
+(services.chain.transfers.relink_after_sync, phase 7 step 5, D184): in its own transaction,
+so the linker never fails a sync, a failure logged by its class name only.
 """
 
 import logging
@@ -24,6 +28,7 @@ from sqlalchemy import Connection
 from hausbuch.auth.lookup import provisioned_workspace_ids
 from hausbuch.schemas.enums import ActorType
 from hausbuch.services.chain.sync import SyncOutcome, sync_wallets
+from hausbuch.services.chain.transfers import relink_after_sync
 from hausbuch.services.context import Actor
 
 from .document_read import JobDeps
@@ -93,6 +98,7 @@ def run_sync_wallets(deps: JobDeps, *, workspace_ids=None) -> WalletRunResult:
             logger.error("a workspace's wallets were not read", extra={"fields": fields})
             continue
         _count(result, outcomes)
+        relink_after_sync(deps.engine, ws, actor=SYSTEM_ACTOR, clock=deps.clock)
     _log(result, SYNC_WALLETS_TASK)
     return result
 
@@ -112,6 +118,7 @@ def run_sync_wallet(deps: JobDeps, *, workspace_id: UUID, account_id: UUID) -> W
             account_id=account_id,
         ),
     )
+    relink_after_sync(deps.engine, workspace_id, actor=SYSTEM_ACTOR, clock=deps.clock)
     _log(result, SYNC_WALLET_TASK)
     return result
 

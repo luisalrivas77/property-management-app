@@ -398,7 +398,7 @@ function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: T
               <span>
                 {link.out_leg.account_label} → {link.in_leg.account_label}
               </span>
-              <span>{formatMoney(link.in_leg.amount)}</span>
+              <span>{link.in_leg.amount != null ? formatMoney(link.in_leg.amount) : null}</span>
             </li>
           ))}
         </ul>
