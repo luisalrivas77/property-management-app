@@ -13,13 +13,15 @@ from pydantic import SecretStr
 
 from hausbuch.rules import errors as E
 from hausbuch.rules.chain import evm
+from hausbuch.rules.chain.registry import registry
 from hausbuch.rules.household.assets import registry as asset_registry
 from hausbuch.schemas.chain import AssetKey, Chain, GroupKind
 from hausbuch.schemas.household import MovementKind
-from hausbuch.services.chain import evm_etherscan, evm_http
-from hausbuch.services.chain.base import ChainSourceError
+from hausbuch.services.chain import evm_etherscan, evm_http, evm_rpc_balance
+from hausbuch.services.chain.base import ChainSourceError, RequestBudget
 from hausbuch.services.chain.evm_etherscan import EtherscanSource
 from hausbuch.services.chain.evm_rpc_balance import RpcBalanceSource
+from hausbuch.settings import Settings
 
 EVM = {c.id: c for c in load("evm_tx").cases}
 KEY = "INVENTEDKEY0123456789ABCDEFGHIJKL"
@@ -297,6 +299,28 @@ def test_balances_at_the_window_end():
     assert all(q["data"] == "0x70a08231" + ME[2:].rjust(64, "0") for q in calls[1:])
 
 
+def test_balances_read_the_tokens_the_sync_asks_for_once_each():
+    """`tokens` (the non-spam tokens the address has movements in) adds a `balanceOf` per
+    token the registry does not list, lower-cased and once; a registry token or another
+    chain's token asked for adds no call."""
+    fetch = Etherscan()
+    source = _source(fetch)
+    assert source.reads_tokens is True
+    unlisted = "0x" + "cd" * 20
+    asked = (
+        AssetKey(chain=Chain.ETHEREUM, contract=("0x" + "CD" * 20).lower()),
+        AssetKey(chain=Chain.ETHEREUM, contract=USDC),
+        AssetKey(chain=Chain.ARBITRUM, contract="0x" + "ef" * 20),
+    )
+    got = source.balances(ME, tokens=asked)
+    listed = {t.contract for t in asset_registry().tokens if t.chain is Chain.ETHEREUM}
+    read = [b.asset_key.contract for b in got[1:]]
+    assert sorted(read) == sorted([*listed, unlisted])
+    calls = [q["to"] for q in fetch.queries if q["action"] == "eth_call"]
+    assert sorted(calls) == sorted([*listed, unlisted])
+    assert {q["tag"] for q in fetch.queries if q["action"] == "eth_call"} == {hex(TIP - 12)}
+
+
 def test_paced_at_two_and_a_half_calls_a_second():
     sleeps: list[float] = []
     fetch = Etherscan()
@@ -497,3 +521,76 @@ def test_no_rows_messages_are_an_empty_window(message):
 def test_the_rpc_url_is_not_in_the_sources_repr():
     source = _rpc(Rpc())
     assert RPC_URL not in repr(source) and "INVENTEDPATHKEY" not in repr(source)
+
+
+# --- make_source and the run's budget (the step 2 core's protocol) -------------------------
+
+
+def _settings(**overrides) -> Settings:
+    return Settings(
+        database_url="postgresql+psycopg://hausbuch_app@localhost/unused",
+        iban_hmac_key=bytes(range(32)),
+        session_key=bytes(range(1, 33)),
+        rp_id="testserver",
+        origin="https://testserver",
+        blob_store="local",
+        blob_root="/tmp/unused",
+        **overrides,
+    )
+
+
+def test_make_source_without_a_key_refuses_before_any_request():
+    fetch = Etherscan()
+    with pytest.raises(ChainSourceError) as caught:
+        evm_etherscan.make_source(
+            registry().chain(Chain.ETHEREUM), _settings(), RequestBudget(10), fetch=fetch
+        )
+    assert caught.value.code == E.WALLET_KEY_MISSING and fetch.urls == []
+
+
+def test_make_source_takes_the_settings_url_and_names_its_host_only():
+    settings = _settings(etherscan_key=SecretStr(KEY), etherscan_url="https://indexer.invalid/api")
+    source = evm_etherscan.make_source(
+        registry().chain(Chain.ARBITRUM), settings, RequestBudget(10), fetch=Etherscan()
+    )
+    assert source.host == "indexer.invalid" and KEY not in repr(source)
+    rpc = evm_rpc_balance.make_source(
+        registry().chain(Chain.BSC), _settings(bsc_rpc_url=SecretStr(RPC_URL)), RequestBudget(10)
+    )
+    assert rpc.host == "bsc.invalid" and rpc.balance_only is True
+    assert "INVENTEDPATHKEY" not in repr(rpc)
+
+
+def test_a_second_page_of_the_same_run_reads_nothing_again():
+    fetch = Etherscan()
+    source = _source(fetch)
+    first = source.transactions(ME, "20999000")
+    asked = len(fetch.queries)
+    again = source.transactions(ME, first.next_cursor)
+    assert again.items == [] and again.next_cursor == first.next_cursor
+    assert len(fetch.queries) == asked  # no call: the window was read to its pinned end
+
+
+def test_a_spent_budget_ends_the_page_with_the_cursor_unmoved_and_no_half_window():
+    budget = RequestBudget(3)  # the tip and two of the five lists
+    fetch = Etherscan()
+    source = EtherscanSource(
+        Chain.ETHEREUM, SecretStr(KEY), fetch=fetch, sleep=lambda s: None, budget=budget
+    )
+    page = source.transactions(ME, "20999000")
+    assert page.items == [] and page.next_cursor == "20999000" and budget.exhausted
+    assert len(fetch.queries) == 3
+    assert source.balances(ME) == []  # refused at once: the sync defers
+
+
+def test_a_spent_budget_stops_the_bsc_balances():
+    budget = RequestBudget(2)  # the tip and the native balance
+    source = RpcBalanceSource(
+        Chain.BSC,
+        RPC_URL,
+        post=Rpc({"eth_getBalance": "0x10"}),
+        sleep=lambda s: None,
+        budget=budget,
+    )
+    assert [b.units for b in source.balances(ME)] == [16] and budget.exhausted
+    assert source.deposit("0x" + "12" * 32, ME) is None

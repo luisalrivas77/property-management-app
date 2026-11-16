@@ -404,6 +404,7 @@ def test_the_pin_mapping_hides_its_values_and_hashes():
 CHAIN_KEY = "etherscan-test-key-0001"
 SOLANA_URL = "https://solana.example.invalid/?api-key=solana-test-key-0002"
 HELIUS_KEY = "helius-test-key-0003"
+BSC_URL = "https://bsc.example.invalid/v1/bsc-test-key-0004"  # a provider's key in the path
 
 
 def test_chain_source_defaults():
@@ -413,7 +414,7 @@ def test_chain_source_defaults():
     assert settings.solana_rpc_url.get_secret_value() == "https://api.mainnet-beta.solana.com"
     assert settings.esplora_urls == ("https://mempool.space/api", "https://blockstream.info/api")
     assert settings.etherscan_url == "https://api.etherscan.io/v2/api"
-    assert settings.bsc_rpc_url == "https://bsc-dataseed.bnbchain.org"
+    assert settings.bsc_rpc_url.get_secret_value() == "https://bsc-dataseed.bnbchain.org"
     assert settings.solana_rpc_rps == 4
 
 
@@ -426,7 +427,7 @@ def test_chain_source_settings_are_read_and_secrets_never_shown():
             "HAUSBUCH_HELIUS_KEY": HELIUS_KEY,
             "HAUSBUCH_ESPLORA_URL": "https://esplora.example.invalid/api, https://b.invalid/api",
             "HAUSBUCH_ETHERSCAN_URL": "https://indexer.example.invalid/api",
-            "HAUSBUCH_BSC_RPC_URL": "https://bsc.example.invalid",
+            "HAUSBUCH_BSC_RPC_URL": BSC_URL,
             "HAUSBUCH_SOLANA_RPC_RPS": "40",
         }
     )
@@ -435,9 +436,9 @@ def test_chain_source_settings_are_read_and_secrets_never_shown():
     assert settings.helius_key.get_secret_value() == HELIUS_KEY
     assert settings.esplora_urls == ("https://esplora.example.invalid/api", "https://b.invalid/api")
     assert settings.etherscan_url == "https://indexer.example.invalid/api"
-    assert settings.bsc_rpc_url == "https://bsc.example.invalid"
+    assert settings.bsc_rpc_url.get_secret_value() == BSC_URL
     assert settings.solana_rpc_rps == 40
-    for secret in (CHAIN_KEY, SOLANA_URL, "solana-test-key-0002", HELIUS_KEY):
+    for secret in (CHAIN_KEY, SOLANA_URL, "solana-test-key-0002", HELIUS_KEY, BSC_URL):
         assert secret not in repr(settings) and secret not in str(settings)
 
 
