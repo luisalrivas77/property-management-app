@@ -337,6 +337,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "account.movements_reconciled": "Börsen-Export abgestimmt",
   "account.withdrawal_history_checked": "Auszahlungsverlauf abgeglichen",
   "account.balance_corrected": "Differenz zum Börsenbestand als Korrektur gebucht",
+  "account.movement_times_corrected": "Zeiten eines Binance-Exports nach UTC verschoben (Zeitzone aus dem Dateinamen)",
   "account.movements_unreconciled": "Börsen-Export nicht abgestimmt",
   "account.holdings_confirmed": "Bestände bestätigt",
   "account.holdings_reconciled": "Bestände abgestimmt",

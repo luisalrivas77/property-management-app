@@ -271,6 +271,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Der Bestand laut Börse weicht von den eingelesenen Bewegungen ab. Fehlt ein Teil des Exports, oder wurde ein Bestand falsch abgelesen?",
   "exchange.withdrawal_history_missing":
     "Binance nennt Netzwerk und Transaktions-Hash einer Auszahlung nur im Auszahlungsverlauf. Bitte ihn hochladen.",
+  "exchange.time_zone_unknown":
+    "Ein Binance-Export nennt seine Zeitzone nur im Dateinamen, und dieser Name nannte keine. Seine Zeiten wurden als UTC gelesen und können um Stunden verschoben sein, so dass eine Auszahlung vor dem Kauf steht, der sie bezahlt hat.",
   "exchange.withdrawal_history_no_match":
     "Im Auszahlungsverlauf steht keine abgeschlossene Auszahlung desselben Coins, deren Betrag plus Gebühr dem gesendeten Betrag entspricht, innerhalb einer Stunde davor.",
   "exchange.deposit_question": "Ist dieser Eingang ein Bonus, eine Belohnung oder kam er von einer eigenen Wallet?",
