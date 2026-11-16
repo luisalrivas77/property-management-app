@@ -6,9 +6,11 @@ phase 6 step 5a.
   whether code may confirm it.
 - `bison_movements(lines)`: BISON's rows to movements, one per row, each with its dedup hash
   (the Transaction ID, else the row's content and its position among identical rows).
-- `binance_movements(rows)`: Binance's transaction history to movements: the trade rows of
-  one second summed per coin and role, a EUR leg folded into the coin leg's eur_amount; every
-  other row one movement.
+- `binance_movements(rows, offset)`: Binance's transaction history to movements: the trade
+  rows of one second summed per coin and role, a EUR leg folded into the coin leg's
+  eur_amount; every other row one movement. The rows' times are UTC; `offset` is the export's
+  time zone (D178 amended (4), 16 Nov 2026), which only the dedup key reads: the key keeps
+  the time as the file writes it.
 - `trade_groups(movements, provider)`, `trade_fee_eur(legs)`: which movements are one trade
   (phase 6 D178 amended (3), migration 0043: one `movement_group` of kind swap per trade, so
   phase 7's lots read its legs together, D188 (1), (4)), and the fee a trade paid in EUR, which
@@ -287,8 +289,9 @@ def _trade(at: datetime, rows: list[BinanceRow]) -> list[tuple[tuple[str, ...], 
     return legs
 
 
-def _other(row: BinanceRow) -> tuple[tuple[str, ...], dict]:
-    """D178 (3): a row that is no trade leg, one movement each."""
+def _other(row: BinanceRow, written: datetime) -> tuple[tuple[str, ...], dict]:
+    """D178 (3): a row that is no trade leg, one movement each; `written` its second as the
+    file writes it (the dedup key's)."""
     if row.operation == "Deposit":
         kind = (
             MovementKind.INTERNAL_TRANSFER_IN if row.coin == EUR else MovementKind.CASHBACK_REWARD
@@ -297,7 +300,7 @@ def _other(row: BinanceRow) -> tuple[tuple[str, ...], dict]:
         kind = MovementKind.INTERNAL_TRANSFER_OUT
     else:
         kind = MovementKind.UNCATEGORIZED
-    key = (row.occurred_at.isoformat(), row.operation, row.coin, canonical(row.change))
+    key = (written.isoformat(), row.operation, row.coin, canonical(row.change))
     return key, {
         "asset": row.coin,
         "kind": kind,
@@ -306,27 +309,37 @@ def _other(row: BinanceRow) -> tuple[tuple[str, ...], dict]:
     }
 
 
-def binance_movements(rows: Sequence[BinanceRow]) -> list[ExchangeMovement]:
+def binance_movements(
+    rows: Sequence[BinanceRow], offset: timedelta = timedelta(0)
+) -> list[ExchangeMovement]:
     """D178 (3), (5): the transaction history to movements, oldest second first; within a
     second the trade's acquisition, disposal and fees (by coin), then the other rows in the
     order Binance wrote them. Raises exchange.binance_ambiguous_trade for a second whose
-    trade rows do not give exactly one coin for one other."""
+    trade rows do not give exactly one coin for one other.
+
+    D178 amended (4) (16 Nov 2026): the rows' `occurred_at` is UTC, the export's own time
+    less `offset` (the zone the export was written in, binance_csv.utc_offset). The dedup key
+    keeps the second as the file writes it, labelled UTC as every import before the
+    amendment hashed it, so a stored row's movement_hash never changes when its time is
+    corrected, and a longer export of the same zone re-uploaded skips every stored row."""
     by_second: dict[datetime, list[BinanceRow]] = {}
     for row in rows:
         by_second.setdefault(row.occurred_at, []).append(row)
-    entries: list[tuple[tuple[str, ...], dict]] = []
+    entries: list[tuple[datetime, tuple[str, ...], dict]] = []
     for at in sorted(by_second):
+        written = at + offset  # the file's own second, the dedup key's (D178 amended (4))
         trade = [r for r in by_second[at] if r.operation in BINANCE_TRADE_OPERATIONS]
         if trade:
-            entries.extend(_trade(at, trade))
+            entries.extend((at, *leg) for leg in _trade(written, trade))
         entries.extend(
-            _other(r) for r in by_second[at] if r.operation not in BINANCE_TRADE_OPERATIONS
+            (at, *_other(r, written))
+            for r in by_second[at]
+            if r.operation not in BINANCE_TRADE_OPERATIONS
         )
     out = []
-    for (key, fields), position in zip(
-        entries, _positions_of(key for key, _ in entries), strict=True
+    for (at, key, fields), position in zip(
+        entries, _positions_of(key for _, key, _ in entries), strict=True
     ):
-        at = datetime.fromisoformat(key[0])
         kind, asset = fields["kind"], fields["asset"]
         out.append(
             _movement(

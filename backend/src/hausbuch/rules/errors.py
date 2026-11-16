@@ -199,6 +199,8 @@ EXCHANGE_BINANCE_AMBIGUOUS_TRADE = "exchange.binance_ambiguous_trade"  # two pai
 EXCHANGE_WITHDRAWAL_HISTORY_MISSING = "exchange.withdrawal_history_missing"  # a to-do (D178 (4))
 # The history uploaded after every open withdrawal fits none of them (the to-do's reason)
 EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH = "exchange.withdrawal_history_no_match"
+# D178 amended (4): a Binance import whose file name named no time zone, read as UTC (a to-do)
+EXCHANGE_TIME_ZONE_UNKNOWN = "exchange.time_zone_unknown"
 EXCHANGE_TRANSACTIONS_FIRST = "exchange.transactions_first"  # a history before any transaction
 EXCHANGE_ACCOUNT_MISMATCH = "exchange.account_mismatch"  # BISON's file on Binance's account
 EXCHANGE_NOT_AN_EXCHANGE = "exchange.not_an_exchange"  # the account is no exchange account

@@ -1015,6 +1015,12 @@ class MovementImportRecorded(Schema):
     rows_total: int = Field(ge=0)
     rows_new: int = Field(ge=0)
     rows_skipped: int = Field(ge=0)
+    # D178 amended (4), 16 Nov 2026: a Binance export's time zone as minutes east of UTC, read
+    # from its file name, and whether it was assumed (no name named one, so the times were read
+    # as UTC and the exchange page asks for the export again). None on BISON's exports and on
+    # every Binance import before the amendment (its zone unknown). Never the name itself.
+    utc_offset_minutes: int | None = None
+    time_zone_assumed: bool | None = None
 
 
 class WithdrawalHistoryChecked(Schema):
@@ -1024,6 +1030,23 @@ class WithdrawalHistoryChecked(Schema):
     document_id: UUID
     withdrawals_completed: int = Field(ge=0)
     withdrawals_open: int = Field(ge=0)
+    utc_offset_minutes: int | None = None  # D178 amended (4), as MovementImportRecorded's
+    time_zone_assumed: bool | None = None
+
+
+class MovementTimesCorrected(Schema):
+    """account.movement_times_corrected (D178 amended (4), 16 Nov 2026): a Binance import's
+    times, read as UTC before its time zone was known, moved to UTC by the zone a file name
+    gave. `document_id` the file whose name gave the zone (the import's own, or a later export
+    of the same rows); `movements_corrected` the rows superseded with the corrected time (each
+    has its own movement.superseded). Ids and counts only, never a name, an amount or an
+    address."""
+
+    import_id: UUID
+    document_id: UUID
+    utc_offset_minutes: int
+    movements_corrected: int = Field(ge=0)
+    links_moved: int = Field(ge=0)
 
 
 class MovementImportChecked(Schema):
@@ -1456,6 +1479,7 @@ class EventType(StrEnum):
     ACCOUNT_MOVEMENTS_UNRECONCILED = "account.movements_unreconciled"
     ACCOUNT_WITHDRAWAL_HISTORY_CHECKED = "account.withdrawal_history_checked"  # step 5a
     ACCOUNT_BALANCE_CORRECTED = "account.balance_corrected"  # D178 amended (0030)
+    ACCOUNT_MOVEMENT_TIMES_CORRECTED = "account.movement_times_corrected"  # D178 amended (4)
     ACCOUNT_HOLDINGS_CONFIRMED = "account.holdings_confirmed"
     ACCOUNT_HOLDINGS_RECONCILED = "account.holdings_reconciled"
     ACCOUNT_HOLDINGS_MISMATCH = "account.holdings_mismatch"
@@ -1686,6 +1710,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.ACCOUNT_BALANCE_CORRECTED: EventSpec(
         BalanceCorrected, "forbidden", "Exchange balance difference booked as a correction"
+    ),
+    E.ACCOUNT_MOVEMENT_TIMES_CORRECTED: EventSpec(
+        MovementTimesCorrected, "forbidden", "Exchange export's times moved to UTC (Binance)"
     ),
     E.ACCOUNT_HOLDINGS_CONFIRMED: EventSpec(
         HoldingsChecked, "optional", "Holdings confirmed (date = as of)"

@@ -36,6 +36,8 @@ export const EXCHANGE_EXPORT_ACCEPT = ".csv,.zip,text/csv,application/zip,applic
 const HISTORY_MISSING = "exchange.withdrawal_history_missing";
 // A history was checked after every open withdrawal and fits none: say why, not "upload it".
 const HISTORY_NO_MATCH = "exchange.withdrawal_history_no_match";
+// D178 amended (4): a Binance export whose file name named no time zone, read as UTC.
+const TIME_ZONE_UNKNOWN = "exchange.time_zone_unknown";
 
 /** A quantity as the API sends it ("0.0000996500") without its trailing zeros, in German:
  * "0,00009965". */
@@ -275,10 +277,24 @@ export function ExchangeSection({ accountId }: { accountId: string }) {
 function ExchangeTodos({ overview, accountId, onChanged }: { overview: ExchangeOverview; accountId: string; onChanged: () => void }) {
   const historyMissing = (overview.todos ?? []).includes(HISTORY_MISSING);
   const historyNoMatch = (overview.todos ?? []).includes(HISTORY_NO_MATCH);
+  const zoneUnknown = (overview.todos ?? []).includes(TIME_ZONE_UNKNOWN);
   const waiting = (overview.imports ?? []).filter((imp) => imp.status === "imported");
-  if (!historyMissing && !historyNoMatch && waiting.length === 0 && overview.movements_to_answer === 0) return null;
+  if (!zoneUnknown && !historyMissing && !historyNoMatch && waiting.length === 0 && overview.movements_to_answer === 0) return null;
   return (
     <ol className="todo-list">
+      {zoneUnknown ? (
+        <li className="todo-item">
+          <p className="todo-title">
+            <strong>Transaktionsverlauf erneut hochladen</strong>
+          </p>
+          <p className="todo-text">
+            {ruleCodeText(TIME_ZONE_UNKNOWN)} Bitte den Transaktionsverlauf noch einmal so hochladen, wie Binance ihn liefert (die
+            ZIP-Datei mit unverändertem Namen): Hausbuch liest die Zeitzone aus dem Dateinamen und verschiebt die schon eingelesenen
+            Zeiten, Verknüpfungen und Antworten bleiben erhalten.
+          </p>
+          <ExchangeExportUpload accountId={accountId} provider={overview.provider} label="Transaktionsverlauf hochladen" onImported={onChanged} />
+        </li>
+      ) : null}
       {historyMissing ? (
         <li className="todo-item">
           <p className="todo-title">

@@ -5,7 +5,9 @@ drops a UTF-8 BOM, and recognises the file by its header line: BISON's transacti
 Binance's transaction history, Binance's withdrawal history, or Binance's spot trade history
 (refused with exchange.binance_spot_history, since it adds nothing, D178 (1)). Anything else
 is exchange.unreadable. No message here repeats a cell or a member name: a Binance file
-carries the account's User ID and the withdrawal addresses (D178 (2)).
+carries the account's User ID and the withdrawal addresses (D178 (2)). The ZIP's member name
+is returned with the text, since a Binance export names its time zone there only (D178
+amended (4), 16 Nov 2026); it is read for that and never stored, logged or put in a message.
 """
 
 import io
@@ -64,9 +66,10 @@ class ExportKind(StrEnum):
 class ExchangeExport:
     kind: ExportKind
     text: str  # the CSV's text, BOM dropped, line ends as written
+    member_name: str | None = None  # the CSV's name inside a ZIP (D178 amended (4))
 
 
-def _unzip(data: bytes) -> bytes:
+def _unzip(data: bytes) -> tuple[bytes, str]:
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
     except (zipfile.BadZipFile, zipfile.LargeZipFile, ValueError):
@@ -95,7 +98,7 @@ def _unzip(data: bytes) -> bytes:
             raise RuleError(E.EXCHANGE_UNREADABLE, "the CSV could not be read") from None
     if len(content) > MAX_EXPORT_BYTES:
         raise RuleError(E.EXCHANGE_UNREADABLE, "the CSV is too large")
-    return content
+    return content, info.filename
 
 
 def _decode(data: bytes) -> str:
@@ -132,9 +135,12 @@ def sniff(text: str) -> ExportKind:
 def read_export(data: bytes) -> ExchangeExport:
     if len(data) > MAX_EXPORT_BYTES:
         raise RuleError(E.EXCHANGE_UNREADABLE, "the file is too large")
-    raw = _unzip(data) if data.startswith(_ZIP_MAGIC) else data
+    member_name = None
+    raw = data
+    if data.startswith(_ZIP_MAGIC):
+        raw, member_name = _unzip(data)
     text = _decode(raw)
-    return ExchangeExport(kind=sniff(text), text=text)
+    return ExchangeExport(kind=sniff(text), text=text, member_name=member_name)
 
 
 def is_exchange_export(data: bytes) -> bool:

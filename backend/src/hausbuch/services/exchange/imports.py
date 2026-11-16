@@ -29,7 +29,7 @@ file is kept as uploaded (principle 6).
 
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -100,7 +100,7 @@ from ..documents import type_document, upload_document
 from ..errors import RuleViolationError
 from ..events import append_event
 from ..lookup import require_row
-from . import ExportKind, binance_csv, bison_csv, read_export
+from . import ExportKind, binance_csv, bison_csv, read_export, times
 
 MOVEMENT_IMPORT = "movement_import"  # require_row's name for a movement_import row
 
@@ -517,15 +517,24 @@ def import_export(
             E.EXCHANGE_ACCOUNT_MISMATCH,
             f"this is an export of {_PROVIDER[export.kind]}, the account is {account.provider}",
         )
+    offset = None
+    if export.kind is not ExportKind.BISON:
+        # D178 amended (4): the zone Binance wrote the file in, from its names (never stored);
+        # the imports read as UTC before the amendment are moved by their stored names first.
+        offset = binance_csv.utc_offset(export.member_name, original_filename)
+        times.correct_by_name(ctx, account_id)
     if export.kind is ExportKind.BINANCE_WITHDRAWALS:
         return _complete_withdrawals(
-            ctx, store, account_id, data, export.text, media_type, original_filename
+            ctx, store, account_id, data, export.text, media_type, original_filename, offset
         )
     fmt = _FORMAT[export.kind]
     if export.kind is ExportKind.BISON:
         movements = rules.bison_movements(bison_csv.parse_text(export.text))
     else:
-        movements = rules.binance_movements(binance_csv.parse_transactions_text(export.text))
+        shift = offset or timedelta(0)  # no zone named: read as UTC, the to-do asks again
+        movements = rules.binance_movements(
+            binance_csv.parse_transactions_text(export.text, shift), shift
+        )
     if not movements:
         raise RuleError(E.EXCHANGE_UNREADABLE, "the export holds no row")
     first = min(m.occurred_at for m in movements)
@@ -548,6 +557,9 @@ def import_export(
             )
         ).scalars()
     )
+    if offset is not None and stored:
+        # D178 amended (4): rows an import read as UTC carries too were written in this zone.
+        times.correct_overlapping(ctx, account_id, stored, offset, document.id)
     # A movement is new when no stored movement of the account and no earlier movement of the
     # same file carries its hash: BISON can repeat a Transaction ID inside one export, and the
     # first row is kept (D166, D22's dedup within a file), never a unique-index failure.
@@ -588,6 +600,7 @@ def import_export(
             rows_total=imported.rows_total,
             rows_new=imported.rows_new,
             rows_skipped=imported.rows_skipped,
+            **_zone_fields(export.kind, offset),
         ),
         effective_date=last.date(),
     )
@@ -668,6 +681,16 @@ def _supersede(
     return new_id
 
 
+def _zone_fields(kind: ExportKind, offset: timedelta | None) -> dict:
+    """D178 amended (4): the zone fields of a Binance file's event (none on BISON's)."""
+    if kind is ExportKind.BISON:
+        return {}
+    return {
+        "utc_offset_minutes": int((offset or timedelta(0)).total_seconds() // 60),
+        "time_zone_assumed": offset is None,
+    }
+
+
 def _complete_withdrawals(
     ctx: CommandContext,
     store: BlobStore,
@@ -676,13 +699,21 @@ def _complete_withdrawals(
     text: str,
     media_type: str,
     original_filename: str | None,
+    offset: timedelta | None,
 ) -> ExchangeUpload:
     """D178 (4): Binance's withdrawal history completes each open withdrawal of the account
     whose history row fits (rules.exchange.match_withdrawals) by a new row with the network,
     the fee in the coin and the transaction hash. A history row whose hash a movement of the
     account carries already completes nothing again. Run on every upload of the file, so
-    the same history uploaded after a longer transaction export completes the new rows."""
-    history = binance_csv.parse_withdrawals_text(text)
+    the same history uploaded after a longer transaction export completes the new rows.
+
+    D178 amended (4): its times are read in the zone its names name, else in the zone of the
+    account's latest transaction import whose zone is known (Binance writes both files in the
+    zone of the account's settings), else as UTC, so they are compared with the withdrawals on
+    one clock."""
+    if offset is None:
+        offset = times.account_offset(ctx.conn, account_id)
+    history = binance_csv.parse_withdrawals_text(text, offset or timedelta(0))
     current = _current(ctx.conn, account_id)
     if not current:
         raise RuleError(
@@ -719,6 +750,7 @@ def _complete_withdrawals(
             document_id=document.id,
             withdrawals_completed=len(found),
             withdrawals_open=still_open,
+            **_zone_fields(ExportKind.BINANCE_WITHDRAWALS, offset),
         ),
     )
     from ..chain import transfers as chain_transfers  # D184: a completed one has its hash
@@ -1170,6 +1202,8 @@ def exchange_overview(conn: Connection, account_id: UUID) -> ExchangeOverview:
     open_rows = _open_withdrawals(stored)
     open_count = len(open_rows)
     todos = []
+    if account.provider == rules.BINANCE and times.zone_unknown(conn, account_id):
+        todos.append(E.EXCHANGE_TIME_ZONE_UNKNOWN)  # D178 amended (4)
     if account.provider == rules.BINANCE and open_count:
         todos.append(_history_todo(conn, account_id, open_rows))
     return ExchangeOverview(

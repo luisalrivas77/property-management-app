@@ -1,10 +1,11 @@
 """`hausbuch bootstrap | invite | openapi | evals | household-reask | rematch-bills |
 rematch-waiting | household-resort | follow-accounts | repair-periods | relink-transfers |
-pair-returns | store-report-prices | group-exchange-trades` (phase 1 step 3, §5, §6.5, §6.7;
+pair-returns | store-report-prices | group-exchange-trades | repair-exchange-times` (phase 1 step
+3, §5, §6.5, §6.7;
 phase 2 D41, D27 amended 15 Nov 2026; phase 6 D159 amended 13 and 14 Nov 2026, D161 widened 14
 Nov 2026, D160 amended (4) 14 Nov 2026, D165 (a) and D176 (3) amended 14 Nov 2026, D162 and
-D167 (c) amended 15 Nov 2026, D162 amended (6) and (7) 15 Nov 2026, D178 amended (3) 16 Nov
-2026).
+D167 (c) amended 15 Nov 2026, D162 amended (6) and (7) 15 Nov 2026, D178 amended (3) and (4) 16
+Nov 2026).
 
 Also `hausbuch relink-chain` (phase 7 D184, step 5), described below.
 
@@ -81,6 +82,14 @@ stored one (amounts and status unchanged), and an acquisition whose trade paid a
 that fee as its fee_eur, as an import writes them now. A second run finds nothing. An exchange
 account whose provider is neither BISON nor Binance is skipped and named by its label. --dry-run
 rolls back and prints what it would group.
+
+`repair-exchange-times` runs services.exchange.times.repair_times once for a workspace, with the
+same owner URL (phase 6 D178 amended (4), 16 Nov 2026): every Binance import read as UTC whose
+stored file name names the zone Binance wrote it in (`…UTC1_…zip`) has its rows moved to UTC,
+each a new row that supersedes the stored one (status, kind, amounts and hash unchanged), its
+trade groups, balance corrections, written deposits and transfer links following, then the
+relinks an import runs. A second run finds nothing. An import whose name named no zone stays as
+it is and keeps the exchange page's to-do. --dry-run rolls back and prints what it would move.
 
 `relink-chain` runs services.chain.transfers.relink once for a workspace, with the same owner
 URL (phase 7 step 5, D184): every open coin leg (an exchange's coin withdrawal or deposit, a
@@ -616,6 +625,52 @@ def group_exchange_trades(args: argparse.Namespace, environ: Mapping[str, str]) 
     return EXIT_OK
 
 
+# --- repair-exchange-times -----------------------------------------------------------
+
+
+def repair_exchange_times(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.exchange.times.repair_times once for a workspace (phase 6 D178 amended (4)):
+    every Binance import read as UTC moved to UTC by the zone its stored file name names.
+    `--dry-run` rolls everything back."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.exchange.times import repair_times
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:repair-exchange-times")
+                result = repair_times(new_command(conn, args.workspace, actor))
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    done = result.corrected
+    verb = "would move" if args.dry_run else "moved"
+    print(
+        f"{verb} {done.movements} movement(s) of {done.imports} Binance import(s) to UTC "
+        f"({result.accounts} Binance account(s))"
+    )
+    if done.unknown:
+        print(
+            f"left {done.unknown} import(s) as they are: their file name names no time zone, "
+            "so the exchange page asks for the export again"
+        )
+    verb = "would then link" if args.dry_run else "then linked"
+    print(f"{verb} {result.linked} transfer(s); reopened {result.reopened}, ended {result.ended}")
+    return EXIT_OK
+
+
 # --- repair-periods -------------------------------------------------------------------
 
 
@@ -913,6 +968,15 @@ def _parser() -> argparse.ArgumentParser:
     trades.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     trades.add_argument("--dry-run", action="store_true", help="count only, change nothing")
     trades.set_defaults(command=group_exchange_trades, command_name="group-exchange-trades")
+
+    zones = commands.add_parser(
+        "repair-exchange-times",
+        help="move the times of every Binance export read as UTC to UTC by the time zone its "
+        "file name names (once, after the deploy of D178 amended (4))",
+    )
+    zones.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    zones.add_argument("--dry-run", action="store_true", help="count only, change nothing")
+    zones.set_defaults(command=repair_exchange_times, command_name="repair-exchange-times")
 
     chain_links = commands.add_parser(
         "relink-chain",
