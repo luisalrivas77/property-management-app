@@ -178,7 +178,7 @@ class _FetchRefused(Exception):
     connection is fine: the poll goes on with the next mail (or the next UID)."""
 
 
-def _log(result: PollResult, **extra: Any) -> None:
+def _log(result: PollResult, level: int | None = None, **extra: Any) -> None:
     fields = {
         "event": "inbound_mail_polled",
         "status": result.status,
@@ -190,7 +190,8 @@ def _log(result: PollResult, **extra: Any) -> None:
         "unreadable": result.unreadable,
         "codes": dict(sorted(result.codes.items())),
     } | extra
-    level = logging.INFO if result.status in ("done", "not_configured") else logging.WARNING
+    if level is None:
+        level = logging.INFO if result.status in ("done", "not_configured") else logging.WARNING
     logger.log(level, "inbound mail polled", extra={"fields": fields})
 
 
@@ -212,12 +213,19 @@ def run_poll_inbox(
         result = PollResult("skipped")
         _log(result, reason="workspaces")
         return result
+    lost: list[AppSecretName] = []
     with workspace_transaction(deps.engine, ws) as conn:
         settings = inbox_settings(conn, deps.settings)
         if configured(settings):
             deps = deps.with_client(conn)  # an attachment is read only with a model client
+        else:
+            lost = app_secrets.unreadable_names(conn, deps.settings, INBOX_NAMES)
     if not configured(settings):
-        return PollResult("not_configured")  # silent: the switch is the settings, not a fault
+        result = PollResult("not_configured")
+        if lost:  # typed in the app, no longer decrypts (D260 amended (9)): a fault, not a switch
+            result.codes[app_secrets.KEY_UNREADABLE] += 1
+            _log(result, level=logging.WARNING)
+        return result  # never set up: silent, the switch is the settings, not a fault
     if imaplib.Debug:
         result = PollResult("skipped")
         _log(result, reason="imaplib_debug")  # it would print the LOGIN line

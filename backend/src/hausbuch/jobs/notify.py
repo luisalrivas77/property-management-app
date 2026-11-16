@@ -64,10 +64,12 @@ from hausbuch.schemas.reminders import (
     Reminder,
     SentNotification,
 )
+from hausbuch.services.app_secrets import KEY_UNREADABLE, unreadable_names
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.events import append_event
 from hausbuch.services.mail import (
+    MAIL_NAMES,
     Mailer,
     MailSendError,
     OutgoingMail,
@@ -130,9 +132,8 @@ def _log(result: NotifyResult, **extra: Any) -> None:
         "items": result.items,
         "codes": dict(sorted(result.codes.items())),
     } | extra
-    level = (
-        logging.INFO if not (result.failed_mails or result.failed_workspaces) else (logging.WARNING)
-    )
+    failed = result.failed_mails or result.failed_workspaces or result.codes[KEY_UNREADABLE]
+    level = logging.WARNING if failed else logging.INFO
     logger.log(level, "reminder digest run", extra={"fields": fields})
 
 
@@ -176,7 +177,11 @@ def _workspace(
     with workspace_transaction(deps.engine, ws) as conn:
         mailer = injected or tem_client(mail_settings(conn, deps.settings))
         if mailer is None:
-            return  # not set up for this workspace (D260): nothing to send
+            # not set up for this workspace (D260): nothing to send; a piece typed in the app
+            # that no longer decrypts makes the run's line a WARNING (D260 amended (9))
+            if unreadable_names(conn, deps.settings, MAIL_NAMES):
+                result.codes[KEY_UNREADABLE] += 1
+            return
         result.status = "done"
         if not get_settings(conn).reminder_emails:
             result.switched_off += 1

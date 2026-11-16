@@ -713,7 +713,9 @@ def inbox(
     open Jahresfragen (phase 4b D110, `questionnaire_open`), the reminders visible today
     (phase 5 §6, `reminder`) and the transfer cards (phase 6 D162); with `now`, the email-in
     cards (phase 5 §5.4: email_received, email_failed) and the bank sync's (phase 5 §4.6,
-    D117: bank_sync_failed, bank_balance_drift).
+    D117: bank_sync_failed, bank_balance_drift). With `settings`, also the card for values typed
+    under Einstellungen › Zugangsschlüssel that no longer decrypt (phase 6 D260 amended (9),
+    `app_secret_unreadable`).
 
     Logs one line, `inbox sections`, with each section's milliseconds and item count (field
     names and numbers only, never an item's content), so a slow queue can be traced to its
@@ -755,6 +757,10 @@ def inbox(
         from .wallet_cards import wallet_inbox_items  # phase 7 wallet screens
 
         sections.append(("wallets", lambda: wallet_inbox_items(conn, settings, now)))
+    if settings is not None:
+        from .app_secrets import unreadable_inbox_items  # phase 6 D260 amended (9)
+
+        sections.append(("app_secrets", lambda: unreadable_inbox_items(conn, settings)))
     items: list[InboxItem] = []
     section_ms: dict[str, float] = {}
     section_items: dict[str, int] = {}
