@@ -28,6 +28,7 @@ from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import wallet_address as address_table
 from hausbuch.db.tables import wallet_sync as sync_table
 from hausbuch.jobs.sync_wallets import enqueue_sync_wallet
+from hausbuch.rules import errors as E
 from hausbuch.rules.chain.address import EVM_CHAINS, address_hmac, mask, validate
 from hausbuch.rules.errors import WALLET_ADDRESS_INVALID, WALLET_ADDRESS_TAKEN, RuleError
 from hausbuch.schemas.chain import AddressKind, Chain, WalletAddress, WalletSyncSummary
@@ -203,6 +204,8 @@ def update_address(
     changes = diff_changes(current.model_dump(include=set(requested)), requested)
     if not changes:
         return current
+    if "active" in changes and requested["active"] is False and _holds_coins(ctx.conn, current):
+        raise RuleError(E.WALLET_ADDRESS_HOLDS_COINS, _HOLDS_COINS)
     row = ctx.conn.execute(
         update(address_table)
         .where(address_table.c.id == address_id)
@@ -222,6 +225,35 @@ def update_address(
         ),
     )
     return updated
+
+
+_HOLDS_COINS = (
+    "Diese Adresse hält laut dem letzten Abruf noch Coins. Erst die Coins wegsenden und den "
+    "nächsten Abruf abwarten, dann die Adresse stilllegen."
+)
+
+
+def _holds_coins(conn: Connection, address: WalletAddress) -> bool:
+    """Whether the newest balance read for the address is not zero (the Bitcoin wiring's
+    review: a retired address is no longer synced, so coins on it would leave the wallet's
+    figures unseen). The newest succeeded row with balances that covers the address: its own,
+    or on a UTXO chain (Bitcoin, reconciled per wallet, D185) the wallet's newest on the
+    chain, whose balances are the sum over its addresses, since no per-address figure is
+    stored. A balance never read does not block. Spam is never in a stored balance."""
+    s, a = sync_table.c, address_table.c
+    if address.chain is Chain.BITCOIN:  # the one UTXO chain (schemas/chain.CHAIN_FAMILY)
+        covers = s.address_id.in_(
+            select(a.id).where(a.account_id == address.account_id, a.chain == address.chain)
+        )
+    else:
+        covers = s.address_id == address.id
+    balances = conn.execute(
+        select(s.balances)
+        .where(covers, s.status == "succeeded", s.balances.is_not(None))
+        .order_by(s.started_at.desc(), s.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return bool(balances) and any(str(units) != "0" for units in balances.values())
 
 
 def reveal_address(ctx: CommandContext, account_id: UUID, address_id: UUID) -> WalletAddressPlain:

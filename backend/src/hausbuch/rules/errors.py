@@ -235,6 +235,11 @@ SETTINGS_CONSENT_NOT_A_MEMBER = "settings.consent_not_a_member"  # only a signed
 # step 0; each is raised or shown by the step that builds its rule (D179-D190).
 WALLET_ADDRESS_INVALID = "wallet.address_invalid"  # not the chain's address format (D179 (2))
 WALLET_ADDRESS_TAKEN = "wallet.address_taken"  # registered on another own account (D179 (2))
+# „Diese Adresse hält laut dem letzten Abruf noch Coins. Erst die Coins wegsenden und den
+# nächsten Abruf abwarten, dann die Adresse stilllegen.“ (retiring an address whose newest
+# read balance is not zero; for Bitcoin, which is reconciled per wallet, the wallet's
+# newest balance on the chain; a sync follow-up of the Bitcoin wiring's review)
+WALLET_ADDRESS_HOLDS_COINS = "wallet.address_holds_coins"
 WALLET_KEY_MISSING = "wallet.key_missing"  # the chain's source needs a key that is unset
 WALLET_SOURCE_THROTTLED = "wallet.source_throttled"  # a 429: the sync resumes the next day
 WALLET_SOURCE_REFUSED = "wallet.source_refused"  # a 401/403: change the URL or key (D182 (1))
