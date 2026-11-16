@@ -812,6 +812,158 @@ def test_bitcoin_send_between_own_wallets_links(seed, run, read):
     assert (link.out_movement_id, link.in_movement_id) == (out, in_)
 
 
+# --- What a dead link confirmed goes back to proposed (review of PR #396) -------------------
+
+
+def _live_successor(read, ws, movement_id):
+    """The live row that supersedes `movement_id` (following the chain), with its group."""
+    m = movement_table.c
+
+    def follow(conn):
+        row = conn.execute(select(movement_table).where(m.id == movement_id)).one()
+        while row.superseded_by is not None:
+            row = conn.execute(select(movement_table).where(m.id == row.superseded_by)).one()
+        return row
+
+    return read(ws, follow)
+
+
+def _hash_of(read, ws, movement_id):
+    m = movement_table.c
+    return read(
+        ws,
+        lambda conn: conn.execute(select(m.movement_hash).where(m.id == movement_id)).scalar_one(),
+    )
+
+
+def _wallet_pair(seed, name):
+    tx = _hash(name)
+    g_out, [out, fee] = seed.group(
+        [
+            (seed.eth, seed.address, "-1", "internal_transfer_out", "proposed"),
+            (seed.eth, seed.address, "-0.0001", "fee", "proposed"),
+        ],
+        kind="transfer",
+        tx_hash=tx,
+        at=T0,
+    )
+    g_in, [in_] = seed.group(
+        [(seed.eth, seed.address_b, "1", "internal_transfer_in", "proposed")],
+        account=seed.wallet_b,
+        kind="transfer",
+        tx_hash=tx,
+        at=T0,
+    )
+    return g_out, out, fee, g_in, in_
+
+
+def test_a_rebooked_leg_returns_what_the_link_confirmed_on_the_other_side(seed, run, read):
+    """A hash link confirmed both wallets' legs, the fee and both groups. A person re-books the
+    sending leg: the link ends, and the receiving side (which only the link had confirmed)
+    goes back to proposed, as a proposed copy of its group and leg; the person's side stays
+    as they answered it. A second relink changes nothing."""
+    g_out, out, fee, g_in, in_ = _wallet_pair(seed, "rebooked")
+    assert run(seed.ws, chain_transfers.relink).linked == 1
+    [link] = _links(read, seed.ws)
+    [(_, payload)] = _events(read, seed.ws, link.id)
+    assert set(payload["confirmed_movements"]) == {str(out), str(fee), str(in_)}
+    assert set(payload["confirmed_groups"]) == {str(g_out), str(g_in)}
+
+    seed.rebook(out)  # the person: it was a disposal, not a transfer
+    result = run(seed.ws, chain_transfers.relink, now=T0 + timedelta(days=2))
+    assert (result.reopened, result.linked) == (1, 0)
+
+    copy = _live_successor(read, seed.ws, in_)
+    assert copy.id != in_ and copy.status == "proposed" and copy.group_id != g_in
+    assert copy.quantity == Decimal("1") and copy.index == "0"
+    old_hash, new_hash = _hash_of(read, seed.ws, in_), copy.movement_hash
+    assert old_hash != new_hash and len(new_hash) == 64 and int(new_hash, 16) >= 0
+    assert _group_status(read, seed.ws, copy.group_id) == "proposed"
+    [(group_event, group_payload)] = _events(read, seed.ws, copy.group_id)
+    assert (group_event, group_payload["reason"]) == ("movement_group.proposed", NO_MATCH)
+    assert [t for t, _ in _events(read, seed.ws, in_)][-1] == "movement.superseded"
+    assert [t for t, _ in _events(read, seed.ws, copy.id)] == ["movement.proposed"]
+    # The person's side: the fee and the group stay as they are.
+    assert _movement(read, seed.ws, fee).status == "confirmed"
+    assert _group_status(read, seed.ws, g_out) == "confirmed"
+    # It waits for a person again among the wallet's open groups (a receipt gets no card).
+    assert _open(read, seed.ws) == []
+
+    again = run(seed.ws, chain_transfers.relink, now=T0 + timedelta(days=3))
+    assert (again.reopened, again.linked) == (0, 0)
+    assert _live_successor(read, seed.ws, in_).id == copy.id
+    assert len(_links(read, seed.ws)) == 1
+
+
+def test_a_persons_link_reopens_nothing(seed, run, read):
+    """Legs a person linked were confirmed by their answer: a dead link of theirs leaves them."""
+    out = seed.exchange_out("1", fee="0.001", status="proposed")
+    group, [in_] = seed.group(
+        [(seed.eth, seed.address, "0.999", "internal_transfer_in", "proposed")],
+        at=T0 + timedelta(hours=3),
+    )
+    _pick(run, seed.ws, out, in_)
+    assert _movement(read, seed.ws, in_).status == "confirmed"
+    seed.rebook(out)
+    assert run(seed.ws, chain_transfers.relink).reopened == 0
+    assert _live_successor(read, seed.ws, in_).id == in_
+    assert _group_status(read, seed.ws, group) == "confirmed"
+
+
+def test_unlinking_a_matcher_link_reopens_the_dropped_receipt(seed, run, read):
+    """The matcher linked an exchange withdrawal to a receipt by hash and confirmed both; the
+    person replaces the receipt by another one of the same transaction (unlink). The
+    withdrawal stays in the person's link; the dropped receipt and its group go back to
+    proposed."""
+    tx = _hash("replaced")
+    out = seed.exchange_out("1", tx_hash=tx, network="ETH", status="proposed")
+    g_first, [first] = seed.group(
+        [(seed.eth, seed.address, "1", "internal_transfer_in", "proposed")], tx_hash=tx
+    )
+    assert run(seed.ws, chain_transfers.relink).linked == 1
+    [matcher] = _links(read, seed.ws)
+    assert matcher.in_movement_id == first
+    _, [second] = seed.group(
+        [(seed.eth, seed.address_b, "1", "internal_transfer_in", "confirmed")],
+        account=seed.wallet_b,
+        status="confirmed",
+        tx_hash=tx,
+    )
+    body = TransferLinkCreate(
+        kind=TransferLinkKind.CHAIN, out_movement_id=out, in_movement_id=second
+    )
+    run(seed.ws, transfers.unlink, matcher.id, body)
+
+    assert run(seed.ws, chain_transfers.relink).reopened == 1
+    copy = _live_successor(read, seed.ws, first)
+    assert copy.status == "proposed"
+    assert _group_status(read, seed.ws, g_first) == "confirmed"  # superseded, kept as it was
+    assert _group_status(read, seed.ws, copy.group_id) == "proposed"
+    assert _live_successor(read, seed.ws, out).id == out  # in the person's link
+    assert _movement(read, seed.ws, out).status == "confirmed"
+
+
+def test_reopened_exchange_row_carries_no_hash(seed, run, read):
+    """An exchange's withdrawal the link confirmed is copied as its corrections are, without
+    a movement_hash, so a re-import still finds the original's."""
+    tx = _hash("exchange reopened")
+    out = seed.exchange_out("0.3", fee="0.0005", tx_hash=tx, network="ETH", status="proposed")
+    _, [in_] = seed.group(
+        [(seed.eth, seed.address, "0.2995", "internal_transfer_in", "proposed")], tx_hash=tx
+    )
+    assert run(seed.ws, chain_transfers.relink).linked == 1
+    seed.rebook(in_, "airdrop")
+    assert run(seed.ws, chain_transfers.relink).reopened == 1
+    copy = _live_successor(read, seed.ws, out)
+    assert (copy.status, copy.movement_hash, copy.source) == ("proposed", None, "csv")
+    assert copy.fee_quantity == Decimal("0.0005") and copy.tx_hash == tx
+    assert _hash_of(read, seed.ws, out) is not None
+    # A send without its counterpart: its card again.
+    assert [(c.code, c.leg.id) for c in _open(read, seed.ws)] == [
+        (OpenTransferCode.UNMATCHED_LEG, copy.id)
+    ]
+
+
 def test_wrap_waits_for_a_pick_until_the_workspace_confirmed_its_pair(seed, run, read):
     """§6 example 8: 1 ETH to the WETH contract, 1 WETH back in the same transaction. Even
     confirmed, a wrap the registry alone knows is a card (D186 (1), review of PR #396); once

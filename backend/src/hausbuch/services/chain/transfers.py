@@ -61,9 +61,10 @@ movement_group.confirmed); the log carries counts; a card names the account, the
 quantity and the symbol, never an address or a hash.
 """
 
+import hashlib
 import logging
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -108,6 +109,7 @@ from hausbuch.schemas.events import (
     EventType,
     MovementGroupRecorded,
     MovementRecorded,
+    MovementSuperseded,
     TransferLinked,
 )
 from hausbuch.schemas.household import (
@@ -539,7 +541,7 @@ def _still(conn: Connection, legs: Iterable[_Row]) -> bool:
     return all(found.get(leg.id) == leg.status.value for leg in legs)
 
 
-def _confirm_movement(ctx: CommandContext, movement_id: UUID) -> None:
+def _confirm_movement(ctx: CommandContext, movement_id: UUID) -> bool:
     m = movement_table.c
     row = ctx.conn.execute(
         update(movement_table)
@@ -548,7 +550,7 @@ def _confirm_movement(ctx: CommandContext, movement_id: UUID) -> None:
         .returning(m.account_id, m.asset_id, m.kind, m.source, m.document_id)
     ).one_or_none()
     if row is None:
-        return
+        return False
     append_event(
         ctx,
         EventType.MOVEMENT_CONFIRMED,
@@ -561,15 +563,29 @@ def _confirm_movement(ctx: CommandContext, movement_id: UUID) -> None:
             document_id=row.document_id,
         ),
     )
+    return True
 
 
-def _confirm(ctx: CommandContext, leg: _Row, pair: set[UUID]) -> int:
+@dataclass
+class _Confirmed:
+    """What a matcher's link confirmed, recorded on its transfer.linked event (review of
+    PR #396), so _reopen can return it to proposed once the link is no longer current."""
+
+    movements: list[UUID] = field(default_factory=list)
+    groups: list[UUID] = field(default_factory=list)
+
+
+def _confirm(
+    ctx: CommandContext, leg: _Row, pair: set[UUID], done: _Confirmed | None = None
+) -> int:
     """The leg confirmed; on a chain, its group too once no leg of it but the pair's waits
     (its fee legs with it: the fee is a fact of the transaction); a group asking a question,
-    or with another leg still waiting, stays proposed. The count of movements confirmed."""
+    or with another leg still waiting, stays proposed. The count of movements confirmed;
+    `done` collects their ids and the group's."""
+    done = done if done is not None else _Confirmed()
     count = 0
-    if not leg.confirmed:
-        _confirm_movement(ctx, leg.id)
+    if not leg.confirmed and _confirm_movement(ctx, leg.id):
+        done.movements.append(leg.id)
         count += 1
     if (
         leg.group_id is None or leg.group_status is not GroupStatus.PROPOSED or leg.group_question
@@ -588,8 +604,9 @@ def _confirm(ctx: CommandContext, leg: _Row, pair: set[UUID]) -> int:
         )
     ).scalars()
     for fee in list(fees):
-        _confirm_movement(ctx, fee)
-        count += 1
+        if _confirm_movement(ctx, fee):
+            done.movements.append(fee)
+            count += 1
     group = ctx.conn.execute(
         update(group_table)
         .where(g.id == leg.group_id, g.status == GroupStatus.PROPOSED.value)
@@ -597,6 +614,7 @@ def _confirm(ctx: CommandContext, leg: _Row, pair: set[UUID]) -> int:
         .returning(g.account_id, g.chain, g.kind)
     ).one_or_none()
     if group is not None:
+        done.groups.append(leg.group_id)
         append_event(
             ctx,
             EventType.MOVEMENT_GROUP_CONFIRMED,
@@ -620,9 +638,11 @@ def _write(
     in_: _Row,
     kind: TransferLinkKind,
     matched_by: TransferMatchedBy,
+    confirmed: _Confirmed | None = None,
 ) -> TransferLink:
     """One transfer_link row of two coin movements and its transfer.linked event (ids only),
-    as services.transfers._write writes a EUR link, without its bank-line hooks."""
+    as services.transfers._write writes a EUR link, without its bank-line hooks; `confirmed`
+    what the matcher's link confirmed (never a person's: that was their answer)."""
     legs = {"out_movement_id": out.id, "in_movement_id": in_.id}
     row = ctx.conn.execute(
         insert(link_table)
@@ -641,9 +661,220 @@ def _write(
         ctx,
         EventType.TRANSFER_LINKED,
         link.id,
-        TransferLinked(kind=kind, matched_by=matched_by, **legs),
+        TransferLinked(
+            kind=kind,
+            matched_by=matched_by,
+            confirmed_movements=confirmed.movements if confirmed else [],
+            confirmed_groups=confirmed.groups if confirmed else [],
+            **legs,
+        ),
     )
     return link
+
+
+# --- Reopening what a dead link confirmed (review of PR #396) -------------------------------
+
+
+def _lock_ids(ctx: CommandContext, movement_ids: Iterable[UUID], group_ids: Iterable[UUID]) -> bool:
+    """_lock_rows' order by ids, SKIP LOCKED: False when any row is held elsewhere."""
+    m, g = movement_table.c, group_table.c
+    ids, groups = sorted(set(movement_ids), key=str), sorted(set(group_ids), key=str)
+    got = (
+        ctx.conn.execute(select(m.id).where(m.id.in_(ids)).with_for_update(skip_locked=True)).all()
+        if ids
+        else []
+    )
+    got_groups = (
+        ctx.conn.execute(
+            select(g.id).where(g.id.in_(groups)).with_for_update(skip_locked=True)
+        ).all()
+        if groups
+        else []
+    )
+    return len(got) == len(ids) and len(got_groups) == len(groups)
+
+
+def _reopened_hash(old: str, new_id: UUID) -> str:
+    """A chain row's copy needs its own movement_hash (0041's unique index spans superseded
+    rows, and source chain requires one). The superseded original keeps the sync's hash, and
+    sync._stored_hashes reads every row of the account, superseded ones too, so a re-sync of
+    the transaction still finds it and writes nothing new."""
+    return hashlib.sha256(f"{old}:reopened:{new_id}".encode()).hexdigest()
+
+
+def _copy_movement(
+    ctx: CommandContext, old, *, group_id: UUID | None, status: MovementStatus
+) -> UUID:  # noqa: ANN001
+    """A copy of the live row `old` with `status` in `group_id` that supersedes it, with its
+    events: movement.superseded on the old row, movement.proposed (or .confirmed) on the
+    new. A chain row gets a hash of its own (_reopened_hash); an exchange's row none, as
+    services.exchange.imports._supersede writes its corrections."""
+    m = movement_table.c
+    new_id = uuid4()
+    skip = {"id", "superseded_by", "created_at", "movement_hash", "status", "group_id"}
+    values = {c.name: getattr(old, c.name) for c in movement_table.c if c.name not in skip}
+    chain = old.source == MovementSource.CHAIN.value and old.movement_hash is not None
+    ctx.conn.execute(
+        insert(movement_table).values(
+            id=new_id,
+            movement_hash=_reopened_hash(old.movement_hash, new_id) if chain else None,
+            status=status.value,
+            group_id=group_id,
+            created_at=ctx.now,
+            **values,
+        )
+    )
+    ctx.conn.execute(update(movement_table).where(m.id == old.id).values(superseded_by=new_id))
+    append_event(
+        ctx, EventType.MOVEMENT_SUPERSEDED, old.id, MovementSuperseded(superseded_by=new_id)
+    )
+    append_event(
+        ctx,
+        EventType.MOVEMENT_CONFIRMED
+        if status is MovementStatus.CONFIRMED
+        else EventType.MOVEMENT_PROPOSED,
+        new_id,
+        MovementRecorded(
+            account_id=old.account_id,
+            asset_id=old.asset_id,
+            kind=MovementKind(old.kind),
+            source=MovementSource(old.source),
+            document_id=old.document_id,
+        ),
+    )
+    return new_id
+
+
+def _reopen_side(
+    ctx: CommandContext,
+    side_id: UUID,
+    movements: set[UUID],
+    groups: set[UUID],
+    linked: set[UUID],
+) -> int:
+    """One leg's side of a dead matcher link: the movements of the leg's transaction the
+    link confirmed back to proposed, and the group with them when the link confirmed it and no
+    leg of it is in a current link. Nothing when the leg was answered by a person (superseded)
+    or is in a current link again. The count of movements reopened."""
+    m, g = movement_table.c, group_table.c
+    side = ctx.conn.execute(
+        select(movement_table).where(m.id == side_id, m.superseded_by.is_(None))
+    ).one_or_none()
+    if side is None or side.id in linked:
+        return 0
+    same = m.id == side.id if side.group_id is None else m.group_id == side.group_id
+    rows = ctx.conn.execute(
+        select(movement_table).where(same, m.superseded_by.is_(None)).order_by(m.index, m.id)
+    ).all()
+    reopen = {
+        r.id
+        for r in rows
+        if r.id in movements and r.id not in linked and r.status == MovementStatus.CONFIRMED.value
+    }
+    group = None
+    if side.group_id in groups:
+        group = ctx.conn.execute(
+            select(group_table).where(
+                g.id == side.group_id,
+                g.superseded_by.is_(None),
+                g.status == GroupStatus.CONFIRMED.value,
+            )
+        ).one_or_none()
+    if group is not None and any(r.id in linked for r in rows):
+        group = None  # a leg of it is in another current link: only the legs, in place
+    if not reopen and group is None:
+        return 0
+    copied = [r for r in rows if group is not None or r.id in reopen]
+    if not _lock_ids(ctx, [r.id for r in copied], [group.id] if group is not None else []):
+        return 0  # a person is answering it right now: the next relink
+    still = {
+        r.id: r.status
+        for r in ctx.conn.execute(
+            select(m.id, m.status).where(
+                m.id.in_([r.id for r in copied]), m.superseded_by.is_(None)
+            )
+        )
+    }
+    if any(still.get(r.id) != r.status for r in copied):
+        return 0  # answered meanwhile
+    group_id = side.group_id
+    if group is not None:
+        group_id = ctx.conn.execute(
+            insert(group_table)
+            .values(
+                workspace_id=ctx.workspace_id,
+                account_id=group.account_id,
+                chain=group.chain,
+                tx_hash=group.tx_hash,
+                occurred_at=group.occurred_at,
+                kind=group.kind,
+                decoder=group.decoder,
+                status=GroupStatus.PROPOSED.value,
+                question=group.question,
+                created_at=ctx.now,
+            )
+            .returning(g.id)
+        ).scalar_one()
+        ctx.conn.execute(update(group_table).where(g.id == group.id).values(superseded_by=group_id))
+        append_event(
+            ctx,
+            EventType.MOVEMENT_GROUP_PROPOSED,
+            group_id,
+            MovementGroupRecorded(
+                account_id=group.account_id, chain=group.chain, kind=group.kind, reason=NO_MATCH
+            ),
+        )
+    for r in copied:
+        status = MovementStatus.PROPOSED if r.id in reopen else MovementStatus(r.status)
+        _copy_movement(ctx, r, group_id=group_id, status=status)
+    return len(reopen)
+
+
+def _reopen(ctx: CommandContext) -> int:
+    """Review of PR #396: what a matcher's coin link confirmed goes back to proposed once the
+    link is no longer current (a person re-booked one leg, or replaced the link), so it shows
+    again as a card or among the wallet's open groups; never what a person confirmed or
+    answered (their rows are not in the link's record, or are superseded already). Append-only:
+    each row is superseded by a proposed copy (_copy_movement), a group the link confirmed by a
+    proposed copy routed routing.no_match, as a sync would have written it. Idempotent: the
+    recorded rows are superseded afterwards. Each run reads every dead matcher coin link; their
+    number only grows (§15.1)."""
+    from ..transfers import _current_links, _leg_ids
+
+    c, e = link_table.c, event_table.c
+    current = _current_links(ctx.conn)
+    current_ids = {r.id for r in current}
+    linked = {i for r in current for i in _leg_ids(r)}
+    dead = [
+        r
+        for r in ctx.conn.execute(
+            select(c.id, c.out_movement_id, c.in_movement_id).where(
+                c.matched_by == TransferMatchedBy.MATCHER.value,
+                c.kind.in_([k.value for k in CHAIN_LINK_KINDS]),
+            )
+        ).all()
+        if r.id not in current_ids
+    ]
+    if not dead:
+        return 0
+    payloads = dict(
+        ctx.conn.execute(
+            select(e.entity_id, e.payload).where(
+                e.type == EventType.TRANSFER_LINKED.value,
+                e.entity_id.in_([r.id for r in dead]),
+            )
+        ).all()
+    )
+    count = 0
+    for link in dead:
+        payload = payloads.get(link.id) or {}
+        movements = {UUID(i) for i in payload.get("confirmed_movements") or []}
+        groups = {UUID(i) for i in payload.get("confirmed_groups") or []}
+        if not movements and not groups:
+            continue  # it confirmed nothing (both legs were confirmed), or a link before this
+        for side in (link.out_movement_id, link.in_movement_id):
+            count += _reopen_side(ctx, side, movements, groups, linked)
+    return count
 
 
 @dataclass
@@ -652,6 +883,7 @@ class RelinkResult:
     confirmed: int = 0  # movements the links confirmed (D186 (1))
     skipped_locked: int = 0  # a fit left for the next run: a person was answering a leg
     busy: bool = False  # relink(wait=False) found the transfer lock taken: nothing done
+    reopened: int = 0  # movements a dead matcher link had confirmed, back to proposed
 
 
 def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
@@ -668,8 +900,8 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
         _lock(ctx)
     elif not _try_lock(ctx):
         return RelinkResult(busy=True)
+    result = RelinkResult(reopened=_reopen(ctx))
     world = _World.read(ctx.conn)
-    result = RelinkResult()
     for leg in [r for r in world.open() if r.sends]:
         if leg.id in world.linked:
             continue
@@ -696,11 +928,12 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
         ):
             result.skipped_locked += 1
             continue
-        result.confirmed += _confirm(ctx, leg, pair) + _confirm(ctx, other, pair)
-        _write(ctx, leg, other, found.link, TransferMatchedBy.MATCHER)
+        done = _Confirmed()
+        result.confirmed += _confirm(ctx, leg, pair, done) + _confirm(ctx, other, pair, done)
+        _write(ctx, leg, other, found.link, TransferMatchedBy.MATCHER, done)
         world.linked |= pair
         result.linked += 1
-    if result.linked or result.skipped_locked:
+    if result.linked or result.skipped_locked or result.reopened:
         logger.info(
             "chain transfers relinked",
             extra={
@@ -709,6 +942,7 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
                     "linked": result.linked,
                     "confirmed": result.confirmed,
                     "skipped_locked": result.skipped_locked,
+                    "reopened": result.reopened,
                 }
             },
         )
