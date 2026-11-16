@@ -118,6 +118,23 @@ def test_the_product_id_alone_is_valid(extra):
     assert settings.fints_product_id == "P1" and dict(settings.fints_pins) == {}
 
 
+@pytest.mark.parametrize(
+    "partial",
+    [
+        {"HAUSBUCH_INBOX_IMAP_USER": "a@mail.example"},
+        {"HAUSBUCH_INBOX_IMAP_PASSWORD": "pw"},
+        {"HAUSBUCH_INBOX_IMAP_USER": "a@mail.example", "HAUSBUCH_INBOX_IMAP_PASSWORD": "pw"},
+        {"HAUSBUCH_TEM_SECRET_KEY": "k"},
+    ],
+    ids=["imap_user", "imap_password", "imap_pair_without_address", "tem_key"],
+)
+def test_part_of_the_mail_settings_is_valid_at_start_up(partial):
+    """Phase 6 D260 (refused until 16 Nov 2026): the rest may be typed in the app
+    (app_secret); the poll and the digest check the workspace's whole set when they run."""
+    settings = load_settings(ENV | partial)
+    assert settings.inbox_address is None and settings.tem_project_id is None
+
+
 @pytest.mark.parametrize("pin", ["HAUSBUCH_FINTS_PIN", "HAUSBUCH_FINTS_PIN_OWNER_B"])
 def test_a_pin_without_the_product_id_is_valid(pin):
     """Phase 6 D260 (refused until 16 Nov 2026): the product id may be typed in the app
@@ -343,21 +360,8 @@ def test_repr_hides_secrets():
         ({"HAUSBUCH_AI_TIMEOUT_S": "-5"}, "positive integer"),
         # Phase 5 §9: a secret without its partner is refused, naming variables only. (Phase 6
         # D260 dropped a PIN without the product id: test_a_pin_without_the_product_id_is_valid.)
-        (
-            {"HAUSBUCH_INBOX_IMAP_USER": "a@mail.example"},
-            "HAUSBUCH_INBOX_IMAP_USER and HAUSBUCH_INBOX_IMAP_PASSWORD",
-        ),
-        (
-            {"HAUSBUCH_INBOX_IMAP_PASSWORD": "pw"},
-            "HAUSBUCH_INBOX_IMAP_USER and HAUSBUCH_INBOX_IMAP_PASSWORD",
-        ),
-        (
-            {"HAUSBUCH_INBOX_IMAP_USER": "a@mail.example", "HAUSBUCH_INBOX_IMAP_PASSWORD": "pw"},
-            "needs HAUSBUCH_INBOX_ADDRESS and HAUSBUCH_INBOX_LABEL",
-        ),
         ({"HAUSBUCH_INBOX_IMAP_HOST": "imap.gmail.com:993"}, "lower-case host name"),
         ({"HAUSBUCH_INBOX_AUTHSERV_ID": "MX.google.com"}, "lower-case host name"),
-        ({"HAUSBUCH_TEM_SECRET_KEY": "k"}, "needs HAUSBUCH_TEM_PROJECT_ID and HAUSBUCH_MAIL_FROM"),
         ({"HAUSBUCH_TEM_REGION": "fr-par/x"}, "must be a Scaleway region"),
         ({"HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S": "0"}, "positive integer"),
     ],

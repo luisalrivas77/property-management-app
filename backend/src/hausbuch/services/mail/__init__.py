@@ -7,7 +7,9 @@ from .tem import (
     MailSendError,
     OutgoingMail,
     TemClient,
+    available,
     configured,
+    mail_settings,
     tem_client,
 )
 
@@ -17,6 +19,8 @@ __all__ = [
     "Mailer",
     "OutgoingMail",
     "TemClient",
+    "available",
     "configured",
+    "mail_settings",
     "tem_client",
 ]

@@ -276,30 +276,16 @@ class Settings:
         # id alone is valid. Phase 6 D260: the product id may be typed in the app too
         # (app_secret), so a container PIN alone is valid as well; a sync whose workspace has
         # no usable product id from either source fails with bank.not_configured.
-        if (self.inbox_imap_user is None) != (self.inbox_imap_password is None):
-            raise SettingsError(
-                "HAUSBUCH_INBOX_IMAP_USER and HAUSBUCH_INBOX_IMAP_PASSWORD are set together or "
-                "not at all"
-            )
-        if self.inbox_imap_user is not None and (
-            self.inbox_address is None or self.inbox_label is None
-        ):
-            raise SettingsError(
-                "email-in (HAUSBUCH_INBOX_IMAP_USER) needs HAUSBUCH_INBOX_ADDRESS and "
-                "HAUSBUCH_INBOX_LABEL"
-            )
+        # Phase 6 D260: the inbox's user, password, address and label and the Transactional
+        # Email key, project and sender may each be typed in the app (app_secret), so none of
+        # them needs its partners in the container; the poll and the digest check the
+        # workspace's resolved set when they run (not_configured while one is missing).
         for name, host in (
             ("HAUSBUCH_INBOX_IMAP_HOST", self.inbox_imap_host),
             ("HAUSBUCH_INBOX_AUTHSERV_ID", self.inbox_authserv_id),
         ):
             if not _HOST.fullmatch(host):
                 raise SettingsError(f"{name} must be a lower-case host name")
-        if self.tem_secret_key is not None and (
-            self.tem_project_id is None or self.mail_from is None
-        ):
-            raise SettingsError(
-                "HAUSBUCH_TEM_SECRET_KEY needs HAUSBUCH_TEM_PROJECT_ID and HAUSBUCH_MAIL_FROM"
-            )
         if not _REGION.fullmatch(self.tem_region):
             raise SettingsError("HAUSBUCH_TEM_REGION must be a Scaleway region such as fr-par")
 

@@ -162,3 +162,30 @@ def test_a_rotated_session_key_makes_the_wallet_say_type_it_again(
         assert inbox.status_code == 200 and KEY not in inbox.text
     finally:
         client.close()
+
+
+def test_the_settings_page_and_the_inbox_address_read_the_typed_values(client_a, client_b):
+    assert ok(client_a.get("/api/workspace/settings"))["reminder_emails_available"] is False
+    for name, value in (
+        ("tem_secret_key", "typed-tem-key-1"),
+        ("tem_project_id", "7c1a2c56-58c1-4a34-9fd3-0b2d1d5f1e01"),
+        ("mail_from", "erinnerung@typed.example"),
+    ):
+        ok(client_a.put(f"/api/app-secrets/{name}", json={"value": value}))
+    assert ok(client_a.get("/api/workspace/settings"))["reminder_emails_available"] is True
+    assert ok(client_b.get("/api/workspace/settings"))["reminder_emails_available"] is False
+    assert ok(client_a.get("/api/inbound-mail/address"))["configured"] is False
+    for name, value in (
+        ("inbox_imap_user", "haushalt@typed.example"),
+        ("inbox_imap_password", PASSWORD),
+        ("inbox_address", "haushalt+t0k3n@typed.example"),
+        ("inbox_label", "Hausbuch"),
+    ):
+        ok(client_a.put(f"/api/app-secrets/{name}", json={"value": value}))
+    address = client_a.get("/api/inbound-mail/address")
+    assert ok(address) == {
+        "configured": True,
+        "address": "haushalt+t0k3n@typed.example",
+        "label": "Hausbuch",
+    }
+    assert PASSWORD not in address.text

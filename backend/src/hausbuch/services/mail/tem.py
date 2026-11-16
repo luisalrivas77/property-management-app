@@ -27,6 +27,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from sqlalchemy import Connection
+
+from hausbuch.schemas.app_secrets import AppSecretName
+from hausbuch.services import app_secrets
 from hausbuch.settings import Settings
 
 API_URL = "https://api.scaleway.com"
@@ -119,13 +123,29 @@ class TemClient:
 
 
 def configured(settings: Settings) -> bool:
-    """Sending is set up: the secret key, the project and the sender address. Settings
-    refuses a key without the other two, so the key alone decides in practice."""
+    """Sending is set up: the secret key, the project and the sender address. Since phase 6
+    D260 each may be typed in the app, so pass the workspace's settings (mail_settings)."""
     return None not in (settings.tem_secret_key, settings.tem_project_id, settings.mail_from)
 
 
+MAIL_NAMES = (AppSecretName.TEM_SECRET_KEY, AppSecretName.TEM_PROJECT_ID, AppSecretName.MAIL_FROM)
+
+
+def mail_settings(conn: Connection, settings: Settings) -> Settings:
+    """`settings` with the workspace's typed key, project and sender in place of the
+    container's (D260); one that no longer decrypts reads as unset, so sending is not set up,
+    never the container's value for that piece."""
+    return app_secrets.workspace_settings(conn, settings, MAIL_NAMES, unreadable="unset")
+
+
+def available(conn: Connection, settings: Settings) -> bool:
+    """Whether this workspace can send reminder emails (the settings page's flag)."""
+    return configured(mail_settings(conn, settings))
+
+
 def tem_client(settings: Settings, transport: Transport = urllib_transport) -> TemClient | None:
-    """The client from the container's settings, or None while sending is not set up."""
+    """The client from these settings (a workspace's, mail_settings), or None while sending
+    is not set up."""
     if not configured(settings):
         return None
     assert settings.tem_secret_key and settings.tem_project_id and settings.mail_from

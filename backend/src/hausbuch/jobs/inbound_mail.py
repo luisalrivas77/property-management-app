@@ -52,6 +52,7 @@ nothing: they are logged, and the next poll decides.
 """
 
 import contextlib
+import dataclasses
 import imaplib
 import logging
 import ssl
@@ -61,6 +62,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
+
+from sqlalchemy import Connection
 
 from hausbuch.auth.lookup import provisioned_workspace_ids
 from hausbuch.db.session import workspace_transaction
@@ -79,8 +82,10 @@ from hausbuch.rules.inbound_mail import (
     parse_internaldate,
     section,
 )
+from hausbuch.schemas.app_secrets import AppSecretName
 from hausbuch.schemas.enums import ActorType
 from hausbuch.schemas.inbound_mail import MAX_ATTACHMENT_BYTES, InboundDecision, InboundPolicy
+from hausbuch.services import app_secrets
 from hausbuch.services import inbound_mail as service
 from hausbuch.services.context import Actor, new_command
 from hausbuch.settings import Settings
@@ -114,13 +119,29 @@ _connect_failures: Counter = Counter()
 
 
 def configured(settings: Settings) -> bool:
-    """The poll is off until the four values are set (§5.2 step 4)."""
+    """The poll is off until the four values are set (§5.2 step 4). Since phase 6 D260 each
+    may be typed in the app, so pass the workspace's settings (inbox_settings)."""
     return None not in (
         settings.inbox_imap_user,
         settings.inbox_imap_password,
         settings.inbox_address,
         settings.inbox_label,
     )
+
+
+INBOX_NAMES = (
+    AppSecretName.INBOX_IMAP_USER,
+    AppSecretName.INBOX_IMAP_PASSWORD,
+    AppSecretName.INBOX_ADDRESS,
+    AppSecretName.INBOX_LABEL,
+)
+
+
+def inbox_settings(conn: Connection, settings: Settings) -> Settings:
+    """`settings` with the workspace's typed inbox values in place of the container's (D260);
+    one that no longer decrypts reads as unset, so the poll is off, never the container's
+    value for that piece. The host and the authserv-id stay container settings."""
+    return app_secrets.workspace_settings(conn, settings, INBOX_NAMES, unreadable="unset")
 
 
 def connect_imap(settings: Settings) -> imaplib.IMAP4:
@@ -181,19 +202,25 @@ def _single_workspace(deps: JobDeps) -> UUID | None:
 def run_poll_inbox(
     deps: JobDeps, *, connect: Connect = connect_imap, workspace_id: UUID | None = None
 ) -> PollResult:
-    """One poll. Never raises: every outcome is a PollResult and one log line."""
-    settings = deps.settings
+    """One poll. Never raises: every outcome is a PollResult and one log line. The inbox
+    values are the workspace's (the container's, or the ones typed in the app, D260), read
+    once the workspace is known; the rest of the poll sees them as `deps.settings`."""
+    ws = workspace_id or _single_workspace(deps)
+    if ws is None:
+        if not configured(deps.settings):
+            return PollResult("not_configured")  # silent, as before D260
+        result = PollResult("skipped")
+        _log(result, reason="workspaces")
+        return result
+    with workspace_transaction(deps.engine, ws) as conn:
+        settings = inbox_settings(conn, deps.settings)
     if not configured(settings):
         return PollResult("not_configured")  # silent: the switch is the settings, not a fault
     if imaplib.Debug:
         result = PollResult("skipped")
         _log(result, reason="imaplib_debug")  # it would print the LOGIN line
         return result
-    ws = workspace_id or _single_workspace(deps)
-    if ws is None:
-        result = PollResult("skipped")
-        _log(result, reason="workspaces")
-        return result
+    deps = dataclasses.replace(deps, settings=settings)
     now = deps.clock()
     result = _poll(deps, connect, ws, now)
     _note_outcome(deps, ws, now, result)
