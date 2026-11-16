@@ -224,6 +224,11 @@ def test_a_workspace_never_sees_another_workspaces_value(run, read, fresh_worksp
         (N.INBOX_ADDRESS, "a b@gmail.example", E.APP_SECRET_INVALID),
         (N.INBOX_LABEL, "Bel\x07ege", E.APP_SECRET_INVALID),
         (N.INBOX_LABEL, "ü" * 257, E.APP_SECRET_INVALID),
+        (N.ELSTER_HERSTELLER_ID, "HID-74931", E.APP_SECRET_INVALID),
+        (N.ELSTER_HERSTELLER_ID, "749 31", E.APP_SECRET_INVALID),
+        (N.ELSTER_HERSTELLER_ID, "7" * 11, E.APP_SECRET_INVALID),
+        (N.ELSTER_HERSTELLER_ID, "\u0667\u0664\u0669", E.APP_SECRET_INVALID),
+        (N.ELSTER_HERSTELLER_ID, "-74931", E.APP_SECRET_INVALID),
     ],
     ids=[
         "blank",
@@ -241,6 +246,11 @@ def test_a_workspace_never_sees_another_workspaces_value(run, read, fresh_worksp
         "address_blank",
         "label_control",
         "label_over_512_bytes",
+        "hersteller_id_letters",
+        "hersteller_id_space",
+        "hersteller_id_too_long",
+        "hersteller_id_non_ascii_digits",
+        "hersteller_id_sign",
     ],
 )
 def test_a_value_outside_its_checks_is_refused_without_quoting_it(
@@ -267,6 +277,7 @@ def test_each_name_takes_a_value_of_its_form(run, read, fresh_workspaces, settin
         N.INBOX_IMAP_PASSWORD: "abcd efgh ijkl mnop",  # Google prints it in four groups
         N.INBOX_ADDRESS: "haushalt+t0ken@gmail.example",
         N.INBOX_LABEL: "Hausbuch Belege/Häuser",
+        N.ELSTER_HERSTELLER_ID: "40123",
     }
     for name, value in accepted.items():
         _set(run, ws, name, value, settings)

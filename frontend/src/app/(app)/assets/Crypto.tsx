@@ -7,6 +7,8 @@
 // or „Kurs fehlt“ with „Kurs eintragen“ for the coin and day whose price is missing (principle
 // 7: the typed price of phase 6 D167, on Übersicht's price card, prefilled with the day).
 // „Bestandsnachweis 31.12.<Jahr> erstellen“ writes D190's immutable statement per account.
+// A wallet whose read movements wait for a person is counted nowhere above: its line names the
+// coins not yet counted and links „Transaktionen prüfen“ on the wallet's page (16 Nov 2026).
 import Link from "next/link";
 import { useCallback, useState } from "react";
 
@@ -20,6 +22,9 @@ import { Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
+import { WaitingNotices } from "./Overview";
+
+type WalletWaiting = components["schemas"]["WalletWaiting"];
 type CryptoHoldings = components["schemas"]["CryptoHoldings"];
 type CryptoAccount = components["schemas"]["CryptoAccount"];
 type CryptoCoin = components["schemas"]["CryptoCoin"];
@@ -92,9 +97,16 @@ function Crypto({ data, owners }: { data: CryptoHoldings; owners: Owner[] }) {
           ))}
         </Notice>
       ) : null}
+      <WaitingNotices lines={data.waiting ?? []} />
       <div className="planning-kpis">
         {accounts.map((account) => (
-          <AccountCard key={account.account_id} account={account} owners={owners} coins={coins} />
+          <AccountCard
+            key={account.account_id}
+            account={account}
+            owners={owners}
+            coins={coins}
+            waiting={(data.waiting ?? []).find((line) => line.account_id === account.account_id) ?? null}
+          />
         ))}
       </div>
       <div className="planning-split">
@@ -237,7 +249,17 @@ function Figures({ data, accounts }: { data: CryptoHoldings; accounts: CryptoAcc
   );
 }
 
-function AccountCard({ account, owners, coins }: { account: CryptoAccount; owners: Owner[]; coins: CryptoCoin[] }) {
+function AccountCard({
+  account,
+  owners,
+  coins,
+  waiting,
+}: {
+  account: CryptoAccount;
+  owners: Owner[];
+  coins: CryptoCoin[];
+  waiting: WalletWaiting | null;
+}) {
   const symbols = coins
     .filter((coin) => coin.account_id === account.account_id)
     .map((coin) => coin.symbol ?? coin.name)
@@ -260,6 +282,12 @@ function AccountCard({ account, owners, coins }: { account: CryptoAccount; owner
         )}
         {account.unvalued_coins ? ` · ${account.unvalued_coins} ohne Kurs` : ""}
       </p>
+      {waiting ? (
+        <p className="planning-kpi-sub">
+          {waiting.groups === 1 ? "1 Transaktion wartet" : `${waiting.groups} Transaktionen warten`}:{" "}
+          <Link href={waiting.href}>{waiting.action}</Link>
+        </p>
+      ) : null}
     </div>
   );
 }

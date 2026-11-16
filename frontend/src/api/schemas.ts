@@ -273,6 +273,8 @@ export type PriceLabel = Schemas["PriceLabel"];
 export type PriceSourceKind = Schemas["PriceSourceKind"];
 export type AssetKind = Schemas["AssetKind"];
 export type AssetRow = Schemas["AssetRow"];
+// a wallet whose read movements wait for a person (16 Nov 2026)
+export type WalletWaiting = Schemas["WalletWaiting"];
 export type AssetPatch = Schemas["AssetPatch"];
 export type AssetPriceRow = Schemas["AssetPriceRow"];
 export type TypedPriceBody = Schemas["TypedPriceBody"];

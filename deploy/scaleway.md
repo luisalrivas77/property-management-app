@@ -554,6 +554,7 @@ the IBAN key keys every stored hash, and the owner URL never belongs on the serv
 | `HAUSBUCH_TEM_PROJECT_ID` | the TEM domain's project id (step 15), optional | — | — | — |
 | `HAUSBUCH_MAIL_FROM` | `hausbuch@mail.rcubed.fr` (step 15), optional | — | — | — |
 | `HAUSBUCH_TEM_REGION` | `fr-par` (step 15; the default) | — | — | — |
+| `HAUSBUCH_ELSTER_HERSTELLER_ID` | **secret**, optional; better typed in the app (Einstellungen › Zugangsschlüssel › ELSTER, phase 6 D260 amended (10)); nothing reads it yet | — | — | — |
 | `HAUSBUCH_API_URL` | — | **build argument**, not a variable (step 7) | — | — |
 
 The API's optional settings keep their defaults unless you have a reason to change them:

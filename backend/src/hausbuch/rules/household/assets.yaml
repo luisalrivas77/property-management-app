@@ -55,6 +55,12 @@
 #   not the bridged USDC.e, which is not listed. Wrapped SOL is written WSOL (AssetSymbol
 #   allows upper case only; the chain's own name is „wSOL“). The token's symbol is a display
 #   label (TokenSymbol, D180 (2) amended 15 Nov 2026); this file still lists one per chain.
+#   Added 16 Nov 2026: Wormhole's „Ether (Portal)“ on Solana (ETH bridged from Ethereum by
+#   the Portal token bridge, which locks WETH there), read from the Solana token list
+#   (raw.githubusercontent.com/solana-labs/token-list/main/src/tokens/solana.tokenlist.json:
+#   symbol ETH, name „Ether (Portal)“, 8 decimals, tags wrapped and wormhole, coingeckoId
+#   ethereum). Priced as ETH by its symbol and coingecko_id, not by `wraps`, which names a
+#   chain's own wrapped native coin (D184 (3)'s wrap links).
 
 coins:
   - {symbol: BTC, name: Bitcoin, coingecko_id: bitcoin, kraken_pair: XXBTZEUR}
@@ -105,3 +111,4 @@ tokens:
   - {chain: solana, contract: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, symbol: USDC, decimals: 6, coingecko_id: usd-coin, name: USD Coin}
   - {chain: solana, contract: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, symbol: USDT, decimals: 6, coingecko_id: tether, name: Tether USD}
   - {chain: solana, contract: So11111111111111111111111111111111111111112, symbol: WSOL, decimals: 9, wraps: SOL, name: Wrapped SOL}
+  - {chain: solana, contract: 7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs, symbol: ETH, decimals: 8, coingecko_id: ethereum, name: Ether (Portal)}

@@ -11,7 +11,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from .chain import Chain, ContractId, TokenSymbol
+from .chain import Chain, ContractId, TokenSymbol, WalletWaiting
 from .common import Money, Schema
 from .household import (
     AssetKind,
@@ -109,6 +109,8 @@ class AssetsOverview(Schema):
     by_kind: dict[str, Money] = Field(default_factory=dict)  # "etf", "crypto", "cash", "stock"
     stale_positions: int = Field(default=0, ge=0)
     unvalued_positions: int = Field(default=0, ge=0)
+    # Wallets whose read movements wait for a person: not in `accounts` yet (16 Nov 2026).
+    waiting: list[WalletWaiting] = Field(default_factory=list)
 
 
 class AssetRow(Schema):

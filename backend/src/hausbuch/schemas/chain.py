@@ -537,3 +537,28 @@ class AccountHoldings(Schema):
 class HoldingsStatement(Schema):
     on: date
     accounts: list[AccountHoldings] = Field(default_factory=list)
+
+
+class WaitingCoin(Schema):
+    """One coin's units a wallet's proposed movements hold (signed: Σ of the live proposed
+    legs, fees included; positive = not yet counted, negative = not yet taken off)."""
+
+    asset_id: UUID
+    symbol: str | None = None
+    name: str
+    units: Quantity
+
+
+class WalletWaiting(Schema):
+    """A wallet whose movements were read but wait for a person (a first sync proposes the
+    whole history, D186 (1)): the Krypto tab, the Anlagen overview and the net worth count
+    confirmed movements only, so these coins are missing there until confirmed (principle 7:
+    the gap as a plain to-do with its link; 16 Nov 2026). Never an address or a hash (D179)."""
+
+    account_id: UUID
+    label: str
+    groups: int = Field(ge=1)  # open transactions with at least one counted leg
+    coins: list[WaitingCoin] = Field(default_factory=list)  # zero sums left out
+    text: str
+    action: str
+    href: str

@@ -4534,13 +4534,13 @@ export interface components {
          * AppSecretGroup
          * @enum {string}
          */
-        AppSecretGroup: "ai" | "chains" | "bank" | "mail";
+        AppSecretGroup: "ai" | "chains" | "bank" | "mail" | "elster";
         /**
          * AppSecretName
-         * @description app_secret.name (migration 0045's CHECK), in the card's order.
+         * @description app_secret.name (migration 0045's CHECK, widened by 0047), in the card's order.
          * @enum {string}
          */
-        AppSecretName: "anthropic_api_key" | "etherscan_key" | "solana_rpc_url" | "bsc_rpc_url" | "helius_key" | "coingecko_key" | "fints_product_id" | "tem_secret_key" | "tem_project_id" | "mail_from" | "inbox_imap_user" | "inbox_imap_password" | "inbox_address" | "inbox_label";
+        AppSecretName: "anthropic_api_key" | "etherscan_key" | "solana_rpc_url" | "bsc_rpc_url" | "helius_key" | "coingecko_key" | "fints_product_id" | "tem_secret_key" | "tem_project_id" | "mail_from" | "inbox_imap_user" | "inbox_imap_password" | "inbox_address" | "inbox_label" | "elster_hersteller_id";
         /**
          * AppSecretPut
          * @description PUT /app-secrets/{name}: the value, stored encrypted and never logged or echoed (a
@@ -4807,6 +4807,8 @@ export interface components {
              * @default 0
              */
             unvalued_positions: number;
+            /** Waiting */
+            waiting?: components["schemas"]["WalletWaiting"][];
         };
         /** AssociationFact */
         AssociationFact: {
@@ -5988,6 +5990,8 @@ export interface components {
             unfilled_movements: number;
             /** Unfilled Account Ids */
             unfilled_account_ids?: string[];
+            /** Waiting */
+            waiting?: components["schemas"]["WalletWaiting"][];
         };
         /**
          * CryptoLot
@@ -9159,7 +9163,7 @@ export interface components {
          * NetWorthTodoCode
          * @enum {string}
          */
-        NetWorthTodoCode: "net_worth.balance_unreconciled" | "net_worth.balance_outdated" | "net_worth.price_missing" | "net_worth.price_stale" | "net_worth.position_not_reconciled" | "net_worth.position_not_booked" | "net_worth.ownership_missing" | "net_worth.property_shares_missing" | "net_worth.loan_not_valued";
+        NetWorthTodoCode: "net_worth.balance_unreconciled" | "net_worth.balance_outdated" | "net_worth.price_missing" | "net_worth.price_stale" | "net_worth.position_not_reconciled" | "net_worth.position_not_booked" | "net_worth.ownership_missing" | "net_worth.property_shares_missing" | "net_worth.loan_not_valued" | "net_worth.wallet_waiting";
         /**
          * NextTranche
          * @description „Nächste Tranche steuerfrei“: the earliest future `tax_free_from` over every open lot,
@@ -13242,6 +13246,24 @@ export interface components {
             /** Count */
             count: number;
         };
+        /**
+         * WaitingCoin
+         * @description One coin's units a wallet's proposed movements hold (signed: Σ of the live proposed
+         *     legs, fees included; positive = not yet counted, negative = not yet taken off).
+         */
+        WaitingCoin: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol?: string | null;
+            /** Name */
+            name: string;
+            /** Units */
+            units: string;
+        };
         /** WalletAddress */
         WalletAddress: {
             /**
@@ -13641,6 +13663,32 @@ export interface components {
              * @default 0
              */
             movements_new: number;
+        };
+        /**
+         * WalletWaiting
+         * @description A wallet whose movements were read but wait for a person (a first sync proposes the
+         *     whole history, D186 (1)): the Krypto tab, the Anlagen overview and the net worth count
+         *     confirmed movements only, so these coins are missing there until confirmed (principle 7:
+         *     the gap as a plain to-do with its link; 16 Nov 2026). Never an address or a hash (D179).
+         */
+        WalletWaiting: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Label */
+            label: string;
+            /** Groups */
+            groups: number;
+            /** Coins */
+            coins?: components["schemas"]["WaitingCoin"][];
+            /** Text */
+            text: string;
+            /** Action */
+            action: string;
+            /** Href */
+            href: string;
         };
         /**
          * WarningCode
