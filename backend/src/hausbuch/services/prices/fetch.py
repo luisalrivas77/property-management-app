@@ -33,6 +33,21 @@ in the catalogue of the issuer its name names, each catalogue asked at most once
 a reference found there prices the fund like a registry one, and the rows it stores keep it
 (`raw.issuer`, `raw.fund_ref`), so the next runs need no catalogue for it. A fund no
 catalogue names is priced from the depot's reports as before, with no card.
+
+Follow-ups of the same day's review:
+
+- (A) A stored reference that stops working (HTTP 404 or 410, or a file stating another
+  ISIN: the issuer moved or renumbered the fund) asks that issuer's catalogue once in the
+  same run, and a different reference listed there for the ISIN is read at once; its rows
+  keep the new reference. A timeout or a 5xx is an outage, not a moved fund: no catalogue.
+- (B) Every fund that stores nothing is named in the run's event with the issuer source
+  asked (`PricesFetched.fund_sources`), so D174's card („Kurs kam nicht von …“) also reaches
+  a fund whose catalogue reference never stored a row (services.prices.overview).
+- (C) A NAV in a currency other than EUR and FX_CURRENCIES is converted by the ECB's rate of
+  that currency, read from the same file and stored as its cash asset's row (the 90-day
+  file for a currency with no recent stored rate); a currency the ECB does not publish
+  stores nothing and is named in the event, which raises a card naming the fund and the
+  currency. A price is never stored in another currency than the euro.
 """
 
 from collections import Counter, defaultdict
@@ -51,7 +66,7 @@ from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.rules import valuation
-from hausbuch.schemas.events import EventType, PricesFetched, PriceSourceFailed
+from hausbuch.schemas.events import EventType, FundSourceNote, PricesFetched, PriceSourceFailed
 from hausbuch.schemas.household import AssetKind, MovementStatus
 from hausbuch.schemas.prices import FxRate, PriceSourceKind
 from hausbuch.services.context import Actor, CommandContext, new_command
@@ -118,6 +133,8 @@ class Collected:
     assets: int = 0
     failed: list[UUID] = field(default_factory=list)
     discovered: dict[UUID, NavSource] = field(default_factory=dict)  # found this run
+    unconverted: dict[UUID, str] = field(default_factory=dict)  # NAV currency the ECB lacks
+    notes: list[FundSourceNote] = field(default_factory=list)  # the funds that stored nothing
 
 
 @dataclass
@@ -141,9 +158,11 @@ class Sources:
         return exc
 
     def ecb(self, backfill: bool) -> dict[str, list[FxRate]] | SourceError:
+        """The file's rates of every currency it lists (follow-up C): `_ecb` stores those of
+        FX_CURRENCIES, `Fx.cover` those of a fund's NAV currency."""
         if backfill not in self._ecb:
             try:
-                self._ecb[backfill] = ecb_fx.fetch(self.fetch, backfill=backfill)
+                self._ecb[backfill] = ecb_fx.fetch(self.fetch, backfill=backfill, currencies=None)
             except SourceError as exc:
                 self._ecb[backfill] = self._failed(S.ECB_FX.value, exc)
         return self._ecb[backfill]
@@ -179,24 +198,33 @@ class Sources:
         self.adapters[issuer] = adapter
         return adapter
 
+    def listed(self, issuer: str, isin: str) -> NavSource | None:
+        """The reference the issuer's catalogue lists for the ISIN; each catalogue is asked
+        once a run, a failed one counted once. None without a catalogue or a listing."""
+        if issuer not in ADAPTERS or ADAPTERS[issuer].catalogue_url is None:
+            return None
+        if issuer not in self._catalogues:
+            try:
+                self._catalogues[issuer] = self._adapter(issuer).catalogue()
+            except SourceError as exc:
+                self._catalogues[issuer] = self._failed(
+                    f"{S.ISSUER_NAV.value}:{issuer}:catalogue", exc
+                )
+        found = self._catalogues[issuer]
+        if isinstance(found, SourceError) or isin not in found:
+            return None
+        return NavSource(issuer=issuer, fund_ref=found[isin], isin=isin)
+
     def discover(self, isin: str, name: str) -> NavSource | None:
         """The fund's reference from the catalogue of the issuer its name names (an iShares
-        fund's from iShares'); each catalogue is asked once a run, a failed one counted once.
-        A fund whose name names no issuer with a catalogue asks nothing."""
+        fund's from iShares'). A fund whose name names no issuer with a catalogue asks
+        nothing."""
         for issuer, cls in ADAPTERS.items():
             if cls.catalogue_url is None or not cls.names_brand(name):
                 continue
-            adapter = self._adapter(issuer)
-            if issuer not in self._catalogues:
-                try:
-                    self._catalogues[issuer] = adapter.catalogue()
-                except SourceError as exc:
-                    self._catalogues[issuer] = self._failed(
-                        f"{S.ISSUER_NAV.value}:{issuer}:catalogue", exc
-                    )
-            listed = self._catalogues[issuer]
-            if not isinstance(listed, SourceError) and isin in listed:
-                return NavSource(issuer=issuer, fund_ref=listed[isin], isin=isin)
+            found = self.listed(issuer, isin)
+            if found is not None:
+                return found
         return None
 
     def nav(self, fund: FundSource) -> NavFile | SourceError:
@@ -356,28 +384,94 @@ def _days(start: date, end: date) -> list[date]:
     return [end - timedelta(days=n) for n in range((end - start).days + 1)]
 
 
-def _ecb(plan: Plan, sources: Sources, today: date, out: Collected) -> dict[str, list[FxRate]]:
+def _rate_draft(code: str, rate: FxRate) -> Draft:
+    return Draft(
+        asset_id=None,
+        currency=code,
+        on=rate.on,
+        price_eur=(Decimal(1) / rate.per_eur).quantize(PLACES, rounding=ROUND_HALF_UP),
+        source=S.ECB_FX,
+        raw={"per_eur": str(rate.per_eur)},
+    )
+
+
+def _gap(stored: list[FxRate], today: date) -> bool:
+    """True when the daily file cannot close the gap since the last stored rate."""
+    last = max((r.on for r in stored), default=None)
+    return last is None or (today - last).days > ecb_fx.BACKFILL_AFTER_DAYS
+
+
+@dataclass
+class Fx:
+    """The run's euro rates per currency: the workspace's stored ones plus the day's new
+    ones. A NAV currency outside FX_CURRENCIES is added on its first need (follow-up C), from
+    the run's ECB answer, and the 90-day file when it has no recent stored rate."""
+
+    sources: Sources
+    today: date
+    out: Collected
+    stored: dict[str, list[FxRate]]  # the workspace's stored rates, as planned
+    backfill: bool  # the run's first ECB call read the 90-day file
+    base: dict[str, list[FxRate]] | SourceError
+    merged: dict[str, list[FxRate]] = field(default_factory=dict)
+    covered: dict[str, bool | None] = field(default_factory=dict)
+
+    def add(self, code: str, answers: list[dict[str, list[FxRate]]]) -> None:
+        """Draft and merge the code's rates not stored yet, each day once."""
+        listed = self.merged.setdefault(code, [])
+        known = {r.on for r in listed}
+        for answer in answers:
+            for rate in answer.get(code, []):
+                if rate.on in known or rate.on > self.today:
+                    continue
+                known.add(rate.on)
+                self.out.drafts.append(_rate_draft(code, rate))
+                listed.append(rate)
+        listed.sort(key=lambda r: r.on)
+
+    def cover(self, code: str) -> bool | None:
+        """Whether a NAV in `code` can be converted: True once its rates are merged; False
+        when the ECB answered and lists no rate for it; None when the ECB could not be read
+        (the stored rates then convert, as for the dollar, and the next run tries again)."""
+        if code == "EUR" or code in ecb_fx.FX_CURRENCIES:
+            return True
+        if code not in self.covered:
+            answers = [self.base]
+            if not self.backfill and _gap(self.stored.get(code, []), self.today):
+                answers.append(self.sources.ecb(True))  # a first need reads 90 days
+            read = [a for a in answers if not isinstance(a, SourceError)]
+            if not read:
+                self.covered[code] = None
+            elif not any(a.get(code) for a in read):
+                self.covered[code] = False
+            else:
+                self.add(code, read)
+                self.covered[code] = True
+        return self.covered[code]
+
+
+def _ecb(
+    plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxRate]], out: Collected
+) -> Fx:
+    """The run's first ECB call, before any other source: FX_CURRENCIES' new rates, each
+    currency against its own stored days (`rates`, the workspace's stored ones)."""
     last = max(plan.ecb_days, default=None)
     backfill = last is None or (today - last).days > ecb_fx.BACKFILL_AFTER_DAYS
     answer = sources.ecb(backfill)
     out.sources.add(S.ECB_FX)
-    if isinstance(answer, SourceError):
-        return {}
-    for code, rates in answer.items():
-        for rate in rates:
-            if rate.on in plan.ecb_days or rate.on > today:
-                continue
-            out.drafts.append(
-                Draft(
-                    asset_id=None,
-                    currency=code,
-                    on=rate.on,
-                    price_eur=(Decimal(1) / rate.per_eur).quantize(PLACES, rounding=ROUND_HALF_UP),
-                    source=S.ECB_FX,
-                    raw={"per_eur": str(rate.per_eur)},
-                )
-            )
-    return answer
+    fx = Fx(
+        sources=sources,
+        today=today,
+        out=out,
+        stored=rates,
+        backfill=backfill,
+        base=answer,
+        merged={code: sorted(listed, key=lambda r: r.on) for code, listed in rates.items()},
+    )
+    if not isinstance(answer, SourceError):
+        for code in ecb_fx.FX_CURRENCIES:
+            fx.add(code, [answer])
+    return fx
 
 
 def _coin(held: Held, plan: Plan, sources: Sources, today: date, out: Collected) -> None:
@@ -419,23 +513,57 @@ def _coin(held: Held, plan: Plan, sources: Sources, today: date, out: Collected)
         out.failed.append(held.id)
 
 
+def _moved(error: SourceError) -> bool:
+    """A file gone (404, 410) or naming another fund: the issuer moved or renumbered the
+    fund (follow-up A). A timeout, a 5xx or an unreadable file is not."""
+    if error.kind == "isin_mismatch":
+        return True
+    return error.kind == "HTTPError" and error.status in (404, 410)
+
+
+def _read(
+    held: Held, fund: FundSource, sources: Sources, out: Collected
+) -> tuple[NavFile | SourceError, FundSource]:
+    """The fund's file. A stored catalogue reference that stopped working is looked up again
+    in its issuer's catalogue, and a different reference listed there is read at once."""
+    answer = sources.nav(fund)
+    if (
+        isinstance(answer, SourceError)
+        and isinstance(fund, NavSource)
+        and fund is held.fund  # the stored reference, not one the catalogue gave this run
+        and _moved(answer)
+    ):
+        found = sources.listed(fund.issuer, fund.isin)
+        if found is not None and found.fund_ref != fund.fund_ref:
+            out.discovered[held.id] = found
+            return sources.nav(found), found
+    return answer, fund
+
+
+def _note(held: Held, fund: FundSource, currency: str | None = None) -> FundSourceNote:
+    return FundSourceNote(
+        asset_id=held.id, issuer=fund.issuer, fund_ref=fund.fund_ref or None, currency=currency
+    )
+
+
 def _etf(
-    held: Held,
-    fund: FundSource,
-    plan: Plan,
-    sources: Sources,
-    rates: dict[str, list[FxRate]],
-    out: Collected,
+    held: Held, fund: FundSource, plan: Plan, sources: Sources, fx: Fx, out: Collected
 ) -> None:
     out.assets += 1
     out.sources.add(S.ISSUER_NAV)
-    answer = sources.nav(fund)
+    answer, fund = _read(held, fund, sources, out)
     if isinstance(answer, SourceError):
         out.failed.append(held.id)
+        out.notes.append(_note(held, fund))
+        return
+    if fx.cover(answer.currency) is False:
+        # Never a price in another currency: the card names the fund and the currency.
+        out.unconverted[held.id] = answer.currency
+        out.notes.append(_note(held, fund, answer.currency))
         return
     stored = plan.stored.get((held.id, S.ISSUER_NAV.value), set())
     rows = valuation.nav_rows(
-        answer.points, held.first_on, rates.get(answer.currency, []), stored_days=stored
+        answer.points, held.first_on, fx.merged.get(answer.currency, []), stored_days=stored
     )
     for row in sorted(rows, key=lambda r: r.on, reverse=True)[:MAX_ROWS]:
         raw: dict[str, Any] = {"nav": str(row.nav), "currency": row.currency}
@@ -451,13 +579,7 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
     out = Collected()
     if not plan.held:
         return out
-    fresh = _ecb(plan, sources, today, out)
-    merged = {code: list(listed) for code, listed in rates.items()}
-    for code, listed in fresh.items():
-        known = {r.on for r in merged.get(code, [])}
-        merged.setdefault(code, []).extend(r for r in listed if r.on not in known)
-    for code in merged:
-        merged[code].sort(key=lambda r: r.on)
+    fx = _ecb(plan, sources, today, rates, out)
     for held in plan.held:
         if held.kind is AssetKind.CRYPTO and held.ids.any:
             _coin(held, plan, sources, today, out)
@@ -470,7 +592,7 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
             if fund is not None:
                 out.discovered[held.id] = fund
         if fund is not None:
-            _etf(held, fund, plan, sources, merged, out)
+            _etf(held, fund, plan, sources, fx, out)
     return out
 
 
@@ -507,6 +629,54 @@ def failure_runs(conn: Connection, asset_id: UUID, since: datetime) -> list[tupl
         (r.recorded_at.astimezone(UTC).date(), wanted in (r.payload.get("failed_asset_ids") or []))
         for r in rows
     ]
+
+
+@dataclass(frozen=True)
+class RunNote:
+    """What the recent runs said of a fund that stored nothing (FundSourceNote, read back):
+    the issuer source last asked, and, when the latest run could not convert its NAV, the
+    currency and the first day of the runs in a row up to the latest that said so."""
+
+    issuer: str
+    fund_ref: str | None
+    currency: str | None = None
+    unconverted_since: date | None = None
+
+
+def fund_notes(conn: Connection, since: datetime) -> dict[UUID, RunNote]:
+    """Per fund the notes of the prices_fetched runs since `since` (follow-ups B and C)."""
+    e = event_table.c
+    rows = conn.execute(
+        select(e.recorded_at, e.payload)
+        .where(e.type == EventType.WORKSPACE_PRICES_FETCHED.value, e.recorded_at >= since)
+        .order_by(e.recorded_at.desc())
+    ).all()
+    found: dict[UUID, RunNote] = {}
+    open_streak: set[UUID] = set()
+    for i, row in enumerate(rows):
+        day = row.recorded_at.astimezone(UTC).date()
+        notes = {UUID(n["asset_id"]): n for n in row.payload.get("fund_sources") or []}
+        for asset_id, n in notes.items():
+            if asset_id in found:
+                continue
+            currency = n.get("currency") if i == 0 else None
+            found[asset_id] = RunNote(
+                issuer=n["issuer"],
+                fund_ref=n.get("fund_ref"),
+                currency=currency,
+                unconverted_since=day if currency else None,
+            )
+            if currency:
+                open_streak.add(asset_id)
+        if i == 0:
+            continue
+        for asset_id in list(open_streak):
+            note = notes.get(asset_id)
+            if note is not None and note.get("currency") == found[asset_id].currency:
+                found[asset_id] = replace(found[asset_id], unconverted_since=day)
+            else:
+                open_streak.discard(asset_id)
+    return found
 
 
 def _raised_since(conn: Connection, asset_id: UUID, since: datetime) -> bool:
@@ -561,6 +731,7 @@ def write(ctx: CommandContext, plan: Plan, out: Collected) -> int:
             rows_new=new,
             assets_failed=len(out.failed),
             failed_asset_ids=out.failed,
+            fund_sources=out.notes,
         ),
     )
     since = ctx.now - timedelta(days=STREAK_WINDOW_DAYS)
@@ -608,10 +779,13 @@ __all__ = [
     "MAX_ROWS",
     "Collected",
     "Held",
+    "Fx",
     "Plan",
+    "RunNote",
     "Sources",
     "collect",
     "failure_runs",
+    "fund_notes",
     "held_assets",
     "held_subquery",
     "plan",

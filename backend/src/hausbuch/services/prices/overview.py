@@ -16,7 +16,10 @@
   „Kursquelle wählen“), `record_price` (POST: a typed `user` price, „Kurs eintragen“).
 - `price_inbox_items(conn, now)`: the Zu prüfen cards, computed on read like the depot's:
   `price_source_failed` (D174 (4): a held ETF whose issuer's file failed on seven daily runs
-  in a row, until a run succeeds or a person types a price) and `price_no_source` (D167 (1):
+  in a row, until a run succeeds or a person types a price; since 16 Nov 2026 also a fund
+  whose source is a catalogue reference no row stored yet, named by the runs' events, and,
+  at once, a fund whose NAV is in a currency the ECB publishes no rate for, naming the
+  currency) and `price_no_source` (D167 (1):
   a held coin with neither a CoinGecko id nor a Kraken pair, „Kursquelle wählen“; a held fund
   or stock with no adapter and no price at all, which the next depot report or a typed price
   values).
@@ -83,7 +86,7 @@ from hausbuch.services.events import append_event, diff_changes
 from hausbuch.services.lookup import require_row
 
 from .assets import FundSource, NavSource, fund_source, nav_source, price_ids, stored_nav_sources
-from .fetch import STREAK_WINDOW_DAYS, failure_runs, held_subquery
+from .fetch import STREAK_WINDOW_DAYS, failure_runs, fund_notes, held_subquery
 from .issuer_nav import issuer_name
 
 S = PriceSourceKind
@@ -535,6 +538,7 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
     # gets no card of its own; the holdings card names the fix, which also prices the fund.
     in_reports = latest_report_agreement(conn)
     stored = stored_nav_sources(conn, [r.id for r in held])
+    notes = fund_notes(conn, since)  # the sources the recent runs asked (follow-ups B, C)
     for row in held:
         kind = AssetKind(row.kind)
         if kind is AssetKind.CRYPTO:
@@ -562,7 +566,49 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
         if kind not in (AssetKind.ETF, AssetKind.STOCK):
             continue
         fund = _fund(kind, row.isin, stored.get(row.id))
-        if fund is None:
+        note = notes.get(row.id) if kind is AssetKind.ETF else None
+        issuer = issuer_name(fund.issuer) if fund is not None else None
+        if fund is None and note is not None:
+            issuer = issuer_name(note.issuer)  # a catalogue reference no row stored yet (B)
+        days = 0
+        if kind is AssetKind.ETF:
+            days = valuation.failed_days(failure_runs(conn, row.id, since))
+        if note is not None and note.currency and note.unconverted_since is not None:
+            # Follow-up C: the file was read, but no ECB rate converts its currency.
+            start = datetime.combine(note.unconverted_since, datetime.min.time(), UTC)
+            if _priced_by_hand_since(conn, row.id, start):
+                continue
+            priced = _any_price(conn, row.id)
+            items.append(
+                InboxItem(
+                    kind=InboxItemKind.PRICE_SOURCE_FAILED,
+                    created_at=last_run or now,
+                    reasoning=(
+                        f"{issuer} veröffentlicht den Kurs von {row.name} in {note.currency}. "
+                        "Für diese Währung gibt die Europäische Zentralbank keinen "
+                        "Referenzkurs heraus, daher kann Hausbuch den Kurs nicht in Euro "
+                        "umrechnen; "
+                        + (
+                            "der Wert in der Vermögensübersicht beruht auf einem älteren Kurs."
+                            if priced
+                            else "in der Vermögensübersicht fehlt sein Wert."
+                        )
+                    ),
+                    question=(
+                        "Bitte unter Anlagen › Übersicht „Kurs eintragen“ den aktuellen Kurs "
+                        "in Euro eintragen, zum Beispiel aus der Depotansicht der Bank. Der "
+                        "nächste Depotbericht oder eine Wertpapierabrechnung bewertet den "
+                        "Fonds ebenfalls neu."
+                    ),
+                    asset_id=row.id,
+                )
+            )
+            continue
+        if fund is None and (note is not None or days > 0):
+            # Follow-up B: the fetch knew an issuer source (only a fund it asked an issuer
+            # for is ever a failed asset), so the card is D174's, never „keinen Kurs“.
+            issuer = issuer or "der Fondsgesellschaft"
+        elif fund is None:
             if _any_price(conn, row.id):
                 continue  # „Kurs aus dem letzten Bericht“, no card (D174 (4))
             if in_reports.get(row.id) is False:
@@ -594,20 +640,23 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 )
             )
             continue
-        days = valuation.failed_days(failure_runs(conn, row.id, since))
         if days < valuation.SOURCE_FAILED_AFTER_DAYS:
             continue
         first = now.astimezone(UTC).date() - timedelta(days=days - 1)
         if _priced_by_hand_since(conn, row.id, datetime.combine(first, datetime.min.time(), UTC)):
             continue
+        value = (
+            "der Wert in der Vermögensübersicht beruht auf einem älteren Kurs."
+            if _any_price(conn, row.id)
+            else "in der Vermögensübersicht fehlt sein Wert."
+        )
         items.append(
             InboxItem(
                 kind=InboxItemKind.PRICE_SOURCE_FAILED,
                 created_at=last_run or now,
                 reasoning=(
                     f"Der Kurs von {row.name} kam seit {days} Tagen nicht von "
-                    f"{issuer_name(fund.issuer)} (seit dem {_german_day(first)}); der Wert in "
-                    "der Vermögensübersicht beruht auf einem älteren Kurs."
+                    f"{issuer} (seit dem {_german_day(first)}); {value}"
                 ),
                 question=(
                     "Hausbuch versucht es jeden Morgen erneut. Soll ein aktueller Kurs von Hand "

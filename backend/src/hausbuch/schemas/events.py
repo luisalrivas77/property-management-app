@@ -1176,16 +1176,31 @@ class PriceSourceFailed(Schema):
     last_price_on: date | None = None
 
 
+class FundSourceNote(Schema):
+    """A fund a daily run asked its issuer for and stored no row for (D174 amended 16 Nov
+    2026, follow-ups B and C): the issuer and reference asked, so the card names the source
+    of a fund whose reference came from the issuer's catalogue and has no stored row yet; and
+    `currency` when the file was read but the ECB publishes no rate for the NAV's currency.
+    Never a price or an amount."""
+
+    asset_id: UUID
+    issuer: str = Field(min_length=1, max_length=40)
+    fund_ref: str | None = Field(default=None, min_length=1, max_length=200)
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+
+
 class PricesFetched(Schema):
     """workspace.prices_fetched: one per daily run (§11). Step 5b adds the failed assets' ids
     (never a price or an amount): D174's card counts an asset's failed days from these
-    events, on read, so no table holds a fetch's state."""
+    events, on read, so no table holds a fetch's state. `fund_sources` (16 Nov 2026) names,
+    per fund that stored nothing, the issuer source asked (FundSourceNote)."""
 
     sources: list[PriceSourceKind] = Field(min_length=1)
     assets: int = Field(ge=0)
     rows_new: int = Field(ge=0)
     assets_failed: int = Field(ge=0)
     failed_asset_ids: list[UUID] = Field(default_factory=list)
+    fund_sources: list[FundSourceNote] = Field(default_factory=list)
 
 
 class ValuationSnapshotWritten(Schema):
