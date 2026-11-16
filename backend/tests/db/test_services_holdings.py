@@ -21,7 +21,7 @@ from hausbuch.db.tables import wallet_sync as sync_table
 from hausbuch.rules.lots import tax_free_from
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import AccountKind
-from hausbuch.services import holdings
+from hausbuch.services import holdings, holdings_export
 
 pytestmark = pytest.mark.db
 
@@ -347,3 +347,123 @@ def test_an_unlinked_in_leg_is_a_lot_of_unknown_cost_without_a_price_need(
     [lot] = coin.lots
     assert coin.asset_id == eth and lot.cost_eur is None and lot.price_needs == []
     assert lot.source.value == "unknown"
+
+
+# --- the year-end statement as a snapshot (D190) -------------------------------------------
+
+KEY = b"k" * 32
+
+
+def test_the_year_end_statement_is_a_snapshot_per_account(run, read, fresh_workspaces, blob_store):
+    from sqlalchemy import select, text
+    from sqlalchemy.exc import ProgrammingError
+
+    from hausbuch.db.tables import event as event_table
+    from hausbuch.db.tables import holdings_export as export_table
+    from hausbuch.schemas.holdings import HoldingsExportCreate
+    from hausbuch.services.errors import NotFoundError
+    from hausbuch.services.reminders import facts
+
+    ws, other = fresh_workspaces
+    ids = run(ws, _moved_lot, now=NOW)
+    body = HoldingsExportCreate(year=2026)
+
+    def missing():
+        return {y.year: y.accounts_missing for y in read(ws, facts, date(2027, 1, 5)).crypto_years}
+
+    # 2025: the exchange held the coin bought that year; 2026: both accounts had movements.
+    assert missing() == {2025: 1, 2026: 2}
+
+    written = run(ws, holdings_export.write_exports, blob_store, body, key=KEY, now=NOW)
+    assert {e.account_id for e in written} == {ids["exchange"], ids["wallet"]}
+    assert all(e.as_of == date(2026, 12, 31) for e in written)
+    [wallet_export] = [e for e in written if e.account_id == ids["wallet"]]
+
+    # The files are stored and read back verified; the statement names its movements.
+    pdf, media, name = read(ws, holdings_export.read_file, blob_store, wallet_export.id, "pdf")
+    assert pdf.startswith(b"%PDF") and media == "application/pdf"
+    assert name == "bestandsnachweis-2026-12-31-Wallet.pdf"
+    assert hashlib.sha256(pdf).hexdigest() == wallet_export.pdf_sha256
+    csv_bytes, _, _ = read(ws, holdings_export.read_file, blob_store, wallet_export.id, "csv")
+    lines = csv_bytes.decode("utf-8-sig").splitlines()
+    assert lines[0].startswith("Zeile;Coin;Adresse;Einheiten")
+    # The moved lot keeps its purchase day and cost; the reward's cost stays open, never 0 €.
+    assert "Posten;SOL;;2;;;;2025-03-01;201,00;2026-03-02;" in lines
+    assert "Posten;SOL;;0,5;;;;2026-06-10;;2027-06-11;Kurs fehlt" in lines
+    assert any(line.startswith("Adresse;SOL;So1x…xxxx;2,5;") for line in lines)
+    assert b"So1xxxx" not in csv_bytes  # the stored address never leaves the database
+
+    def stored(conn):
+        x = export_table.c
+        row = conn.execute(select(x.statement, x.created_by).where(x.id == wallet_export.id)).one()
+        events = conn.execute(
+            select(event_table.c.entity_id, event_table.c.payload).where(
+                event_table.c.type == "account.holdings_exported"
+            )
+        ).all()
+        return row, events
+
+    row, events = read(ws, stored)
+    assert row.statement["on"] == "2026-12-31"
+    assert str(ids["buy"]) not in row.statement["account"]["movement_ids"]  # the exchange's
+    assert str(ids["reward"]) in row.statement["account"]["movement_ids"]
+    assert {e.entity_id for e in events} == {ids["exchange"], ids["wallet"]}
+    assert {e.payload["holdings_export_id"] for e in events} == {str(e.id) for e in written}
+
+    # Append-only: the app role can neither change nor delete a row.
+    for statement in (
+        "UPDATE holdings_export SET as_of = '2026-12-30'",
+        "DELETE FROM holdings_export",
+    ):
+        with pytest.raises(ProgrammingError):
+            run(ws, lambda ctx, sql=statement: ctx.conn.execute(text(sql)), now=NOW)
+
+    # The reminder closes; a second export is new rows, the first ones unchanged.
+    assert missing() == {2025: 1, 2026: 0}
+    again = run(ws, holdings_export.write_exports, blob_store, body, key=KEY, now=NOW)
+    listed = read(ws, holdings_export.list_exports, key=KEY, now=NOW, year=2026)
+    assert {e.id for e in listed} == {e.id for e in written + again}
+    assert {e.pdf_sha256 for e in again} != {e.pdf_sha256 for e in written}  # its own id
+
+    # Workspace isolation.
+    assert read(other, holdings_export.list_exports, key=KEY, now=NOW) == []
+    with pytest.raises(NotFoundError):
+        read(other, holdings_export.read_file, blob_store, wallet_export.id, "pdf")
+    assert read(other, facts, date(2027, 1, 5)).crypto_years == []
+
+
+def test_the_statement_waits_for_the_year_end_and_for_something_held(
+    run, fresh_workspaces, blob_store
+):
+    from hausbuch.rules.errors import (
+        HOLDINGS_EXPORT_NOTHING_HELD,
+        HOLDINGS_EXPORT_YEAR_OPEN,
+        RuleError,
+    )
+    from hausbuch.schemas.holdings import HoldingsExportCreate
+
+    ws, other = fresh_workspaces
+    run(ws, _moved_lot, now=NOW)
+    body = HoldingsExportCreate(year=2026)
+    # 31 Dec 2026, 23:30 in Berlin: the day is not over yet.
+    with pytest.raises(RuleError) as refused:
+        late = datetime(2026, 12, 31, 22, 30, tzinfo=UTC)
+        run(ws, holdings_export.write_exports, blob_store, body, key=KEY, now=late)
+    assert refused.value.code == HOLDINGS_EXPORT_YEAR_OPEN
+    # 1 Jan 2027, 00:30 in Berlin: it is.
+    early = datetime(2026, 12, 31, 23, 30, tzinfo=UTC)
+    assert len(run(ws, holdings_export.write_exports, blob_store, body, key=KEY, now=early)) == 2
+    with pytest.raises(RuleError) as refused:
+        run(other, holdings_export.write_exports, blob_store, body, key=KEY, now=NOW)
+    assert refused.value.code == HOLDINGS_EXPORT_NOTHING_HELD
+    # Nothing was held on 31 Dec 2024 either: the purchase is of 2025.
+    with pytest.raises(RuleError) as refused:
+        run(
+            ws,
+            holdings_export.write_exports,
+            blob_store,
+            HoldingsExportCreate(year=2024),
+            key=KEY,
+            now=NOW,
+        )
+    assert refused.value.code == HOLDINGS_EXPORT_NOTHING_HELD

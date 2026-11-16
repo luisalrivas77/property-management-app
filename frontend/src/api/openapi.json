@@ -6830,6 +6830,170 @@
         }
       }
     },
+    "/api/exports/holdings": {
+      "post": {
+        "summary": "Holdings Export Create",
+        "description": "„Bestandsnachweis 31.12.<Jahr> erstellen“: one immutable row per wallet and exchange\naccount held on 31 Dec of `year`, its PDF and CSV stored, with signed download links. A\nsecond call writes new rows. 422 holdings_export.year_open before 1 Jan of the next year,\nholdings_export.nothing_held when no such account had a confirmed movement by then.",
+        "operationId": "holdings_export_create_api_exports_holdings_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldingsExportCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HoldingsExport"
+                  },
+                  "title": "Response Holdings Export Create Api Exports Holdings Post"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Holdings Exports List",
+        "description": "The stored statements, newest first, each with download links valid a few minutes.",
+        "operationId": "holdings_exports_list_api_exports_holdings_get",
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 2100,
+                  "minimum": 2009
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HoldingsExport"
+                  },
+                  "title": "Response Holdings Exports List Api Exports Holdings Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/exports/holdings/{export_id}/file": {
+      "get": {
+        "summary": "Holdings Export File",
+        "description": "The PDF or CSV, SHA-256 verified, as an attachment. A wrong or expired signature answers\n404, like an export of another workspace.",
+        "operationId": "holdings_export_file_api_exports_holdings__export_id__file_get",
+        "parameters": [
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Export Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pdf",
+                "csv"
+              ],
+              "type": "string",
+              "title": "Format"
+            }
+          },
+          {
+            "name": "expires",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Expires"
+            }
+          },
+          {
+            "name": "signature",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "title": "Signature"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The statement's bytes",
+            "content": {
+              "application/pdf": {},
+              "text/csv": {}
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/wallets/{account_id}/sync": {
       "post": {
         "summary": "Wallet Sync Start",
@@ -16983,6 +17147,7 @@
           "account.holdings_reconciled",
           "account.holdings_mismatch",
           "account.holding_corrected",
+          "account.holdings_exported",
           "wallet.address_added",
           "wallet.address_updated",
           "wallet.address_revealed",
@@ -18410,6 +18575,96 @@
           "units"
         ],
         "title": "HoldingBalance"
+      },
+      "HoldingsExport": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "account_label": {
+            "type": "string",
+            "title": "Account Label"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "pdf_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Pdf Sha256"
+          },
+          "csv_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Csv Sha256"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "pdf_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdf Url"
+          },
+          "csv_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csv Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "account_label",
+          "as_of",
+          "pdf_sha256",
+          "csv_sha256",
+          "created_at"
+        ],
+        "title": "HoldingsExport",
+        "description": "A `holdings_export` row (immutable, D190) without its statement, with signed download\nURLs valid a few minutes (fetch the list right before downloading)."
+      },
+      "HoldingsExportCreate": {
+        "properties": {
+          "year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2009.0,
+            "title": "Year"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "year"
+        ],
+        "title": "HoldingsExportCreate",
+        "description": "POST /exports/holdings: the statement of 31 Dec of `year` for every wallet and exchange\naccount with a confirmed movement on or before it (D190)."
       },
       "HoldingsStatement": {
         "properties": {
@@ -25738,10 +25993,11 @@
           "tenancy.settlement_deadline",
           "tenancy.rent_missing",
           "bank.sync_stale",
-          "bank.statement_due"
+          "bank.statement_due",
+          "crypto.holdings_statement"
         ],
         "title": "ReminderKind",
-        "description": "The catalogue's twelve kinds (§6.2); the value is the reminder key."
+        "description": "The catalogue's thirteen kinds (§6.2); the value is the reminder key."
       },
       "ReminderScope": {
         "type": "string",

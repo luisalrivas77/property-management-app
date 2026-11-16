@@ -104,3 +104,17 @@ def test_the_cards_leave_out_what_has_no_number():
 def test_nothing_held_has_no_tranche():
     seen = H.summary(ON, [], [])
     assert seen.next_tranche is None and seen.total_eur == Decimal("0.00")
+
+
+def test_the_statement_reminder_shows_from_new_year_until_every_account_is_exported():
+    from hausbuch.rules.reminders import build_reminders
+    from hausbuch.schemas.reminders import ReminderCryptoYear, ReminderFacts, ReminderKind
+
+    facts = ReminderFacts(crypto_years=[ReminderCryptoYear(year=2026, accounts_missing=2)])
+    [r] = build_reminders(facts, date(2027, 1, 1))
+    assert r.kind is ReminderKind.HOLDINGS_STATEMENT
+    assert (r.due_on, r.visible_from) == (date(2027, 1, 31), date(2027, 1, 1))
+    assert r.label_args == {"year": 2026, "accounts": 2}
+    assert r.cleared_by == "auto"
+    done = ReminderFacts(crypto_years=[ReminderCryptoYear(year=2026, accounts_missing=0)])
+    assert build_reminders(done, date(2027, 1, 1)) == []

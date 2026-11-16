@@ -72,6 +72,8 @@ export function reminderLabel(reminder: Reminder): string {
       return `Bankabruf ${arg(reminder, "account")} lange nicht erfolgreich`;
     case "bank.statement_due":
       return `Kontoauszug fällig: ${arg(reminder, "account")}`;
+    case "crypto.holdings_statement":
+      return `Bestandsnachweis 31.12.${year} erstellen`;
     default:
       return "Termin";
   }
@@ -107,6 +109,9 @@ export function reminderLink(reminder: Reminder): { href: string; label: string 
     case "bank.statement_due":
       // D122 amended: the Kontoauszüge tab holds the account's statement upload.
       return { href: `/accounts/${id}?tab=kontoauszuege`, label: "Kontoauszug hochladen" };
+    case "crypto.holdings_statement":
+      // Phase 7 D190: the button sits on Anlagen › Krypto.
+      return { href: "/assets?tab=krypto", label: "Bestandsnachweis erstellen" };
     default:
       return null;
   }

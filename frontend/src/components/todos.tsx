@@ -1529,6 +1529,12 @@ export const REMINDER_GUIDE: Record<ReminderKind, ReminderGuide> = {
     text: (r) =>
       `Die Kontoauszüge in Hausbuch reichen bis ${formatDate(String(r.label_args?.covered_until ?? ""))}; der nächste fehlt. Ihn mit „Kontoauszug hochladen“ auf der Seite des Kontos hochladen; danach verschwindet der Termin von selbst.`,
   },
+  // Phase 7 D190: never an address or an amount, only the year.
+  "crypto.holdings_statement": {
+    todo: true,
+    text: (r) =>
+      `Unter Anlagen › Krypto „Bestandsnachweis 31.12.${String(r.label_args?.year ?? "")} erstellen“ klicken: Hausbuch hält für jede Wallet und jede Börse den Bestand zum Jahresende mit den offenen Posten als PDF und CSV fest. Danach verschwindet der Termin von selbst.`,
+  },
 };
 
 /** Was tun for a reminder; null for a kind the map does not know yet. */
