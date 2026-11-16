@@ -119,6 +119,7 @@ from hausbuch.rules.errors import (
     WALLET_SOURCE_UNAVAILABLE,
     WALLET_SYNC_DEFERRED,
     WALLET_SYNC_ERROR,
+    WALLET_TOKEN_UNREADABLE,
 )
 from hausbuch.rules.household.assets import registry as asset_registry
 from hausbuch.rules.review import CHAIN_UNSTORABLE, route_group
@@ -254,6 +255,9 @@ class _Read:
     # The source refused or failed the balance read after the history was read to its end:
     # the pages are written, nothing is reconciled, the next run reads the balance again.
     balance_error: str | None = None
+    # The tokens whose balance the source could not read (an EVM source's `unreadable`: a
+    # reverted `balanceOf`): left out of both sides, and the run never reads reconciled.
+    unreadable: frozenset[AssetKey] = frozenset()
 
 
 # --- Assets ----------------------------------------------------------------------------------
@@ -553,6 +557,7 @@ def _balances(source: ChainSource, start: _Start, out: _Read) -> list[AssetBalan
     addresses = list(start.own) if start.scope == "account" else [start.address]
     if not start.reads_tokens:
         return [b for a in addresses for b in source.balances(a)]
+    unreadable: set[AssetKey] = set()
     read: dict[str, set[AssetKey]] = {}
     for group in out.groups:
         for leg in group.legs:
@@ -564,6 +569,8 @@ def _balances(source: ChainSource, start: _Start, out: _Read) -> list[AssetBalan
         tokens = read.get(a, set()) | start.stored_tokens.get(a, frozenset())
         ordered = tuple(sorted(tokens, key=lambda k: k.contract or ""))
         balances.extend(source.balances(a, tokens=ordered))
+        unreadable |= set(getattr(source, "unreadable", ()) or ())
+    out.unreadable = frozenset(unreadable)
     return balances
 
 
@@ -1074,7 +1081,10 @@ def _spam_keys(conn: Connection, chain: Chain, keys: set[AssetKey]) -> set[Asset
 
 
 def _reconcile(
-    ctx: CommandContext, start: _Start, balances: list[AssetBalance]
+    ctx: CommandContext,
+    start: _Start,
+    balances: list[AssetBalance],
+    unreadable: frozenset[AssetKey] = frozenset(),
 ) -> tuple[dict[str, str], dict[str, str], str | None]:
     """D186 (2): Σ confirmed and proposed movements (spam left out) of the address, or of the
     account's addresses on the chain when the source reconciles per account, against the
@@ -1086,7 +1096,10 @@ def _reconcile(
     balance with them, over the assets the source read a balance of (a deposit in an asset
     it did not read is no shortfall). A balance above them is reconciled (the card
     transfer.unmatched_leg), one below is reconciled false with the negative shortfall as
-    the difference (wallet.coins_left)."""
+    the difference (wallet.coins_left).
+
+    A token whose balance the source could not read (`unreadable`) is left out of both
+    sides, never compared as if its balance were 0; the caller marks the run unreconciled."""
     scope = (
         movement_table.c.address_id.in_([o.id for o in start.own.values()])
         if start.scope == "account"
@@ -1111,6 +1124,8 @@ def _reconcile(
         key = AssetKey(chain=start.chain, contract=r.contract_address)
         if r.spam:
             spam_keys.add(key)
+            continue
+        if key in unreadable:
             continue
         sums[key] = sums.get(key, 0) + _quantity_to_units(r.total, r.decimals)
     spam_keys |= _spam_keys(ctx.conn, start.chain, {b.asset_key for b in balances})
@@ -1261,12 +1276,14 @@ def _write(
     waiting = False
     block = max((tx.block for tx in read.txs), default=None)
     if read.balances is not None:
-        balances, difference, card = _reconcile(ctx, start, read.balances)
+        balances, difference, card = _reconcile(ctx, start, read.balances, read.unreadable)
         reconciled = not difference
         if difference and set(difference) <= _waiting_keys(ctx, start):
             reconciled, difference, waiting = None, None, True
         elif difference and start.scope == "account" and account_pending:
             reconciled, difference = None, None  # the account's last address decides
+        if read.unreadable:  # a balance not read is never reconciled, nor only waiting
+            reconciled, waiting, card = False, False, WALLET_TOKEN_UNREADABLE
         block = max((b.at_block for b in read.balances), default=block)
     _finish(
         ctx,
@@ -1336,6 +1353,7 @@ def _log(outcome: SyncOutcome, exc: BaseException | None = None) -> None:
     if exc is not None:
         fields["exc_type"] = type(exc).__name__
     quiet = outcome.error_code in (None, WALLET_SYNC_DEFERRED) and not outcome.unstorable
+    quiet = quiet and outcome.card != WALLET_TOKEN_UNREADABLE
     level = logging.INFO if quiet else logging.WARNING
     logger.log(level, "a wallet address was read from its chain", extra={"fields": fields})
 

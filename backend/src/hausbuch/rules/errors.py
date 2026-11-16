@@ -254,6 +254,12 @@ WALLET_SYNC_ERROR = "wallet.sync_error"
 WALLET_SOURCE_UNAVAILABLE = "wallet.source_unavailable"
 WALLET_UNRECONCILED = "wallet.unreconciled"  # Σ movements != the chain's balance (D186 (2))
 WALLET_COINS_LEFT = "wallet.coins_left"  # a balance-only address below its linked deposits
+# „Kontostand eines Tokens nicht lesbar: der Vertrag hat die Abfrage des Kontostands
+# abgelehnt. Die Bewegungen sind gespeichert, aber die Adresse gilt als nicht abgeglichen.“
+# (an EVM token the registry does not list whose `balanceOf` reverts or answers no number:
+# that token is left out of the reconciliation, the run goes on and reads unreconciled;
+# a follow-up of the EVM wiring's review, item 8)
+WALLET_TOKEN_UNREADABLE = "wallet.token_unreadable"
 WALLET_SYNC_DEFERRED = "wallet.sync_deferred"  # the run's budget ran out; a page note, no card
 WALLET_CHANGE_CANDIDATE = "wallet.change_candidate"  # an own spend's unregistered output (D185)
 # A record whose token legs cannot be read (a token balance row without an owner the sync can

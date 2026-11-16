@@ -159,6 +159,9 @@ class FakeEtherscan:
             return self._proxy(hex(c["tip"]))
         if action == "eth_call":
             assert int(q["tag"], 16) == c["tip"] - 12
+            if q["to"] in c.get("revert", ()):  # a contract whose `balanceOf` reverts
+                error = {"code": 3, "message": "execution reverted"}
+                return 200, json.dumps({"jsonrpc": "2.0", "id": 1, "error": error}).encode()
             return self._proxy(hex(c["tokens"].get(q["to"], 0)))
         if action == "balance":
             assert int(q["tag"], 16) == c["tip"] - 12
@@ -794,3 +797,89 @@ def test_a_claimed_unlisted_token_reconciles(
     again = _run(app_engine, blob_store, ws, account, day=2)[Chain.ETHEREUM]
     assert (again.reconciled, again.movements_new) == (True, 0)
     assert _sync_row(dbname, ids[Chain.ETHEREUM])[6][token] == str(5 * 10**18)
+
+
+# --- a reverted balanceOf (follow-up of the EVM wiring's review, item 8) -------------------
+
+
+def test_a_reverted_balance_of_an_unlisted_token_marks_it_unreadable_and_the_run_goes_on(
+    dbname, app_engine, blob_store, fresh_workspaces, http
+):
+    """An unlisted token whose `balanceOf` reverts (a contract the classifier took for a
+    token) no longer fails every run: the run's movements are written, the token is left out
+    of both sides, the row stores the balances read, and the run reads unreconciled with the
+    card wallet.token_unreadable. A registry token that reverts still fails the balance read
+    (the run's pages kept, nothing reconciled)."""
+    scan, _ = http
+    ws, _ = fresh_workspaces
+    account, ids = _wallet(app_engine, ws)
+    token = "0x" + "ce" * 20
+    claim = {
+        "hash": _hash("invented claim of a contract"),
+        "blockNumber": "21000850",
+        "timeStamp": "1773750000",
+        "from": ME,
+        "to": token,
+        "value": "0",
+        "gasUsed": "50000",
+        "gasPrice": "10000000000",
+        "isError": "0",
+        "input": "0x4e71d92d",
+    }
+    credited = {
+        "hash": claim["hash"],
+        "blockNumber": "21000850",
+        "timeStamp": "1773750000",
+        "from": "0x" + "0" * 40,
+        "to": ME,
+        "contractAddress": token,
+        "tokenSymbol": "ODD",
+        "tokenDecimal": "18",
+        "value": str(5 * 10**18),
+        "logIndex": "1",
+    }
+    eth_chain = scan.chains[ETH_ID]
+    eth_chain["rows"]["txlist"].append(claim)
+    eth_chain["rows"]["tokentx"].append(credited)
+    eth_chain["native"] = ETH_BALANCE - 50000 * 10_000_000_000
+    eth_chain["revert"] = {token}
+    eth = _run(app_engine, blob_store, ws, account)[Chain.ETHEREUM]
+    assert (eth.status, eth.error_code, eth.reconciled, eth.card, eth.waiting) == (
+        WalletSyncStatus.SUCCEEDED,
+        None,
+        False,
+        E.WALLET_TOKEN_UNREADABLE,
+        False,
+    )
+    row = _sync_row(dbname, ids[Chain.ETHEREUM])
+    assert (row[0], row[5], row[7], row[9]) == ("succeeded", False, None, None)
+    assert token not in row[6] and row[6][USDC] == "150000000"
+    held = _q(
+        dbname,
+        "SELECT count(*) FROM asset_movement m JOIN asset a ON a.id = m.asset_id"
+        " WHERE m.address_id = %s AND a.contract_address = %s",
+        ids[Chain.ETHEREUM],
+        token,
+    )
+    assert held[0][0] == 1
+
+    # the next run: nothing new, the token still unreadable, still unreconciled
+    again = _run(app_engine, blob_store, ws, account, day=2)[Chain.ETHEREUM]
+    assert (again.movements_new, again.reconciled, again.card) == (
+        0,
+        False,
+        E.WALLET_TOKEN_UNREADABLE,
+    )
+    # once it answers, the address reconciles
+    eth_chain["revert"] = set()
+    eth_chain["tokens"][token] = 5 * 10**18
+    assert _run(app_engine, blob_store, ws, account, day=3)[Chain.ETHEREUM].reconciled is True
+
+    # a registry token that reverts is no misread contract: the balance read fails
+    eth_chain["revert"] = {USDC}
+    listed = _run(app_engine, blob_store, ws, account, day=4)[Chain.ETHEREUM]
+    assert (listed.status, listed.error_code, listed.reconciled) == (
+        WalletSyncStatus.SUCCEEDED,
+        E.WALLET_SOURCE_FAILED,
+        None,
+    )
