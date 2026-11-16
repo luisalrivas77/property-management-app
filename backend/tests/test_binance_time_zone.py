@@ -33,6 +33,9 @@ ROWS = (
         ("History(UTC-3).csv", "Binance-Transaction-History-202611161200UTC1_1.zip", -180),
         # A member that names nothing leaves the upload's name to decide.
         ("export.csv", "Binance-Transaction-History-202611161200UTC1_1.zip", 60),
+        # UTC alone right after the stamp, before the download's id.
+        (None, "Binance-Transaction-History-202611161200UTC_91402f5c.zip", 0),
+        (None, "Binance-Transaction-History-202611161200UTC1_100001.zip", 60),
     ],
 )
 def test_the_zone_is_read_from_the_names(member, filename, minutes):
@@ -48,6 +51,16 @@ def test_the_zone_is_read_from_the_names(member, filename, minutes):
         (None, "COUTCOME-2026.csv"),  # „UTC“ inside a word is no zone
         (None, "Binance-History-UTC15_1.zip"),  # beyond UTC+14
         (None, "Binance-History-UTC+5:75_1.zip"),  # no such minute
+        # Review E (16 Nov 2026): a zone the reader can only read in part names none, never
+        # the part it reads (these had been read as UTC+5 or as UTC).
+        ("Transaction-History-20261116(UTC+5.5)-part1-of1.csv", None),
+        (None, "Binance-Transaction-History-202611161200UTC5-30_123456.zip"),
+        (None, "Binance-Transaction-History-202611161200UTC5.5_123456.zip"),
+        (None, "Binance-Transaction-History-202611161200UTC5_30_123456.zip"),
+        (None, "Binance-Transaction-History-202611161200UTC+5_30_123456.zip"),
+        ("Transaction-History-20261116(UTC +1)-part1-of1.csv", None),
+        ("Transaction-History-20261116(UTC%2B1)-part1-of1.csv", None),
+        (None, "Binance-Transaction-History_UTC_1_.zip"),
     ],
 )
 def test_no_zone_named(member, filename):

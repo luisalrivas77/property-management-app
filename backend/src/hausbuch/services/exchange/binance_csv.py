@@ -48,8 +48,13 @@ from . import (
 # not preceded by a letter, and the hours not followed by another digit, so a stamp's or an
 # id's digits are never read as an offset.
 _ZONE_IN_PARENS = re.compile(r"\(UTC(?:([+-])(\d{1,2})(?::(\d{2}))?)?\)")
-_ZONE_TOKEN = re.compile(r"(?<![A-Za-z])UTC([+-]?)(\d{1,2})(?::(\d{2}))?(?![\d:])")
-_ZONE_TOKEN_BARE = re.compile(r"(?<![A-Za-z])UTC(?![A-Za-z\d+-])")
+_ZONE_TOKEN = re.compile(r"(?<![A-Za-z(])UTC([+-]?)(\d{1,2})(?::(\d{2}))?(?![\d:])")
+# UTC alone only right after the stamp and before the download's id: "…202611161200UTC_<id>".
+_ZONE_TOKEN_BARE = re.compile(r"(?<=\d)UTC(?=_)")
+# What may not follow a token: another number joined by "." or "-" („UTC5.5“, „UTC5-30“), or
+# a short number between underscores („UTC5_30_“), which would be a part of the zone the
+# reader cannot place, never the download's id (review E, 16 Nov 2026).
+_ZONE_TAIL = re.compile(r"(?:[.\-]\d|_\d{1,2}_)")
 _MAX_OFFSET = timedelta(hours=14)
 
 
@@ -69,10 +74,16 @@ def _zone_in(name: str | None) -> timedelta | None:
     if not name:
         return None
     name = name.replace("\\", "/").rsplit("/", 1)[-1]
-    for pattern in (_ZONE_IN_PARENS, _ZONE_TOKEN):
-        found = pattern.search(name)
-        if found is not None:
-            return _offset_of(*found.groups())
+    if "(UTC" in name:
+        # In parentheses the zone is read whole or not at all: „(UTC+5.5)“, „(UTC +1)“ or
+        # „(UTC%2B1)“ name no zone the reader knows, never UTC+5 or UTC.
+        found = _ZONE_IN_PARENS.search(name)
+        return _offset_of(*found.groups()) if found is not None else None
+    found = _ZONE_TOKEN.search(name)
+    if found is not None:
+        if _ZONE_TAIL.match(name, found.end()):
+            return None
+        return _offset_of(*found.groups())
     if _ZONE_TOKEN_BARE.search(name) is not None:
         return timedelta(0)
     return None
