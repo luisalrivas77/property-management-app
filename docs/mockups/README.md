@@ -24,18 +24,48 @@ Dokumente. Links to Posteingang, Immobilien and the Anlage V tab open 02–05. T
 
 | Screen | Files | Phase | What it shows |
 | --- | --- | --- | --- |
-| Übersicht (Haushalt) | `07-household-overview.png` / `.html` | 6 (grows with 7–9) | Net worth, last month's cash flow and savings rate, cash reserve in months, open inbox items, the AI sync notice, asset mix (property net of loan, ETF, bank, crypto), the property card, upcoming dates (Verlustbescheinigung, year-end crypto holdings statement, Vorabpauschale, the next lot turning tax-free), recent activity |
+| Übersicht (Haushalt) | `07-household-overview.png` / `.html` | 6 (grows with 7–9) | Net worth, last month's cash flow and savings rate, cash reserve in months, open inbox items, the AI sync notice, asset mix (property net of loan, ETF, bank, crypto), the property card, upcoming dates (Verlustbescheinigung, year-end crypto holdings statement, Vorabpauschale, the next lot turning tax-free), recent activity. Phase 9 adds a Kennzahlen block and the net worth's Verlauf, which no mockup shows yet (see the phase 9 notes below) |
 | Konten | `08-accounts.png` / `.html` | 6 | Every account grouped as bank, depot, crypto and liabilities, with source (camt export, quirion PDFs, BISON CSV, Helius, balance-only RPC), owner chip (Luis, Partnerin, Gemeinsam 50/50), balance and reconciliation status; how data gets in; internal transfers never counted. Phase 7 step 1 adds the wallet rows to the Krypto group: each wallet with its chains as pills and the count of its masked addresses, its source, owner chip and last sync (`docs/phases/phase-7.md` §14; planned, not built as of 15 Nov 2026) |
 | Anlagen · Übersicht | `09-holdings.png` / `.html` | 6–7 | Tab 1 of 3 (Luis, 7 Nov 2026: ETF and crypto as separate tabs, plus an overview): total value, unrealized gain, monthly savings plans, the ETF/crypto split bar with a summary card per class, largest positions across both, value per owner |
 | Anlagen · ETF | `09b-holdings-etf.png` / `.html` | 6 | The quirion depot: value, gain, savings plan, income so far; positions with units, price, value, cost and gain; weighting; Sparer-Pauschbetrag used and the Freistellungsauftrag split; the Vorabpauschale estimate; recent Postbox documents |
 | Anlagen · Krypto | `09c-holdings-crypto.png` / `.html` | 7 | Crypto value, gain, what can be sold tax-free today and the next lot to turn tax-free; one card per crypto account with its owner; coins table; selecting a row shows its lots (date, units, cost, source, "steuerfrei ab …"). Built in phase 7 step 6, with the lots and the holding period (`docs/phases/phase-7.md` §14; planned, not built as of 15 Nov 2026) |
-| Haushalt | `10-household-cashflow.png` / `.html` | 6 | Income, spending and savings rate for a month and the 12-month average, monthly surplus chart, spending by category, income rows, and transfers to own accounts counted as saved, not spent |
+| Haushalt | `10-household-cashflow.png` / `.html` | 6 | Income, spending and savings rate for a month and the 12-month average, monthly surplus chart, spending by category, income rows, and transfers to own accounts counted as saved, not spent. Phase 9 heads the average with its real basis instead of "Ø 12 Monate" (see the phase 9 notes below) |
 | Steuern · Anlage SO | `11-tax-anlage-so.png` / `.html` | 8 | The tax year with tabs V, KAP, SO and an owner switch (Luis / Partnerin); §23 result with the €1,000 Freigrenze meter, the undecided LP positions with both results, sales and swaps with holding time, §22 Nr. 3 rewards against €256, the filing checklist, what BISON reports under the wife's name, exports |
-| Planung · Haushalt | `12-planning-household.png` / `.html` | 9 | Investable amount per month and how it is derived, the existing savings plans, reserve gap, two levers (reserve target, buffer), three ways to reach the reserve target, and the AI explanation panel in own-use mode (names existing accounts only) |
+| Planung · Haushalt | `12-planning-household.png` / `.html` | 9 | Investable amount per month and how it is derived, the existing savings plans, reserve gap, two levers (reserve target, buffer), three ways to reach the reserve target, and the AI explanation panel in own-use mode (names existing accounts only). The phase 9 spec differs from the drawing in three places and adds one card (see the phase 9 notes below) |
 
 The Anlagen, Steuern and Planung screens are interactive in the original (row selection, owner
 switch, levers); the static HTML shows one state. Owners appear as "Luis", "Partnerin" and
 "Gemeinsam 50/50"; every amount, coin and address is sample data.
+
+### Phase 9 notes (16 Nov 2026)
+
+Phase 9 is specced in `docs/phases/phase-9.md` (merged 16 Nov 2026, PR #388) and not built.
+The mockups were drawn on 6 Nov 2026, before the spec, and are **not redrawn yet**. Where a
+drawing and the spec disagree, the spec wins. Nothing below is drawn; the new drawings are
+agreed with Luis before phase 9's step 3 starts (phase 9 spec Q-O136), and the count above
+stays at fourteen until then.
+
+- **Mockup 12, the paths.** No row of the ways to reach the reserve target is highlighted or
+  marked as the better one, and there is one row per savings plan ("Reserve zuerst", one row
+  per plan paused, "Alles weiter wie bisher"), not a fixed three (phase 9 D246).
+- **Mockup 12, the reserve.** "Monatsausgaben" under the reserve becomes the monthly need:
+  the mean regular spending of the private accounts plus the flat's monthly shortfall, when
+  the rental account does not carry itself (D237).
+- **Mockup 12, a new card** „Vermögen in einigen Jahren: eure Annahme“ (D247, Luis 16 Nov
+  2026), to be drawn in two states: with the two rate fields (funds, crypto) empty, where no
+  figure is shown, and with both filled, with the assumption lines above the figures. The
+  rate fields have no default, no placeholder and no example. A rate shown in the filled
+  state is sample data and must not be read as a default or built as one.
+- **Mockup 10, the average.** "Ø 12 Monate" is headed with the real basis, the complete
+  months the figure rests on, written as „Basis: N Monate, <Monat> bis <Monat> <Jahr>“; with
+  fewer than three complete months no average is shown, and a to-do stands in its place (D231).
+- **A new mockup for Übersicht** with the Kennzahlen block and the net worth's Verlauf, which
+  mockup 07 does not show. It carries the marks: each green, amber or red mark beside its
+  plain sentence and the words "eigene Grenze" with the limit, and the card
+  „Ampel-Grenzen festlegen“ in its unconfirmed state, in which no figure is coloured (D250,
+  Luis 16 Nov 2026). The split of the assets never carries a mark (D240).
+- As for every mockup, the numbers are sample data and never fixtures; the worked example of
+  the phase 9 spec (§15.2) was computed by a script and takes nothing from these screens.
 
 ## How to use them
 
