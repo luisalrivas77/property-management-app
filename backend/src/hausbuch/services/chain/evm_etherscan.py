@@ -16,14 +16,28 @@ balance, and the proxy module's `eth_blockNumber` and `eth_call` (a token's `bal
 - `balances(address)`: the native balance and each registry token's `balanceOf`, at
   `tip − 12`, the block the movements were read to (D186 (2)).
 
-Paced at 2.5 calls a second (the free tier allows 3) with an injectable `sleep`. Etherscan
-answers its errors with HTTP 200 and `status = "0"`: a rate limit is
+Paced at 2.5 calls a second (the free tier allows 3) with an injectable `sleep`; each call
+first takes one request from the run's `RequestBudget` (services/chain/base, D182 (1)). When
+the budget says no, `transactions` returns an empty page with the cursor it was given (a
+window is read whole across the five lists or not at all, so a half-read window is never
+returned) and `balances` stops where it is; the sync then ends the run deferred. A second
+`transactions` call of the same run with the cursor its first call returned (the sync asks
+again until the cursor stops moving) reads nothing: the window is already read to the pinned
+end, and re-reading its overlap would only repeat rows.
+
+`make_source(row, settings, budget)` is the factory services/chain/base finds: the key
+`HAUSBUCH_ETHERSCAN_KEY` (unset → `wallet.key_missing` before any request, so the address
+gets no `wallet_sync` row) and the base URL `HAUSBUCH_ETHERSCAN_URL`; `host` is that URL's
+host name only.
+
+Etherscan answers its errors with HTTP 200 and `status = "0"`: a rate limit is
 `wallet.source_throttled`, a key it refuses (invalid, missing, a chain the plan does not
-cover) `wallet.source_refused`; `status = "0"` with an empty list is no data. No key →
-`wallet.key_missing` before any request. The key is never in a log or an exception: a
-failure carries its code and HTTP status only (services/chain/evm_http).
+cover) `wallet.source_refused`; `status = "0"` with an empty list is no data. The key is
+never in a log or an exception: a failure carries its code and HTTP status only
+(services/chain/evm_http).
 """
 
+import contextlib
 import time
 import urllib.parse
 from collections.abc import Callable, Mapping
@@ -33,13 +47,14 @@ from pydantic import JsonValue, SecretStr
 
 from hausbuch.rules import errors as E
 from hausbuch.rules.chain import evm
-from hausbuch.rules.chain.registry import registry
+from hausbuch.rules.chain.registry import ChainRegistryRow, registry
 from hausbuch.rules.chain.sync_window import window
 from hausbuch.rules.household.assets import registry as asset_registry
 from hausbuch.schemas.chain import AssetBalance, AssetKey, Chain, ChainSourceKind, ChainTx, Page
-from hausbuch.services.chain.base import ChainSourceError
-from hausbuch.services.chain.evm_http import SOURCE_FAILED, get_json
+from hausbuch.services.chain.base import ChainSourceError, RequestBudget, host_of, setting
+from hausbuch.services.chain.evm_http import SOURCE_FAILED, BudgetSpent, get_json
 from hausbuch.services.prices.http import Fetch, urllib_fetch
+from hausbuch.settings import Settings
 
 DEFAULT_URL = "https://api.etherscan.io/v2/api"
 MIN_INTERVAL_S = 0.4  # 2.5 calls a second
@@ -74,9 +89,11 @@ class EtherscanSource:
     base_url: str = DEFAULT_URL
     fetch: Fetch = field(default=urllib_fetch, repr=False)
     sleep: Callable[[float], None] = field(default=time.sleep, repr=False)
+    budget: RequestBudget | None = field(default=None, repr=False)  # None: unbounded
     kind: ChainSourceKind = ChainSourceKind.EVM_ETHERSCAN
     _calls: int = field(default=0, init=False, repr=False)
     _tip: int | None = field(default=None, init=False, repr=False)
+    _read_to: str | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         row = registry().chain(self.chain)
@@ -85,11 +102,18 @@ class EtherscanSource:
         self._chain_id = row.chain_id
         self._final = row.confirmations_final
 
+    @property
+    def host(self) -> str:
+        """The provider's host name, the only part of its URL a run records (D181)."""
+        return host_of(self.base_url)
+
     # --- one call ----------------------------------------------------------------------
 
     def _call(self, params: Mapping[str, str | int]) -> JsonValue:
         if self.key is None or not self.key.get_secret_value():
             raise ChainSourceError(E.WALLET_KEY_MISSING)
+        if self.budget is not None and not self.budget.take():
+            raise BudgetSpent
         if self._calls:
             self.sleep(MIN_INTERVAL_S)
         self._calls += 1
@@ -161,11 +185,17 @@ class EtherscanSource:
 
     def transactions(self, address: str, cursor: str | None) -> Page[ChainTx]:
         address = address.lower()
-        span = window(self.chain, int(cursor) if cursor else None, self.tip())
-        if span is None:
-            return Page[ChainTx](items=[], next_cursor=cursor)
-        start, end = span
-        records = {action: self._rows(action, address, start, end) for action in evm.ACTIONS}
+        if cursor is not None and cursor == self._read_to:
+            return Page[ChainTx](items=[], next_cursor=cursor)  # read to the pinned end
+        try:
+            span = window(self.chain, int(cursor) if cursor else None, self.tip())
+            if span is None:
+                return Page[ChainTx](items=[], next_cursor=cursor)
+            start, end = span
+            records = {action: self._rows(action, address, start, end) for action in evm.ACTIONS}
+        except BudgetSpent:
+            return Page[ChainTx](items=[], next_cursor=cursor)  # the next run reads it whole
+        self._read_to = str(end)
         return Page[ChainTx](
             items=evm.normalise(self.chain, records, address), next_cursor=str(end)
         )
@@ -173,7 +203,13 @@ class EtherscanSource:
     # --- balances ----------------------------------------------------------------------
 
     def balances(self, address: str) -> list[AssetBalance]:
-        address = address.lower()
+        out: list[AssetBalance] = []
+        # a spent budget stops the reading: the sync defers and reads the balances next run
+        with contextlib.suppress(BudgetSpent):
+            self._balances(address.lower(), out)
+        return out
+
+    def _balances(self, address: str, out: list[AssetBalance]) -> None:
         at = max(self.tip() - self._final, 0)
         tag = hex(at)
         native = self._call(
@@ -183,7 +219,7 @@ class EtherscanSource:
             units = int(str(native))
         except ValueError:
             raise ChainSourceError(SOURCE_FAILED) from None
-        out = [AssetBalance(asset_key=evm.native(self.chain), units=units, at_block=at)]
+        out.append(AssetBalance(asset_key=evm.native(self.chain), units=units, at_block=at))
         data = BALANCE_OF + address[2:].rjust(64, "0")
         for token in asset_registry().tokens:
             if token.chain is not self.chain:
@@ -199,4 +235,26 @@ class EtherscanSource:
             )
             key = AssetKey(chain=self.chain, contract=token.contract)
             out.append(AssetBalance(asset_key=key, units=held, at_block=at))
-        return out
+
+
+def make_source(
+    row: ChainRegistryRow,
+    settings: Settings,
+    budget: RequestBudget,
+    *,
+    fetch: Fetch = urllib_fetch,
+    sleep: Callable[[float], None] = time.sleep,
+) -> EtherscanSource:
+    """The chain's Etherscan source (services/chain/base.factory_for). No key →
+    `wallet.key_missing` here, before any request; `fetch` and `sleep` are a test's."""
+    key = setting(settings, "etherscan_key")
+    if key is None:
+        raise ChainSourceError(E.WALLET_KEY_MISSING)
+    return EtherscanSource(
+        row.code,
+        SecretStr(key),
+        base_url=setting(settings, "etherscan_url") or DEFAULT_URL,
+        fetch=fetch,
+        sleep=sleep,
+        budget=budget,
+    )

@@ -26,6 +26,14 @@ whoever served them (D192), which is what `hausbuch replay-sync` relies on.
   list (no family-neutral spam helper existed when step 3 started; the orchestrator may move
   them to rules/chain/spam.py).
 - `reconcile_balance_only`: D181 (c), D186 (2) for a balance-only address.
+- `classify_tx(tx, ctx)`: the family protocol of rules/chain/classify (the step 2 core's
+  sync loop calls it): `classify_evm` for the synced address with the context's own
+  addresses, held tokens and decoders (the workspace's rows first, then the public ones), as
+  a `ChainGroup`. An unlisted token's leg carries the symbol and decimals its Etherscan row
+  states (`tokenSymbol`, `tokenDecimal`), so the asset the sync creates on first sight has
+  the token's real decimals; a spam leg is marked spam. No question is set: an EVM group's
+  legs are all booked, so its card is the routing's reason, not a question the run's
+  difference waits on.
 
 **Reading (D183 (3) (d) against (e))**: a registry or held token credited by a third party's
 transaction is a plain transfer in (`evm_tx.yaml` `erc20_in`: an `uncategorized` leg and
@@ -44,6 +52,7 @@ from uuid import UUID
 from pydantic import Field, JsonValue
 
 from hausbuch.rules import errors as E
+from hausbuch.rules.chain.classify import ChainGroup, ChainLeg, ClassifyContext
 from hausbuch.rules.chain.decoders import public_decoders
 from hausbuch.rules.chain.registry import registry
 from hausbuch.rules.household.assets import registry as asset_registry
@@ -637,6 +646,86 @@ def classify_evm(
     if signed:
         return group(GroupKind.CONTRACT_CALL, legs + spam_legs, card=E.GROUP_CONTRACT_CALL)
     return group(GroupKind.UNKNOWN, legs + spam_legs, card=E.GROUP_UNKNOWN)
+
+
+# --- the family protocol (rules/chain/classify) -------------------------------------------
+
+_TOKEN_LISTS = ("tokentx", "tokennfttx", "token1155tx")
+
+
+def _told(tx: ChainTx) -> dict[str, tuple[str | None, int | None]]:
+    """What the transaction's token rows say of each contract: (symbol, decimals), the first
+    row that states them. An ERC-721 or ERC-1155 row has no decimals: 0."""
+    out: dict[str, tuple[str | None, int | None]] = {}
+    for action in _TOKEN_LISTS:
+        rows = tx.raw.get(action)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            contract = _lower(row.get("contractAddress"))
+            if contract is None or contract in out:
+                continue
+            symbol = row.get("tokenSymbol")
+            decimals: int | None
+            if action == "tokentx":
+                try:
+                    decimals = int(str(row.get("tokenDecimal")))
+                except ValueError:
+                    decimals = None  # unreadable: the asset row takes 0 (sync._new_asset)
+            else:
+                decimals = 0
+            out[contract] = (symbol if isinstance(symbol, str) else None, decimals)
+    return out
+
+
+def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
+    """The family classifier of rules/chain/classify for one synced EVM address. None when
+    the transaction moves nothing of it (no leg, not even a fee).
+
+    Routing facts: `decoder_listed` when a decoder row decided the kind (the registry's
+    wrap); `linked` stays False, also for a transfer between two own addresses, until step 5
+    writes the link by hash (D184 (1)): such a group waits for a person once rather than
+    being confirmed on a link nobody has written."""
+    group = classify_evm(
+        ctx.chain,
+        tx,
+        ctx.address,
+        decoders=[*ctx.decoders, *public_decoders()],
+        own=ctx.own_addresses,
+        held=ctx.held,
+    )
+    if not group.legs:
+        return None
+    told = _told(tx)
+    legs = []
+    for leg in group.legs:
+        symbol = decimals = None
+        contract = leg.asset_key.contract
+        if contract is not None and asset_registry().token(ctx.chain, contract) is None:
+            symbol, decimals = told.get(contract, (None, None))
+        legs.append(
+            ChainLeg(
+                asset_key=leg.asset_key,
+                units=leg.units,
+                role=leg.role,
+                kind=leg.kind,
+                index=leg.index,
+                symbol=symbol,
+                decimals=decimals,
+                spam=leg.kind is MovementKind.SPAM,
+            )
+        )
+    return ChainGroup(
+        tx_hash=group.tx_hash,
+        occurred_at=group.occurred_at,
+        block=tx.block,
+        kind=group.kind,
+        legs=legs,
+        decoder=group.decoder,
+        decoder_listed=group.decoder is not None,
+    )
 
 
 # --- to the stored shape --------------------------------------------------------------------
