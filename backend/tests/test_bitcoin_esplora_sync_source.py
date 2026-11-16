@@ -12,7 +12,12 @@ import pytest
 
 from hausbuch.rules.chain.registry import registry
 from hausbuch.schemas.chain import AssetKey, Chain, ChainSourceKind
-from hausbuch.services.chain.base import RequestBudget, factory_for, reconcile_scope
+from hausbuch.services.chain.base import (
+    ChainSourceError,
+    RequestBudget,
+    factory_for,
+    reconcile_scope,
+)
 from hausbuch.services.chain.bitcoin_esplora import (
     BLOCKSTREAM_URL,
     MEMPOOL_URL,
@@ -50,23 +55,32 @@ def receive(n: int, block: int, sats: int = 1000) -> dict:
 
 class Chainstate:
     """A fake Esplora: per address its records (any order; served newest first), the tip, and
-    each address's tip balance. Counts the requests."""
+    each address's tip balance. Counts the requests. Its index holds the blocks up to its tip
+    only (a host behind the chain does not know a later transaction); an anchor it does not
+    know gives an empty page, as both public hosts answer (checked in the review of PR #387),
+    and its /tx/{txid}/status a 404. `failing` paths (by their first segment after the base,
+    such as "address") answer 503; `base` is the host's URL."""
 
-    def __init__(self, tip: int) -> None:
+    def __init__(self, tip: int, base: str = BASE) -> None:
         self.tip = tip
+        self.base = base
         self.records: dict[str, list[dict]] = {OWN: []}
         self.calls: list[str] = []
+        self.failing: set[str] = set()
+
+    def indexed(self, address: str) -> list[dict]:
+        return [r for r in self.records[address] if r["status"]["block_height"] <= self.tip]
 
     def balance(self, address: str) -> int:
         funded = sum(
             o["value"]
-            for r in self.records[address]
+            for r in self.indexed(address)
             for o in r["vout"]
             if o.get("scriptpubkey_address") == address
         )
         spent = sum(
             i["prevout"]["value"]
-            for r in self.records[address]
+            for r in self.indexed(address)
             for i in r["vin"]
             if i["prevout"].get("scriptpubkey_address") == address
         )
@@ -74,21 +88,48 @@ class Chainstate:
 
     def __call__(self, url, headers, timeout, max_bytes):
         self.calls.append(url)
-        path = url.removeprefix(BASE)
+        path = url.removeprefix(self.base)
         if path == "/blocks/tip/height":
             return 200, f"{self.tip}\n".encode()
         parts = path.split("/")
+        if parts[1] in self.failing:
+            return 503, b""
+        if parts[1] == "tx":  # /tx/{txid}/status
+            known = any(r["txid"] == parts[2] for a in self.records for r in self.indexed(a))
+            return (200, b'{"confirmed": true}') if known else (404, b"Transaction not found")
         address = parts[2]
         if len(parts) == 3:
             stats = {"funded_txo_sum": self.balance(address), "spent_txo_sum": 0}
             return 200, json.dumps({"address": address, "chain_stats": stats}).encode()
         newest = sorted(
-            self.records[address], key=lambda r: r["status"]["block_height"], reverse=True
+            self.indexed(address), key=lambda r: r["status"]["block_height"], reverse=True
         )
         if len(parts) == 6:
             ids = [r["txid"] for r in newest]
-            newest = newest[ids.index(parts[5]) + 1 :]
+            newest = newest[ids.index(parts[5]) + 1 :] if parts[5] in ids else []
         return 200, json.dumps(newest[:PAGE_SIZE]).encode()
+
+
+ONE = "https://one.example.invalid/api"
+TWO = "https://two.example.invalid/api"
+
+
+class Hosts:
+    """Two fake Esplora hosts over one chain, tried in order (`esplora_urls`)."""
+
+    def __init__(self, tip: int) -> None:
+        self.one, self.two = Chainstate(tip, ONE), Chainstate(tip, TWO)
+        self.two.records = self.one.records  # one chain, two indexes
+
+    def __call__(self, url, headers, timeout, max_bytes):
+        host = self.one if url.startswith(ONE) else self.two
+        return host(url, headers, timeout, max_bytes)
+
+    def source(self, budget: RequestBudget | None = None) -> EsploraSource:
+        class S:
+            esplora_urls = (ONE, TWO)
+
+        return make_source(ROW, S(), budget or RequestBudget(600), fetch=self, sleep=lambda s: None)
 
 
 def _source(world: Chainstate, budget: RequestBudget | None = None) -> EsploraSource:
@@ -201,3 +242,72 @@ def test_a_spent_budget_returns_no_balance(limit):
     budget = RequestBudget(limit)
     assert _source(world, budget).balances(OWN) == []
     assert budget.exhausted and len(world.calls) == limit
+
+
+def test_the_tip_and_the_history_come_from_one_host():
+    """Review of PR #387 (sim_cursor 1): host one answers the tip but fails its history; host
+    two is ten blocks behind. The tip was read from one and the pages from two, so a block
+    two had not indexed read as empty and the cursor passed it for good. Now the run fails
+    on the host that gave the tip (or moves the pair to the next host), and the next run
+    reads the transaction."""
+    hosts = Hosts(tip=1000)
+    hosts.one.records[OWN] = [receive(1, 950), receive(2, 993)]
+    hosts.two.tip = 990
+    hosts.one.failing = {"address"}
+    seen, cursor = _run(hosts.source(), "940")
+    # the pair moved to host two: its own window (984), never one's 994 over two's pages
+    assert [tx.block for tx in seen] == [950] and cursor == "984"
+    hosts.one.failing = set()
+    hosts.one.tip = hosts.two.tip = 1010
+    seen, cursor = _run(hosts.source(), cursor)
+    assert [tx.block for tx in seen] == [993] and cursor == "1004"
+
+
+def test_an_unknown_anchor_walks_again_from_the_top():
+    """Review of PR #387 (sim_cursor 2): a walk deferred by the budget on host one resumes on
+    host two, which has not indexed the anchor's block and answers an empty page. That page
+    is no end: two does not confirm the anchor, so the walk starts again from two's newest
+    page down to `done`, and every transaction is read."""
+    hosts = Hosts(tip=146)
+    hosts.one.records[OWN] = [receive(n, 100 + n) for n in range(1, 41)]  # blocks 101..140
+    first = hosts.source(RequestBudget(2)).transactions(OWN, None)  # the tip and one page
+    assert len(first.items) == PAGE_SIZE and first.next_cursor.startswith("-1:140:")
+    hosts.one.failing = {"address"}
+    hosts.two.tip = 110  # behind: the anchor (block 116) is not in its index
+    seen, cursor = _run(hosts.source(), first.next_cursor)
+    assert sorted(tx.block for tx in seen) == list(range(101, 105)) and cursor == "104"
+    hosts.one.failing = set()
+    hosts.one.tip = hosts.two.tip = 146
+    rest, cursor = _run(hosts.source(), cursor)
+    read = {tx.block for tx in first.items + seen + rest}
+    assert read == set(range(101, 141)) and cursor == "140"
+
+
+@pytest.mark.parametrize("count", [PAGE_SIZE, 2 * PAGE_SIZE])
+def test_a_history_of_whole_pages_ends(count):
+    """The other empty anchored page: the page before was full and the oldest. The host
+    confirms the anchor, so the walk ends there and the cursor reaches the window."""
+    world = Chainstate(tip=300)
+    world.records[OWN] = [receive(n, 100 + n) for n in range(count)]
+    seen, cursor = _run(_source(world), None)
+    assert len(seen) == count and cursor == "294"
+    assert world.calls[-1] == f"{BASE}/tx/{txid(0)}/status"
+
+
+def test_a_host_behind_what_is_stored_gives_no_balance():
+    """A host whose final height is below what an earlier run read hands the run to the
+    next host; when none has reached it, the balance is refused (a failed run), never a
+    figure at a lower height that would read as a mismatch."""
+    hosts = Hosts(tip=120)
+    hosts.one.records[OWN] = [receive(1, 100, 5000)]
+    hosts.one.tip = 110  # one is behind the cursor's 114, two is not
+    source = hosts.source()
+    assert _run(source, "114") == ([], "114")
+    (balance,) = source.balances(OWN)
+    assert (balance.at_block, balance.units) == (114, 5000)
+    assert hosts.two.calls  # the pair moved to two
+    hosts.two.tip = 110
+    source = hosts.source()
+    assert _run(source, "114") == ([], "114")
+    with pytest.raises(ChainSourceError):
+        source.balances(OWN)

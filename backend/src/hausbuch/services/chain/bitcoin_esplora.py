@@ -9,7 +9,8 @@ the configured provider fails; the same code reads either (D192). No key.
 - `GET {base}/blocks/tip/height`: the tip, as plain text;
 - `GET {base}/address/{a}/txs/chain[/{last_seen_txid}]`: the confirmed history, newest first,
   25 per page; the next page starts after the last txid of a full one;
-- `GET {base}/tx/{txid}`: one transaction, with `vin[].prevout`, `vout[]`, `fee`, `status`.
+- `GET {base}/tx/{txid}`: one transaction, with `vin[].prevout`, `vout[]`, `fee`, `status`;
+- `GET {base}/tx/{txid}/status`: whether the host holds the transaction as confirmed.
 
 `to_chain_tx` turns one Esplora transaction record into the chain-neutral `ChainTx` (D181)
 and is a module function, so a replay over the stored originals needs no source (D182 (3)).
@@ -186,7 +187,12 @@ class BitcoinEsplora:
     `pages` keeps every record read, in the protocol's own shape, for the sync's stored
     original (D182 (3)); `host` names the provider that answered last (`wallet_sync.
     source_host`, never a path or key). `budget`, when set, is asked before every request,
-    a fallback's included; a refusal raises BudgetSpent before anything is sent."""
+    a fallback's included; a refusal raises BudgetSpent before anything is sent.
+
+    `pin` (the sync's source sets it): the first host that answers serves every later request
+    of this client, so a run's tip and history come from one host's index (review of PR #387:
+    a tip from one host and pages from a host behind it had read a block as empty for good).
+    `drop_pinned` hands the run to the next host; nothing goes back to a dropped one."""
 
     base_url: str = MEMPOOL_URL
     fallback_url: str | None = BLOCKSTREAM_URL
@@ -197,14 +203,34 @@ class BitcoinEsplora:
     pages: list[JsonValue] = field(default_factory=list, repr=False)
     more_urls: tuple[str, ...] = ()
     budget: RequestBudget | None = field(default=None, repr=False)
+    pin: bool = False
     _calls: int = 0
+    _pinned: str | None = None
+    _dropped: set[str] = field(default_factory=set, repr=False)
 
-    def _urls(self) -> list[str]:
+    def _all_urls(self) -> list[str]:
         urls = [self.base_url.rstrip("/")]
         for url in (self.fallback_url, *self.more_urls):
             if url and url.rstrip("/") not in urls:
                 urls.append(url.rstrip("/"))
         return urls
+
+    def _urls(self) -> list[str]:
+        if self._pinned is not None:
+            return [self._pinned]
+        return [url for url in self._all_urls() if url not in self._dropped]
+
+    def drop_pinned(self) -> bool:
+        """Leave the pinned host for the next one not dropped yet; False (nothing changed)
+        when no host is pinned or none is left."""
+        if self._pinned is None:
+            return False
+        left = [u for u in self._all_urls() if u not in self._dropped and u != self._pinned]
+        if not left:
+            return False
+        self._dropped.add(self._pinned)
+        self._pinned = None
+        return True
 
     def _get(self, path: str, parse: Callable[[bytes], object]) -> object:
         """One request, paced, on the configured URL and then on the fallback. A 429 stops
@@ -234,6 +260,8 @@ class BitcoinEsplora:
                 failure = ChainSourceError(SOURCE_FAILED)
                 continue
             self.host = urlsplit(base).hostname
+            if self.pin:
+                self._pinned = base
             return value
         error = refused or failure
         assert error is not None
@@ -301,6 +329,21 @@ class BitcoinEsplora:
         self.pages.extend(tx.raw for tx in items)
         full = len(items) >= PAGE_SIZE
         return Page[ChainTx](items=items, next_cursor=items[-1].hash if full else None)
+
+    def confirmed(self, txid: str) -> bool:
+        """Whether the host holds `txid` as a confirmed transaction: True only on a readable
+        yes; a not-found, an unreadable answer or a failure is False (a 429 still raises)."""
+
+        def parse(body: bytes) -> bool:
+            return _json_object(body).get("confirmed") is True
+
+        try:
+            value = self._get(f"/tx/{txid}/status", parse)
+        except ChainSourceError as exc:
+            if exc.code == _THROTTLED:
+                raise
+            return False
+        return value is True
 
     def transaction(self, txid: str, address: str | None = None) -> ChainTx:
         """One transaction by its id (a confirmed one; an unconfirmed one is unreadable)."""
@@ -408,6 +451,16 @@ class EsploraSource:
       of the account is read to the same block. /address is read before the newest history
       page; a block found between the two reads makes that run's figure wrong by that block's
       transaction, and the next run reads it right again;
+    - one host serves the run (the client is pinned): the window and every page of a walk
+      come from the index that answered the tip. A host whose final height is below what an
+      earlier run read, or whose newest page fails after its tip, hands the run to the next
+      host with the tip read again there; when no host has reached what is stored, the
+      balance is refused (a failed run, never a false mismatch);
+    - an anchored page that comes back empty is the end of the walk only when the same host
+      confirms the anchor; a host that does not know it (one behind, or another than the one
+      that wrote the cursor) restarts the walk from its newest page down to `done`, so no
+      transaction between the anchor and `done` is skipped (review of PR #387). Movements
+      already stored are read again and kept once by their hash (D182 (2));
     - a request the budget refuses ends the page where it stands (the sync then defers)."""
 
     client: BitcoinEsplora
@@ -415,6 +468,24 @@ class EsploraSource:
     kind: ChainSourceKind = ChainSourceKind.BITCOIN_ESPLORA
     reconcile_scope: str = "account"
     _final: int | None = None
+    _floor: int = -1  # the highest height a cursor of this run said was read
+
+    def _fresh(self, address: str, done: int) -> tuple[int, Page[ChainTx] | None]:
+        """(the window, the newest page) of a new walk from one host; no page (and no
+        request) when nothing new is final."""
+        while True:
+            window = self.final_height()
+            if window < done and self.client.drop_pinned():
+                self._final = None  # behind what is stored: the next host's tip
+                continue
+            if done >= window:
+                return window, None
+            try:
+                return window, self.client.transactions(address, None)
+            except ChainSourceError as exc:
+                if exc.code == _THROTTLED or not self.client.drop_pinned():
+                    raise
+                self._final = None  # the history failed after the tip: the next host's pair
 
     @property
     def host(self) -> str | None:
@@ -429,14 +500,19 @@ class EsploraSource:
 
     def transactions(self, address: str, cursor: str | None) -> Page[ChainTx]:
         state = _Cursor.parse(cursor)
+        self._floor = max(self._floor, state.done)
         try:
             if state.window is None:
-                window, after = self.final_height(), None
-                if state.done >= window:  # nothing new is final: no request
+                window, newest = self._fresh(address, state.done)
+                if newest is None:  # nothing new is final: no request
                     return Page[ChainTx](items=[], next_cursor=cursor)
+                page = newest
             else:
-                window, after = state.window, state.txid
-            page = self.client.transactions(address, after)
+                window = state.window
+                page = self.client.transactions(address, state.txid)
+                if not page.items and not self.client.confirmed(state.txid):
+                    # not the end: this host does not know the anchor; walk again from the top
+                    return Page[ChainTx](items=[], next_cursor=_Cursor(state.done).text())
         except BudgetSpent:
             return Page[ChainTx](items=[], next_cursor=cursor)
         items = [tx for tx in page.items if state.done < tx.block <= window]
@@ -450,6 +526,8 @@ class EsploraSource:
     def balances(self, address: str) -> list[AssetBalance]:
         try:
             final = self.final_height()
+            if final < self._floor:  # no host reached what is stored: no figure, no mismatch
+                raise ChainSourceError(SOURCE_FAILED)
             units = self.client.address_units(address)
             later: list[ChainTx] = []
             after: str | None = None
@@ -480,4 +558,5 @@ def make_source(
     client = from_settings(settings, fetch)
     client.sleep = sleep
     client.budget = budget
+    client.pin = True
     return EsploraSource(client=client, confirmations_final=row.confirmations_final)
