@@ -10,9 +10,13 @@
 - POST /transfers/{id}/unlink: replace a wrong link by the one the user picks. 404, 409 when
   it was replaced already or a leg of the replacement is linked.
 - POST /transfers/{id}/release: „Verknüpfung lösen“ (phase 7 D261, review fixes 16 Nov 2026):
-  ends a coin link the app wrote from a learned exchange address or withdrawal pair, both legs
-  back to proposed and the learned row forgotten. 404; 409 for a link proven by its hash, any
+  ends a coin link the app wrote from a learned exchange address or withdrawal pair, or a
+  person's „An eigene Wallet“ (its written deposit ended), the legs back to proposed and the
+  learned row forgotten. 404; 409 for a link proven by its hash, any
   other link, or one no longer current.
+- POST /transfers/own-wallet-deposit: „An eigene Wallet“ (phase 7 D181 (c) amended 16 Nov
+  2026): an exchange's withdrawal to BNB Smart Chain booked to an own address there, the
+  deposit written by the app. 404, 409, 422 transfer.legs_invalid.
 - POST /returns: „Als Rücküberweisung verbuchen“ (D162 amended (7)): a credit on a private
   account that returns an earlier debit of it, both booked as transfer parts by the person's
   answer and linked to each other. 404 for an unknown line, 409 when either is linked to
@@ -34,6 +38,7 @@ from fastapi import Query, Response
 from hausbuch.schemas.household import (
     HouseholdCashflow,
     OpenTransfer,
+    OwnWalletDepositCreate,
     ReturnedPaymentCreate,
     TransferLink,
     TransferLinkRequest,
@@ -74,6 +79,16 @@ def transfer_release(link_id: UUID, cmd: Cmd) -> Response:
     409 for a hash link, a person's link or any other link, or one no longer current."""
     cmd.run(transfers.release, link_id)
     return Response(status_code=204)
+
+
+@router.post("/transfers/own-wallet-deposit", status_code=201)
+def transfer_own_wallet_deposit(body: OwnWalletDepositCreate, cmd: Cmd) -> TransferLink:
+    """„An eigene Wallet“ (phase 7 D181 (c) amended 16 Nov 2026): an exchange's withdrawal to a
+    balance-only chain (BNB Smart Chain) booked to an own address there: the app writes the
+    deposit (the withdrawal less its fee), links it (matched_by user) and confirms both legs;
+    `learned` when the remember box taught the pair. 404, 409 when linked already or being
+    answered, 422 transfer.legs_invalid for a withdrawal or address it does not apply to."""
+    return cmd.run(transfers.own_wallet_deposit, body)
 
 
 @router.post("/transfers/{link_id}/unlink", status_code=201)

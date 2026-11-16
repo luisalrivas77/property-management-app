@@ -1236,7 +1236,11 @@ class TransferLinked(Schema):
     # address), `withdrawal_pair` (an exchange's withdrawal to an own address it was linked to
     # before), `confirmed` (both legs confirmed already). None on a person's link and on
     # every EUR link.
-    reason: Literal["hash", "deposit_address", "withdrawal_pair", "confirmed"] | None = None
+    # D181 (c) amended 16 Nov 2026: `own_wallet` on a person's link of an exchange's
+    # withdrawal to a deposit the app wrote on a balance-only address.
+    reason: (
+        Literal["hash", "deposit_address", "withdrawal_pair", "confirmed", "own_wallet"] | None
+    ) = None
 
 
 class TransferUnlinked(Schema):

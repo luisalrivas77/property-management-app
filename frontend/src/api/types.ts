@@ -2248,6 +2248,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/transfers/own-wallet-deposit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transfer Own Wallet Deposit
+         * @description „An eigene Wallet“ (phase 7 D181 (c) amended 16 Nov 2026): an exchange's withdrawal to a
+         *     balance-only chain (BNB Smart Chain) booked to an own address there: the app writes the
+         *     deposit (the withdrawal less its fee), links it (matched_by user) and confirms both legs;
+         *     `learned` when the remember box taught the pair. 404, 409 when linked already or being
+         *     answered, 422 transfer.legs_invalid for a withdrawal or address it does not apply to.
+         */
+        post: operations["transfer_own_wallet_deposit_api_transfers_own_wallet_deposit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transfers/{link_id}/unlink": {
         parameters: {
             query?: never;
@@ -9225,6 +9249,13 @@ export interface components {
         /**
          * OpenTransfer
          * @description One leg waiting for its counterpart, with the legs it may be linked to.
+         *
+         *     own_wallets (D181 (c) amended 16 Nov 2026): on a transfer.unmatched_leg card of an
+         *     exchange's withdrawal to a balance-only chain that no hash can prove (none in the export,
+         *     or the node did not know it a day later), the own addresses on that chain it may be
+         *     booked to (POST /transfers/own-wallet-deposit). paired_address_id: the one address the
+         *     exchange's withdrawals are learned to arrive on; the app links them itself once the
+         *     address's last read balance covers them, so this one waits because it does not yet.
          */
         OpenTransfer: {
             code: components["schemas"]["OpenTransferCode"];
@@ -9236,6 +9267,10 @@ export interface components {
              * Format: date
              */
             window_end: string;
+            /** Own Wallets */
+            own_wallets?: components["schemas"]["OwnWalletChoice"][];
+            /** Paired Address Id */
+            paired_address_id?: string | null;
         };
         /**
          * OpenTransferCode
@@ -9324,6 +9359,55 @@ export interface components {
             from_report: boolean;
             /** Reconciled Through */
             reconciled_through?: string | null;
+        };
+        /**
+         * OwnWalletChoice
+         * @description D181 (c) amended 16 Nov 2026: an own address on a balance-only chain (BNB Smart Chain)
+         *     an exchange's withdrawal may be booked to by hand, „An eigene Wallet: <Wallet> (<Chain>)“.
+         *     The masked address only (D179).
+         */
+        OwnWalletChoice: {
+            /**
+             * Address Id
+             * Format: uuid
+             */
+            address_id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Account Label */
+            account_label: string;
+            /** Chain */
+            chain: string;
+            /** Address Masked */
+            address_masked: string;
+        };
+        /**
+         * OwnWalletDepositCreate
+         * @description POST /transfers/own-wallet-deposit (D181 (c) amended 16 Nov 2026): book an exchange's
+         *     withdrawal to an own address on a balance-only chain. The app writes the deposit (the
+         *     withdrawal less its fee, on its date), links it (matched_by user) and confirms both legs;
+         *     remember_withdrawal_pair (ticked by default) learns the pair (exchange, address), so the
+         *     next such withdrawals are linked by code while the address's balance covers them.
+         */
+        OwnWalletDepositCreate: {
+            /**
+             * Withdrawal Movement Id
+             * Format: uuid
+             */
+            withdrawal_movement_id: string;
+            /**
+             * Address Id
+             * Format: uuid
+             */
+            address_id: string;
+            /**
+             * Remember Withdrawal Pair
+             * @default true
+             */
+            remember_withdrawal_pair: boolean;
         };
         /** Owner */
         Owner: {
@@ -18423,6 +18507,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transfer_own_wallet_deposit_api_transfers_own_wallet_deposit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnWalletDepositCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferLink"];
+                };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
             default: {

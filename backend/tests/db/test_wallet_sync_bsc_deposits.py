@@ -146,6 +146,7 @@ class Seed:
         tx_hash: str | None = None,
         network: str | None = "BSC",
         at: datetime = SENT_AT,
+        status: str = "confirmed",
     ) -> uuid.UUID:
         with _admin(self.dbname) as conn:
             return _insert(
@@ -162,7 +163,7 @@ class Seed:
                     "tx_hash": tx_hash,
                     "network": network,
                     "source": "csv",
-                    "status": "confirmed",
+                    "status": status,
                     "movement_hash": hashlib.sha256(uuid.uuid4().bytes).hexdigest(),
                 },
             )
@@ -384,3 +385,270 @@ def test_an_import_or_answer_queues_the_wallet_s_sync(dbname, app_engine, fresh_
     finally:
         with app_engine.begin() as conn:
             conn.execute(text("DELETE FROM procrastinate_jobs WHERE task_name = 'sync_wallet'"))
+
+
+# --- A withdrawal no hash proves: „An eigene Wallet“ and the learned pair -------------------
+
+TODAY = NOW.date()
+
+
+def _own_wallet(withdrawal, address, *, remember=True):
+    from hausbuch.schemas.household import OwnWalletDepositCreate
+    from hausbuch.services import transfers
+
+    body = OwnWalletDepositCreate(
+        withdrawal_movement_id=withdrawal, address_id=address, remember_withdrawal_pair=remember
+    )
+    return lambda ctx: transfers.own_wallet_deposit(ctx, body)
+
+
+def _cards(read, ws):
+    from hausbuch.services.chain.transfers import open_transfers
+
+    return {o.leg.id: o for o in read(ws, open_transfers, TODAY)}
+
+
+def _pairs(read, ws):
+    from hausbuch.services.chain.learned import withdrawal_pairs
+
+    return read(ws, withdrawal_pairs)
+
+
+def _wallet_units(read, ws, wallet):
+    """The wallet's coins as the lots read them (services.holdings, FIFO on read)."""
+    from hausbuch.services.holdings import crypto_holdings
+
+    coins = read(ws, crypto_holdings, TODAY).coins
+    return sorted(c.units for c in coins if c.account_id == wallet)
+
+
+def _current(read, ws):
+    """The links that count (services.transfers._current_links: both legs live)."""
+    from hausbuch.services.transfers import _current_links
+
+    return read(ws, lambda conn: [r.id for r in _current_links(conn)])
+
+
+def _relink(ctx):
+    from hausbuch.services.chain.transfers import relink
+
+    return relink(ctx)
+
+
+def test_a_pick_writes_the_deposit_links_it_and_learns_the_pair(
+    dbname, app_engine, blob_store, fresh_workspaces, node, run, read
+):
+    """BISON names no hash: its card offers the own BSC address; the pick writes the deposit
+    (the withdrawal less its fee), links it as the person's answer and learns the pair. The
+    address's balance check then reads it: equal → reconciled, no card; above → the card."""
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    withdrawal = seed.withdrawal("2.001", fee="0.001", tx_hash=None, network=None)
+
+    card = _cards(read, ws)[withdrawal]
+    assert card.code.value == "transfer.unmatched_leg" and card.paired_address_id is None
+    (choice,) = card.own_wallets
+    assert (choice.address_id, choice.account_label, choice.chain) == (
+        seed.address,
+        "Hardware-Wallet",
+        "bsc",
+    )
+    assert choice.address_masked != OWN  # masked only (D179)
+
+    link = run(ws, _own_wallet(withdrawal, seed.address))
+    assert (link.matched_by.value, link.learned) == ("user", "learned")
+    ((g_hash, g_kind, g_status, kind, quantity, status, m_hash),) = _deposits(dbname, seed.address)
+    assert (g_kind, g_status, kind, quantity, status, m_hash) == (
+        "exchange_transfer",
+        "confirmed",
+        "internal_transfer_in",
+        Decimal("2"),
+        "confirmed",
+        None,
+    )
+    assert g_hash == f"exchange-withdrawal:{withdrawal}"
+    ((out_id, in_id, matched_by, reason),) = _links(dbname, ws)
+    assert (out_id, matched_by, reason) == (withdrawal, "user", "own_wallet")
+    assert _pairs(read, ws) == {(seed.exchange, seed.address)}
+    assert withdrawal not in _cards(read, ws)
+    assert _wallet_units(read, ws, seed.wallet) == [Decimal("2")]
+    # the written group is no person's answer: „Antwort zurücknehmen“ never lists it
+    ((group_reason,),) = _q(
+        dbname,
+        "SELECT e.payload->>'reason' FROM event e JOIN asset_movement m ON m.group_id ="
+        " e.entity_id WHERE m.id = %s AND e.type = 'movement_group.confirmed'",
+        in_id,
+    )
+    assert group_reason == "routing.chain_written_deposit"
+
+    node.native = 2 * BNB
+    equal = _run(app_engine, blob_store, ws, seed.wallet)
+    assert (equal.reconciled, equal.card) == (True, None)
+    node.native = 3 * BNB
+    above = _run(app_engine, blob_store, ws, seed.wallet, day=1)
+    assert (above.reconciled, above.card) == (True, "transfer.unmatched_leg")
+
+
+def test_the_next_withdrawal_is_linked_only_while_the_balance_covers_it(
+    dbname, app_engine, blob_store, fresh_workspaces, node, run, read
+):
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    first = seed.withdrawal("2.001", fee="0.001", tx_hash=None, network=None)
+    run(ws, _own_wallet(first, seed.address))
+    node.native = 2 * BNB
+    _run(app_engine, blob_store, ws, seed.wallet)
+
+    # one more BNB left the exchange; the node still reads 2: nothing proves it arrived
+    second = seed.withdrawal(
+        "1.0005", fee="0.0005", tx_hash=None, network=None, at=SENT_AT + timedelta(days=3)
+    )
+    assert run(ws, _relink).written == 0
+    card = _cards(read, ws)[second]
+    assert card.paired_address_id == seed.address and card.own_wallets
+
+    # the next read shows 3 BNB: the sync's relink writes and links it; a later run reconciles
+    node.native = 3 * BNB
+    _run(app_engine, blob_store, ws, seed.wallet, day=1)
+    links = {r[0]: r for r in _links(dbname, ws)}
+    assert links[second][2:] == ("matcher", "withdrawal_pair")
+    assert sorted(r[4] for r in _deposits(dbname, seed.address)) == [Decimal("1"), Decimal("2")]
+    after = _run(app_engine, blob_store, ws, seed.wallet, day=2)
+    assert (after.reconciled, after.card) == (True, None)
+
+    # two waiting withdrawals never pass on one balance: 3 + 1 + 1 > 4
+    third = seed.withdrawal(
+        "1", fee=None, tx_hash=None, network=None, at=SENT_AT + timedelta(days=4)
+    )
+    fourth = seed.withdrawal(
+        "1", fee=None, tx_hash=None, network=None, at=SENT_AT + timedelta(days=5)
+    )
+    node.native = 4 * BNB
+    _run(app_engine, blob_store, ws, seed.wallet, day=3)
+    linked = {r[0] for r in _links(dbname, ws)}
+    assert third in linked and fourth not in linked
+    assert _cards(read, ws)[fourth].paired_address_id == seed.address
+
+
+def test_release_ends_the_written_deposit_and_forgets_the_pair(
+    dbname, app_engine, blob_store, fresh_workspaces, node, run, read
+):
+    """„Verknüpfung lösen“ on the person's pick: the deposit ends by a 0-unit successor
+    (append-only), the withdrawal goes back to proposed (the pick had confirmed it), the pair
+    is forgotten, the lots no longer hold the coins and the balance check counts nothing."""
+    from hausbuch.services import transfers
+    from hausbuch.services.chain.transfers import learned_links
+
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    withdrawal = seed.withdrawal(
+        "2.001", fee="0.001", tx_hash=None, network=None, status="proposed"
+    )
+    link = run(ws, _own_wallet(withdrawal, seed.address))
+    assert read(ws, learned_links, [withdrawal]) == {
+        withdrawal: link.id,
+        link.in_movement_id: link.id,
+    }
+
+    run(ws, lambda ctx: transfers.release(ctx, link.id))
+    assert _current(read, ws) == []
+    assert _pairs(read, ws) == set()
+    ((_, _, g_status, kind, quantity, status, _),) = _deposits(dbname, seed.address)
+    assert (g_status, kind, quantity, status) == (
+        "confirmed",
+        "uncategorized",
+        Decimal("0"),
+        "confirmed",
+    )
+    assert _wallet_units(read, ws, seed.wallet) == []
+    ((copy,),) = _q(
+        dbname,
+        "SELECT status FROM asset_movement WHERE id ="
+        " (SELECT superseded_by FROM asset_movement WHERE id = %s)",
+        withdrawal,
+    )
+    assert copy == "proposed"
+    node.native = 0
+    out = _run(app_engine, blob_store, ws, seed.wallet)
+    assert (out.reconciled, out.card) == (True, None)
+    assert _current(read, ws) == []  # nothing relinks it: the pair is forgotten
+
+
+def test_a_re_booked_withdrawal_ends_its_written_deposit(dbname, fresh_workspaces, run, read):
+    """The withdrawal answered otherwise (superseded): the link is no longer current, and the
+    next relink ends the deposit it held, so no balance counts coins nothing proves."""
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    withdrawal = seed.withdrawal("2.001", fee="0.001", tx_hash=None, network=None)
+    run(ws, _own_wallet(withdrawal, seed.address, remember=False))
+    assert _pairs(read, ws) == set()
+    with _admin(dbname) as conn:
+        new = _insert(
+            conn,
+            "asset_movement",
+            {
+                "workspace_id": ws,
+                "account_id": seed.exchange,
+                "asset_id": seed.bnb,
+                "kind": "uncategorized",
+                "quantity": "-2.001",
+                "occurred_at": SENT_AT,
+                "source": "user",
+                "status": "confirmed",
+                "movement_hash": hashlib.sha256(uuid.uuid4().bytes).hexdigest(),
+            },
+        )
+        conn.execute(
+            "UPDATE asset_movement SET superseded_by = %s WHERE id = %s", (new, withdrawal)
+        )
+    assert run(ws, _relink).ended == 1
+    ((_, _, _, kind, quantity, _, _),) = _deposits(dbname, seed.address)
+    assert (kind, quantity) == ("uncategorized", Decimal("0"))
+    assert run(ws, _relink).ended == 0  # idempotent
+
+
+def test_an_unknown_hash_is_offered_a_hash_still_to_look_up_is_not(
+    dbname, app_engine, blob_store, fresh_workspaces, node, run, read
+):
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    unknown = seed.withdrawal(tx_hash=_hash("the node never saw it"))
+    _run(app_engine, blob_store, ws, seed.wallet)  # asked a day later, in vain: remembered
+    pending = seed.withdrawal(tx_hash=_hash("not asked yet"))
+
+    cards = _cards(read, ws)
+    assert pending not in cards  # the sync looks it up first (no dead-end card)
+    assert [c.address_id for c in cards[unknown].own_wallets] == [seed.address]
+    assert cards[unknown].paired_address_id is None  # a hashed one is never linked by a pair
+
+    run(ws, _own_wallet(unknown, seed.address))
+    ((g_hash, *_rest),) = _deposits(dbname, seed.address)
+    assert g_hash == _hash("the node never saw it")  # held now: never looked up again
+
+
+def test_a_pick_is_refused_where_it_does_not_apply(dbname, fresh_workspaces, run):
+    from db.test_phase7_migration import EVM
+
+    from hausbuch.services.errors import ConflictError, NotFoundError, RuleViolationError
+
+    ws, other = fresh_workspaces
+    seed = Seed(dbname, ws)
+    theirs = Seed(dbname, other, address=OTHER)
+    with _admin(dbname) as conn:
+        eth = _address(conn, ws, seed.wallet, chain="ethereum", address=EVM)
+    bison = seed.withdrawal("2.001", fee="0.001", tx_hash=None, network=None)
+    hashed = seed.withdrawal(tx_hash=_hash("to be looked up"))
+    their_bison = theirs.withdrawal(tx_hash=None, network=None)
+
+    with pytest.raises(RuleViolationError):  # an address on another chain
+        run(ws, _own_wallet(bison, eth))
+    with pytest.raises(RuleViolationError):  # a hash the sync looks up first
+        run(ws, _own_wallet(hashed, seed.address))
+    with pytest.raises(NotFoundError):  # another workspace's address (row-level security)
+        run(ws, _own_wallet(bison, theirs.address))
+    with pytest.raises(NotFoundError):  # another workspace's withdrawal
+        run(ws, _own_wallet(their_bison, seed.address))
+    run(ws, _own_wallet(bison, seed.address))
+    with pytest.raises(ConflictError):  # linked already
+        run(ws, _own_wallet(bison, seed.address))
+    assert len(_deposits(dbname, seed.address)) == 1

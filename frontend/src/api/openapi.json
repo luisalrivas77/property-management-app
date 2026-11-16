@@ -6200,6 +6200,45 @@
         }
       }
     },
+    "/api/transfers/own-wallet-deposit": {
+      "post": {
+        "summary": "Transfer Own Wallet Deposit",
+        "description": "„An eigene Wallet“ (phase 7 D181 (c) amended 16 Nov 2026): an exchange's withdrawal to a\nbalance-only chain (BNB Smart Chain) booked to an own address there: the app writes the\ndeposit (the withdrawal less its fee), links it (matched_by user) and confirms both legs;\n`learned` when the remember box taught the pair. 404, 409 when linked already or being\nanswered, 422 transfer.legs_invalid for a withdrawal or address it does not apply to.",
+        "operationId": "transfer_own_wallet_deposit_api_transfers_own_wallet_deposit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnWalletDepositCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferLink"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/transfers/{link_id}/unlink": {
       "post": {
         "summary": "Transfer Unlink",
@@ -23641,6 +23680,25 @@
             "type": "string",
             "format": "date",
             "title": "Window End"
+          },
+          "own_wallets": {
+            "items": {
+              "$ref": "#/components/schemas/OwnWalletChoice"
+            },
+            "type": "array",
+            "title": "Own Wallets"
+          },
+          "paired_address_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paired Address Id"
           }
         },
         "additionalProperties": false,
@@ -23652,7 +23710,7 @@
           "window_end"
         ],
         "title": "OpenTransfer",
-        "description": "One leg waiting for its counterpart, with the legs it may be linked to."
+        "description": "One leg waiting for its counterpart, with the legs it may be linked to.\n\nown_wallets (D181 (c) amended 16 Nov 2026): on a transfer.unmatched_leg card of an\nexchange's withdrawal to a balance-only chain that no hash can prove (none in the export,\nor the node did not know it a day later), the own addresses on that chain it may be\nbooked to (POST /transfers/own-wallet-deposit). paired_address_id: the one address the\nexchange's withdrawals are learned to arrive on; the app links them itself once the\naddress's last read balance covers them, so this one waits because it does not yet."
       },
       "OpenTransferCode": {
         "type": "string",
@@ -23874,6 +23932,70 @@
         ],
         "title": "OverviewPosition",
         "description": "One asset on one account: units from the confirmed movements to `on`, the price\n`rules.valuation.price_on` chose, and the value; `not_valued_reason` says why there is\nnone (valuation.not_valued past the last reconciled date, price.no_source). `from_report`\nmarks a price taken from a depot report (source statement) on a fund whose issuer has no\nadapter: „Kurs aus dem letzten Bericht“ (D174 (4))."
+      },
+      "OwnWalletChoice": {
+        "properties": {
+          "address_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Address Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "account_label": {
+            "type": "string",
+            "title": "Account Label"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain"
+          },
+          "address_masked": {
+            "type": "string",
+            "title": "Address Masked"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "address_id",
+          "account_id",
+          "account_label",
+          "chain",
+          "address_masked"
+        ],
+        "title": "OwnWalletChoice",
+        "description": "D181 (c) amended 16 Nov 2026: an own address on a balance-only chain (BNB Smart Chain)\nan exchange's withdrawal may be booked to by hand, „An eigene Wallet: <Wallet> (<Chain>)“.\nThe masked address only (D179)."
+      },
+      "OwnWalletDepositCreate": {
+        "properties": {
+          "withdrawal_movement_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Withdrawal Movement Id"
+          },
+          "address_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Address Id"
+          },
+          "remember_withdrawal_pair": {
+            "type": "boolean",
+            "title": "Remember Withdrawal Pair",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "withdrawal_movement_id",
+          "address_id"
+        ],
+        "title": "OwnWalletDepositCreate",
+        "description": "POST /transfers/own-wallet-deposit (D181 (c) amended 16 Nov 2026): book an exchange's\nwithdrawal to an own address on a balance-only chain. The app writes the deposit (the\nwithdrawal less its fee, on its date), links it (matched_by user) and confirms both legs;\nremember_withdrawal_pair (ticked by default) learns the pair (exchange, address), so the\nnext such withdrawals are linked by code while the address's balance covers them."
       },
       "Owner": {
         "properties": {

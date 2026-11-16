@@ -62,6 +62,14 @@ CHAIN_CHANGE_CANDIDATE = "routing.chain_change_candidate"
 # übrigen Transaktionen der Adresse sind eingelesen; der Kontostand weicht um diese
 # Transaktion ab, bis Hausbuch sie lesen kann.“
 CHAIN_UNSTORABLE = "routing.chain_unstorable"
+# D181 (c) amended 16 Nov 2026: a deposit the app wrote on a balance-only address (BNB Smart
+# Chain) for an exchange's withdrawal, by a person's pick „An eigene Wallet“ or from a learned
+# withdrawal pair (services.chain.transfers); the node reports no history, so the deposit is
+# the withdrawal less its fee. Its group's movement_group.confirmed event carries this reason
+# (never routing.person: „Antwort zurücknehmen“ does not apply, „Verknüpfung lösen“ does), and
+# the group that ends it when its link ends carries the second.
+CHAIN_WRITTEN_DEPOSIT = "routing.chain_written_deposit"
+CHAIN_WRITTEN_DEPOSIT_ENDED = "routing.chain_written_deposit_ended"
 
 EXACT = Decimal("1.000")
 _RECURRING = Decimal("0.900")

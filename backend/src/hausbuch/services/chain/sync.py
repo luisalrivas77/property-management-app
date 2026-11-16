@@ -1192,7 +1192,9 @@ def _reconcile(
     a balance-only address's card.
 
     A balance-only source (D181 (c)) has no history, so its address's movements are only the
-    deposits linked to it (step 5): rules/chain/evm.reconcile_balance_only compares the
+    deposits written on it (from the withdrawal's receipt, or by a person's pick „An eigene
+    Wallet“ and its learned pair, D181 (c) amended 16 Nov 2026, services.chain.transfers),
+    each linked: rules/chain/evm.reconcile_balance_only compares the
     balance with them, over the assets the source read a balance of (a deposit in an asset
     it did not read is no shortfall). A balance above them is reconciled (the card
     transfer.unmatched_leg), one below is reconciled false with the negative shortfall as
