@@ -51,12 +51,18 @@ BINANCE = fixtures.load("binance_csv")
 REAL_LAYOUT = next(c for c in BISON.parse_cases if c.id == "real_layout").text
 
 
-def _zip(text: str, *, bom: bool = True) -> bytes:
+def _zip(text: str, *, bom: bool = True, member: str = "export-202611131200.csv") -> bytes:
     data = (b"\xef\xbb\xbf" if bom else b"") + text.replace("\n", "\r\n").encode()
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("export-202611131200.csv", data)
+        archive.writestr(member, data)
     return buffer.getvalue()
+
+
+# D178 amended (4), 16 Nov 2026: a Binance transaction export names its time zone in its CSV's
+# name; the fixtures' times are UTC, so their member names „(UTC)“ (else the exchange page would
+# also ask for the export again, exchange.time_zone_unknown).
+UTC_MEMBER = "export-202611131200(UTC).csv"
 
 
 def _exchange(run, ws, provider="BISON", **overrides):
@@ -408,10 +414,6 @@ def test_what_does_not_belong_on_the_account_is_refused_before_anything_is_writt
 
 # --- Binance (D178), once its format is in the CHECK ---------------------------------------
 
-# D178 amended (4), 16 Nov 2026: these uploads' names (export.csv, export-<stamp>.csv) name no
-# time zone, so each Binance account below also shows the to-do asking for the export again.
-ZONE = E.EXCHANGE_TIME_ZONE_UNKNOWN
-
 
 def test_binance_withdrawals_completed_by_the_history_uploaded_later(
     run, read, blob_store, fresh_workspaces
@@ -419,11 +421,11 @@ def test_binance_withdrawals_completed_by_the_history_uploaded_later(
     ws, _ = fresh_workspaces
     account = _exchange(run, ws, provider="Binance")
     case = next(c for c in BINANCE.cases if c.id == "withdrawal_history_uploaded_later")
-    upload = _upload(run, blob_store, ws, account.id, _zip(case.transactions))
+    upload = _upload(run, blob_store, ws, account.id, _zip(case.transactions, member=UTC_MEMBER))
     assert upload.withdrawals_open == 1
     assert upload.movement_import.format.value == "binance_csv"
     overview = read(ws, imports.exchange_overview, account.id)
-    assert overview.todos == [ZONE, E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING]
+    assert overview.todos == [E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING]
     completed = _upload(run, blob_store, ws, account.id, _zip(case.withdrawals), n=1)
     assert (completed.movement_import, completed.withdrawals_completed) == (None, 1)
     assert completed.withdrawals_open == 0
@@ -437,7 +439,7 @@ def test_binance_withdrawals_completed_by_the_history_uploaded_later(
     )
     assert current.movement_hash is None
     assert current.document_id == upload.movement_import.document_id  # still its import's
-    assert read(ws, imports.exchange_overview, account.id).todos == [ZONE]
+    assert read(ws, imports.exchange_overview, account.id).todos == []
     # The same history again completes nothing twice.
     again = _upload(run, blob_store, ws, account.id, _zip(case.withdrawals), n=2)
     assert (again.withdrawals_completed, again.withdrawals_open) == (0, 0)
@@ -464,7 +466,7 @@ def test_a_withdrawal_history_that_fits_no_withdrawal_names_why(
     ws, _ = fresh_workspaces
     account = _exchange(run, ws, provider="Binance")
     case = next(c for c in BINANCE.cases if c.id == "withdrawal_history_uploaded_later")
-    _upload(run, blob_store, ws, account.id, _zip(case.transactions))
+    _upload(run, blob_store, ws, account.id, _zip(case.transactions, member=UTC_MEMBER))
     other_coin = (
         "Time,Coin,Network,Amount,Fee,Address,TXID,Status\n"
         f"2026-03-05 12:05:00,SOL,SOL,1.5,0.01,{BINANCE.never_stored.address},"
@@ -474,7 +476,7 @@ def test_a_withdrawal_history_that_fits_no_withdrawal_names_why(
     assert (checked.withdrawals_completed, checked.withdrawals_open) == (0, 1)
     assert checked.withdrawals_reason == E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH
     overview = read(ws, imports.exchange_overview, account.id)
-    assert overview.todos == [ZONE, E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH]
+    assert overview.todos == [E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH]
     [current] = read(ws, imports.exchange_movements, account.id)
     assert current.tx_hash is None  # the matching rule is unchanged: nothing is guessed
     payloads = read(
@@ -497,18 +499,18 @@ def test_a_withdrawal_history_that_fits_no_withdrawal_names_why(
         f"{BINANCE.never_stored.user_id},2026-04-01 09:00:00,Spot,Withdraw,BTC,-0.0020,"
         "Withdraw fee is included\n"
     )
-    _upload(run, blob_store, ws, account.id, _zip(longer), n=2)
+    _upload(run, blob_store, ws, account.id, _zip(longer, member=UTC_MEMBER), n=2)
     overview = read(ws, imports.exchange_overview, account.id)
     assert (overview.withdrawals_open, overview.todos) == (
         2,
-        [ZONE, E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING],
+        [E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING],
     )
     # The fixture's history completes the first; the second still fits no row of it.
     partial = _upload(run, blob_store, ws, account.id, _zip(case.withdrawals), n=3)
     assert (partial.withdrawals_completed, partial.withdrawals_open) == (1, 1)
     assert partial.withdrawals_reason == E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH
     overview = read(ws, imports.exchange_overview, account.id)
-    assert overview.todos == [ZONE, E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH]
+    assert overview.todos == [E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH]
 
 
 TYPED_BINANCE = [
