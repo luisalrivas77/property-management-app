@@ -89,6 +89,15 @@ def exchange_overview(account_id: UUID, cmd: Cmd) -> ExchangeOverview:
     return cmd.read(imports.exchange_overview, account_id)
 
 
+@router.post("/accounts/{account_id}/learned/{learned_id}/forget", status_code=204)
+def exchange_learned_forget(account_id: UUID, learned_id: UUID, cmd: Cmd) -> Response:
+    """„Vergessen“ (D261): ends a learned deposit address or withdrawal pair of the exchange;
+    the links already written stay. 404 for none of this exchange's; 409 when forgotten
+    already."""
+    cmd.run(imports.forget_learned, account_id, learned_id)
+    return Response(status_code=204)
+
+
 @router.get("/accounts/{account_id}/movements")
 def exchange_movements(account_id: UUID, cmd: Cmd) -> list[ExchangeMovementRow]:
     """The exchange account's current movements, newest first."""

@@ -9,6 +9,10 @@
   transfer by the person's answer (D176 (4)); 422 transfer.legs_invalid for one not tied.
 - POST /transfers/{id}/unlink: replace a wrong link by the one the user picks. 404, 409 when
   it was replaced already or a leg of the replacement is linked.
+- POST /transfers/{id}/release: „Verknüpfung lösen“ (phase 7 D261, review fixes 16 Nov 2026):
+  ends a coin link the app wrote from a learned exchange address or withdrawal pair, both legs
+  back to proposed and the learned row forgotten. 404; 409 for a link proven by its hash, any
+  other link, or one no longer current.
 - POST /returns: „Als Rücküberweisung verbuchen“ (D162 amended (7)): a credit on a private
   account that returns an earlier debit of it, both booked as transfer parts by the person's
   answer and linked to each other. 404 for an unknown line, 409 when either is linked to
@@ -25,7 +29,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Query
+from fastapi import Query, Response
 
 from hausbuch.schemas.household import (
     HouseholdCashflow,
@@ -61,6 +65,15 @@ def transfers_open(cmd: Cmd) -> list[OpenTransfer]:
 @router.post("/transfers", status_code=201)
 def transfer_link(body: TransferLinkRequest, cmd: Cmd, settings: SettingsDep) -> TransferLink:
     return cmd.run(transfers.link_by_hand, body, iban_key=settings.iban_hmac_key)
+
+
+@router.post("/transfers/{link_id}/release", status_code=204)
+def transfer_release(link_id: UUID, cmd: Cmd) -> Response:
+    """„Verknüpfung lösen“ (phase 7 D261): ends a coin link the app wrote from a learned
+    exchange address or withdrawal pair, reopens both legs and forgets what produced it. 404,
+    409 for a hash link, a person's link or any other link, or one no longer current."""
+    cmd.run(transfers.release, link_id)
+    return Response(status_code=204)
 
 
 @router.post("/transfers/{link_id}/unlink", status_code=201)

@@ -1286,9 +1286,12 @@ function legFigure(leg: TransferLegView): string {
 /** POST /transfers' body: the leg paid out is the out leg, each by its table (D162). A coin
  * candidate carries the kind its link takes (chain, bridge or wrap, from the API), which the
  * accounts alone cannot tell. */
-function linkBody(accounts: Map<string, Account>, leg: TransferLegView, other: TransferLegView): TransferLinkRequest {
+function linkBody(accounts: Map<string, Account>, leg: TransferLegView, other: TransferLegView, remember = false): TransferLinkRequest {
   const [out, in_] = legSends(leg) ? [leg, other] : [other, leg];
+  const learn = learnBox(leg, other);
   return {
+    remember_deposit_address: remember && learn?.kind === "deposit",
+    remember_withdrawal_pair: remember && learn?.kind === "withdrawal",
     rebook: other.rebook_on_link,
     kind: other.link_kind ?? linkKind(accounts, out, in_),
     out_transaction_id: out.source === "transaction" ? out.id : null,
@@ -1296,6 +1299,30 @@ function linkBody(accounts: Map<string, Account>, leg: TransferLegView, other: T
     in_transaction_id: in_.source === "transaction" ? in_.id : null,
     in_movement_id: in_.source === "movement" ? in_.id : null,
   };
+}
+
+/** D261: the box a coin link between an own wallet and an exchange offers, ticked by default.
+ * A wallet's send to the exchange's deposit teaches its deposit address, an exchange's
+ * withdrawal to a wallet address teaches that pair; from then on code links the next ones. The
+ * box names both sides, the wallet's send or receipt with its date and units included (review
+ * fixes 16 Nov 2026: the person sees which send the address is taken from), never the address
+ * (D179). */
+function learnBox(leg: TransferLegView, other: TransferLegView): { kind: "deposit" | "withdrawal"; text: string } | null {
+  if (leg.source !== "movement" || other.source !== "movement") return null;
+  const [out, in_] = legSends(leg) ? [leg, other] : [other, leg];
+  if (out.account_kind === "wallet" && in_.account_kind === "exchange") {
+    return {
+      kind: "deposit",
+      text: `Die Adresse, an die ${out.account_label} am ${formatDate(out.booked_on)} ${legFigure(out)} gesendet hat, als Einzahlungsadresse von ${in_.account_label} merken (Einzahlung vom ${formatDate(in_.booked_on)}, ${legFigure(in_)}); weitere Einzahlungen dorthin verknüpft die App dann selbst`,
+    };
+  }
+  if (out.account_kind === "exchange" && in_.account_kind === "wallet") {
+    return {
+      kind: "withdrawal",
+      text: `Abhebungen von ${out.account_label} an diese Adresse von ${in_.account_label} künftig automatisch verknüpfen (Abhebung vom ${formatDate(out.booked_on)}, ${legFigure(out)}; Eingang vom ${formatDate(in_.booked_on)}, ${legFigure(in_)})`,
+    };
+  }
+  return null;
 }
 
 function legText(leg: TransferLegView): string {
@@ -1338,6 +1365,8 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
   const name = `transfer-${open.leg.id}`;
   const chosen = open.candidates.find((candidate) => candidate.id === choice);
   const rebook = chosen?.rebook_on_link === true;
+  const learn = chosen ? learnBox(open.leg, chosen) : null;
+  const [remember, setRemember] = useState(true);
 
   async function link() {
     const other = open.candidates.find((candidate) => candidate.id === choice);
@@ -1345,7 +1374,7 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
     setBusy(true);
     setError(null);
     try {
-      await ok(api.POST("/api/transfers", { body: linkBody(accounts, open.leg, other) }));
+      await ok(api.POST("/api/transfers", { body: linkBody(accounts, open.leg, other, remember) }));
       onLinked();
     } catch (caught) {
       setError(caught);
@@ -1364,6 +1393,11 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
         </label>
       ))}
       {rebook && chosen ? <p className="muted">{rebookText(chosen, open.leg)}</p> : null}
+      {learn ? (
+        <label>
+          <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> {learn.text}
+        </label>
+      ) : null}
       <button type="button" onClick={() => void link()} disabled={busy || choice === ""}>
         {busy
           ? "Verknüpft …"

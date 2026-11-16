@@ -28,7 +28,7 @@ file is kept as uploaded (principle 6).
 """
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -83,6 +83,7 @@ from hausbuch.schemas.household import (
     HoldingBalance,
     HoldingSource,
     ImportBalance,
+    LearnedExchangeAddress,
     MovementImport,
     MovementImportFormat,
     MovementKind,
@@ -92,6 +93,7 @@ from hausbuch.schemas.household import (
 )
 from hausbuch.storage import BlobStore
 
+from ..chain import learned
 from ..context import CommandContext
 from ..documents import type_document, upload_document
 from ..errors import RuleViolationError
@@ -1024,7 +1026,12 @@ def answers_for(quantity: Decimal) -> list[MovementKind]:
 def answer_movement(ctx: CommandContext, movement_id: UUID, body: AnswerMovementBody) -> UUID:
     """POST /movements/{id}/answer: what the proposed movement really was; a kind of the
     other direction is refused (exchange.answer_invalid). The same kind confirms it; another
-    kind replaces it by a confirmed row of that kind. Returns the current movement's id."""
+    kind replaces it by a confirmed row of that kind. Returns the current movement's id.
+
+    An answer never teaches a deposit address (D261, review fixes 16 Nov 2026): the person
+    does not see which wallet send an address would come from, so a payment to a third party
+    could be learned as the exchange's. Learning is the remember box of a person's pick of the
+    two legs (POST /transfers), which the transfer card offers once the deposit is answered."""
     row = _require_proposed(ctx.conn, movement_id)
     if body.kind not in answers_for(row.quantity):
         raise RuleViolationError(
@@ -1159,13 +1166,26 @@ def exchange_overview(conn: Connection, account_id: UUID) -> ExchangeOverview:
         withdrawals_open=open_count,
         movements_to_answer=sum(1 for s in stored if s.status is MovementStatus.PROPOSED),
         todos=todos,
+        learned=[
+            LearnedExchangeAddress.model_validate(asdict(r))
+            for r in learned.learned_of(conn, account_id)
+        ],
     )
+
+
+def forget_learned(ctx: CommandContext, account_id: UUID, learned_id: UUID) -> None:
+    """POST /accounts/{id}/learned/{learned_id}/forget: „Vergessen“ (D261). 404 for a row of
+    another exchange or none; 409 when it was forgotten already. Links stay."""
+    learned.forget(ctx, account_id, learned_id)
 
 
 def _question(kind: MovementKind, status: MovementStatus) -> str | None:
     if status is MovementStatus.PROPOSED and kind is MovementKind.CASHBACK_REWARD:
         return E.EXCHANGE_DEPOSIT_QUESTION
     return None
+
+
+_UNSHOWN = frozenset({"counterparty_hmac", "counterparty_masked"})
 
 
 def exchange_movements(conn: Connection, account_id: UUID) -> list[ExchangeMovementRow]:
@@ -1179,16 +1199,21 @@ def exchange_movements(conn: Connection, account_id: UUID) -> list[ExchangeMovem
         .where(m.account_id == account_id, m.superseded_by.is_(None))
         .order_by(m.occurred_at.desc(), m.id)
     ).all()
+    from ..chain import transfers as chain_transfers
+
+    released = chain_transfers.learned_links(conn, [r.id for r in rows])
     out = []
     for r in rows:
         kind, status = MovementKind(r.kind), MovementStatus(r.status)
-        values = {c.name: getattr(r, c.name) for c in movement_table.c}
+        # D261: a chain send's counterparty (HMAC, masked) is the linker's, never shown here
+        values = {c.name: getattr(r, c.name) for c in movement_table.c if c.name not in _UNSHOWN}
         out.append(
             ExchangeMovementRow(
                 **values,
                 symbol=r.symbol or r.asset_name,
                 question=_question(kind, status),
                 answers=answers_for(r.quantity) if status is MovementStatus.PROPOSED else [],
+                learned_link_id=released.get(r.id),
             )
         )
     return out

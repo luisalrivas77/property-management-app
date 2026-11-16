@@ -176,6 +176,7 @@ from hausbuch.services.chain.base import (
     reconcile_scope,
     source_for,
 )
+from hausbuch.services.chain.learned import counterparty, deposit_predicate
 from hausbuch.services.chain.payee_answers import answered_payee
 from hausbuch.services.context import Actor, CommandContext, new_command
 from hausbuch.services.documents import read_original, type_document, upload_document
@@ -252,6 +253,9 @@ class _Start:
     # tokens each own address has movements in, these stored ones and the run's own legs.
     reads_tokens: bool = False
     stored_tokens: dict[str, frozenset[AssetKey]] = field(default_factory=dict)
+    # D261: the IBAN HMAC key, so a plain send's counterparty is stored as its HMAC and
+    # masked form (`asset_movement.counterparty_*`); None stores none.
+    hmac_key: bytes | None = field(default=None, repr=False)
 
 
 @dataclass(slots=True)
@@ -474,7 +478,11 @@ def _context(
     own: dict[str, _Own],
     native_asset_id: UUID,
     answered_payee: Callable[[str], bool] | None = None,
+    hmac_key: bytes | None = None,
 ) -> ClassifyContext:
+    """The classifier's context for one synced address. With `hmac_key`, a send to a deposit
+    address the workspace learned for one of its exchanges (D261) becomes an
+    exchange_transfer."""
     every_own = conn.execute(
         select(address_table.c.address).where(
             address_table.c.chain == chain.value, address_table.c.active.is_(True)
@@ -539,6 +547,9 @@ def _context(
         asset_ids=asset_ids,
         answered_payee=answered_payee,
         exchange_hashes=frozenset(h.strip() for h in exchange_hashes if h.strip()),
+        exchange_deposit=(
+            deposit_predicate(conn, chain, hmac_key) if hmac_key is not None else None
+        ),
     )
 
 
@@ -940,6 +951,13 @@ def _write_movements(
     document_id = original.ensure(ctx, start)
     for leg, own, digest in plan.legs:
         asset = chain_asset(ctx, leg.asset_key, leg)
+        # D261: the HMAC and masked form of the one external address a plain send paid, so a
+        # person's link can learn it as an exchange's deposit address; never the plaintext.
+        paid = (
+            counterparty(start.chain, leg.counterparty, start.hmac_key)
+            if leg.counterparty is not None and start.hmac_key is not None
+            else None
+        )
         movement_id = ctx.conn.execute(
             insert(movement_table)
             .values(
@@ -957,6 +975,8 @@ def _write_movements(
                 group_id=group_id,
                 address_id=own.id,
                 index=leg.index,
+                counterparty_hmac=paid[0] if paid else None,
+                counterparty_masked=paid[1] if paid else None,
                 created_at=ctx.now,
             )
             .returning(movement_table.c.id)
@@ -1476,7 +1496,16 @@ def _begin(
             if chain is Chain.BITCOIN
             else None
         )
-        ctx = _context(conn, chain, row.address, row.account_id, own, native.id, payees)
+        ctx = _context(
+            conn,
+            chain,
+            row.address,
+            row.account_id,
+            own,
+            native.id,
+            payees,
+            settings.iban_hmac_key,
+        )
         reads_tokens = getattr(source, "reads_tokens", False) is True
         stored_tokens = _stored_tokens(conn, chain, own) if reads_tokens else {}
         host = _host(source)
@@ -1509,6 +1538,7 @@ def _begin(
         balance_only=getattr(source, "balance_only", False) is True,
         reads_tokens=reads_tokens,
         stored_tokens=stored_tokens,
+        hmac_key=settings.iban_hmac_key,
     )
     return start, source, ctx, budget
 

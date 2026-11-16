@@ -126,6 +126,7 @@ class Seed:
         reason=NO_MATCH,
         tx_hash=None,
         at=T0 + timedelta(minutes=4),
+        question=None,
     ):
         """One movement group with its legs, each (asset, address, quantity, kind, status) and
         optionally its index (else its position), and its movement_group.proposed or
@@ -144,6 +145,7 @@ class Seed:
                     "occurred_at": at,
                     "kind": kind,
                     "status": status,
+                    "question": question,
                 },
             )
             insert_event(
@@ -299,11 +301,52 @@ def test_relink_twice_writes_one_link(seed, run, read):
     assert len(_links(read, seed.ws)) == 1
 
 
-def test_first_sync_waits_for_the_persons_pick(seed, run, read):
-    """A wallet's first sync is never confirmed by code (D186 (2)): the card proposes the fit,
-    and the person's pick confirms both legs and links them (matched_by user)."""
+def test_first_sync_pair_under_one_hash_is_linked_and_confirmed_by_code(seed, run, read):
+    """D261 (16 Nov 2026, amends D186 (1)): a wallet's whole history arrives in its first
+    sync, so a pair under one hash whose units fit is linked and confirmed by code there too
+    (until D261 the card waited for a person's pick). The link's event names the reason."""
     tx = _hash("first sync")
-    out = seed.exchange_out("0.3", fee="0.0005", tx_hash=tx, network="ETH")
+    out = seed.exchange_out("0.3", fee="0.0005", tx_hash=tx, network="ETH", status="proposed")
+    group, [in_] = seed.group(
+        [(seed.eth, seed.address, "0.2995", "internal_transfer_in", "proposed")],
+        tx_hash=tx,
+        reason=CHAIN_FIRST_SYNC,
+    )
+
+    result = run(seed.ws, chain_transfers.relink)
+
+    assert (result.linked, result.confirmed) == (1, 2)
+    [link] = _links(read, seed.ws)
+    assert link.matched_by == TransferMatchedBy.MATCHER.value
+    assert _movement(read, seed.ws, out).status == "confirmed"
+    assert _movement(read, seed.ws, in_).status == "confirmed"
+    assert _group_status(read, seed.ws, group) == "confirmed"
+    [(_, payload)] = _events(read, seed.ws, link.id)
+    assert payload["reason"] == "hash"
+    assert _open(read, seed.ws) == []
+
+
+def test_first_sync_group_with_a_question_still_waits(seed, run, read):
+    """D261 only lifts the first-sync wait; a group asking a question still waits."""
+    tx = _hash("first sync question")
+    seed.exchange_out("0.3", fee="0.0005", tx_hash=tx, network="ETH")
+    _, [in_] = seed.group(
+        [(seed.eth, seed.address, "0.2995", "internal_transfer_in", "proposed")],
+        tx_hash=tx,
+        reason=CHAIN_FIRST_SYNC,
+        question="Was ist das?",
+    )
+
+    assert run(seed.ws, chain_transfers.relink).linked == 0
+    assert _movement(read, seed.ws, in_).status == "proposed"
+
+
+def test_first_sync_fit_by_quantity_waits_for_the_persons_pick(seed, run, read):
+    """Without a hash, a fit by quantity with a proposed leg waits for a person, first sync
+    or not: the card proposes the fit, and the person's pick confirms both legs and links
+    them (matched_by user)."""
+    tx = _hash("first sync")
+    out = seed.exchange_out("0.3", fee="0.0005", network="ETH")
     group, [in_] = seed.group(
         [(seed.eth, seed.address, "0.2995", "internal_transfer_in", "proposed")],
         tx_hash=tx,

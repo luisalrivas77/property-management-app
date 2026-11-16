@@ -72,9 +72,9 @@ def test_a_scenario_is_recorded_corrected_and_listed_with_its_event(world):
 
     with workspace_transaction(world.engine, world.ws) as conn:
         events = conn.execute(
-            select(event_table).where(
-                event_table.c.type == EventType.PROPERTY_SCENARIO_RECORDED.value
-            )
+            select(event_table)
+            .where(event_table.c.type == EventType.PROPERTY_SCENARIO_RECORDED.value)
+            .order_by(event_table.c.seq)
         ).all()
     assert [e.payload["scenario_id"] for e in events] == [str(first.id), str(second.id)]
     assert all(e.entity_id == world.property_id for e in events)

@@ -6166,6 +6166,40 @@
         }
       }
     },
+    "/api/transfers/{link_id}/release": {
+      "post": {
+        "summary": "Transfer Release",
+        "description": "„Verknüpfung lösen“ (phase 7 D261): ends a coin link the app wrote from a learned\nexchange address or withdrawal pair, reopens both legs and forgets what produced it. 404,\n409 for a hash link, a person's link or any other link, or one no longer current.",
+        "operationId": "transfer_release_api_transfers__link_id__release_post",
+        "parameters": [
+          {
+            "name": "link_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Link Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/transfers/{link_id}/unlink": {
       "post": {
         "summary": "Transfer Unlink",
@@ -6474,6 +6508,50 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{account_id}/learned/{learned_id}/forget": {
+      "post": {
+        "summary": "Exchange Learned Forget",
+        "description": "„Vergessen“ (D261): ends a learned deposit address or withdrawal pair of the exchange;\nthe links already written stay. 404 for none of this exchange's; 409 when forgotten\nalready.",
+        "operationId": "exchange_learned_forget_api_accounts__account_id__learned__learned_id__forget_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "learned_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Learned Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "default": {
             "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
@@ -18016,6 +18094,10 @@
           "account.holdings_mismatch",
           "account.holding_corrected",
           "account.holdings_exported",
+          "account.deposit_address_learned",
+          "account.deposit_address_forgotten",
+          "account.withdrawal_pair_learned",
+          "account.withdrawal_pair_forgotten",
           "wallet.address_added",
           "wallet.address_updated",
           "wallet.address_revealed",
@@ -18412,6 +18494,18 @@
             },
             "type": "array",
             "title": "Answers"
+          },
+          "learned_link_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learned Link Id"
           }
         },
         "additionalProperties": false,
@@ -18475,6 +18569,13 @@
             },
             "type": "array",
             "title": "Todos"
+          },
+          "learned": {
+            "items": {
+              "$ref": "#/components/schemas/LearnedExchangeAddress"
+            },
+            "type": "array",
+            "title": "Learned"
           }
         },
         "additionalProperties": false,
@@ -18484,7 +18585,7 @@
           "provider"
         ],
         "title": "ExchangeOverview",
-        "description": "GET /accounts/{id}/exchange: the exchange account's page. `withdrawals_open` counts\nthe crypto withdrawals without network and hash; on Binance they are the to-do\n„Auszahlungsverlauf hochladen“ (D178 (4)), named by `todos`."
+        "description": "GET /accounts/{id}/exchange: the exchange account's page. `withdrawals_open` counts\nthe crypto withdrawals without network and hash; on Binance they are the to-do\n„Auszahlungsverlauf hochladen“ (D178 (4)), named by `todos`. `learned` the live deposit\naddresses and withdrawal pairs (D261), oldest first."
       },
       "ExchangePosition": {
         "properties": {
@@ -20915,6 +21016,58 @@
         "description": "Invoices: Nebenkosten (notary, Grundbuchamt, broker) now, repairs and others later."
       },
       "JsonValue": {},
+      "LearnedExchangeAddress": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "deposit_address",
+              "withdrawal_pair"
+            ],
+            "title": "Kind"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain"
+          },
+          "address_masked": {
+            "type": "string",
+            "title": "Address Masked"
+          },
+          "wallet_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wallet Label"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "chain",
+          "address_masked",
+          "created_at"
+        ],
+        "title": "LearnedExchangeAddress",
+        "description": "D261: what a person's link taught about the exchange, as its page lists it with\n„Vergessen“: a deposit address on a chain (masked, never in clear, D179), or an own wallet\naddress its withdrawals arrive on (`wallet_label` names the wallet)."
+      },
       "LeaseExtraction": {
         "properties": {
           "title": {
@@ -32142,6 +32295,24 @@
               }
             ],
             "title": "Superseded By"
+          },
+          "learned": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "learned",
+                  "already",
+                  "no_counterparty",
+                  "own_address",
+                  "balance_only"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learned"
           }
         },
         "additionalProperties": false,
@@ -32286,6 +32457,16 @@
           "rebook": {
             "type": "boolean",
             "title": "Rebook",
+            "default": false
+          },
+          "remember_deposit_address": {
+            "type": "boolean",
+            "title": "Remember Deposit Address",
+            "default": false
+          },
+          "remember_withdrawal_pair": {
+            "type": "boolean",
+            "title": "Remember Withdrawal Pair",
             "default": false
           }
         },

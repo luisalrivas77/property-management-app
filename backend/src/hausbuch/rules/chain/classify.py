@@ -33,7 +33,7 @@ decimals, hashes each leg (D182 (2)), fills the routing facts only the database 
 """
 
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from importlib import import_module
 from typing import Literal
@@ -80,6 +80,11 @@ class ClassifyContext:
     # stored on the exchange's asset_movement rows. Held in memory only: a hash is never put
     # into an event, a log line or a ChainGroup's text fields.
     exchange_hashes: frozenset[str] = frozenset()
+    # D261: whether an address is a deposit address the workspace learned for one of its
+    # exchanges on this chain (the sync compares its HMAC with the learned rows, so no
+    # plaintext is kept for them); None: none is learned. A plain send to such an address is
+    # an exchange_transfer with an internal_transfer_out leg (`learned_deposit`).
+    exchange_deposit: Callable[[str], bool] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +106,11 @@ class ChainLeg:
     # The own address the movement sits on (a key of ClassifyContext.own_address_ids); None:
     # the synced address. Its HMAC goes into the movement hash and its id into address_id.
     address: str | None = None
+    # D261: the one external address a plain send paid (EVM's recipient, Solana's credited
+    # owner, Bitcoin's one output that is no own address), in clear and in memory only: the
+    # sync stores its HMAC and masked form. None on every other leg, and on a send paying
+    # more than one external output.
+    counterparty: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.units <= 0:
@@ -170,8 +180,39 @@ def classifier_for(family: ChainFamily) -> FamilyClassifier:
 
 
 def classify(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
-    """The transaction's group for the synced address, by its chain's family."""
-    return classifier_for(CHAIN_FAMILY[ctx.chain])(tx, ctx)
+    """The transaction's group for the synced address, by its chain's family, then
+    `learned_deposit`."""
+    group = classifier_for(CHAIN_FAMILY[ctx.chain])(tx, ctx)
+    return None if group is None else learned_deposit(group, ctx)
+
+
+def plain_send(group: ChainGroup) -> ChainLeg | None:
+    """The one value leg of a plain send (a transfer whose only non-fee leg is one
+    `uncategorized` out with a counterparty), else None."""
+    if group.kind is not GroupKind.TRANSFER or group.question is not None:
+        return None
+    value = [leg for leg in group.legs if leg.role != "fee" and not leg.spam]
+    if len(value) != 1:
+        return None
+    leg = value[0]
+    if leg.role != "out" or leg.kind is not MovementKind.UNCATEGORIZED:
+        return None
+    return leg if leg.counterparty is not None else None
+
+
+def learned_deposit(group: ChainGroup, ctx: ClassifyContext) -> ChainGroup:
+    """D261: a plain send to an address the workspace learned as one of its exchanges'
+    deposit addresses is an `exchange_transfer` with an `internal_transfer_out` leg; the
+    linker pairs it with that exchange's deposit. Any other group is returned unchanged."""
+    leg = plain_send(group)
+    if leg is None or ctx.exchange_deposit is None or leg.counterparty is None:
+        return group
+    if not ctx.exchange_deposit(leg.counterparty):
+        return group
+    legs = [
+        replace(x, kind=MovementKind.INTERNAL_TRANSFER_OUT) if x is leg else x for x in group.legs
+    ]
+    return replace(group, kind=GroupKind.EXCHANGE_TRANSFER, legs=legs)
 
 
 def own(ctx: ClassifyContext, address: str | None, chain: Chain | None = None) -> bool:

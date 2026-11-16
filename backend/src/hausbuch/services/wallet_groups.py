@@ -660,6 +660,7 @@ def _supersede(
     keep = {"account_id", "asset_id", "quantity", "fee_eur", "fee_quantity", "occurred_at"}
     keep |= {"tax_withheld_eur", "external_ref", "network", "tx_hash", "document_id"}
     keep |= {"transaction_id", "address_id", "index", "eur_amount", "note"}
+    keep |= {"counterparty_hmac", "counterparty_masked"}  # D261: an answered send still teaches
     plans = []
     for move in moves:
         values = {name: move._mapping[name] for name in keep}

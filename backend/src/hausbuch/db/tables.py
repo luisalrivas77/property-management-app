@@ -984,6 +984,9 @@ asset_movement = Table(
     _uuid("group_id", nullable=True),
     _uuid("address_id", nullable=True),
     _text("index", nullable=True),  # a reserved word: quoted in hand-written SQL ("index")
+    # 0046 (phase 7 D261): the one external address a plain send paid, HMAC and masked only
+    Column("counterparty_hmac", LargeBinary, nullable=True),
+    _text("counterparty_masked", nullable=True),
 )
 holding_statement = Table(
     "holding_statement",
@@ -1067,6 +1070,35 @@ wallet_address = Table(
     _uuid("discovered_from", nullable=True),
     Column("active", Boolean, nullable=False, server_default=text("true")),
     _created_at(),
+)
+# 0046 (phase 7 D261): what a person's link taught about an exchange, ended once
+exchange_deposit_address = Table(
+    "exchange_deposit_address",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _text("chain"),
+    Column("address_hmac", LargeBinary, nullable=False),
+    _text("address_masked"),
+    _uuid("learned_from"),
+    _uuid("set_by", nullable=True),
+    _created_at(),
+    _timestamp("ended_at", default=False, nullable=True),
+    _uuid("ended_by", nullable=True),
+)
+exchange_withdrawal_pair = Table(
+    "exchange_withdrawal_pair",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("account_id"),
+    _uuid("address_id"),
+    _uuid("learned_from"),
+    _uuid("set_by", nullable=True),
+    _created_at(),
+    _timestamp("ended_at", default=False, nullable=True),
+    _uuid("ended_by", nullable=True),
 )
 movement_group = Table(
     "movement_group",

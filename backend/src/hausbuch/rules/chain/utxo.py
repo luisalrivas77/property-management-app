@@ -397,6 +397,17 @@ def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
             kind=GroupKind.UNKNOWN,
             question=FOREIGN_INPUTS_QUESTION if foreign else NO_MOVEMENT_QUESTION,
         )
+    # D261: the one output that is no own address, the send's counterparty; several such
+    # outputs (or one to another own wallet) name none, so no deposit address is learned.
+    external = _unique([t.to_addr for t in outputs(tx) if t.to_addr and t.to_addr not in own])
+    payee = (
+        external[0]
+        if own_in
+        and len(own_in) == len(ins)  # no foreign input (a CoinJoin names no one payee)
+        and len(external) == 1
+        and external[0] not in ctx.own_addresses
+        else None
+    )
     legs = [
         ChainLeg(
             asset_key=BTC,
@@ -405,6 +416,7 @@ def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
             kind=leg.kind,
             index=leg.index,
             address=leg.address,
+            counterparty=payee if leg.role == "out" else None,
         )
         for leg in reading.legs
     ]

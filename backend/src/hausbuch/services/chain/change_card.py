@@ -93,6 +93,7 @@ class _Reading:
     document_id: UUID
     own: dict
     ctx: ClassifyContext
+    hmac_key: bytes | None = None  # D261: the send's counterparty stored as its HMAC
 
 
 def _open_cards(conn, account_id: UUID, *, but: UUID | None = None):
@@ -154,8 +155,11 @@ def _reading(conn, cmd, store: BlobStore, settings: Settings, card) -> _Reading 
         own,
         native.id,
         answered_payee(conn, card.account_id, settings.iban_hmac_key),
+        settings.iban_hmac_key,
     )
-    return _Reading(card, run, to_chain_tx(raw, synced.address), document_id, own, ctx)
+    return _Reading(
+        card, run, to_chain_tx(raw, synced.address), document_id, own, ctx, settings.iban_hmac_key
+    )
 
 
 def _supersede(conn, cmd, store: BlobStore, reading: _Reading, group) -> UUID:
@@ -173,6 +177,7 @@ def _supersede(conn, cmd, store: BlobStore, reading: _Reading, group) -> UUID:
         started_at=cmd.now,
         host=run.source_host,
         scope="account",
+        hmac_key=reading.hmac_key,
     )
     original = sync._Original(store, sync._Read(), None, id=reading.document_id)
     for plan in sync._plan(cmd, start, sync._Read(groups=[group])):
