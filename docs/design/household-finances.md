@@ -278,6 +278,8 @@ a SaaS-phase decision, not a v1 one.
 
 ## 4. Crypto tax: Anlage SO and related, as versioned rule data
 
+*Specced 16 Nov 2026 in `docs/phases/phase-8.md` (PR #384, not built); where this section and the spec differ, the spec wins.*
+
 A pure function `draft_so(owner, taxYear, ruleSet, confirmedMovementAllocations, lots) →
 AnlageSODraft`, the sibling of phase 3's `draft`. No model. Every line carries the ids of the
 lots, movements and prices it summed. Unclear classifications never reach the draft: they are
@@ -288,7 +290,7 @@ lots, movements and prices it summed. Unclear classifications never reach the dr
 | Rule | Logic (checked against the BMF letter of 6 Mar 2025 and §§ 22, 23 EStG) | Data it needs |
 | --- | --- | --- |
 | Disposal recognition | Sale for EUR, swap crypto → crypto (Rn. 54: a swap is a disposal and an acquisition), paying with crypto. Not a disposal: internal transfer (§2.3), and by default wrap/unwrap and canonical bridges per the registry (the letter does not cover them; the rule set records the position taken, and the draft warns "Position: Wrap gilt nicht als Tausch", switchable per asset pair) | movement allocations, transfer links, registry pairs |
-| Lot order and method | Einzelbetrachtung if units are identifiable; otherwise FIFO for the holding period and the average method or, as a simplification, FIFO for cost (Rn. 61); **per wallet and per token** (Rn. 62), the choice kept until that wallet holds none of the token, then re-electable | LotMethodElection, lots per account × asset |
+| Lot order and method | Einzelbetrachtung if units are identifiable; otherwise FIFO for the holding period and the average method or, as a simplification, FIFO for cost (Rn. 61); **per wallet and per token** (Rn. 62), the choice kept until that wallet holds none of the token, then re-electable. *The average method is not built: phase 8 D201 offers FIFO only (Q-O101, 16 Nov 2026).* | LotMethodElection, lots per account × asset |
 | Holding period | Taxable if ≤ one year between acquisition and disposal (§23 Abs. 1 Nr. 2); a swap starts a new period for the received token (Rn. 55); the ten-year extension for income-producing assets does not apply to currency/payment tokens (Rn. 63) | lot `acquired_at`, disposal `occurred_at` |
 | Gain per lot | Proceeds (EUR market value at disposal; for swaps the received token's value, else the given-up token's, Rn. 58) − cost (incl. acquisition fees, Rn. 59) − disposal fees as Werbungskosten (Rn. 59); Werbungskosten split between taxable and tax-free disposals | prices with source, fee movements |
 | Freigrenze §23 | Total §23 gains of the year below €1,000 → tax-free; at or above → fully taxable (Freigrenze, not Freibetrag; §23 Abs. 3 S. 5, "weniger als 1.000 Euro"); **per spouse** when each has own gains; the pot includes a property sale inside ten years (phase 4's §23 check feeds the same pot) | per-owner gains, incl. phase 4's sale gain |
@@ -330,6 +332,8 @@ are what the tax office will hold, so the SO tab shows "BISON 2026: Σ Verkäufe
 to the draft, and a mismatch between CSV and the Info-Report is a review item.
 
 ## 5. ETFs: Anlage KAP
+
+*Specced 16 Nov 2026 in `docs/phases/phase-8.md` (PR #384, not built); where this section and the spec differ, the spec wins.*
 
 **What quirion (Quirin Privatbank as custodian) already does.** As a German bank it withholds
 Kapitalertragsteuer 25 % plus Soli (and church tax if registered) on distributions, realized
@@ -468,12 +472,12 @@ Merkblatt, Feb 2025 version). The feature is designed so that:
 | Form | The app fills (deterministic) | The app explains | Optimisation hints it computes |
 | --- | --- | --- | --- |
 | Anlage V (phase 3) | As specified | As specified | Renovation timing vs the 15 % limit; §82b spread election |
-| Anlage KAP | Per owner: certificate lines summed across institutions; Termingeschäfte result; Sparer-Pauschbetrag used; Günstigerprüfung tick recommendation | Why KAP is or is not worth filing this year; what Vorabpauschale is | Freistellungsauftrag split; Verlustbescheinigung deadline; expected January Vorabpauschale cash |
-| Anlage SO | Per owner: Kryptowerte section from lots; Leistungen from rewards; §23 pot incl. a property sale | Each lot's story: bought when, sold when, held how long, priced how | Holding-period countdown per lot ("steuerfrei ab …"); Freigrenze headroom ("noch €620 unter der 1.000-€-Grenze; ein weiterer Verkauf mit Gewinn > €620 macht alles steuerpflichtig"); €256 headroom for rewards; loss harvesting within the year (sell a lot under a year old at a loss to stay under the cliff, shown as an option, never executed); mixed-wallet warning once the 2027 rules are law |
+| Anlage KAP | Per owner: certificate lines summed across institutions; Termingeschäfte result (*deferred, phase 8 D219, Q-O102*); Sparer-Pauschbetrag used; Günstigerprüfung tick recommendation | Why KAP is or is not worth filing this year; what Vorabpauschale is | Freistellungsauftrag split (*not built: phase 8 D220 (5), Q-O105*); Verlustbescheinigung deadline; expected January Vorabpauschale cash |
+| Anlage SO | Per owner: Kryptowerte section from lots; Leistungen from rewards; §23 pot incl. a property sale | Each lot's story: bought when, sold when, held how long, priced how | Holding-period countdown per lot ("steuerfrei ab …"); Freigrenze headroom ("noch €620 unter der 1.000-€-Grenze; ein weiterer Verkauf mit Gewinn > €620 macht alles steuerpflichtig"); €256 headroom for rewards; loss harvesting within the year (sell a lot under a year old at a loss to stay under the cliff, shown as an option, never executed; *moved to phase 9's validator, phase 8 D227 (5)*); mixed-wallet warning once the 2027 rules are law |
 | Hauptvordruck inputs | Expected gross pay per owner and church-tax flag (already in the marginal-rate decision); Elterngeld and Kindergeld rows from household categories, so the marginal-rate estimate can account for them (whether Elterngeld raises the rate via Progressionsvorbehalt is to be verified in the phase 8 spec, not assumed here) | — | — |
 | Anlage N (phase 4b, added 9 Nov 2026) | Per spouse: the Lohnsteuerbescheinigung lines; itemised Werbungskosten | Why itemising does or does not beat the Pauschbetrag | Commute and home-office totals vs the Arbeitnehmer-Pauschbetrag per spouse; whole-return refund estimate. Specced in `docs/phases/phase-4b.md` (10 Nov 2026); Anlage Kind, Sonderausgaben and Haushaltsnahe Aufwendungen are inputs only there (D109, D112), and its yearly questionnaire (D110) is the one interview later forms (KAP, SO in phase 8) join |
 
-Exports: the field sheet grows to three forms with one page per form per owner; the yearly
+Exports: the field sheet grows to three forms with one page per form per owner (four with the Anlage N: phase 8 D226 (1) adds one sheet for all forms); the yearly
 archive adds the Steuerreport (§4.1) and the year-end holdings statement (§4.2). ELSTER filing
 stays out of scope.
 
@@ -550,7 +554,8 @@ wanted for the SO pot (it is a planning figure, not a filing need, so I would no
   no `TaxLot` or `LotMethodElection` (lots computed on read, D188; the election moved to
   phase 8), and the fourteen fixture files of phase 7 §15 under `tests/fixtures/phase7/`.
 - **Phase 8**: `schemas/tax_so.py`, `schemas/tax_kap.py`, migration `0010_tax_positions` (per-owner
-  loss pots and elections), fixtures `so_2026/`: `disposal_gain.yaml`, `freigrenze.yaml` (€999.99
+  loss pots and elections; *replaced by phase 8 D225: `return_input` kinds and one
+  `movement_tax_input` table in migration 0045*), fixtures `so_2026/`: `disposal_gain.yaml`, `freigrenze.yaml` (€999.99
   free, €1,000 fully taxable, per spouse, with a property sale in the pot), `rewards_256.yaml`,
   `losses_23.yaml` (carry back and forward), `wrap_position.yaml` (both positions),
   `lp_position.yaml` (both positions), `perps_kap.yaml` (realized PnL, funding, loss offset
