@@ -39,12 +39,11 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-from sqlalchemy import Connection, func, insert, select
+from sqlalchemy import Connection, insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
-from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import document_file as file_table
 from hausbuch.db.tables import holdings_export as export_table
 from hausbuch.rules.errors import HOLDINGS_EXPORT_NOTHING_HELD, HOLDINGS_EXPORT_YEAR_OPEN, RuleError
@@ -52,7 +51,6 @@ from hausbuch.rules.lots import PRECISION
 from hausbuch.schemas.chain import AccountHoldings, Lot, LotSource
 from hausbuch.schemas.events import EventType, HoldingsExported
 from hausbuch.schemas.holdings import HoldingsExport, HoldingsExportCreate, HoldingsFileFormat
-from hausbuch.schemas.household import AssetKind, MovementStatus
 from hausbuch.schemas.reminders import ReminderCryptoYear
 from hausbuch.storage import BlobStore, blob_key
 
@@ -61,7 +59,7 @@ from .context import CommandContext
 from .documents import LOCAL_TIME_ZONE, OriginalIntegrityError
 from .errors import NotFoundError
 from .events import append_event
-from .holdings import CRYPTO_ACCOUNT_KINDS, berlin_day, statement
+from .holdings import held_accounts, statement
 
 HOLDINGS_EXPORT = "holdings_export"  # NotFoundError's entity name
 DOWNLOAD_TTL_S = 300
@@ -538,34 +536,32 @@ def signature_valid(
 # --- The reminder's facts (D190) ----------------------------------------------------------
 
 
+# The first year whose 31 Dec statement the app asks for: the household's accounts are kept
+# from 1 Jan 2026 (Decisions, "History range", 6 Nov 2026); an older year's crypto history
+# exists for the lots only and is never a reminder.
+FIRST_HOLDINGS_YEAR = 2026
+
+
 def crypto_years(conn: Connection, today: date, *, years_back: int) -> list[ReminderCryptoYear]:
-    """Per closed year (at most `years_back` before today's), how many wallet and exchange
-    accounts with a confirmed crypto movement on or before its 31 Dec have no holdings_export
-    for that day: the accounts `write_exports` would write (services.holdings.statement)."""
-    m, a, s = movement_table.c, account_table.c, asset_table.c
-    rows = conn.execute(
-        select(m.account_id, func.min(m.occurred_at).label("first_at"))
-        .join(account_table, a.id == m.account_id)
-        .join(asset_table, s.id == m.asset_id)
-        .where(
-            a.kind.in_([k.value for k in CRYPTO_ACCOUNT_KINDS]),
-            s.kind == AssetKind.CRYPTO.value,
-            m.status == MovementStatus.CONFIRMED.value,
-            m.superseded_by.is_(None),
-        )
-        .group_by(m.account_id)
-    ).all()
-    if not rows:
+    """Per closed year from FIRST_HOLDINGS_YEAR (at most `years_back` before today's), how
+    many wallet and exchange accounts held a coin on its 31 Dec and have no holdings_export
+    for that day. Held: a non-spam asset with units > 0 at the end of the Berlin day, read
+    as the statement and the lots read it (a linked pair whole at its earlier leg), so an
+    account emptied before the day or holding only spam asks for nothing."""
+    years = range(max(FIRST_HOLDINGS_YEAR, today.year - years_back), today.year)
+    if not years:
         return []
-    first = {r.account_id: berlin_day(r.first_at) for r in rows}
+    held_on = held_accounts(conn, [date(year, 12, 31) for year in years])
+    if not any(held_on.values()):
+        return []
     x = export_table.c
     exported: dict[date, set[UUID]] = {}
     for r in conn.execute(select(x.account_id, x.as_of)).all():
         exported.setdefault(r.as_of, set()).add(r.account_id)
     out = []
-    for year in range(today.year - years_back, today.year):
+    for year in years:
         end = date(year, 12, 31)
-        held = {account for account, day in first.items() if day <= end}
+        held = held_on[end]
         if held:
             missing = held - exported.get(end, set())
             out.append(ReminderCryptoYear(year=year, accounts_missing=len(missing)))

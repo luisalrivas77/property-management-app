@@ -478,8 +478,9 @@ def test_the_year_end_statement_is_a_snapshot_per_account(run, read, fresh_works
     def missing():
         return {y.year: y.accounts_missing for y in read(ws, facts, date(2027, 1, 5)).crypto_years}
 
-    # 2025: the exchange held the coin bought that year; 2026: both accounts had movements.
-    assert missing() == {2025: 1, 2026: 2}
+    # Only years from 2026 (the exchange's 2025 purchase asks for nothing), and only the
+    # wallet held a coin on 31 Dec 2026: the exchange had sent it all on.
+    assert missing() == {2026: 1}
 
     written = run(ws, holdings_export.write_exports, blob_store, body, key=KEY, now=NOW)
     assert {e.account_id for e in written} == {ids["exchange"], ids["wallet"]}
@@ -535,7 +536,7 @@ def test_the_year_end_statement_is_a_snapshot_per_account(run, read, fresh_works
             run(ws, lambda ctx, sql=statement: ctx.conn.execute(text(sql)), now=NOW)
 
     # The reminder closes; a second export is new rows, the first ones unchanged.
-    assert missing() == {2025: 1, 2026: 0}
+    assert missing() == {2026: 0}
     again = run(ws, holdings_export.write_exports, blob_store, body, key=KEY, now=NOW)
     listed = read(ws, holdings_export.list_exports, key=KEY, now=NOW, year=2026)
     assert {e.id for e in listed} == {e.id for e in written + again}
@@ -583,3 +584,47 @@ def test_the_statement_waits_for_the_year_end_and_for_something_held(
             now=NOW,
         )
     assert refused.value.code == HOLDINGS_EXPORT_NOTHING_HELD
+
+
+@pytest.mark.parametrize("history", ["before_2026", "emptied", "spam_only"])
+def test_the_statement_reminder_asks_only_for_a_coin_held(run, read, fresh_workspaces, history):
+    """No card for a year before 2026, for an account emptied before 31 Dec, or for a wallet
+    that holds only spam."""
+    from hausbuch.rules.reminders import build_reminders
+    from hausbuch.schemas.reminders import ReminderKind
+    from hausbuch.services.reminders import facts
+
+    ws, _ = fresh_workspaces
+
+    def setup(ctx):
+        if history == "before_2026":
+            exchange = _account(ctx, AccountKind.EXCHANGE, "Börse")
+            sol = _asset(ctx, "SOL", "Solana", chain="solana")
+            _movement(ctx, exchange, sol, "1", _at("2024-05-01T10:00:00Z"))
+            _movement(ctx, exchange, sol, "1", _at("2025-05-01T10:00:00Z"))
+        elif history == "emptied":
+            exchange = _account(ctx, AccountKind.EXCHANGE, "Börse")
+            sol = _asset(ctx, "SOL", "Solana", chain="solana")
+            _movement(ctx, exchange, sol, "1", _at("2026-03-01T10:00:00Z"))
+            _movement(ctx, exchange, sol, "-1", _at("2026-11-01T10:00:00Z"))
+        else:
+            wallet = _account(ctx, AccountKind.WALLET, "Wallet")
+            address = _address(ctx, wallet, "ethereum", "0x2b…9c1e")
+            junk = _asset(ctx, None, "Token 0x9f…21ab", chain="ethereum", spam=True)
+            _movement(
+                ctx,
+                wallet,
+                junk,
+                "1000",
+                _at("2026-03-01T10:00:00Z"),
+                address_id=address,
+                kind="spam",
+            )
+
+    run(ws, setup, now=NOW)
+    # 5 Jan 2026 for the history before 2026 (its last closed year is 2025), else 5 Jan 2027.
+    today = date(2026, 1, 5) if history == "before_2026" else date(2027, 1, 5)
+    seen = read(ws, facts, today)
+    assert all(y.accounts_missing == 0 for y in seen.crypto_years)
+    reminders = build_reminders(seen, today)
+    assert [r for r in reminders if r.kind is ReminderKind.HOLDINGS_STATEMENT] == []

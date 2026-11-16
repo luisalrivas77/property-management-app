@@ -201,6 +201,20 @@ def _units(ledger: _Ledger, on: date) -> dict[tuple[UUID, UUID], Decimal]:
     return lot_rules.units_through(ledger.movements, ledger.links, on)
 
 
+def held_accounts(conn: Connection, days: Sequence[date]) -> dict[date, set[UUID]]:
+    """Per day, the wallet and exchange accounts holding a non-spam asset with units > 0 at
+    the end of that Berlin day, read as the statement reads them (the year-end reminder)."""
+    ledger = _ledger(conn)
+    return {
+        on: {
+            account
+            for (account, asset), units in _units(ledger, on).items()
+            if units > 0 and not ledger.assets[asset].spam
+        }
+        for on in days
+    }
+
+
 def _open_lots(book: lot_rules.LotBook) -> dict[tuple[UUID, UUID], list[Lot]]:
     out: dict[tuple[UUID, UUID], list[Lot]] = defaultdict(list)
     for lot in book.lots:
