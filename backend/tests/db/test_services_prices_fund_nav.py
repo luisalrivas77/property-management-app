@@ -536,3 +536,173 @@ def test_a_nav_in_a_currency_the_ecb_does_not_publish_is_a_card_never_a_price(
     later = NOW + timedelta(hours=1)
     run(ws, typed, now=later)
     assert not [c for c in _cards(read, ws, later) if c.asset_id == fund]
+
+
+# --- review of PR #391 -----------------------------------------------------------------------
+
+FX = {"USD": "1.0850", "GBP": "0.84500", "CHF": "0.9500"}
+
+
+def _ecb_xml(days: dict[date, dict[str, str]]) -> bytes:
+    """An ECB reference-rate file holding `days` (one Cube per day)."""
+    cubes = "".join(
+        f"<Cube time='{on.isoformat()}'>"
+        + "".join(f"<Cube currency='{code}' rate='{rate}'/>" for code, rate in rates.items())
+        + "</Cube>"
+        for on, rates in days.items()
+    )
+    return (
+        "<?xml version='1.0' encoding='UTF-8'?>"
+        "<gesmes:Envelope xmlns:gesmes='http://www.gesmes.org/xml/2002-08-01' "
+        "xmlns='http://www.ecb.int/vocabulary/2002-08-01/eurofxref'>"
+        f"<Cube>{cubes}</Cube></gesmes:Envelope>"
+    ).encode()
+
+
+def _yen_rows(read, ws, fund):
+    return {r.on: r.raw for r in _nav_rows(read, ws) if r.asset_id == fund}
+
+
+def test_a_held_currency_s_rate_is_stored_while_the_fund_file_fails(
+    run, read, app_engine, fresh_workspaces
+):
+    """Finding 1 (a): once the workspace holds yen rates, every run stores the day's yen rate
+    like the dollar's, so a NAV day a failed file left to a later run is converted by its
+    own day's rate, never the last one stored before the failure."""
+    ws, _ = fresh_workspaces
+    fund = _unlisted_funds(run, ws)[ISHARES_ISIN]
+    days = {date(2026, 6, d): FX | {"JPY": f"{142 + d}.00"} for d in (24, 25, 26)}
+    first = Served(
+        {
+            "eurofxref-hist-90d": (200, _ecb_xml(days)),
+            "portfolioId=1&": (200, _ishares_file(currency=b"JPY")),
+        }
+    )
+    _run(app_engine, ws, first, NOW)
+    outage = Served(
+        {
+            "eurofxref-daily": (200, _ecb_xml({date(2026, 6, 27): FX | {"JPY": "171.00"}})),
+            "portfolioId=1&": (503, b""),
+        }
+    )
+    _, out = _run(app_engine, ws, outage, NOW + timedelta(days=1))
+    assert out.failed == [fund]
+    assert (date(2026, 6, 27), {"per_eur": "171.00"}) in [
+        (r.on, r.raw) for r in _ecb_rows(read, ws, "JPY")
+    ]
+    later_file = _ishares_file(day=b"28.Juni2026", currency=b"JPY").replace(
+        b">25.Juni2026<", b">27.Juni2026<"
+    )
+    back = Served(
+        {
+            "eurofxref-daily": (200, _ecb_xml({date(2026, 6, 28): FX | {"JPY": "172.00"}})),
+            "portfolioId=1&": (200, later_file),
+        }
+    )
+    _run(app_engine, ws, back, NOW + timedelta(days=2))
+    rows = _yen_rows(read, ws, fund)
+    assert {on: raw["rate_on"] for on, raw in rows.items()} == {
+        date(2026, 6, d): f"2026-06-{d}" for d in (25, 26, 27, 28)
+    }
+
+
+def test_a_currency_absent_on_the_newest_ecb_day_is_a_card_never_a_price(
+    run, read, app_engine, fresh_workspaces
+):
+    """Finding 1 (b), a first need: the 90-day file lists yen on older days only (the ECB
+    stopped publishing it), so no NAV is converted at that frozen rate: nothing is stored,
+    no yen rate either, and the card names the fund and the currency at once."""
+    ws, _ = fresh_workspaces
+    fund = _unlisted_funds(run, ws)[ISHARES_ISIN]
+    days = {
+        date(2026, 6, 24): FX | {"JPY": "168.00"},
+        date(2026, 6, 25): FX | {"JPY": "169.00"},
+        date(2026, 6, 26): FX,
+    }
+    dropped = Served(
+        {
+            "eurofxref-hist-90d": (200, _ecb_xml(days)),
+            "portfolioId=1&": (200, _ishares_file(currency=b"JPY")),
+        }
+    )
+    _, out = _run(app_engine, ws, dropped, NOW)
+    assert out.unconverted == {fund: "JPY"}
+    assert _yen_rows(read, ws, fund) == {} and _ecb_rows(read, ws, "JPY") == []
+    [card] = [c for c in _cards(read, ws, NOW) if c.asset_id == fund]
+    assert card.kind is InboxItemKind.PRICE_SOURCE_FAILED and "in JPY" in card.reasoning
+
+
+def test_a_stored_currency_the_ecb_drops_is_never_converted_at_its_last_rate(
+    run, read, app_engine, fresh_workspaces
+):
+    """Finding 1 (b), a stored currency: priced in yen on day 1; on day 2 the daily file has
+    no yen, so the new NAV day stores nothing and the card shows."""
+    ws, _ = fresh_workspaces
+    fund = _unlisted_funds(run, ws)[ISHARES_ISIN]
+    days = {date(2026, 6, d): FX | {"JPY": f"{142 + d}.00"} for d in (24, 25, 26)}
+    _run(
+        app_engine,
+        ws,
+        Served(
+            {
+                "eurofxref-hist-90d": (200, _ecb_xml(days)),
+                "portfolioId=1&": (200, _ishares_file(currency=b"JPY")),
+            }
+        ),
+        NOW,
+    )
+    assert set(_yen_rows(read, ws, fund)) == {date(2026, 6, 25), date(2026, 6, 26)}
+    later = NOW + timedelta(days=1)
+    gone = Served(
+        {
+            "eurofxref-daily": (200, _ecb_xml({date(2026, 6, 27): FX})),
+            "portfolioId=1&": (200, _ishares_file(day=b"27.Juni2026", currency=b"JPY")),
+        }
+    )
+    _, out = _run(app_engine, ws, gone, later)
+    assert out.unconverted == {fund: "JPY"}
+    assert set(_yen_rows(read, ws, fund)) == {date(2026, 6, 25), date(2026, 6, 26)}
+    [card] = [c for c in _cards(read, ws, later) if c.asset_id == fund]
+    assert card.kind is InboxItemKind.PRICE_SOURCE_FAILED and "in JPY" in card.reasoning
+
+
+def test_an_older_note_never_hides_the_card_of_a_fund_without_a_price(
+    run, read, app_engine, fresh_workspaces
+):
+    """Finding 2: day 1 the catalogue names the fund and its file fails; day 2 the catalogue
+    is down, so the fund is not asked and not failed. It has no price, so a card shows at
+    once, saying it has no current price, never that iShares publishes none."""
+    ws, _ = fresh_workspaces
+    fund = _unlisted_funds(run, ws)[ISHARES_ISIN]
+    _run(app_engine, ws, Recorded(down=("portfolioId=1&",)), NOW)
+    later = NOW + timedelta(days=1)
+    _run(app_engine, ws, Recorded(down=("portfolioId=1&", "product-screener")), later)
+    [card] = [c for c in _cards(read, ws, later) if c.asset_id == fund]
+    assert card.kind is InboxItemKind.PRICE_NO_SOURCE
+    assert "keinen aktuellen Kurs" in card.reasoning and "iShares" in card.reasoning
+    assert "veröffentlicht" not in card.reasoning
+    assert "Kurs eintragen" in card.question
+
+
+def test_an_unknown_product_s_400_asks_the_catalogue(
+    run, read, app_engine, fresh_workspaces, monkeypatch
+):
+    """Finding 3: iShares answers 400 for a product id it does not know, so a 400 counts as
+    a moved fund; the file read through the catalogue's reference is ISIN-checked anyway."""
+    ws, _ = fresh_workspaces
+    fund = _unlisted_funds(run, ws)[ISHARES_ISIN]
+    _run(app_engine, ws, Recorded(), NOW)
+    monkeypatch.setattr(
+        ISharesAdapter, "parse_catalogue", staticmethod(lambda body: {ISHARES_ISIN: "2"})
+    )
+    unknown = Served(
+        {
+            "portfolioId=1&": (400, b""),
+            "portfolioId=2&": (200, _ishares_file(day=b"27.Juni2026")),
+        }
+    )
+    _, out = _run(app_engine, ws, unknown, NOW + timedelta(days=1))
+    assert unknown.asked("product-screener") == 1
+    assert out.failed == [] and out.discovered[fund].fund_ref == "2"
+    [new_row] = [r for r in _nav_rows(read, ws) if r.asset_id == fund and r.on == TODAY]
+    assert new_row.raw["fund_ref"] == "2"

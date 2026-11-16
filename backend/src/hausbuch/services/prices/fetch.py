@@ -36,7 +36,7 @@ catalogue names is priced from the depot's reports as before, with no card.
 
 Follow-ups of the same day's review:
 
-- (A) A stored reference that stops working (HTTP 404 or 410, or a file stating another
+- (A) A stored reference that stops working (HTTP 400, 404 or 410, or a file stating another
   ISIN: the issuer moved or renumbered the fund) asks that issuer's catalogue once in the
   same run, and a different reference listed there for the ISIN is read at once; its rows
   keep the new reference. A timeout or a 5xx is an outage, not a moved fund: no catalogue.
@@ -46,9 +46,11 @@ Follow-ups of the same day's review:
   a fund whose catalogue reference never stored a row (services.prices.overview).
 - (C) A NAV in a currency other than EUR and FX_CURRENCIES is converted by the ECB's rate of
   that currency, read from the same file and stored as its cash asset's row (the 90-day
-  file for a currency with no recent stored rate); a currency the ECB does not publish
-  stores nothing and is named in the event, which raises a card naming the fund and the
-  currency. A price is never stored in another currency than the euro.
+  file for a currency with no recent stored rate), and stored on every later run like the
+  dollar's; a currency without a rate on the newest day of the ECB's answer (one the ECB
+  does not publish, or stopped publishing) stores nothing and is named in the event, which
+  raises a card naming the fund and the currency. A price is never stored in another
+  currency than the euro, nor converted at a frozen rate.
 """
 
 from collections import Counter, defaultdict
@@ -405,8 +407,9 @@ def _gap(stored: list[FxRate], today: date) -> bool:
 @dataclass
 class Fx:
     """The run's euro rates per currency: the workspace's stored ones plus the day's new
-    ones. A NAV currency outside FX_CURRENCIES is added on its first need (follow-up C), from
-    the run's ECB answer, and the 90-day file when it has no recent stored rate."""
+    ones. A currency outside FX_CURRENCIES is stored on every run once the workspace holds a
+    rate of it, like the dollar, and on its first need for a NAV (follow-up C); the 90-day
+    file is read too when its last stored rate is older than the daily file can bridge."""
 
     sources: Sources
     today: date
@@ -416,6 +419,14 @@ class Fx:
     base: dict[str, list[FxRate]] | SourceError
     merged: dict[str, list[FxRate]] = field(default_factory=dict)
     covered: dict[str, bool | None] = field(default_factory=dict)
+
+    def answers(self, code: str) -> list[dict[str, list[FxRate]]]:
+        """The run's readable ECB answers for `code`: the first call's, plus the 90-day
+        file when the code's stored rates leave a gap the daily file cannot close."""
+        answers = [self.base]
+        if not self.backfill and _gap(self.stored.get(code, []), self.today):
+            answers.append(self.sources.ecb(True))
+        return [a for a in answers if not isinstance(a, SourceError)]
 
     def add(self, code: str, answers: list[dict[str, list[FxRate]]]) -> None:
         """Draft and merge the code's rates not stored yet, each day once."""
@@ -431,31 +442,36 @@ class Fx:
         listed.sort(key=lambda r: r.on)
 
     def cover(self, code: str) -> bool | None:
-        """Whether a NAV in `code` can be converted: True once its rates are merged; False
-        when the ECB answered and lists no rate for it; None when the ECB could not be read
-        (the stored rates then convert, as for the dollar, and the next run tries again)."""
+        """Whether a NAV in `code` can be converted: True when the run's ECB answer lists a
+        rate of it on the answer's newest day (its rates are then merged); False when the
+        answer was read and has none that day, so a currency the ECB stopped publishing is
+        never converted at a frozen rate (review of PR #391); None when the ECB could not be
+        read (the stored rates then convert, as for the dollar, and the next run tries
+        again)."""
         if code == "EUR" or code in ecb_fx.FX_CURRENCIES:
             return True
         if code not in self.covered:
-            answers = [self.base]
-            if not self.backfill and _gap(self.stored.get(code, []), self.today):
-                answers.append(self.sources.ecb(True))  # a first need reads 90 days
-            read = [a for a in answers if not isinstance(a, SourceError)]
+            read = self.answers(code)
             if not read:
                 self.covered[code] = None
-            elif not any(a.get(code) for a in read):
-                self.covered[code] = False
             else:
-                self.add(code, read)
-                self.covered[code] = True
+                newest = max(
+                    (r.on for a in read for listed in a.values() for r in listed), default=None
+                )
+                current = any(r.on == newest for a in read for r in a.get(code, []))
+                if current:
+                    self.add(code, read)
+                self.covered[code] = current
         return self.covered[code]
 
 
 def _ecb(
     plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxRate]], out: Collected
 ) -> Fx:
-    """The run's first ECB call, before any other source: FX_CURRENCIES' new rates, each
-    currency against its own stored days (`rates`, the workspace's stored ones)."""
+    """The run's first ECB call, before any other source: the new rates of FX_CURRENCIES and
+    of every other currency the workspace already holds a rate of, whether or not a fund's
+    file is read this run (review of PR #391: a NAV day a failed file leaves to a later run
+    must find its own day's rate), each currency against its own stored days (`rates`)."""
     last = max(plan.ecb_days, default=None)
     backfill = last is None or (today - last).days > ecb_fx.BACKFILL_AFTER_DAYS
     answer = sources.ecb(backfill)
@@ -472,6 +488,9 @@ def _ecb(
     if not isinstance(answer, SourceError):
         for code in ecb_fx.FX_CURRENCIES:
             fx.add(code, [answer])
+        for code in sorted(rates):
+            if code != "EUR" and code not in ecb_fx.FX_CURRENCIES:
+                fx.add(code, fx.answers(code))
     return fx
 
 
@@ -515,11 +534,13 @@ def _coin(held: Held, plan: Plan, sources: Sources, today: date, out: Collected)
 
 
 def _moved(error: SourceError) -> bool:
-    """A file gone (404, 410) or naming another fund: the issuer moved or renumbered the
-    fund (follow-up A). A timeout, a 5xx or an unreadable file is not."""
+    """A file gone (404, 410; 400, which iShares answers for a product id it does not know)
+    or naming another fund: the issuer moved or renumbered the fund (follow-up A). A
+    timeout, a 5xx or an unreadable file is not. A wrong guess costs one catalogue lookup,
+    and the file read through the catalogue's reference must state the ISIN anyway."""
     if error.kind == "isin_mismatch":
         return True
-    return error.kind == "HTTPError" and error.status in (404, 410)
+    return error.kind == "HTTPError" and error.status in (400, 404, 410)
 
 
 def _read(

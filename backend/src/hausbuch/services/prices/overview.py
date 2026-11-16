@@ -604,9 +604,10 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 )
             )
             continue
-        if fund is None and (note is not None or days > 0):
-            # Follow-up B: the fetch knew an issuer source (only a fund it asked an issuer
-            # for is ever a failed asset), so the card is D174's, never „keinen Kurs“.
+        if fund is None and days > 0:
+            # Follow-up B: the latest run asked an issuer and failed (only a fund it asked
+            # an issuer for is ever a failed asset), so the card is D174's, never „keinen
+            # Kurs“. An older note only names the issuer (review of PR #391).
             issuer = issuer or "der Fondsgesellschaft"
         elif fund is None:
             if _any_price(conn, row.id):
@@ -622,14 +623,23 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 report = "kein aktueller Depotbericht bewertet ihn"
             else:
                 report = "bisher nennt ihn kein Depotbericht"
+            if issuer is not None:
+                # An older run asked this issuer (a note), the latest did not fail it: the
+                # issuer may well publish a price, so the card never says it does not.
+                reasoning = (
+                    f"Für {row.name} hat Hausbuch keinen aktuellen Kurs: {issuer} hat ihn "
+                    f"zuletzt nicht geliefert, und {report}."
+                )
+            else:
+                reasoning = (
+                    f"Für {row.name} veröffentlicht die Fondsgesellschaft keinen Kurs, den "
+                    f"Hausbuch abrufen kann, und {report}."
+                )
             items.append(
                 InboxItem(
                     kind=InboxItemKind.PRICE_NO_SOURCE,
                     created_at=row.created_at,
-                    reasoning=(
-                        f"Für {row.name} veröffentlicht die Fondsgesellschaft keinen Kurs, den "
-                        f"Hausbuch abrufen kann, und {report}."
-                    ),
+                    reasoning=reasoning,
                     question=(
                         "Der nächste Depotbericht unter Dokumente bewertet den Fonds von "
                         "selbst („Kurs aus dem letzten Bericht“). Bis dahin kann unter "
