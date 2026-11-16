@@ -136,7 +136,10 @@ connection is signed under a key derived from it, so the next sync discards it a
 under another key derived from it, so after a new session key the Bankabruf card says they no
 longer read: type the Anmeldename again in „Zugang ändern“ (change access) and the PIN with
 „PIN ändern“ (change PIN) on each connection's card. A PIN kept as a container variable is not
-affected.
+affected. The same holds for every key, address and mail setting typed under Einstellungen ›
+Zugangsschlüssel (phase 6 D260): the card then says „Kann nicht gelesen werden“ for each, and
+each must be typed again with „Ändern“; until then it counts as not set, never as the
+container variable of the same name.
 
 ## Step 1: Project and region
 

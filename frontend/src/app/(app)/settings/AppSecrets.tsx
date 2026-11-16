@@ -128,7 +128,7 @@ function SecretRow({
     <div className="stack" data-testid={`app-secret-${state.name}`}>
       <div className="row">
         <strong>{state.label}</strong>
-        <span className={state.source === "unreadable" ? "badge warn" : "muted"}>{SOURCE_TEXT[state.source]}</span>
+        <span className={state.source === "unreadable" ? "badge badge-danger" : "badge badge-muted"}>{SOURCE_TEXT[state.source]}</span>
       </div>
       <p className="muted">{state.purpose}</p>
       {!state.secret && state.value ? <p>{state.value}</p> : null}
@@ -146,7 +146,7 @@ function SecretRow({
             type={state.secret ? "password" : "text"}
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            autoComplete="off"
+            autoComplete={state.secret ? "new-password" : "off"}
             spellCheck={false}
             required
           />
