@@ -16,10 +16,10 @@ output „Nein, Empfänger“:
    changes (the first sync writes one card per past spend, often to the same payee); a card
    whose spend is in no stored original is left as it is.
 
-Known gap (§15.1): a sync run whose only new item was the card stores no original (D182 (3),
-`wallet_sync`'s CHECK: an original only with a new movement), so its transaction is in no
-stored original and the answer is refused with `wallet.original_missing`. „Ja, eigene
-Adresse“ is not built here.
+A sync run whose only new item was the card keeps its original since migration 0044 (D182 (3)
+amended, review of PR #387), so every card written since can be answered. A card written
+before it, by such a run, has its transaction in no stored original: the answer is refused
+with `wallet.original_missing`. „Ja, eigene Adresse“ is not built here.
 """
 
 import json

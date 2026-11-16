@@ -18,7 +18,7 @@ from db.test_phase7_migration import BECH32, _address, _wallet
 from db.test_wallet_sync_core import ACTOR, SETTINGS
 from psycopg.rows import namedtuple_row
 
-from hausbuch.rules.errors import WALLET_CHANGE_ANSWERED, WALLET_ORIGINAL_MISSING, RuleError
+from hausbuch.rules.errors import WALLET_CHANGE_ANSWERED, RuleError
 from hausbuch.schemas.chain import ChainSourceKind
 from hausbuch.services.chain.base import register_source
 from hausbuch.services.chain.bitcoin_esplora import PAGE_SIZE, make_source
@@ -295,8 +295,72 @@ def test_a_two_address_bitcoin_wallet_is_read_booked_and_its_change_card_answere
     assert runs[a].cursor_after == runs[b].cursor_after == "109"
     assert runs[b].reconciled is None  # waits for the new card
 
-    # the known gap (§15.1): that run brought only the card, so it kept no original and the
-    # answer cannot read the transaction again
-    with pytest.raises(RuleError) as refused:
-        answer(ws, later[0].id, 1)
-    assert refused.value.code == WALLET_ORIGINAL_MISSING
+    # that run brought only the card and kept its original all the same (D182 (3) amended,
+    # migration 0044; until then the answer was refused with wallet.original_missing), so
+    # the card is answered from the stored original without the provider
+    assert runs[b].document_id is not None
+    calls = esplora.calls
+    answer(ws, later[0].id, 1)
+    assert esplora.calls == calls
+    after = [g for g in _live_groups(dbname, account) if g.tx_hash == txid(5)]
+    assert [(g.kind, g.question) for g in after] == [("transfer", None)]
+
+
+def test_a_card_whose_change_address_is_registered_gives_way_to_its_legs(
+    dbname, esplora, btc_wallet, run
+):
+    """Review of PR #387 (F4): the card's change address is registered by hand, and its first
+    sync reads the spend again with legs. The legs no longer join the legless card (which had
+    kept its question over booked legs): the card is superseded by the group derived now,
+    and the account reconciles."""
+    ws, account, a, b = btc_wallet
+    sync, answer = run
+    esplora.records = [
+        record(1, 100, [(STRANGER, 101_000)], [(OWN, 100_000)]),
+        record(4, 101, [(OWN, 100_000)], [(PAYEE, 20_000), (CHANGE, 79_500)]),
+    ]
+    sync(ws)
+    (card,) = [g for g in _live_groups(dbname, account) if g.tx_hash == txid(4)]
+    assert (card.kind, card.question is not None) == ("unknown", True)
+    with _admin(dbname) as conn:
+        _address(conn, ws, account, chain="bitcoin", address=CHANGE, address_masked="bc1q…gz2k")
+    sync(ws)
+    (live,) = [g for g in _live_groups(dbname, account) if g.tx_hash == txid(4)]
+    assert (live.kind, live.question) == ("transfer", None)
+    (superseded,) = _rows(dbname, "SELECT superseded_by FROM movement_group WHERE id = %s", card.id)
+    assert superseded.superseded_by == live.id
+    assert _rows(
+        dbname,
+        'SELECT group_id, "index", quantity FROM asset_movement WHERE tx_hash = %s'
+        ' AND account_id = %s ORDER BY "index"',
+        txid(4),
+        account,
+    ) == [(live.id, "fee", Decimal("-0.000005")), (live.id, "net", Decimal("-0.0002"))]
+    assert all(r.reconciled is True for r in _last_runs(dbname, account))
+
+
+def test_a_card_from_the_first_sync_is_answered_from_its_original(dbname, esplora, btc_wallet, run):
+    """Review of PR #387 (F2): on the first sync, the second address's run brings nothing but
+    a card. It keeps its original (D182 (3) amended, migration 0044), so the card is answered
+    from it without the provider; until then the answer was refused with
+    wallet.original_missing for good."""
+    ws, account, a, b = btc_wallet
+    sync, answer = run
+    esplora.records = [
+        record(1, 100, [(STRANGER, 101_000)], [(OWN, 100_000)]),
+        record(2, 101, [(OWN, 100_000)], [(PAYEE, 30_000), (SECOND, 69_000)]),
+        record(5, 103, [(SECOND, 69_000)], [(PAYEE, 40_000), (CHANGE2, 28_000)]),
+    ]
+    sync(ws)
+    (card,) = [g for g in _live_groups(dbname, account) if g.tx_hash == txid(5)]
+    runs = {r.address_id: r for r in _last_runs(dbname, account)}
+    assert runs[b].document_id is not None
+    (movements,) = _rows(dbname, "SELECT movements_new FROM wallet_sync WHERE address_id = %s", b)
+    assert movements.movements_new == 0
+    calls = esplora.calls
+    answer(ws, card.id, 0)  # the payee: the narrower card asks the other output only
+    assert esplora.calls == calls
+    (live,) = [g for g in _live_groups(dbname, account) if g.tx_hash == txid(5)]
+    assert live.question == (
+        f"Ist diese Adresse Ihr Wechselgeld? bc1q…{CHANGE2[-4:]} (0,00028 BTC)"
+    )
