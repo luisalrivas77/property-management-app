@@ -182,7 +182,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   // exports of the draft (phase-3.md §10, §12)
   // the FinTS sync (phase-5.md §4.4)
   "bank.not_configured":
-    "Der Bankabruf ist noch nicht eingerichtet: die FinTS-Produkt-ID fehlt. Bitte unter Einstellungen › Zugangsschlüssel eintragen (oder in der Serverkonfiguration, Runbook Schritt 14).",
+    "Der Bankabruf ist nicht eingerichtet: die FinTS-Produkt-ID fehlt oder lässt sich nicht mehr lesen. Bitte unter Einstellungen › Zugangsschlüssel eintragen (oder in der Serverkonfiguration, Runbook Schritt 14).",
   "bank.rate_limited": "Höchstens vier Abrufe pro Stunde von Hand. Bitte etwas später noch einmal.",
   "bank.sync_running": "Für dieses Konto läuft schon ein Abruf.",
   "bank.window_invalid":
