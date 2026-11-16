@@ -6166,6 +6166,40 @@
         }
       }
     },
+    "/api/transfers/{link_id}/release": {
+      "post": {
+        "summary": "Transfer Release",
+        "description": "„Verknüpfung lösen“ (phase 7 D261): ends a coin link the app wrote from a learned\nexchange address or withdrawal pair, reopens both legs and forgets what produced it. 404,\n409 for a hash link, a person's link or any other link, or one no longer current.",
+        "operationId": "transfer_release_api_transfers__link_id__release_post",
+        "parameters": [
+          {
+            "name": "link_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Link Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/transfers/{link_id}/unlink": {
       "post": {
         "summary": "Transfer Unlink",
@@ -12177,11 +12211,6 @@
         "properties": {
           "kind": {
             "$ref": "#/components/schemas/MovementKind"
-          },
-          "remember_deposit_address": {
-            "type": "boolean",
-            "title": "Remember Deposit Address",
-            "default": false
           }
         },
         "additionalProperties": false,
@@ -12190,7 +12219,7 @@
           "kind"
         ],
         "title": "AnswerMovementBody",
-        "description": "POST /movements/{id}/answer: what the movement really was. The movement is replaced\nby a confirmed row of that kind (the old one kept, superseded_by).\n\nremember_deposit_address (D261 (2)): with kind internal_transfer_in, the address the one\nfitting open wallet send paid becomes the exchange's deposit address on its chain."
+        "description": "POST /movements/{id}/answer: what the movement really was. The movement is replaced\nby a confirmed row of that kind (the old one kept, superseded_by)."
       },
       "AppCredential": {
         "properties": {
@@ -18465,6 +18494,18 @@
             },
             "type": "array",
             "title": "Answers"
+          },
+          "learned_link_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learned Link Id"
           }
         },
         "additionalProperties": false,
@@ -22747,24 +22788,6 @@
             "type": "string",
             "format": "uuid",
             "title": "Movement Id"
-          },
-          "learned": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "learned",
-                  "already",
-                  "no_counterparty",
-                  "own_address",
-                  "balance_only"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Learned"
           }
         },
         "additionalProperties": false,
@@ -22773,7 +22796,7 @@
           "movement_id"
         ],
         "title": "MovementAnswered",
-        "description": "POST /movements/{id}/answer: the movement that now stands for the answered one;\n`learned` what the deposit box did (None when it was not ticked or did not apply)."
+        "description": "POST /movements/{id}/answer: the movement that now stands for the answered one."
       },
       "MovementImport": {
         "properties": {

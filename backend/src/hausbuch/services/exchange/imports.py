@@ -84,7 +84,6 @@ from hausbuch.schemas.household import (
     HoldingSource,
     ImportBalance,
     LearnedExchangeAddress,
-    MovementAnswered,
     MovementImport,
     MovementImportFormat,
     MovementKind,
@@ -1024,15 +1023,15 @@ def answers_for(quantity: Decimal) -> list[MovementKind]:
     return list(_INWARD_ANSWERS if quantity > 0 else _OUTWARD_ANSWERS)
 
 
-def answer_movement(
-    ctx: CommandContext, movement_id: UUID, body: AnswerMovementBody
-) -> MovementAnswered:
+def answer_movement(ctx: CommandContext, movement_id: UUID, body: AnswerMovementBody) -> UUID:
     """POST /movements/{id}/answer: what the proposed movement really was; a kind of the
     other direction is refused (exchange.answer_invalid). The same kind confirms it; another
-    kind replaces it by a confirmed row of that kind. Returns the current movement's id, and
-    what the deposit box did (D261 (2): an answer internal_transfer_in with
-    remember_deposit_address learns the exchange's deposit address from the one fitting open
-    wallet send; an address learned for another exchange is a plain 409)."""
+    kind replaces it by a confirmed row of that kind. Returns the current movement's id.
+
+    An answer never teaches a deposit address (D261, review fixes 16 Nov 2026): the person
+    does not see which wallet send an address would come from, so a payment to a third party
+    could be learned as the exchange's. Learning is the remember box of a person's pick of the
+    two legs (POST /transfers), which the transfer card offers once the deposit is answered."""
     row = _require_proposed(ctx.conn, movement_id)
     if body.kind not in answers_for(row.quantity):
         raise RuleViolationError(
@@ -1042,16 +1041,13 @@ def answer_movement(
 
     if body.kind.value == row.kind:
         _confirm(ctx, row)
-        new_id = row.id
-    else:
-        new_id = _supersede(
-            ctx, row.id, {"kind": body.kind.value, "status": MovementStatus.CONFIRMED.value}
-        )
-    outcome = None
-    if body.remember_deposit_address and body.kind is MovementKind.INTERNAL_TRANSFER_IN:
-        outcome = chain_transfers.learn_from_deposit(ctx, new_id)
-    chain_transfers.relink_after_answer(ctx)  # D184: a confirmed leg may link now
-    return MovementAnswered(movement_id=new_id, learned=outcome)
+        chain_transfers.relink_after_answer(ctx)  # D184: a confirmed leg may link now
+        return row.id
+    new_id = _supersede(
+        ctx, row.id, {"kind": body.kind.value, "status": MovementStatus.CONFIRMED.value}
+    )
+    chain_transfers.relink_after_answer(ctx)
+    return new_id
 
 
 def confirm_withdrawals(ctx: CommandContext, import_id: UUID) -> WithdrawalsConfirmed:
@@ -1203,6 +1199,9 @@ def exchange_movements(conn: Connection, account_id: UUID) -> list[ExchangeMovem
         .where(m.account_id == account_id, m.superseded_by.is_(None))
         .order_by(m.occurred_at.desc(), m.id)
     ).all()
+    from ..chain import transfers as chain_transfers
+
+    released = chain_transfers.learned_links(conn, [r.id for r in rows])
     out = []
     for r in rows:
         kind, status = MovementKind(r.kind), MovementStatus(r.status)
@@ -1214,6 +1213,7 @@ def exchange_movements(conn: Connection, account_id: UUID) -> list[ExchangeMovem
                 symbol=r.symbol or r.asset_name,
                 question=_question(kind, status),
                 answers=answers_for(r.quantity) if status is MovementStatus.PROPOSED else [],
+                learned_link_id=released.get(r.id),
             )
         )
     return out
