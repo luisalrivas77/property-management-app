@@ -1,0 +1,32 @@
+{
+ "1": {
+  "portfolioId": 1,
+  "isin": "IE000INVENT2",
+  "fundName": "iShares Invented USD UCITS ETF",
+  "productPageUrl": "/de/privatanleger/de/produkte/1/ishares-invented"
+ },
+ "2": {
+  "portfolioId": 2,
+  "isin": "IE000INVENT3",
+  "fundName": "iShares Invented Twin A"
+ },
+ "3": {
+  "portfolioId": 3,
+  "isin": "IE000INVENT3",
+  "fundName": "iShares Invented Twin B"
+ },
+ "4": {
+  "portfolioId": "x4",
+  "isin": "IE000INVENT4",
+  "fundName": "iShares Invented bad id"
+ },
+ "5": {
+  "portfolioId": 5,
+  "isin": "not-an-isin",
+  "fundName": "iShares Invented bad isin"
+ },
+ "6": {
+  "portfolioId": 6,
+  "fundName": "iShares Invented without ISIN"
+ }
+}
