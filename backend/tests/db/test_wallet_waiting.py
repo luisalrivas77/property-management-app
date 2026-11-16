@@ -200,3 +200,6 @@ def test_an_outgoing_transaction_is_worded_as_not_yet_taken_off(run, read, fresh
         "Abgänge von 1,25 SOL auf „Ausgang“ sind gelesen, werden aber erst nach Ihrer "
         "Bestätigung abgezogen (1 Transaktion wartet)."
     )
+    figure = read(ws, net_worth.net_worth, ON)
+    [todo] = [t for t in figure.todos if t.code is NetWorthTodoCode.WALLET_WAITING]
+    assert todo.text == f"{line.text} Bis dahin ist das Nettovermögen um diese Abgänge zu hoch."
