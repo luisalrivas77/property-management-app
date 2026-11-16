@@ -705,6 +705,10 @@ class InboxItemKind(StrEnum):
     WALLET_SYNC = "wallet_sync"
     WALLET_UNRECONCILED = "wallet_unreconciled"
     WALLET_COINS_LEFT = "wallet_coins_left"
+    # Phase 6 D260 amended (9), 16 Nov 2026 (principle 7), computed on read: a value typed
+    # under Einstellungen › Zugangsschlüssel no longer decrypts (the session key changed); the
+    # reasoning names the groups and labels and what stopped, never a value.
+    APP_SECRET_UNREADABLE = "app_secret_unreadable"
 
 
 class InboxItem(Schema):

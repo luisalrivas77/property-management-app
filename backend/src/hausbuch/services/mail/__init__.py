@@ -2,6 +2,7 @@
 Transactional Email. `tem.py` is the client; tests use a fake `Mailer`."""
 
 from .tem import (
+    MAIL_NAMES,
     MIN_SUBJECT_LENGTH,
     Mailer,
     MailSendError,
@@ -14,6 +15,7 @@ from .tem import (
 )
 
 __all__ = [
+    "MAIL_NAMES",
     "MIN_SUBJECT_LENGTH",
     "MailSendError",
     "Mailer",

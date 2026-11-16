@@ -6,10 +6,11 @@
 // encrypted, DELETE falls back to the server's variable. A secret is typed into a password
 // field, sent once and never shown again: the API never returns it. A name that is not secret
 // (the sender address, the inbox's user, address and label, the TEM project) is shown back.
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { AppSecretGroup, AppSecretSource, AppSecretState } from "@/api/schemas";
+import { APP_SECRETS_ANCHOR } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { ErrorNotice } from "@/lib/ErrorNotice";
@@ -40,6 +41,14 @@ export function AppSecrets() {
 function SecretList({ initial }: { initial: AppSecretState[] }) {
   const [rows, setRows] = useState(initial);
   const [error, setError] = useState<unknown>(null);
+
+  // Zu prüfen's „Zugangsschlüssel öffnen“ (D260 amended (9)) links to the heading; the cards
+  // above it load at their own pace, so the jump is made again once this list is shown.
+  useEffect(() => {
+    if (window.location.hash === `#${APP_SECRETS_ANCHOR}`) {
+      document.getElementById(APP_SECRETS_ANCHOR)?.scrollIntoView({ block: "start" });
+    }
+  }, []);
   const groups = (Object.keys(GROUPS) as AppSecretGroup[]).filter((group) => rows.some((row) => row.group === group));
 
   function replace(state: AppSecretState) {

@@ -20527,7 +20527,8 @@
           "wallet_question",
           "wallet_sync",
           "wallet_unreconciled",
-          "wallet_coins_left"
+          "wallet_coins_left",
+          "app_secret_unreadable"
         ],
         "title": "InboxItemKind",
         "description": "GET /inbox (§8.3): one list, newest first."

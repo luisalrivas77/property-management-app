@@ -40,6 +40,7 @@ from hausbuch.db.tables import app_secret as secret_table
 from hausbuch.rules import errors as E
 from hausbuch.rules.bank_sync import product_id_usable
 from hausbuch.rules.errors import RuleError
+from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.app_secrets import (
     AppSecretGroup,
     AppSecretName,
@@ -344,6 +345,102 @@ def _state(conn: Connection, settings: Settings, name: AppSecretName) -> AppSecr
     return next(s for s in secret_states(conn, settings) if s.name is name)
 
 
+# --- An unreadable value: the Zu prüfen card and the jobs' warning (D260 amended (9)) -------
+
+# The card's group headings (frontend AppSecrets.tsx GROUPS), in the card's order.
+GROUP_LABELS: dict[AppSecretGroup, str] = {
+    G.AI: "KI",
+    G.CHAINS: "Blockchains & Kurse",
+    G.BANK: "Bank",
+    G.MAIL: "E-Mail",
+}
+
+_DIGEST = "Die tägliche Erinnerungs-E-Mail wird nicht verschickt."
+_EMAIL_IN = "Weitergeleitete Belege werden nicht aus Gmail abgerufen (E-Mail-Eingang)."
+# What does not run while a name's typed value cannot be read; None: nothing uses it yet.
+STOPPED: dict[AppSecretName, str | None] = {
+    N.ANTHROPIC_API_KEY: (
+        "Dokumente werden nicht automatisch ausgelesen, und die KI schlägt keine Zuordnung "
+        "von Zahlungen vor."
+    ),
+    N.ETHERSCAN_KEY: "Ethereum- und Arbitrum-Adressen werden nicht gelesen.",
+    N.SOLANA_RPC_URL: "Solana-Adressen werden nicht gelesen.",
+    N.BSC_RPC_URL: "Kontostände auf BNB Smart Chain werden nicht gelesen.",
+    N.HELIUS_KEY: None,
+    N.COINGECKO_KEY: "Die täglichen Coin-Kurse kommen nur von Kraken.",
+    N.FINTS_PRODUCT_ID: "Der Bankabruf läuft nicht, weder täglich noch mit „Jetzt abrufen“.",
+    N.TEM_SECRET_KEY: _DIGEST,
+    N.TEM_PROJECT_ID: _DIGEST,
+    N.MAIL_FROM: _DIGEST,
+    N.INBOX_IMAP_USER: _EMAIL_IN,
+    N.INBOX_IMAP_PASSWORD: _EMAIL_IN,
+    N.INBOX_ADDRESS: _EMAIL_IN,
+    N.INBOX_LABEL: _EMAIL_IN,
+}
+assert list(STOPPED) == list(N)
+
+# The jobs' log code for a group that is off because its typed value cannot be read.
+KEY_UNREADABLE = "key_unreadable"
+
+
+def unreadable_names(
+    conn: Connection, settings: Settings, names: Iterable[AppSecretName]
+) -> list[AppSecretName]:
+    """Those of `names` typed in the app whose value no longer decrypts, so a job can tell a
+    group that is off because of them from one that was never set up (names only)."""
+    rows = _rows(conn)
+    return [
+        name
+        for name in names
+        if (row := rows.get(name.value)) is not None and _open(row, settings) is None
+    ]
+
+
+def unreadable_inbox_items(conn: Connection, settings: Settings) -> list[InboxItem]:
+    """One Zu prüfen card while any value typed in the app cannot be read (principle 7): the
+    groups by their card headings with each value's label, what does not run meanwhile, and
+    that the server's own value never stands in. Gone once each is typed again or deleted.
+    Never a value; a name by its label only."""
+    rows = _rows(conn)
+    lost: list[tuple[AppSecretName, datetime]] = []
+    for name in N:
+        row = rows.get(name.value)
+        if row is not None and _open(row, settings) is None:
+            lost.append((name, row.updated_at))
+    if not lost:
+        return []
+    by_group: dict[AppSecretGroup, list[str]] = {}
+    for name, _ in lost:
+        by_group.setdefault(SPECS[name].group, []).append(SPECS[name].label)
+    groups = "; ".join(
+        f"{GROUP_LABELS[group]}: {', '.join(by_group[group])}"
+        for group in GROUP_LABELS
+        if group in by_group
+    )
+    stopped: list[str] = []
+    for name, _ in lost:
+        sentence = STOPPED[name]
+        if sentence is not None and sentence not in stopped:
+            stopped.append(sentence)
+    reasoning = " ".join(
+        [
+            "In der App gespeicherte Zugangsschlüssel lassen sich nicht mehr lesen, meist weil "
+            "der Sitzungsschlüssel des Servers gewechselt wurde.",
+            f"Betroffen – {groups}.",
+            *stopped,
+            "Hausbuch nimmt dafür nicht den Wert aus der Server-Konfiguration.",
+        ]
+    )
+    return [
+        InboxItem(
+            kind=InboxItemKind.APP_SECRET_UNREADABLE,
+            created_at=max(updated for _, updated in lost),
+            reasoning=reasoning,
+            question="Unter Einstellungen › Zugangsschlüssel neu eintragen oder löschen.",
+        )
+    ]
+
+
 # --- Set and delete --------------------------------------------------------------------------
 
 
@@ -410,7 +507,9 @@ def delete_secret(ctx: CommandContext, name: AppSecretName) -> bool:
 
 
 __all__ = [
+    "GROUP_LABELS",
     "INFO",
+    "KEY_UNREADABLE",
     "KEY_VERSION",
     "Resolved",
     "SecretUnreadable",
@@ -421,5 +520,7 @@ __all__ = [
     "resolve",
     "secret_states",
     "set_secret",
+    "unreadable_inbox_items",
+    "unreadable_names",
     "workspace_settings",
 ]

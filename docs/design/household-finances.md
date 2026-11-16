@@ -555,7 +555,7 @@ wanted for the SO pot (it is a planning figure, not a filing need, so I would no
   phase 8), and the fourteen fixture files of phase 7 §15 under `tests/fixtures/phase7/`.
 - **Phase 8**: `schemas/tax_so.py`, `schemas/tax_kap.py`, migration `0010_tax_positions` (per-owner
   loss pots and elections; *replaced by phase 8 D225: `return_input` kinds and one
-  `movement_tax_input` table in migration 0046*), fixtures `so_2026/`: `disposal_gain.yaml`, `freigrenze.yaml` (€999.99
+  `movement_tax_input` table in migration 0047*), fixtures `so_2026/`: `disposal_gain.yaml`, `freigrenze.yaml` (€999.99
   free, €1,000 fully taxable, per spouse, with a property sale in the pot), `rewards_256.yaml`,
   `losses_23.yaml` (carry back and forward), `wrap_position.yaml` (both positions),
   `lp_position.yaml` (both positions), `perps_kap.yaml` (realized PnL, funding, loss offset
@@ -566,7 +566,7 @@ wanted for the SO pot (it is a planning figure, not a filing need, so I would no
   fixtures `health.yaml`, `surplus.yaml`, `explain_validator.yaml` (rejects an ISIN, a ticker, a
   "kaufe"), and recorded evals for the explain job. As specced (16 Nov 2026, not built; step 0
   not started): `schemas/health.py`, `schemas/plan.py` and `schemas/advice.py`; migration
-  `0047_household_plan` (`workspace.advice_mode` and the tables `household_scenario`,
+  `0048_household_plan` (`workspace.advice_mode` and the tables `household_scenario`,
   `health_snapshot` and `plan_explanation`, so not "no migration beyond scenarios"); and the
   seventeen fixture files of phase 9 §15.1 under `tests/fixtures/phase9/`:
   `closed_month.yaml`, `household_month.yaml`, `savings_rate.yaml`, `reserve.yaml`,
