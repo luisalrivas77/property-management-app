@@ -356,8 +356,9 @@ function pinSentence(slot: string, pin: PinInfo): ReactNode {
   if (pin.source === "app" && pin.readable && !pin.serverMatches) {
     return (
       <>
-        <strong>Die gespeicherte PIN gilt für eine andere FinTS-Adresse</strong>: Hausbuch sendet sie nur an die Adresse, für
-        die sie eingegeben wurde. Bitte „PIN ändern“ wählen und die PIN für diese Adresse neu eingeben.
+        <strong>Bitte die PIN einmal neu eingeben</strong>: Hausbuch sendet eine gespeicherte PIN nur an die FinTS-Adresse,
+        für die sie eingegeben wurde. Eine PIN, die vor dem 16.11.2026 eingegeben wurde, nennt noch keine Adresse; sonst wurde
+        die FinTS-Adresse dieses Zugangs seither geändert. „PIN ändern“ wählen und die PIN für diese Adresse neu eingeben.
       </>
     );
   }
