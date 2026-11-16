@@ -49,7 +49,10 @@ itself fits, of the kind it reads, whose units fit (else 422 transfer.units_diff
 Currentness is decided on read, as phase 6's: services.transfers._current_links counts a chain,
 bridge or wrap link only while both legs are live, whoever wrote it, so re-booking a leg
 (superseding it) ends the link (D184 (5)) and the leg's successor is open again. Nothing here
-sets transfer_link.superseded_by.
+sets transfer_link.superseded_by (services.transfers.unlink does, for a person's replacement).
+What a matcher's link confirmed is recorded on its transfer.linked event; once the link is no
+longer current, the next relink returns it to proposed (_reopen: proposed copies that supersede
+the rows, never a person's answer), so it waits for a person again (review of PR #396).
 
 Locks: the workspace's transfer lock (services.transfers._lock); a movement or group row is
 locked with SKIP LOCKED by the matcher (a row a person is answering right now is left for the
