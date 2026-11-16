@@ -477,7 +477,11 @@ cases:
 # applies decides:
 #   1. kind failed or spam, or a group that moves nothing but its fee (fee_only) ->
 #      auto_confirm, routing.deterministic (also on a first sync: D186 (1) exempts them)
-#   2. first_sync -> review, routing.chain_first_sync (a person reads the first history once)
+#   2. first_sync -> review, routing.chain_first_sync (a person reads the first history once;
+#      since D261, 16 Nov 2026, this is the route the sync writes, and the linker in
+#      services.chain.transfers afterwards confirms a transfer or exchange_transfer group
+#      routed so when its pair is proven: one hash with fitting units, a learned exchange
+#      deposit address or a learned withdrawal pair. route_group itself is unchanged)
 #   3. unregistered_output (a Bitcoin spend paying an unregistered address, D185) -> review,
 #      routing.chain_change_candidate
 #   4. transfer, exchange_transfer: linked -> auto_confirm, routing.deterministic; else
@@ -534,7 +538,18 @@ chain_cases:
     item: {kind: swap, decoder_listed: true, priced: true, registry_assets: true, first_sync: true}
     expect: {decision: review, reason: routing.chain_first_sync}
   - id: chain_first_sync_transfer_linked_review
+    description: >-
+      The route at the sync. Since D261 (16 Nov 2026) the linker confirms such a group
+      afterwards when its pair is proven (one hash, a learned deposit address or withdrawal
+      pair); until then the group waited for a person's pick.
     item: {kind: transfer, linked: true, first_sync: true}
+    expect: {decision: review, reason: routing.chain_first_sync}
+  - id: chain_first_sync_exchange_transfer_waits_for_its_link
+    description: >-
+      Added with D261 (16 Nov 2026): a first sync's send to an exchange (by hash or to a
+      learned deposit address) is routed chain_first_sync like every first-sync group; the
+      linker, not route_group, confirms it once the exchange's row is linked to it.
+    item: {kind: exchange_transfer, registry_assets: true, first_sync: true}
     expect: {decision: review, reason: routing.chain_first_sync}
   - id: chain_bitcoin_unregistered_output
     description: §6 example 12.

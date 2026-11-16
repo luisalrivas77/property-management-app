@@ -24,8 +24,8 @@ fit and:
 2. the two legs share their transaction hash, the link is of kind chain, and each proposed leg
    may be confirmed by code (D186 (1): an exchange's withdrawal by hash, own address to own
    address): an exchange row with a transfer kind, or a leg whose group is a transfer or
-   exchange_transfer that waits only for its link (routed routing.no_match, so never a
-   wallet's first sync, which waits for a person) and holds no leg but the pair's, its fees
+   exchange_transfer that waits only for its link (routed routing.no_match, or since D261 a
+   wallet's first sync, routing.chain_first_sync) and holds no leg but the pair's, its fees
    and the rent of a token account the send opened. The link confirms them in the same
    transaction (the group, its legs and its fees, each with its event; a group with its rent
    leg stays proposed for a person), so the sync's `linked` (which the classifiers leave
@@ -36,7 +36,7 @@ less the exchange's fee_quantity equal the received units within the chain's dus
 one hash: a hash names the transaction, not what each own address got of it. A bridge's units
 are the matcher's fee-share fit, a wrap's its unit fit.
 
-Anything else (an amount-only fit, a bridge, a wrap, a first sync, an ambiguous fit) waits for
+Anything else (an amount-only fit, a bridge, a wrap, an ambiguous fit) waits for
 a person on a card of GET /transfers/open: transfer.proposed with the one fit,
 transfer.ambiguous with every fit, transfer.partial when the transaction's hash names own legs
 of other units (part of the coins went elsewhere, or one send paid several own receipts: they
@@ -70,6 +70,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -97,7 +98,7 @@ from hausbuch.rules.chain.match_transfer import (
 from hausbuch.rules.chain.registry import registry
 from hausbuch.rules.errors import TRANSFER_LEGS_INVALID, TRANSFER_UNITS_DIFFER
 from hausbuch.rules.household.assets import registry as asset_registry
-from hausbuch.rules.review import DETERMINISTIC, NO_MATCH
+from hausbuch.rules.review import CHAIN_FIRST_SYNC, DETERMINISTIC, NO_MATCH
 from hausbuch.schemas.allocation import AllocationCategory, TransferLegSource
 from hausbuch.schemas.chain import (
     BridgePair,
@@ -148,6 +149,10 @@ _CONFIRMABLE_GROUPS = frozenset({GroupKind.TRANSFER, GroupKind.EXCHANGE_TRANSFER
 _TRANSFER_KINDS = frozenset({MovementKind.INTERNAL_TRANSFER_OUT, MovementKind.INTERNAL_TRANSFER_IN})
 _CHAIN_KINDS = _TRANSFER_KINDS | {MovementKind.UNCATEGORIZED}
 _LIVE = (MovementStatus.PROPOSED.value, MovementStatus.CONFIRMED.value)
+# The routing reasons of a group that waits only for its link (D186 (1)): routing.no_match,
+# and since D261 (16 Nov 2026) a wallet's first sync too, whose history arrives in that one
+# sync; a pair under one hash with fitting units is proof enough there as well.
+_LINK_WAITS = frozenset({NO_MATCH, CHAIN_FIRST_SYNC})
 
 
 # --- Reading legs ---------------------------------------------------------------------------
@@ -489,8 +494,8 @@ def _code_may_confirm(conn: Connection, leg: _Row, pair: set[UUID]) -> bool:
         or leg.group_status is not GroupStatus.PROPOSED
     ):
         return False
-    if _group_reason(conn, leg.group_id) != NO_MATCH:
-        return False  # a first sync (or anything but a missing link) waits for a person
+    if _group_reason(conn, leg.group_id) not in _LINK_WAITS:
+        return False  # anything but a missing link (a question, a decoder) waits for a person
     return {r.id for r in _group_rest(conn, leg.group_id) if not _rent(r)} <= pair
 
 
@@ -632,7 +637,10 @@ def _confirm(
     return count
 
 
-# --- Writing links --------------------------------------------------------------------------
+# --- Writing links -----------------------------------------------------------------------
+
+# Why a matcher's coin link was written, on its transfer.linked event (D261).
+LinkReason = Literal["hash", "deposit_address", "withdrawal_pair", "confirmed"]
 
 
 def _write(
@@ -642,6 +650,7 @@ def _write(
     kind: TransferLinkKind,
     matched_by: TransferMatchedBy,
     confirmed: _Confirmed | None = None,
+    reason: LinkReason | None = None,
 ) -> TransferLink:
     """One transfer_link row of two coin movements and its transfer.linked event (ids only),
     as services.transfers._write writes a EUR link, without its bank-line hooks; `confirmed`
@@ -669,6 +678,7 @@ def _write(
             matched_by=matched_by,
             confirmed_movements=confirmed.movements if confirmed else [],
             confirmed_groups=confirmed.groups if confirmed else [],
+            reason=reason,
             **legs,
         ),
     )
@@ -946,7 +956,9 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
         if found.link is not TransferLinkKind.CHAIN and not _learned(world, leg, other, found.link):
             continue  # a bridge or wrap the workspace has not confirmed: a person's pick
         pair = {leg.id, other.id}
+        reason: LinkReason = "confirmed"
         if not (leg.confirmed and other.confirmed):
+            reason = "hash"
             if found.link is not TransferLinkKind.CHAIN or not _same_hash(leg, other):
                 continue  # an amount-only fit, a bridge or a wrap waits for a person
             if not (
@@ -960,7 +972,7 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
             continue
         done = _Confirmed()
         result.confirmed += _confirm(ctx, leg, pair, done) + _confirm(ctx, other, pair, done)
-        _write(ctx, leg, other, found.link, TransferMatchedBy.MATCHER, done)
+        _write(ctx, leg, other, found.link, TransferMatchedBy.MATCHER, done, reason)
         world.linked |= pair
         result.linked += 1
     if result.linked or result.skipped_locked or result.reopened:

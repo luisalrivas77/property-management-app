@@ -1172,6 +1172,12 @@ class TransferLinked(Schema):
     # them to proposed once the link is no longer current. Empty on every other link.
     confirmed_movements: list[UUID] = Field(default_factory=list)
     confirmed_groups: list[UUID] = Field(default_factory=list)
+    # Phase 7 D261 (16 Nov 2026): why a matcher's coin link was written: `hash` (both legs
+    # under one transaction hash), `deposit_address` (a send to an exchange's learned deposit
+    # address), `withdrawal_pair` (an exchange's withdrawal to an own address it was linked to
+    # before), `confirmed` (both legs confirmed already). None on a person's link and on
+    # every EUR link.
+    reason: Literal["hash", "deposit_address", "withdrawal_pair", "confirmed"] | None = None
 
 
 class TransferUnlinked(Schema):
