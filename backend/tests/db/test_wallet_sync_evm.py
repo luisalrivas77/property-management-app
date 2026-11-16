@@ -26,6 +26,7 @@ from db.test_phase7_migration import _chain_movement, _group_row
 from fixture_models_phase7 import load
 from pydantic import SecretStr
 
+from hausbuch.api.routes.wallet_sync import list_wallet_syncs
 from hausbuch.db.session import workspace_transaction
 from hausbuch.rules import errors as E
 from hausbuch.rules.chain import evm
@@ -159,6 +160,10 @@ class FakeEtherscan:
             return self._proxy(hex(c["tip"]))
         if action == "eth_call":
             assert int(q["tag"], 16) == c["tip"] - 12
+            if q["to"] in c.get("revert", ()):  # a contract whose `balanceOf` reverts
+                message = c.get("reason", "execution reverted")
+                error = {"code": c.get("revert_code", 3), "message": message}
+                return 200, json.dumps({"jsonrpc": "2.0", "id": 1, "error": error}).encode()
             return self._proxy(hex(c["tokens"].get(q["to"], 0)))
         if action == "balance":
             assert int(q["tag"], 16) == c["tip"] - 12
@@ -184,10 +189,13 @@ class FakeRpc:
     def __init__(self, native: int) -> None:
         self.native = native
         self.urls: list[str] = []
+        self.fail = None  # a callable(payload) -> (status, body): the node refuses
 
     def __call__(self, url, headers, body, timeout, max_bytes):
         self.urls.append(url)
         payload = json.loads(body)
+        if self.fail is not None:
+            return self.fail(payload)
         result = {
             "eth_blockNumber": hex(BSC_TIP),
             "eth_getBalance": hex(self.native),
@@ -565,6 +573,60 @@ def test_bsc_is_reconciled_against_its_linked_deposits(
     assert _sync_row(dbname, bsc_id)[7] is None
 
 
+def _rpc_error(payload):
+    error = {"code": -32000, "message": "invented node failure"}
+    return 200, json.dumps({"jsonrpc": "2.0", "id": payload["id"], "error": error}).encode()
+
+
+@pytest.mark.parametrize(
+    ("answer", "status", "code"),
+    [
+        (lambda payload: (403, b""), "refused", E.WALLET_SOURCE_REFUSED),
+        (lambda payload: (429, b""), "throttled", E.WALLET_SOURCE_THROTTLED),
+        (_rpc_error, "failed", E.WALLET_SOURCE_FAILED),
+    ],
+    ids=["http403", "http429", "rpc_error"],
+)
+def test_a_bsc_node_that_refuses_every_call_is_a_failed_row_each_day(
+    dbname, app_engine, blob_store, fresh_workspaces, http, answer, status, code
+):
+    """Review of PR #397: a balance-only address reads no history, so a node refusing every
+    call stores nothing new. Each day is a refused, throttled or failed row with its code,
+    on the row, on GET /wallets/{id}/syncs and on the wallet page's last_sync, never a
+    succeeded row with no balance that reads deferred."""
+    _, rpc = http
+    ws, _ = fresh_workspaces
+    account, ids = _wallet(app_engine, ws)
+    bsc_id = ids[Chain.BSC]
+    rpc.fail = answer
+    for day in (1, 2):
+        out = _run(app_engine, blob_store, ws, account, day=day)[Chain.BSC]
+        assert (out.status, out.error_code, out.deferred, out.reconciled) == (
+            WalletSyncStatus(status),
+            code,
+            False,
+            None,
+        )
+        row = _sync_row(dbname, bsc_id)
+        assert (row[0], row[2], row[5], row[6], row[9]) == (status, None, None, None, code)
+    with workspace_transaction(app_engine, ws) as conn:
+        runs = [r for r in list_wallet_syncs(conn, account) if r.address_id == bsc_id]
+        page = wallet_svc.wallet_page(conn, account)
+    assert len(runs) == 2
+    assert {(r.status.value, r.error_code, r.deferred) for r in runs} == {(status, code, False)}
+    (last,) = [a.last_sync for a in page.addresses if a.id == bsc_id]
+    assert (last.error_code, last.reconciled) == (code, None)
+
+    rpc.fail = None  # the node answers again: the address reconciles
+    rpc.native = 0
+    back = _run(app_engine, blob_store, ws, account, day=3)[Chain.BSC]
+    assert (back.status, back.error_code, back.reconciled) == (
+        WalletSyncStatus.SUCCEEDED,
+        None,
+        True,
+    )
+
+
 def test_bsc_settings_url_is_used_and_only_its_host_recorded(
     dbname, app_engine, blob_store, fresh_workspaces, http, caplog
 ):
@@ -794,3 +856,164 @@ def test_a_claimed_unlisted_token_reconciles(
     again = _run(app_engine, blob_store, ws, account, day=2)[Chain.ETHEREUM]
     assert (again.reconciled, again.movements_new) == (True, 0)
     assert _sync_row(dbname, ids[Chain.ETHEREUM])[6][token] == str(5 * 10**18)
+
+
+# --- a reverted balanceOf (follow-up of the EVM wiring's review, item 8) -------------------
+
+
+def test_a_reverted_balance_of_an_unlisted_token_marks_it_unreadable_and_the_run_goes_on(
+    dbname, app_engine, blob_store, fresh_workspaces, http
+):
+    """An unlisted token whose `balanceOf` reverts (a contract the classifier took for a
+    token) no longer fails every run: the run's movements are written, the token is left out
+    of both sides, the row stores the balances read, and the run reads unreconciled with the
+    card wallet.token_unreadable. A registry token that reverts still fails the balance read
+    (a run with nothing new is then a failed row, review of PR #397)."""
+    scan, _ = http
+    ws, _ = fresh_workspaces
+    account, ids = _wallet(app_engine, ws)
+    token = "0x" + "ce" * 20
+    claim = {
+        "hash": _hash("invented claim of a contract"),
+        "blockNumber": "21000850",
+        "timeStamp": "1773750000",
+        "from": ME,
+        "to": token,
+        "value": "0",
+        "gasUsed": "50000",
+        "gasPrice": "10000000000",
+        "isError": "0",
+        "input": "0x4e71d92d",
+    }
+    credited = {
+        "hash": claim["hash"],
+        "blockNumber": "21000850",
+        "timeStamp": "1773750000",
+        "from": "0x" + "0" * 40,
+        "to": ME,
+        "contractAddress": token,
+        "tokenSymbol": "ODD",
+        "tokenDecimal": "18",
+        "value": str(5 * 10**18),
+        "logIndex": "1",
+    }
+    eth_chain = scan.chains[ETH_ID]
+    eth_chain["rows"]["txlist"].append(claim)
+    eth_chain["rows"]["tokentx"].append(credited)
+    eth_chain["native"] = ETH_BALANCE - 50000 * 10_000_000_000
+    eth_chain["revert"] = {token}
+    eth = _run(app_engine, blob_store, ws, account)[Chain.ETHEREUM]
+    assert (eth.status, eth.error_code, eth.reconciled, eth.card, eth.waiting) == (
+        WalletSyncStatus.SUCCEEDED,
+        None,
+        False,
+        E.WALLET_TOKEN_UNREADABLE,
+        False,
+    )
+    row = _sync_row(dbname, ids[Chain.ETHEREUM])
+    assert (row[0], row[5], row[7], row[9]) == ("succeeded", False, None, None)
+    assert token not in row[6] and row[6][USDC] == "150000000"
+    held = _q(
+        dbname,
+        "SELECT count(*) FROM asset_movement m JOIN asset a ON a.id = m.asset_id"
+        " WHERE m.address_id = %s AND a.contract_address = %s",
+        ids[Chain.ETHEREUM],
+        token,
+    )
+    assert held[0][0] == 1
+
+    # the next run: nothing new, the token still unreadable, still unreconciled
+    again = _run(app_engine, blob_store, ws, account, day=2)[Chain.ETHEREUM]
+    assert (again.movements_new, again.reconciled, again.card) == (
+        0,
+        False,
+        E.WALLET_TOKEN_UNREADABLE,
+    )
+    # once it answers, the address reconciles
+    eth_chain["revert"] = set()
+    eth_chain["tokens"][token] = 5 * 10**18
+    assert _run(app_engine, blob_store, ws, account, day=3)[Chain.ETHEREUM].reconciled is True
+
+    # a registry token that reverts is no misread contract: the balance read fails, and with
+    # nothing new the run is a failed row (review of PR #397)
+    eth_chain["revert"] = {USDC}
+    listed = _run(app_engine, blob_store, ws, account, day=4)[Chain.ETHEREUM]
+    assert (listed.status, listed.error_code, listed.reconciled) == (
+        WalletSyncStatus.FAILED,
+        E.WALLET_SOURCE_FAILED,
+        None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("reason", "code"),
+    [
+        ("execution reverted", 3),
+        ("execution reverted: Access denied", 3),
+        ("execution reverted: transfers not supported", -32000),
+    ],
+)
+def test_a_revert_reason_is_never_read_as_a_provider_refusal(
+    dbname, app_engine, blob_store, fresh_workspaces, http, reason, code
+):
+    """Review of PR #397: a token's own revert text („Access denied“, „not supported“) holds
+    words the refusal classifier keys on; a reverted call (code 3, or a message starting
+    „execution reverted“) is the contract's answer, so the token is unreadable and the run
+    stores its balances, never refused."""
+    scan, _ = http
+    ws, _ = fresh_workspaces
+    account, ids = _wallet(app_engine, ws)
+    token = "0x" + "cf" * 20
+    tx_hash = _hash(f"invented claim, {reason}")
+    eth_chain = scan.chains[ETH_ID]
+    eth_chain["rows"]["txlist"].append(
+        {
+            "hash": tx_hash,
+            "blockNumber": "21000850",
+            "timeStamp": "1773750000",
+            "from": ME,
+            "to": token,
+            "value": "0",
+            "gasUsed": "50000",
+            "gasPrice": "10000000000",
+            "isError": "0",
+            "input": "0x4e71d92d",
+        }
+    )
+    eth_chain["rows"]["tokentx"].append(
+        {
+            "hash": tx_hash,
+            "blockNumber": "21000850",
+            "timeStamp": "1773750000",
+            "from": "0x" + "0" * 40,
+            "to": ME,
+            "contractAddress": token,
+            "tokenSymbol": "ODD",
+            "tokenDecimal": "18",
+            "value": str(5 * 10**18),
+            "logIndex": "1",
+        }
+    )
+    eth_chain["native"] = ETH_BALANCE - 50000 * 10_000_000_000
+    eth_chain["revert"] = {token}
+    eth_chain["reason"] = reason
+    eth_chain["revert_code"] = code
+    eth = _run(app_engine, blob_store, ws, account)[Chain.ETHEREUM]
+    assert (eth.status, eth.error_code, eth.reconciled, eth.card) == (
+        WalletSyncStatus.SUCCEEDED,
+        None,
+        False,
+        E.WALLET_TOKEN_UNREADABLE,
+    )
+    row = _sync_row(dbname, ids[Chain.ETHEREUM])
+    assert (row[0], row[9]) == ("succeeded", None)
+    assert token not in row[6] and row[6][USDC] == "150000000"
+
+    # a registry token reverting with the same text still fails the balance read: the
+    # contract's answer (wallet.source_failed), nothing new, a failed row; never refused
+    eth_chain["revert"] = {USDC}
+    listed = _run(app_engine, blob_store, ws, account, day=2)[Chain.ETHEREUM]
+    assert (listed.status, listed.error_code) == (
+        WalletSyncStatus.FAILED,
+        E.WALLET_SOURCE_FAILED,
+    )

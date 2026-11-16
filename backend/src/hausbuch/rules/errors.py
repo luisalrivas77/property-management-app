@@ -238,6 +238,13 @@ SETTINGS_CONSENT_NOT_A_MEMBER = "settings.consent_not_a_member"  # only a signed
 # step 0; each is raised or shown by the step that builds its rule (D179-D190).
 WALLET_ADDRESS_INVALID = "wallet.address_invalid"  # not the chain's address format (D179 (2))
 WALLET_ADDRESS_TAKEN = "wallet.address_taken"  # registered on another own account (D179 (2))
+# „Diese Adresse hält laut dem letzten Abruf noch Coins. Erst die Coins wegsenden und den
+# nächsten Abruf abwarten, dann die Adresse stilllegen.“ (retiring an address whose newest
+# read balance is not zero; for Bitcoin, which is reconciled per wallet, the wallet's
+# newest balance on the chain; a sync follow-up of the Bitcoin wiring's review). Bitcoin, and
+# an address with movements whose balance was never read, refuse with their own texts
+# (services/wallets._retire_refusal; review of PR #397).
+WALLET_ADDRESS_HOLDS_COINS = "wallet.address_holds_coins"
 WALLET_KEY_MISSING = "wallet.key_missing"  # the chain's source needs a key that is unset
 WALLET_SOURCE_THROTTLED = "wallet.source_throttled"  # a 429: the sync resumes the next day
 WALLET_SOURCE_REFUSED = "wallet.source_refused"  # a 401/403: change the URL or key (D182 (1))
@@ -257,6 +264,12 @@ WALLET_SYNC_ERROR = "wallet.sync_error"
 WALLET_SOURCE_UNAVAILABLE = "wallet.source_unavailable"
 WALLET_UNRECONCILED = "wallet.unreconciled"  # Σ movements != the chain's balance (D186 (2))
 WALLET_COINS_LEFT = "wallet.coins_left"  # a balance-only address below its linked deposits
+# „Kontostand eines Tokens nicht lesbar: der Vertrag hat die Abfrage des Kontostands
+# abgelehnt. Die Bewegungen sind gespeichert, aber die Adresse gilt als nicht abgeglichen.“
+# (an EVM token the registry does not list whose `balanceOf` reverts or answers no number:
+# that token is left out of the reconciliation, the run goes on and reads unreconciled;
+# a follow-up of the EVM wiring's review, item 8)
+WALLET_TOKEN_UNREADABLE = "wallet.token_unreadable"
 WALLET_SYNC_DEFERRED = "wallet.sync_deferred"  # the run's budget ran out; a page note, no card
 WALLET_CHANGE_CANDIDATE = "wallet.change_candidate"  # an own spend's unregistered output (D185)
 # A record whose token legs cannot be read (a token balance row without an owner the sync can
@@ -271,3 +284,14 @@ GROUP_UNKNOWN = "group.unknown"  # no rule reads the transaction (D183 (3f))
 GROUP_CONTRACT_CALL = "group.contract_call"  # a shape no rule reads (D183 (4))
 GROUP_UNPRICED = "group.unpriced"  # a leg without the day's price (D188 (4))
 GROUP_LP_UNDECIDED = "group.lp_undecided"  # a pool position, phase 8 decides (D183 (4))
+# The wallet cards (phase 7 wallet screens): the group is no open card any more (answered,
+# confirmed or superseded since the page was loaded); „Bestätigen“ on a group that needs an
+# answer (a question, a leg not yet categorised, a group without legs); an answer that does
+# not fit the group's legs (Bezahlung on a receipt, Spam on the chain's own coin).
+WALLET_GROUP_DONE = "wallet.group_done"
+WALLET_GROUP_NEEDS_ANSWER = "wallet.group_needs_answer"
+WALLET_ANSWER_UNFIT = "wallet.answer_unfit"
+# Phase 7 step 6 (D190): „Bestandsnachweis 31.12.<Jahr> erstellen“ before that day is over in
+# Berlin, or for a year in which no wallet or exchange account had a confirmed movement.
+HOLDINGS_EXPORT_YEAR_OPEN = "holdings_export.year_open"
+HOLDINGS_EXPORT_NOTHING_HELD = "holdings_export.nothing_held"

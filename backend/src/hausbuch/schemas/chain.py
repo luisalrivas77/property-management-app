@@ -28,7 +28,7 @@ from uuid import UUID
 from pydantic import BeforeValidator, Field, JsonValue, model_validator
 
 from .common import _STRING_ONLY, Money, Schema, _string_schema
-from .household import AssetMovementDraft, AssetSymbol, NonNegativeQuantity, Quantity
+from .household import AssetMovementDraft, AssetSymbol, NonNegativeQuantity, PriceEur, Quantity
 
 # --- Value types (decimal strings on the wire, phase 1 spec amendment 2) ----------------
 
@@ -443,6 +443,15 @@ class LotSource(StrEnum):
 
 
 class Lot(Schema):
+    """A lot, computed on read (D188 (1)). `id` is derived from its origin (the creating
+    movement, or a moved part's origin and link), so a re-read gives the same id; `movement_id`
+    is the movement that created it, kept through every move (principle 2: a lot links to its
+    movements); `acquired_at` is the instant, FIFO's second key after `acquired_on`. Folded in
+    from rules/lots.HeldLot in step 6."""
+
+    id: UUID
+    movement_id: UUID
+    acquired_at: datetime
     account_id: UUID
     asset_id: UUID
     acquired_on: date
@@ -461,6 +470,15 @@ class LotUse(Schema):
     cost_eur: Money | None = None
 
 
+class PriceNeed(Schema):
+    """A price of one asset for one Berlin day whose absence leaves a lot unpriced: typing it
+    („Kurs eintragen“, a `user` price of phase 6 D167) prices the lot (D188 (4), principle 7).
+    The asset may be the lot's own, a swap's given coin or a fee's coin (D188 amended)."""
+
+    asset_id: UUID
+    on: date
+
+
 # --- The year-end holdings statement (D190) ---------------------------------------------
 
 
@@ -471,9 +489,19 @@ class AddressHoldings(Schema):
 
 
 class PositionHoldings(Schema):
+    """An account's position in one asset at the end of the statement's day. `symbol` and
+    `name` label it (a chain token's symbol is a label, D180 amended); `price_eur` and
+    `price_on` the price `value_eur` used (phase 6 D167's `price_on`, a chain token through
+    its `priced_as` asset); `reconciled` is false when the last sync on or before the day of an
+    address holding it did not reconcile (an exchange has no sync: true)."""
+
     asset_id: UUID
+    symbol: str | None = None
+    name: str = ""
     units: Quantity
     lots: list[Lot] = Field(default_factory=list)
+    price_eur: PriceEur | None = None
+    price_on: date | None = None
     value_eur: Money | None = None
     reconciled: bool
 
@@ -488,10 +516,22 @@ class UnvaluedToken(Schema):
 
 
 class AccountHoldings(Schema):
+    """One wallet or exchange account. `addresses[].units_by_asset` is keyed by the asset id
+    (a chain token's symbol is not unique); `movement_ids` are the confirmed movements the
+    statement summed (D190: the statement's source list)."""
+
     account_id: UUID
+    label: str = ""
+    kind: str = ""
+    provider: str | None = None
     addresses: list[AddressHoldings] = Field(default_factory=list)
     positions: list[PositionHoldings] = Field(default_factory=list)
     unvalued_tokens: list[UnvaluedToken] = Field(default_factory=list)
+    unreconciled_addresses: list[str] = Field(default_factory=list)  # masked
+    movement_ids: list[UUID] = Field(default_factory=list)
+    # Step 6 review: the addresses (masked) no sync had finished reading by the end of the
+    # day; the statement says „kein Abgleich bis zum Stichtag“, never „abgeglichen“.
+    unsynced_addresses: list[str] = Field(default_factory=list)
 
 
 class HoldingsStatement(Schema):

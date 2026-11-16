@@ -19,7 +19,11 @@ output „Nein, Empfänger“:
 A sync run whose only new item was the card keeps its original since migration 0044 (D182 (3)
 amended, review of PR #387), so every card written since can be answered. A card written
 before it, by such a run, has its transaction in no stored original: the answer is refused
-with `wallet.original_missing`. „Ja, eigene Adresse“ is not built here.
+with `wallet.original_missing`.
+
+„Ja, eigene Adresse“ (`answer_own_change`, the wallet screens) registers the output's address
+on the wallet as kind change through services/wallets and derives the spend again with it as
+own, the same way; `candidates` lists what a card asks about, read again from the original.
 """
 
 import json
@@ -48,7 +52,7 @@ from hausbuch.services.chain.payee_answers import answered_payee
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import read_original
 from hausbuch.services.events import append_event
-from hausbuch.services.wallets import _lock_wallet
+from hausbuch.services.wallets import _lock_wallet, register_change_address
 from hausbuch.settings import Settings
 from hausbuch.storage import BlobStore
 
@@ -115,7 +119,9 @@ def _open_cards(conn, account_id: UUID, *, but: UUID | None = None):
 
 def _reading(conn, cmd, store: BlobStore, settings: Settings, card) -> _Reading | None:
     """The card's spend read again from a stored original, with the account's own addresses
-    and current answers; None when no original holds it. Raises when the card has no run."""
+    and current answers; None when no original holds it. Raises when the card has no run.
+    `cmd` None reads only (the card's candidates): the chain's coin is then looked up, never
+    created (the sync that wrote the card created it)."""
     e = event_table.c
     sync_id = conn.execute(
         select(e.payload["sync_id"].astext).where(
@@ -136,7 +142,10 @@ def _reading(conn, cmd, store: BlobStore, settings: Settings, card) -> _Reading 
     raw, document_id = found
     own = sync._own_of(conn, card.account_id, Chain.BITCOIN)
     own.setdefault(synced.address, sync._Own(synced.id, bytes(synced.address_hmac).hex()))
-    native = sync.chain_asset(cmd, AssetKey(chain=Chain.BITCOIN))
+    key = AssetKey(chain=Chain.BITCOIN)
+    native = sync.chain_asset(cmd, key) if cmd is not None else sync._find_asset(conn, key)
+    if native is None:
+        return None
     ctx = sync._context(
         conn,
         Chain.BITCOIN,
@@ -238,16 +247,101 @@ def answer_payee(
         new_id = _supersede(
             conn, cmd, store, reading, classify(tx, replace(ctx, answered_payee=answers))
         )
-        for other in cards:
-            if other.id == card.id:
-                continue
-            again = _reading(conn, cmd, store, settings, other)
-            if again is None:
-                continue  # its spend is in no stored original (§15.1's gap): left as it is
-            group = classify(again.tx, again.ctx)  # the answers now include this one
-            if group is not None and not group.legs and group.question == other.question:
-                continue  # the answer does not concern it
-            if group is None:
-                continue  # never on a stored spend of the account; nothing to write
-            _supersede(conn, cmd, store, again, group)
+        _rederive(conn, cmd, store, settings, cards, but=card.id)
+        return new_id
+
+
+def _rederive(conn, cmd, store: BlobStore, settings: Settings, cards, *, but: UUID) -> None:
+    """Every other open card of the account whose reading the answer changes is superseded
+    by the group derived now (the first sync writes one card per past spend, often to the
+    same payee or change address); a card whose spend is in no stored original is left."""
+    for other in cards:
+        if other.id == but:
+            continue
+        again = _reading(conn, cmd, store, settings, other)
+        if again is None:
+            continue  # its spend is in no stored original (§15.1's gap): left as it is
+        group = classify(again.tx, again.ctx)  # the answers now include this one
+        if group is not None and not group.legs and group.question == other.question:
+            continue  # the answer does not concern it
+        if group is None:
+            continue  # never on a stored spend of the account; nothing to write
+        _supersede(conn, cmd, store, again, group)
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """An output a card asks about: its vout, masked address and amount in satoshis."""
+
+    vout: int
+    address_masked: str
+    sats: int
+
+
+def candidates(
+    engine: Engine, workspace_id: UUID, group_id: UUID, *, settings: Settings, store: BlobStore
+) -> list[Candidate] | None:
+    """The outputs the open card `group_id` asks about, read again from the stored original;
+    None when no stored original holds its spend. wallet.change_answered when it is no open
+    change card. Reads only."""
+    g = group_table.c
+    with workspace_transaction(engine, workspace_id) as conn:
+        account_id = conn.execute(select(g.account_id).where(g.id == group_id)).scalar_one_or_none()
+        if account_id is None:
+            raise RuleError(WALLET_CHANGE_ANSWERED)
+        card = next((c for c in _open_cards(conn, account_id) if c.id == group_id), None)
+        if card is None:
+            raise RuleError(WALLET_CHANGE_ANSWERED)
+        reading = _reading(conn, None, store, settings, card)
+        if reading is None:
+            return None
+        tx, mine = reading.tx, set(reading.own)
+        asked = read_utxo(tx, mine, settled_outputs(tx, mine, reading.ctx)).candidates
+        found = [Candidate(c.vout, mask(Chain.BITCOIN, c.address), c.sats) for c in asked]
+        return sorted(found, key=lambda c: c.vout)
+
+
+def answer_own_change(
+    engine: Engine,
+    workspace_id: UUID,
+    group_id: UUID,
+    vout: int,
+    *,
+    settings: Settings,
+    store: BlobStore,
+    actor: Actor,
+    clock: Clock,
+) -> UUID:
+    """„Ja, eigene Adresse“ for output `vout` of the card `group_id` (D185 (2)): the output's
+    address is registered on the same wallet as a change address (services/wallets, with its
+    checks, event and first sync), the spend is derived again with it as own and written
+    through the sync's writer, superseding the card (a transfer once every output is placed,
+    else a narrower card), and every other open card of the account is derived again too.
+    Returns the group that supersedes the card."""
+    g = group_table.c
+    with workspace_transaction(engine, workspace_id) as conn:
+        account_id = conn.execute(select(g.account_id).where(g.id == group_id)).scalar_one_or_none()
+        if account_id is None:
+            raise RuleError(WALLET_CHANGE_ANSWERED)
+        _lock_wallet(conn, account_id)
+        cards = _open_cards(conn, account_id)
+        card = next((c for c in cards if c.id == group_id), None)
+        if card is None:
+            raise RuleError(WALLET_CHANGE_ANSWERED)
+        cmd = new_command(conn, workspace_id, actor, now=clock())
+        reading = _reading(conn, cmd, store, settings, card)
+        if reading is None:
+            raise RuleError(WALLET_ORIGINAL_MISSING)
+        tx, ctx, mine = reading.tx, reading.ctx, set(reading.own)
+        asked = {c.address for c in read_utxo(tx, mine, settled_outputs(tx, mine, ctx)).candidates}
+        output = next((t for t in outputs(tx) if t.index == str(vout)), None)
+        if output is None or output.to_addr not in asked:
+            raise RuleError(WALLET_CHANGE_ANSWERED)
+        register_change_address(cmd, account_id, output.to_addr, key=settings.iban_hmac_key)
+        again = _reading(conn, cmd, store, settings, card)  # the new address is own now
+        group = None if again is None else classify(again.tx, again.ctx)
+        if again is None or group is None:
+            raise RuleError(WALLET_ORIGINAL_MISSING)
+        new_id = _supersede(conn, cmd, store, again, group)
+        _rederive(conn, cmd, store, settings, cards, but=card.id)
         return new_id

@@ -25,8 +25,11 @@ cache the first superseded movement makes wrong, D184 (5)):
 - `berlin_day(occurred_at)`: the Europe/Berlin calendar day of an aware timestamp (D188 (2)).
 
 What creates a lot (D188 (1)): an `acquisition` (its EUR leg, else the day's price × units,
-else, in a swap group, the given legs' value (D188 (4)); plus its `fee_eur`, else the group's
-`fee` movements valued on the day when the group creates exactly one lot); a
+else, in a swap group, the given legs' value (D188 (4)); plus its `fee_eur` and the group's
+`fee` movements in another coin valued on the day when the group creates exactly one lot; a
+fee in the coin acquired and withheld from the units received, as in an exchange trade,
+adds nothing, its value being inside the EUR paid, while chain gas in that coin is paid on
+top and joins the cost, D188 amended 16 Nov 2026); a
 `staking_reward`, `cashback_reward` or `airdrop` (its EUR leg, else the day's price × units);
 a linked transfer in (the moved lot keeps its day, cost per unit and source, D184 (4)). What
 consumes: a `disposal`, a `fee` (at cost), a linked or unlinked transfer out. Nothing:
@@ -75,8 +78,9 @@ large balance subtract exactly once the quantity type is widened (migration 0042
 Fixtures tests/fixtures/phase7/lots.yaml, holding_period.yaml.
 """
 
+import bisect
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, localcontext
@@ -86,11 +90,12 @@ from zoneinfo import ZoneInfo
 
 from pydantic import Field
 
-from hausbuch.schemas.chain import Lot, LotSource, LotUse
+from hausbuch.schemas.chain import Lot, LotSource, LotUse, PriceNeed
 from hausbuch.schemas.common import Money, Schema
 from hausbuch.schemas.household import (
     AssetMovement,
     MovementKind,
+    MovementSource,
     MovementStatus,
     NonNegativeQuantity,
     PricePoint,
@@ -138,25 +143,27 @@ def _exact[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
     return run
 
 
-class HeldLot(Lot):
-    """A `Lot` with what `consume` and `LotUse.lot_id` need and the spec's `Lot` lacks: its
-    id, the movement that created it (kept through every move) and the instant it was
-    acquired (FIFO's second key). To be folded into `schemas/chain.Lot` (step 6 report)."""
+# For the modules that sum or print the lots' units (rules.holdings, the statement, its files).
+exact = _exact
 
-    id: UUID
-    movement_id: UUID
-    acquired_at: datetime
+
+# The lot with its id, creating movement and instant: folded into `schemas/chain.Lot` in
+# step 6; the name stays for the callers of step 0's rules. PriceNeed lives there too.
+HeldLot = Lot
 
 
 class LotBook(Schema):
     """`book`'s answer. `lots`: every lot, closed ones too, per account and asset in FIFO
     order. `uses`: per movement id, the lots it took (a disposal, a fee, a transfer out to
     another account). `unfilled`: per movement id, the units it took that no lot covered (an
-    incomplete history); never priced, never 0 €."""
+    incomplete history); never priced, never 0 €. `price_needs`: per creating movement id
+    (a lot's `movement_id`, kept through every move), the prices whose absence leaves its
+    lot unpriced; a lot of source `unknown` has none (no price can give it a cost)."""
 
     lots: list[HeldLot] = Field(default_factory=list)
     uses: dict[UUID, list[LotUse]] = Field(default_factory=dict)
     unfilled: dict[UUID, NonNegativeQuantity] = Field(default_factory=dict)
+    price_needs: dict[UUID, list[PriceNeed]] = Field(default_factory=dict)
 
 
 class CostTotal(Schema):
@@ -230,11 +237,15 @@ def _cost(per: Decimal | None, units: Decimal) -> Decimal | None:
 
 
 @_exact
-def _fifo(parts: Iterable[_Part], units: Decimal) -> list[tuple[_Part, Decimal]]:
-    """The parts `units` takes, oldest first, and how much of each; mutates nothing."""
+def _fifo(
+    parts: Iterable[_Part], units: Decimal, *, ordered: bool = False
+) -> list[tuple[_Part, Decimal]]:
+    """The parts `units` takes, oldest first, and how much of each; mutates nothing.
+    `ordered`: the parts are already in `_Part.key` order (the book's lists)."""
     out: list[tuple[_Part, Decimal]] = []
     left = units
-    for part in sorted((p for p in parts if p.open > 0), key=_Part.key):
+    candidates = (p for p in parts if p.open > 0)
+    for part in candidates if ordered else sorted(candidates, key=_Part.key):
         if left <= 0:
             break
         take = min(left, part.open)
@@ -293,12 +304,23 @@ def cost_total(lots: Iterable[Lot]) -> CostTotal:
 
 @dataclass
 class _Book:
+    """The parts per (account, asset), kept in FIFO order (`_Part.key`, unique by the part's
+    id) as they are added, so a take never sorts; `head` is the first part that may still be
+    open: a take empties parts from the front only, and an older part added later (a lot
+    moved in with its original day) moves it back."""
+
     parts: dict[tuple[UUID, UUID], list[_Part]] = field(default_factory=lambda: defaultdict(list))
+    head: dict[tuple[UUID, UUID], int] = field(default_factory=lambda: defaultdict(int))
     uses: dict[UUID, list[LotUse]] = field(default_factory=lambda: defaultdict(list))
     unfilled: dict[UUID, Decimal] = field(default_factory=dict)
 
     def add(self, part: _Part) -> None:
-        self.parts[(part.account_id, part.asset_id)].append(part)
+        key = (part.account_id, part.asset_id)
+        parts = self.parts[key]
+        at = bisect.bisect_right(parts, part.key(), key=_Part.key)
+        parts.insert(at, part)
+        if at < self.head[key]:
+            self.head[key] = at
 
     @_exact
     def take(
@@ -306,9 +328,16 @@ class _Book:
     ) -> list[tuple[_Part, Decimal]]:
         """Take `units` FIFO from the movement's account and asset; record the uses and any
         shortfall under the movement. Returns what was taken."""
-        taken = _fifo(self.parts[(movement.account_id, movement.asset_id)], units)
+        key = (movement.account_id, movement.asset_id)
+        parts = self.parts[key]
+        head = self.head[key]
+        taken = _fifo(parts[head:], units, ordered=True)
         for part, n in taken:
             part.open -= n
+        while head < len(parts) and parts[head].open <= 0:
+            head += 1
+        self.head[key] = head
+        for part, n in taken:
             if record:
                 self.uses[movement.id].append(
                     LotUse(lot_id=part.id, units=n, cost_eur=_cost(part.per, n))
@@ -335,14 +364,24 @@ def _new(movement: AssetMovement, units: Decimal, per: Decimal | None, source: L
 
 
 class _Prices:
-    def __init__(self, prices: Sequence[PricePoint]) -> None:
+    def __init__(
+        self, prices: Sequence[PricePoint], priced_as: Mapping[UUID, UUID] | None = None
+    ) -> None:
         self._by_asset: dict[UUID, list[PricePoint]] = defaultdict(list)
         for point in prices:
             self._by_asset[point.asset_id].append(point)
+        self._twin = dict(priced_as or {})
 
     def of_day(self, asset_id: UUID, day: date) -> Decimal | None:
-        """The asset's price for exactly that day (D188 (4)), by phase 6's precedence."""
-        point = valuation.price_on(self._by_asset.get(asset_id, []), day)
+        """The asset's price for exactly that day (D188 (4)), by phase 6's precedence; a chain
+        asset's `priced_as` asset's rows are read with its own (D180 (3), §15.1 item 18: the
+        asset's own row first on its day)."""
+        twin = self._twin.get(asset_id)
+        point = valuation.price_on(
+            self._by_asset.get(asset_id, []),
+            day,
+            priced_as=self._by_asset.get(twin, []) if twin is not None else (),
+        )
         return point.price_eur if point is not None and point.on == day else None
 
     def value(self, movements: Iterable[AssetMovement], day: date) -> Decimal | None:
@@ -357,51 +396,100 @@ class _Prices:
             seen = True
         return total if seen else None
 
+    def missing(self, movements: Iterable[AssetMovement], day: date) -> list[PriceNeed]:
+        """The (asset, day) pairs among `movements` with no price of that day."""
+        return [
+            PriceNeed(asset_id=m.asset_id, on=day)
+            for m in movements
+            if self.of_day(m.asset_id, day) is None
+        ]
+
 
 def _acquisition_total(
     m: AssetMovement, group: Sequence[AssetMovement], prices: _Prices
-) -> Decimal | None:
-    """D188 (1), (4): the EUR leg, else the day's price × units, else (a swap that creates
-    this one lot) the given legs' value; plus `fee_eur`, else the group's fee movements valued
-    on the day (again only when the group creates this one lot). Any part unpriced → None,
-    never 0 €: a group that creates two lots cannot give each the whole given value."""
+) -> tuple[Decimal | None, list[PriceNeed]]:
+    """D188 (1), (4) and D188 amended (16 Nov 2026): the EUR leg, else the day's price ×
+    units, else (a swap that creates this one lot) the given legs' value; plus `fee_eur`, plus
+    the group's fees paid in another coin valued on the day (only when the group creates this
+    one lot). Both fee parts count; neither replaces the other.
+
+    A fee paid in the coin this movement acquires and withheld from the units received (an
+    exchange trade: Binance's default, „Buy 1 SOL“, „Fee −0.001 SOL“) adds nothing here and
+    needs no price: its value is already inside the EUR paid (the trade's own euro price per
+    unit, EUR paid ÷ units received), so the lot's cost is the EUR paid (plus any other fee).
+    Gas a chain transaction pays in that coin is paid on top of the units received (the fee
+    movement is read from a chain, D183 (2)), so its value on the day joins the cost like a
+    fee in another coin. Either way the fee movement then takes its units FIFO at cost, like
+    every fee (D188 (1)). The test is the fee movement's own source, never whether the trade
+    has a EUR leg (a coin-for-coin trade on an exchange has none and still withholds). A fee
+    movement that carries its own EUR amount while the acquisition carries `fee_eur` is that
+    same EUR fee (Binance's EUR fee leg, phase 6 D178 amended (3)) and is not counted twice.
+
+    Any part unpriced → None, never 0 €, with the (asset, day) prices that would price it: a
+    group that creates two lots cannot give each the whole given value."""
     day = berlin_day(m.occurred_at)
     units = abs(m.quantity)
     creating = [g for g in group if g.kind in _CREATES_IN_GROUP and g.quantity > 0]
+    needs: list[PriceNeed] = []
     if m.eur_amount is not None:
         base: Decimal | None = abs(m.eur_amount)
     else:
         price = prices.of_day(m.asset_id, day)
         if price is not None:
             base = price * units
-        elif len(creating) != 1:
-            base = None
         else:
-            given = [
-                g
-                for g in group
-                if g.id != m.id
-                and g.kind is MovementKind.DISPOSAL
-                and g.quantity < 0
-                and g.asset_id != m.asset_id
-            ]
-            base = prices.value(given, day)
-    if base is None:
-        return None
-    if m.fee_eur is not None:
-        return base + m.fee_eur
-    fees = [g for g in group if g.kind is MovementKind.FEE]
-    if not fees or len(creating) != 1:
-        return base
-    fee = prices.value(fees, day)
-    return None if fee is None else base + fee
+            # The received coin's own price for the day prices it (Rn. 58: received first).
+            needs.append(PriceNeed(asset_id=m.asset_id, on=day))
+            if len(creating) != 1:
+                base = None
+            else:
+                given = [
+                    g
+                    for g in group
+                    if g.id != m.id
+                    and g.kind is MovementKind.DISPOSAL
+                    and g.quantity < 0
+                    and g.asset_id != m.asset_id
+                ]
+                base = prices.value(given, day)
+                needs += prices.missing(given, day)
+    total = base
+    if m.fee_eur is not None and total is not None:
+        total += m.fee_eur
+    if len(creating) == 1:
+        coin_fees = [
+            g
+            for g in group
+            if g.kind is MovementKind.FEE
+            and (g.asset_id != m.asset_id or _paid_on_top(g))
+            and not (m.fee_eur is not None and g.eur_amount is not None)  # the fee_eur itself
+        ]
+        if coin_fees:
+            needs += prices.missing(coin_fees, day)
+            fee = prices.value(coin_fees, day)
+            total = None if fee is None or total is None else total + fee
+    if total is not None:
+        return total, []
+    once: dict[tuple[UUID, date], PriceNeed] = {}
+    for need in needs:  # chain gas in the coin acquired needs that coin's price too
+        once.setdefault((need.asset_id, need.on), need)
+    return None, list(once.values())
 
 
-def _reward_total(m: AssetMovement, prices: _Prices) -> Decimal | None:
+def _paid_on_top(fee: AssetMovement) -> bool:
+    """A fee in the coin acquired is paid on top of the units received when a chain
+    transaction paid it (gas, D183 (2)); an exchange withholds it from the units received."""
+    return fee.source is MovementSource.CHAIN
+
+
+def _reward_total(m: AssetMovement, prices: _Prices) -> tuple[Decimal | None, list[PriceNeed]]:
     if m.eur_amount is not None:
-        return abs(m.eur_amount)
-    price = prices.of_day(m.asset_id, berlin_day(m.occurred_at))
-    return None if price is None else price * abs(m.quantity)
+        return abs(m.eur_amount), []
+    day = berlin_day(m.occurred_at)
+    price = prices.of_day(m.asset_id, day)
+    if price is None:
+        return None, [PriceNeed(asset_id=m.asset_id, on=day)]
+    return price * abs(m.quantity), []
 
 
 def _per(total: Decimal | None, units: Decimal) -> Decimal | None:
@@ -533,22 +621,15 @@ def _ordered(steps: list[_Step]) -> list[_Step]:
     return out
 
 
-@_exact
-def book(
-    movements: Sequence[AssetMovement],
-    links: Sequence[TransferLink],
-    prices: Sequence[PricePoint],
-    on: date,
-) -> LotBook:
-    """Every lot of the movements read at the end of the Berlin day `on`, and what took them.
-    `movements` and `prices` may hold several accounts and assets; FIFO is per account and
-    asset. The caller passes only assets that are lots (not EUR)."""
+def _reading(
+    movements: Sequence[AssetMovement], links: Sequence[TransferLink], on: date
+) -> tuple[list[_Step], list[AssetMovement]]:
+    """The steps of the book at the end of `on` and the movements they read: one step per
+    unlinked confirmed movement of a Berlin day on or before `on`; a linked pair one step at
+    its earlier leg, read whole (both legs) when that leg's Berlin day is on or before `on`,
+    the later leg possibly after it."""
     confirmed = {m.id: m for m in movements if _confirmed(m)}
     linked = _live_links(links, confirmed)
-    priced = _Prices(prices)
-
-    # One step per movement read; a linked pair one step at its earlier leg, read whole when
-    # that leg's Berlin day is on or before `on` (the later leg may be after it).
     steps: list[_Step] = []
     read: list[AssetMovement] = []
     done: set[UUID] = set()
@@ -567,6 +648,48 @@ def book(
                 key = (at, 1, 0, _index(sender), str(sender.id))
                 steps.append((key, sender, link, receiver))
                 read += [sender, receiver]
+    return steps, read
+
+
+def read_through(
+    movements: Sequence[AssetMovement], links: Sequence[TransferLink], on: date
+) -> list[AssetMovement]:
+    """The confirmed, unsuperseded movements the book reads at the end of the Berlin day `on`
+    (an unlinked one of that day or before; a linked pair whole when its earlier leg's day is),
+    so the units a statement shows and the lots it lists read a transfer across the day the
+    same way (a pair across 31 Dec counts once, on the receiver). Order as given."""
+    return _reading(movements, links, on)[1]
+
+
+@_exact
+def units_through(
+    movements: Sequence[AssetMovement], links: Sequence[TransferLink], on: date
+) -> dict[tuple[UUID, UUID], Decimal]:
+    """Σ quantity per (account, asset) of `read_through`, with PRECISION digits; equal to the
+    open lots' units wherever no movement took more than its account held."""
+    out: dict[tuple[UUID, UUID], Decimal] = defaultdict(Decimal)
+    for m in read_through(movements, links, on):
+        out[(m.account_id, m.asset_id)] += m.quantity
+    return dict(out)
+
+
+@_exact
+def book(
+    movements: Sequence[AssetMovement],
+    links: Sequence[TransferLink],
+    prices: Sequence[PricePoint],
+    on: date,
+    *,
+    priced_as: Mapping[UUID, UUID] | None = None,
+) -> LotBook:
+    """Every lot of the movements read at the end of the Berlin day `on`, and what took them.
+    `movements` and `prices` may hold several accounts and assets; FIFO is per account and
+    asset. The caller passes only assets that are lots (not EUR, whose fee legs the
+    acquisitions' `fee_eur` already carry). `priced_as` maps a chain asset to the asset it is
+    priced as (D180 (3)); `prices` then holds that asset's rows too."""
+    steps, read = _reading(movements, links, on)
+    priced = _Prices(prices, priced_as)
+    needs: dict[UUID, list[PriceNeed]] = {}
     groups: dict[UUID, list[AssetMovement]] = defaultdict(list)
     for m in read:
         if m.group_id is not None:
@@ -579,10 +702,15 @@ def book(
             _move(lots, link, m, receiver)
         elif m.kind is MovementKind.ACQUISITION:
             group = groups[m.group_id] if m.group_id is not None else [m]
-            total = _acquisition_total(m, group, priced)
+            total, missing = _acquisition_total(m, group, priced)
+            if missing:
+                needs[m.id] = missing
             lots.add(_new(m, units, _per(total, units), LotSource.ACQUISITION))
         elif m.kind in _REWARDS:
-            lots.add(_new(m, units, _per(_reward_total(m, priced), units), LotSource.REWARD))
+            total, missing = _reward_total(m, priced)
+            if missing:
+                needs[m.id] = missing
+            lots.add(_new(m, units, _per(total, units), LotSource.REWARD))
         elif m.kind in _TAKES or m.kind is MovementKind.INTERNAL_TRANSFER_OUT:
             lots.take(m, units)
         elif m.kind is MovementKind.INTERNAL_TRANSFER_IN:
@@ -602,10 +730,11 @@ def book(
         lots=[
             _out(part)
             for key in sorted(lots.parts, key=lambda k: (str(k[0]), str(k[1])))
-            for part in sorted(lots.parts[key], key=_Part.key)
+            for part in lots.parts[key]  # kept in FIFO order by _Book.add
         ],
         uses=dict(lots.uses),
         unfilled=dict(lots.unfilled),
+        price_needs=needs,
     )
 
 
@@ -632,7 +761,10 @@ def lots(
     links: Sequence[TransferLink],
     prices: Sequence[PricePoint],
     on: date,
+    *,
+    priced_as: Mapping[UUID, UUID] | None = None,
 ) -> list[HeldLot]:
     """The lots open at the end of the Berlin day `on` (D188 (1)), per account and asset in
     FIFO order, each with its `tax_free_from`."""
-    return [lot for lot in book(movements, links, prices, on).lots if lot.units_open > 0]
+    got = book(movements, links, prices, on, priced_as=priced_as)
+    return [lot for lot in got.lots if lot.units_open > 0]

@@ -40,15 +40,28 @@ stays a mismatch. No quantity is ever rounded.
 
 A failure ends its own address's row only (`failed`, `throttled` on a 429, `refused` on a
 401 or 403) and writes nothing else: the cursor does not move, so the next run reads the same
-range again. A start that fails otherwise (the address gone) ends that address only in
-`sync_wallets`, and the next address runs. Nothing logged, raised or stored in an event
-holds an address, a cursor, a transaction hash, a URL or a key: the logs carry the chain,
-the outcome, counts and the exception class.
+range again. A balance read that fails after the history was read is such a failure when the
+run stored nothing new (no movement, no question card, no original); only a run that stored
+something keeps it and reads `succeeded` with no balance (below). A start that fails
+otherwise (the address gone) ends that address only in `sync_wallets`, and the next address
+runs. Nothing logged, raised or stored in an event holds an address, a cursor, a
+transaction hash, a URL or a key: the logs carry the chain, the outcome, counts and the
+exception class.
 
 How a run's row reads (step 1's wallet page):
 
 - `succeeded`, `balances` null: the budget ended first (`wallet.sync_deferred`); nothing was
-  reconciled, since a half-read history cannot match the balance.
+  reconciled, since a half-read history cannot match the balance. Or the history was read to
+  its end, the run stored something new, and the balance read failed (refused, throttled,
+  failed): the new movements, cards and original are written all the same, the row is never
+  reconciled (`reconciled` null, so the address's first sync is still ahead of it), the code
+  is on the outcome, the log line and the wallet.sync_completed event (`error_code`,
+  `deferred` false), not on the row (its CHECK keeps `error_code` to failed rows), so the
+  wallet page reads it as deferred; the next run, starting at the tip, reads the balance
+  again (a follow-up of the EVM wiring's review). When the run stored nothing new, the row is
+  `failed`, `throttled` or `refused` with the code and the cursor stays (review of PR #397).
+  Telling a run that brings new movements every day while its balance keeps failing from a
+  deferred one needs a migration (docs/phases/phase-7.md §15.1, Sync follow-ups).
 - `succeeded`, `balances` set, `reconciled` true or false: the history is read to its end;
   false raises `wallet.unreconciled` with `difference` = balance − Σ per asset.
 - `succeeded`, `balances` set, `reconciled` null: every asset that differs is named by an
@@ -114,6 +127,7 @@ from hausbuch.rules.errors import (
     WALLET_SOURCE_UNAVAILABLE,
     WALLET_SYNC_DEFERRED,
     WALLET_SYNC_ERROR,
+    WALLET_TOKEN_UNREADABLE,
 )
 from hausbuch.rules.household.assets import registry as asset_registry
 from hausbuch.rules.review import CHAIN_UNSTORABLE, route_group
@@ -197,6 +211,9 @@ class SyncOutcome:
     chain: Chain
     sync_id: UUID | None  # None: no row (wallet.key_missing)
     status: WalletSyncStatus | None
+    # On a succeeded run: the balance read failed after the history was read and the run
+    # stored something new (the pages are written, the row has no balance and is never
+    # reconciled; the next run reads it again). With nothing new the run is a failed row.
     error_code: str | None = None
     txs_seen: int = 0
     movements_new: int = 0
@@ -244,6 +261,14 @@ class _Read:
     cursor: str | None = None
     deferred: bool = False
     balances: list[AssetBalance] | None = None
+    # The source refused or failed the balance read after the history was read to its end:
+    # what the pages bring that is new is written, nothing is reconciled, the next run reads
+    # the balance again; a run with nothing new ends failed (`_write`, _BalanceUnread).
+    balance_error: str | None = None
+    balance_exc: BaseException | None = None
+    # The tokens whose balance the source could not read (an EVM source's `unreadable`: a
+    # reverted `balanceOf`): left out of both sides, and the run never reads reconciled.
+    unreadable: frozenset[AssetKey] = frozenset()
 
 
 # --- Assets ----------------------------------------------------------------------------------
@@ -361,6 +386,17 @@ def chain_asset(ctx: CommandContext, key: AssetKey, leg: ChainLeg | None = None)
 
 class _Unstorable(Exception):
     """A leg asset_movement cannot hold exactly; its transaction becomes CHAIN_UNSTORABLE."""
+
+
+class _BalanceUnread(Exception):
+    """The balance read failed and the run stored nothing new: the run ends as a failure
+    with the read's code (`failed`, `throttled`, `refused`), its cursor unmoved, as a
+    failed balance read did before the pages were kept (review of PR #397)."""
+
+    def __init__(self, code: str, cause: BaseException | None) -> None:
+        super().__init__(code)
+        self.code = code
+        self.cause = cause
 
 
 def _storable(units: int, decimals: int) -> bool:
@@ -543,6 +579,7 @@ def _balances(source: ChainSource, start: _Start, out: _Read) -> list[AssetBalan
     addresses = list(start.own) if start.scope == "account" else [start.address]
     if not start.reads_tokens:
         return [b for a in addresses for b in source.balances(a)]
+    unreadable: set[AssetKey] = set()
     read: dict[str, set[AssetKey]] = {}
     for group in out.groups:
         for leg in group.legs:
@@ -554,6 +591,8 @@ def _balances(source: ChainSource, start: _Start, out: _Read) -> list[AssetBalan
         tokens = read.get(a, set()) | start.stored_tokens.get(a, frozenset())
         ordered = tuple(sorted(tokens, key=lambda k: k.contract or ""))
         balances.extend(source.balances(a, tokens=ordered))
+        unreadable |= set(getattr(source, "unreadable", ()) or ())
+    out.unreadable = frozenset(unreadable)
     return balances
 
 
@@ -600,12 +639,32 @@ def _read(
             return out
         if not moved:  # the tip reached: None, or the cursor it was given
             break
-    balances = _balances(source, start, out)
+    try:
+        balances = _balances(source, start, out)
+    except (ChainSourceError, SourceError) as exc:
+        # The history is read: a failed balance read never discards it. The run is written
+        # with no balance (never reconciled), and the next run, at the tip, reads it again.
+        code = exc.code if isinstance(exc, ChainSourceError) else error_from(exc).code
+        out.balance_error, out.balance_exc = code, exc
+        _log_balance_unread(start, code, exc)
+        return out
     if budget.exhausted:  # a balance call may have been refused: the next run reads them
         out.deferred = True
         return out
     out.balances = balances
     return out
+
+
+def _log_balance_unread(start: _Start, code: str, exc: BaseException) -> None:
+    """A balance read that failed after the history was read: the chain, the code and the
+    exception class only (no address, URL or cursor)."""
+    fields = {
+        "event": "wallet_sync_balance_unread",
+        "chain": start.chain.value,
+        "error_code": code,
+        "exc_type": type(exc).__name__,
+    }
+    logger.warning("a wallet balance could not be read", extra={"fields": fields})
 
 
 # --- Step 3: write ---------------------------------------------------------------------------
@@ -1044,7 +1103,10 @@ def _spam_keys(conn: Connection, chain: Chain, keys: set[AssetKey]) -> set[Asset
 
 
 def _reconcile(
-    ctx: CommandContext, start: _Start, balances: list[AssetBalance]
+    ctx: CommandContext,
+    start: _Start,
+    balances: list[AssetBalance],
+    unreadable: frozenset[AssetKey] = frozenset(),
 ) -> tuple[dict[str, str], dict[str, str], str | None]:
     """D186 (2): Σ confirmed and proposed movements (spam left out) of the address, or of the
     account's addresses on the chain when the source reconciles per account, against the
@@ -1056,7 +1118,10 @@ def _reconcile(
     balance with them, over the assets the source read a balance of (a deposit in an asset
     it did not read is no shortfall). A balance above them is reconciled (the card
     transfer.unmatched_leg), one below is reconciled false with the negative shortfall as
-    the difference (wallet.coins_left)."""
+    the difference (wallet.coins_left).
+
+    A token whose balance the source could not read (`unreadable`) is left out of both
+    sides, never compared as if its balance were 0; the caller marks the run unreconciled."""
     scope = (
         movement_table.c.address_id.in_([o.id for o in start.own.values()])
         if start.scope == "account"
@@ -1081,6 +1146,8 @@ def _reconcile(
         key = AssetKey(chain=start.chain, contract=r.contract_address)
         if r.spam:
             spam_keys.add(key)
+            continue
+        if key in unreadable:
             continue
         sums[key] = sums.get(key, 0) + _quantity_to_units(r.total, r.decimals)
     spam_keys |= _spam_keys(ctx.conn, start.chain, {b.asset_key for b in balances})
@@ -1178,6 +1245,11 @@ def _write(
     read: _Read,
     account_pending: bool = False,
 ) -> SyncOutcome:
+    # The wallet's account row, locked before any live group is read: a person's answer locks
+    # it too (wallet_groups), so a sync never adds a leg under a group just superseded.
+    ctx.conn.execute(
+        select(account_table.c.id).where(account_table.c.id == start.account_id).with_for_update()
+    )
     plans = _plan(ctx, start, read)
     writing = [p for p in plans if p.legs or p.unstorable or p.group.question is not None]
     original = _Original(store, read, max((p.group.occurred_at for p in writing), default=None))
@@ -1191,6 +1263,13 @@ def _write(
         if written.occurred_at is not None:
             written_at.append(written.occurred_at)
     document_id = original.id
+    if read.balance_error is not None and not written_at and document_id is None:
+        # Nothing new (no movement, no question card, no original): a run that only says
+        # the balance is unread is a failure, never a quiet succeeded row with no balance,
+        # which the wallet page would show as deferred day after day (a BNB Smart Chain
+        # address whose node refuses every call). Decided by what was stored, not by the
+        # transactions read: Solana re-reads its tip, Etherscan's cursor moves on none.
+        raise _BalanceUnread(read.balance_error, read.balance_exc)
     import_id = None
     if document_id is not None:
         last, first = max(written_at), min(written_at)
@@ -1231,12 +1310,14 @@ def _write(
     waiting = False
     block = max((tx.block for tx in read.txs), default=None)
     if read.balances is not None:
-        balances, difference, card = _reconcile(ctx, start, read.balances)
+        balances, difference, card = _reconcile(ctx, start, read.balances, read.unreadable)
         reconciled = not difference
         if difference and set(difference) <= _waiting_keys(ctx, start):
             reconciled, difference, waiting = None, None, True
         elif difference and start.scope == "account" and account_pending:
             reconciled, difference = None, None  # the account's last address decides
+        if read.unreadable:  # a balance not read is never reconciled, nor only waiting
+            reconciled, waiting, card = False, False, WALLET_TOKEN_UNREADABLE
         block = max((b.at_block for b in read.balances), default=block)
     _finish(
         ctx,
@@ -1265,6 +1346,7 @@ def _write(
             deferred=read.deferred,
             waiting=waiting,
             document_id=document_id,
+            error_code=read.balance_error,
         ),
     )
     return SyncOutcome(
@@ -1280,6 +1362,7 @@ def _write(
         spam_dropped=spam_dropped,
         unstorable=unstorable,
         card=card,
+        error_code=read.balance_error,
     )
 
 
@@ -1304,6 +1387,7 @@ def _log(outcome: SyncOutcome, exc: BaseException | None = None) -> None:
     if exc is not None:
         fields["exc_type"] = type(exc).__name__
     quiet = outcome.error_code in (None, WALLET_SYNC_DEFERRED) and not outcome.unstorable
+    quiet = quiet and outcome.card != WALLET_TOKEN_UNREADABLE
     level = logging.INFO if quiet else logging.WARNING
     logger.log(level, "a wallet address was read from its chain", extra={"fields": fields})
 
@@ -1472,6 +1556,8 @@ def sync_address(
         with workspace_transaction(engine, workspace_id) as conn:
             ctx_w = new_command(conn, workspace_id, actor, now=clock())
             outcome = _write(ctx_w, store, start, read, account_pending)
+    except _BalanceUnread as exc:  # nothing written: the failure the balance read was
+        return _fail(engine, workspace_id, actor, clock, start, exc.code, 0, exc.cause or exc)
     except Exception as exc:  # noqa: BLE001 - the write rolled back; its class name only
         return _fail(
             engine, workspace_id, actor, clock, start, WALLET_SYNC_ERROR, len(read.txs), exc

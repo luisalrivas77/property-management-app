@@ -2083,7 +2083,7 @@ export interface paths {
         /**
          * Inbox List
          * @description Plus, from 1 January, last year's open Jahresfragen (phase 4b D110), and the email-in
-         *     cards (phase 5 §5.4).
+         *     cards (phase 5 §5.4), and the wallet cards (phase 7; `settings` sees a missing key).
          */
         get: operations["inbox_list_api_inbox_get"];
         put?: never;
@@ -2458,6 +2458,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/holdings/crypto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crypto Holdings
+         * @description Every wallet and exchange account with its coins and their open lots (FIFO per account
+         *     and coin), each lot with its day, units, cost and „steuerfrei ab“, or the prices whose
+         *     absence leaves it without a cost („Kurs fehlt“); the four cards of the tab.
+         */
+        get: operations["crypto_holdings_api_holdings_crypto_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/holdings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallets Holdings
+         * @description D190's statement at the end of the Berlin day `on`: per account its addresses' units,
+         *     its positions with their open lots and value, the spam tokens (never valued) and the
+         *     addresses whose last sync on or before the day did not reconcile.
+         */
+        get: operations["wallets_holdings_api_wallets_holdings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/lots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet Lots
+         * @description The account's open lots on `on`, of one coin with `asset`, in FIFO order. An account
+         *     with nothing held (or of another workspace) answers an empty list.
+         */
+        get: operations["wallet_lots_api_wallets__account_id__lots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exports/holdings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Holdings Exports List
+         * @description The stored statements, newest first, each with download links valid a few minutes.
+         */
+        get: operations["holdings_exports_list_api_exports_holdings_get"];
+        put?: never;
+        /**
+         * Holdings Export Create
+         * @description „Bestandsnachweis 31.12.<Jahr> erstellen“: one immutable row per wallet and exchange
+         *     account held on 31 Dec of `year`, its PDF and CSV stored, with signed download links. A
+         *     second call writes new rows. 422 holdings_export.year_open before 1 Jan of the next year,
+         *     holdings_export.nothing_held when no such account had a confirmed movement by then.
+         */
+        post: operations["holdings_export_create_api_exports_holdings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exports/holdings/{export_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Holdings Export File
+         * @description The PDF or CSV, SHA-256 verified, as an attachment. A wrong or expired signature answers
+         *     404, like an export of another workspace.
+         */
+        get: operations["holdings_export_file_api_exports_holdings__export_id__file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/wallets/{account_id}/sync": {
         parameters: {
             query?: never;
@@ -2573,6 +2686,248 @@ export interface paths {
         get: operations["wallet_address_plain_api_wallets__account_id__addresses__address_id__plain_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet State
+         * @description 404 for an account that is no wallet of this workspace.
+         */
+        get: operations["wallet_state_api_wallets__account_id__state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet Groups List
+         * @description The open groups, those asking a question first, then the newest (at most 200).
+         */
+        get: operations["wallet_groups_list_api_wallets__account_id__groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Group Confirm
+         * @description 422 wallet.group_needs_answer for a group that needs an answer, wallet.group_done for
+         *     one no longer open.
+         */
+        post: operations["wallet_group_confirm_api_groups__group_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Group Answer
+         * @description The group that now stands for the transaction. 422 wallet.answer_unfit when the
+         *     answer does not fit its legs.
+         */
+        post: operations["wallet_group_answer_api_groups__group_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/answered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet Answered Groups
+         * @description The groups a person answered or confirmed, newest first (at most 50); no spam group.
+         */
+        get: operations["wallet_answered_groups_api_wallets__account_id__answered_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Group Undo
+         * @description „Antwort zurücknehmen“: the new proposed group with the sync's classification. 422
+         *     wallet.answer_unfit for a group no person answered, a spam group or one a transfer link
+         *     touches; wallet.group_done for one no longer live.
+         */
+        post: operations["wallet_group_undo_api_groups__group_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet Change Card
+         * @description 422 wallet.change_answered when it is no open change card.
+         */
+        get: operations["wallet_change_card_api_groups__group_id__change_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/change/payee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Change Payee
+         * @description „Nein, Empfänger“: the output is a payee; the card gives way to the group derived.
+         */
+        post: operations["wallet_change_payee_api_groups__group_id__change_payee_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/change/own": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Change Own
+         * @description „Ja, eigene Adresse“: the output's address is registered on the wallet as a change
+         *     address; the card gives way to the group derived.
+         */
+        post: operations["wallet_change_own_api_groups__group_id__change_own_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/hidden-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Wallet Hidden Tokens */
+        get: operations["wallet_hidden_tokens_api_wallets__account_id__hidden_tokens_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets/{asset_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Token Promote
+         * @description „Kein Spam“: `groups` is the number of groups now waiting as a card.
+         */
+        post: operations["wallet_token_promote_api_assets__asset_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets/{asset_id}/demote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Token Demote
+         * @description „Als Spam verbergen“: `groups` is the number of groups changed.
+         */
+        post: operations["wallet_token_demote_api_assets__asset_id__demote_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3409,6 +3764,43 @@ export interface components {
             external_ref?: string | null;
         };
         /**
+         * AccountHoldings
+         * @description One wallet or exchange account. `addresses[].units_by_asset` is keyed by the asset id
+         *     (a chain token's symbol is not unique); `movement_ids` are the confirmed movements the
+         *     statement summed (D190: the statement's source list).
+         */
+        AccountHoldings: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Kind
+             * @default
+             */
+            kind: string;
+            /** Provider */
+            provider?: string | null;
+            /** Addresses */
+            addresses?: components["schemas"]["AddressHoldings"][];
+            /** Positions */
+            positions?: components["schemas"]["PositionHoldings"][];
+            /** Unvalued Tokens */
+            unvalued_tokens?: components["schemas"]["UnvaluedToken"][];
+            /** Unreconciled Addresses */
+            unreconciled_addresses?: string[];
+            /** Movement Ids */
+            movement_ids?: string[];
+            /** Unsynced Addresses */
+            unsynced_addresses?: string[];
+        };
+        /**
          * AccountKind
          * @description account.kind (migration 0025, phase 6 D156). `wallet` was in the CHECK from the start
          *     so phase 7 adds no migration for it; create_account takes it since phase 7 step 1 (D179).
@@ -3603,6 +3995,16 @@ export interface components {
              * @default DE
              */
             country_code: string;
+        };
+        /** AddressHoldings */
+        AddressHoldings: {
+            /** Address Masked */
+            address_masked: string;
+            chain: components["schemas"]["Chain"];
+            /** Units By Asset */
+            units_by_asset?: {
+                [key: string]: string;
+            };
         };
         /**
          * AddressKind
@@ -4762,6 +5164,45 @@ export interface components {
          */
         Chain: "bitcoin" | "ethereum" | "arbitrum" | "bsc" | "solana";
         /**
+         * ChangeAnswerBody
+         * @description POST /groups/{gid}/change/payee and /change/own: the output answered.
+         */
+        ChangeAnswerBody: {
+            /** Vout */
+            vout: number;
+        };
+        /**
+         * ChangeCandidateOut
+         * @description One output a change card asks about: its vout, masked address and amount in BTC.
+         */
+        ChangeCandidateOut: {
+            /** Vout */
+            vout: number;
+            /** Address Masked */
+            address_masked: string;
+            /** Amount Btc */
+            amount_btc: string;
+        };
+        /**
+         * ChangeCard
+         * @description GET /groups/{gid}/change: the outputs the card asks about, read again from the stored
+         *     original (D182 (3)); `original_missing` when no stored original holds the spend.
+         */
+        ChangeCard: {
+            /**
+             * Group Id
+             * Format: uuid
+             */
+            group_id: string;
+            /** Candidates */
+            candidates?: components["schemas"]["ChangeCandidateOut"][];
+            /**
+             * Original Missing
+             * @default false
+             */
+            original_missing: boolean;
+        };
+        /**
          * ChecklistBankLine
          * @description A confirmed allocation as a checklist item cites it (D142): no counterparty, no purpose
          *     text (D5); the frontend labels it by date and amount and opens its bank line.
@@ -5258,6 +5699,188 @@ export interface components {
          * @enum {string}
          */
         CredentialSource: "app" | "server" | "none";
+        /** CryptoAccount */
+        CryptoAccount: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Label */
+            label: string;
+            /** Kind */
+            kind: string;
+            /** Provider */
+            provider?: string | null;
+            /** Ownership */
+            ownership?: components["schemas"]["OwnershipShare"][];
+            /** Value Eur */
+            value_eur: string;
+            /**
+             * Unvalued Coins
+             * @default 0
+             */
+            unvalued_coins: number;
+        };
+        /**
+         * CryptoCoin
+         * @description One coin on one account (FIFO is per account and coin, D188 (1)).
+         */
+        CryptoCoin: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol?: string | null;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Units */
+            units: string;
+            /** Price Eur */
+            price_eur?: string | null;
+            /** Price On */
+            price_on?: string | null;
+            /** Value Eur */
+            value_eur?: string | null;
+            /** Cost Eur */
+            cost_eur?: string | null;
+            /** Cost Priced Eur */
+            cost_priced_eur: string;
+            /** Unpriced Lots */
+            unpriced_lots: number;
+            /** Unrealized Eur */
+            unrealized_eur?: string | null;
+            /** Tax Free Units */
+            tax_free_units: string;
+            /** Tax Free Value Eur */
+            tax_free_value_eur?: string | null;
+            /** Next Tax Free From */
+            next_tax_free_from?: string | null;
+            /** Next Tax Free Units */
+            next_tax_free_units?: string | null;
+            /**
+             * Reconciled
+             * @default true
+             */
+            reconciled: boolean;
+            /** Lots */
+            lots?: components["schemas"]["CryptoLot"][];
+        };
+        /**
+         * CryptoHoldings
+         * @description GET /holdings/crypto: the Krypto tab on `on` (today by default).
+         */
+        CryptoHoldings: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Total Eur */
+            total_eur: string;
+            /**
+             * Unvalued Coins
+             * @default 0
+             */
+            unvalued_coins: number;
+            /** Unrealized Eur */
+            unrealized_eur: string;
+            /**
+             * Unrealized Excluded
+             * @default 0
+             */
+            unrealized_excluded: number;
+            /** Tax Free Today Eur */
+            tax_free_today_eur: string;
+            /**
+             * Tax Free Today Excluded
+             * @default 0
+             */
+            tax_free_today_excluded: number;
+            next_tranche?: components["schemas"]["NextTranche"] | null;
+            /** Accounts */
+            accounts?: components["schemas"]["CryptoAccount"][];
+            /** Coins */
+            coins?: components["schemas"]["CryptoCoin"][];
+            /**
+             * Unfilled Movements
+             * @default 0
+             */
+            unfilled_movements: number;
+            /** Unfilled Account Ids */
+            unfilled_account_ids?: string[];
+        };
+        /**
+         * CryptoLot
+         * @description An open lot as the tab shows it: tax-free today or from `tax_free_from`, its value at
+         *     the coin's price, and what resolves a missing cost. A lot of source `unknown` (an in-leg
+         *     no transfer explains, a correction) has no price need: its cost is unknown for another
+         *     reason, and the tab names that instead.
+         */
+        CryptoLot: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Movement Id
+             * Format: uuid
+             */
+            movement_id: string;
+            /**
+             * Acquired At
+             * Format: date-time
+             */
+            acquired_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /**
+             * Acquired On
+             * Format: date
+             */
+            acquired_on: string;
+            /** Units */
+            units: string;
+            /** Units Open */
+            units_open: string;
+            /** Cost Eur */
+            cost_eur?: string | null;
+            /** Cost Per Unit */
+            cost_per_unit?: string | null;
+            source: components["schemas"]["LotSource"];
+            /** Moved Through */
+            moved_through?: string[];
+            /**
+             * Tax Free From
+             * Format: date
+             */
+            tax_free_from: string;
+            /** Tax Free */
+            tax_free: boolean;
+            /** Value Eur */
+            value_eur?: string | null;
+            /** Price Needs */
+            price_needs?: components["schemas"]["LotPriceNeed"][];
+        };
         /**
          * Currency
          * @description transaction.currency. v1 is EUR only (one value, kept as a CHECK'd set like
@@ -6164,7 +6787,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -6641,6 +7264,18 @@ export interface components {
             /** @description Notiz, typed by hand */
             notes?: components["schemas"]["ExtractedValue"];
         };
+        /**
+         * GroupKind
+         * @description movement_group.kind (D183 (2)): the thirteen shapes a transaction is classified as.
+         * @enum {string}
+         */
+        GroupKind: "transfer" | "exchange_transfer" | "swap" | "wrap" | "bridge" | "stake" | "reward" | "airdrop" | "lp" | "contract_call" | "failed" | "spam" | "unknown";
+        /**
+         * GroupStatus
+         * @description movement_group.status: proposed -> confirmed only (the trigger group_forward).
+         * @enum {string}
+         */
+        GroupStatus: "proposed" | "confirmed";
         /** GrundsteuerInstalment */
         GrundsteuerInstalment: {
             /**
@@ -6760,6 +7395,25 @@ export interface components {
             /** @description Entnahme aus der Rücklage */
             ruecklage_spent?: components["schemas"]["ExtractedValue"];
         };
+        /**
+         * HiddenToken
+         * @description GET /wallets/{id}/hidden-tokens (D187 (3)): a token held as spam, by its asset's name
+         *     (the masked contract with the symbol the chain tells), never priced.
+         */
+        HiddenToken: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            chain: components["schemas"]["Chain"];
+            /** Name */
+            name: string;
+            /** Units */
+            units: string;
+            /** Groups */
+            groups: number;
+        };
         /** HoldingBalance */
         HoldingBalance: {
             /**
@@ -6769,6 +7423,62 @@ export interface components {
             asset_id: string;
             /** Units */
             units: string;
+        };
+        /**
+         * HoldingsExport
+         * @description A `holdings_export` row (immutable, D190) without its statement, with signed download
+         *     URLs valid a few minutes (fetch the list right before downloading).
+         */
+        HoldingsExport: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Account Label */
+            account_label: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Pdf Sha256 */
+            pdf_sha256: string;
+            /** Csv Sha256 */
+            csv_sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Pdf Url */
+            pdf_url?: string | null;
+            /** Csv Url */
+            csv_url?: string | null;
+        };
+        /**
+         * HoldingsExportCreate
+         * @description POST /exports/holdings: the statement of 31 Dec of `year` for every wallet and exchange
+         *     account with a confirmed movement on or before it (D190).
+         */
+        HoldingsExportCreate: {
+            /** Year */
+            year: number;
+        };
+        /** HoldingsStatement */
+        HoldingsStatement: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Accounts */
+            accounts?: components["schemas"]["AccountHoldings"][];
         };
         /**
          * HomeOfficeComponent
@@ -7062,13 +7772,15 @@ export interface components {
             bulk_confirmable: boolean;
             /** Report Trades */
             report_trades?: number | null;
+            /** Group Id */
+            group_id?: string | null;
         };
         /**
          * InboxItemKind
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment" | "wallet_groups" | "wallet_change" | "wallet_question" | "wallet_sync" | "wallet_unreconciled" | "wallet_coins_left";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).
@@ -7619,6 +8331,85 @@ export interface components {
             };
         };
         /**
+         * Lot
+         * @description A lot, computed on read (D188 (1)). `id` is derived from its origin (the creating
+         *     movement, or a moved part's origin and link), so a re-read gives the same id; `movement_id`
+         *     is the movement that created it, kept through every move (principle 2: a lot links to its
+         *     movements); `acquired_at` is the instant, FIFO's second key after `acquired_on`. Folded in
+         *     from rules/lots.HeldLot in step 6.
+         */
+        Lot: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Movement Id
+             * Format: uuid
+             */
+            movement_id: string;
+            /**
+             * Acquired At
+             * Format: date-time
+             */
+            acquired_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /**
+             * Acquired On
+             * Format: date
+             */
+            acquired_on: string;
+            /** Units */
+            units: string;
+            /** Units Open */
+            units_open: string;
+            /** Cost Eur */
+            cost_eur?: string | null;
+            /** Cost Per Unit */
+            cost_per_unit?: string | null;
+            source: components["schemas"]["LotSource"];
+            /** Moved Through */
+            moved_through?: string[];
+            /**
+             * Tax Free From
+             * Format: date
+             */
+            tax_free_from: string;
+        };
+        /**
+         * LotPriceNeed
+         * @description „Kurs eintragen“ for this coin and day prices the lot (a typed `user` price, D167).
+         */
+        LotPriceNeed: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol?: string | null;
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+        };
+        /**
+         * LotSource
+         * @enum {string}
+         */
+        LotSource: "acquisition" | "reward" | "transfer" | "unknown";
+        /**
          * ManagementContractExtraction
          * @description Verwaltervertrag (contract / management_contract, D130): a Mietverwaltungsvertrag with
          *     the household's letting manager, or the WEG's Verwaltervertrag. Proposes typing and
@@ -8166,6 +8957,22 @@ export interface components {
          * @enum {string}
          */
         NetWorthTodoCode: "net_worth.balance_unreconciled" | "net_worth.balance_outdated" | "net_worth.price_missing" | "net_worth.price_stale" | "net_worth.position_not_reconciled" | "net_worth.position_not_booked" | "net_worth.ownership_missing" | "net_worth.property_shares_missing" | "net_worth.loan_not_valued";
+        /**
+         * NextTranche
+         * @description „Nächste Tranche steuerfrei“: the earliest future `tax_free_from` over every open lot,
+         *     with the units of every coin that becomes free that day (D188 (5)).
+         */
+        NextTranche: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Parts */
+            parts?: components["schemas"]["TranchePart"][];
+            /** Value Eur */
+            value_eur?: string | null;
+        };
         /**
          * NoPayFact
          * @description „Kein Arbeitslohn in <Jahr>“ (D195): the owner had no pay that year (e.g. a whole year of
@@ -8748,6 +9555,40 @@ export interface components {
             tax_free_benefits_month?: components["schemas"]["ExtractedValue"];
             /** @description steuerfreie Bezüge, Jahreswerte / kumuliert */
             tax_free_benefits_ytd?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * PositionHoldings
+         * @description An account's position in one asset at the end of the statement's day. `symbol` and
+         *     `name` label it (a chain token's symbol is a label, D180 amended); `price_eur` and
+         *     `price_on` the price `value_eur` used (phase 6 D167's `price_on`, a chain token through
+         *     its `priced_as` asset); `reconciled` is false when the last sync on or before the day of an
+         *     address holding it did not reconcile (an exchange has no sync: true).
+         */
+        PositionHoldings: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol?: string | null;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Units */
+            units: string;
+            /** Lots */
+            lots?: components["schemas"]["Lot"][];
+            /** Price Eur */
+            price_eur?: string | null;
+            /** Price On */
+            price_on?: string | null;
+            /** Value Eur */
+            value_eur?: string | null;
+            /** Reconciled */
+            reconciled: boolean;
         };
         /**
          * PossibleDuplicate
@@ -9654,10 +10495,10 @@ export interface components {
         };
         /**
          * ReminderKind
-         * @description The catalogue's twelve kinds (§6.2); the value is the reminder key.
+         * @description The catalogue's thirteen kinds (§6.2); the value is the reminder key.
          * @enum {string}
          */
-        ReminderKind: "grundsteuer.instalment" | "checklist.due" | "tax.return_deadline" | "tax.questionnaire_open" | "tax.wage_certificate_missing" | "loan.fixed_rate_end" | "loan.special_termination" | "property.speculation_end" | "tenancy.settlement_deadline" | "tenancy.rent_missing" | "bank.sync_stale" | "bank.statement_due";
+        ReminderKind: "grundsteuer.instalment" | "checklist.due" | "tax.return_deadline" | "tax.questionnaire_open" | "tax.wage_certificate_missing" | "loan.fixed_rate_end" | "loan.special_termination" | "property.speculation_end" | "tenancy.settlement_deadline" | "tenancy.rent_missing" | "bank.sync_stale" | "bank.statement_due" | "crypto.holdings_statement";
         /**
          * ReminderScope
          * @description reminder_ack.scope_type (migration 0019). WORKSPACE is §6.2's "household".
@@ -10393,6 +11234,22 @@ export interface components {
              * @default 0
              */
             unvalued_positions: number;
+        };
+        /**
+         * SpamVerdict
+         * @description POST /assets/{id}/promote and /demote: the token's verdict now and the number of
+         *     groups the flip changed (D187 (3)).
+         */
+        SpamVerdict: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Spam */
+            spam: boolean;
+            /** Groups */
+            groups: number;
         };
         /** SpecialExpenseFact */
         SpecialExpenseFact: {
@@ -11378,6 +12235,25 @@ export interface components {
             /** Amount */
             amount: string;
         };
+        /** TranchePart */
+        TranchePart: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol?: string | null;
+            /** Units */
+            units: string;
+            /** Value Eur */
+            value_eur?: string | null;
+        };
         /**
          * Transaction
          * @description Read shape. The counterparty IBAN is shown masked only. allocation_status and
@@ -11849,6 +12725,25 @@ export interface components {
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
+         * UnvaluedToken
+         * @description A token held but not shown in the value (spam, or no price source), listed so the
+         *     statement still accounts for every unit (D187).
+         */
+        UnvaluedToken: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Units */
+            units: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "spam" | "no_price";
+        };
+        /**
          * UsefulLife
          * @description §7 Abs. 4 S. 2 EStG (D79): the building's shorter actual useful life in whole years, as
          *     the Gutachten (document_id on the row) states it; tax_year on the row is the first tax year
@@ -12138,6 +13033,206 @@ export interface components {
             address: string;
         };
         /**
+         * WalletAddressState
+         * @description One address's state on the wallet page, from its last finished `wallet_sync` row and
+         *     its chain's source as configured now (services/wallet_cards.address_statuses).
+         * @enum {string}
+         */
+        WalletAddressState: "retired" | "key_missing" | "source_unavailable" | "not_synced" | "failed" | "throttled" | "refused" | "deferred" | "reconciled" | "waiting" | "pending" | "unreconciled" | "coins_left";
+        /**
+         * WalletAddressStatus
+         * @description An address's state in plain German (`text`) with what to do (`todo`), and the
+         *     Scaleway container variable to set or check (`setting`) when the cure is one.
+         */
+        WalletAddressStatus: {
+            /**
+             * Address Id
+             * Format: uuid
+             */
+            address_id: string;
+            chain: components["schemas"]["Chain"];
+            /** Address Masked */
+            address_masked: string;
+            state: components["schemas"]["WalletAddressState"];
+            /** Text */
+            text: string;
+            /** Todo */
+            todo?: string | null;
+            /** Setting */
+            setting?: string | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Block */
+            block?: number | null;
+            /** Movements New */
+            movements_new?: number | null;
+        };
+        /**
+         * WalletAnswer
+         * @description A person's answer to a proposed group (D183 (5)), built for groups whose legs all go
+         *     one way: „Bezahlung“ (out: a disposal), „Geschenk oder Zahlung erhalten“ (in: an
+         *     acquisition at a typed cost, 0 when 0 is typed, unknown (NULL, D188) when none is),
+         *     „Belohnung“ (in: a staking reward) and „Spam“ (in, tokens the registry does not list and
+         *     the household does not hold only: hidden from then on, D187). „Tausch“ and
+         *     „Übertrag an eigene Wallet/Börse“ need the legs picked and a transfer link (step 5).
+         * @enum {string}
+         */
+        WalletAnswer: "payment" | "gift" | "reward" | "spam";
+        /**
+         * WalletAnsweredGroup
+         * @description GET /wallets/{id}/answered: a live group a person answered or confirmed, its legs in
+         *     plain words. `undoable`: „Antwort zurücknehmen“ applies (no transfer link touches its
+         *     legs); it re-proposes the transaction as the sync first classified it.
+         */
+        WalletAnsweredGroup: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            chain: components["schemas"]["Chain"];
+            kind: components["schemas"]["GroupKind"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Text */
+            text: string;
+            /** Legs */
+            legs?: components["schemas"]["WalletLeg"][];
+            /**
+             * Undoable
+             * @default false
+             */
+            undoable: boolean;
+        };
+        /**
+         * WalletCardKind
+         * @description What a live proposed movement group asks of a person.
+         * @enum {string}
+         */
+        WalletCardKind: "proposed" | "change" | "unreadable" | "question" | "unstorable";
+        /**
+         * WalletGroup
+         * @description GET /wallets/{id}/groups: one card per open group (D183 (1)): live and proposed, or
+         *     holding a live proposed leg (a leg a later sync added to an answered group). `text`,
+         *     `confirmable` and `answers` are about its proposed legs: „Bestätigen“ keeps them as they
+         *     stand (no question, no leg left uncategorized); `answers` are the corrections that fit
+         *     them. `legs` lists every live leg, each with its status.
+         */
+        WalletGroup: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            chain: components["schemas"]["Chain"];
+            kind: components["schemas"]["GroupKind"];
+            status: components["schemas"]["GroupStatus"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            card: components["schemas"]["WalletCardKind"];
+            /** Question */
+            question?: string | null;
+            /** Text */
+            text: string;
+            /** Legs */
+            legs?: components["schemas"]["WalletLeg"][];
+            /**
+             * Confirmable
+             * @default false
+             */
+            confirmable: boolean;
+            /** Answers */
+            answers?: components["schemas"]["WalletAnswer"][];
+        };
+        /**
+         * WalletGroupAnswerBody
+         * @description POST /groups/{gid}/answer. `cost_eur` only with `gift` and one leg: the acquisition's
+         *     cost; a gift is typed as 0. Without it the cost stays unknown (NULL): the lots price it by
+         *     the day or show „Kurs fehlt“ (D183 (5), D188).
+         */
+        WalletGroupAnswerBody: {
+            answer: components["schemas"]["WalletAnswer"];
+            /** Cost Eur */
+            cost_eur?: string | null;
+        };
+        /**
+         * WalletGroupDone
+         * @description The group that now stands for the transaction (the same id after „Bestätigen“).
+         */
+        WalletGroupDone: {
+            /**
+             * Group Id
+             * Format: uuid
+             */
+            group_id: string;
+        };
+        /**
+         * WalletHolding
+         * @description One asset's balance on the chain at the last read beside what Hausbuch books for it
+         *     (D186 (2)). `address_id` is None when the chain reconciles the wallet's addresses
+         *     together (Bitcoin). `booked_units` is the chain's balance less the stored difference,
+         *     None while the run waits for an answer (the difference is then not stored).
+         */
+        WalletHolding: {
+            chain: components["schemas"]["Chain"];
+            /** Address Id */
+            address_id?: string | null;
+            /** Address Masked */
+            address_masked?: string | null;
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Symbol */
+            symbol: string;
+            /** Chain Units */
+            chain_units: string;
+            /** Booked Units */
+            booked_units?: string | null;
+            state: components["schemas"]["WalletAddressState"];
+            /** At Block */
+            at_block?: number | null;
+            /** Read At */
+            read_at?: string | null;
+        };
+        /** WalletLeg */
+        WalletLeg: {
+            /**
+             * Movement Id
+             * Format: uuid
+             */
+            movement_id: string;
+            /** Address Masked */
+            address_masked?: string | null;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol: string;
+            kind: components["schemas"]["MovementKind"];
+            status: components["schemas"]["MovementStatus"];
+            /** Quantity */
+            quantity: string;
+        };
+        /**
          * WalletPage
          * @description GET /wallets/{id}: the wallet account with its owner shares, its addresses (masked,
          *     active first, then by chain and the order added, each with its last finished sync), and
@@ -12152,6 +13247,27 @@ export interface components {
             balances?: components["schemas"]["AssetBalance"][];
             /** Syncs */
             syncs?: components["schemas"]["WalletSyncSummary"][];
+        };
+        /**
+         * WalletState
+         * @description GET /wallets/{id}/state: each address's state, the holdings per asset at the last
+         *     read, and the live proposed groups of the wallet (those with a question among them).
+         */
+        WalletState: {
+            /** Statuses */
+            statuses?: components["schemas"]["WalletAddressStatus"][];
+            /** Holdings */
+            holdings?: components["schemas"]["WalletHolding"][];
+            /**
+             * Open Groups
+             * @default 0
+             */
+            open_groups: number;
+            /**
+             * Open Questions
+             * @default 0
+             */
+            open_questions: number;
         };
         /**
          * WalletSyncQueued
@@ -12172,10 +13288,13 @@ export interface components {
          *     asset (the contract, or `native`), as strings. `reconciled` null with `balances` set:
          *     every differing asset is named by an open question („wartet auf Antwort“), or the
          *     account's next address in the same run carries the account's verdict; `balances` null on
-         *     a succeeded run: the budget ended first (`wallet.sync_deferred`). On an account-scope
-         *     source (Bitcoin) the account's verdict is the newest row with `reconciled` not null among
-         *     the account's addresses on that chain; when the run's last address failed, the earlier
-         *     rows stay null and the failed row is what the wallet shows.
+         *     a succeeded run: the budget ended first (`wallet.sync_deferred`), or the balance read
+         *     failed after a run that stored something new (its code is in the run's event and log,
+         *     not on the row); a balance read that fails with nothing new is a failed, throttled or
+         *     refused row with its `error_code`. On an account-scope source (Bitcoin) the account's
+         *     verdict is the newest row with `reconciled` not null among the account's addresses on
+         *     that chain; when the run's last address failed, the earlier rows stay null and the
+         *     failed row is what the wallet shows.
          */
         WalletSyncRun: {
             /**
@@ -17435,6 +18554,202 @@ export interface operations {
             };
         };
     };
+    crypto_holdings_api_holdings_crypto_get: {
+        parameters: {
+            query?: {
+                on?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CryptoHoldings"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallets_holdings_api_wallets_holdings_get: {
+        parameters: {
+            query?: {
+                on?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoldingsStatement"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_lots_api_wallets__account_id__lots_get: {
+        parameters: {
+            query?: {
+                asset?: string | null;
+                on?: string | null;
+            };
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CryptoLot"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    holdings_exports_list_api_exports_holdings_get: {
+        parameters: {
+            query?: {
+                year?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoldingsExport"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    holdings_export_create_api_exports_holdings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HoldingsExportCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoldingsExport"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    holdings_export_file_api_exports_holdings__export_id__file_get: {
+        parameters: {
+            query: {
+                format: "pdf" | "csv";
+                expires: number;
+                signature: string;
+            };
+            header?: never;
+            path: {
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The statement's bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                    "text/csv": unknown;
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     wallet_sync_start_api_wallets__account_id__sync_post: {
         parameters: {
             query?: never;
@@ -17618,6 +18933,390 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WalletAddressPlain"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_state_api_wallets__account_id__state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletState"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_groups_list_api_wallets__account_id__groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroup"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_group_confirm_api_groups__group_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroupDone"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_group_answer_api_groups__group_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WalletGroupAnswerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroupDone"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_answered_groups_api_wallets__account_id__answered_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletAnsweredGroup"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_group_undo_api_groups__group_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroupDone"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_change_card_api_groups__group_id__change_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeCard"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_change_payee_api_groups__group_id__change_payee_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeAnswerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroupDone"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_change_own_api_groups__group_id__change_own_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeAnswerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroupDone"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_hidden_tokens_api_wallets__account_id__hidden_tokens_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HiddenToken"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_token_promote_api_assets__asset_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpamVerdict"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_token_demote_api_assets__asset_id__demote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpamVerdict"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

@@ -296,6 +296,17 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   // Phase 7 step 5, review of PR #396 (D184 (1)(a)): a coin pair whose units do not fit.
   "transfer.units_differ":
     "Auf dem anderen Konto kam eine andere Menge an, als hier abging: ein Teil der Coins ging in derselben Transaktion an eine andere Adresse. Deshalb sind die beiden kein Übertrag; die Transaktion wird auf der Seite der Wallet beantwortet.",
+  // Phase 7 wallet screens: „Bestätigen“ and the answers on a wallet's transactions.
+  "wallet.group_done": "Diese Transaktion ist schon beantwortet oder bestätigt. Bitte die Seite neu laden.",
+  "wallet.group_needs_answer":
+    "Diese Transaktion braucht eine Antwort, bevor sie gebucht werden kann: bitte auswählen, was sie war.",
+  "wallet.answer_unfit":
+    "Diese Antwort passt nicht zu der Transaktion (etwa „Bezahlung“ bei einem Eingang oder „Spam“ bei der eigenen Währung der Blockchain).",
+  // Phase 7 step 6 (D190): „Bestandsnachweis 31.12.<Jahr> erstellen“.
+  "holdings_export.year_open":
+    "Der Bestandsnachweis zum 31.12. lässt sich erst ab dem 1. Januar des Folgejahres erstellen, wenn der Tag vorbei ist.",
+  "holdings_export.nothing_held":
+    "Bis zum 31.12. dieses Jahres gibt es auf keiner Wallet und keiner Börse eine bestätigte Bewegung; es gibt nichts nachzuweisen.",
   // D193: why a document cannot be deleted; each names what still depends on it.
   "document.delete_blocked.statement_import": "Aus diesem Auszug wurden Umsätze eingelesen; sie bleiben unverändert im Konto.",
   "document.delete_blocked.bank_statement": "Es ist ein Kontoauszug, den die Bank über den Bankabruf geliefert hat; er gehört ins Jahresarchiv.",

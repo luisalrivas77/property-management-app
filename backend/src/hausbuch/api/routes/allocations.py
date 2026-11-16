@@ -43,11 +43,11 @@ router = domain_router()
 
 
 @router.get("/inbox")
-def inbox_list(cmd: Cmd) -> list[InboxItem]:
+def inbox_list(cmd: Cmd, settings: SettingsDep) -> list[InboxItem]:
     """Plus, from 1 January, last year's open Jahresfragen (phase 4b D110), and the email-in
-    cards (phase 5 §5.4)."""
+    cards (phase 5 §5.4), and the wallet cards (phase 7; `settings` sees a missing key)."""
     now = datetime.now(LOCAL_TIME_ZONE)
-    return cmd.read(review.inbox, today=now.date(), now=now)
+    return cmd.read(review.inbox, today=now.date(), now=now, settings=settings)
 
 
 @router.post("/inbox/ai-retry")
