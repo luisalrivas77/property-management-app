@@ -6655,6 +6655,90 @@
         }
       }
     },
+    "/api/wallets/{account_id}/sync": {
+      "post": {
+        "summary": "Wallet Sync Start",
+        "operationId": "wallet_sync_start_api_wallets__account_id__sync_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletSyncQueued"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/wallets/{account_id}/syncs": {
+      "get": {
+        "summary": "Wallet Sync List",
+        "operationId": "wallet_sync_list_api_wallets__account_id__syncs_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WalletSyncRun"
+                  },
+                  "title": "Response Wallet Sync List Api Wallets  Account Id  Syncs Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/wallets/{account_id}": {
       "get": {
         "summary": "Wallet Get",
@@ -16192,6 +16276,10 @@
           "movement.proposed",
           "movement.confirmed",
           "movement.superseded",
+          "wallet.sync_completed",
+          "wallet.sync_failed",
+          "movement_group.proposed",
+          "movement_group.confirmed",
           "movement_group.trade_recorded",
           "transfer.linked",
           "transfer.unlinked",
@@ -30762,7 +30850,185 @@
           "addresses"
         ],
         "title": "WalletPage",
-        "description": "GET /wallets/{id}: the wallet account with its owner shares, its addresses (masked,\nactive first, then by chain and the order added), and the balances and syncs, empty until\nthe sync of step 2 reads a chain."
+        "description": "GET /wallets/{id}: the wallet account with its owner shares, its addresses (masked,\nactive first, then by chain and the order added, each with its last finished sync), and\nthe balances and syncs, still empty: the runs are GET /wallets/{id}/syncs, the balances\nthe screens step's."
+      },
+      "WalletSyncQueued": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "addresses": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Addresses"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "addresses"
+        ],
+        "title": "WalletSyncQueued",
+        "description": "POST /wallets/{id}/sync: „Jetzt abrufen“ queued for the wallet's active addresses."
+      },
+      "WalletSyncRun": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "address_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Address Id"
+          },
+          "address_masked": {
+            "type": "string",
+            "title": "Address Masked"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WalletSyncStatus"
+          },
+          "source_host": {
+            "type": "string",
+            "title": "Source Host"
+          },
+          "block": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block"
+          },
+          "txs_seen": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Txs Seen"
+          },
+          "movements_new": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Movements New"
+          },
+          "balances": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balances"
+          },
+          "reconciled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconciled"
+          },
+          "difference": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difference"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "deferred": {
+            "type": "boolean",
+            "title": "Deferred",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "address_id",
+          "address_masked",
+          "started_at",
+          "status",
+          "source_host",
+          "txs_seen",
+          "movements_new"
+        ],
+        "title": "WalletSyncRun",
+        "description": "One address's run (a wallet_sync row). `balances` and `difference` are base units per\nasset (the contract, or `native`), as strings. `reconciled` null with `balances` set:\nevery differing asset is named by an open question („wartet auf Antwort“), or the\naccount's next address in the same run carries the account's verdict; `balances` null on\na succeeded run: the budget ended first (`wallet.sync_deferred`). On an account-scope\nsource (Bitcoin) the account's verdict is the newest row with `reconciled` not null among\nthe account's addresses on that chain; when the run's last address failed, the earlier\nrows stay null and the failed row is what the wallet shows."
+      },
+      "WalletSyncStatus": {
+        "type": "string",
+        "enum": [
+          "running",
+          "succeeded",
+          "failed",
+          "throttled",
+          "refused"
+        ],
+        "title": "WalletSyncStatus",
+        "description": "wallet_sync.status (D182 (1)): written running, finished once."
       },
       "WalletSyncSummary": {
         "properties": {

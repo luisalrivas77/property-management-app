@@ -59,6 +59,7 @@ from .routes import (
     tenancies,
     tenants,
     units,
+    wallet_sync,
     wallets,
     workspace,
 )
@@ -85,6 +86,7 @@ ROUTE_MODULES = (
     allocations,
     household,
     exchange,
+    wallet_sync,
     wallets,
     tax,
     tax_inputs,
