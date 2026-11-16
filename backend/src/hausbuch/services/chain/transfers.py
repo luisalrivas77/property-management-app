@@ -76,7 +76,14 @@ from hausbuch.rules.errors import TRANSFER_LEGS_INVALID
 from hausbuch.rules.household.assets import registry as asset_registry
 from hausbuch.rules.review import DETERMINISTIC, NO_MATCH
 from hausbuch.schemas.allocation import AllocationCategory, TransferLegSource
-from hausbuch.schemas.chain import BridgePair, Chain, GroupKind, GroupStatus, WrapPair
+from hausbuch.schemas.chain import (
+    BridgePair,
+    Chain,
+    ChainSourceKind,
+    GroupKind,
+    GroupStatus,
+    WrapPair,
+)
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.events import (
     EventType,
@@ -732,14 +739,17 @@ def _window_end(leg: _Row) -> date:
 def _pairable(conn: Connection, leg: _Row) -> bool:
     """Whether a counterpart of an unmatched leg could be in the app: a wallet leg's always
     (the classifier saw the other side as own); an exchange row's when a wallet address
-    exists on the chain its network names (any wallet address when it names none)."""
+    exists on the chain its network names (any wallet address when it names none). Never on a
+    balance-only chain (D181 (c), BNB Smart Chain): it has no movement to pair with, so the
+    card would be a dead end; its sync's balance check shows the unexplained deposit instead
+    (rules/chain/evm.reconcile_balance_only, transfer.unmatched_leg)."""
     if leg.account_kind is not AccountKind.EXCHANGE:
         return True
     w = address_table.c
     where = [w.active.is_(True)]
     if leg.network is not None:
         chain = registry().network(leg.network)
-        if chain is None:
+        if chain is None or registry().chain(chain).source is ChainSourceKind.EVM_RPC_BALANCE:
             return False
         where.append(w.chain == chain.value)
     return conn.execute(select(w.id).where(and_(*where)).limit(1)).first() is not None

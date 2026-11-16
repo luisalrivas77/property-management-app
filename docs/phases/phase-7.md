@@ -400,6 +400,68 @@ Loaded by `tests/fixture_models_phase7.py` (the phase 6 loader's pattern: loadin
 - **Re-reading the stored transactions that name an address when it joins the account** (D185 (2)) is not built: the cursor is per address, so a change address registered later starts its own history from its first transaction, and spends already booked keep their reading until a replay over the stored originals re-derives them (the `hausbuch replay-sync` that `services/chain/base.py` names, not built).
 - `wallet_reconcile.yaml`'s `bitcoin_two_addresses` case is still `pending` (its `rules/chain/reconcile` wiring is the reconcile step's).
 
+**Step 5, chain transfers (branch feat/phase7-chain-transfers, not merged).** `services/chain/transfers.py` runs the pure matcher (`rules/chain/match_transfer.match`, PR #367) over every open coin leg of a workspace and writes `transfer_link` rows of kind `chain`, `bridge` and `wrap` (D184). No migration. Built in three commits on the branch: the service with its cards and the link by hand, the hooks and the command, the transfer card on Zu prüfen.
+
+1. **What a coin leg is.** A live, non-zero movement of a crypto asset that is not spam, on an `exchange` or `wallet` account, of a transfer kind (`internal_transfer_out`/`in`, `exchange_transfer_out`/`in`, or `uncategorized` on a wallet). An exchange row needs a transfer kind. A wallet row needs a live movement group of kind `transfer`, `exchange_transfer`, `wrap` or `bridge`. A chain token's quantity is compared under its `priced_as` symbol (a WETH as ETH, an Arbitrum ETH as ETH), from the asset's twin or the registry. A leg with no such symbol is skipped.
+2. **When code writes a link (`matched_by = matcher`).** The matcher finds exactly one counterpart, and no other open send would also fit that counterpart. Then one of two things holds:
+   - Both legs are already confirmed. This applies to any kind, a bridge or a wrap included.
+   - The link is of kind `chain`, the two legs share the transaction hash, and code may confirm each proposed leg. Code may confirm a leg when it is an exchange's transfer movement, or when its group is a `transfer` or `exchange_transfer` group that is still proposed, holds no question, was routed `routing.no_match`, and has no other non-fee leg (D186 (1)). The legs, the group's proposed fee legs and the group are then confirmed in the same transaction (`movement.confirmed`, `movement_group.confirmed` with reason `deterministic`).
+
+   Everything else waits for a person:
+   - a first sync (`routing.chain_first_sync`);
+   - a bridge or a wrap with a proposed leg;
+   - a fit by quantity alone with a proposed leg;
+   - two fits.
+3. **Cards (`GET /transfers/open`, after phase 6's EUR cards).** A fit that code may not link becomes a card:
+   - `proposed`, with its one candidate;
+   - `ambiguous`, with every candidate. Each candidate carries the `link_kind` its link takes.
+   - `unmatched`, only for an outgoing leg (`internal_transfer_out`) whose 48-hour window has passed and whose counterpart could be in the app. That is a wallet leg, or an exchange withdrawal whose network names a chain on which the workspace holds an active address (or any address when it names no network). A balance-only chain is excluded (BNB Smart Chain, D181 (c)): no movement could ever pair with the withdrawal, so the card would be a dead end, and the sync's balance check shows the unexplained deposit instead.
+
+   The card shows the account, the date and the signed quantity with its symbol, never an address or a hash. `POST /transfers` with two movement ids of which one is a crypto asset goes to `chain_transfers.link_by_hand`. That function:
+   - accepts only a pair the matcher fits with that kind, and refuses any other pair (`transfer.legs_invalid`): another hash, the wrong kind, the wrong quantity or the wrong window;
+   - confirms both legs and their group;
+   - writes the link with `matched_by = user`.
+4. **Currentness on read, never `superseded_by`.** A coin link counts only while both its movements are live (`superseded_by IS NULL`), whoever wrote it. Phase 6's `_current_links` now treats the kinds `chain`, `bridge` and `wrap` as it treats a returned payment's link. So re-booking a leg ends the link without a write, and the leg is open again.
+5. **Hooks.**
+   - The wallet sync jobs (`jobs/sync_wallets.py`, both the daily task and „Jetzt abrufen“) call `relink_after_sync` once per workspace after its addresses ran. It runs in its own transaction, never fails the sync, and logs a failure by its exception class only. The hook is in the job, not in `services/chain/sync.py`.
+   - An exchange import and a Binance withdrawal history call `relink` in their own transaction.
+   - A person's confirmation or answer on an exchange's coin movement (`confirm_movement`, `answer_movement`, `confirm_withdrawals`) calls `relink(wait=False)`. It takes the transfer lock with `pg_try_advisory_xact_lock` and does nothing when another linker holds the lock. The reason is lock order: that command holds the movement's row, not the exchange account's row, and phase 6's `_lock` order (D162 amended (8)) takes the account row before the lock.
+   - `hausbuch relink-chain --workspace <id> [--dry-run]` runs the relink once.
+6. **The `transfer_link` contract the lots read.** Column by column:
+   - `kind` is `chain`, `bridge` or `wrap`;
+   - `out_movement_id` is the sending movement and `in_movement_id` the receiving one, both `asset_movement` ids;
+   - `out_transaction_id` and `in_transaction_id` are NULL;
+   - `matched_by` is `matcher` or `user`;
+   - `created_at` is the command's time;
+   - `superseded_by` is never set by this step.
+
+   Each write appends `transfer.linked` (kind, matched_by, both movement ids, no address or hash). A link is current while both movements are live. The fee stays on the sender: an exchange row's `fee_quantity`, or a wallet group's `fee` movement.
+7. **Tests:** `tests/db/test_services_chain_transfers.py`, 19 tests:
+   - §6 example 2: 0.3 ETH out, a fee of 0.0005 and 0.2995 in, under one hash. Code links the pair and confirms both legs.
+   - idempotence;
+   - a first sync waiting for the pick;
+   - a refused pick;
+   - fits by quantity, confirmed and proposed;
+   - ambiguous and then picked;
+   - the unmatched card, and none on a balance-only chain;
+   - wallet to wallet;
+   - a wrap;
+   - a bridge;
+   - a re-booked leg ending a matcher's link and a person's link;
+   - workspace isolation;
+   - the three hooks and the command.
+
+   The adjacent phase 6 transfer, returns and exchange suites pass, and so do the wallet sync suites.
+8. **Not built:**
+   - Nothing writes `chain_pair` yet. Its rows are read as extras (a bridge pair with `max_fee_share`, a wrap pair) but never learned from a person's pick, so a learned bridge is never confirmed by code.
+   - The deposit movement on a BNB Smart Chain address is not built. That chain is read by balance only (D181 (c)). `services/chain/sync.py`'s balance check compares the balance with „the deposits linked to the address (step 5)“, but nothing writes such a deposit movement from an exchange withdrawal yet. Until it does, every BNB coin there reads as an unexplained deposit (`transfer.unmatched_leg` on the wallet), and the lots cannot carry a BISON purchase onto that chain.
+   - The lots-on-read service that reads these links is another agent's.
+   - `frontend/src/api/types.ts` was not regenerated, because the dev box has no Node: `npm run gen:types` must run before the frontend typechecks. `openapi.json` is regenerated.
+9. **Deviations from the brief:**
+   - Phase 6's `services/transfers.py` was edited beyond adding lines: in `_current_links`, `link_by_hand` (it delegates a coin pair), `open_transfers` (EUR cards plus coin cards) and `transfer_inbox_items` (the coin texts). A `_try_lock` was added.
+   - `TransferLegView.amount` is now optional. It is None only on a coin leg, which carries `quantity`, `asset_symbol`, `chain` and, on a candidate, `link_kind`.
+   - The Haushalt's transfer list guards the optional amount. It lists no coin link, because its legs are read from EUR lines only.
+
 ## 16. Implementation steps
 
 | Step | Delivers | Migration | Done when | Size | Review | Luis does |

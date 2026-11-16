@@ -425,6 +425,15 @@ def test_unmatched_withdrawal_card_only_when_its_chain_has_a_wallet(seed, run, r
     assert read(seed.ws, transfers.open_transfers, T0.date()) == []
 
 
+def test_no_unmatched_card_on_a_balance_only_chain(seed, read):
+    """D181 (c): BNB Smart Chain is read by balance only, so no movement could ever pair with
+    the withdrawal; even with an own address there the card would be a dead end."""
+    with _admin(seed.dbname) as conn:
+        _address(conn, seed.ws, seed.wallet, chain="bsc", address=EVM)
+    seed.exchange_out("3", network="BSC")
+    assert _open(read, seed.ws) == []
+
+
 # --- Wallet to wallet, wrap and bridge ------------------------------------------------------
 
 
