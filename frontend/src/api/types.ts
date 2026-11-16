@@ -2457,6 +2457,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wallets/{account_id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Wallet Sync Start */
+        post: operations["wallet_sync_start_api_wallets__account_id__sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/syncs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Wallet Sync List */
+        get: operations["wallet_sync_list_api_wallets__account_id__syncs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet Get
+         * @description The wallet account with its owner shares and its addresses, masked; balances and syncs
+         *     are empty until a chain is read (step 2). 404 for an account that is no wallet.
+         */
+        get: operations["wallet_get_api_wallets__account_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/addresses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Address Add
+         * @description The rows written: the chain given, and with `also_on` the same 0x address on the other
+         *     EVM chains („Auch auf Arbitrum und BNB Smart Chain lesen“), a chain already registered on
+         *     this wallet skipped. 422 wallet.address_invalid (not the chain's format, or `also_on` for a
+         *     non-EVM address) or wallet.address_taken (on another own account, or already on every
+         *     chain asked for here); 404 for an account that is no wallet.
+         */
+        post: operations["wallet_address_add_api_wallets__account_id__addresses_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/addresses/{address_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Wallet Address Update
+         * @description The label (null clears it) and active: false retires the address („Adresse
+         *     stilllegen“), true reactivates it. 404 for an address of another wallet.
+         */
+        patch: operations["wallet_address_update_api_wallets__account_id__addresses__address_id__patch"];
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/addresses/{address_id}/plain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet Address Plain
+         * @description „kopieren“: the full address, for the clipboard only. Never cached; each call writes
+         *     wallet.address_revealed. 404 for an address of another wallet.
+         */
+        get: operations["wallet_address_plain_api_wallets__account_id__addresses__address_id__plain_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/anlage-v": {
         parameters: {
             query?: never;
@@ -3288,9 +3409,9 @@ export interface components {
         };
         /**
          * AccountKind
-         * @description account.kind (migration 0025, phase 6 D156). `wallet` is in the CHECK so phase 7 adds
-         *     no migration for it; create_account refuses it (account.kind_not_available) until then,
-         *     as AccountSource.AGGREGATOR is refused.
+         * @description account.kind (migration 0025, phase 6 D156). `wallet` was in the CHECK from the start
+         *     so phase 7 adds no migration for it; create_account takes it since phase 7 step 1 (D179).
+         *     AccountSource.AGGREGATOR stays refused (account.kind_not_available).
          * @enum {string}
          */
         AccountKind: "bank_current" | "bank_savings" | "depot" | "exchange" | "wallet" | "credit_card";
@@ -3482,6 +3603,12 @@ export interface components {
              */
             country_code: string;
         };
+        /**
+         * AddressKind
+         * @description wallet_address.kind: change only on Bitcoin (D185), stake only on Solana (D183 (4)).
+         * @enum {string}
+         */
+        AddressKind: "receive" | "change" | "stake";
         /**
          * AfaLine
          * @description wk.afa for one tax year. amount, basis and rate are None without a selected split.
@@ -3972,6 +4099,20 @@ export interface components {
             church: string;
             /** Total */
             total: string;
+        };
+        /** AssetBalance */
+        AssetBalance: {
+            asset_key: components["schemas"]["AssetKey"];
+            /** Units */
+            units: number;
+            /** At Block */
+            at_block: number;
+        };
+        /** AssetKey */
+        AssetKey: {
+            chain: components["schemas"]["Chain"];
+            /** Contract */
+            contract?: string | null;
         };
         /**
          * AssetKind
@@ -6010,7 +6151,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "movement_group.proposed" | "movement_group.confirmed" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -11910,6 +12051,182 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** WalletAddress */
+        WalletAddress: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            chain: components["schemas"]["Chain"];
+            /** Address Masked */
+            address_masked: string;
+            /** Label */
+            label?: string | null;
+            kind: components["schemas"]["AddressKind"];
+            /** Active */
+            active: boolean;
+            last_sync?: components["schemas"]["WalletSyncSummary"] | null;
+        };
+        /**
+         * WalletAddressBody
+         * @description POST /wallets/{id}/addresses (WalletAddressCreate's fields): a validation error never
+         *     echoes the pasted address. `also_on` takes EVM chains only, for an Ethereum address the
+         *     shortcut „Auch auf Arbitrum und BNB Smart Chain lesen“ (D179 (2)).
+         */
+        WalletAddressBody: {
+            chain: components["schemas"]["Chain"];
+            /** Address */
+            address: string;
+            /** Label */
+            label?: string | null;
+            /** Also On */
+            also_on?: components["schemas"]["Chain"][];
+        };
+        /**
+         * WalletAddressPatch
+         * @description PATCH /wallets/{id}/addresses/{aid}: the label (null clears it) and active (false
+         *     retires the address, true reactivates it). Nothing else of a row ever changes (0041's
+         *     trigger).
+         */
+        WalletAddressPatch: {
+            /** Label */
+            label?: string | null;
+            /** Active */
+            active?: boolean;
+        };
+        /**
+         * WalletAddressPlain
+         * @description GET /wallets/{id}/addresses/{aid}/plain: the full address for „kopieren“, sent with
+         *     Cache-Control: no-store and audited as wallet.address_revealed. The page writes it to the
+         *     clipboard and never renders it.
+         */
+        WalletAddressPlain: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            chain: components["schemas"]["Chain"];
+            /** Address */
+            address: string;
+        };
+        /**
+         * WalletPage
+         * @description GET /wallets/{id}: the wallet account with its owner shares, its addresses (masked,
+         *     active first, then by chain and the order added, each with its last finished sync), and
+         *     the balances and syncs, still empty: the runs are GET /wallets/{id}/syncs, the balances
+         *     the screens step's.
+         */
+        WalletPage: {
+            account: components["schemas"]["Account"];
+            /** Addresses */
+            addresses: components["schemas"]["WalletAddress"][];
+            /** Balances */
+            balances?: components["schemas"]["AssetBalance"][];
+            /** Syncs */
+            syncs?: components["schemas"]["WalletSyncSummary"][];
+        };
+        /**
+         * WalletSyncQueued
+         * @description POST /wallets/{id}/sync: „Jetzt abrufen“ queued for the wallet's active addresses.
+         */
+        WalletSyncQueued: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Addresses */
+            addresses: number;
+        };
+        /**
+         * WalletSyncRun
+         * @description One address's run (a wallet_sync row). `balances` and `difference` are base units per
+         *     asset (the contract, or `native`), as strings. `reconciled` null with `balances` set:
+         *     every differing asset is named by an open question („wartet auf Antwort“), or the
+         *     account's next address in the same run carries the account's verdict; `balances` null on
+         *     a succeeded run: the budget ended first (`wallet.sync_deferred`). On an account-scope
+         *     source (Bitcoin) the account's verdict is the newest row with `reconciled` not null among
+         *     the account's addresses on that chain; when the run's last address failed, the earlier
+         *     rows stay null and the failed row is what the wallet shows.
+         */
+        WalletSyncRun: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Address Id
+             * Format: uuid
+             */
+            address_id: string;
+            /** Address Masked */
+            address_masked: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            status: components["schemas"]["WalletSyncStatus"];
+            /** Source Host */
+            source_host: string;
+            /** Block */
+            block?: number | null;
+            /** Txs Seen */
+            txs_seen: number;
+            /** Movements New */
+            movements_new: number;
+            /** Balances */
+            balances?: {
+                [key: string]: string;
+            } | null;
+            /** Reconciled */
+            reconciled?: boolean | null;
+            /** Difference */
+            difference?: {
+                [key: string]: string;
+            } | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /**
+             * Deferred
+             * @default false
+             */
+            deferred: boolean;
+        };
+        /**
+         * WalletSyncStatus
+         * @description wallet_sync.status (D182 (1)): written running, finished once.
+         * @enum {string}
+         */
+        WalletSyncStatus: "running" | "succeeded" | "failed" | "throttled" | "refused";
+        /** WalletSyncSummary */
+        WalletSyncSummary: {
+            /** Finished At */
+            finished_at?: string | null;
+            /** Block */
+            block?: number | null;
+            /** Reconciled */
+            reconciled?: boolean | null;
+            /** Error Code */
+            error_code?: string | null;
+            /**
+             * Movements New
+             * @default 0
+             */
+            movements_new: number;
+        };
         /**
          * WarningCode
          * @enum {string}
@@ -17084,6 +17401,202 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MovementAnswered"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_sync_start_api_wallets__account_id__sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletSyncQueued"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_sync_list_api_wallets__account_id__syncs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletSyncRun"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_get_api_wallets__account_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletPage"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_address_add_api_wallets__account_id__addresses_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WalletAddressBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletAddress"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_address_update_api_wallets__account_id__addresses__address_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+                address_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WalletAddressPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletAddress"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_address_plain_api_wallets__account_id__addresses__address_id__plain_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+                address_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletAddressPlain"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

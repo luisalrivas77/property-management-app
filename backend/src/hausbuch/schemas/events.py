@@ -42,6 +42,7 @@ from .bank_sync import (
     SyncStatus,
     SyncTrigger,
 )
+from .chain import AddressKind, Chain
 from .common import (
     Area,
     BuildingShare,
@@ -975,6 +976,35 @@ class AccountOwnershipSet(Schema):
     superseded: list[UUID] = Field(default_factory=list)  # the account_ownership rows replaced
 
 
+class WalletAddressAdded(Schema):
+    """wallet.address_added (phase 7 D179 (2), step 1), on the wallet account: the masked form,
+    never the address or its HMAC."""
+
+    address_id: UUID
+    chain: Chain
+    address_masked: str
+    label: str | None = None
+    kind: AddressKind
+
+
+class WalletAddressUpdated(Schema):
+    """wallet.address_updated: its label or active changed (retired or reactivated)."""
+
+    address_id: UUID
+    chain: Chain
+    address_masked: str
+    changes: dict[str, FieldChange] = Field(min_length=1)
+
+
+class WalletAddressRevealed(Schema):
+    """wallet.address_revealed: „kopieren“ read the full address (D179, §4); the audit of the
+    one endpoint that returns it."""
+
+    address_id: UUID
+    chain: Chain
+    address_masked: str
+
+
 class MovementImportRecorded(Schema):
     """account.movements_imported (D166): the statement.imported of an exchange export."""
 
@@ -1043,6 +1073,38 @@ class MovementRecorded(Schema):
     kind: MovementKind
     source: MovementSource
     document_id: UUID | None = None
+
+
+class WalletSyncRecorded(Schema):
+    """wallet.sync_completed and wallet.sync_failed (phase 7 D182 (1)): one run of one
+    address, by ids and counts only. No address, cursor, transaction hash or URL: the host
+    name is the provider's, never the household's (D181)."""
+
+    sync_id: UUID
+    address_id: UUID
+    status: Literal["succeeded", "failed", "throttled", "refused"]
+    source_host: str
+    txs_seen: int = Field(ge=0)
+    movements_new: int = Field(ge=0)
+    reconciled: bool | None = None  # None: not checked (failed, or the history not read yet)
+    deferred: bool = False  # the run's budget ended before the history did (wallet.sync_deferred)
+    # Balances read, and every asset that differs is named by an open question of the run's
+    # scope (a Bitcoin change card's native coin, a question's legs), so the difference is
+    # „wartet auf Antwort“, not a mismatch.
+    waiting: bool = False
+    error_code: str | None = None
+    document_id: UUID | None = None  # the run's stored original (D182 (3))
+
+
+class MovementGroupRecorded(Schema):
+    """movement_group.proposed and movement_group.confirmed (phase 7 D183, D186 (1)): the
+    group's kind and how it was routed; its transaction hash stays in the row only."""
+
+    account_id: UUID
+    chain: str
+    kind: str
+    reason: str  # the routing reason (rules.review)
+    sync_id: UUID | None = None
 
 
 class MovementSuperseded(Schema):
@@ -1261,6 +1323,11 @@ class EventType(StrEnum):
     ACCOUNT_HOLDINGS_MISMATCH = "account.holdings_mismatch"
     ACCOUNT_HOLDING_CORRECTED = "account.holding_corrected"  # step 4, 0027
 
+    # Phase 7 (entity_type wallet, entity_id = the wallet account)
+    WALLET_ADDRESS_ADDED = "wallet.address_added"
+    WALLET_ADDRESS_UPDATED = "wallet.address_updated"
+    WALLET_ADDRESS_REVEALED = "wallet.address_revealed"
+
     ASSET_CREATED = "asset.created"  # phase 6
     ASSET_UPDATED = "asset.updated"
     ASSET_PRICE_RECORDED = "asset.price_recorded"
@@ -1269,6 +1336,11 @@ class EventType(StrEnum):
     MOVEMENT_PROPOSED = "movement.proposed"  # phase 6
     MOVEMENT_CONFIRMED = "movement.confirmed"
     MOVEMENT_SUPERSEDED = "movement.superseded"
+
+    WALLET_SYNC_COMPLETED = "wallet.sync_completed"  # phase 7 step 2 (core)
+    WALLET_SYNC_FAILED = "wallet.sync_failed"
+    MOVEMENT_GROUP_PROPOSED = "movement_group.proposed"
+    MOVEMENT_GROUP_CONFIRMED = "movement_group.confirmed"
 
     TRANSFER_LINKED = "transfer.linked"  # phase 6
     TRANSFER_UNLINKED = "transfer.unlinked"
@@ -1475,6 +1547,14 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.ACCOUNT_HOLDING_CORRECTED: EventSpec(
         HoldingCorrected, "optional", "A report's position corrected (date = as of)"
     ),
+    # Phase 7
+    E.WALLET_ADDRESS_ADDED: EventSpec(WalletAddressAdded, "forbidden", "Wallet address added"),
+    E.WALLET_ADDRESS_UPDATED: EventSpec(
+        WalletAddressUpdated, "forbidden", "Wallet address relabelled, retired or reactivated"
+    ),
+    E.WALLET_ADDRESS_REVEALED: EventSpec(
+        WalletAddressRevealed, "forbidden", "Wallet address copied in full („kopieren“)"
+    ),
     E.ASSET_CREATED: EventSpec(AssetRecorded, "forbidden", "Asset recorded"),
     E.ASSET_UPDATED: EventSpec(Updated, "forbidden", "Asset name or price ids changed"),
     E.ASSET_PRICE_RECORDED: EventSpec(PriceRecorded, "optional", "Price recorded"),
@@ -1484,6 +1564,16 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.MOVEMENT_PROPOSED: EventSpec(MovementRecorded, "optional", "Movement proposed"),
     E.MOVEMENT_CONFIRMED: EventSpec(MovementRecorded, "optional", "Movement confirmed"),
     E.MOVEMENT_SUPERSEDED: EventSpec(MovementSuperseded, "forbidden", "Movement corrected"),
+    E.WALLET_SYNC_COMPLETED: EventSpec(
+        WalletSyncRecorded, "forbidden", "Wallet address read from its chain"
+    ),
+    E.WALLET_SYNC_FAILED: EventSpec(WalletSyncRecorded, "forbidden", "Wallet sync failed"),
+    E.MOVEMENT_GROUP_PROPOSED: EventSpec(
+        MovementGroupRecorded, "forbidden", "Chain transaction waiting for review"
+    ),
+    E.MOVEMENT_GROUP_CONFIRMED: EventSpec(
+        MovementGroupRecorded, "forbidden", "Chain transaction confirmed"
+    ),
     E.TRANSFER_LINKED: EventSpec(TransferLinked, "forbidden", "Transfer legs linked"),
     E.TRANSFER_UNLINKED: EventSpec(TransferUnlinked, "forbidden", "Transfer link undone"),
     E.STATEMENT_IMPORTED: EventSpec(
