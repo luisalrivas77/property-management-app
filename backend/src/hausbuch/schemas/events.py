@@ -1152,6 +1152,45 @@ class ExchangeTradeGrouped(Schema):
     document_id: UUID | None = None
 
 
+class ExchangeDepositAddressLearned(Schema):
+    """account.deposit_address_learned (phase 7 D261 (2)), on the exchange account: a person
+    linked a wallet's plain send to this exchange's deposit with „Adresse als
+    Einzahlungsadresse von <Börse> merken“ ticked, so the address the send paid is the
+    exchange's deposit address on its chain. Ids and the masked address only, never the
+    address or its HMAC (D179); the HMAC sits on the row."""
+
+    learned_id: UUID
+    chain: Chain
+    address_masked: str
+    learned_from: UUID  # the wallet's send
+
+
+class ExchangeDepositAddressForgotten(Schema):
+    """account.deposit_address_forgotten (D261 (2)): „Vergessen“ ended the learned row; the
+    links already written stay."""
+
+    learned_id: UUID
+    chain: Chain
+    address_masked: str
+
+
+class ExchangeWithdrawalPairLearned(Schema):
+    """account.withdrawal_pair_learned (D261 (3)), on the exchange account: a person linked an
+    exchange withdrawal to a receipt on the own wallet address `address_id` with „Abhebungen
+    von <Börse> an diese Adresse künftig automatisch verknüpfen“ ticked."""
+
+    learned_id: UUID
+    address_id: UUID
+    learned_from: UUID  # the exchange's withdrawal
+
+
+class ExchangeWithdrawalPairForgotten(Schema):
+    """account.withdrawal_pair_forgotten (D261 (3)): „Vergessen“ ended the pair."""
+
+    learned_id: UUID
+    address_id: UUID
+
+
 class TransferLinked(Schema):
     """transfer.linked (D162): the two legs, by id only. deposit_iban (D162 amended 15 Nov
     2026, review): on the first link by hand of a deposit an exchange credited short, or (D162
@@ -1398,6 +1437,10 @@ class EventType(StrEnum):
     ACCOUNT_HOLDINGS_MISMATCH = "account.holdings_mismatch"
     ACCOUNT_HOLDING_CORRECTED = "account.holding_corrected"  # step 4, 0027
     ACCOUNT_HOLDINGS_EXPORTED = "account.holdings_exported"  # phase 7 D190, step 6
+    ACCOUNT_DEPOSIT_ADDRESS_LEARNED = "account.deposit_address_learned"  # phase 7 D261
+    ACCOUNT_DEPOSIT_ADDRESS_FORGOTTEN = "account.deposit_address_forgotten"  # phase 7 D261
+    ACCOUNT_WITHDRAWAL_PAIR_LEARNED = "account.withdrawal_pair_learned"  # phase 7 D261
+    ACCOUNT_WITHDRAWAL_PAIR_FORGOTTEN = "account.withdrawal_pair_forgotten"  # phase 7 D261
 
     # Phase 7 (entity_type wallet, entity_id = the wallet account)
     WALLET_ADDRESS_ADDED = "wallet.address_added"
@@ -1633,6 +1676,18 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.ACCOUNT_HOLDINGS_EXPORTED: EventSpec(
         HoldingsExported, "required", "Year-end holdings statement exported (date = as of)"
+    ),
+    E.ACCOUNT_DEPOSIT_ADDRESS_LEARNED: EventSpec(
+        ExchangeDepositAddressLearned, "forbidden", "Exchange deposit address learned"
+    ),
+    E.ACCOUNT_DEPOSIT_ADDRESS_FORGOTTEN: EventSpec(
+        ExchangeDepositAddressForgotten, "forbidden", "Exchange deposit address forgotten"
+    ),
+    E.ACCOUNT_WITHDRAWAL_PAIR_LEARNED: EventSpec(
+        ExchangeWithdrawalPairLearned, "forbidden", "Exchange withdrawals to an address learned"
+    ),
+    E.ACCOUNT_WITHDRAWAL_PAIR_FORGOTTEN: EventSpec(
+        ExchangeWithdrawalPairForgotten, "forbidden", "Exchange withdrawals to an address forgotten"
     ),
     # Phase 7
     E.WALLET_ADDRESS_ADDED: EventSpec(WalletAddressAdded, "forbidden", "Wallet address added"),

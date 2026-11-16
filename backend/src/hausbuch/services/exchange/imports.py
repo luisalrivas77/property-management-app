@@ -1168,6 +1168,9 @@ def _question(kind: MovementKind, status: MovementStatus) -> str | None:
     return None
 
 
+_UNSHOWN = frozenset({"counterparty_hmac", "counterparty_masked"})
+
+
 def exchange_movements(conn: Connection, account_id: UUID) -> list[ExchangeMovementRow]:
     """GET /accounts/{id}/movements: the account's current movements, newest first, each
     with its symbol and, while proposed, its question and the kinds it may be answered as."""
@@ -1182,7 +1185,8 @@ def exchange_movements(conn: Connection, account_id: UUID) -> list[ExchangeMovem
     out = []
     for r in rows:
         kind, status = MovementKind(r.kind), MovementStatus(r.status)
-        values = {c.name: getattr(r, c.name) for c in movement_table.c}
+        # D261: a chain send's counterparty (HMAC, masked) is the linker's, never shown here
+        values = {c.name: getattr(r, c.name) for c in movement_table.c if c.name not in _UNSHOWN}
         out.append(
             ExchangeMovementRow(
                 **values,

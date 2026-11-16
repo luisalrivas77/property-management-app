@@ -966,6 +966,45 @@ def _unreadable_group(record: Mapping[str, JsonValue], address: str) -> SolanaGr
     )
 
 
+def recipient(
+    record: Mapping[str, JsonValue], address: str, key: AssetKey, units: int
+) -> str | None:
+    """D261: the one external address a plain send of `units` of `key` from `address` paid,
+    or None. SOL: the one account key other than `address` whose lamports grew, by exactly
+    `units`. A token: the one balance row of its mint not owned by `address` that grew, by
+    exactly `units`, named by its `owner` (the wallet the exchange gave as its deposit
+    address, not its token account); a row without an owner gives None."""
+    try:
+        meta = _obj(record["meta"])
+        keys = account_keys(record)
+        if key.contract is None:
+            pre = [int(cast(int, v)) for v in _list(meta["preBalances"])]
+            post = [int(cast(int, v)) for v in _list(meta["postBalances"])]
+            grew = [
+                (keys[i], post[i] - pre[i])
+                for i in range(min(len(keys), len(pre), len(post)))
+                if keys[i] != address and post[i] > pre[i]
+            ]
+            return grew[0][0] if len(grew) == 1 and grew[0][1] == units else None
+        amounts: dict[int, list] = {}
+        for name, at in (("preTokenBalances", 0), ("postTokenBalances", 1)):
+            for raw in _list(meta.get(name)):
+                row = _obj(raw)
+                if row.get("mint") != key.contract:
+                    continue
+                index = cast(int, row["accountIndex"])
+                seen = amounts.setdefault(index, [0, 0, None])
+                seen[at] = int(str(_obj(row["uiTokenAmount"])["amount"]))
+                if isinstance(row.get("owner"), str):
+                    seen[2] = row["owner"]
+        grew = [(o, b - a) for a, b, o in amounts.values() if b > a and o != address]
+    except (KeyError, TypeError, ValueError, IndexError):
+        return None
+    if len(grew) != 1 or grew[0][1] != units or not isinstance(grew[0][0], str):
+        return None
+    return grew[0][0]
+
+
 def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
     """The sync's Solana classifier, over the stored record (`tx.raw`) of the synced address.
 
@@ -1001,6 +1040,14 @@ def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
     if group.stake_account is not None and group.stake_account in ctx.own_addresses:
         question = None
     decimals = token_decimals(record)
+    value = [leg for leg in group.legs if leg.role != "fee" and leg.kind is not MovementKind.SPAM]
+    plain = (
+        group.kind is GroupKind.TRANSFER
+        and question is None
+        and len(value) == 1
+        and value[0].role == "out"
+        and value[0].kind is MovementKind.UNCATEGORIZED
+    )
     legs = [
         ChainLeg(
             asset_key=leg.asset_key,
@@ -1010,6 +1057,11 @@ def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
             index=leg.index,
             decimals=decimals.get(leg.asset_key.contract) if leg.asset_key.contract else None,
             spam=leg.kind is MovementKind.SPAM,
+            counterparty=(
+                recipient(record, ctx.address, leg.asset_key, leg.units)
+                if plain and leg.role == "out"
+                else None
+            ),
         )
         for leg in group.legs
     ]

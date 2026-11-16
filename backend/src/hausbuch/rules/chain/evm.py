@@ -680,6 +680,21 @@ def _told(tx: ChainTx) -> dict[str, tuple[str | None, int | None]]:
     return out
 
 
+def _recipient(group: EvmGroup, tx: ChainTx) -> tuple[str, str] | None:
+    """D261: (index, recipient) of a plain send's one out leg (a transfer with one
+    uncategorized out and no other value leg), the recipient as the record names it
+    (lower-case); None otherwise or when the record names none."""
+    if group.kind is not GroupKind.TRANSFER:
+        return None
+    value = [leg for leg in group.legs if leg.role != "fee" and leg.kind is not MovementKind.SPAM]
+    if len(value) != 1 or value[0].role != "out" or value[0].kind is not MovementKind.UNCATEGORIZED:
+        return None
+    found = [t.to_addr for t in tx.transfers if t.index == value[0].index]
+    if len(found) != 1 or not found[0]:
+        return None
+    return value[0].index, found[0].lower()
+
+
 def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
     """The family classifier of rules/chain/classify for one synced EVM address. None when
     the transaction moves nothing of it (no leg, not even a fee).
@@ -702,6 +717,7 @@ def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
     if not group.legs:
         return None
     told = _told(tx)
+    to = _recipient(group, tx)
     legs = []
     for leg in group.legs:
         symbol = decimals = None
@@ -718,6 +734,7 @@ def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
                 symbol=symbol,
                 decimals=decimals,
                 spam=leg.kind is MovementKind.SPAM,
+                counterparty=to[1] if to is not None and leg.index == to[0] else None,
             )
         )
     return ChainGroup(
