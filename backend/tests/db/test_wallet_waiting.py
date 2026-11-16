@@ -19,7 +19,7 @@ from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.net_worth import NetWorthTodoCode
 from hausbuch.services import holdings, net_worth
 from hausbuch.services.prices.overview import assets_overview
-from hausbuch.services.wallet_groups import waiting
+from hausbuch.services.wallet_groups import confirm_group, undo_group, waiting
 
 pytestmark = pytest.mark.db
 
@@ -203,3 +203,66 @@ def test_an_outgoing_transaction_is_worded_as_not_yet_taken_off(run, read, fresh
     figure = read(ws, net_worth.net_worth, ON)
     [todo] = [t for t in figure.todos if t.code is NetWorthTodoCode.WALLET_WAITING]
     assert todo.text == f"{line.text} Bis dahin ist das Nettovermögen um diese Abgänge zu hoch."
+
+
+def test_a_group_is_counted_on_one_side_only_through_confirm_and_undo(run, read, fresh_workspaces):
+    """Proposed → „Bestätigen“ → „Antwort zurücknehmen“: at every step the group's net sits
+    either in the overview (confirmed) or in the waiting line (proposed), never in both."""
+    ws, _ = fresh_workspaces
+    net = Decimal("2.499995")
+
+    def setup(ctx):
+        account = _account(ctx, AccountKind.WALLET, "Hin und zurück")
+        sol = _coin(ctx, "SOL", "Solana")
+        group = _group(
+            ctx,
+            account,
+            [(sol, "2.5", "internal_transfer_in"), (sol, "-0.000005", "fee")],
+        )
+        return account, sol, group
+
+    account, sol, group = run(ws, setup)
+
+    def sides() -> tuple[Decimal, Decimal]:
+        overview = read(ws, assets_overview, ON)
+        counted = sum(
+            (
+                p.units
+                for a in overview.accounts
+                if a.account_id == account
+                for p in a.positions
+                if p.asset_id == sol
+            ),
+            Decimal(0),
+        )
+        waits = sum(
+            (c.units for w in read(ws, waiting, ON) for c in w.coins if c.asset_id == sol),
+            Decimal(0),
+        )
+        return counted, waits
+
+    assert sides() == (Decimal(0), net)  # proposed: waiting only
+    confirmed = run(ws, confirm_group, group)
+    assert sides() == (net, Decimal(0))  # confirmed: counted only
+    run(ws, undo_group, confirmed)
+    assert sides() == (Decimal(0), net)  # undone: a card again, waiting only
+
+
+def test_legs_that_cancel_out_name_the_count_and_no_net_worth_todo(run, read, fresh_workspaces):
+    ws, _ = fresh_workspaces
+
+    def setup(ctx):
+        account = _account(ctx, AccountKind.WALLET, "Ausgleich")
+        sol = _coin(ctx, "SOL", "Solana")
+        _group(ctx, account, [(sol, "1", "internal_transfer_in")])
+        _group(ctx, account, [(sol, "-1", "internal_transfer_out")])
+
+    run(ws, setup)
+    [line] = read(ws, waiting, ON)
+    assert (line.groups, line.coins) == (2, [])
+    assert line.text == (
+        "Auf „Ausgleich“ warten 2 Transaktionen auf Ihre Bestätigung; zusammen ändern sie den "
+        "Bestand nicht."
+    )
+    figure = read(ws, net_worth.net_worth, ON)
+    assert not [t for t in figure.todos if t.code is NetWorthTodoCode.WALLET_WAITING]

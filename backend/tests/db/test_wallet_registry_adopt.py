@@ -6,6 +6,14 @@ the next sync (services/chain/sync.adopt_registry, 16 Nov 2026; docs/phases/phas
 import uuid
 
 import pytest
+from db.test_wallet_sync_solana import A as SOLANA_A
+from db.test_wallet_sync_solana import _record as solana_record
+from db.test_wallet_sync_solana import _sums as solana_sums
+from db.test_wallet_sync_solana import (  # noqa: F401  (fixtures: the fake chain, the wallet, the sync)
+    chain,
+    sync,
+    wallet,
+)
 from sqlalchemy import insert, select
 
 from hausbuch.db.tables import asset as asset_table
@@ -118,3 +126,73 @@ def test_a_listed_contract_with_other_decimals_is_left_alone(run, read, fresh_wo
     run(ws, adopt_registry, Chain.SOLANA)
     portal = read(ws, _rows)[PORTAL]
     assert portal.symbol is None and portal.priced_as_asset_id is None
+
+
+def _portal_and_sol(ctx) -> dict:
+    return {
+        "native": _chain_asset(ctx, contract=None, symbol="SOL", name="SOL (solana)", decimals=9),
+        "portal": _chain_asset(
+            ctx, contract=PORTAL, symbol=None, name="Token 7vfC…voxs", decimals=8
+        ),
+    }
+
+
+def _asset_events(conn, asset_id):
+    e = event_table.c
+    return conn.execute(
+        select(e.payload).where(e.type == "asset.updated", e.entity_id == asset_id)
+    ).all()
+
+
+def test_adopting_in_one_household_leaves_the_other_untouched(run, read, fresh_workspaces):
+    """The same contract and coin stored in both workspaces: adopting in one changes neither
+    the other's rows nor creates its off-chain coins (RLS, the ctx's workspace only)."""
+    ws, other = fresh_workspaces
+    run(ws, _portal_and_sol)
+    theirs = run(other, _portal_and_sol)
+    before = read(other, _rows)
+
+    assert run(ws, adopt_registry, Chain.SOLANA) == 2
+    assert read(ws, _rows)[PORTAL].symbol == "ETH"
+
+    after = read(other, _rows)
+    assert after == before
+    assert after[PORTAL].symbol is None and after[PORTAL].priced_as_asset_id is None
+    assert after["SOL@solana"].priced_as_asset_id is None
+    assert "ETH@off-chain" not in after and "SOL@off-chain" not in after
+    assert read(other, _asset_events, theirs["portal"]) == []
+
+
+def test_a_sync_adopts_a_stored_symbol_less_token(
+    dbname,
+    chain,  # noqa: F811
+    wallet,  # noqa: F811
+    sync,  # noqa: F811
+    run,
+    read,
+):
+    """One real Solana sync (the fake transport of test_wallet_sync_solana) over a Portal row
+    stored without a symbol: `_begin` adopts it before the run reads the chain."""
+    ws, account, a = wallet
+    portal_id = run(
+        ws,
+        lambda ctx: _chain_asset(
+            ctx, contract=PORTAL, symbol=None, name="Token 7vfC…voxs", decimals=8
+        ),
+    )
+    chain.add(solana_record("native_receive"))
+    sol, _ = solana_sums("native_receive")
+    chain.lamports[SOLANA_A] = sol
+    chain.tokens[SOLANA_A] = []
+
+    sync(ws, a)
+
+    rows = read(ws, _rows)
+    portal = rows[PORTAL]
+    assert (portal.symbol, portal.name) == ("ETH", "Ether (Portal)")
+    assert portal.priced_as_asset_id == rows["ETH@off-chain"].id
+    [event] = read(ws, _asset_events, portal_id)
+    assert event.payload["changes"]["symbol"] == {"old": None, "new": "ETH"}
+
+    sync(ws, a)  # a second run changes nothing more
+    assert len(read(ws, _asset_events, portal_id)) == 1
