@@ -596,14 +596,19 @@ def test_a_wallet_send_and_another_exchanges_withdrawal_fitting_one_deposit_link
     seed, run, read
 ):
     """Exchange B's withdrawal could be what exchange A credited as much as the wallet's send
-    to A's learned address: two fits, the card asks which."""
+    to A's learned address: two fits, so code links nothing. No transfer card names both
+    candidates: the send waits on its wallet's line, B's withdrawal on the card
+    `transfer.unmatched_leg`, and the deposit as its own proposed movement in Zu prüfen
+    („Eingang … ohne Kauf“), which a person answers."""
     seed.learn_deposit()
     seed.send("1")
+    withdrawal_b = uuid.uuid4()
     with _admin(seed.dbname) as conn:
         _insert(
             conn,
             "asset_movement",
             {
+                "id": withdrawal_b,
                 "workspace_id": seed.ws,
                 "account_id": seed.exchange_b,
                 "asset_id": seed.eth_plain,
@@ -619,10 +624,11 @@ def test_a_wallet_send_and_another_exchanges_withdrawal_fitting_one_deposit_link
     assert run(seed.ws, chain_transfers.relink).linked == 0
     assert _links(read, seed.ws) == []
     assert [r.ended_at for r in _learned_rows(read, seed.ws)] == [None]
-    # nothing waits silently: the send counts on its wallet's line in Zu prüfen, and the
-    # deposit stays a proposed movement with its own question on the exchange
+    # nothing waits silently
     assert read(seed.ws, wallet_groups.proposed_counts)[seed.wallet][0] >= 1
-    assert _live(read, seed.ws, deposit).status == "proposed"
+    assert [c.leg.id for c in _open(read, seed.ws)] == [withdrawal_b]
+    items = read(seed.ws, imports.exchange_inbox_items)
+    assert [i.movement_id for i in items if i.movement_id == deposit] == [deposit]
 
 
 # --- (3) a learned withdrawal pair -------------------------------------------------------------
