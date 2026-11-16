@@ -51,7 +51,10 @@ def movement(
     superseded: bool = False,
     status: MovementStatus = MovementStatus.CONFIRMED,
     index: str | None = None,
+    chain: bool = False,
 ) -> AssetMovement:
+    """A confirmed movement typed by a person, or read from a chain (`chain`: its own
+    address and an index, as a wallet sync writes it)."""
     return AssetMovement(
         id=uuid4(),
         workspace_id=WORKSPACE,
@@ -63,11 +66,12 @@ def movement(
         eur_amount=eur_amount,
         fee_eur=fee_eur,
         occurred_at=at,
-        source=MovementSource.USER,
+        source=MovementSource.CHAIN if chain else MovementSource.USER,
         status=status,
         superseded_by=uuid4() if superseded else None,
         group_id=group,
-        index=index,
+        index=index if index is not None or not chain else str(kind),
+        address_id=uuid4() if chain else None,
     )
 
 
@@ -131,8 +135,18 @@ def _ledger(case):
         account, asset = accounts(ev.account), assets(ev.asset or "X")
         fee = ev.fee_eur or None
         cost = None if ev.cost_eur is None else -ev.cost_eur
-        common = {"account": account, "asset": asset, "superseded": ev.superseded}
-        if ev.kind == "acquisition":
+        common = {
+            "account": account,
+            "asset": asset,
+            "superseded": ev.superseded,
+            "chain": ev.chain,
+        }
+        if ev.kind == "acquisition" and ev.chain:
+            # A chain swap's received leg has no EUR leg: its day's price row prices it.
+            m = movement(K.ACQUISITION, ev.units, ev.at, group=groups.get(ev.name), **common)
+            if ev.cost_eur is not None:
+                prices.append(price(asset, L.berlin_day(ev.at), str(ev.cost_eur / ev.units)))
+        elif ev.kind == "acquisition":
             m = movement(
                 K.ACQUISITION,
                 ev.units,
@@ -888,6 +902,47 @@ def test_a_fee_in_the_coin_bought_needs_no_price_and_the_eur_fee_leg_counts_once
     got = L.book(rows, [], [], DAY)
     assert next(lot for lot in got.lots if lot.asset_id == sol).cost_eur is None
     assert got.price_needs == {buy.id: [L.PriceNeed(asset_id=bnb, on=DAY)]}
+
+
+def test_an_exchange_coin_for_coin_trade_withholds_its_fee_in_the_coin_bought():
+    """Binance's coin-for-coin trade has no EUR leg: the lot is priced by the day's price of
+    the coin received, and the fee in that coin is still withheld from the units received
+    (the source decides, not the EUR leg), so it adds nothing."""
+    acct, sol, usdc, group = uuid4(), uuid4(), uuid4(), uuid4()
+    csv = {"source": MovementSource.CSV}
+    buy_usdc = movement(
+        K.ACQUISITION, "150", AT - timedelta(days=9), account=acct, asset=usdc, eur_amount=D("-138")
+    ).model_copy(update=csv)
+    given = movement(K.DISPOSAL, "-150", AT, account=acct, asset=usdc, group=group)
+    buy = movement(K.ACQUISITION, "1", AT, account=acct, asset=sol, group=group)
+    fee = movement(K.FEE, "-0.001", AT, account=acct, asset=sol, group=group)
+    rows = [buy_usdc, *(m.model_copy(update=csv) for m in (given, buy, fee))]
+    got = L.book(rows, [], [price(sol, DAY, "140.00")], DAY)
+    sol_lot = next(lot for lot in got.lots if lot.asset_id == sol)
+    assert (sol_lot.units_open, sol_lot.cost_eur) == (D("0.999"), D("139.86"))
+    assert [u.cost_eur for u in got.uses[fee.id]] == [D("0.14")]
+
+
+def test_chain_gas_in_the_coin_acquired_needs_its_day_price():
+    """Chain gas in the coin acquired is paid on top: without the coin's price of the day the
+    swap's lot is unpriced (never the given coin's value alone) and names that price."""
+    acct, eth, usdc, group = uuid4(), uuid4(), uuid4(), uuid4()
+    before = AT - timedelta(days=9)
+    buy_usdc = movement(
+        K.ACQUISITION, "3000", before, account=acct, asset=usdc, eur_amount=D("-2760")
+    )
+    given = movement(K.DISPOSAL, "-3000", AT, account=acct, asset=usdc, group=group, chain=True)
+    got_eth = movement(K.ACQUISITION, "1", AT, account=acct, asset=eth, group=group, chain=True)
+    gas = movement(K.FEE, "-0.01", AT, account=acct, asset=eth, group=group, chain=True)
+    rows = [buy_usdc, given, got_eth, gas]
+    got = L.book(rows, [], [price(usdc, DAY, "0.93")], DAY)
+    assert next(lot for lot in got.lots if lot.asset_id == eth).cost_eur is None
+    assert got.price_needs == {got_eth.id: [L.PriceNeed(asset_id=eth, on=DAY)]}
+    got = L.book(rows, [], [price(usdc, DAY, "0.93"), price(eth, DAY, "2800")], DAY)
+    lot = next(lot for lot in got.lots if lot.asset_id == eth)
+    # 2,800 + 0.01 × 2,800 for 1 ETH; the gas then takes 0.01 of it at cost (no older lot).
+    assert (lot.units_open, lot.cost_eur) == (D("0.99"), D("2799.72"))
+    assert [u.cost_eur for u in got.uses[gas.id]] == [D("28.28")]
 
 
 def test_an_ungrouped_acquisition_keeps_its_eur_leg_and_fee():

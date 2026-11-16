@@ -27,8 +27,9 @@ cache the first superseded movement makes wrong, D184 (5)):
 What creates a lot (D188 (1)): an `acquisition` (its EUR leg, else the day's price × units,
 else, in a swap group, the given legs' value (D188 (4)); plus its `fee_eur` and the group's
 `fee` movements in another coin valued on the day when the group creates exactly one lot; a
-fee in the coin acquired adds nothing, its value being inside the EUR paid, D188 amended
-16 Nov 2026); a
+fee in the coin acquired and withheld from the units received, as in an exchange trade,
+adds nothing, its value being inside the EUR paid, while chain gas in that coin is paid on
+top and joins the cost, D188 amended 16 Nov 2026); a
 `staking_reward`, `cashback_reward` or `airdrop` (its EUR leg, else the day's price × units);
 a linked transfer in (the moved lot keeps its day, cost per unit and source, D184 (4)). What
 consumes: a `disposal`, a `fee` (at cost), a linked or unlinked transfer out. Nothing:
@@ -93,6 +94,7 @@ from hausbuch.schemas.common import Money, Schema
 from hausbuch.schemas.household import (
     AssetMovement,
     MovementKind,
+    MovementSource,
     MovementStatus,
     NonNegativeQuantity,
     PricePoint,
@@ -384,13 +386,17 @@ def _acquisition_total(
     the group's fees paid in another coin valued on the day (only when the group creates this
     one lot). Both fee parts count; neither replaces the other.
 
-    A fee paid in the coin this movement acquires (Binance's default: „Buy 1 SOL“, „Fee
-    −0.001 SOL“) adds nothing here and needs no price: its value is already inside the EUR
-    paid (the trade's own euro price per unit, EUR paid ÷ units received), so the lot's cost
-    is the EUR paid (plus any other fee); the fee movement then takes its units FIFO at cost,
-    like every fee (D188 (1)). A fee movement that carries its own EUR amount while the
-    acquisition carries `fee_eur` is that same EUR fee (Binance's EUR fee leg, phase 6 D178
-    amended (3)) and is not counted twice.
+    A fee paid in the coin this movement acquires and withheld from the units received (an
+    exchange trade: Binance's default, „Buy 1 SOL“, „Fee −0.001 SOL“) adds nothing here and
+    needs no price: its value is already inside the EUR paid (the trade's own euro price per
+    unit, EUR paid ÷ units received), so the lot's cost is the EUR paid (plus any other fee).
+    Gas a chain transaction pays in that coin is paid on top of the units received (the fee
+    movement is read from a chain, D183 (2)), so its value on the day joins the cost like a
+    fee in another coin. Either way the fee movement then takes its units FIFO at cost, like
+    every fee (D188 (1)). The test is the fee movement's own source, never whether the trade
+    has a EUR leg (a coin-for-coin trade on an exchange has none and still withholds). A fee
+    movement that carries its own EUR amount while the acquisition carries `fee_eur` is that
+    same EUR fee (Binance's EUR fee leg, phase 6 D178 amended (3)) and is not counted twice.
 
     Any part unpriced → None, never 0 €, with the (asset, day) prices that would price it: a
     group that creates two lots cannot give each the whole given value."""
@@ -428,14 +434,25 @@ def _acquisition_total(
             g
             for g in group
             if g.kind is MovementKind.FEE
-            and g.asset_id != m.asset_id  # in the coin acquired: inside the EUR paid
+            and (g.asset_id != m.asset_id or _paid_on_top(g))
             and not (m.fee_eur is not None and g.eur_amount is not None)  # the fee_eur itself
         ]
         if coin_fees:
             needs += prices.missing(coin_fees, day)
             fee = prices.value(coin_fees, day)
             total = None if fee is None or total is None else total + fee
-    return (total, [] if total is not None else needs)
+    if total is not None:
+        return total, []
+    once: dict[tuple[UUID, date], PriceNeed] = {}
+    for need in needs:  # chain gas in the coin acquired needs that coin's price too
+        once.setdefault((need.asset_id, need.on), need)
+    return None, list(once.values())
+
+
+def _paid_on_top(fee: AssetMovement) -> bool:
+    """A fee in the coin acquired is paid on top of the units received when a chain
+    transaction paid it (gas, D183 (2)); an exchange withholds it from the units received."""
+    return fee.source is MovementSource.CHAIN
 
 
 def _reward_total(m: AssetMovement, prices: _Prices) -> tuple[Decimal | None, list[PriceNeed]]:

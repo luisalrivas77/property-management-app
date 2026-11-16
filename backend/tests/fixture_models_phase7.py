@@ -1026,6 +1026,11 @@ class LedgerEvent(Schema):
     # per unit on the day (None: no price, the trade's lot unpriced).
     trade: str | None = None
     price_eur: Decimal | None = Field(default=None, gt=0)
+    # D188 amended (review of step 6): read from a chain (D182). A chain acquisition has no
+    # EUR leg: its `cost_eur` is the day's price × units (a price row). A chain `trade_fee` in
+    # the coin acquired is gas paid on top of the units received: valued at that coin's price
+    # of the day (the acquisition's) and added to the lot, unlike an exchange's withheld fee.
+    chain: bool = False
 
     @model_validator(mode="after")
     def _trade_fee(self) -> Self:
@@ -1033,6 +1038,8 @@ class LedgerEvent(Schema):
             raise ValueError(f"{self.name}: a trade fee, and only one, names its trade")
         if self.price_eur is not None and self.kind != "trade_fee":
             raise ValueError(f"{self.name}: only a trade fee carries a price")
+        if self.chain and self.kind not in ("acquisition", "trade_fee", "disposal"):
+            raise ValueError(f"{self.name}: only a trade's legs are marked as read from a chain")
         return self
 
     @model_validator(mode="after")
@@ -1088,9 +1095,20 @@ class LotsCase(_Case):
             trade = by_name.get(ev.trade or "")
             if trade is None or trade.kind != "acquisition" or trade.account != ev.account:
                 raise ValueError(f"{self.id}: {ev.name} names no acquisition of its account")
+            if ev.chain != trade.chain:
+                raise ValueError(f"{self.id}: {ev.name} and its trade are read from one place")
             if ev.asset == trade.asset:
                 if ev.price_eur is not None:
-                    raise ValueError(f"{self.id}: {ev.name} in the coin bought needs no price")
+                    raise ValueError(f"{self.id}: {ev.name} in the coin bought has its price")
+                if not ev.chain:
+                    continue  # withheld from the units received: inside the EUR paid
+                # Chain gas paid on top: at the coin's price of the day (the trade's own).
+                before = coin_fees.get(trade.name, Decimal(0))
+                coin_fees[trade.name] = (
+                    None
+                    if before is None or trade.cost_eur is None
+                    else before + ev.units * trade.cost_eur / trade.units
+                )
                 continue
             before = coin_fees.get(trade.name, Decimal(0))
             coin_fees[trade.name] = (
