@@ -8258,7 +8258,7 @@ export interface components {
          *     other).
          * @enum {string}
          */
-        OpenTransferCode: "transfer.ambiguous" | "transfer.unmatched_leg" | "transfer.proposed";
+        OpenTransferCode: "transfer.ambiguous" | "transfer.unmatched_leg" | "transfer.proposed" | "transfer.partial";
         /**
          * OperatingCostsTerms
          * @description How a lease agrees the running costs (tenancy.operating_costs_terms, 0013; phase 3 D72).
