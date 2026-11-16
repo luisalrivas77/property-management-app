@@ -281,6 +281,13 @@ GROUP_UNKNOWN = "group.unknown"  # no rule reads the transaction (D183 (3f))
 GROUP_CONTRACT_CALL = "group.contract_call"  # a shape no rule reads (D183 (4))
 GROUP_UNPRICED = "group.unpriced"  # a leg without the day's price (D188 (4))
 GROUP_LP_UNDECIDED = "group.lp_undecided"  # a pool position, phase 8 decides (D183 (4))
+# The wallet cards (phase 7 wallet screens): the group is no open card any more (answered,
+# confirmed or superseded since the page was loaded); „Bestätigen“ on a group that needs an
+# answer (a question, a leg not yet categorised, a group without legs); an answer that does
+# not fit the group's legs (Bezahlung on a receipt, Spam on the chain's own coin).
+WALLET_GROUP_DONE = "wallet.group_done"
+WALLET_GROUP_NEEDS_ANSWER = "wallet.group_needs_answer"
+WALLET_ANSWER_UNFIT = "wallet.answer_unfit"
 # Phase 7 step 6 (D190): „Bestandsnachweis 31.12.<Jahr> erstellen“ before that day is over in
 # Berlin, or for a year in which no wallet or exchange account had a confirmed movement.
 HOLDINGS_EXPORT_YEAR_OPEN = "holdings_export.year_open"

@@ -60,6 +60,7 @@ from .routes import (
     tenancies,
     tenants,
     units,
+    wallet_cards,
     wallet_sync,
     wallets,
     workspace,
@@ -90,6 +91,7 @@ ROUTE_MODULES = (
     holdings,  # before wallets: GET /wallets/holdings, not /wallets/{account_id}
     wallet_sync,
     wallets,
+    wallet_cards,
     tax,
     tax_inputs,
     tax_exports,

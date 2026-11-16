@@ -97,6 +97,7 @@ import { ALLOCATION_CATEGORY, INBOX_ITEM_KIND } from "./labels";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
 import { reminderTodo } from "./todos";
 import { ActionDialog, Notice } from "./ui";
+import { ChangeAnswers } from "./wallet-cards";
 
 // Step 4's schemas have no alias in schemas.ts yet.
 export type InboxItem = components["schemas"]["InboxItem"];
@@ -120,6 +121,7 @@ const SECTIONS = [
   { key: "transfers", title: "Überweisungen zwischen eigenen Konten" },
   { key: "property_costs", title: "Immobilie, privat bezahlt" },
   { key: "exchanges", title: "Börsen" },
+  { key: "wallets", title: "Wallets" },
   { key: "other", title: "Weitere Punkte" },
 ] as const;
 
@@ -166,6 +168,13 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   exchange_movement: "exchanges",
   // Phase 6 D162 amended (7): a returned payment, beside the transfers it was shown as before.
   returned_payment: "transfers",
+  // Phase 7 wallet screens: a wallet's transactions, change and questions, and its reads.
+  wallet_groups: "wallets",
+  wallet_change: "wallets",
+  wallet_question: "wallets",
+  wallet_sync: "wallets",
+  wallet_unreconciled: "wallets",
+  wallet_coins_left: "wallets",
 };
 
 /** A line kind without a line id cannot open the panel: it is listed under Weitere Punkte,
@@ -207,6 +216,12 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   exchange_withdrawals: "badge badge-info",
   exchange_movement: "badge badge-info",
   returned_payment: "badge badge-info",
+  wallet_groups: "badge badge-info",
+  wallet_change: "badge badge-warn",
+  wallet_question: "badge badge-warn",
+  wallet_sync: "badge badge-danger",
+  wallet_unreconciled: "badge badge-danger",
+  wallet_coins_left: "badge badge-danger",
 };
 
 export interface InboxData {
@@ -848,6 +863,10 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
       </>
     );
   }
+  if (item.kind.startsWith("wallet_")) {
+    const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
+    return <strong>Wallet{account ? ` · ${account.label}` : ""}</strong>;
+  }
   if (item.kind === "holdings_mismatch") {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
     return <strong>Depotbestand{account ? ` · ${account.label}` : ""}</strong>;
@@ -1114,6 +1133,20 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       if (movement) return <MovementAnswers movement={movement} onDone={onChanged} />;
       return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zum Börsenkonto</Link> : null;
     }
+    case "wallet_change":
+      return (
+        <>
+          {item.group_id ? <ChangeAnswers groupId={item.group_id} onDone={onChanged} /> : null}
+          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zur Wallet</Link> : null}
+        </>
+      );
+    case "wallet_groups":
+      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Auf der Wallet beantworten</Link> : null;
+    case "wallet_question":
+    case "wallet_sync":
+    case "wallet_unreconciled":
+    case "wallet_coins_left":
+      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zur Wallet</Link> : null;
     case "holdings_mismatch":
       return (
         <>

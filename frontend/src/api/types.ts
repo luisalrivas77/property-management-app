@@ -2083,7 +2083,7 @@ export interface paths {
         /**
          * Inbox List
          * @description Plus, from 1 January, last year's open Jahresfragen (phase 4b D110), and the email-in
-         *     cards (phase 5 §5.4).
+         *     cards (phase 5 §5.4), and the wallet cards (phase 7; `settings` sees a missing key).
          */
         get: operations["inbox_list_api_inbox_get"];
         put?: never;
@@ -2686,6 +2686,248 @@ export interface paths {
         get: operations["wallet_address_plain_api_wallets__account_id__addresses__address_id__plain_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet State
+         * @description 404 for an account that is no wallet of this workspace.
+         */
+        get: operations["wallet_state_api_wallets__account_id__state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet Groups List
+         * @description The open groups, those asking a question first, then the newest (at most 200).
+         */
+        get: operations["wallet_groups_list_api_wallets__account_id__groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Group Confirm
+         * @description 422 wallet.group_needs_answer for a group that needs an answer, wallet.group_done for
+         *     one no longer open.
+         */
+        post: operations["wallet_group_confirm_api_groups__group_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Group Answer
+         * @description The group that now stands for the transaction. 422 wallet.answer_unfit when the
+         *     answer does not fit its legs.
+         */
+        post: operations["wallet_group_answer_api_groups__group_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/answered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet Answered Groups
+         * @description The groups a person answered or confirmed, newest first (at most 50); no spam group.
+         */
+        get: operations["wallet_answered_groups_api_wallets__account_id__answered_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Group Undo
+         * @description „Antwort zurücknehmen“: the new proposed group with the sync's classification. 422
+         *     wallet.answer_unfit for a group no person answered, a spam group or one a transfer link
+         *     touches; wallet.group_done for one no longer live.
+         */
+        post: operations["wallet_group_undo_api_groups__group_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet Change Card
+         * @description 422 wallet.change_answered when it is no open change card.
+         */
+        get: operations["wallet_change_card_api_groups__group_id__change_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/change/payee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Change Payee
+         * @description „Nein, Empfänger“: the output is a payee; the card gives way to the group derived.
+         */
+        post: operations["wallet_change_payee_api_groups__group_id__change_payee_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/groups/{group_id}/change/own": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Change Own
+         * @description „Ja, eigene Adresse“: the output's address is registered on the wallet as a change
+         *     address; the card gives way to the group derived.
+         */
+        post: operations["wallet_change_own_api_groups__group_id__change_own_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/hidden-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Wallet Hidden Tokens */
+        get: operations["wallet_hidden_tokens_api_wallets__account_id__hidden_tokens_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets/{asset_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Token Promote
+         * @description „Kein Spam“: `groups` is the number of groups now waiting as a card.
+         */
+        post: operations["wallet_token_promote_api_assets__asset_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets/{asset_id}/demote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wallet Token Demote
+         * @description „Als Spam verbergen“: `groups` is the number of groups changed.
+         */
+        post: operations["wallet_token_demote_api_assets__asset_id__demote_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4922,6 +5164,45 @@ export interface components {
          */
         Chain: "bitcoin" | "ethereum" | "arbitrum" | "bsc" | "solana";
         /**
+         * ChangeAnswerBody
+         * @description POST /groups/{gid}/change/payee and /change/own: the output answered.
+         */
+        ChangeAnswerBody: {
+            /** Vout */
+            vout: number;
+        };
+        /**
+         * ChangeCandidateOut
+         * @description One output a change card asks about: its vout, masked address and amount in BTC.
+         */
+        ChangeCandidateOut: {
+            /** Vout */
+            vout: number;
+            /** Address Masked */
+            address_masked: string;
+            /** Amount Btc */
+            amount_btc: string;
+        };
+        /**
+         * ChangeCard
+         * @description GET /groups/{gid}/change: the outputs the card asks about, read again from the stored
+         *     original (D182 (3)); `original_missing` when no stored original holds the spend.
+         */
+        ChangeCard: {
+            /**
+             * Group Id
+             * Format: uuid
+             */
+            group_id: string;
+            /** Candidates */
+            candidates?: components["schemas"]["ChangeCandidateOut"][];
+            /**
+             * Original Missing
+             * @default false
+             */
+            original_missing: boolean;
+        };
+        /**
          * ChecklistBankLine
          * @description A confirmed allocation as a checklist item cites it (D142): no counterparty, no purpose
          *     text (D5); the frontend labels it by date and amount and opens its bank line.
@@ -6983,6 +7264,18 @@ export interface components {
             /** @description Notiz, typed by hand */
             notes?: components["schemas"]["ExtractedValue"];
         };
+        /**
+         * GroupKind
+         * @description movement_group.kind (D183 (2)): the thirteen shapes a transaction is classified as.
+         * @enum {string}
+         */
+        GroupKind: "transfer" | "exchange_transfer" | "swap" | "wrap" | "bridge" | "stake" | "reward" | "airdrop" | "lp" | "contract_call" | "failed" | "spam" | "unknown";
+        /**
+         * GroupStatus
+         * @description movement_group.status: proposed -> confirmed only (the trigger group_forward).
+         * @enum {string}
+         */
+        GroupStatus: "proposed" | "confirmed";
         /** GrundsteuerInstalment */
         GrundsteuerInstalment: {
             /**
@@ -7101,6 +7394,25 @@ export interface components {
             ruecklage_contribution?: components["schemas"]["ExtractedValue"];
             /** @description Entnahme aus der Rücklage */
             ruecklage_spent?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * HiddenToken
+         * @description GET /wallets/{id}/hidden-tokens (D187 (3)): a token held as spam, by its asset's name
+         *     (the masked contract with the symbol the chain tells), never priced.
+         */
+        HiddenToken: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            chain: components["schemas"]["Chain"];
+            /** Name */
+            name: string;
+            /** Units */
+            units: string;
+            /** Groups */
+            groups: number;
         };
         /** HoldingBalance */
         HoldingBalance: {
@@ -7460,13 +7772,15 @@ export interface components {
             bulk_confirmable: boolean;
             /** Report Trades */
             report_trades?: number | null;
+            /** Group Id */
+            group_id?: string | null;
         };
         /**
          * InboxItemKind
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment" | "wallet_groups" | "wallet_change" | "wallet_question" | "wallet_sync" | "wallet_unreconciled" | "wallet_coins_left";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).
@@ -10921,6 +11235,22 @@ export interface components {
              */
             unvalued_positions: number;
         };
+        /**
+         * SpamVerdict
+         * @description POST /assets/{id}/promote and /demote: the token's verdict now and the number of
+         *     groups the flip changed (D187 (3)).
+         */
+        SpamVerdict: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Spam */
+            spam: boolean;
+            /** Groups */
+            groups: number;
+        };
         /** SpecialExpenseFact */
         SpecialExpenseFact: {
             /**
@@ -12695,6 +13025,206 @@ export interface components {
             address: string;
         };
         /**
+         * WalletAddressState
+         * @description One address's state on the wallet page, from its last finished `wallet_sync` row and
+         *     its chain's source as configured now (services/wallet_cards.address_statuses).
+         * @enum {string}
+         */
+        WalletAddressState: "retired" | "key_missing" | "source_unavailable" | "not_synced" | "failed" | "throttled" | "refused" | "deferred" | "reconciled" | "waiting" | "pending" | "unreconciled" | "coins_left";
+        /**
+         * WalletAddressStatus
+         * @description An address's state in plain German (`text`) with what to do (`todo`), and the
+         *     Scaleway container variable to set or check (`setting`) when the cure is one.
+         */
+        WalletAddressStatus: {
+            /**
+             * Address Id
+             * Format: uuid
+             */
+            address_id: string;
+            chain: components["schemas"]["Chain"];
+            /** Address Masked */
+            address_masked: string;
+            state: components["schemas"]["WalletAddressState"];
+            /** Text */
+            text: string;
+            /** Todo */
+            todo?: string | null;
+            /** Setting */
+            setting?: string | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Block */
+            block?: number | null;
+            /** Movements New */
+            movements_new?: number | null;
+        };
+        /**
+         * WalletAnswer
+         * @description A person's answer to a proposed group (D183 (5)), built for groups whose legs all go
+         *     one way: „Bezahlung“ (out: a disposal), „Geschenk oder Zahlung erhalten“ (in: an
+         *     acquisition at a typed cost, 0 when 0 is typed, unknown (NULL, D188) when none is),
+         *     „Belohnung“ (in: a staking reward) and „Spam“ (in, tokens the registry does not list and
+         *     the household does not hold only: hidden from then on, D187). „Tausch“ and
+         *     „Übertrag an eigene Wallet/Börse“ need the legs picked and a transfer link (step 5).
+         * @enum {string}
+         */
+        WalletAnswer: "payment" | "gift" | "reward" | "spam";
+        /**
+         * WalletAnsweredGroup
+         * @description GET /wallets/{id}/answered: a live group a person answered or confirmed, its legs in
+         *     plain words. `undoable`: „Antwort zurücknehmen“ applies (no transfer link touches its
+         *     legs); it re-proposes the transaction as the sync first classified it.
+         */
+        WalletAnsweredGroup: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            chain: components["schemas"]["Chain"];
+            kind: components["schemas"]["GroupKind"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Text */
+            text: string;
+            /** Legs */
+            legs?: components["schemas"]["WalletLeg"][];
+            /**
+             * Undoable
+             * @default false
+             */
+            undoable: boolean;
+        };
+        /**
+         * WalletCardKind
+         * @description What a live proposed movement group asks of a person.
+         * @enum {string}
+         */
+        WalletCardKind: "proposed" | "change" | "unreadable" | "question" | "unstorable";
+        /**
+         * WalletGroup
+         * @description GET /wallets/{id}/groups: one card per open group (D183 (1)): live and proposed, or
+         *     holding a live proposed leg (a leg a later sync added to an answered group). `text`,
+         *     `confirmable` and `answers` are about its proposed legs: „Bestätigen“ keeps them as they
+         *     stand (no question, no leg left uncategorized); `answers` are the corrections that fit
+         *     them. `legs` lists every live leg, each with its status.
+         */
+        WalletGroup: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            chain: components["schemas"]["Chain"];
+            kind: components["schemas"]["GroupKind"];
+            status: components["schemas"]["GroupStatus"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            card: components["schemas"]["WalletCardKind"];
+            /** Question */
+            question?: string | null;
+            /** Text */
+            text: string;
+            /** Legs */
+            legs?: components["schemas"]["WalletLeg"][];
+            /**
+             * Confirmable
+             * @default false
+             */
+            confirmable: boolean;
+            /** Answers */
+            answers?: components["schemas"]["WalletAnswer"][];
+        };
+        /**
+         * WalletGroupAnswerBody
+         * @description POST /groups/{gid}/answer. `cost_eur` only with `gift` and one leg: the acquisition's
+         *     cost; a gift is typed as 0. Without it the cost stays unknown (NULL): the lots price it by
+         *     the day or show „Kurs fehlt“ (D183 (5), D188).
+         */
+        WalletGroupAnswerBody: {
+            answer: components["schemas"]["WalletAnswer"];
+            /** Cost Eur */
+            cost_eur?: string | null;
+        };
+        /**
+         * WalletGroupDone
+         * @description The group that now stands for the transaction (the same id after „Bestätigen“).
+         */
+        WalletGroupDone: {
+            /**
+             * Group Id
+             * Format: uuid
+             */
+            group_id: string;
+        };
+        /**
+         * WalletHolding
+         * @description One asset's balance on the chain at the last read beside what Hausbuch books for it
+         *     (D186 (2)). `address_id` is None when the chain reconciles the wallet's addresses
+         *     together (Bitcoin). `booked_units` is the chain's balance less the stored difference,
+         *     None while the run waits for an answer (the difference is then not stored).
+         */
+        WalletHolding: {
+            chain: components["schemas"]["Chain"];
+            /** Address Id */
+            address_id?: string | null;
+            /** Address Masked */
+            address_masked?: string | null;
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Symbol */
+            symbol: string;
+            /** Chain Units */
+            chain_units: string;
+            /** Booked Units */
+            booked_units?: string | null;
+            state: components["schemas"]["WalletAddressState"];
+            /** At Block */
+            at_block?: number | null;
+            /** Read At */
+            read_at?: string | null;
+        };
+        /** WalletLeg */
+        WalletLeg: {
+            /**
+             * Movement Id
+             * Format: uuid
+             */
+            movement_id: string;
+            /** Address Masked */
+            address_masked?: string | null;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol: string;
+            kind: components["schemas"]["MovementKind"];
+            status: components["schemas"]["MovementStatus"];
+            /** Quantity */
+            quantity: string;
+        };
+        /**
          * WalletPage
          * @description GET /wallets/{id}: the wallet account with its owner shares, its addresses (masked,
          *     active first, then by chain and the order added, each with its last finished sync), and
@@ -12709,6 +13239,27 @@ export interface components {
             balances?: components["schemas"]["AssetBalance"][];
             /** Syncs */
             syncs?: components["schemas"]["WalletSyncSummary"][];
+        };
+        /**
+         * WalletState
+         * @description GET /wallets/{id}/state: each address's state, the holdings per asset at the last
+         *     read, and the live proposed groups of the wallet (those with a question among them).
+         */
+        WalletState: {
+            /** Statuses */
+            statuses?: components["schemas"]["WalletAddressStatus"][];
+            /** Holdings */
+            holdings?: components["schemas"]["WalletHolding"][];
+            /**
+             * Open Groups
+             * @default 0
+             */
+            open_groups: number;
+            /**
+             * Open Questions
+             * @default 0
+             */
+            open_questions: number;
         };
         /**
          * WalletSyncQueued
@@ -18374,6 +18925,390 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WalletAddressPlain"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_state_api_wallets__account_id__state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletState"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_groups_list_api_wallets__account_id__groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroup"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_group_confirm_api_groups__group_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroupDone"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_group_answer_api_groups__group_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WalletGroupAnswerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroupDone"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_answered_groups_api_wallets__account_id__answered_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletAnsweredGroup"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_group_undo_api_groups__group_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroupDone"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_change_card_api_groups__group_id__change_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeCard"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_change_payee_api_groups__group_id__change_payee_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeAnswerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroupDone"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_change_own_api_groups__group_id__change_own_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeAnswerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletGroupDone"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_hidden_tokens_api_wallets__account_id__hidden_tokens_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HiddenToken"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_token_promote_api_assets__asset_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpamVerdict"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_token_demote_api_assets__asset_id__demote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpamVerdict"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

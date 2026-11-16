@@ -903,6 +903,13 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   exchange_movement: "Eingang prüfen",
   // phase 6 D162 amended (7): a returned payment and the debit it brings back
   returned_payment: "Rücküberweisung erkannt",
+  // phase 7 wallet screens (D183, D185, D186)
+  wallet_groups: "Transaktionen prüfen",
+  wallet_change: "Wechselgeld?",
+  wallet_question: "Transaktion prüfen",
+  wallet_sync: "Abruf",
+  wallet_unreconciled: "Saldo weicht ab",
+  wallet_coins_left: "Coins abgegangen",
 };
 
 /** asset_movement.kind (phase 6 D165, D166): what a coin or fund movement was, in plain words. */

@@ -85,6 +85,7 @@ from hausbuch.schemas.enums import (
     ImportStatus,
     ProposalStatus,
 )
+from hausbuch.settings import Settings
 
 from . import allocations, matching, rules_learned, transfers, workspace_settings
 from .context import CommandContext
@@ -701,7 +702,10 @@ _PROPOSED_QUESTION = "Stimmt diese Zuordnung?"
 
 
 def inbox(
-    conn: Connection, today: date | None = None, now: datetime | None = None
+    conn: Connection,
+    today: date | None = None,
+    now: datetime | None = None,
+    settings: Settings | None = None,
 ) -> list[InboxItem]:
     """Every item of §8.3, newest first. Texts quote no bank line, name or IBAN. Also the
     phase 6 D161 cards of private lines paying property costs, and a depot whose latest
@@ -747,6 +751,10 @@ def inbox(
             ("bank_sync", lambda: bank_sync_items(conn)),
             ("prices", lambda: price_inbox_items(conn, now)),
         ]
+    if now is not None and settings is not None:
+        from .wallet_cards import wallet_inbox_items  # phase 7 wallet screens
+
+        sections.append(("wallets", lambda: wallet_inbox_items(conn, settings, now)))
     items: list[InboxItem] = []
     section_ms: dict[str, float] = {}
     section_items: dict[str, int] = {}

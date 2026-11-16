@@ -13,20 +13,23 @@
 // (the statement's Neuer Saldo, negative when owed, shown as a positive amount „offen“).
 // A wallet (phase 7 step 1, §14) is listed under Krypto after the exchanges, with its
 // provider, its chains as pills and „N Chains · M Adressen“ (active addresses only); its Quelle
-// and Stand read „noch nicht abgerufen“ until step 2 reads the chains.
+// reads „Chain-Abruf“ and its Stand the wallet page's verdicts (GET /wallets/{id}/state, one
+// badge per distinct state of its active addresses) and when it was last read.
 import Link from "next/link";
 
 import { api, ok } from "@/api/client";
-import type { Account, Loan, LoanSchedule, Owner, StatementImport, WalletAddress } from "@/api/schemas";
+import type { Account, Loan, LoanSchedule, Owner, StatementImport, WalletAddress, WalletState } from "@/api/schemas";
 import { ImportStatusPill, ownerChip } from "@/components/accounts";
-import { formatDate, formatMoney, todayIso } from "@/components/format";
+import { formatDate, formatDateTime, formatMoney, todayIso } from "@/components/format";
 import { CHAIN } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { walletChains, walletSummary } from "@/components/wallet";
+import { STATE_BADGE } from "@/components/wallet-cards";
 
-/** `addresses` is set on a wallet's row only (its masked addresses, from GET /wallets/{id}). */
-type Row = { account: Account; imports: StatementImport[]; addresses: WalletAddress[] | null };
+/** `addresses` and `state` are set on a wallet's row only (its masked addresses from GET
+ * /wallets/{id}, each address's verdict from GET /wallets/{id}/state). */
+type Row = { account: Account; imports: StatementImport[]; addresses: WalletAddress[] | null; state: WalletState | null };
 type LoanRow = { loan: Loan; schedule: LoanSchedule };
 
 const GROUPS: { label: string; kinds: Account["kind"][] }[] = [
@@ -38,11 +41,15 @@ const GROUPS: { label: string; kinds: Account["kind"][] }[] = [
 /** A wallet has no statement imports: its row reads its addresses instead. */
 async function loadRow(account: Account): Promise<Row> {
   if (account.kind === "wallet") {
-    const page = await ok(api.GET("/api/wallets/{account_id}", { params: { path: { account_id: account.id } } }));
-    return { account, imports: [], addresses: page.addresses };
+    const params = { params: { path: { account_id: account.id } } };
+    const [page, state] = await Promise.all([
+      ok(api.GET("/api/wallets/{account_id}", params)),
+      ok(api.GET("/api/wallets/{account_id}/state", params)),
+    ]);
+    return { account, imports: [], addresses: page.addresses, state };
   }
   const imports = await ok(api.GET("/api/accounts/{account_id}/imports", { params: { path: { account_id: account.id } } }));
-  return { account, imports, addresses: null };
+  return { account, imports, addresses: null, state: null };
 }
 
 async function loadAccounts() {
@@ -123,9 +130,9 @@ function AccountGroup({ label, rows, owners }: { label: string; rows: Row[]; own
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ account, imports, addresses }) =>
-              addresses !== null ? (
-                <WalletRow key={account.id} account={account} addresses={addresses} owners={owners} />
+            {rows.map(({ account, imports, addresses, state }) =>
+              addresses !== null && state !== null ? (
+                <WalletRow key={account.id} account={account} addresses={addresses} state={state} owners={owners} />
               ) : (
               <tr key={account.id}>
                 <td>
@@ -169,9 +176,25 @@ function AccountGroup({ label, rows, owners }: { label: string; rows: Row[]; own
 }
 
 /** One wallet: its provider, its chains as pills and how many active addresses it reads. No
- * address is shown here, not even masked. Quelle and Stand stay „noch nicht abgerufen“ until
- * step 2 syncs the chains. */
-function WalletRow({ account, addresses, owners }: { account: Account; addresses: WalletAddress[]; owners: Owner[] }) {
+ * address is shown here, not even masked. Stand shows the wallet page's verdict per active
+ * address (one badge per distinct state, in the state endpoint's order, so „stimmt“ beside
+ * „Schlüssel fehlt“ says some read and some cannot) and the newest finished run's time; the
+ * wallet page says per address what to do. */
+function WalletRow({
+  account,
+  addresses,
+  state,
+  owners,
+}: {
+  account: Account;
+  addresses: WalletAddress[];
+  state: WalletState;
+  owners: Owner[];
+}) {
+  const active = (state.statuses ?? []).filter((status) => status.state !== "retired");
+  const states = [...new Set(active.map((status) => status.state))];
+  const finished = active.map((status) => status.finished_at).filter((at): at is string => !!at);
+  const lastRead = finished.length > 0 ? finished.reduce((a, b) => (new Date(a) > new Date(b) ? a : b)) : null;
   return (
     <tr>
       <td>
@@ -189,9 +212,7 @@ function WalletRow({ account, addresses, owners }: { account: Account; addresses
           </p>
         ) : null}
       </td>
-      <td>
-        <span className="muted">noch nicht abgerufen</span>
-      </td>
+      <td>{active.length > 0 ? "Chain-Abruf" : "–"}</td>
       <td>
         {account.ownership_missing ? (
           <Link href={`/accounts/${account.id}`}>Eigentümer festlegen</Link>
@@ -200,7 +221,21 @@ function WalletRow({ account, addresses, owners }: { account: Account; addresses
         )}
       </td>
       <td className="num">
-        <span className="muted">noch nicht abgerufen</span>
+        {states.length === 0 ? (
+          "–"
+        ) : (
+          <>
+            <Link href={`/accounts/${account.id}`}>
+              {states.map((value, index) => (
+                <span key={value}>
+                  {index > 0 ? " " : null}
+                  <span className={STATE_BADGE[value].className}>{STATE_BADGE[value].label}</span>
+                </span>
+              ))}
+            </Link>
+            {lastRead ? <p className="cell-detail">letzter Abruf {formatDateTime(lastRead)}</p> : null}
+          </>
+        )}
       </td>
       <td>–</td>
     </tr>
