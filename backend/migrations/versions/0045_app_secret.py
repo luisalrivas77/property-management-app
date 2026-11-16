@@ -4,14 +4,16 @@ Luis, 16 Nov 2026: „I want to be able to add the secrets in the app not throug
 Like the api keys etc...“
 
 - `app_secret`: one row per workspace and allowlisted name (the CHECK below: the Anthropic API
-  key, the Etherscan key, the Solana and BNB Smart Chain RPC URLs, the Helius key and the
-  CoinGecko key; never the database URL, the session key, the IBAN key, the owner URL, the
-  FinTS product id or the mail credentials), holding the value as AES-256-GCM ciphertext
+  key, the Etherscan key, the Solana and BNB Smart Chain RPC URLs, the Helius key, the
+  CoinGecko key, the FinTS product id, the Scaleway TEM key, project and sender, and the Gmail
+  inbox's user, app password, address and label; never the database URL, the session key, the
+  IBAN key or the owner URL), holding the value as AES-256-GCM ciphertext
   with its 96-bit nonce and the key version (1: HKDF-SHA256 from the session key, info
   `hausbuch/app-secret/v1`; the key exists only in the API container, never here). The AAD
   (workspace id and name) is not stored: it is rebuilt from the row's own columns, so a
-  ciphertext copied to another row or workspace does not decrypt. A value is printable ASCII
-  of at most 512 characters, so the ciphertext is at most 512 + 16 bytes. A secret, not
+  ciphertext copied to another row or workspace does not decrypt. A value is at most 512
+  bytes (UTF-8), so the ciphertext is at most 512 + 16 bytes; the names that are not secret
+  (TEM project, sender, inbox user, address and label) are encrypted the same way. A secret, not
   history (as D196's bank_credential): setting it again UPDATEs the row and „Löschen“ DELETEs
   it; the event log records the act without any value (workspace.app_secret_set and
   workspace.app_secret_deleted). The app role gets SELECT, INSERT, UPDATE and DELETE.
@@ -46,10 +48,18 @@ CREATE TABLE app_secret (
                          'solana_rpc_url',
                          'bsc_rpc_url',
                          'helius_key',
-                         'coingecko_key'
+                         'coingecko_key',
+                         'fints_product_id',
+                         'tem_secret_key',
+                         'tem_project_id',
+                         'mail_from',
+                         'inbox_imap_user',
+                         'inbox_imap_password',
+                         'inbox_address',
+                         'inbox_label'
                      )),
     nonce            bytea NOT NULL CHECK (octet_length(nonce) = 12),
-    -- AES-GCM: the value's bytes (1 to 512 printable ASCII characters) plus the 16-byte tag.
+    -- AES-GCM: the value's bytes (1 to 512, UTF-8) plus the 16-byte tag.
     ciphertext       bytea NOT NULL CHECK (octet_length(ciphertext) BETWEEN 17 AND 528),
     key_version      smallint NOT NULL CHECK (key_version >= 1),
     set_by           uuid,  -- the person who typed it (no FK, as bank_credential.set_by)
@@ -59,7 +69,7 @@ CREATE TABLE app_secret (
     UNIQUE (workspace_id, name)
 );
 COMMENT ON TABLE app_secret IS
-    'D260: a provider key or URL typed in the app, AES-256-GCM under a key derived from the '
+    'D260: a provider key, URL or service setting typed in the app, AES-256-GCM under a key derived from the '
     'session key (never stored here); AAD = workspace id + name. Replaced in place and '
     'deleted by a person: a secret, not history.';
 

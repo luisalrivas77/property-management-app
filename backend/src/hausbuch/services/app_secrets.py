@@ -1,9 +1,12 @@
-"""Provider keys and URLs typed into the app, stored encrypted (docs/phases/phase-6.md D260).
+"""Provider keys, URLs and service settings typed into the app, stored encrypted
+(docs/phases/phase-6.md D260).
 
-The rule (D196's, for a closed allowlist of third-party keys, schemas.app_secrets): a value is
-kept either as a container variable or encrypted in `app_secret` under a key that exists only
-in the API container. It is never shown, logged, put into an event, a job payload or a read
-model, nor returned by any endpoint; a reader gets where it comes from, never what it is.
+The rule (D196's, for a closed allowlist, SPECS below): a value is kept either as a container
+variable or encrypted in `app_secret` under a key that exists only in the API container. A
+secret is never shown, logged, put into an event, a job payload or a read model, nor returned
+by any endpoint; a reader gets where it comes from, never what it is. The few names that are
+not secret (the TEM project and sender, the inbox's user, address and label) are encrypted
+the same way and returned on the card only.
 
 Keys: HKDF-SHA256 over the session key (Settings.session_key), no salt, info
 `hausbuch/app-secret/v1` (bank_credentials.derive_key, unchanged). Cipher: AES-256-GCM with a
@@ -23,9 +26,10 @@ event (workspace.app_secret_set, workspace.app_secret_deleted) naming the name a
 """
 
 import dataclasses
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import SecretStr
@@ -34,9 +38,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from hausbuch.db.tables import app_secret as secret_table
 from hausbuch.rules import errors as E
+from hausbuch.rules.bank_sync import product_id_usable
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.app_secrets import (
-    AppSecretKind,
+    AppSecretGroup,
     AppSecretName,
     AppSecretSource,
     AppSecretState,
@@ -58,7 +63,7 @@ N = AppSecretName
 
 INFO = b"hausbuch/app-secret/v1"
 KEY_VERSION = 1
-MAX_LENGTH = 512  # characters, printable ASCII: the ciphertext CHECK's 528 bytes with the tag
+MAX_BYTES = 512  # UTF-8: the ciphertext CHECK's 528 bytes with the 16-byte tag
 
 # A URL's public default (settings.py): the container's value when no variable is set, so
 # it reads as „nicht gesetzt“, the public endpoint in use.
@@ -69,31 +74,120 @@ SECRET_STR_FIELDS = frozenset(
     {N.ETHERSCAN_KEY, N.SOLANA_RPC_URL, N.BSC_RPC_URL, N.HELIUS_KEY, N.COINGECKO_KEY}
 )
 
-# (label, what Hausbuch uses it for), in the card's order.
-TEXTS: dict[AppSecretName, tuple[str, str]] = {
-    N.ANTHROPIC_API_KEY: (
-        "Anthropic (Claude)",
-        "Liest hochgeladene Dokumente und schlägt Kategorien für Umsätze vor (KI).",
+
+def _token(value: str) -> bool:
+    """A key, an id or a mail address: printable ASCII without a blank."""
+    return all("!" <= c <= "~" for c in value)
+
+
+def _text(value: str) -> bool:
+    """A label or a password: no control character (a blank and an umlaut are fine)."""
+    return all(c.isprintable() for c in value)
+
+
+def _mail(value: str) -> bool:
+    local, at, domain = value.rpartition("@")
+    return _token(value) and bool(at and local and "." in domain.strip("."))
+
+
+def _uuid(value: str) -> bool:
+    try:
+        UUID(value)
+    except ValueError:
+        return False
+    return True
+
+
+@dataclass(frozen=True)
+class Spec:
+    group: AppSecretGroup
+    label: str
+    purpose: str  # what Hausbuch uses it for, one plain German line
+    check: Callable[[str], bool] = _token
+
+
+G = AppSecretGroup
+# The allowlist as one table, in the card's order (the enum's).
+SPECS: dict[AppSecretName, Spec] = {
+    N.ANTHROPIC_API_KEY: Spec(
+        G.AI,
+        "Anthropic-API-Schlüssel (Claude)",
+        "Liest hochgeladene Dokumente und schlägt Kategorien für Umsätze vor.",
     ),
-    N.ETHERSCAN_KEY: ("Etherscan", "Liest Ethereum- und Arbitrum-Adressen."),
-    N.SOLANA_RPC_URL: (
+    N.ETHERSCAN_KEY: Spec(G.CHAINS, "Etherscan", "Liest Ethereum- und Arbitrum-Adressen."),
+    N.SOLANA_RPC_URL: Spec(
+        G.CHAINS,
         "Solana-RPC-Adresse",
         "Liest Solana-Adressen. Ohne Eintrag nutzt Hausbuch den öffentlichen Zugang.",
+        _is_http_url,
     ),
-    N.BSC_RPC_URL: (
+    N.BSC_RPC_URL: Spec(
+        G.CHAINS,
         "BNB-Smart-Chain-RPC-Adresse",
         "Liest Kontostände auf BNB Smart Chain. Ohne Eintrag nutzt Hausbuch den öffentlichen "
         "Zugang.",
+        _is_http_url,
     ),
-    N.HELIUS_KEY: (
+    N.HELIUS_KEY: Spec(
+        G.CHAINS,
         "Helius",
         "Kurze Beschreibungen von Solana-Transaktionen; wird zurzeit noch nicht genutzt.",
     ),
-    N.COINGECKO_KEY: (
+    N.COINGECKO_KEY: Spec(
+        G.CHAINS,
         "CoinGecko",
         "Tägliche Kurse der Coins. Ohne Schlüssel kommen sie nur von Kraken.",
     ),
+    N.FINTS_PRODUCT_ID: Spec(
+        G.BANK,
+        "FinTS-Produkt-ID",
+        "Die Registrierungsnummer der Deutschen Kreditwirtschaft; ohne sie ruft Hausbuch "
+        "keine Kontoumsätze bei der Bank ab.",
+        product_id_usable,
+    ),
+    N.TEM_SECRET_KEY: Spec(
+        G.MAIL,
+        "Scaleway-TEM-Schlüssel",
+        "Versendet die tägliche Erinnerungs-E-Mail (mit Projekt-ID und Absenderadresse).",
+    ),
+    N.TEM_PROJECT_ID: Spec(
+        G.MAIL,
+        "Scaleway-Projekt-ID",
+        "Das Scaleway-Projekt, über das die Erinnerungs-E-Mail versendet wird.",
+        _uuid,
+    ),
+    N.MAIL_FROM: Spec(
+        G.MAIL,
+        "Absenderadresse",
+        "Die Adresse der bestätigten Domain, von der die Erinnerungs-E-Mail kommt.",
+        _mail,
+    ),
+    N.INBOX_IMAP_USER: Spec(
+        G.MAIL,
+        "Gmail-Konto für den E-Mail-Eingang",
+        "Das Gmail-Konto, dessen Label Hausbuch liest (mit App-Passwort, Adresse und Label).",
+        _mail,
+    ),
+    N.INBOX_IMAP_PASSWORD: Spec(
+        G.MAIL,
+        "Gmail-App-Passwort",
+        "Das App-Passwort dieses Gmail-Kontos; Hausbuch liest damit nur das eine Label.",
+        _text,
+    ),
+    N.INBOX_ADDRESS: Spec(
+        G.MAIL,
+        "Weiterleitungsadresse",
+        "Die Adresse mit Token (name+token@gmail.com), an die Belege weitergeleitet werden.",
+        _mail,
+    ),
+    N.INBOX_LABEL: Spec(
+        G.MAIL,
+        "Gmail-Label",
+        "Das Label, in das Gmail die weitergeleiteten Belege legt.",
+        _text,
+    ),
 }
+assert list(SPECS) == list(N)
 
 
 # --- Keys and the cipher ---------------------------------------------------------------------
@@ -181,18 +275,27 @@ class SecretUnreadable(Exception):
 
 
 def workspace_settings(
-    conn: Connection, settings: Settings, names: Iterable[AppSecretName]
+    conn: Connection,
+    settings: Settings,
+    names: Iterable[AppSecretName],
+    *,
+    unreadable: Literal["raise", "unset"] = "raise",
 ) -> Settings:
     """`settings` with each of `names` typed in the app put in place of the container's, for
-    a factory that reads Settings (the chain sources). Raises SecretUnreadable for a typed
-    value that no longer decrypts. The copy lives in the caller's frame only."""
+    a consumer that reads Settings (the chain sources, the bank sync, the mailer, the inbox
+    poll). A typed value that no longer decrypts raises SecretUnreadable, or with
+    unreadable="unset" leaves its field None (a plain field only), so the consumer sees it
+    as not configured; never the container's value. The copy lives in the caller's frame
+    only."""
     changes: dict[str, object] = {}
     rows = _rows(conn)
     for name in names:
         found = _resolved(rows.get(name.value), settings, name)
         if found.source is AppSecretSource.UNREADABLE:
-            raise SecretUnreadable(name)
-        if found.source is AppSecretSource.APP:
+            if unreadable == "raise" or name in SECRET_STR_FIELDS:
+                raise SecretUnreadable(name)
+            changes[name.value] = None
+        elif found.source is AppSecretSource.APP:
             assert found.value is not None
             # each Settings field's own type, declared, never read off its current value
             # (an unset field is None either way)
@@ -205,21 +308,24 @@ def workspace_settings(
 
 
 def secret_states(conn: Connection, settings: Settings) -> list[AppSecretState]:
-    """Every allowlisted name with where its value comes from; never the value."""
+    """Every allowlisted name with where its value comes from; a value only for a name that is
+    not secret."""
     rows = _rows(conn)
     out = []
-    for name in N:
+    for name, spec in SPECS.items():
         found = _resolved(rows.get(name.value), settings, name)
-        label, purpose = TEXTS[name]
+        shown = None if name.secret or found.value is None else found.value.get_secret_value()
         out.append(
             AppSecretState(
                 name=name,
-                label=label,
-                purpose=purpose,
-                kind=AppSecretKind.URL if name.is_url else AppSecretKind.KEY,
+                group=spec.group,
+                label=spec.label,
+                purpose=spec.purpose,
+                secret=name.secret,
                 variable=name.variable,
                 source=found.source,
                 updated_at=found.updated_at,
+                value=shown,
             )
         )
     return out
@@ -233,17 +339,19 @@ def _state(conn: Connection, settings: Settings, name: AppSecretName) -> AppSecr
 
 
 def checked_value(name: AppSecretName, value: SecretStr) -> str:
-    """The value to store: trimmed, 1 to 512 printable ASCII characters (no blank or control
-    character inside), and a URL an http(s) URL with a host, exactly as Settings checks the
-    container variable (settings._is_http_url). Fixed messages: never the value."""
+    """The value to store: trimmed, 1 to 512 bytes, and of its name's form (SPECS): a key
+    printable ASCII without a blank, a URL as Settings checks the container variable
+    (settings._is_http_url), a product id as the sync does (product_id_usable), a mail address,
+    a UUID, a label or password without a control character. Fixed messages: never the value."""
     plain = value.get_secret_value().strip()
-    if not plain or len(plain) > MAX_LENGTH or not all("!" <= c <= "~" for c in plain):
-        raise RuleError(
-            E.APP_SECRET_INVALID,
-            f"a key is 1 to {MAX_LENGTH} printable characters without blanks",
-        )
-    if name.is_url and not _is_http_url(plain):
-        raise RuleError(E.APP_SECRET_URL_INVALID, "the address must be an http(s) URL with a host")
+    if not plain or len(plain.encode()) > MAX_BYTES:
+        raise RuleError(E.APP_SECRET_INVALID, f"a value is 1 to {MAX_BYTES} bytes")
+    if not SPECS[name].check(plain):
+        if name.is_url:
+            raise RuleError(
+                E.APP_SECRET_URL_INVALID, "the address must be an http(s) URL with a host"
+            )
+        raise RuleError(E.APP_SECRET_INVALID, f"not a valid value for {name.value}")
     return plain
 
 

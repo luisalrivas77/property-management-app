@@ -23,6 +23,14 @@ NAMES = (
     "bsc_rpc_url",
     "helius_key",
     "coingecko_key",
+    "fints_product_id",
+    "tem_secret_key",
+    "tem_project_id",
+    "mail_from",
+    "inbox_imap_user",
+    "inbox_imap_password",
+    "inbox_address",
+    "inbox_label",
 )
 
 
@@ -91,7 +99,7 @@ def test_every_allowlisted_name_once_per_workspace(app_conn):
     [
         {"name": "database_url"},
         {"name": "session_key"},
-        {"name": "fints_product_id"},
+        {"name": "iban_hmac_key"},
         {"name": "Etherscan_Key"},
         {"nonce": os.urandom(16)},
         {"ciphertext": os.urandom(16)},
@@ -101,7 +109,7 @@ def test_every_allowlisted_name_once_per_workspace(app_conn):
     ids=[
         "database_url",
         "session_key",
-        "product_id",
+        "iban_key",
         "upper_case",
         "nonce_not_96_bits",
         "no_room_for_tag",

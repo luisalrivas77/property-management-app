@@ -216,8 +216,30 @@ def test_a_workspace_never_sees_another_workspaces_value(run, read, fresh_worksp
         (N.SOLANA_RPC_URL, "solana.rpc.example/v1", E.APP_SECRET_URL_INVALID),
         (N.SOLANA_RPC_URL, "ftp://solana.rpc.example", E.APP_SECRET_URL_INVALID),
         (N.BSC_RPC_URL, "https://", E.APP_SECRET_URL_INVALID),
+        (N.FINTS_PRODUCT_ID, "P" * 26, E.APP_SECRET_INVALID),
+        (N.TEM_PROJECT_ID, "not-a-project", E.APP_SECRET_INVALID),
+        (N.MAIL_FROM, "erinnerung.mail.example", E.APP_SECRET_INVALID),
+        (N.INBOX_ADDRESS, "a b@gmail.example", E.APP_SECRET_INVALID),
+        (N.INBOX_LABEL, "Bel\x07ege", E.APP_SECRET_INVALID),
+        (N.INBOX_LABEL, "ü" * 257, E.APP_SECRET_INVALID),
     ],
-    ids=["blank", "space", "tab", "nul", "non_ascii", "too_long", "no_scheme", "ftp", "no_host"],
+    ids=[
+        "blank",
+        "space",
+        "tab",
+        "nul",
+        "non_ascii",
+        "too_long",
+        "no_scheme",
+        "ftp",
+        "no_host",
+        "product_id_too_long",
+        "project_not_uuid",
+        "sender_no_at",
+        "address_blank",
+        "label_control",
+        "label_over_512_bytes",
+    ],
 )
 def test_a_value_outside_its_checks_is_refused_without_quoting_it(
     run, app_engine, fresh_workspaces, settings, name, value, code
@@ -230,11 +252,67 @@ def test_a_value_outside_its_checks_is_refused_without_quoting_it(
     assert _rows(app_engine, ws) == []
 
 
-def test_a_key_of_512_characters_and_a_url_are_accepted(run, read, fresh_workspaces, settings):
+def test_each_name_takes_a_value_of_its_form(run, read, fresh_workspaces, settings):
     ws, _ = fresh_workspaces
-    _set(run, ws, N.HELIUS_KEY, "k" * 512, settings)
-    _set(run, ws, N.SOLANA_RPC_URL, APP_URL, settings)
-    assert read(ws, secrets.resolve, settings, N.HELIUS_KEY).get_secret_value() == "k" * 512
+    accepted = {
+        N.HELIUS_KEY: "k" * 512,
+        N.SOLANA_RPC_URL: APP_URL,
+        N.FINTS_PRODUCT_ID: "PRODUCTID0123456789ABCDEF",
+        N.TEM_SECRET_KEY: "tem-secret-0123",
+        N.TEM_PROJECT_ID: "11111111-2222-4333-8444-555555555555",
+        N.MAIL_FROM: "erinnerung@mail.example",
+        N.INBOX_IMAP_USER: "haushalt@gmail.example",
+        N.INBOX_IMAP_PASSWORD: "abcd efgh ijkl mnop",  # Google prints it in four groups
+        N.INBOX_ADDRESS: "haushalt+t0ken@gmail.example",
+        N.INBOX_LABEL: "Hausbuch Belege/Häuser",
+    }
+    for name, value in accepted.items():
+        _set(run, ws, name, value, settings)
+        assert read(ws, secrets.resolve, settings, name).get_secret_value() == value
+
+
+def test_only_a_setting_that_is_not_secret_is_shown_back(
+    run, read, app_engine, fresh_workspaces, settings
+):
+    ws, _ = fresh_workspaces
+    _set(run, ws, N.INBOX_LABEL, "Hausbuch", settings)
+    _set(run, ws, N.INBOX_IMAP_PASSWORD, "abcd efgh ijkl mnop", settings)
+    _set(run, ws, N.TEM_SECRET_KEY, "tem-secret-0123", settings)
+    container = dataclasses.replace(settings, mail_from="erinnerung@mail.example")
+    states = {s.name: s for s in read(ws, secrets.secret_states, container)}
+    assert (states[N.INBOX_LABEL].secret, states[N.INBOX_LABEL].value) == (False, "Hausbuch")
+    assert states[N.MAIL_FROM].source is Src.CONTAINER
+    assert states[N.MAIL_FROM].value == "erinnerung@mail.example"
+    assert states[N.INBOX_IMAP_PASSWORD].secret is True
+    assert states[N.INBOX_IMAP_PASSWORD].value is None
+    assert states[N.TEM_SECRET_KEY].value is None
+    dumped = repr([s.model_dump() for s in states.values()])
+    assert "abcd efgh" not in dumped and "tem-secret-0123" not in dumped
+    with workspace_transaction(app_engine, ws) as conn:
+        payloads = [r.payload for r in conn.execute(select(event_table)).all()]
+    assert payloads == [
+        {"name": "inbox_label"},
+        {"name": "inbox_imap_password"},
+        {"name": "tem_secret_key"},
+    ]
+    assert b"Hausbuch" not in _all_text(app_engine, ws).replace(b"hausbuch", b"")
+
+
+def test_an_unreadable_plain_setting_is_unset_never_the_containers(
+    run, read, fresh_workspaces, settings
+):
+    ws, _ = fresh_workspaces
+    _set(run, ws, N.FINTS_PRODUCT_ID, "PRODUCTID0123456789ABCDEF", settings)
+    container = dataclasses.replace(settings, fints_product_id="CONTAINERPRODUCT0000")
+    rotated = dataclasses.replace(container, session_key=OTHER_KEY)
+    names = [N.FINTS_PRODUCT_ID]
+    assert read(ws, secrets.workspace_settings, container, names).fints_product_id == (
+        "PRODUCTID0123456789ABCDEF"
+    )
+    unset = read(ws, secrets.workspace_settings, rotated, names, unreadable="unset")
+    assert unset.fints_product_id is None
+    with pytest.raises(secrets.SecretUnreadable):
+        read(ws, secrets.workspace_settings, rotated, names)
 
 
 def test_workspace_settings_puts_the_typed_values_in_place(
