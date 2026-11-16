@@ -925,3 +925,102 @@ def test_the_same_file_again_links_what_its_upload_moved(
     )
     assert link.out_movement_id == live.id and live.occurred_at == WITHDRAWN
     assert run(ws, chain_transfers.relink, now=T0 + HOUR).linked == 0  # nothing left to link
+
+
+def _both(a, b, gap=0.6):
+    """`a` in one thread, `b` in another started `gap` seconds later (each its own connection
+    through `run`); each one's outcome."""
+    import threading
+    import time
+
+    out = {}
+
+    def wrap(name, fn):
+        try:
+            out[name] = ("ok", fn())
+        except Exception as exc:  # noqa: BLE001 - the outcome is the assertion
+            out[name] = ("error", type(exc).__name__)
+
+    first = threading.Thread(target=wrap, args=("a", a), name="A")
+    second = threading.Thread(target=wrap, args=("b", b), name="B")
+    first.start()
+    time.sleep(gap)
+    second.start()
+    first.join(30)
+    second.join(30)
+    return out
+
+
+def _paused(monkeypatch, module, name, *, when):
+    """`module.name` that sleeps in thread A once `when(args, kwargs)` holds."""
+    import threading
+    import time
+
+    original = getattr(module, name)
+
+    def slow(*args, **kwargs):
+        if threading.current_thread().name == "A" and when(args, kwargs):
+            time.sleep(1.5)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(module, name, slow)
+
+
+def test_a_correction_and_the_repair_at_once_both_commit(
+    run, read, blob_store, fresh_workspaces, monkeypatch
+):
+    """Review C: book_correction holds the import and then takes the account; the repair takes
+    the imports before the accounts, so it waits for the correction instead of deadlocking
+    with it. A pauses between its two locks while B starts."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    with _legacy(monkeypatch) as m:
+        _no_zone(m)
+        imported = _upload(
+            run, blob_store, ws, account.id, _zip(TX, TX_MEMBER), TX_NAME
+        ).movement_import
+    ids = _unreconciled(run, read, ws, account.id, imported.id)
+    _paused(monkeypatch, imports, "_require_exchange", when=lambda a, k: k.get("for_update"))
+    out = _both(
+        lambda: _correct(run, ws, imported.id, ids),
+        lambda: _repair(run, ws),
+    )
+    assert out["a"][0] == "ok" and out["a"][1].status.value == "reconciled"
+    assert out["b"][0] == "ok" and out["b"][1].corrected.imports == 1
+    assert ("balance_correction", WITHDRAWN) in _times(read, ws, account.id)
+
+
+def test_confirming_withdrawals_and_the_repair_at_once_both_commit(
+    run, read, blob_store, fresh_workspaces, monkeypatch
+):
+    """Review C: confirm_withdrawals holds the import and then its movements; the repair waits
+    at the import. A pauses after taking the import while B starts."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    with _legacy(monkeypatch) as m:
+        _no_zone(m)
+        imported = _upload(
+            run, blob_store, ws, account.id, _zip(TX, TX_MEMBER), TX_NAME
+        ).movement_import
+    original = imports.require_row
+
+    def slow(*args, **kwargs):
+        import threading
+        import time
+
+        row = original(*args, **kwargs)
+        if threading.current_thread().name == "A" and kwargs.get("for_update"):
+            time.sleep(1.5)
+        return row
+
+    monkeypatch.setattr(imports, "require_row", slow)
+    out = _both(
+        lambda: run(ws, imports.confirm_withdrawals, imported.id, now=T0 + timedelta(minutes=3)),
+        lambda: _repair(run, ws),
+    )
+    assert out["a"][0] == "ok" and out["a"][1].confirmed == 1
+    assert out["b"][0] == "ok" and out["b"][1].corrected.imports == 1
+    withdrawal = next(
+        r for r in _live(read, ws, account.id) if r.kind == MovementKind.INTERNAL_TRANSFER_OUT.value
+    )
+    assert (withdrawal.occurred_at, withdrawal.status) == (WITHDRAWN, "confirmed")

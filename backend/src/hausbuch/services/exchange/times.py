@@ -13,16 +13,23 @@ event names the import (its times were moved here). Every other Binance import, 
 before the amendment and each one whose names named no zone, is unknown; the exchange page shows
 the to-do exchange.time_zone_unknown while one is (`zone_unknown`).
 
-- `correct_by_name(ctx, account_id)`: each unknown import whose stored file name names a zone
-  moved by it. Run by `hausbuch repair-exchange-times` and at the start of every Binance upload.
-  The member name inside a ZIP is not stored, so an import whose upload name named no zone stays
-  unknown here.
-- `correct_overlapping(ctx, account_id, hashes, offset, document_id)`: a later export whose
-  name names its zone and that carries rows of an unknown import (the same movement_hash, which
-  is built from the time as the file writes it, so the same rows of the same zone) moves that
-  import by its zone: the to-do's answer, „Transaktionsverlauf erneut hochladen“.
+- `correct_by_name(ctx, account_id, locked)`: each unknown import whose stored file name
+  names a zone moved by it. Run by `hausbuch repair-exchange-times` and at the start of every
+  Binance upload. The member name inside a ZIP is not stored, so an import whose upload name
+  named no zone stays unknown here.
+- `correct_overlapping(ctx, account_id, hashes, offset, document_id, locked)`: a later export
+  whose name names its zone and that carries rows of an unknown import (the same
+  movement_hash, which is built from the time as the file writes it, so the same rows of the
+  same zone) moves that import by its zone: the to-do's answer, „Transaktionsverlauf erneut
+  hochladen“.
 - `repair_times(ctx)`: the command over every Binance account of the workspace, then the
   relinks the import runs, so nothing a link needs is left open.
+
+Lock order (review C, 16 Nov 2026): the Binance import rows (`lock_imports`), then the
+account's row, then the transfer lock and the movement rows, as book_correction and
+confirm_withdrawals take an import first; each entry corrects only the imports its caller
+locked. A person's answer (answer_movement) holds a movement row and then waits for the transfer
+lock, the order the repair reverses; that window is left as it is (phase-6.md D178 amended (4)).
 
 How one import is moved (`_correct_import`), append-only and keeping everything a person or the
 matcher decided: every live row descending from a row the import wrote (by its movement_hash and
@@ -134,6 +141,31 @@ def unknown_imports(conn: Connection, account_id: UUID) -> list[Row]:
 def zone_unknown(conn: Connection, account_id: UUID) -> bool:
     """Whether the exchange page shows exchange.time_zone_unknown."""
     return bool(unknown_imports(conn, account_id))
+
+
+def lock_imports(conn: Connection, account_id: UUID | None = None) -> frozenset[UUID]:
+    """The Binance import rows of the account (None: of every Binance account of the
+    workspace), locked in id order. Taken before the account's row (review C, 16 Nov 2026):
+    book_correction and confirm_withdrawals hold an import and then take the account or its
+    movements, so a correction here that took the account first and then updated an import
+    could deadlock with them. Only the imports locked here are corrected (`locked`), so an
+    import another upload wrote meanwhile is never updated after the account's row."""
+    i, acc = import_table.c, account_table.c
+    accounts = (
+        [account_id]
+        if account_id is not None
+        else select(acc.id).where(
+            acc.kind == AccountKind.EXCHANGE.value, acc.provider == rules.BINANCE
+        )
+    )
+    return frozenset(
+        conn.execute(
+            select(i.id)
+            .where(i.account_id.in_(accounts), i.format == MovementImportFormat.BINANCE_CSV.value)
+            .order_by(i.id)
+            .with_for_update()
+        ).scalars()
+    )
 
 
 def account_offset(conn: Connection, account_id: UUID) -> timedelta | None:
@@ -449,7 +481,11 @@ def _corrections(conn: Connection, imported: Row) -> list[UUID]:
 
 
 def _correct_import(
-    ctx: CommandContext, imported: Row, offset: timedelta, document_id: UUID
+    ctx: CommandContext,
+    imported: Row,
+    offset: timedelta,
+    document_id: UUID,
+    locked: frozenset[UUID],
 ) -> int:
     """The import moved by `offset` (the module docstring); the rows moved."""
     from ..transfers import _current_links, _leg_ids, _lock
@@ -511,7 +547,7 @@ def _correct_import(
                 updated_at=ctx.now,
             )
         )
-        _follow_bounds(ctx, imported, targets, now_at)
+        _follow_bounds(ctx, imported, targets, now_at, locked)
     append_event(
         ctx,
         EventType.ACCOUNT_MOVEMENT_TIMES_CORRECTED,
@@ -532,6 +568,7 @@ def _follow_bounds(
     imported: Row,
     targets: dict[UUID, datetime],
     old_at: dict[UUID, datetime],
+    locked: frozenset[UUID],
 ) -> None:
     """The bounds of the account's imports that wrote no row (`live_bounds`) follow the rows
     just moved: a first or last row whose time is the old time of a moved row takes its new
@@ -541,7 +578,7 @@ def _follow_bounds(
     if not moved:
         return
     for other in _binance_imports(ctx.conn, imported.account_id):
-        if other.id == imported.id or other.rows_new:
+        if other.id == imported.id or other.rows_new or other.id not in locked:
             continue
         first = moved.get(other.first_at, other.first_at)
         last = moved.get(other.last_at, other.last_at)
@@ -583,12 +620,19 @@ class TimesCorrected:
         )
 
 
-def correct_by_name(ctx: CommandContext, account_id: UUID) -> TimesCorrected:
+def _unknown_locked(conn: Connection, account_id: UUID, locked: frozenset[UUID]) -> list[Row]:
+    return [r for r in unknown_imports(conn, account_id) if r.id in locked]
+
+
+def correct_by_name(
+    ctx: CommandContext, account_id: UUID, locked: frozenset[UUID]
+) -> TimesCorrected:
     """Each unknown import of the account whose stored upload name names a zone moved by it.
-    The caller holds the account's row (the upload's lock, or repair_times')."""
+    The caller holds the import rows `locked` (lock_imports) and then the account's row (the
+    upload's lock, or repair_times'), in that order."""
     d = document_table.c
     imports = moved = unknown = 0
-    for imported in unknown_imports(ctx.conn, account_id):
+    for imported in _unknown_locked(ctx.conn, account_id, locked):
         name = ctx.conn.execute(
             select(d.original_filename).where(d.id == imported.document_id)
         ).scalar_one_or_none()
@@ -596,7 +640,7 @@ def correct_by_name(ctx: CommandContext, account_id: UUID) -> TimesCorrected:
         if offset is None:
             unknown += 1
             continue
-        moved += _correct_import(ctx, imported, offset, imported.document_id)
+        moved += _correct_import(ctx, imported, offset, imported.document_id, locked)
         imports += 1
     return TimesCorrected(imports, moved, unknown)
 
@@ -607,12 +651,13 @@ def correct_overlapping(
     hashes: Iterable[str],
     offset: timedelta,
     document_id: UUID,
+    locked: frozenset[UUID],
 ) -> TimesCorrected:
     """Each unknown import of the account that wrote a row of `hashes` (a new export of the
     zone `offset`, stored as `document_id`) moved by that zone: the same hash is the same time
     as the file writes it, so the earlier file was written in the same zone."""
     hashes = set(hashes)
-    unknown = unknown_imports(ctx.conn, account_id)
+    unknown = _unknown_locked(ctx.conn, account_id, locked)
     if not hashes or not unknown:
         return TimesCorrected()
     m = movement_table.c
@@ -626,20 +671,25 @@ def correct_overlapping(
     imports = moved = 0
     for imported in unknown:
         if imported.document_id in docs:
-            moved += _correct_import(ctx, imported, offset, document_id)
+            moved += _correct_import(ctx, imported, offset, document_id, locked)
             imports += 1
     return TimesCorrected(imports, moved)
 
 
 def correct_same_file(
-    ctx: CommandContext, account_id: UUID, import_id: UUID, offset: timedelta, document_id: UUID
+    ctx: CommandContext,
+    account_id: UUID,
+    import_id: UUID,
+    offset: timedelta,
+    document_id: UUID,
+    locked: frozenset[UUID],
 ) -> TimesCorrected:
     """The import of a file uploaded again (the same bytes, so its stored import) under a name
     that names its zone, moved by that zone when its own was unknown: the to-do's answer when
     the export is uploaded unchanged but for its name."""
-    for imported in unknown_imports(ctx.conn, account_id):
+    for imported in _unknown_locked(ctx.conn, account_id, locked):
         if imported.id == import_id:
-            return TimesCorrected(1, _correct_import(ctx, imported, offset, document_id))
+            return TimesCorrected(1, _correct_import(ctx, imported, offset, document_id, locked))
     return TimesCorrected()
 
 
@@ -656,7 +706,8 @@ class RepairResult:
 
 def repair_times(ctx: CommandContext) -> RepairResult:
     """`hausbuch repair-exchange-times`: correct_by_name over every Binance account of the
-    workspace (each account's row locked first), then the relinks an import runs (D162's on
+    workspace (their import rows locked first, then the accounts' rows: lock_imports), then
+    the relinks an import runs (D162's on
     each account, D184's over the workspace), which find every moved link current and so
     reopen, end and write nothing (their counts are reported). Idempotent: a second run finds
     every import's zone known."""
@@ -664,6 +715,7 @@ def repair_times(ctx: CommandContext) -> RepairResult:
     from ..transfers import relink
 
     acc = account_table.c
+    locked = lock_imports(ctx.conn)
     accounts = (
         ctx.conn.execute(
             select(acc.id)
@@ -677,7 +729,7 @@ def repair_times(ctx: CommandContext) -> RepairResult:
     total = TimesCorrected()
     linked = 0
     for account_id in accounts:
-        total = total + correct_by_name(ctx, account_id)
+        total = total + correct_by_name(ctx, account_id, locked)
     for account_id in accounts:
         linked += relink(ctx, account_id)
     chain = chain_transfers.relink(ctx)

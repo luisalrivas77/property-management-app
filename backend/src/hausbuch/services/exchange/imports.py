@@ -514,6 +514,9 @@ def import_export(
     exchange's file (exchange.account_mismatch), an export without rows, and a withdrawal
     history before any transaction history (exchange.transactions_first). The same file
     again returns its stored import and writes nothing."""
+    # Review C (D178 amended (4)): the account's Binance import rows before its row, the order
+    # book_correction and confirm_withdrawals take them in; only these imports are corrected.
+    locked = times.lock_imports(ctx.conn, account_id)
     account = _require_exchange(ctx.conn, account_id, for_update=True)
     export = read_export(data)
     if account.provider != _PROVIDER[export.kind]:
@@ -527,7 +530,7 @@ def import_export(
         # D178 amended (4): the zone Binance wrote the file in, from its names (never stored);
         # the imports read as UTC before the amendment are moved by their stored names first.
         offset = binance_csv.utc_offset(export.member_name, original_filename)
-        renamed = times.correct_by_name(ctx, account_id)
+        renamed = times.correct_by_name(ctx, account_id, locked)
     if export.kind is ExportKind.BINANCE_WITHDRAWALS:
         if renamed.imports:
             from ..transfers import relink
@@ -558,7 +561,9 @@ def import_export(
         same = times.TimesCorrected()
         if offset is not None:
             # D178 amended (4): the same file again under a name that names its zone.
-            same = times.correct_same_file(ctx, account_id, existing.id, offset, document.id)
+            same = times.correct_same_file(
+                ctx, account_id, existing.id, offset, document.id, locked
+            )
         if same.imports or renamed.imports:
             # Review B: whatever moved at the start of this upload links again, as after an
             # import, though the file is one stored already.
@@ -579,7 +584,7 @@ def import_export(
     )
     if offset is not None and stored:
         # D178 amended (4): rows an import read as UTC carries too were written in this zone.
-        times.correct_overlapping(ctx, account_id, stored, offset, document.id)
+        times.correct_overlapping(ctx, account_id, stored, offset, document.id, locked)
     # A movement is new when no stored movement of the account and no earlier movement of the
     # same file carries its hash: BISON can repeat a Transaction ID inside one export, and the
     # first row is kept (D166, D22's dedup within a file), never a unique-index failure.
