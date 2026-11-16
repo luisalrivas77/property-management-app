@@ -9718,6 +9718,13 @@
             },
             "type": "array",
             "title": "Movement Ids"
+          },
+          "unsynced_addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unsynced Addresses"
           }
         },
         "additionalProperties": false,
@@ -14571,6 +14578,14 @@
             "minimum": 0.0,
             "title": "Unfilled Movements",
             "default": 0
+          },
+          "unfilled_account_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Unfilled Account Ids"
           }
         },
         "additionalProperties": false,

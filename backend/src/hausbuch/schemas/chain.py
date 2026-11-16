@@ -529,6 +529,9 @@ class AccountHoldings(Schema):
     unvalued_tokens: list[UnvaluedToken] = Field(default_factory=list)
     unreconciled_addresses: list[str] = Field(default_factory=list)  # masked
     movement_ids: list[UUID] = Field(default_factory=list)
+    # Step 6 review: the addresses (masked) no sync had finished reading by the end of the
+    # day; the statement says „kein Abgleich bis zum Stichtag“, never „abgeglichen“.
+    unsynced_addresses: list[str] = Field(default_factory=list)
 
 
 class HoldingsStatement(Schema):

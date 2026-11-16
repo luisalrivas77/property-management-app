@@ -104,6 +104,8 @@ class CryptoHoldings(Schema):
     # Movements that took more units than any lot held (an incomplete history): their units
     # have no lot, never a cost (D188 (4)).
     unfilled_movements: int = Field(default=0, ge=0)
+    # The accounts those movements are on, so the notice links each one's Umsätze.
+    unfilled_account_ids: list[UUID] = Field(default_factory=list)
 
 
 class HoldingsExportCreate(Schema):

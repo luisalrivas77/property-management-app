@@ -32,7 +32,7 @@ from hausbuch.schemas.holdings import (
 )
 from hausbuch.schemas.prices import PricePoint
 
-from .lots import cost_total
+from .lots import cost_total, exact
 
 CENT = Decimal("0.01")
 
@@ -45,6 +45,7 @@ def _value(units: Decimal, price: PricePoint | None) -> Decimal | None:
     return None if price is None else _cents(units * price.price_eur)
 
 
+@exact
 def coin(
     *,
     account_id: UUID,
@@ -60,9 +61,14 @@ def coin(
     reconciled: bool = True,
 ) -> CryptoCoin:
     """`lots`: the coin's open lots on this account in FIFO order; `needs`: per creating
-    movement id, the prices that would price its lot (`rules.lots.LotBook.price_needs`)."""
+    movement id, the prices that would price its lot (`rules.lots.LotBook.price_needs`).
+    A lot whose origin no movement explains (`source` unknown) has no known acquisition day,
+    so it is never counted free of the holding period nor as a coming tranche: its
+    `tax_free_from` is the day it arrived, which the screen and the statement do not show
+    (they say „Herkunft offen“). Units are summed with `rules.lots`' precision."""
     shown: list[CryptoLot] = []
     for lot in lots:
+        known = lot.source is not LotSource.UNKNOWN
         lot_needs = (
             []
             if lot.cost_eur is not None or lot.source is LotSource.UNKNOWN
@@ -74,7 +80,7 @@ def coin(
         shown.append(
             CryptoLot(
                 **lot.model_dump(),
-                tax_free=lot.tax_free_from <= on,
+                tax_free=known and lot.tax_free_from <= on,
                 value_eur=_value(lot.units_open, price),
                 price_needs=lot_needs,
             )
@@ -83,7 +89,7 @@ def coin(
     value = _value(units, price)
     free = [lot for lot in shown if lot.tax_free]
     free_units = sum((lot.units_open for lot in free), Decimal(0))
-    waiting = [lot for lot in shown if not lot.tax_free]
+    waiting = [lot for lot in shown if not lot.tax_free and lot.source is not LotSource.UNKNOWN]
     next_on = min((lot.tax_free_from for lot in waiting), default=None)
     next_units = (
         None
@@ -141,6 +147,7 @@ def summary(
     coins: Sequence[CryptoCoin],
     accounts: Sequence[CryptoAccount],
     unfilled_movements: int = 0,
+    unfilled_account_ids: Sequence[UUID] = (),
 ) -> CryptoHoldings:
     """The tab: `accounts` carry their label, kind and owners; their value and unvalued count
     are summed here from `coins`."""
@@ -180,4 +187,5 @@ def summary(
         accounts=shown_accounts,
         coins=list(coins),
         unfilled_movements=unfilled_movements,
+        unfilled_account_ids=list(unfilled_account_ids),
     )

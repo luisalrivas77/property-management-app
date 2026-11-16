@@ -3,6 +3,7 @@
 the masked addresses are holdings_statement.yaml's own."""
 
 import hashlib
+import io
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -10,6 +11,7 @@ from decimal import Decimal
 import pytest
 from db.db_support import TEST_IBAN_KEY
 from fixture_models_phase7 import load
+from pypdf import PdfReader
 from sqlalchemy import insert
 
 from hausbuch.db.tables import asset as asset_table
@@ -428,6 +430,24 @@ def test_a_thirty_digit_quantity_is_summed_and_printed_exactly(run, read, fresh_
     assert any(line.startswith("Bestand;PEPE;;123456789012,123456789012345677;") for line in lines)
 
 
+def test_a_sale_beyond_the_lots_names_its_account_for_the_notice(run, read, fresh_workspaces):
+    """A disposal no lot covers (a missing deposit): the tab counts it and names its account,
+    so the notice links that account's Umsätze."""
+    ws, _ = fresh_workspaces
+
+    def setup(ctx):
+        exchange = _account(ctx, AccountKind.EXCHANGE, "Börse")
+        wallet = _account(ctx, AccountKind.WALLET, "Wallet")
+        sol = _asset(ctx, "SOL", "Solana", chain="solana")
+        _movement(ctx, exchange, sol, "1", BOUGHT, eur_amount=Decimal("-100"))
+        _movement(ctx, exchange, sol, "-3", MOVED, eur_amount=Decimal("300"))
+        return exchange, wallet
+
+    exchange, _wallet = run(ws, setup, now=NOW)
+    tab = read(ws, holdings.crypto_holdings, ON)
+    assert (tab.unfilled_movements, tab.unfilled_account_ids) == (1, [exchange])
+
+
 # --- the year-end statement as a snapshot (D190) -------------------------------------------
 
 KEY = b"k" * 32
@@ -445,6 +465,14 @@ def test_the_year_end_statement_is_a_snapshot_per_account(run, read, fresh_works
 
     ws, other = fresh_workspaces
     ids = run(ws, _moved_lot, now=NOW)
+
+    def unlinked_in_leg(ctx):
+        # 1 SOL arrives at the wallet's address with no link: a lot whose origin is open.
+        [address] = ctx.conn.execute(select(address_table.c.id)).scalars().all()
+        sol, at = ids["sol"], _at("2026-08-01T10:00:00Z")
+        return _movement(ctx, ids["wallet"], sol, "1", at, address_id=address)
+
+    run(ws, unlinked_in_leg, now=NOW)
     body = HoldingsExportCreate(year=2026)
 
     def missing():
@@ -469,8 +497,17 @@ def test_the_year_end_statement_is_a_snapshot_per_account(run, read, fresh_works
     # The moved lot keeps its purchase day and cost; the reward's cost stays open, never 0 €.
     assert "Posten;SOL;;2;;;;2025-03-01;201,00;2026-03-02;" in lines
     assert "Posten;SOL;;0,5;;;;2026-06-10;;2027-06-11;Kurs fehlt" in lines
-    assert any(line.startswith("Adresse;SOL;So1x…xxxx;2,5;") for line in lines)
+    # The unlinked in-leg: its origin is open, so no „Kurs fehlt“ and no „Steuerfrei ab“.
+    assert "Posten;SOL;;1;;;;2026-08-01;;;Herkunft offen" in lines
+    # No sync of the address had finished by the day: never „abgeglichen“.
+    [address_line] = [line for line in lines if line.startswith("Adresse;SOL;So1x…xxxx;3,5;")]
+    assert address_line.endswith(";kein Abgleich bis zum Stichtag")
     assert b"So1xxxx" not in csv_bytes  # the stored address never leaves the database
+    text_of_pdf = "".join(page.extract_text() for page in PdfReader(io.BytesIO(pdf)).pages)
+    assert "Herkunft offen" in text_of_pdf and "Kurs fehlt" in text_of_pdf
+    assert "kein Abgleich bis zum Stichtag" in text_of_pdf
+    assert "abgeglichen" not in text_of_pdf
+    assert "02.08.2027" not in text_of_pdf  # the in-leg's day + 1 year: not a tax-free day
 
     def stored(conn):
         x = export_table.c

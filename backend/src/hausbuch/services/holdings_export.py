@@ -49,7 +49,7 @@ from hausbuch.db.tables import document_file as file_table
 from hausbuch.db.tables import holdings_export as export_table
 from hausbuch.rules.errors import HOLDINGS_EXPORT_NOTHING_HELD, HOLDINGS_EXPORT_YEAR_OPEN, RuleError
 from hausbuch.rules.lots import PRECISION
-from hausbuch.schemas.chain import AccountHoldings, Lot
+from hausbuch.schemas.chain import AccountHoldings, Lot, LotSource
 from hausbuch.schemas.events import EventType, HoldingsExported
 from hausbuch.schemas.holdings import HoldingsExport, HoldingsExportCreate, HoldingsFileFormat
 from hausbuch.schemas.household import AssetKind, MovementStatus
@@ -140,14 +140,37 @@ def _table(header: list[str], rows: list[list[str]], numeric: set[int], widths) 
     return table
 
 
+UNKNOWN_ORIGIN = "Herkunft offen"
+NO_SYNC = "kein Abgleich bis zum Stichtag"
+
+
+def _sync_state(account: AccountHoldings, masked: str) -> str | None:
+    """What the statement may say about an address: no sync finished by the day, a sync that
+    did not reconcile, or (None) its last sync reconciled."""
+    if masked in account.unsynced_addresses:
+        return NO_SYNC
+    if masked in account.unreconciled_addresses:
+        return "nicht abgeglichen"
+    return None
+
+
+def _cost_hint(lot: Lot) -> str:
+    """A lot whose origin no movement explains says so, whatever its cost: no price can
+    resolve it, and its day is the day it arrived, not a known acquisition day (so no
+    „Steuerfrei ab“ either). Only a priceable lot without a cost says „Kurs fehlt“."""
+    if lot.source is LotSource.UNKNOWN:
+        return UNKNOWN_ORIGIN
+    return "" if lot.cost_eur is not None else "Kurs fehlt"
+
+
 def _lot_rows(lots: list[Lot], label: str) -> list[list[str]]:
     return [
         [
             label,
             _day(lot.acquired_on),
             _units(lot.units_open),
-            _money(lot.cost_eur) if lot.cost_eur is not None else "Kurs fehlt",
-            _day(lot.tax_free_from),
+            _money(lot.cost_eur) if lot.cost_eur is not None else _cost_hint(lot),
+            UNKNOWN_ORIGIN if lot.source is LotSource.UNKNOWN else _day(lot.tax_free_from),
         ]
         for lot in lots
     ]
@@ -182,9 +205,7 @@ def render_pdf(
                     [
                         a.address_masked,
                         a.chain.value,
-                        "nicht abgeglichen"
-                        if a.address_masked in account.unreconciled_addresses
-                        else "abgeglichen",
+                        _sync_state(account, a.address_masked) or "abgeglichen",
                     ]
                     for a in account.addresses
                 ],
@@ -287,7 +308,7 @@ def render_csv(account: AccountHoldings, labels: Mapping[UUID, str]) -> bytes:
     writer.writerow(CSV_HEADER)
     blank = [""] * 7
     for a in account.addresses:
-        hint = "nicht abgeglichen" if a.address_masked in account.unreconciled_addresses else ""
+        hint = _sync_state(account, a.address_masked) or ""
         for asset_id, units in a.units_by_asset.items():
             label = labels.get(UUID(asset_id), "")
             writer.writerow(["Adresse", label, a.address_masked, _units(units), *blank[:6], hint])
@@ -321,8 +342,8 @@ def render_csv(account: AccountHoldings, labels: Mapping[UUID, str]) -> bytes:
                     "",
                     lot.acquired_on.isoformat(),
                     _csv_amount(lot.cost_eur),
-                    lot.tax_free_from.isoformat(),
-                    "" if lot.cost_eur is not None else "Kurs fehlt",
+                    "" if lot.source is LotSource.UNKNOWN else lot.tax_free_from.isoformat(),
+                    _cost_hint(lot),
                 ]
             )
     for t in account.unvalued_tokens:

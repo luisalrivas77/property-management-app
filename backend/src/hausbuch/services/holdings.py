@@ -215,7 +215,8 @@ class _Address:
     account_id: UUID
     chain: str
     masked: str
-    reconciled: bool  # its last finished sync on or before the day reconciled
+    reconciled: bool  # its last finished sync on or before the day reconciled (or none ran)
+    synced: bool  # a sync finished on or before the day
 
 
 def _addresses(conn: Connection, account_ids: Sequence[UUID], on: date) -> dict[UUID, _Address]:
@@ -245,6 +246,7 @@ def _addresses(conn: Connection, account_ids: Sequence[UUID], on: date) -> dict[
             r.chain,
             r.address_masked,
             reconciled=r.id not in last or last[r.id].reconciled is True,
+            synced=r.id in last,
         )
         for r in rows
     }
@@ -321,7 +323,14 @@ def crypto_holdings(conn: Connection, on: date) -> CryptoHoldings:
         for a in ledger.accounts
         if a.id in held or a.kind is AccountKind.WALLET
     ]
-    return figures.summary(on, coins, accounts, unfilled_movements=len(book.unfilled))
+    unfilled_accounts = {mv.account_id for mv in ledger.movements if mv.id in book.unfilled}
+    return figures.summary(
+        on,
+        coins,
+        accounts,
+        unfilled_movements=len(book.unfilled),
+        unfilled_account_ids=sorted(unfilled_accounts, key=str),
+    )
 
 
 def account_lots(
@@ -423,4 +432,5 @@ def _account_statement(
         ],
         unreconciled_addresses=[a.masked for a in shown if not a.reconciled],
         movement_ids=sorted((mv.id for mv in movements), key=str),
+        unsynced_addresses=[a.masked for a in shown if not a.synced],
     )

@@ -3555,6 +3555,8 @@ export interface components {
             unreconciled_addresses?: string[];
             /** Movement Ids */
             movement_ids?: string[];
+            /** Unsynced Addresses */
+            unsynced_addresses?: string[];
         };
         /**
          * AccountKind
@@ -5534,6 +5536,8 @@ export interface components {
              * @default 0
              */
             unfilled_movements: number;
+            /** Unfilled Account Ids */
+            unfilled_account_ids?: string[];
         };
         /**
          * CryptoLot

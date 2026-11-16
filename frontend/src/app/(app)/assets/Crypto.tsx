@@ -83,7 +83,13 @@ function Crypto({ data, owners }: { data: CryptoHoldings; owners: Owner[] }) {
         <Notice>
           {data.unfilled_movements === 1 ? "1 Abgang übersteigt" : `${data.unfilled_movements} Abgänge übersteigen`} den gebuchten
           Bestand davor; es fehlt eine Einzahlung oder ein Übertrag. Die Umsätze des Kontos prüfen und die fehlende Bewegung
-          einlesen; bis dahin bleibt der Einstand dieses Abgangs offen.
+          einlesen; bis dahin bleibt der Einstand dieses Abgangs offen.{" "}
+          {(data.unfilled_account_ids ?? []).map((id, i) => (
+            <span key={id}>
+              {i > 0 ? " · " : ""}
+              <Link href={`/accounts/${id}?tab=umsaetze`}>Umsätze {accountOf(id)?.label ?? "des Kontos"} öffnen</Link>
+            </span>
+          ))}
         </Notice>
       ) : null}
       <div className="planning-kpis">
@@ -268,7 +274,7 @@ function LotsPanel({ coin, account, owners }: { coin: CryptoCoin; account: Crypt
       {!coin.reconciled ? (
         <Notice>
           Der letzte Abgleich einer Adresse dieses Kontos ergab einen anderen Bestand als die Kette. Die Wallet öffnen und den
-          Abgleich prüfen; bis dahin können Posten fehlen.
+          Abgleich prüfen; bis dahin können Posten fehlen. <Link href={`/accounts/${coin.account_id}`}>Wallet öffnen</Link>
         </Notice>
       ) : null}
       <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
@@ -305,11 +311,23 @@ function LotRow({ lot, coin }: { lot: CryptoLot; coin: CryptoCoin }) {
         <span className="muted">
           {origin} · Einstand {lot.cost_eur != null ? formatMoney(lot.cost_eur) : costMissing(lot)}
         </span>
-        <span className={lot.tax_free ? "planning-good" : "planning-bad"}>
-          {lot.tax_free ? "steuerfrei" : `steuerfrei ab ${formatDate(lot.tax_free_from)}`}
-        </span>
+        {/* A lot of open origin is dated the day it arrived, not a known purchase day: no
+            „steuerfrei ab“ until a person assigns where it came from. */}
+        {lot.source === "unknown" ? (
+          <span className="planning-bad">Herkunft offen</span>
+        ) : (
+          <span className={lot.tax_free ? "planning-good" : "planning-bad"}>
+            {lot.tax_free ? "steuerfrei" : `steuerfrei ab ${formatDate(lot.tax_free_from)}`}
+          </span>
+        )}
       </div>
-      {lot.cost_eur == null && (lot.price_needs ?? []).length > 0 ? (
+      {lot.source === "unknown" ? (
+        <p className="muted hint" style={{ margin: 0 }}>
+          Woher diese Coins kamen, ist nicht geklärt; erst dann stehen Erwerbstag, Einstand und Haltefrist fest.{" "}
+          <Link href="/inbox">In Zu prüfen den Zugang zuordnen</Link>
+        </p>
+      ) : null}
+      {lot.cost_eur == null && lot.source !== "unknown" && (lot.price_needs ?? []).length > 0 ? (
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
           {(lot.price_needs ?? []).map((need) => (
             <Link
@@ -328,8 +346,9 @@ function LotRow({ lot, coin }: { lot: CryptoLot; coin: CryptoCoin }) {
 
 /** Why a lot has no cost, as a plain to-do (principle 7). */
 function costMissing(lot: CryptoLot): string {
+  if (lot.source === "unknown") return "offen: Herkunft offen";
   if ((lot.price_needs ?? []).length > 0) return "offen: Kurs fehlt";
-  return "offen: woher der Coin kam, ist nicht geklärt (in Zu prüfen den Zugang zuordnen)";
+  return "offen";
 }
 
 // --- „Bestandsnachweis 31.12.<Jahr> erstellen“ (D190) ---------------------------------------

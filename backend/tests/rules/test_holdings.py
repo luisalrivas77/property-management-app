@@ -70,6 +70,18 @@ def test_a_coin_splits_free_and_waiting_lots():
     assert coin.lots[1].value_eur == Decimal("49.95")
 
 
+def test_a_lot_of_open_origin_is_never_free_nor_a_coming_tranche():
+    """An unlinked in-leg's lot is dated the day it arrived, not a known acquisition day: it
+    counts neither as free of the holding period nor as the next tranche (the screen and the
+    statement say „Herkunft offen“)."""
+    unknown_old = _lot("1", "90.00", date(2025, 1, 10), source=LotSource.UNKNOWN)
+    unknown_new = _lot("2", None, date(2026, 2, 1), source=LotSource.UNKNOWN)
+    coin = _coin([unknown_old, unknown_new], _price("150.00"))
+    assert [lot.tax_free for lot in coin.lots] == [False, False]
+    assert coin.tax_free_units == 0 and coin.next_tax_free_from is None
+    assert coin.next_tax_free_units is None
+
+
 def test_an_unpriced_lot_is_never_a_cost_of_zero():
     priced = _lot("1", "100.00", date(2026, 1, 10))
     unpriced = _lot("0.5", None, date(2026, 3, 1), source=LotSource.ACQUISITION)
