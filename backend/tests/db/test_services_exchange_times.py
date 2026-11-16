@@ -704,3 +704,101 @@ def test_a_written_deposit_moves_with_its_withdrawal(
     _run(app_engine, blob_store, ws, seed.wallet, day=1)
     assert {r.id for r in deposits().values()} == {after[tx_hash].id, moved.id}
     assert len(_links(dbname, ws)) == 2
+
+
+# --- The command ---------------------------------------------------------------------------
+
+
+def test_the_command_counts_on_a_dry_run_and_changes_nothing(
+    run, read, blob_store, fresh_workspaces, dbname, monkeypatch, capsys
+):
+    """`hausbuch repair-exchange-times --dry-run` reports what the real run then does, and
+    rolls everything back; neither run prints a file name, an address or a hash."""
+    from db.test_cli_evals_report import _owner_url
+
+    from hausbuch import cli
+
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    with _legacy(monkeypatch) as m:
+        _no_zone(m)
+        _upload(run, blob_store, ws, account.id, _zip(TX, TX_MEMBER), TX_NAME)
+        chain = Chain(dbname, ws, _plain_eth(read, ws, account.id))
+        chain.receipt("0.1995", RECEIVED)
+        _upload(run, blob_store, ws, account.id, _zip(WD), WD_NAME, n=1)
+    times_before = _times(read, ws, account.id)
+    links_before = [r.id for r in _current_links(read, ws)]
+    events_before = _event_count(read, ws)
+    environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}
+    argv = ["repair-exchange-times", "--workspace", str(ws)]
+
+    assert cli.main([*argv, "--dry-run"], environ) == cli.EXIT_OK
+    dry = capsys.readouterr().out
+    assert "would move 3 movement(s) of 1 Binance import(s) to UTC" in dry
+    assert "would then link 0 transfer(s); reopened 0, ended 0" in dry
+    assert _times(read, ws, account.id) == times_before
+    assert [r.id for r in _current_links(read, ws)] == links_before
+    assert _event_count(read, ws) == events_before
+    assert read(ws, imports.exchange_overview, account.id).todos == [E.EXCHANGE_TIME_ZONE_UNKNOWN]
+
+    assert cli.main(argv, environ) == cli.EXIT_OK
+    real = capsys.readouterr().out
+    assert "moved 3 movement(s) of 1 Binance import(s) to UTC" in real
+    assert ("acquisition", BOUGHT) in _times(read, ws, account.id)
+    assert read(ws, imports.exchange_overview, account.id).todos == []
+    assert cli.main(argv, environ) == cli.EXIT_OK
+    assert "moved 0 movement(s) of 0 Binance import(s)" in capsys.readouterr().out
+    for text in (dry, real):
+        for needle in ("UTC1", "UTC+1", "History", TX_HASH[2:], EVM):
+            assert needle not in text
+
+
+# --- The normal path after the amendment ---------------------------------------------------
+
+
+def test_zone_named_files_complete_their_withdrawal_at_utc(
+    run, read, blob_store, fresh_workspaces, dbname
+):
+    """No repair needed: both of Binance's own ZIPs name their zone, the withdrawal stands at
+    its UTC time, the history completes it and the hash links the chain's receipt; the wallet's
+    lot carries the purchase."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    _upload(run, blob_store, ws, account.id, _zip(TX, TX_MEMBER), TX_NAME)
+    chain = Chain(dbname, ws, _plain_eth(read, ws, account.id))
+    _, receipt = chain.receipt("0.1995", RECEIVED)
+    done = _upload(run, blob_store, ws, account.id, _zip(WD), WD_NAME, n=1)
+    assert done.withdrawals_completed == 1
+    withdrawal = next(
+        r for r in _live(read, ws, account.id) if r.kind == MovementKind.INTERNAL_TRANSFER_OUT.value
+    )
+    assert (withdrawal.occurred_at, withdrawal.tx_hash) == (WITHDRAWN, TX_HASH)
+    [link] = _current_links(read, ws)
+    assert (link.out_movement_id, link.in_movement_id) == (withdrawal.id, receipt)
+    assert read(ws, imports.exchange_overview, account.id).todos == []
+    after = read(ws, holdings.crypto_holdings, ON)
+    assert after.unfilled_movements == 0
+    [coin] = [c for c in after.coins if c.account_id == chain.wallet]
+    assert [lot.acquired_at for lot in coin.lots] == [BOUGHT]
+    assert _repair(run, ws).corrected.movements == 0
+
+
+def test_a_renamed_history_after_the_repair_is_read_in_the_import_s_zone(
+    run, read, blob_store, fresh_workspaces, monkeypatch
+):
+    """The withdrawal history uploaded under a name that names no zone, onto an import the
+    repair has moved: it is read in that import's zone (the account's known offset), so its row
+    still stands within the hour before the moved withdrawal and completes it."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    with _legacy(monkeypatch) as m:
+        _no_zone(m)
+        _upload(run, blob_store, ws, account.id, _zip(TX, TX_MEMBER), TX_NAME)
+    assert _repair(run, ws).corrected.imports == 1
+    done = _upload(run, blob_store, ws, account.id, _zip(WD), "history.zip", n=40)
+    assert done.withdrawals_completed == 1
+    withdrawal = next(
+        r for r in _live(read, ws, account.id) if r.kind == MovementKind.INTERNAL_TRANSFER_OUT.value
+    )
+    assert (withdrawal.occurred_at, withdrawal.tx_hash) == (WITHDRAWN, TX_HASH)
+    assert withdrawal.fee_quantity == Decimal("0.0005")
