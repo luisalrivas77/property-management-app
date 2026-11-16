@@ -88,7 +88,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import Field
 
-from hausbuch.schemas.chain import Lot, LotSource, LotUse
+from hausbuch.schemas.chain import Lot, LotSource, LotUse, PriceNeed
 from hausbuch.schemas.common import Money, Schema
 from hausbuch.schemas.household import (
     AssetMovement,
@@ -140,22 +140,9 @@ def _exact[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
     return run
 
 
-class HeldLot(Lot):
-    """A `Lot` with what `consume` and `LotUse.lot_id` need and the spec's `Lot` lacks: its
-    id, the movement that created it (kept through every move) and the instant it was
-    acquired (FIFO's second key). To be folded into `schemas/chain.Lot` (step 6 report)."""
-
-    id: UUID
-    movement_id: UUID
-    acquired_at: datetime
-
-
-class PriceNeed(Schema):
-    """A price of one asset for one Berlin day whose absence leaves a lot unpriced: typing it
-    („Kurs eintragen“, a `user` price of D167) prices the lot (D188 (4), principle 7)."""
-
-    asset_id: UUID
-    on: date
+# The lot with its id, creating movement and instant: folded into `schemas/chain.Lot` in
+# step 6; the name stays for the callers of step 0's rules. PriceNeed lives there too.
+HeldLot = Lot
 
 
 class LotBook(Schema):

@@ -2458,6 +2458,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/holdings/crypto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Crypto Holdings
+         * @description Every wallet and exchange account with its coins and their open lots (FIFO per account
+         *     and coin), each lot with its day, units, cost and „steuerfrei ab“, or the prices whose
+         *     absence leaves it without a cost („Kurs fehlt“); the four cards of the tab.
+         */
+        get: operations["crypto_holdings_api_holdings_crypto_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/holdings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallets Holdings
+         * @description D190's statement at the end of the Berlin day `on`: per account its addresses' units,
+         *     its positions with their open lots and value, the spam tokens (never valued) and the
+         *     addresses whose last sync on or before the day did not reconcile.
+         */
+        get: operations["wallets_holdings_api_wallets_holdings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wallets/{account_id}/lots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wallet Lots
+         * @description The account's open lots on `on`, of one coin with `asset`, in FIFO order. An account
+         *     with nothing held (or of another workspace) answers an empty list.
+         */
+        get: operations["wallet_lots_api_wallets__account_id__lots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/wallets/{account_id}/sync": {
         parameters: {
             query?: never;
@@ -3409,6 +3474,41 @@ export interface components {
             external_ref?: string | null;
         };
         /**
+         * AccountHoldings
+         * @description One wallet or exchange account. `addresses[].units_by_asset` is keyed by the asset id
+         *     (a chain token's symbol is not unique); `movement_ids` are the confirmed movements the
+         *     statement summed (D190: the statement's source list).
+         */
+        AccountHoldings: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Kind
+             * @default
+             */
+            kind: string;
+            /** Provider */
+            provider?: string | null;
+            /** Addresses */
+            addresses?: components["schemas"]["AddressHoldings"][];
+            /** Positions */
+            positions?: components["schemas"]["PositionHoldings"][];
+            /** Unvalued Tokens */
+            unvalued_tokens?: components["schemas"]["UnvaluedToken"][];
+            /** Unreconciled Addresses */
+            unreconciled_addresses?: string[];
+            /** Movement Ids */
+            movement_ids?: string[];
+        };
+        /**
          * AccountKind
          * @description account.kind (migration 0025, phase 6 D156). `wallet` was in the CHECK from the start
          *     so phase 7 adds no migration for it; create_account takes it since phase 7 step 1 (D179).
@@ -3603,6 +3703,16 @@ export interface components {
              * @default DE
              */
             country_code: string;
+        };
+        /** AddressHoldings */
+        AddressHoldings: {
+            /** Address Masked */
+            address_masked: string;
+            chain: components["schemas"]["Chain"];
+            /** Units By Asset */
+            units_by_asset?: {
+                [key: string]: string;
+            };
         };
         /**
          * AddressKind
@@ -5258,6 +5368,186 @@ export interface components {
          * @enum {string}
          */
         CredentialSource: "app" | "server" | "none";
+        /** CryptoAccount */
+        CryptoAccount: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Label */
+            label: string;
+            /** Kind */
+            kind: string;
+            /** Provider */
+            provider?: string | null;
+            /** Ownership */
+            ownership?: components["schemas"]["OwnershipShare"][];
+            /** Value Eur */
+            value_eur: string;
+            /**
+             * Unvalued Coins
+             * @default 0
+             */
+            unvalued_coins: number;
+        };
+        /**
+         * CryptoCoin
+         * @description One coin on one account (FIFO is per account and coin, D188 (1)).
+         */
+        CryptoCoin: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol?: string | null;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Units */
+            units: string;
+            /** Price Eur */
+            price_eur?: string | null;
+            /** Price On */
+            price_on?: string | null;
+            /** Value Eur */
+            value_eur?: string | null;
+            /** Cost Eur */
+            cost_eur?: string | null;
+            /** Cost Priced Eur */
+            cost_priced_eur: string;
+            /** Unpriced Lots */
+            unpriced_lots: number;
+            /** Unrealized Eur */
+            unrealized_eur?: string | null;
+            /** Tax Free Units */
+            tax_free_units: string;
+            /** Tax Free Value Eur */
+            tax_free_value_eur?: string | null;
+            /** Next Tax Free From */
+            next_tax_free_from?: string | null;
+            /** Next Tax Free Units */
+            next_tax_free_units?: string | null;
+            /**
+             * Reconciled
+             * @default true
+             */
+            reconciled: boolean;
+            /** Lots */
+            lots?: components["schemas"]["CryptoLot"][];
+        };
+        /**
+         * CryptoHoldings
+         * @description GET /holdings/crypto: the Krypto tab on `on` (today by default).
+         */
+        CryptoHoldings: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Total Eur */
+            total_eur: string;
+            /**
+             * Unvalued Coins
+             * @default 0
+             */
+            unvalued_coins: number;
+            /** Unrealized Eur */
+            unrealized_eur: string;
+            /**
+             * Unrealized Excluded
+             * @default 0
+             */
+            unrealized_excluded: number;
+            /** Tax Free Today Eur */
+            tax_free_today_eur: string;
+            /**
+             * Tax Free Today Excluded
+             * @default 0
+             */
+            tax_free_today_excluded: number;
+            next_tranche?: components["schemas"]["NextTranche"] | null;
+            /** Accounts */
+            accounts?: components["schemas"]["CryptoAccount"][];
+            /** Coins */
+            coins?: components["schemas"]["CryptoCoin"][];
+            /**
+             * Unfilled Movements
+             * @default 0
+             */
+            unfilled_movements: number;
+        };
+        /**
+         * CryptoLot
+         * @description An open lot as the tab shows it: tax-free today or from `tax_free_from`, its value at
+         *     the coin's price, and what resolves a missing cost. A lot of source `unknown` (an in-leg
+         *     no transfer explains, a correction) has no price need: its cost is unknown for another
+         *     reason, and the tab names that instead.
+         */
+        CryptoLot: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Movement Id
+             * Format: uuid
+             */
+            movement_id: string;
+            /**
+             * Acquired At
+             * Format: date-time
+             */
+            acquired_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /**
+             * Acquired On
+             * Format: date
+             */
+            acquired_on: string;
+            /** Units */
+            units: string;
+            /** Units Open */
+            units_open: string;
+            /** Cost Eur */
+            cost_eur?: string | null;
+            /** Cost Per Unit */
+            cost_per_unit?: string | null;
+            source: components["schemas"]["LotSource"];
+            /** Moved Through */
+            moved_through?: string[];
+            /**
+             * Tax Free From
+             * Format: date
+             */
+            tax_free_from: string;
+            /** Tax Free */
+            tax_free: boolean;
+            /** Value Eur */
+            value_eur?: string | null;
+            /** Price Needs */
+            price_needs?: components["schemas"]["LotPriceNeed"][];
+        };
         /**
          * Currency
          * @description transaction.currency. v1 is EUR only (one value, kept as a CHECK'd set like
@@ -6770,6 +7060,16 @@ export interface components {
             /** Units */
             units: string;
         };
+        /** HoldingsStatement */
+        HoldingsStatement: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Accounts */
+            accounts?: components["schemas"]["AccountHoldings"][];
+        };
         /**
          * HomeOfficeComponent
          * @description §5.3: (days_other_workplace + days_no_other_workplace) × day_rate, at most cap.
@@ -7619,6 +7919,85 @@ export interface components {
             };
         };
         /**
+         * Lot
+         * @description A lot, computed on read (D188 (1)). `id` is derived from its origin (the creating
+         *     movement, or a moved part's origin and link), so a re-read gives the same id; `movement_id`
+         *     is the movement that created it, kept through every move (principle 2: a lot links to its
+         *     movements); `acquired_at` is the instant, FIFO's second key after `acquired_on`. Folded in
+         *     from rules/lots.HeldLot in step 6.
+         */
+        Lot: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Movement Id
+             * Format: uuid
+             */
+            movement_id: string;
+            /**
+             * Acquired At
+             * Format: date-time
+             */
+            acquired_at: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /**
+             * Acquired On
+             * Format: date
+             */
+            acquired_on: string;
+            /** Units */
+            units: string;
+            /** Units Open */
+            units_open: string;
+            /** Cost Eur */
+            cost_eur?: string | null;
+            /** Cost Per Unit */
+            cost_per_unit?: string | null;
+            source: components["schemas"]["LotSource"];
+            /** Moved Through */
+            moved_through?: string[];
+            /**
+             * Tax Free From
+             * Format: date
+             */
+            tax_free_from: string;
+        };
+        /**
+         * LotPriceNeed
+         * @description „Kurs eintragen“ for this coin and day prices the lot (a typed `user` price, D167).
+         */
+        LotPriceNeed: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol?: string | null;
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+        };
+        /**
+         * LotSource
+         * @enum {string}
+         */
+        LotSource: "acquisition" | "reward" | "transfer" | "unknown";
+        /**
          * ManagementContractExtraction
          * @description Verwaltervertrag (contract / management_contract, D130): a Mietverwaltungsvertrag with
          *     the household's letting manager, or the WEG's Verwaltervertrag. Proposes typing and
@@ -8166,6 +8545,22 @@ export interface components {
          * @enum {string}
          */
         NetWorthTodoCode: "net_worth.balance_unreconciled" | "net_worth.balance_outdated" | "net_worth.price_missing" | "net_worth.price_stale" | "net_worth.position_not_reconciled" | "net_worth.position_not_booked" | "net_worth.ownership_missing" | "net_worth.property_shares_missing" | "net_worth.loan_not_valued";
+        /**
+         * NextTranche
+         * @description „Nächste Tranche steuerfrei“: the earliest future `tax_free_from` over every open lot,
+         *     with the units of every coin that becomes free that day (D188 (5)).
+         */
+        NextTranche: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Parts */
+            parts?: components["schemas"]["TranchePart"][];
+            /** Value Eur */
+            value_eur?: string | null;
+        };
         /**
          * NoPayFact
          * @description „Kein Arbeitslohn in <Jahr>“ (D195): the owner had no pay that year (e.g. a whole year of
@@ -8748,6 +9143,40 @@ export interface components {
             tax_free_benefits_month?: components["schemas"]["ExtractedValue"];
             /** @description steuerfreie Bezüge, Jahreswerte / kumuliert */
             tax_free_benefits_ytd?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * PositionHoldings
+         * @description An account's position in one asset at the end of the statement's day. `symbol` and
+         *     `name` label it (a chain token's symbol is a label, D180 amended); `price_eur` and
+         *     `price_on` the price `value_eur` used (phase 6 D167's `price_on`, a chain token through
+         *     its `priced_as` asset); `reconciled` is false when the last sync on or before the day of an
+         *     address holding it did not reconcile (an exchange has no sync: true).
+         */
+        PositionHoldings: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol?: string | null;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Units */
+            units: string;
+            /** Lots */
+            lots?: components["schemas"]["Lot"][];
+            /** Price Eur */
+            price_eur?: string | null;
+            /** Price On */
+            price_on?: string | null;
+            /** Value Eur */
+            value_eur?: string | null;
+            /** Reconciled */
+            reconciled: boolean;
         };
         /**
          * PossibleDuplicate
@@ -11378,6 +11807,25 @@ export interface components {
             /** Amount */
             amount: string;
         };
+        /** TranchePart */
+        TranchePart: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Symbol */
+            symbol?: string | null;
+            /** Units */
+            units: string;
+            /** Value Eur */
+            value_eur?: string | null;
+        };
         /**
          * Transaction
          * @description Read shape. The counterparty IBAN is shown masked only. allocation_status and
@@ -11839,6 +12287,25 @@ export interface components {
             rooms?: components["schemas"]["RoomRent"][];
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
+        /**
+         * UnvaluedToken
+         * @description A token held but not shown in the value (spam, or no price source), listed so the
+         *     statement still accounts for every unit (D187).
+         */
+        UnvaluedToken: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Units */
+            units: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "spam" | "no_price";
         };
         /**
          * UsefulLife
@@ -17414,6 +17881,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MovementAnswered"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    crypto_holdings_api_holdings_crypto_get: {
+        parameters: {
+            query?: {
+                on?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CryptoHoldings"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallets_holdings_api_wallets_holdings_get: {
+        parameters: {
+            query?: {
+                on?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoldingsStatement"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    wallet_lots_api_wallets__account_id__lots_get: {
+        parameters: {
+            query?: {
+                asset?: string | null;
+                on?: string | null;
+            };
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CryptoLot"][];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
