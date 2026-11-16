@@ -792,7 +792,9 @@ export function MovementAnswers({ movement, exchange, onDone }: { movement: Exch
   const [error, setError] = useState<unknown>(null);
   const [remember, setRemember] = useState(true);
   if (movement.status !== "proposed") return null;
-  const canLearn = !movement.quantity.startsWith("-") && (movement.answers ?? []).includes("internal_transfer_in");
+  // a deposit already proposed as a transfer in is confirmed, not answered: its box would teach nothing
+  const canLearn =
+    !movement.quantity.startsWith("-") && movement.kind !== "internal_transfer_in" && (movement.answers ?? []).includes("internal_transfer_in");
 
   async function answer(kind: MovementKind) {
     setBusy(kind);
