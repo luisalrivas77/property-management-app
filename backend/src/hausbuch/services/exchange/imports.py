@@ -585,12 +585,16 @@ def import_export(
     if offset is not None and stored:
         # D178 amended (4): rows an import read as UTC carries too were written in this zone.
         times.correct_overlapping(ctx, account_id, stored, offset, document.id, locked)
+    elsewhere: tuple[set[str], list[UUID]] = (set(), [])
+    if export.kind is ExportKind.BINANCE_TRANSACTIONS and offset is not None:
+        # Review F (D178 amended (4)): the same rows exported before in another zone.
+        elsewhere = times.stored_in_another_zone(ctx.conn, account_id, movements, stored)
     # A movement is new when no stored movement of the account and no earlier movement of the
     # same file carries its hash: BISON can repeat a Transaction ID inside one export, and the
     # first row is kept (D166, D22's dedup within a file), never a unique-index failure.
     new = []
     for mv in movements:
-        if mv.movement_hash in stored:
+        if mv.movement_hash in stored or mv.movement_hash in elsewhere[0]:
             continue
         stored.add(mv.movement_hash)
         new.append(mv)
@@ -604,7 +608,8 @@ def import_export(
                 m.movement_hash.in_([mv.movement_hash for mv in movements]),
             )
         ).scalars()
-        first, last = times.live_bounds(ctx.conn, account_id, matched) or (first, last)
+        roots = [*matched, *elsewhere[1]]
+        first, last = times.live_bounds(ctx.conn, account_id, roots) or (first, last)
     imported = ctx.conn.execute(
         insert(import_table)
         .values(

@@ -52,11 +52,13 @@ same zone, still skips every stored row.
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import Connection, Row, insert, select, update
 
 from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import event as event_table
@@ -77,6 +79,7 @@ from hausbuch.schemas.events import (
     TransferUnlinked,
 )
 from hausbuch.schemas.household import (
+    ExchangeMovement,
     MovementImportFormat,
     MovementKind,
     MovementSource,
@@ -215,6 +218,62 @@ def live_bounds(
     tips = list(_tips(conn, account_id, roots))
     times = conn.execute(select(m.occurred_at).where(m.id.in_(tips))).scalars().all()
     return min(times), max(times)
+
+
+def stored_in_another_zone(
+    conn: Connection,
+    account_id: UUID,
+    movements: Sequence[ExchangeMovement],
+    stored: set[str],
+) -> tuple[set[str], list[UUID]]:
+    """Review F (16 Nov 2026): the rows of a file whose zone is known that an import of a
+    known zone stored already from an export in another zone. The movement hash keeps the time
+    as written, so the same row exported in UTC+2 and before in UTC+1 hashes differently; here
+    it is the same row when a stored row of a known-zone import has the same instant in UTC
+    (its live row's), kind, coin and quantity. Matched by position: the n-th such row of the
+    file is the n-th stored one, so two equal rows of one second stay two. Only stored rows
+    whose hash the file does not carry are candidates, and only the file's rows no hash
+    matched (not in `stored`). Answers the hashes to skip and the stored rows (roots) they
+    matched."""
+    hashes = {mv.movement_hash for mv in movements}
+    i, m, a = import_table.c, movement_table.c, asset_table.c
+    known = _known(conn, account_id)
+    if not known:
+        return set(), []
+    documents = (
+        conn.execute(select(i.document_id).where(i.id.in_(known), i.account_id == account_id))
+        .scalars()
+        .all()
+    )
+    roots = conn.execute(
+        select(m.id, m.kind, m.quantity, a.symbol, m.created_at)
+        .join(asset_table, a.id == m.asset_id)
+        .where(
+            m.account_id == account_id,
+            m.document_id.in_(documents),
+            m.movement_hash.is_not(None),
+            m.movement_hash.not_in(hashes),
+        )
+        .order_by(m.created_at, m.id)
+    ).all()
+    if not roots:
+        return set(), []
+    tips = _tips(conn, account_id, roots)
+    at = dict(conn.execute(select(m.id, m.occurred_at).where(m.id.in_(list(tips)))).tuples().all())
+    waiting: dict[tuple, list[UUID]] = {}
+    for tip, root in tips.items():
+        key = (at[tip], root.kind, root.symbol, Decimal(root.quantity).normalize())
+        waiting.setdefault(key, []).append(root.id)
+    skip: set[str] = set()
+    matched: list[UUID] = []
+    for mv in movements:
+        if mv.movement_hash in stored or mv.movement_hash in skip:
+            continue
+        key = (mv.occurred_at, mv.kind.value, mv.asset, Decimal(mv.quantity).normalize())
+        if waiting.get(key):
+            matched.append(waiting[key].pop(0))
+            skip.add(mv.movement_hash)
+    return skip, matched
 
 
 # --- Moving one import ------------------------------------------------------------------------

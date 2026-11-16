@@ -1050,3 +1050,78 @@ def test_a_history_checked_before_the_repair_still_names_why(
     assert _repair(run, ws).corrected.movements == 3
 
     assert read(ws, imports.exchange_overview, account.id).todos == no_match[1:]
+
+
+def _in_utc2(text: str) -> str:
+    """The same export written in UTC+2: every time an hour later than in UTC+1."""
+    out = []
+    for line in text.splitlines(keepends=True):
+        cells = line.split(",")
+        if len(cells) > 2 and cells[1][:4].isdigit():
+            at = datetime.strptime(cells[1], "%Y-%m-%d %H:%M:%S") + HOUR
+            cells[1] = at.strftime("%Y-%m-%d %H:%M:%S")
+        out.append(",".join(cells))
+    return "".join(out)
+
+
+UTC2_NAME = "Binance-Transaction-History-202704011200UTC2_100003.zip"
+UTC2_MEMBER = "Transaction-History-202704011200(UTC+2)-part1-of1.csv"
+
+
+def test_the_same_rows_exported_in_another_zone_are_stored_already(
+    run, read, blob_store, fresh_workspaces
+):
+    """Review F: the export of UTC+1, then the same rows exported in UTC+2. Their hashes
+    differ (the time as written), but each is the same instant, kind, coin and quantity as a
+    stored row of a known zone, so nothing is stored twice."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    first = _upload(run, blob_store, ws, account.id, _zip(TX, TX_MEMBER), TX_NAME).movement_import
+    before = _times(read, ws, account.id)
+
+    again = _upload(
+        run, blob_store, ws, account.id, _zip(_in_utc2(TX), UTC2_MEMBER), UTC2_NAME, n=1
+    ).movement_import
+
+    assert (again.rows_new, again.rows_skipped) == (0, first.rows_total)
+    assert (again.first_at, again.last_at) == (first.first_at, first.last_at)
+    assert _times(read, ws, account.id) == before
+    assert E.EXCHANGE_TIME_ZONE_UNKNOWN not in read(ws, imports.exchange_overview, account.id).todos
+
+
+def test_a_longer_export_in_another_zone_adds_only_the_new_row(
+    run, read, blob_store, fresh_workspaces
+):
+    """Review F: a later UTC+2 export holding the UTC+1 rows and one more adds that one."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    first = _upload(run, blob_store, ws, account.id, _zip(TX, TX_MEMBER), TX_NAME).movement_import
+    longer = _in_utc2(TX + LATER_ROW)
+
+    again = _upload(
+        run, blob_store, ws, account.id, _zip(longer, UTC2_MEMBER), UTC2_NAME, n=1
+    ).movement_import
+
+    assert (again.rows_new, again.rows_skipped) == (1, first.rows_total)
+    assert datetime(2026, 3, 9, 10, 0, tzinfo=UTC) in [at for _, at in _times(read, ws, account.id)]
+    assert len(_live(read, ws, account.id)) == len(_times(read, ws, account.id))
+
+
+def test_two_equal_rows_in_another_zone_match_one_by_one(run, read, blob_store, fresh_workspaces):
+    """Review F: two equal deposits in one second are two rows; a re-export in another zone
+    holding three of them adds the third."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    row = "100000001,2026-03-02 10:00:00,Spot,Deposit,EUR,500,\n"
+    _upload(run, blob_store, ws, account.id, _zip(HEADER + row * 2, TX_MEMBER), TX_NAME)
+    again = _upload(
+        run,
+        blob_store,
+        ws,
+        account.id,
+        _zip(_in_utc2(HEADER + row * 3), UTC2_MEMBER),
+        UTC2_NAME,
+        n=1,
+    ).movement_import
+    assert (again.rows_new, again.rows_skipped) == (1, 2)
+    assert len(_live(read, ws, account.id)) == 3
