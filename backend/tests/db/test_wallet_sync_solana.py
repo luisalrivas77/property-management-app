@@ -20,7 +20,7 @@ import pytest
 from db.db_support import _admin, _insert
 from db.test_phase7_migration import _address, _hmac, _wallet
 from pydantic import SecretStr
-from solana_chain_fake import FakeChain, signature, token_account
+from solana_chain_fake import FakeChain, Records, signature, token_account
 
 from hausbuch.rules.chain import solana
 from hausbuch.rules.chain.classify import ClassifyContext, register_family
@@ -373,7 +373,8 @@ def test_a_spent_budget_inside_a_discovery_loses_nothing(dbname, chain, wallet, 
     for case_id in FIRST:
         chain.add(_record(case_id))
     chain.lamports[A] = _sums(*FIRST)[0]
-    budgets = {ChainSourceKind.SOLANA_RPC: RequestBudget(7)}
+    # the height, 2 listings of A, 2 token programs, 3 transactions; the account's listing cut
+    budgets = {ChainSourceKind.SOLANA_RPC: RequestBudget(8)}
     first = sync(ws, a, budgets=budgets)
     assert first.deferred and first.reconciled is None
     got = set().union(*(_signed(i) for i in ("native_receive", "native_send_with_fee", "spl_out")))
@@ -381,3 +382,30 @@ def test_a_spent_budget_inside_a_discovery_loses_nothing(dbname, chain, wallet, 
     rest = sync(ws, a)
     assert not rest.deferred
     assert _movements(dbname, account) == got | _signed("spl_in")
+
+
+@pytest.mark.parametrize("first", [8, 9, 12, 60])
+def test_a_first_sync_cut_short_stores_all_306_transactions(dbname, chain, wallet, sync, first):
+    """The step 2 review's sequence 1 (a): a token account opened, credited without naming A,
+    debited and closed, then 300 SOL credits; the first run is cut while the account is found
+    or listed. The next run, with the default budget, reads the stored originals for the token
+    accounts earlier runs found and ends with every transaction stored; the run after it is at
+    the tip. No cursor names the token account."""
+    ws, account, a = wallet
+    closed = "T1c1osedTokenAccountInventedA"
+    r = Records(A)
+    records = [r.sol_in(1), r.open(3, closed), r.token_in(7, closed), r.sol_in(9)]
+    records += [r.token_out(15, closed), r.close(25, closed)]
+    records += [r.sol_in(100 + i) for i in range(300)]
+    for record in records:
+        chain.add(record)
+    cut = sync(ws, a, budgets={ChainSourceKind.SOLANA_RPC: RequestBudget(first)})
+    assert cut.deferred
+    rest = sync(ws, a)
+    assert not rest.deferred
+    assert set(_groups(dbname, account)) == {signature(rec) for rec in records}
+    again = sync(ws, a)
+    assert not again.deferred and again.movements_new == 0
+    cursors = _rows(dbname, "SELECT cursor_after FROM wallet_sync WHERE address_id = %s", a)
+    assert len({c for (c,) in cursors[1:]}) == 1  # the tip: unchanged by the last run
+    assert all(closed not in (c or "") for (c,) in cursors)

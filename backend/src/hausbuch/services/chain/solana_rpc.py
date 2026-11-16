@@ -6,15 +6,17 @@ a node of one's own): the URL is `HAUSBUCH_SOLANA_RPC_URL` and the pace `HAUSBUC
 (4 on the public endpoint's per-method cap, 40 on a paid plan). The caller passes both; nothing
 here reads the environment.
 
-Read-only methods only: `getSignaturesForAddress` (paged back with `before` to the address's
-first signature, or to `until` the sync's cursor), `getTransaction` (encoding jsonParsed,
-maxSupportedTransactionVersion 0, at `finalized`), `getBalance`, `getTokenAccountsByOwner` over
-both token programs, `getInflationReward`, `getEpochInfo` and `getBlockTime`.
+Read-only methods only: `getSlot` (the run's finalized height), `getSignaturesForAddress`
+(paged back with `before` to the address's first signature, or to below the slot the cursor
+names), `getTransaction` (encoding jsonParsed, maxSupportedTransactionVersion 0, at
+`finalized`), `getBalance`, `getTokenAccountsByOwner` over both token programs,
+`getInflationReward`, `getEpochInfo` and `getBlockTime`.
 
 `getSignaturesForAddress` lists the transactions whose account keys hold the address, so a
 token credited to an own token account names the token account, never the owner (solana_tx.yaml
-`spl_in`). `token_accounts` gives every token account of an owner, and the sync lists each of
-them too (a closed one from the stored originals), merged and deduplicated by signature.
+`spl_in`). `token_accounts` gives every open token account of an owner; SolanaSource lists each
+of them too, and a closed one when a record of the run names it or, after a run the budget
+cut, when the address's stored originals do, merged and deduplicated by signature.
 
 The URL is a secret (a provider's key travels in its query or its path): it is never logged,
 never in an exception, never in a repr; `source_host` gives the host alone (wallet_sync's
@@ -23,16 +25,19 @@ never in an exception, never in a repr; `source_host` gives the host alone (wall
 (the run's request budget spent), or SolanaRpcError with an exception class, an HTTP status or
 the JSON-RPC error number, never the provider's message. A listed signature whose transaction
 the provider no longer serves (null, or a JSON-RPC error of the ledger) raises
-HistoryUnavailable with the slot reached, so a sync stops there and says so (Q-O93), never
-skipping a transaction silently.
+HistoryUnavailable, which SolanaSource turns into `wallet.source_failed`: the run fails and
+its cursor stays, never skipping a transaction silently. The spec's Q-O93 asks for a run
+that records `oldest_slot_reached` and stops there instead; that is not built (an accepted,
+still open deviation, phase-7.md §15.1).
 """
 
+import heapq
 import json
 import ssl
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import cast
@@ -359,6 +364,10 @@ class SolanaRpc:
             raw=dict(record),
         )
 
+    def finalized_slot(self) -> int:
+        """getSlot at `finalized`: the height a run reads its history to."""
+        return _int(self.call("getSlot", [{"commitment": COMMITMENT}]))
+
     # --- balances ------------------------------------------------------------------------
 
     def lamports(self, address: str) -> tuple[int, int]:
@@ -487,19 +496,26 @@ def _signature_info(raw: object) -> SignatureInfo:
 
 @dataclass(frozen=True)
 class SourceCursor:
-    """A SolanaSource cursor, `<slot>:<signature>[;<back>;<upto>]` (≤ 200 characters).
+    """A SolanaSource cursor: `<slot>:<signature>`, or `<slot>:<signature>;<closed>` after a
+    run the budget cut (≤ 110 characters; never a token account's address).
 
-    `slot` is where the next run lists from, inclusive (listings of several accounts have no
-    order inside one slot); `signature` the highest transaction served there, so the cursor
-    changes while a run moves on and comes back unchanged at the tip. `back` and `upto` are
-    an unfinished discovery the budget cut (see SolanaSource): a token account named by a
-    record at a slot ≤ `upto` is listed from `back` (empty: from its first signature), not
-    from `slot`."""
+    `slot` is where the next run lists the address and its open token accounts from,
+    inclusive: every transaction of theirs below it is served. `signature` is the highest one
+    served at that slot (empty while one there is still unserved), so the cursor changes
+    while a run moves on and comes back unchanged at the tip. `closed` is where the own token
+    accounts found in earlier runs (services/chain/sync passes the stored originals) are
+    listed from: every transaction of theirs below it is served; empty means from their first.
+    Without it they are complete below `slot` and listed only when a record names them."""
 
     slot: int | None = None
     signature: str = ""
-    back: int | None = None
-    upto: int | None = None
+    closed: int | None = None
+    split: bool = False  # `closed` written: the stored token accounts are listed at the start
+
+    @property
+    def low(self) -> int | None:
+        """Where the own token accounts found in earlier runs are complete to (None: nowhere)."""
+        return self.closed if self.split else self.slot
 
     @classmethod
     def parse(cls, text: str | None) -> "SourceCursor":
@@ -507,18 +523,22 @@ class SourceCursor:
         again and the movement hashes keep it once."""
         head, *extra = (text or "").split(";")
         slot, _, signature = head.partition(":")
-        if not slot.isdigit():
+        if not slot.isdigit() or len(extra) > 1:
             return cls()
-        if len(extra) == 2 and extra[1].isdigit() and (not extra[0] or extra[0].isdigit()):
-            back = int(extra[0]) if extra[0] else None
-            return cls(int(slot), signature, back, int(extra[1]))
-        return cls(int(slot), signature)
+        if not extra:
+            return cls(int(slot), signature)
+        if extra[0] and not extra[0].isdigit():
+            return cls()
+        closed = int(extra[0]) if extra[0] else None
+        if closed is not None and closed >= int(slot):
+            return cls(int(slot), signature)
+        return cls(int(slot), signature, closed, True)
 
     def text(self) -> str:
         head = f"{self.slot}:{self.signature}"
-        if self.upto is None:
+        if not self.split:
             return head
-        return f"{head};{'' if self.back is None else self.back};{self.upto}"
+        return f"{head};{'' if self.closed is None else self.closed}"
 
 
 def owned_token_accounts(record: Mapping[str, JsonValue], owner: str) -> set[str]:
@@ -542,25 +562,37 @@ def _covers(have: int | None, want: int | None) -> bool:
     return have is None or (want is not None and have <= want)
 
 
+def _lowest(*bounds: int | None) -> int | None:
+    """The lowest of listing bounds, None (from the first) below every slot."""
+    return None if None in bounds else min(cast(int, b) for b in bounds)
+
+
+# Records the core read from the address's stored originals (sync passes them on demand).
+StoredRecords = Callable[[], Iterable[Mapping[str, JsonValue]]]
+
+
 @dataclass
 class _Run:
     """One address's listing inside one source (a source is built per address run)."""
 
+    address: str
     start: SourceCursor
-    ready: bool = False  # the address and its open token accounts are listed
+    loader: StoredRecords | None = None  # the address's stored records (services/chain/sync)
+    height: int = 0  # the finalized slot fixed at the start: nothing above it is served
+    ready: bool = False  # the run's start listings are done
     accounts: set[str] = field(default_factory=set)  # own token accounts known so far
+    stored: set[str] | None = None  # those found in earlier runs, read on demand
     listed: dict[str, int | None] = field(default_factory=dict)  # account -> listed from
     pending: dict[str, SignatureInfo] = field(default_factory=dict)  # listed, not served
+    queue: list[tuple[int, str]] = field(default_factory=list)  # heap of pending positions
+    open_side: set[str] = field(default_factory=set)  # listed via the address or an open one
     served: set[str] = field(default_factory=set)
     last: tuple[int, str] | None = None  # the highest (slot, signature) served
-    cut: tuple[int, int | None] | None = None  # a discovery the budget cut: (slot, from)
+    cuts: list[tuple[bool, int | None]] = field(default_factory=list)  # (open side, from)
 
-    def bound(self, slot: int) -> int | None:
-        """The slot a token account named by a record at `slot` is listed from."""
-        upto = self.start.upto
-        if upto is not None and slot <= upto:
-            return self.start.back
-        return self.start.slot
+    @property
+    def complete(self) -> bool:
+        return not self.pending and not self.cuts
 
 
 @dataclass
@@ -572,22 +604,29 @@ class SolanaSource:
     account alone (solana_tx.yaml `spl_in`). A run therefore lists the address, each token
     account `getTokenAccountsByOwner` gives it now, and each token account a record read in
     the run names as the address's (a closed one: its opening and closing transactions hold
-    the owner), merged by signature and read oldest first by (slot, signature).
+    the owner), merged by signature and read oldest first by (slot, signature). A token
+    account found that no earlier run stored is listed from its first transaction; one an
+    earlier run stored (`stored`: the sync passes the address's stored originals, read only
+    when needed) from where the cursor says its transactions are complete.
 
-    **The cursor** (SourceCursor) stands on the highest transaction served; the next run lists
-    again from that slot, inclusive, so the transactions of that slot are read once more and
-    the movement hashes store them once. A page never splits a slot, and the slot it starts
-    on does not count toward its size. When something listed is still unserved below the
-    highest slot served (a token account found late, or the budget spent inside a slot), the
-    cursor stands on that slot instead, so nothing listed is skipped. At the tip it comes
-    back unchanged, which ends the sync's loop.
+    **One height.** The run fixes the finalized slot first (`getSlot`) and serves nothing
+    above it, so listings read moments apart agree on where the history ends.
+
+    **The cursor** (SourceCursor) stands on the lowest slot something listed is still unserved
+    at, else on the highest transaction served; the next run lists again from that slot,
+    inclusive, so the transactions of that slot are read once more and the movement hashes
+    store them once. A page never splits a slot, and the slot it starts on does not count
+    toward its size. At the tip it comes back unchanged, which ends the sync's loop; a page is
+    never handed back with the cursor it was given while something listed is unserved and the
+    budget has not refused.
 
     **The budget.** Every request asks the run's RequestBudget first; a „no“ ends the page
-    where it stood (the sync then marks the run deferred), never an error. When the budget
-    cuts the listing of a token account just found, the cursor stands on the record that
-    named it and carries `back`/`upto`, so the next run lists that account from where this
-    run listed, not from the cursor: a daily budget that always ends at the same place still
-    moves on, and no older transaction of the account is lost.
+    where it stood (the sync then marks the run deferred), never an error, and nothing taken
+    from the listing is dropped before its record and block time are in hand. A run the budget
+    cut writes `closed`: the next run lists every token account an earlier run stored from
+    there, so a closed one with transactions still unserved is found without the record that
+    names it, and a daily budget that always ends at the same place still moves on. A listing
+    of 1,000 signatures a page needs its pages within one run's budget (§15.1).
 
     **Per address.** Each own address is its own run, read and reconciled alone (the
     `transfers` of a ChainTx are the address's own), as solana.classify_tx reads it. A stake
@@ -597,7 +636,8 @@ class SolanaSource:
     **Stored as read.** `raw` is the provider's record; only a record with a token balance row
     without an `owner` carries the own token accounts the run knew, under solana.SYNC_KEY, so
     the classifier reads the same legs from the stored original without a provider (D192). A
-    record whose token legs cannot be read anyway is a card, never a stopped sync.
+    record whose token legs cannot be read anyway is a card, never a stopped sync. No token
+    account's address leaves the run: never in a cursor, an event or a log.
 
     **Errors.** A JSON-RPC or transport failure, or a transaction the provider no longer
     serves (Q-O93), is `wallet.source_failed` with the HTTP status at most; a 429 throttles
@@ -607,6 +647,7 @@ class SolanaSource:
     rpc: SolanaRpc
     kind: ChainSourceKind = ChainSourceKind.SOLANA_RPC
     reconcile_scope: str = "address"
+    reads_stored: bool = True  # services/chain/sync passes `stored`
     page_size: int = TRANSACTION_PAGE
     _runs: dict[str, _Run] = field(default_factory=dict, repr=False)
 
@@ -614,16 +655,21 @@ class SolanaSource:
     def host(self) -> str:
         return self.rpc.source_host.lower()
 
-    def transactions(self, address: str, cursor: str | None) -> Page[ChainTx]:
+    def transactions(
+        self, address: str, cursor: str | None, stored: StoredRecords | None = None
+    ) -> Page[ChainTx]:
         run = self._runs.get(address)
         if run is None:
-            run = self._runs[address] = _Run(start=SourceCursor.parse(cursor))
+            run = self._runs[address] = _Run(address, SourceCursor.parse(cursor), stored)
         items: list[ChainTx] = []
         try:
             if not run.ready:
-                self._list_open(address, run)
+                self._begin(run)
                 run.ready = True
-            self._serve(address, run, items)
+            while True:
+                self._serve(run, items)
+                if not run.pending or self._next(run, cursor) != cursor:
+                    break
         except ChainSourceError as exc:
             if exc.code != E.WALLET_SYNC_DEFERRED:
                 raise
@@ -646,66 +692,112 @@ class SolanaSource:
 
     # --- the listing ---------------------------------------------------------------------
 
-    def _list_open(self, address: str, run: _Run) -> None:
-        self._list(address, run, run.start.slot)
-        accounts, _ = self.rpc.token_accounts(address)
-        run.accounts.update(a.pubkey for a in accounts)
-        for pubkey in sorted(run.accounts):
-            self._list(pubkey, run, run.start.slot)
+    def _begin(self, run: _Run) -> None:
+        """The run's height, then the address and its open token accounts from the cursor's
+        slot; after a cut run also every token account an earlier run stored, from `closed`."""
+        if not run.height:
+            run.height = self.rpc.finalized_slot()
+        start = run.start
+        self._list(run.address, run, start.slot, True)
+        accounts, _ = self.rpc.token_accounts(run.address)
+        opened = {a.pubkey for a in accounts}
+        run.accounts.update(opened)
+        earlier = self._stored(run) if start.split else set()
+        run.accounts.update(earlier)
+        for pubkey in sorted(opened | earlier):
+            if pubkey in earlier:
+                self._list(pubkey, run, start.low, False)
+            else:
+                self._list(pubkey, run, start.slot, True)
 
-    def _list(self, account: str, run: _Run, since: int | None) -> None:
-        """The account's signatures at or after `since` (all of them for None), paged back
-        with `before` until an empty page or one that reaches below `since`."""
+    def _stored(self, run: _Run) -> set[str]:
+        """The own token accounts the address's stored originals name: by a row's owner, or
+        as the accounts a run kept beside a record (solana.SYNC_KEY). Read once per run."""
+        if run.stored is None:
+            found: set[str] = set()
+            for record in run.loader() if run.loader is not None else ():
+                found |= owned_token_accounts(record, run.address)
+                found.update(solana.recorded_token_accounts(record) or ())
+            found.discard(run.address)
+            run.stored = found
+        return run.stored
+
+    def _list(self, account: str, run: _Run, since: int | None, open_side: bool) -> None:
+        """The account's signatures at or after `since` (all of them for None) up to the
+        run's height, paged back with `before` until an empty page or one that reaches below
+        `since`. A listing the budget cuts is noted with its bound for the cursor."""
         if account in run.listed and _covers(run.listed[account], since):
             return
         before: str | None = None
-        while True:
-            options: dict[str, JsonValue] = {
-                "limit": self.rpc.signature_page,
-                "commitment": COMMITMENT,
-            }
-            if before is not None:
-                options["before"] = before
-            page = self.rpc.call("getSignaturesForAddress", [account, options])
-            if not isinstance(page, list):
-                raise SolanaRpcError("parse")
-            infos = [_signature_info(raw) for raw in page]
-            for info in infos:
-                if since is not None and info.slot < since:
-                    continue
-                if info.signature not in run.served:
-                    run.pending.setdefault(info.signature, info)
-            if not infos or (since is not None and infos[-1].slot < since):
-                break
-            before = infos[-1].signature
+        try:
+            while True:
+                options: dict[str, JsonValue] = {
+                    "limit": self.rpc.signature_page,
+                    "commitment": COMMITMENT,
+                }
+                if before is not None:
+                    options["before"] = before
+                page = self.rpc.call("getSignaturesForAddress", [account, options])
+                if not isinstance(page, list):
+                    raise SolanaRpcError("parse")
+                infos = [_signature_info(raw) for raw in page]
+                for info in infos:
+                    if info.slot > run.height or (since is not None and info.slot < since):
+                        continue
+                    if info.signature in run.served:
+                        continue
+                    if info.signature not in run.pending:
+                        run.pending[info.signature] = info
+                        heapq.heappush(run.queue, (info.slot, info.signature))
+                    if open_side:
+                        run.open_side.add(info.signature)
+                if not infos or (since is not None and infos[-1].slot < since):
+                    break
+                before = infos[-1].signature
+        except ChainSourceError as exc:
+            if exc.code == E.WALLET_SYNC_DEFERRED:
+                run.cuts.append((open_side, since))
+            raise
         run.listed[account] = since
 
     # --- the page ------------------------------------------------------------------------
 
-    def _serve(self, address: str, run: _Run, items: list[ChainTx]) -> None:
-        order = sorted(run.pending.values(), key=lambda s: (s.slot, s.signature))
+    def _serve(self, run: _Run, items: list[ChainTx]) -> None:
+        address = run.address
         base = run.last[0] if run.last is not None else run.start.slot
         later = 0
-        for n, info in enumerate(order):
-            if later >= self.page_size and info.slot != order[n - 1].slot:
+        previous: int | None = None
+        while run.queue:
+            slot, sig = run.queue[0]
+            info = run.pending.get(sig)
+            if info is None:  # served already (listed twice)
+                heapq.heappop(run.queue)
+                continue
+            if later >= self.page_size and slot != previous:
                 break
             record = self.rpc.transaction(info.signature, info.slot)
-            run.pending.pop(info.signature, None)
-            run.served.add(info.signature)
+            when = self._when(record, info)
+            # Both answers are in hand: only now does the signature leave `pending`, so a
+            # budget that refuses either leaves it for the next run.
+            heapq.heappop(run.queue)
+            del run.pending[sig]
+            run.served.add(sig)
             found = owned_token_accounts(record, address)
             run.accounts.update(found)
-            stored = solana.with_token_accounts(record, run.accounts, self._when(record, info))
-            items.append(self.rpc.chain_tx(stored, {address}, run.accounts, strict=False))
-            position = (info.slot, info.signature)
+            kept = solana.with_token_accounts(record, run.accounts, when)
+            items.append(self.rpc.chain_tx(kept, {address}, run.accounts, strict=False))
+            position = (slot, sig)
             if run.last is None or position > run.last:
                 run.last = position
-            if info.slot != base:
+            if slot != base:
                 later += 1
-            since = run.bound(info.slot)
-            run.cut = (info.slot, since)
+            previous = slot
             for pubkey in sorted(found):
-                self._list(pubkey, run, since)
-            run.cut = None
+                if pubkey in run.listed:
+                    continue
+                earlier = self._stored(run)
+                run.accounts.update(earlier)
+                self._list(pubkey, run, run.start.low if pubkey in earlier else None, False)
 
     def _when(self, record: Mapping[str, JsonValue], info: SignatureInfo) -> int | None:
         """The block time of a record that carries none (an old slot's): the listing's, else
@@ -716,26 +808,34 @@ class SolanaSource:
         return int(when.timestamp())
 
     def _next(self, run: _Run, cursor: str | None) -> str | None:
-        """The cursor after this page (see the class docstring)."""
-        if run.last is None:
+        """The cursor after this page (see SourceCursor and the class docstring)."""
+        if not run.ready and run.last is None:  # the budget refused the run's start
             return cursor
-        slot, signature = run.last
-        unserved = [s.slot for s in run.pending.values()]
-        if run.cut is not None:
-            unserved.append(run.cut[0])
-        low = min(unserved, default=None)
-        at, sig = (low, "") if low is not None and low <= slot else (slot, signature)
-        owed: list[tuple[int | None, int]] = []
-        inherited = run.start.upto
-        if inherited is not None and at <= inherited and (run.pending or run.cut is not None):
-            owed.append((run.start.back, inherited))
-        if run.cut is not None:
-            owed.append((run.cut[1], run.cut[0]))
-        if not owed:
-            return SourceCursor(at, sig).text()
-        backs = [b for b, _ in owed]
-        back = None if None in backs else min(b for b in backs if b is not None)
-        return SourceCursor(at, sig, back, max(u for _, u in owed)).text()
+        open_cut = [since for side, since in run.cuts if side]
+        closed_cut = [since for side, since in run.cuts if not side]
+        open_pending = [i.slot for s, i in run.pending.items() if s in run.open_side]
+        closed_pending = [i.slot for s, i in run.pending.items() if s not in run.open_side]
+        slot: int | None
+        if open_cut:  # the address's or an open account's listing is unfinished
+            slot = run.start.slot
+        elif open_pending:
+            slot = min(open_pending)
+        elif run.last is not None:
+            slot = run.last[0]
+        else:
+            slot = run.start.slot
+        if slot is None:  # a first run with nothing to stand on yet
+            return cursor
+        closed = _lowest(slot, *closed_pending, *closed_cut)
+        if not run.start.split and not run.complete and self._stored(run) - run.listed.keys():
+            # Token accounts earlier runs stored and this run has not listed: one closed since
+            # then is found only through the record that names it, maybe not reached yet.
+            closed = _lowest(closed, run.start.low)
+        unserved = any(i.slot <= slot for i in run.pending.values())
+        signature = run.last[1] if run.last and run.last[0] == slot and not unserved else ""
+        if closed == slot:
+            return SourceCursor(slot, signature).text()
+        return SourceCursor(slot, signature, closed, True).text()
 
 
 def _failed(exc: SolanaRpcError) -> ChainSourceError:

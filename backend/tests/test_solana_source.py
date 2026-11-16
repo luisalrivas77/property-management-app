@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import fixture_models_phase7 as phase7
 import pytest
 from pydantic import SecretStr
-from solana_chain_fake import FakeChain, signature, token_account
+from solana_chain_fake import FakeChain, Records, signature, token_account
 
 from hausbuch.rules import errors as E
 from hausbuch.rules.chain import solana
@@ -233,31 +233,36 @@ def test_a_token_account_found_late_moves_the_cursor_back():
 
 def test_a_spent_budget_inside_a_discovery_is_finished_by_the_next_run():
     """The budget ends while the token account `spl_out` revealed is being listed: the page
-    ends there, the cursor stands on `spl_out`'s slot and owes the account's listing from
-    the start, so the next run, listing only from that slot, still finds the older `spl_in`."""
+    ends there, and the cursor says the closed token accounts are owed from their first, so
+    the next run, finding the account again in `spl_out`, lists it whole and serves the older
+    `spl_in`."""
     ids = ["native_receive", "native_send_with_fee", "spl_in", "spl_out"]
-    budget = RequestBudget(7)  # 2 listings of A, 2 token programs, 3 transactions
+    budget = RequestBudget(8)  # the height, 2 listings of A, 2 token programs, 3 transactions
     chain = _chain(*ids, open_account=False)
     page = _source(chain, budget=budget).transactions(A, None)
     assert budget.exhausted
     assert [tx.hash for tx in page.items] == [
         signature(_record(i)) for i in ("native_receive", "native_send_with_fee", "spl_out")
     ]
-    slot = _record("spl_out")["slot"]
-    assert page.next_cursor == f"{slot}:;;{slot}"
-    assert SourceCursor.parse(page.next_cursor) == SourceCursor(slot, "", None, slot)
+    spl_out = _record("spl_out")
+    slot = spl_out["slot"]
+    assert page.next_cursor == f"{slot}:{signature(spl_out)};"
+    assert SourceCursor.parse(page.next_cursor) == SourceCursor(
+        slot, signature(spl_out), None, True
+    )
 
     items, cursor = _read_all(_source(_chain(*ids, open_account=False)), A, page.next_cursor)
     assert [tx.hash for tx in items] == [signature(_record(i)) for i in ("spl_out", "spl_in")]
-    assert cursor == f"{slot}:{signature(_record('spl_out'))}"
+    assert cursor == f"{slot}:{signature(spl_out)}"
 
 
 def test_a_spent_budget_ends_the_page_without_an_error():
-    budget = RequestBudget(7)  # 6 listings (A and its token account), one transaction
+    budget = RequestBudget(8)  # the height, 6 listings (A and its token account), one transaction
     page = _source(_chain(*ORDER), budget=budget).transactions(A, None)
     assert budget.exhausted and len(page.items) == 1
-    first = _record("native_receive")
-    assert page.next_cursor == f"{first['slot']}:{signature(first)}"
+    # the next run starts at the first transaction still unserved
+    following = _record("native_send_with_fee")
+    assert page.next_cursor == f"{following['slot']}:"
     # nothing at all: the cursor it was given
     spent = RequestBudget(0)
     assert _source(_chain(*ORDER), budget=spent).transactions(A, "12:x").next_cursor == "12:x"
@@ -267,8 +272,202 @@ def test_a_spent_budget_ends_the_page_without_an_error():
 def test_a_cursor_it_did_not_write_starts_over():
     assert SourceCursor.parse(None) == SourceCursor()
     assert SourceCursor.parse("5vBy…") == SourceCursor()
-    assert SourceCursor.parse("12:abc;x;7") == SourceCursor(12, "abc")
-    assert SourceCursor(12, "abc", 3, 9).text() == "12:abc;3;9"
+    assert SourceCursor.parse("12:abc;x") == SourceCursor()
+    assert SourceCursor.parse("12:abc;3;9") == SourceCursor()
+    assert SourceCursor.parse("12:abc;") == SourceCursor(12, "abc", None, True)
+    assert SourceCursor.parse("12:abc;3") == SourceCursor(12, "abc", 3, True)
+    assert SourceCursor.parse("12:abc;12") == SourceCursor(12, "abc")  # nothing owed below
+    assert SourceCursor(12, "abc", 3, True).text() == "12:abc;3"
+    assert SourceCursor(12, "abc", None, True).text() == "12:abc;"
+    assert SourceCursor(12, "abc").text() == "12:abc" and SourceCursor(12, "abc").low == 12
+
+
+# --- runs the budget cuts (the step 2 review's findings 1, 3 and 4) -------------------------
+
+T1 = "T1c1osedTokenAccountInventedA"  # an own token account closed before any run
+T2 = "T2openTokenAccountInventedAaa"  # an own token account still open
+T3 = "T3c1osedLateFoundInventedAaa"  # closed, opened by a third party, found late
+
+
+@dataclasses.dataclass
+class _Daily:
+    """The sync's runs over one address (services/chain/sync._read and its stored originals):
+    each run has its own budget, ends deferred when the budget is spent, reads the balances
+    at the tip, and stores what it read when it brought something new (every record here
+    makes a movement), which is what the next run is handed as `stored`."""
+
+    chain: FakeChain
+    page_size: int | None = None
+    cursor: str | None = None
+    store: list = dataclasses.field(default_factory=list)
+    served: dict = dataclasses.field(default_factory=dict)  # hash -> ChainTx
+    runs: int = 0
+    tip: bool = False
+
+    def run(self, limit: int) -> bool:
+        """One run; whether it read to the tip."""
+        budget = RequestBudget(limit)
+        source = _source(self.chain, budget=budget)
+        if self.page_size:
+            source.page_size = self.page_size
+        items, cursor = [], self.cursor
+        while True:
+            page = source.transactions(A, cursor, stored=lambda: list(self.store))
+            items.extend(page.items)
+            moved = page.next_cursor is not None and page.next_cursor != cursor
+            cursor = page.next_cursor if moved else cursor
+            if budget.exhausted or not moved:
+                break
+        if not budget.exhausted:
+            source.balances(A)
+        if any(tx.hash not in self.served for tx in items):
+            self.store.extend(tx.raw for tx in items)
+        for tx in items:
+            self.served.setdefault(tx.hash, tx)
+        self.runs += 1
+        self.cursor, self.tip = cursor, not budget.exhausted
+        return self.tip
+
+    def to_tip(self, *limits: int, most: int = 400) -> "_Daily":
+        """Runs with these budgets, the last one repeated daily, until one reads to the tip."""
+        for n in range(most):
+            if self.run(limits[min(n, len(limits) - 1)]):
+                return self
+        raise AssertionError(f"no tip after {most} runs, cursor {self.cursor}")
+
+
+def _legs_by_hash(daily: _Daily) -> dict:
+    return {h: _legs(solana.classify_tx(tx, _ctx())) for h, tx in daily.served.items()}
+
+
+def _mixed() -> FakeChain:
+    """SOL both ways, an own token account closed before the first run, one still open, and
+    one a third party opened and that is closed too: credits name the token account alone."""
+    r = Records(A)
+    slots = (1, 2, 6, 10, 14, 22, 22, 27, 31, 35, 38, 42, 47, 52, 55, 58, 60)
+    records = [r.sol_in(s) if s % 2 else r.sol_out(s) for s in slots]
+    records += [r.open(3, T1), r.token_in(7, T1), r.token_in(12, T1), r.token_out(15, T1)]
+    records += [r.token_in(18, T1), r.token_in(22, T1), r.close(25, T1)]
+    records += [r.open(4, T2), r.token_in(9, T2), r.token_out(20, T2)]
+    records += [r.token_in(40, T2), r.token_in(59, T2)]
+    records += [r.open(28, T3, payer=Records.PAYER), r.token_in(30, T3), r.token_in(33, T3)]
+    records += [r.token_out(45, T3), r.token_in(45, T3), r.token_in(46, T3), r.close(50, T3)]
+    chain = FakeChain(records)
+    chain.tokens[A] = [token_account(A, T2, Records.MINT, 10, Records.RENT)]
+    return chain
+
+
+def _three_hundred_and_six() -> FakeChain:
+    """The review's sequence 1 (a): a token account opened, credited without naming A, debited
+    and closed early, then 300 SOL credits."""
+    r = Records(A)
+    records = [r.sol_in(1), r.open(3, T1), r.token_in(7, T1), r.sol_in(9)]
+    records += [r.token_out(15, T1), r.close(25, T1)]
+    records += [r.sol_in(100 + i) for i in range(300)]
+    return FakeChain(records)
+
+
+def _smallest_workable(build) -> int:
+    """The smallest budget every run can work with: the costliest start (a cursor at the tip
+    that owes every token account an earlier run stored from its first transaction) and one
+    transaction; and at the tip one request more than the run takes, since the sync counts a
+    budget used to its last request as spent."""
+    full = _Daily(build()).to_tip(10**6)
+    slot = full.cursor.split(":")[0]
+    starts = []
+    for cursor in (f"{slot}:;", full.cursor):
+        chain = build()
+        _Daily(chain, cursor=cursor, store=list(full.store)).to_tip(10**6)
+        methods = [r["method"] for r in chain.requests]
+        starts.append(methods.index("getTransaction") + 1)
+        tip_run = len(methods)
+    return max(*starts, tip_run) + 1
+
+
+@pytest.mark.parametrize(
+    ("build", "page_size"),
+    [(_mixed, None), (_mixed, 1), (_mixed, 3), (_three_hundred_and_six, None)],
+    ids=["mixed", "mixed-page-1", "mixed-page-3", "306"],
+)
+def test_every_daily_budget_reaches_the_tip_with_what_one_run_serves(build, page_size):
+    """Property (finding 1): whatever the same budget every day, from the smallest one a run
+    can work with to an unlimited one, the runs reach the tip and serve the same transactions,
+    read the same way, as one unlimited run; no run hands back its cursor while something it
+    listed waits, and the cursor never cycles (the long sequence at a sample of budgets)."""
+    full = _Daily(build(), page_size).to_tip(10**6)
+    want = _legs_by_hash(full)
+    assert len(want) == len(build().records)
+    needed = len(full.chain.requests)
+    smallest = _smallest_workable(build)
+    limits = range(smallest, needed + 3)
+    if build is _three_hundred_and_six:
+        limits = [smallest, smallest + 1, smallest + 3, 12, 60, 2400]
+    for limit in limits:
+        daily = _Daily(build(), page_size).to_tip(limit)
+        assert _legs_by_hash(daily) == want, limit
+
+
+@pytest.mark.parametrize("first", [8, 9, 12, 60])
+def test_a_first_run_cut_short_loses_no_transaction_of_a_closed_token_account(first):
+    """Sequence 1 (a): the first run is cut while the closed account is being found or listed;
+    the next run, with the default budget, serves every transaction and stands at the tip
+    (the cursor no longer freezes on a false tip)."""
+    daily = _Daily(_three_hundred_and_six())
+    assert not daily.run(first)
+    assert daily.run(2400) and len(daily.served) == 306
+    cursor = daily.cursor
+    assert daily.run(2400) and daily.cursor == cursor
+
+
+def test_two_cut_runs_still_serve_a_late_found_account_s_credit():
+    """Sequence 1 (b): the credit at slot 7 names the closed T1 alone, and T1 is found only by
+    the debit at slot 200; two runs are cut before the third reaches the tip."""
+    r = Records(A)
+    credit = r.token_in(7, T1)
+    records = [r.sol_in(1), r.open(3, T1), credit] + [r.sol_in(10 + i) for i in range(150)]
+    records += [r.token_out(200, T1), r.close(210, T1)] + [r.sol_in(300 + i) for i in range(20)]
+    daily = _Daily(FakeChain(records)).to_tip(9, 130, 2400)
+    assert signature(credit) in daily.served and len(daily.served) == len(records)
+
+
+@pytest.mark.parametrize("limits", [(20, 10**6), (20, 80, 10**6), (45, 10**6)])
+def test_one_ordinary_cut_leaves_no_gap_in_a_token_account_closed_later(limits):
+    """Sequence 1 (c): a run cut on an ordinary cursor, before the debit that names T1 is
+    reached; T1 is closed by the next run, which finds it again and serves the credit."""
+    r = Records(A)
+    credit = r.token_in(50, T1)
+    records = [r.sol_in(1), r.open(3, T1)] + [r.sol_in(10 + i) for i in range(30)] + [credit]
+    records += [r.sol_in(60 + i) for i in range(60)]
+    records += [r.token_out(200, T1), r.close(210, T1), r.sol_in(220)]
+    daily = _Daily(FakeChain(records)).to_tip(*limits)
+    assert signature(credit) in daily.served and len(daily.served) == len(records)
+
+
+@pytest.mark.parametrize("first", range(6, 14))
+def test_a_refused_block_time_keeps_the_record_for_the_next_run(first):
+    """Sequence 4: the record carries no block time and the budget refuses getBlockTime; the
+    record stays unserved, and the next run serves it with the block's time."""
+    r = Records(A)
+    late = r.token_in(7, T1, block_time=False)
+    records = [r.sol_in(1), r.open(3, T1), late, r.sol_in(9), r.sol_in(12)]
+    chain = FakeChain(records)
+    chain.block_times[7] = 1_770_000_007
+    daily = _Daily(chain).to_tip(first, 2400)
+    assert len(daily.served) == len(records)
+    assert daily.served[signature(late)].occurred_at.timestamp() == 1_770_000_007
+
+
+def test_one_finalized_height_per_run():
+    """Finding 3: the run fixes the finalized slot first and serves nothing above it, so
+    listings read moments apart agree; the next run serves the rest."""
+    chain = _chain(*ORDER)
+    chain.finalized = _record("spl_in")["slot"]
+    items, cursor = _read_all(_source(chain), A)
+    assert [tx.hash for tx in items] == [signature(_record(i)) for i in ORDER[:3]]
+    assert chain.calls("getSlot") == [[{"commitment": "finalized"}]]
+    chain.finalized = None
+    later, _ = _read_all(_source(chain), A, cursor)
+    assert [tx.hash for tx in later] == [signature(_record(i)) for i in ORDER[2:]]
 
 
 # --- the balance (D186 (2)) -----------------------------------------------------------------

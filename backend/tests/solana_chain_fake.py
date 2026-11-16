@@ -2,12 +2,13 @@
 SolanaSource tests and the Solana sync test.
 
 It holds recorded `getTransaction` records (tests/fixtures/phase7/solana_tx.yaml, every key
-and signature invented) and answers the four methods a sync sends as a provider does:
+and signature invented) and answers the methods a sync sends as a provider does:
 `getSignaturesForAddress` lists the records whose account keys hold the account, newest first,
 paged with `limit` and `before`; `getTransaction` serves a record by signature (None when the
 chain has none); `getBalance` and `getTokenAccountsByOwner` answer from the balances the test
-sets. A `status` makes every answer that HTTP status; `fail_on` turns one method into a
-JSON-RPC error. Every request is recorded, with the URL it went to."""
+sets; `getSlot` names the highest record's slot (or `finalized`). A `status` makes every
+answer that HTTP status; `fail_on` turns one method into a JSON-RPC error. Every request is
+recorded, with the URL it went to."""
 
 import json
 from copy import deepcopy
@@ -67,6 +68,7 @@ class FakeChain:
         self.requests: list[dict] = []
         self.urls: list[str] = []
         self.block_times: dict[int, int] = {}  # getBlockTime by slot (absent: the RPC has none)
+        self.finalized: int | None = None  # getSlot (None: the highest record's slot)
         for record in records:
             self.add(record)
 
@@ -122,6 +124,11 @@ class FakeChain:
     def _getBalance(self, address, options):  # noqa: N802
         return {"context": {"slot": SLOT}, "value": self.lamports.get(address, 0)}
 
+    def _getSlot(self, options):  # noqa: N802
+        if self.finalized is not None:
+            return self.finalized
+        return max((r["slot"] for r in self.records.values()), default=0)
+
     def _getBlockTime(self, slot):  # noqa: N802
         return self.block_times.get(slot)
 
@@ -130,3 +137,99 @@ class FakeChain:
             e for e in self.tokens.get(owner, []) if e["account"]["owner"] == program["programId"]
         ]
         return {"context": {"slot": SLOT}, "value": value}
+
+
+class Records:
+    """Invented records for long histories (the budget and cursor tests): `owner` sends and
+    receives SOL, and token accounts it owns are opened, credited without naming it (a credit
+    names the token account alone), debited and closed. Signatures are numbered."""
+
+    PAYER = "ANgPywB9VnrmKJ9oXqByisxMxB564F4CoDY4HWZd4Y5J"
+    PAYER_TOKEN = "41frPyR5ATwWweP1VzSdHDY82VbWy3Dt6mViHk9a1nD4"
+    MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    RENT = 2_039_280
+
+    def __init__(self, owner: str) -> None:
+        self.owner = owner
+        self.count = 0
+
+    def _row(self, index: int, owner: str | None, amount: int) -> dict:
+        row = {
+            "accountIndex": index,
+            "mint": self.MINT,
+            "uiTokenAmount": {"amount": str(amount), "decimals": 6},
+        }
+        if owner is not None:
+            row["owner"] = owner
+        return row
+
+    def _record(self, slot, tag, keys, program, balances, rows=((), ()), block_time=True):
+        self.count += 1
+        pre, post = balances
+        return {
+            "slot": slot,
+            "blockTime": 1_770_000_000 + slot if block_time else None,
+            "transaction": {
+                "signatures": [f"{tag}{self.count:05d}".ljust(88, "x")],
+                "message": {
+                    "accountKeys": [
+                        {"pubkey": k, "signer": i == 0, "writable": True, "source": "transaction"}
+                        for i, k in enumerate(keys)
+                    ],
+                    "instructions": [{"programId": program, "parsed": {"type": "x"}}],
+                },
+            },
+            "meta": {
+                "err": None,
+                "fee": 5000,
+                "preBalances": list(pre),
+                "postBalances": list(post),
+                "preTokenBalances": list(rows[0]),
+                "postTokenBalances": list(rows[1]),
+                "innerInstructions": [],
+            },
+        }
+
+    def sol_in(self, slot: int) -> dict:
+        keys = [self.PAYER, self.owner, solana.SYSTEM_PROGRAM]
+        balances = ([10**10, 10**9, 1], [10**10 - 1_005_000, 10**9 + 1_000_000, 1])
+        return self._record(slot, "SOLIN", keys, solana.SYSTEM_PROGRAM, balances)
+
+    def sol_out(self, slot: int) -> dict:
+        keys = [self.owner, self.PAYER, solana.SYSTEM_PROGRAM]
+        balances = ([10**9, 10**10, 1], [10**9 - 1_005_000, 10**10 + 1_000_000, 1])
+        return self._record(slot, "SOLOUT", keys, solana.SYSTEM_PROGRAM, balances)
+
+    def token_in(self, slot: int, account: str, block_time: bool = True) -> dict:
+        """5 units credited to `account` by a third party; the owner is not a key."""
+        keys = [self.PAYER, self.PAYER_TOKEN, account, solana.TOKEN_PROGRAM]
+        rows = (
+            [self._row(1, self.PAYER, 100), self._row(2, self.owner, 10)],
+            [self._row(1, self.PAYER, 95), self._row(2, self.owner, 15)],
+        )
+        balances = ([10**9, self.RENT, self.RENT, 1], [10**9 - 5000, self.RENT, self.RENT, 1])
+        return self._record(slot, "TOKIN", keys, solana.TOKEN_PROGRAM, balances, rows, block_time)
+
+    def token_out(self, slot: int, account: str) -> dict:
+        """5 units sent from `account`, signed by the owner."""
+        keys = [self.owner, account, self.PAYER_TOKEN, solana.TOKEN_PROGRAM]
+        rows = (
+            [self._row(1, self.owner, 10), self._row(2, self.PAYER, 100)],
+            [self._row(1, self.owner, 5), self._row(2, self.PAYER, 105)],
+        )
+        balances = ([10**9, self.RENT, self.RENT, 1], [10**9 - 5000, self.RENT, self.RENT, 1])
+        return self._record(slot, "TOKOUT", keys, solana.TOKEN_PROGRAM, balances, rows)
+
+    def open(self, slot: int, account: str, payer: str | None = None) -> dict:
+        """`account` opened for the owner, paid by the owner (or by a third party `payer`,
+        whose record then does not name the owner)."""
+        keys = [payer or self.owner, account, solana.SYSTEM_PROGRAM, solana.TOKEN_PROGRAM]
+        balances = ([10**9, 0, 1, 1], [10**9 - 5000 - self.RENT, self.RENT, 1, 1])
+        rows = ([], [self._row(1, self.owner, 0)])
+        return self._record(slot, "OPEN", keys, solana.TOKEN_PROGRAM, balances, rows)
+
+    def close(self, slot: int, account: str) -> dict:
+        keys = [self.owner, account, solana.TOKEN_PROGRAM]
+        balances = ([10**9, self.RENT, 1], [10**9 - 5000 + self.RENT, 0, 1])
+        rows = ([self._row(1, self.owner, 0)], [])
+        return self._record(slot, "CLOSE", keys, solana.TOKEN_PROGRAM, balances, rows)
