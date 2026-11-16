@@ -150,6 +150,7 @@ from hausbuch.services.chain.base import (
     reconcile_scope,
     source_for,
 )
+from hausbuch.services.chain.payee_answers import answered_payee
 from hausbuch.services.context import Actor, CommandContext, new_command
 from hausbuch.services.documents import type_document, upload_document
 from hausbuch.services.events import append_event
@@ -415,6 +416,7 @@ def _context(
     account_id: UUID,
     own: dict[str, _Own],
     native_asset_id: UUID,
+    answered_payee: Callable[[str], bool] | None = None,
 ) -> ClassifyContext:
     every_own = conn.execute(
         select(address_table.c.address).where(
@@ -461,6 +463,7 @@ def _context(
         own_address_ids={a: o.id for a, o in own.items()},
         native_asset_id=native_asset_id,
         asset_ids=asset_ids,
+        answered_payee=answered_payee,
     )
 
 
@@ -1208,7 +1211,13 @@ def _begin(
         own = _own_of(conn, row.account_id, chain)
         own.setdefault(row.address, _Own(row.id, bytes(row.address_hmac).hex()))
         cursor, caught_up = _last_cursor(conn, address_id)
-        ctx = _context(conn, chain, row.address, row.account_id, own, native.id)
+        # Bitcoin: the account's „Nein, Empfänger“ answers (D185 (2)), so none is asked again
+        payees = (
+            answered_payee(conn, row.account_id, settings.iban_hmac_key)
+            if chain is Chain.BITCOIN
+            else None
+        )
+        ctx = _context(conn, chain, row.address, row.account_id, own, native.id, payees)
         host = _host(source)
         sync_id = conn.execute(
             insert(sync_table)

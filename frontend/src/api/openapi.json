@@ -16278,6 +16278,7 @@
           "movement.superseded",
           "wallet.sync_completed",
           "wallet.sync_failed",
+          "wallet.payee_answered",
           "movement_group.proposed",
           "movement_group.confirmed",
           "transfer.linked",

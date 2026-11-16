@@ -1096,6 +1096,20 @@ class WalletSyncRecorded(Schema):
     document_id: UUID | None = None  # the run's stored original (D182 (3))
 
 
+class WalletPayeeAnswered(Schema):
+    """wallet.payee_answered (phase 7 D185 (2), step 4), on the wallet account: a person
+    answered „Nein, Empfänger“ on a Bitcoin change card, so this address is a payee of the
+    account and never asked about again there, in a later spend or a replay. The address is
+    kept as its masked form and its keyed HMAC (as rules/chain/address.address_hmac gives it,
+    the form a learned rule keeps a counterparty IBAN in, `RuleRecorded`), never in clear: it
+    is no own address, so it has no wallet_address row. `group_id` the card answered."""
+
+    group_id: UUID
+    chain: Chain
+    address_masked: str
+    address_hmac: HmacHex = Field(pattern=HMAC_PATTERN)
+
+
 class MovementGroupRecorded(Schema):
     """movement_group.proposed and movement_group.confirmed (phase 7 D183, D186 (1)): the
     group's kind and how it was routed; its transaction hash stays in the row only."""
@@ -1339,6 +1353,7 @@ class EventType(StrEnum):
 
     WALLET_SYNC_COMPLETED = "wallet.sync_completed"  # phase 7 step 2 (core)
     WALLET_SYNC_FAILED = "wallet.sync_failed"
+    WALLET_PAYEE_ANSWERED = "wallet.payee_answered"  # phase 7 step 4 (Bitcoin change card)
     MOVEMENT_GROUP_PROPOSED = "movement_group.proposed"
     MOVEMENT_GROUP_CONFIRMED = "movement_group.confirmed"
 
@@ -1568,6 +1583,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
         WalletSyncRecorded, "forbidden", "Wallet address read from its chain"
     ),
     E.WALLET_SYNC_FAILED: EventSpec(WalletSyncRecorded, "forbidden", "Wallet sync failed"),
+    E.WALLET_PAYEE_ANSWERED: EventSpec(
+        WalletPayeeAnswered, "forbidden", "Bitcoin output answered „Nein, Empfänger“"
+    ),
     E.MOVEMENT_GROUP_PROPOSED: EventSpec(
         MovementGroupRecorded, "forbidden", "Chain transaction waiting for review"
     ),

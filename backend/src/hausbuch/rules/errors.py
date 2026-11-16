@@ -256,6 +256,11 @@ WALLET_CHANGE_CANDIDATE = "wallet.change_candidate"  # an own spend's unregister
 # A record whose token legs cannot be read (a token balance row without an owner the sync can
 # place, or a Token program call without token balances): the sync stops, never drops a leg.
 WALLET_RECORD_UNREADABLE = "wallet.record_unreadable"
+# A change card's answer (D185 (2), step 4): the group is no open card, or the output named is
+# not one it asks about; the transaction is in no stored original of the account, so the
+# address cannot be read again (a run whose only new item was the card stores none, D182 (3)).
+WALLET_CHANGE_ANSWERED = "wallet.change_answered"
+WALLET_ORIGINAL_MISSING = "wallet.original_missing"
 GROUP_UNKNOWN = "group.unknown"  # no rule reads the transaction (D183 (3f))
 GROUP_CONTRACT_CALL = "group.contract_call"  # a shape no rule reads (D183 (4))
 GROUP_UNPRICED = "group.unpriced"  # a leg without the day's price (D188 (4))

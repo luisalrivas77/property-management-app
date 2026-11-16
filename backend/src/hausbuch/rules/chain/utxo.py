@@ -343,7 +343,7 @@ NO_MOVEMENT_QUESTION = (
 )
 
 
-def _answered(tx: ChainTx, own: Collection[str], ctx: ClassifyContext) -> set[str]:
+def settled_outputs(tx: ChainTx, own: Collection[str], ctx: ClassifyContext) -> set[str]:
     """The outputs to unregistered addresses settled as not this account's change: a
     „Nein, Empfänger“ answer stored for the account (`ctx.answered_payee`), and an own address
     of another wallet of the workspace (it is no change of this account; D184 links it as a
@@ -378,7 +378,7 @@ def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
     own_in = [t for t in ins if t.from_addr in own]
     if not own_in and not any(t.to_addr in own for t in outputs(tx)):
         return None
-    reading = read_utxo(tx, own, _answered(tx, own, ctx))
+    reading = read_utxo(tx, own, settled_outputs(tx, own, ctx))
     if reading.card == errors.WALLET_CHANGE_CANDIDATE:
         return ChainGroup(
             tx_hash=tx.hash,
