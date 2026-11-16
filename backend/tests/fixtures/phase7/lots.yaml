@@ -179,3 +179,25 @@ cases:
       - {account: exchange, asset: SOL, acquired_on: 2026-03-02, units_open: "2", cost_eur: null, source: acquisition, tax_free_from: 2027-03-03}
     expect_uses:
       - {event: sol_fee, acquired_on: 2026-02-01, units: "0.002", cost_eur: "1.00"}
+  # D188 amended (review of step 6, 16 Nov 2026, decided by the orchestrator): the fee in the
+  # coin bought adds nothing only when it is withheld from the units received (an exchange
+  # trade, the cases above). Gas a chain transaction pays in the coin it acquires is paid on
+  # top of the units received: its value on the Berlin day joins the new lot's cost, and the
+  # fee movement still takes its units FIFO at cost from the oldest lot. `chain: true` marks
+  # events read from a chain (D182): a chain swap has no EUR leg, so the acquisition's
+  # `cost_eur` is the day's price × units. Swap 3,000 USDC for 1 ETH with 0.01 ETH gas, ETH at
+  # 2,800 € that day: the new lot costs 2,800.00 + 0.01 × 2,800 = 2,828.00 €; the gas takes
+  # 0.01 ETH from the February lot (2,000 € per unit) at 20.00 €.
+  - id: chain_swap_gas_in_acquired_coin
+    events:
+      - {name: buy_usdc, at: "2026-01-10T10:00:00Z", account: wallet, asset: USDC, kind: acquisition, units: "3000", cost_eur: "2760.00"}
+      - {name: buy_eth, at: "2026-02-01T10:00:00Z", account: wallet, asset: ETH, kind: acquisition, units: "0.5", cost_eur: "1000.00"}
+      - {name: swap_eth, at: "2026-04-01T10:00:00Z", account: wallet, asset: ETH, kind: acquisition, units: "1", cost_eur: "2800.00", chain: true}
+      - {name: swap_usdc, at: "2026-04-01T10:00:00Z", account: wallet, asset: USDC, kind: disposal, units: "3000", chain: true}
+      - {name: swap_gas, at: "2026-04-01T10:00:00Z", account: wallet, asset: ETH, kind: trade_fee, trade: swap_eth, units: "0.01", chain: true}
+    expect_lots:
+      - {account: wallet, asset: ETH, acquired_on: 2026-02-01, units_open: "0.49", cost_eur: "980.00", source: acquisition, tax_free_from: 2027-02-02}
+      - {account: wallet, asset: ETH, acquired_on: 2026-04-01, units_open: "1", cost_eur: "2828.00", source: acquisition, tax_free_from: 2027-04-02}
+    expect_uses:
+      - {event: swap_usdc, acquired_on: 2026-01-10, units: "3000", cost_eur: "2760.00"}
+      - {event: swap_gas, acquired_on: 2026-02-01, units: "0.01", cost_eur: "20.00"}
