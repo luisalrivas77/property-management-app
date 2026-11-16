@@ -1121,6 +1121,22 @@ class WalletPayeeAnswered(Schema):
     address_hmac: HmacHex = Field(pattern=HMAC_PATTERN)
 
 
+class WalletDepositLookedUp(Schema):
+    """wallet.deposit_looked_up (phase 7 D181 (c) amended 16 Nov 2026), on the wallet
+    account: the sync of a balance-only address (BNB Smart Chain) asked its node for an
+    exchange withdrawal by its hash and got a lasting answer, so it does not ask again every
+    run. `absent` (the transaction is final and credited this address nothing) is never asked
+    again on this address; `unknown` (the node does not know the hash) is not asked again of
+    the same node (`source_host`), only after the withdrawal is a day old. A found deposit is
+    its movement; pending and unasked lookups are not recorded. Ids only: never the hash."""
+
+    sync_id: UUID
+    address_id: UUID
+    movement_id: UUID  # the exchange's withdrawal
+    outcome: Literal["absent", "unknown"]
+    source_host: str = Field(min_length=1, max_length=253)
+
+
 class MovementGroupRecorded(Schema):
     """movement_group.proposed and movement_group.confirmed (phase 7 D183, D186 (1)): the
     group's kind and how it was routed; its transaction hash stays in the row only."""
@@ -1220,7 +1236,11 @@ class TransferLinked(Schema):
     # address), `withdrawal_pair` (an exchange's withdrawal to an own address it was linked to
     # before), `confirmed` (both legs confirmed already). None on a person's link and on
     # every EUR link.
-    reason: Literal["hash", "deposit_address", "withdrawal_pair", "confirmed"] | None = None
+    # D181 (c) amended 16 Nov 2026: `own_wallet` on a person's link of an exchange's
+    # withdrawal to a deposit the app wrote on a balance-only address.
+    reason: (
+        Literal["hash", "deposit_address", "withdrawal_pair", "confirmed", "own_wallet"] | None
+    ) = None
 
 
 class TransferUnlinked(Schema):
@@ -1463,6 +1483,7 @@ class EventType(StrEnum):
     WALLET_SYNC_COMPLETED = "wallet.sync_completed"  # phase 7 step 2 (core)
     WALLET_SYNC_FAILED = "wallet.sync_failed"
     WALLET_PAYEE_ANSWERED = "wallet.payee_answered"  # phase 7 step 4 (Bitcoin change card)
+    WALLET_DEPOSIT_LOOKED_UP = "wallet.deposit_looked_up"  # phase 7 D181 (c) amended
     MOVEMENT_GROUP_PROPOSED = "movement_group.proposed"
     MOVEMENT_GROUP_CONFIRMED = "movement_group.confirmed"
     MOVEMENT_GROUP_TRADE_RECORDED = "movement_group.trade_recorded"  # phase 6 D178 amended (3)
@@ -1716,6 +1737,11 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     E.WALLET_SYNC_FAILED: EventSpec(WalletSyncRecorded, "forbidden", "Wallet sync failed"),
     E.WALLET_PAYEE_ANSWERED: EventSpec(
         WalletPayeeAnswered, "forbidden", "Bitcoin output answered „Nein, Empfänger“"
+    ),
+    E.WALLET_DEPOSIT_LOOKED_UP: EventSpec(
+        WalletDepositLookedUp,
+        "forbidden",
+        "Exchange withdrawal looked up on a balance-only address, nothing credited",
     ),
     E.MOVEMENT_GROUP_PROPOSED: EventSpec(
         MovementGroupRecorded, "forbidden", "Chain transaction waiting for review"

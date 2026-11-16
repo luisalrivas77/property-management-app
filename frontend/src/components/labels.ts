@@ -360,6 +360,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "wallet.sync_completed": "Wallet-Adresse abgerufen",
   "wallet.sync_failed": "Wallet-Abruf fehlgeschlagen",
   "wallet.payee_answered": "Bitcoin-Ausgang als Empfänger bestätigt",
+  "wallet.deposit_looked_up": "Börsen-Abhebung auf der Adresse gesucht, nichts gutgeschrieben",
   "movement_group.proposed": "Chain-Transaktion wartet auf Prüfung",
   "movement_group.confirmed": "Chain-Transaktion bestätigt",
   "movement_group.trade_recorded": "Börsen-Trade zusammengefasst",

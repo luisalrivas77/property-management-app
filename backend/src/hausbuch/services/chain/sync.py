@@ -95,7 +95,7 @@ import re
 import unicodedata
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -137,6 +137,7 @@ from hausbuch.schemas.chain import (
     AssetKey,
     Chain,
     ChainSource,
+    ChainSourceKind,
     ChainTx,
     DecoderRow,
     GroupRoutingInput,
@@ -159,6 +160,7 @@ from hausbuch.schemas.events import (
     MovementImportRecorded,
     MovementRecorded,
     Updated,
+    WalletDepositLookedUp,
     WalletSyncRecorded,
 )
 from hausbuch.schemas.household import (
@@ -202,6 +204,14 @@ _NDJSON = "application/x-ndjson"
 _QUANTITY_SCALE = movement_table.c.quantity.type.scale
 _QUANTITY_INTEGER_DIGITS = movement_table.c.quantity.type.precision - _QUANTITY_SCALE
 _TOLD_SYMBOL_MAX = 32  # what a chain says a token is called, kept in its name only (D180 (a))
+# D181 (c) amended 16 Nov 2026: a balance-only address's run looks up at most this many
+# exchange withdrawals by their hash (each up to three requests of the public node's budget),
+# the oldest first; the rest wait for the next run.
+_MAX_LOOKUPS = 10
+# A withdrawal the node does not know is remembered only once it is a day old: a node that
+# lags behind the exchange answers `unknown` for a few minutes, and that is asked again.
+_UNKNOWN_AFTER = timedelta(days=1)
+_EVM_HASH = re.compile(r"^0x[0-9a-f]{64}$")
 
 Clock = Callable[[], datetime]
 
@@ -258,6 +268,19 @@ class _Start:
     # D261: the IBAN HMAC key, so a plain send's counterparty is stored as its HMAC and
     # masked form (`asset_movement.counterparty_*`); None stores none.
     hmac_key: bytes | None = field(default=None, repr=False)
+    # D181 (c) amended 16 Nov 2026: a balance-only address's exchange withdrawals to look up
+    # by their hash after the balances (_deposit_candidates), at most _MAX_LOOKUPS a run.
+    lookups: tuple["_Lookup", ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _Lookup:
+    """One exchange withdrawal a balance-only address's run asks its node about: the
+    withdrawal's movement, its hash as the node takes it, and when the exchange sent it."""
+
+    movement_id: UUID
+    tx_hash: str = field(repr=False)
+    occurred_at: datetime
 
 
 @dataclass(slots=True)
@@ -275,6 +298,9 @@ class _Read:
     # The tokens whose balance the source could not read (an EVM source's `unreadable`: a
     # reverted `balanceOf`): left out of both sides, and the run never reads reconciled.
     unreadable: frozenset[AssetKey] = frozenset()
+    # The lookups asked (D181 (c) amended) with their outcome; `absent` and an old `unknown`
+    # are recorded as wallet.deposit_looked_up so they are not asked again.
+    looked_up: list[tuple[_Lookup, str]] = field(default_factory=list)
 
 
 # --- Assets ----------------------------------------------------------------------------------
@@ -710,7 +736,39 @@ def _read(
         out.deferred = True
         return out
     out.balances = balances
+    if start.lookups:
+        _lookup_deposits(source, start, ctx, out)
     return out
+
+
+def _lookup_deposits(source: ChainSource, start: _Start, ctx: ClassifyContext, out: _Read) -> None:
+    """D181 (c) amended 16 Nov 2026: a balance-only address has no history, so the exchange
+    withdrawals on its chain that name a hash are looked up by it (the source's `lookup`),
+    after the balances, so a budget spent here never costs the run its balance (the run is
+    not deferred by it). A deposit found is classified like a page's transaction (its hash
+    is an exchange's, so an exchange_transfer, D183 (3)(b)) and written as the run's; step
+    5's matcher then links it by the hash and confirms both legs (D186 (1)). A node's error
+    or a spent budget stops the lookups only; they are asked again next run."""
+    lookup = getattr(source, "lookup", None)
+    if lookup is None:
+        return
+    for wanted in start.lookups[:_MAX_LOOKUPS]:
+        try:
+            got = lookup(wanted.tx_hash, start.address)
+        except (ChainSourceError, SourceError) as exc:
+            code = exc.code if isinstance(exc, ChainSourceError) else error_from(exc).code
+            fields = {"event": "wallet_deposit_lookup", "chain": start.chain.value, "code": code}
+            logger.warning("a deposit lookup failed", extra={"fields": fields})
+            return
+        if got.outcome == "not_asked":
+            return  # the run's budget is spent: the next run asks
+        out.looked_up.append((wanted, got.outcome))
+        if got.tx is None:
+            continue
+        out.txs.append(got.tx)
+        group = classify(got.tx, ctx)
+        if group is not None and (group.legs or group.question):
+            out.groups.append(group)
 
 
 def _log_balance_unread(start: _Start, code: str, exc: BaseException) -> None:
@@ -1181,7 +1239,9 @@ def _reconcile(
     a balance-only address's card.
 
     A balance-only source (D181 (c)) has no history, so its address's movements are only the
-    deposits linked to it (step 5): rules/chain/evm.reconcile_balance_only compares the
+    deposits written on it (from the withdrawal's receipt, or by a person's pick „An eigene
+    Wallet“ and its learned pair, D181 (c) amended 16 Nov 2026, services.chain.transfers),
+    each linked: rules/chain/evm.reconcile_balance_only compares the
     balance with them, over the assets the source read a balance of (a deposit in an asset
     it did not read is no shortfall). A balance above them is reconciled (the card
     transfer.unmatched_leg), one below is reconciled false with the negative shortfall as
@@ -1373,6 +1433,7 @@ def _write(
             ),
             effective_date=last.date(),
         )
+    _remember_lookups(ctx, start, read)
     balances = difference = reconciled = card = None
     waiting = False
     block = max((tx.block for tx in read.txs), default=None)
@@ -1430,6 +1491,211 @@ def _write(
         unstorable=unstorable,
         card=card,
         error_code=read.balance_error,
+    )
+
+
+# --- Deposits looked up by hash (D181 (c) amended 16 Nov 2026) --------------------------------
+
+
+def _evm_hash(value: str) -> str | None:
+    """An exchange's printed hash as an EVM node takes it (lower case, 0x, 64 hex digits), or
+    None for anything else (never sent: a malformed hash costs no request)."""
+    text = value.strip().lower()
+    if not text.startswith("0x"):
+        text = "0x" + text
+    return text if _EVM_HASH.fullmatch(text) else None
+
+
+def _hashed_withdrawals(conn: Connection, chain: Chain) -> list:
+    """Every live, confirmed exchange withdrawal (`internal_transfer_out`) of the workspace
+    (row-level security) whose network is `chain`'s and that names a hash, the oldest first."""
+    m, a = movement_table.c, account_table.c
+    rows = conn.execute(
+        select(m.id, m.tx_hash, m.network, m.occurred_at)
+        .select_from(movement_table.join(account_table, a.id == m.account_id))
+        .where(
+            a.kind == AccountKind.EXCHANGE.value,
+            m.kind == MovementKind.INTERNAL_TRANSFER_OUT.value,
+            m.status == MovementStatus.CONFIRMED.value,
+            m.superseded_by.is_(None),
+            m.tx_hash.is_not(None),
+            m.network.is_not(None),
+        )
+        .order_by(m.occurred_at, m.id)
+    ).all()
+    return [r for r in rows if registry().network(r.network) is chain]
+
+
+def _linked_legs(conn: Connection) -> set[UUID]:
+    from hausbuch.services.transfers import _current_links, _leg_ids
+
+    return {i for link in _current_links(conn) for i in _leg_ids(link)}
+
+
+def _held_hashes(conn: Connection, account_id: UUID) -> set[str]:
+    """The transaction hashes the wallet holds a group of, superseded ones too (a deposit
+    written once, or answered by a person, is never looked up again)."""
+    g = group_table.c
+    return {
+        h.lower()
+        for h in conn.execute(select(g.tx_hash).where(g.account_id == account_id)).scalars()
+    }
+
+
+def _remembered(conn: Connection, account_id: UUID, address_id: UUID) -> list[dict]:
+    e = event_table.c
+    return [
+        p or {}
+        for p in conn.execute(
+            select(e.payload).where(
+                e.type == EventType.WALLET_DEPOSIT_LOOKED_UP.value,
+                e.entity_id == account_id,
+                e.payload["address_id"].astext == str(address_id),
+            )
+        ).scalars()
+    ]
+
+
+def _deposit_candidates(
+    conn: Connection, chain: Chain, account_id: UUID, address_id: UUID, host: str
+) -> tuple[_Lookup, ...]:
+    """The withdrawals a balance-only address's run looks up: every live, confirmed exchange
+    withdrawal (`internal_transfer_out`) of the workspace (row-level security) whose network
+    is this chain's and that names a well-formed hash, the oldest first, except one already
+    in a current link, one whose hash the wallet holds a group of already (written, or
+    answered by a person), one this address's node said credited it nothing (`absent`), and
+    one the same node did not know a day after it was sent (`unknown`)."""
+    rows = _hashed_withdrawals(conn, chain)
+    if not rows:
+        return ()
+    linked = _linked_legs(conn)
+    held = _held_hashes(conn, account_id)
+    absent: set[str] = set()
+    unknown: set[str] = set()
+    for p in _remembered(conn, account_id, address_id):
+        if p.get("outcome") == "absent":
+            absent.add(str(p.get("movement_id")))
+        elif p.get("outcome") == "unknown" and p.get("source_host") == host:
+            unknown.add(str(p.get("movement_id")))
+    out: list[_Lookup] = []
+    seen: set[str] = set()
+    for r in rows:
+        tx_hash = _evm_hash(r.tx_hash)
+        if tx_hash is None or tx_hash in seen or tx_hash in held or r.id in linked:
+            continue
+        if str(r.id) in absent or str(r.id) in unknown:
+            continue
+        seen.add(tx_hash)
+        out.append(_Lookup(r.id, tx_hash, r.occurred_at))
+    return tuple(out)
+
+
+def _remember_lookups(ctx: CommandContext, start: _Start, read: _Read) -> None:
+    """The lasting answers of the run's lookups, one wallet.deposit_looked_up each (ids
+    only): `absent`, and `unknown` once the withdrawal is a day old (_UNKNOWN_AFTER)."""
+    for wanted, outcome in read.looked_up:
+        if outcome == "unknown" and ctx.now - wanted.occurred_at < _UNKNOWN_AFTER:
+            continue
+        if outcome not in ("absent", "unknown"):
+            continue
+        append_event(
+            ctx,
+            EventType.WALLET_DEPOSIT_LOOKED_UP,
+            start.account_id,
+            WalletDepositLookedUp(
+                sync_id=start.sync_id,
+                address_id=start.address_id,
+                movement_id=wanted.movement_id,
+                outcome=outcome,
+                source_host=start.host,
+            ),
+        )
+
+
+def remembered_unknown(conn: Connection, movement_ids: list[UUID]) -> set[UUID]:
+    """The withdrawals some balance-only address's node did not know by their hash a day
+    after they were sent: the card offers them to an own wallet by hand like a withdrawal
+    with no hash."""
+    if not movement_ids:
+        return set()
+    e = event_table.c
+    wanted = {str(i) for i in movement_ids}
+    return {
+        UUID(p["movement_id"])
+        for p in conn.execute(
+            select(e.payload).where(
+                e.type == EventType.WALLET_DEPOSIT_LOOKED_UP.value,
+                e.payload["outcome"].astext == "unknown",
+            )
+        ).scalars()
+        if p and p.get("movement_id") in wanted
+    }
+
+
+def wallets_awaiting_deposits(conn: Connection) -> list[UUID]:
+    """The wallets with an active address on a balance-only chain (BNB Smart Chain) for
+    which some exchange withdrawal on that chain names a hash that is not linked, not held
+    as a group of the wallet and not remembered as looked up for it: their next sync has a
+    deposit to look up."""
+    chains = [r.code for r in registry().chains if r.source is ChainSourceKind.EVM_RPC_BALANCE]
+    if not chains:
+        return []
+    ad = address_table.c
+    wallets = conn.execute(
+        select(ad.account_id, ad.chain)
+        .distinct()
+        .where(ad.active.is_(True), ad.chain.in_([c.value for c in chains]))
+        .order_by(ad.account_id, ad.chain)
+    ).all()
+    if not wallets:
+        return []
+    linked: set[UUID] | None = None
+    out: list[UUID] = []
+    for account_id, chain in wallets:
+        if account_id in out:
+            continue
+        rows = _hashed_withdrawals(conn, Chain(chain))
+        if not rows:
+            continue
+        linked = _linked_legs(conn) if linked is None else linked
+        held = _held_hashes(conn, account_id)
+        e = event_table.c
+        remembered = {
+            str(p.get("movement_id"))
+            for p in conn.execute(
+                select(e.payload).where(
+                    e.type == EventType.WALLET_DEPOSIT_LOOKED_UP.value,
+                    e.entity_id == account_id,
+                )
+            ).scalars()
+            if p
+        }
+        if any(
+            r.id not in linked
+            and str(r.id) not in remembered
+            and (h := _evm_hash(r.tx_hash)) is not None
+            and h not in held
+            for r in rows
+        ):
+            out.append(account_id)
+    return out
+
+
+def queue_deposit_lookups(ctx: CommandContext) -> int:
+    """D181 (c) amended 16 Nov 2026: a sync queued, in the caller's transaction, for each
+    wallet that has an exchange withdrawal to look up (wallets_awaiting_deposits), so the
+    deposit is written and linked without waiting for the daily run: called after an
+    exchange import or a person's answer on an exchange's movement, and by `hausbuch
+    relink-chain`. Never calls the node itself (the caller holds a request's transaction).
+    A wallet whose sync already waits to run gets no second one (enqueue_sync_wallet's
+    `once`). The count of syncs queued."""
+    from hausbuch.jobs.sync_wallets import enqueue_sync_wallet
+
+    return sum(
+        enqueue_sync_wallet(
+            ctx.conn, workspace_id=ctx.workspace_id, account_id=account_id, once=True
+        )
+        for account_id in wallets_awaiting_deposits(ctx.conn)
     )
 
 
@@ -1558,6 +1824,14 @@ def _begin(
         reads_tokens = getattr(source, "reads_tokens", False) is True
         stored_tokens = _stored_tokens(conn, chain, own) if reads_tokens else {}
         host = _host(source)
+        balance_only = getattr(source, "balance_only", False) is True
+        lookups = (
+            _deposit_candidates(conn, chain, row.account_id, address_id, host)
+            if balance_only
+            else ()
+        )
+        if lookups:  # the hash as the node gives it back: the deposit reads as the exchange's
+            ctx = replace(ctx, exchange_hashes=ctx.exchange_hashes | {x.tx_hash for x in lookups})
         sync_id = conn.execute(
             insert(sync_table)
             .values(
@@ -1584,10 +1858,11 @@ def _begin(
         started_at=now,
         host=host,
         scope=reconcile_scope(source),
-        balance_only=getattr(source, "balance_only", False) is True,
+        balance_only=balance_only,
         reads_tokens=reads_tokens,
         stored_tokens=stored_tokens,
         hmac_key=settings.iban_hmac_key,
+        lookups=lookups,
     )
     return start, source, ctx, budget
 

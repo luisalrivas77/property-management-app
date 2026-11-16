@@ -489,8 +489,9 @@ def test_an_unset_key_skips_ethereum_and_arbitrum_and_bsc_still_syncs(
 
 
 def _deposit(dbname, ws, account, address_id, units: int, *, contract=None):
-    """A deposit linked to the BSC address, as step 5 will write it from the exchange's
-    withdrawal (seeded here: step 5's lookup by hash is not built)."""
+    """A deposit on the BSC address, as the sync writes it from the exchange's withdrawal by
+    its hash or a person's „An eigene Wallet“ writes it (D181 (c) amended 16 Nov 2026; those
+    paths are tested in test_wallet_sync_bsc_deposits.py), seeded here directly."""
     with _admin(dbname) as conn:
         if contract is None:
             asset_id = conn.execute(

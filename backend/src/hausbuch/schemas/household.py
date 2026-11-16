@@ -788,13 +788,57 @@ class OpenTransferCode(StrEnum):
     PARTIAL = "transfer.partial"
 
 
+class OwnWalletChoice(Schema):
+    """D181 (c) amended 16 Nov 2026: an own address on a balance-only chain (BNB Smart Chain)
+    an exchange's withdrawal may be booked to by hand, „An eigene Wallet: <Wallet> (<Chain>)“.
+    The masked address only (D179)."""
+
+    address_id: UUID
+    account_id: UUID
+    account_label: str
+    chain: str
+    address_masked: str
+
+
 class OpenTransfer(Schema):
-    """One leg waiting for its counterpart, with the legs it may be linked to."""
+    """One leg waiting for its counterpart, with the legs it may be linked to.
+
+    own_wallets (D181 (c) amended 16 Nov 2026): on a transfer.unmatched_leg card of an
+    exchange's withdrawal to a balance-only chain that no hash can prove (none in the export,
+    or the node did not know it a day later), the own addresses on that chain it may be
+    booked to (POST /transfers/own-wallet-deposit). paired_address_id: the one address the
+    exchange's withdrawals are learned to arrive on; the app links them itself once the
+    address's last read balance covers them, so this one waits because it does not yet.
+    paired_addresses: how many own addresses on that chain the exchange's withdrawals are
+    learned to arrive on; above one the app cannot tell which this one paid, so it links none
+    by itself and the person picks (review of 16 Nov 2026).
+
+    history_todo: on an unmatched withdrawal of an exchange whose withdrawals its withdrawal
+    history completes (Binance), the exchange page's to-do (exchange.withdrawal_history_missing
+    or exchange.withdrawal_history_no_match, D178 (4)): its transaction export lists the gross
+    amount with no fee, network or hash, so nothing is offered until the history completed it
+    (review of 16 Nov 2026)."""
 
     code: OpenTransferCode
     leg: TransferLegView
     candidates: list[TransferLegView]
     window_end: date
+    own_wallets: list[OwnWalletChoice] = Field(default_factory=list)
+    paired_address_id: UUID | None = None
+    paired_addresses: int = 0
+    history_todo: str | None = None
+
+
+class OwnWalletDepositCreate(Schema):
+    """POST /transfers/own-wallet-deposit (D181 (c) amended 16 Nov 2026): book an exchange's
+    withdrawal to an own address on a balance-only chain. The app writes the deposit (the
+    withdrawal less its fee, on its date), links it (matched_by user) and confirms both legs;
+    remember_withdrawal_pair (ticked by default) learns the pair (exchange, address), so the
+    next such withdrawals are linked by code while the address's balance covers them."""
+
+    withdrawal_movement_id: UUID
+    address_id: UUID
+    remember_withdrawal_pair: bool = True
 
 
 class OpenReturn(Schema):

@@ -101,6 +101,7 @@ from hausbuch.schemas.household import (
     MovementStatus,
     OpenTransfer,
     OpenTransferCode,
+    OwnWalletDepositCreate,
     TransferCandidate,
     TransferLeg,
     TransferLegSource,
@@ -1524,6 +1525,8 @@ def unlink(ctx: CommandContext, link_id: UUID, replacement: TransferLinkCreate) 
         new = _write(ctx, out.leg, in_.leg, replacement.kind, TransferMatchedBy.USER)
     ctx.conn.execute(update(link_table).where(c.id == link_id).values(superseded_by=new.id))
     append_event(ctx, EventType.TRANSFER_UNLINKED, link_id, TransferUnlinked(superseded_by=new.id))
+    if coin:  # a deposit the app wrote for the replaced link ends with it (D181 (c) amended)
+        chain_transfers.end_orphaned_deposits(ctx)
     return new
 
 
@@ -1543,6 +1546,18 @@ def release(ctx: CommandContext, link_id: UUID) -> None:
     _lock_exchanges(ctx, (legs.out_movement_id, legs.in_movement_id))
     _lock(ctx)
     chain_transfers.release_learned_link(ctx, link_id)
+
+
+def own_wallet_deposit(ctx: CommandContext, body: OwnWalletDepositCreate) -> TransferLink:
+    """POST /transfers/own-wallet-deposit: „An eigene Wallet“ on an exchange's withdrawal to a
+    balance-only chain (phase 7 D181 (c) amended 16 Nov 2026,
+    chain_transfers.write_own_wallet_deposit). The exchange's row is locked before the
+    transfer lock, as link_by_hand's order."""
+    from .chain import transfers as chain_transfers  # it imports this module
+
+    _lock_exchanges(ctx, (body.withdrawal_movement_id,))
+    _lock(ctx)
+    return chain_transfers.write_own_wallet_deposit(ctx, body)
 
 
 # --- Reading links and cards ----------------------------------------------------------------

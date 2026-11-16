@@ -2248,6 +2248,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/transfers/own-wallet-deposit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transfer Own Wallet Deposit
+         * @description „An eigene Wallet“ (phase 7 D181 (c) amended 16 Nov 2026): an exchange's withdrawal to a
+         *     balance-only chain (BNB Smart Chain) booked to an own address there: the app writes the
+         *     deposit (the withdrawal less its fee), links it (matched_by user) and confirms both legs;
+         *     `learned` when the remember box taught the pair. 404, 409 when linked already or being
+         *     answered, 422 transfer.legs_invalid for a withdrawal or address it does not apply to.
+         */
+        post: operations["transfer_own_wallet_deposit_api_transfers_own_wallet_deposit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transfers/{link_id}/unlink": {
         parameters: {
             query?: never;
@@ -6936,7 +6960,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "account.deposit_address_learned" | "account.deposit_address_forgotten" | "account.withdrawal_pair_learned" | "account.withdrawal_pair_forgotten" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "account.deposit_address_learned" | "account.deposit_address_forgotten" | "account.withdrawal_pair_learned" | "account.withdrawal_pair_forgotten" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "wallet.deposit_looked_up" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -9229,6 +9253,22 @@ export interface components {
         /**
          * OpenTransfer
          * @description One leg waiting for its counterpart, with the legs it may be linked to.
+         *
+         *     own_wallets (D181 (c) amended 16 Nov 2026): on a transfer.unmatched_leg card of an
+         *     exchange's withdrawal to a balance-only chain that no hash can prove (none in the export,
+         *     or the node did not know it a day later), the own addresses on that chain it may be
+         *     booked to (POST /transfers/own-wallet-deposit). paired_address_id: the one address the
+         *     exchange's withdrawals are learned to arrive on; the app links them itself once the
+         *     address's last read balance covers them, so this one waits because it does not yet.
+         *     paired_addresses: how many own addresses on that chain the exchange's withdrawals are
+         *     learned to arrive on; above one the app cannot tell which this one paid, so it links none
+         *     by itself and the person picks (review of 16 Nov 2026).
+         *
+         *     history_todo: on an unmatched withdrawal of an exchange whose withdrawals its withdrawal
+         *     history completes (Binance), the exchange page's to-do (exchange.withdrawal_history_missing
+         *     or exchange.withdrawal_history_no_match, D178 (4)): its transaction export lists the gross
+         *     amount with no fee, network or hash, so nothing is offered until the history completed it
+         *     (review of 16 Nov 2026).
          */
         OpenTransfer: {
             code: components["schemas"]["OpenTransferCode"];
@@ -9240,6 +9280,17 @@ export interface components {
              * Format: date
              */
             window_end: string;
+            /** Own Wallets */
+            own_wallets?: components["schemas"]["OwnWalletChoice"][];
+            /** Paired Address Id */
+            paired_address_id?: string | null;
+            /**
+             * Paired Addresses
+             * @default 0
+             */
+            paired_addresses: number;
+            /** History Todo */
+            history_todo?: string | null;
         };
         /**
          * OpenTransferCode
@@ -9328,6 +9379,55 @@ export interface components {
             from_report: boolean;
             /** Reconciled Through */
             reconciled_through?: string | null;
+        };
+        /**
+         * OwnWalletChoice
+         * @description D181 (c) amended 16 Nov 2026: an own address on a balance-only chain (BNB Smart Chain)
+         *     an exchange's withdrawal may be booked to by hand, „An eigene Wallet: <Wallet> (<Chain>)“.
+         *     The masked address only (D179).
+         */
+        OwnWalletChoice: {
+            /**
+             * Address Id
+             * Format: uuid
+             */
+            address_id: string;
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Account Label */
+            account_label: string;
+            /** Chain */
+            chain: string;
+            /** Address Masked */
+            address_masked: string;
+        };
+        /**
+         * OwnWalletDepositCreate
+         * @description POST /transfers/own-wallet-deposit (D181 (c) amended 16 Nov 2026): book an exchange's
+         *     withdrawal to an own address on a balance-only chain. The app writes the deposit (the
+         *     withdrawal less its fee, on its date), links it (matched_by user) and confirms both legs;
+         *     remember_withdrawal_pair (ticked by default) learns the pair (exchange, address), so the
+         *     next such withdrawals are linked by code while the address's balance covers them.
+         */
+        OwnWalletDepositCreate: {
+            /**
+             * Withdrawal Movement Id
+             * Format: uuid
+             */
+            withdrawal_movement_id: string;
+            /**
+             * Address Id
+             * Format: uuid
+             */
+            address_id: string;
+            /**
+             * Remember Withdrawal Pair
+             * @default true
+             */
+            remember_withdrawal_pair: boolean;
         };
         /** Owner */
         Owner: {
@@ -18471,6 +18571,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transfer_own_wallet_deposit_api_transfers_own_wallet_deposit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnWalletDepositCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferLink"];
+                };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
             default: {

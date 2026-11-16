@@ -54,6 +54,21 @@ What a matcher's link confirmed is recorded on its transfer.linked event; once t
 longer current, the next relink returns it to proposed (_reopen: proposed copies that supersede
 the rows, never a person's answer), so it waits for a person again (review of PR #396).
 
+A balance-only address (D181 (c), BNB Smart Chain) reads no history, so its deposits are
+written (D181 (c) amended 16 Nov 2026): one by the sync from the node's receipt of a withdrawal
+the exchange names by hash (services.chain.sync, a chain row like any other), and one by this
+module for a withdrawal no hash proves (BISON's export names none; a hash the node did not
+know a day later): the person's pick „An eigene Wallet“ (write_own_wallet_deposit, matched_by
+user, reason own_wallet) or, once that pick taught the pair (exchange, address), the linker
+for the exchange's next withdrawals of the chain's native coin (_balance_only_pass, matched_by
+matcher, reason withdrawal_pair), only while the address's last read balance covers the
+deposits already on it plus this one. Such a deposit is the withdrawal less its fee, on its
+date, a confirmed group whose movement_group.confirmed event carries
+routing.chain_written_deposit; it lives exactly as long as its link: a link that ends
+(„Verknüpfung lösen“, a re-booked withdrawal, a replaced link) ends it by a successor of 0
+units (_end_written, append-only), so the address's balance check never counts a deposit
+nothing proves.
+
 Locks: the workspace's transfer lock (services.transfers._lock); a movement or group row is
 locked with SKIP LOCKED by the matcher (a row a person is answering right now is left for the
 next run) and with NOWAIT on a link by hand (409), so this module never waits for a row while
@@ -74,7 +89,7 @@ from typing import Literal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Connection, Engine, and_, insert, select, update
+from sqlalchemy import Connection, Engine, and_, func, insert, select, update
 from sqlalchemy.orm import aliased
 
 from hausbuch.db.session import workspace_transaction
@@ -86,6 +101,7 @@ from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import movement_group as group_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.db.tables import wallet_address as address_table
+from hausbuch.db.tables import wallet_sync as sync_table
 from hausbuch.rules.chain.match_transfer import (
     WINDOW,
     ChainLeg,
@@ -97,15 +113,24 @@ from hausbuch.rules.chain.match_transfer import (
 )
 from hausbuch.rules.chain.registry import registry
 from hausbuch.rules.errors import TRANSFER_LEGS_INVALID, TRANSFER_UNITS_DIFFER
+from hausbuch.rules.exchange import WITHDRAWALS_COMPLETED_BY_HISTORY
 from hausbuch.rules.household.assets import registry as asset_registry
-from hausbuch.rules.review import CHAIN_FIRST_SYNC, DETERMINISTIC, NO_MATCH
+from hausbuch.rules.review import (
+    CHAIN_FIRST_SYNC,
+    CHAIN_WRITTEN_DEPOSIT,
+    CHAIN_WRITTEN_DEPOSIT_ENDED,
+    DETERMINISTIC,
+    NO_MATCH,
+)
 from hausbuch.schemas.allocation import AllocationCategory, TransferLegSource
 from hausbuch.schemas.chain import (
+    AssetKey,
     BridgePair,
     Chain,
     ChainSourceKind,
     GroupKind,
     GroupStatus,
+    WalletSyncStatus,
     WrapPair,
 )
 from hausbuch.schemas.enums import AccountKind
@@ -124,6 +149,8 @@ from hausbuch.schemas.household import (
     MovementStatus,
     OpenTransfer,
     OpenTransferCode,
+    OwnWalletChoice,
+    OwnWalletDepositCreate,
     TransferLegView,
     TransferLink,
     TransferLinkCreate,
@@ -189,6 +216,9 @@ class _Row:
     address_id: UUID | None = None
     group_chain: Chain | None = None
     counterparty_hmac: bytes | None = field(default=None, repr=False)
+    # the account's provider (an exchange's name, D178 (7)): whether its withdrawals wait for
+    # a withdrawal history (WITHDRAWALS_COMPLETED_BY_HISTORY)
+    provider: str | None = None
 
     @property
     def sends(self) -> bool:
@@ -266,6 +296,7 @@ def _read_legs(
             m.account_id,
             acc.label.label("account_label"),
             acc.kind.label("account_kind"),
+            acc.provider.label("account_provider"),
             m.asset_id,
             a.symbol,
             a.name,
@@ -351,6 +382,7 @@ def _read_legs(
                 counterparty_hmac=(
                     None if r.counterparty_hmac is None else bytes(r.counterparty_hmac)
                 ),
+                provider=r.account_provider,
             )
         )
     return legs
@@ -664,7 +696,7 @@ def _confirm(
 # --- Writing links -----------------------------------------------------------------------
 
 # Why a matcher's coin link was written, on its transfer.linked event (D261).
-LinkReason = Literal["hash", "deposit_address", "withdrawal_pair", "confirmed"]
+LinkReason = Literal["hash", "deposit_address", "withdrawal_pair", "confirmed", "own_wallet"]
 
 
 def _write(
@@ -678,7 +710,9 @@ def _write(
 ) -> TransferLink:
     """One transfer_link row of two coin movements and its transfer.linked event (ids only),
     as services.transfers._write writes a EUR link, without its bank-line hooks; `confirmed`
-    what the matcher's link confirmed (never a person's: that was their answer)."""
+    what the matcher's link confirmed (a person's link by hand records none: that was their
+    answer; a person's pick of an own wallet records what it confirmed of the withdrawal, so
+    „Verknüpfung lösen“ returns exactly that)."""
     legs = {"out_movement_id": out.id, "in_movement_id": in_.id}
     row = ctx.conn.execute(
         insert(link_table)
@@ -956,6 +990,8 @@ class RelinkResult:
     skipped_locked: int = 0  # a fit left for the next run: a person was answering a leg
     busy: bool = False  # relink(wait=False) found the transfer lock taken: nothing done
     reopened: int = 0  # movements a dead matcher link had confirmed, back to proposed
+    written: int = 0  # deposits written on a balance-only address (D181 (c) amended)
+    ended: int = 0  # written deposits whose link had ended, ended with it
 
 
 # --- What a person's link taught (D261) -------------------------------------------------------
@@ -1169,7 +1205,7 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
         _lock(ctx)
     elif not _try_lock(ctx):
         return RelinkResult(busy=True)
-    result = RelinkResult(reopened=_reopen(ctx))
+    result = RelinkResult(reopened=_reopen(ctx), ended=_end_orphans(ctx))
     world = _World.read(ctx.conn)
     for leg in [r for r in world.open() if r.sends]:
         if leg.id in world.linked:
@@ -1206,7 +1242,8 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
         result.linked += 1
     _deposit_pass(ctx, world, result)
     _withdrawal_pass(ctx, world, result)
-    if result.linked or result.skipped_locked or result.reopened:
+    _balance_only_pass(ctx, world, result)
+    if result.linked or result.skipped_locked or result.reopened or result.ended:
         logger.info(
             "chain transfers relinked",
             extra={
@@ -1216,6 +1253,8 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
                     "confirmed": result.confirmed,
                     "skipped_locked": result.skipped_locked,
                     "reopened": result.reopened,
+                    "written": result.written,
+                    "ended": result.ended,
                 }
             },
         )
@@ -1224,8 +1263,13 @@ def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
 
 def relink_after_answer(ctx: CommandContext) -> None:
     """The hook after a person confirms or answers an exchange's coin movement: relink in the
-    caller's transaction, without waiting for the transfer lock (relink's wait=False)."""
+    caller's transaction, without waiting for the transfer lock (relink's wait=False); a
+    withdrawal confirmed on a balance-only chain queues its wallet's sync, which looks the
+    deposit up by its hash (D181 (c) amended 16 Nov 2026)."""
+    from .sync import queue_deposit_lookups
+
     relink(ctx, wait=False)
+    queue_deposit_lookups(ctx)
 
 
 def relink_after_sync(
@@ -1345,6 +1389,14 @@ def _learn_on_link(
 LEARNED_REASONS: frozenset[str] = frozenset({"deposit_address", "withdrawal_pair"})
 
 
+def _releasable(link, reason: str | None) -> bool:  # noqa: ANN001 - a transfer_link row
+    """A link „Verknüpfung lösen“ ends: one code wrote from a learned row, or a person's pick
+    of an own wallet on a balance-only chain (reason own_wallet, D181 (c) amended)."""
+    if link.matched_by == TransferMatchedBy.MATCHER.value:
+        return reason in LEARNED_REASONS
+    return reason == "own_wallet"
+
+
 def _link_payloads(conn: Connection, link_ids: Sequence[UUID]) -> dict[UUID, dict]:
     """Each link's transfer.linked payload (its reason, what it confirmed)."""
     if not link_ids:
@@ -1361,8 +1413,9 @@ def _link_payloads(conn: Connection, link_ids: Sequence[UUID]) -> dict[UUID, dic
 
 
 def learned_links(conn: Connection, movement_ids: Iterable[UUID]) -> dict[UUID, UUID]:
-    """movement id → the current link code wrote from a learned row that it is a leg of: what
-    „Verknüpfung lösen“ offers on the exchange's movement rows."""
+    """movement id → the current link code wrote from a learned row that it is a leg of, or a
+    person's pick of an own wallet on a balance-only chain (D181 (c) amended 16 Nov 2026):
+    what „Verknüpfung lösen“ offers on the exchange's movement rows."""
     from ..transfers import _current_links
 
     ids = set(movement_ids)
@@ -1370,13 +1423,12 @@ def learned_links(conn: Connection, movement_ids: Iterable[UUID]) -> dict[UUID, 
         r
         for r in _current_links(conn)
         if r.kind == TransferLinkKind.CHAIN.value
-        and r.matched_by == TransferMatchedBy.MATCHER.value
         and (r.out_movement_id in ids or r.in_movement_id in ids)
     ]
     payloads = _link_payloads(conn, [r.id for r in rows])
     out: dict[UUID, UUID] = {}
     for r in rows:
-        if payloads.get(r.id, {}).get("reason") in LEARNED_REASONS:
+        if _releasable(r, payloads.get(r.id, {}).get("reason")):
             out[r.out_movement_id] = r.id
             out[r.in_movement_id] = r.id
     return out
@@ -1384,7 +1436,10 @@ def learned_links(conn: Connection, movement_ids: Iterable[UUID]) -> dict[UUID, 
 
 def release_learned_link(ctx: CommandContext, link_id: UUID) -> None:
     """POST /transfers/{id}/release, „Verknüpfung lösen“ (D261, review fixes 16 Nov 2026): a
-    chain link code wrote from a learned deposit address or withdrawal pair ends. Both legs go
+    chain link code wrote from a learned deposit address or withdrawal pair ends, and so does
+    a person's pick of an own wallet on a balance-only chain (D181 (c) amended 16 Nov 2026),
+    whose written deposit ends with it (_end_written) while what the link confirmed of the
+    withdrawal returns to proposed. Otherwise both legs go
     back to proposed (their groups too when the link confirmed them), as a dead matcher link's
     legs do (_reopen_side), so they show again as a card; the learned row that produced the
     link ends with it, its account.*_forgotten event naming the link, so the next relink cannot
@@ -1412,18 +1467,26 @@ def release_learned_link(ctx: CommandContext, link_id: UUID) -> None:
             "Diese Verknüpfung beruht auf derselben Transaktion (gleicher Hash); "
             "sie lässt sich nicht lösen."
         )
-    if (
-        link.kind != TransferLinkKind.CHAIN.value
-        or link.matched_by != TransferMatchedBy.MATCHER.value
-        or reason not in LEARNED_REASONS
-    ):
+    if link.kind != TransferLinkKind.CHAIN.value or not _releasable(link, reason):
         raise ConflictError(
             "Nur eine Verknüpfung, die die App über eine gemerkte Adresse gesetzt hat, "
             "lässt sich hier lösen."
         )
     out_id, in_id = link.out_movement_id, link.in_movement_id
-    forget_for_link(ctx, reason, out_id, in_id, link.id)
     linked = {i for r in current if r.id != link.id for i in _leg_ids(r)}
+    written = _written_deposits(ctx.conn, [in_id])
+    if written:
+        # D181 (c) amended: the deposit the app wrote is nothing but the link's consequence, so
+        # it ends with it; the withdrawal returns to what it was before the link confirmed it,
+        # and the pair (exchange, address) is forgotten, so the next withdrawals wait.
+        if not _end_written(ctx, written[0]):
+            raise ConflictError("Eine Seite wird gerade bearbeitet. Bitte noch einmal versuchen.")
+        forget_for_link(ctx, "withdrawal_pair", out_id, in_id, link.id)
+        movements = {UUID(i) for i in payload.get("confirmed_movements") or []}
+        _reopen_side(ctx, out_id, movements, set(), linked, set())
+        append_event(ctx, EventType.TRANSFER_UNLINKED, link.id, TransferUnlinked())
+        return
+    forget_for_link(ctx, reason, out_id, in_id, link.id)
     movements = {UUID(i) for i in payload.get("confirmed_movements") or []} | {out_id, in_id}
     groups = {UUID(i) for i in payload.get("confirmed_groups") or []}
     for side in (out_id, in_id):
@@ -1434,6 +1497,433 @@ def release_learned_link(ctx: CommandContext, link_id: UUID) -> None:
     append_event(ctx, EventType.TRANSFER_UNLINKED, link.id, TransferUnlinked())
 
 
+# --- Deposits written on a balance-only address (D181 (c) amended 16 Nov 2026) --------------
+
+
+def _balance_only(chain: Chain | None) -> bool:
+    return chain is not None and registry().chain(chain).source is ChainSourceKind.EVM_RPC_BALANCE
+
+
+def _native_balance_only_chain(priced: str) -> Chain | None:
+    """The one balance-only chain whose native coin `priced` is (BNB: BNB Smart Chain)."""
+    found = [
+        r.code
+        for r in registry().chains
+        if r.source is ChainSourceKind.EVM_RPC_BALANCE and r.native_symbol == priced
+    ]
+    return found[0] if len(found) == 1 else None
+
+
+def _awaits_history(leg: _Row) -> bool:
+    """An exchange's withdrawal its withdrawal history has not completed yet (D178 (4)):
+    no hash, at an exchange whose transaction export names none (Binance)."""
+    return (
+        leg.account_kind is AccountKind.EXCHANGE
+        and leg.kind is MovementKind.INTERNAL_TRANSFER_OUT
+        and leg.tx_hash is None
+        and leg.provider in WITHDRAWALS_COMPLETED_BY_HISTORY
+    )
+
+
+def _own_wallet_chain(leg: _Row, unknown: Iterable[UUID] = ()) -> Chain | None:
+    """The balance-only chain an exchange's withdrawal may be booked to by a written deposit,
+    or None: a withdrawal (internal_transfer_out) of the chain's native coin that no hash can
+    prove. One naming the chain's network needs a hash the node did not know a day after it
+    was sent (`unknown`, sync.remembered_unknown); a hash not looked up yet waits for the
+    lookup, and a withdrawal not completed yet has none. One naming no network (BISON's
+    export) names no hash either, and its coin says the chain. A token is never offered: the
+    node's balance of the native coin is what proves a written deposit. An exchange whose
+    withdrawals its withdrawal history completes (Binance) is never offered before that: its
+    row is the gross amount with the fee unknown, and the history then brings the hash, so
+    the deposit is looked up by hash (review of 16 Nov 2026)."""
+    if (
+        leg.account_kind is not AccountKind.EXCHANGE
+        or leg.kind is not MovementKind.INTERNAL_TRANSFER_OUT
+        or not leg.sends
+    ):
+        return None
+    if leg.network is not None:
+        chain = registry().network(leg.network)
+        if not _balance_only(chain) or leg.tx_hash is None or leg.id not in set(unknown):
+            return None
+    elif leg.tx_hash is not None or _awaits_history(leg):
+        return None
+    else:
+        chain = _native_balance_only_chain(leg.priced)
+    if chain is None or registry().chain(chain).native_symbol != leg.priced:
+        return None
+    return chain
+
+
+def _own_wallet_choices(conn: Connection, chain: Chain) -> list[OwnWalletChoice]:
+    """The active own addresses on `chain`, by wallet label and masked address (D179)."""
+    w, acc = address_table.c, account_table.c
+    rows = conn.execute(
+        select(w.id, w.account_id, acc.label, w.chain, w.address_masked)
+        .select_from(address_table.join(account_table, acc.id == w.account_id))
+        .where(w.active.is_(True), w.chain == chain.value)
+        .order_by(acc.label, w.id)
+    ).all()
+    return [
+        OwnWalletChoice(
+            address_id=r.id,
+            account_id=r.account_id,
+            account_label=r.label,
+            chain=r.chain,
+            address_masked=r.address_masked,
+        )
+        for r in rows
+    ]
+
+
+def _balance_only_pairs(conn: Connection) -> dict[UUID, list[tuple[UUID, Chain]]]:
+    """exchange → the active own addresses on a balance-only chain it is learned to pay."""
+    from .learned import withdrawal_pairs
+
+    pairs = withdrawal_pairs(conn)
+    if not pairs:
+        return {}
+    w = address_table.c
+    chains = {
+        r.id: Chain(r.chain)
+        for r in conn.execute(
+            select(w.id, w.chain).where(
+                w.id.in_(sorted({a for _, a in pairs}, key=str)), w.active.is_(True)
+            )
+        )
+    }
+    out: dict[UUID, list[tuple[UUID, Chain]]] = {}
+    for exchange, address in sorted(pairs, key=lambda p: (str(p[0]), str(p[1]))):
+        chain = chains.get(address)
+        if chain is not None and _balance_only(chain):
+            out.setdefault(exchange, []).append((address, chain))
+    return out
+
+
+def _written_groups():  # noqa: ANN202 - a scalar subquery
+    """The groups the app wrote as deposits (their movement_group.confirmed event's reason)."""
+    e = event_table.c
+    return select(e.entity_id).where(
+        e.type == EventType.MOVEMENT_GROUP_CONFIRMED.value,
+        e.payload["reason"].astext == CHAIN_WRITTEN_DEPOSIT,
+    )
+
+
+def _written_deposits(conn: Connection, movement_ids: Iterable[UUID] | None = None) -> list:
+    """The live deposits the app wrote (not ended), optionally only among `movement_ids`."""
+    m = movement_table.c
+    where = [m.group_id.in_(_written_groups()), m.superseded_by.is_(None), m.quantity != 0]
+    if movement_ids is not None:
+        where.append(m.id.in_(list(movement_ids)))
+    return conn.execute(select(movement_table).where(*where).order_by(m.occurred_at, m.id)).all()
+
+
+def _deposit_units(withdrawal: _Row) -> Decimal:
+    return abs(withdrawal.quantity) - (withdrawal.fee_quantity or Decimal(0))
+
+
+def _write_deposit(ctx: CommandContext, withdrawal: _Row, address, chain: Chain) -> _Row:  # noqa: ANN001 - a wallet_address row
+    """The deposit of `withdrawal` on the own `address`: a confirmed group of kind
+    exchange_transfer routed routing.chain_written_deposit, with one confirmed
+    internal_transfer_in of the chain's native coin (source user), the withdrawal less its
+    fee, on its date. The group's hash is the withdrawal's when it names one (so the sync
+    never looks it up again), else one naming the withdrawal."""
+    from .sync import chain_asset
+
+    units = _deposit_units(withdrawal)
+    if units <= 0:
+        raise RuleViolationError(
+            [TRANSFER_UNITS_DIFFER], "the exchange's fee is all of the withdrawal"
+        )
+    asset = chain_asset(ctx, AssetKey(chain=chain, contract=None))
+    g, m = group_table.c, movement_table.c
+    group_id = ctx.conn.execute(
+        insert(group_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            account_id=address.account_id,
+            chain=chain.value,
+            tx_hash=withdrawal.tx_hash or f"exchange-withdrawal:{withdrawal.id}",
+            occurred_at=withdrawal.occurred_at,
+            kind=GroupKind.EXCHANGE_TRANSFER.value,
+            status=GroupStatus.CONFIRMED.value,
+            created_at=ctx.now,
+        )
+        .returning(g.id)
+    ).scalar_one()
+    append_event(
+        ctx,
+        EventType.MOVEMENT_GROUP_CONFIRMED,
+        group_id,
+        MovementGroupRecorded(
+            account_id=address.account_id,
+            chain=chain.value,
+            kind=GroupKind.EXCHANGE_TRANSFER.value,
+            reason=CHAIN_WRITTEN_DEPOSIT,
+        ),
+    )
+    movement_id = ctx.conn.execute(
+        insert(movement_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            account_id=address.account_id,
+            asset_id=asset.id,
+            kind=MovementKind.INTERNAL_TRANSFER_IN.value,
+            quantity=units,
+            occurred_at=withdrawal.occurred_at,
+            tx_hash=withdrawal.tx_hash,
+            source=MovementSource.USER.value,
+            status=MovementStatus.CONFIRMED.value,
+            group_id=group_id,
+            address_id=address.id,
+            index="0",
+            created_at=ctx.now,
+        )
+        .returning(m.id)
+    ).scalar_one()
+    append_event(
+        ctx,
+        EventType.MOVEMENT_CONFIRMED,
+        movement_id,
+        MovementRecorded(
+            account_id=address.account_id,
+            asset_id=asset.id,
+            kind=MovementKind.INTERNAL_TRANSFER_IN,
+            source=MovementSource.USER,
+        ),
+    )
+    [deposit] = _read_legs(ctx.conn, m.id == movement_id)
+    if not _fits(withdrawal, deposit, TransferLinkKind.CHAIN):  # pragma: no cover - by its units
+        raise RuleViolationError([TRANSFER_UNITS_DIFFER], "the written deposit does not fit")
+    return deposit
+
+
+def _end_written(ctx: CommandContext, move) -> bool:  # noqa: ANN001 - a live asset_movement row
+    """A written deposit ended (append-only): its group superseded by a confirmed group routed
+    routing.chain_written_deposit_ended whose one movement, of 0 units and kind uncategorized
+    (no lot, no leg, nothing in the balance check), supersedes the deposit. False when a row
+    is held elsewhere right now or was ended meanwhile."""
+    g, m = group_table.c, movement_table.c
+    if not _lock_ids(ctx, [move.id], [move.group_id]):
+        return False
+    if (
+        ctx.conn.execute(select(m.id).where(m.id == move.id, m.superseded_by.is_(None))).first()
+        is None
+    ):
+        return False
+    group = ctx.conn.execute(select(group_table).where(g.id == move.group_id)).one()
+    new_group = ctx.conn.execute(
+        insert(group_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            account_id=group.account_id,
+            chain=group.chain,
+            tx_hash=group.tx_hash,
+            occurred_at=group.occurred_at,
+            kind=group.kind,
+            status=GroupStatus.CONFIRMED.value,
+            created_at=ctx.now,
+        )
+        .returning(g.id)
+    ).scalar_one()
+    append_event(
+        ctx,
+        EventType.MOVEMENT_GROUP_CONFIRMED,
+        new_group,
+        MovementGroupRecorded(
+            account_id=group.account_id,
+            chain=group.chain,
+            kind=group.kind,
+            reason=CHAIN_WRITTEN_DEPOSIT_ENDED,
+        ),
+    )
+    new_id = ctx.conn.execute(
+        insert(movement_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            account_id=move.account_id,
+            asset_id=move.asset_id,
+            kind=MovementKind.UNCATEGORIZED.value,
+            quantity=Decimal(0),
+            occurred_at=move.occurred_at,
+            tx_hash=move.tx_hash,
+            source=MovementSource.USER.value,
+            status=MovementStatus.CONFIRMED.value,
+            group_id=new_group,
+            address_id=move.address_id,
+            index=move.index,
+            created_at=ctx.now,
+        )
+        .returning(m.id)
+    ).scalar_one()
+    ctx.conn.execute(update(movement_table).where(m.id == move.id).values(superseded_by=new_id))
+    append_event(
+        ctx, EventType.MOVEMENT_SUPERSEDED, move.id, MovementSuperseded(superseded_by=new_id)
+    )
+    append_event(
+        ctx,
+        EventType.MOVEMENT_CONFIRMED,
+        new_id,
+        MovementRecorded(
+            account_id=move.account_id,
+            asset_id=move.asset_id,
+            kind=MovementKind.UNCATEGORIZED,
+            source=MovementSource.USER,
+        ),
+    )
+    if group.superseded_by is None:
+        ctx.conn.execute(
+            update(group_table).where(g.id == group.id).values(superseded_by=new_group)
+        )
+    return True
+
+
+def _end_orphans(ctx: CommandContext) -> int:
+    """Every written deposit no current link holds (its withdrawal re-booked, its link replaced
+    or released) ended; the count. A row held elsewhere waits for the next relink."""
+    from ..transfers import _current_links, _leg_ids
+
+    rows = _written_deposits(ctx.conn)
+    if not rows:
+        return 0
+    linked = {i for r in _current_links(ctx.conn) for i in _leg_ids(r)}
+    return sum(1 for r in rows if r.id not in linked and _end_written(ctx, r))
+
+
+def end_orphaned_deposits(ctx: CommandContext) -> int:
+    """For services.transfers.unlink: the deposit a replaced link held ends at once."""
+    return _end_orphans(ctx)
+
+
+def _covered(conn: Connection, address_id: UUID, chain: Chain, withdrawal: _Row) -> bool:
+    """Whether the address's last read balance, read after the withdrawal, covers the
+    deposits on it plus this one: the latest succeeded sync that read a balance of the
+    native coin, started after the withdrawal. No such read: it waits for the next one."""
+    s, m, a = sync_table.c, movement_table.c, asset_table.c
+    read = conn.execute(
+        select(s.balances, s.started_at)
+        .where(
+            s.address_id == address_id,
+            s.status == WalletSyncStatus.SUCCEEDED.value,
+            s.balances.is_not(None),
+        )
+        .order_by(s.started_at.desc(), s.id.desc())
+        .limit(1)
+    ).first()
+    if read is None or read.started_at <= withdrawal.occurred_at:
+        return False
+    native = (read.balances or {}).get("native")
+    if native is None:
+        return False
+    balance = Decimal(int(native)).scaleb(-registry().chain(chain).native_decimals)
+    held = conn.execute(
+        select(func.coalesce(func.sum(m.quantity), 0))
+        .select_from(movement_table.join(asset_table, a.id == m.asset_id))
+        .where(
+            m.address_id == address_id,
+            m.superseded_by.is_(None),
+            a.chain == chain.value,
+            a.contract_address.is_(None),
+        )
+    ).scalar_one()
+    return Decimal(held) + _deposit_units(withdrawal) <= balance
+
+
+def _balance_only_pass(ctx: CommandContext, world: _World, result: RelinkResult) -> None:
+    """D181 (c) amended: an exchange's withdrawal of a balance-only chain's native coin that
+    names no hash, from an exchange learned to pay exactly one own address on that chain,
+    gets its deposit written and linked (matched_by matcher, reason withdrawal_pair) while
+    the address's last read balance covers it (_covered, re-read per withdrawal, so two
+    waiting withdrawals never pass on one balance); otherwise it waits on its card."""
+    learned = _balance_only_pairs(ctx.conn)
+    if not learned:
+        return
+    for leg in world.open():
+        if leg.id in world.linked or leg.tx_hash is not None:
+            continue
+        chain = _own_wallet_chain(leg)
+        if chain is None:
+            continue
+        targets = [a for a, c in learned.get(leg.account_id, []) if c is chain]
+        if len(targets) != 1 or not _covered(ctx.conn, targets[0], chain, leg):
+            continue  # several addresses, or the balance does not cover it: the card
+        if not _lock_rows(ctx, (leg,), wait_for_none=True) or not _still(ctx.conn, (leg,)):
+            result.skipped_locked += 1
+            continue
+        address = ctx.conn.execute(
+            select(address_table).where(address_table.c.id == targets[0])
+        ).one()
+        deposit = _write_deposit(ctx, leg, address, chain)
+        pair = {leg.id, deposit.id}
+        done = _Confirmed()
+        result.confirmed += _confirm(ctx, leg, pair, done)
+        _write(
+            ctx,
+            leg,
+            deposit,
+            TransferLinkKind.CHAIN,
+            TransferMatchedBy.MATCHER,
+            done,
+            "withdrawal_pair",
+        )
+        world.linked |= pair
+        result.linked += 1
+        result.written += 1
+
+
+def write_own_wallet_deposit(ctx: CommandContext, body: OwnWalletDepositCreate) -> TransferLink:
+    """POST /transfers/own-wallet-deposit (services.transfers.own_wallet_deposit calls it after
+    its locks): „An eigene Wallet“ on an exchange's withdrawal no hash proves. The deposit is
+    written on the own address (the withdrawal less its fee, on its date), the withdrawal
+    confirmed by the person's answer, both linked (matched_by user, reason own_wallet, what it
+    confirmed recorded); with remember_withdrawal_pair the pair (exchange, address) is
+    learned and the relink runs at once, so the exchange's other such withdrawals that the
+    balance covers are linked too.
+
+    404 for no open exchange withdrawal or no active own address; 422 transfer.legs_invalid
+    for a withdrawal that is not one of a balance-only chain's native coin without a hash
+    proof, or an address on another chain; 409 when the withdrawal is linked already or is
+    being answered right now."""
+    from .learned import learn_withdrawal_pair
+    from .sync import remembered_unknown
+
+    world = _World.read(ctx.conn)
+    leg = next((r for r in world.legs if r.id == body.withdrawal_movement_id), None)
+    if leg is None or leg.account_kind is not AccountKind.EXCHANGE or not leg.sends:
+        raise NotFoundError("movement", body.withdrawal_movement_id)
+    w = address_table.c
+    address = ctx.conn.execute(
+        select(address_table).where(w.id == body.address_id, w.active.is_(True))
+    ).one_or_none()
+    if address is None:
+        raise NotFoundError("wallet address", body.address_id)
+    if leg.id in world.linked:
+        raise ConflictError("Diese Abhebung ist schon verknüpft.")
+    unknown = remembered_unknown(ctx.conn, [leg.id]) if leg.tx_hash else set()
+    chain = _own_wallet_chain(leg, unknown)
+    if chain is None or Chain(address.chain) is not chain:
+        raise RuleViolationError(
+            [TRANSFER_LEGS_INVALID],
+            "this withdrawal cannot be booked to this address by a written deposit",
+        )
+    _lock_rows(ctx, (leg,), wait_for_none=False)
+    if not _still(ctx.conn, (leg,)):
+        raise ConflictError("Diese Abhebung wurde inzwischen beantwortet.")
+    deposit = _write_deposit(ctx, leg, address, chain)
+    pair = {leg.id, deposit.id}
+    done = _Confirmed()
+    _confirm(ctx, leg, pair, done)
+    link = _write(
+        ctx, leg, deposit, TransferLinkKind.CHAIN, TransferMatchedBy.USER, done, "own_wallet"
+    )
+    if not body.remember_withdrawal_pair:
+        return link
+    outcome = learn_withdrawal_pair(ctx, leg.account_id, address.id, leg.id, written=True)
+    if outcome == "learned":
+        relink(ctx)
+    return link.model_copy(update={"learned": outcome})
+
+
 # --- Cards ----------------------------------------------------------------------------------
 
 
@@ -1441,20 +1931,24 @@ def _window_end(leg: _Row) -> date:
     return (leg.occurred_at + WINDOW[TransferLinkKind.CHAIN]).astimezone(BERLIN).date()
 
 
-def _pairable(conn: Connection, leg: _Row) -> bool:
+def _pairable(conn: Connection, leg: _Row, unknown: frozenset[UUID] = frozenset()) -> bool:
     """Whether a counterpart of an unmatched leg could be in the app: a wallet leg's always
     (the classifier saw the other side as own); an exchange row's when a wallet address
-    exists on the chain its network names (any wallet address when it names none). Never on a
-    balance-only chain (D181 (c), BNB Smart Chain): it has no movement to pair with, so the
-    card would be a dead end; its sync's balance check shows the unexplained deposit instead
-    (rules/chain/evm.reconcile_balance_only, transfer.unmatched_leg)."""
+    exists on the chain its network names (any wallet address when it names none). On a
+    balance-only chain (D181 (c), BNB Smart Chain) the sync writes the deposit from the
+    node's receipt of the withdrawal's hash (D181 (c) amended 16 Nov 2026), so there is no
+    card while that lookup is still to come (no hash yet, or a hash not looked up yet), only
+    for a hash the node did not know a day later (`unknown`), which the person may book to an
+    own wallet by hand („An eigene Wallet“, OpenTransfer.own_wallets)."""
     if leg.account_kind is not AccountKind.EXCHANGE:
         return True
     w = address_table.c
     where = [w.active.is_(True)]
     if leg.network is not None:
         chain = registry().network(leg.network)
-        if chain is None or registry().chain(chain).source is ChainSourceKind.EVM_RPC_BALANCE:
+        if chain is None:
+            return False
+        if _balance_only(chain) and (leg.tx_hash is None or leg.id not in unknown):
             return False
         where.append(w.chain == chain.value)
     return conn.execute(select(w.id).where(and_(*where)).limit(1)).first() is not None
@@ -1464,8 +1958,25 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
     """The coin legs that wait for a person, computed now: a fit the matcher did not write
     (transfer.proposed), several fits (transfer.ambiguous, every one listed), and a transfer
     leg past its 48 hours whose counterpart could be in the app (transfer.unmatched_leg, no
-    candidate). An uncategorized leg without a fit is a payment, not a transfer: no card."""
+    candidate). An uncategorized leg without a fit is a payment, not a transfer: no card. An
+    unmatched exchange withdrawal to a balance-only chain lists the own addresses there it may
+    be booked to, and names the one its exchange is learned to pay, if any (D181 (c) amended
+    16 Nov 2026)."""
+    from .sync import remembered_unknown
+
     world = _World.read(conn)
+    unknown = frozenset(
+        remembered_unknown(
+            conn,
+            [
+                r.id
+                for r in world.open()
+                if r.account_kind is AccountKind.EXCHANGE and r.tx_hash is not None and r.sends
+            ],
+        )
+    )
+    learned: dict[UUID, list[tuple[UUID, Chain]]] | None = None
+    history: dict[UUID, str | None] = {}
     items: list[OpenTransfer] = []
     for leg in [r for r in world.open() if r.sends]:
         found = world.match(leg, world.receivers(leg))
@@ -1491,14 +2002,41 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
         elif (
             leg.kind is MovementKind.INTERNAL_TRANSFER_OUT
             and _window_end(leg) < today
-            and _pairable(conn, leg)
+            and _pairable(conn, leg, unknown)
         ):
             code, candidates = OpenTransferCode.UNMATCHED_LEG, []
         else:
             continue
+        own: list[OwnWalletChoice] = []
+        paired: UUID | None = None
+        paired_count = 0
+        history_todo: str | None = None
+        chain = _own_wallet_chain(leg, unknown) if code is OpenTransferCode.UNMATCHED_LEG else None
+        if chain is not None:
+            own = _own_wallet_choices(conn, chain)
+            if learned is None:
+                learned = _balance_only_pairs(conn)
+            targets = [a for a, c in learned.get(leg.account_id, []) if c is chain]
+            if leg.tx_hash is None:
+                paired_count = len(targets)
+                if len(targets) == 1:
+                    paired = targets[0]
+        elif code is OpenTransferCode.UNMATCHED_LEG and _awaits_history(leg):
+            if leg.account_id not in history:
+                from ..exchange.imports import withdrawal_history_todo
+
+                history[leg.account_id] = withdrawal_history_todo(conn, leg.account_id)
+            history_todo = history[leg.account_id]
         items.append(
             OpenTransfer(
-                code=code, leg=leg.view(), candidates=candidates, window_end=_window_end(leg)
+                code=code,
+                leg=leg.view(),
+                candidates=candidates,
+                window_end=_window_end(leg),
+                own_wallets=own,
+                paired_address_id=paired,
+                paired_addresses=paired_count,
+                history_todo=history_todo,
             )
         )
     return items
@@ -1519,4 +2057,5 @@ __all__ = [
     "relink",
     "relink_after_answer",
     "relink_after_sync",
+    "write_own_wallet_deposit",
 ]

@@ -88,6 +88,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
+import { ruleCodeText } from "@/api/errors";
 import type { Account, Document, ExchangeMovementRow, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
 import type { components } from "@/api/types";
 import { ErrorNotice } from "@/lib/ErrorNotice";
@@ -97,7 +98,7 @@ import { BalanceForm, DuplicateCard, OpeningFromClosing } from "./accounts";
 import { documentLabel, ImportStoredStatement, UploadControl } from "./documents";
 import { ConfirmWithdrawals, ExchangeUnreconciledActions, formatUnits, MovementAnswers } from "./exchange";
 import { formatDate, formatDateTime, formatMoney } from "./format";
-import { ALLOCATION_CATEGORY, APP_SECRETS_ANCHOR, INBOX_ITEM_KIND } from "./labels";
+import { ALLOCATION_CATEGORY, APP_SECRETS_ANCHOR, CHAIN, INBOX_ITEM_KIND } from "./labels";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
 import { reminderTodo } from "./todos";
 import { ActionDialog, Notice } from "./ui";
@@ -1117,6 +1118,20 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
         );
       }
       if (open.candidates.length > 0) return <TransferPick open={open} accounts={data.accounts} onLinked={onChanged} />;
+      if ((open.own_wallets ?? []).length > 0) return <OwnWalletPick open={open} onLinked={onChanged} />;
+      if (open.history_todo) {
+        // D181 (c) amended, review of 16 Nov 2026: Binance's export lists a withdrawal before
+        // its fee, network and hash; its withdrawal history completes it, on the exchange's page.
+        return (
+          <span className="stack">
+            <span>{ruleCodeText(open.history_todo)}</span>
+            {/* a history already checked against it cannot help again: the page says why */}
+            <Link href={`/accounts/${open.leg.account_id}`}>
+              {open.history_todo === "exchange.withdrawal_history_no_match" ? "Konto öffnen" : "Auszahlungsverlauf hochladen"}
+            </Link>
+          </span>
+        );
+      }
       if (open.leg.amount == null) {
         // Phase 7 step 5: a coin leg's other side is a wallet (added and fetched under Konten)
         // or the exchange's movement, answered on its account's page.
@@ -1412,6 +1427,77 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
           Keine Überweisung – Zahlung anders zuordnen
         </Link>
       ) : null}
+      <ErrorNotice error={error} />
+    </fieldset>
+  );
+}
+
+/** Phase 7 D181 (c) amended 16 Nov 2026: „An eigene Wallet“. An exchange's withdrawal to BNB
+ * Smart Chain that no hash proves (BISON names none): the node there reports a balance, not a
+ * history, so the person says which own address got it. The app then writes the deposit (the
+ * withdrawal less its fee) and links it (POST /transfers/own-wallet-deposit); the box, ticked by
+ * default, lets the app link the exchange's next such withdrawals itself while the wallet's
+ * read balance covers them. Only the wallet's name and its masked address are shown. */
+function OwnWalletPick({ open, onLinked }: { open: OpenTransfer; onLinked: () => void }) {
+  const wallets = open.own_wallets ?? [];
+  const [choice, setChoice] = useState(wallets.length === 1 ? (wallets[0]?.address_id ?? "") : "");
+  const [remember, setRemember] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const name = `own-wallet-${open.leg.id}`;
+  const chainName = (chain: string) => (CHAIN as Record<string, string>)[chain] ?? chain;
+  const paired = wallets.find((wallet) => wallet.address_id === open.paired_address_id);
+
+  async function book() {
+    if (choice === "") return;
+    setBusy(true);
+    setError(null);
+    try {
+      await ok(
+        api.POST("/api/transfers/own-wallet-deposit", {
+          body: { withdrawal_movement_id: open.leg.id, address_id: choice, remember_withdrawal_pair: remember },
+        }),
+      );
+      onLinked();
+    } catch (caught) {
+      setError(caught);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <fieldset className="stack">
+      <legend className="visually-hidden">Eigene Wallet</legend>
+      {paired ? (
+        <p className="muted">
+          Abhebungen von {open.leg.account_label} an {paired.account_label} verknüpft die App selbst, sobald der abgerufene Kontostand
+          der Wallet sie enthält. Diese wartet, weil der letzte Kontostand sie noch nicht enthält: Wallet abrufen, oder hier selbst
+          zuordnen.
+        </p>
+      ) : null}
+      {(open.paired_addresses ?? 0) > 1 ? (
+        <p className="muted">
+          Abhebungen von {open.leg.account_label} sind an {open.paired_addresses} eigene Adressen auf dieser Chain gelernt. Die App
+          kann nicht erkennen, an welche diese ging, und verknüpft sie deshalb nicht selbst: bitte hier zuordnen.
+        </p>
+      ) : null}
+      {wallets.map((wallet) => (
+        <label key={wallet.address_id}>
+          <input type="radio" name={name} value={wallet.address_id} checked={choice === wallet.address_id} onChange={() => setChoice(wallet.address_id)} />{" "}
+          An eigene Wallet: {wallet.account_label} ({chainName(wallet.chain)}) · {wallet.address_masked}
+        </label>
+      ))}
+      <p className="muted">
+        Die App bucht die Einzahlung auf der Wallet selbst: die abgehobene Menge abzüglich der Gebühr der Börse, am Tag der Abhebung.
+      </p>
+      <label>
+        <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Abhebungen von{" "}
+        {open.leg.account_label} an diese Adresse künftig automatisch verknüpfen
+      </label>
+      <button type="button" onClick={() => void book()} disabled={busy || choice === ""}>
+        {busy ? "Wird gebucht …" : "Auf eigene Wallet buchen"}
+      </button>
+      <Link href={`/accounts/${open.leg.account_id}`}>Konto öffnen</Link>
       <ErrorNotice error={error} />
     </fieldset>
   );

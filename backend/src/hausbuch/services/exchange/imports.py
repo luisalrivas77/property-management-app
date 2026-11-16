@@ -94,6 +94,7 @@ from hausbuch.schemas.household import (
 from hausbuch.storage import BlobStore
 
 from ..chain import learned
+from ..chain.sync import queue_deposit_lookups
 from ..context import CommandContext
 from ..documents import type_document, upload_document
 from ..errors import RuleViolationError
@@ -595,6 +596,7 @@ def import_export(
 
     relink(ctx, account_id)  # an EUR deposit or withdrawal finds its bank leg (D162)
     chain_transfers.relink(ctx)  # a coin withdrawal or deposit finds its chain leg (D184)
+    queue_deposit_lookups(ctx)  # D181 (c) amended: a BSC withdrawal's deposit, read by hash
     return ExchangeUpload(
         movement_import=_to_import(imported),
         withdrawals_open=len(_open_withdrawals(_current(ctx.conn, account_id))),
@@ -722,11 +724,23 @@ def _complete_withdrawals(
     from ..chain import transfers as chain_transfers  # D184: a completed one has its hash
 
     chain_transfers.relink(ctx)
+    queue_deposit_lookups(ctx)  # D181 (c) amended: a hash completed on a balance-only chain
     return ExchangeUpload(
         withdrawals_completed=len(found),
         withdrawals_open=still_open,
         withdrawals_reason=E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH if still_open else None,
     )
+
+
+def withdrawal_history_todo(conn: Connection, account_id: UUID) -> str | None:
+    """The exchange page's to-do for its open withdrawals (D178 (4)), for a Zu prüfen card of
+    one of them (D181 (c) amended 16 Nov 2026, review): None when the exchange's withdrawals
+    are not completed by a history (BISON) or none is open."""
+    account = _require_exchange(conn, account_id)
+    if account.provider not in rules.WITHDRAWALS_COMPLETED_BY_HISTORY:
+        return None
+    open_rows = _open_withdrawals(_current(conn, account_id))
+    return _history_todo(conn, account_id, open_rows) if open_rows else None
 
 
 def _history_todo(conn: Connection, account_id: UUID, open_rows: list[_Stored]) -> str:

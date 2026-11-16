@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 import procrastinate
-from sqlalchemy import Connection
+from sqlalchemy import Connection, text
 
 from hausbuch.auth.lookup import provisioned_workspace_ids
 from hausbuch.schemas.enums import ActorType
@@ -123,11 +123,34 @@ def run_sync_wallet(deps: JobDeps, *, workspace_id: UUID, account_id: UUID) -> W
     return result
 
 
-def enqueue_sync_wallet(conn: Connection, *, workspace_id: UUID, account_id: UUID) -> None:
-    """Queue `sync_wallet` for one wallet, in the caller's transaction."""
+def enqueue_sync_wallet(
+    conn: Connection, *, workspace_id: UUID, account_id: UUID, once: bool = False
+) -> bool:
+    """Queue `sync_wallet` for one wallet, in the caller's transaction. Whether it queued.
+
+    once (the deposit lookups of D181 (c) amended 16 Nov 2026, queued by every exchange
+    import, answer and relink): not when a `sync_wallet` of the same wallet already waits to
+    run, since that run reads the chain when it starts and covers this cause too. The lookup
+    is jobs.enqueue's (enqueue_rematch_waiting): a plain SELECT holding the waiting job FOR
+    KEY SHARE until the caller commits, so the worker cannot start it in between, and never
+    Procrastinate's queueing_lock, whose unique index would raise inside the caller's
+    transaction. Two commands racing past the lookup queue two runs; that is harmless (one
+    lock, the second finds nothing new). „Jetzt abrufen“ and the daily run do not pass it."""
+    if once:
+        waiting = conn.execute(
+            text(
+                "SELECT 1 FROM procrastinate_jobs WHERE task_name = :task AND status = 'todo'"
+                " AND args->>'workspace_id' = :ws AND args->>'account_id' = :account"
+                " LIMIT 1 FOR KEY SHARE"
+            ),
+            {"task": SYNC_WALLET_TASK, "ws": str(workspace_id), "account": str(account_id)},
+        ).first()
+        if waiting is not None:
+            return False
     _DEFER_APP.configure_task(
         SYNC_WALLET_TASK,
         allow_unknown=True,
         lock=SYNC_WALLETS_LOCK,
         connection=conn.connection.driver_connection,
     ).defer(workspace_id=str(workspace_id), account_id=str(account_id))
+    return True

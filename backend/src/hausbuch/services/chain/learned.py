@@ -213,13 +213,21 @@ def learn_deposit_address(ctx: CommandContext, exchange_id: UUID, send_id: UUID)
 
 
 def learn_withdrawal_pair(
-    ctx: CommandContext, exchange_id: UUID, address_id: UUID, withdrawal_id: UUID
+    ctx: CommandContext,
+    exchange_id: UUID,
+    address_id: UUID,
+    withdrawal_id: UUID,
+    *,
+    written: bool = False,
 ) -> LearnOutcome:
     """Learn that the exchange's withdrawals arrive on the own address (D261 (3)). "learned" when
-    learned, "already" when a live pair exists, "balance_only" on BNB Smart Chain."""
+    learned, "already" when a live pair exists, "balance_only" on BNB Smart Chain, where no
+    receipt is ever read; there `written` (D181 (c) amended 16 Nov 2026: the person booked the
+    withdrawal to the address with „An eigene Wallet“) learns it, and the linker then writes
+    the next deposits while the address's balance covers them."""
     a = address_table.c
     chain = ctx.conn.execute(select(a.chain).where(a.id == address_id)).scalar_one()
-    if registry().chain(Chain(chain)).source is ChainSourceKind.EVM_RPC_BALANCE:
+    if not written and registry().chain(Chain(chain)).source is ChainSourceKind.EVM_RPC_BALANCE:
         return "balance_only"
     if paired(ctx.conn, exchange_id, address_id):
         return "already"
