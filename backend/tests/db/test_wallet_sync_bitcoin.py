@@ -31,6 +31,7 @@ OWN = "bc1q62vj3efj43p06q74rjqe2kmvfs4yya99s7rtxz"  # the wallet's first address
 SECOND = "bc1q0phhhvur8dmwqv48kmf6d7ck3s3zkfjksuzqrl"  # its second
 CHANGE = "bc1qsdqk2xmw06qgn2589yjzthjlk368wfpq4pgz2k"  # an unregistered change address
 CHANGE2 = BECH32
+CHANGE3 = "bc1qmc3ct8j5r6se3lnsrd8g9xmhw6p909s5l7kyhg"
 PAYEE = "bc1qfrg03s5v98wyvu393dcfdeun6pvwthnt2gatuf"
 STRANGER = "bc1qn8duhwxyj87x0d2efhvv44p5r0f48jr6t94ngw"
 BASE = "https://esplora.example.invalid/api"
@@ -64,7 +65,7 @@ class Esplora:
     touches, newest first by PAGE_SIZE; the tip; each address's tip balance."""
 
     def __init__(self) -> None:
-        self.tip = 110
+        self.tip = 111
         self.records: list[dict] = []
         self.calls = 0
 
@@ -198,7 +199,10 @@ def test_a_two_address_bitcoin_wallet_is_read_booked_and_its_change_card_answere
         record(3, 102, [(STRANGER, 51_000)], [(OWN, 50_000)]),
         # a send with its change to an address the app does not know: the card
         record(4, 103, [(OWN, 50_000)], [(PAYEE, 20_000), (CHANGE, 29_500)]),
-        record(9, 106, [(STRANGER, 9_000)], [(OWN, 8_000)]),  # tip 110 − 6 = 104: not final
+        record(6, 104, [(STRANGER, 41_000)], [(OWN, 40_000)]),
+        # a second card for a spend to the same payee
+        record(7, 105, [(OWN, 40_000)], [(PAYEE, 10_000), (CHANGE3, 29_000)]),
+        record(9, 106, [(STRANGER, 9_000)], [(OWN, 8_000)]),  # tip 111 − 6 = 105: not final
     ]
     sync(ws)
 
@@ -208,8 +212,13 @@ def test_a_two_address_bitcoin_wallet_is_read_booked_and_its_change_card_answere
         (txid(2), "transfer", "proposed"),
         (txid(3), "transfer", "proposed"),
         (txid(4), "unknown", "proposed"),
+        (txid(6), "transfer", "proposed"),
+        (txid(7), "unknown", "proposed"),
     ]
-    card = groups[3]
+    card, second = groups[3], groups[5]
+    assert second.question == (
+        "Ist eine dieser Adressen Ihr Wechselgeld? bc1q…atuf (0,0001 BTC), bc1q…kyhg (0,00029 BTC)"
+    )
     assert card.question == (
         "Ist eine dieser Adressen Ihr Wechselgeld? bc1q…atuf (0,0002 BTC), bc1q…gz2k (0,000295 BTC)"
     )
@@ -220,16 +229,18 @@ def test_a_two_address_bitcoin_wallet_is_read_booked_and_its_change_card_answere
         (txid(2), "fee", Decimal("-0.00001000"), a),
         (txid(2), "net", Decimal("-0.00030000"), a),
         (txid(3), "0", Decimal("0.00050000"), a),
+        (txid(6), "0", Decimal("0.00040000"), a),
     ]
     runs = {r.address_id: r for r in _last_runs(dbname, account)}
-    assert {r.cursor_after for r in runs.values()} == {"104"}
+    assert {r.cursor_after for r in runs.values()} == {"105"}
     assert all(r.status == "succeeded" for r in runs.values())
-    # Σ movements is 119 000 sats, the account holds 69 000 at block 104 (all on SECOND):
-    # the 50 000 the card holds back wait („wartet auf Antwort“), never a mismatch
+    # Σ movements is 159 000 sats, the account holds 69 000 at block 105 (all on SECOND):
+    # the 90 000 the two cards hold back wait („wartet auf Antwort“), never a mismatch
     assert runs[b].reconciled is None and runs[b].difference is None
     assert runs[a].document_id is not None  # the run that booked tx 1 to 3 kept the original
 
-    # „Nein, Empfänger“ on the payee: the card narrows to the change address alone
+    # „Nein, Empfänger“ on the payee: the card narrows to the change address alone, and so
+    # does the other card that asked about the same payee
     narrower = answer(ws, card.id, 0)
     with pytest.raises(RuleError) as refused:
         answer(ws, card.id, 1)  # the card is superseded: no open card any more
@@ -237,10 +248,13 @@ def test_a_two_address_bitcoin_wallet_is_read_booked_and_its_change_card_answere
     groups = _live_groups(dbname, account)
     assert groups[3].id == narrower and groups[3].kind == "unknown"
     assert groups[3].question == "Ist diese Adresse Ihr Wechselgeld? bc1q…gz2k (0,000295 BTC)"
+    assert groups[5].id != second.id and groups[5].kind == "unknown"
+    assert groups[5].question == "Ist diese Adresse Ihr Wechselgeld? bc1q…kyhg (0,00029 BTC)"
+    other = groups[5]
     with pytest.raises(RuleError) as refused:
         answer(ws, narrower, 0)  # the payee is answered already
     assert refused.value.code == WALLET_CHANGE_ANSWERED
-    (event,) = _rows(
+    (event,) = _rows(  # one answer, though it settled the payee on two cards
         dbname,
         "SELECT entity_id, payload FROM event WHERE type = 'wallet.payee_answered'",
     )
@@ -253,17 +267,21 @@ def test_a_two_address_bitcoin_wallet_is_read_booked_and_its_change_card_answere
     settled = answer(ws, narrower, 1)
     groups = _live_groups(dbname, account)
     assert (groups[3].id, groups[3].kind, groups[3].question) == (settled, "transfer", None)
+    assert groups[5].id == other.id  # an answer that does not concern a card leaves it
     spent = [m for m in _movements(dbname, account) if m.tx_hash == txid(4)]
     assert [(m.index, m.quantity, m.address_id) for m in spent] == [
         ("fee", Decimal("-0.00000500"), a),
         ("net", Decimal("-0.00049500"), a),
     ]
 
+    answer(ws, other.id, 1)  # the second card's change: a transfer too
+    assert [g.kind for g in _live_groups(dbname, account)] == ["transfer"] * 6
+
     # a re-sync: nothing new, nothing asked again, and the account now reconciles
     sync(ws)
-    assert len(_live_groups(dbname, account)) == 4
+    assert len(_live_groups(dbname, account)) == 6
     runs = {r.address_id: r for r in _last_runs(dbname, account)}
-    assert runs[b].reconciled is True and runs[b].cursor_after == "104"
+    assert runs[b].reconciled is True and runs[b].cursor_after == "105"
 
     # a later spend to the same payee: only its unknown output is asked about
     esplora.records.append(record(5, 107, [(SECOND, 69_000)], [(PAYEE, 40_000), (CHANGE2, 28_000)]))
