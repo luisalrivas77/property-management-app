@@ -355,6 +355,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "wallet.payee_answered": "Bitcoin-Ausgang als Empfänger bestätigt",
   "movement_group.proposed": "Chain-Transaktion wartet auf Prüfung",
   "movement_group.confirmed": "Chain-Transaktion bestätigt",
+  "movement_group.trade_recorded": "Börsen-Trade zusammengefasst",
   "transfer.linked": "Übertrag verknüpft",
   "transfer.unlinked": "Übertrag getrennt",
   "statement.imported": "Kontoauszug importiert",

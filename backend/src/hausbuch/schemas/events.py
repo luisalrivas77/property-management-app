@@ -42,7 +42,7 @@ from .bank_sync import (
     SyncStatus,
     SyncTrigger,
 )
-from .chain import AddressKind, Chain
+from .chain import AddressKind, Chain, GroupKind
 from .common import (
     Area,
     BuildingShare,
@@ -1129,6 +1129,18 @@ class MovementSuperseded(Schema):
     document_id: UUID | None = None
 
 
+class ExchangeTradeGrouped(Schema):
+    """movement_group.trade_recorded: one exchange trade's legs tied as one group (phase 6
+    D178 amended (3), migration 0043), by id only: the movements it holds, the export they
+    came from. Its own type, not movement_group.confirmed, which phase 7 step 2 gives a chain
+    transaction's routing (a chain and a reason an exchange trade has not)."""
+
+    account_id: UUID
+    kind: GroupKind
+    movement_ids: list[UUID] = Field(min_length=1)
+    document_id: UUID | None = None
+
+
 class TransferLinked(Schema):
     """transfer.linked (D162): the two legs, by id only. deposit_iban (D162 amended 15 Nov
     2026, review): on the first link by hand of a deposit an exchange credited short, or (D162
@@ -1356,6 +1368,7 @@ class EventType(StrEnum):
     WALLET_PAYEE_ANSWERED = "wallet.payee_answered"  # phase 7 step 4 (Bitcoin change card)
     MOVEMENT_GROUP_PROPOSED = "movement_group.proposed"
     MOVEMENT_GROUP_CONFIRMED = "movement_group.confirmed"
+    MOVEMENT_GROUP_TRADE_RECORDED = "movement_group.trade_recorded"  # phase 6 D178 amended (3)
 
     TRANSFER_LINKED = "transfer.linked"  # phase 6
     TRANSFER_UNLINKED = "transfer.unlinked"
@@ -1591,6 +1604,9 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.MOVEMENT_GROUP_CONFIRMED: EventSpec(
         MovementGroupRecorded, "forbidden", "Chain transaction confirmed"
+    ),
+    E.MOVEMENT_GROUP_TRADE_RECORDED: EventSpec(
+        ExchangeTradeGrouped, "optional", "Exchange trade grouped"
     ),
     E.TRANSFER_LINKED: EventSpec(TransferLinked, "forbidden", "Transfer legs linked"),
     E.TRANSFER_UNLINKED: EventSpec(TransferUnlinked, "forbidden", "Transfer link undone"),

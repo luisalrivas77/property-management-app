@@ -16281,6 +16281,7 @@
           "wallet.payee_answered",
           "movement_group.proposed",
           "movement_group.confirmed",
+          "movement_group.trade_recorded",
           "transfer.linked",
           "transfer.unlinked",
           "statement.imported",
