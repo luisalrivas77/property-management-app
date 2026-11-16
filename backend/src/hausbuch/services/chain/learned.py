@@ -42,7 +42,7 @@ from hausbuch.db.tables import wallet_address as address_table
 from hausbuch.rules.chain.address import address_hmac, mask, validate
 from hausbuch.rules.chain.registry import registry
 from hausbuch.rules.errors import RuleError
-from hausbuch.schemas.chain import Chain
+from hausbuch.schemas.chain import Chain, ChainSourceKind
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.events import (
     EventType,
@@ -51,20 +51,12 @@ from hausbuch.schemas.events import (
     ExchangeWithdrawalPairForgotten,
     ExchangeWithdrawalPairLearned,
 )
+from hausbuch.schemas.household import LearnOutcome
 
 from ..allocations import user_id
 from ..context import CommandContext
 from ..errors import ConflictError, NotFoundError
 from ..events import append_event
-
-# Why a remembered box learned nothing (the link itself stands); None: learned.
-NotLearned = Literal[
-    "no_counterparty",  # the send names no single external address (several outputs)
-    "own_address",  # the address is an own wallet address
-    "balance_only",  # BNB Smart Chain: no send is read (D181 (c))
-    "already",  # learned already for this exchange
-]
-
 
 # --- Readers (the sync's) -------------------------------------------------------------------
 
@@ -108,6 +100,26 @@ def deposit_exchange(conn: Connection, chain: str, hmac: bytes) -> UUID | None:
     ).scalar_one_or_none()
 
 
+def deposit_addresses(conn: Connection) -> dict[tuple[str, bytes], UUID]:
+    """The linker's view: every live learned deposit address, (chain, HMAC) → exchange."""
+    d = deposit_table.c
+    return {
+        (r.chain, bytes(r.address_hmac)): r.account_id
+        for r in conn.execute(
+            select(d.chain, d.address_hmac, d.account_id).where(d.ended_at.is_(None))
+        )
+    }
+
+
+def withdrawal_pairs(conn: Connection) -> set[tuple[UUID, UUID]]:
+    """The linker's view: every live learned withdrawal pair, (exchange, own address)."""
+    p = pair_table.c
+    return {
+        (r.account_id, r.address_id)
+        for r in conn.execute(select(p.account_id, p.address_id).where(p.ended_at.is_(None)))
+    }
+
+
 def paired(conn: Connection, exchange_id: UUID, address_id: UUID) -> bool:
     """Whether the exchange's withdrawals to the own address are learned (a live pair)."""
     p = pair_table.c
@@ -132,11 +144,9 @@ def _own_hmac(conn: Connection, chain: str, hmac: bytes) -> bool:
     )
 
 
-def learn_deposit_address(
-    ctx: CommandContext, exchange_id: UUID, send_id: UUID
-) -> NotLearned | None:
+def learn_deposit_address(ctx: CommandContext, exchange_id: UUID, send_id: UUID) -> LearnOutcome:
     """Learn the address the wallet send `send_id` paid as the exchange's deposit address on
-    its chain (D261 (2)). None when learned; a reason when nothing was learned (the caller's
+    its chain (D261 (2)). "learned" when stored; else why nothing was (the caller's
     link stands). Raises ConflictError when the address is a live deposit address of another
     exchange of the workspace."""
     m, g = movement_table.c, group_table.c
@@ -148,7 +158,7 @@ def learn_deposit_address(
     if send is None or send.counterparty_hmac is None:
         return "no_counterparty"
     chain = send.chain
-    if registry().chain(Chain(chain)).balance_only:
+    if registry().chain(Chain(chain)).source is ChainSourceKind.EVM_RPC_BALANCE:
         return "balance_only"
     hmac = bytes(send.counterparty_hmac)
     if _own_hmac(ctx.conn, chain, hmac):
@@ -185,17 +195,17 @@ def learn_deposit_address(
             learned_from=send_id,
         ),
     )
-    return None
+    return "learned"
 
 
 def learn_withdrawal_pair(
     ctx: CommandContext, exchange_id: UUID, address_id: UUID, withdrawal_id: UUID
-) -> NotLearned | None:
-    """Learn that the exchange's withdrawals arrive on the own address (D261 (3)). None when
+) -> LearnOutcome:
+    """Learn that the exchange's withdrawals arrive on the own address (D261 (3)). "learned" when
     learned, "already" when a live pair exists, "balance_only" on BNB Smart Chain."""
     a = address_table.c
     chain = ctx.conn.execute(select(a.chain).where(a.id == address_id)).scalar_one()
-    if registry().chain(Chain(chain)).balance_only:
+    if registry().chain(Chain(chain)).source is ChainSourceKind.EVM_RPC_BALANCE:
         return "balance_only"
     if paired(ctx.conn, exchange_id, address_id):
         return "already"
@@ -219,7 +229,7 @@ def learn_withdrawal_pair(
             learned_id=row_id, address_id=address_id, learned_from=withdrawal_id
         ),
     )
-    return None
+    return "learned"
 
 
 # --- The exchange page ------------------------------------------------------------------------

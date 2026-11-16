@@ -351,7 +351,7 @@ def test_the_withdrawals_are_answered_at_once_and_a_deposit_one_by_one(
         imports.answer_movement,
         single.movement_id,
         AnswerMovementBody(kind=MovementKind.INTERNAL_TRANSFER_IN),
-    )
+    ).movement_id  # D261: the service returns the route's MovementAnswered
     assert new_id != single.movement_id
     old, new = (
         read(

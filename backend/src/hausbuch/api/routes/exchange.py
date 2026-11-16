@@ -89,6 +89,15 @@ def exchange_overview(account_id: UUID, cmd: Cmd) -> ExchangeOverview:
     return cmd.read(imports.exchange_overview, account_id)
 
 
+@router.post("/accounts/{account_id}/learned/{learned_id}/forget", status_code=204)
+def exchange_learned_forget(account_id: UUID, learned_id: UUID, cmd: Cmd) -> Response:
+    """„Vergessen“ (D261): ends a learned deposit address or withdrawal pair of the exchange;
+    the links already written stay. 404 for none of this exchange's; 409 when forgotten
+    already."""
+    cmd.run(imports.forget_learned, account_id, learned_id)
+    return Response(status_code=204)
+
+
 @router.get("/accounts/{account_id}/movements")
 def exchange_movements(account_id: UUID, cmd: Cmd) -> list[ExchangeMovementRow]:
     """The exchange account's current movements, newest first."""
@@ -133,4 +142,4 @@ def movement_confirm(movement_id: UUID, cmd: Cmd) -> Response:
 def movement_answer(movement_id: UUID, body: AnswerMovementBody, cmd: Cmd) -> MovementAnswered:
     """What the proposed movement really was, and the id of the movement that now stands for
     it. 422 exchange.answer_invalid, exchange.movement_done."""
-    return MovementAnswered(movement_id=cmd.run(imports.answer_movement, movement_id, body))
+    return cmd.run(imports.answer_movement, movement_id, body)

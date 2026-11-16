@@ -28,7 +28,7 @@ file is kept as uploaded (principle 6).
 """
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -83,6 +83,8 @@ from hausbuch.schemas.household import (
     HoldingBalance,
     HoldingSource,
     ImportBalance,
+    LearnedExchangeAddress,
+    MovementAnswered,
     MovementImport,
     MovementImportFormat,
     MovementKind,
@@ -92,6 +94,7 @@ from hausbuch.schemas.household import (
 )
 from hausbuch.storage import BlobStore
 
+from ..chain import learned
 from ..context import CommandContext
 from ..documents import type_document, upload_document
 from ..errors import RuleViolationError
@@ -1021,10 +1024,15 @@ def answers_for(quantity: Decimal) -> list[MovementKind]:
     return list(_INWARD_ANSWERS if quantity > 0 else _OUTWARD_ANSWERS)
 
 
-def answer_movement(ctx: CommandContext, movement_id: UUID, body: AnswerMovementBody) -> UUID:
+def answer_movement(
+    ctx: CommandContext, movement_id: UUID, body: AnswerMovementBody
+) -> MovementAnswered:
     """POST /movements/{id}/answer: what the proposed movement really was; a kind of the
     other direction is refused (exchange.answer_invalid). The same kind confirms it; another
-    kind replaces it by a confirmed row of that kind. Returns the current movement's id."""
+    kind replaces it by a confirmed row of that kind. Returns the current movement's id, and
+    what the deposit box did (D261 (2): an answer internal_transfer_in with
+    remember_deposit_address learns the exchange's deposit address from the one fitting open
+    wallet send; an address learned for another exchange is a plain 409)."""
     row = _require_proposed(ctx.conn, movement_id)
     if body.kind not in answers_for(row.quantity):
         raise RuleViolationError(
@@ -1034,13 +1042,16 @@ def answer_movement(ctx: CommandContext, movement_id: UUID, body: AnswerMovement
 
     if body.kind.value == row.kind:
         _confirm(ctx, row)
-        chain_transfers.relink_after_answer(ctx)  # D184: a confirmed leg may link now
-        return row.id
-    new_id = _supersede(
-        ctx, row.id, {"kind": body.kind.value, "status": MovementStatus.CONFIRMED.value}
-    )
-    chain_transfers.relink_after_answer(ctx)
-    return new_id
+        new_id = row.id
+    else:
+        new_id = _supersede(
+            ctx, row.id, {"kind": body.kind.value, "status": MovementStatus.CONFIRMED.value}
+        )
+    outcome = None
+    if body.remember_deposit_address and body.kind is MovementKind.INTERNAL_TRANSFER_IN:
+        outcome = chain_transfers.learn_from_deposit(ctx, new_id)
+    chain_transfers.relink_after_answer(ctx)  # D184: a confirmed leg may link now
+    return MovementAnswered(movement_id=new_id, learned=outcome)
 
 
 def confirm_withdrawals(ctx: CommandContext, import_id: UUID) -> WithdrawalsConfirmed:
@@ -1159,7 +1170,17 @@ def exchange_overview(conn: Connection, account_id: UUID) -> ExchangeOverview:
         withdrawals_open=open_count,
         movements_to_answer=sum(1 for s in stored if s.status is MovementStatus.PROPOSED),
         todos=todos,
+        learned=[
+            LearnedExchangeAddress.model_validate(asdict(r))
+            for r in learned.learned_of(conn, account_id)
+        ],
     )
+
+
+def forget_learned(ctx: CommandContext, account_id: UUID, learned_id: UUID) -> None:
+    """POST /accounts/{id}/learned/{learned_id}/forget: „Vergessen“ (D261). 404 for a row of
+    another exchange or none; 409 when it was forgotten already. Links stay."""
+    learned.forget(ctx, account_id, learned_id)
 
 
 def _question(kind: MovementKind, status: MovementStatus) -> str | None:

@@ -16,7 +16,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from fractions import Fraction
-from typing import Annotated, Protocol, Self
+from typing import Annotated, Literal, Protocol, Self
 from uuid import UUID
 
 from pydantic import AfterValidator, Field, JsonValue, StringConstraints, model_validator
@@ -534,10 +534,24 @@ class ExchangePosition(Schema):
     difference_units: Quantity | None = None
 
 
+class LearnedExchangeAddress(Schema):
+    """D261: what a person's link taught about the exchange, as its page lists it with
+    „Vergessen“: a deposit address on a chain (masked, never in clear, D179), or an own wallet
+    address its withdrawals arrive on (`wallet_label` names the wallet)."""
+
+    id: UUID
+    kind: Literal["deposit_address", "withdrawal_pair"]
+    chain: str
+    address_masked: str
+    wallet_label: str | None = None
+    created_at: datetime
+
+
 class ExchangeOverview(Schema):
     """GET /accounts/{id}/exchange: the exchange account's page. `withdrawals_open` counts
     the crypto withdrawals without network and hash; on Binance they are the to-do
-    „Auszahlungsverlauf hochladen“ (D178 (4)), named by `todos`."""
+    „Auszahlungsverlauf hochladen“ (D178 (4)), named by `todos`. `learned` the live deposit
+    addresses and withdrawal pairs (D261), oldest first."""
 
     account_id: UUID
     provider: str
@@ -546,6 +560,7 @@ class ExchangeOverview(Schema):
     withdrawals_open: int = Field(default=0, ge=0)
     movements_to_answer: int = Field(default=0, ge=0)
     todos: list[str] = Field(default_factory=list)  # error codes, e.g. the history missing
+    learned: list[LearnedExchangeAddress] = Field(default_factory=list)
 
 
 class ExchangeMovementRow(AssetMovement):
@@ -557,17 +572,32 @@ class ExchangeMovementRow(AssetMovement):
     answers: list[MovementKind] = Field(default_factory=list)
 
 
+# D261: what a ticked box „Adresse als Einzahlungsadresse von <Börse> merken“ or
+# „Abhebungen von <Börse> an diese Adresse künftig automatisch verknüpfen“ did. learned: a row
+# was stored; already: it was learned before; no_counterparty: the send names no single
+# external address (a Bitcoin spend paying several outputs), or no single open send fits the
+# answered deposit; own_address: the address is an own wallet address; balance_only: BNB Smart
+# Chain, whose sends are not read. Only `learned` stores anything; the link stands either way.
+LearnOutcome = Literal["learned", "already", "no_counterparty", "own_address", "balance_only"]
+
+
 class AnswerMovementBody(Schema):
     """POST /movements/{id}/answer: what the movement really was. The movement is replaced
-    by a confirmed row of that kind (the old one kept, superseded_by)."""
+    by a confirmed row of that kind (the old one kept, superseded_by).
+
+    remember_deposit_address (D261 (2)): with kind internal_transfer_in, the address the one
+    fitting open wallet send paid becomes the exchange's deposit address on its chain."""
 
     kind: MovementKind
+    remember_deposit_address: bool = False
 
 
 class MovementAnswered(Schema):
-    """POST /movements/{id}/answer: the movement that now stands for the answered one."""
+    """POST /movements/{id}/answer: the movement that now stands for the answered one;
+    `learned` what the deposit box did (None when it was not ticked or did not apply)."""
 
     movement_id: UUID
+    learned: LearnOutcome | None = None
 
 
 class WithdrawalsConfirmed(Schema):
@@ -685,11 +715,18 @@ class TransferLinkRequest(TransferLinkCreate):
     the card's confirmed payment IBAN); otherwise transfer.legs_invalid."""
 
     rebook: bool = False
+    # D261 (2), (3), two coin legs only: a wallet send linked to an exchange's deposit teaches
+    # the exchange's deposit address on that chain; an exchange's withdrawal linked to a
+    # receipt on an own address teaches the pair (exchange, address). Ignored otherwise.
+    remember_deposit_address: bool = False
+    remember_withdrawal_pair: bool = False
 
 
 class TransferLink(TransferLinkCreate, Record):
     matched_by: TransferMatchedBy
     superseded_by: UUID | None = None
+    # D261: what a remember box of POST /transfers did (None: none ticked, or not applicable).
+    learned: LearnOutcome | None = None
 
 
 class TransferLegView(Schema):
