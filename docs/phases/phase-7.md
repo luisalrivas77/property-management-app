@@ -407,7 +407,7 @@ Loaded by `tests/fixture_models_phase7.py` (the phase 6 loader's pattern: loadin
 - **The Bitcoin change card** (D185 (2)). `GET /groups/{gid}/change` re-reads the spend from the stored original and lists the outputs it asks about. „Nein, Empfänger“ (`POST .../change/payee`) is `change_card.answer_payee`. „Ja, eigene Adresse“ (`POST .../change/own`, `change_card.answer_own_change`) takes the wallet lock, registers the output's address as a `change` address of the same wallet through `services/wallets.register_change_address` (the add path's validation, taken checks, insert and `wallet.address_added` event, factored into `_insert_address`), queues its first sync, re-classifies the spend (a transfer once nothing is unknown), supersedes the card and re-derives the account's other open cards. A missing original is `wallet.original_missing`.
 - **Spam** (D187 (3)). The verdict is `asset.spam`, flipped with an `asset.updated` event. `GET /wallets/{id}/hidden-tokens` lists the hidden tokens; „Kein Spam“ (`POST /assets/{id}/promote`) re-proposes their groups as airdrops; `POST /assets/{id}/demote` and the „Spam“ answer hide a token again and mark its groups (a group where only that token moved becomes confirmed spam). A native coin is never spam (`wallet.answer_unfit`).
 - **Zu prüfen.** A new section „Wallets“ with six kinds: `wallet_groups` (one card per wallet counting its proposed transactions, linking to the wallet page), `wallet_change` (the change card's buttons in place), `wallet_question` (another question), `wallet_sync` (failed, throttled, refused or key missing), `wallet_unreconciled`, `wallet_coins_left`, each with what to do. `GET /inbox` now takes the settings, to see a missing key.
-- New rule codes `wallet.group_done`, `wallet.group_needs_answer`, `wallet.answer_unfit`, with German texts. No full address, transaction hash, URL or key in any answer; every query runs in the workspace's session. Tests: `tests/api/test_wallet_cards.py` (9).
+- New rule codes `wallet.group_done`, `wallet.group_needs_answer`, `wallet.answer_unfit`, with German texts. No full address, transaction hash, URL or key in any answer; every query runs in the workspace's session. Tests: `tests/api/test_wallet_cards.py` (10, one of them a second household trying every group, change and spam route).
 
 *Deviations from §13 and §14:*
 
@@ -420,7 +420,7 @@ Loaded by `tests/fixture_models_phase7.py` (the phase 6 loader's pattern: loadin
 
 - The answers „Tausch“ and „Übertrag an eigene Wallet/Börse“ (they need the legs picked and a transfer link, step 5), the answers to `wallet.coins_left` (step 5), any answer to an unreadable transaction (`wallet.record_unreadable`) or to a CoinJoin question (foreign inputs): those cards say what happened and point to the wallet page only.
 - „Als Spam verbergen“ on a holding row: hiding a token works through the „Spam“ answer and `POST /assets/{id}/demote`; no button on the holdings table, since a holding does not say whether it is the chain's own coin.
-- A wallet's provider and last sync on Konten (§14's „Quelle“, „Stand“) are unchanged.
+- A wallet's provider and last sync on Konten (§14's „Quelle“, „Stand“) are unchanged: the Konten list still reads „noch nicht abgerufen“ for every wallet, even after a sync. The wallet page shows the real state.
 
 ## 16. Implementation steps
 

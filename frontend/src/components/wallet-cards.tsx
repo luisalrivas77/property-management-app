@@ -18,6 +18,7 @@ import { notifyInboxChanged } from "@/lib/inboxCount";
 
 import { formatUnits } from "./exchange";
 import { formatDateTime } from "./format";
+import { toMoneyString } from "./input";
 import { CHAIN, MOVEMENT_KIND } from "./labels";
 import { Loading, Notice } from "./ui";
 import { useLoad } from "./useLoad";
@@ -195,6 +196,7 @@ function GroupCard({ group, onDone }: { group: WalletGroup; onDone: () => void }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [cost, setCost] = useState("");
+  const [costError, setCostError] = useState<string | null>(null);
   const path = { params: { path: { group_id: group.id } } };
   const legs = group.legs ?? [];
   const answers = group.answers ?? [];
@@ -214,18 +216,20 @@ function GroupCard({ group, onDone }: { group: WalletGroup; onDone: () => void }
   }
 
   const confirm = () => run(() => ok(api.POST("/api/groups/{group_id}/confirm", path)));
-  const answer = (value: WalletAnswer) =>
-    run(() =>
-      ok(
-        api.POST("/api/groups/{group_id}/answer", {
-          ...path,
-          body: {
-            answer: value,
-            cost_eur: value === "gift" && cost.trim() !== "" ? cost.trim().replace(",", ".") : null,
-          },
-        }),
-      ),
-    );
+  const answer = (value: WalletAnswer) => {
+    // The cost goes only with „Geschenk oder Zahlung erhalten“; German input („1.234,56“).
+    let costEur: string | null = null;
+    if (value === "gift" && cost.trim() !== "") {
+      const parsed = toMoneyString(cost);
+      if (!parsed.ok) {
+        setCostError(parsed.message);
+        return;
+      }
+      costEur = parsed.value;
+    }
+    setCostError(null);
+    return run(() => ok(api.POST("/api/groups/{group_id}/answer", { ...path, body: { answer: value, cost_eur: costEur } })));
+  };
 
   return (
     <li className="checklist-item">
@@ -289,9 +293,14 @@ function GroupCard({ group, onDone }: { group: WalletGroup; onDone: () => void }
               placeholder="0,00"
             />
             <p className="muted hint">
-              Für „Geschenk oder Zahlung erhalten“: leer lassen bei einem Geschenk; bei einem Kauf außerhalb einer Börse den gezahlten
-              Betrag eintragen. Er wird der Kaufpreis dieser Coins.
+              Für „Geschenk oder Zahlung erhalten“: wurde für die Coins bezahlt (ein Kauf außerhalb einer Börse), hier den Betrag
+              eintragen; er wird ihr Kaufpreis. Sonst leer lassen.
             </p>
+            {costError ? (
+              <ul className="field-errors">
+                <li>{costError}</li>
+              </ul>
+            ) : null}
           </div>
         ) : null}
         <ErrorNotice error={error} />

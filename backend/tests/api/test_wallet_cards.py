@@ -248,6 +248,34 @@ def test_ja_eigene_adresse_registers_the_change_and_settles_both_cards(
     assert holding["booked_units"] == holding["chain_units"]
 
 
+def test_another_household_reaches_no_group_of_this_wallet(client_a, client_b, btc, dbname):
+    ws, account, a, b, _ = btc
+    before = ok(client_a.get(f"/api/wallets/{account}/groups"))
+    proposed = next(g for g in before if g["card"] == "proposed")
+    four = _group(dbname, account, 4)
+    attempts = [
+        client_b.post(f"/api/groups/{proposed['id']}/confirm"),
+        client_b.post(f"/api/groups/{proposed['id']}/answer", json={"answer": "gift"}),
+        client_b.get(f"/api/groups/{four.id}/change"),
+        client_b.post(f"/api/groups/{four.id}/change/own", json={"vout": 1}),
+        client_b.post(f"/api/groups/{four.id}/change/payee", json={"vout": 0}),
+        client_b.get(f"/api/wallets/{account}/hidden-tokens"),
+    ]
+    for response in attempts:
+        assert response.status_code in (404, 422), response.text
+        _private(response.text, *ADDRESSES, *_tx_hashes())
+    # nothing changed for the wallet's own household
+    assert ok(client_a.get(f"/api/wallets/{account}/groups")) == before
+    assert (
+        _rows(
+            dbname,
+            "SELECT id FROM wallet_address WHERE account_id = %s AND kind = 'change'",
+            account,
+        )
+        == []
+    )
+
+
 def test_nein_empfaenger_through_the_route(client_a, btc, dbname):
     ws, account, a, b, _ = btc
     four = _group(dbname, account, 4)
@@ -323,6 +351,7 @@ def test_a_token_is_hidden_as_spam_and_shown_again(client_a, client_b, token_wal
     again = client_a.post(f"/api/assets/{asset}/demote")
     assert again.status_code == 422 and again.json()["code"] == "wallet.answer_unfit"
 
+    assert client_b.post(f"/api/assets/{asset}/promote").status_code == 404
     shown = ok(client_a.post(f"/api/assets/{asset}/promote"))
     assert shown == {"asset_id": str(asset), "spam": False, "groups": 1}
     assert ok(client_a.get(f"/api/wallets/{account}/hidden-tokens")) == []

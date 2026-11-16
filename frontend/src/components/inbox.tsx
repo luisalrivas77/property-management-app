@@ -1141,8 +1141,8 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
         </>
       );
     case "wallet_groups":
-    case "wallet_question":
       return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Auf der Wallet beantworten</Link> : null;
+    case "wallet_question":
     case "wallet_sync":
     case "wallet_unreconciled":
     case "wallet_coins_left":
