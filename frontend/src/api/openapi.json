@@ -29651,8 +29651,15 @@
             "title": "Booked On"
           },
           "amount": {
-            "type": "string",
-            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Amount"
           },
           "counterparty_name": {
@@ -29718,6 +29725,50 @@
               }
             ],
             "title": "Deposit Fee Text"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "asset_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Symbol"
+          },
+          "chain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain"
+          },
+          "link_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransferLinkKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -29901,7 +29952,7 @@
           "wrap"
         ],
         "title": "TransferLinkKind",
-        "description": "transfer_link.kind (migration 0025; chain, bridge and wrap since 0041, phase 7 D184).\nA link by hand (TransferLinkCreate) still only takes the kind rules.matching\n.transfer_link_kind gives the two accounts, so the chain kinds wait for step 5."
+        "description": "transfer_link.kind (migration 0025; chain, bridge and wrap since 0041, phase 7 D184).\nA link by hand (TransferLinkCreate) of two EUR legs takes the kind rules.matching\n.transfer_link_kind gives the two accounts; of two coin legs (phase 7 step 5,\nservices.chain.transfers) the kind rules.chain.match_transfer reads from the legs."
       },
       "TransferLinkRequest": {
         "properties": {

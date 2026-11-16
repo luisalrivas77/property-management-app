@@ -881,7 +881,7 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
     return (
       <>
         <strong>
-          {leg.account_label} · {signedMoney(leg.amount)}
+          {leg.account_label} · {legFigure(leg)}
         </strong>
         <span className="inbox-detail">
           {[formatDate(leg.booked_on), leg.counterparty_name ?? ""].filter(Boolean).join(" · ")}
@@ -894,7 +894,7 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
     return (
       <>
         <strong>
-          {leg.account_label} · {signedMoney(leg.amount)}
+          {leg.account_label} · {legFigure(leg)}
         </strong>
         <span className="inbox-detail">
           {[formatDate(leg.booked_on), leg.counterparty_name ?? ""].filter(Boolean).join(" · ")}
@@ -1201,12 +1201,28 @@ function linkKind(accounts: Map<string, Account>, a: TransferLegView, b: Transfe
   return "bank";
 }
 
-/** POST /transfers' body: the leg paid out is the out leg, each by its table (D162). */
+/** Whether a leg pays out: its EUR amount, or a coin leg's quantity (phase 7 step 5). */
+function legSends(leg: TransferLegView): boolean {
+  return (leg.amount ?? leg.quantity ?? "").startsWith("-");
+}
+
+/** A leg's figure: its signed EUR amount, or a coin leg's signed quantity and symbol (phase 7
+ * step 5, D184: a coin leg has no EUR amount, and no screen shows an invented 0 €). */
+function legFigure(leg: TransferLegView): string {
+  if (leg.amount != null) return signedMoney(leg.amount);
+  const units = formatUnits(leg.quantity);
+  const sign = leg.quantity != null && isCredit(leg.quantity) ? "+" : "";
+  return [`${sign}${units}`, leg.asset_symbol ?? ""].filter(Boolean).join(" ");
+}
+
+/** POST /transfers' body: the leg paid out is the out leg, each by its table (D162). A coin
+ * candidate carries the kind its link takes (chain, bridge or wrap, from the API), which the
+ * accounts alone cannot tell. */
 function linkBody(accounts: Map<string, Account>, leg: TransferLegView, other: TransferLegView): TransferLinkRequest {
-  const [out, in_] = leg.amount.startsWith("-") ? [leg, other] : [other, leg];
+  const [out, in_] = legSends(leg) ? [leg, other] : [other, leg];
   return {
     rebook: other.rebook_on_link,
-    kind: linkKind(accounts, out, in_),
+    kind: other.link_kind ?? linkKind(accounts, out, in_),
     out_transaction_id: out.source === "transaction" ? out.id : null,
     out_movement_id: out.source === "movement" ? out.id : null,
     in_transaction_id: in_.source === "transaction" ? in_.id : null,
@@ -1215,13 +1231,13 @@ function linkBody(accounts: Map<string, Account>, leg: TransferLegView, other: T
 }
 
 function legText(leg: TransferLegView): string {
-  return [leg.account_label, formatDate(leg.booked_on), signedMoney(leg.amount), leg.counterparty_name ?? ""].filter(Boolean).join(" · ");
+  return [leg.account_label, formatDate(leg.booked_on), legFigure(leg), leg.counterparty_name ?? ""].filter(Boolean).join(" · ");
 }
 
 /** D176 (4), review of step 2b: why a candidate booked as something else (a card bill answered
  * „Kreditkarte“ before the card account existed) is booked as a transfer when it is linked. */
 function rebookText(candidate: TransferLegView, leg: TransferLegView): string {
-  const debit = candidate.amount.startsWith("-");
+  const debit = legSends(candidate);
   const what = debit ? "Die Abbuchung" : "Die Gutschrift";
   const counted = debit ? "Ausgabe" : "Einnahme";
   const booked = candidate.booked_category
