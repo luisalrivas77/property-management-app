@@ -23,7 +23,11 @@ from hausbuch.db.tables import movement_group as group_table
 from hausbuch.db.tables import wallet_address as address_table
 from hausbuch.db.tables import wallet_sync as sync_table
 from hausbuch.rules.chain.registry import registry
-from hausbuch.rules.errors import WALLET_KEY_MISSING, WALLET_SYNC_ERROR
+from hausbuch.rules.errors import (
+    WALLET_KEY_MISSING,
+    WALLET_KEY_UNREADABLE,
+    WALLET_SYNC_ERROR,
+)
 from hausbuch.rules.household.assets import registry as asset_registry
 from hausbuch.schemas.api import InboxItem, InboxItemKind
 from hausbuch.schemas.chain import Chain, ChainSourceKind, WalletSyncStatus
@@ -58,6 +62,21 @@ SOURCE_SETTING = {
 }
 
 _CONSOLE = "In der Scaleway-Konsole beim API-Container (Einstellungen › Umgebungsvariablen)"
+# D260: the keys and URLs a person can type in the app instead of the console.
+_IN_APP = "In Hausbuch unter Einstellungen › Zugangsschlüssel"
+_TYPED = {"HAUSBUCH_ETHERSCAN_KEY", "HAUSBUCH_SOLANA_RPC_URL", "HAUSBUCH_BSC_RPC_URL"}
+
+
+def _where(var: str, verb: str) -> str:
+    """Where to set, check or change a source's setting: the app first when it can be typed
+    there (D260), else the console."""
+    if var in _TYPED:
+        return f"{_IN_APP} den Eintrag {verb} (oder in der Scaleway-Konsole die Variable {var})"
+    return f"{_CONSOLE} die Variable {var} {verb}"
+
+
+def _lower_first(text: str) -> str:
+    return text[:1].lower() + text[1:]
 
 
 @dataclass(frozen=True)
@@ -68,13 +87,17 @@ class _Probe:
     scope: str  # "address" or "account" (D186 (2), Bitcoin reconciles per account)
 
 
-def _probe(chain: Chain, settings: Settings) -> _Probe:
+_PROBE_STATES = {WALLET_KEY_MISSING: S.KEY_MISSING, WALLET_KEY_UNREADABLE: S.KEY_UNREADABLE}
+
+
+def _probe(chain: Chain, settings: Settings, conn: Connection) -> _Probe:
     """Build the chain's source (no request is made) to see a missing key or a source not
-    built yet before any run; the exception's text is never passed on."""
+    built yet before any run, with the workspace's keys typed in the app (D260); the
+    exception's text is never passed on."""
     try:
-        source = source_for(chain, settings)
+        source = source_for(chain, settings, conn=conn)
     except ChainSourceError as exc:
-        state = S.KEY_MISSING if exc.code == WALLET_KEY_MISSING else S.SOURCE_UNAVAILABLE
+        state = _PROBE_STATES.get(exc.code, S.SOURCE_UNAVAILABLE)
         return _Probe(state, "address")
     except NotImplementedError:
         return _Probe(S.SOURCE_UNAVAILABLE, "address")
@@ -99,8 +122,16 @@ def _texts(state: WalletAddressState, chain: Chain, error_code: str | None) -> t
         case S.KEY_MISSING:
             return (
                 f"Nicht abgerufen: für {name} fehlt Hausbuch der Zugang zum Datenanbieter.",
-                f"{_CONSOLE} die Variable {var} setzen. Der nächste Abruf liest die Adresse "
-                "dann; bis dahin bleibt sie gespeichert.",
+                f"{_where(var, 'eintragen')}. Der nächste Abruf liest die Adresse dann; bis "
+                "dahin bleibt sie gespeichert.",
+                var,
+            )
+        case S.KEY_UNREADABLE:
+            return (
+                f"Nicht abgerufen: der für {name} in Hausbuch gespeicherte Zugang kann nicht "
+                "gelesen werden, weil der Schlüssel des Servers gewechselt wurde.",
+                f"{_IN_APP} den Eintrag ändern und neu eintragen; der nächste Abruf liest "
+                "die Adresse dann.",
                 var,
             )
         case S.SOURCE_UNAVAILABLE:
@@ -135,14 +166,13 @@ def _texts(state: WalletAddressState, chain: Chain, error_code: str | None) -> t
             return (
                 "Der Datenanbieter hat zu viele Anfragen gemeldet und den Abruf gebremst.",
                 "Nichts zu tun: der Abruf setzt am nächsten Tag fort, wo er stand. Kommt das "
-                f"jeden Tag vor, {_CONSOLE[0].lower()}{_CONSOLE[1:]} unter {var} einen anderen "
-                "Anbieter eintragen.",
+                f"jeden Tag vor, {_lower_first(_where(var, 'auf einen anderen Anbieter ändern'))}.",
                 var,
             )
         case S.REFUSED:
             return (
                 "Der Datenanbieter hat den Abruf abgelehnt: der Zugang ist ungültig oder gesperrt.",
-                f"{_CONSOLE} die Variable {var} prüfen und korrigieren, dann „Jetzt abrufen“.",
+                f"{_where(var, 'prüfen und korrigieren')}, dann „Jetzt abrufen“.",
                 var,
             )
         case S.DEFERRED:
@@ -259,7 +289,7 @@ def wallet_state(conn: Connection, account_id: UUID, settings: Settings) -> Wall
     runs = _last_runs(conn, account_id)
     with_balances = _last_balances(conn, account_id)
     opened = open_groups(conn, account_id)
-    probes = {chain: _probe(chain, settings) for chain in {Chain(r.chain) for r in addresses}}
+    probes = {chain: _probe(chain, settings, conn) for chain in {Chain(r.chain) for r in addresses}}
     chain_of = {r.id: Chain(r.chain) for r in addresses}
     masked_of = {r.id: r.address_masked for r in addresses}
 
@@ -459,6 +489,7 @@ __all__ = [
 # retries both, and no click of the person changes either (review of PR #398, finding 6).
 _SYNC_CARDS = {
     S.KEY_MISSING: InboxItemKind.WALLET_SYNC,
+    S.KEY_UNREADABLE: InboxItemKind.WALLET_SYNC,
     S.FAILED: InboxItemKind.WALLET_SYNC,
     S.REFUSED: InboxItemKind.WALLET_SYNC,
     S.UNRECONCILED: InboxItemKind.WALLET_UNRECONCILED,
