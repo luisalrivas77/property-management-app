@@ -197,6 +197,41 @@ def test_a_url_parsers_disagree_on_is_bound_verbatim(url):
     assert C.server_address(url) == f"verbatim {url}"
 
 
+@pytest.mark.parametrize(
+    "url", ["https://[1.2.3.4]/fints", "https://[12345]/fints", "https://[::::]/fints"]
+)
+def test_a_bracketed_host_that_is_no_ipv6_literal_is_bound_verbatim(url):
+    """urlsplit refuses such a host; the binding must not raise (it would answer 500 on
+    every read of the connection) but bind the address verbatim."""
+    assert C.server_address(url) == f"verbatim {url}"
+
+
+def test_only_an_ascii_https_scheme_is_normalised():
+    """The long s matches „s“ case-insensitively; such a scheme is bound verbatim, so two
+    hosts never share one binding."""
+    a, b = "http\u017f://evil.example/fints", "http\u017f://bank.example/fints"
+    assert C.server_address(a) == f"verbatim {a}"
+    assert C.server_hash(a) != C.server_hash(b)
+
+
+def test_the_fints_session_never_follows_a_redirect(monkeypatch):
+    """A 307/308 would re-send the message, PIN included, to another address."""
+    import requests
+
+    from hausbuch.services.bank import fints
+
+    seen = {}
+
+    def fake(self, *args, **kwargs):
+        seen.update(kwargs)
+        raise requests.ConnectionError("stop")
+
+    monkeypatch.setattr(requests.Session, "request", fake)
+    with pytest.raises(requests.ConnectionError):
+        fints._TimeoutSession(5).post("https://bank.example/fints", data=b"x")
+    assert seen["allow_redirects"] is False
+
+
 def test_the_pin_request_needs_an_https_address():
     with pytest.raises(ValidationError):
         BankPinSet(pin=PIN)

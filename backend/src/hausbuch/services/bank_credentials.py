@@ -150,7 +150,7 @@ def unseal(key: bytes, nonce: bytes, ciphertext: bytes, aad: bytes) -> str | Non
 # backslash, no query, no fragment. Only this shape is normalised: on it every URL parser
 # (urlsplit here, urllib3 under python-fints' requests session) reads the same host.
 _PLAIN_ADDRESS = re.compile(
-    r"(?i:https)://(?P<host>[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::(?P<port>[0-9]{1,5}))?"
+    r"[Hh][Tt][Tt][Pp][Ss]://(?P<host>[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::(?P<port>[0-9]{1,5}))?"
     r"(?P<path>/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?"
 )
 
@@ -167,9 +167,12 @@ def server_address(url: str) -> str:
     plain = _PLAIN_ADDRESS.fullmatch(raw)
     if plain is not None:
         port = int(plain["port"] or 443)
-        if port <= 65535:
+        try:
             # urlsplit agrees with the regex on this shape; it lower-cases the host
-            host = (urlsplit(raw).hostname or "").lower()
+            host = (urlsplit(raw).hostname or "").lower() if port <= 65535 else None
+        except ValueError:  # a bracketed host that is no IPv6 literal, e.g. „[1.2.3.4]“
+            host = None
+        if host:
             if ":" in host:
                 host = f"[{host}]"  # an IPv6 literal keeps its brackets
             return f"https://{host}:{port}{plain['path'] or '/'}"
