@@ -41,6 +41,7 @@ from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.household import (
+    AnswerMovementBody,
     BalanceCorrectionBody,
     DeclareHoldingsBody,
     MovementKind,
@@ -1125,3 +1126,35 @@ def test_two_equal_rows_in_another_zone_match_one_by_one(run, read, blob_store, 
     ).movement_import
     assert (again.rows_new, again.rows_skipped) == (1, 2)
     assert len(_live(read, ws, account.id)) == 3
+
+
+def test_a_withdrawal_answered_after_the_history_check_asks_for_the_history(
+    run, read, blob_store, fresh_workspaces
+):
+    """Review D, its limit: a row the person answers as a withdrawal after the history was
+    checked was never tried against it, so the page asks for the history again; only a copy
+    of the same kind (the repair's) keeps the time its original was read."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    sent = "100000001,2026-03-02 16:00:00,Spot,Send,ETH,-0.05,\n"
+    other = "0x" + hashlib.sha256(b"invented withdrawal of another amount").hexdigest()
+    history = (
+        "Time,Coin,Network,Amount,Fee,Address,TXID,Status\n"
+        f"2026-03-02 14:59:00,ETH,ETH,0.5,0.0005,{EVM},{other},Completed\n"
+    )
+    _upload(run, blob_store, ws, account.id, _zip(TX + sent, TX_MEMBER), TX_NAME)
+    _upload(run, blob_store, ws, account.id, _zip(history), WD_NAME, n=1)
+    no_match = [E.EXCHANGE_WITHDRAWAL_HISTORY_NO_MATCH]
+    assert read(ws, imports.exchange_overview, account.id).todos == no_match
+    question = next(r for r in _live(read, ws, account.id) if r.kind == "uncategorized")
+
+    run(
+        ws,
+        imports.answer_movement,
+        question.id,
+        AnswerMovementBody(kind=MovementKind.INTERNAL_TRANSFER_OUT),
+        now=T0 + timedelta(minutes=5),
+    )
+
+    todos = read(ws, imports.exchange_overview, account.id).todos
+    assert todos == [E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING]

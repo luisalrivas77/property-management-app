@@ -838,22 +838,24 @@ def _history_todo(conn: Connection, account_id: UUID, open_rows: list[_Stored]) 
 
 
 def _first_read(conn: Connection, account_id: UUID, ids: Sequence[UUID]) -> dict[UUID, datetime]:
-    """When each movement was first read: the created_at of the row it descends from (its
-    superseded_by chain walked back), since a copy the repair wrote (D178 amended (4), review
-    D) is no row read later."""
+    """When each movement was first read as what it is: the created_at of the row it descends
+    from through copies of the same kind (its superseded_by chain walked back), since a copy
+    the repair wrote (D178 amended (4), review D) is no row read later. A person's answer that
+    made it a withdrawal changed its kind, so the walk stops there: a history checked before
+    that answer was never tried against it."""
     m = movement_table.c
     rows = conn.execute(
-        select(m.id, m.superseded_by, m.created_at).where(m.account_id == account_id)
+        select(m.id, m.superseded_by, m.created_at, m.kind).where(m.account_id == account_id)
     ).all()
     back = {r.superseded_by: r.id for r in rows if r.superseded_by is not None}
-    created = {r.id: r.created_at for r in rows}
+    row_of = {r.id: r for r in rows}
     out = {}
     for movement_id in ids:
         at, seen = movement_id, set()
-        while at in back and at not in seen:
+        while at in back and at not in seen and row_of[back[at]].kind == row_of[at].kind:
             seen.add(at)
             at = back[at]
-        out[movement_id] = created[at]
+        out[movement_id] = row_of[at].created_at
     return out
 
 
