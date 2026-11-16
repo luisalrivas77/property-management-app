@@ -636,6 +636,35 @@ def test_a_new_account_without_owner_the_caller_does_not_know_is_unreadable():
     assert raised.value.code == E.WALLET_RECORD_UNREADABLE
 
 
+@pytest.mark.parametrize("case_id", ["spl_out", "spl_in"])
+def test_a_row_without_owner_on_an_account_the_run_never_learned_is_unreadable(case_id):
+    """Review fix C: a record from before token rows named their owner, on an own token account
+    already closed (getTokenAccountsByOwner no longer names it, no stored group carried it).
+    Neither row can be placed on a known own account, so neither is read as someone else's:
+    the record is unreadable, never a group whose token leg was dropped and whose fee alone
+    would be booked by code."""
+    case = CASES[case_id]
+    tx = _without_owner(case_id)
+    with pytest.raises(E.RuleError) as raised:
+        solana.solana_deltas(tx, {case.own}, own_token_accounts=set())
+    assert raised.value.code == E.WALLET_RECORD_UNREADABLE
+
+
+def test_a_row_without_owner_beside_an_own_row_of_its_mint_is_the_counterparty():
+    """The own side of the token is known, so the other row of that mint is the other party
+    (spl_in: the sender's account), whatever its owner field says or lacks."""
+    case = CASES["spl_in"]
+    tx = deepcopy(case.tx)
+    for key in ("preTokenBalances", "postTokenBalances"):
+        for row in tx["meta"][key]:
+            if row.get("owner") != case.own:
+                row.pop("owner")
+    deltas = solana.solana_deltas(tx, {case.own}, own_token_accounts=set())
+    assert [(d.asset_key.contract, d.units) for d in deltas] == [
+        (d.mint, d.units) for d in case.expect.deltas
+    ]
+
+
 def test_a_failed_record_without_token_rows_still_keeps_its_fee():
     """A failed transaction moved nothing but its fee, so its token rows are never read."""
     case = CASES["failed_transaction"]

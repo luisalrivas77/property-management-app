@@ -444,6 +444,26 @@ def test_an_unreadable_card_keeps_the_fee_the_address_paid():
     assert (other.legs, other.question) == ([], solana.QUESTION_UNREADABLE)
 
 
+def test_an_old_send_from_a_closed_token_account_is_a_card_with_its_fee():
+    """Review fix C: `spl_out` from before rows named their owner, its token account closed and
+    unknown to the run. Nothing is guessed: the card with A's fee, waiting for a person."""
+    record = _record("spl_out")
+    for key in ("preTokenBalances", "postTokenBalances"):
+        for row in record["meta"][key]:
+            row.pop("owner")
+    # as SolanaSource keeps it beside the record: the own token accounts the run knew
+    record[solana.SYNC_KEY] = {"own_token_accounts": []}
+    tx = SolanaRpc.chain_tx(record, {A}, set(), strict=False)
+    assert tx.transfers == []
+    group = solana.classify_tx(tx, _ctx())
+    assert (group.kind, group.question) == (GroupKind.UNKNOWN, solana.QUESTION_UNREADABLE)
+    assert _legs(group) == [(MovementKind.FEE, "fee", record["meta"]["fee"], None, "fee")]
+    # the same record once the run knows the account: the send it is
+    record[solana.SYNC_KEY] = {"own_token_accounts": [A_USDC]}
+    known = SolanaRpc.chain_tx(record, {A}, {A_USDC}, strict=False)
+    assert _legs(solana.classify_tx(known, _ctx())) == _want("spl_out")
+
+
 def test_a_slot_without_any_block_time_fails_the_run_as_the_ledger_s_end():
     old = _record("native_receive")
     old["blockTime"] = None

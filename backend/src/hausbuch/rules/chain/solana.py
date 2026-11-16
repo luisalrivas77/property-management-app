@@ -229,7 +229,7 @@ def program_calls(tx: Mapping[str, JsonValue]) -> list[tuple[str, str | None]]:
 class _TokenRow:
     index: int
     mint: str
-    mine: bool  # the token account belongs to an own address
+    mine: bool | None  # the token account belongs to an own address; None: not placed yet
     amount: int
 
 
@@ -253,20 +253,22 @@ def _token_rows(
     """The token balance rows, each resolved as own or not: by its `owner` when the record
     carries one; else by the token account's address against the own token accounts the caller
     knows (`own_token_accounts`, the sync's getTokenAccountsByOwner set and every token account
-    of its stored groups). A row without an owner stays unresolved, and the record unreadable,
-    when the caller passed no set, or when its account is opened in this transaction and is
-    not in the set (a new account the set cannot know yet)."""
+    of its stored groups). A row without an owner makes the record unreadable when the caller
+    passed no set, or when its account is opened in this transaction and is not in the set (a
+    new account the set cannot know yet); any other row without an owner and not in the set
+    is left unplaced (`mine` None) for _place."""
     rows = []
     for raw in _list(_obj(tx["meta"]).get(key)):
         row = _obj(raw)
         index = cast(int, row["accountIndex"])
         owner = row.get("owner")
+        mine: bool | None
         if isinstance(owner, str):
             mine = owner in own
         elif own_token_accounts is not None and keys[index] in own_token_accounts:
             mine = True
         elif own_token_accounts is not None and not opened(index):
-            mine = False
+            mine = None
         else:
             raise _unreadable(tx)
         rows.append(
@@ -329,14 +331,48 @@ def _balances(
     def opened(i: int) -> bool:
         return i not in before and pre[i] == 0
 
+    pre_tokens, post_tokens = _place(
+        tx,
+        _token_rows(tx, "preTokenBalances", keys, own, own_token_accounts, opened),
+        _token_rows(tx, "postTokenBalances", keys, own, own_token_accounts, opened),
+    )
     return _Balances(
         keys=keys,
         pre=pre,
         post=post,
-        pre_tokens=_token_rows(tx, "preTokenBalances", keys, own, own_token_accounts, opened),
-        post_tokens=_token_rows(tx, "postTokenBalances", keys, own, own_token_accounts, opened),
+        pre_tokens=pre_tokens,
+        post_tokens=post_tokens,
         fee=int(cast(int, meta["fee"])),
     )
+
+
+def _place(
+    tx: Mapping[str, JsonValue], pre: list[_TokenRow], post: list[_TokenRow]
+) -> tuple[list[_TokenRow], list[_TokenRow]]:
+    """Each unplaced row (no `owner`, its account not among the own token accounts known) is
+    someone else's only when the record shows where the own side of that token is: a row of
+    the same mint on a known own account (the counterparty of a payment, the pool of a swap),
+    or when its account moves nothing in the transaction. Otherwise it may be an own token
+    account the run never learned (closed before any record named its owner), so the record is
+    unreadable, a card for a person (classify_tx), never a leg dropped and never a fee alone
+    booked by code."""
+    if all(r.mine is not None for r in pre + post):
+        return pre, post
+    placed = {r.mint for r in pre + post if r.mine}
+    amounts: dict[int, list[int | None]] = {}
+    for n, rows in enumerate((pre, post)):
+        for r in rows:
+            amounts.setdefault(r.index, [None, None])[n] = r.amount
+
+    def settle(r: _TokenRow) -> _TokenRow:
+        if r.mine is not None:
+            return r
+        before, after = amounts[r.index]
+        if r.mint in placed or (before is not None and before == after):
+            return replace(r, mine=False)
+        raise _unreadable(tx)
+
+    return [settle(r) for r in pre], [settle(r) for r in post]
 
 
 def _own_token_accounts(b: _Balances) -> dict[int, str]:
