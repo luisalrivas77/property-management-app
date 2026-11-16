@@ -185,7 +185,7 @@ def test_spam_verdict(case):
 # --- the family dispatcher (rules/chain/classify) ------------------------------------------
 
 
-def test_classify_dispatches_by_family_and_restores():
+def test_classify_dispatches_by_family_and_restores(monkeypatch):
     tx = ChainTx(hash="h1", block=7, occurred_at=datetime(2026, 1, 2, tzinfo=UTC), status="ok")
     seen = []
 
@@ -201,7 +201,12 @@ def test_classify_dispatches_by_family_and_restores():
         register_family(ChainFamily.SOLANA, None)
     assert seen == [("h1", Chain.SOLANA)]
     assert group.fee_only and group.legs[0].signed == -5000
-    with pytest.raises(NotImplementedError):  # the family module has no classify_tx yet
+    # a family module without classify_tx (UTXO had none until step 4 wired Bitcoin; a
+    # module standing in for one, so the check does not depend on what is built)
+    import hausbuch.rules.chain.classify as classify_module
+
+    monkeypatch.setitem(classify_module._MODULES, ChainFamily.UTXO, "hausbuch.rules.errors")
+    with pytest.raises(NotImplementedError):
         classifier_for(ChainFamily.UTXO)
 
 
