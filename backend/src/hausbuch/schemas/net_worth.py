@@ -62,6 +62,8 @@ class NetWorthTodoCode(StrEnum):
     OWNERSHIP_MISSING = "net_worth.ownership_missing"
     PROPERTY_SHARES_MISSING = "net_worth.property_shares_missing"
     LOAN_NOT_VALUED = "net_worth.loan_not_valued"
+    # A wallet's read movements that wait for a person (16 Nov 2026).
+    WALLET_WAITING = "net_worth.wallet_waiting"
 
 
 class NetWorthTodo(Schema):

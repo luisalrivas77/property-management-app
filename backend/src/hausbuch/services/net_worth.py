@@ -383,6 +383,17 @@ def _positions(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTo
                         href="/assets",
                     )
                 )
+    for pending in overview.waiting:  # read, not yet confirmed: counted nowhere (16 Nov 2026)
+        if not pending.coins:
+            continue  # its waiting transactions change no coin's units
+        todos.append(
+            NetWorthTodo(
+                code=T.WALLET_WAITING,
+                text=f"{pending.text} Bis dahin fehlen sie im Nettovermögen.",
+                action=pending.action,
+                href=pending.href,
+            )
+        )
     known = {(i.line.account_id, i.line.asset_id) for i in items}
     unbooked, unbooked_todos = _unbooked_funds(conn, on, known)
     return items + unbooked, todos + unbooked_todos, stale, unvalued + len(unbooked)

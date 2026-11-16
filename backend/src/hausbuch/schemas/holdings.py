@@ -14,7 +14,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from .chain import Lot
+from .chain import Lot, WalletWaiting
 from .common import Money, Schema, Sha256Hex
 from .household import OwnershipShare, PriceEur, Quantity
 
@@ -106,6 +106,8 @@ class CryptoHoldings(Schema):
     unfilled_movements: int = Field(default=0, ge=0)
     # The accounts those movements are on, so the notice links each one's Umsätze.
     unfilled_account_ids: list[UUID] = Field(default_factory=list)
+    # Wallets whose read movements wait for a person: not counted above (16 Nov 2026).
+    waiting: list[WalletWaiting] = Field(default_factory=list)
 
 
 class HoldingsExportCreate(Schema):

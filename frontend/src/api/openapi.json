@@ -12850,6 +12850,13 @@
             "minimum": 0.0,
             "title": "Unvalued Positions",
             "default": 0
+          },
+          "waiting": {
+            "items": {
+              "$ref": "#/components/schemas/WalletWaiting"
+            },
+            "type": "array",
+            "title": "Waiting"
           }
         },
         "additionalProperties": false,
@@ -15437,6 +15444,13 @@
             },
             "type": "array",
             "title": "Unfilled Account Ids"
+          },
+          "waiting": {
+            "items": {
+              "$ref": "#/components/schemas/WalletWaiting"
+            },
+            "type": "array",
+            "title": "Waiting"
           }
         },
         "additionalProperties": false,
@@ -23273,7 +23287,8 @@
           "net_worth.position_not_booked",
           "net_worth.ownership_missing",
           "net_worth.property_shares_missing",
-          "net_worth.loan_not_valued"
+          "net_worth.loan_not_valued",
+          "net_worth.wallet_waiting"
         ],
         "title": "NetWorthTodoCode"
       },
@@ -33036,6 +33051,44 @@
         "title": "WaitingAmount",
         "description": "An amount other lines from the same IBAN and sign are waiting with, and how many."
       },
+      "WaitingCoin": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Units"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "name",
+          "units"
+        ],
+        "title": "WaitingCoin",
+        "description": "One coin's units a wallet's proposed movements hold (signed: Σ of the live proposed\nlegs, fees included; positive = not yet counted, negative = not yet taken off)."
+      },
       "WalletAddress": {
         "properties": {
           "id": {
@@ -33959,6 +34012,55 @@
         "additionalProperties": false,
         "type": "object",
         "title": "WalletSyncSummary"
+      },
+      "WalletWaiting": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "groups": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Groups"
+          },
+          "coins": {
+            "items": {
+              "$ref": "#/components/schemas/WaitingCoin"
+            },
+            "type": "array",
+            "title": "Coins"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "href": {
+            "type": "string",
+            "title": "Href"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "label",
+          "groups",
+          "text",
+          "action",
+          "href"
+        ],
+        "title": "WalletWaiting",
+        "description": "A wallet whose movements were read but wait for a person (a first sync proposes the\nwhole history, D186 (1)): the Krypto tab, the Anlagen overview and the net worth count\nconfirmed movements only, so these coins are missing there until confirmed (principle 7:\nthe gap as a plain to-do with its link; 16 Nov 2026). Never an address or a hash (D179)."
       },
       "WarningCode": {
         "type": "string",

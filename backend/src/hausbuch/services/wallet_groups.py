@@ -44,7 +44,8 @@ confirmed legs stay as they are.
 """
 
 from collections.abc import Callable
-from decimal import Decimal
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal, localcontext
 from uuid import UUID
 
 from sqlalchemy import Connection, func, insert, or_, select, update
@@ -65,7 +66,15 @@ from hausbuch.rules.errors import (
     WALLET_GROUP_NEEDS_ANSWER,
     RuleError,
 )
-from hausbuch.schemas.chain import AssetKey, Chain, GroupKind, GroupStatus
+from hausbuch.rules.lots import BERLIN
+from hausbuch.schemas.chain import (
+    AssetKey,
+    Chain,
+    GroupKind,
+    GroupStatus,
+    WaitingCoin,
+    WalletWaiting,
+)
 from hausbuch.schemas.enums import AccountKind, EntityType
 from hausbuch.schemas.events import (
     EventType,
@@ -413,6 +422,140 @@ def proposed_counts(conn: Connection) -> dict[UUID, tuple[int, object]]:
         .group_by(g.account_id)
     ).all()
     return {account_id: (n, newest) for account_id, n, newest in rows}
+
+
+WAITING_ACTION = "Transaktionen prüfen"
+
+
+def waiting(conn: Connection, on: date) -> list[WalletWaiting]:
+    """Per wallet, the coins its live proposed movements of the Berlin day `on` or before hold
+    (spam left out, fees included, summed exactly in SQL) and how many open transactions
+    they are in: the Krypto tab, the Anlagen overview and the net worth count confirmed
+    movements only, so a wallet whose history waits for a person shows fewer coins than it
+    holds (16 Nov 2026, Luis: „It seems it booked less coins than are in the wallet.“). The
+    link opens the wallet's page, whose „Transaktionen prüfen“ lists them; Zu prüfen shows
+    only a count that points there. By label, then account."""
+    m, g, a, acc = movement_table.c, group_table.c, asset_table.c, account_table.c
+    end = datetime.combine(on + timedelta(days=1), time(), BERLIN)
+    live = (
+        select(m.account_id, m.asset_id, m.group_id, m.quantity)
+        .join(group_table, g.id == m.group_id)
+        .join(account_table, acc.id == m.account_id)
+        .join(asset_table, a.id == m.asset_id)
+        .where(
+            acc.kind == AccountKind.WALLET.value,
+            m.status == MovementStatus.PROPOSED.value,
+            m.superseded_by.is_(None),
+            g.superseded_by.is_(None),
+            g.chain.is_not(None),
+            a.spam.is_(False),
+            m.occurred_at < end,
+        )
+        .subquery()
+    )
+    groups = dict(
+        conn.execute(
+            select(live.c.account_id, func.count(live.c.group_id.distinct())).group_by(
+                live.c.account_id
+            )
+        ).all()
+    )
+    if not groups:
+        return []
+    sums = conn.execute(
+        select(live.c.account_id, live.c.asset_id, func.sum(live.c.quantity).label("units"))
+        .group_by(live.c.account_id, live.c.asset_id)
+        .having(func.sum(live.c.quantity) != 0)
+    ).all()
+    assets = {
+        r.id: r
+        for r in conn.execute(
+            select(a.id, a.symbol, a.name, a.contract_address).where(
+                a.id.in_({s.asset_id for s in sums})
+            )
+        )
+    }
+    labels = dict(conn.execute(select(acc.id, acc.label).where(acc.id.in_(list(groups)))).all())
+    coins: dict[UUID, list[WaitingCoin]] = {}
+    for s in sums:
+        asset = assets[s.asset_id]
+        coins.setdefault(s.account_id, []).append(
+            WaitingCoin(
+                asset_id=s.asset_id,
+                symbol=asset.symbol,
+                name=asset.name,
+                units=s.units,
+            )
+        )
+    out = []
+    for account_id, n in groups.items():
+        listed = sorted(
+            coins.get(account_id, []), key=lambda c: (_coin_label(c, assets), str(c.asset_id))
+        )
+        out.append(
+            WalletWaiting(
+                account_id=account_id,
+                label=labels[account_id],
+                groups=n,
+                coins=listed,
+                text=_waiting_text(labels[account_id], n, listed, assets),
+                action=WAITING_ACTION,
+                href=f"/accounts/{account_id}",
+            )
+        )
+    return sorted(out, key=lambda w: (w.label, str(w.account_id)))
+
+
+def _coin_label(coin: WaitingCoin, assets: dict) -> str:
+    """A token by its name („Ether (Portal)“, so it never reads as the chain's own ETH), the
+    chain's own coin by its symbol."""
+    if assets[coin.asset_id].contract_address is not None or coin.symbol is None:
+        return coin.name
+    return coin.symbol
+
+
+def _german_units(units: Decimal) -> str:
+    """Every digit the quantity has (never rounded: code states the units exactly), a
+    German decimal comma and thousands points."""
+    with localcontext() as wide:
+        wide.prec = 60
+        text = f"{abs(units).normalize():f}"
+    whole, _, fraction = text.partition(".")
+    whole = f"{int(whole):,}".replace(",", ".")
+    return f"{whole},{fraction}" if fraction else whole
+
+
+def _listing(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} und {items[-1]}"
+
+
+def _waiting_text(label: str, groups: int, coins: list[WaitingCoin], assets: dict) -> str:
+    def words(selected: list[WaitingCoin]) -> str:
+        return _listing([f"{_german_units(c.units)} {_coin_label(c, assets)}" for c in selected])
+
+    added = [c for c in coins if c.units > 0]
+    taken = [c for c in coins if c.units < 0]
+    count = f"{groups} Transaktion wartet" if groups == 1 else f"{groups} Transaktionen warten"
+    if added:
+        text = (
+            f"{words(added)} auf „{label}“ sind gelesen, zählen aber erst nach Ihrer "
+            "Bestätigung mit"
+        )
+        if taken:
+            text += f"; Abgänge von {words(taken)} sind noch nicht abgezogen"
+    elif taken:
+        text = (
+            f"Abgänge von {words(taken)} auf „{label}“ sind gelesen, werden aber erst nach "
+            "Ihrer Bestätigung abgezogen"
+        )
+    else:
+        verb = "wartet" if groups == 1 else "warten"
+        noun = "Transaktion" if groups == 1 else "Transaktionen"
+        return (
+            f"Auf „{label}“ {verb} {groups} {noun} auf Ihre Bestätigung; zusammen ändern sie "
+            "den Bestand nicht."
+        )
+    return f"{text} ({count})."
 
 
 def _answered_by_person():

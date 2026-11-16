@@ -72,6 +72,7 @@ from hausbuch.schemas.prices import PriceSourceKind
 
 from .accounts import list_accounts
 from .prices.overview import _latest_prices
+from .wallet_groups import waiting
 
 CRYPTO_ACCOUNT_KINDS = (AccountKind.WALLET, AccountKind.EXCHANGE)
 
@@ -338,13 +339,15 @@ def crypto_holdings(conn: Connection, on: date) -> CryptoHoldings:
         if a.id in held or a.kind is AccountKind.WALLET
     ]
     unfilled_accounts = {mv.account_id for mv in ledger.movements if mv.id in book.unfilled}
-    return figures.summary(
+    summary = figures.summary(
         on,
         coins,
         accounts,
         unfilled_movements=len(book.unfilled),
         unfilled_account_ids=sorted(unfilled_accounts, key=str),
     )
+    # The coins a wallet's proposed movements hold, which the figures above leave out.
+    return summary.model_copy(update={"waiting": waiting(conn, on)})
 
 
 def account_lots(
