@@ -1,0 +1,9 @@
+# Address-poisoning dust (docs/phases/phase-7.md D262, 17 Nov 2026): an incoming transfer of a
+# coin or token from an address that is not an own one, worth less than `below_eur` at its
+# Berlin day's price, is proposed as a Kleinstbetrag (vermutlich Spam). Rule data
+# (principle 5): the limit is changed here, never in code. A movement without a price for its
+# day is never dust by value (no guess).
+#
+# 0.01 €: one cent. A real deposit is never this small; a poisoning transfer is worth a
+# fraction of a cent.
+below_eur: "0.01"
