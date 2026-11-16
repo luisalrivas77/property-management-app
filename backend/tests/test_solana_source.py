@@ -405,6 +405,7 @@ def test_thirty_closed_token_accounts_at_a_budget_of_25_reach_the_tip():
     daily = _Daily(_thirty_closed()).to_tip(25, most=200)
     assert _legs_by_hash(daily) == want
     assert len(daily.served) == len(_thirty_closed().records)
+    assert ";" not in daily.cursor  # the tip: the plain form again, no sweep left
 
 
 def test_a_cursor_names_no_token_account_and_stays_short():
@@ -418,9 +419,15 @@ def test_a_cursor_names_no_token_account_and_stays_short():
             break
     assert daily.tip
     for cursor in seen:
-        assert len(cursor) <= 130
         assert not any(account in cursor for account in MANY)
         assert "c1osed" not in cursor
+    # the longest a real one gets: 10-digit slots, an 88-character signature, a 5-digit
+    # index, within services/chain/sync's 200 (a longer one fails the run)
+    real = SourceCursor(
+        4_000_000_000, "5" * 88, 3_999_000_000, True, 99_999, 3_999_500_000, 4_000_000_001
+    )
+    assert len(real.text()) <= 140
+    assert SourceCursor.parse(real.text()) == real
 
 
 # The pinned floors: before the sweep (Q-O162) the mixed history needed 12, a start then
@@ -441,6 +448,7 @@ def test_a_sweep_inside_one_busy_account_moves_on_by_its_at():
         if tip:
             break
     assert daily.tip and len(daily.served) == len(_one_busy_closed().records)
+    assert ";" not in daily.cursor
     assert len(ats) >= 2 and ats == sorted(ats) and len(set(ats)) == len(ats)
 
 

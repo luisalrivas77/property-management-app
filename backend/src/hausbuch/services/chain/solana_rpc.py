@@ -498,7 +498,7 @@ def _signature_info(raw: object) -> SignatureInfo:
 class SourceCursor:
     """A SolanaSource cursor: `<slot>:<signature>`; after a run the budget cut
     `<slot>:<signature>;<closed>`, or `<slot>:<signature>;<closed>;<index>;<at>;<prefix>` while
-    a sweep of the stored token accounts is under way (≤ 130 characters; never a token
+    a sweep of the stored token accounts is under way (≤ 140 characters; never a token
     account's address, only an index into them, Q-O162).
 
     `slot` is where the next run lists the address and its open token accounts from,
