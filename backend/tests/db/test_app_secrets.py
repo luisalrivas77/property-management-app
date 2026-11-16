@@ -1,0 +1,254 @@
+"""Provider keys and URLs typed in the app, stored encrypted (docs/phases/phase-6.md D260):
+services.app_secrets against Postgres as hausbuch_app under RLS. Every key, URL and session
+key here is invented."""
+
+import dataclasses
+import logging
+from datetime import UTC, datetime
+
+import pytest
+from db.db_support import TEST_IBAN_KEY
+from pydantic import SecretStr
+from sqlalchemy import select, text, update
+
+from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import app_secret as secret_table
+from hausbuch.db.tables import event as event_table
+from hausbuch.rules import errors as E
+from hausbuch.rules.errors import RuleError
+from hausbuch.schemas.app_secrets import AppSecretName as N
+from hausbuch.schemas.app_secrets import AppSecretSource as Src
+from hausbuch.schemas.events import EventType
+from hausbuch.services import app_secrets as secrets
+from hausbuch.settings import SOLANA_PUBLIC_RPC_URL, Settings
+
+pytestmark = pytest.mark.db
+
+T0 = datetime(2026, 11, 16, 9, 0, tzinfo=UTC)
+APP_KEY = "app-typed-etherscan-KEY-0042"
+ENV_KEY = "container-etherscan-KEY-7777"
+APP_URL = "https://solana.rpc.example/v1/app-typed-path-secret"
+APP_AI = "sk-ant-app-typed-0123456789"
+OTHER_KEY = bytes(range(101, 133))  # a rotated session key
+SECRETS = (APP_KEY, ENV_KEY, APP_URL, APP_AI)
+
+
+def _settings(tmp_path, **overrides) -> Settings:
+    values = {
+        "database_url": "postgresql+psycopg://hausbuch_app@localhost/unused",
+        "iban_hmac_key": TEST_IBAN_KEY,
+        "session_key": bytes(range(1, 33)),
+        "rp_id": "testserver",
+        "origin": "https://testserver",
+        "blob_store": "local",
+        "blob_root": tmp_path / "blobs",
+    } | overrides
+    return Settings(**values)
+
+
+@pytest.fixture
+def settings(tmp_path):
+    return _settings(tmp_path)
+
+
+@pytest.fixture
+def env_settings(tmp_path):
+    return _settings(tmp_path, etherscan_key=SecretStr(ENV_KEY))
+
+
+def _set(run, ws, name, value, settings):
+    return run(ws, secrets.set_secret, name, SecretStr(value), settings=settings, now=T0)
+
+
+def _rows(app_engine, ws):
+    with workspace_transaction(app_engine, ws) as conn:
+        return conn.execute(select(secret_table)).all()
+
+
+def _all_text(app_engine, ws) -> bytes:
+    with workspace_transaction(app_engine, ws) as conn:
+        rows = [
+            *conn.execute(select(secret_table)).all(),
+            *conn.execute(select(event_table)).all(),
+        ]
+        jobs = conn.execute(text("SELECT args FROM procrastinate_jobs")).scalars().all()
+    out = bytearray(repr([tuple(r) for r in rows]).encode() + repr(jobs).encode())
+    for row in rows:
+        for value in row:
+            if isinstance(value, bytes | memoryview):
+                out += bytes(value)
+    return bytes(out)
+
+
+def test_a_key_round_trips_encrypted_and_its_event_names_the_name_only(
+    run, read, app_engine, fresh_workspaces, settings, caplog
+):
+    caplog.set_level(logging.DEBUG)
+    ws, _ = fresh_workspaces
+    state = _set(run, ws, N.ETHERSCAN_KEY, f"  {APP_KEY}\n", settings)
+    assert (state.source, state.updated_at) == (Src.APP, T0)
+    (row,) = _rows(app_engine, ws)
+    assert APP_KEY.encode() not in bytes(row.ciphertext)
+    assert len(bytes(row.nonce)) == 12 and row.key_version == secrets.KEY_VERSION
+    value = read(ws, secrets.resolve, settings, N.ETHERSCAN_KEY)
+    assert value.get_secret_value() == APP_KEY  # trimmed
+    with workspace_transaction(app_engine, ws) as conn:
+        (event,) = conn.execute(select(event_table)).all()
+    assert event.type == EventType.WORKSPACE_APP_SECRET_SET.value
+    assert event.payload == {"name": "etherscan_key"}
+    for secret in SECRETS:
+        assert secret.encode() not in _all_text(app_engine, ws)
+        assert secret not in caplog.text
+    assert APP_KEY not in repr(read(ws, secrets.lookup, settings, N.ETHERSCAN_KEY))
+
+
+def test_a_typed_value_wins_over_the_container_and_delete_falls_back(
+    run, read, fresh_workspaces, env_settings
+):
+    ws, _ = fresh_workspaces
+    found = read(ws, secrets.lookup, env_settings, N.ETHERSCAN_KEY)
+    assert found.source is Src.CONTAINER and found.value.get_secret_value() == ENV_KEY
+    _set(run, ws, N.ETHERSCAN_KEY, APP_KEY, env_settings)
+    found = read(ws, secrets.lookup, env_settings, N.ETHERSCAN_KEY)
+    assert found.source is Src.APP and found.value.get_secret_value() == APP_KEY
+    replaced = _set(run, ws, N.ETHERSCAN_KEY, "second-typed-key", env_settings)
+    assert replaced.source is Src.APP
+    assert read(ws, secrets.resolve, env_settings, N.ETHERSCAN_KEY).get_secret_value() == (
+        "second-typed-key"
+    )
+    assert run(ws, secrets.delete_secret, N.ETHERSCAN_KEY, now=T0) is True
+    found = read(ws, secrets.lookup, env_settings, N.ETHERSCAN_KEY)
+    assert found.source is Src.CONTAINER and found.value.get_secret_value() == ENV_KEY
+    assert run(ws, secrets.delete_secret, N.ETHERSCAN_KEY, now=T0) is False
+
+
+def test_the_card_lists_every_name_by_its_source_never_a_value(
+    run, read, fresh_workspaces, env_settings
+):
+    ws, _ = fresh_workspaces
+    _set(run, ws, N.ANTHROPIC_API_KEY, APP_AI, env_settings)
+    states = {s.name: s for s in read(ws, secrets.secret_states, env_settings)}
+    assert list(states) == list(N)
+    assert states[N.ANTHROPIC_API_KEY].source is Src.APP
+    assert states[N.ETHERSCAN_KEY].source is Src.CONTAINER
+    # A URL at its public default reads as not set: the public endpoint is in use.
+    assert states[N.SOLANA_RPC_URL].source is Src.NONE
+    assert states[N.COINGECKO_KEY].source is Src.NONE
+    assert states[N.ETHERSCAN_KEY].variable == "HAUSBUCH_ETHERSCAN_KEY"
+    dumped = repr([s.model_dump() for s in states.values()])
+    assert all(secret not in dumped for secret in SECRETS)
+
+
+def test_a_rotated_session_key_leaves_the_row_unreadable_without_falling_back(
+    run, read, fresh_workspaces, env_settings
+):
+    ws, _ = fresh_workspaces
+    _set(run, ws, N.ETHERSCAN_KEY, APP_KEY, env_settings)
+    rotated = dataclasses.replace(env_settings, session_key=OTHER_KEY)
+    found = read(ws, secrets.lookup, rotated, N.ETHERSCAN_KEY)
+    assert (found.source, found.value, found.updated_at) == (Src.UNREADABLE, None, T0)
+    assert read(ws, secrets.resolve, rotated, N.ETHERSCAN_KEY) is None  # never ENV_KEY
+    states = {s.name: s for s in read(ws, secrets.secret_states, rotated)}
+    assert states[N.ETHERSCAN_KEY].source is Src.UNREADABLE
+    with pytest.raises(secrets.SecretUnreadable):
+        read(ws, secrets.workspace_settings, rotated, [N.ETHERSCAN_KEY])
+    # Typing it again under the new key makes it readable.
+    _set(run, ws, N.ETHERSCAN_KEY, APP_KEY, rotated)
+    assert read(ws, secrets.lookup, rotated, N.ETHERSCAN_KEY).source is Src.APP
+
+
+def test_an_unknown_key_version_is_unreadable(run, read, app_engine, fresh_workspaces, settings):
+    ws, _ = fresh_workspaces
+    _set(run, ws, N.COINGECKO_KEY, APP_KEY, settings)
+    with workspace_transaction(app_engine, ws) as conn:
+        conn.execute(update(secret_table).values(key_version=2))
+    assert read(ws, secrets.lookup, settings, N.COINGECKO_KEY).source is Src.UNREADABLE
+
+
+def test_a_ciphertext_moved_to_another_name_or_workspace_does_not_open(
+    run, read, app_engine, fresh_workspaces, settings
+):
+    a, b = fresh_workspaces
+    _set(run, a, N.ETHERSCAN_KEY, APP_KEY, settings)
+    (row,) = _rows(app_engine, a)
+    with workspace_transaction(app_engine, a) as conn:
+        conn.execute(
+            secret_table.insert().values(
+                workspace_id=a,
+                name=N.HELIUS_KEY.value,
+                nonce=row.nonce,
+                ciphertext=row.ciphertext,
+                key_version=row.key_version,
+            )
+        )
+    with workspace_transaction(app_engine, b) as conn:
+        conn.execute(
+            secret_table.insert().values(
+                workspace_id=b,
+                name=N.ETHERSCAN_KEY.value,
+                nonce=row.nonce,
+                ciphertext=row.ciphertext,
+                key_version=row.key_version,
+            )
+        )
+    assert read(a, secrets.lookup, settings, N.ETHERSCAN_KEY).source is Src.APP
+    assert read(a, secrets.lookup, settings, N.HELIUS_KEY).source is Src.UNREADABLE
+    assert read(b, secrets.lookup, settings, N.ETHERSCAN_KEY).source is Src.UNREADABLE
+
+
+def test_a_workspace_never_sees_another_workspaces_value(run, read, fresh_workspaces, settings):
+    a, b = fresh_workspaces
+    _set(run, a, N.ETHERSCAN_KEY, APP_KEY, settings)
+    assert read(b, secrets.lookup, settings, N.ETHERSCAN_KEY).source is Src.NONE
+    assert run(b, secrets.delete_secret, N.ETHERSCAN_KEY, now=T0) is False
+    assert read(a, secrets.lookup, settings, N.ETHERSCAN_KEY).source is Src.APP
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "code"),
+    [
+        (N.ETHERSCAN_KEY, "   ", E.APP_SECRET_INVALID),
+        (N.ETHERSCAN_KEY, "two words", E.APP_SECRET_INVALID),
+        (N.ETHERSCAN_KEY, "tab\tinside", E.APP_SECRET_INVALID),
+        (N.ETHERSCAN_KEY, "ctrl\x00char", E.APP_SECRET_INVALID),
+        (N.ETHERSCAN_KEY, "schlüssel", E.APP_SECRET_INVALID),
+        (N.ETHERSCAN_KEY, "k" * 513, E.APP_SECRET_INVALID),
+        (N.SOLANA_RPC_URL, "solana.rpc.example/v1", E.APP_SECRET_URL_INVALID),
+        (N.SOLANA_RPC_URL, "ftp://solana.rpc.example", E.APP_SECRET_URL_INVALID),
+        (N.BSC_RPC_URL, "https://", E.APP_SECRET_URL_INVALID),
+    ],
+    ids=["blank", "space", "tab", "nul", "non_ascii", "too_long", "no_scheme", "ftp", "no_host"],
+)
+def test_a_value_outside_its_checks_is_refused_without_quoting_it(
+    run, app_engine, fresh_workspaces, settings, name, value, code
+):
+    ws, _ = fresh_workspaces
+    with pytest.raises(RuleError) as refused:
+        _set(run, ws, name, value, settings)
+    assert refused.value.code == code
+    assert value.strip() == "" or value not in str(refused.value)
+    assert _rows(app_engine, ws) == []
+
+
+def test_a_key_of_512_characters_and_a_url_are_accepted(run, read, fresh_workspaces, settings):
+    ws, _ = fresh_workspaces
+    _set(run, ws, N.HELIUS_KEY, "k" * 512, settings)
+    _set(run, ws, N.SOLANA_RPC_URL, APP_URL, settings)
+    assert read(ws, secrets.resolve, settings, N.HELIUS_KEY).get_secret_value() == "k" * 512
+
+
+def test_workspace_settings_puts_the_typed_values_in_place(
+    run, read, fresh_workspaces, env_settings
+):
+    a, b = fresh_workspaces
+    _set(run, a, N.SOLANA_RPC_URL, APP_URL, env_settings)
+    _set(run, a, N.ANTHROPIC_API_KEY, APP_AI, env_settings)
+    names = [N.SOLANA_RPC_URL, N.ETHERSCAN_KEY, N.ANTHROPIC_API_KEY]
+    typed = read(a, secrets.workspace_settings, env_settings, names)
+    assert typed.solana_rpc_url.get_secret_value() == APP_URL
+    assert typed.etherscan_key.get_secret_value() == ENV_KEY  # the container's still
+    assert typed.anthropic_api_key == APP_AI  # a plain str field stays a str
+    assert APP_URL not in repr(typed)
+    other = read(b, secrets.workspace_settings, env_settings, names)
+    assert other is env_settings
+    assert other.solana_rpc_url.get_secret_value() == SOLANA_PUBLIC_RPC_URL

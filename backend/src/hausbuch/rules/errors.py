@@ -227,6 +227,9 @@ BANK_LOGIN_UNREADABLE = "bank.login_unreadable"  # type the Anmeldename and the 
 # D196 amended (16 Nov 2026): the PIN typed into the app was typed for another FinTS address
 # than the connection's (its address changed since, or the PIN predates the binding)
 BANK_PIN_SERVER_CHANGED = "bank.pin_server_changed"  # type the PIN again for this address
+# Phase 6 D260: a provider key or URL typed in the app (Einstellungen › Zugangsschlüssel)
+APP_SECRET_INVALID = "app_secret.invalid"  # empty, blanks or control characters, > 512 chars
+APP_SECRET_URL_INVALID = "app_secret.url_invalid"  # an RPC URL Settings would refuse too
 # Phase 6 step 1 (D168): the second owner's own consent to ai_private_accounts.
 SETTINGS_CONSENT_SWITCH_OFF = "settings.consent_switch_off"  # nothing to consent to
 SETTINGS_CONSENT_ALREADY_RECORDED = "settings.consent_already_recorded"  # this member did
@@ -243,6 +246,9 @@ WALLET_ADDRESS_TAKEN = "wallet.address_taken"  # registered on another own accou
 # (services/wallets._retire_refusal; review of PR #397).
 WALLET_ADDRESS_HOLDS_COINS = "wallet.address_holds_coins"
 WALLET_KEY_MISSING = "wallet.key_missing"  # the chain's source needs a key that is unset
+# D260: the key or URL typed in the app for the chain's source no longer decrypts (the session
+# key changed); never replaced silently by the container variable: type it again
+WALLET_KEY_UNREADABLE = "wallet.key_unreadable"
 WALLET_SOURCE_THROTTLED = "wallet.source_throttled"  # a 429: the sync resumes the next day
 WALLET_SOURCE_REFUSED = "wallet.source_refused"  # a 401/403: change the URL or key (D182 (1))
 # „Abruf fehlgeschlagen: der Anbieter hat nicht geantwortet oder eine unlesbare Antwort

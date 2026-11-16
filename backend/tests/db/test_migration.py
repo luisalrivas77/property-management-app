@@ -86,6 +86,8 @@ MIGRATION_TABLES = {
     "chain_decoder",
     "chain_pair",
     "holdings_export",
+    # Phase 6 D260 (migration 0045)
+    "app_secret",
 }
 # Procrastinate's own tables (0005): not RLS'd, no workspace_id (D20). The one exclusion.
 QUEUE_TABLE_PREFIX = "procrastinate_"

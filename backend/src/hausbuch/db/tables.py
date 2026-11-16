@@ -791,6 +791,20 @@ bank_credential = Table(
     _created_at(),
     _updated_at(),
 )
+# Phase 6 D260 (migration 0045): a provider key or URL typed in the app, encrypted.
+app_secret = Table(
+    "app_secret",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("name"),
+    Column("nonce", LargeBinary, nullable=False),
+    Column("ciphertext", LargeBinary, nullable=False),
+    Column("key_version", SmallInteger, nullable=False),
+    _uuid("set_by", nullable=True),
+    _created_at(),
+    _updated_at(),
+)
 bank_sync = Table(
     "bank_sync",
     metadata,
