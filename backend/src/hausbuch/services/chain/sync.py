@@ -158,6 +158,7 @@ from hausbuch.schemas.events import (
     MovementGroupRecorded,
     MovementImportRecorded,
     MovementRecorded,
+    Updated,
     WalletSyncRecorded,
 )
 from hausbuch.schemas.household import (
@@ -179,7 +180,8 @@ from hausbuch.services.chain.base import (
 from hausbuch.services.chain.payee_answers import answered_payee
 from hausbuch.services.context import Actor, CommandContext, new_command
 from hausbuch.services.documents import read_original, type_document, upload_document
-from hausbuch.services.events import append_event
+from hausbuch.services.events import append_event, diff_changes
+from hausbuch.services.prices.assets import asset_for_symbol
 from hausbuch.services.prices.http import SourceError
 from hausbuch.settings import Settings
 from hausbuch.storage import BlobStore
@@ -382,6 +384,51 @@ def chain_asset(ctx: CommandContext, key: AssetKey, leg: ChainLeg | None = None)
         AssetRecorded(kind=AssetKind.CRYPTO, symbol=new.symbol, name=name),
     )
     return ChainAsset(asset_id, new.decimals, new.spam)
+
+
+def adopt_registry(ctx: CommandContext, chain: Chain) -> int:
+    """The chain's assets the registry has learned about since a sync created them, brought
+    up to it (16 Nov 2026; idempotent, run at the start of every sync of the chain): a listed
+    token stored without a symbol (created before its registry row existed, so valued at
+    nothing) gets the row's symbol and name; it and the native coin get their `priced_as`
+    asset when it is missing, the symbol-level coin created from the registry when the
+    workspace has none yet (D180 (3): „created from assets.yaml when missing“), so the daily
+    fetch prices it. The decimals and the spam flag are never touched. One `asset.updated`
+    event per changed row; returns how many rows changed."""
+    a = asset_table.c
+    rows = ctx.conn.execute(
+        select(a.id, a.symbol, a.name, a.decimals, a.contract_address, a.priced_as_asset_id)
+        .where(
+            a.chain == chain.value,
+            a.spam.is_(False),  # never priced (D187)
+            a.symbol.is_(None) | a.priced_as_asset_id.is_(None),
+        )
+        .order_by(a.id)
+    ).all()
+    native = registry().chain(chain).native_symbol
+    changed = 0
+    for row in rows:
+        if row.contract_address is None:
+            symbol, name, coin = row.symbol or native, row.name, native
+        else:
+            token = asset_registry().token(chain, row.contract_address)
+            if token is None or token.decimals != row.decimals:
+                continue  # unlisted, or not the token the registry means: left as it is
+            symbol = row.symbol if row.symbol is not None else token.symbol
+            name = row.name if row.symbol is not None else (token.name or row.name)
+            coin = asset_registry().priced_as(token).symbol
+        priced = row.priced_as_asset_id or asset_for_symbol(ctx, coin)
+        new = {"symbol": symbol, "name": name, "priced_as_asset_id": priced}
+        old = {"symbol": row.symbol, "name": row.name, "priced_as_asset_id": row.priced_as_asset_id}
+        changes = diff_changes(old, new)
+        if not changes:
+            continue
+        ctx.conn.execute(
+            update(asset_table).where(a.id == row.id).values(**new, updated_at=ctx.now)
+        )
+        append_event(ctx, EventType.ASSET_UPDATED, row.id, Updated(changes=changes))
+        changed += 1
+    return changed
 
 
 class _Unstorable(Exception):
@@ -1466,7 +1513,9 @@ def _begin(
             _log(outcome)
             return outcome
         now = clock()
-        native = chain_asset(new_command(conn, workspace_id, actor, now=now), AssetKey(chain=chain))
+        command = new_command(conn, workspace_id, actor, now=now)
+        native = chain_asset(command, AssetKey(chain=chain))
+        adopt_registry(command, chain)  # a token the registry learned since its first sight
         own = _own_of(conn, row.account_id, chain)
         own.setdefault(row.address, _Own(row.id, bytes(row.address_hmac).hex()))
         cursor, caught_up = _last_cursor(conn, address_id)

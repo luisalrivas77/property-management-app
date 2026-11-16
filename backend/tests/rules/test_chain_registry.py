@@ -67,7 +67,7 @@ def test_every_wrap_is_a_registry_token_of_its_native_coin():
 
 def test_tokens_price_as_listed_coins():
     assets = asset_registry()
-    assert len(assets.tokens) == 12
+    assert len(assets.tokens) == 13  # 16 Nov 2026: Ether (Portal) on Solana
     for token in assets.tokens:
         coin = assets.priced_as(token)
         assert coin.symbol == (token.wraps or token.symbol)
