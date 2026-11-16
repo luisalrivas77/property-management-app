@@ -91,6 +91,7 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.exc import DataError, IntegrityError
 
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import chain_decoder as decoder_table
@@ -129,7 +130,13 @@ from hausbuch.schemas.chain import (
 )
 from hausbuch.schemas.common import TAX_YEAR_MIN
 from hausbuch.schemas.document import DocumentTyping
-from hausbuch.schemas.enums import DocumentSource, DocumentSubtype, DocumentType, ImportStatus
+from hausbuch.schemas.enums import (
+    AccountKind,
+    DocumentSource,
+    DocumentSubtype,
+    DocumentType,
+    ImportStatus,
+)
 from hausbuch.schemas.events import (
     AssetRecorded,
     EventType,
@@ -141,6 +148,7 @@ from hausbuch.schemas.events import (
 from hausbuch.schemas.household import (
     AssetKind,
     MovementImportFormat,
+    MovementKind,
     MovementSource,
     MovementStatus,
 )
@@ -459,6 +467,23 @@ def _context(
             )
         )
     }
+    # D183 (3)(b): the hashes the workspace's own exchange withdrawals name, so a token an
+    # exchange sent to an own address is an exchange_transfer, never spam. Read under RLS
+    # like every query here; kept as stored (a base58 signature is case-sensitive; the EVM
+    # classifier lower-cases), held in memory only, never logged or put into an event.
+    exchange_hashes = conn.execute(
+        select(movement_table.c.tx_hash)
+        .distinct()
+        .select_from(
+            movement_table.join(account_table, movement_table.c.account_id == account_table.c.id)
+        )
+        .where(
+            account_table.c.kind == AccountKind.EXCHANGE.value,
+            movement_table.c.kind == MovementKind.INTERNAL_TRANSFER_OUT.value,
+            movement_table.c.tx_hash.is_not(None),
+            movement_table.c.superseded_by.is_(None),
+        )
+    ).scalars()
     return ClassifyContext(
         chain=chain,
         address=address,
@@ -469,6 +494,7 @@ def _context(
         own_address_ids={a: o.id for a, o in own.items()},
         native_asset_id=native_asset_id,
         asset_ids=asset_ids,
+        exchange_hashes=frozenset(h.strip() for h in exchange_hashes if h.strip()),
     )
 
 

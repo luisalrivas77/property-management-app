@@ -21,6 +21,7 @@ from decimal import Decimal
 
 import pytest
 from db.db_support import TEST_IBAN_KEY, _admin, _insert
+from db.test_phase6_migration import _movement
 from db.test_phase7_migration import _chain_movement, _group_row
 from fixture_models_phase7 import load
 from pydantic import SecretStr
@@ -626,6 +627,119 @@ def test_two_base_urls_give_the_same_movements_and_a_replay_needs_no_source(
         assert replayed == {
             h: sorted((m[0], m[1]) for m in legs) for h, (_, _, legs) in stored.items()
         }
+
+
+# --- a token an exchange sent (D183 (3)(b), review finding 1) -----------------------------
+
+
+def _exchange_withdrawals(app_engine, dbname, ws, *tx_hashes: str) -> None:
+    """An own exchange's crypto withdrawals, each naming one of `tx_hashes`, as an import
+    stores them."""
+    with workspace_transaction(app_engine, ws) as conn:
+        ctx = new_command(conn, ws, Actor(ActorType.USER, "user:test"), now=NOW)
+        exchange = create_account(
+            ctx,
+            AccountCreate(
+                label="Börse",
+                bank="BISON",
+                kind=AccountKind.EXCHANGE,
+                provider="BISON",
+                opening_balance=Decimal("0.00"),
+                opening_balance_on=datetime(2026, 1, 1).date(),
+            ),
+            iban_key=TEST_IBAN_KEY,
+        ).id
+    with _admin(dbname) as conn:
+        coin = _insert(
+            conn, "asset", {"workspace_id": ws, "kind": "crypto", "symbol": "XTK", "name": "X"}
+        )
+        for tx_hash in tx_hashes:
+            _insert(
+                conn,
+                "asset_movement",
+                _movement(
+                    ws,
+                    exchange,
+                    coin,
+                    kind="internal_transfer_out",
+                    quantity="-40.0000000000",
+                    eur_amount=None,
+                    source="csv",
+                    network="ETH",
+                    tx_hash=tx_hash,
+                ),
+            )
+
+
+def test_an_unlisted_token_an_exchange_sent_is_an_exchange_transfer_not_spam(
+    dbname, app_engine, blob_store, fresh_workspaces, http
+):
+    """An unlisted ERC-20 credited by a transaction an own exchange withdrawal names is an
+    `exchange_transfer` (D183 (3)(b), before the spam test): proposed until step 5 links it,
+    its asset not spam. Its twin, the same shape with no withdrawal naming it, stays spam,
+    confirmed and hidden. The hash is in no event."""
+    scan, _ = http
+    ws, _ = fresh_workspaces
+    account, ids = _wallet(app_engine, ws)
+    sent, twin = "0x" + "e1" * 20, "0x" + "e2" * 20
+    sent_hash, twin_hash = _hash("invented exchange withdrawal"), _hash("invented twin")
+    for contract, tx_hash, block in ((sent, sent_hash, "21000860"), (twin, twin_hash, "21000861")):
+        scan.chains[ETH_ID]["rows"]["tokentx"].append(
+            {
+                "hash": tx_hash,
+                "blockNumber": block,
+                "timeStamp": "1773760000",
+                "from": "0xb70f11bb61b8bc94b873e7bc2b1f47eea34a158a",  # the exchange's hot wallet
+                "to": ME,
+                "contractAddress": contract,
+                "tokenSymbol": "XTK",
+                "tokenDecimal": "18",
+                "value": str(40 * 10**18),
+                "logIndex": "2",
+            }
+        )
+    native_hash = _hash("invented native withdrawal")
+    scan.chains[ETH_ID]["rows"]["txlist"].append(
+        {
+            "hash": native_hash,
+            "blockNumber": "21000862",
+            "timeStamp": "1773770000",
+            "from": "0xb70f11bb61b8bc94b873e7bc2b1f47eea34a158a",
+            "to": ME,
+            "value": "299500000000000000",
+            "gasUsed": "21000",
+            "gasPrice": "15000000000",
+            "isError": "0",
+            "input": "0x",
+        }
+    )
+    scan.chains[ETH_ID]["native"] += 299_500_000_000_000_000
+    scan.chains[ETH_ID]["tokens"][sent] = 40 * 10**18
+    # stored as the export spelled it (upper-case hex): the classifier compares lower-cased
+    _exchange_withdrawals(
+        app_engine, dbname, ws, sent_hash.upper().replace("0X", "0x"), native_hash
+    )
+
+    _run(app_engine, blob_store, ws, account)
+
+    groups = _groups(dbname, ids[Chain.ETHEREUM])
+    kind, status, legs = groups[sent_hash]
+    assert (kind, status) == ("exchange_transfer", "proposed")
+    assert [(i, k) for i, k, _, _ in legs] == [("2", "internal_transfer_in")]
+    # the native coin too: an exchange_transfer, not a transfer with an unmatched leg, and
+    # proposed like every EVM group until step 5 links it (never confirmed by the hash alone)
+    kind, status, legs = groups[native_hash]
+    assert (kind, status) == ("exchange_transfer", "proposed")
+    assert [(i, k) for i, k, _, _ in legs] == [("value", "internal_transfer_in")]
+    kind, status, legs = groups[twin_hash]
+    assert (kind, status) == ("spam", "confirmed")
+    assert [(i, k) for i, k, _, _ in legs] == [("2", "spam")]
+    spam = dict(_q(dbname, "SELECT contract_address, spam FROM asset WHERE workspace_id = %s", ws))
+    assert spam[sent] is False
+    assert spam[twin] is True
+    events = _q(dbname, "SELECT payload::text FROM event WHERE workspace_id = %s", ws)
+    hashes = (sent_hash[2:], twin_hash[2:], native_hash[2:])
+    assert not [p for (p,) in events if any(h in p.lower() for h in hashes)]
 
 
 # --- a known gap, for the orchestrator (§15.1) --------------------------------------------

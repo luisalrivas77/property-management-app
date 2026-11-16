@@ -687,13 +687,16 @@ def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
     Routing facts: `decoder_listed` when a decoder row decided the kind (the registry's
     wrap); `linked` stays False, also for a transfer between two own addresses, until step 5
     writes the link by hash (D184 (1)): such a group waits for a person once rather than
-    being confirmed on a link nobody has written."""
+    being confirmed on a link nobody has written. That holds for an `exchange_transfer` too:
+    a hash in `ctx.exchange_hashes` decides the kind before the spam test, so a token an
+    exchange sent is never hidden as spam, and the group stays proposed until step 5."""
     group = classify_evm(
         ctx.chain,
         tx,
         ctx.address,
         decoders=[*ctx.decoders, *public_decoders()],
         own=ctx.own_addresses,
+        exchange_hashes=ctx.exchange_hashes,
         held=ctx.held,
     )
     if not group.legs:
