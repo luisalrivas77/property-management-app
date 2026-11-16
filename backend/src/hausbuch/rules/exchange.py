@@ -54,6 +54,10 @@ HALF_CENT = Decimal("0.005")
 # The exchanges whose trade EUR legs code rounds to the cent (Binance writes up to 8
 # decimals); BISON's EUR amounts are taken as given.
 ROUNDS_EUR_LEGS = frozenset({BINANCE})
+# D178 (3), (4): the exchanges whose transaction export lists a withdrawal gross, with no
+# fee, network or hash; its withdrawal history (Binance's Auszahlungsverlauf) completes it.
+# Until then its units are not what arrived (D181 (c) amended 16 Nov 2026, review).
+WITHDRAWALS_COMPLETED_BY_HISTORY = frozenset({BINANCE})
 # D178 (3): the history's row lies within one hour before the transaction history's row.
 WITHDRAWAL_WINDOW = timedelta(hours=1)
 COMPLETED = "Completed"

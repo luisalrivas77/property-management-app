@@ -1687,13 +1687,16 @@ def queue_deposit_lookups(ctx: CommandContext) -> int:
     deposit is written and linked without waiting for the daily run: called after an
     exchange import or a person's answer on an exchange's movement, and by `hausbuch
     relink-chain`. Never calls the node itself (the caller holds a request's transaction).
-    The count of syncs queued."""
+    A wallet whose sync already waits to run gets no second one (enqueue_sync_wallet's
+    `once`). The count of syncs queued."""
     from hausbuch.jobs.sync_wallets import enqueue_sync_wallet
 
-    accounts = wallets_awaiting_deposits(ctx.conn)
-    for account_id in accounts:
-        enqueue_sync_wallet(ctx.conn, workspace_id=ctx.workspace_id, account_id=account_id)
-    return len(accounts)
+    return sum(
+        enqueue_sync_wallet(
+            ctx.conn, workspace_id=ctx.workspace_id, account_id=account_id, once=True
+        )
+        for account_id in wallets_awaiting_deposits(ctx.conn)
+    )
 
 
 # --- The run ---------------------------------------------------------------------------------

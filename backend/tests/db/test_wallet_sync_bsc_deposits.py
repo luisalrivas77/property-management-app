@@ -126,15 +126,23 @@ def node():
 
 
 class Seed:
-    """A wallet with OWN on BSC and an exchange holding plain BNB, written as the superuser."""
+    """A wallet with OWN on BSC and an exchange holding plain BNB, written as the superuser.
+    provider: the exchange's (None: no provider, as BISON's rows behave)."""
 
-    def __init__(self, dbname: str, ws: uuid.UUID, *, address: str = OWN) -> None:
+    def __init__(
+        self, dbname: str, ws: uuid.UUID, *, address: str = OWN, provider: str | None = None
+    ) -> None:
         self.dbname, self.ws = dbname, ws
         with _admin(dbname) as conn:
             self.wallet = _wallet(conn, ws, label="Hardware-Wallet")
             self.address = _address(conn, ws, self.wallet, chain="bsc", address=address)
             self.exchange = _depot(
-                conn, ws, kind="exchange", external_ref_masked="**** 0815", label="Börse"
+                conn,
+                ws,
+                kind="exchange",
+                external_ref_masked="**** 0815",
+                label="Börse",
+                provider=provider,
             )
             self.bnb = _asset(conn, ws, symbol="BNB", name="BNB")
 
@@ -382,6 +390,45 @@ def test_an_import_or_answer_queues_the_wallet_s_sync(dbname, app_engine, fresh_
                 text("SELECT count(*) FROM procrastinate_jobs WHERE task_name = 'sync_wallet'")
             ).scalar_one()
         assert after == before + 1
+    finally:
+        with app_engine.begin() as conn:
+            conn.execute(text("DELETE FROM procrastinate_jobs WHERE task_name = 'sync_wallet'"))
+
+
+def test_two_answers_in_a_row_leave_one_queued_sync(dbname, app_engine, fresh_workspaces, run):
+    """Every exchange answer, import and relink queues the deposit lookup; a wallet whose sync
+    already waits to run gets no second one (review of 16 Nov 2026). „Jetzt abrufen“ still
+    queues its own."""
+    from hausbuch.jobs.sync_wallets import enqueue_sync_wallet
+    from hausbuch.services.exchange import imports
+
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    one = seed.withdrawal(tx_hash=_hash("first answer"), status="proposed")
+    two = seed.withdrawal(tx_hash=_hash("second answer"), status="proposed")
+
+    def waiting():
+        with app_engine.begin() as conn:
+            return conn.execute(
+                text(
+                    "SELECT count(*) FROM procrastinate_jobs WHERE task_name = 'sync_wallet'"
+                    " AND status = 'todo' AND args->>'account_id' = :account"
+                ),
+                {"account": str(seed.wallet)},
+            ).scalar_one()
+
+    try:
+        run(ws, lambda ctx: imports.confirm_movement(ctx, one))
+        run(ws, lambda ctx: imports.confirm_movement(ctx, two))
+        assert waiting() == 1
+        assert run(ws, queue_deposit_lookups) == 0  # the relink's own call: none either
+        run(
+            ws,
+            lambda ctx: enqueue_sync_wallet(
+                ctx.conn, workspace_id=ctx.workspace_id, account_id=seed.wallet
+            ),
+        )
+        assert waiting() == 2  # „Jetzt abrufen“ is unchanged
     finally:
         with app_engine.begin() as conn:
             conn.execute(text("DELETE FROM procrastinate_jobs WHERE task_name = 'sync_wallet'"))
@@ -733,6 +780,7 @@ def test_an_exchange_paired_with_two_addresses_links_nothing_by_code(
     assert third not in {r[0] for r in _links(dbname, ws)}
     card = _cards(read, ws)[third]
     assert card.paired_address_id is None and len(card.own_wallets) == 2
+    assert card.paired_addresses == 2  # the card says why code booked none (review)
 
 
 def test_releasing_a_link_code_wrote_ends_its_deposit(
@@ -764,3 +812,131 @@ def _current_rows(conn):
     from hausbuch.services.transfers import _current_links
 
     return _current_links(conn)
+
+
+# --- Binance: a withdrawal waits for its withdrawal history (review of 16 Nov 2026) ---------
+
+
+def test_a_binance_withdrawal_without_its_history_is_never_booked_to_a_wallet(
+    dbname, app_engine, blob_store, fresh_workspaces, node, run, read
+):
+    """Binance's transaction export lists a withdrawal gross, with no fee, network or hash:
+    nothing is offered or written from it (it would book the fee as coins that arrived); the
+    card names the exchange page's to-do, upload the withdrawal history. Even a learned pair
+    and a balance that would cover it write nothing."""
+    from hausbuch.rules import errors as E
+    from hausbuch.services.errors import RuleViolationError
+
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    first = seed.withdrawal("2.001", fee="0.001", tx_hash=None, network=None)
+    run(ws, _own_wallet(first, seed.address))  # the pair (exchange, OWN) is learned
+    with _admin(dbname) as conn:
+        conn.execute("UPDATE account SET provider = 'Binance' WHERE id = %s", (seed.exchange,))
+    gross = seed.withdrawal(
+        "1.0005", fee=None, tx_hash=None, network=None, at=SENT_AT + timedelta(days=1)
+    )
+
+    card = _cards(read, ws)[gross]
+    assert card.code.value == "transfer.unmatched_leg"
+    assert (card.own_wallets, card.paired_address_id, card.paired_addresses) == ([], None, 0)
+    assert card.history_todo == E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING
+    with pytest.raises(RuleViolationError) as refused:
+        run(ws, _own_wallet(gross, seed.address))
+    assert refused.value.code == E.TRANSFER_LEGS_INVALID
+
+    node.native = 10 * BNB  # would cover it
+    _run(app_engine, blob_store, ws, seed.wallet)
+    assert run(ws, _relink).written == 0
+    assert gross not in {r[0] for r in _links(dbname, ws)}
+    assert sorted(r[4] for r in _deposits(dbname, seed.address)) == [Decimal("2")]
+
+
+def test_the_same_row_on_bison_is_offered_and_booked_as_sent(dbname, fresh_workspaces, run, read):
+    """BISON's export names no fee for a withdrawal it charged none for: the row is the
+    amount that arrived, offered and booked as it stands (unchanged by the review)."""
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws, provider="BISON")
+    row = seed.withdrawal("1.0005", fee=None, tx_hash=None, network=None)
+
+    card = _cards(read, ws)[row]
+    assert [c.address_id for c in card.own_wallets] == [seed.address]
+    assert card.history_todo is None
+    run(ws, _own_wallet(row, seed.address))
+    assert [r[4] for r in _deposits(dbname, seed.address)] == [Decimal("1.0005")]
+
+
+def test_binance_s_history_completes_the_row_then_the_hash_books_the_net_units(
+    dbname, app_engine, blob_store, fresh_workspaces, node, run, read
+):
+    """Through the real upload path: the transaction export's gross row waits (the card says
+    upload the history); the withdrawal history completes it with the network, the fee and
+    the hash (services.exchange.imports._complete_withdrawals); once confirmed, the sync looks
+    the hash up and books what arrived, the amount less the fee, linked by hash."""
+    from db.db_support import TEST_IBAN_KEY
+
+    from hausbuch.rules import errors as E
+    from hausbuch.schemas.bank import AccountCreate
+    from hausbuch.schemas.enums import AccountKind
+    from hausbuch.services.accounts import create_account
+    from hausbuch.services.exchange import imports
+
+    ws, _ = fresh_workspaces
+    seed = Seed(dbname, ws)
+    binance = run(
+        ws,
+        create_account,
+        AccountCreate(
+            label="Binance-Konto",
+            bank="Binance",
+            kind=AccountKind.EXCHANGE,
+            provider="Binance",
+            opening_balance=Decimal("0.00"),
+            opening_balance_on=SENT_AT.date().replace(month=1, day=1),
+        ),
+        iban_key=TEST_IBAN_KEY,
+        now=SENT_AT,
+    ).id
+    tx_hash = _hash("binance bsc withdrawal")
+
+    def upload(text_: str, n: int):
+        return run(
+            ws,
+            imports.import_export,
+            blob_store,
+            binance,
+            text_.replace("\n", "\r\n").encode(),
+            media_type="text/csv",
+            original_filename="export.csv",
+            now=NOW + timedelta(minutes=n),
+        )
+
+    upload(
+        "User ID,Time,Account,Operation,Coin,Change,Remark\n"
+        "123456789,2026-05-04 10:00:00,Spot,Withdraw,BNB,-2.001,Withdraw fee is included\n",
+        0,
+    )
+    [row] = read(ws, imports.exchange_movements, binance)
+    assert (row.quantity, row.fee_quantity, row.tx_hash) == (Decimal("-2.001"), None, None)
+    card = _cards(read, ws)[row.id]
+    assert card.own_wallets == [] and card.history_todo == E.EXCHANGE_WITHDRAWAL_HISTORY_MISSING
+
+    completed = upload(
+        "Time,Coin,Network,Amount,Fee,Address,TXID,Status\n"
+        f"2026-05-04 09:50:00,BNB,BSC,2.000,0.001,{OWN},{tx_hash},Completed\n",
+        1,
+    )
+    assert completed.withdrawals_completed == 1
+    [row] = read(ws, imports.exchange_movements, binance)
+    assert (row.network, row.fee_quantity, row.tx_hash) == ("BSC", Decimal("0.001"), tx_hash)
+    assert row.id not in _cards(read, ws)  # its hash is looked up first, no card
+
+    run(ws, lambda ctx: imports.confirm_movement(ctx, row.id))
+    node.send(tx_hash, OWN, 2 * BNB)
+    node.native = 2 * BNB
+    out = _run(app_engine, blob_store, ws, seed.wallet)
+    assert (out.movements_new, out.reconciled) == (1, True)
+    ((g_hash, *_rest, quantity, status, _m),) = _deposits(dbname, seed.address)
+    assert (g_hash, quantity, status) == (tx_hash, Decimal("2"), "confirmed")
+    ((out_id, _in, matched_by, reason),) = _links(dbname, ws)
+    assert (out_id, matched_by, reason) == (row.id, "matcher", "hash")

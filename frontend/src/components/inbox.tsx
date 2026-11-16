@@ -88,6 +88,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
+import { ruleCodeText } from "@/api/errors";
 import type { Account, Document, ExchangeMovementRow, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
 import type { components } from "@/api/types";
 import { ErrorNotice } from "@/lib/ErrorNotice";
@@ -1118,6 +1119,16 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       }
       if (open.candidates.length > 0) return <TransferPick open={open} accounts={data.accounts} onLinked={onChanged} />;
       if ((open.own_wallets ?? []).length > 0) return <OwnWalletPick open={open} onLinked={onChanged} />;
+      if (open.history_todo) {
+        // D181 (c) amended, review of 16 Nov 2026: Binance's export lists a withdrawal before
+        // its fee, network and hash; its withdrawal history completes it, on the exchange's page.
+        return (
+          <span className="stack">
+            <span>{ruleCodeText(open.history_todo)}</span>
+            <Link href={`/accounts/${open.leg.account_id}`}>Auszahlungsverlauf hochladen</Link>
+          </span>
+        );
+      }
       if (open.leg.amount == null) {
         // Phase 7 step 5: a coin leg's other side is a wallet (added and fetched under Konten)
         // or the exchange's movement, answered on its account's page.
@@ -1459,6 +1470,12 @@ function OwnWalletPick({ open, onLinked }: { open: OpenTransfer; onLinked: () =>
           Abhebungen von {open.leg.account_label} an {paired.account_label} verknüpft die App selbst, sobald der abgerufene Kontostand
           der Wallet sie enthält. Diese wartet, weil der letzte Kontostand sie noch nicht enthält: Wallet abrufen, oder hier selbst
           zuordnen.
+        </p>
+      ) : null}
+      {(open.paired_addresses ?? 0) > 1 ? (
+        <p className="muted">
+          Abhebungen von {open.leg.account_label} sind an {open.paired_addresses} eigene Adressen auf dieser Chain gelernt. Die App
+          kann nicht erkennen, an welche diese ging, und verknüpft sie deshalb nicht selbst: bitte hier zuordnen.
         </p>
       ) : null}
       {wallets.map((wallet) => (

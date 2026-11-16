@@ -9260,6 +9260,15 @@ export interface components {
          *     booked to (POST /transfers/own-wallet-deposit). paired_address_id: the one address the
          *     exchange's withdrawals are learned to arrive on; the app links them itself once the
          *     address's last read balance covers them, so this one waits because it does not yet.
+         *     paired_addresses: how many own addresses on that chain the exchange's withdrawals are
+         *     learned to arrive on; above one the app cannot tell which this one paid, so it links none
+         *     by itself and the person picks (review of 16 Nov 2026).
+         *
+         *     history_todo: on an unmatched withdrawal of an exchange whose withdrawals its withdrawal
+         *     history completes (Binance), the exchange page's to-do (exchange.withdrawal_history_missing
+         *     or exchange.withdrawal_history_no_match, D178 (4)): its transaction export lists the gross
+         *     amount with no fee, network or hash, so nothing is offered until the history completed it
+         *     (review of 16 Nov 2026).
          */
         OpenTransfer: {
             code: components["schemas"]["OpenTransferCode"];
@@ -9275,6 +9284,13 @@ export interface components {
             own_wallets?: components["schemas"]["OwnWalletChoice"][];
             /** Paired Address Id */
             paired_address_id?: string | null;
+            /**
+             * Paired Addresses
+             * @default 0
+             */
+            paired_addresses: number;
+            /** History Todo */
+            history_todo?: string | null;
         };
         /**
          * OpenTransferCode

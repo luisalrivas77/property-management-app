@@ -23716,6 +23716,22 @@
               }
             ],
             "title": "Paired Address Id"
+          },
+          "paired_addresses": {
+            "type": "integer",
+            "title": "Paired Addresses",
+            "default": 0
+          },
+          "history_todo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Todo"
           }
         },
         "additionalProperties": false,
@@ -23727,7 +23743,7 @@
           "window_end"
         ],
         "title": "OpenTransfer",
-        "description": "One leg waiting for its counterpart, with the legs it may be linked to.\n\nown_wallets (D181 (c) amended 16 Nov 2026): on a transfer.unmatched_leg card of an\nexchange's withdrawal to a balance-only chain that no hash can prove (none in the export,\nor the node did not know it a day later), the own addresses on that chain it may be\nbooked to (POST /transfers/own-wallet-deposit). paired_address_id: the one address the\nexchange's withdrawals are learned to arrive on; the app links them itself once the\naddress's last read balance covers them, so this one waits because it does not yet."
+        "description": "One leg waiting for its counterpart, with the legs it may be linked to.\n\nown_wallets (D181 (c) amended 16 Nov 2026): on a transfer.unmatched_leg card of an\nexchange's withdrawal to a balance-only chain that no hash can prove (none in the export,\nor the node did not know it a day later), the own addresses on that chain it may be\nbooked to (POST /transfers/own-wallet-deposit). paired_address_id: the one address the\nexchange's withdrawals are learned to arrive on; the app links them itself once the\naddress's last read balance covers them, so this one waits because it does not yet.\npaired_addresses: how many own addresses on that chain the exchange's withdrawals are\nlearned to arrive on; above one the app cannot tell which this one paid, so it links none\nby itself and the person picks (review of 16 Nov 2026).\n\nhistory_todo: on an unmatched withdrawal of an exchange whose withdrawals its withdrawal\nhistory completes (Binance), the exchange page's to-do (exchange.withdrawal_history_missing\nor exchange.withdrawal_history_no_match, D178 (4)): its transaction export lists the gross\namount with no fee, network or hash, so nothing is offered until the history completed it\n(review of 16 Nov 2026)."
       },
       "OpenTransferCode": {
         "type": "string",

@@ -808,7 +808,16 @@ class OpenTransfer(Schema):
     or the node did not know it a day later), the own addresses on that chain it may be
     booked to (POST /transfers/own-wallet-deposit). paired_address_id: the one address the
     exchange's withdrawals are learned to arrive on; the app links them itself once the
-    address's last read balance covers them, so this one waits because it does not yet."""
+    address's last read balance covers them, so this one waits because it does not yet.
+    paired_addresses: how many own addresses on that chain the exchange's withdrawals are
+    learned to arrive on; above one the app cannot tell which this one paid, so it links none
+    by itself and the person picks (review of 16 Nov 2026).
+
+    history_todo: on an unmatched withdrawal of an exchange whose withdrawals its withdrawal
+    history completes (Binance), the exchange page's to-do (exchange.withdrawal_history_missing
+    or exchange.withdrawal_history_no_match, D178 (4)): its transaction export lists the gross
+    amount with no fee, network or hash, so nothing is offered until the history completed it
+    (review of 16 Nov 2026)."""
 
     code: OpenTransferCode
     leg: TransferLegView
@@ -816,6 +825,8 @@ class OpenTransfer(Schema):
     window_end: date
     own_wallets: list[OwnWalletChoice] = Field(default_factory=list)
     paired_address_id: UUID | None = None
+    paired_addresses: int = 0
+    history_todo: str | None = None
 
 
 class OwnWalletDepositCreate(Schema):

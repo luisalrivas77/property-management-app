@@ -113,6 +113,7 @@ from hausbuch.rules.chain.match_transfer import (
 )
 from hausbuch.rules.chain.registry import registry
 from hausbuch.rules.errors import TRANSFER_LEGS_INVALID, TRANSFER_UNITS_DIFFER
+from hausbuch.rules.exchange import WITHDRAWALS_COMPLETED_BY_HISTORY
 from hausbuch.rules.household.assets import registry as asset_registry
 from hausbuch.rules.review import (
     CHAIN_FIRST_SYNC,
@@ -215,6 +216,9 @@ class _Row:
     address_id: UUID | None = None
     group_chain: Chain | None = None
     counterparty_hmac: bytes | None = field(default=None, repr=False)
+    # the account's provider (an exchange's name, D178 (7)): whether its withdrawals wait for
+    # a withdrawal history (WITHDRAWALS_COMPLETED_BY_HISTORY)
+    provider: str | None = None
 
     @property
     def sends(self) -> bool:
@@ -292,6 +296,7 @@ def _read_legs(
             m.account_id,
             acc.label.label("account_label"),
             acc.kind.label("account_kind"),
+            acc.provider.label("account_provider"),
             m.asset_id,
             a.symbol,
             a.name,
@@ -377,6 +382,7 @@ def _read_legs(
                 counterparty_hmac=(
                     None if r.counterparty_hmac is None else bytes(r.counterparty_hmac)
                 ),
+                provider=r.account_provider,
             )
         )
     return legs
@@ -1508,6 +1514,17 @@ def _native_balance_only_chain(priced: str) -> Chain | None:
     return found[0] if len(found) == 1 else None
 
 
+def _awaits_history(leg: _Row) -> bool:
+    """An exchange's withdrawal its withdrawal history has not completed yet (D178 (4)):
+    no hash, at an exchange whose transaction export names none (Binance)."""
+    return (
+        leg.account_kind is AccountKind.EXCHANGE
+        and leg.kind is MovementKind.INTERNAL_TRANSFER_OUT
+        and leg.tx_hash is None
+        and leg.provider in WITHDRAWALS_COMPLETED_BY_HISTORY
+    )
+
+
 def _own_wallet_chain(leg: _Row, unknown: Iterable[UUID] = ()) -> Chain | None:
     """The balance-only chain an exchange's withdrawal may be booked to by a written deposit,
     or None: a withdrawal (internal_transfer_out) of the chain's native coin that no hash can
@@ -1515,7 +1532,10 @@ def _own_wallet_chain(leg: _Row, unknown: Iterable[UUID] = ()) -> Chain | None:
     was sent (`unknown`, sync.remembered_unknown); a hash not looked up yet waits for the
     lookup, and a withdrawal not completed yet has none. One naming no network (BISON's
     export) names no hash either, and its coin says the chain. A token is never offered: the
-    node's balance of the native coin is what proves a written deposit."""
+    node's balance of the native coin is what proves a written deposit. An exchange whose
+    withdrawals its withdrawal history completes (Binance) is never offered before that: its
+    row is the gross amount with the fee unknown, and the history then brings the hash, so
+    the deposit is looked up by hash (review of 16 Nov 2026)."""
     if (
         leg.account_kind is not AccountKind.EXCHANGE
         or leg.kind is not MovementKind.INTERNAL_TRANSFER_OUT
@@ -1526,7 +1546,7 @@ def _own_wallet_chain(leg: _Row, unknown: Iterable[UUID] = ()) -> Chain | None:
         chain = registry().network(leg.network)
         if not _balance_only(chain) or leg.tx_hash is None or leg.id not in set(unknown):
             return None
-    elif leg.tx_hash is not None:
+    elif leg.tx_hash is not None or _awaits_history(leg):
         return None
     else:
         chain = _native_balance_only_chain(leg.priced)
@@ -1956,6 +1976,7 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
         )
     )
     learned: dict[UUID, list[tuple[UUID, Chain]]] | None = None
+    history: dict[UUID, str | None] = {}
     items: list[OpenTransfer] = []
     for leg in [r for r in world.open() if r.sends]:
         found = world.match(leg, world.receivers(leg))
@@ -1988,14 +2009,24 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
             continue
         own: list[OwnWalletChoice] = []
         paired: UUID | None = None
+        paired_count = 0
+        history_todo: str | None = None
         chain = _own_wallet_chain(leg, unknown) if code is OpenTransferCode.UNMATCHED_LEG else None
         if chain is not None:
             own = _own_wallet_choices(conn, chain)
             if learned is None:
                 learned = _balance_only_pairs(conn)
             targets = [a for a, c in learned.get(leg.account_id, []) if c is chain]
-            if leg.tx_hash is None and len(targets) == 1:
-                paired = targets[0]
+            if leg.tx_hash is None:
+                paired_count = len(targets)
+                if len(targets) == 1:
+                    paired = targets[0]
+        elif code is OpenTransferCode.UNMATCHED_LEG and _awaits_history(leg):
+            if leg.account_id not in history:
+                from ..exchange.imports import withdrawal_history_todo
+
+                history[leg.account_id] = withdrawal_history_todo(conn, leg.account_id)
+            history_todo = history[leg.account_id]
         items.append(
             OpenTransfer(
                 code=code,
@@ -2004,6 +2035,8 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
                 window_end=_window_end(leg),
                 own_wallets=own,
                 paired_address_id=paired,
+                paired_addresses=paired_count,
+                history_todo=history_todo,
             )
         )
     return items
