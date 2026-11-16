@@ -1178,6 +1178,11 @@ def _write(
     read: _Read,
     account_pending: bool = False,
 ) -> SyncOutcome:
+    # The wallet's account row, locked before any live group is read: a person's answer locks
+    # it too (wallet_groups), so a sync never adds a leg under a group just superseded.
+    ctx.conn.execute(
+        select(account_table.c.id).where(account_table.c.id == start.account_id).with_for_update()
+    )
     plans = _plan(ctx, start, read)
     writing = [p for p in plans if p.legs or p.unstorable or p.group.question is not None]
     original = _Original(store, read, max((p.group.occurred_at for p in writing), default=None))

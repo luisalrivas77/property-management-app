@@ -9,6 +9,7 @@ verdict. No household fact; every response is checked for a full address or a tx
 
 import itertools
 import json
+import threading
 from datetime import timedelta
 from decimal import Decimal
 
@@ -34,6 +35,7 @@ from db.test_wallet_sync_bitcoin import (  # noqa: F401  (esplora is a fixture)
 )
 from db.test_wallet_sync_core import ACTOR, SETTINGS
 
+from hausbuch.services.chain import sync as sync_mod
 from hausbuch.services.chain.sync import sync_wallets
 
 pytestmark = pytest.mark.db
@@ -434,3 +436,76 @@ def test_a_refused_run_and_a_missing_key_are_cards(client_a, fresh_workspaces, d
     _private(response.text, OWN, EVM, "esplora.example.invalid", "http")
     state = ok(client_a.get(f"/api/wallets/{account}/state"))
     assert [s["state"] for s in state["statuses"]] == ["key_missing", "key_missing", "refused"]
+
+
+def test_an_answer_during_a_syncs_write_leaves_no_leg_under_a_superseded_group(
+    client_a,
+    fresh_workspaces,
+    esplora,  # noqa: F811
+    app_engine,
+    blob_store,
+    dbname,
+    monkeypatch,
+):
+    """Review finding 3: a sync's write transaction locks the wallet's account row before it
+    reads a transaction's live group, as an answer does, so an answer given while the sync
+    writes waits for it, and the sync never adds a leg under a group the answer superseded."""
+    ws = fresh_workspaces[0]
+    with _admin(dbname) as conn:
+        account = _wallet(conn, ws)
+        _address(conn, ws, account, chain="bitcoin", address=OWN, address_masked="bc1q…rtxz")
+    esplora.records = [record(1, 100, [(STRANGER, 200_000)], [(OWN, 100_000), (SECOND, 50_000)])]
+    esplora.tip = 112
+    ticks = itertools.count()
+
+    def sync():
+        return sync_wallets(
+            app_engine,
+            ws,
+            settings=SETTINGS,
+            store=blob_store,
+            actor=ACTOR,
+            clock=lambda: T0 + timedelta(days=1, seconds=next(ticks)),
+        )
+
+    sync()
+    (card,) = ok(client_a.get(f"/api/wallets/{account}/groups"))
+    with _admin(dbname) as conn:  # a second own address: the next sync adds its leg to tx 1
+        _address(conn, ws, account, chain="bitcoin", address=SECOND, address_masked="bc1q…zqrl")
+
+    seen, go = threading.Event(), threading.Event()
+    real = sync_mod._live_group
+
+    def held(ctx, start, tx_hash):  # the sync pauses right after reading the live group
+        live = real(ctx, start, tx_hash)
+        if live is not None and not seen.is_set():
+            seen.set()
+            go.wait(20)
+        return live
+
+    monkeypatch.setattr(sync_mod, "_live_group", held)
+    syncing = threading.Thread(target=sync)
+    syncing.start()
+    assert seen.wait(30)
+    answered: dict[str, int] = {}
+
+    def answer():
+        # no typed cost: by the time it runs the group holds the second address's leg too
+        response = client_a.post(f"/api/groups/{card['id']}/answer", json={"answer": "gift"})
+        answered["status"] = response.status_code
+
+    answering = threading.Thread(target=answer)
+    answering.start()
+    answering.join(1.0)
+    assert answering.is_alive()  # the answer waits for the sync's write
+    go.set()
+    syncing.join(30)
+    answering.join(30)
+    assert answered["status"] == 200
+    orphans = _rows(
+        dbname,
+        "SELECT m.id FROM asset_movement m JOIN movement_group g ON g.id = m.group_id"
+        " WHERE m.account_id = %s AND m.superseded_by IS NULL AND g.superseded_by IS NOT NULL",
+        account,
+    )
+    assert orphans == []
