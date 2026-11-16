@@ -11,7 +11,11 @@ D178; step 5a). The parsers and the pure rules are `bison_csv`, `binance_csv` an
   each open withdrawal with its network, fee and transaction hash by a new row that
   supersedes the old one (D178 (4)). Each trade's legs are written in one `movement_group`
   of kind swap without a chain (D178 amended (3), migration 0043), so phase 7's lots read the
-  given leg and the fee with the acquisition (D188 (1), (4)).
+  given leg and the fee with the acquisition (D188 (1), (4)). Binance's times are read in
+  the zone its file names name and stored as UTC, the hash kept on the time as written; a
+  file whose names name no zone is read as UTC with the to-do `exchange.time_zone_unknown`,
+  and the same file uploaded again under Binance's own name, or a later export naming its
+  zone, moves that import's rows (D178 amended (4), `services/exchange/times`).
 - `group_stored_trades`: `hausbuch group-exchange-trades`, the same groups for the trades
   imported before 0043, each leg superseded by a grouped row.
 - `declare_holdings`: the balances the exchange shows, typed once per import; Σ movements
