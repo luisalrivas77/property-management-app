@@ -66,6 +66,7 @@ class FakeChain:
         self.missing: set[str] = set()  # listed, but getTransaction answers null (Q-O93)
         self.requests: list[dict] = []
         self.urls: list[str] = []
+        self.block_times: dict[int, int] = {}  # getBlockTime by slot (absent: the RPC has none)
         for record in records:
             self.add(record)
 
@@ -106,7 +107,7 @@ class FakeChain:
             {
                 "signature": signature(r),
                 "slot": r["slot"],
-                "err": r["meta"].get("err"),
+                "err": (r["meta"] or {}).get("err"),
                 "memo": None,
                 "blockTime": r["blockTime"],
                 "confirmationStatus": "finalized",
@@ -120,6 +121,9 @@ class FakeChain:
 
     def _getBalance(self, address, options):  # noqa: N802
         return {"context": {"slot": SLOT}, "value": self.lamports.get(address, 0)}
+
+    def _getBlockTime(self, slot):  # noqa: N802
+        return self.block_times.get(slot)
 
     def _getTokenAccountsByOwner(self, owner, program, options):  # noqa: N802
         value = [

@@ -311,6 +311,19 @@ class SolanaRpc:
         `transfers` instead, and the classifier makes it a card (solana.classify_tx), so one
         record never blocks its address."""
         keys = solana.account_keys(record)
+        if not solana.readable_meta(record):  # an old slot's record with `meta: null`
+            if strict:
+                raise ChainSourceError(E.WALLET_RECORD_UNREADABLE)
+            return ChainTx(
+                hash=solana.signature(record),
+                block=cast(int, record["slot"]),
+                occurred_at=solana.block_time(record),
+                status="ok",
+                fee=None,
+                transfers=[],
+                program_calls=[],  # read with the inner calls, which live in the meta
+                raw=dict(record),
+            )
         payer = bool(keys) and keys[0] in own
         fee = cast(int, cast(Mapping[str, JsonValue], record["meta"])["fee"])
         try:
@@ -681,7 +694,7 @@ class SolanaSource:
             run.served.add(info.signature)
             found = owned_token_accounts(record, address)
             run.accounts.update(found)
-            stored = solana.with_token_accounts(record, run.accounts)
+            stored = solana.with_token_accounts(record, run.accounts, self._when(record, info))
             items.append(self.rpc.chain_tx(stored, {address}, run.accounts, strict=False))
             position = (info.slot, info.signature)
             if run.last is None or position > run.last:
@@ -693,6 +706,14 @@ class SolanaSource:
             for pubkey in sorted(found):
                 self._list(pubkey, run, since)
             run.cut = None
+
+    def _when(self, record: Mapping[str, JsonValue], info: SignatureInfo) -> int | None:
+        """The block time of a record that carries none (an old slot's): the listing's, else
+        getBlockTime's (a slot with none fails the run as the ledger's end, Q-O93)."""
+        if isinstance(record.get("blockTime"), int):
+            return None
+        when = info.block_time or self.rpc.block_time(info.slot)
+        return int(when.timestamp())
 
     def _next(self, run: _Run, cursor: str | None) -> str | None:
         """The cursor after this page (see the class docstring)."""

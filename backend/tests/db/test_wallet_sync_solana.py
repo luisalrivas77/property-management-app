@@ -245,7 +245,7 @@ def test_three_runs_from_a_first_sync_to_the_tip(dbname, chain, wallet, sync, bl
     assert _movements(dbname, account) == want
     groups = _groups(dbname, account)
     assert groups[signature(_record("failed_transaction"))] == ("failed", "confirmed", False)
-    assert groups[signature(_record("swap_listed_amm"))][0] == "swap"
+    assert groups[signature(_record("swap_listed_amm"))] == ("swap", "confirmed", False)
     # one record never blocks its address: it is a card with its question, the rest booked
     assert groups[signature(unreadable)] == ("unknown", "proposed", True)
     (question,) = _rows(

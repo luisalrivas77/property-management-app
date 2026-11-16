@@ -174,8 +174,12 @@ def failed(tx: Mapping[str, JsonValue]) -> bool:
 
 
 def block_time(tx: Mapping[str, JsonValue]) -> datetime:
+    """The record's `blockTime`, else the time the sync's source kept beside it (SYNC_KEY)."""
     value = tx.get("blockTime")
-    if not isinstance(value, int):
+    kept = tx.get(SYNC_KEY)
+    if not isinstance(value, int) and isinstance(kept, Mapping):
+        value = kept.get("block_time")
+    if not isinstance(value, int) or isinstance(value, bool):
         raise ValueError("a finalized transaction carries its blockTime")
     return datetime.fromtimestamp(value, UTC)
 
@@ -849,14 +853,26 @@ def has_ownerless_token_row(record: Mapping[str, JsonValue]) -> bool:
 
 
 def with_token_accounts(
-    record: Mapping[str, JsonValue], accounts: Collection[str]
+    record: Mapping[str, JsonValue], accounts: Collection[str], block_time: int | None = None
 ) -> dict[str, JsonValue]:
     """The record as the sync stores it: with the own token accounts under SYNC_KEY when a
-    token row has no owner, else unchanged."""
+    token row has no owner, and the block's time (from the listing or getBlockTime) when the
+    record carries no `blockTime` (an old slot's); else unchanged."""
     out = dict(record)
+    kept: dict[str, JsonValue] = {}
     if has_ownerless_token_row(record):
-        out[SYNC_KEY] = {"own_token_accounts": sorted(accounts)}
+        kept["own_token_accounts"] = list(sorted(accounts))
+    if not isinstance(record.get("blockTime"), int) and block_time is not None:
+        kept["block_time"] = block_time
+    if kept:
+        out[SYNC_KEY] = kept
     return out
+
+
+def readable_meta(record: Mapping[str, JsonValue]) -> bool:
+    """Whether the record carries its `meta` (fee, balances, error); a very old slot's record
+    may come back with `meta: null`, and such a record is a card (classify_tx)."""
+    return isinstance(record.get("meta"), Mapping)
 
 
 def recorded_token_accounts(record: Mapping[str, JsonValue]) -> list[str] | None:
@@ -928,6 +944,8 @@ def classify_tx(tx: ChainTx, ctx: ClassifyContext) -> ChainGroup | None:
         return decoder_for(Chain.SOLANA, program, method, decoders)
 
     try:
+        if not readable_meta(record):
+            raise _unreadable(record)
         group = classify_solana(
             record,
             {ctx.address},

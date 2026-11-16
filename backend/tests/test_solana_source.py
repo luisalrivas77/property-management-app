@@ -22,7 +22,7 @@ from hausbuch.rules.chain import solana
 from hausbuch.rules.chain.classify import ClassifyContext
 from hausbuch.rules.chain.reconcile import reconcile, sum_balance_parts, sum_movements
 from hausbuch.rules.chain.registry import registry
-from hausbuch.schemas.chain import AssetKey, Chain, ChainSourceKind
+from hausbuch.schemas.chain import AssetKey, Chain, ChainSourceKind, DecoderRow, GroupKind
 from hausbuch.services.chain.base import ChainSourceError, RequestBudget
 from hausbuch.services.chain.solana_rpc import SolanaRpc, SourceCursor, make_source
 from hausbuch.settings import Settings
@@ -350,3 +350,69 @@ def test_a_throttled_provider_is_throttled():
     with pytest.raises(ChainSourceError) as caught:
         _source(chain).balances(A)
     assert caught.value.code == E.WALLET_SOURCE_THROTTLED
+
+
+# --- the sync's classifier over every recorded case ------------------------------------------
+
+
+def _workspace_row(row) -> DecoderRow:
+    """A workspace's decoder row as services/chain/sync._context reads it: no legs, no name."""
+    return DecoderRow(chain=Chain.SOLANA, program=row.program, method=row.method, kind=row.kind)
+
+
+@pytest.mark.parametrize("case", list(CASES.values()), ids=lambda c: c.id)
+def test_classify_tx_replays_every_case(case):
+    """classify_tx, the sync's entry, over each `solana_tx.yaml` record as the source hands
+    it on (chain_tx, not strict) and with a decoder row shaped as the sync reads it: the same
+    kind and legs as the fixture. A provider label is not read (D192), so it changes
+    nothing."""
+    if case.pending:
+        pytest.skip(case.pending)
+    tx = SolanaRpc.chain_tx(case.tx, {case.own}, strict=False)
+    rows = (_workspace_row(AMM_ROW),) if case.decoder_listed else ()
+    ctx = ClassifyContext(
+        chain=Chain.SOLANA, address=case.own, own_addresses=frozenset({case.own}), decoders=rows
+    )
+    group = solana.classify_tx(tx, ctx)
+    assert group.kind is case.expect.group
+    assert _legs(group) == [
+        (m.kind, m.role, m.units, m.mint, m.index) for m in case.expect.movements
+    ]
+    if case.decoder_listed and case.expect.group is GroupKind.SWAP:
+        assert group.decoder_listed  # the workspace row reaches routing (route_group)
+
+
+def test_a_record_without_meta_or_block_time_is_a_card_and_never_blocks_the_address():
+    """An old slot's record may come back with `meta: null` and `blockTime: null`. It is the
+    unreadable card (no legs, its question), placed in time by getBlockTime and that time kept
+    beside the record, and the address's other transactions are served as usual."""
+    old = _record("native_receive")
+    old["transaction"]["signatures"] = ["3oLdRec0rdW1th0utMetaInv3nted" + "1" * 59]
+    old["slot"] = 300_000_001
+    old["meta"] = None
+    old["blockTime"] = None
+    chain = _chain("native_receive", "spl_out")
+    chain.add(old)
+    chain.block_times[300_000_001] = 1_767_225_600
+    items, _ = _read_all(_source(chain), A)
+    assert {signature(_record(i)) for i in ("native_receive", "spl_out")} <= {
+        tx.hash for tx in items
+    }
+    (first,) = [tx for tx in items if tx.hash == signature(old)]
+    assert first.raw[solana.SYNC_KEY] == {"block_time": 1_767_225_600}
+    assert first.transfers == [] and first.fee is None
+    group = solana.classify_tx(_replay(_stored(first)), _ctx())
+    assert (group.kind, group.legs, group.question) == (
+        GroupKind.UNKNOWN,
+        [],
+        solana.QUESTION_UNREADABLE,
+    )
+    assert group.occurred_at.timestamp() == 1_767_225_600
+
+
+def test_a_slot_without_any_block_time_fails_the_run_as_the_ledger_s_end():
+    old = _record("native_receive")
+    old["blockTime"] = None
+    with pytest.raises(ChainSourceError) as caught:
+        _read_all(_source(FakeChain([old])), A)
+    assert caught.value.code == E.WALLET_SOURCE_FAILED
