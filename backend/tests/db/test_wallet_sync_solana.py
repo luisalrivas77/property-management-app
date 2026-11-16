@@ -406,7 +406,8 @@ def test_a_first_sync_cut_short_stores_all_306_transactions(dbname, chain, walle
     assert set(_groups(dbname, account)) == {signature(rec) for rec in records}
     again = sync(ws, a)
     assert not again.deferred and again.movements_new == 0
-    cursors = _rows(dbname, "SELECT cursor_after FROM wallet_sync WHERE address_id = %s", a)
+    query = "SELECT cursor_after FROM wallet_sync WHERE address_id = %s ORDER BY started_at"
+    cursors = _rows(dbname, query, a)  # in run order: cursors[0] is the cut run's
     assert len({c for (c,) in cursors[1:]}) == 1  # the tip: unchanged by the last run
     assert all(closed not in (c or "") for (c,) in cursors)
 
