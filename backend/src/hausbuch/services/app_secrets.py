@@ -304,6 +304,15 @@ def workspace_settings(
     return dataclasses.replace(settings, **changes) if changes else settings
 
 
+def ai_available(conn: Connection, settings: Settings) -> bool:
+    """The AI layer is on and the workspace has an Anthropic key that reads (typed, else the
+    container's), so a queued job can call the model."""
+    if not settings.ai_enabled:
+        return False
+    names = [N.ANTHROPIC_API_KEY]
+    return bool(workspace_settings(conn, settings, names, unreadable="unset").anthropic_api_key)
+
+
 # --- The card --------------------------------------------------------------------------------
 
 

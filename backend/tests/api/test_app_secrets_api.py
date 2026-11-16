@@ -189,3 +189,18 @@ def test_the_settings_page_and_the_inbox_address_read_the_typed_values(client_a,
         "label": "Hausbuch",
     }
     assert PASSWORD not in address.text
+
+
+def test_the_ai_button_opens_with_a_typed_key_alone(
+    app_engine, sessions, tmp_path, blob_store, client_a
+):
+    settings = make_settings(tmp_path, ai_enabled=True, anthropic_api_key=None)
+    app = create_app(settings, app_engine, blob_store, FakeResolver(sessions), worker=None)
+    client = client_for(app, TOKEN_A)
+    try:
+        refused = ok(client.post("/api/inbox/ai-retry"), 422)
+        assert refused["code"] == E.AI_DISABLED
+        ok(client.put("/api/app-secrets/anthropic_api_key", json={"value": "sk-ant-typed-1"}))
+        assert ok(client.post("/api/inbox/ai-retry"))["queued"] == 0  # nothing unmatched yet
+    finally:
+        client.close()

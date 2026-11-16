@@ -4,6 +4,8 @@ a key share its answers, and a typed key that no longer decrypts prices that wor
 from Kraken alone, never with the container's key. Over the recorded files of
 test_services_prices_fetch; invented keys only."""
 
+# ruff: noqa: F811  (the imported fixtures are parameters)
+
 import dataclasses
 import logging
 

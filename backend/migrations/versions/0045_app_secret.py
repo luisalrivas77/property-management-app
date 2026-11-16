@@ -69,7 +69,8 @@ CREATE TABLE app_secret (
     UNIQUE (workspace_id, name)
 );
 COMMENT ON TABLE app_secret IS
-    'D260: a provider key, URL or service setting typed in the app, AES-256-GCM under a key derived from the '
+    'D260: a provider key, URL or service setting typed in the app, AES-256-GCM under a key '
+    'derived from the '
     'session key (never stored here); AAD = workspace id + name. Replaced in place and '
     'deleted by a person: a secret, not history.';
 

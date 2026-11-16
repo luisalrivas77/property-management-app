@@ -31,7 +31,8 @@ import procrastinate
 from sqlalchemy import Engine
 from sqlalchemy.engine import make_url
 
-from hausbuch.ai.client import AnthropicModelClient, ModelClient
+from hausbuch.ai.client import ModelClient
+from hausbuch.ai.per_workspace import WorkspaceModelClients
 from hausbuch.settings import Settings
 from hausbuch.storage import BlobStore
 
@@ -181,12 +182,11 @@ def build_worker(
     connector_kwargs: dict | None = None,
     clock: Callable | None = None,
 ) -> JobWorker:
-    """The production worker. With the AI layer off there is no model client and every
-    document_read ends at gate 1 (ai.disabled); the worker still runs the queue."""
-    if model_client is None and settings.ai_enabled and settings.anthropic_api_key:
-        model_client = AnthropicModelClient(
-            settings.anthropic_api_key, timeout_s=settings.ai_timeout_s
-        )
+    """The production worker. Each job resolves its workspace's model client when it runs
+    (phase 6 D260: a key typed in the app wins over HAUSBUCH_ANTHROPIC_API_KEY); with the AI
+    layer off or no key there is none and every document_read ends at gate 1 (ai.disabled);
+    the worker still runs the queue. A `model_client` handed in serves every workspace."""
+    model_clients = None if model_client is not None else WorkspaceModelClients(settings)
     connector = procrastinate.PsycopgConnector(
         conninfo=procrastinate_conninfo(settings.database_url),
         min_size=1,
@@ -199,6 +199,7 @@ def build_worker(
         settings=settings,
         blob_store=blob_store,
         model_client=model_client,
+        model_clients=model_clients,
         **({"clock": clock} if clock is not None else {}),
     )
     return JobWorker(

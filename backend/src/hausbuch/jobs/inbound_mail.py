@@ -214,6 +214,8 @@ def run_poll_inbox(
         return result
     with workspace_transaction(deps.engine, ws) as conn:
         settings = inbox_settings(conn, deps.settings)
+        if configured(settings):
+            deps = deps.with_client(conn)  # an attachment is read only with a model client
     if not configured(settings):
         return PollResult("not_configured")  # silent: the switch is the settings, not a fault
     if imaplib.Debug:
