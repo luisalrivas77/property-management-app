@@ -25,6 +25,7 @@ from hausbuch.rules.errors import (
     WALLET_UNRECONCILED,
 )
 from hausbuch.rules.review import route_group
+from hausbuch.schemas.allocation import Routing, RoutingDecision
 from hausbuch.schemas.chain import (
     AssetKey,
     Chain,
@@ -34,6 +35,7 @@ from hausbuch.schemas.chain import (
     DecoderKind,
     DecoderRow,
     GroupKind,
+    GroupRoutingInput,
 )
 from hausbuch.schemas.household import MovementKind
 from hausbuch.services.chain.base import (
@@ -146,6 +148,21 @@ def test_reconcile_by_asset_key():
 def test_route_group(case):
     assert case.pending is None
     assert route_group(case.item) == case.expect
+
+
+@pytest.mark.parametrize("kind", [GroupKind.UNKNOWN, GroupKind.TRANSFER, GroupKind.CONTRACT_CALL])
+@pytest.mark.parametrize("first_sync", [False, True])
+def test_a_fee_alone_with_a_question_waits_for_its_answer(kind, first_sync):
+    """A Solana record no reader can place is a card that keeps its fee leg: a fee alone is
+    booked by code (D186 (1)), but never one that asks a question, or the card would vanish.
+    The same group without a question (EVM's approval, Bitcoin's or Solana's closed account)
+    is still booked."""
+    asking = GroupRoutingInput(kind=kind, fee_only=True, question=True, first_sync=first_sync)
+    assert route_group(asking).decision is RoutingDecision.REVIEW
+    plain = GroupRoutingInput(kind=kind, fee_only=True, first_sync=first_sync)
+    assert route_group(plain) == Routing(
+        decision=RoutingDecision.AUTO_CONFIRM, reason="routing.deterministic"
+    )
 
 
 def test_no_core_case_left_pending():

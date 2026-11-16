@@ -80,10 +80,11 @@ import json
 import logging
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Connection, Engine, and_, cast, exists, func, insert, null, select, update
@@ -163,7 +164,7 @@ from hausbuch.services.chain.base import (
 )
 from hausbuch.services.chain.payee_answers import answered_payee
 from hausbuch.services.context import Actor, CommandContext, new_command
-from hausbuch.services.documents import type_document, upload_document
+from hausbuch.services.documents import read_original, type_document, upload_document
 from hausbuch.services.events import append_event
 from hausbuch.services.prices.http import SourceError
 from hausbuch.settings import Settings
@@ -564,11 +565,21 @@ def _host(source: ChainSource) -> str:
 # --- Step 2: read ----------------------------------------------------------------------------
 
 
-def _read(source: ChainSource, start: _Start, ctx: ClassifyContext, budget: RequestBudget) -> _Read:
+def _read(
+    source: ChainSource,
+    start: _Start,
+    ctx: ClassifyContext,
+    budget: RequestBudget,
+    stored: Callable[[], Iterator[dict[str, Any]]] | None = None,
+) -> _Read:
     out = _Read(cursor=start.cursor)
     seen: set[str] = set()
+    # A source that `reads_stored` (Solana: the own token accounts earlier runs found) is
+    # handed the address's stored records, which it reads only when it needs them.
+    asks = stored is not None and getattr(source, "reads_stored", False)
+    extra = {"stored": stored} if asks else {}
     while True:
-        page = source.transactions(start.address, out.cursor)
+        page = source.transactions(start.address, out.cursor, **extra)
         for tx in page.items:
             out.txs.append(tx)
             if tx.hash in seen:
@@ -708,8 +719,37 @@ def _route(start: _Start, group: ChainGroup):
             linked=group.linked,
             pair_learned=group.pair_learned,
             unregistered_output=group.unregistered_output,
+            question=group.question is not None,
         )
     )
+
+
+def _stored_records(
+    engine: Engine, workspace_id: UUID, store: BlobStore, address_id: UUID
+) -> Callable[[], Iterator[dict[str, Any]]]:
+    """The address's stored originals, every record as the runs kept it, read on demand in a
+    transaction of its own (a source that `reads_stored` asks once per run at most), one
+    original at a time and one record at a time, so a long history is never held whole.
+    Nothing read here is logged or put into an event."""
+
+    def load() -> Iterator[dict[str, Any]]:
+        with workspace_transaction(engine, workspace_id) as conn:
+            documents = conn.execute(
+                select(sync_table.c.document_id)
+                .where(
+                    sync_table.c.address_id == address_id,
+                    sync_table.c.document_id.is_not(None),
+                )
+                .order_by(sync_table.c.started_at, sync_table.c.id)
+            ).scalars()
+            for document_id in list(documents):
+                original = read_original(conn, store, document_id)
+                for line in original.splitlines():
+                    if line.strip():
+                        yield json.loads(line)
+                del original
+
+    return load
 
 
 @dataclass(slots=True)
@@ -1420,7 +1460,8 @@ def sync_address(
         return begun
     start, source, ctx, budget = begun
     try:
-        read = _read(source, start, ctx, budget)
+        stored = _stored_records(engine, workspace_id, store, start.address_id)
+        read = _read(source, start, ctx, budget, stored)
     except ChainSourceError as exc:
         return _fail(engine, workspace_id, actor, clock, start, exc.code, 0, exc)
     except SourceError as exc:

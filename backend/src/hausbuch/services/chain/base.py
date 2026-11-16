@@ -33,6 +33,13 @@ found as `make_source` in `services/chain/<kind>.py` (`solana_rpc.py`, `evm_ethe
   the account's movements on the chain against Σ `balances(a)` over every active own address
   `a` of the account on that chain (Bitcoin: a spend's movements sit on its first input's
   address while its change lands on another own address, fixture `bitcoin_two_addresses`);
+- may set `reads_stored = True`: the sync then passes `transactions(address, cursor,
+  stored=...)`, a callable giving an iterator over the address's stored originals as records
+  (the NDJSON lines of every `wallet_sync.document_id` of the address, one original at a time,
+  read in a transaction of its own only when the source calls it and iterates it), for what
+  earlier runs found that the chain no longer lists from
+  the address (Solana: its closed token accounts, SolanaSource); nothing read from it may go
+  into a cursor, an event or a log;
 - may set `reads_tokens = True`: the sync then calls `balances(a, tokens=...)` with every
   non-spam token `a` has movements in (stored, or read in the same run), and the source reads
   those balances besides its own list (EVM over Etherscan, so a token the registry does not

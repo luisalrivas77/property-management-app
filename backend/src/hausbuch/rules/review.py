@@ -318,8 +318,10 @@ def route_group(item: GroupRoutingInput) -> Routing:
     group and a fee alone are booked; a wallet's first sync waits for a person, then a Bitcoin
     output to an unregistered address; a transfer is booked once linked, a wrap once its
     decoder is listed, a swap or reward once listed and priced (a swap only between registry
-    assets), a bridge once its pair is learned and linked; everything else waits."""
-    if item.kind in (GroupKind.FAILED, GroupKind.SPAM) or item.fee_only:
+    assets), a bridge once its pair is learned and linked; everything else waits. A group of a
+    fee alone that asks a question (a Solana record it cannot read in full) is never booked as
+    „a fee“: it waits for the person's answer like any other card."""
+    if item.kind in (GroupKind.FAILED, GroupKind.SPAM) or (item.fee_only and not item.question):
         return Routing(decision=RoutingDecision.AUTO_CONFIRM, reason=DETERMINISTIC)
     auto = Routing(decision=RoutingDecision.AUTO_CONFIRM, reason=DETERMINISTIC)
     if item.first_sync:

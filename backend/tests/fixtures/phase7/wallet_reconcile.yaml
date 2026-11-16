@@ -38,7 +38,6 @@ cases:
   # §9: the main account holds 1 SOL and two token accounts 0.002 SOL of rent each → the SOL
   # compared is 1.004; the USDC is the sum over both token accounts.
   - id: solana_rent_in_token_accounts
-    pending: "phase 7 step 2 (rules/chain/reconcile)"
     chain: solana
     movements:
       - {asset: SOL, units: 2500000000, status: confirmed}
