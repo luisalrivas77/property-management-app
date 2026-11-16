@@ -13,11 +13,23 @@
 // `?kurs=<asset id>` opens the price card for one asset: „Kursquelle wählen“ (a coin's CoinGecko
 // id and Kraken pair, PATCH /assets/{id}) and „Kurs eintragen“ (POST /assets/{id}/prices). The
 // two price cards on Zu prüfen link here.
+//
+// A wallet whose read movements wait for a person (a first sync proposes the whole history) is
+// counted nowhere yet: its line names the coins not yet counted and links „Transaktionen prüfen“
+// on the wallet's page, inside the wallet's card, or on its own while nothing is confirmed
+// (16 Nov 2026).
 import Link from "next/link";
 import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { AssetRow, AssetsOverview, OverviewAccount, OverviewPosition, PriceLabel } from "@/api/schemas";
+import type {
+  AssetRow,
+  AssetsOverview,
+  OverviewAccount,
+  OverviewPosition,
+  PriceLabel,
+  WalletWaiting,
+} from "@/api/schemas";
 import { formatDate, formatDecimal, formatMoney, todayIso } from "@/components/format";
 import { decimalInput, toDecimalString } from "@/components/input";
 import { ACCOUNT_KIND, ASSET_KIND, PRICE_SOURCE } from "@/components/labels";
@@ -44,16 +56,22 @@ export function OverviewTab({ priceFor, priceDay = null }: { priceFor: string | 
 
 function Overview({ data }: { data: AssetsOverview }) {
   const accounts = data.accounts ?? [];
+  const waiting = data.waiting ?? [];
+  const withRow = new Set(accounts.map((account) => account.account_id));
+  const alone = waiting.filter((line) => !withRow.has(line.account_id));
   if (accounts.length === 0) {
     return (
-      <section className="card stack">
-        <h2>Positionen</h2>
-        <p className="muted">
-          Noch keine Anlagen gebucht. Legen Sie unter <Link href="/accounts">Konten</Link> ein Depot an und laden Sie seine
-          Abrechnungen und Berichte unter <Link href="/documents">Dokumente</Link> hoch; jede Position erscheint hier mit ihrem
-          Tageskurs.
-        </p>
-      </section>
+      <>
+        <WaitingNotices lines={alone} />
+        <section className="card stack">
+          <h2>Positionen</h2>
+          <p className="muted">
+            Noch keine Anlagen gebucht. Legen Sie unter <Link href="/accounts">Konten</Link> ein Depot an und laden Sie seine
+            Abrechnungen und Berichte unter <Link href="/documents">Dokumente</Link> hoch; jede Position erscheint hier mit ihrem
+            Tageskurs.
+          </p>
+        </section>
+      </>
     );
   }
   const kinds = Object.entries(data.by_kind ?? {}).filter(([, value]) => value != null);
@@ -75,8 +93,13 @@ function Overview({ data }: { data: AssetsOverview }) {
       {(data.unvalued_positions ?? 0) > 0 || (data.stale_positions ?? 0) > 0 ? (
         <Notice>{coverageText(data.unvalued_positions ?? 0, data.stale_positions ?? 0)}</Notice>
       ) : null}
+      <WaitingNotices lines={alone} />
       {accounts.map((account) => (
-        <AccountPositions key={account.account_id} account={account} />
+        <AccountPositions
+          key={account.account_id}
+          account={account}
+          waiting={waiting.find((line) => line.account_id === account.account_id) ?? null}
+        />
       ))}
       <p className="muted hint">{ATTRIBUTION}</p>
     </>
@@ -103,7 +126,20 @@ function coverageText(unvalued: number, stale: number): string {
   return `${parts.join("; ")}. Bei der Position steht, was zu tun ist.`;
 }
 
-function AccountPositions({ account }: { account: OverviewAccount }) {
+/** A wallet's coins read but not yet confirmed, with the link that confirms them (principle 7). */
+export function WaitingNotices({ lines }: { lines: WalletWaiting[] }) {
+  return (
+    <>
+      {lines.map((line) => (
+        <Notice key={line.account_id}>
+          {line.text} <Link href={line.href}>{line.action}</Link>
+        </Notice>
+      ))}
+    </>
+  );
+}
+
+function AccountPositions({ account, waiting }: { account: OverviewAccount; waiting: WalletWaiting | null }) {
   return (
     <section className="card stack" aria-label={`Positionen ${account.label}`}>
       <div className="planning-card-head">
@@ -114,6 +150,7 @@ function AccountPositions({ account }: { account: OverviewAccount }) {
         <span className="spacer" />
         <strong>{formatMoney(account.value_eur)}</strong>
       </div>
+      <WaitingNotices lines={waiting ? [waiting] : []} />
       <div className="table-wrap">
         <table>
           <thead>

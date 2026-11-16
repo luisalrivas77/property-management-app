@@ -6,7 +6,7 @@ import { apiCall, expect, test } from "./support";
 test("switching on Mieterdokumente is saved and recorded as one event", async ({ page, signedIn }) => {
   void signedIn;
   await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Einstellungen" }).click();
-  await expect(page.getByRole("heading", { name: "KI" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "KI", level: 2 })).toBeVisible();
 
   const tenantDocuments = page.getByRole("switch", { name: "Mieterdokumente von der KI lesen lassen" });
   const autoAccept = page.getByRole("switch", { name: "KI-Zuordnungen automatisch bestätigen" });

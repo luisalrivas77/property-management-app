@@ -84,6 +84,7 @@ from hausbuch.services.depot import _movements as depot_movements
 from hausbuch.services.depot import latest_report_agreement
 from hausbuch.services.events import append_event, diff_changes
 from hausbuch.services.lookup import require_row
+from hausbuch.services.wallet_groups import waiting
 
 from .assets import FundSource, NavSource, fund_source, nav_source, price_ids, stored_nav_sources
 from .fetch import STREAK_WINDOW_DAYS, failure_runs, fund_notes, held_subquery
@@ -219,6 +220,8 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
     ).all()
     if not accounts:
         return AssetsOverview(on=on, total_eur=Decimal("0.00"))
+    # A wallet's read movements that wait for a person count nowhere below (16 Nov 2026).
+    pending = waiting(conn, on)
     end = datetime.combine(on + timedelta(days=1), datetime.min.time(), UTC)
     units = conn.execute(
         select(m.account_id, m.asset_id, func.sum(m.quantity).label("units"))
@@ -348,6 +351,7 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
         by_kind=dict(by_kind),
         stale_positions=stale,
         unvalued_positions=unvalued,
+        waiting=pending,
     )
 
 
