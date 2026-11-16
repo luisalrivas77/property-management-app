@@ -136,7 +136,10 @@ connection is signed under a key derived from it, so the next sync discards it a
 under another key derived from it, so after a new session key the Bankabruf card says they no
 longer read: type the Anmeldename again in „Zugang ändern“ (change access) and the PIN with
 „PIN ändern“ (change PIN) on each connection's card. A PIN kept as a container variable is not
-affected.
+affected. The same holds for every key, address and mail setting typed under Einstellungen ›
+Zugangsschlüssel (phase 6 D260): the card then says „Kann nicht gelesen werden“ for each, and
+each must be typed again with „Ändern“; until then it counts as not set, never as the
+container variable of the same name.
 
 ## Step 1: Project and region
 
@@ -516,6 +519,13 @@ curl -i https://<api-container-endpoint>/healthz      # 200 {"status":"ok","work
 
 The last two columns are your computer's `~/.hausbuch-owner.env`, not anything at Scaleway.
 
+Since 16 Nov 2026 (phase 6 D260) the provider values of steps 13 to 19 (the Anthropic key, the
+FinTS product id, the three TEM values, the four inbox values, the CoinGecko key and the chain
+keys and RPC URLs) can instead be typed in the app under Einstellungen › Zugangsschlüssel; a
+typed value wins over the variable here. The database URL, the session key, the IBAN key and
+the owner URL cannot: the app needs the first two to reach and decrypt the typed values at all,
+the IBAN key keys every stored hash, and the owner URL never belongs on the server.
+
 | Variable | `hausbuch-api` | `hausbuch-web` | migrate (your computer) | bootstrap / invite (your computer) |
 | --- | --- | --- | --- | --- |
 | `HAUSBUCH_DATABASE_URL` | **secret**: app role, private IP | — | — | — |
@@ -621,8 +631,22 @@ spouse joins from the app: Einstellungen → "Mitglied einladen".
 ## Step 13: The Claude API key (phase 2, AI pre-fill)
 
 Phase 2 reads uploaded documents with the Claude API (phase-2.md §5, §11.3). The API key is
-the only new secret. It is never in the database, the repository, a log line, an `ai_call`
-row or the frontend; `Settings` hides it in `repr` like the other secrets.
+the only new secret. It is never in the repository, a log line, an `ai_call` row or the
+frontend, and in the database only encrypted when typed in the app (below); `Settings` hides
+it in `repr` like the other secrets.
+
+**Or type it in the app (since 16 Nov 2026, phase 6 D260).** Hausbuch app, Einstellungen ›
+Zugangsschlüssel (API keys), group „KI“: press „Eintragen“ (enter) beside „Anthropic-API-Schlüssel (Claude)“, paste
+the value and „Speichern“ (save). No redeploy is needed: the value is stored encrypted in the
+database under a key derived from `HAUSBUCH_SESSION_KEY`, takes effect at the next use, wins
+over the container variable of the same name, and „Löschen“ (delete) falls back to the
+variable. A secret is never shown again; the card says only where the value comes from („In
+der App gespeichert“, „Aus der Server-Konfiguration“, „Nicht gesetzt“, or „Kann nicht gelesen
+werden“ after the session key changed, when it must be typed again). The container variable
+below stays the alternative.
+
+`HAUSBUCH_AI_ENABLED=true` (point 4) is still a container variable: the switch stays with
+the operator.
 
 **Order: migration `0005` first.** It adds the job queue's tables, `ai_call` and
 `proposal`. Run it from your computer exactly as in step 9, from the commit of the step 1
@@ -645,8 +669,10 @@ image, **before** deploying that image (as with `0004`). `alembic current` must 
    as its value.
 4. **API container** (step 10): add the secret environment variable
    `HAUSBUCH_ANTHROPIC_API_KEY`, pasting the secret's value (containers cannot read Secret
-   Manager directly), and the plain variable `HAUSBUCH_AI_ENABLED=true`. The container
-   refuses to start with `HAUSBUCH_AI_ENABLED=true` and no key. Leave `HAUSBUCH_RUN_WORKER`
+   Manager directly), and the plain variable `HAUSBUCH_AI_ENABLED=true`. If the key is typed
+   in the app instead, set only `HAUSBUCH_AI_ENABLED=true`. Since D260 the container starts
+   with `HAUSBUCH_AI_ENABLED=true` and no key anywhere; every read then ends as „nicht
+   eingerichtet“ (`ai.disabled`) and can be read again once the key is in. Leave `HAUSBUCH_RUN_WORKER`
    at `true`: the reading job runs in this container.
 5. **Redeploy** the container and check that the worker is up:
 
@@ -665,7 +691,9 @@ image, **before** deploying that image (as with `0004`). `alembic current` must 
 
 1. create a new key in the `hausbuch` Console workspace;
 2. add it to `hausbuch-anthropic-api-key` as a **new secret version**;
-3. paste it into the container's `HAUSBUCH_ANTHROPIC_API_KEY`;
+3. paste it into the container's `HAUSBUCH_ANTHROPIC_API_KEY` (or, if the key lives in the
+   app, „Ändern“ on Einstellungen › Zugangsschlüssel, no redeploy, and skip point 4's
+   redeploy);
 4. redeploy, and check `/healthz` and one upload as above;
 5. **delete the old key** in the Console. Do this last, so the running container never holds
    a revoked key.
@@ -687,8 +715,10 @@ registration number the Deutsche Kreditwirtschaft (DK) sends after the product r
 Neither is ever in a job, an event, a log line, an answer of the API or the repository, and
 neither is ever stored in readable form.
 
-**Where they live.** The **product id** is a secret environment variable of the API
-container. The **PIN** is, since 15 Nov 2026 (phase 6 D196), typed into the Bankabruf card
+**Where they live.** The **product id** is typed in the app since 16 Nov 2026 (phase 6
+D260: Einstellungen › Zugangsschlüssel, group „Bank“, „FinTS-Produkt-ID“, stored encrypted,
+no redeploy), or a secret environment variable of the API container; the typed one wins.
+The **PIN** is, since 15 Nov 2026 (phase 6 D196), typed into the Bankabruf card
 in the app (field „PIN (Online-Banking)“, button „PIN speichern“, save PIN): the API stores
 it encrypted in the database under a key derived from `HAUSBUCH_SESSION_KEY` and never shows
 it again. Setting it as a container variable instead (`HAUSBUCH_FINTS_PIN`) still works; a
@@ -709,10 +739,12 @@ recoverable record of the values; it is not a step, and the container never read
 2. **Subscribe to the DK's bank list** (the FinTS institute list the DK offers to
    registered products, sent by email when it changes). It is how you learn that the
    Sparkasse's FinTS address moved before a sync fails with `bank.unreachable`.
-3. **API container** (step 10): add `HAUSBUCH_FINTS_PRODUCT_ID` as a **secret environment
-   variable**, then **redeploy**. The product id alone is enough (D196); the container still
-   refuses to start with a PIN variable (`HAUSBUCH_FINTS_PIN`, or another login's from step
-   17) and no product id. If you keep the PIN as a variable instead of typing it in point 4,
+3. **The product id**: type it in the app (Einstellungen › Zugangsschlüssel › Bank,
+   „Eintragen“ beside „FinTS-Produkt-ID“; no redeploy), **or** add
+   `HAUSBUCH_FINTS_PRODUCT_ID` to the API container (step 10) as a **secret environment
+   variable** and **redeploy**. The product id alone is enough (D196). Since D260 the
+   container also starts with a PIN variable and no product id, since the id may be typed in
+   the app; a sync with neither fails with `bank.not_configured`. If you keep the PIN as a variable instead of typing it in point 4,
    add `HAUSBUCH_FINTS_PIN` in the same update. A product id that is longer than 25
    characters does not stop the container; every sync fails with `bank.not_configured`
    instead. `HAUSBUCH_RUN_WORKER` stays `true`: the sync is a job of this container's worker.
@@ -804,14 +836,16 @@ FinTS address with the bank's website and the DK list.
 **Rotation**: a new **PIN** (changed in online banking) goes into the card the same day with
 „PIN ändern“, no redeploy (or, if it lives there, into `HAUSBUCH_FINTS_PIN` with a redeploy),
 or every sync fails with `bank.refused`. A new **product id** (the DK re-registers a product version) goes into
-`HAUSBUCH_FINTS_PRODUCT_ID`. If you keep a copy in Secret Manager, add a new version there
+the app („Ändern“ on Einstellungen › Zugangsschlüssel) or `HAUSBUCH_FINTS_PRODUCT_ID`,
+wherever it lives now. If you keep a copy in Secret Manager, add a new version there
 too. Changing the FinTS address or the Anmeldename on the page (Zugang ändern) drops the
 stored connection, so the next sync asks for an approval again; so does a new
 `HAUSBUCH_SESSION_KEY`, which also makes every PIN and Anmeldename typed into the app
 unreadable until typed again (D196).
 
-**To switch the sync off**, remove the product id and every PIN variable (this one and
-step 17's) in one update and redeploy: every start is then refused with
+**To switch the sync off**, delete a product id typed in the app („Löschen“ on
+Einstellungen › Zugangsschlüssel), and remove the product id and every PIN variable (this
+one and step 17's) in one update and redeploy: every start is then refused with
 `bank.not_configured` and the bank is never contacted. PINs typed into the app stay stored,
 encrypted, until „PIN löschen“. To stop one login only, see step 17.
 
@@ -827,6 +861,19 @@ migration is needed (the tables came with `0019`).
 
 Who gets it: every member who has enrolled a passkey, at the email their account was
 created with. An invited member who never enrolled gets nothing.
+
+**Or type it in the app (since 16 Nov 2026, phase 6 D260).** Hausbuch app, Einstellungen ›
+Zugangsschlüssel (API keys), group „E-Mail“: press „Eintragen“ (enter) beside „Scaleway-TEM-Schlüssel“, „Scaleway-Projekt-ID“ and
+„Absenderadresse“ (the secret key, project id and sender of point 4), paste
+the value and „Speichern“ (save). No redeploy is needed: the value is stored encrypted in the
+database under a key derived from `HAUSBUCH_SESSION_KEY`, takes effect at the next use, wins
+over the container variable of the same name, and „Löschen“ (delete) falls back to the
+variable. A secret is never shown again; the card says only where the value comes from („In
+der App gespeichert“, „Aus der Server-Konfiguration“, „Nicht gesetzt“, or „Kann nicht gelesen
+werden“ after the session key changed, when it must be typed again). The container variable
+below stays the alternative.
+
+`HAUSBUCH_TEM_REGION` stays a container variable (default `fr-par`).
 
 **What is already done.** The sending domain `mail.rcubed.fr` is added in TEM (Console:
 Transactional Email, in fr-par) and verified, with autoconfiguration on, so Scaleway wrote
@@ -868,13 +915,15 @@ mail's text.
    then **redeploy**. Add them beside the variables that are already there and leave those
    alone: an update changes only the variables it names, and the secrets of steps 10, 13, 14
    and 16 stay as they are (in the console, add rows; never clear or retype the list). The
-   container refuses to start with the secret key but no project id or sender, or with a
-   region that is not a Scaleway region such as `fr-par`. While the secret key is unset the
-   daily run does nothing but log one line, `"status": "not_configured"`.
+   container refuses to start with a region that is not a Scaleway region such as
+   `fr-par`. Since D260 it no longer refuses a partial set (the missing values may be typed
+   in the app): while the three are not all set, in the app or the container, the daily run
+   does nothing but log one line, `"status": "not_configured"`.
    `HAUSBUCH_RUN_WORKER` stays `true`: the digest is a periodic job of this container's
    worker.
 5. **Switch it on.** Open Einstellungen › Erinnerungen. The note „Der E-Mail-Versand ist noch
-   nicht eingerichtet“ is gone once the container has the three values; switch
+   nicht eingerichtet“ is gone once the three values are set (in the app or the
+   container); switch
    **Erinnerungen per E-Mail** on. The switch belongs to the household and is recorded in
    History; switched off, nothing is sent even with the key set.
 6. **Check the first run.** The first mail arrives at 06:00 UTC (07:00 or 08:00 in Berlin) on
@@ -916,8 +965,9 @@ creates the label. No migration is needed (the tables came with `0019`).
 **What the app password can do.** A Google app password opens the **whole** mailbox. The
 limit to one label is the app's own code, which sends only `CAPABILITY`, `LOGIN`, `EXAMINE`,
 `UID SEARCH`, `UID FETCH` and `LOGOUT` (a test enforces the list). That is the informed
-choice of 10 Nov 2026 over a separate account. The password is a container secret, never a
-database column, a log line or an event; revoking it on Google's page stops the poll at
+choice of 10 Nov 2026 over a separate account. The password is a container secret or, typed
+in the app (below), stored encrypted only; never a readable database column, a log line or
+an event; revoking it on Google's page stops the poll at
 once.
 
 **Parked 12 Nov 2026.** The household's own Gmail account cannot create an app password, so this step was not done. To set it up later, create a separate Gmail account used only for Hausbuch, do points 1–3 there, and forward documents to its token address from a member's own address (the sender check is unchanged).
@@ -937,13 +987,19 @@ once.
 4. **Secret Manager** (step 8): four secrets, `hausbuch-inbox-imap-user` (the Gmail
    address), `hausbuch-inbox-imap-password` (the app password), `hausbuch-inbox-address`
    (the token address) and `hausbuch-inbox-label` (`Hausbuch`).
-5. **API container** (step 10): add `HAUSBUCH_INBOX_IMAP_USER`,
+5. **In the app or in the API container.** Hausbuch app, Einstellungen › Zugangsschlüssel
+   (API keys), group „E-Mail“: „Eintragen“ beside the Gmail account, its app password, the
+   forwarding address and the label (phase 6 D260; stored encrypted, a typed value wins over
+   the variable, „Löschen“ falls back to it, no redeploy; the password is never shown
+   again). Point 4's Secret Manager copies are then optional. **Or** the container (step
+   10): add `HAUSBUCH_INBOX_IMAP_USER`,
    `HAUSBUCH_INBOX_IMAP_PASSWORD` and `HAUSBUCH_INBOX_ADDRESS` as secret environment
    variables, pasting the secrets' values (the token address is what keeps strangers out,
    so it is treated as a secret too), and `HAUSBUCH_INBOX_LABEL=Hausbuch` as a plain one. `HAUSBUCH_INBOX_IMAP_HOST` defaults to
    `imap.gmail.com` and `HAUSBUCH_INBOX_AUTHSERV_ID` to `mx.google.com`; leave both. The
-   container refuses to start with the user and no password (or the reverse), or with a
-   login and no address or label. While the four are unset the poll does nothing.
+   host and authserv-id stay container variables. Since D260 the container no longer
+   refuses a partial set (the rest may be typed in the app); while the four are not all
+   set, in the app or the container, the poll does nothing.
    `HAUSBUCH_RUN_WORKER` stays `true`: the poll is a periodic job of this container's
    worker.
 6. **Redeploy**, open Einstellungen › Posteingang-Adresse, and check that the token address
@@ -1041,7 +1097,8 @@ so always check the card afterwards (point 4): it says whether the server has th
    einrichten“ (set up bank sync). The PIN field appears only while that name has no PIN in
    the app or on the server; for a second account under a login whose PIN is already saved,
    the form says so instead. The PIN may also stay empty and be saved later on the card with
-   „PIN speichern“ (save PIN). `HAUSBUCH_FINTS_PRODUCT_ID` must be set (step 14, point 3).
+   „PIN speichern“ (save PIN). The product id must be set, in the app or as
+   `HAUSBUCH_FINTS_PRODUCT_ID` (step 14, point 3).
 3. **Check the card.** Under „PIN“ it says one of three things: „PIN in der App gespeichert
    am <Datum>“ (saved in the app on <date>, with „PIN ändern“ and „PIN löschen“), „PIN auf
    dem Server gesetzt“ (set on the server, the variable named), or „Noch keine PIN
@@ -1119,7 +1176,10 @@ shows the to-do „Kursquelle wählen“ (choose a price source) on the Anlagen 
    an account and a Demo API key. Do not pick a paid plan; the Demo tier (10,000 calls a
    month, 365 days back) is far more than one household needs. CoinGecko asks for
    attribution; the Anlagen page names it in the line „Kurse: CoinGecko, Kraken, EZB, NAV der Fondsgesellschaften.“
-2. **Scaleway console** (console.scaleway.com, project of step 1): Serverless → Containers
+2. **Hausbuch app** (since 16 Nov 2026, phase 6 D260): Einstellungen › Zugangsschlüssel
+   (API keys), group „Blockchains & Kurse“, „Eintragen“ beside „CoinGecko“, paste
+   the Demo key, „Speichern“; no redeploy, it is used from the next morning's run. **Or**
+   the **Scaleway console** (console.scaleway.com, project of step 1): Serverless → Containers
    → namespace `hausbuch` → container `hausbuch-api` → **Settings** tab, environment
    variables. Add `HAUSBUCH_COINGECKO_KEY` as a **secret** (not a plain variable), with the
    Demo key as its value, then **Deploy**/redeploy the container.
@@ -1136,6 +1196,13 @@ From phase 7 the app reads the household's wallets by their **public addresses**
 seed phrase or a private key). Each chain is read through a provider whose address and, where
 needed, key are settings of the API container. The settings are read from phase 7 step 1; the
 daily read of the chains comes with step 2, so until then they change nothing visible.
+
+**In the app** (since 16 Nov 2026, phase 6 D260): each of the four secrets below can be typed
+under Einstellungen › Zugangsschlüssel (API keys), group „Blockchains & Kurse“, instead of
+the container; a typed value wins, „Löschen“ falls back to the variable, no redeploy, and
+saving a key or URL queues a new read of every wallet address that reads through it. The
+wallet page's „Was tun“ line names both places. The Helius key is stored and listed there
+but nothing reads it yet. The base URLs in the second table stay container settings.
 
 **Secrets** (Scaleway console: Serverless → Containers → namespace `hausbuch` → container
 `hausbuch-api` → **Settings** tab, environment variables, each added as a **secret**, then

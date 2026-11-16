@@ -10,7 +10,7 @@
 
 from datetime import UTC, datetime
 
-from hausbuch.jobs.inbound_mail import configured
+from hausbuch.jobs.inbound_mail import configured, inbox_settings
 from hausbuch.schemas.inbound_mail import InboundMail, InboxAddress
 from hausbuch.services.inbound_mail import list_inbound_mail
 
@@ -25,9 +25,11 @@ def inbound_mail_list(cmd: Cmd) -> list[InboundMail]:
 
 
 @router.get("/inbound-mail/address")
-def inbound_mail_address(settings: SettingsDep) -> InboxAddress:
+def inbound_mail_address(cmd: Cmd, settings: SettingsDep) -> InboxAddress:
     """Signed-in members only, as every domain route: the token is what keeps strangers'
-    mail out of the label, so it is shown to members and nowhere else."""
+    mail out of the label, so it is shown to members and nowhere else. The workspace's
+    values: the container's, or the ones typed in the app (phase 6 D260)."""
+    settings = cmd.read(inbox_settings, settings)
     if not configured(settings):
         return InboxAddress(configured=False)
     return InboxAddress(configured=True, address=settings.inbox_address, label=settings.inbox_label)

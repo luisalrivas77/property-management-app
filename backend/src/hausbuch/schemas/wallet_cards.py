@@ -23,6 +23,7 @@ class WalletAddressState(StrEnum):
 
     RETIRED = "retired"  # stillgelegt: no longer read
     KEY_MISSING = "key_missing"  # wallet.key_missing: no row is written
+    KEY_UNREADABLE = "key_unreadable"  # wallet.key_unreadable: typed in the app (D260), unread
     SOURCE_UNAVAILABLE = "source_unavailable"  # wallet.source_unavailable: no row either
     NOT_SYNCED = "not_synced"  # no finished run yet
     FAILED = "failed"  # wallet.source_failed or wallet.sync_error

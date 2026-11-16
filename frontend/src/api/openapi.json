@@ -5525,6 +5525,112 @@
         }
       }
     },
+    "/api/app-secrets": {
+      "get": {
+        "summary": "App Secrets Get",
+        "operationId": "app_secrets_get_api_app_secrets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSecrets"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/app-secrets/{name}": {
+      "put": {
+        "summary": "App Secret Set",
+        "description": "The value is encrypted before it reaches the database; the answer names its source.",
+        "operationId": "app_secret_set_api_app_secrets__name__put",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AppSecretName"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppSecretPut"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSecretState"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "App Secret Delete",
+        "operationId": "app_secret_delete_api_app_secrets__name__delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AppSecretName"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/imports/{import_id}": {
       "get": {
         "summary": "Import Get",
@@ -9098,7 +9204,7 @@
     "/api/inbound-mail/address": {
       "get": {
         "summary": "Inbound Mail Address",
-        "description": "Signed-in members only, as every domain route: the token is what keeps strangers'\nmail out of the label, so it is shown to members and nowhere else.",
+        "description": "Signed-in members only, as every domain route: the token is what keeps strangers'\nmail out of the label, so it is shown to members and nowhere else. The workspace's\nvalues: the container's, or the ones typed in the app (phase 6 D260).",
         "operationId": "inbound_mail_address_api_inbound_mail_address_get",
         "responses": {
           "200": {
@@ -12068,6 +12174,148 @@
         ],
         "title": "AppCredential",
         "description": "A slot whose PIN was typed into the app (D196): its name and when; never the PIN."
+      },
+      "AppSecretGroup": {
+        "type": "string",
+        "enum": [
+          "ai",
+          "chains",
+          "bank",
+          "mail"
+        ],
+        "title": "AppSecretGroup"
+      },
+      "AppSecretName": {
+        "type": "string",
+        "enum": [
+          "anthropic_api_key",
+          "etherscan_key",
+          "solana_rpc_url",
+          "bsc_rpc_url",
+          "helius_key",
+          "coingecko_key",
+          "fints_product_id",
+          "tem_secret_key",
+          "tem_project_id",
+          "mail_from",
+          "inbox_imap_user",
+          "inbox_imap_password",
+          "inbox_address",
+          "inbox_label"
+        ],
+        "title": "AppSecretName",
+        "description": "app_secret.name (migration 0045's CHECK), in the card's order."
+      },
+      "AppSecretPut": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "format": "password",
+            "title": "Value",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "AppSecretPut",
+        "description": "PUT /app-secrets/{name}: the value, stored encrypted and never logged or echoed (a\nSecretStr: its repr is stars; hide_input_in_errors keeps a 422 from quoting it). Checked\nby services.app_secrets.checked_value per name (app_secret.invalid, app_secret.url_invalid)."
+      },
+      "AppSecretSource": {
+        "type": "string",
+        "enum": [
+          "app",
+          "container",
+          "none",
+          "unreadable"
+        ],
+        "title": "AppSecretSource",
+        "description": "Where a name's value comes from now: typed in the app (it wins), the container\nvariable, nowhere (a URL then uses its public default), or typed in the app but no longer\nreadable (the session key changed): the consumer then uses nothing, never the variable."
+      },
+      "AppSecretState": {
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/AppSecretName"
+          },
+          "group": {
+            "$ref": "#/components/schemas/AppSecretGroup"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "secret": {
+            "type": "boolean",
+            "title": "Secret"
+          },
+          "variable": {
+            "type": "string",
+            "title": "Variable"
+          },
+          "source": {
+            "$ref": "#/components/schemas/AppSecretSource"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "group",
+          "label",
+          "purpose",
+          "secret",
+          "variable",
+          "source"
+        ],
+        "title": "AppSecretState",
+        "description": "One row of the card „Zugangsschlüssel (API keys)“. `value` only for a name that is not\nsecret; a secret's value and its length are never returned."
+      },
+      "AppSecrets": {
+        "properties": {
+          "secrets": {
+            "items": {
+              "$ref": "#/components/schemas/AppSecretState"
+            },
+            "type": "array",
+            "title": "Secrets"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "secrets"
+        ],
+        "title": "AppSecrets",
+        "description": "GET /app-secrets: every allowlisted name, in a fixed order."
       },
       "AppUser": {
         "properties": {
@@ -17730,6 +17978,8 @@
           "workspace.valuation_snapshot_written",
           "workspace.bank_pin_set",
           "workspace.bank_pin_deleted",
+          "workspace.app_secret_set",
+          "workspace.app_secret_deleted",
           "proposal.created",
           "proposal.superseded",
           "proposal.rejected",
@@ -32941,6 +33191,7 @@
         "enum": [
           "retired",
           "key_missing",
+          "key_unreadable",
           "source_unavailable",
           "not_synced",
           "failed",

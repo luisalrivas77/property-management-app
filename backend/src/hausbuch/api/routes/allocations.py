@@ -34,8 +34,10 @@ from hausbuch.schemas.api import (
     TransactionAllocations,
 )
 from hausbuch.schemas.enums import EntityType
-from hausbuch.services import review
+from hausbuch.services import app_secrets, review
+from hausbuch.services.context import CommandContext
 from hausbuch.services.documents import LOCAL_TIME_ZONE
+from hausbuch.settings import Settings
 
 from ..deps import Cmd, SettingsDep, domain_router, found
 
@@ -53,7 +55,14 @@ def inbox_list(cmd: Cmd, settings: SettingsDep) -> list[InboxItem]:
 @router.post("/inbox/ai-retry")
 def inbox_ai_retry(cmd: Cmd, settings: SettingsDep) -> AiRetryResult:
     """Queue the model for every unmatched line; the suggestions arrive as the jobs run."""
-    return cmd.run(review.request_ai_suggestions, ai_enabled=settings.ai_enabled)
+    return cmd.run(_ai_retry, settings)
+
+
+def _ai_retry(ctx: CommandContext, settings: Settings) -> AiRetryResult:
+    """Refused unless the workspace has a key that reads (phase 6 D260: typed or the
+    container's), since the jobs would otherwise end without asking."""
+    ai = app_secrets.ai_available(ctx.conn, settings)
+    return review.request_ai_suggestions(ctx, ai_enabled=ai)
 
 
 @router.post("/inbox/confirm-category")

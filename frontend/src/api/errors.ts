@@ -141,7 +141,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "settings.consent_switch_off": "Erst „Private Konten mit KI zuordnen“ einschalten, dann zustimmen.",
   "settings.consent_already_recorded": "Ihre Zustimmung ist schon gespeichert.",
   // POST /inbox/ai-retry (D50); a proposal's ai.disabled has its own text in AI_ERROR_TEXT.
-  "ai.disabled": "Die KI ist auf dem Server nicht eingeschaltet. Zahlungen lassen sich nur von Hand zuordnen.",
+  "ai.disabled":
+    "Die KI ist nicht eingerichtet: sie ist auf dem Server ausgeschaltet, oder es ist kein Anthropic-Schlüssel eingetragen (Einstellungen › Zugangsschlüssel). Zahlungen lassen sich bis dahin nur von Hand zuordnen.",
   // the Anlage V draft (phase-3.md §10)
   "tax.year_not_available": "Für dieses Jahr gibt es zu dieser Immobilie keinen Entwurf (vor dem Kauf oder in der Zukunft).",
   "tax.no_rule_set": "Für dieses Steuerjahr gibt es noch kein Regelwerk, also keinen Entwurf.",
@@ -181,7 +182,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   // exports of the draft (phase-3.md §10, §12)
   // the FinTS sync (phase-5.md §4.4)
   "bank.not_configured":
-    "Der Bankabruf ist auf dem Server nicht eingerichtet: die Produkt-ID fehlt in der Serverkonfiguration (Runbook Schritt 14).",
+    "Der Bankabruf ist noch nicht eingerichtet: die FinTS-Produkt-ID fehlt. Bitte unter Einstellungen › Zugangsschlüssel eintragen (oder in der Serverkonfiguration, Runbook Schritt 14).",
   "bank.rate_limited": "Höchstens vier Abrufe pro Stunde von Hand. Bitte etwas später noch einmal.",
   "bank.sync_running": "Für dieses Konto läuft schon ein Abruf.",
   "bank.window_invalid":
@@ -283,6 +284,13 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "exchange.correction_no_difference": "Dieser Coin stimmt mit dem Bestand laut Börse überein; es gibt nichts zu korrigieren.",
   "exchange.correction_stale":
     "Seit der Eingabe des Bestands haben sich die Bewegungen geändert. Bitte den Bestand laut Börse neu eingeben und dann die Differenz buchen.",
+  // Phase 6 D260: Einstellungen › Zugangsschlüssel. Neither text repeats the typed value.
+  "app_secret.invalid":
+    "Dieser Wert wird nicht übernommen: er ist leer, zu lang (höchstens 512 Zeichen) oder enthält Zeichen, die hier nicht passen (etwa Leerzeichen in einem Schlüssel oder eine E-Mail-Adresse ohne @). Bitte den Wert unverändert aus dem Konto des Anbieters kopieren.",
+  "app_secret.url_invalid":
+    "Das ist keine gültige Adresse. Sie muss mit https:// (oder http://) beginnen und einen Servernamen enthalten, wie der Anbieter sie angibt.",
+  "wallet.key_unreadable":
+    "Der unter Einstellungen › Zugangsschlüssel gespeicherte Schlüssel kann nicht mehr gelesen werden (der Server hat einen neuen Sitzungsschlüssel). Bitte den Schlüssel dort neu eintragen.",
   // Phase 7 step 1 (D179): a wallet's addresses. Neither text repeats the pasted address.
   "wallet.address_invalid":
     "Das ist keine gültige Adresse für die gewählte Chain. Bitte die öffentliche Adresse unverändert aus der Wallet kopieren; das Format steht unter dem Feld.",
@@ -338,7 +346,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
 /** German text for a proposal's `error_code`: why reading the document failed or was
  * stopped (phase-2.md §5.5, §12; the job's extra codes in backend rules/errors.py). */
 export const AI_ERROR_TEXT: Record<string, string> = {
-  "ai.disabled": "Automatisches Auslesen ist auf dem Server nicht eingeschaltet.",
+  "ai.disabled":
+    "Automatisches Auslesen ist nicht eingerichtet: die KI ist auf dem Server ausgeschaltet, oder es ist kein Anthropic-Schlüssel eingetragen (Einstellungen › Zugangsschlüssel). Danach das Dokument erneut auslesen.",
   "ai.blocked_tenant_data": "Dokumente mit Mieterdaten werden nicht an die KI geschickt, solange das nicht freigegeben ist.",
   "ai.unparsable": "Die Antwort der KI ließ sich auch beim zweiten Versuch nicht auswerten.",
   "ai.refused": "Die KI hat das Auslesen abgelehnt, oder ihre Antwort wurde auch im zweiten Versuch mit mehr Platz zu lang.",

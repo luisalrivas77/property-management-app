@@ -32,6 +32,7 @@ from .allocation import (
     MatchingRuleCreate,
     SplitMethod,
 )
+from .app_secrets import AppSecretName
 from .bank import StatementFormat
 from .bank_sync import (
     PRIMARY_SLOT,
@@ -1258,6 +1259,14 @@ class BankPinChanged(Schema):
     credential_slot: CredentialSlot
 
 
+class AppSecretChanged(Schema):
+    """workspace.app_secret_set and workspace.app_secret_deleted (phase 6 D260): a provider
+    key or URL typed into the app (stored encrypted) or deleted, by the actor of the event.
+    The name only: never the value, its ciphertext or its length."""
+
+    name: AppSecretName
+
+
 # --- Catalog -----------------------------------------------------------------
 
 EffectiveDate = Literal["required", "optional", "forbidden"]
@@ -1340,6 +1349,8 @@ class EventType(StrEnum):
     WORKSPACE_VALUATION_SNAPSHOT_WRITTEN = "workspace.valuation_snapshot_written"
     WORKSPACE_BANK_PIN_SET = "workspace.bank_pin_set"  # D196
     WORKSPACE_BANK_PIN_DELETED = "workspace.bank_pin_deleted"  # D196
+    WORKSPACE_APP_SECRET_SET = "workspace.app_secret_set"  # D260
+    WORKSPACE_APP_SECRET_DELETED = "workspace.app_secret_deleted"  # D260
 
     PROPOSAL_CREATED = "proposal.created"
     PROPOSAL_SUPERSEDED = "proposal.superseded"
@@ -1536,6 +1547,12 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.WORKSPACE_BANK_PIN_DELETED: EventSpec(
         BankPinChanged, "forbidden", "Bank PIN deleted from the app (D196)"
+    ),
+    E.WORKSPACE_APP_SECRET_SET: EventSpec(
+        AppSecretChanged, "forbidden", "Provider key stored in the app, encrypted (D260)"
+    ),
+    E.WORKSPACE_APP_SECRET_DELETED: EventSpec(
+        AppSecretChanged, "forbidden", "Provider key deleted from the app (D260)"
     ),
     E.PROPOSAL_CREATED: EventSpec(ProposalNoted, "forbidden", "Pre-fill proposal created"),
     E.PROPOSAL_SUPERSEDED: EventSpec(ProposalNoted, "forbidden", "Proposal replaced by a re-run"),

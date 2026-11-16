@@ -1446,7 +1446,7 @@ def _begin(
         if budget is None:
             budget = budgets[kind] = RequestBudget(budget_limit(kind, settings))
         try:
-            source = source_for(chain, settings, budget)
+            source = source_for(chain, settings, budget, conn=conn)  # D260: typed keys first
         except ChainSourceError as exc:
             outcome = SyncOutcome(address_id, chain, None, None, error_code=exc.code)
             _log(outcome)

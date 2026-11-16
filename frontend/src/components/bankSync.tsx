@@ -260,8 +260,8 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
     <section className="card stack" aria-labelledby="bank-sync-title">
       <h2 id="bank-sync-title">Bankabruf</h2>
       <p className="muted">
-        Die PIN Ihres Online-Bankings speichert Hausbuch nur verschlüsselt und zeigt sie nie wieder an; die Produkt-ID liegt in
-        der Serverkonfiguration.
+        Die PIN Ihres Online-Bankings speichert Hausbuch nur verschlüsselt und zeigt sie nie wieder an. Die Produkt-ID steht unter
+        Einstellungen › Zugangsschlüssel oder in der Serverkonfiguration.
       </p>
       {state.error ? <ErrorNotice error={state.error} /> : null}
       {state.data === undefined ? (

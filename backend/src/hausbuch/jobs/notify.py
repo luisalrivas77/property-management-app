@@ -67,7 +67,13 @@ from hausbuch.schemas.reminders import (
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.events import append_event
-from hausbuch.services.mail import Mailer, MailSendError, OutgoingMail, tem_client
+from hausbuch.services.mail import (
+    Mailer,
+    MailSendError,
+    OutgoingMail,
+    mail_settings,
+    tem_client,
+)
 from hausbuch.services.reminders import list_reminders
 from hausbuch.services.workspace_settings import get_settings
 
@@ -137,18 +143,14 @@ def run_send_reminders(
     workspace_ids: Iterable[UUID] | None = None,
 ) -> NotifyResult:
     """One daily run. `mailer` and `workspace_ids` are for tests; the task passes neither, so
-    the mailer comes from the settings and every provisioned workspace is visited. Never
-    raises for one workspace's failure (logged by class name; the next run retries it)."""
-    if mailer is None:
-        mailer = tem_client(deps.settings)
-    if mailer is None:
-        result = NotifyResult("not_configured")
-        _log(result)
-        return result
+    each workspace's mailer comes from its own settings (the container's, or the ones typed in
+    the app, phase 6 D260) and every provisioned workspace is visited; a workspace without a
+    complete set is skipped, and a run in which none has one is not_configured. Never raises
+    for one workspace's failure (logged by class name; the next run retries it)."""
     now = deps.clock()
     today = local_today(now)
     link = app_link(deps.settings.origin)
-    result = NotifyResult("done")
+    result = NotifyResult("done" if mailer is not None else "not_configured")
     ids = provisioned_workspace_ids(deps.engine) if workspace_ids is None else workspace_ids
     for ws in sorted(set(ids)):
         try:
@@ -163,7 +165,7 @@ def run_send_reminders(
 
 def _workspace(
     deps: JobDeps,
-    mailer: Mailer,
+    injected: Mailer | None,
     ws: UUID,
     *,
     today: date,
@@ -172,6 +174,10 @@ def _workspace(
     result: NotifyResult,
 ) -> None:
     with workspace_transaction(deps.engine, ws) as conn:
+        mailer = injected or tem_client(mail_settings(conn, deps.settings))
+        if mailer is None:
+            return  # not set up for this workspace (D260): nothing to send
+        result.status = "done"
         if not get_settings(conn).reminder_emails:
             result.switched_off += 1
             return

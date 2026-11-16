@@ -77,6 +77,7 @@ from hausbuch.rules import errors as E
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.statements import EMPTY as STATEMENT_EMPTY
 from hausbuch.schemas.api import InboxItem, InboxItemKind
+from hausbuch.schemas.app_secrets import AppSecretName
 from hausbuch.schemas.bank import StatementFormat
 from hausbuch.schemas.bank_sync import (
     PRIMARY_SLOT,
@@ -121,6 +122,7 @@ from hausbuch.schemas.events import (
 from hausbuch.settings import Settings
 from hausbuch.storage import BlobStore
 
+from . import app_secrets
 from . import bank_credentials as credentials
 from .allocations import user_id
 from .context import CommandContext
@@ -470,8 +472,18 @@ def _auto_sync_allowed(conn: Connection, row: Row, *, bank_name: str | None = No
 def configured(settings: Settings) -> bool:
     """A usable product id is set (§4.4 bank.not_configured). Since D196 a PIN may be typed
     into the app, so whether the connection's slot has a PIN from either source is
-    check_slot's (bank.pin_missing)."""
+    check_slot's (bank.pin_missing). Since D260 the product id may be typed into the app too:
+    pass the workspace's settings (bank_settings), never the bare container's."""
     return rules.product_id_usable(settings.fints_product_id)
+
+
+def bank_settings(conn: Connection, settings: Settings) -> Settings:
+    """`settings` with the workspace's product id typed in the app in place of the container's
+    (D260); one that no longer decrypts reads as unset, so the sync fails with
+    bank.not_configured, never with the container's number."""
+    return app_secrets.workspace_settings(
+        conn, settings, [AppSecretName.FINTS_PRODUCT_ID], unreadable="unset"
+    )
 
 
 def configured_slots(settings: Settings) -> list[str]:
@@ -486,7 +498,7 @@ def start_sync(ctx: CommandContext, account_id: UUID, *, settings: Settings) -> 
     bank.window_invalid when the anchor or the imported history reaches today."""
     account = require_row(ctx.conn, account_table, EntityType.ACCOUNT, account_id, for_update=True)
     connection = _connection_row(ctx.conn, account_id)
-    if not configured(settings):
+    if not configured(bank_settings(ctx.conn, settings)):
         raise RuleError(E.BANK_NOT_CONFIGURED, "the FinTS product id is not configured")
     rules.check_slot(credentials.available_slots(ctx.conn, settings), connection.credential_slot)
     if _manual_starts_last_hour(ctx, account_id) >= rules.MANUAL_STARTS_PER_HOUR:
@@ -719,8 +731,10 @@ def _to_sync(row: Row) -> BankSync:
 # What a bank_sync_failed card says per code: what happened, and what to do (principle 7).
 _FAILED_CARD = {
     E.BANK_NOT_CONFIGURED: (
-        "Der Bankabruf ist nicht eingerichtet: die Produkt-ID fehlt in der Serverkonfiguration.",
-        "Sie als Secret hinterlegen (Runbook Schritt 14), dann erneut abrufen.",
+        "Der Bankabruf ist nicht eingerichtet: die Produkt-ID fehlt (oder die in Hausbuch"
+        " gespeicherte lässt sich nicht mehr lesen).",
+        "Sie unter Einstellungen › Zugangsschlüssel eintragen (oder als Variable"
+        " HAUSBUCH_FINTS_PRODUCT_ID im Container, Runbook Schritt 14), dann erneut abrufen.",
     ),
     # D196: the stored PIN or login no longer decrypts (the server's session key changed).
     E.BANK_PIN_UNREADABLE: (
@@ -813,11 +827,12 @@ _REFUSED_CARD: dict[str, tuple[str, str]] = {
     "9078": (
         "Die Bank lässt Hausbuch nicht an: sie kennt die Produkt-ID nicht, mit der Hausbuch"
         " sich anmeldet (die Registrierungsnummer der Deutschen Kreditwirtschaft). Entweder"
-        " steht im Container eine andere Nummer, oder die Registrierung ist bei dieser Bank"
+        " ist eine andere Nummer eingetragen, oder die Registrierung ist bei dieser Bank"
         " noch nicht angekommen. Der Code betrifft die Produkt-ID, nicht die PIN.",
-        "Die Produkt-ID im Container (HAUSBUCH_FINTS_PRODUCT_ID) Zeichen für Zeichen mit der"
-        " Nummer aus der E-Mail der Deutschen Kreditwirtschaft vergleichen und bei einer"
-        " Abweichung korrigieren (Runbook Schritt 14). Stimmt sie, einige Tage warten und"
+        "Die Produkt-ID unter Einstellungen › Zugangsschlüssel (oder im Container,"
+        " HAUSBUCH_FINTS_PRODUCT_ID) Zeichen für Zeichen mit der Nummer aus der E-Mail der"
+        " Deutschen Kreditwirtschaft vergleichen und bei einer Abweichung neu eintragen"
+        " (Runbook Schritt 14). Stimmt sie, einige Tage warten und"
         " dann erneut abrufen: eine neue Registrierung erreicht die Banken erst nach einiger"
         " Zeit.",
     ),
@@ -1212,7 +1227,7 @@ def begin_run(
     if status is _S.IMPORTING:  # never committed (module docstring); nothing to resume
         return None
     connection = require_row(ctx.conn, connection_table, "bank_connection", row.connection_id)
-    if not configured(settings):
+    if not configured(bank_settings(ctx.conn, settings)):
         _fail(ctx, row, E.BANK_NOT_CONFIGURED)
         return None
     # before any dialog (D163, D196); whether a stored PIN decrypts is the job's, at the dialog

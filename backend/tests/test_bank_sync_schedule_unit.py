@@ -43,15 +43,17 @@ def _settings(**overrides) -> Settings:
 @pytest.mark.parametrize(
     "overrides",
     [
-        {},  # neither secret set (Settings refuses one without the other)
+        {},  # neither secret set
         {"fints_pin": "1234", "fints_product_id": " padded "},  # a product id HKVVB refuses
     ],
 )
 def test_inert_without_the_fints_secrets_and_reads_nothing(caplog, overrides):
-    # engine None: a run that touched the database would fail.
+    # engine None and no workspace: since D260 the product id is resolved per workspace (one
+    # may be typed in the app), so a run with no workspace to visit is the inert case here;
+    # tests/db/test_jobs_bank_sync.py covers a workspace without a product id.
     deps = JobDeps(engine=None, settings=_settings(**overrides), blob_store=None, model_client=None)
     with caplog.at_level(logging.INFO, logger="hausbuch.jobs.bank_sync_schedule"):
-        result = job.run_bank_sync_scheduled(deps)
+        result = job.run_bank_sync_scheduled(deps, workspace_ids=())
     assert result.status == "not_configured" and not result.outcomes
     [record] = caplog.records
     assert record.fields["status"] == "not_configured"

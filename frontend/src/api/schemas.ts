@@ -17,6 +17,10 @@ export type Member = Schemas["Member"];
 export type InviteCreate = Schemas["InviteCreate"];
 export type WorkspaceSettings = Schemas["WorkspaceSettings"];
 export type WorkspaceSettingsPatch = Schemas["WorkspaceSettingsPatch"];
+// provider keys typed in the app (phase 6 D260); a secret's value is never returned
+export type AppSecretState = Schemas["AppSecretState"];
+export type AppSecretGroup = Schemas["AppSecretGroup"];
+export type AppSecretSource = Schemas["AppSecretSource"];
 
 // owners and properties
 export type Owner = Schemas["Owner"];

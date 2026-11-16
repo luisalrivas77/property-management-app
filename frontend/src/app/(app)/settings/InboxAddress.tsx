@@ -2,7 +2,8 @@
 
 // Posteingang-Adresse (docs/phases/phase-5.md §5.2, §11; D121): the token address members
 // forward documents to, with a copy button and the three sentences of §5.2. GET
-// /inbound-mail/address returns it only once the four HAUSBUCH_INBOX_* values are set; the
+// /inbound-mail/address returns it only once the four inbox values are set (typed under
+// Zugangsschlüssel, phase 6 D260, or the HAUSBUCH_INBOX_* variables); the
 // IMAP login and the app password never reach the browser.
 import { useState } from "react";
 
@@ -22,8 +23,9 @@ export function InboxAddress() {
         ) : (
           <div className="card stack">
             <p className="muted">
-              Der Posteingang per Mail ist noch nicht eingerichtet. Sobald er eingerichtet ist, steht hier die Adresse, an die Sie
-              Rechnungen und Kontoauszüge weiterleiten.
+              Der Posteingang per Mail ist noch nicht eingerichtet. Dafür unter „Zugangsschlüssel“ (unten, Bereich E-Mail) das
+              Gmail-Konto, sein App-Passwort, die Weiterleitungsadresse und das Label eintragen. Danach steht hier die Adresse, an die
+              Sie Rechnungen und Kontoauszüge weiterleiten.
             </p>
           </div>
         )

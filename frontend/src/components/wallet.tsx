@@ -256,7 +256,8 @@ function AddressRow({
 }
 
 /** The last read of one address in plain words, with what to do and, when the cure is a
- * Scaleway container variable, its name (never its value). */
+ * key (typed under Einstellungen › Zugangsschlüssel, phase 6 D260, or a Scaleway container
+ * variable), the variable's name (never its value). */
 function AddressStatusCell({ status }: { status: WalletAddressStatus }) {
   const badge = STATE_BADGE[status.state];
   return (
@@ -266,7 +267,8 @@ function AddressStatusCell({ status }: { status: WalletAddressStatus }) {
       {status.todo ? <p className="cell-detail todo-text">Was tun: {status.todo}</p> : null}
       {status.setting ? (
         <p className="cell-detail">
-          Einstellung im Scaleway-Container: <code>{status.setting}</code>
+          Unter Einstellungen › Zugangsschlüssel eintragen, oder als Variable im Scaleway-Container:{" "}
+          <code>{status.setting}</code>
         </p>
       ) : null}
     </>

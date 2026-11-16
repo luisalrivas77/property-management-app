@@ -2,7 +2,8 @@
 
 // A wallet's sync state, holdings and cards (phase 7 §13, §14, D183, D185, D186, D187).
 // Every address is shown masked; no full address, transaction hash, URL or key reaches this
-// page. A missing key is named by its Scaleway container variable only (principle 7).
+// page. A missing key is named by its Scaleway container variable only (principle 7), beside
+// Einstellungen › Zugangsschlüssel, where it can be typed instead (phase 6 D260).
 //
 // - SyncPanel: „Jetzt abrufen“ and, per asset, the chain's balance at the last read beside what
 //   Hausbuch books for it (D186 (2)).
@@ -28,6 +29,7 @@ import { useLoad } from "./useLoad";
 export const STATE_BADGE: Record<WalletAddressState, { label: string; className: string }> = {
   retired: { label: "stillgelegt", className: "badge" },
   key_missing: { label: "Schlüssel fehlt", className: "badge badge-danger" },
+  key_unreadable: { label: "Schlüssel nicht lesbar", className: "badge badge-danger" },
   source_unavailable: {
     label: "noch nicht lesbar",
     className: "badge badge-warn",

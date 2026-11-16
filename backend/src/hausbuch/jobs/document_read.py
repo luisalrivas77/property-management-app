@@ -26,6 +26,7 @@ Nothing here writes a domain table (D14), and no log line carries a document val
 answer, an exception message or the API key: only ids, codes and exception class names.
 """
 
+import dataclasses
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -34,10 +35,11 @@ from functools import partial
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Connection, Engine, select, update
 
 from hausbuch.ai import documents
 from hausbuch.ai.client import ModelCallError, ModelClient, ModelRequest, ModelResponse
+from hausbuch.ai.per_workspace import WorkspaceModelClients
 from hausbuch.ai.provenance import record_ai_call
 from hausbuch.ai.requests import (
     CLASSIFY_PAGES,
@@ -140,6 +142,24 @@ class JobDeps:
     blob_store: BlobStore
     model_client: ModelClient | None  # None when the AI layer is off (gate 1 needs no client)
     clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
+    # Phase 6 D260: the production worker resolves each workspace's Anthropic key when a job
+    # runs (with_client / for_workspace); a client handed in (tests, evals) wins and is kept.
+    model_clients: WorkspaceModelClients | None = None
+
+    def with_client(self, conn: Connection) -> "JobDeps":
+        """These deps with the model client of `conn`'s workspace (None: no key, or a typed
+        key that cannot be read); unchanged when a client was handed in."""
+        if self.model_clients is None:
+            return self
+        client = self.model_clients.client(conn, self.settings)
+        return dataclasses.replace(self, model_client=client)
+
+    def for_workspace(self, workspace_id: UUID) -> "JobDeps":
+        """with_client in a transaction of its own."""
+        if self.model_clients is None:
+            return self
+        with workspace_transaction(self.engine, workspace_id) as conn:
+            return self.with_client(conn)
 
 
 class _Stop(Exception):
@@ -196,6 +216,7 @@ def run_document_read(
     failure: tuple[str, UUID | None] | None = None
     retryable = False
     try:
+        deps = deps.for_workspace(workspace_id)  # D260: the workspace's key, resolved now
         original = _load(deps, workspace_id, document_id, proposal_id)
         if original is None:
             logger.info("nothing to read", extra={"fields": log | {"outcome": "skipped"}})

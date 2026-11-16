@@ -51,10 +51,12 @@ def _settings() -> Settings:
 
 
 def test_inert_without_tem_and_reads_nothing(caplog):
-    # engine None: a run that touched the database would fail.
+    # engine None and no workspace: since phase 6 D260 the TEM settings are resolved per
+    # workspace (they may be typed in the app), so a run with no workspace to visit is the
+    # inert case here; tests/db/test_jobs_notify.py covers a workspace without them.
     deps = JobDeps(engine=None, settings=_settings(), blob_store=None, model_client=None)
     with caplog.at_level(logging.INFO, logger="hausbuch.jobs.notify"):
-        result = job.run_send_reminders(deps)
+        result = job.run_send_reminders(deps, workspace_ids=())
     assert result.status == "not_configured" and result.mails == 0
     [record] = caplog.records
     assert record.fields["status"] == "not_configured"

@@ -17,6 +17,7 @@ from hausbuch.services.workspace_settings import (
 )
 from hausbuch.settings import Settings
 
+from ..commands import Commands
 from ..deps import Cmd, SettingsDep, domain_router
 
 router = domain_router()
@@ -24,7 +25,7 @@ router = domain_router()
 
 @router.get("/workspace/settings")
 def workspace_settings_get(cmd: Cmd, settings: SettingsDep) -> WorkspaceSettings:
-    return _with_availability(cmd.read(get_settings), settings)
+    return _with_availability(cmd.read(get_settings), _available(cmd, settings))
 
 
 @router.patch("/workspace/settings")
@@ -32,15 +33,20 @@ def workspace_settings_update(
     body: WorkspaceSettingsPatch, cmd: Cmd, settings: SettingsDep
 ) -> WorkspaceSettings:
     """Only the settings sent change; a patch that changes nothing writes no event."""
-    return _with_availability(cmd.run(update_settings, **body.changes()), settings)
+    return _with_availability(cmd.run(update_settings, **body.changes()), _available(cmd, settings))
 
 
 @router.post("/workspace/settings/ai-consent")
 def workspace_ai_consent(cmd: Cmd, settings: SettingsDep) -> WorkspaceSettings:
     """The signed-in member's own consent to `ai_private_accounts` (phase 6 D168); the switch
     takes effect once two members have consented since it was switched on."""
-    return _with_availability(cmd.run(record_ai_consent), settings)
+    return _with_availability(cmd.run(record_ai_consent), _available(cmd, settings))
 
 
-def _with_availability(current: WorkspaceSettings, settings: Settings) -> WorkspaceSettings:
-    return current.model_copy(update={"reminder_emails_available": mail.configured(settings)})
+def _with_availability(current: WorkspaceSettings, available: bool) -> WorkspaceSettings:
+    return current.model_copy(update={"reminder_emails_available": available})
+
+
+def _available(cmd: Commands, settings: Settings) -> bool:
+    """The workspace's resolved Transactional Email settings (phase 6 D260)."""
+    return cmd.read(mail.available, settings)

@@ -1214,18 +1214,22 @@ def test_app_role_may_use_the_queue_and_nothing_more_on_it(connect):
 
 
 def test_app_role_defers_fetches_and_finishes_a_job(connect):
-    """The worker's own calls, as hausbuch_app (no workspace needed: the queue is not RLS'd)."""
+    """The worker's own calls, as hausbuch_app (no workspace needed: the queue is not RLS'd).
+    On a queue of its own: other tests in this worker's database leave waiting jobs on
+    'default' (the bank, notify and inbox tests do), and the oldest of those would be fetched
+    first."""
     with connect(APP) as conn:
         (job_ids,) = conn.execute("""
             SELECT procrastinate_defer_jobs_v1(ARRAY[ROW(
-                'default', 'document_read', 0, NULL, 'doc:1',
+                'grant_probe', 'document_read', 0, NULL, 'doc:1',
                 '{"workspace_id": "w"}'::jsonb, NULL)::procrastinate_job_to_defer_v1])
         """).fetchone()
         (worker,) = conn.execute(
             "SELECT worker_id FROM procrastinate_register_worker_v1()"
         ).fetchone()
         job = conn.execute(
-            "SELECT id, status FROM procrastinate_fetch_job_v2(ARRAY['default'], %s)", (worker,)
+            "SELECT id, status FROM procrastinate_fetch_job_v2(ARRAY['grant_probe'], %s)",
+            (worker,),
         ).fetchone()
         assert job == (job_ids[0], "doing")
         conn.execute("SELECT procrastinate_finish_job_v1(%s, 'succeeded', false)", (job[0],))

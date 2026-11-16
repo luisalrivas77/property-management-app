@@ -236,8 +236,10 @@ def _match(
     first_attempt: bool = True,
 ) -> matching.MatchPlan:
     key = deps.settings.iban_hmac_key
-    ai = _ai_on(deps) and not rematch
     with workspace_transaction(deps.engine, workspace_id) as conn:
+        if not rematch:  # D260: the workspace's key, resolved now; a re-match never asks
+            deps = deps.with_client(conn)
+        ai = _ai_on(deps) and not rematch
         ctx = new_command(conn, workspace_id, SYSTEM_ACTOR, now=deps.clock())
         # A retried re-ask asks again: its first attempt may have called the model and then
         # failed to write the answer (the ai_call row commits on its own).

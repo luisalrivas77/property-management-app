@@ -64,6 +64,12 @@ def test_ai_defaults_from_the_phase_2_spec():
     assert (settings.ai_max_pages, settings.ai_timeout_s, settings.eval_dir) == (100, 120, None)
 
 
+def test_ai_enabled_without_the_key_variable_is_valid():
+    """Phase 6 D260 (this was refused until 16 Nov 2026): the key may be typed in the app."""
+    settings = load_settings(ENV | {"HAUSBUCH_AI_ENABLED": "true"})
+    assert settings.ai_enabled is True and settings.anthropic_api_key is None
+
+
 def test_ai_enabled_with_a_key_and_the_key_stays_out_of_repr():
     api_key = "sk-ant-test-0123456789"
     settings = load_settings(
@@ -110,6 +116,32 @@ def test_the_product_id_alone_is_valid(extra):
     starts with the product id and no PIN variable; an ignored name adds no PIN."""
     settings = load_settings(ENV | {"HAUSBUCH_FINTS_PRODUCT_ID": "P1"} | extra)
     assert settings.fints_product_id == "P1" and dict(settings.fints_pins) == {}
+
+
+@pytest.mark.parametrize(
+    "partial",
+    [
+        {"HAUSBUCH_INBOX_IMAP_USER": "a@mail.example"},
+        {"HAUSBUCH_INBOX_IMAP_PASSWORD": "pw"},
+        {"HAUSBUCH_INBOX_IMAP_USER": "a@mail.example", "HAUSBUCH_INBOX_IMAP_PASSWORD": "pw"},
+        {"HAUSBUCH_TEM_SECRET_KEY": "k"},
+    ],
+    ids=["imap_user", "imap_password", "imap_pair_without_address", "tem_key"],
+)
+def test_part_of_the_mail_settings_is_valid_at_start_up(partial):
+    """Phase 6 D260 (refused until 16 Nov 2026): the rest may be typed in the app
+    (app_secret); the poll and the digest check the workspace's whole set when they run."""
+    settings = load_settings(ENV | partial)
+    assert settings.inbox_address is None and settings.tem_project_id is None
+
+
+@pytest.mark.parametrize("pin", ["HAUSBUCH_FINTS_PIN", "HAUSBUCH_FINTS_PIN_OWNER_B"])
+def test_a_pin_without_the_product_id_is_valid(pin):
+    """Phase 6 D260 (refused until 16 Nov 2026): the product id may be typed in the app
+    (app_secret), so the container starts with a PIN and no product id; a sync without one
+    from either source fails with bank.not_configured."""
+    settings = load_settings(ENV | {pin: "12345"})
+    assert settings.fints_product_id is None and len(dict(settings.fints_pins)) == 1
 
 
 # Synthetic values only (public repo).
@@ -321,35 +353,15 @@ def test_repr_hides_secrets():
         ({"HAUSBUCH_WORKER_CONCURRENCY": "0"}, "positive integer"),
         ({"HAUSBUCH_SHUTDOWN_GRACE_S": "2.5"}, "positive integer"),
         ({"HAUSBUCH_RUN_WORKER": "1"}, "true or false"),
-        ({"HAUSBUCH_AI_ENABLED": "true"}, "needs HAUSBUCH_ANTHROPIC_API_KEY"),
         ({"HAUSBUCH_AI_ENABLED": "yes"}, "true or false"),
         ({"HAUSBUCH_AI_INFERENCE_GEO": "eu"}, "must be one of us, global"),
         ({"HAUSBUCH_AI_MAX_PAGES": "0"}, "positive integer"),
         ({"HAUSBUCH_AI_MAX_PAGES": "601"}, "must not exceed 600"),
         ({"HAUSBUCH_AI_TIMEOUT_S": "-5"}, "positive integer"),
-        # Phase 5 §9: a secret without its partner is refused, naming variables only.
-        ({"HAUSBUCH_FINTS_PIN": "12345"}, "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID"),
-        # Phase 6 D163: a slot's PIN needs the product id too. (Phase 6 D196 dropped the
-        # reverse: the product id alone is valid, test_the_product_id_alone_is_valid.)
-        (
-            {"HAUSBUCH_FINTS_PIN_OWNER_B": "12345"},
-            "HAUSBUCH_FINTS_PIN and HAUSBUCH_FINTS_PRODUCT_ID",
-        ),
-        (
-            {"HAUSBUCH_INBOX_IMAP_USER": "a@mail.example"},
-            "HAUSBUCH_INBOX_IMAP_USER and HAUSBUCH_INBOX_IMAP_PASSWORD",
-        ),
-        (
-            {"HAUSBUCH_INBOX_IMAP_PASSWORD": "pw"},
-            "HAUSBUCH_INBOX_IMAP_USER and HAUSBUCH_INBOX_IMAP_PASSWORD",
-        ),
-        (
-            {"HAUSBUCH_INBOX_IMAP_USER": "a@mail.example", "HAUSBUCH_INBOX_IMAP_PASSWORD": "pw"},
-            "needs HAUSBUCH_INBOX_ADDRESS and HAUSBUCH_INBOX_LABEL",
-        ),
+        # Phase 5 §9: a secret without its partner is refused, naming variables only. (Phase 6
+        # D260 dropped a PIN without the product id: test_a_pin_without_the_product_id_is_valid.)
         ({"HAUSBUCH_INBOX_IMAP_HOST": "imap.gmail.com:993"}, "lower-case host name"),
         ({"HAUSBUCH_INBOX_AUTHSERV_ID": "MX.google.com"}, "lower-case host name"),
-        ({"HAUSBUCH_TEM_SECRET_KEY": "k"}, "needs HAUSBUCH_TEM_PROJECT_ID and HAUSBUCH_MAIL_FROM"),
         ({"HAUSBUCH_TEM_REGION": "fr-par/x"}, "must be a Scaleway region"),
         ({"HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S": "0"}, "positive integer"),
     ],

@@ -148,12 +148,13 @@ def run_bank_sync(
     session: FintsSession | None = None
     try:
         pin = _pin(deps, workspace_id, plan.credential_slot, plan.fints_url)
+        product_id = _product_id(deps, workspace_id)
         session = open_session(
             bank_code=plan.bank_code,
             login_name=plan.login_name,
             pin=pin,
             url=plan.fints_url,
-            product_id=deps.settings.fints_product_id or "",
+            product_id=product_id,
             client_data=plan.client_data,
             tan_mechanism=plan.tan_mechanism,
             client_factory=net.client_factory,
@@ -520,6 +521,18 @@ def _pin(deps: JobDeps, workspace_id: UUID, slot: str, fints_url: str) -> str:
             return credentials.resolve_pin(conn, slot, deps.settings, fints_url=fints_url)
     except RuleError as exc:
         raise BankError(exc.code) from None
+
+
+def _product_id(deps: JobDeps, workspace_id: UUID) -> str:
+    """The FinTS product id for this dialog (D260): the one typed into the app, decrypted,
+    else the container's; read in its own transaction, never put into the job's payload or a
+    log line. begin_run checked that one is usable; one deleted since, or one that no longer
+    decrypts, fails the run with bank.not_configured before any dialog."""
+    with workspace_transaction(deps.engine, workspace_id) as conn:
+        settings = service.bank_settings(conn, deps.settings)
+    if not service.configured(settings):
+        raise BankError(E.BANK_NOT_CONFIGURED)
+    return settings.fints_product_id or ""
 
 
 def _bank_error(

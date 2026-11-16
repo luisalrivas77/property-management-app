@@ -42,7 +42,7 @@ test("the Bankabruf card sets up a connection and explains a server without the 
   await expect(card).toContainText("noch keine: beim ersten Abruf fragt die Bank");
 
   await card.getByRole("button", { name: "Jetzt abrufen" }).click();
-  await expect(card.getByRole("alert")).toContainText("die Produkt-ID fehlt in der Serverkonfiguration");
+  await expect(card.getByRole("alert")).toContainText("die FinTS-Produkt-ID fehlt");
   await expect(card.getByRole("table")).toHaveCount(0); // a refused start leaves no run
 });
 

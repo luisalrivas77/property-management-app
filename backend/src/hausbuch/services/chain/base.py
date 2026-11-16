@@ -51,6 +51,13 @@ found as `make_source` in `services/chain/<kind>.py` (`solana_rpc.py`, `evm_ethe
   tip so the history and the balances of that run read to the same block;
 - keeps each `ChainTx.raw` as the provider's record as read: the sync stores the run's raws
   as the NDJSON original (D182 (3)).
+
+**A key or URL typed in the app (phase 6 D260).** `source_for(..., conn=)` hands the factory
+the Settings with the workspace's typed values in place of the container's (`SOURCE_SECRETS`
+names which a kind reads; services.app_secrets.workspace_settings), resolved when the run or
+the page builds the source, never stored. A typed value that no longer decrypts raises
+`wallet.key_unreadable` before the factory runs: never the container's value instead, never
+the public default.
 """
 
 from collections.abc import Callable
@@ -60,15 +67,19 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import SecretStr
+from sqlalchemy import Connection
 
 from hausbuch.rules.chain.registry import ChainRegistryRow, registry
 from hausbuch.rules.errors import (
     WALLET_KEY_MISSING,
+    WALLET_KEY_UNREADABLE,
     WALLET_SOURCE_FAILED,
     WALLET_SOURCE_REFUSED,
     WALLET_SOURCE_THROTTLED,
 )
+from hausbuch.schemas.app_secrets import AppSecretName
 from hausbuch.schemas.chain import Chain, ChainSource, ChainSourceKind
+from hausbuch.services import app_secrets
 from hausbuch.services.prices.http import SourceError
 from hausbuch.settings import Settings
 
@@ -171,25 +182,53 @@ def factory_for(kind: ChainSourceKind) -> SourceFactory:
     return found
 
 
+# The keys and URLs typed in the app (D260) each source kind reads from Settings.
+SOURCE_SECRETS: dict[ChainSourceKind, tuple[AppSecretName, ...]] = {
+    ChainSourceKind.EVM_ETHERSCAN: (AppSecretName.ETHERSCAN_KEY,),
+    ChainSourceKind.SOLANA_RPC: (AppSecretName.SOLANA_RPC_URL,),
+    ChainSourceKind.EVM_RPC_BALANCE: (AppSecretName.BSC_RPC_URL,),
+    ChainSourceKind.BITCOIN_ESPLORA: (),
+}
+
+
+def chain_settings(conn: Connection, settings: Settings, kind: ChainSourceKind) -> Settings:
+    """`settings` with the workspace's typed values for `kind` (RLS: the conn's workspace);
+    ChainSourceError `wallet.key_unreadable` for a typed one that no longer decrypts."""
+    try:
+        return app_secrets.workspace_settings(conn, settings, SOURCE_SECRETS.get(kind, ()))
+    except app_secrets.SecretUnreadable:
+        raise ChainSourceError(WALLET_KEY_UNREADABLE) from None
+
+
 def source_for(
-    chain: Chain, settings: Settings, budget: RequestBudget | None = None
+    chain: Chain,
+    settings: Settings,
+    budget: RequestBudget | None = None,
+    *,
+    conn: Connection | None = None,
 ) -> ChainSource:
     """The configured source of a chain (the registry's `source` kind with the settings' base
-    URL and key), or ChainSourceError `wallet.key_missing`."""
+    URL and key, a workspace's typed ones first when `conn` is given, D260), or
+    ChainSourceError `wallet.key_missing` (or `wallet.key_unreadable`)."""
     row = registry().chain(chain)
+    if conn is not None:
+        settings = chain_settings(conn, settings, row.source)
     if budget is None:
         budget = RequestBudget(budget_limit(row.source, settings))
     return factory_for(row.source)(row, settings, budget)
 
 
 __all__ = [
+    "SOURCE_SECRETS",
     "WALLET_KEY_MISSING",
+    "WALLET_KEY_UNREADABLE",
     "WALLET_SOURCE_FAILED",
     "ChainSourceError",
     "ReconcileScope",
     "RequestBudget",
     "SourceFactory",
     "budget_limit",
+    "chain_settings",
     "error_from",
     "factory_for",
     "host_of",

@@ -60,8 +60,9 @@ export function ReminderSettings() {
             <p className="muted">{settings.reminder_emails ? "Eingeschaltet" : "Ausgeschaltet"}</p>
             {settings.reminder_emails_available ? null : (
               <p className="muted" data-testid="reminder-emails-unavailable">
-                Der E-Mail-Versand ist noch nicht eingerichtet. Bis dahin wird keine E-Mail verschickt; die Erinnerungen stehen weiter
-                auf der Übersicht und unter „Zu prüfen“.
+                Der E-Mail-Versand ist noch nicht eingerichtet: dafür unter „Zugangsschlüssel“ (unten, Bereich E-Mail) den Schlüssel,
+                das Projekt und die Absenderadresse von Scaleway Transactional Email eintragen. Bis dahin wird keine E-Mail verschickt;
+                die Erinnerungen stehen weiter auf der Übersicht und unter „Zu prüfen“.
               </p>
             )}
             <ErrorNotice error={error} />
