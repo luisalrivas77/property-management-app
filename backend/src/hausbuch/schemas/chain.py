@@ -427,6 +427,9 @@ class GroupRoutingInput(Schema):
     linked: bool = False
     pair_learned: bool = False  # a bridge over a pair the workspace's chain_pair rows hold
     unregistered_output: bool = False  # a Bitcoin spend paying an unregistered address (D185)
+    # The group asks a person something (a Solana record it cannot read in full keeps its fee
+    # leg beside the question): never booked by code as „a fee“, so the question stays.
+    question: bool = False
 
 
 # --- Lots and the holding period (D187, D188) -------------------------------------------
