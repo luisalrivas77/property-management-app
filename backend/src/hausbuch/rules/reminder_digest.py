@@ -111,6 +111,8 @@ def reminder_label(reminder: Reminder) -> str:
             return f"Bankabruf {arg('account')} lange nicht erfolgreich"
         case "bank.statement_due":  # D122 amended: never an amount or an IBAN (D123)
             return f"Kontoauszug fällig: {arg('account')}"
+        case "crypto.holdings_statement":  # phase 7 D190: never an address or an amount
+            return f"Bestandsnachweis 31.12.{arg('year')} erstellen"
     return FALLBACK_LABEL
 
 

@@ -340,6 +340,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "account.holdings_reconciled": "Bestände abgestimmt",
   "account.holdings_mismatch": "Bestände weichen ab",
   "account.holding_corrected": "Bestand korrigiert",
+  "account.holdings_exported": "Bestandsnachweis erstellt",
   "wallet.address_added": "Wallet-Adresse hinzugefügt",
   "wallet.address_updated": "Wallet-Adresse geändert",
   "wallet.address_revealed": "Wallet-Adresse vollständig kopiert",

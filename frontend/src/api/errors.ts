@@ -293,6 +293,11 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Diese Frage ist schon beantwortet oder hat sich geändert, etwa durch eine andere Antwort. Bitte die Seite neu laden und die aktuelle Frage beantworten.",
   "wallet.original_missing":
     "Die Daten zu dieser Zahlung wurden bei ihrem Abruf nicht gespeichert, deshalb lässt sich die Frage hier nicht beantworten. Die Zahlung bleibt als offene Frage auf der Wallet stehen.",
+  // Phase 7 step 6 (D190): „Bestandsnachweis 31.12.<Jahr> erstellen“.
+  "holdings_export.year_open":
+    "Der Bestandsnachweis zum 31.12. lässt sich erst ab dem 1. Januar des Folgejahres erstellen, wenn der Tag vorbei ist.",
+  "holdings_export.nothing_held":
+    "Bis zum 31.12. dieses Jahres gibt es auf keiner Wallet und keiner Börse eine bestätigte Bewegung; es gibt nichts nachzuweisen.",
   // D193: why a document cannot be deleted; each names what still depends on it.
   "document.delete_blocked.statement_import": "Aus diesem Auszug wurden Umsätze eingelesen; sie bleiben unverändert im Konto.",
   "document.delete_blocked.bank_statement": "Es ist ein Kontoauszug, den die Bank über den Bankabruf geliefert hat; er gehört ins Jahresarchiv.",
