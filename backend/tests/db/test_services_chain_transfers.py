@@ -39,6 +39,7 @@ pytestmark = pytest.mark.db
 
 T0 = datetime(2026, 3, 1, 10, 0, tzinfo=UTC)
 TODAY = date(2026, 3, 20)  # every 48-hour window has passed
+TODAY_AT = datetime(2026, 3, 20, 7, 0, tzinfo=UTC)
 WETH = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"  # the registry's WETH on Ethereum
 
 
@@ -559,3 +560,85 @@ def test_another_workspace_sees_and_links_nothing(dbname, fresh_workspaces, run,
     assert _links(read, b) == []
     assert _links(read, a) == []
     assert len(_open(read, a)) == 1
+
+
+# --- Hooks and the command ------------------------------------------------------------------
+
+
+def test_confirming_an_exchange_withdrawal_links_it(seed, run, read):
+    """The hook after a person's answer on an exchange's movement (D178 (4)): a withdrawal
+    confirmed as going to an own wallet links to the confirmed receipt at once."""
+    from hausbuch.services.exchange.imports import confirm_movement
+
+    out = seed.exchange_out("1", fee="0.001", status="proposed")
+    _, [in_] = seed.group(
+        [(seed.eth, seed.address, "0.999", "internal_transfer_in", "confirmed")],
+        status="confirmed",
+        at=T0 + timedelta(hours=3),
+    )
+    assert run(seed.ws, chain_transfers.relink).linked == 0  # quantity alone confirms nothing
+
+    run(seed.ws, confirm_movement, out)
+
+    [link] = _links(read, seed.ws)
+    assert (link.out_movement_id, link.in_movement_id, link.matched_by) == (out, in_, "matcher")
+
+
+def test_answer_hook_never_waits_for_the_transfer_lock(seed, run, app_engine):
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+
+    actor = Actor(ActorType.SYSTEM, "test")
+    with workspace_transaction(app_engine, seed.ws) as holder:
+        transfers._lock(new_command(holder, seed.ws, actor))
+        result = run(seed.ws, chain_transfers.relink, wait=False)
+    assert result.busy and result.linked == 0
+
+
+def test_after_sync_hook_links_and_never_raises(seed, read, app_engine, monkeypatch, caplog):
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor
+
+    actor = Actor(ActorType.SYSTEM, "sync_wallets")
+    tx = _hash("after sync")
+    seed.exchange_out("0.3", fee="0.0005", tx_hash=tx, network="ETH")
+    seed.group([(seed.eth, seed.address, "0.2995", "internal_transfer_in", "proposed")], tx_hash=tx)
+
+    chain_transfers.relink_after_sync(app_engine, seed.ws, actor=actor, clock=lambda: TODAY_AT)
+    assert len(_links(read, seed.ws)) == 1
+
+    def broken(ctx, **kw):
+        raise RuntimeError(f"invented failure quoting {tx}")
+
+    monkeypatch.setattr(chain_transfers, "relink", broken)
+    with caplog.at_level("ERROR", logger="hausbuch.services.chain.transfers"):
+        chain_transfers.relink_after_sync(app_engine, seed.ws, actor=actor, clock=lambda: TODAY_AT)
+    [record] = [r for r in caplog.records if "not relinked" in r.getMessage()]
+    assert record.fields["exc_type"] == "RuntimeError"
+    assert tx not in caplog.text  # the class name only, never the message
+
+
+def test_relink_chain_command(dbname, seed, read, capsys):
+    from db.test_cli_evals_report import _owner_url
+
+    from hausbuch import cli
+
+    tx = _hash("command")
+    seed.exchange_out("0.3", fee="0.0005", tx_hash=tx, network="ETH")
+    seed.group([(seed.eth, seed.address, "0.2995", "internal_transfer_in", "proposed")], tx_hash=tx)
+    environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}
+    argv = ["relink-chain", "--workspace", str(seed.ws)]
+
+    assert cli.main([*argv, "--dry-run"], environ) == cli.EXIT_OK
+    text = capsys.readouterr().out
+    assert (
+        "would link 1 coin transfer(s)" in text and "would confirm 1 movement(s)" in text
+    )  # the receipt; the withdrawal was confirmed
+    assert _links(read, seed.ws) == []
+
+    assert cli.main(argv, environ) == cli.EXIT_OK
+    assert "linked 1 coin transfer(s)" in capsys.readouterr().out
+    assert len(_links(read, seed.ws)) == 1
+    assert cli.main(argv, environ) == cli.EXIT_OK  # a second run links nothing more
+    assert "linked 0 coin transfer(s)" in capsys.readouterr().out

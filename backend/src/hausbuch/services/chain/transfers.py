@@ -470,9 +470,7 @@ def _still(conn: Connection, legs: Iterable[_Row]) -> bool:
     m = movement_table.c
     ids = [leg.id for leg in legs]
     found = dict(
-        conn.execute(
-            select(m.id, m.status).where(m.id.in_(ids), m.superseded_by.is_(None))
-        ).all()
+        conn.execute(select(m.id, m.status).where(m.id.in_(ids), m.superseded_by.is_(None))).all()
     )
     return all(found.get(leg.id) == leg.status.value for leg in legs)
 
@@ -589,14 +587,23 @@ class RelinkResult:
     linked: int = 0
     confirmed: int = 0  # movements the links confirmed (D186 (1))
     skipped_locked: int = 0  # a fit left for the next run: a person was answering a leg
+    busy: bool = False  # relink(wait=False) found the transfer lock taken: nothing done
 
 
-def relink(ctx: CommandContext) -> RelinkResult:
+def relink(ctx: CommandContext, *, wait: bool = True) -> RelinkResult:
     """Every open coin leg of the workspace linked where the module docstring says; the
-    counts. Idempotent: a second run finds every written pair linked."""
-    from ..transfers import _lock
+    counts. Idempotent: a second run finds every written pair linked.
 
-    _lock(ctx)
+    wait=False (the hook after a person's answer on an exchange's movement, which holds that
+    movement's row and not the exchange's account row, so it may not wait for the transfer
+    lock: services.transfers._lock's order): when another linker holds the lock nothing is
+    done and `busy` says so; the next sync or import links what is left."""
+    from ..transfers import _lock, _try_lock
+
+    if wait:
+        _lock(ctx)
+    elif not _try_lock(ctx):
+        return RelinkResult(busy=True)
     world = _World.read(ctx.conn)
     result = RelinkResult()
     for leg in [r for r in world.open() if r.sends]:
@@ -640,9 +647,10 @@ def relink(ctx: CommandContext) -> RelinkResult:
     return result
 
 
-def relink_after(ctx: CommandContext) -> None:
-    """The hook after an exchange import or answer: relink in the caller's transaction."""
-    relink(ctx)
+def relink_after_answer(ctx: CommandContext) -> None:
+    """The hook after a person confirms or answers an exchange's coin movement: relink in the
+    caller's transaction, without waiting for the transfer lock (relink's wait=False)."""
+    relink(ctx, wait=False)
 
 
 def relink_after_sync(
@@ -786,6 +794,6 @@ __all__ = [
     "link_by_hand",
     "open_transfers",
     "relink",
-    "relink_after",
+    "relink_after_answer",
     "relink_after_sync",
 ]

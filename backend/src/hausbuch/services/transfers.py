@@ -564,6 +564,13 @@ def _lock(ctx: CommandContext) -> None:
     ctx.conn.execute(select(func.pg_advisory_xact_lock(key)))
 
 
+def _try_lock(ctx: CommandContext) -> bool:
+    """_lock without waiting (phase 7 step 5): whether the lock is now held. For a caller
+    that holds a movement row and so may not wait for the lock (its order)."""
+    key = func.hashtextextended(f"transfer_link:{ctx.workspace_id}", 0)
+    return bool(ctx.conn.execute(select(func.pg_try_advisory_xact_lock(key))).scalar_one())
+
+
 def _lock_exchanges(ctx: CommandContext, movement_ids: Iterable[UUID | None]) -> None:
     """The rows of the exchange accounts the movements `movement_ids` belong to, locked in id
     order before the transfer lock (_lock's lock order): a link by hand of an exchange's
