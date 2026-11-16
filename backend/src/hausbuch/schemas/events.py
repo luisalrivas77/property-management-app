@@ -42,6 +42,7 @@ from .bank_sync import (
     SyncStatus,
     SyncTrigger,
 )
+from .chain import AddressKind, Chain
 from .common import (
     Area,
     BuildingShare,
@@ -975,6 +976,35 @@ class AccountOwnershipSet(Schema):
     superseded: list[UUID] = Field(default_factory=list)  # the account_ownership rows replaced
 
 
+class WalletAddressAdded(Schema):
+    """wallet.address_added (phase 7 D179 (2), step 1), on the wallet account: the masked form,
+    never the address or its HMAC."""
+
+    address_id: UUID
+    chain: Chain
+    address_masked: str
+    label: str | None = None
+    kind: AddressKind
+
+
+class WalletAddressUpdated(Schema):
+    """wallet.address_updated: its label or active changed (retired or reactivated)."""
+
+    address_id: UUID
+    chain: Chain
+    address_masked: str
+    changes: dict[str, FieldChange] = Field(min_length=1)
+
+
+class WalletAddressRevealed(Schema):
+    """wallet.address_revealed: „kopieren“ read the full address (D179, §4); the audit of the
+    one endpoint that returns it."""
+
+    address_id: UUID
+    chain: Chain
+    address_masked: str
+
+
 class MovementImportRecorded(Schema):
     """account.movements_imported (D166): the statement.imported of an exchange export."""
 
@@ -1293,6 +1323,11 @@ class EventType(StrEnum):
     ACCOUNT_HOLDINGS_MISMATCH = "account.holdings_mismatch"
     ACCOUNT_HOLDING_CORRECTED = "account.holding_corrected"  # step 4, 0027
 
+    # Phase 7 (entity_type wallet, entity_id = the wallet account)
+    WALLET_ADDRESS_ADDED = "wallet.address_added"
+    WALLET_ADDRESS_UPDATED = "wallet.address_updated"
+    WALLET_ADDRESS_REVEALED = "wallet.address_revealed"
+
     ASSET_CREATED = "asset.created"  # phase 6
     ASSET_UPDATED = "asset.updated"
     ASSET_PRICE_RECORDED = "asset.price_recorded"
@@ -1511,6 +1546,14 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.ACCOUNT_HOLDING_CORRECTED: EventSpec(
         HoldingCorrected, "optional", "A report's position corrected (date = as of)"
+    ),
+    # Phase 7
+    E.WALLET_ADDRESS_ADDED: EventSpec(WalletAddressAdded, "forbidden", "Wallet address added"),
+    E.WALLET_ADDRESS_UPDATED: EventSpec(
+        WalletAddressUpdated, "forbidden", "Wallet address relabelled, retired or reactivated"
+    ),
+    E.WALLET_ADDRESS_REVEALED: EventSpec(
+        WalletAddressRevealed, "forbidden", "Wallet address copied in full („kopieren“)"
     ),
     E.ASSET_CREATED: EventSpec(AssetRecorded, "forbidden", "Asset recorded"),
     E.ASSET_UPDATED: EventSpec(Updated, "forbidden", "Asset name or price ids changed"),

@@ -366,9 +366,9 @@ class AccountSource(StrEnum):
 
 
 class AccountKind(StrEnum):
-    """account.kind (migration 0025, phase 6 D156). `wallet` is in the CHECK so phase 7 adds
-    no migration for it; create_account refuses it (account.kind_not_available) until then,
-    as AccountSource.AGGREGATOR is refused."""
+    """account.kind (migration 0025, phase 6 D156). `wallet` was in the CHECK from the start
+    so phase 7 adds no migration for it; create_account takes it since phase 7 step 1 (D179).
+    AccountSource.AGGREGATOR stays refused (account.kind_not_available)."""
 
     BANK_CURRENT = "bank_current"
     BANK_SAVINGS = "bank_savings"

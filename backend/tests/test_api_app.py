@@ -110,6 +110,7 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
         "household",
         "exchange",
         "wallet_sync",
+        "wallets",
         "tax",
         "tax_inputs",
         "tax_exports",

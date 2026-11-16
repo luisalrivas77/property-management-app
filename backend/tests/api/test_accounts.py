@@ -145,6 +145,44 @@ def test_another_workspace_gets_404_and_empty_lists(client_a, client_b):
     assert ok(client_b.get("/api/possible-duplicates")) == []
 
 
+# The anonymised export with its Auftragskonto column blank: a bank file naming no account
+# of its own, which routing by IBAN (D164) cannot refuse anywhere.
+CSV_NO_IBAN = CSV_BYTES.replace(f'"{SAMPLE_IBAN}";'.encode(), b'"";')
+
+
+@pytest.mark.parametrize(
+    "kind_fields",
+    [
+        {"kind": "wallet", "provider": "Testwallet"},
+        {"kind": "exchange", "provider": "BISON"},
+    ],
+    ids=["wallet", "exchange"],
+)
+def test_a_wallet_or_an_exchange_takes_no_bank_statement(client_a, dbname, kind_fields):
+    """Review of PR #374: a wallet is read from its chains and an exchange from its own export,
+    so a bank file is refused there before anything is written (it booked 22 lines and a
+    Kontostand card before); the same file still imports onto a bank account."""
+    assert CSV_NO_IBAN != CSV_BYTES
+    body = {k: v for k, v in ACCOUNT.items() if k != "iban"} | {"label": "Ziel"} | kind_fields
+    target = create(client_a, "/api/accounts", body)
+    response = _upload(client_a, target["id"], CSV_NO_IBAN, "text/csv", "umsaetze.csv")
+    assert ok(response, 422)["code"] == "statement.account_mismatch"
+    assert ok(client_a.get(f"/api/accounts/{target['id']}/imports")) == []
+    assert ok(client_a.get("/api/inbox")) == []
+    with _admin(dbname) as conn:
+        written = conn.execute(
+            "SELECT (SELECT count(*) FROM transaction WHERE account_id = %(a)s),"
+            " (SELECT count(*) FROM statement_import WHERE account_id = %(a)s),"
+            " (SELECT count(*) FROM document WHERE workspace_id = %(w)s)",
+            {"a": target["id"], "w": target["workspace_id"]},
+        ).fetchone()
+    assert written == (0, 0, 0)
+
+    bank = create(client_a, "/api/accounts", ACCOUNT)
+    imported = ok(_upload(client_a, bank["id"], CSV_NO_IBAN, "text/csv", "umsaetze.csv"), 201)
+    assert imported["lines_new"] == 22
+
+
 def test_a_statement_upload_gets_the_upload_limit_not_the_json_limit(client_a):
     """A year of daily reports or a PDF is over the 1 MiB JSON limit: the imports path must
     reach the route (which then judges the file), not be refused at the transport."""
