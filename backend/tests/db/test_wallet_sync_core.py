@@ -441,7 +441,6 @@ def test_no_plaintext_address_in_events_logs_or_rows(dbname, world, wallet, sync
 # Invented mints: Solana program ids, valid base58, no token the registry lists.
 MINT_X = "Vote111111111111111111111111111111111111111"
 MINT_Y = "Config1111111111111111111111111111111111111"
-USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # the registry's Solana USDC row
 
 
 def _run(app_engine, blob_store, ws, account, *, day=1, budgets=None):

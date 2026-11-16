@@ -86,7 +86,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, Engine, and_, cast, exists, func, insert, null, select, update
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DataError, IntegrityError
 
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import asset as asset_table
@@ -639,13 +639,16 @@ class _Written:
 
 
 def _savepoint(ctx: CommandContext, original: _Original, write: Callable[[], int]) -> int:
-    """`write` in a savepoint: a refusal (_Unstorable, or the database's DBAPIError) rolls
-    back its rows, events, assets and an original it stored, and is raised on."""
+    """`write` in a savepoint: a refusal (_Unstorable, or the database refusing the data:
+    DataError, IntegrityError) rolls back its rows, events, assets and an original it
+    stored, and is raised on. Any other database error (a deadlock, a lost connection) is
+    not a refusal of this transaction: it fails the run, the cursor unmoved, so the next run
+    reads it again."""
     had_original = original.id is not None
     try:
         with ctx.conn.begin_nested():
             return write()
-    except (_Unstorable, DBAPIError):
+    except (_Unstorable, DataError, IntegrityError):
         if not had_original:
             original.id = None
         raise
@@ -794,7 +797,8 @@ def _write_unstorable(
 
     try:
         _savepoint(ctx, original, write)
-    except (_Unstorable, DBAPIError):  # not even the group fits (a hash over 200 characters)
+    except (_Unstorable, DataError, IntegrityError):
+        # not even the group fits (a hash over 200 characters)
         _log_refused(start, "group_refused")
         return _Written(unstorable=1)
     return _Written(unstorable=1, occurred_at=group.occurred_at)
@@ -824,7 +828,7 @@ def _write_group(ctx: CommandContext, start: _Start, plan: _Plan, original: _Ori
     kept = _Plan(replace(group, legs=[leg for leg, _, _ in keep]), keep)
     try:
         n = _savepoint(ctx, original, lambda: _write_movements(ctx, start, kept, live, original))
-    except (_Unstorable, DBAPIError):  # a leg or the group the database refuses
+    except (_Unstorable, DataError, IntegrityError):  # a leg or the group the database refuses
         written = _write_unstorable(ctx, start, group, original, "refused")
         written.spam_dropped = dropped
         return written
