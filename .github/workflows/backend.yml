@@ -6,8 +6,28 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --python 3.12
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  # The suite runs as three parallel parts (tests/conftest.py, --shard): about a third of the
+  # wall time each. The parts are disjoint and together are the whole suite.
   test:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     defaults:
       run:
         working-directory: backend
@@ -30,6 +50,4 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --python 3.12
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run pytest -q -rs -n auto
+      - run: uv run pytest -q -rs -n auto --shard ${{ matrix.shard }}/3
