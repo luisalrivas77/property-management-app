@@ -420,7 +420,7 @@ Loaded by `tests/fixture_models_phase7.py` (the phase 6 loader's pattern: loadin
 
 - The answers „Tausch“ and „Übertrag an eigene Wallet/Börse“ (they need the legs picked and a transfer link, step 5), the answers to `wallet.coins_left` (step 5), any answer to an unreadable transaction (`wallet.record_unreadable`) or to a CoinJoin question (foreign inputs): those cards say what happened and point to the wallet page only.
 - „Als Spam verbergen“ on a holding row: hiding a token works through the „Spam“ answer and `POST /assets/{id}/demote`; no button on the holdings table, since a holding does not say whether it is the chain's own coin.
-- A wallet's provider and last sync on Konten (§14's „Quelle“, „Stand“) are unchanged: the Konten list still reads „noch nicht abgerufen“ for every wallet, even after a sync. The wallet page shows the real state.
+- A wallet on Konten (§14's „Quelle“, „Stand“): Quelle reads „Chain-Abruf“, and Stand shows the wallet page's verdict per active address (one badge per distinct state from `GET /wallets/{id}/state`, linking to the wallet) and the time of the newest finished run. (Until the second follow-up commit on this branch the list read „noch nicht abgerufen“ for every wallet, even after a sync.)
 
 ## 16. Implementation steps
 
