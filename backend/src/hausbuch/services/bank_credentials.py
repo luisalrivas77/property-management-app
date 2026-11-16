@@ -27,10 +27,11 @@ normalised (server_address: a plain https address by its host, port and path, an
 shape verbatim), before the PIN, so the binding is authenticated by the same tag and needs
 no column. A sync compares it with the address it is about to dial and refuses with
 bank.pin_server_changed before any request when they differ: the PIN must be typed again
-for the new address. A row of key version 1 (typed before the binding; none on the live
-data, checked 15 Nov 2026) names no address and is refused the same way, never bound at its
-first use. Only the PIN typed into the app is bound; a container secret is the operator's
-and follows the connection.
+for the new address. A row of key version 1 (typed before the binding; this said "none on
+the live data, checked 15 Nov 2026", but two were typed that evening and had to be typed
+again) names no address and is refused the same way, never bound at its first use. Only the
+PIN typed into the app is bound; a container secret is the operator's and follows the
+connection.
 
 A PIN is a secret, not history: setting it replaces the row, deleting it removes it. Each act
 is an event (workspace.bank_pin_set, workspace.bank_pin_deleted) naming the slot and its actor
