@@ -522,12 +522,17 @@ def import_export(
             f"this is an export of {_PROVIDER[export.kind]}, the account is {account.provider}",
         )
     offset = None
+    renamed = times.TimesCorrected()
     if export.kind is not ExportKind.BISON:
         # D178 amended (4): the zone Binance wrote the file in, from its names (never stored);
         # the imports read as UTC before the amendment are moved by their stored names first.
         offset = binance_csv.utc_offset(export.member_name, original_filename)
-        times.correct_by_name(ctx, account_id)
+        renamed = times.correct_by_name(ctx, account_id)
     if export.kind is ExportKind.BINANCE_WITHDRAWALS:
+        if renamed.imports:
+            from ..transfers import relink
+
+            relink(ctx, account_id)  # review B: a moved EUR leg finds its bank leg (D162)
         return _complete_withdrawals(
             ctx, store, account_id, data, export.text, media_type, original_filename, offset
         )
@@ -550,11 +555,13 @@ def import_export(
         )
     ).one_or_none()
     if existing is not None:
-        if (
-            offset is not None
-            and times.correct_same_file(ctx, account_id, existing.id, offset, document.id).imports
-        ):
+        same = times.TimesCorrected()
+        if offset is not None:
             # D178 amended (4): the same file again under a name that names its zone.
+            same = times.correct_same_file(ctx, account_id, existing.id, offset, document.id)
+        if same.imports or renamed.imports:
+            # Review B: whatever moved at the start of this upload links again, as after an
+            # import, though the file is one stored already.
             existing = ctx.conn.execute(
                 select(*_IMPORT_COLUMNS).where(import_table.c.id == existing.id)
             ).one()

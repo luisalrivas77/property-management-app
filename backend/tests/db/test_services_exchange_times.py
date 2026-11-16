@@ -890,3 +890,38 @@ def test_an_export_whose_rows_are_all_stored_follows_their_repair(
     assert E.EXCHANGE_TIME_ZONE_UNKNOWN not in read(ws, imports.exchange_overview, account.id).todos
     ids = _unreconciled(run, read, ws, account.id, first.id, n=40)
     assert _correct(run, ws, first.id, ids, n=41).status.value == "reconciled"
+
+
+def test_the_same_file_again_links_what_its_upload_moved(
+    run, read, blob_store, fresh_workspaces, dbname, monkeypatch
+):
+    """Review B: an import read as UTC under Binance's own name, a learned withdrawal pair
+    (D261) and the chain's receipt five minutes after the true time. The same bytes uploaded
+    again are the stored import, but the upload first moved its rows by the stored name; it
+    links them as an import does, so the pair links the moved withdrawal."""
+    ws, _ = fresh_workspaces
+    account = _binance(run, ws)
+    no_fee = TX.replace("Withdraw fee is included", "")
+    with _legacy(monkeypatch) as m:
+        _no_zone(m)
+        first = _upload(
+            run, blob_store, ws, account.id, _zip(no_fee, TX_MEMBER), TX_NAME
+        ).movement_import
+    chain = Chain(dbname, ws, _plain_eth(read, ws, account.id))
+    withdrawal = next(
+        r for r in _live(read, ws, account.id) if r.kind == MovementKind.INTERNAL_TRANSFER_OUT.value
+    )
+    chain.pair(account.id, withdrawal.id)
+    chain.receipt("0.2", WITHDRAWN + timedelta(minutes=5), tx_hash=None)
+    assert run(ws, chain_transfers.relink, now=T0).linked == 0  # an hour apart
+
+    again = _upload(run, blob_store, ws, account.id, _zip(no_fee, TX_MEMBER), TX_NAME, n=5)
+
+    assert again.movement_import.id == first.id
+    assert again.movement_import.last_at == WITHDRAWN
+    [link] = _current_links(read, ws)
+    live = next(
+        r for r in _live(read, ws, account.id) if r.kind == MovementKind.INTERNAL_TRANSFER_OUT.value
+    )
+    assert link.out_movement_id == live.id and live.occurred_at == WITHDRAWN
+    assert run(ws, chain_transfers.relink, now=T0 + HOUR).linked == 0  # nothing left to link
