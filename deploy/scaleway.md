@@ -1047,6 +1047,11 @@ so always check the card afterwards (point 4): it says whether the server has th
    dem Server gesetzt“ (set on the server, the variable named), or „Noch keine PIN
    hinterlegt.“ (no PIN yet, with the input). In the last case a sync ends with „PIN fehlt“
    (PIN missing, `bank.pin_missing`). The card never shows the PIN.
+   A PIN typed in the app is bound to the „FinTS-Adresse“ (FinTS address) of the connection
+   it was typed for (D196 amended, 16 Nov 2026). If that address is changed later, or the PIN
+   was typed before 16 Nov 2026, the card says „Die gespeicherte PIN gilt für eine andere
+   FinTS-Adresse“ and a sync stops before anything is sent: choose „PIN ändern“ and type it
+   again. A PIN kept as a container variable is not bound.
 4. **Only if you keep the PIN as a variable instead** — Scaleway console
    (console.scaleway.com, project of step 1): Serverless → Containers → namespace
    `hausbuch` → container `hausbuch-api` → its **Settings** tab, the environment variables
