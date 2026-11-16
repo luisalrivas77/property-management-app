@@ -1906,7 +1906,8 @@ export interface paths {
         /**
          * Bank Credential Set
          * @description D196: the PIN is encrypted before it reaches the database; the answer names the slot
-         *     and when, never the PIN.
+         *     and when, never the PIN. The PIN is bound to the FinTS address in the same body (D196
+         *     amended).
          */
         put: operations["bank_credential_set_api_bank_credentials__slot__put"];
         post?: never;
@@ -4460,6 +4461,11 @@ export interface components {
              * @default true
              */
             name_readable: boolean;
+            /**
+             * Credential Server Matches
+             * @default true
+             */
+            credential_server_matches: boolean;
         };
         /**
          * BankConnectionCreate
@@ -4520,6 +4526,11 @@ export interface components {
          *     never returned, logged or echoed (a SecretStr: its repr is stars). Surrounding blanks are
          *     trimmed, as the container secret's are (settings._optional), so a PIN pasted with a space
          *     is the same PIN; the length counts after trimming.
+         *
+         *     fints_url (D196 amended, 16 Nov 2026): the FinTS address the PIN is typed for, the
+         *     connection's as the card shows it. The PIN is stored bound to it and a sync to any other
+         *     address refuses it (bank.pin_server_changed), so changing a connection's address never
+         *     sends the stored PIN elsewhere. Never echoed or stored readable.
          */
         BankPinSet: {
             /**
@@ -4527,6 +4538,8 @@ export interface components {
              * Format: password
              */
             pin: string;
+            /** Fints Url */
+            fints_url: string;
         };
         /**
          * BankStatement

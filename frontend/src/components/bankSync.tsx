@@ -41,6 +41,9 @@
 //   (DELETE) falls back to the variable. After the server's key changed, a stored PIN or
 //   Anmeldename no longer decrypts (`credential_readable`, `name_readable` false) and the card
 //   asks for it again.
+// - D196 amended (16 Nov 2026): a PIN is saved for the FinTS address the form shows (the PUT
+//   carries it) and is sent only there. After the connection's address changed, the stored
+//   PIN is refused (`credential_server_matches` false) and the card asks to type it again.
 import Link from "next/link";
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 
@@ -163,12 +166,14 @@ async function loadBankSync(
 
 /** Where a slot's PIN comes from at the next sync (D196's precedence: the app's, then the
  * server's variable). */
-type PinInfo = { source: CredentialSource; setAt: string | null; readable: boolean };
+type PinInfo = { source: CredentialSource; setAt: string | null; readable: boolean; serverMatches: boolean };
 
+/** A slot's PIN without a connection: whether it was typed for this address is unknown
+ * here, so it counts as matching; the connection's card says otherwise once it exists. */
 function slotPin(slot: string, slots: Slots): PinInfo {
   const app = slots.app.find((c) => c.slot === slot);
-  if (app) return { source: "app", setAt: app.set_at, readable: app.readable };
-  return { source: slots.server.includes(slot) ? "server" : "none", setAt: null, readable: true };
+  if (app) return { source: "app", setAt: app.set_at, readable: app.readable, serverMatches: true };
+  return { source: slots.server.includes(slot) ? "server" : "none", setAt: null, readable: true, serverMatches: true };
 }
 
 function connectionPin(connection: BankConnection): PinInfo {
@@ -176,6 +181,7 @@ function connectionPin(connection: BankConnection): PinInfo {
     source: connection.credential_source,
     setAt: connection.credential_set_at ?? null,
     readable: connection.credential_readable,
+    serverMatches: connection.credential_server_matches,
   };
 }
 
@@ -270,6 +276,7 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
           <ConnectionFacts connection={state.data.connection} />
           <PinPanel
             slot={state.data.connection.credential_slot}
+            fintsUrl={state.data.connection.fints_url}
             pin={connectionPin(state.data.connection)}
             serverSet={state.data.slots.server.includes(state.data.connection.credential_slot)}
             onChanged={reload}
@@ -346,6 +353,14 @@ function dayAfter(timestamp: string, days: number): string {
 
 /** Where a slot's PIN comes from, in one sentence (names and dates only, never a PIN). */
 function pinSentence(slot: string, pin: PinInfo): ReactNode {
+  if (pin.source === "app" && pin.readable && !pin.serverMatches) {
+    return (
+      <>
+        <strong>Die gespeicherte PIN gilt für eine andere FinTS-Adresse</strong>: Hausbuch sendet sie nur an die Adresse, für
+        die sie eingegeben wurde. Bitte „PIN ändern“ wählen und die PIN für diese Adresse neu eingeben.
+      </>
+    );
+  }
   if (pin.source === "app") {
     return pin.readable ? (
       <>PIN in der App gespeichert am {pin.setAt ? dayAfter(pin.setAt, 0) : "–"} (verschlüsselt).</>
@@ -407,12 +422,15 @@ function PinInput({
 }
 
 /** PUT the slot's PIN (D196). The PIN goes out in this one request body and is never read back;
- * the input is emptied once it is saved. */
-async function savePin(slot: string, pin: string): Promise<void> {
-  await ok(api.PUT("/api/bank-credentials/{slot}", { params: { path: { slot } }, body: { pin } }));
+ * the input is emptied once it is saved. It is saved for `fintsUrl`, the address the form
+ * belongs to, and sent only there (D196 amended). */
+async function savePin(slot: string, pin: string, fintsUrl: string): Promise<void> {
+  await ok(
+    api.PUT("/api/bank-credentials/{slot}", { params: { path: { slot } }, body: { pin, fints_url: fintsUrl } }),
+  );
 }
 
-function PinForm({ slot, onSaved }: { slot: string; onSaved: () => void }) {
+function PinForm({ slot, fintsUrl, onSaved }: { slot: string; fintsUrl: string; onSaved: () => void }) {
   const id = useId();
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
@@ -426,7 +444,7 @@ function PinForm({ slot, onSaved }: { slot: string; onSaved: () => void }) {
     setBusy(true);
     form.clear();
     try {
-      await savePin(slot, pin);
+      await savePin(slot, pin, fintsUrl);
       setPin("");
       onSaved();
     } catch (error) {
@@ -453,11 +471,13 @@ function PinForm({ slot, onSaved }: { slot: string; onSaved: () => void }) {
  * the one typed into the app. */
 function PinPanel({
   slot,
+  fintsUrl,
   pin,
   serverSet,
   onChanged,
 }: {
   slot: string;
+  fintsUrl: string;
   pin: PinInfo;
   serverSet: boolean;
   onChanged: () => void;
@@ -487,6 +507,7 @@ function PinPanel({
       {(close) => (
         <PinForm
           slot={slot}
+          fintsUrl={fintsUrl}
           onSaved={() => {
             close();
             onChanged();
@@ -505,13 +526,15 @@ function PinPanel({
             {pinSentence(slot, pin)} Hausbuch speichert die PIN verschlüsselt und zeigt sie danach nie wieder an. Ohne PIN endet
             jeder Abruf mit „PIN fehlt“.
           </p>
-          <PinForm slot={slot} onSaved={onChanged} />
+          <PinForm slot={slot} fintsUrl={fintsUrl} onSaved={onChanged} />
         </>
       ) : (
         <>
-          <p className={pin.readable ? undefined : "notice notice-warn"}>
+          <p className={pin.readable && pin.serverMatches ? undefined : "notice notice-warn"}>
             {pinSentence(slot, pin)}
-            {pin.source === "app" && pin.readable && serverSet ? " Sie gilt vor der PIN auf dem Server." : ""}
+            {pin.source === "app" && pin.readable && pin.serverMatches && serverSet
+              ? " Sie gilt vor der PIN auf dem Server."
+              : ""}
           </p>
           <div className="row">
             {pin.source === "app" ? (
@@ -954,10 +977,10 @@ function checkUrl(url: string): string | null {
   return url.trim().startsWith("https://") ? null : "Die FinTS-Adresse muss mit https:// beginnen.";
 }
 
-/** A slot with no usable PIN yet: none from either place, or a stored one that no longer
- * decrypts. */
+/** A slot with no usable PIN yet: none from either place, a stored one that no longer
+ * decrypts, or one typed for another FinTS address (D196 amended). */
 function pinNeeded(pin: PinInfo): boolean {
-  return pin.source === "none" || !pin.readable;
+  return pin.source === "none" || !pin.readable || !pin.serverMatches;
 }
 
 function ConnectionCreateForm({ account, slots, onCreated }: { account: Account; slots: Slots; onCreated: () => void }) {
@@ -968,12 +991,14 @@ function ConnectionCreateForm({ account, slots, onCreated }: { account: Account;
   const [slot, setSlot] = useState(PRIMARY_SLOT);
   const [pin, setPin] = useState("");
   // The slot whose PIN this form already saved, when the connection's POST then failed.
-  const [savedFor, setSavedFor] = useState<{ slot: string; at: string } | null>(null);
+  const [savedFor, setSavedFor] = useState<{ slot: string; url: string; at: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(CREATE_KEYS, CODE_FIELDS);
   const slotValid = checkSlot(slot) === null;
   const current: PinInfo =
-    savedFor && savedFor.slot === slot.trim() ? { source: "app", setAt: savedFor.at, readable: true } : slotPin(slot.trim(), slots);
+    savedFor && savedFor.slot === slot.trim() && savedFor.url === url.trim()
+      ? { source: "app", setAt: savedFor.at, readable: true, serverMatches: true }
+      : slotPin(slot.trim(), slots);
   const askPin = slotValid && pinNeeded(current);
 
   function changeBankCode(value: string) {
@@ -999,9 +1024,10 @@ function ConnectionCreateForm({ account, slots, onCreated }: { account: Account;
       if (askPin && pin) {
         // The PIN first (D196): it is stored by slot, so a refused connection keeps it and
         // the form says so; the input is emptied either way once it is saved.
-        await savePin(slot.trim(), pin);
+        // Saved for the address typed above (D196 amended): the one the connection gets.
+        await savePin(slot.trim(), pin, url.trim());
         setPin("");
-        setSavedFor({ slot: slot.trim(), at: new Date().toISOString() });
+        setSavedFor({ slot: slot.trim(), url: url.trim(), at: new Date().toISOString() });
       }
       await ok(
         api.POST("/api/accounts/{account_id}/bank-connection", {
