@@ -354,6 +354,7 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "wallet.sync_failed": "Wallet-Abruf fehlgeschlagen",
   "movement_group.proposed": "Chain-Transaktion wartet auf Prüfung",
   "movement_group.confirmed": "Chain-Transaktion bestätigt",
+  "movement_group.trade_recorded": "Börsen-Trade zusammengefasst",
   "transfer.linked": "Übertrag verknüpft",
   "transfer.unlinked": "Übertrag getrennt",
   "statement.imported": "Kontoauszug importiert",

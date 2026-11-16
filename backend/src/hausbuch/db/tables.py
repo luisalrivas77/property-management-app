@@ -1060,8 +1060,9 @@ movement_group = Table(
     _id(),
     _workspace_id(),
     _uuid("account_id"),
-    _text("chain"),
-    _text("tx_hash"),
+    # Null together on an exchange trade's group (kind swap, migration 0043).
+    _text("chain", nullable=True),
+    _text("tx_hash", nullable=True),
     _timestamp("occurred_at", default=False),
     _text("kind"),
     _text("decoder", nullable=True),
