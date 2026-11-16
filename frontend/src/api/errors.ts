@@ -301,6 +301,9 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Diese Frage ist schon beantwortet oder hat sich geändert, etwa durch eine andere Antwort. Bitte die Seite neu laden und die aktuelle Frage beantworten.",
   "wallet.original_missing":
     "Die Daten zu dieser Zahlung wurden bei ihrem Abruf nicht gespeichert, deshalb lässt sich die Frage hier nicht beantworten. Die Zahlung bleibt als offene Frage auf der Wallet stehen.",
+  // Phase 7 step 5, review of PR #396 (D184 (1)(a)): a coin pair whose units do not fit.
+  "transfer.units_differ":
+    "Auf dem anderen Konto kam eine andere Menge an, als hier abging: ein Teil der Coins ging in derselben Transaktion an eine andere Adresse. Deshalb sind die beiden kein Übertrag; die Transaktion wird auf der Seite der Wallet beantwortet.",
   // Phase 7 wallet screens: „Bestätigen“ and the answers on a wallet's transactions.
   "wallet.group_done": "Diese Transaktion ist schon beantwortet oder bestätigt. Bitte die Seite neu laden.",
   "wallet.group_needs_answer":

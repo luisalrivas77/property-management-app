@@ -178,7 +178,7 @@ The sender, the subject, the body, any header, any address; the log line per pol
 
 D122. `ReminderFacts` is assembled by `services/reminders.facts(conn, today)` from existing services (`checklist.build`, `rules.tax.return_estimate.filing_deadline(tax_year)`, `questionnaire_progress`, the properties with `purchase_date` and their `grundsteuer_schedule` tax inputs, the loans, the tenancies with their rent schedules, unit labels and the confirmed `rent` allocations by service period, the confirmed `grundsteuer` allocations by booking date, amount and whether their bank line is a direct debit (`rules.statements.is_direct_debit(transaction.raw)`), the accounts with their last reconciled booking day and the connection's `last_sync_at`, the `reminder_ack` rows). `build_reminders` is pure and order-independent (the fixture shuffles the lists, as the checklist fixture does).
 
-### 6.2 The catalogue (twelve kinds: eleven, all kept, Luis, 10 Nov 2026; `bank.statement_due` added 15 Nov 2026, D122 amended)
+### 6.2 The catalogue (thirteen kinds: eleven, all kept, Luis, 10 Nov 2026; `bank.statement_due` added 15 Nov 2026, D122 amended; `crypto.holdings_statement` added 16 Nov 2026 by phase 7 D190, PR #399, see `docs/phases/phase-7.md`; this heading said „twelve“ until then)
 
 | Kind (`key`) | Scope | Due date(s) | In-app lead | Email leads | Severity | Cleared by | Source of truth |
 | --- | --- | --- | --- | --- | --- | --- | --- |

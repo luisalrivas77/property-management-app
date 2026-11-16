@@ -588,9 +588,11 @@ def import_export(
         ),
         effective_date=last.date(),
     )
+    from ..chain import transfers as chain_transfers
     from ..transfers import relink  # transfers imports the statement services
 
     relink(ctx, account_id)  # an EUR deposit or withdrawal finds its bank leg (D162)
+    chain_transfers.relink(ctx)  # a coin withdrawal or deposit finds its chain leg (D184)
     return ExchangeUpload(
         movement_import=_to_import(imported),
         withdrawals_open=len(_open_withdrawals(_current(ctx.conn, account_id))),
@@ -715,6 +717,9 @@ def _complete_withdrawals(
             withdrawals_open=still_open,
         ),
     )
+    from ..chain import transfers as chain_transfers  # D184: a completed one has its hash
+
+    chain_transfers.relink(ctx)
     return ExchangeUpload(
         withdrawals_completed=len(found),
         withdrawals_open=still_open,
@@ -1005,7 +1010,10 @@ def _confirm(ctx: CommandContext, row: Row) -> None:
 def confirm_movement(ctx: CommandContext, movement_id: UUID) -> None:
     """POST /movements/{id}/confirm: the proposed movement is right as it stands (a coin
     withdrawal went to an own wallet; a deposit was a bonus)."""
+    from ..chain import transfers as chain_transfers
+
     _confirm(ctx, _require_proposed(ctx.conn, movement_id))
+    chain_transfers.relink_after_answer(ctx)  # D184: a confirmed leg may link now
 
 
 def answers_for(quantity: Decimal) -> list[MovementKind]:
@@ -1022,12 +1030,17 @@ def answer_movement(ctx: CommandContext, movement_id: UUID, body: AnswerMovement
         raise RuleViolationError(
             [E.EXCHANGE_ANSWER_INVALID], "this kind does not fit the movement's direction"
         )
+    from ..chain import transfers as chain_transfers
+
     if body.kind.value == row.kind:
         _confirm(ctx, row)
+        chain_transfers.relink_after_answer(ctx)  # D184: a confirmed leg may link now
         return row.id
-    return _supersede(
+    new_id = _supersede(
         ctx, row.id, {"kind": body.kind.value, "status": MovementStatus.CONFIRMED.value}
     )
+    chain_transfers.relink_after_answer(ctx)
+    return new_id
 
 
 def confirm_withdrawals(ctx: CommandContext, import_id: UUID) -> WithdrawalsConfirmed:
@@ -1050,6 +1063,9 @@ def confirm_withdrawals(ctx: CommandContext, import_id: UUID) -> WithdrawalsConf
     ).all()
     for row in rows:
         _confirm(ctx, row)
+    from ..chain import transfers as chain_transfers
+
+    chain_transfers.relink_after_answer(ctx)  # D184: each confirmed withdrawal may link now
     return WithdrawalsConfirmed(confirmed=len(rows))
 
 

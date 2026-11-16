@@ -6,6 +6,8 @@ Nov 2026, D160 amended (4) 14 Nov 2026, D165 (a) and D176 (3) amended 14 Nov 202
 D167 (c) amended 15 Nov 2026, D162 amended (6) and (7) 15 Nov 2026, D178 amended (3) 16 Nov
 2026).
 
+Also `hausbuch relink-chain` (phase 7 D184, step 5), described below.
+
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
 only place the owner URL lives (ARCHITECTURE Decisions, admin commands, revised 5 Nov 2026).
@@ -79,6 +81,13 @@ stored one (amounts and status unchanged), and an acquisition whose trade paid a
 that fee as its fee_eur, as an import writes them now. A second run finds nothing. An exchange
 account whose provider is neither BISON nor Binance is skipped and named by its label. --dry-run
 rolls back and prints what it would group.
+
+`relink-chain` runs services.chain.transfers.relink once for a workspace, with the same owner
+URL (phase 7 step 5, D184): every open coin leg (an exchange's coin withdrawal or deposit, a
+wallet's transfer leg) is linked to its counterpart where both are confirmed, or where they
+share their transaction hash and code may confirm the proposed one (D186 (1)), as each wallet
+sync and exchange import now does. A second run finds nothing. --dry-run rolls back and prints
+what it would link and confirm.
 
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
 14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
@@ -439,6 +448,48 @@ def relink_transfers(args: argparse.Namespace, environ: Mapping[str, str]) -> in
     print(f"{verb} {linked} transfer(s)")
     verb = "would book" if args.dry_run else "booked"
     print(f"{verb} {confirmed} linked line(s) the model had only proposed as the transfer")
+    return EXIT_OK
+
+
+# --- relink-chain ---------------------------------------------------------------------
+
+
+def relink_chain(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.chain.transfers.relink once for a workspace (phase 7 step 5, D184): the coin
+    transfers between own accounts linked as an import or sync links them. `--dry-run` rolls
+    everything back."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.chain.transfers import relink
+    from hausbuch.services.context import Actor, new_command
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:relink-chain")
+                result = relink(new_command(conn, args.workspace, actor))
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    verb = "would link" if args.dry_run else "linked"
+    print(f"{verb} {result.linked} coin transfer(s)")
+    verb = "would confirm" if args.dry_run else "confirmed"
+    print(f"{verb} {result.confirmed} movement(s) by their transaction hash")
+    if result.reopened:
+        verb = "would reopen" if args.dry_run else "reopened"
+        print(f"{verb} {result.reopened} movement(s) a link no longer current had confirmed")
+    if result.skipped_locked:
+        print(f"left {result.skipped_locked} for the next run (a leg was being answered)")
     return EXIT_OK
 
 
@@ -852,6 +903,16 @@ def _parser() -> argparse.ArgumentParser:
     trades.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     trades.add_argument("--dry-run", action="store_true", help="count only, change nothing")
     trades.set_defaults(command=group_exchange_trades, command_name="group-exchange-trades")
+
+    chain_links = commands.add_parser(
+        "relink-chain",
+        help="link the coin transfers between own accounts (an exchange withdrawal to a "
+        "wallet, wallet to wallet, a wrap or a bridge) once more, as each wallet sync and "
+        "exchange import does (once, after the deploy of phase 7 step 5)",
+    )
+    chain_links.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    chain_links.add_argument("--dry-run", action="store_true", help="count only, change nothing")
+    chain_links.set_defaults(command=relink_chain, command_name="relink-chain")
 
     follow = commands.add_parser(
         "follow-accounts",
