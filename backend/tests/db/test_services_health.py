@@ -565,3 +565,34 @@ def test_a_month_counts_its_waiting_lines_and_open_transfer_legs(world):
     assert current in {a.account_id for a in october.accounts}
     assert waiting and november
     assert world.query(health.closed_month_facts, [], date(2026, 11, 12)) == {}
+
+
+def test_a_past_month_end_counts_nothing_after_its_day(world):
+    """D241: a month-end stored months later reads its own day: a line booked after it does not
+    count, and the stored run equals the day's reading. An account whose opening balance is
+    dated after the day has no figure that day and is absent from the run, with no to-do
+    saying so (phase 6's rule, reported as a gap: before D241 only the running month met it)."""
+    giro = _account(world, "A Giro", AccountKind.BANK_CURRENT, opening="100.00")
+    _statement(
+        world,
+        giro,
+        date(2026, 8, 15),
+        date(2026, 10, 31),
+        datetime(2026, 11, 2, 9, tzinfo=UTC),
+        lines=[date(2026, 8, 15), date(2026, 9, 20), date(2026, 10, 10)],
+    )
+    later = _account(world, "Neu", AccountKind.BANK_SAVINGS, opening="300.00", on=date(2026, 9, 15))
+    _scenario(world, "300000.00", datetime(2026, 9, 20, 10, tzinfo=UTC))
+
+    stored = world.cmd(net_worth.capture_month_end, date(2026, 8, 31))
+    assert stored.outcome == SnapshotOutcome.WRITTEN
+    run = world.query(net_worth.stored_run, stored.run.net_worth_run_id)
+    read = world.query(net_worth.net_worth, date(2026, 8, 31))
+    lines = {line.account_id: line for line in run.lines if line.account_id is not None}
+    assert lines[giro].value_eur == Decimal("90.00")  # the 15 Aug line only
+    assert later not in lines
+    assert (run.total, run.property_estimate) == (read.total, read.property_estimate)
+    assert run.property_estimate != Decimal("300000.00")  # recorded on 20 Sep, after the day
+    september = world.query(net_worth.net_worth, date(2026, 9, 30))
+    by_account = {line.account_id: line.value_eur for line in september.lines}
+    assert (by_account[giro], by_account[later]) == (Decimal("80.00"), Decimal("300.00"))
