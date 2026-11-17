@@ -162,13 +162,11 @@ bases:
 
 cases:
   - id: figures_and_marks
-    pending: "1"
     description: §15.2's key figures and marks from the lines, balances and runs
     household: *household
     expect: *figures
 
   - id: before_confirm_no_mark
-    pending: "1"
     description: the same household before „Übernehmen“ of the limits; no mark at all, and the to-do
     household:
       <<: *household

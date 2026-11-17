@@ -772,3 +772,155 @@ def test_the_reserve_mark_keeps_its_limits():
     assert (mark.colour, mark.green, mark.red) == (LightColour.AMBER, None, Decimal("0.5"))
     # without a target there is nothing to compare
     assert B.light(Decimal("1.00"), band, MarkedFigure.RESERVE).colour is None
+
+
+# --- health_worked.yaml: §15.2 end to end (step 1's figures and marks) ----------------
+
+WORKED = phase9.load("health_worked")
+
+
+def run_net_worth(run, properties) -> NetWorth:
+    """The newest run as phase 6's NetWorth: its classes, its liabilities negative, and one
+    property and one loan line per property (the run's lines)."""
+    loans = run.liabilities["loans"]
+    by_class = {**run.by_class, NetWorthClass.LIABILITIES: -(loans + run.liabilities["other"])}
+    lines = []
+    for key, prop in properties.items():
+        lines.append(
+            NetWorthLine(
+                kind=NetWorthLineKind.PROPERTY,
+                net_worth_class=NetWorthClass.PROPERTY,
+                label=key,
+                property_id=uid(key),
+                value_eur=prop.default_scenario.value_today,
+                estimate=True,
+            )
+        )
+        lines += [
+            NetWorthLine(
+                kind=NetWorthLineKind.LOAN,
+                net_worth_class=NetWorthClass.LIABILITIES,
+                label=f"Darlehen {i}",
+                property_id=uid(key),
+                loan_id=uid(f"{key}-loan{i}"),
+                value_eur=-loan.balance,
+                estimate=True,
+            )
+            for i, loan in enumerate(prop.loans)
+        ]
+    estimate = sum((p.default_scenario.value_today for p in properties.values()), ZERO)
+    return NetWorth(
+        on=run.month_end,
+        total=run.total,
+        by_class=by_class,
+        by_owner={},
+        property_estimate=estimate,
+        loan_balances=loans,
+        property_net=estimate - loans,
+        lines=lines,
+    )
+
+
+@pytest.mark.parametrize("case", WORKED.cases, ids=lambda c: c.id)
+def test_health_worked(case):
+    """The whole of step 1 on §15.2's household: lines → months → window → figures → marks."""
+    _live(case)
+    hh, want = case.household, case.expect
+    closed = [phase9.add_months(hh.newest_closed, -k) for k in (2, 1, 0)]
+    win = W.window(dict.fromkeys(closed, True))
+    months, interest = [], ZERO
+    for month in win.months:
+        got, blocks, _ = household(month, [li for li in hh.lines if str(li.booked)[:7] == month])
+        months.append(got)
+        interest += sum((b.interest for b in blocks), ZERO)
+        if want.months is not None:
+            expect = next(m for m in want.months if m.month == month)
+            compare(got, blocks, expect, (case.id, month))
+    if want.window is not None:
+        assert (win.months, win.enough) == (want.window.months, want.window.enough)
+    rate = F.savings_rate(months)
+    if want.savings_rate is not None:
+        assert (
+            phase9.HwSavingsRate.model_validate(rate.model_dump(exclude={"months"}))
+            == want.savings_rate
+        )
+    kinds = {a.key: a for a in hh.accounts}
+    balances = [
+        ReserveBalance(
+            account_id=uid(b.account),
+            label=b.account,
+            kind=kinds[b.account].kind,
+            rental=kinds[b.account].purpose == "rental",
+            balance=b.balance,
+            as_of=b.as_of,
+            owners={OWNERS[o]: exact(s) for o, s in kinds[b.account].owners.items()},
+        )
+        for b in hh.balances
+    ]
+    reserve = F.reserve(
+        balances, months, target_months=hh.levers.reserve_target_months, today=hh.today
+    )
+    if want.reserve is not None:
+        r = want.reserve
+        names = {uid(b.account): b.account for b in hh.balances}
+        assert [names[a.account_id] for a in reserve.accounts] == r.counted
+        assert (reserve.amount, reserve.need, reserve.months) == (r.amount, r.need, r.months)
+        assert (reserve.target, reserve.gap, reserve.state) == (r.target, r.gap, r.state)
+        assert reserve.todos == []
+    run = max(hh.runs, key=lambda r: (r.month_end, r.created))
+    nw = run_net_worth(run, hh.properties)
+    debt = F.debt(
+        nw,
+        months,
+        interest=interest,
+        estimate_sources={uid(k): EstimateSource.SCENARIO for k in hh.properties},
+    )
+    if want.net_worth is not None:
+        assert (debt.gross_assets, debt.liabilities, nw.total) == (
+            want.net_worth.gross,
+            want.net_worth.liabilities,
+            want.net_worth.total,
+        )
+    if want.debt is not None:
+        d = want.debt
+        assert {p.property_id: p.ltv for p in debt.properties} == {
+            uid(k): v for k, v in d.ltv.items()
+        }
+        assert (debt.debt_ratio, debt.debt_service_year, debt.income_year) == (
+            d.debt_ratio,
+            d.debt_service_year,
+            d.income_year,
+        )
+        assert (debt.debt_service_ratio, debt.debt_to_income) == (
+            d.debt_service_ratio,
+            d.debt_to_income,
+        )
+        assert F.split(nw) == d.split
+    runs = [
+        RunTotals(
+            net_worth_run_id=uid(r.id), month_end=r.month_end, created_at=r.created, total=r.total
+        )
+        for r in hh.runs
+    ]
+    series = F.series(runs, months)
+    if want.series is not None:
+        assert [(p.month_end, p.total, p.change, p.saved, p.other) for p in series] == [
+            (p.month_end, p.total, p.change, p.saved, p.other) for p in want.series
+        ]
+    health = Health(
+        as_of=hh.today,
+        window=win,
+        newest=months[-1],
+        savings_rate=rate,
+        reserve=reserve,
+        debt=debt,
+        split=F.split(nw),
+        series=series,
+    )
+    marks = B.lights(health, hh.levers.bands)
+    for figure, expect in want.lights.items():
+        assert (marks[figure].colour, marks[figure].sentences) == (
+            expect.colour,
+            expect.sentences,
+        ), figure
+    assert [t.code for t in B.bands_todos(hh.levers.bands)] == (want.todos or [])
