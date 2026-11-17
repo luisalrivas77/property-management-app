@@ -212,6 +212,37 @@ def test_the_command_prints_and_writes_no_address_or_signature(tmp_path, monkeyp
     assert len(chain.requests) > 0
 
 
+def test_a_json_rpc_error_on_a_transaction_is_counted_and_the_survey_goes_on(tmp_path):
+    chain = _chain()
+    chain.fail_on = "getTransaction"
+    result, _, _ = _run(chain, tmp_path)
+    # the closed T1 is found only through a record, so its credit naming T1 alone stays unlisted
+    unlisted = 1
+    assert result.run.not_read == {"SolanaRpcError rpc": len(chain.records) - unlisted}
+    assert result.summary.observed == 0
+    assert result.listing.total == len(chain.records) - unlisted
+
+
+def test_a_failing_provider_ends_the_survey_without_naming_it(tmp_path):
+    chain = _chain()
+    chain.status = 500
+    with pytest.raises(survey.SurveyError) as caught:
+        _run(chain, tmp_path)
+    assert "resumes from its cache" in str(caught.value)
+    for secret in _secrets(chain):
+        assert secret not in str(caught.value)
+    assert len(chain.requests) == survey._ATTEMPTS  # retried, then given up
+
+
+def test_a_refusing_provider_ends_the_survey(tmp_path):
+    chain = _chain()
+    chain.status = 403
+    with pytest.raises(survey.SurveyError) as caught:
+        _run(chain, tmp_path)
+    assert "403" in str(caught.value)
+    assert len(chain.requests) == 1  # a refusal is not retried
+
+
 def test_the_command_refuses_an_invalid_address(tmp_path, capsys):
     address_file = tmp_path / "address.txt"
     address_file.write_text("not-an-address\n")

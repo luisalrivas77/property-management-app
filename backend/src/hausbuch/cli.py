@@ -549,10 +549,11 @@ def _hex_key(environ: Mapping[str, str], name: str) -> bytes | None:
     return raw
 
 
-def _survey_workspace(workspace: UUID, environ: Mapping[str, str], address: str):
+def _survey_workspace(workspace: UUID, environ: Mapping[str, str], address: str, *, want_url: bool):
     """One read-only transaction in the workspace, rolled back: the Solana RPC address typed
-    in the app (None: none typed) and the classifier's context as the address's first sync
-    would build it (sync._context, with this address as one more own address)."""
+    in the app (None: none typed, or not `want_url`, when --rpc-url-env names one) and the
+    classifier's context as the address's first sync would build it (sync._context, with
+    this address as one more own address)."""
     import dataclasses
     from uuid import uuid4
 
@@ -584,9 +585,16 @@ def _survey_workspace(workspace: UUID, environ: Mapping[str, str], address: str)
         try:
             with workspace_transaction(engine, workspace) as conn:
                 conn.execute(text("SET TRANSACTION READ ONLY"))
-                typed = app_secrets.lookup(conn, settings, AppSecretName.SOLANA_RPC_URL)
                 url: str | None = None
-                if typed.source in (AppSecretSource.APP, AppSecretSource.UNREADABLE):
+                typed = (
+                    app_secrets.lookup(conn, settings, AppSecretName.SOLANA_RPC_URL)
+                    if want_url
+                    else None
+                )
+                if typed is not None and typed.source in (
+                    AppSecretSource.APP,
+                    AppSecretSource.UNREADABLE,
+                ):
                     if session_key is None:
                         raise CliError(
                             "a Solana RPC address is typed in the app for this workspace: set "
@@ -660,7 +668,9 @@ def survey_solana(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     context = "the public registry and decoders, this address as the only own one"
     typed: str | None = None
     if args.workspace is not None:
-        typed, ctx = _survey_workspace(args.workspace, environ, address)
+        typed, ctx = _survey_workspace(
+            args.workspace, environ, address, want_url=not args.rpc_url_env
+        )
         context = "the workspace's own addresses, decoder rows, held tokens and withdrawals"
     if args.rpc_url_env:
         value = environ.get(args.rpc_url_env, "").strip()
@@ -701,6 +711,8 @@ def survey_solana(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
         )
     except survey.SurveyError as exc:
         raise CliError(str(exc)) from None
+    except Exception as exc:  # noqa: BLE001 - a message could carry an address or signature
+        raise CliError(f"the survey failed ({type(exc).__name__}); its cache is kept") from None
     report = out_dir / "report.md"
     survey.write_report(report, result.report)
     print(result.report)

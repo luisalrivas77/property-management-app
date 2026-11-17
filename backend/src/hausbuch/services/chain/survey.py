@@ -361,6 +361,25 @@ def _fatal(exc: Exception) -> SurveyError:
     return SurveyError(f"the survey failed ({type(exc).__name__})")
 
 
+def _fetch(
+    rpc: SolanaRpc, sig: str, slot: int, not_read: Counter[str]
+) -> Mapping[str, object] | None:
+    """One transaction's record, or None (counted by class) when the RPC serves none or
+    answers it with a JSON-RPC error or bad JSON; a refusal, throttling past the retries or a
+    transport failure ends the survey."""
+    try:
+        return rpc.transaction(sig, slot)
+    except HistoryUnavailable:
+        not_read["HistoryUnavailable"] += 1
+    except SolanaRpcError as exc:
+        if exc.kind not in ("rpc", "parse"):
+            raise _fatal(exc) from None
+        not_read[f"SolanaRpcError {exc.kind}"] += 1
+    except ChainSourceError as exc:
+        raise _fatal(exc) from None
+    return None
+
+
 def run_survey(
     address: str,
     *,
@@ -397,27 +416,28 @@ def run_survey(
     queue = [order_of(s) for s in wanted]
     heapq.heapify(queue)
     queued = set(wanted)
-    records: dict[str, Mapping[str, object]] = {}
+    # Pass 1 keeps only the signatures it read (the records are in the cache, so pass 2
+    # reads each again from there without a request: a long history never sits in memory).
+    read: list[str] = []
+    no_time: set[str] = set()  # neither the record nor the listing has a block time
     not_read: Counter[str] = Counter()
     while queue:
         _, sig = heapq.heappop(queue)
         info = listed_.infos[sig]
-        try:
-            record = rpc.transaction(sig, info.slot)
-        except HistoryUnavailable:
-            not_read["HistoryUnavailable"] += 1
+        record = _fetch(rpc, sig, info.slot, not_read)
+        if record is None:
             continue
-        except SolanaRpcError as exc:
-            if exc.kind in ("rpc", "parse"):
-                not_read[f"SolanaRpcError {exc.kind}"] += 1
-                continue
-            raise _fatal(exc) from None
-        except ChainSourceError as exc:
-            raise _fatal(exc) from None
-        records[sig] = record
-        if len(records) % 500 == 0:
-            say(f"read {len(records)} transaction(s)")
-        for pubkey in sorted(owned_token_accounts(record, address) - {address}):
+        read.append(sig)
+        if not isinstance(record.get("blockTime"), int) and info.block_time is None:
+            no_time.add(sig)
+        if len(read) % 500 == 0:
+            say(f"read {len(read)} transaction(s)")
+        try:
+            owned = owned_token_accounts(record, address) - {address}  # type: ignore[arg-type]
+        except Exception:  # noqa: BLE001 - a malformed record names no token account
+            owned = set()
+        del record
+        for pubkey in sorted(owned):
             if pubkey in listed_.kinds:
                 continue
             try:
@@ -430,11 +450,18 @@ def run_survey(
                     if new not in queued:
                         queued.add(new)
                         heapq.heappush(queue, order_of(new))
+    say(f"read {len(read)} transaction(s); classifying")
 
     accounts = set(listed_.kinds) - {address}
     observations: list[rules.Observation] = []
-    for sig in sorted(records, key=order_of):
-        record, info = records[sig], listed_.infos[sig]
+    rereads = 0
+    for sig in sorted(read, key=order_of):
+        info = listed_.infos[sig]
+        before = rpc.requests
+        record = _fetch(rpc, sig, info.slot, not_read)
+        rereads += rpc.requests - before
+        if record is None:
+            continue
         try:
             when = None
             if not isinstance(record.get("blockTime"), int):
@@ -456,11 +483,7 @@ def run_survey(
         rules.Listing(listed_.kinds[a], tuple(index[s] for s in listed_.members[a]))
         for a in sorted(listed_.kinds, key=lambda a: (a != address, listed_.kinds[a], a))
     ]
-    lookups = [
-        index[s]
-        for s, r in records.items()
-        if not isinstance(r.get("blockTime"), int) and listed_.infos[s].block_time is None
-    ]
+    lookups = [index[s] for s in no_time]
     facts = rules.listing_facts(
         (
             i.block_time.year if i.block_time is not None else None,
@@ -471,7 +494,7 @@ def run_survey(
     summary = rules.summarise(observations)
     plan = rules.estimate(slots, listings, lookups, sync_budget)
     run = rules.RunFacts(
-        requests=rpc.requests,
+        requests=rpc.requests - rereads,  # pass 2's reads of what pass 1 read are not new
         network=transport.network,
         sample=None if max_tx is None or max_tx >= len(order) else max_tx,
         not_read=dict(not_read),

@@ -77,6 +77,26 @@ def test_the_typed_url_and_the_workspace_context(
         assert secret not in captured.out + captured.err
 
 
+def test_rpc_url_env_skips_the_typed_url(
+    dbname,
+    run,
+    wallet,  # noqa: F811
+    surveyed,
+    tmp_path,
+):
+    """--workspace for the context, --rpc-url-env for the address: the typed one is not
+    read, so no HAUSBUCH_SESSION_KEY is needed."""
+    ws, *_ = wallet
+    chain, seen, address_file = surveyed
+    run(ws, app_secrets.set_secret, N.SOLANA_RPC_URL, SecretStr(TYPED_URL), settings=SETTINGS)
+    other = "https://other.rpc.example/"
+    environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname), "INVENTED_RPC": other}
+    argv = [*_argv(ws, address_file, tmp_path), "--rpc-url-env", "INVENTED_RPC"]
+    assert cli.main(argv, environ) == cli.EXIT_OK
+    assert set(chain.urls) == {other}
+    assert SOL_B in seen["ctx"].own_addresses
+
+
 def test_a_typed_url_without_the_session_key_stops(
     dbname,
     run,
