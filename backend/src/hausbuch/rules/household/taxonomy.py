@@ -40,8 +40,12 @@ R = Relevance
 P = ProposedInput
 
 
-def _code(category: C, group: G, relevance: R, proposes: P | None = None) -> HouseholdCode:
-    return HouseholdCode(category=category, group=group, relevance=relevance, proposes=proposes)
+def _code(
+    category: C, group: G, relevance: R, proposes: P | None = None, *, one_off: bool = False
+) -> HouseholdCode:
+    return HouseholdCode(
+        category=category, group=group, relevance=relevance, proposes=proposes, one_off=one_off
+    )
 
 
 TAXONOMY = MappingProxyType(
@@ -101,7 +105,8 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_CAR_SERVICE, G.MOBILITY, R.SPENDING),
             _code(C.HH_CAR_TAX, G.MOBILITY, R.SPENDING),
             # D159 amended (7) 15 Nov 2026 (migration 0037): buying or financing a car
-            _code(C.HH_CAR_PURCHASE, G.MOBILITY, R.SPENDING),
+            # Phase 9 D236: one-off spending, out of the regular spending of a month
+            _code(C.HH_CAR_PURCHASE, G.MOBILITY, R.SPENDING, one_off=True),
             _code(C.HH_SUPERMARKET, G.GROCERIES, R.SPENDING),
             _code(C.HH_DRUGSTORE, G.GROCERIES, R.SPENDING),
             _code(C.HH_BAKERY, G.GROCERIES, R.SPENDING),
@@ -181,6 +186,13 @@ TAX_RELEVANT = frozenset(c for c, row in TAXONOMY.items() if row.relevance is R.
 
 if set(TAXONOMY) != PRIVATE_ONLY:  # pragma: no cover - a code without its row
     raise RuntimeError("every household, transfer and depot code needs a taxonomy row")
+
+# Phase 9 D236: the codes whose spending is one-off, left out of a month's regular spending
+# (the reserve's monthly need, the free cash) and still counted in the savings rate. Every
+# row carries the field; a one-off code must be spending, since only spending is regular.
+ONE_OFF = frozenset(c for c, row in TAXONOMY.items() if row.one_off)
+if any(TAXONOMY[c].relevance is not R.SPENDING for c in ONE_OFF):  # pragma: no cover
+    raise RuntimeError("a one-off code must count as spending")
 
 # „Alle bestätigen“ in Zu prüfen (D159 amended 13 Nov 2026): the plain income and spending
 # codes whose waiting proposals a person may confirm as a group (POST /inbox/confirm-category).

@@ -4120,6 +4120,12 @@ export interface components {
          */
         AddressKind: "receive" | "change" | "stake";
         /**
+         * AdviceMode
+         * @description workspace.advice_mode (D251).
+         * @enum {string}
+         */
+        AdviceMode: "own_use" | "generic";
+        /**
          * AfaLine
          * @description wk.afa for one tax year. amount, basis and rate are None without a selected split.
          *
@@ -6742,7 +6748,7 @@ export interface components {
          * @description Entities that carry events. Also the prefix of every event type.
          * @enum {string}
          */
-        EntityType: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan" | "document" | "user" | "proposal" | "account" | "statement" | "transaction" | "rule" | "workspace" | "asset" | "movement" | "transfer" | "wallet" | "wallet_address" | "movement_group";
+        EntityType: "owner" | "property" | "unit" | "tenant" | "tenancy" | "loan" | "document" | "user" | "proposal" | "account" | "statement" | "transaction" | "rule" | "workspace" | "asset" | "movement" | "transfer" | "wallet" | "wallet_address" | "movement_group" | "household_scenario" | "health" | "plan";
         /** EquipmentComponent */
         EquipmentComponent: {
             /** Amount */
@@ -13873,6 +13879,8 @@ export interface components {
              * @default false
              */
             ai_private_accounts: boolean;
+            /** @default own_use */
+            advice_mode: components["schemas"]["AdviceMode"];
         };
         /**
          * WorkspaceSettings

@@ -1,0 +1,29 @@
+# Phase 9 D255 check 7, §9.3: names the explanation may never contain. Versioned; the version
+# is stored with every plan_explanation (lexicon_version). Lower-case; an entry of six letters
+# or more (advice_rules.yaml `squash_min_length`) is searched with spaces, hyphens and dots
+# removed, a shorter one as a whole word.
+#
+# Public market names only: market data, not household facts (Q-O137, settled 17 Nov 2026).
+# Nothing in this file says what the household holds, and nothing may: no entry is marked,
+# ordered or commented as held. The eval list tests/fixtures/phase9/instrument_names.yaml is a
+# separate, larger file on purpose: most of its names are NOT here, so that layer 2 of D258
+# tests checks 5, 8 and 8b too (§9.3). A name that consists only of everyday words and that
+# check 8b does not catch belongs here.
+version: advice-lexicon-2026-11-17
+
+issuers: [ishares, blackrock, vanguard, xtrackers, amundi, invesco, spdr, "state street",
+  "franklin templeton", fidelity, "hsbc global", "ubs asset", "dws", deka, "union investment",
+  wisdomtree, vaneck, "global x"]
+
+indices: [msci, "msci world", "msci acwi", "ftse all-world", "ftse", stoxx, "euro stoxx",
+  "s&p", nasdaq, "dow jones", dax, mdax, sdax, tecdax, "nikkei", "russell"]
+
+brokers_and_banks: ["trade republic", "scalable capital", comdirect, consorsbank, flatex,
+  smartbroker, onvista, "ing diba", "deutsche bank", commerzbank, postbank, "n26",
+  "interactive brokers", degiro, "justtrade"]
+
+coins: [bitcoin, ethereum, ether, solana, cardano, ripple, xrp, dogecoin, tether, usdt, usdc,
+  btc, eth, sol, bnb, ada, doge, litecoin, polkadot, chainlink, avalanche]
+
+platforms: [binance, coinbase, bitpanda, bitstamp, kraken, bybit, okx, kucoin, robinhood,
+  uniswap, metamask, ledger, trezor, phantom]

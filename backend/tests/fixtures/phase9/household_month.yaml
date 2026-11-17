@@ -1,0 +1,221 @@
+# Phase 9 (docs/phases/phase-9.md §4, D230–D236, §15.1): `rules/health/month.household_month`.
+# One calendar month of the household: the private accounts' cashflow (phase 6's
+# month_cashflow) plus the rental account's cash, counted once (D232, D233).
+#
+# Every line is invented; owners A and B; amounts in euros as strings, signed as booked (a
+# debit negative). `account` names one of the case's accounts: `rental` is the rental account,
+# `a_current`, `b_current`, `savings`, `card`, `depot` and `exchange` are private (D237's
+# kinds). A line counts in the month of its booking date (D230). `links` pairs the two legs of
+# a transfer between own accounts (phase 6 D162); `private_cost_for` marks a private line that
+# is the Beleg of a property's Nebenkosten row (D234) or a privately paid rental cost (D161).
+#
+# Step 0 checks on load that every `expect` is consistent with §4.2 (C = R − principal,
+# E = private income + R, A = private spending, S = E − A, regular = private spending −
+# one-off, F = private income − regular + C, rate = S ÷ E to four places half-up, None when
+# E ≤ 0). The classification of the lines is step 1's (pending: "1").
+bases:
+  rental_march: &rental_march
+    - {account: rental, booked: "2027-03-01", amount: "950.00", category: rent_cold}
+    - {account: rental, booked: "2027-03-01", amount: "150.00", category: operating_costs_prepayment}
+    - {account: rental, booked: "2027-03-03", amount: "-210.00", category: hausgeld_umlagefaehig}
+    - {account: rental, booked: "2027-03-03", amount: "-100.00", category: hausgeld_verwaltung}
+    - {account: rental, booked: "2027-03-15", amount: "-60.00", category: insurance}
+    - {account: rental, booked: "2027-03-30", amount: "-640.00", category: loan_interest}
+    - {account: rental, booked: "2027-03-30", amount: "-310.00", category: loan_principal}
+  private_march: &private_march
+    - {account: a_current, booked: "2027-03-28", amount: "3100.00", category: hh_salary}
+    - {account: b_current, booked: "2027-03-28", amount: "2200.00", category: hh_salary}
+    - {account: a_current, booked: "2027-03-02", amount: "-1450.00", category: hh_rent}
+    - {account: a_current, booked: "2027-03-10", amount: "-900.00", category: hh_supermarket}
+    - {account: b_current, booked: "2027-03-12", amount: "-650.00", category: hh_energy}
+    - {account: card, booked: "2027-03-20", amount: "-900.00", category: hh_restaurant}
+
+cases:
+  - id: baseline
+    pending: "1"
+    description: §15.2's March
+    month: "2027-03"
+    lines: [*rental_march, *private_march]
+    expect: {private_income: "5300.00", private_spending: "3900.00", one_off_spending: "0.00",
+      regular_spending: "3900.00", rental_result: "90.00", rental_cash: "-220.00",
+      income: "5390.00", spending: "3900.00", saved: "1490.00", principal: "310.00",
+      free_cash: "1180.00", savings_rate: "0.2764"}
+
+  - id: flat_shortfall
+    pending: "1"
+    description: §15.2's May; R is negative and lowers E (D233)
+    month: "2027-05"
+    lines:
+      - {account: rental, booked: "2027-05-01", amount: "950.00", category: rent_cold}
+      - {account: rental, booked: "2027-05-01", amount: "150.00", category: operating_costs_prepayment}
+      - {account: rental, booked: "2027-05-03", amount: "-210.00", category: hausgeld_umlagefaehig}
+      - {account: rental, booked: "2027-05-03", amount: "-160.00", category: hausgeld_verwaltung}
+      - {account: rental, booked: "2027-05-18", amount: "-400.00", category: repairs}
+      - {account: rental, booked: "2027-05-30", amount: "-638.00", category: loan_interest}
+      - {account: rental, booked: "2027-05-30", amount: "-312.00", category: loan_principal}
+      - {account: a_current, booked: "2027-05-28", amount: "3100.00", category: hh_salary}
+      - {account: b_current, booked: "2027-05-28", amount: "2200.00", category: hh_salary}
+      - {account: a_current, booked: "2027-05-20", amount: "850.00", category: hh_tax_refund}
+      - {account: a_current, booked: "2027-05-02", amount: "-1450.00", category: hh_rent}
+      - {account: a_current, booked: "2027-05-10", amount: "-2850.00", category: hh_supermarket}
+      - {account: b_current, booked: "2027-05-14", amount: "-12000.00", category: hh_car_purchase}
+    expect: {private_income: "6150.00", private_spending: "16300.00",
+      one_off_spending: "12000.00", regular_spending: "4300.00", rental_result: "-308.00",
+      rental_cash: "-620.00", income: "5842.00", spending: "16300.00", saved: "-10458.00",
+      principal: "312.00", free_cash: "1230.00", savings_rate: "-1.7901"}
+
+  - id: private_cost_once
+    pending: "1"
+    description: a repair of the flat paid from A's account counts in A, not in R; its private_cost tax input is ignored
+    month: "2027-03"
+    lines:
+      - *rental_march
+      - *private_march
+      - {account: a_current, booked: "2027-03-22", amount: "-300.00", category: hh_property_cost, private_cost_for: repair_bill}
+    tax_inputs: [{kind: private_cost, amount: "300.00", ignored: true}]
+    expect: {private_spending: "4200.00", rental_result: "90.00", income: "5390.00",
+      spending: "4200.00", saved: "1190.00", private_income: "5300.00",
+      one_off_spending: "0.00", regular_spending: "4200.00", rental_cash: "-220.00",
+      principal: "310.00", free_cash: "880.00", savings_rate: "0.2208"}
+
+  - id: purchase_cost_paid_privately
+    pending: "1"
+    description: D234; the notary's bill for the purchase, paid from B's account, leaves A and joins invested_property
+    month: "2027-03"
+    lines:
+      - *rental_march
+      - *private_march
+      - {account: b_current, booked: "2027-03-08", amount: "-1800.00", category: hh_investment_property, private_cost_for: nebenkosten_notary}
+    expect: {private_spending: "3900.00", spending: "3900.00", invested_property: "1800.00",
+      saved: "1490.00", income: "5390.00"}
+
+  - id: purchase_month
+    pending: "1"
+    description: §15.2's second case; the price, the payout and the purchase costs in one month
+    month: "2026-04"
+    lines:
+      - {account: rental, booked: "2026-04-02", amount: "60000.00", category: owner_transfer_in}
+      - {account: b_current, booked: "2026-04-02", amount: "-60000.00", category: internal_transfer_out, links: owner_transfer}
+      - {account: rental, booked: "2026-04-10", amount: "240000.00", category: loan_disbursement}
+      - {account: rental, booked: "2026-04-11", amount: "-300000.00", category: purchase_price}
+      - {account: a_current, booked: "2026-04-14", amount: "-4200.00", category: hh_investment_property, private_cost_for: nebenkosten_notary}
+      - {account: a_current, booked: "2026-04-20", amount: "-15000.00", category: hh_investment_property, private_cost_for: nebenkosten_grunderwerbsteuer}
+      - {account: a_current, booked: "2026-04-28", amount: "3100.00", category: hh_salary}
+      - {account: b_current, booked: "2026-04-28", amount: "2200.00", category: hh_salary}
+      - {account: a_current, booked: "2026-04-02", amount: "-1450.00", category: hh_rent}
+      - {account: a_current, booked: "2026-04-12", amount: "-2450.00", category: hh_supermarket}
+    expect: {private_income: "5300.00", private_spending: "3900.00", one_off_spending: "0.00",
+      regular_spending: "3900.00", rental_result: "0.00", rental_cash: "0.00",
+      income: "5300.00", spending: "3900.00", saved: "1400.00", principal: "0.00",
+      invested_property: "79200.00", free_cash: "1400.00", savings_rate: "0.2642"}
+
+  - id: payout_one_month_before_payment
+    pending: "1"
+    description: the loan pays out in April, the price leaves in May; the two months net to the own money
+    months:
+      - month: "2026-04"
+        lines: [{account: rental, booked: "2026-04-28", amount: "240000.00", category: loan_disbursement}]
+        expect: {invested_property: "-240000.00"}
+      - month: "2026-05"
+        lines:
+          - {account: rental, booked: "2026-05-04", amount: "-300000.00", category: purchase_price}
+          - {account: rental, booked: "2026-05-04", amount: "60000.00", category: owner_transfer_in}
+        expect: {invested_property: "300000.00"}
+    net_invested_property: "60000.00"
+
+  - id: tax_lines_not_tax_effect
+    pending: "1"
+    description: a tax back-payment is a spending line; a tax effect given beside it is never read (D233)
+    month: "2027-03"
+    lines:
+      - *rental_march
+      - *private_march
+      - {account: a_current, booked: "2027-03-25", amount: "-700.00", category: hh_tax_payment}
+    ignored_tax_effect: "-900.00"
+    expect: {private_spending: "4600.00", spending: "4600.00", saved: "790.00",
+      income: "5390.00", private_income: "5300.00", rental_result: "90.00",
+      one_off_spending: "0.00", regular_spending: "4600.00", rental_cash: "-220.00",
+      principal: "310.00", free_cash: "480.00", savings_rate: "0.1466"}
+
+  - id: owner_transfer_ignored
+    pending: "1"
+    description: money from B's account to the rental account is in neither block
+    month: "2027-03"
+    lines:
+      - *rental_march
+      - *private_march
+      - {account: b_current, booked: "2027-03-05", amount: "-500.00", category: internal_transfer_out, links: owner_transfer}
+      - {account: rental, booked: "2027-03-05", amount: "500.00", category: owner_transfer_in}
+    expect: {private_spending: "3900.00", rental_result: "90.00", saved: "1490.00"}
+
+  - id: loan_payout_and_deposit_ignored
+    pending: "1"
+    description: a deposit received and a loan payout are neither income nor spending
+    month: "2027-03"
+    lines:
+      - *rental_march
+      - *private_march
+      - {account: rental, booked: "2027-03-01", amount: "1900.00", category: deposit_in}
+      - {account: rental, booked: "2027-03-02", amount: "5000.00", category: loan_disbursement}
+    expect: {rental_result: "90.00", income: "5390.00", saved: "1490.00", invested_property: "-5000.00"}
+
+  - id: transfer_into_depot_is_invested
+    pending: "1"
+    description: a transfer from A's account to the depot is saving, not spending
+    month: "2027-03"
+    lines:
+      - *rental_march
+      - *private_march
+      - {account: a_current, booked: "2027-03-05", amount: "-400.00", category: internal_transfer_out, links: t1}
+      - {account: depot, booked: "2027-03-05", amount: "400.00", category: internal_transfer_in, links: t1}
+    expect: {private_spending: "3900.00", saved: "1490.00", invested: "400.00"}
+
+  - id: refund_lowers_spending
+    pending: "1"
+    description: a merchant's refund (hh_refund) lowers spending and is never income
+    month: "2027-03"
+    lines:
+      - *rental_march
+      - *private_march
+      - {account: card, booked: "2027-03-24", amount: "120.00", category: hh_refund}
+    expect: {private_income: "5300.00", private_spending: "3780.00", saved: "1610.00"}
+
+  - id: tenant_refund_lowers_income
+    pending: "1"
+    description: a refund to a tenant from the rental account lowers the Umlagen received
+    month: "2027-03"
+    lines:
+      - *rental_march
+      - *private_march
+      - {account: rental, booked: "2027-03-20", amount: "-80.00", category: operating_costs_settlement}
+    expect: {rental_result: "10.00", income: "5310.00", saved: "1410.00"}
+
+  - id: year_end_rent
+    pending: "1"
+    description: January's rent booked on 30 December counts in December (D230, not §11)
+    month: "2026-12"
+    lines:
+      - {account: rental, booked: "2026-12-01", amount: "950.00", category: rent_cold}
+      - {account: rental, booked: "2026-12-30", amount: "950.00", category: rent_cold, period: "2027-01"}
+    expect: {rental_result: "1900.00"}
+
+  - id: no_income
+    pending: "1"
+    description: E ≤ 0 gives no rate
+    month: "2027-03"
+    lines:
+      - {account: a_current, booked: "2027-03-02", amount: "-1450.00", category: hh_rent}
+    expect: {private_income: "0.00", private_spending: "1450.00", one_off_spending: "0.00",
+      regular_spending: "1450.00", rental_result: "0.00", rental_cash: "0.00",
+      income: "0.00", spending: "1450.00", saved: "-1450.00", principal: "0.00",
+      free_cash: "-1450.00", savings_rate: null}
+
+  - id: card_settlement_without_statements
+    pending: "1"
+    description: a card whose statements are not in the app; its settlement (hh_credit_card) is spending
+    month: "2027-03"
+    lines:
+      - *rental_march
+      - *private_march
+      - {account: a_current, booked: "2027-03-27", amount: "-350.00", category: hh_credit_card}
+    expect: {private_spending: "4250.00", saved: "1140.00"}

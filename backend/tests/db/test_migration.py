@@ -91,6 +91,10 @@ MIGRATION_TABLES = {
     # Phase 7 D261 (migration 0046)
     "exchange_deposit_address",
     "exchange_withdrawal_pair",
+    # Phase 9 (docs/phases/phase-9.md §11, migration 0048)
+    "household_scenario",
+    "health_snapshot",
+    "plan_explanation",
 }
 # Procrastinate's own tables (0005): not RLS'd, no workspace_id (D20). The one exclusion.
 QUEUE_TABLE_PREFIX = "procrastinate_"

@@ -255,6 +255,10 @@ class EntityType(StrEnum):
     WALLET = "wallet"  # a wallet account's sync and reveal events (entity_id = account.id)
     WALLET_ADDRESS = "wallet_address"  # a wallet_address row (masked form only, D179)
     MOVEMENT_GROUP = "movement_group"  # a movement_group row (D183)
+    # Phase 9 (migration 0048, §11.6). The event types are added by the steps that write them.
+    HOUSEHOLD_SCENARIO = "household_scenario"  # a household_scenario row (D248)
+    HEALTH = "health"  # health.snapshot_stored (entity_id = health_snapshot.id)
+    PLAN = "plan"  # plan.explanation_stored (entity_id = plan_explanation.id)
 
 
 class LinkTarget(StrEnum):

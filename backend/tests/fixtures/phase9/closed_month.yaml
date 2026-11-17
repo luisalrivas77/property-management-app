@@ -1,0 +1,121 @@
+# Phase 9 (docs/phases/phase-9.md §4.4, D231, §15.1): `rules/health/window.closed` and
+# `window`. A month is closed when every private account and the rental account is covered
+# for it (a statement or a fetch reaching its last day), no line of the month waits in
+# Zu prüfen, and no transfer leg of the month waits for its counterpart. The window is the
+# unbroken run of closed months ending at the newest closed one, cut to 12; `enough` when it
+# holds at least 3.
+#
+# `covered_to` per account: the last day its imports or fetches reach. `idle_card`: a credit
+# card whose last statement closed at 0 € and no bank debit after it (phase 5 D122 amended
+# (6)): it counts as covered. `first_day` and `own_opening`: §4.4's rule for an account whose
+# history starts later. Owners A and B; every account is invented.
+#
+# Step 0's readings, recorded in docs/phases/phase-9.md §15.1:
+# - an account first imported after the month's end is not one of the month's accounts when
+#   its opening balance on its first day is its first statement's own opening (it did not
+#   exist in the app before); otherwise it makes every earlier month not closed;
+# - the to-dos keep the order of the reasons (accounts, waiting lines, open transfers).
+accounts: &accounts
+  - {key: a_current, kind: bank_current, owners: {A: "1"}, first_day: "2026-01-01"}
+  - {key: b_current, kind: bank_current, owners: {B: "1"}, first_day: "2026-01-01"}
+  - {key: savings, kind: bank_savings, owners: {A: "0.5", B: "0.5"}, first_day: "2026-01-01"}
+  - {key: card, kind: credit_card, owners: {A: "1"}, first_day: "2026-01-01"}
+  - {key: rental, kind: bank_current, purpose: rental, owners: {A: "0.5", B: "0.5"}, first_day: "2026-03-20"}
+
+cases:
+  - id: all_covered
+    pending: "1"
+    month: "2027-03"
+    accounts: *accounts
+    covered_to: {a_current: "2027-04-02", b_current: "2027-03-31", savings: "2027-03-31", card: "2027-03-31", rental: "2027-04-06"}
+    lines_waiting: 0
+    transfers_open: 0
+    expect: {closed: true, reasons: [], todos: []}
+
+  - id: card_statement_missing
+    pending: "1"
+    month: "2027-03"
+    accounts: *accounts
+    covered_to: {a_current: "2027-04-02", b_current: "2027-03-31", savings: "2027-03-31", card: "2027-02-28", rental: "2027-04-06"}
+    lines_waiting: 0
+    transfers_open: 0
+    expect:
+      closed: false
+      reasons: [{code: account_not_covered, account: card}]
+      todos: [account_not_covered]
+
+  - id: idle_card_counts_as_covered
+    pending: "1"
+    description: the card's statement of 31 Jan closed at 0 € and no bank debit names it after that
+    month: "2027-03"
+    accounts: *accounts
+    covered_to: {a_current: "2027-04-02", b_current: "2027-03-31", savings: "2027-03-31", card: "2027-01-31", rental: "2027-04-06"}
+    idle_card: [card]
+    lines_waiting: 0
+    transfers_open: 0
+    expect: {closed: true, reasons: [], todos: []}
+
+  - id: line_waiting
+    pending: "1"
+    month: "2027-03"
+    accounts: *accounts
+    covered_to: {a_current: "2027-04-02", b_current: "2027-03-31", savings: "2027-03-31", card: "2027-03-31", rental: "2027-04-06"}
+    lines_waiting: 2
+    transfers_open: 0
+    expect:
+      closed: false
+      reasons: [{code: lines_waiting, count: 2}]
+      todos: [lines_waiting]
+
+  - id: transfer_leg_open
+    pending: "1"
+    month: "2027-03"
+    accounts: *accounts
+    covered_to: {a_current: "2027-04-02", b_current: "2027-03-31", savings: "2027-03-31", card: "2027-03-31", rental: "2027-04-06"}
+    lines_waiting: 0
+    transfers_open: 1
+    expect:
+      closed: false
+      reasons: [{code: transfer_open, count: 1}]
+      todos: [transfer_open]
+
+  - id: window_cut_by_gap
+    pending: "1"
+    closed_months: {"2027-01": true, "2027-02": false, "2027-03": true, "2027-04": true, "2027-05": true}
+    expect_window: {months: ["2027-03", "2027-04", "2027-05"], enough: true}
+
+  - id: window_capped_at_twelve
+    pending: "1"
+    closed_months: {"2026-03": true, "2026-04": true, "2026-05": true, "2026-06": true,
+      "2026-07": true, "2026-08": true, "2026-09": true, "2026-10": true, "2026-11": true,
+      "2026-12": true, "2027-01": true, "2027-02": true, "2027-03": true, "2027-04": true,
+      "2027-05": true}
+    expect_window: {months: ["2026-06", "2026-07", "2026-08", "2026-09", "2026-10", "2026-11",
+      "2026-12", "2027-01", "2027-02", "2027-03", "2027-04", "2027-05"], enough: true}
+
+  - id: two_months_only
+    pending: "1"
+    description: the page shows the to-do in place of the cards (D231)
+    closed_months: {"2027-03": false, "2027-04": true, "2027-05": true}
+    expect_window: {months: ["2027-04", "2027-05"], enough: false}
+    expect_todos: [too_few_months]
+
+  - id: account_history_starts_later
+    pending: "1"
+    description: a savings account first imported on 10 Apr 2027
+    accounts:
+      - {key: a_current, kind: bank_current, owners: {A: "1"}, first_day: "2026-01-01"}
+      - {key: new_savings, kind: bank_savings, owners: {A: "0.5", B: "0.5"}, first_day: "2027-04-10"}
+    lines_waiting: 0
+    transfers_open: 0
+    variants:
+      - description: its opening on 10 Apr is not its first statement's own opening, so it held money before the app saw it
+        own_opening: false
+        month: "2027-03"
+        covered_to: {a_current: "2027-03-31", new_savings: "2027-05-31"}
+        expect: {closed: false, reasons: [{code: account_not_covered, account: new_savings}], todos: [account_not_covered]}
+      - description: its opening is its first statement's own opening, so it did not exist before
+        own_opening: true
+        month: "2027-03"
+        covered_to: {a_current: "2027-03-31", new_savings: "2027-05-31"}
+        expect: {closed: true, reasons: [], todos: []}

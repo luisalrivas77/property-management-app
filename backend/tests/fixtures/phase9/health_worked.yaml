@@ -1,0 +1,215 @@
+# Phase 9 (docs/phases/phase-9.md §15.2, §15.1 "end to end"): the invented household of §15.2
+# with its lines, balances, stored runs and scenarios, run through every function of steps 1
+# and 2 together. Owners A and B; every name, line and amount is invented.
+#
+# `household` holds what the services would read from the database: the accounts with their
+# kinds and owner shares, the booked lines of March to May 2027 (signed as booked, a debit
+# negative; `links` pairs the legs of a transfer between own accounts), the balances on
+# 2 June 2027, the stored net worth runs, the flat with its loan and its default scenario, and
+# the household scenario's levers (the limits of the marks as confirmed in the case).
+#
+# Step 0 checks on load that the expected figures agree with each other and with the per-function
+# fixtures of §15.1 that quote §15.2 (savings_rate three_months, reserve default_accounts,
+# debt one_loan, net_worth_series three_points, lights worked, surplus baseline,
+# savings_plans depot_and_exchange, paths four_rows, plan_levers projection_year_replaces_mean,
+# net_worth_projection worked): the same function gives the same figure everywhere. Reading the
+# lines into months is step 1's (pending "1"), the plan and the projection step 2's
+# (pending "2").
+bases:
+  household: &household
+    today: "2027-06-03"
+    newest_closed: "2027-05"
+    accounts:
+      - {key: a_current, kind: bank_current, owners: {A: "1"}}
+      - {key: b_current, kind: bank_current, owners: {B: "1"}}
+      - {key: savings, kind: bank_savings, owners: {A: "0.5", B: "0.5"}}
+      - {key: card, kind: credit_card, owners: {A: "1"}}
+      - {key: rental, kind: bank_current, purpose: rental, owners: {A: "0.5", B: "0.5"}}
+      - {key: depot, kind: depot, owners: {A: "0.5", B: "0.5"}}
+      - {key: exchange, kind: exchange, owners: {B: "1"}}
+    lines:
+      # March 2027
+      - {account: rental, booked: "2027-03-01", amount: "950.00", category: rent_cold}
+      - {account: rental, booked: "2027-03-01", amount: "150.00", category: operating_costs_prepayment}
+      - {account: rental, booked: "2027-03-03", amount: "-210.00", category: hausgeld_umlagefaehig}
+      - {account: rental, booked: "2027-03-03", amount: "-100.00", category: hausgeld_verwaltung}
+      - {account: rental, booked: "2027-03-15", amount: "-60.00", category: insurance}
+      - {account: rental, booked: "2027-03-30", amount: "-640.00", category: loan_interest}
+      - {account: rental, booked: "2027-03-30", amount: "-310.00", category: loan_principal}
+      - {account: a_current, booked: "2027-03-28", amount: "3100.00", category: hh_salary}
+      - {account: b_current, booked: "2027-03-28", amount: "2200.00", category: hh_salary}
+      - {account: a_current, booked: "2027-03-02", amount: "-1450.00", category: hh_rent}
+      - {account: a_current, booked: "2027-03-10", amount: "-900.00", category: hh_supermarket}
+      - {account: b_current, booked: "2027-03-12", amount: "-650.00", category: hh_energy}
+      - {account: card, booked: "2027-03-20", amount: "-900.00", category: hh_restaurant}
+      - {account: a_current, booked: "2027-03-05", amount: "-400.00", category: internal_transfer_out, links: t03d}
+      - {account: depot, booked: "2027-03-05", amount: "400.00", category: internal_transfer_in, links: t03d}
+      - {account: b_current, booked: "2027-03-06", amount: "-150.00", category: internal_transfer_out, links: t03e}
+      - {account: exchange, booked: "2027-03-06", amount: "150.00", category: internal_transfer_in, links: t03e}
+      # April 2027
+      - {account: rental, booked: "2027-04-01", amount: "950.00", category: rent_cold}
+      - {account: rental, booked: "2027-04-01", amount: "150.00", category: operating_costs_prepayment}
+      - {account: rental, booked: "2027-04-03", amount: "-210.00", category: hausgeld_umlagefaehig}
+      - {account: rental, booked: "2027-04-03", amount: "-100.00", category: hausgeld_verwaltung}
+      - {account: rental, booked: "2027-04-15", amount: "-60.00", category: insurance}
+      - {account: rental, booked: "2027-04-30", amount: "-639.00", category: loan_interest}
+      - {account: rental, booked: "2027-04-30", amount: "-311.00", category: loan_principal}
+      - {account: a_current, booked: "2027-04-28", amount: "3100.00", category: hh_salary}
+      - {account: b_current, booked: "2027-04-28", amount: "2200.00", category: hh_salary}
+      - {account: a_current, booked: "2027-04-02", amount: "-1450.00", category: hh_rent}
+      - {account: a_current, booked: "2027-04-10", amount: "-1100.00", category: hh_supermarket}
+      - {account: b_current, booked: "2027-04-12", amount: "-650.00", category: hh_energy}
+      - {account: card, booked: "2027-04-20", amount: "-950.00", category: hh_restaurant}
+      - {account: a_current, booked: "2027-04-05", amount: "-400.00", category: internal_transfer_out, links: t04d}
+      - {account: depot, booked: "2027-04-05", amount: "400.00", category: internal_transfer_in, links: t04d}
+      - {account: b_current, booked: "2027-04-06", amount: "-150.00", category: internal_transfer_out, links: t04e}
+      - {account: exchange, booked: "2027-04-06", amount: "150.00", category: internal_transfer_in, links: t04e}
+      # May 2027
+      - {account: rental, booked: "2027-05-01", amount: "950.00", category: rent_cold}
+      - {account: rental, booked: "2027-05-01", amount: "150.00", category: operating_costs_prepayment}
+      - {account: rental, booked: "2027-05-03", amount: "-210.00", category: hausgeld_umlagefaehig}
+      - {account: rental, booked: "2027-05-03", amount: "-160.00", category: hausgeld_verwaltung}
+      - {account: rental, booked: "2027-05-18", amount: "-400.00", category: repairs}
+      - {account: rental, booked: "2027-05-30", amount: "-638.00", category: loan_interest}
+      - {account: rental, booked: "2027-05-30", amount: "-312.00", category: loan_principal}
+      - {account: a_current, booked: "2027-05-28", amount: "3100.00", category: hh_salary}
+      - {account: b_current, booked: "2027-05-28", amount: "2200.00", category: hh_salary}
+      - {account: a_current, booked: "2027-05-20", amount: "850.00", category: hh_tax_refund}
+      - {account: a_current, booked: "2027-05-02", amount: "-1450.00", category: hh_rent}
+      - {account: a_current, booked: "2027-05-10", amount: "-2850.00", category: hh_supermarket}
+      - {account: savings, booked: "2027-05-14", amount: "-12000.00", category: hh_car_purchase}
+      - {account: a_current, booked: "2027-05-05", amount: "-400.00", category: internal_transfer_out, links: t05d}
+      - {account: depot, booked: "2027-05-05", amount: "400.00", category: internal_transfer_in, links: t05d}
+      - {account: b_current, booked: "2027-05-06", amount: "-150.00", category: internal_transfer_out, links: t05e}
+      - {account: exchange, booked: "2027-05-06", amount: "150.00", category: internal_transfer_in, links: t05e}
+    balances:
+      - {account: a_current, balance: "3400.00", as_of: "2027-06-02"}
+      - {account: b_current, balance: "1250.00", as_of: "2027-06-02"}
+      - {account: savings, balance: "13000.00", as_of: "2027-06-02"}
+      - {account: card, balance: "-820.00", as_of: "2027-06-01"}
+      - {account: rental, balance: "2300.00", as_of: "2027-06-02"}
+      - {account: exchange, balance: "150.00", as_of: "2027-06-02", description: the exchange's euros}
+    runs:
+      - {id: r1, month_end: "2027-03-31", created: "2027-04-08T08:00:00Z", total: "138900.00"}
+      - {id: r2, month_end: "2027-04-30", created: "2027-05-07T08:00:00Z", total: "140150.00"}
+      - id: r3
+        month_end: "2027-05-31"
+        created: "2027-06-03T08:00:00Z"
+        total: "128380.00"
+        by_class: {bank: "19950.00", depot: "21500.00", crypto: "4150.00", property: "320000.00"}
+        liabilities: {loans: "236400.00", other: "820.00"}
+    properties:
+      p1:
+        purchase_price: "300000.00"
+        loans: [{balance: "236400.00"}]
+        default_scenario:
+          value_today: "320000.00"
+          sale_year: 2035
+          years:
+            2028: {value: "324800.00", loan_balance: "230350.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+            2029: {value: "329672.00", loan_balance: "226420.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+            2030: {value: "334617.08", loan_balance: "222400.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+            2031: {value: "339636.34", loan_balance: "218290.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+            2032: {value: "344730.88", loan_balance: "214090.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+            2033: {value: "349901.84", loan_balance: "209790.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+            2034: {value: "355150.37", loan_balance: "205390.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+    levers:
+      reserve_target_months: "6"
+      buffer_percent: "10"
+      horizon_months: 60
+      net_worth_years: 5
+      value_change: {depot: "0.037", crypto: "-0.015"}
+      bands:
+        - {figure: reserve, red: "0.5"}
+        - {figure: savings_rate, red: "0"}
+        - {figure: ltv, green: "0.60", red: "1.00"}
+        - {figure: debt_service_ratio, green: "0.30", red: "0.40"}
+
+  figures: &figures
+    window: {months: ["2027-03", "2027-04", "2027-05"], enough: true, annualised_from: 3}
+    months:
+      - {month: "2027-03", private_income: "5300.00", private_spending: "3900.00", one_off_spending: "0.00",
+        regular_spending: "3900.00", rental_result: "90.00", rental_cash: "-220.00", income: "5390.00",
+        spending: "3900.00", saved: "1490.00", principal: "310.00", interest: "640.00",
+        free_cash: "1180.00", savings_rate: "0.2764", invested: "550.00"}
+      - {month: "2027-04", private_income: "5300.00", private_spending: "4150.00", one_off_spending: "0.00",
+        regular_spending: "4150.00", rental_result: "91.00", rental_cash: "-220.00", income: "5391.00",
+        spending: "4150.00", saved: "1241.00", principal: "311.00", interest: "639.00",
+        free_cash: "930.00", savings_rate: "0.2302", invested: "550.00"}
+      - {month: "2027-05", private_income: "6150.00", private_spending: "16300.00", one_off_spending: "12000.00",
+        regular_spending: "4300.00", rental_result: "-308.00", rental_cash: "-620.00", income: "5842.00",
+        spending: "16300.00", saved: "-10458.00", principal: "312.00", interest: "638.00",
+        free_cash: "1230.00", savings_rate: "-1.7901", invested: "550.00"}
+    savings_rate: {saved: "-7727.00", income: "16623.00", one_off_spending: "12000.00",
+      principal: "933.00", rate: "-0.4648", rate_regular: "0.2571", rate_without_principal: "-0.5210"}
+    reserve: {counted: [a_current, b_current, savings, card], amount: "16830.00", need: "4470.00",
+      months: "3.8", target: "26820.00", gap: "9990.00", state: below}
+    net_worth: {gross: "365600.00", liabilities: "237220.00", total: "128380.00"}
+    debt: {ltv: {p1: "0.7388"}, debt_ratio: "0.6489", debt_service_year: "11400.00",
+      income_year: "74160.00", debt_service_ratio: "0.1537", debt_to_income: "3.20",
+      split: {bank: "0.0546", depot: "0.0588", crypto: "0.0114", property: "0.8753"}}
+    series:
+      - {month_end: "2027-03-31", total: "138900.00", change: null, saved: null, other: null}
+      - {month_end: "2027-04-30", total: "140150.00", change: "1250.00", saved: "1241.00", other: "9.00"}
+      - {month_end: "2027-05-31", total: "128380.00", change: "-11770.00", saved: "-10458.00", other: "-1312.00"}
+    lights:
+      reserve: {colour: amber, sentences: [reserve.amber]}
+      savings_rate: {colour: red, sentences: [savings_rate.red, savings_rate.red_regular]}
+      ltv: {colour: amber, sentences: [ltv.intro, ltv.amber]}
+      debt_service_ratio: {colour: green, sentences: [debt_service_ratio.intro, debt_service_ratio.green]}
+      debt_ratio: {colour: null, sentences: []}
+      debt_to_income: {colour: null, sentences: []}
+
+cases:
+  - id: figures_and_marks
+    pending: "1"
+    description: §15.2's key figures and marks from the lines, balances and runs
+    household: *household
+    expect: *figures
+
+  - id: before_confirm_no_mark
+    pending: "1"
+    description: the same household before „Übernehmen“ of the limits; no mark at all, and the to-do
+    household:
+      <<: *household
+      levers: {reserve_target_months: "6", buffer_percent: "10", horizon_months: 60,
+        net_worth_years: 5, value_change: {depot: "0.037", crypto: "-0.015"}}
+    expect:
+      lights:
+        reserve: {colour: null, sentences: []}
+        savings_rate: {colour: null, sentences: []}
+        ltv: {colour: null, sentences: []}
+        debt_service_ratio: {colour: null, sentences: []}
+        debt_ratio: {colour: null, sentences: []}
+        debt_to_income: {colour: null, sentences: []}
+      todos: [bands_unconfirmed]
+
+  - id: plan_and_projection
+    pending: "2"
+    description: §15.2's surplus, savings plans, paths under the flat's scenario, and the net worth in five years
+    household: *household
+    expect:
+      surplus: {mean_income: "5583.33", mean_regular_spending: "4116.67", mean_rental_cash: "-353.33",
+        free_cash: "1113.33", buffer: "111.33", investable: "1002.00", median_free_cash: "1180.00",
+        lowest_free_cash: "930.00", lowest_month: "2027-04", one_off_spending_left_out: "12000.00"}
+      savings_plans:
+        - {key: depot, asset_class: depot, monthly: "400.00"}
+        - {key: exchange, asset_class: crypto, monthly: "150.00"}
+      already_invested: "550.00"
+      investable_left: "452.00"
+      paths:
+        - {key: reserve_first, reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "84215.77"}
+        - {key: "pause:depot", reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "75215.77"}
+        - {key: "pause:exchange", reached: "2028-08", months_needed: 15, used_up: null, reserve_at_horizon: "60215.77"}
+        - {key: as_is, reached: "2028-12", months_needed: 19, used_up: null, reserve_at_horizon: "51215.77"}
+      projection:
+        points:
+          - {"on": "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
+          - {"on": "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
+          - {"on": "2030-12-31", bank: "44321.24", depot: "42837.41", crypto: "10213.86", property: "334617.08", loans: "222400.00", other_liabilities: "820.00", total: "208769.59"}
+          - {"on": "2031-12-31", bank: "51390.32", depot: "49303.80", crypto: "11848.28", property: "339636.34", loans: "218290.00", other_liabilities: "820.00", total: "233068.74"}
+          - {"on": "2032-12-31", bank: "58459.40", depot: "56009.44", crypto: "13458.18", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "257747.90"}
+        change: {on_accounts: "38509.40", paid_in: "36850.00", from_assumptions: "6967.62",
+          from_assumptions_by_class: {depot: "7709.44", crypto: "-741.82"},
+          flat_value: "24730.88", loan_repaid: "22310.00", total: "129367.90"}
+      todos: []

@@ -1,0 +1,115 @@
+# Phase 9 (docs/phases/phase-9.md §7.1, §7.2, D246, D251, §15.1): `rules/plan/paths.paths`.
+# For k = 1 … horizon after the newest closed month: free(k) = mean income − mean regular
+# spending + flat(k) (+ income changes and one-offs, plan_levers.yaml); investable(k) = free(k)
+# − free(k) × buffer ÷ 100 to the cent when free(k) > 0, else free(k); reserve(k) =
+# reserve(k−1) + investable(k) − the plans that continue. Rows: reserve_first (every plan
+# paused), pause:<plan> per plan, as_is. `reached`: the first month with reserve ≥ target;
+# `used_up`: the first month with reserve < 0. No scenario here: flat(k) is the measured mean
+# every month (plan_levers.yaml has the scenario cases). Step 0 recomputes every row on load.
+#
+# Step 0's readings, recorded in docs/phases/phase-9.md §15.1:
+# - rows are sorted by `reached`, the rows never reached last, ties in the order reserve_first,
+#   the pauses in the plans' order (largest first), as_is;
+# - with more than four plans the four largest get a row each and the rest are listed in
+#   `others` (the screen's „weitere“), with no row of their own;
+# - a reserve already at its target gives every row reached = the newest closed month and
+#   months_needed 0; the rows still carry their reserve at the horizon.
+bases:
+  worked_month: &worked_month {mean_income: "5583.33", mean_regular_spending: "4116.67",
+    mean_rental_cash: "-353.33", buffer_percent: "10"}
+  worked_plans: &worked_plans
+    - {key: depot, monthly: "400.00"}
+    - {key: exchange, monthly: "150.00"}
+
+cases:
+  - id: four_rows
+    pending: "2"
+    description: §15.2
+    newest_closed: "2027-05"
+    month: *worked_month
+    reserve: "16830.00"
+    target: "26820.00"
+    plans: *worked_plans
+    horizon_months: 60
+    mode: own_use
+    expect:
+      rows:
+        - {key: reserve_first, paused: [depot, exchange], to_reserve_first_month: "1002.00", reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "76950.00"}
+        - {key: "pause:depot", paused: [depot], to_reserve_first_month: "852.00", reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "67950.00"}
+        - {key: "pause:exchange", paused: [exchange], to_reserve_first_month: "602.00", reached: "2028-10", months_needed: 17, used_up: null, reserve_at_horizon: "52950.00"}
+        - {key: as_is, paused: [], to_reserve_first_month: "452.00", reached: "2029-04", months_needed: 23, used_up: null, reserve_at_horizon: "43950.00"}
+      others: []
+
+  - id: already_reached
+    pending: "2"
+    newest_closed: "2027-05"
+    month: *worked_month
+    reserve: "30000.00"
+    target: "26820.00"
+    plans: *worked_plans
+    horizon_months: 60
+    mode: own_use
+    expect:
+      rows:
+        - {key: reserve_first, paused: [depot, exchange], to_reserve_first_month: "1002.00", reached: "2027-05", months_needed: 0, used_up: null, reserve_at_horizon: "90120.00"}
+        - {key: "pause:depot", paused: [depot], to_reserve_first_month: "852.00", reached: "2027-05", months_needed: 0, used_up: null, reserve_at_horizon: "81120.00"}
+        - {key: "pause:exchange", paused: [exchange], to_reserve_first_month: "602.00", reached: "2027-05", months_needed: 0, used_up: null, reserve_at_horizon: "66120.00"}
+        - {key: as_is, paused: [], to_reserve_first_month: "452.00", reached: "2027-05", months_needed: 0, used_up: null, reserve_at_horizon: "57120.00"}
+      others: []
+
+  - id: as_is_never_reaches
+    pending: "2"
+    description: the plan takes more than is left; as_is sends −100.00 a month to the reserve
+    newest_closed: "2027-05"
+    month: {mean_income: "4000.00", mean_regular_spending: "3444.44", mean_rental_cash: "0.00", buffer_percent: "10"}
+    reserve: "1000.00"
+    target: "5000.00"
+    plans: [{key: depot, monthly: "600.00"}]
+    horizon_months: 60
+    mode: own_use
+    expect:
+      rows:
+        - {key: reserve_first, paused: [depot], to_reserve_first_month: "500.00", reached: "2028-01", months_needed: 8, used_up: null, reserve_at_horizon: "31000.00"}
+        - {key: "pause:depot", paused: [depot], to_reserve_first_month: "500.00", reached: "2028-01", months_needed: 8, used_up: null, reserve_at_horizon: "31000.00"}
+        - {key: as_is, paused: [], to_reserve_first_month: "-100.00", reached: null, months_needed: null, used_up: "2028-04", reserve_at_horizon: "-5000.00"}
+      others: []
+
+  - id: generic_two_rows
+    pending: "2"
+    description: in advice_mode generic only the first and the last row exist (D251)
+    newest_closed: "2027-05"
+    month: *worked_month
+    reserve: "16830.00"
+    target: "26820.00"
+    plans: *worked_plans
+    horizon_months: 60
+    mode: generic
+    expect:
+      rows:
+        - {key: reserve_first, paused: [depot, exchange], to_reserve_first_month: "1002.00", reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "76950.00"}
+        - {key: as_is, paused: [], to_reserve_first_month: "452.00", reached: "2029-04", months_needed: 23, used_up: null, reserve_at_horizon: "43950.00"}
+      others: []
+
+  - id: more_than_four_plans
+    pending: "2"
+    newest_closed: "2027-05"
+    month: {mean_income: "5000.00", mean_regular_spending: "3000.00", mean_rental_cash: "0.00", buffer_percent: "0"}
+    reserve: "10000.00"
+    target: "20000.00"
+    plans:
+      - {key: a, monthly: "300.00"}
+      - {key: b, monthly: "200.00"}
+      - {key: c, monthly: "100.00"}
+      - {key: d, monthly: "50.00"}
+      - {key: e, monthly: "20.00"}
+    horizon_months: 60
+    mode: own_use
+    expect:
+      rows:
+        - {key: reserve_first, paused: [a, b, c, d, e], to_reserve_first_month: "2000.00", reached: "2027-10", months_needed: 5, used_up: null, reserve_at_horizon: "130000.00"}
+        - {key: "pause:a", paused: [a], to_reserve_first_month: "1630.00", reached: "2027-12", months_needed: 7, used_up: null, reserve_at_horizon: "107800.00"}
+        - {key: "pause:b", paused: [b], to_reserve_first_month: "1530.00", reached: "2027-12", months_needed: 7, used_up: null, reserve_at_horizon: "101800.00"}
+        - {key: "pause:c", paused: [c], to_reserve_first_month: "1430.00", reached: "2027-12", months_needed: 7, used_up: null, reserve_at_horizon: "95800.00"}
+        - {key: "pause:d", paused: [d], to_reserve_first_month: "1380.00", reached: "2028-01", months_needed: 8, used_up: null, reserve_at_horizon: "92800.00"}
+        - {key: as_is, paused: [], to_reserve_first_month: "1330.00", reached: "2028-01", months_needed: 8, used_up: null, reserve_at_horizon: "89800.00"}
+      others: [e]

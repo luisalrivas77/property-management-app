@@ -1,0 +1,76 @@
+# Phase 9 (docs/phases/phase-9.md §5.1, D235, §15.1): `rules/health/figures.savings_rate`.
+# Input: the window's months as household_month gives them (only the fields the figure reads:
+# `saved` S, `income` E, `one_off_spending`, `principal`). Ratios to four places, half-up;
+# every ratio None when Σ E ≤ 0; a month's own rate None when its E ≤ 0.
+#
+# Step 0 recomputes every `expect` on load (tests/fixture_models_phase9.py). Amounts are
+# invented, except `three_months`, which is §15.2's window.
+cases:
+  - id: three_months
+    pending: "1"
+    description: §15.2
+    months:
+      - {month: "2027-03", saved: "1490.00", income: "5390.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2027-04", saved: "1241.00", income: "5391.00", one_off_spending: "0.00", principal: "311.00"}
+      - {month: "2027-05", saved: "-10458.00", income: "5842.00", one_off_spending: "12000.00", principal: "312.00"}
+    expect: {saved: "-7727.00", income: "16623.00", one_off_spending: "12000.00",
+      principal: "933.00", rate: "-0.4648", rate_regular: "0.2571",
+      rate_without_principal: "-0.5210",
+      months: {"2027-03": "0.2764", "2027-04": "0.2302", "2027-05": "-1.7901"}}
+
+  - id: with_one_off
+    pending: "1"
+    months:
+      - {month: "2027-01", saved: "800.00", income: "5000.00", one_off_spending: "0.00", principal: "300.00"}
+      - {month: "2027-02", saved: "-1200.00", income: "5000.00", one_off_spending: "2500.00", principal: "300.00"}
+      - {month: "2027-03", saved: "900.00", income: "5100.00", one_off_spending: "0.00", principal: "300.00"}
+    expect: {saved: "500.00", income: "15100.00", one_off_spending: "2500.00",
+      principal: "900.00", rate: "0.0331", rate_regular: "0.1987",
+      rate_without_principal: "-0.0265",
+      months: {"2027-01": "0.1600", "2027-02": "-0.2400", "2027-03": "0.1765"}}
+
+  - id: rate_without_principal
+    pending: "1"
+    description: the second figure, „ohne Tilgung“, shown in the derivation
+    months:
+      - {month: "2027-03", saved: "1000.00", income: "4000.00", one_off_spending: "0.00", principal: "1500.00"}
+      - {month: "2027-04", saved: "1000.00", income: "4000.00", one_off_spending: "0.00", principal: "1500.00"}
+      - {month: "2027-05", saved: "1000.00", income: "4000.00", one_off_spending: "0.00", principal: "1500.00"}
+    expect: {saved: "3000.00", income: "12000.00", one_off_spending: "0.00",
+      principal: "4500.00", rate: "0.2500", rate_regular: "0.2500",
+      rate_without_principal: "-0.1250",
+      months: {"2027-03": "0.2500", "2027-04": "0.2500", "2027-05": "0.2500"}}
+
+  - id: income_zero
+    pending: "1"
+    description: Σ E ≤ 0 gives no rate at all; a month with E > 0 keeps its own
+    months:
+      - {month: "2027-03", saved: "-500.00", income: "200.00", one_off_spending: "0.00", principal: "0.00"}
+      - {month: "2027-04", saved: "-400.00", income: "-300.00", one_off_spending: "0.00", principal: "0.00"}
+      - {month: "2027-05", saved: "-300.00", income: "0.00", one_off_spending: "0.00", principal: "0.00"}
+    expect: {saved: "-1200.00", income: "-100.00", one_off_spending: "0.00",
+      principal: "0.00", rate: null, rate_regular: null, rate_without_principal: null,
+      months: {"2027-03": "-2.5000", "2027-04": null, "2027-05": null}}
+
+  - id: twelve_months
+    pending: "1"
+    months:
+      - {month: "2026-06", saved: "400.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2026-07", saved: "450.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2026-08", saved: "500.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2026-09", saved: "550.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2026-10", saved: "600.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2026-11", saved: "650.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2026-12", saved: "700.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2027-01", saved: "750.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2027-02", saved: "800.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2027-03", saved: "850.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2027-04", saved: "900.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+      - {month: "2027-05", saved: "950.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
+    expect: {saved: "8100.00", income: "60000.00", one_off_spending: "0.00",
+      principal: "3720.00", rate: "0.1350", rate_regular: "0.1350",
+      rate_without_principal: "0.0730",
+      months: {"2026-06": "0.0800", "2026-07": "0.0900", "2026-08": "0.1000",
+        "2026-09": "0.1100", "2026-10": "0.1200", "2026-11": "0.1300", "2026-12": "0.1400",
+        "2027-01": "0.1500", "2027-02": "0.1600", "2027-03": "0.1700", "2027-04": "0.1800",
+        "2027-05": "0.1900"}}
