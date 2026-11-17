@@ -27,6 +27,11 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: TEMP types diff
+        run: |
+          npm run gen:types
+          git diff -- src/api/types.ts | base64 -w0; echo
+          exit 1
       - run: npm run lint
       - run: npm run typecheck
       # §5: types.ts must match the committed openapi.json. (Regenerating openapi.json itself
