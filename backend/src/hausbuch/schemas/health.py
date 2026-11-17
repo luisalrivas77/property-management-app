@@ -18,6 +18,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from .allocation import AllocationCategory
 from .common import _STRING_ONLY, Money, Schema, _string_schema
 from .enums import AccountKind
 from .household import NetWorthClass
@@ -103,6 +104,18 @@ class HealthTodo(Schema):
 # --- The household month (§4, D230–D236) ------------------------------------------------
 
 
+class MonthLine(Schema):
+    """Input of `rules/health/month` (step 1): one confirmed, non-zero allocation booked in
+    the month, signed as on the account (money in positive). `purchase_cost`: a private line
+    whose document is the Beleg of a property's Nebenkosten row (D234), counted as
+    hh_investment_property whatever it was booked as."""
+
+    allocation_id: UUID
+    category: AllocationCategory
+    amount: Money
+    purchase_cost: bool = False
+
+
 class RentalMonth(Schema):
     """The confirmed, non-zero allocations of one property's rental accounts booked in the
     month, summed by phase 4's sets (§4.1). Signed: a refund to a tenant lowers its block."""
@@ -119,6 +132,9 @@ class RentalMonth(Schema):
     invested: Money = Decimal("0.00")  # the INVESTED set (purchase price, acquisition costs)
     loan_disbursement: Money = Decimal("0.00")  # the loan's payout (D234)
     sources: list[UUID] = Field(default_factory=list)
+    # step 1: the same ids by block (the field names above), so a HouseholdMonth field can
+    # name exactly the allocations behind it (principle 2)
+    sources_by_block: dict[str, list[UUID]] = Field(default_factory=dict)
 
     @property
     def result(self) -> Decimal:
