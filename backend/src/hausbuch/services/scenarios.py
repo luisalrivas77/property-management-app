@@ -48,7 +48,7 @@ from hausbuch.rules.health.figures import estimate_on
 from hausbuch.rules.performance.projection import value_today
 from hausbuch.schemas.enums import EntityType
 from hausbuch.schemas.events import EventType, ScenarioRecorded
-from hausbuch.schemas.health import PropertyEstimate, ScenarioValue
+from hausbuch.schemas.health import EstimateSource, PropertyEstimate, ScenarioValue
 from hausbuch.schemas.performance import Scenario, ScenarioCreate
 
 from .allocations import user_id
@@ -144,8 +144,9 @@ def estimate_on_day(
     """Phase 9 D241 (Q-O131): the property's estimate on `day` and the default scenario it
     came from, decided by rules.health.figures.estimate_on over the default rows standing at
     the end of that day (the rule itself does not see supersession, so only those rows are
-    handed to it); the purchase price when none stood. On today the scenario is
-    default_scenario's."""
+    handed to it); the purchase price when none stood, and labelled the purchase price too
+    when the standing default typed no „Wert heute“ (its value is then the price). On today
+    the scenario is default_scenario's."""
     standing = _defaults_standing(conn, property_id, day)
     values = [
         ScenarioValue(
@@ -159,6 +160,10 @@ def estimate_on_day(
     ]
     estimate = estimate_on(values, day, purchase_price)
     scenario = next((r for r in standing if r.id == estimate.scenario_id), None)
+    if scenario is not None and (scenario.levers is None or scenario.levers.today_value is None):
+        # The default typed no „Wert heute“: its value is the purchase price, and the LTV's
+        # estimate source says so (review finding 8), as the net worth line's note does.
+        estimate = PropertyEstimate(value=estimate.value, source=EstimateSource.PURCHASE_PRICE)
     return estimate, scenario
 
 

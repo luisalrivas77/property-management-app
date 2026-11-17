@@ -34,6 +34,7 @@ from hausbuch.schemas.allocation import (
     AllocationSet,
 )
 from hausbuch.schemas.enums import AccountKind, AccountPurpose, AcquisitionCostKind
+from hausbuch.schemas.health import EstimateSource
 from hausbuch.schemas.net_worth import SnapshotOutcome
 from hausbuch.schemas.performance import Levers, ScenarioCreate
 from hausbuch.schemas.property import AcquisitionCostCreate, Address, PropertyCreate
@@ -41,7 +42,7 @@ from hausbuch.services import allocations, health, household, net_worth
 from hausbuch.services.errors import RuleViolationError
 from hausbuch.services.iban import protect_iban
 from hausbuch.services.properties import add_acquisition_cost, create_property
-from hausbuch.services.scenarios import create_scenario, default_scenario_on
+from hausbuch.services.scenarios import create_scenario, default_scenario_on, estimate_on_day
 
 pytestmark = pytest.mark.db
 
@@ -249,7 +250,7 @@ def test_a_privately_paid_nebenkosten_bill_is_invested_not_spent(world):
 # --- D241: a past month-end --------------------------------------------------------------------
 
 
-def _scenario(world: World, value: str, at: datetime, *, supersedes=None, withdrawn=False):
+def _scenario(world: World, value: str | None, at: datetime, *, supersedes=None, withdrawn=False):
     return world.cmd(
         create_scenario,
         world.property_id,
@@ -259,7 +260,11 @@ def _scenario(world: World, value: str, at: datetime, *, supersedes=None, withdr
             is_default=True,
             supersedes_id=supersedes,
             withdrawn=withdrawn,
-            levers=Levers(value_growth=Decimal("0.02"), sale_year=2036, today_value=Decimal(value)),
+            levers=Levers(
+                value_growth=Decimal("0.02"),
+                sale_year=2036,
+                today_value=None if value is None else Decimal(value),
+            ),
         ),
         now=at,
     )
@@ -297,6 +302,32 @@ def test_a_past_day_reads_the_scenario_of_that_day(world):
     assert world.query(net_worth.net_worth, date(2026, 11, 30)).property_estimate == Decimal(
         "289000.00"
     )  # the purchase price once no default is in force
+
+
+def test_a_default_without_a_value_today_is_labelled_the_purchase_price(world):
+    """Review finding 8: a standing default scenario that typed no „Wert heute“ values the
+    flat at its purchase price, so the estimate says „Kaufpreis“, not „Szenario“; once a
+    default with a „Wert heute“ stands, it says „Szenario“."""
+    first = _scenario(world, None, datetime(2026, 9, 20, 10, tzinfo=UTC))
+    _scenario(world, "300000.00", datetime(2026, 11, 5, 9, tzinfo=UTC), supersedes=first.id)
+
+    october, scenario = world.query(
+        estimate_on_day, world.property_id, Decimal("289000.00"), date(2026, 10, 31)
+    )
+    assert (october.value, october.source, october.scenario_id) == (
+        Decimal("289000.00"),
+        EstimateSource.PURCHASE_PRICE,
+        None,
+    )
+    assert scenario is not None and scenario.id == first.id
+    november, _ = world.query(
+        estimate_on_day, world.property_id, Decimal("289000.00"), date(2026, 11, 30)
+    )
+    assert (november.value, november.source) == (Decimal("300000.00"), EstimateSource.SCENARIO)
+    figure = world.query(net_worth.net_worth, date(2026, 10, 31))
+    assert world.query(health.estimate_sources, figure) == {
+        world.property_id: EstimateSource.PURCHASE_PRICE
+    }
 
 
 def test_any_closed_month_end_from_january_2026_can_be_stored(world):
