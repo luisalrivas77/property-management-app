@@ -633,7 +633,9 @@ def test_a_month_end_is_stored_once_and_recaptured_only_when_it_changed(
 
 def test_a_stored_month_end_is_read_from_its_rows_alone(run, read, fresh_workspaces):
     """D167 (5) amended (migration 0040): after the capture the flat's value and the loan
-    change; the figure on read follows them, the stored month-end does not."""
+    change; the figure on read follows them, the stored month-end does not. The scenario is
+    recorded on the month-end itself: since phase 9 D241 a day's estimate is the default
+    scenario as it stood on that day, so one recorded on 1 Nov would not reach 31 Oct."""
     ws, _ = fresh_workspaces
     ids = _ledger(run, ws)
     run(ws, net_worth.capture_month_end, ON, now=NOW)
@@ -650,7 +652,7 @@ def test_a_stored_month_end_is_read_from_its_rows_alone(run, read, fresh_workspa
                 value_growth=Decimal("0.05"), sale_year=2036, today_value=Decimal("400000.00")
             ),
         ),
-        now=NOW,
+        now=datetime(2026, 10, 31, 12, tzinfo=UTC),
     )
     run(
         ws,

@@ -168,3 +168,21 @@ def test_net_worth_month_ends_and_isolation(client_a, client_b):
     assert client_b.get(f"/api/net-worth/snapshots/{run_id}").status_code == 404
     assert ok(client_b.get("/api/net-worth"))["lines"] == []
     assert ok(client_b.post("/api/net-worth/snapshots"))["outcome"] == "empty"
+
+
+def test_a_past_month_end_is_stored_by_its_day(client_a):
+    """Phase 9 D241: the body names a past month-end; a day that is no month-end, one before
+    31 Jan 2026 and the running month's end are refused with their code (422)."""
+    stored = ok(client_a.post("/api/net-worth/snapshots", json={"as_of": "2026-09-30"}))
+    assert (stored["outcome"], stored["as_of"]) == ("empty", "2026-09-30")
+    last = ok(client_a.post("/api/net-worth/snapshots"))["as_of"]
+    assert ok(client_a.post("/api/net-worth/snapshots", json={}))["as_of"] == last
+    running = date.fromisoformat(last) + timedelta(days=1)
+    running_end = (running.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    for day, code in [
+        ("2026-09-29", "net_worth.not_month_end"),
+        ("2025-12-31", "net_worth.month_end_before_history"),
+        (running_end.isoformat(), "net_worth.month_end_not_closed"),
+    ]:
+        refused = client_a.post("/api/net-worth/snapshots", json={"as_of": day})
+        assert (refused.status_code, refused.json()["codes"]) == (422, [code])

@@ -219,6 +219,10 @@ PRICE_NO_SOURCE = "price.no_source"  # an asset not in the registry (D167)
 PRICE_SOURCE_FAILED = "price.source_failed"  # an issuer's NAV missing seven days (D174)
 VALUATION_STALE_PRICE = "valuation.stale_price"  # the price is older than 7 days (D167)
 VALUATION_NOT_VALUED = "valuation.not_valued"  # past the asset's last reconciled date
+# Phase 9 D241 (POST /net-worth/snapshots {as_of}): a past month-end, refused when ...
+NET_WORTH_NOT_MONTH_END = "net_worth.not_month_end"  # the day is not a month's last day
+NET_WORTH_MONTH_END_BEFORE_HISTORY = "net_worth.month_end_before_history"  # before 31 Jan 2026
+NET_WORTH_MONTH_END_NOT_CLOSED = "net_worth.month_end_not_closed"  # today's month or later
 # Phase 6 step 5b (PATCH /assets/{id}, POST /assets/{id}/prices)
 ASSET_NOT_CRYPTO = "asset.not_crypto"  # a CoinGecko id or Kraken pair on a fund or cash
 ASSET_IS_EURO = "asset.is_euro"  # a typed price for the euro, which is 1.0

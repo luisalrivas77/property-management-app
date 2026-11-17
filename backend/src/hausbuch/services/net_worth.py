@@ -24,10 +24,13 @@ NetWorth(on) = Σ balances + Σ positions × price + the properties' estimate �
   latest report lists while no unit of it is booked (the overview shows booked units only)
   is listed unvalued too, with a to-do pointing to the holdings card in Zu prüfen.
 - **The property** from its handover (purchase_date) to the end of ownership: the value in
-  today's year by the default scenario in force (its „Wert heute“, else the purchase price;
-  rules.performance.projection.value_today, D86), an estimate. **Its loans** from the payout,
-  by the repayment schedule (the scenario's follow-up rate where it sets one, as the
-  projection does), an estimate too.
+  today's year by the default scenario as it stood on `on` (its „Wert heute“, else the
+  purchase price; rules.performance.projection.value_today, D86), an estimate. Phase 9 D241
+  (Q-O131): `projection_scenario` is append-only, so the scenario of a past day is the newest
+  default recorded by the end of that day and not yet withdrawn or superseded then
+  (services.scenarios.default_scenario_on); until 17 Nov 2026 every day read today's. **Its
+  loans** from the payout, by the repayment schedule (the scenario's follow-up rate where it
+  sets one, as the projection does), an estimate too.
 - **Owners**: an account's figures by its account_ownership set in force on `on` (the newest
   recorded set whose effective_from is on or before `on`; before its first set, the earliest
   one), the property and its loans by the property's shares; split to the cent by
@@ -46,6 +49,19 @@ runs stay. Until 15 Nov 2026 the task wrote only when no run held the month-end 
 press before 08:00 on the 1st froze an early figure for good (review, finding 3). The
 overview reads the stored month-end's day again and says when today's reading of it differs
 (`month_end_now`). Captures of one workspace run one at a time (an advisory lock).
+
+**Past month-ends (phase 9 D241, amending D167 (5)).** `capture_month_end` and POST
+/net-worth/snapshots {as_of} take any month-end from 31 Jan 2026 to the last one before today
+(rules.net_worth.month_end_codes; refused with net_worth.not_month_end,
+net_worth.month_end_before_history or net_worth.month_end_not_closed), because a month often
+closes weeks later. A past day is read as `net_worth(on)` reads any day: a balance by the
+reconciled imports up to `on` (exact once a reconciled import reaches it, else „Stand vom …“
+and its to-do), positions by the confirmed movements through `on` priced by the newest price
+on or before `on` (stale after seven days, missing before the first stored price: both
+to-dos), a depot's fund checked against its latest report on or before `on`, a wallet's
+movements waiting for a person named as today. Two figures are not as of the day: a loan's
+balance follows its terms as they are now (the loan row is edited in place), and an owner's
+account shares follow the sets in force on `on` as recorded now.
 
 A stored month-end is read from its rows alone: every euro figure, the classes and the total
 are the stored values, never recomputed (a later „Wert heute“ or loan change leaves it as
@@ -98,10 +114,11 @@ from hausbuch.schemas.net_worth import (
 from .context import CommandContext
 from .depot import _german_units as german_units
 from .depot import latest_report_checks
+from .errors import require_valid
 from .events import append_event
 from .loans import list_loans
 from .prices.overview import assets_overview
-from .scenarios import default_scenario
+from .scenarios import default_scenario_on
 from .transfers import _last_days as history_ends  # D162 amended (9)'s history end
 
 C = NetWorthClass
@@ -492,7 +509,7 @@ def _properties(
     items: list[_Item] = []
     todos: list[NetWorthTodo] = []
     for prop in rows:
-        scenario = default_scenario(conn, prop.id)
+        scenario = default_scenario_on(conn, prop.id, on)
         levers = scenario.levers if scenario is not None else None
         if levers is not None and levers.today_value is not None:
             note = f"Schätzwert: „Wert heute“ aus dem Szenario „{scenario.name}“ (Planung)"
@@ -860,7 +877,12 @@ def _lock(ctx: CommandContext) -> None:
 
 def capture_month_end(ctx: CommandContext, as_of: date) -> SnapshotResult:
     """Store `as_of`'s figure as a run (see the module doc): the button and the periodic task
-    alike, a new run only when the figures differ from the newest stored one."""
+    alike, a new run only when the figures differ from the newest stored one. Any month-end
+    from 31 Jan 2026 to the last one before today (phase 9 D241), else RuleViolationError."""
+    from .documents import LOCAL_TIME_ZONE
+
+    today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
+    require_valid(rules.month_end_codes(as_of, today), "not a month-end that can be stored")
     _lock(ctx)
     existing = _latest_run(ctx.conn, as_of)
     figure = net_worth(ctx.conn, as_of)
@@ -927,13 +949,15 @@ def capture_month_end(ctx: CommandContext, as_of: date) -> SnapshotResult:
     )
 
 
-def capture_last_month_end(ctx: CommandContext) -> SnapshotResult:
-    """POST /net-worth/snapshots („Monatsabschluss festhalten“): the last month-end before
-    today (Berlin time, as the screen's day)."""
+def capture_last_month_end(ctx: CommandContext, as_of: date | None = None) -> SnapshotResult:
+    """POST /net-worth/snapshots („Monatsabschluss festhalten“): `as_of` when given (a past
+    month-end, phase 9 D241), else the last month-end before today (Berlin time, as the
+    screen's day)."""
     from .documents import LOCAL_TIME_ZONE
 
-    today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
-    return capture_month_end(ctx, last_month_end(today))
+    if as_of is None:
+        as_of = last_month_end(ctx.now.astimezone(LOCAL_TIME_ZONE).date())
+    return capture_month_end(ctx, as_of)
 
 
 __all__ = [

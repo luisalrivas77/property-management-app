@@ -28,6 +28,7 @@ tax inputs do, so the "one default" check cannot race; `supersedes_id` is UNIQUE
 as well.
 """
 
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -106,6 +107,30 @@ def default_scenario(conn: Connection, property_id: UUID) -> Scenario | None:
             _in_force(),
         )
         .order_by(scenario_table.c.recorded_at.desc(), scenario_table.c.id)
+        .limit(1)
+    ).one_or_none()
+    return None if row is None else _to_scenario(row)
+
+
+def default_scenario_on(conn: Connection, property_id: UUID, day: date) -> Scenario | None:
+    """The property's default scenario as it stood at the end of `day` (Europe/Berlin), None
+    when it had none then (phase 9 D241, Q-O131: a past month-end's estimate). The table is
+    append-only, so the state of a day is the rows recorded before the next day began: the
+    newest default among them that no row recorded by then withdrew or superseded (a
+    withdrawal is itself a superseding row). On today the answer is default_scenario's."""
+    end = datetime.combine(day + timedelta(days=1), time(), LOCAL_TIME_ZONE)
+    s = scenario_table.c
+    later = scenario_table.alias("later")
+    row = conn.execute(
+        select(scenario_table)
+        .where(
+            s.property_id == property_id,
+            s.is_default.is_(True),
+            s.withdrawn.is_(False),
+            s.recorded_at < end,
+            ~exists().where(later.c.supersedes_id == s.id, later.c.recorded_at < end),
+        )
+        .order_by(s.recorded_at.desc(), s.id)
         .limit(1)
     ).one_or_none()
     return None if row is None else _to_scenario(row)

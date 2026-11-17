@@ -21,20 +21,29 @@ the Anlagen overview's valuations and hands them here. Built in phase 6 step 6.
 - `totals(parts, owners)`: Σ per class, per owner and in all; a part whose account has no
   shares counts in its class and the total but in no owner, and is reported as unassigned.
   A part without a value (not valued: no price, past its reconciled date) counts nowhere.
+- `month_end_codes(as_of, today)`: which month-ends may be stored (phase 9 D241, amending
+  D167 (5)): any closed month-end from 31 Jan 2026 on (the bank history starts on 1 Jan
+  2026, design §10) up to the last one before `today`, not only the last one.
 """
 
 from collections.abc import Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from fractions import Fraction
 
+from hausbuch.rules.errors import (
+    NET_WORTH_MONTH_END_BEFORE_HISTORY,
+    NET_WORTH_MONTH_END_NOT_CLOSED,
+    NET_WORTH_NOT_MONTH_END,
+)
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.household import NetWorthClass
 from hausbuch.schemas.loan import ScheduleEntry
 
 ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
+FIRST_MONTH_END = date(2026, 1, 31)  # the household's bank history starts on 1 Jan 2026
 
 _CLASS_OF_KIND = {
     AccountKind.BANK_CURRENT: NetWorthClass.BANK,
@@ -146,3 +155,16 @@ __all__ = [
     "split",
     "totals",
 ]
+
+
+def month_end_codes(as_of: date, today: date) -> list[str]:
+    """Why `as_of` cannot be stored as a month-end on `today` (both Berlin days), empty when
+    it can: it must be a month's last day, not before FIRST_MONTH_END, and before today's
+    month (a month still running has no month-end yet)."""
+    if (as_of + timedelta(days=1)).day != 1:
+        return [NET_WORTH_NOT_MONTH_END]
+    if as_of < FIRST_MONTH_END:
+        return [NET_WORTH_MONTH_END_BEFORE_HISTORY]
+    if as_of >= today.replace(day=1):
+        return [NET_WORTH_MONTH_END_NOT_CLOSED]
+    return []

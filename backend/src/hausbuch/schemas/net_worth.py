@@ -127,6 +127,13 @@ class SnapshotOutcome(StrEnum):
     EMPTY = "empty"  # nothing to store (no account, position, property or loan with a value)
 
 
+class SnapshotRequest(Schema):
+    """POST /net-worth/snapshots, optional body (phase 9 D241): a past month-end to store, from
+    31 Jan 2026 to the last one before today. Without it, the last month-end before today."""
+
+    as_of: date | None = None
+
+
 class SnapshotResult(Schema):
     """POST /net-worth/snapshots: what „Monatsabschluss festhalten“ did."""
 

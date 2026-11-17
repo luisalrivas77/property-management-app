@@ -1528,8 +1528,10 @@ export interface paths {
         put?: never;
         /**
          * Net Worth Snapshot
-         * @description 200 in every case: the outcome says whether a run was written (written, recaptured)
-         *     or not (unchanged, empty).
+         * @description 200 when the month-end may be stored: the outcome says whether a run was written
+         *     (written, recaptured) or not (unchanged, empty). A body's `as_of` stores a past month-end
+         *     (phase 9 D241); 422 net_worth.not_month_end, net_worth.month_end_before_history or
+         *     net_worth.month_end_not_closed when it cannot be stored.
          */
         post: operations["net_worth_snapshot_api_net_worth_snapshots_post"];
         delete?: never;
@@ -11507,6 +11509,15 @@ export interface components {
          */
         SnapshotOutcome: "written" | "recaptured" | "unchanged" | "empty";
         /**
+         * SnapshotRequest
+         * @description POST /net-worth/snapshots, optional body (phase 9 D241): a past month-end to store, from
+         *     31 Jan 2026 to the last one before today. Without it, the last month-end before today.
+         */
+        SnapshotRequest: {
+            /** As Of */
+            as_of?: string | null;
+        };
+        /**
          * SnapshotResult
          * @description POST /net-worth/snapshots: what „Monatsabschluss festhalten“ did.
          */
@@ -17121,7 +17132,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SnapshotRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

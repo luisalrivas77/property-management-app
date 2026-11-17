@@ -4237,8 +4237,25 @@
       },
       "post": {
         "summary": "Net Worth Snapshot",
-        "description": "200 in every case: the outcome says whether a run was written (written, recaptured)\nor not (unchanged, empty).",
+        "description": "200 when the month-end may be stored: the outcome says whether a run was written\n(written, recaptured) or not (unchanged, empty). A body's `as_of` stores a past month-end\n(phase 9 D241); 422 net_worth.not_month_end, net_worth.month_end_before_history or\nnet_worth.month_end_not_closed when it cannot be stored.",
         "operationId": "net_worth_snapshot_api_net_worth_snapshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SnapshotRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -29186,6 +29203,26 @@
           "empty"
         ],
         "title": "SnapshotOutcome"
+      },
+      "SnapshotRequest": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SnapshotRequest",
+        "description": "POST /net-worth/snapshots, optional body (phase 9 D241): a past month-end to store, from\n31 Jan 2026 to the last one before today. Without it, the last month-end before today."
       },
       "SnapshotResult": {
         "properties": {
