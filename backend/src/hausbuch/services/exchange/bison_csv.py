@@ -2,6 +2,8 @@
 tests/fixtures/phase6/bison_csv.yaml).
 
 Nine columns separated by „; “ (every cell after the first starts with a space), no quoting;
+since 17 Nov 2026 also separated by commas (Luis's export of that day; D166 amended (3)), no
+quoting and no comma inside a cell, the hour possibly written with one digit („9:45:20“);
 one row per trade with both legs; amounts unsigned with a point as decimal mark; the asset
 written capitalised (Btc) and read upper-case; the date in UTC. An EUR row (Currency Eur, no
 Asset) is the EUR asset, its quantity and eur_amount both its EUR amount. The Fee is in the
@@ -36,11 +38,19 @@ def _amount(cell: str, n: int) -> Decimal | None:
 
 def parse_text(text: str) -> list[MovementLine]:
     lines = [line for line in text.replace("\r\n", "\n").split("\n") if line.strip()]
-    if not lines or tuple(c.strip() for c in lines[0].split(";")) != BISON_HEADER:
+    sep = next(
+        (
+            d
+            for d in (";", ",")
+            if lines and tuple(c.strip() for c in lines[0].split(d)) == BISON_HEADER
+        ),
+        None,
+    )
+    if sep is None:
         raise RuleError(E.EXCHANGE_UNREADABLE, "not BISON's transaction export")
     out = []
     for n, line in enumerate(lines[1:], start=1):
-        cells = [c.strip() for c in line.split(";")]
+        cells = [c.strip() for c in line.split(sep)]
         if len(cells) != len(BISON_HEADER):
             raise RuleError(E.EXCHANGE_UNREADABLE, f"row {n}: {len(cells)} cells, not 9")
         ref, kind, currency, asset, eur, units, _price, fee, when = cells
