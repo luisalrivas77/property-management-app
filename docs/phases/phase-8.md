@@ -204,7 +204,7 @@ The card says „Schätzung“ and names what it rests on (the two prices and th
 - **Refusals,** each with its to-dos: `so.incomplete` (§4.3), `so.lp_undecided` (D209), `kap.certificate_unconfirmed` (a certificate uploaded but its card not yet applied), `export.too_large` (D77).
 - **Archive.** The yearly ZIP of phase 3 step 3 takes the newest export of each new kind for the year, or builds them when none exists and none is refused; a refused part is named on the archive's contents page instead of failing the archive.
 
-## 11. Data model: migration 0048 (`0048_tax_kap_so`; 0043 went to phase 6's exchange trades, 0044 to phase 7's sync originals, 0045 to the provider keys typed in the app, 0046 to phase 7's learned transfers and 0047 to the ELSTER Hersteller-ID; phase 9 takes 0049)
+## 11. Data model: the next free migration when step 0 starts (0048 went to phase 9's step 0 on 17 Nov 2026, Q-O126 amended; until then `0048_tax_kap_so`; 0043 went to phase 6's exchange trades, 0044 to phase 7's sync originals, 0045 to the provider keys typed in the app, 0046 to phase 7's learned transfers and 0047 to the ELSTER Hersteller-ID; phase 9 takes 0049)
 
 One migration, written in step 0. No table holds a computed tax figure: lots, drafts and assessments are computed on read; only inputs and exports are stored.
 
