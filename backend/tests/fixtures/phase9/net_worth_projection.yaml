@@ -55,11 +55,11 @@ cases:
     expect:
       end_of_2027: {bank: "23114.00", depot: "24789.94", crypto: "5159.75"}
       points:
-        - {on: "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
-        - {on: "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
-        - {on: "2030-12-31", bank: "44321.24", depot: "42837.41", crypto: "10213.86", property: "334617.08", loans: "222400.00", other_liabilities: "820.00", total: "208769.59"}
-        - {on: "2031-12-31", bank: "51390.32", depot: "49303.80", crypto: "11848.28", property: "339636.34", loans: "218290.00", other_liabilities: "820.00", total: "233068.74"}
-        - {on: "2032-12-31", bank: "58459.40", depot: "56009.44", crypto: "13458.18", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "257747.90"}
+        - {"on": "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
+        - {"on": "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
+        - {"on": "2030-12-31", bank: "44321.24", depot: "42837.41", crypto: "10213.86", property: "334617.08", loans: "222400.00", other_liabilities: "820.00", total: "208769.59"}
+        - {"on": "2031-12-31", bank: "51390.32", depot: "49303.80", crypto: "11848.28", property: "339636.34", loans: "218290.00", other_liabilities: "820.00", total: "233068.74"}
+        - {"on": "2032-12-31", bank: "58459.40", depot: "56009.44", crypto: "13458.18", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "257747.90"}
       ends_before_sale_year: null
       used_up: null
       todos: []
@@ -83,7 +83,7 @@ cases:
     <<: *household
     levers: {value_change: {depot: "0", crypto: "0"}, net_worth_years: 5}
     expect:
-      last: {on: "2032-12-31", bank: "58459.40", depot: "48300.00", crypto: "14200.00", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "250780.28"}
+      last: {"on": "2032-12-31", bank: "58459.40", depot: "48300.00", crypto: "14200.00", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "250780.28"}
       todos: []
 
   - id: negative_rate
@@ -92,8 +92,8 @@ cases:
     levers: {value_change: {depot: "-0.100", crypto: "-0.015"}, net_worth_years: 2}
     expect:
       points:
-        - {on: "2028-12-31", bank: "30183.08", depot: "25258.25", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "155941.31"}
-        - {on: "2029-12-31", bank: "37252.16", depot: "27312.43", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "175551.14"}
+        - {"on": "2028-12-31", bank: "30183.08", depot: "25258.25", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "155941.31"}
+        - {"on": "2029-12-31", bank: "37252.16", depot: "27312.43", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "175551.14"}
       todos: []
 
   - id: class_not_held_needs_no_rate
@@ -106,8 +106,8 @@ cases:
     levers: {value_change: {depot: "0.037"}, net_worth_years: 2}
     expect:
       points:
-        - {on: "2028-12-31", bank: "33033.08", depot: "30588.57", crypto: "0.00", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "157251.65"}
-        - {on: "2029-12-31", bank: "41902.16", depot: "36601.75", crypto: "0.00", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "180935.91"}
+        - {"on": "2028-12-31", bank: "33033.08", depot: "30588.57", crypto: "0.00", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "157251.65"}
+        - {"on": "2029-12-31", bank: "41902.16", depot: "36601.75", crypto: "0.00", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "180935.91"}
       todos: []
 
   - id: plan_into_empty_class_needs_rate
@@ -159,8 +159,8 @@ cases:
     levers: {value_change: *worked_rates, net_worth_years: 10}
     expect:
       points:
-        - {on: "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
-        - {on: "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
+        - {"on": "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
+        - {"on": "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
       ends_before_sale_year: 2030
       todos: []
 
@@ -181,8 +181,8 @@ cases:
     levers: {value_change: *worked_rates, net_worth_years: 10}
     expect:
       points:
-        - {on: "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "474800.00", loans: "320350.00", other_liabilities: "820.00", total: "221271.63"}
-        - {on: "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "481672.00", loans: "314420.00", other_liabilities: "820.00", total: "248840.46"}
+        - {"on": "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "474800.00", loans: "320350.00", other_liabilities: "820.00", total: "221271.63"}
+        - {"on": "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "481672.00", loans: "314420.00", other_liabilities: "820.00", total: "248840.46"}
       ends_before_sale_year: 2030
       todos: []
 
@@ -192,8 +192,8 @@ cases:
     levers: {value_change: *worked_rates, net_worth_years: 2}
     expect:
       points:
-        - {on: "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
-        - {on: "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
+        - {"on": "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
+        - {"on": "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
       ends_before_sale_year: null
       todos: []
 
@@ -205,7 +205,7 @@ cases:
       income_changes: [{monthly_net: "-1500.00", from_month: "2027-09"}]}
     expect:
       points:
-        - {on: "2028-12-31", bank: "8147.24", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "139235.79"}
+        - {"on": "2028-12-31", bank: "8147.24", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "139235.79"}
       used_up: "2029-07"
       todos: []
 
@@ -217,8 +217,8 @@ cases:
       one_offs: [{month: "2027-08", amount: "-2000.00", source: typed}]}
     expect:
       points:
-        - {on: "2028-12-31", bank: "21814.41", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "152902.96"}
-        - {on: "2029-12-31", bank: "28883.49", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "176471.79"}
+        - {"on": "2028-12-31", bank: "21814.41", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "152902.96"}
+        - {"on": "2029-12-31", bank: "28883.49", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "176471.79"}
       todos: []
 
   - id: change_rows_sum
