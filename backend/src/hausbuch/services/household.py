@@ -4,8 +4,9 @@ accounts, computed on read from confirmed allocations only (rules.household.cash
 Phase 9 D234 (amends phase 6's screen, not its rule): a private line booked hh_property_cost
 whose document is the Beleg of a Nebenkosten row of the property (property_acquisition_cost:
 the notary, the land register, the Grunderwerbsteuer; phase 6 D161 amended) bought the flat,
-so `cashflow` hands it to month_cashflow as hh_investment_property („Gespart, nicht
-ausgegeben“) instead of spending of the tax group. `private_purchase_costs` lists those
+so `cashflow` flags it `purchase_cost` and rules.health.month.cashflow_rows counts it as
+hh_investment_property („Gespart, nicht ausgegeben“) instead of spending of the tax group.
+`private_purchase_costs` lists those
 allocations for phase 9's invested_property, which the category alone cannot tell apart
 from a down payment booked hh_investment_property. A line paying a bill with both a purchase
 part and a financing part moves whole (one allocation, one document)."""
@@ -16,18 +17,20 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Connection, and_, case, exists, func, or_, select
+from sqlalchemy import Connection, and_, exists, func, or_, select
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import property_acquisition_cost as cost_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.rules.health.month import cashflow_rows
 from hausbuch.rules.household.cashflow import month_cashflow
-from hausbuch.schemas.allocation import AllocationCategory
+from hausbuch.schemas.allocation import AllocationCategory, TransferLegSource
 from hausbuch.schemas.enums import AccountPurpose, AllocationStatus
+from hausbuch.schemas.health import MonthLine
 from hausbuch.schemas.household import HouseholdCashflow
 
-from .transfers import saved_in
+from .transfers import saving_links
 
 
 def month_bounds(month: str) -> tuple[date, date]:
@@ -107,34 +110,109 @@ def private_purchase_costs(conn: Connection, start: date, end: date) -> list[Pri
     return [PrivatePurchaseCost(*r) for r in rows]
 
 
-def cashflow(conn: Connection, month: str) -> HouseholdCashflow:
-    """GET /household/cashflow?month=: income, spending by group, saved, surplus and the
-    savings rate of the private accounts' lines booked in the month, plus how many of them
-    no confirmed answer explains yet."""
-    start, end = month_bounds(month)
+def months_between(first: str, last: str) -> list[str]:
+    """Every calendar month from `first` to `last` ("YYYY-MM", inclusive), oldest first."""
+    out, (year, number) = [], (int(first[:4]), int(first[5:7]))
+    while f"{year:04d}-{number:02d}" <= last:
+        out.append(f"{year:04d}-{number:02d}")
+        year, number = (year + 1, 1) if number == 12 else (year, number + 1)
+    return out
+
+
+@dataclass(frozen=True)
+class PrivateMonth:
+    """One month of the private accounts: the Haushalt screen's cashflow, the lines behind
+    it (rules.health.month.household_month reads them for D234 and the sources), and the
+    allocation ids of the current-account legs of the transfer links in `cashflow.saved`."""
+
+    cashflow: HouseholdCashflow
+    lines: list[MonthLine]
+    link_sources: list[UUID]
+
+
+def private_months(conn: Connection, first: str, last: str) -> dict[str, PrivateMonth]:
+    """Every month from `first` to `last`: the confirmed allocations of the private
+    accounts' lines booked in it, as MonthLine rows flagged `purchase_cost` by D234, summed
+    by rules.health.month.cashflow_rows (the one place D234's recode lives) into phase 6's
+    month_cashflow."""
+    months = months_between(first, last)
+    if not months:
+        return {}
+    start, end = month_bounds(months[0])[0], month_bounds(months[-1])[1]
     a, t = allocation_table.c, transaction_table.c
     lines = _private_lines(start, end)
-    # D234: a privately paid purchase cost is invested, not spent.
-    category = case(
-        (_purchase_cost(), AllocationCategory.HH_INVESTMENT_PROPERTY.value), else_=a.category
-    ).label("category")
-    rows = conn.execute(
-        select(category, func.sum(a.amount))
+    by_month: dict[str, list[MonthLine]] = {m: [] for m in months}
+    for r in conn.execute(
+        select(a.id, a.category, a.amount, _purchase_cost().label("purchase_cost"), t.booking_date)
+        .join(transaction_table, t.id == a.transaction_id)
         .where(
             a.transaction_id.in_(lines.scalar_subquery()),
             a.status == AllocationStatus.CONFIRMED.value,
         )
-        .group_by(category)
-    ).all()
+        .order_by(t.booking_date, a.transaction_id, a.id)
+    ):
+        by_month[_month(r.booking_date)].append(
+            MonthLine(
+                allocation_id=r.id,
+                category=AllocationCategory(r.category),
+                amount=r.amount,
+                purchase_cost=bool(r.purchase_cost),
+            )
+        )
     confirmed = exists().where(
         a.transaction_id == t.id, a.status == AllocationStatus.CONFIRMED.value
     )
-    open_lines = conn.execute(
-        select(func.count()).select_from(lines.where(t.amount != 0, ~confirmed).subquery())
-    ).scalar_one()
-    return month_cashflow(
-        month,
-        [(AllocationCategory(c), Decimal(v)) for c, v in rows],
-        saved=saved_in(conn, start=start, end=end),
-        open_lines=open_lines,
-    )
+    open_lines: dict[str, int] = dict.fromkeys(months, 0)
+    for (day,) in conn.execute(
+        select(t.booking_date).where(t.id.in_(lines.scalar_subquery()), t.amount != 0, ~confirmed)
+    ):
+        open_lines[_month(day)] += 1
+    saved: dict[str, Decimal] = {m: Decimal("0.00") for m in months}
+    out_legs: dict[str, list[UUID]] = {m: [] for m in months}
+    for view in saving_links(conn, start=start, end=end):
+        month = _month(view.in_leg.booked_on)
+        saved[month] += view.in_leg.amount
+        if view.out_leg.source is TransferLegSource.TRANSACTION:
+            out_legs[month].append(view.out_leg.id)
+    sources = _allocation_ids(conn, [i for ids in out_legs.values() for i in ids])
+    return {
+        month: PrivateMonth(
+            cashflow=month_cashflow(
+                month,
+                cashflow_rows(by_month[month]),
+                saved=saved[month],
+                open_lines=open_lines[month],
+            ),
+            lines=by_month[month],
+            link_sources=[i for leg in out_legs[month] for i in sources.get(leg, [])],
+        )
+        for month in months
+    }
+
+
+def _month(day: date) -> str:
+    return f"{day.year:04d}-{day.month:02d}"
+
+
+def _allocation_ids(conn: Connection, transaction_ids: list[UUID]) -> dict[UUID, list[UUID]]:
+    if not transaction_ids:
+        return {}
+    a = allocation_table.c
+    out: dict[UUID, list[UUID]] = {}
+    for transaction_id, allocation_id in conn.execute(
+        select(a.transaction_id, a.id)
+        .where(
+            a.transaction_id.in_(transaction_ids),
+            a.status == AllocationStatus.CONFIRMED.value,
+        )
+        .order_by(a.transaction_id, a.id)
+    ):
+        out.setdefault(transaction_id, []).append(allocation_id)
+    return out
+
+
+def cashflow(conn: Connection, month: str) -> HouseholdCashflow:
+    """GET /household/cashflow?month=: income, spending by group, saved, surplus and the
+    savings rate of the private accounts' lines booked in the month, plus how many of them
+    no confirmed answer explains yet (private_months, one month)."""
+    return private_months(conn, month, month)[month].cashflow

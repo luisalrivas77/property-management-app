@@ -15,7 +15,7 @@ hands the rules plain facts.
   `unattributed`, so the caller can say so. Every property owned in the month gets a row,
   zero when nothing was booked.
 - `closed_month_facts(conn, months, today)`: what `rules.health.window.closed` reads for
-  each month (D231, §4.4, Q-O133), failing closed: see `CoverageAccount`.
+  each month (D231, §4.4, Q-O133) as `MonthFacts`, failing closed: see `CoverageAccount`.
 """
 
 from collections import defaultdict
@@ -33,6 +33,7 @@ from hausbuch.db.tables import bank_sync as sync_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.rules.health.month import rental_month
 from hausbuch.rules.performance.year_figures import (
     INTEREST,
     INVESTED,
@@ -52,10 +53,10 @@ from hausbuch.schemas.enums import (
     AllocationStatus,
     ImportStatus,
 )
-from hausbuch.schemas.health import RentalMonth, month_of
+from hausbuch.schemas.health import AccountCoverage, MonthFacts, MonthLine, RentalMonth, month_of
 
 from .documents import LOCAL_TIME_ZONE
-from .household import month_bounds
+from .household import month_bounds, months_between
 from .reminders import idle_cards
 from .transfers import _first_days as history_starts
 from .transfers import open_transfers
@@ -65,20 +66,10 @@ C = AllocationCategory
 
 # --- The rental block (§4.1) -------------------------------------------------------------
 
-_BLOCKS: dict[str, frozenset[AllocationCategory]] = {
-    "rent": RENT,
-    "other_income": OTHER_INCOME,
-    "umlagen_in": UMLAGEN_IN,
-    "umlagen_out": UMLAGEN_OUT,
-    "running": RUNNING,
-    "interest": INTEREST,
-    "principal": PRINCIPAL,
-    "invested": INVESTED,
-    "loan_disbursement": frozenset({C.LOAN_DISBURSEMENT}),
-}
-# Signed as booked (year_figures._signed_in); every other block is a magnitude (_signed_out).
-_SIGNED_IN = frozenset({"rent", "other_income", "umlagen_in", "loan_disbursement"})
-_BLOCK_OF = {category: name for name, categories in _BLOCKS.items() for category in categories}
+# Every category a RentalMonth block sums (rules.health.month.rental_month decides which).
+_COUNTED = (
+    RENT | OTHER_INCOME | UMLAGEN_IN | UMLAGEN_OUT | RUNNING | INTEREST | PRINCIPAL | INVESTED
+) | {C.LOAN_DISBURSEMENT}
 
 
 @dataclass(frozen=True)
@@ -89,14 +80,6 @@ class RentalMonths:
 
     months: dict[str, list[RentalMonth]]
     unattributed: dict[str, list[UUID]] = field(default_factory=dict)
-
-
-def _months(first: str, last: str) -> list[str]:
-    out, (year, number) = [], (int(first[:4]), int(first[5:7]))
-    while f"{year:04d}-{number:02d}" <= last:
-        out.append(f"{year:04d}-{number:02d}")
-        year, number = (year + 1, 1) if number == 12 else (year, number + 1)
-    return out
 
 
 def _account_property(conn: Connection, properties: Sequence[UUID]) -> dict[UUID, UUID]:
@@ -129,7 +112,7 @@ def _account_property(conn: Connection, properties: Sequence[UUID]) -> dict[UUID
 
 def rental_months(conn: Connection, first: str, last: str) -> RentalMonths:
     """§4.1 for every calendar month from `first` to `last` ("YYYY-MM", inclusive)."""
-    months = _months(first, last)
+    months = months_between(first, last)
     if not months:
         return RentalMonths(months={})
     start, end = month_bounds(months[0])[0], month_bounds(months[-1])[1]
@@ -147,15 +130,14 @@ def rental_months(conn: Connection, first: str, last: str) -> RentalMonths:
             acc.purpose == AccountPurpose.RENTAL.value,
             a.status == AllocationStatus.CONFIRMED.value,
             a.amount != 0,
-            a.category.in_([c.value for c in _BLOCK_OF]),
+            a.category.in_([c.value for c in _COUNTED]),
             t.excluded_as_duplicate_of.is_(None),
             t.booking_date >= start,
             t.booking_date <= end,
         )
         .order_by(t.booking_date, t.id, a.id)
     ).all()
-    sums: dict[tuple[str, UUID], dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
-    sources: dict[tuple[str, UUID], list[UUID]] = defaultdict(list)
+    lines: dict[tuple[str, UUID], list[MonthLine]] = defaultdict(list)
     unattributed: dict[str, list[UUID]] = defaultdict(list)
     for r in rows:
         month = month_of(r.booking_date)
@@ -163,21 +145,16 @@ def rental_months(conn: Connection, first: str, last: str) -> RentalMonths:
         if property_id is None:
             unattributed[month].append(r.id)
             continue
-        name = _BLOCK_OF[C(r.category)]
-        sums[(month, property_id)][name] += r.amount if name in _SIGNED_IN else -r.amount
-        sources[(month, property_id)].append(r.id)
+        lines[(month, property_id)].append(
+            MonthLine(allocation_id=r.id, category=C(r.category), amount=r.amount)
+        )
     out: dict[str, list[RentalMonth]] = {}
     for month in months:
         m_start, m_end = month_bounds(month)
         out[month] = [
-            RentalMonth(
-                month=month,
-                property_id=prop.id,
-                sources=sources.get((month, prop.id), []),
-                **{name: sums[(month, prop.id)][name] + ZERO for name in _BLOCKS},
-            )
+            rental_month(month, prop.id, lines.get((month, prop.id), []))
             for prop in properties
-            if (month, prop.id) in sums
+            if (month, prop.id) in lines
             or (
                 prop.purchase_date is not None
                 and prop.purchase_date <= m_end
@@ -222,22 +199,6 @@ class CoverageAccount:
     covered_to: date | None
     idle: bool
     own_opening: bool
-
-
-@dataclass(frozen=True)
-class ClosedMonthFacts:
-    """What `closed()` reads for one month. `lines_waiting`: the month's lines on those
-    accounts that no confirmed allocation explains (whatever their import's state, 0 € lines,
-    pending lines and the later line of a possible duplicate included: wider than Zu prüfen's
-    list, which shows an unreconciled import or a duplicate as one card). `transfers_open`:
-    the euro transfer legs booked in the month that GET /transfers/open lists (a leg inside
-    its window that has a counterpart, or past it without one); a coin leg (no euro amount)
-    moves no figure of the household month and is not counted."""
-
-    month: str
-    accounts: tuple[CoverageAccount, ...]
-    lines_waiting: int
-    transfers_open: int
 
 
 def _local_day(moment) -> date:  # noqa: ANN001
@@ -359,14 +320,35 @@ def _lines_waiting(conn: Connection, ids: Sequence[UUID], start: date, end: date
     return counts
 
 
+def _coverage(account: CoverageAccount) -> AccountCoverage:
+    return AccountCoverage(
+        account_id=account.account_id,
+        label=account.label,
+        credit_card=account.kind is AccountKind.CREDIT_CARD,
+        first_day=account.first_day,
+        covered_to=account.covered_to,
+        idle=account.idle,
+        own_opening=account.own_opening,
+    )
+
+
 def closed_month_facts(
     conn: Connection, months: Sequence[str], today: date
-) -> dict[str, ClosedMonthFacts]:
+) -> dict[str, MonthFacts]:
     """D231's facts for each month ("YYYY-MM"), read once for all of them (GET
-    /transfers/open is computed once and bucketed by the leg's booking month)."""
+    /transfers/open is computed once and bucketed by the leg's booking month), as
+    rules.health.window.closed reads them.
+
+    `lines_waiting`: the month's lines on the checked accounts that no confirmed allocation
+    explains (whatever their import's state, 0 € lines, pending lines and the later line of a
+    possible duplicate included: wider than Zu prüfen's list, which shows an unreconciled
+    import or a duplicate as one card). `transfers_open`: the euro transfer legs booked in the
+    month that GET /transfers/open lists (a leg inside its window that has a counterpart, or
+    past it without one); a coin leg (no euro amount) moves no figure of the household month
+    and is not counted."""
     if not months:
         return {}
-    accounts = coverage_accounts(conn)
+    accounts = [_coverage(a) for a in coverage_accounts(conn)]
     start, end = month_bounds(min(months))[0], month_bounds(max(months))[1]
     waiting = _lines_waiting(conn, [r.account_id for r in accounts], start, end)
     legs: dict[str, int] = defaultdict(int)
@@ -374,7 +356,7 @@ def closed_month_facts(
         if item.leg.amount is not None and start <= item.leg.booked_on <= end:
             legs[month_of(item.leg.booked_on)] += 1
     return {
-        month: ClosedMonthFacts(
+        month: MonthFacts(
             month=month,
             accounts=accounts,
             lines_waiting=waiting.get(month, 0),

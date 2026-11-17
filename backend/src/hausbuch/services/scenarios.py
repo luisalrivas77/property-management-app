@@ -29,6 +29,7 @@ as well.
 """
 
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -43,8 +44,11 @@ from hausbuch.rules.errors import (
     SCENARIO_SALE_YEAR_BEFORE_TODAY,
     SCENARIO_SCOPE_INVALID,
 )
+from hausbuch.rules.health.figures import estimate_on
+from hausbuch.rules.performance.projection import value_today
 from hausbuch.schemas.enums import EntityType
 from hausbuch.schemas.events import EventType, ScenarioRecorded
+from hausbuch.schemas.health import PropertyEstimate, ScenarioValue
 from hausbuch.schemas.performance import Scenario, ScenarioCreate
 
 from .allocations import user_id
@@ -112,16 +116,15 @@ def default_scenario(conn: Connection, property_id: UUID) -> Scenario | None:
     return None if row is None else _to_scenario(row)
 
 
-def default_scenario_on(conn: Connection, property_id: UUID, day: date) -> Scenario | None:
-    """The property's default scenario as it stood at the end of `day` (Europe/Berlin), None
-    when it had none then (phase 9 D241, Q-O131: a past month-end's estimate). The table is
-    append-only, so the state of a day is the rows recorded before the next day began: the
-    newest default among them that no row recorded by then withdrew or superseded (a
-    withdrawal is itself a superseding row). On today the answer is default_scenario's."""
+def _defaults_standing(conn: Connection, property_id: UUID, day: date) -> list[Scenario]:
+    """The property's default rows as they stood at the end of `day` (Europe/Berlin): the
+    table is append-only, so the state of a day is the rows recorded before the next day
+    began, less every row that a row recorded by then withdrew or superseded (a withdrawal
+    is itself a superseding row)."""
     end = datetime.combine(day + timedelta(days=1), time(), LOCAL_TIME_ZONE)
     s = scenario_table.c
     later = scenario_table.alias("later")
-    row = conn.execute(
+    rows = conn.execute(
         select(scenario_table)
         .where(
             s.property_id == property_id,
@@ -130,10 +133,40 @@ def default_scenario_on(conn: Connection, property_id: UUID, day: date) -> Scena
             s.recorded_at < end,
             ~exists().where(later.c.supersedes_id == s.id, later.c.recorded_at < end),
         )
-        .order_by(s.recorded_at.desc(), s.id)
-        .limit(1)
-    ).one_or_none()
-    return None if row is None else _to_scenario(row)
+        .order_by(s.recorded_at, s.id)
+    )
+    return [_to_scenario(r) for r in rows]
+
+
+def estimate_on_day(
+    conn: Connection, property_id: UUID, purchase_price: Decimal, day: date
+) -> tuple[PropertyEstimate, Scenario | None]:
+    """Phase 9 D241 (Q-O131): the property's estimate on `day` and the default scenario it
+    came from, decided by rules.health.figures.estimate_on over the default rows standing at
+    the end of that day (the rule itself does not see supersession, so only those rows are
+    handed to it); the purchase price when none stood. On today the scenario is
+    default_scenario's."""
+    standing = _defaults_standing(conn, property_id, day)
+    values = [
+        ScenarioValue(
+            scenario_id=row.id,
+            created_on=row.recorded_at.astimezone(LOCAL_TIME_ZONE).date(),
+            recorded_at=row.recorded_at,
+            default=True,
+            value_today=value_today(row.levers, purchase_price),
+        )
+        for row in standing
+    ]
+    estimate = estimate_on(values, day, purchase_price)
+    scenario = next((r for r in standing if r.id == estimate.scenario_id), None)
+    return estimate, scenario
+
+
+def default_scenario_on(conn: Connection, property_id: UUID, day: date) -> Scenario | None:
+    """The property's default scenario as it stood at the end of `day` (Europe/Berlin), None
+    when it had none then (phase 9 D241, Q-O131: a past month-end's estimate); the scenario
+    estimate_on_day picks."""
+    return estimate_on_day(conn, property_id, Decimal("0.00"), day)[1]
 
 
 # --- Writes ------------------------------------------------------------------------------

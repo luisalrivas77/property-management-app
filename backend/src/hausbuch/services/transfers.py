@@ -2054,10 +2054,11 @@ def transfer_inbox_items(conn: Connection, today: date) -> list[InboxItem]:
     return items
 
 
-def saved_in(conn: Connection, *, start: date, end: date) -> Decimal:
-    """D162 for the Haushalt screen: what the current links moved into a savings, depot or
-    exchange account from a current account, with the in-leg booked between the dates."""
-    total = Decimal("0.00")
+def saving_links(conn: Connection, *, start: date, end: date) -> list[TransferLinkView]:
+    """The current links that moved money into a savings, depot or exchange account from a
+    current account, with the in-leg booked between the dates (what `saved_in` sums; phase 9
+    buckets them by the in-leg's month)."""
+    out = []
     for view in list_links(conn, start=start, end=end):
         if not start <= view.in_leg.booked_on <= end:
             continue
@@ -2066,8 +2067,14 @@ def saved_in(conn: Connection, *, start: date, end: date) -> Decimal:
             kinds.get(view.in_leg.account_id) in _SAVING
             and kinds.get(view.out_leg.account_id) not in _SAVING
         ):
-            total += view.in_leg.amount
-    return total
+            out.append(view)
+    return out
+
+
+def saved_in(conn: Connection, *, start: date, end: date) -> Decimal:
+    """D162 for the Haushalt screen: what the current links moved into a savings, depot or
+    exchange account from a current account, with the in-leg booked between the dates."""
+    return sum((v.in_leg.amount for v in saving_links(conn, start=start, end=end)), Decimal("0.00"))
 
 
 _SAVING = (AccountKind.BANK_SAVINGS, AccountKind.DEPOT, AccountKind.EXCHANGE)
@@ -2093,6 +2100,7 @@ __all__ = [
     "relink",
     "relink_all",
     "saved_in",
+    "saving_links",
     "transfer_inbox_items",
     "unlink",
 ]
