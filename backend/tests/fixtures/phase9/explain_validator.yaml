@@ -9,6 +9,10 @@
 # The facts are invented. Held in `own_use`: accounts k1 (bank_savings), k2 (bank_current),
 # k3 (depot); plans p1 (depot), p2 (crypto); assets a1 (depot), a2 (crypto). `formerly_held`
 # names a key the household sold: it is in no fact, so its slot is check 2's.
+# The figures hold every limit a mark's sentence names (§8.1: the five confirmed proposals and
+# "a member's own for the other figures"), so that `every_mark_sentence` can pass; the six
+# member's own keys were added in step 0 once the coverage test showed the sentences of
+# bands.yaml need them.
 # `extra_lexicon` adds the invented names of §15.2 for the cases that name them: "Kupferberg"
 # (an issuer) and "Tal" (a three-letter coin). "Zephyron" is in no list at all.
 #
@@ -27,7 +31,8 @@ facts:
     debt_to_income, share_bank, share_depot, share_crypto, share_property, basis_months,
     path_as_is_reached, path_reserve_first_reached, path_as_is_monthly, band_reserve_red,
     band_ltv_green, band_ltv_red, band_debt_service_green, band_debt_service_red,
-    assumed_change_depot, assumed_change_crypto, projection_until, projection_total,
+    band_savings_rate_green, band_savings_rate_red, band_debt_ratio_green, band_debt_ratio_red,
+    band_debt_to_income_green, band_debt_to_income_red, assumed_change_depot, assumed_change_crypto, projection_until, projection_total,
     projection_change, projection_assumption_part]
   states: {reserve_state: below, investable_state: positive, left_state: positive,
     basis_state: short, trend_state: down, projection_state: shown, light_reserve: amber,
