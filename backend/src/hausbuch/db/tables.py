@@ -26,7 +26,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 
 metadata = MetaData()
 
@@ -92,6 +92,8 @@ workspace = Table(
     Column("reminder_emails", Boolean, nullable=False, server_default=text("false")),
     # 0025 (phase 6, D168)
     Column("ai_private_accounts", Boolean, nullable=False, server_default=text("false")),
+    # 0048 (phase 9, D251)
+    _text("advice_mode", server_default=text("'own_use'::text")),
 )
 
 app_user = Table(
@@ -1182,4 +1184,59 @@ holdings_export = Table(
     Column("statement", JSONB, nullable=False),
     _created_at(),
     _uuid("created_by", nullable=True),
+)
+
+# --- Phase 9: the household's key figures and plan (0048) -----------------------------------
+
+household_scenario = Table(
+    "household_scenario",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _text("name"),
+    Column("is_default", Boolean, nullable=False, server_default=text("false")),
+    Column("levers", JSONB, nullable=False),
+    _uuid("supersedes_id", nullable=True),
+    Column("withdrawn", Boolean, nullable=False, server_default=text("false")),
+    _uuid("created_by", nullable=True),
+    _created_at(),
+)
+health_snapshot = Table(
+    "health_snapshot",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _date("month_end"),
+    _uuid("net_worth_run_id"),
+    Column("figures", JSONB, nullable=False),
+    _text("rule_version"),
+    _uuid("created_by", nullable=True),
+    _created_at(),
+)
+plan_explanation = Table(
+    "plan_explanation",
+    metadata,
+    _id(),
+    _workspace_id(),
+    _uuid("scenario_id", nullable=True),
+    _text("advice_mode"),
+    _text("status"),
+    _text("reason", nullable=True),
+    Column("facts", JSONB, nullable=False),
+    Column("labels", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("facts_sha256", LargeBinary, nullable=False),
+    Column("paragraphs", JSONB, nullable=False),
+    Column("violations", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    Column(
+        "ai_call_ids",
+        ARRAY(UUID(as_uuid=True)),
+        nullable=False,
+        server_default=text("'{}'::uuid[]"),
+    ),
+    _text("prompt_version", nullable=True),
+    _text("validator_version"),
+    _text("lexicon_version"),
+    _text("vocabulary_version"),
+    _uuid("created_by", nullable=True),
+    _created_at(),
 )

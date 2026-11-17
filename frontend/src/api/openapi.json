@@ -10970,6 +10970,15 @@
         "title": "AddressKind",
         "description": "wallet_address.kind: change only on Bitcoin (D185), stake only on Solana (D183 (4))."
       },
+      "AdviceMode": {
+        "type": "string",
+        "enum": [
+          "own_use",
+          "generic"
+        ],
+        "title": "AdviceMode",
+        "description": "workspace.advice_mode (D251)."
+      },
       "AfaLine": {
         "properties": {
           "tax_year": {
@@ -17456,7 +17465,10 @@
           "transfer",
           "wallet",
           "wallet_address",
-          "movement_group"
+          "movement_group",
+          "household_scenario",
+          "health",
+          "plan"
         ],
         "title": "EntityType",
         "description": "Entities that carry events. Also the prefix of every event type."
@@ -34817,6 +34829,10 @@
             "type": "boolean",
             "title": "Ai Private Accounts",
             "default": false
+          },
+          "advice_mode": {
+            "$ref": "#/components/schemas/AdviceMode",
+            "default": "own_use"
           }
         },
         "additionalProperties": false,

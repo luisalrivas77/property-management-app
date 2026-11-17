@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from .advice import AdviceMode
 from .common import Record, Schema
 
 
@@ -21,6 +22,8 @@ class Workspace(Schema):
     # Phase 6 (migration 0025, D168): private-account lines and the depot's documents may be
     # sent to the model, switched on with both owners' consent.
     ai_private_accounts: bool = False
+    # Phase 9 (migration 0048, D251): what the plan and its explanation may name.
+    advice_mode: AdviceMode = AdviceMode.OWN_USE
 
 
 class AppUser(Record):

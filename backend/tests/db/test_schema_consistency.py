@@ -7,6 +7,7 @@ import pytest
 from db.db_support import OWNER
 
 from hausbuch.schemas import enums as E
+from hausbuch.schemas.advice import AdviceMode, ExplanationReason, ExplanationStatus
 from hausbuch.schemas.ai import AiJob
 from hausbuch.schemas.allocation import AllocationCategory, AllocationMethod, SplitMethod
 from hausbuch.schemas.app_secrets import AppSecretName
@@ -123,6 +124,11 @@ COLUMNS: dict[tuple[str, str], type[StrEnum]] = {
     ("chain_pair", "to_chain"): Chain,
     # Phase 6 D260 (0045, widened by 0047)
     ("app_secret", "name"): AppSecretName,
+    # Phase 9 (0048)
+    ("workspace", "advice_mode"): AdviceMode,
+    ("plan_explanation", "advice_mode"): AdviceMode,
+    ("plan_explanation", "status"): ExplanationStatus,
+    ("plan_explanation", "reason"): ExplanationReason,
 }
 
 
