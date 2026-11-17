@@ -9,13 +9,14 @@ the series, the D234 recode of a flagged line, and two stale accounts."""
 
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from fractions import Fraction
 from uuid import UUID, uuid4
 
 import fixture_models_phase9 as phase9
 import pytest
 
+from hausbuch.rules.health import bands as B
 from hausbuch.rules.health import figures as F
 from hausbuch.rules.health import month as M
 from hausbuch.rules.health import window as W
@@ -24,16 +25,27 @@ from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.common import Fraction as ExactShare
 from hausbuch.schemas.health import (
     AccountCoverage,
+    BandLimits,
     ClosedReasonCode,
+    Debt,
     EstimateSource,
+    Health,
     HealthTodoCode,
     HouseholdMonth,
+    LightColour,
+    LimitOrigin,
+    MarkedFigure,
     MonthFacts,
     MonthLine,
+    PropertyLtv,
+    Reserve,
     ReserveBalance,
     ReserveOrigin,
+    ReserveState,
     RunTotals,
+    SavingsRate,
     ScenarioValue,
+    Window,
     ratio,
 )
 from hausbuch.schemas.household import NetWorthClass
@@ -651,3 +663,112 @@ def test_the_estimate_skips_a_withdrawn_scenario():
     ]
     got = F.estimate_on(rows, date(2027, 1, 31), Decimal("300000.00"))
     assert got.scenario_id == uid("s1") and got.value == Decimal("310000.00")
+
+
+# --- lights.yaml ---------------------------------------------------------------------
+
+LIGHTS = phase9.load("lights")
+WINDOW = Window(months=["2027-03", "2027-04", "2027-05"], enough=True)
+INCOME = Decimal("10000.00")
+
+
+def health_of(figures) -> Health:
+    """A Health whose figures are the case's values (rates exact over an income of 10,000)."""
+    rate = None
+    if figures.savings_rate is not None:
+        assert figures.savings_rate_regular is not None, "no case gives a rate without it"
+        rate = SavingsRate(
+            saved=figures.savings_rate * INCOME,
+            income=INCOME,
+            one_off_spending=(figures.savings_rate_regular - figures.savings_rate) * INCOME,
+            principal=ZERO,
+            rate=figures.savings_rate,
+            rate_regular=figures.savings_rate_regular,
+            rate_without_principal=figures.savings_rate,
+        )
+    reserve = None
+    if figures.reserve is not None:
+        amount, target = figures.reserve.amount, figures.reserve.target
+        reserve = Reserve(
+            amount=amount,
+            need=target,
+            months=(amount / target).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP),
+            target_months=Decimal("1"),
+            target=target,
+            gap=max(ZERO, target - amount),
+            state=ReserveState.REACHED if amount >= target else ReserveState.BELOW,
+        )
+    properties = []
+    if figures.ltv is not None:
+        properties.append(
+            PropertyLtv(
+                property_id=uid("p1"),
+                loan_balance=ZERO,
+                estimate=ZERO,
+                estimate_source=EstimateSource.SCENARIO,
+                ltv=figures.ltv,
+            )
+        )
+    debt = Debt(
+        properties=properties,
+        liabilities=ZERO,
+        gross_assets=ZERO,
+        debt_ratio=figures.debt_ratio,
+        interest=ZERO,
+        principal=ZERO,
+        debt_service_year=ZERO,
+        income_year=ZERO,
+        debt_service_ratio=figures.debt_service_ratio,
+        debt_to_income=figures.debt_to_income,
+        months=3,
+    )
+    return Health(
+        as_of=date(2027, 6, 3), window=WINDOW, savings_rate=rate, reserve=reserve, debt=debt
+    )
+
+
+def lights_runs(case):
+    runs = [(case.figures, case.bands, case.expect)] if case.expect else []
+    return runs + [(v.figures, v.bands, v.expect) for v in case.variants]
+
+
+@pytest.mark.parametrize("case", LIGHTS.cases, ids=lambda c: c.id)
+def test_lights(case):
+    _live(case)
+    for figures, bands, expect in lights_runs(case):
+        got = B.lights(health_of(figures), bands)
+        assert set(got) == set(MarkedFigure)
+        for figure, want in expect.lights.items():
+            mark = got[figure]
+            assert (mark.colour, mark.sentences) == (want.colour, want.sentences), figure
+            if mark.colour is not None:
+                assert mark.origin is LimitOrigin.OWN_LEVER
+        assert [t.code for t in B.bands_todos(bands)] == expect.todos
+
+
+def test_an_empty_list_of_limits_is_unconfirmed():
+    case = next(c for c in LIGHTS.cases if c.id == "worked")
+    got = B.lights(health_of(case.figures), [])
+    assert all(mark.colour is None and mark.origin is None for mark in got.values())
+    todo = B.bands_todos([])
+    assert [t.code for t in todo] == [HealthTodoCode.BANDS_UNCONFIRMED]
+    assert todo[0].action == "Ampel-Grenzen festlegen"
+    assert B.bands_todos(case.bands) == []
+
+
+def test_the_highest_ltv_is_marked():
+    case = next(c for c in LIGHTS.cases if c.id == "worked")
+    health = health_of(case.figures)
+    second = health.debt.properties[0].model_copy(
+        update={"property_id": uid("p2"), "ltv": Decimal("1.0500")}
+    )
+    health.debt.properties.append(second)
+    assert B.lights(health, case.bands)[MarkedFigure.LTV].colour is LightColour.RED
+
+
+def test_the_reserve_mark_keeps_its_limits():
+    band = BandLimits(figure=MarkedFigure.RESERVE, red=Decimal("0.5"))
+    mark = B.light(Decimal("13410.00"), band, MarkedFigure.RESERVE, target=Decimal("26820.00"))
+    assert (mark.colour, mark.green, mark.red) == (LightColour.AMBER, None, Decimal("0.5"))
+    # without a target there is nothing to compare
+    assert B.light(Decimal("1.00"), band, MarkedFigure.RESERVE).colour is None
