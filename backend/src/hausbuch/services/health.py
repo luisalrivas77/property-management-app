@@ -245,8 +245,11 @@ COVERED_KINDS = BANK_ACCOUNT_KINDS | {AccountKind.CREDIT_CARD}
 
 @dataclass(frozen=True)
 class CoverageAccount:
-    """One account D231 (a) checks: every bank account and credit card of purpose private or
-    rental (a depot's, an exchange's or a wallet's flows are not the household month's).
+    """One account D231 (a) checks for coverage: every bank account and credit card of purpose
+    private or rental. A depot's cash lines do count in the household month, and a waiting one
+    keeps its month open (`_lines_waiting`); its statements are not required to reach the
+    month's last day, coverage stays on bank accounts and cards (review finding 4, decided by
+    the coordinator). An exchange's or a wallet's movements are not bank lines and do not count.
 
     - `first_day`: the first booking day of its lines of reconciled imports (None: no history
       at all, so no month is covered).
@@ -375,15 +378,21 @@ def coverage_accounts(conn: Connection) -> tuple[CoverageAccount, ...]:
     )
 
 
-def _lines_waiting(conn: Connection, ids: Sequence[UUID], start: date, end: date) -> dict[str, int]:
-    a, t = allocation_table.c, transaction_table.c
+def _lines_waiting(conn: Connection, start: date, end: date) -> dict[str, int]:
+    """Per month the lines no confirmed allocation explains on every account whose lines feed
+    the household month (review finding 4): each account of purpose private or rental,
+    whatever its kind, so a depot's cash line waiting in Zu prüfen keeps its month open too."""
+    a, t, acc = allocation_table.c, transaction_table.c, account_table.c
     confirmed = exists().where(
         a.transaction_id == t.id, a.status == AllocationStatus.CONFIRMED.value
+    )
+    feeding = select(acc.id).where(
+        acc.purpose.in_([AccountPurpose.PRIVATE.value, AccountPurpose.RENTAL.value])
     )
     counts: dict[str, int] = defaultdict(int)
     for (day,) in conn.execute(
         select(t.booking_date).where(
-            t.account_id.in_(ids),
+            t.account_id.in_(feeding.scalar_subquery()),
             t.excluded_as_duplicate_of.is_(None),
             t.booking_date >= start,
             t.booking_date <= end,
@@ -413,7 +422,9 @@ def closed_month_facts(
     /transfers/open is computed once and bucketed by the leg's booking month), as
     rules.health.window.closed reads them.
 
-    `lines_waiting`: the month's lines on the checked accounts that no confirmed allocation
+    `lines_waiting`: the month's lines on every account feeding the household month (each
+    private or rental account, a depot's cash account included; the coverage check stays on
+    the bank accounts and cards) that no confirmed allocation
     explains (whatever their import's state, 0 € lines, pending lines and the later line of a
     possible duplicate included: wider than Zu prüfen's list, which shows an unreconciled
     import or a duplicate as one card). `transfers_open`: the euro transfer legs booked in the
@@ -424,7 +435,7 @@ def closed_month_facts(
         return {}
     accounts = [_coverage(a) for a in coverage_accounts(conn)]
     start, end = month_bounds(min(months))[0], month_bounds(max(months))[1]
-    waiting = _lines_waiting(conn, [r.account_id for r in accounts], start, end)
+    waiting = _lines_waiting(conn, start, end)
     legs: dict[str, int] = defaultdict(int)
     for item in open_transfers(conn, today):
         if item.leg.amount is not None and start <= item.leg.booked_on <= end:

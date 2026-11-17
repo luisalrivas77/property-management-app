@@ -9,6 +9,7 @@ from decimal import Decimal
 import pytest
 from db.matching_support import World
 from db.test_cli_evals_report import _owner_url
+from db.test_services_health import _account, _book, _statement
 from sqlalchemy import func, select, update
 
 from hausbuch import cli
@@ -29,12 +30,14 @@ from hausbuch.schemas.allocation import (
     AllocationMethod,
     AllocationSet,
 )
-from hausbuch.schemas.health import HealthSnapshotOutcome, HealthTodoCode
+from hausbuch.schemas.enums import AccountKind
+from hausbuch.schemas.health import ClosedReasonCode, HealthSnapshotOutcome, HealthTodoCode
 from hausbuch.services import allocations, health, net_worth
 from hausbuch.services.errors import RuleViolationError
 
 C = AllocationCategory
 NOW = datetime(2027, 4, 10, 8, 0, tzinfo=UTC)
+TODAY = date(2027, 4, 10)
 
 
 @pytest.fixture
@@ -213,6 +216,34 @@ def test_a_month_changed_since_its_snapshot_shows_both(world):
         with pytest.raises(RuleViolationError) as refused:
             world.query(health.health_months, first, last, date(2027, 4, 10))
         assert list(refused.value.codes) == [HEALTH_RANGE_INVALID]
+
+
+def test_a_waiting_depot_line_keeps_its_month_open(world):
+    """Review finding 4: a depot's cash lines count in the household month, so a depot line
+    waiting in Zu prüfen keeps its month open like a bank line; the depot's statements are
+    not a coverage check (coverage stays on bank accounts and cards)."""
+    _closed_history(world)
+    assert world.query(health.read_months, ["2027-03"], TODAY)["2027-03"].closed.closed
+    depot = _account(world, "Depot", AccountKind.DEPOT)
+    fee, waiting = _statement(
+        world,
+        depot,
+        date(2027, 3, 15),
+        date(2027, 3, 20),
+        datetime(2027, 4, 9, tzinfo=UTC),
+        lines=[date(2027, 3, 15), date(2027, 3, 20)],
+    )
+    _book(world, fee, "-10.00", C.DEPOT_FEE)
+    assert depot not in {a.account_id for a in world.query(health.coverage_accounts)}
+    read = world.query(health.read_months, ["2027-03"], TODAY)["2027-03"]
+    assert read.household.spending == Decimal("10.00")  # the depot's fee is in the month
+    assert not read.closed.closed
+    assert [(r.code, r.count) for r in read.closed.reasons] == [(ClosedReasonCode.LINES_WAITING, 1)]
+    with pytest.raises(RuleViolationError) as refused:
+        world.cmd(health.store_snapshot, "2027-03")
+    assert list(refused.value.codes) == [HEALTH_MONTH_NOT_CLOSED]
+    _book(world, waiting, "-10.00", C.DEPOT_FEE)
+    assert world.query(health.read_months, ["2027-03"], TODAY)["2027-03"].closed.closed
 
 
 def test_health_check_recomputes_each_stored_month(world):
