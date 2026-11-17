@@ -14,6 +14,8 @@ from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import health_snapshot as health_snapshot_table
 from hausbuch.db.tables import statement_import as import_table
+from hausbuch.jobs.document_read import JobDeps
+from hausbuch.jobs.health_daily import run_health_daily
 from hausbuch.rules.errors import (
     HEALTH_MONTH_END_MISSING,
     HEALTH_MONTH_NOT_CLOSED,
@@ -160,6 +162,31 @@ def test_the_daily_step_stores_each_missing_month_once(world):
     assert [r.snapshot.figures.month.month for r in stored] == ["2027-01", "2027-03"]
     assert world.cmd(health.store_missing_snapshots) == []
     assert (_snapshots(world), _events(world)) == (2, 2)
+
+
+def test_the_daily_task_stores_as_the_system_and_is_idempotent(world):
+    """§11.5: health_daily runs the step for each workspace under the system actor; an empty
+    workspace stores nothing and fails nothing; the second run stores nothing."""
+    _closed_history(world)
+    world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
+    deps = JobDeps(
+        engine=world.engine,
+        settings=None,
+        blob_store=None,
+        model_client=None,
+        clock=lambda: datetime(2027, 4, 11, 8, 30, tzinfo=UTC),
+    )
+    first = run_health_daily(deps, workspace_ids=[world.ws])
+    assert (first.stored, first.failed_workspaces) == (1, 0)
+    again = run_health_daily(deps, workspace_ids=[world.ws])
+    assert (again.stored, again.failed_workspaces) == (0, 0)
+    with workspace_transaction(world.engine, world.ws) as conn:
+        actors = conn.execute(
+            select(event_table.c.actor_type, event_table.c.actor_id).where(
+                event_table.c.type == "health.snapshot_stored"
+            )
+        ).all()
+    assert [(a.actor_type, a.actor_id) for a in actors] == [("system", "health_daily")]
 
 
 def test_a_month_changed_since_its_snapshot_shows_both(world):
