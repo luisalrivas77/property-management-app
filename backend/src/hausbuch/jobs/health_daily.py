@@ -2,11 +2,15 @@
 
 At 08:30 UTC every day, after phase 6's month_end at 08:00 on the 1st, the worker stores a
 health_snapshot for every month of every provisioned workspace that has ended, is closed
-(D231), has a month-end run and has no snapshot yet (services.health.store_missing_snapshots):
-the month's key figures as of that month, beside the newest run of its month-end, with the
-event health.snapshot_stored. A month that already has one is left alone, so a second run
-the same day stores nothing; a month that closes later (a line confirmed, a statement
-imported) or whose month-end run is stored later is stored by the next day's run.
+(D231), has no snapshot yet, follows a closed month (or the household's history starts
+after the month before it) and whose month-end read again is complete
+(services.health.store_missing_snapshots): the month-end is captured first when no run holds
+it or the newest differs from the reading (net_worth.capture_month_end, insert-only), then
+the month's key figures as of that month are stored beside that run, with the event
+health.snapshot_stored. A month that already has one is left alone, so a second run the
+same day stores nothing; a month that closes later (a line confirmed, a statement
+imported), whose month before closes later, or whose month-end gap is closed later (a price,
+a statement) is stored by the next day's run.
 
 Step 4 adds the second half of §11.5 (one explain_plan job for the default scenario when a
 row was stored and ai_private_accounts is on); this step stores the snapshot only.

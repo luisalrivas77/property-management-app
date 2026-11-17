@@ -847,8 +847,10 @@ def overview(conn: Connection, today: date) -> NetWorthOverview:
     the button stores), its day is read again on read, and `month_end_now` carries that
     total when it differs from the stored one (a statement or a price that arrived after the
     capture; review of 15 Nov 2026, findings 2 and 3), so the card offers „Monatsabschluss
-    neu speichern“. The property's estimate and a loan's balance read today's „Wert heute“
-    and loan terms, so a change of those also shows as a difference."""
+    neu speichern“. The property's estimate is the default scenario standing at the end of
+    that day (phase 9 D241, services.scenarios.estimate_on_day), so a „Wert heute“ recorded
+    after it does not move it; a loan's balance is read from the loan's terms as they are now
+    (with that scenario's follow-up rate), so a change of those does show as a difference."""
     due = last_month_end(today)
     stored = latest_month_end(conn)
     now = None

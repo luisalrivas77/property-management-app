@@ -7,8 +7,10 @@ container's health check, which is GET /healthz (api/health.py).
 - GET /health/months?from=&to=: each calendar month on read (at most 24), with its closing
   state and its newest stored snapshot; 422 health.range_invalid.
 - GET /health/net-worth-series: the stored month-end runs as a series (D241).
-- POST /health/snapshots {month}: „Kennzahlen festhalten“ for a closed month (D242); 422
-  health.month_not_closed or health.month_end_missing.
+- POST /health/snapshots {month}: „Kennzahlen festhalten“ for a closed month (D242), its
+  month-end captured first when no run holds it or the newest differs from the day read
+  again; 422 health.month_not_closed, health.month_end_incomplete (the month-end has a gap)
+  or health.month_end_missing (nothing to value that day).
 """
 
 from datetime import date, datetime

@@ -20266,7 +20266,7 @@
           "closed"
         ],
         "title": "HealthMonthView",
-        "description": "GET /health/months: one calendar month on read (D232, D242). `household` with its\nsources; `closed` with its reasons and to-dos. `snapshot_id` names the newest stored row\nof the month; `stored` is that row's month (without sources) only when it differs from\nthe month on read, the screen's „seit dem Abschluss geändert“ with both values. `todo`:\n„Monatsabschluss festhalten“ for a month that has ended and is closed but has no snapshot\nand no month-end run, the one thing POST /health/snapshots would refuse it for."
+        "description": "GET /health/months: one calendar month on read (D232, D242). `household` with its\nsources; `closed` with its reasons and to-dos. `snapshot_id` names the newest stored row\nof the month; `stored` is that row's month (without sources) only when it differs from\nthe month on read, the screen's „seit dem Abschluss geändert“ with both values. `todo`\n(code month_end_missing), for a month that has ended and is closed but has no snapshot:\nthe first gap of its month-end read again (a missing or stale price, a balance not\nreconciled to the day) with the net worth's own button, while that month-end is\nincomplete; else „Monatsabschluss festhalten“ while no run holds the month-end and the\ndaily task would store the month the next morning."
       },
       "HealthSnapshot": {
         "properties": {

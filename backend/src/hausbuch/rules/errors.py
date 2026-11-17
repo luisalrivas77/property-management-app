@@ -226,6 +226,8 @@ NET_WORTH_MONTH_END_NOT_CLOSED = "net_worth.month_end_not_closed"  # today's mon
 # Phase 9 D242 (POST /health/snapshots {month}, GET /health/months): refused when ...
 HEALTH_MONTH_NOT_CLOSED = "health.month_not_closed"  # not ended, or D231's checks fail
 HEALTH_MONTH_END_MISSING = "health.month_end_missing"  # no net worth run for its month-end
+# the month-end read again has a position without a value or a missing value (review of PR #426)
+HEALTH_MONTH_END_INCOMPLETE = "health.month_end_incomplete"
 HEALTH_RANGE_INVALID = "health.range_invalid"  # from after to, or more than 24 months
 # Phase 6 step 5b (PATCH /assets/{id}, POST /assets/{id}/prices)
 ASSET_NOT_CRYPTO = "asset.not_crypto"  # a CoinGecko id or Kraken pair on a fund or cash

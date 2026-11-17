@@ -182,6 +182,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Dieser Monat ist noch nicht abgeschlossen: Es fehlen Umsätze, oder etwas wartet in „Zu prüfen“. Die offenen Punkte stehen beim Monat.",
   "health.month_end_missing":
     "Für das Ende dieses Monats ist noch kein Monatsabschluss gespeichert. Bitte zuerst „Monatsabschluss festhalten“.",
+  "health.month_end_incomplete":
+    "Das Nettovermögen zum Monatsende ist noch unvollständig: Ein Kurs, ein Kontoauszug oder eine Buchung fehlt. Was fehlt, steht beim Monat; danach lassen sich die Kennzahlen festhalten.",
   "health.range_invalid":
     "Dieser Zeitraum geht nicht: Der Anfang muss vor dem Ende liegen, und es sind höchstens 24 Monate.",
   "scenario.not_current":

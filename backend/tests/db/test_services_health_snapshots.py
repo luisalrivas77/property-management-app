@@ -10,6 +10,7 @@ import pytest
 from db.matching_support import World
 from db.test_cli_evals_report import _owner_url
 from db.test_services_health import _account, _book, _statement
+from db.test_services_net_worth import _asset, _held, _price
 from sqlalchemy import func, select, update
 
 from hausbuch import cli
@@ -20,6 +21,7 @@ from hausbuch.db.tables import statement_import as import_table
 from hausbuch.jobs.document_read import JobDeps
 from hausbuch.jobs.health_daily import run_health_daily
 from hausbuch.rules.errors import (
+    HEALTH_MONTH_END_INCOMPLETE,
     HEALTH_MONTH_END_MISSING,
     HEALTH_MONTH_NOT_CLOSED,
     HEALTH_RANGE_INVALID,
@@ -139,34 +141,49 @@ def test_a_closed_month_is_stored_once_beside_its_run(world):
     assert (_snapshots(world), _events(world)) == (1, 1)
 
 
-def test_an_unclosed_month_or_one_without_a_run_is_refused(world):
-    """POST /health/snapshots: a month still running, a month with a waiting line and a month
-    whose month-end has no run are refused, nothing written."""
+def test_an_unclosed_month_is_refused_and_a_month_without_a_run_captures_it(world):
+    """POST /health/snapshots: a month still running, one before January 2026 and one with a
+    waiting line are refused, nothing written. A closed month whose month-end has no run gets
+    its run captured first and the snapshot beside it (review of PR #426: the button no
+    longer asks for „Monatsabschluss festhalten“ first); it does not wait for the month
+    before it, which the daily task does."""
     _closed_history(world)
     world.line(date(2027, 2, 12), "-30.00")
     world.cmd(net_worth.capture_month_end, date(2027, 2, 28))
-    for month, code in [
-        ("2027-04", HEALTH_MONTH_NOT_CLOSED),
-        ("2025-12", HEALTH_MONTH_NOT_CLOSED),
-        ("2027-02", HEALTH_MONTH_NOT_CLOSED),
-        ("2027-01", HEALTH_MONTH_END_MISSING),
-    ]:
+    for month in ("2027-04", "2025-12", "2027-02"):
         with pytest.raises(RuleViolationError) as refused:
             world.cmd(health.store_snapshot, month)
-        assert list(refused.value.codes) == [code]
+        assert list(refused.value.codes) == [HEALTH_MONTH_NOT_CLOSED]
     assert _snapshots(world) == 0
+    assert world.query(net_worth.latest_run, date(2027, 1, 31)) is None
+    january = world.cmd(health.store_snapshot, "2027-01")
+    run = world.query(net_worth.latest_run, date(2027, 1, 31))
+    assert january.outcome is HealthSnapshotOutcome.STORED
+    assert run is not None and january.snapshot.net_worth_run_id == run.net_worth_run_id
+    march = world.cmd(health.store_snapshot, "2027-03")  # February, before it, is open
+    assert march.outcome is HealthSnapshotOutcome.STORED
+    assert _snapshots(world) == 2
 
 
 def test_the_daily_step_stores_each_missing_month_once(world):
-    """§11.5: every ended, closed month with a run and no snapshot gets one; a second run
-    stores nothing; a month without a run waits."""
+    """§11.5 with the review of PR #426: every ended, closed month with a complete month-end
+    and no snapshot gets one, oldest first, back to January 2026; a month-end without a run
+    is captured first, one whose run equals the day read again keeps that run (no second
+    run); a second step stores nothing."""
     _closed_history(world)
-    for day in (date(2027, 1, 31), date(2027, 3, 31)):
-        world.cmd(net_worth.capture_month_end, day)
+    january = world.cmd(net_worth.capture_month_end, date(2027, 1, 31)).run
     stored = world.cmd(health.store_missing_snapshots)
-    assert [r.snapshot.figures.month.month for r in stored] == ["2027-01", "2027-03"]
+    months = [r.snapshot.figures.month.month for r in stored]
+    assert months == health.months_between("2026-01", "2027-03")
+    by_month = {r.snapshot.figures.month.month: r.snapshot for r in stored}
+    assert by_month["2027-01"].net_worth_run_id == january.net_worth_run_id
+    runs = world.query(net_worth.list_runs)
+    assert len(runs) == 15 and len({r.as_of for r in runs}) == 15
+    for month, snapshot in by_month.items():
+        run = world.query(net_worth.latest_run, health.month_bounds(month)[1])
+        assert snapshot.net_worth_run_id == run.net_worth_run_id
     assert world.cmd(health.store_missing_snapshots) == []
-    assert (_snapshots(world), _events(world)) == (2, 2)
+    assert (_snapshots(world), _events(world)) == (15, 15)
 
 
 def test_the_daily_task_stores_as_the_system_and_is_idempotent(world):
@@ -182,7 +199,7 @@ def test_the_daily_task_stores_as_the_system_and_is_idempotent(world):
         clock=lambda: datetime(2027, 4, 11, 8, 30, tzinfo=UTC),
     )
     first = run_health_daily(deps, workspace_ids=[world.ws])
-    assert (first.stored, first.failed_workspaces) == (1, 0)
+    assert (first.stored, first.failed_workspaces) == (15, 0)  # every closed month since Jan 2026
     again = run_health_daily(deps, workspace_ids=[world.ws])
     assert (again.stored, again.failed_workspaces) == (0, 0)
     with workspace_transaction(world.engine, world.ws) as conn:
@@ -191,7 +208,8 @@ def test_the_daily_task_stores_as_the_system_and_is_idempotent(world):
                 event_table.c.type == "health.snapshot_stored"
             )
         ).all()
-    assert [(a.actor_type, a.actor_id) for a in actors] == [("system", "health_daily")]
+    assert {(a.actor_type, a.actor_id) for a in actors} == {("system", "health_daily")}
+    assert len(actors) == 15
 
 
 def test_a_month_changed_since_its_snapshot_shows_both(world):
@@ -250,9 +268,8 @@ def test_health_check_recomputes_each_stored_month(world):
     """D259 amended: each stored figure equals its recomputation from the stored rows; a line
     booked later in a stored month makes the check name the figures that moved."""
     _closed_history(world)
-    for day in (date(2027, 1, 31), date(2027, 2, 28), date(2027, 3, 31)):
-        world.cmd(net_worth.capture_month_end, day)
-    world.cmd(health.store_missing_snapshots)
+    for month in ("2027-01", "2027-02", "2027-03"):
+        world.cmd(health.store_snapshot, month)
     result = world.query(health.health_check, "2027-01", "2027-03", date(2027, 4, 10))
     assert result.months == ["2027-01", "2027-02", "2027-03"]
     assert result.match, [r for r in result.rows if not r.equal]
@@ -273,6 +290,122 @@ def test_health_check_recomputes_each_stored_month(world):
     assert list(refused.value.codes) == [HEALTH_MONTH_END_MISSING]
 
 
+def _cover(world: World, last: date) -> None:
+    """The rental account's one import covers 5 Jan 2026 to `last`."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        conn.execute(
+            update(import_table)
+            .where(import_table.c.id == world.import_id)
+            .values(first_booking_on=date(2026, 1, 5), last_booking_on=last)
+        )
+
+
+def test_a_run_frozen_before_the_months_lines_is_captured_again(world):
+    """Review of PR #426, finding 2: phase 6's month-end job freezes 31 Mar on 1 Apr, before
+    March's statement is in; once it is and March closes, the daily step captures the day
+    again and stores March beside the new run, which equals the day read again, so
+    health-check finds nothing to report. The frozen run stays (runs are insert-only)."""
+    _cover(world, date(2027, 2, 28))
+    for year, month in [(2026, m) for m in range(1, 13)] + [(2027, m) for m in (1, 2)]:
+        _booked(world, date(year, month, 5), "950.00", C.RENT_COLD)
+        _booked(world, date(year, month, 20), "-640.00", C.LOAN_INTEREST)
+    first_of_april = datetime(2027, 4, 1, 8, 0, tzinfo=UTC)
+    frozen = world.cmd(net_worth.capture_month_end, date(2027, 3, 31), now=first_of_april).run
+    stored = world.cmd(health.store_missing_snapshots, now=first_of_april)
+    assert "2027-03" not in [r.snapshot.figures.month.month for r in stored]  # not closed
+    _booked(world, date(2027, 3, 5), "950.00", C.RENT_COLD)
+    _booked(world, date(2027, 3, 20), "-640.00", C.LOAN_INTEREST)
+    _cover(world, date(2027, 3, 31))
+    eleventh = datetime(2027, 4, 11, 8, 30, tzinfo=UTC)
+    stored = world.cmd(health.store_missing_snapshots, now=eleventh)
+    assert [r.snapshot.figures.month.month for r in stored] == ["2027-03"]
+    snapshot = stored[0].snapshot
+    assert snapshot.net_worth_run_id != frozen.net_worth_run_id
+    run = world.query(net_worth.stored_run, snapshot.net_worth_run_id)
+    again = world.query(net_worth.net_worth, date(2027, 3, 31))
+    assert run.total == again.total
+    assert world.query(net_worth.stored_run, frozen.net_worth_run_id).total != again.total
+    result = world.query(health.health_check, "2027-03", "2027-03", date(2027, 4, 11))
+    assert result.match, [r for r in result.rows if not r.equal]
+    assert world.cmd(health.store_missing_snapshots, now=eleventh) == []
+
+
+def _coin_held_since_july(world: World, price_on: date):
+    """An exchange holding 2 coins since 1 Jul 2026 whose only price is of `price_on`."""
+    exchange = _account(world, "Börse", AccountKind.EXCHANGE)
+
+    def stored(ctx):
+        coin = _asset(ctx, kind="crypto", symbol="BTC", name="Bitcoin")
+        _held(ctx, exchange, coin, "2")
+        _price(ctx, coin, price_on, "50000.00", "user")
+        return coin
+
+    return exchange, world.cmd(stored)
+
+
+def test_a_month_end_without_a_price_is_not_stored(world):
+    """Review of PR #426, finding 1: a month-end whose reading leaves a position without a
+    value (no price on or before the day) is never stored: the button is refused with
+    health.month_end_incomplete, the daily step skips the month, and the month's to-do names
+    the gap with the net worth's own button. A run captured by hand that omits the coin
+    gets no snapshot either."""
+    _closed_history(world)
+    _coin_held_since_july(world, date(2027, 4, 5))
+    captured = world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
+    assert captured.unvalued_positions == 1
+    with pytest.raises(RuleViolationError) as refused:
+        world.cmd(health.store_snapshot, "2027-03")
+    assert list(refused.value.codes) == [HEALTH_MONTH_END_INCOMPLETE]
+    stored = world.cmd(health.store_missing_snapshots)
+    assert [r.snapshot.figures.month.month for r in stored] == health.months_between(
+        "2026-01", "2026-06"
+    )
+    [march] = world.query(health.health_months, "2027-03", "2027-03", TODAY)
+    assert march.closed.closed and march.snapshot_id is None
+    assert march.todo.code is HealthTodoCode.MONTH_END_MISSING
+    assert "31.03.2027 ist noch unvollständig" in march.todo.text
+    assert "Bitcoin" in march.todo.text
+    assert (march.todo.action, march.todo.href) == ("Kursquelle wählen", "/assets")
+
+
+def test_health_check_reports_a_holding_the_stored_month_end_lacks(world):
+    """Review of PR #426: a holding booked after its month was stored, with no price on the
+    day, leaves the day read again without a value for it: health-check reports it as an
+    input that disagrees, not „gleich“."""
+    _closed_history(world)
+    world.cmd(health.store_snapshot, "2027-03")
+    assert world.query(health.health_check, "2027-03", "2027-03", TODAY).match
+    exchange, _ = _coin_held_since_july(world, date(2027, 4, 5))
+    result = world.query(health.health_check, "2027-03", "2027-03", TODAY)
+    assert not result.match
+    assert all(r.equal for r in result.rows)  # the figures recompute from the stored run
+    [gap] = [i for i in result.inputs if not i.agrees]
+    assert gap.account_id == exchange
+    assert gap.reason.startswith("Am Monatsende ohne Wert und nicht im gespeicherten Abschluss")
+
+
+def test_the_daily_step_waits_for_the_month_before(world):
+    """Review of PR #426, finding 3: while February has a line waiting, the daily step does
+    not store March, though March is closed, and March shows no to-do of its own (February's
+    reasons say what to do); once February closes, both are stored, March with its full
+    window, and health-check finds nothing to report."""
+    _closed_history(world)
+    waiting = world.line(date(2027, 2, 17), "-80.00")
+    stored = world.cmd(health.store_missing_snapshots)
+    assert [r.snapshot.figures.month.month for r in stored] == health.months_between(
+        "2026-01", "2027-01"
+    )
+    february, march = world.query(health.health_months, "2027-02", "2027-03", TODAY)
+    assert not february.closed.closed and march.closed.closed
+    assert march.snapshot_id is None and march.todo is None
+    _book(world, waiting, "-80.00", C.INSURANCE, property_id=world.property_id)
+    stored = world.cmd(health.store_missing_snapshots)
+    assert [r.snapshot.figures.month.month for r in stored] == ["2027-02", "2027-03"]
+    assert len(stored[1].snapshot.figures.window.months) == 12
+    result = world.query(health.health_check, "2027-02", "2027-03", TODAY)
+    assert result.match, [r for r in result.rows if not r.equal]
+
+
 class _April(datetime):
     """The CLI's clock on 10 Apr 2027, the day these tests' months have ended."""
 
@@ -286,9 +419,8 @@ def test_the_cli_prints_gleich_or_the_difference(world, dbname, monkeypatch, cap
     exit 1 with the difference once a later booking moved one; a range with no snapshot is
     an error on stderr. Nothing is written."""
     _closed_history(world)
-    for day in (date(2027, 1, 31), date(2027, 2, 28), date(2027, 3, 31)):
-        world.cmd(net_worth.capture_month_end, day)
-    world.cmd(health.store_missing_snapshots)
+    for month in ("2027-01", "2027-02", "2027-03"):
+        world.cmd(health.store_snapshot, month)
     monkeypatch.setattr(cli, "datetime", _April)
     environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}
     argv = ["health-check", "--workspace", str(world.ws), "--from", "2027-01"]

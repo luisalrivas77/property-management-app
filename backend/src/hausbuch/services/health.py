@@ -52,6 +52,7 @@ from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.rules.errors import (
+    HEALTH_MONTH_END_INCOMPLETE,
     HEALTH_MONTH_END_MISSING,
     HEALTH_MONTH_NOT_CLOSED,
     HEALTH_RANGE_INVALID,
@@ -112,7 +113,15 @@ from hausbuch.schemas.health import (
     Window,
     month_of,
 )
-from hausbuch.schemas.net_worth import NetWorth, NetWorthLine, NetWorthLineKind, NetWorthRun
+from hausbuch.schemas.net_worth import (
+    NetWorth,
+    NetWorthLine,
+    NetWorthLineKind,
+    NetWorthRun,
+    NetWorthTodo,
+    NetWorthTodoCode,
+    SnapshotOutcome,
+)
 from hausbuch.schemas.plan import HouseholdLevers, ReserveAccounts
 
 from .allocations import user_id
@@ -122,6 +131,7 @@ from .errors import NotFoundError, RuleViolationError
 from .events import append_event
 from .household import month_bounds, months_between, private_months
 from .net_worth import (
+    capture_month_end,
     last_month_end,
     latest_run,
     list_runs,
@@ -716,10 +726,17 @@ def _check_range(first: str, last: str) -> list[str]:
 
 def health_months(conn: Connection, first: str, last: str, today: date) -> list[HealthMonthView]:
     """GET /health/months?from=&to=: each month on read, with the newest snapshot of the
-    month and, when its stored month differs from the month on read, the stored one."""
+    month and, when its stored month differs from the month on read, the stored one. A month
+    that has ended, is closed and has no snapshot gets a to-do when something keeps it from
+    being stored: its month-end read again is incomplete (the first gap's text and button,
+    `_incomplete`), else no month-end run is stored yet while the daily task would store the
+    month (the month before it closed, `_waits_for_previous`). The net worth is read only for
+    such months."""
     months = _check_range(first, last)
-    reads = read_months(conn, months, today)
+    before = _previous(months[0])
+    reads = read_months(conn, ([before] if before >= FIRST_MONTH else []) + months, today)
     stored = _newest_snapshots(conn, months)
+    start = _first_history_month(conn)
     out = []
     for month in months:
         read = reads[month]
@@ -732,7 +749,11 @@ def health_months(conn: Connection, first: str, last: str, today: date) -> list[
         end = month_bounds(month)[1]
         todo = None
         if snapshot is None and read.closed.closed and end < today:
-            todo = None if latest_run(conn, end) is not None else _month_end_todo(end)
+            figure = net_worth(conn, end)
+            if _incomplete(figure):
+                todo = _incomplete_todo(end, figure)
+            elif latest_run(conn, end) is None and not _waits_for_previous(reads, month, start):
+                todo = _month_end_todo(end)
         out.append(
             HealthMonthView(
                 month=month,
@@ -747,18 +768,104 @@ def health_months(conn: Connection, first: str, last: str, today: date) -> list[
 
 
 def _month_end_todo(end: date) -> HealthTodo:
-    """A closed month whose month-end has no run: its key figures cannot be stored until the
-    month-end is (D242). The Übersicht's Nettovermögen card holds the button; the month-end
-    is named, since POST /net-worth/snapshots {as_of} takes a past one (D241)."""
+    """A closed month whose complete month-end has no run yet: the daily task captures it and
+    stores the key figures beside it the next morning; the Übersicht's Nettovermögen card
+    holds the button that captures it at once (POST /net-worth/snapshots {as_of} takes a past
+    month-end, D241)."""
     return HealthTodo(
         code=HealthTodoCode.MONTH_END_MISSING,
         text=(
-            f"Für den {end.strftime('%d.%m.%Y')} ist kein Monatsabschluss gespeichert; ohne "
-            "ihn lassen sich die Kennzahlen des Monats nicht festhalten."
+            f"Für den {end.strftime('%d.%m.%Y')} ist noch kein Monatsabschluss gespeichert; "
+            "Hausbuch hält ihn am nächsten Morgen selbst fest, mit „Monatsabschluss "
+            "festhalten“ sofort."
         ),
         action="Monatsabschluss festhalten",
         href=f"/?month_end={end.isoformat()}",
     )
+
+
+# The net worth's to-dos that leave a month-end without a value it should hold (review of PR
+# #426, findings 1 and 2): a position with no price or a stale one, a depot report that does
+# not agree or lists an unbooked fund, a balance not reconciled to the day or older than it, a
+# wallet's waiting coins, a loan without a balance. The owner-share to-dos move no total and
+# do not count.
+MONTH_END_GAPS = frozenset(
+    {
+        NetWorthTodoCode.BALANCE_UNRECONCILED,
+        NetWorthTodoCode.BALANCE_OUTDATED,
+        NetWorthTodoCode.PRICE_MISSING,
+        NetWorthTodoCode.PRICE_STALE,
+        NetWorthTodoCode.POSITION_NOT_RECONCILED,
+        NetWorthTodoCode.POSITION_NOT_BOOKED,
+        NetWorthTodoCode.LOAN_NOT_VALUED,
+        NetWorthTodoCode.WALLET_WAITING,
+    }
+)
+
+
+def _incomplete(figure: NetWorth) -> list[NetWorthTodo]:
+    """The gaps of a month-end read again (MONTH_END_GAPS), empty when it is complete; a
+    position without a value and no to-do of its own (none is known) still counts."""
+    gaps = [todo for todo in figure.todos if todo.code in MONTH_END_GAPS]
+    if not gaps and figure.unvalued_positions:
+        gaps = [
+            NetWorthTodo(
+                code=NetWorthTodoCode.PRICE_MISSING,
+                text=f"{figure.unvalued_positions} Positionen haben am Monatsende keinen Wert.",
+                action="Anlagen öffnen",
+                href="/assets",
+            )
+        ]
+    return gaps
+
+
+def _incomplete_todo(end: date, figure: NetWorth) -> HealthTodo:
+    """The month's to-do while its month-end is incomplete: the first gap's text, button and
+    link, and how many more there are. The code is MONTH_END_MISSING (a complete month-end is
+    what is missing), so HealthTodoCode is unchanged."""
+    gaps = _incomplete(figure)
+    more = len(gaps) - 1
+    tail = "" if not more else f" ({more} weitere Lücke{'n' if more > 1 else ''} im Nettovermögen)"
+    return HealthTodo(
+        code=HealthTodoCode.MONTH_END_MISSING,
+        text=(
+            f"Das Nettovermögen zum {end.strftime('%d.%m.%Y')} ist noch unvollständig, deshalb "
+            f"werden die Kennzahlen des Monats noch nicht festgehalten: {gaps[0].text}{tail}"
+        ),
+        action=gaps[0].action,
+        href=gaps[0].href,
+    )
+
+
+def _previous(month: str) -> str:
+    return month_of(month_bounds(month)[0] - timedelta(days=1))
+
+
+def _first_history_month(conn: Connection) -> str | None:
+    """The first month of the household's history (review of PR #426, finding 3): the month
+    of the day after the earliest opening balance of the accounts D231 checks (an opening
+    balance is the balance at the end of its day, so the history starts the day after); None
+    without such an account."""
+    acc = account_table.c
+    day = conn.execute(
+        select(func.min(acc.opening_balance_on)).where(
+            acc.kind.in_([k.value for k in COVERED_KINDS]),
+            acc.purpose.in_([AccountPurpose.PRIVATE.value, AccountPurpose.RENTAL.value]),
+        )
+    ).scalar()
+    return None if day is None else month_of(day + timedelta(days=1))
+
+
+def _waits_for_previous(reads: dict[str, MonthRead], month: str, start: str | None) -> bool:
+    """The daily task stores a month only once the month before it is closed, or when that
+    month is before the household's history (before January 2026 or before `start`), so a
+    month is never frozen with a window that a still-open month before it would later
+    lengthen (review of PR #426, finding 3; POST /health/snapshots does not wait)."""
+    before = _previous(month)
+    if before < FIRST_MONTH or (start is not None and before < start):
+        return False
+    read = reads.get(before)
+    return read is None or not read.closed.closed
 
 
 def net_worth_series(conn: Connection, today: date) -> list[NetWorthPoint]:
@@ -870,14 +977,30 @@ def _store(
     month: str,
     levers: HouseholdLevers,
     today: date,
+    figure: NetWorth | None = None,
 ) -> HealthSnapshotResult:
+    """Store `month` beside a complete, current month-end (review of PR #426, findings 1 and
+    2): its month-end is read again (`figure` when the caller has read it); an incomplete
+    reading is refused with health.month_end_incomplete, naming its gaps; a complete one is
+    captured through net_worth.capture_month_end, insert-only, which writes a run when none
+    holds the day or the newest differs from the reading and otherwise returns the newest,
+    and the snapshot is stored beside that run. A day with nothing to value is refused with
+    health.month_end_missing."""
     _refuse_unclosed(month, reads.get(month), today)
     end = month_bounds(month)[1]
-    run = latest_run(ctx.conn, end)
-    if run is None:
+    figure = net_worth(ctx.conn, end) if figure is None else figure
+    gaps = _incomplete(figure)
+    if gaps:
         raise RuleViolationError(
-            [HEALTH_MONTH_END_MISSING],
-            f"no month-end is stored for {end.isoformat()}: „Monatsabschluss festhalten“ first",
+            [HEALTH_MONTH_END_INCOMPLETE],
+            f"the net worth of {end.isoformat()} is incomplete: "
+            + "; ".join(gap.text for gap in gaps),
+        )
+    captured = capture_month_end(ctx, end)
+    run = captured.run
+    if captured.outcome is SnapshotOutcome.EMPTY or run is None:
+        raise RuleViolationError(
+            [HEALTH_MONTH_END_MISSING], f"nothing holds a value on {end.isoformat()}"
         )
     figures = snapshot_figures(ctx.conn, reads, month, month_end_figure(ctx.conn, run), levers)
     version = rule_version()
@@ -913,11 +1036,14 @@ def _store(
 
 
 def store_snapshot(ctx: CommandContext, month: str) -> HealthSnapshotResult:
-    """POST /health/snapshots {month}: store a closed month's key figures beside its newest
-    month-end run. Refused with health.month_not_closed (not ended, or D231's checks fail;
-    the message names the month's to-dos) or health.month_end_missing (no run for its
-    month-end). A new row only when the newest row of the month differs (its run, its rule
-    version or its figures); otherwise that row, `unchanged`."""
+    """POST /health/snapshots {month}: store a closed month's key figures beside its
+    month-end run, captured first when none holds the day or the newest differs from the day
+    read again (`_store`). Refused with health.month_not_closed (not ended, or D231's checks
+    fail; the message names the month's to-dos), health.month_end_incomplete (the month-end
+    read again has a gap) or health.month_end_missing (nothing to value that day). It does
+    not wait for the month before (the daily task does). A new row only when the newest row
+    of the month differs (its run, its rule version or its figures); otherwise that row,
+    `unchanged`."""
     _lock(ctx)
     today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
     months = months_between(FIRST_MONTH, month) if month >= FIRST_MONTH else []
@@ -926,21 +1052,27 @@ def store_snapshot(ctx: CommandContext, month: str) -> HealthSnapshotResult:
 
 
 def store_missing_snapshots(ctx: CommandContext) -> list[HealthSnapshotResult]:
-    """The daily task's step (§11.5): a snapshot for every month that has ended, is closed,
-    has a month-end run and has no snapshot yet, oldest first. Idempotent: a second run the
-    same day stores nothing."""
+    """The daily task's step (§11.5): a snapshot for every month that has ended, is closed
+    and has no snapshot yet, oldest first, when the month before it is closed or before the
+    household's history (`_waits_for_previous`, review of PR #426 finding 3) and its
+    month-end read again is complete (`_incomplete`). The month-end is captured as `_store`
+    does, so past months fill in without a click and a run frozen before the month's lines
+    arrived is captured again first. A month that waits or is incomplete is skipped, its
+    to-do on GET /health/months. Idempotent: a second run the same day stores nothing."""
     _lock(ctx)
     today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
     reads = read_months(ctx.conn, ended_months(today), today)
     held = _newest_snapshots(ctx.conn, list(reads))
     levers = household_levers(ctx.conn)
+    start = _first_history_month(ctx.conn)
     out = []
     for month, read in reads.items():
-        if month in held or not read.closed.closed:
+        if month in held or not read.closed.closed or _waits_for_previous(reads, month, start):
             continue
-        if latest_run(ctx.conn, month_bounds(month)[1]) is None:
+        figure = net_worth(ctx.conn, month_bounds(month)[1])
+        if _incomplete(figure) or not any(line.value_eur is not None for line in figure.lines):
             continue
-        out.append(_store(ctx, reads, month, levers, today))
+        out.append(_store(ctx, reads, month, levers, today, figure))
     return out
 
 
@@ -997,7 +1129,10 @@ def _input_checks(month: str, stored: NetWorth, now: NetWorth) -> list[HealthChe
     """Each account and position line of the month-end run against the same day read again
     from its sources (a statement's balance, a depot's report, an exchange's typed balance,
     a wallet's chain balance, as the net worth reads them): agrees when the value is equal
-    to the cent."""
+    to the cent. The reading's own gaps disagree too (review of PR #426): a line of the
+    reading without a value that the run does not hold (a holding the run omitted), and each
+    gap to-do of the reading (`_incomplete`) beyond what such a line already names, its text
+    the reason."""
     run_id = None if stored.run is None else stored.run.net_worth_run_id
 
     def key(line: NetWorthLine) -> tuple:
@@ -1024,7 +1159,40 @@ def _input_checks(month: str, stored: NetWorth, now: NetWorth) -> list[HealthChe
                 reason=reason,
             )
         )
+    held = {key(line) for line in stored.lines if line.account_id is not None}
+    for line in now.lines:
+        if line.account_id is None or line.value_eur is not None or key(line) in held:
+            continue
+        where = (
+            line.label if line.account_label is None else f"{line.label} („{line.account_label}“)"
+        )
+        out.append(
+            HealthCheckInput(
+                month=month,
+                net_worth_run_id=run_id,
+                account_id=line.account_id,
+                agrees=False,
+                reason=f"Am Monatsende ohne Wert und nicht im gespeicherten Abschluss: {where}",
+            )
+        )
+    for gap in _incomplete(now):
+        if gap.code in UNVALUED_LINE_GAPS:
+            continue  # its line, valued or not, is checked above
+        out.append(
+            HealthCheckInput(month=month, net_worth_run_id=run_id, agrees=False, reason=gap.text)
+        )
     return out
+
+
+# The gaps a position line without a value carries itself (net_worth._positions and
+# _unbooked_funds), so health-check names the line rather than the to-do as well.
+UNVALUED_LINE_GAPS = frozenset(
+    {
+        NetWorthTodoCode.PRICE_MISSING,
+        NetWorthTodoCode.POSITION_NOT_RECONCILED,
+        NetWorthTodoCode.POSITION_NOT_BOOKED,
+    }
+)
 
 
 def health_check(conn: Connection, first: str, last: str, today: date) -> HealthCheckResult:
