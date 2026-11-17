@@ -7,6 +7,9 @@
 # listed here are exactly the codes only a private account carries, and `shared` are the codes
 # both purposes carry. A code without all six fails here before any rule exists.
 #
+# Phase 9 (D236, step 0, 17 Nov 2026) adds `one_off` (default false), checked against the
+# taxonomy's field; only hh_car_purchase is one-off.
+#
 # Written from D159's text, not from the tables. Labels are given only where D159 names one.
 #
 # Step 0 readings (listed in the step 0 report):
@@ -105,7 +108,8 @@ codes:
   - {category: hh_car_tax, label: "Auto: Kfz-Steuer & Zulassung", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
   # D159 amended (7) 15 Nov 2026 (migration 0037, Luis: „There's a payment to finish buying the car. I
   # didn't think we have a proper category for it.“): buying or financing a car, same group.
-  - {category: hh_car_purchase, label: "Auto: Kauf & Finanzierung", group: mobility, relevance: spending, treatment: private, threshold: "0.900"}
+  # Phase 9 D236 (step 0, 17 Nov 2026): the one code whose spending is one-off.
+  - {category: hh_car_purchase, label: "Auto: Kauf & Finanzierung", group: mobility, relevance: spending, treatment: private, threshold: "0.900", one_off: true}
   - {category: hh_supermarket, label: "Supermarkt", group: groceries, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_drugstore, label: "Drogerie & Kosmetik", group: groceries, relevance: spending, treatment: private, threshold: "0.900"}
   - {category: hh_bakery, label: "Bäckerei, Kiosk & Markt", group: groceries, relevance: spending, treatment: private, threshold: "0.900"}

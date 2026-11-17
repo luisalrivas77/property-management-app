@@ -182,6 +182,7 @@ class CodeRow(Schema):
     treatment: TaxTreatment
     threshold: Decimal | None
     proposes: ProposedInput | None = None
+    one_off: bool = False  # phase 9 D236
 
 
 class HouseholdCategoriesFixture(_Fixture):
@@ -204,8 +205,16 @@ class HouseholdCategoriesFixture(_Fixture):
                 table.proposes,
                 categories.tax_treatment(row.category),
                 review.threshold(row.category),
+                table.one_off,
             )
-            want = (row.group, row.relevance, row.proposes, row.treatment, row.threshold)
+            want = (
+                row.group,
+                row.relevance,
+                row.proposes,
+                row.treatment,
+                row.threshold,
+                row.one_off,
+            )
             if got != want:
                 raise ValueError(f"{row.category}: the tables say {got}, the fixture {want}")
             if row.label is not None and categories.CATEGORY_LABEL[row.category] != row.label:

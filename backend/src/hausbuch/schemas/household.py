@@ -1045,6 +1045,8 @@ class HouseholdCode(Schema):
     group: HouseholdGroup
     relevance: Relevance
     proposes: ProposedInput | None = None
+    # Phase 9 D236: one-off spending (hh_car_purchase), out of the regular spending.
+    one_off: bool = False
 
 
 class HouseholdCashflow(Schema):
