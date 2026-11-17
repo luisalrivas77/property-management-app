@@ -96,10 +96,19 @@ export function signedMoney(value: string): string {
   return `${value.startsWith("-") || /^0+(\.0+)?$/.test(value) ? "" : "+"}${formatMoney(value)}`;
 }
 
-const loadLastMonth = () => loadCashflow(lastFullMonth());
+/** Last month's private cashflow, with the household's savings rate of the same month (phase 9
+ * D235, Q-O139): the app shows one Sparquote, the household's, here as on the Haushalt page. */
+async function loadLastMonth(): Promise<HouseholdCashflow & { household_rate: string | null }> {
+  const month = lastFullMonth();
+  const [cashflow, health] = await Promise.all([
+    loadCashflow(month),
+    ok(api.GET("/api/health/months", { params: { query: { from: month, to: month } } })),
+  ]);
+  return { ...cashflow, household_rate: health[0]?.household.savings_rate ?? null };
+}
 
 /** The Übersicht's Cashflow card (mockup 07): last month's surplus, money in and out and the
- * savings rate, linking to the Haushalt page. A month without any private booking says so. */
+ * household's savings rate (with the flat's result, D235), linking to the Haushalt page. A month without any private booking says so. */
 export function CashflowCard() {
   const month = lastFullMonth();
   const state = useLoad(loadLastMonth);
@@ -124,7 +133,7 @@ export function CashflowCard() {
               <p className="cashflow-value">{signedMoney(cashflow.surplus)}</p>
               <p className="muted">
                 {formatMoney(cashflow.income)} rein · {formatMoney(spent(cashflow))} raus
-                {cashflow.savings_rate != null ? ` · Sparquote ${formatPercent(cashflow.savings_rate)}` : ""}
+                {cashflow.household_rate != null ? ` · Sparquote ${formatPercent(cashflow.household_rate)}` : ""}
               </p>
               <p>
                 <Link href="/household">Zum Haushalt</Link>
