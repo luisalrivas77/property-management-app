@@ -54,7 +54,7 @@ async function loadYear(month: string): Promise<Year> {
   const [months, transfers, health] = await Promise.all([
     Promise.all(shown.map(loadCashflow)),
     ok(api.GET("/api/transfers", { params: { query: { month } } })),
-    ok(api.GET("/api/health/months", { params: { query: { from: shown[0], to: month } } })),
+    ok(api.GET("/api/health/months", { params: { query: { from: shown[0] ?? month, to: month } } })),
   ]);
   return { months, transfers, health };
 }
