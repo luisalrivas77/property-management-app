@@ -116,7 +116,7 @@ def header_of(text: str, delimiter: str) -> tuple[str, ...]:
 
 
 def sniff(text: str) -> ExportKind:
-    if header_of(text, ";") == BISON_HEADER:
+    if BISON_HEADER in (header_of(text, ";"), header_of(text, ",")):
         return ExportKind.BISON
     header = header_of(text, ",")
     if header == BINANCE_TRANSACTIONS_HEADER:
