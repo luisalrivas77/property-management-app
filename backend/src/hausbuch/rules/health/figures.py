@@ -324,7 +324,9 @@ def _gap_todo(end: date) -> HealthTodo:
             "dort eine Lücke."
         ),
         action="Monatsabschluss festhalten",
-        href="/",  # the Übersicht's Nettovermögen card holds the button
+        # The Übersicht's Nettovermögen card holds the button; the month-end it stores is
+        # named (POST /net-worth/snapshots {as_of} takes a past month-end since D241).
+        href=f"/?month_end={end.isoformat()}",
     )
 
 

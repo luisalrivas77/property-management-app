@@ -178,6 +178,12 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Monatsabschlüsse gibt es ab Januar 2026, dem ersten Monat der Kontoumsätze in Hausbuch.",
   "net_worth.month_end_not_closed":
     "Dieser Monat läuft noch: sein Abschluss lässt sich erst ab dem 1. des Folgemonats festhalten.",
+  "health.month_not_closed":
+    "Dieser Monat ist noch nicht abgeschlossen: Es fehlen Umsätze, oder etwas wartet in „Zu prüfen“. Die offenen Punkte stehen beim Monat.",
+  "health.month_end_missing":
+    "Für das Ende dieses Monats ist noch kein Monatsabschluss gespeichert. Bitte zuerst „Monatsabschluss festhalten“.",
+  "health.range_invalid":
+    "Dieser Zeitraum geht nicht: Der Anfang muss vor dem Ende liegen, und es sind höchstens 24 Monate.",
   "scenario.not_current":
     "Das Szenario ist nicht mehr aktuell, oder es gibt schon ein Standard-Szenario. Bitte die Seite neu laden.",
   "scenario.scope_invalid": "Das Szenario passt nicht zu dieser Immobilie oder ihren Darlehen.",

@@ -16,24 +16,51 @@ hands the rules plain facts.
   zero when nothing was booked.
 - `closed_month_facts(conn, months, today)`: what `rules.health.window.closed` reads for
   each month (D231, §4.4, Q-O133) as `MonthFacts`, failing closed: see `CoverageAccount`.
+- `read_months`, `health`, `health_months`, `net_worth_series` (§13): the household month
+  of rules.health.month.household_month over the Haushalt screen's own private month and
+  the rental blocks; the window of the closed months; the key figures over it. GET /health
+  takes the reserve and the split from today's net worth and the debt figures from the
+  window's newest month-end (its stored run, else that day on read); the free cash is the
+  window's mean of each month's F (D244; rules/plan/surplus is step 2's).
+- `store_snapshot`, `store_missing_snapshots` (D242, §5.5): a closed month's figures as of
+  that month, the reserve, debt and split from the newest run of its month-end, stored with
+  `rule_version` (the SHA-256 of rules/health/ and rules/plan/) and its
+  `health.snapshot_stored` event, one write at a time per workspace (an advisory lock).
+- `health_check` (D259 amended, §16.1): each stored month recomputed from the stored rows
+  with the run and the reserve levers it names, figure by figure within the tolerances.
 """
 
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
+from functools import cache
+from hashlib import sha256
+from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import Connection, and_, exists, or_, select
+from sqlalchemy import Connection, Row, and_, exists, func, insert, or_, select
 
+import hausbuch.rules as rules_package
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import bank_sync as sync_table
+from hausbuch.db.tables import health_snapshot as health_snapshot_table
+from hausbuch.db.tables import household_scenario as household_scenario_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import transaction as transaction_table
-from hausbuch.rules.health.month import rental_month
+from hausbuch.rules.errors import (
+    HEALTH_MONTH_END_MISSING,
+    HEALTH_MONTH_NOT_CLOSED,
+    HEALTH_RANGE_INVALID,
+)
+from hausbuch.rules.health.bands import bands_todos, lights, proposals
+from hausbuch.rules.health.figures import debt, reserve, savings_rate, series, split
+from hausbuch.rules.health.month import household_month, rental_month
+from hausbuch.rules.health.window import closed, window, window_todos
+from hausbuch.rules.net_worth import FIRST_MONTH_END
 from hausbuch.rules.performance.year_figures import (
     INTEREST,
     INVESTED,
@@ -51,13 +78,58 @@ from hausbuch.schemas.enums import (
     AccountKind,
     AccountPurpose,
     AllocationStatus,
+    EntityType,
     ImportStatus,
 )
-from hausbuch.schemas.health import AccountCoverage, MonthFacts, MonthLine, RentalMonth, month_of
+from hausbuch.schemas.events import EventType, HealthSnapshotStored
+from hausbuch.schemas.health import (
+    AccountCoverage,
+    ClosedMonth,
+    Debt,
+    EstimateSource,
+    ExactShare,
+    Health,
+    HealthCheckInput,
+    HealthCheckResult,
+    HealthCheckRow,
+    HealthMonthView,
+    HealthSnapshot,
+    HealthSnapshotFigures,
+    HealthSnapshotOutcome,
+    HealthSnapshotResult,
+    HouseholdMonth,
+    MonthFacts,
+    MonthLine,
+    NetWorthPoint,
+    RentalMonth,
+    Reserve,
+    ReserveBalance,
+    ReserveOrigin,
+    RunTotals,
+    SavingsRate,
+    Window,
+    month_of,
+)
+from hausbuch.schemas.net_worth import NetWorth, NetWorthLine, NetWorthLineKind, NetWorthRun
+from hausbuch.schemas.plan import HouseholdLevers, ReserveAccounts
 
+from .allocations import user_id
+from .context import CommandContext
 from .documents import LOCAL_TIME_ZONE
-from .household import month_bounds, months_between
+from .errors import NotFoundError, RuleViolationError
+from .events import append_event
+from .household import month_bounds, months_between, private_months
+from .net_worth import (
+    last_month_end,
+    latest_run,
+    list_runs,
+    month_end_figure,
+    net_worth,
+    shares_on,
+    stored_run,
+)
 from .reminders import idle_cards
+from .scenarios import estimate_on_day
 from .transfers import _first_days as history_starts
 from .transfers import open_transfers
 
@@ -364,3 +436,616 @@ def closed_month_facts(
         )
         for month in months
     }
+
+
+# --- The household month and the window (§4.2, D231) ---------------------------------------
+
+FIRST_MONTH = month_of(FIRST_MONTH_END)  # the household's bank history starts in Jan 2026
+MAX_MONTHS = 24  # GET /health/months reads at most two years at once
+CENT = Decimal("0.01")
+
+
+@dataclass(frozen=True)
+class MonthRead:
+    """One calendar month on read: the household month (with sources), its rental blocks
+    (the debt figures' interest), and whether it is closed (D231)."""
+
+    household: HouseholdMonth
+    rental: list[RentalMonth]
+    closed: ClosedMonth
+
+
+def read_months(conn: Connection, months: Sequence[str], today: date) -> dict[str, MonthRead]:
+    """`months` (consecutive, oldest first) on read: rules.health.month.household_month over
+    the private accounts' month (services.household.private_months, the Haushalt screen's
+    own read) and the rental blocks (rental_months), and rules.health.window.closed over
+    the month's facts."""
+    if not months:
+        return {}
+    first, last = months[0], months[-1]
+    private = private_months(conn, first, last)
+    rental = rental_months(conn, first, last)
+    facts = closed_month_facts(conn, months, today)
+    out = {}
+    for month in months:
+        p = private[month]
+        blocks = rental.months.get(month, [])
+        out[month] = MonthRead(
+            household=household_month(
+                p.cashflow, blocks, lines=p.lines, link_sources=p.link_sources
+            ),
+            rental=blocks,
+            closed=closed(facts[month]),
+        )
+    return out
+
+
+def ended_months(today: date) -> list[str]:
+    """Every month from January 2026 to the last one that has ended before `today`."""
+    last = month_of(last_month_end(today))
+    return months_between(FIRST_MONTH, last) if last >= FIRST_MONTH else []
+
+
+def _window(reads: dict[str, MonthRead], up_to: str | None = None) -> Window:
+    return window({m: r.closed.closed for m, r in reads.items() if up_to is None or m <= up_to})
+
+
+# --- The levers (D248: the default household scenario in force) ----------------------------
+
+
+def household_levers(conn: Connection, scenario_id: UUID | None = None) -> HouseholdLevers:
+    """The levers of `scenario_id` (any row of the table, a withdrawn one included, so an
+    old scenario can be looked at), else of the default household scenario in force (not
+    withdrawn, not superseded; the newest when two are), else the defaults. Step 2 writes the
+    rows; until then every household reads the defaults."""
+    hs = household_scenario_table.c
+    if scenario_id is not None:
+        row = conn.execute(select(hs.levers).where(hs.id == scenario_id)).one_or_none()
+        if row is None:
+            raise NotFoundError(EntityType.HOUSEHOLD_SCENARIO, scenario_id)
+        return HouseholdLevers.model_validate(row.levers)
+    later = household_scenario_table.alias("later")
+    row = conn.execute(
+        select(hs.levers)
+        .where(
+            hs.is_default.is_(True),
+            hs.withdrawn.is_(False),
+            ~exists().where(later.c.supersedes_id == hs.id),
+        )
+        .order_by(hs.created_at.desc(), hs.id)
+        .limit(1)
+    ).one_or_none()
+    return HouseholdLevers() if row is None else HouseholdLevers.model_validate(row.levers)
+
+
+# --- The figures of a window (§5) -----------------------------------------------------------
+
+
+def _reserve_balances(conn: Connection, figure: NetWorth) -> list[ReserveBalance]:
+    """Every valued account balance of a net worth (a position is no balance), with its
+    purpose and its owner shares on the figure's day."""
+    lines = [
+        line
+        for line in figure.lines
+        if line.kind is NetWorthLineKind.ACCOUNT
+        and line.account_id is not None
+        and line.account_kind is not None
+        and line.value_eur is not None
+    ]
+    ids = [line.account_id for line in lines]
+    acc = account_table.c
+    query = select(acc.id, acc.purpose).where(acc.id.in_(ids))
+    purposes = {r.id: r.purpose for r in conn.execute(query)}
+    shares = shares_on(conn, ids, figure.on)
+    return [
+        ReserveBalance(
+            account_id=line.account_id,
+            label=line.account_label or line.label,
+            kind=line.account_kind,
+            rental=purposes.get(line.account_id) == AccountPurpose.RENTAL.value,
+            balance=line.value_eur,
+            as_of=line.as_of or figure.on,
+            owners={
+                owner: ExactShare(numerator=share.numerator, denominator=share.denominator)
+                for owner, share in shares.get(line.account_id, {}).items()
+            },
+        )
+        for line in lines
+    ]
+
+
+def estimate_sources(conn: Connection, figure: NetWorth) -> dict[UUID, EstimateSource]:
+    """Per property with an estimate line: whether its estimate on the figure's day is the
+    default scenario's „Wert heute“ or the purchase price (D239 (1)), decided as the net worth
+    decided it (services.scenarios.estimate_on_day)."""
+    ids = {
+        line.property_id
+        for line in figure.lines
+        if line.kind is NetWorthLineKind.PROPERTY and line.property_id is not None
+    }
+    if not ids:
+        return {}
+    p = property_table.c
+    prices = conn.execute(select(p.id, p.purchase_price).where(p.id.in_(ids))).all()
+    return {
+        r.id: estimate_on_day(conn, r.id, r.purchase_price, figure.on)[0].source for r in prices
+    }
+
+
+@dataclass(frozen=True)
+class KeyFigures:
+    savings_rate: SavingsRate | None
+    reserve: Reserve | None
+    debt: Debt | None
+    free_cash: Decimal | None
+
+
+def _free_cash(months: Sequence[HouseholdMonth]) -> Decimal:
+    """D244: mean private income − mean regular spending + mean C over the window, to the
+    cent half-up: the mean of the months' F (F is linear in the three)."""
+    total = sum((m.free_cash for m in months), Decimal("0.00"))
+    return (total / len(months)).quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def key_figures(
+    conn: Connection,
+    reads: dict[str, MonthRead],
+    win: Window,
+    levers: HouseholdLevers,
+    *,
+    balances: NetWorth,
+    debt_figure: NetWorth | None,
+    today: date,
+) -> KeyFigures:
+    """The flow figures over the window's months, None below three closed months (D231):
+    the savings rate (D235), the reserve from `balances` (D237), the debt figures from
+    `debt_figure` with the window's rental interest (D239) and the free cash (D244)."""
+    if not win.enough:
+        return KeyFigures(None, None, None, None)
+    months = [reads[m].household for m in win.months]
+    interest = sum(
+        (block.interest for m in win.months for block in reads[m].rental), Decimal("0.00")
+    )
+    debt_figures = None
+    if debt_figure is not None:
+        debt_figures = debt(
+            debt_figure,
+            months,
+            interest=interest,
+            estimate_sources=estimate_sources(conn, debt_figure),
+        )
+    return KeyFigures(
+        savings_rate=savings_rate(months),
+        reserve=reserve(_reserve_balances(conn, balances), months, levers, today=today),
+        debt=debt_figures,
+        free_cash=_free_cash(months),
+    )
+
+
+def _run_figure(conn: Connection, month_end: date) -> NetWorth | None:
+    run = latest_run(conn, month_end)
+    return None if run is None else month_end_figure(conn, run)
+
+
+def run_totals(conn: Connection) -> list[RunTotals]:
+    """The newest stored run of every month-end, summed as phase 6 sums it."""
+    newest: dict[date, NetWorthRun] = {}
+    for run in list_runs(conn):  # the newest capture of a month-end first
+        newest.setdefault(run.as_of, run)
+    out = []
+    for run in newest.values():
+        figure = month_end_figure(conn, run)
+        out.append(
+            RunTotals(
+                net_worth_run_id=run.net_worth_run_id,
+                month_end=run.as_of,
+                created_at=run.captured_at,
+                total=figure.total,
+                by_class=figure.by_class,
+                by_owner=figure.by_owner,
+            )
+        )
+    return out
+
+
+# --- GET /health, GET /health/months, GET /health/net-worth-series (§13) --------------------
+
+
+def health(conn: Connection, today: date, scenario_id: UUID | None = None) -> Health:
+    """GET /health on `today` (Berlin): the window of the closed months up to the last ended
+    one; the savings rate, the need and the free cash over it; the reserve from today's
+    balances; the debt figures from the window's newest month-end (its newest stored run,
+    else that day on read); the split of today's net worth (D240); the series of the stored
+    runs; the marks against the confirmed limits, the proposals while none is confirmed;
+    and the to-dos: too few months, what keeps the month after the window open, the limits."""
+    levers = household_levers(conn, scenario_id)
+    reads = read_months(conn, ended_months(today), today)
+    win = _window(reads)
+    now = net_worth(conn, today)
+    debt_figure = None
+    if win.enough:
+        end = month_bounds(win.months[-1])[1]
+        debt_figure = _run_figure(conn, end) or net_worth(conn, end)
+    figures = key_figures(
+        conn, reads, win, levers, balances=now, debt_figure=debt_figure, today=today
+    )
+    newest = win.months[-1] if win.months else None
+    todos = window_todos(win)
+    after = [m for m, r in reads.items() if not r.closed.closed and (newest is None or m > newest)]
+    if after:
+        todos += reads[after[0]].closed.todos
+    todos += bands_todos(levers.bands)
+    out = Health(
+        as_of=today,
+        window=win,
+        newest=None if newest is None else reads[newest].household,
+        savings_rate=figures.savings_rate,
+        reserve=figures.reserve,
+        debt=figures.debt,
+        split=split(now),
+        free_cash=figures.free_cash,
+        series=series(run_totals(conn), [r.household for r in reads.values() if r.closed.closed]),
+        proposals=[] if levers.bands else list(proposals()[1].values()),
+        todos=todos,
+    )
+    return out.model_copy(update={"marks": lights(out, levers.bands)})
+
+
+def _check_range(first: str, last: str) -> list[str]:
+    months = months_between(first, last)
+    if not months or len(months) > MAX_MONTHS:
+        raise RuleViolationError(
+            [HEALTH_RANGE_INVALID],
+            f"{first} to {last}: the first month comes first, at most {MAX_MONTHS} months",
+        )
+    return months
+
+
+def health_months(conn: Connection, first: str, last: str, today: date) -> list[HealthMonthView]:
+    """GET /health/months?from=&to=: each month on read, with the newest snapshot of the
+    month and, when its stored month differs from the month on read, the stored one."""
+    months = _check_range(first, last)
+    reads = read_months(conn, months, today)
+    stored = _newest_snapshots(conn, months)
+    out = []
+    for month in months:
+        read = reads[month]
+        snapshot = stored.get(month)
+        held = None
+        if snapshot is not None:
+            held = snapshot.figures.month
+            if held == read.household.model_copy(update={"sources": {}}):
+                held = None
+        out.append(
+            HealthMonthView(
+                month=month,
+                household=read.household,
+                closed=read.closed,
+                snapshot_id=None if snapshot is None else snapshot.id,
+                stored=held,
+            )
+        )
+    return out
+
+
+def net_worth_series(conn: Connection, today: date) -> list[NetWorthPoint]:
+    """GET /health/net-worth-series: the stored runs per month-end (D241), with each closed
+    month's S beside its change."""
+    reads = read_months(conn, ended_months(today), today)
+    return series(run_totals(conn), [r.household for r in reads.values() if r.closed.closed])
+
+
+# --- health_snapshot (D242, §5.5) ------------------------------------------------------------
+
+
+@cache
+def rule_version() -> str:
+    """The SHA-256 of rules/health/ and rules/plan/: every file's path and bytes, sorted by
+    path (§5.5), so a stored row names the rules that computed it."""
+    digest = sha256()
+    base = Path(rules_package.__file__).parent
+    for folder in ("health", "plan"):
+        for path in sorted((base / folder).rglob("*")):
+            if not path.is_file() or "__pycache__" in path.parts:
+                continue
+            digest.update(path.relative_to(base).as_posix().encode())
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _to_snapshot(row: Row) -> HealthSnapshot:
+    return HealthSnapshot.model_validate(row._asdict())
+
+
+def _newest_snapshots(conn: Connection, months: Sequence[str]) -> dict[str, HealthSnapshot]:
+    """Per month the newest stored row (by created_at, then id)."""
+    if not months:
+        return {}
+    h = health_snapshot_table.c
+    ends = [month_bounds(m)[1] for m in months]
+    out: dict[str, HealthSnapshot] = {}
+    for row in conn.execute(
+        select(health_snapshot_table)
+        .where(h.month_end.in_(ends))
+        .order_by(h.month_end, h.created_at.desc(), h.id)
+    ):
+        out.setdefault(month_of(row.month_end), _to_snapshot(row))
+    return out
+
+
+def list_snapshots(conn: Connection) -> list[HealthSnapshot]:
+    """Every stored row, the newest month first, within a month the newest row first."""
+    h = health_snapshot_table.c
+    rows = conn.execute(
+        select(health_snapshot_table).order_by(h.month_end.desc(), h.created_at.desc(), h.id)
+    )
+    return [_to_snapshot(r) for r in rows]
+
+
+def snapshot_figures(
+    conn: Connection,
+    reads: dict[str, MonthRead],
+    month: str,
+    run_figure: NetWorth,
+    levers: HouseholdLevers,
+) -> HealthSnapshotFigures:
+    """The figures of a closed month as of that month (§5.5): the window of the closed
+    months up to it; the reserve, the debt figures and the split from its stored run, the
+    reserve's day the run's; the month without sources."""
+    win = _window(reads, up_to=month)
+    figures = key_figures(
+        conn,
+        reads,
+        win,
+        levers,
+        balances=run_figure,
+        debt_figure=run_figure,
+        today=run_figure.on,
+    )
+    return HealthSnapshotFigures(
+        month=reads[month].household.model_copy(update={"sources": {}}),
+        window=win,
+        savings_rate=figures.savings_rate,
+        reserve=figures.reserve,
+        debt=figures.debt,
+        split=split(run_figure),
+        free_cash=figures.free_cash,
+    )
+
+
+def _lock(ctx: CommandContext) -> None:
+    """One snapshot write at a time per workspace (the button and the daily task)."""
+    key = func.hashtextextended(f"health:{ctx.workspace_id}", 0)
+    ctx.conn.execute(select(func.pg_advisory_xact_lock(key)))
+
+
+def _refuse_unclosed(month: str, read: MonthRead | None, today: date) -> None:
+    if month < FIRST_MONTH or month_bounds(month)[1] >= today or read is None:
+        raise RuleViolationError(
+            [HEALTH_MONTH_NOT_CLOSED], f"{month} has not ended yet, or is before January 2026"
+        )
+    if not read.closed.closed:
+        texts = "; ".join(todo.text for todo in read.closed.todos)
+        raise RuleViolationError([HEALTH_MONTH_NOT_CLOSED], f"{month} is not closed: {texts}")
+
+
+def _store(
+    ctx: CommandContext,
+    reads: dict[str, MonthRead],
+    month: str,
+    levers: HouseholdLevers,
+    today: date,
+) -> HealthSnapshotResult:
+    _refuse_unclosed(month, reads.get(month), today)
+    end = month_bounds(month)[1]
+    run = latest_run(ctx.conn, end)
+    if run is None:
+        raise RuleViolationError(
+            [HEALTH_MONTH_END_MISSING],
+            f"no month-end is stored for {end.isoformat()}: „Monatsabschluss festhalten“ first",
+        )
+    figures = snapshot_figures(ctx.conn, reads, month, month_end_figure(ctx.conn, run), levers)
+    version = rule_version()
+    held = _newest_snapshots(ctx.conn, [month]).get(month)
+    if (
+        held is not None
+        and held.net_worth_run_id == run.net_worth_run_id
+        and held.rule_version == version
+        and held.figures == figures
+    ):
+        return HealthSnapshotResult(outcome=HealthSnapshotOutcome.UNCHANGED, snapshot=held)
+    row = ctx.conn.execute(
+        insert(health_snapshot_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            month_end=end,
+            net_worth_run_id=run.net_worth_run_id,
+            figures=figures.model_dump(mode="json"),
+            rule_version=version,
+            created_by=user_id(ctx),
+            created_at=ctx.now,
+        )
+        .returning(*health_snapshot_table.c)
+    ).one()
+    snapshot = _to_snapshot(row)
+    append_event(
+        ctx,
+        EventType.HEALTH_SNAPSHOT_STORED,
+        snapshot.id,
+        HealthSnapshotStored(month=month, net_worth_run_id=run.net_worth_run_id),
+    )
+    return HealthSnapshotResult(outcome=HealthSnapshotOutcome.STORED, snapshot=snapshot)
+
+
+def store_snapshot(ctx: CommandContext, month: str) -> HealthSnapshotResult:
+    """POST /health/snapshots {month}: store a closed month's key figures beside its newest
+    month-end run. Refused with health.month_not_closed (not ended, or D231's checks fail;
+    the message names the month's to-dos) or health.month_end_missing (no run for its
+    month-end). A new row only when the newest row of the month differs (its run, its rule
+    version or its figures); otherwise that row, `unchanged`."""
+    _lock(ctx)
+    today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
+    months = months_between(FIRST_MONTH, month) if month >= FIRST_MONTH else []
+    reads = read_months(ctx.conn, months, today)
+    return _store(ctx, reads, month, household_levers(ctx.conn), today)
+
+
+def store_missing_snapshots(ctx: CommandContext) -> list[HealthSnapshotResult]:
+    """The daily task's step (§11.5): a snapshot for every month that has ended, is closed,
+    has a month-end run and has no snapshot yet, oldest first. Idempotent: a second run the
+    same day stores nothing."""
+    _lock(ctx)
+    today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
+    reads = read_months(ctx.conn, ended_months(today), today)
+    held = _newest_snapshots(ctx.conn, list(reads))
+    levers = household_levers(ctx.conn)
+    out = []
+    for month, read in reads.items():
+        if month in held or not read.closed.closed:
+            continue
+        if latest_run(ctx.conn, month_bounds(month)[1]) is None:
+            continue
+        out.append(_store(ctx, reads, month, levers, today))
+    return out
+
+
+# --- hausbuch health-check (D259 amended 17 Nov 2026, §16.1) --------------------------------
+
+EURO = Decimal("1")
+POINT = Decimal("0.001")  # 0.1 percentage points of a ratio
+TENTH = Decimal("0.1")
+
+
+def _stored_levers(figures: HealthSnapshotFigures) -> HouseholdLevers:
+    """The reserve levers a snapshot was computed with, read back from its stored reserve
+    (the target in months and the accounts the lever added or removed), so a lever changed
+    since does not move the recomputation."""
+    if figures.reserve is None:
+        return HouseholdLevers()
+    accounts = figures.reserve.accounts
+    return HouseholdLevers(
+        reserve_target_months=figures.reserve.target_months,
+        reserve_accounts=ReserveAccounts(
+            added=[a.account_id for a in accounts if a.origin is ReserveOrigin.ADDED],
+            removed=[a.account_id for a in accounts if a.origin is ReserveOrigin.REMOVED],
+        ),
+    )
+
+
+def _compared(
+    figures: HealthSnapshotFigures, net_worth_total: Decimal
+) -> dict[str, tuple[Decimal | None, Decimal]]:
+    """§16.1's figures with their tolerance step: amounts to the euro, ratios to 0.1
+    percentage points, months to 0.1."""
+    rate, reserve_, debt_ = figures.savings_rate, figures.reserve, figures.debt
+    out: dict[str, tuple[Decimal | None, Decimal]] = {
+        "net_worth": (net_worth_total, EURO),
+        "savings_rate_month": (figures.month.savings_rate, POINT),
+        "savings_rate_window": (None if rate is None else rate.rate, POINT),
+        "reserve_amount": (None if reserve_ is None else reserve_.amount, EURO),
+        "reserve_months": (None if reserve_ is None else reserve_.months, TENTH),
+        "debt_ratio": (None if debt_ is None else debt_.debt_ratio, POINT),
+        "debt_service_ratio": (None if debt_ is None else debt_.debt_service_ratio, POINT),
+        "debt_to_income": (None if debt_ is None else debt_.debt_to_income, TENTH / 10),
+        "free_cash": (figures.free_cash, EURO),
+    }
+    for item in [] if debt_ is None else debt_.properties:
+        out[f"ltv:{item.property_id}"] = (item.ltv, POINT)
+    return out
+
+
+def _rounded(value: Decimal | None, step: Decimal) -> Decimal | None:
+    return None if value is None else value.quantize(step, rounding=ROUND_HALF_UP)
+
+
+def _input_checks(month: str, stored: NetWorth, now: NetWorth) -> list[HealthCheckInput]:
+    """Each account and position line of the month-end run against the same day read again
+    from its sources (a statement's balance, a depot's report, an exchange's typed balance,
+    a wallet's chain balance, as the net worth reads them): agrees when the value is equal
+    to the cent."""
+    run_id = None if stored.run is None else stored.run.net_worth_run_id
+
+    def key(line: NetWorthLine) -> tuple:
+        return (line.account_id, line.asset_id)
+
+    current = {key(line): line for line in now.lines if line.account_id is not None}
+    out = []
+    for line in stored.lines:
+        if line.account_id is None:
+            continue
+        again = current.get(key(line))
+        if again is None or again.value_eur is None:
+            reason = "Am Monatsende heute nicht mehr bewertet"
+        elif again.value_eur != line.value_eur:
+            reason = "Der Wert am Monatsende weicht heute vom gespeicherten ab"
+        else:
+            reason = None
+        out.append(
+            HealthCheckInput(
+                month=month,
+                net_worth_run_id=run_id,
+                account_id=line.account_id,
+                agrees=reason is None,
+                reason=reason,
+            )
+        )
+    return out
+
+
+def health_check(conn: Connection, first: str, last: str, today: date) -> HealthCheckResult:
+    """D259 amended: each month from `first` to `last` with a stored snapshot (its newest
+    row) is recomputed from the stored rows, with the month-end run the snapshot names and
+    the reserve levers it stored, and each §16.1 figure compared within its tolerance; the
+    net worth is the run's total against the same day read again, and each of the run's
+    account lines is an input checked against that read. A month without a snapshot is
+    left out at either end of the range; raises health.range_invalid for an empty range and
+    health.month_end_missing when no month of it has a snapshot or one between two that do
+    has none (the months compared are consecutive)."""
+    months = months_between(first, last)
+    if not months:
+        raise RuleViolationError([HEALTH_RANGE_INVALID], f"{first} comes after {last}")
+    stored = _newest_snapshots(conn, months)
+    if not stored:
+        raise RuleViolationError(
+            [HEALTH_MONTH_END_MISSING], f"no month from {first} to {last} has a snapshot"
+        )
+    checked = sorted(stored)
+    gaps = [m for m in months_between(checked[0], checked[-1]) if m not in stored]
+    if gaps:
+        raise RuleViolationError(
+            [HEALTH_MONTH_END_MISSING],
+            f"the months between have no snapshot: {', '.join(gaps)} („Kennzahlen festhalten“)",
+        )
+    reads = read_months(conn, months_between(FIRST_MONTH, checked[-1]), today)
+    rows: list[HealthCheckRow] = []
+    inputs: list[HealthCheckInput] = []
+    for month in checked:
+        snapshot = stored[month]
+        run = stored_run(conn, snapshot.net_worth_run_id)
+        if run is None:  # unreachable: runs are append-only
+            raise RuleViolationError([HEALTH_MONTH_END_MISSING], f"{month}: its run is gone")
+        again = net_worth(conn, run.on)
+        recomputed = snapshot_figures(conn, reads, month, run, _stored_levers(snapshot.figures))
+        held = _compared(snapshot.figures, run.total)
+        fresh = _compared(recomputed, again.total)
+        for figure in sorted(held.keys() | fresh.keys()):
+            value, step = held.get(figure, (None, EURO))
+            new, step = fresh.get(figure, (None, step))
+            rows.append(
+                HealthCheckRow(
+                    month=month,
+                    figure=figure,
+                    stored=None if value is None else str(value),
+                    recomputed=None if new is None else str(new),
+                    equal=_rounded(value, step) == _rounded(new, step),
+                )
+            )
+        inputs += _input_checks(month, run, again)
+    return HealthCheckResult(
+        months=checked,
+        rows=rows,
+        inputs=inputs,
+        match=all(r.equal for r in rows) and all(i.agrees for i in inputs),
+    )

@@ -28,7 +28,8 @@ NetWorth(on) = Σ balances + Σ positions × price + the properties' estimate �
   purchase price; rules.performance.projection.value_today, D86), an estimate. Phase 9 D241
   (Q-O131): `projection_scenario` is append-only, so the scenario of a past day is the newest
   default recorded by the end of that day and not yet withdrawn or superseded then
-  (services.scenarios.default_scenario_on); until 17 Nov 2026 every day read today's. **Its
+  (services.scenarios.estimate_on_day, which hands those rows to
+  rules.health.figures.estimate_on); until 17 Nov 2026 every day read today's. **Its
   loans** from the payout, by the repayment schedule (the scenario's follow-up rate where it
   sets one, as the projection does), an estimate too.
 - **Owners**: an account's figures by its account_ownership set in force on `on` (the newest
@@ -95,7 +96,6 @@ from hausbuch.rules import net_worth as rules
 from hausbuch.rules import valuation
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.loan_schedule import build_schedule
-from hausbuch.rules.performance.projection import value_today
 from hausbuch.schemas.enums import BANK_ACCOUNT_KINDS, AccountKind, ImportStatus
 from hausbuch.schemas.events import EventType, ValuationSnapshotWritten
 from hausbuch.schemas.household import AssetKind, NetWorthClass, PriceSourceKind
@@ -118,7 +118,7 @@ from .errors import require_valid
 from .events import append_event
 from .loans import list_loans
 from .prices.overview import assets_overview
-from .scenarios import default_scenario_on
+from .scenarios import estimate_on_day
 from .transfers import _last_days as history_ends  # D162 amended (9)'s history end
 
 C = NetWorthClass
@@ -509,7 +509,7 @@ def _properties(
     items: list[_Item] = []
     todos: list[NetWorthTodo] = []
     for prop in rows:
-        scenario = default_scenario_on(conn, prop.id, on)
+        estimate, scenario = estimate_on_day(conn, prop.id, prop.purchase_price, on)
         levers = scenario.levers if scenario is not None else None
         if levers is not None and levers.today_value is not None:
             note = f"Schätzwert: „Wert heute“ aus dem Szenario „{scenario.name}“ (Planung)"
@@ -525,7 +525,7 @@ def _properties(
                     net_worth_class=C.PROPERTY,
                     label=prop.label,
                     property_id=prop.id,
-                    value_eur=value_today(levers, prop.purchase_price),
+                    value_eur=estimate.value,
                     estimate=True,
                     note=note,
                 ),
@@ -699,6 +699,12 @@ def _latest_run(conn: Connection, as_of: date | None = None) -> NetWorthRun | No
     """The newest run of `as_of`, or of the latest month-end stored when None."""
     runs = _runs(conn, as_of=as_of)
     return runs[0] if runs else None
+
+
+def latest_run(conn: Connection, as_of: date) -> NetWorthRun | None:
+    """The newest stored run of the month-end `as_of`, None when none holds it (phase 9:
+    a health_snapshot is stored beside it, D242)."""
+    return _latest_run(conn, as_of)
 
 
 def _stored(conn: Connection, run_id: UUID) -> list:
@@ -965,6 +971,7 @@ __all__ = [
     "capture_month_end",
     "last_month_end",
     "latest_month_end",
+    "latest_run",
     "list_runs",
     "month_end_figure",
     "net_worth",

@@ -1,0 +1,210 @@
+"""Phase 9 step 1, the service side (docs/phases/phase-9.md §5.5, §13, D242, D259 amended):
+GET /health, the months on read, the stored snapshot of a closed month, the daily task's step
+and `hausbuch health-check`, over invented data (owners A and B, a flat and its rental
+account). The arithmetic is held by the rule fixtures; these tests hold the reads and writes."""
+
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+import pytest
+from db.matching_support import World
+from sqlalchemy import func, select, update
+
+from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import event as event_table
+from hausbuch.db.tables import health_snapshot as health_snapshot_table
+from hausbuch.db.tables import statement_import as import_table
+from hausbuch.rules.errors import (
+    HEALTH_MONTH_END_MISSING,
+    HEALTH_MONTH_NOT_CLOSED,
+    HEALTH_RANGE_INVALID,
+)
+from hausbuch.schemas.allocation import (
+    AllocationCategory,
+    AllocationDraft,
+    AllocationMethod,
+    AllocationSet,
+)
+from hausbuch.schemas.health import HealthSnapshotOutcome, HealthTodoCode
+from hausbuch.services import allocations, health, net_worth
+from hausbuch.services.errors import RuleViolationError
+
+C = AllocationCategory
+NOW = datetime(2027, 4, 10, 8, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def world(app_engine, fresh_workspaces) -> World:
+    return World(app_engine, fresh_workspaces[0], now=NOW)
+
+
+def _booked(world: World, booked: date, amount: str, category: C, *, confirm: bool = True):
+    tx = world.line(booked, amount)
+    world.cmd(
+        allocations.record_set,
+        AllocationSet(
+            transaction_id=tx,
+            allocations=[
+                AllocationDraft(
+                    amount=Decimal(amount), category=category, property_id=world.property_id
+                )
+            ],
+            method=AllocationMethod.USER,
+            confidence=Decimal("1.000"),
+        ),
+        confirm=confirm,
+        auto=False,
+    )
+    return tx
+
+
+def _closed_history(world: World) -> None:
+    """The rental account covered from 5 Jan 2026 to 31 Mar 2027 (its one import, made on 10
+    Apr 2027), the rent of each month booked and confirmed, no line waiting: every month from
+    January 2026 to March 2027 is closed."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        conn.execute(
+            update(import_table)
+            .where(import_table.c.id == world.import_id)
+            .values(first_booking_on=date(2026, 1, 5), last_booking_on=date(2027, 3, 31))
+        )
+    for year, month in [(2026, m) for m in range(1, 13)] + [(2027, m) for m in range(1, 4)]:
+        _booked(world, date(year, month, 5), "950.00", C.RENT_COLD)
+        _booked(world, date(year, month, 20), "-640.00", C.LOAN_INTEREST)
+
+
+def _snapshots(world: World) -> int:
+    with workspace_transaction(world.engine, world.ws) as conn:
+        return conn.execute(select(func.count()).select_from(health_snapshot_table)).scalar_one()
+
+
+def _events(world: World) -> int:
+    with workspace_transaction(world.engine, world.ws) as conn:
+        return conn.execute(
+            select(func.count())
+            .select_from(event_table)
+            .where(event_table.c.type == "health.snapshot_stored")
+        ).scalar_one()
+
+
+def test_health_reads_twelve_closed_months_and_marks_nothing_unconfirmed(world):
+    """GET /health: the window is the newest twelve closed months; the flow figures are
+    computed over it; no limit is confirmed, so no colour, the proposals and the to-do."""
+    _closed_history(world)
+    got = world.query(health.health, date(2027, 4, 10))
+    assert got.window.months[0] == "2026-04" and got.window.months[-1] == "2027-03"
+    assert got.newest.month == "2027-03"
+    assert got.savings_rate.income == Decimal("950.00") * 12 - Decimal("640.00") * 12
+    assert got.debt is not None and got.reserve is not None
+    assert got.free_cash == Decimal("310.00")
+    assert all(light.colour is None for light in got.marks.values())
+    assert got.proposals
+    assert [t.code for t in got.todos] == [HealthTodoCode.BANDS_UNCONFIRMED]
+
+
+def test_too_few_closed_months_show_no_flow_figure(world):
+    """D231: a waiting line in January 2027 leaves February and March as the window: no
+    savings rate, reserve, debt or free cash, and the to-do for too few months (no month
+    after the window keeps it open: the window reaches March)."""
+    _closed_history(world)
+    world.line(date(2027, 1, 12), "-30.00")  # waiting in Zu prüfen
+    got = world.query(health.health, date(2027, 4, 10))
+    assert got.window.months == ["2027-02", "2027-03"]
+    assert (got.savings_rate, got.reserve, got.debt, got.free_cash) == (None, None, None, None)
+    assert HealthTodoCode.TOO_FEW_MONTHS in [t.code for t in got.todos]
+
+
+def test_a_closed_month_is_stored_once_beside_its_run(world):
+    """D242: „Kennzahlen festhalten“ stores the month as of that month, beside the newest run
+    of its month-end, with its event; pressing it again stores nothing new."""
+    _closed_history(world)
+    world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
+    first = world.cmd(health.store_snapshot, "2027-03")
+    assert first.outcome is HealthSnapshotOutcome.STORED
+    figures = first.snapshot.figures
+    assert figures.month.month == "2027-03" and figures.month.sources == {}
+    assert figures.window.months[-1] == "2027-03" and len(figures.window.months) == 12
+    assert first.snapshot.rule_version == health.rule_version()
+    assert len(first.snapshot.rule_version) == 64
+    again = world.cmd(health.store_snapshot, "2027-03")
+    assert again.outcome is HealthSnapshotOutcome.UNCHANGED
+    assert again.snapshot.id == first.snapshot.id
+    assert (_snapshots(world), _events(world)) == (1, 1)
+
+
+def test_an_unclosed_month_or_one_without_a_run_is_refused(world):
+    """POST /health/snapshots: a month still running, a month with a waiting line and a month
+    whose month-end has no run are refused, nothing written."""
+    _closed_history(world)
+    world.line(date(2027, 2, 12), "-30.00")
+    world.cmd(net_worth.capture_month_end, date(2027, 2, 28))
+    for month, code in [
+        ("2027-04", HEALTH_MONTH_NOT_CLOSED),
+        ("2025-12", HEALTH_MONTH_NOT_CLOSED),
+        ("2027-02", HEALTH_MONTH_NOT_CLOSED),
+        ("2027-01", HEALTH_MONTH_END_MISSING),
+    ]:
+        with pytest.raises(RuleViolationError) as refused:
+            world.cmd(health.store_snapshot, month)
+        assert list(refused.value.codes) == [code]
+    assert _snapshots(world) == 0
+
+
+def test_the_daily_step_stores_each_missing_month_once(world):
+    """§11.5: every ended, closed month with a run and no snapshot gets one; a second run
+    stores nothing; a month without a run waits."""
+    _closed_history(world)
+    for day in (date(2027, 1, 31), date(2027, 3, 31)):
+        world.cmd(net_worth.capture_month_end, day)
+    stored = world.cmd(health.store_missing_snapshots)
+    assert [r.snapshot.figures.month.month for r in stored] == ["2027-01", "2027-03"]
+    assert world.cmd(health.store_missing_snapshots) == []
+    assert (_snapshots(world), _events(world)) == (2, 2)
+
+
+def test_a_month_changed_since_its_snapshot_shows_both(world):
+    """GET /health/months: the stored month beside the month on read once a line booked
+    later changes it; equal months carry no stored copy."""
+    _closed_history(world)
+    world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
+    world.cmd(health.store_snapshot, "2027-03")
+    views = world.query(health.health_months, "2027-02", "2027-03", date(2027, 4, 10))
+    assert [v.month for v in views] == ["2027-02", "2027-03"]
+    assert views[1].snapshot_id is not None and views[1].stored is None
+    _booked(world, date(2027, 3, 25), "-100.00", C.INSURANCE)
+    views = world.query(health.health_months, "2027-03", "2027-03", date(2027, 4, 10))
+    assert views[0].stored is not None
+    assert views[0].stored.spending != views[0].household.spending or (
+        views[0].stored.rental_result != views[0].household.rental_result
+    )
+    for first, last in [("2027-03", "2027-02"), ("2025-01", "2027-03")]:
+        with pytest.raises(RuleViolationError) as refused:
+            world.query(health.health_months, first, last, date(2027, 4, 10))
+        assert list(refused.value.codes) == [HEALTH_RANGE_INVALID]
+
+
+def test_health_check_recomputes_each_stored_month(world):
+    """D259 amended: each stored figure equals its recomputation from the stored rows; a line
+    booked later in a stored month makes the check name the figures that moved."""
+    _closed_history(world)
+    for day in (date(2027, 1, 31), date(2027, 2, 28), date(2027, 3, 31)):
+        world.cmd(net_worth.capture_month_end, day)
+    world.cmd(health.store_missing_snapshots)
+    result = world.query(health.health_check, "2027-01", "2027-03", date(2027, 4, 10))
+    assert result.months == ["2027-01", "2027-02", "2027-03"]
+    assert result.match, [r for r in result.rows if not r.equal]
+    _booked(world, date(2027, 3, 25), "-100.00", C.INSURANCE)
+    result = world.query(health.health_check, "2027-01", "2027-03", date(2027, 4, 10))
+    assert not result.match
+    # The rent less interest of every month is all of its saving, so the rates stay 1; the
+    # free cash, the debt service ratio and the month-end's balance move, in March only.
+    moved = {(r.month, r.figure) for r in result.rows if not r.equal}
+    assert moved == {
+        ("2027-03", "free_cash"),
+        ("2027-03", "debt_service_ratio"),
+        ("2027-03", "net_worth"),
+    }
+    assert [i.agrees for i in result.inputs if i.month == "2027-03"] == [False]
+    with pytest.raises(RuleViolationError) as refused:
+        world.query(health.health_check, "2026-01", "2026-03", date(2027, 4, 10))
+    assert list(refused.value.codes) == [HEALTH_MONTH_END_MISSING]

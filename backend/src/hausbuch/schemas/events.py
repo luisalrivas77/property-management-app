@@ -1335,6 +1335,14 @@ class ValuationSnapshotWritten(Schema):
     rows: int = Field(ge=1)
 
 
+class HealthSnapshotStored(Schema):
+    """health.snapshot_stored (phase 9 D242, §11.6): one closed month's key figures stored,
+    beside the net worth run they read. No amount and no label."""
+
+    month: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    net_worth_run_id: UUID
+
+
 class AiConsentRecorded(Schema):
     """workspace.ai_consent_recorded (D168): the second owner's own click, by the member it
     concerns; the first consent is the settings_changed event's consented_by."""
@@ -1526,6 +1534,8 @@ class EventType(StrEnum):
 
     RULE_CREATED = "rule.created"
     RULE_DISABLED = "rule.disabled"
+
+    HEALTH_SNAPSHOT_STORED = "health.snapshot_stored"  # phase 9 D242, §11.6
 
 
 E = EventType
@@ -1806,6 +1816,10 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.RULE_CREATED: EventSpec(RuleRecorded, "forbidden", "Matching rule learned"),
     E.RULE_DISABLED: EventSpec(RuleRecorded, "forbidden", "Matching rule disabled"),
+    # Phase 9
+    E.HEALTH_SNAPSHOT_STORED: EventSpec(
+        HealthSnapshotStored, "forbidden", "A closed month's key figures stored (D242)"
+    ),
 }
 del E
 

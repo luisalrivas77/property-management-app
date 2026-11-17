@@ -734,3 +734,43 @@ class HealthCheckResult(Schema):
         if self.match != everything:
             raise ValueError("match = every row equal and every input agreeing")
         return self
+
+
+# --- Step 1's endpoints (§13): appended by the service side, the shapes above unchanged ----
+
+
+class HealthMonthView(Schema):
+    """GET /health/months: one calendar month on read (D232, D242). `household` with its
+    sources; `closed` with its reasons and to-dos. `snapshot_id` names the newest stored row
+    of the month; `stored` is that row's month (without sources) only when it differs from
+    the month on read, the screen's „seit dem Abschluss geändert“ with both values."""
+
+    month: YearMonth
+    household: HouseholdMonth
+    closed: ClosedMonth
+    snapshot_id: UUID | None = None
+    stored: HouseholdMonth | None = None
+
+    @model_validator(mode="after")
+    def _same_month(self) -> Self:
+        if self.household.month != self.month or self.closed.month != self.month:
+            raise ValueError("the view's parts are of its month")
+        if self.stored is not None and self.snapshot_id is None:
+            raise ValueError("a stored month names its snapshot")
+        return self
+
+
+class HealthSnapshotRequest(Schema):
+    """POST /health/snapshots („Kennzahlen festhalten“)."""
+
+    month: YearMonth
+
+
+class HealthSnapshotOutcome(StrEnum):
+    STORED = "stored"  # a new row
+    UNCHANGED = "unchanged"  # the newest row of the month holds the same figures already
+
+
+class HealthSnapshotResult(Schema):
+    outcome: HealthSnapshotOutcome
+    snapshot: HealthSnapshot

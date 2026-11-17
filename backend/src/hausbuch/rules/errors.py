@@ -223,6 +223,10 @@ VALUATION_NOT_VALUED = "valuation.not_valued"  # past the asset's last reconcile
 NET_WORTH_NOT_MONTH_END = "net_worth.not_month_end"  # the day is not a month's last day
 NET_WORTH_MONTH_END_BEFORE_HISTORY = "net_worth.month_end_before_history"  # before 31 Jan 2026
 NET_WORTH_MONTH_END_NOT_CLOSED = "net_worth.month_end_not_closed"  # today's month or later
+# Phase 9 D242 (POST /health/snapshots {month}, GET /health/months): refused when ...
+HEALTH_MONTH_NOT_CLOSED = "health.month_not_closed"  # not ended, or D231's checks fail
+HEALTH_MONTH_END_MISSING = "health.month_end_missing"  # no net worth run for its month-end
+HEALTH_RANGE_INVALID = "health.range_invalid"  # from after to, or more than 24 months
 # Phase 6 step 5b (PATCH /assets/{id}, POST /assets/{id}/prices)
 ASSET_NOT_CRYPTO = "asset.not_crypto"  # a CoinGecko id or Kraken pair on a fund or cash
 ASSET_IS_EURO = "asset.is_euro"  # a typed price for the euro, which is 1.0
