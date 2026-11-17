@@ -1,0 +1,110 @@
+# Phase 9 (docs/phases/phase-9.md §5.3, D239, D240, §15.1): `rules/health/figures.debt` and
+# `split`. Inputs: the net worth's classes (gross assets, `rules/net_worth`'s `by_class`), the
+# loans' balances per property, each property's estimate with its source (the default
+# scenario's „Wert heute“, else the purchase price), a credit card's debt (a liability, never
+# debt service), and the window's interest, principal and income E (the savings rate's E).
+#
+# - ltv per property = Σ its loans' balances ÷ its estimate; absent without a loan;
+# - debt_ratio = liabilities ÷ gross assets;
+# - debt_service_year = (interest + principal) × 12 ÷ months, to the cent;
+#   income_year = (E + interest) × 12 ÷ months, to the cent;
+#   debt_service_ratio = debt_service_year ÷ income_year; debt_to_income = liabilities ÷
+#   income_year, two places; both None when income_year ≤ 0;
+# - split: each class ÷ gross assets, four places, each rounded on its own (the four need not
+#   sum to 1), never marked.
+# Ratios four places, half-up. Step 0 recomputes every `expect` on load.
+#
+# Step 0's reading: the annualised amounts are rounded to the cent before the ratios are
+# taken (it changes no case here; recorded in §15.1).
+bases:
+  classes: &classes {bank: "19950.00", depot: "21500.00", crypto: "4150.00", property: "320000.00"}
+
+cases:
+  - id: one_loan
+    pending: "1"
+    description: §15.2
+    classes: *classes
+    estimates: {p1: {value: "320000.00", source: scenario}}
+    loans: [{property: p1, balance: "236400.00"}]
+    card_debt: "820.00"
+    window: {months: 3, interest: "1917.00", principal: "933.00", income: "16623.00"}
+    expect: {gross: "365600.00", liabilities: "237220.00", debt_ratio: "0.6489",
+      ltv: {p1: "0.7388"}, debt_service_year: "11400.00", income_year: "74160.00",
+      debt_service_ratio: "0.1537", debt_to_income: "3.20",
+      split: {bank: "0.0546", depot: "0.0588", crypto: "0.0114", property: "0.8753"}}
+
+  - id: two_loans_one_property
+    pending: "1"
+    classes: *classes
+    estimates: {p1: {value: "320000.00", source: scenario}}
+    loans: [{property: p1, balance: "150000.00"}, {property: p1, balance: "86400.00"}]
+    card_debt: "820.00"
+    window: {months: 3, interest: "1917.00", principal: "933.00", income: "16623.00"}
+    expect: {gross: "365600.00", liabilities: "237220.00", debt_ratio: "0.6489",
+      ltv: {p1: "0.7388"}, debt_service_year: "11400.00", income_year: "74160.00",
+      debt_service_ratio: "0.1537", debt_to_income: "3.20",
+      split: {bank: "0.0546", depot: "0.0588", crypto: "0.0114", property: "0.8753"}}
+
+  - id: no_loan
+    pending: "1"
+    classes: *classes
+    estimates: {p1: {value: "320000.00", source: scenario}}
+    loans: []
+    card_debt: "0.00"
+    window: {months: 3, interest: "0.00", principal: "0.00", income: "16623.00"}
+    expect: {gross: "365600.00", liabilities: "0.00", debt_ratio: "0.0000", ltv: {},
+      debt_service_year: "0.00", income_year: "66492.00", debt_service_ratio: "0.0000",
+      debt_to_income: "0.00",
+      split: {bank: "0.0546", depot: "0.0588", crypto: "0.0114", property: "0.8753"}}
+
+  - id: estimate_is_purchase_price
+    pending: "1"
+    description: no default scenario; the estimate is the purchase price and the screen says so
+    classes: {bank: "19950.00", depot: "21500.00", crypto: "4150.00", property: "300000.00"}
+    estimates: {p1: {value: "300000.00", source: purchase_price}}
+    loans: [{property: p1, balance: "236400.00"}]
+    card_debt: "820.00"
+    window: {months: 3, interest: "1917.00", principal: "933.00", income: "16623.00"}
+    expect: {gross: "345600.00", liabilities: "237220.00", debt_ratio: "0.6864",
+      ltv: {p1: "0.7880"}, estimate_source: {p1: purchase_price},
+      debt_service_year: "11400.00", income_year: "74160.00", debt_service_ratio: "0.1537",
+      debt_to_income: "3.20",
+      split: {bank: "0.0577", depot: "0.0622", crypto: "0.0120", property: "0.8681"}}
+
+  - id: annualised_from_three
+    pending: "1"
+    description: every annualised figure says „hochgerechnet aus 3 Monaten“
+    classes: *classes
+    estimates: {p1: {value: "320000.00", source: scenario}}
+    loans: [{property: p1, balance: "236400.00"}]
+    card_debt: "820.00"
+    window: {months: 3, interest: "1800.00", principal: "900.00", income: "15000.00"}
+    expect: {gross: "365600.00", liabilities: "237220.00", debt_ratio: "0.6489",
+      ltv: {p1: "0.7388"}, debt_service_year: "10800.00", income_year: "67200.00",
+      debt_service_ratio: "0.1607", debt_to_income: "3.53", annualised_from_months: 3,
+      split: {bank: "0.0546", depot: "0.0588", crypto: "0.0114", property: "0.8753"}}
+
+  - id: card_debt_in_liabilities
+    pending: "1"
+    description: the card's debt is a liability and no debt service
+    classes: {bank: "10000.00", depot: "0.00", crypto: "0.00", property: "0.00"}
+    estimates: {}
+    loans: []
+    card_debt: "1500.00"
+    window: {months: 3, interest: "0.00", principal: "0.00", income: "15000.00"}
+    expect: {gross: "10000.00", liabilities: "1500.00", debt_ratio: "0.1500", ltv: {},
+      debt_service_year: "0.00", income_year: "60000.00", debt_service_ratio: "0.0000",
+      debt_to_income: "0.03",
+      split: {bank: "1.0000", depot: "0.0000", crypto: "0.0000", property: "0.0000"}}
+
+  - id: income_not_positive
+    pending: "1"
+    classes: *classes
+    estimates: {p1: {value: "320000.00", source: scenario}}
+    loans: [{property: p1, balance: "236400.00"}]
+    card_debt: "820.00"
+    window: {months: 3, interest: "50.00", principal: "0.00", income: "-100.00"}
+    expect: {gross: "365600.00", liabilities: "237220.00", debt_ratio: "0.6489",
+      ltv: {p1: "0.7388"}, debt_service_year: "200.00", income_year: "-200.00",
+      debt_service_ratio: null, debt_to_income: null,
+      split: {bank: "0.0546", depot: "0.0588", crypto: "0.0114", property: "0.8753"}}

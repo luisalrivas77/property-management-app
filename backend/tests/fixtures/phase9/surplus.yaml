@@ -1,0 +1,75 @@
+# Phase 9 (docs/phases/phase-9.md §6.1, D244, §15.1): `rules/plan/surplus.surplus`. Per window
+# month: private income, regular private spending, the flat's cash after interest and repayment
+# C (signed) and one-off spending. Each mean over the window to the cent, half-up; free cash =
+# their sum; buffer = free cash × buffer_percent ÷ 100 to the cent, 0 when free cash ≤ 0;
+# investable = max(0, free cash − buffer). Free cash of one month F = income − regular + C;
+# beside the mean the median and the lowest F of the window. The one-offs are left out of the
+# means and named as their sum.
+#
+# Step 0 recomputes every row on load and passes them through hausbuch.schemas.plan.Surplus.
+#
+# Step 0's readings, recorded in docs/phases/phase-9.md §15.1:
+# - the median of an even count is the mean of the middle two, half-up to the cent;
+# - when two months share the lowest F, `lowest_month` is the earlier one.
+bases:
+  worked: &worked
+    - {month: "2027-03", income: "5300.00", regular_spending: "3900.00", rental_cash: "-220.00", one_off_spending: "0.00"}
+    - {month: "2027-04", income: "5300.00", regular_spending: "4150.00", rental_cash: "-220.00", one_off_spending: "0.00"}
+    - {month: "2027-05", income: "6150.00", regular_spending: "4300.00", rental_cash: "-620.00", one_off_spending: "12000.00"}
+
+cases:
+  - id: baseline
+    pending: "2"
+    description: §15.2
+    months: *worked
+    buffer_percent: "10"
+    expect: {mean_income: "5583.33", mean_regular_spending: "4116.67",
+      mean_rental_cash: "-353.33", free_cash: "1113.33", buffer: "111.33",
+      investable: "1002.00", median_free_cash: "1180.00", lowest_free_cash: "930.00",
+      lowest_month: "2027-04", one_off_spending_left_out: "12000.00"}
+
+  - id: buffer_zero
+    pending: "2"
+    months: *worked
+    buffer_percent: "0"
+    expect: {mean_income: "5583.33", mean_regular_spending: "4116.67",
+      mean_rental_cash: "-353.33", free_cash: "1113.33", buffer: "0.00",
+      investable: "1113.33", median_free_cash: "1180.00", lowest_free_cash: "930.00",
+      lowest_month: "2027-04", one_off_spending_left_out: "12000.00"}
+
+  - id: free_cash_negative
+    pending: "2"
+    months:
+      - {month: "2027-03", income: "3000.00", regular_spending: "3500.00", rental_cash: "-100.00", one_off_spending: "0.00"}
+      - {month: "2027-04", income: "3000.00", regular_spending: "3500.00", rental_cash: "-100.00", one_off_spending: "0.00"}
+      - {month: "2027-05", income: "3000.00", regular_spending: "3500.00", rental_cash: "-100.00", one_off_spending: "0.00"}
+    buffer_percent: "10"
+    expect: {mean_income: "3000.00", mean_regular_spending: "3500.00",
+      mean_rental_cash: "-100.00", free_cash: "-600.00", buffer: "0.00", investable: "0.00",
+      median_free_cash: "-600.00", lowest_free_cash: "-600.00", lowest_month: "2027-03",
+      one_off_spending_left_out: "0.00"}
+
+  - id: one_off_left_out
+    pending: "2"
+    months:
+      - {month: "2027-01", income: "5000.00", regular_spending: "3000.00", rental_cash: "0.00", one_off_spending: "0.00"}
+      - {month: "2027-02", income: "5000.00", regular_spending: "3000.00", rental_cash: "0.00", one_off_spending: "2500.00"}
+      - {month: "2027-03", income: "5000.00", regular_spending: "3000.00", rental_cash: "0.00", one_off_spending: "0.00"}
+    buffer_percent: "10"
+    expect: {mean_income: "5000.00", mean_regular_spending: "3000.00",
+      mean_rental_cash: "0.00", free_cash: "2000.00", buffer: "200.00", investable: "1800.00",
+      median_free_cash: "2000.00", lowest_free_cash: "2000.00", lowest_month: "2027-01",
+      one_off_spending_left_out: "2500.00"}
+
+  - id: median_and_lowest
+    pending: "2"
+    months:
+      - {month: "2027-02", income: "5000.00", regular_spending: "4000.00", rental_cash: "0.00", one_off_spending: "0.00"}
+      - {month: "2027-03", income: "5000.00", regular_spending: "3600.00", rental_cash: "0.00", one_off_spending: "0.00"}
+      - {month: "2027-04", income: "5000.00", regular_spending: "4200.00", rental_cash: "0.00", one_off_spending: "0.00"}
+      - {month: "2027-05", income: "5000.00", regular_spending: "3800.00", rental_cash: "0.00", one_off_spending: "0.00"}
+    buffer_percent: "10"
+    expect: {mean_income: "5000.00", mean_regular_spending: "3900.00",
+      mean_rental_cash: "0.00", free_cash: "1100.00", buffer: "110.00", investable: "990.00",
+      median_free_cash: "1100.00", lowest_free_cash: "800.00", lowest_month: "2027-04",
+      one_off_spending_left_out: "0.00"}

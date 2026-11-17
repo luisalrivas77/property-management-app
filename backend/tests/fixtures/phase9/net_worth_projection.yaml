@@ -1,0 +1,232 @@
+# Phase 9 (docs/phases/phase-9.md §7.5, D247 amended, §15.1, §15.2):
+# `rules/plan/projection.project_net_worth`. Start: the stored run at the newest closed
+# month-end. Bank, month by month: bank(k) = bank(k−1) + investable(k) − every plan (the month
+# function of §7.1, plan_levers.yaml). Funds and crypto per class with its typed rate r, over a
+# stretch of m months ending on a 31 December: V × (1 + r·m/12) + Σ_j c_j × (1 + r·(m − j)/12),
+# exact fractions, rounded half-up to the cent only in the output. The flat's value and loan
+# from the default scenario's YearFigures; other liabilities (a card) kept at the start value.
+# Points: 31 December of each year every property's scenario projects, at most net_worth_years,
+# never a sale year; the projection ends early when the as_is reserve falls below 0.
+#
+# The rates in these cases are test inputs, deliberately uneven; no screen, default,
+# placeholder or mockup may show them (§15.2). Step 0 recomputes every point on load and
+# passes each through hausbuch.schemas.plan.ProjectionPoint (the total and the five change
+# rows sum).
+#
+# Step 0's readings, recorded in docs/phases/phase-9.md §15.1:
+# - a point's total is the sum of its rounded classes less its rounded liabilities (so
+#   31 Dec 2031 is 233,068.74 and 31 Dec 2032 257,747.90, as §15.2's table prints them);
+# - "used up inside the projection" keeps the points before the month the as_is reserve falls
+#   below 0 and drops every point from that month on;
+# - a class needs a typed rate when it has a value at the start or a plan pays into it; a class
+#   with neither stays 0 and needs none.
+bases:
+  month: &month {mean_income: "5583.33", mean_regular_spending: "4116.67", mean_rental_cash: "-353.33", buffer_percent: "10"}
+  start: &start {month_end: "2027-05-31", run: run-2027-05, bank: "19950.00", depot: "21500.00",
+    crypto: "4150.00", property: "320000.00", loans: "236400.00", other_liabilities: "820.00"}
+  reserve: &reserve "16830.00"
+  plans: &plans [{key: depot, asset_class: depot, monthly: "400.00"}, {key: exchange, asset_class: crypto, monthly: "150.00"}]
+  flat: &flat
+    sale_year: 2035
+    years:
+      2028: {value: "324800.00", loan_balance: "230350.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+      2029: {value: "329672.00", loan_balance: "226420.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+      2030: {value: "334617.08", loan_balance: "222400.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+      2031: {value: "339636.34", loan_balance: "218290.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+      2032: {value: "344730.88", loan_balance: "214090.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+      2033: {value: "349901.84", loan_balance: "209790.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+      2034: {value: "355150.37", loan_balance: "205390.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+  worked_rates: &worked_rates {depot: "0.037", crypto: "-0.015"}
+  household: &household
+    newest_closed: "2027-05"
+    closed_months: 3
+    month: *month
+    start: *start
+    reserve: *reserve
+    plans: *plans
+    flats: {p1: *flat}
+
+cases:
+  - id: worked
+    pending: "2"
+    description: §15.2
+    <<: *household
+    levers: {value_change: *worked_rates, net_worth_years: 5}
+    expect:
+      end_of_2027: {bank: "23114.00", depot: "24789.94", crypto: "5159.75"}
+      points:
+        - {on: "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
+        - {on: "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
+        - {on: "2030-12-31", bank: "44321.24", depot: "42837.41", crypto: "10213.86", property: "334617.08", loans: "222400.00", other_liabilities: "820.00", total: "208769.59"}
+        - {on: "2031-12-31", bank: "51390.32", depot: "49303.80", crypto: "11848.28", property: "339636.34", loans: "218290.00", other_liabilities: "820.00", total: "233068.74"}
+        - {on: "2032-12-31", bank: "58459.40", depot: "56009.44", crypto: "13458.18", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "257747.90"}
+      ends_before_sale_year: null
+      used_up: null
+      todos: []
+
+  - id: bank_equals_as_is_path
+    pending: "2"
+    description: bank(k) − bank(0) = reserve_as_is(k) − reserve(0) for every month (§7.5 (4))
+    <<: *household
+    levers: {value_change: *worked_rates, net_worth_years: 5}
+    expect: {as_is_reserve: {"2032-12": "55339.40"}, bank: {"2032-12-31": "58459.40"}, difference: "38509.40"}
+
+  - id: rate_missing_no_projection
+    pending: "2"
+    <<: *household
+    levers: {value_change: {depot: "0.037"}, net_worth_years: 5}
+    expect: {points: [], todos: [rate_missing]}
+
+  - id: zero_typed_is_a_rate
+    pending: "2"
+    description: the start plus what was paid in
+    <<: *household
+    levers: {value_change: {depot: "0", crypto: "0"}, net_worth_years: 5}
+    expect:
+      last: {on: "2032-12-31", bank: "58459.40", depot: "48300.00", crypto: "14200.00", property: "344730.88", loans: "214090.00", other_liabilities: "820.00", total: "250780.28"}
+      todos: []
+
+  - id: negative_rate
+    pending: "2"
+    <<: *household
+    levers: {value_change: {depot: "-0.100", crypto: "-0.015"}, net_worth_years: 2}
+    expect:
+      points:
+        - {on: "2028-12-31", bank: "30183.08", depot: "25258.25", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "155941.31"}
+        - {on: "2029-12-31", bank: "37252.16", depot: "27312.43", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "175551.14"}
+      todos: []
+
+  - id: class_not_held_needs_no_rate
+    pending: "2"
+    description: no crypto at the start and no plan into it; the crypto rate may stay empty
+    <<: *household
+    start: {month_end: "2027-05-31", run: run-2027-05, bank: "19950.00", depot: "21500.00",
+      crypto: "0.00", property: "320000.00", loans: "236400.00", other_liabilities: "820.00"}
+    plans: [{key: depot, asset_class: depot, monthly: "400.00"}]
+    levers: {value_change: {depot: "0.037"}, net_worth_years: 2}
+    expect:
+      points:
+        - {on: "2028-12-31", bank: "33033.08", depot: "30588.57", crypto: "0.00", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "157251.65"}
+        - {on: "2029-12-31", bank: "41902.16", depot: "36601.75", crypto: "0.00", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "180935.91"}
+      todos: []
+
+  - id: plan_into_empty_class_needs_rate
+    pending: "2"
+    description: no crypto at the start, but a plan pays into it
+    <<: *household
+    start: {month_end: "2027-05-31", run: run-2027-05, bank: "19950.00", depot: "21500.00",
+      crypto: "0.00", property: "320000.00", loans: "236400.00", other_liabilities: "820.00"}
+    levers: {value_change: {depot: "0.037"}, net_worth_years: 2}
+    expect: {points: [], todos: [rate_missing]}
+
+  - id: first_year_partial
+    pending: "2"
+    description: seven months, June to December, one stretch of the formula
+    stretch: {value: "10000.00", rate: "0.05", monthly: "100.00", months: 7}
+    expect: {value: "11000.42"}
+
+  - id: full_year_closed_formula
+    pending: "2"
+    description: a full year with a constant plan is V × (1 + r) + 12 c + 5.5 c r
+    stretch: {value: "10000.00", rate: "0.05", monthly: "100.00", months: 12}
+    expect: {value: "11727.50"}
+
+  - id: no_default_scenario_todo
+    pending: "2"
+    <<: *household
+    flats: {p1: null}
+    levers: {value_change: *worked_rates, net_worth_years: 5}
+    expect: {points: [], todos: [no_default_scenario]}
+
+  - id: no_run_todo
+    pending: "2"
+    description: no stored run at 31 May 2027 („Monatsabschluss festhalten“)
+    <<: *household
+    start: null
+    levers: {value_change: *worked_rates, net_worth_years: 5}
+    expect: {points: [], todos: [month_end_missing]}
+
+  - id: ends_before_sale_year
+    pending: "2"
+    <<: *household
+    flats:
+      p1:
+        sale_year: 2030
+        years:
+          2028: {value: "324800.00", loan_balance: "230350.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+          2029: {value: "329672.00", loan_balance: "226420.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+          2030: {value: "334617.08", loan_balance: "0.00", net_cash: "-1512.00", tax_effect: "-900.00"}
+    levers: {value_change: *worked_rates, net_worth_years: 10}
+    expect:
+      points:
+        - {on: "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
+        - {on: "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
+      ends_before_sale_year: 2030
+      todos: []
+
+  - id: two_properties_earliest_sale_year
+    pending: "2"
+    description: a second, invented property whose scenario sells in 2030; its cash is 0
+    <<: *household
+    start: {month_end: "2027-05-31", run: run-2027-05, bank: "19950.00", depot: "21500.00",
+      crypto: "4150.00", property: "470000.00", loans: "328400.00", other_liabilities: "820.00"}
+    flats:
+      p1: *flat
+      p2:
+        sale_year: 2030
+        years:
+          2028: {value: "150000.00", loan_balance: "90000.00", net_cash: "0.00", tax_effect: "0.00"}
+          2029: {value: "152000.00", loan_balance: "88000.00", net_cash: "0.00", tax_effect: "0.00"}
+          2030: {value: "154000.00", loan_balance: "0.00", net_cash: "0.00", tax_effect: "0.00"}
+    levers: {value_change: *worked_rates, net_worth_years: 10}
+    expect:
+      points:
+        - {on: "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "474800.00", loans: "320350.00", other_liabilities: "820.00", total: "221271.63"}
+        - {on: "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "481672.00", loans: "314420.00", other_liabilities: "820.00", total: "248840.46"}
+      ends_before_sale_year: 2030
+      todos: []
+
+  - id: years_capped_by_lever
+    pending: "2"
+    <<: *household
+    levers: {value_change: *worked_rates, net_worth_years: 2}
+    expect:
+      points:
+        - {on: "2028-12-31", bank: "30183.08", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "161271.63"}
+        - {on: "2029-12-31", bank: "37252.16", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "184840.46"}
+      ends_before_sale_year: null
+      todos: []
+
+  - id: reserve_used_up_ends_early
+    pending: "2"
+    description: −1,500.00 a month from September 2027; the as_is reserve is used up in July 2029
+    <<: *household
+    levers: {value_change: *worked_rates, net_worth_years: 5,
+      income_changes: [{monthly_net: "-1500.00", from_month: "2027-09"}]}
+    expect:
+      points:
+        - {on: "2028-12-31", bank: "8147.24", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "139235.79"}
+      used_up: "2029-07"
+      todos: []
+
+  - id: income_change_and_one_off
+    pending: "2"
+    <<: *household
+    levers: {value_change: *worked_rates, net_worth_years: 2,
+      income_changes: [{monthly_net: "-600.00", from_month: "2027-09", to_month: "2028-08"}],
+      one_offs: [{month: "2027-08", amount: "-2000.00", source: typed}]}
+    expect:
+      points:
+        - {on: "2028-12-31", bank: "21814.41", depot: "30588.57", crypto: "6869.98", property: "324800.00", loans: "230350.00", other_liabilities: "820.00", total: "152902.96"}
+        - {on: "2029-12-31", bank: "28883.49", depot: "36601.75", crypto: "8554.55", property: "329672.00", loans: "226420.00", other_liabilities: "820.00", total: "176471.79"}
+      todos: []
+
+  - id: change_rows_sum
+    pending: "2"
+    description: §15.2's change to 31 December 2032 in its five rows
+    <<: *household
+    levers: {value_change: *worked_rates, net_worth_years: 5}
+    expect:
+      change: {on_accounts: "38509.40", paid_in: "36850.00", from_assumptions: "6967.62",
+        from_assumptions_by_class: {depot: "7709.44", crypto: "-741.82"},
+        flat_value: "24730.88", loan_repaid: "22310.00", total: "129367.90"}

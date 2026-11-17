@@ -1,0 +1,140 @@
+# Phase 9 (docs/phases/phase-9.md §6.2, D245, §15.1): `rules/plan/savings_plans.detect` and
+# `apply_overrides`. A plan is a destination (an own account of kind depot or exchange, or the
+# payee of lines booked hh_investment_securities or hh_investment_crypto) that received a
+# confirmed outgoing payment from a private account in each of the last three closed months;
+# monthly = the median of the three monthly sums. A transfer into an own savings account is no
+# plan (it builds the reserve). already_invested = Σ monthly; investable_left = investable −
+# already_invested, signed.
+#
+# `lines`: confirmed outgoing payments from private accounts (amount negative), with the own
+# account they go to (`to_account`, its kind in `own_accounts`) or a payee and category.
+# Step 0 recomputes the plans on load.
+#
+# Step 0's readings, recorded in docs/phases/phase-9.md §15.1:
+# - a plan's key is its destination account's key, or for a payee the payee folded to lower
+#   case with every run of other characters as one hyphen;
+# - an exchange is class `crypto`, a depot class `depot`; a payee takes the class of its code;
+# - plans are listed by monthly amount, largest first, then by key.
+bases:
+  own_accounts: &own_accounts
+    depot: {kind: depot}
+    exchange: {kind: exchange}
+    savings: {kind: bank_savings}
+  months: &months ["2027-03", "2027-04", "2027-05"]
+
+cases:
+  - id: depot_and_exchange
+    pending: "2"
+    description: §15.2
+    own_accounts: *own_accounts
+    last_three_closed: *months
+    lines:
+      - {booked: "2027-03-02", amount: "-400.00", to_account: depot}
+      - {booked: "2027-03-15", amount: "-150.00", to_account: exchange}
+      - {booked: "2027-04-02", amount: "-400.00", to_account: depot}
+      - {booked: "2027-04-15", amount: "-150.00", to_account: exchange}
+      - {booked: "2027-05-03", amount: "-400.00", to_account: depot}
+      - {booked: "2027-05-17", amount: "-150.00", to_account: exchange}
+    investable: "1002.00"
+    expect:
+      plans:
+        - {key: depot, asset_class: depot, monthly: "400.00", months: ["400.00", "400.00", "400.00"]}
+        - {key: exchange, asset_class: crypto, monthly: "150.00", months: ["150.00", "150.00", "150.00"]}
+      already_invested: "550.00"
+      investable_left: "452.00"
+
+  - id: two_of_three_months_is_no_plan
+    pending: "2"
+    own_accounts: *own_accounts
+    last_three_closed: *months
+    lines:
+      - {booked: "2027-03-02", amount: "-400.00", to_account: depot}
+      - {booked: "2027-05-03", amount: "-400.00", to_account: depot}
+    investable: "1002.00"
+    expect: {plans: [], already_invested: "0.00", investable_left: "1002.00"}
+
+  - id: doubled_month_uses_median
+    pending: "2"
+    own_accounts: *own_accounts
+    last_three_closed: *months
+    lines:
+      - {booked: "2027-03-02", amount: "-400.00", to_account: depot}
+      - {booked: "2027-04-02", amount: "-400.00", to_account: depot}
+      - {booked: "2027-04-20", amount: "-400.00", to_account: depot}
+      - {booked: "2027-05-03", amount: "-400.00", to_account: depot}
+    investable: "1002.00"
+    expect:
+      plans:
+        - {key: depot, asset_class: depot, monthly: "400.00", months: ["400.00", "800.00", "400.00"]}
+      already_invested: "400.00"
+      investable_left: "602.00"
+
+  - id: transfer_to_savings_is_no_plan
+    pending: "2"
+    own_accounts: *own_accounts
+    last_three_closed: *months
+    lines:
+      - {booked: "2027-03-02", amount: "-500.00", to_account: savings}
+      - {booked: "2027-04-02", amount: "-500.00", to_account: savings}
+      - {booked: "2027-05-03", amount: "-500.00", to_account: savings}
+    investable: "1002.00"
+    expect: {plans: [], already_invested: "0.00", investable_left: "1002.00"}
+
+  - id: payee_plan_by_investment_code
+    pending: "2"
+    description: a fund plan paid to a payee that is not an own account, and a coin plan likewise
+    own_accounts: *own_accounts
+    last_three_closed: *months
+    lines:
+      - {booked: "2027-03-01", amount: "-200.00", payee: Fondsplan Nord, category: hh_investment_securities}
+      - {booked: "2027-04-01", amount: "-200.00", payee: Fondsplan Nord, category: hh_investment_securities}
+      - {booked: "2027-05-01", amount: "-200.00", payee: Fondsplan Nord, category: hh_investment_securities}
+      - {booked: "2027-03-10", amount: "-50.00", payee: Coinsparen Sued, category: hh_investment_crypto}
+      - {booked: "2027-04-10", amount: "-50.00", payee: Coinsparen Sued, category: hh_investment_crypto}
+      - {booked: "2027-05-10", amount: "-50.00", payee: Coinsparen Sued, category: hh_investment_crypto}
+      - {booked: "2027-03-12", amount: "-80.00", payee: Fitnessstudio Ost, category: hh_sport}
+      - {booked: "2027-04-12", amount: "-80.00", payee: Fitnessstudio Ost, category: hh_sport}
+      - {booked: "2027-05-12", amount: "-80.00", payee: Fitnessstudio Ost, category: hh_sport}
+    investable: "1002.00"
+    expect:
+      plans:
+        - {key: fondsplan-nord, destination_payee: Fondsplan Nord, asset_class: depot, monthly: "200.00", months: ["200.00", "200.00", "200.00"]}
+        - {key: coinsparen-sued, destination_payee: Coinsparen Sued, asset_class: crypto, monthly: "50.00", months: ["50.00", "50.00", "50.00"]}
+      already_invested: "250.00"
+      investable_left: "752.00"
+
+  - id: override_amount
+    pending: "2"
+    description: the depot plan was lowered at the bank last week
+    own_accounts: *own_accounts
+    last_three_closed: *months
+    lines:
+      - {booked: "2027-03-02", amount: "-400.00", to_account: depot}
+      - {booked: "2027-04-02", amount: "-400.00", to_account: depot}
+      - {booked: "2027-05-03", amount: "-400.00", to_account: depot}
+    overrides: [{plan_key: depot, monthly: "300.00"}]
+    investable: "1002.00"
+    expect:
+      plans:
+        - {key: depot, asset_class: depot, monthly: "300.00", months: ["400.00", "400.00", "400.00"], overridden: true}
+      already_invested: "300.00"
+      investable_left: "702.00"
+
+  - id: override_dropped
+    pending: "2"
+    own_accounts: *own_accounts
+    last_three_closed: *months
+    lines:
+      - {booked: "2027-03-02", amount: "-400.00", to_account: depot}
+      - {booked: "2027-03-15", amount: "-150.00", to_account: exchange}
+      - {booked: "2027-04-02", amount: "-400.00", to_account: depot}
+      - {booked: "2027-04-15", amount: "-150.00", to_account: exchange}
+      - {booked: "2027-05-03", amount: "-400.00", to_account: depot}
+      - {booked: "2027-05-17", amount: "-150.00", to_account: exchange}
+    overrides: [{plan_key: exchange, dropped: true}]
+    investable: "1002.00"
+    expect:
+      plans:
+        - {key: depot, asset_class: depot, monthly: "400.00", months: ["400.00", "400.00", "400.00"]}
+      already_invested: "400.00"
+      investable_left: "602.00"

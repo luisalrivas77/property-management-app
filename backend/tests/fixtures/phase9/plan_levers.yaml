@@ -1,0 +1,159 @@
+# Phase 9 (docs/phases/phase-9.md §7.1, §7.3, D247, D248, §15.1): `rules/plan/levers` and the
+# month function of §7.1 under a scenario. flat(k) = the measured mean C in the calendar year
+# of the newest closed month; from the next year on Σ over the properties of (net_cash +
+# tax_effect) ÷ 12 of the default scenario's projected year, to the cent (the year's cash before
+# the derived tax); a year the scenario does not project keeps the mean. Income changes count
+# from their first to their last month (no end: to the horizon); a one-off counts in its month;
+# a one-off phase 4b proposes (source return_estimate) counts only once accepted.
+#
+# Every case is §15.2's household: newest closed May 2027, reserve 16,830.00, target
+# 26,820.00, plans depot 400.00 and exchange 150.00, horizon 60. `flat_years`: the default
+# scenario's YearFigures per year, or null without a scenario. `months`: a sample of the month
+# function. Step 0 recomputes `months` and `rows` on load; `lever_bounds` goes through
+# hausbuch.schemas.plan.HouseholdLevers.
+bases:
+  household: &household
+    newest_closed: "2027-05"
+    month: {mean_income: "5583.33", mean_regular_spending: "4116.67", mean_rental_cash: "-353.33", buffer_percent: "10"}
+    reserve: "16830.00"
+    target: "26820.00"
+    plans: [{key: depot, monthly: "400.00"}, {key: exchange, monthly: "150.00"}]
+    horizon_months: 60
+  flat_years: &flat_years
+    p1:
+      2028: {net_cash: "-1512.00", tax_effect: "-900.00"}
+      2029: {net_cash: "-1512.00", tax_effect: "-900.00"}
+      2030: {net_cash: "-1512.00", tax_effect: "-900.00"}
+      2031: {net_cash: "-1512.00", tax_effect: "-900.00"}
+      2032: {net_cash: "-1512.00", tax_effect: "-900.00"}
+
+cases:
+  - id: projection_year_replaces_mean
+    pending: "2"
+    description: §15.2
+    <<: *household
+    flat_years: *flat_years
+    expect:
+      months:
+        - {month: "2027-06", flat: "-353.33", free: "1113.33", investable: "1002.00"}
+        - {month: "2027-12", flat: "-353.33", free: "1113.33", investable: "1002.00"}
+        - {month: "2028-01", flat: "-201.00", free: "1265.66", investable: "1139.09"}
+      rows:
+        - {key: reserve_first, reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "84215.77"}
+        - {key: "pause:depot", reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "75215.77"}
+        - {key: "pause:exchange", reached: "2028-08", months_needed: 15, used_up: null, reserve_at_horizon: "60215.77"}
+        - {key: as_is, reached: "2028-12", months_needed: 19, used_up: null, reserve_at_horizon: "51215.77"}
+      todos: []
+
+  - id: income_change_window
+    pending: "2"
+    description: §15.2, −600.00 a month from September 2027 to August 2028
+    <<: *household
+    flat_years: *flat_years
+    income_changes: [{monthly_net: "-600.00", from_month: "2027-09", to_month: "2028-08", note_code: parental_leave}]
+    expect:
+      months:
+        - {month: "2027-09", flat: "-353.33", free: "513.33", investable: "462.00"}
+        - {month: "2028-01", flat: "-201.00", free: "665.66", investable: "599.09"}
+        - {month: "2028-09", flat: "-201.00", free: "1265.66", investable: "1139.09"}
+      rows:
+        - {key: reserve_first, reached: "2028-09", months_needed: 16, used_up: null, reserve_at_horizon: "77735.77"}
+        - {key: "pause:depot", reached: "2028-11", months_needed: 18, used_up: null, reserve_at_horizon: "68735.77"}
+        - {key: "pause:exchange", reached: "2029-05", months_needed: 24, used_up: null, reserve_at_horizon: "53735.77"}
+        - {key: as_is, reached: "2029-11", months_needed: 30, used_up: null, reserve_at_horizon: "44735.77"}
+      todos: []
+
+  - id: reserve_used_up
+    pending: "2"
+    description: §15.2, −1,500.00 a month from September 2027 with no end
+    <<: *household
+    flat_years: *flat_years
+    income_changes: [{monthly_net: "-1500.00", from_month: "2027-09"}]
+    expect:
+      rows:
+        - {key: reserve_first, reached: null, months_needed: null, used_up: null, reserve_at_horizon: "5869.30"}
+        - {key: "pause:depot", reached: null, months_needed: null, used_up: "2031-09", reserve_at_horizon: "-3130.70"}
+        - {key: "pause:exchange", reached: null, months_needed: null, used_up: "2030-01", reserve_at_horizon: "-18130.70"}
+        - {key: as_is, reached: null, months_needed: null, used_up: "2029-07", reserve_at_horizon: "-27130.70"}
+      todos: []
+
+  - id: one_off_in_month
+    pending: "2"
+    description: a typed one-off of −2,000.00 in August 2027 (free cash that month −886.67, no buffer)
+    <<: *household
+    flat_years: *flat_years
+    one_offs: [{month: "2027-08", amount: "-2000.00", source: typed}]
+    expect:
+      months:
+        - {month: "2027-08", flat: "-353.33", free: "-886.67", investable: "-886.67"}
+      rows:
+        - {key: reserve_first, reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "82327.10"}
+        - {key: "pause:depot", reached: "2028-06", months_needed: 13, used_up: null, reserve_at_horizon: "73327.10"}
+        - {key: "pause:exchange", reached: "2028-11", months_needed: 18, used_up: null, reserve_at_horizon: "58327.10"}
+        - {key: as_is, reached: "2029-03", months_needed: 22, used_up: null, reserve_at_horizon: "49327.10"}
+      todos: []
+
+  - id: proposed_refund_not_counted_until_accepted
+    pending: "2"
+    description: phase 4b's expected refund is proposed as a one-off; until accepted the rows are those without it
+    <<: *household
+    flat_years: *flat_years
+    proposed_one_offs: [{month: "2027-09", amount: "850.00", source: return_estimate}]
+    expect:
+      rows:
+        - {key: reserve_first, reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "84215.77"}
+        - {key: "pause:depot", reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "75215.77"}
+        - {key: "pause:exchange", reached: "2028-08", months_needed: 15, used_up: null, reserve_at_horizon: "60215.77"}
+        - {key: as_is, reached: "2028-12", months_needed: 19, used_up: null, reserve_at_horizon: "51215.77"}
+      todos: []
+
+  - id: no_default_scenario_todo
+    pending: "2"
+    description: no default scenario for the flat; the measured mean every month and the to-do „Szenario für die Wohnung anlegen“
+    <<: *household
+    flat_years: null
+    expect:
+      rows:
+        - {key: reserve_first, reached: "2028-03", months_needed: 10, used_up: null, reserve_at_horizon: "76950.00"}
+        - {key: "pause:depot", reached: "2028-05", months_needed: 12, used_up: null, reserve_at_horizon: "67950.00"}
+        - {key: "pause:exchange", reached: "2028-10", months_needed: 17, used_up: null, reserve_at_horizon: "52950.00"}
+        - {key: as_is, reached: "2029-04", months_needed: 23, used_up: null, reserve_at_horizon: "43950.00"}
+      todos: [no_default_scenario]
+
+  - id: lever_bounds
+    pending: "2"
+    description: >-
+      §7.3 through HouseholdLevers; a one-off outside the horizon and an account of another
+      kind in reserve_accounts are refused by the rule and the service, which know the
+      horizon's start and the account (step 2)
+    accepted:
+      - {}
+      - {reserve_target_months: "0", buffer_percent: "0", horizon_months: 12, net_worth_years: 1}
+      - {reserve_target_months: "24", buffer_percent: "50", horizon_months: 240, net_worth_years: 30}
+      - {reserve_target_months: "4.5"}
+      - {value_change: {depot: "-0.500", crypto: "0.500"}}
+      - {value_change: {depot: "0"}}
+      - {value_change: {depot: "0.037", crypto: "-0.015"}}
+      - {income_changes: [{monthly_net: "-600.00", from_month: "2027-09", to_month: "2027-09"}]}
+      - {plan_overrides: [{plan_key: depot, monthly: "0.00"}]}
+    refused:
+      - {reserve_target_months: "-0.5"}
+      - {reserve_target_months: "24.5"}
+      - {reserve_target_months: "4.25"}
+      - {buffer_percent: "-1"}
+      - {buffer_percent: "51"}
+      - {horizon_months: 11}
+      - {horizon_months: 241}
+      - {net_worth_years: 0}
+      - {net_worth_years: 31}
+      - {value_change: {depot: "0.501"}}
+      - {value_change: {crypto: "-0.501"}}
+      - {value_change: {depot: "0.0375"}}
+      - {value_change: {depot: 0.037}}
+      - {income_changes: [{monthly_net: "-600.00", from_month: "2027-09", to_month: "2027-08"}]}
+      - {plan_overrides: [{plan_key: depot}]}
+      - {plan_overrides: [{plan_key: depot, monthly: "100.00", dropped: true}]}
+      - {plan_overrides: [{plan_key: depot, monthly: "100.00"}, {plan_key: depot, dropped: true}]}
+      - {bands: [{figure: ltv, green: "0.60"}, {figure: ltv, red: "1.00"}]}
+      - {bands: [{figure: ltv, green: "1.00", red: "0.60"}]}
+      - {bands: [{figure: share_bank, red: "0.10"}]}

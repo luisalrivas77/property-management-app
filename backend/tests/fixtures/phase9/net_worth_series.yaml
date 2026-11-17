@@ -1,0 +1,74 @@
+# Phase 9 (docs/phases/phase-9.md §5.4, D241, §15.1): `rules/health/figures.series`. One point
+# per month-end with a stored net worth run, the newest run per month-end (by its creation
+# time). The change between two consecutive month-ends is split into `saved` (the later
+# month's S from household_month) and `other` (the difference). A month-end without a run is a
+# gap with the to-do `month_end_missing`.
+#
+# Step 0's readings, recorded in docs/phases/phase-9.md §15.1:
+# - the change is taken only against the month-end directly before; after a gap the point's
+#   change, saved and other are None (no change is spread over two months);
+# - a month-end without a run before the first run is not a gap (the series starts there).
+#
+# `runs`: id, month_end, created (the time it was stored), total. `saved`: the month's S.
+# Step 0 recomputes change and other on load.
+cases:
+  - id: three_points
+    pending: "1"
+    description: §15.2
+    runs:
+      - {id: r1, month_end: "2027-03-31", created: "2027-04-08T08:00:00Z", total: "138900.00"}
+      - {id: r2, month_end: "2027-04-30", created: "2027-05-07T08:00:00Z", total: "140150.00"}
+      - {id: r3, month_end: "2027-05-31", created: "2027-06-03T08:00:00Z", total: "128380.00"}
+    saved: {"2027-03": "1490.00", "2027-04": "1241.00", "2027-05": "-10458.00"}
+    expect:
+      points:
+        - {month_end: "2027-03-31", run: r1, total: "138900.00", change: null, saved: null, other: null}
+        - {month_end: "2027-04-30", run: r2, total: "140150.00", change: "1250.00", saved: "1241.00", other: "9.00"}
+        - {month_end: "2027-05-31", run: r3, total: "128380.00", change: "-11770.00", saved: "-10458.00", other: "-1312.00"}
+      todos: []
+
+  - id: month_without_run
+    pending: "1"
+    runs:
+      - {id: r1, month_end: "2027-03-31", created: "2027-04-08T08:00:00Z", total: "138900.00"}
+      - {id: r3, month_end: "2027-05-31", created: "2027-06-03T08:00:00Z", total: "128380.00"}
+    saved: {"2027-03": "1490.00", "2027-04": "1241.00", "2027-05": "-10458.00"}
+    expect:
+      points:
+        - {month_end: "2027-03-31", run: r1, total: "138900.00", change: null, saved: null, other: null}
+        - {month_end: "2027-05-31", run: r3, total: "128380.00", change: null, saved: null, other: null}
+      gaps: ["2027-04-30"]
+      todos: [month_end_missing]
+
+  - id: two_runs_newest_wins
+    pending: "1"
+    description: a month-end stored again after a late card statement; the newer run counts
+    runs:
+      - {id: r1, month_end: "2027-03-31", created: "2027-04-08T08:00:00Z", total: "138900.00"}
+      - {id: r2a, month_end: "2027-04-30", created: "2027-05-01T08:00:00Z", total: "140560.00"}
+      - {id: r2b, month_end: "2027-04-30", created: "2027-05-20T14:12:00Z", total: "140150.00"}
+    saved: {"2027-03": "1490.00", "2027-04": "1241.00"}
+    expect:
+      points:
+        - {month_end: "2027-03-31", run: r1, total: "138900.00", change: null, saved: null, other: null}
+        - {month_end: "2027-04-30", run: r2b, total: "140150.00", change: "1250.00", saved: "1241.00", other: "9.00"}
+      todos: []
+
+  - id: past_month_end_uses_scenario_of_that_day
+    pending: "1"
+    description: >-
+      D241 amends phase 6 D167 (5): a run stored on 3 Jun 2027 for 31 Jan 2027 values the flat
+      by the default scenario as it stood on 31 Jan (s1, created 2026-12-01), not by s2
+      (created 2027-03-01, which supersedes s1); with neither, by the purchase price
+    capture:
+      month_end: "2027-01-31"
+      stored_on: "2027-06-03"
+      purchase_price: "300000.00"
+      scenarios:
+        - {id: s1, created: "2026-12-01", default: true, value_today: "310000.00"}
+        - {id: s2, created: "2027-03-01", default: true, supersedes: s1, value_today: "320000.00"}
+    expect: {property_estimate: "310000.00", scenario: s1}
+    variants:
+      - description: the month-end lies before every scenario
+        month_end: "2026-11-30"
+        expect: {property_estimate: "300000.00", scenario: null}

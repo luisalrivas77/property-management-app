@@ -1,0 +1,153 @@
+# Phase 9 (docs/phases/phase-9.md §8.4, §8.5, §15.1): `rules/advice/render.render` and
+# `template.render`. Rendering replaces {f:key} by the figure in German format (money in whole
+# euros, half-up, with the thousands point and " €"; a percent with one decimal and " %"; months
+# with one decimal and " Monate"; a month as „März 2028“; a count as digits), {k:} and {p:} by
+# the stored label, {c:code} by the class's fixed German word, {a:key} by the asset's stored
+# name. It runs on validated text only and raises on an unknown slot rather than print it.
+#
+# The template cases name the topic sentences of explain_validator.yaml's `template_*` cases
+# that template.render writes for the given states (step 4 writes the final wording; each is
+# also a must-accept case of the validator).
+#
+# Step 0's readings, recorded in docs/phases/phase-9.md §15.1:
+# - a negative value keeps its sign as "-" (ASCII hyphen-minus) before the number;
+# - one month is still written "1,0 Monate" (one decimal, never "Monat");
+# - the space before € and % is an ordinary space.
+facts: &facts
+  mode: own_use
+  as_of: "2027-06-03"
+  figures:
+    - {key: reserve, type: money, value: "16830.00"}
+    - {key: reserve_gap, type: money, value: "9990.00"}
+    - {key: investable, type: money, value: "1002.49"}
+    - {key: buffer, type: money, value: "111.50"}
+    - {key: net_worth_change, type: money, value: "-11770.00"}
+    - {key: projection_total, type: money, value: "257747.90"}
+    - {key: ltv, type: percent, value: "0.7388"}
+    - {key: assumed_change_depot, type: percent, value: "0.037"}
+    - {key: savings_rate, type: percent, value: "-0.4648"}
+    - {key: reserve_months, type: months, value: "3.8"}
+    - {key: reserve_target_months, type: months, value: "1.0"}
+    - {key: path_as_is_reached, type: month, value: "2029-04"}
+    - {key: projection_until, type: month, value: "2032-12"}
+    - {key: basis_months, type: count, value: "3"}
+  accounts: {k1: bank_savings}
+  plans: {p1: depot}
+  assets: {a1: depot}
+labels: &labels
+  accounts: {k1: Tagesgeld Nordstern}
+  plans: {p1: Depot Weltreise}
+  assets: {a1: Musterfonds Global Aktien}
+
+cases:
+  - id: money_whole_euros
+    pending: "4"
+    facts: *facts
+    labels: *labels
+    renders:
+      - {text: "{f:reserve_gap}", expect: "9.990 €"}
+      - {text: "{f:investable}", expect: "1.002 €"}
+      - {text: "{f:buffer}", expect: "112 €"}
+      - {text: "{f:projection_total}", expect: "257.748 €"}
+
+  - id: percent_one_decimal
+    pending: "4"
+    facts: *facts
+    labels: *labels
+    renders:
+      - {text: "{f:ltv}", expect: "73,9 %"}
+      - {text: "{f:assumed_change_depot}", expect: "3,7 %"}
+
+  - id: months
+    pending: "4"
+    facts: *facts
+    labels: *labels
+    renders:
+      - {text: "Deine Reserve reicht für {f:reserve_months}.", expect: "Deine Reserve reicht für 3,8 Monate."}
+      - {text: "{f:reserve_target_months}", expect: "1,0 Monate"}
+
+  - id: month_name
+    pending: "4"
+    facts: *facts
+    labels: *labels
+    renders:
+      - {text: "{f:path_as_is_reached}", expect: "April 2029"}
+      - {text: "{f:projection_until}", expect: "Dezember 2032"}
+
+  - id: account_label
+    pending: "4"
+    facts: *facts
+    labels: *labels
+    renders:
+      - {text: "Die Reserve liegt auf {k:k1}.", expect: "Die Reserve liegt auf Tagesgeld Nordstern."}
+      - {text: "{p:p1} läuft weiter.", expect: "Depot Weltreise läuft weiter."}
+
+  - id: asset_name
+    pending: "4"
+    facts: *facts
+    labels: *labels
+    renders:
+      - {text: "{a:a1} ist breit gestreut.", expect: "Musterfonds Global Aktien ist breit gestreut."}
+      - {text: "Für {c:depot} und {c:liabilities}.", expect: "Für Fonds und Wertpapiere und Schulden."}
+
+  - id: unknown_slot_raises
+    pending: "4"
+    facts: *facts
+    labels: *labels
+    raises: ["{f:monthly_need}", "{k:k9}", "{a:a7}", "{c:gold}", "{x:reserve}"]
+
+  - id: template_below_target
+    pending: "4"
+    facts: *facts
+    states: {reserve_state: below, investable_state: positive, left_state: positive, basis_state: full, trend_state: down, projection_state: absent}
+    expect_sentences: [template_reserve_below, template_surplus_positive]
+
+  - id: template_reached
+    pending: "4"
+    facts: *facts
+    states: {reserve_state: reached, investable_state: positive, left_state: positive, basis_state: full, trend_state: up, projection_state: absent, light_reserve: green}
+    expect_sentences: [template_reserve_reached, template_surplus_positive]
+
+  - id: template_generic
+    pending: "4"
+    description: generic mode names no account, plan or asset
+    facts: {mode: generic, as_of: "2027-06-03", figures: [{key: reserve, type: money, value: "16830.00"}]}
+    states: {reserve_state: below, investable_state: positive, left_state: positive, basis_state: full, trend_state: down, projection_state: absent}
+    expect_no_slots: [k, p, a]
+
+  - id: template_short_basis
+    pending: "4"
+    facts: *facts
+    states: {reserve_state: below, investable_state: positive, left_state: positive, basis_state: short, trend_state: down, projection_state: absent}
+    expect_sentences: [template_basis_short]
+    expect_rendered_contains: ["erst auf 3 abgeschlossene Monate"]
+
+  - id: negative_percent
+    pending: "4"
+    facts: *facts
+    labels: *labels
+    renders:
+      - {text: "{f:savings_rate}", expect: "-46,5 %"}
+      - {text: "{f:net_worth_change}", expect: "-11.770 €"}
+
+  - id: template_projection
+    pending: "4"
+    facts: *facts
+    labels: *labels
+    states: {reserve_state: below, investable_state: positive, left_state: positive, basis_state: full, trend_state: down, projection_state: shown}
+    expect_sentences: [template_projection]
+    expect_rendered_contains: ["Mit eurer Annahme von 3,7 % pro Jahr für Fonds und Wertpapiere läge euer Vermögen Ende Dezember 2032 bei 257.748 €."]
+
+  - id: mark_sentence
+    pending: "4"
+    description: a sentence of rules/health/bands.yaml rendered with its figures
+    facts:
+      mode: own_use
+      as_of: "2027-06-03"
+      figures:
+        - {key: ltv, type: percent, value: "0.7388"}
+        - {key: band_ltv_green, type: percent, value: "0.60"}
+        - {key: band_ltv_red, type: percent, value: "1.00"}
+    sentence: ltv.amber
+    renders:
+      - {text: "Das liegt zwischen euren Grenzen von {f:band_ltv_green} und {f:band_ltv_red}.", expect: "Das liegt zwischen euren Grenzen von 60,0 % und 100,0 %."}
