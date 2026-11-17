@@ -237,7 +237,7 @@ def window(closed: dict[str, bool]) -> CmWindow:
 
 
 class CmCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     month: YearMonth | None = None
     accounts: list[CmAccount] | None = None
     covered_to: dict[str, date] | None = None
@@ -379,7 +379,7 @@ class HmMonth(Schema):
 
 
 class HmCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     month: YearMonth | None = None
     lines: list[HmLine] = Field(default_factory=list)
     months: list[HmMonth] = Field(default_factory=list)
@@ -461,7 +461,7 @@ def savings_rate(months: list[SrMonth]) -> SrExpect:
 
 
 class SrCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     months: list[SrMonth] = Field(min_length=1, max_length=12)
     expect: SrExpect
 
@@ -577,7 +577,7 @@ def reserve(
 
 
 class RsCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     today: date
     balances: list[RsBalance]
     mean_regular_spending: Money
@@ -666,7 +666,7 @@ def debt(
 
 
 class DbCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     classes: dict[NetWorthClass, Money]
     estimates: dict[str, DbEstimate]
     loans: list[DbLoan]
@@ -784,7 +784,7 @@ def estimate_on(capture: NsCapture, month_end: date) -> NsEstimate:
 
 
 class NsCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     runs: list[NsRun] = Field(default_factory=list)
     saved: dict[YearMonth, Money] = Field(default_factory=dict)
     capture: NsCapture | None = None
@@ -906,7 +906,7 @@ class LtVariant(Schema):
 
 
 class LtCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     figures: LtFigures | None = None
     bands: list[BandLimits] | None = None
     expect: LtExpect | None = None
@@ -1758,7 +1758,7 @@ class HwExpect(Schema):
 
 
 class HwCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     household: HwHousehold
     expect: HwExpect
 

@@ -219,6 +219,29 @@ class ClosedMonth(Schema):
         return self
 
 
+class AccountCoverage(Schema):
+    """Input of `rules/health/window.closed` (step 1): one active bank account or credit card
+    of purpose private or rental, as the service read its coverage (Q-O133)."""
+
+    account_id: UUID
+    label: str
+    credit_card: bool = False  # names the card's upload in the to-do
+    first_day: date | None = None  # its first imported day; None: nothing imported yet
+    covered_to: date | None = None  # the last day its imports or fetches reach
+    idle: bool = False  # a card idle by phase 5 D122 amended (6): covered
+    own_opening: bool = False  # its opening on first_day is its first statement's own
+
+
+class MonthFacts(Schema):
+    """Input of `rules/health/window.closed` (step 1): what decides whether a month is
+    closed (D231)."""
+
+    month: YearMonth
+    accounts: list[AccountCoverage] = Field(default_factory=list)
+    lines_waiting: int = Field(default=0, ge=0)  # lines booked in the month in Zu prüfen
+    transfers_open: int = Field(default=0, ge=0)  # transfer legs of the month still open
+
+
 class Window(Schema):
     """The unbroken run of closed months ending at the newest, cut to 12 (D231)."""
 
