@@ -8,8 +8,10 @@ from decimal import Decimal
 
 import pytest
 from db.matching_support import World
+from db.test_cli_evals_report import _owner_url
 from sqlalchemy import func, select, update
 
+from hausbuch import cli
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import health_snapshot as health_snapshot_table
@@ -235,3 +237,37 @@ def test_health_check_recomputes_each_stored_month(world):
     with pytest.raises(RuleViolationError) as refused:
         world.query(health.health_check, "2026-01", "2026-03", date(2027, 4, 10))
     assert list(refused.value.codes) == [HEALTH_MONTH_END_MISSING]
+
+
+class _April(datetime):
+    """The CLI's clock on 10 Apr 2027, the day these tests' months have ended."""
+
+    @classmethod
+    def now(cls, tz=None):  # noqa: ANN001, ANN206
+        return datetime(2027, 4, 10, 10, 0, tzinfo=UTC).astimezone(tz)
+
+
+def test_the_cli_prints_gleich_or_the_difference(world, dbname, monkeypatch, capsys):
+    """`hausbuch health-check`: exit 0 and „gleich“ per figure while the stored months match,
+    exit 1 with the difference once a later booking moved one; a range with no snapshot is
+    an error on stderr. Nothing is written."""
+    _closed_history(world)
+    for day in (date(2027, 1, 31), date(2027, 2, 28), date(2027, 3, 31)):
+        world.cmd(net_worth.capture_month_end, day)
+    world.cmd(health.store_missing_snapshots)
+    monkeypatch.setattr(cli, "datetime", _April)
+    environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}
+    argv = ["health-check", "--workspace", str(world.ws), "--from", "2027-01"]
+    assert cli.main(argv, environ) == cli.EXIT_OK
+    out = capsys.readouterr().out.splitlines()
+    assert "2027-03 free_cash: gleich" in out
+    assert out[-1] == "2027-01 bis 2027-03: alles gleich"
+    _booked(world, date(2027, 3, 25), "-100.00", C.INSURANCE)
+    assert cli.main(argv, environ) == cli.EXIT_ERROR
+    out = capsys.readouterr().out.splitlines()
+    assert any(line.startswith("2027-03 free_cash: Differenz -") for line in out)
+    assert out[-1] == "2027-01 bis 2027-03: abweichend"
+    missing = ["health-check", "--workspace", str(world.ws), "--from", "2026-01", "--to", "2026-03"]
+    assert cli.main(missing, environ) == cli.EXIT_ERROR
+    assert "health.month_end_missing" in capsys.readouterr().err
+    assert (_snapshots(world), _events(world)) == (3, 3)

@@ -7,8 +7,8 @@ Nov 2026, D160 amended (4) 14 Nov 2026, D165 (a) and D176 (3) amended 14 Nov 202
 D167 (c) amended 15 Nov 2026, D162 amended (6) and (7) 15 Nov 2026, D178 amended (3) and (4) 16
 Nov 2026).
 
-Also `hausbuch relink-chain` (phase 7 D184, step 5) and `hausbuch survey-solana` (phase 7,
-17 Nov 2026), described below.
+Also `hausbuch relink-chain` (phase 7 D184, step 5), `hausbuch survey-solana` (phase 7,
+17 Nov 2026) and `hausbuch health-check` (phase 9 D259 amended 17 Nov 2026), described below.
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -99,6 +99,17 @@ share their transaction hash and code may confirm the proposed one (D186 (1)), a
 sync and exchange import now does. A second run finds nothing. --dry-run rolls back and prints
 what it would link and confirm.
 
+`health-check` runs services.health.health_check once for a workspace, with the same owner URL,
+in a transaction it rolls back (phase 9 D259 amended 17 Nov 2026, §16.1): each month from
+--from to --to (default: the last month that has ended) with a stored key-figures snapshot is
+recomputed from the stored rows, with the month-end run and the reserve levers the snapshot
+names, and printed per figure as „gleich“ or the difference within the tolerances (amounts to
+the euro, ratios to 0.1 percentage points, months to 0.1); each account line of the month-end
+run is read again for its day and printed with its reason when it no longer agrees. It exits 0
+when everything matches and 1 when anything differs or the months cannot be checked. The
+figures are printed on the operator's terminal only; the repository records only the date, the
+months and whether they matched (§15.3).
+
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
 14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
 holds its IBAN or number, and every ready depot suggestion is rebuilt with the depot it prints
@@ -123,6 +134,7 @@ import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -470,6 +482,68 @@ def relink_transfers(args: argparse.Namespace, environ: Mapping[str, str]) -> in
     verb = "would book" if args.dry_run else "booked"
     print(f"{verb} {confirmed} linked line(s) the model had only proposed as the transfer")
     return EXIT_OK
+
+
+# --- health-check ---------------------------------------------------------------------
+
+
+def health_check(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.health.health_check once for a workspace (phase 9 D259 amended 17 Nov 2026):
+    per stored month and figure „gleich“ or the difference, per input that no longer agrees
+    its reason. Read-only: the transaction is rolled back. A refusal (no snapshot in the range,
+    a month between two without one) is printed as an error."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.services.documents import LOCAL_TIME_ZONE
+    from hausbuch.services.errors import RuleViolationError
+    from hausbuch.services.health import health_check as check
+    from hausbuch.services.net_worth import last_month_end
+
+    today = datetime.now(LOCAL_TIME_ZONE).date()
+    last = args.to or last_month_end(today).isoformat()[:7]
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                result = check(conn, args.first, last, today)
+                raise _DryRun  # read-only: roll back whatever the read touched
+        except _DryRun:
+            pass
+        except RuleViolationError as exc:
+            raise CliError(str(exc)) from None
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    for row in result.rows:
+        if row.equal:
+            verdict = "gleich"
+        elif row.stored is None or row.recomputed is None:
+            verdict = f"gespeichert {row.stored or '–'}, neu berechnet {row.recomputed or '–'}"
+        else:
+            difference = Decimal(row.recomputed) - Decimal(row.stored)
+            verdict = f"Differenz {difference:+} (gespeichert {row.stored})"
+        print(f"{row.month} {row.figure}: {verdict}")
+    for item in result.inputs:
+        if not item.agrees:
+            print(f"{item.month} Konto {item.account_id}: {item.reason}")
+    months = f"{result.months[0]} bis {result.months[-1]}"
+    if result.match:
+        print(f"{months}: alles gleich")
+        return EXIT_OK
+    print(f"{months}: abweichend")
+    return EXIT_ERROR
+
+
+def _month(value: str) -> str:
+    if len(value) != 7 or value[4] != "-" or not (value[:4] + value[5:]).isdigit():
+        raise argparse.ArgumentTypeError("expected YYYY-MM")
+    if not 1 <= int(value[5:]) <= 12:
+        raise argparse.ArgumentTypeError("expected YYYY-MM")
+    return value
 
 
 # --- relink-chain ---------------------------------------------------------------------
@@ -1143,6 +1217,20 @@ def _parser() -> argparse.ArgumentParser:
     relinked.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     relinked.add_argument("--dry-run", action="store_true", help="count only, change nothing")
     relinked.set_defaults(command=relink_transfers, command_name="relink-transfers")
+
+    checked = commands.add_parser(
+        "health-check",
+        help="recompute each stored month's key figures from the stored rows and print "
+        "„gleich“ or the difference per figure (phase 9 D259 amended)",
+    )
+    checked.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    checked.add_argument(
+        "--from", dest="first", type=_month, required=True, help="the first month, YYYY-MM"
+    )
+    checked.add_argument(
+        "--to", type=_month, default=None, help="the last month, YYYY-MM (default: last ended)"
+    )
+    checked.set_defaults(command=health_check, command_name="health-check")
 
     returned = commands.add_parser(
         "pair-returns",
