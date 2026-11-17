@@ -7,7 +7,8 @@ Nov 2026, D160 amended (4) 14 Nov 2026, D165 (a) and D176 (3) amended 14 Nov 202
 D167 (c) amended 15 Nov 2026, D162 amended (6) and (7) 15 Nov 2026, D178 amended (3) and (4) 16
 Nov 2026).
 
-Also `hausbuch relink-chain` (phase 7 D184, step 5), described below.
+Also `hausbuch relink-chain` (phase 7 D184, step 5) and `hausbuch survey-solana` (phase 7,
+17 Nov 2026), described below.
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -103,6 +104,17 @@ what it would link and confirm.
 holds its IBAN or number, and every ready depot suggestion is rebuilt with the depot it prints
 pre-selected and its Steuerjahr. The worker runs it because the stored files are read from the
 object store, which this computer does not hold. --dry-run counts and queues nothing.
+
+`survey-solana` (phase 7, 17 Nov 2026, before liquidity pools are supported) reads one Solana
+wallet's whole history from its RPC and reports what it holds and how the current classifier
+and routing would treat it (services/chain/survey.py). It only reads: it books nothing and
+writes nothing to the database. The address comes from a file (--address-file) and is never
+printed, logged or written outside the cache under --out-dir, where every RPC answer is kept so
+a second run resumes without asking again; report.md goes there too. The RPC address comes from
+--rpc-url-env, else the one typed in the app for --workspace (read in a read-only transaction,
+which needs HAUSBUCH_SESSION_KEY to decrypt), else HAUSBUCH_SOLANA_RPC_URL, else the public
+endpoint; it is never printed. With --workspace the classifier also knows the workspace's own
+addresses, decoder rows, held tokens and exchange withdrawals, as the first sync would.
 """
 
 import argparse
@@ -509,6 +521,202 @@ def relink_chain(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
         print(f"left {result.skipped_locked} for the next run (a leg was being answered)")
     if queued:
         print(f"queued {queued} wallet sync(s) to look up exchange withdrawals by their hash")
+    return EXIT_OK
+
+
+# --- survey-solana --------------------------------------------------------------------
+
+DEFAULT_SURVEY_DIR = "~/hausbuch-samples/solana-survey"
+
+
+def _survey_url(value: str, where: str) -> str:
+    parts = urlsplit(value)
+    if parts.scheme not in ("https", "http") or not parts.hostname:
+        raise CliError(f"the Solana RPC address in {where} is not an http(s) URL")
+    return value
+
+
+def _hex_key(environ: Mapping[str, str], name: str) -> bytes | None:
+    value = environ.get(name, "").strip()
+    if not value:
+        return None
+    try:
+        raw = bytes.fromhex(value)
+    except ValueError:
+        raise CliError(f"{name} is not a hex key") from None
+    if len(raw) < 32:
+        raise CliError(f"{name} is shorter than 32 bytes")
+    return raw
+
+
+def _survey_workspace(workspace: UUID, environ: Mapping[str, str], address: str, *, want_url: bool):
+    """One read-only transaction in the workspace, rolled back: the Solana RPC address typed
+    in the app (None: none typed, or not `want_url`, when --rpc-url-env names one) and the
+    classifier's context as the address's first sync would build it (sync._context, with
+    this address as one more own address)."""
+    import dataclasses
+    from uuid import uuid4
+
+    from sqlalchemy import select, text
+
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.db.tables import asset as asset_table
+    from hausbuch.schemas.app_secrets import AppSecretName, AppSecretSource
+    from hausbuch.schemas.chain import Chain
+    from hausbuch.services import app_secrets
+    from hausbuch.services.chain.sync import _context, _Own
+    from hausbuch.settings import Settings
+
+    session_key = _hex_key(environ, "HAUSBUCH_SESSION_KEY")
+    hmac_key = _hex_key(environ, "HAUSBUCH_IBAN_HMAC_KEY")
+    settings = Settings(
+        database_url="postgresql+psycopg://unused@localhost/unused",
+        # placeholders only to build Settings; the session key's absence is checked below
+        iban_hmac_key=hmac_key or bytes([1]) * 32,
+        session_key=session_key or bytes([2]) * 32,
+        rp_id="localhost",
+        origin="https://localhost",
+        blob_store="local",
+        blob_root=tempfile.gettempdir(),
+    )
+    engine = owner_engine(environ)
+    found = []
+    try:
+        try:
+            with workspace_transaction(engine, workspace) as conn:
+                conn.execute(text("SET TRANSACTION READ ONLY"))
+                url: str | None = None
+                typed = (
+                    app_secrets.lookup(conn, settings, AppSecretName.SOLANA_RPC_URL)
+                    if want_url
+                    else None
+                )
+                if typed is not None and typed.source in (
+                    AppSecretSource.APP,
+                    AppSecretSource.UNREADABLE,
+                ):
+                    if session_key is None:
+                        raise CliError(
+                            "a Solana RPC address is typed in the app for this workspace: set "
+                            "HAUSBUCH_SESSION_KEY to read it, or pass --rpc-url-env"
+                        )
+                    if typed.value is None:
+                        raise CliError(
+                            "the Solana RPC address typed in the app does not decrypt with "
+                            "this HAUSBUCH_SESSION_KEY; pass --rpc-url-env instead"
+                        )
+                    url = typed.value.get_secret_value()
+                native = conn.execute(
+                    select(asset_table.c.id).where(
+                        asset_table.c.chain == Chain.SOLANA.value,
+                        asset_table.c.contract_address.is_(None),
+                    )
+                ).scalar_one_or_none()
+                ctx = _context(
+                    conn,
+                    Chain.SOLANA,
+                    address,
+                    uuid4(),
+                    {address: _Own(uuid4(), "")},
+                    native or uuid4(),
+                    None,
+                    hmac_key,
+                )
+                ctx = dataclasses.replace(ctx, own_addresses=ctx.own_addresses | {address})
+                found.append((url, ctx))
+                raise _DryRun  # never commit, though nothing was written
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not read the workspace ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    return found[0]
+
+
+def survey_solana(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.chain.survey.run_survey for one address read from a file (see the module
+    docstring): the report to stdout and to report.md, progress counts to stderr."""
+    from pydantic import SecretStr
+
+    from hausbuch.rules.chain.address import validate
+    from hausbuch.rules.chain.classify import ClassifyContext
+    from hausbuch.rules.errors import RuleError
+    from hausbuch.schemas.chain import Chain
+    from hausbuch.services.chain import survey
+    from hausbuch.services.chain.solana_rpc import SolanaRpc
+    from hausbuch.settings import DEFAULT_SOLANA_RPC_RPS, SOLANA_PUBLIC_RPC_URL
+
+    if args.rps <= 0:
+        raise CliError("--rps is a positive number of requests per second")
+    if args.max_tx is not None and args.max_tx < 1:
+        raise CliError("--max-tx is a positive number of transactions")
+    try:
+        content = Path(args.address_file).expanduser().read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise CliError(f"cannot read the address file ({type(exc).__name__})") from None
+    try:
+        address = validate(Chain.SOLANA, content.strip())
+    except RuleError:
+        raise CliError("the address file does not hold one Solana address") from None
+
+    ctx = ClassifyContext(chain=Chain.SOLANA, address=address, own_addresses=frozenset({address}))
+    context = "the public registry and decoders, this address as the only own one"
+    typed: str | None = None
+    if args.workspace is not None:
+        typed, ctx = _survey_workspace(
+            args.workspace, environ, address, want_url=not args.rpc_url_env
+        )
+        context = "the workspace's own addresses, decoder rows, held tokens and withdrawals"
+    if args.rpc_url_env:
+        value = environ.get(args.rpc_url_env, "").strip()
+        if not value:
+            raise CliError(f"{args.rpc_url_env} is not set")
+        url, source = _survey_url(value, args.rpc_url_env), f"the variable {args.rpc_url_env}"
+    elif typed is not None:
+        url, source = _survey_url(typed, "the app"), "the address typed in the app"
+    elif environ.get("HAUSBUCH_SOLANA_RPC_URL", "").strip():
+        value = environ["HAUSBUCH_SOLANA_RPC_URL"].strip()
+        url, source = _survey_url(value, "HAUSBUCH_SOLANA_RPC_URL"), "HAUSBUCH_SOLANA_RPC_URL"
+    else:
+        url, source = SOLANA_PUBLIC_RPC_URL, "the public endpoint (api.mainnet-beta.solana.com)"
+    try:
+        sync_rps = int(environ.get("HAUSBUCH_SOLANA_RPC_RPS", "") or DEFAULT_SOLANA_RPC_RPS)
+    except ValueError:
+        raise CliError("HAUSBUCH_SOLANA_RPC_RPS is not a whole number") from None
+
+    out_dir = Path(args.out_dir).expanduser()
+    try:
+        out_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    except OSError as exc:
+        raise CliError(f"cannot create the output directory ({type(exc).__name__})") from None
+    transport = survey.CachedPost(out_dir / "cache", survey.default_post(), rps=args.rps)
+    rpc = SolanaRpc(url=SecretStr(url), post=transport, sleep=lambda _seconds: None)
+    print(f"reading through {source} at {args.rps:g} request(s) a second", file=sys.stderr)
+    try:
+        result = survey.run_survey(
+            address,
+            rpc=rpc,
+            transport=transport,
+            ctx=ctx,
+            sync_budget=sync_rps * 600,
+            max_tx=args.max_tx,
+            rpc_source=source,
+            context_label=context,
+            progress=lambda line: print(line, file=sys.stderr),
+        )
+    except survey.SurveyError as exc:
+        raise CliError(str(exc)) from None
+    except Exception as exc:  # noqa: BLE001 - a message could carry an address or signature
+        raise CliError(f"the survey failed ({type(exc).__name__}); its cache is kept") from None
+    report = out_dir / "report.md"
+    survey.write_report(report, result.report)
+    print(result.report)
+    print(f"report written to {report}", file=sys.stderr)
     return EXIT_OK
 
 
@@ -987,6 +1195,35 @@ def _parser() -> argparse.ArgumentParser:
     chain_links.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     chain_links.add_argument("--dry-run", action="store_true", help="count only, change nothing")
     chain_links.set_defaults(command=relink_chain, command_name="relink-chain")
+
+    surveyor = commands.add_parser(
+        "survey-solana",
+        help="read one Solana wallet's history and report what the current classifier would "
+        "do with it; books nothing and writes nothing to the database",
+    )
+    surveyor.add_argument(
+        "--address-file", required=True, help="a file holding the address (never printed)"
+    )
+    surveyor.add_argument(
+        "--out-dir",
+        default=DEFAULT_SURVEY_DIR,
+        help=f"the cache and report.md, outside the repo (default {DEFAULT_SURVEY_DIR})",
+    )
+    surveyor.add_argument(
+        "--max-tx", type=int, help="read at most this many transactions (an even sample)"
+    )
+    surveyor.add_argument(
+        "--rps", type=float, default=2.0, help="requests a second sent to the RPC (default 2)"
+    )
+    surveyor.add_argument(
+        "--rpc-url-env", help="the name of an environment variable holding the RPC address"
+    )
+    surveyor.add_argument(
+        "--workspace",
+        type=UUID,
+        help="read the workspace's typed RPC address and classifier context, read-only",
+    )
+    surveyor.set_defaults(command=survey_solana, command_name="survey-solana")
 
     follow = commands.add_parser(
         "follow-accounts",
