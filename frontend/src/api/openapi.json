@@ -20246,6 +20246,16 @@
                 "type": "null"
               }
             ]
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HealthTodo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -20256,7 +20266,7 @@
           "closed"
         ],
         "title": "HealthMonthView",
-        "description": "GET /health/months: one calendar month on read (D232, D242). `household` with its\nsources; `closed` with its reasons and to-dos. `snapshot_id` names the newest stored row\nof the month; `stored` is that row's month (without sources) only when it differs from\nthe month on read, the screen's „seit dem Abschluss geändert“ with both values."
+        "description": "GET /health/months: one calendar month on read (D232, D242). `household` with its\nsources; `closed` with its reasons and to-dos. `snapshot_id` names the newest stored row\nof the month; `stored` is that row's month (without sources) only when it differs from\nthe month on read, the screen's „seit dem Abschluss geändert“ with both values. `todo`:\n„Monatsabschluss festhalten“ for a month that has ended and is closed but has no snapshot\nand no month-end run, the one thing POST /health/snapshots would refuse it for."
       },
       "HealthSnapshot": {
         "properties": {

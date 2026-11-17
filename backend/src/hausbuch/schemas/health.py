@@ -743,13 +743,16 @@ class HealthMonthView(Schema):
     """GET /health/months: one calendar month on read (D232, D242). `household` with its
     sources; `closed` with its reasons and to-dos. `snapshot_id` names the newest stored row
     of the month; `stored` is that row's month (without sources) only when it differs from
-    the month on read, the screen's „seit dem Abschluss geändert“ with both values."""
+    the month on read, the screen's „seit dem Abschluss geändert“ with both values. `todo`:
+    „Monatsabschluss festhalten“ for a month that has ended and is closed but has no snapshot
+    and no month-end run, the one thing POST /health/snapshots would refuse it for."""
 
     month: YearMonth
     household: HouseholdMonth
     closed: ClosedMonth
     snapshot_id: UUID | None = None
     stored: HouseholdMonth | None = None
+    todo: HealthTodo | None = None
 
     @model_validator(mode="after")
     def _same_month(self) -> Self:

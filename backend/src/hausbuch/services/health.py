@@ -97,6 +97,8 @@ from hausbuch.schemas.health import (
     HealthSnapshotFigures,
     HealthSnapshotOutcome,
     HealthSnapshotResult,
+    HealthTodo,
+    HealthTodoCode,
     HouseholdMonth,
     MonthFacts,
     MonthLine,
@@ -716,6 +718,10 @@ def health_months(conn: Connection, first: str, last: str, today: date) -> list[
             held = snapshot.figures.month
             if held == read.household.model_copy(update={"sources": {}}):
                 held = None
+        end = month_bounds(month)[1]
+        todo = None
+        if snapshot is None and read.closed.closed and end < today:
+            todo = None if latest_run(conn, end) is not None else _month_end_todo(end)
         out.append(
             HealthMonthView(
                 month=month,
@@ -723,9 +729,25 @@ def health_months(conn: Connection, first: str, last: str, today: date) -> list[
                 closed=read.closed,
                 snapshot_id=None if snapshot is None else snapshot.id,
                 stored=held,
+                todo=todo,
             )
         )
     return out
+
+
+def _month_end_todo(end: date) -> HealthTodo:
+    """A closed month whose month-end has no run: its key figures cannot be stored until the
+    month-end is (D242). The Übersicht's Nettovermögen card holds the button; the month-end
+    is named, since POST /net-worth/snapshots {as_of} takes a past one (D241)."""
+    return HealthTodo(
+        code=HealthTodoCode.MONTH_END_MISSING,
+        text=(
+            f"Für den {end.strftime('%d.%m.%Y')} ist kein Monatsabschluss gespeichert; ohne "
+            "ihn lassen sich die Kennzahlen des Monats nicht festhalten."
+        ),
+        action="Monatsabschluss festhalten",
+        href=f"/?month_end={end.isoformat()}",
+    )
 
 
 def net_worth_series(conn: Connection, today: date) -> list[NetWorthPoint]:
