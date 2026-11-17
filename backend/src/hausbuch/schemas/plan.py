@@ -34,6 +34,14 @@ ValueChangeRate = Annotated[
     _STRING_ONLY,
     _string_schema(3, signed=True),
 ]
+# An assumption's value (§7.5 (9)): a typed depot or crypto rate (ValueChangeRate, three
+# places, signed) or phase 4's growth lever (Rate, six places); bounded by both.
+AssumptionValue = Annotated[
+    Decimal,
+    Field(ge=Decimal("-0.5"), lt=Decimal("1"), max_digits=7, decimal_places=6),
+    _STRING_ONLY,
+    _string_schema(6, signed=True),
+]
 # A savings plan's key: stable per destination (an account or a payee pattern).
 PlanKey = Annotated[str, Field(pattern=r"^[a-z0-9_-]{1,64}$")]
 # A path: reserve_first, as_is, or pause:<plan key> (D246).
@@ -317,7 +325,7 @@ class ProjectionAssumption(Schema):
     """What was assumed, by which scenario row (§7.5 (9))."""
 
     kind: AssumptionKind
-    value: Decimal
+    value: AssumptionValue
     scenario_id: UUID  # a household_scenario or, for the flat, a projection_scenario
     property_id: UUID | None = None
     created_at: datetime
