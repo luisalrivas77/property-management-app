@@ -1,0 +1,53 @@
+# Phase 9 (docs/phases/phase-9.md §9.3, §15.1, D258 layer 2): the eval list of instrument
+# names and the eleven carriers. The test (step 4) places every name into every carrier, in
+# both modes, and expects each generated text to be rejected; it prints the number of texts
+# and, per text, which check rejected it, so the share the lexicon alone catches is visible.
+#
+# Public market names in blocks are market data, not household facts (Q-O137, settled 17 Nov
+# 2026): nothing in this file, its order or its comments says what the household holds, and
+# the "held" sets of every case in this phase are invented. The list is separate from
+# rules/advice/advice_lexicon.yaml on purpose; most names here are not in the lexicon, so this
+# layer tests checks 5, 8 and 8b as well as 7 (§9.3). The invented block holds names no list
+# knows. "Zephyron" (§15.2) is in no list, this one included.
+#
+# A carrier's `sentence` holds <NAME> where the transformed name goes; it is otherwise made of
+# words of rules/advice/advice_vocabulary.txt. `transform` is applied to the name first:
+#   plain, lower (lower case), upper (upper case), spaced (a space between every letter),
+#   hyphenated (a hyphen after the first half), compound (the name joined to "fonds"),
+#   zero_width (U+200B after the first letter), lookalike (the first a, e, o, p, c or x
+#   replaced by its Cyrillic look-alike; a name with none of them gets U+0430 prefixed),
+#   dollar ($ before the name), braces ({ } around the name).
+# Every case is pending until step 4.
+pending: "4"
+
+carriers:
+  - {id: plain, transform: plain, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
+  - {id: lower_case, transform: lower, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
+  - {id: upper_case, transform: upper, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
+  - {id: spaced_letters, transform: spaced, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
+  - {id: hyphenated, transform: hyphenated, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
+  - {id: in_compound, transform: compound, sentence: "Ein Teil eures Vermögens liegt im <NAME>."}
+  - {id: zero_width, transform: zero_width, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
+  - {id: lookalike_letter, transform: lookalike, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
+  - {id: dollar_name, transform: dollar, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
+  - {id: in_braces, transform: braces, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
+  - {id: valid_sentence, transform: plain, sentence: "Eure Reserve reicht für {f:reserve_months}, und mit <NAME> wäre euer Vermögen breiter gestreut."}
+
+names:
+  fund_issuers: [iShares, Vanguard, Xtrackers, Amundi, Invesco, WisdomTree, VanEck, HANetf,
+    Ossiam, Fidelity, JPMorgan, "Franklin Templeton", Deka, DWS, "Union Investment", Comgest,
+    "Flossbach von Storch", Carmignac, Acatis, Ethna, Lyxor, UBS, "BNP Paribas Easy",
+    "Legal and General", SPDR, "Global X", BlackRock]
+  index_names: ["MSCI World", "MSCI ACWI", "MSCI Emerging Markets", "FTSE All-World",
+    "FTSE Developed", "S&P 500", "Nasdaq-100", "Dow Jones", DAX, MDAX, "Euro Stoxx 50",
+    "Stoxx Europe 600", "Nikkei 225", "Russell 2000", "CAC 40"]
+  brokers_and_banks: ["Trade Republic", "Scalable Capital", comdirect, Consorsbank, flatex,
+    Smartbroker, onvista, ING, DKB, Sparkasse, Volksbank, "Deutsche Bank", Commerzbank,
+    Postbank, N26, "Interactive Brokers", DEGIRO, justTRADE]
+  coins: [Bitcoin, Ethereum, Solana, Cardano, XRP, Dogecoin, "Shiba Inu", Polkadot, Chainlink,
+    Avalanche, Litecoin, Tron, Toncoin, Stellar, Monero, Pepe, Arbitrum, Optimism, Polygon,
+    Cosmos, Aptos, BTC, ETH, SOL, BNB, ADA, USDT, USDC]
+  platforms: [Binance, Coinbase, Kraken, Bitpanda, Bitvavo, Bitstamp, Bybit, OKX, KuCoin,
+    Gemini, Uniswap, Aave, Lido, Raydium, PancakeSwap, MetaMask, Phantom, Ledger, Trezor]
+  invented: [Quellmark, "Nordlicht Capital", Brisanto, Velorix, "Kandor Invest", Silbertann,
+    Ovarra, "Lumen Vest", Trivexa, Halvoro]

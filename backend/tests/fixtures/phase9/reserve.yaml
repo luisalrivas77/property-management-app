@@ -1,0 +1,133 @@
+# Phase 9 (docs/phases/phase-9.md §5.2, D237, D238, §15.1): `rules/health/figures.reserve`.
+# The reserve = the private current and savings accounts less the credit cards' debt (D237),
+# changed by the lever `reserve_accounts`; the need = mean regular spending + max(0, −mean C),
+# both means to the cent; months to one place, half-up, None when the need is 0; the target =
+# target months × need; gap = max(0, target − amount); `state` compared in euros.
+# `by_owner` splits each counted account by its owner shares with phase 6's cent rule
+# (rules/net_worth.split: cents rounded down, the cents left over to the largest remainders,
+# ties by the owner's sort key, here A before B).
+#
+# `balances` per account: kind, balance (a card's debt negative), as_of, owners. The rental
+# account and an exchange's euros are not reserve accounts by default. Owners A and B,
+# amounts invented except `default_accounts`, which is §15.2's. `today` decides staleness
+# (a counted balance older than 7 days adds the net worth's to-do).
+#
+# Step 0 recomputes amount, need, months, target, gap, state and by_owner on load.
+bases:
+  worked: &worked
+    - {key: a_current, kind: bank_current, balance: "3400.00", as_of: "2027-06-02", owners: {A: "1"}}
+    - {key: b_current, kind: bank_current, balance: "1250.00", as_of: "2027-06-02", owners: {B: "1"}}
+    - {key: savings, kind: bank_savings, balance: "13000.00", as_of: "2027-06-02", owners: {A: "0.5", B: "0.5"}}
+    - {key: card, kind: credit_card, balance: "-820.00", as_of: "2027-06-01", owners: {A: "1"}}
+    - {key: rental, kind: bank_current, purpose: rental, balance: "2300.00", as_of: "2027-06-02", owners: {A: "0.5", B: "0.5"}}
+    - {key: exchange_eur, kind: exchange, balance: "150.00", as_of: "2027-06-02", owners: {B: "1"}}
+
+cases:
+  - id: default_accounts
+    pending: "1"
+    description: §15.2
+    today: "2027-06-03"
+    balances: *worked
+    mean_regular_spending: "4116.67"
+    mean_rental_cash: "-353.33"
+    levers: {reserve_target_months: "6"}
+    expect: {counted: [a_current, b_current, savings, card], amount: "16830.00",
+      need: "4470.00", months: "3.8", target: "26820.00", gap: "9990.00", state: below,
+      by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
+
+  - id: card_debt_lowers
+    pending: "1"
+    today: "2027-06-03"
+    balances:
+      - {key: a_current, kind: bank_current, balance: "2000.00", as_of: "2027-06-02", owners: {A: "1"}}
+      - {key: card, kind: credit_card, balance: "-500.00", as_of: "2027-06-02", owners: {A: "1"}}
+    mean_regular_spending: "1500.00"
+    mean_rental_cash: "0.00"
+    levers: {reserve_target_months: "6"}
+    expect: {counted: [a_current, card], amount: "1500.00", need: "1500.00", months: "1.0",
+      target: "9000.00", gap: "7500.00", state: below, by_owner: {A: "1500.00"}, todos: []}
+
+  - id: rental_account_added_by_lever
+    pending: "1"
+    today: "2027-06-03"
+    balances: *worked
+    mean_regular_spending: "4116.67"
+    mean_rental_cash: "-353.33"
+    levers: {reserve_target_months: "6", reserve_accounts: {added: [rental]}}
+    expect: {counted: [a_current, b_current, savings, card, rental], added: [rental],
+      amount: "19130.00", need: "4470.00", months: "4.3", target: "26820.00",
+      gap: "7690.00", state: below, by_owner: {A: "10230.00", B: "8900.00"}, todos: []}
+
+  - id: savings_account_removed_by_lever
+    pending: "1"
+    description: the removed account is shown with origin `removed` and not counted
+    today: "2027-06-03"
+    balances: *worked
+    mean_regular_spending: "4116.67"
+    mean_rental_cash: "-353.33"
+    levers: {reserve_target_months: "6", reserve_accounts: {removed: [savings]}}
+    expect: {counted: [a_current, b_current, card], removed: [savings], amount: "3830.00",
+      need: "4470.00", months: "0.9", target: "26820.00", gap: "22990.00", state: below,
+      by_owner: {A: "2580.00", B: "1250.00"}, todos: []}
+
+  - id: flat_carries_itself
+    pending: "1"
+    description: a positive mean C adds no shortfall to the need
+    today: "2027-06-03"
+    balances: *worked
+    mean_regular_spending: "4116.67"
+    mean_rental_cash: "200.00"
+    levers: {reserve_target_months: "6"}
+    expect: {counted: [a_current, b_current, savings, card], amount: "16830.00",
+      need: "4116.67", months: "4.1", target: "24700.02", gap: "7870.02", state: below,
+      by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
+
+  - id: target_three_reached
+    pending: "1"
+    today: "2027-06-03"
+    balances: *worked
+    mean_regular_spending: "4116.67"
+    mean_rental_cash: "-353.33"
+    levers: {reserve_target_months: "3"}
+    expect: {counted: [a_current, b_current, savings, card], amount: "16830.00",
+      need: "4470.00", months: "3.8", target: "13410.00", gap: "0.00", state: reached,
+      by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
+
+  - id: need_zero
+    pending: "1"
+    today: "2027-06-03"
+    balances:
+      - {key: a_current, kind: bank_current, balance: "500.00", as_of: "2027-06-02", owners: {A: "1"}}
+    mean_regular_spending: "0.00"
+    mean_rental_cash: "0.00"
+    levers: {reserve_target_months: "6"}
+    expect: {counted: [a_current], amount: "500.00", need: "0.00", months: null,
+      target: "0.00", gap: "0.00", state: reached, by_owner: {A: "500.00"}, todos: []}
+
+  - id: by_owner_shares
+    pending: "1"
+    description: the odd cent of a joint account goes to the owner with the lower sort key
+    today: "2027-06-03"
+    balances:
+      - {key: a_current, kind: bank_current, balance: "100.00", as_of: "2027-06-02", owners: {A: "1"}}
+      - {key: savings, kind: bank_savings, balance: "1000.01", as_of: "2027-06-02", owners: {A: "0.5", B: "0.5"}}
+    mean_regular_spending: "1000.00"
+    mean_rental_cash: "0.00"
+    levers: {reserve_target_months: "6"}
+    expect: {counted: [a_current, savings], amount: "1100.01", need: "1000.00",
+      months: "1.1", target: "6000.00", gap: "4899.99", state: below,
+      by_owner: {A: "600.01", B: "500.00"}, todos: []}
+
+  - id: stale_balance_todo
+    pending: "1"
+    description: the savings balance is 9 days old; it still counts
+    today: "2027-06-03"
+    balances:
+      - {key: a_current, kind: bank_current, balance: "3400.00", as_of: "2027-06-02", owners: {A: "1"}}
+      - {key: savings, kind: bank_savings, balance: "13000.00", as_of: "2027-05-25", owners: {A: "0.5", B: "0.5"}}
+    mean_regular_spending: "4116.67"
+    mean_rental_cash: "-353.33"
+    levers: {reserve_target_months: "6"}
+    expect: {counted: [a_current, savings], amount: "16400.00", need: "4470.00",
+      months: "3.7", target: "26820.00", gap: "10420.00", state: below,
+      by_owner: {A: "9900.00", B: "6500.00"}, todos: [balance_stale]}

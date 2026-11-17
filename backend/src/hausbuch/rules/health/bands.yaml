@@ -1,0 +1,113 @@
+# Phase 9 D250, §5.6: the limits the app proposes for the marks on the key figures, with their
+# origins, reference points and sentences. Luis accepted these values on 16 Nov 2026 (§18.1
+# Q9); they still colour nothing until a member confirms them on the card „Ampel-Grenzen
+# festlegen“ (D250 (3)), which stores them in the default scenario's `levers.bands`.
+#
+# As read on 16 Nov 2026 no source sets a limit for a household's own figure (§3), so every
+# limit is `own_lever` and the sources are reference points only. A limit moves to `source`
+# only when an original whose definition matches the figure has been read.
+#
+# The reserve's green is the household's own target (D238), not a limit of this file; its red
+# is a share of that target. Verschuldungsgrad and Schulden zu Jahreseinkommen get no proposal
+# (none found), only sentences for a limit a member types. The split of the assets is refused
+# (D240) and is not in this file.
+#
+# Sentences are data with figure slots only ({f:key}), rendered by §8.4's renderer; each is a
+# must-accept case of the validator (tests/rules/test_phase9_data_files.py). No sentence says
+# what to do. The final German is agreed with the mockup (Q-O136).
+# Loaded into hausbuch.schemas.health.BandProposal; this file is inside `rule_version`.
+version: bands-2026-11-16
+
+figures:
+  - figure: reserve
+    direction: higher
+    red: {value: "0.5", origin: own_lever}
+    reference_points: []
+    sentences:
+      green: [reserve.green]
+      amber: [reserve.amber]
+      red: [reserve.red]
+
+  - figure: savings_rate
+    direction: higher
+    red: {value: "0", origin: own_lever}
+    reference_points:
+      - source: Statistisches Bundesamt, Sparquote der privaten Haushalte (VGR)
+        says: the national average saving of private households, a comparison
+        does_not_say: a limit for one household's own rate; not shown as one
+    sentences:
+      green: [savings_rate.green]
+      amber: [savings_rate.amber]
+      red: [savings_rate.red, savings_rate.red_regular]
+
+  - figure: ltv
+    direction: lower
+    green: {value: "0.60", origin: own_lever}
+    red: {value: "1.00", origin: own_lever}
+    reference_points:
+      - source: "§ 14 PfandBG"
+        says: a mortgage bank's cover may use loans up to 60 % of the Beleihungswert
+        does_not_say: a limit for a household; the Beleihungswert is not the estimate used here
+      - source: Deutsche Bundesbank, Finanzstabilitätsbericht (Wohnimmobilienkredite)
+        says: the supervisors report the share of loans above the property's value
+        does_not_say: a limit for one household's loan-to-value
+    sentences:
+      green: [ltv.intro, ltv.green]
+      amber: [ltv.intro, ltv.amber]
+      red: [ltv.intro, ltv.red]
+
+  - figure: debt_service_ratio
+    direction: lower
+    green: {value: "0.30", origin: own_lever}
+    red: {value: "0.40", origin: own_lever}
+    reference_points:
+      - source: consumer guides on mortgage affordability (Verbraucherzentrale, Stiftung Warentest)
+        says: 30 to 40 % of net income for the loan's rate, meant for an owner-occupier
+        does_not_say: a limit for a rented flat, or for this figure's definition (D239)
+    sentences:
+      green: [debt_service_ratio.intro, debt_service_ratio.green]
+      amber: [debt_service_ratio.intro, debt_service_ratio.amber]
+      red: [debt_service_ratio.intro, debt_service_ratio.red]
+
+  - figure: debt_ratio
+    direction: lower
+    reference_points: []
+    sentences:
+      green: [debt_ratio.intro, debt_ratio.green]
+      amber: [debt_ratio.intro, debt_ratio.amber]
+      red: [debt_ratio.intro, debt_ratio.red]
+
+  - figure: debt_to_income
+    direction: lower
+    reference_points: []
+    sentences:
+      green: [debt_to_income.intro, debt_to_income.green]
+      amber: [debt_to_income.intro, debt_to_income.amber]
+      red: [debt_to_income.intro, debt_to_income.red]
+
+# `savings_rate.red_regular` is shown only when the rate without one-offs is not below 0.
+# `band_reserve_red` is an amount: the share times the target.
+sentences:
+  reserve.green: "Eure Reserve von {f:reserve} erreicht euer eigenes Ziel von {f:reserve_target}."
+  reserve.amber: "Eure Reserve reicht für {f:reserve_months}. Bis zu eurem eigenen Ziel fehlen {f:reserve_gap}."
+  reserve.red: "Eure Reserve von {f:reserve} liegt unter der Grenze von {f:band_reserve_red}, die ihr selbst gesetzt habt."
+  savings_rate.green: "Eure Sparquote von {f:savings_rate} liegt auf oder über eurer Grenze von {f:band_savings_rate_green}."
+  savings_rate.amber: "Eure Sparquote von {f:savings_rate} liegt zwischen euren Grenzen von {f:band_savings_rate_red} und {f:band_savings_rate_green}."
+  savings_rate.red: "In diesem Zeitraum habt ihr mehr ausgegeben als eingenommen."
+  savings_rate.red_regular: "Ohne die Einmalausgaben läge die Sparquote bei {f:savings_rate_regular}."
+  ltv.intro: "Die Kredite der Wohnung machen {f:ltv} ihres geschätzten Werts aus."
+  ltv.green: "Das liegt unter eurer Grenze von {f:band_ltv_green}."
+  ltv.amber: "Das liegt zwischen euren Grenzen von {f:band_ltv_green} und {f:band_ltv_red}."
+  ltv.red: "Das liegt über eurer Grenze von {f:band_ltv_red}."
+  debt_service_ratio.intro: "{f:debt_service_ratio} eures Einkommens gehen für Zins und Tilgung an die Bank."
+  debt_service_ratio.green: "Das liegt unter eurer Grenze von {f:band_debt_service_green}."
+  debt_service_ratio.amber: "Das liegt zwischen euren Grenzen von {f:band_debt_service_green} und {f:band_debt_service_red}."
+  debt_service_ratio.red: "Das liegt über eurer Grenze von {f:band_debt_service_red}."
+  debt_ratio.intro: "Eure Schulden machen {f:debt_ratio} eures Vermögens aus."
+  debt_ratio.green: "Das liegt unter eurer Grenze von {f:band_debt_ratio_green}."
+  debt_ratio.amber: "Das liegt zwischen euren Grenzen von {f:band_debt_ratio_green} und {f:band_debt_ratio_red}."
+  debt_ratio.red: "Das liegt über eurer Grenze von {f:band_debt_ratio_red}."
+  debt_to_income.intro: "Eure Schulden sind {f:debt_to_income} mal so hoch wie euer Jahreseinkommen."
+  debt_to_income.green: "Das liegt unter eurer Grenze von {f:band_debt_to_income_green}."
+  debt_to_income.amber: "Das liegt zwischen euren Grenzen von {f:band_debt_to_income_green} und {f:band_debt_to_income_red}."
+  debt_to_income.red: "Das liegt über eurer Grenze von {f:band_debt_to_income_red}."

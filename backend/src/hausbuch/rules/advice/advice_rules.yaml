@@ -1,0 +1,146 @@
+# Phase 9 D255, D256, §9.1: the word lists and tables of the explanation's validator.
+# Versioned; the version is stored with every plan_explanation (validator_version). Read by
+# rules/advice/validator.py (step 4). Every list is lower-case and compared after NFKC and
+# lower-casing, except `short_upper_case`, which holds tokens as written.
+#
+# Step 0's readings, recorded in docs/phases/phase-9.md §15.1:
+# - Check 1 runs on the text outside the slots; inside a slot the grammar of check 2 applies,
+#   so the `_` and the digits of a slot key ({f:reserve_gap}, {k:k1}) are not check 1's.
+# - Forms of a word are listed out, as German inflects; a separable verb is listed in its
+#   joined forms (aufstocken, aufgestockt, aufzustocken), and its split form ("stockt … auf")
+#   is caught by the stem ("stockt") in the same list.
+version: advice-rules-2026-11-17
+
+# Check 1: after NFKC, every character outside a slot is one of these. Anything else (another
+# script, a format character, $ / @ & % # _ and digits) is a violation.
+allowed_characters:
+  letters: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZäöüÄÖÜß"
+  other: " .,;:!?-–()„“\"'{}"
+
+# Check 2: the slot grammar.
+slot_pattern: "\\{([fkpca]):([a-z0-9_]+)\\}"
+slots_by_mode:
+  own_use: [f, k, p, c, a]
+  generic: [f, c]
+
+# Check 5: upper-case tokens of 2 to 6 letters allowed outside a slot; a run of three or more
+# single letters is a name spelled with spaces.
+short_upper_case: [ETF, EUR, KI]
+single_letter_run: 3
+
+# Check 6.
+link_markers: [www, http, https]
+
+# Check 7: an entry of this length or longer is searched in the text with spaces, hyphens and
+# dots removed; a shorter one as a whole word, also with its hyphens removed (§9.2).
+squash_min_length: 6
+
+# Check 4: number and fraction words, so no amount is smuggled in words.
+number_words: ["null", eins, zwei, drei, vier, fünf, sechs, sieben, acht, neun, zehn, elf, zwölf,
+  dreizehn, vierzehn, fünfzehn, sechzehn, siebzehn, achtzehn, neunzehn, zwanzig, dreißig,
+  vierzig, fünfzig, sechzig, siebzig, achtzig, neunzig, hundert, hunderte, tausend, tausende,
+  million, millionen, milliarde, milliarden, dutzend, paar]
+fraction_words: [hälfte, halb, halbe, halben, halber, drittel, viertel, fünftel, zehntel,
+  hundertstel, doppelt, doppelte, doppelten, dreifach, dreifache, vierfach, zweimal, dreimal,
+  prozent, prozentpunkte]
+
+# Check 8b: product nouns. A compound containing one must be in `permitted_compounds`; a
+# capitalised word directly before one, or hyphenated to it, must be a function word or a
+# permitted compound.
+product_nouns: [etf, etfs, fonds, aktie, aktien, anleihe, anleihen, zertifikat, zertifikate,
+  sparplan, sparpläne, sparplans, depot, depots, coin, coins, token, tokens, kryptowährung,
+  kryptowährungen, index, indexfonds]
+permitted_compounds: [aktienfonds, indexfonds, rentenfonds, mischfonds, geldmarktfonds,
+  immobilienfonds, wertpapierdepot, wertpapierdepots, fondssparplan, fondssparpläne,
+  sparplan, sparpläne, sparplans, kryptowährung, kryptowährungen]
+function_words: [der, die, das, den, dem, des, ein, eine, einen, einem, einer, eines, euer,
+  eure, euren, eurem, eurer, eures, dein, deine, deinen, deinem, deiner, deines, kein, keine,
+  keinen, keinem, keiner, jeder, jede, jeden, jedem, dieser, diese, diesen, diesem, im, in,
+  ins, am, an, beim, vom, zum, zur, mit, ohne, für, auf, aus, bei, als, und, oder, ihr, ihre,
+  ihren, ihrem, ihrer]
+
+# Check 9 (D256): no recommendation word in a sentence with an {a:} slot, in both modes.
+recommendation_words: [kaufen, kauft, kaufe, kaufst, kauf, kaufte, kauften, gekauft, zukaufen,
+  verkaufen, verkauft, verkaufe, verkaufst, verkauf, verkaufte, verkauften,
+  aufstocken, aufgestockt, aufzustocken, stockt, stockst, reduzieren, reduziert, reduziere,
+  reduzierst, umschichten, umgeschichtet, umzuschichten, schichtet, halten, haltet, hältst,
+  hält, gehalten, behalten, behaltet, behältst, behält, empfehlen, empfehle, empfiehlt,
+  empfehlt, empfohlen, empfehlung, empfehlenswert, sollte, solltest, solltet, sollten, soll,
+  sollst, lohnt, lohnen, lohnend, lohnenswert, ratsam]
+
+# D256 amended 16 Nov 2026: a transaction word may not stand in a sentence with a {c:} slot or
+# with the slot of a marked figure (check 13), nor anywhere in a `projection` paragraph
+# (check 12).
+transaction_words: [kaufen, kauft, kaufe, kaufst, kauf, gekauft, verkaufen, verkauft, verkaufe,
+  verkaufst, verkauf, aufstocken, aufgestockt, aufzustocken, stockt, reduzieren,
+  reduziert, reduziere, umschichten, umgeschichtet, umzuschichten, schichtet, nachkaufen,
+  nachgekauft, nachzukaufen, abstoßen, abgestoßen, abzustoßen, stoßt, stößt]
+
+# Entries with a space are phrases, matched as consecutive words.
+# Check 12 (added 16 Nov 2026): a `projection` paragraph holds a typed-rate slot and an
+# assumption word, and none of the words below.
+assumption_words: [annahme, annahmen, angenommen, angenommene, angenommenen, annehmt,
+  annehmen, nehmt]
+future_auxiliaries: [wird, wirst, werdet, werden]
+forecast_words: [prognose, prognosen, prognostiziert, vorhersage, vorhersagen, voraussichtlich,
+  wahrscheinlich, sicher, sicherlich, garantiert, garantie, erwarten, erwartet, erwartung,
+  erwartbar, bestimmt, gewiss]
+judging_words: [realistisch, unrealistisch, vorsichtig, konservativ, optimistisch,
+  pessimistisch, üblich, üblichen, typisch, historisch, marktüblich, angemessen, plausibel,
+  sinnvoll, vernünftig, "hoch gegriffen", "niedrig gegriffen", gewagt, "zu hoch", "zu niedrig"]
+
+# Checks 10 and 13: per topic, phrases that may not appear under a state of the facts. A
+# phrase is matched as words on the lower-cased text. The `light_*` rows are check 13's.
+contradictions:
+  - {topic: reserve, state: reserve_state, value: below,
+     phrases: [erreicht, geschafft, ist voll, ausreichend, reicht aus, genug]}
+  - {topic: reserve, state: reserve_state, value: reached,
+     phrases: [fehlt, fehlen, noch nicht erreicht, unter dem ziel, zu wenig]}
+  - {topic: paths, state: reserve_state, value: reached,
+     phrases: [fehlt, fehlen, noch nicht erreicht]}
+  - {topic: surplus, state: investable_state, value: zero,
+     phrases: [könnt ihr anlegen, kannst du anlegen, bleibt übrig, bleiben übrig]}
+  - {topic: surplus, state: left_state, value: negative,
+     phrases: [bleibt noch, bleiben noch, reicht für eure sparpläne]}
+  - {topic: net_worth, state: trend_state, value: up,
+     phrases: [gefallen, gesunken, verloren, weniger als im vormonat]}
+  - {topic: net_worth, state: trend_state, value: down,
+     phrases: [gestiegen, gewachsen, zugelegt, mehr als im vormonat]}
+  - {topic: basis, state: basis_state, value: short,
+     phrases: [ganzes jahr, ganzen jahr, ganzen jahres]}
+  - {topic: reserve, state: light_reserve, value: green, phrases: &bad [kritisch, bedenklich, gefährlich, alarmierend, rot, roten bereich]}
+  - {topic: reserve, state: light_reserve, value: amber, phrases: &good [im grünen bereich, unbedenklich, gesund, kein problem, alles gut, solide]}
+  - {topic: reserve, state: light_reserve, value: red, phrases: *good}
+  - {topic: savings_rate, state: light_savings_rate, value: green, phrases: *bad}
+  - {topic: savings_rate, state: light_savings_rate, value: amber, phrases: *good}
+  - {topic: savings_rate, state: light_savings_rate, value: red, phrases: *good}
+  - {topic: debt, state: light_ltv, value: green, phrases: *bad}
+  - {topic: debt, state: light_ltv, value: amber, phrases: *good}
+  - {topic: debt, state: light_ltv, value: red, phrases: *good}
+  - {topic: debt, state: light_debt_service_ratio, value: green, phrases: *bad}
+  - {topic: debt, state: light_debt_service_ratio, value: amber, phrases: *good}
+  - {topic: debt, state: light_debt_service_ratio, value: red, phrases: *good}
+  - {topic: debt, state: light_debt_ratio, value: green, phrases: *bad}
+  - {topic: debt, state: light_debt_ratio, value: amber, phrases: *good}
+  - {topic: debt, state: light_debt_ratio, value: red, phrases: *good}
+  - {topic: debt, state: light_debt_to_income, value: green, phrases: *bad}
+  - {topic: debt, state: light_debt_to_income, value: amber, phrases: *good}
+  - {topic: debt, state: light_debt_to_income, value: red, phrases: *good}
+
+# Check 13: the slot of a marked figure, per light state. A transaction word may not stand in
+# a sentence with one of these slots while its light is green, amber or red.
+marked_figure_slots:
+  light_reserve: [reserve, reserve_months, reserve_gap, band_reserve_red]
+  light_savings_rate: [savings_rate, savings_rate_regular, band_savings_rate_green,
+    band_savings_rate_red]
+  light_ltv: [ltv, band_ltv_green, band_ltv_red]
+  light_debt_service_ratio: [debt_service_ratio, band_debt_service_green,
+    band_debt_service_red]
+  light_debt_ratio: [debt_ratio, band_debt_ratio_green, band_debt_ratio_red]
+  light_debt_to_income: [debt_to_income, band_debt_to_income_green, band_debt_to_income_red]
+
+# Check 11.
+shape:
+  paragraphs_max: 4
+  paragraph_max_characters: 500
+  topic_once: true
