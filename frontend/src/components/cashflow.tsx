@@ -72,8 +72,14 @@ export function averageMoney(values: string[]): string {
 /** surplus ÷ income (the Sparquote) over several months as a fraction string with four places ("0.1563"), as the
  * server's savings_rate; null without income. */
 export function averageRate(months: HouseholdCashflow[]): string | null {
+  return rateOfSums(months.map((m) => ({ income: m.income, saved: m.surplus })));
+}
+
+/** Σ saved ÷ Σ income over several months, four places, half up; null without income (phase 9
+ * D235: the household's Sparquote over a span, a ratio of sums, never a mean of rates). */
+export function rateOfSums(months: { income: string; saved: string }[]): string | null {
   const income = months.reduce((sum, m) => sum + toCents(m.income), 0n);
-  const surplus = months.reduce((sum, m) => sum + toCents(m.surplus), 0n);
+  const surplus = months.reduce((sum, m) => sum + toCents(m.saved), 0n);
   if (income <= 0n) return null;
   const size = surplus < 0n ? -surplus : surplus;
   const scaled = (2n * size * 10000n + income) / (2n * income); // half up, on the magnitude

@@ -14,13 +14,13 @@ import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import {
   averageMoney,
-  averageRate,
   fromCents,
   type HouseholdCashflow,
   lastFullMonth,
   loadCashflow,
   monthsUpTo,
   openLinesText,
+  rateOfSums,
   signedMoney,
   spent,
   sumMoney,
@@ -34,6 +34,7 @@ import { useLoad } from "@/components/useLoad";
 type HouseholdGroup = components["schemas"]["HouseholdGroup"];
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 type TransferLinkView = components["schemas"]["TransferLinkView"];
+type HealthMonthView = components["schemas"]["HealthMonthView"];
 
 const MONTHS_SHOWN = 12;
 const MONTHS_OFFERED = 24;
@@ -43,14 +44,19 @@ interface Year {
   /** The twelve months ending at the chosen one, oldest first; the chosen one is last. */
   months: HouseholdCashflow[];
   transfers: TransferLinkView[];
+  /** The same twelve months as the household counts them (phase 9 D232, D235): the private
+   * accounts plus the flat's result, so the Sparquote is the household's (Q-O139). */
+  health: HealthMonthView[];
 }
 
 async function loadYear(month: string): Promise<Year> {
-  const [months, transfers] = await Promise.all([
-    Promise.all(monthsUpTo(month, MONTHS_SHOWN).map(loadCashflow)),
+  const shown = monthsUpTo(month, MONTHS_SHOWN);
+  const [months, transfers, health] = await Promise.all([
+    Promise.all(shown.map(loadCashflow)),
     ok(api.GET("/api/transfers", { params: { query: { month } } })),
+    ok(api.GET("/api/health/months", { params: { query: { from: shown[0], to: month } } })),
   ]);
-  return { months, transfers };
+  return { months, transfers, health };
 }
 
 /** The Geldanlage group's fallback („Sonstige Geldanlage“), listed last when the group opens. */
@@ -99,9 +105,11 @@ export default function HouseholdPage() {
 }
 
 function HouseholdMonth({ year }: { year: Year }) {
-  const { months, transfers } = year;
+  const { months, transfers, health } = year;
   const month = months[months.length - 1];
   if (!month) return null;
+  const householdMonths = health.map((h) => h.household);
+  const householdNow = householdMonths.find((h) => h.month === month.month);
   const spentNow = spent(month);
   return (
     <div className="stack planning">
@@ -118,9 +126,11 @@ function HouseholdMonth({ year }: { year: Year }) {
         </div>
         <div className="planning-kpi" role="group" aria-label="Sparquote">
           <p className="planning-kpi-label">Sparquote</p>
-          <p className="planning-kpi-value planning-good">{month.savings_rate != null ? formatPercent(month.savings_rate) : "–"}</p>
+          <p className="planning-kpi-value planning-good">
+            {householdNow?.savings_rate != null ? formatPercent(householdNow.savings_rate) : "–"}
+          </p>
           <p className="planning-kpi-sub">
-            Ø 12 Monate {formatPercent(averageRate(months))} · Überschuss ÷ Einnahmen
+            Ø 12 Monate {formatPercent(rateOfSums(householdMonths))} · Gespart ÷ Einnahmen, mit dem Ergebnis der Wohnung
           </p>
         </div>
         <div className={month.open_lines > 0 ? "planning-kpi household-open" : "planning-kpi"} role="group" aria-label="Ohne Kategorie">
