@@ -15,6 +15,7 @@ from sqlalchemy import func, select, update
 
 from hausbuch import cli
 from hausbuch.db.session import workspace_transaction
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import health_snapshot as health_snapshot_table
 from hausbuch.db.tables import statement_import as import_table
@@ -404,6 +405,34 @@ def test_the_daily_step_waits_for_the_month_before(world):
     assert len(stored[1].snapshot.figures.window.months) == 12
     result = world.query(health.health_check, "2027-02", "2027-03", TODAY)
     assert result.match, [r for r in result.rows if not r.equal]
+
+
+def test_the_first_month_of_history_does_not_wait_for_the_month_before(world):
+    """Review of PR #426, finding 3: the household's history starts the day after its
+    earliest opening balance (31 May 2026 here, so June). May cannot close, since no account
+    holds its lines, yet June is stored without waiting for it, and every month after June
+    follows. With the opening's own month as the start, June would wait for May for good."""
+    with workspace_transaction(world.engine, world.ws) as conn:
+        conn.execute(
+            update(account_table)
+            .where(account_table.c.id == world.account_id)
+            .values(opening_balance_on=date(2026, 5, 31))
+        )
+        conn.execute(
+            update(import_table)
+            .where(import_table.c.id == world.import_id)
+            .values(first_booking_on=date(2026, 6, 5), last_booking_on=date(2027, 3, 31))
+        )
+    for year, month in [(2026, m) for m in range(6, 13)] + [(2027, m) for m in range(1, 4)]:
+        _booked(world, date(year, month, 5), "950.00", C.RENT_COLD)
+        _booked(world, date(year, month, 20), "-640.00", C.LOAN_INTEREST)
+    assert world.query(health._first_history_month) == "2026-06"
+    reads = world.query(health.read_months, ["2026-05", "2026-06"], TODAY)
+    assert not reads["2026-05"].closed.closed and reads["2026-06"].closed.closed
+    stored = world.cmd(health.store_missing_snapshots)
+    assert [r.snapshot.figures.month.month for r in stored] == health.months_between(
+        "2026-06", "2027-03"
+    )
 
 
 class _April(datetime):
