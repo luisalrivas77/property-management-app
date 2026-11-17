@@ -8,7 +8,7 @@ Plus what the fixtures cannot hold: the to-do texts, several properties, a month
 the series, the D234 recode of a flagged line, and two stale accounts."""
 
 from collections import defaultdict
-from datetime import date
+from datetime import UTC, date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
 from fractions import Fraction
 from uuid import UUID, uuid4
@@ -50,7 +50,7 @@ from hausbuch.schemas.health import (
 )
 from hausbuch.schemas.household import NetWorthClass
 from hausbuch.schemas.net_worth import NetWorth, NetWorthLine, NetWorthLineKind
-from hausbuch.schemas.plan import ReserveAccounts
+from hausbuch.schemas.plan import HouseholdLevers, ReserveAccounts
 
 CLOSED = phase9.load("closed_month")
 MONTH = phase9.load("household_month")
@@ -335,6 +335,21 @@ def test_savings_rate(case):
 # --- reserve.yaml --------------------------------------------------------------------
 
 
+SIX = HouseholdLevers(reserve_target_months=Decimal("6"))
+
+
+def scenario(key, day, value, *, default=True, withdrawn=False, at=time(8)) -> ScenarioValue:
+    """A scenario row written on `day` (the fixture gives the day; the time orders a day)."""
+    return ScenarioValue(
+        scenario_id=uid(key),
+        created_on=day,
+        recorded_at=datetime.combine(day, at, tzinfo=UTC),
+        default=default,
+        withdrawn=withdrawn,
+        value_today=Decimal(value),
+    )
+
+
 def owner_ids(cases) -> dict[str, UUID]:
     """Owner keys to ids that sort as the keys do (A before B), as phase 6's cent rule breaks
     a tie by the owner's sort key; key_uuid's order would be arbitrary."""
@@ -372,17 +387,14 @@ def test_reserve(case):
             rental_result=case.mean_rental_cash,
         )
     ]
-    lever = ReserveAccounts(
-        added=[uid(k) for k in case.levers.reserve_accounts.added],
-        removed=[uid(k) for k in case.levers.reserve_accounts.removed],
+    levers = HouseholdLevers(
+        reserve_target_months=case.levers.reserve_target_months,
+        reserve_accounts=ReserveAccounts(
+            added=[uid(k) for k in case.levers.reserve_accounts.added],
+            removed=[uid(k) for k in case.levers.reserve_accounts.removed],
+        ),
     )
-    got = F.reserve(
-        [balance_of(b) for b in case.balances],
-        window,
-        target_months=case.levers.reserve_target_months,
-        accounts=lever,
-        today=case.today,
-    )
+    got = F.reserve([balance_of(b) for b in case.balances], window, levers, today=case.today)
     want = case.expect
     by_key = {uid(b.key): b.key for b in case.balances}
     origin = {by_key[a.account_id]: a.origin for a in got.accounts}
@@ -417,7 +429,7 @@ def test_two_stale_accounts_each_get_their_todo():
     got = F.reserve(
         balances,
         [hm("2027-05", private_spending=Decimal("100.00"))],
-        target_months=Decimal("6"),
+        SIX,
         today=date(2027, 6, 3),
     )
     assert [t.code for t in got.todos] == [HealthTodoCode.BALANCE_STALE] * 2
@@ -425,9 +437,7 @@ def test_two_stale_accounts_each_get_their_todo():
     assert got.todos[1].action == "Kreditkartenabrechnung hochladen"
     assert got.todos[1].href == f"/accounts/{uid('karte')}?tab=kontoauszuege"
     # seven days old is not stale yet (rules/valuation.STALE_AFTER_DAYS)
-    fresh = F.reserve(
-        balances, [hm("2027-05")], target_months=Decimal("6"), today=date(2027, 5, 27)
-    )
+    fresh = F.reserve(balances, [hm("2027-05")], SIX, today=date(2027, 5, 27))
     assert fresh.todos == [] and fresh.months is None
 
 
@@ -439,7 +449,7 @@ def test_an_account_without_shares_leaves_by_owner_empty():
         balance=Decimal("10.00"),
         as_of=date(2027, 6, 2),
     )
-    got = F.reserve([plain], [hm("2027-05")], target_months=Decimal("6"), today=date(2027, 6, 3))
+    got = F.reserve([plain], [hm("2027-05")], SIX, today=date(2027, 6, 3))
     assert got.amount == Decimal("10.00") and got.by_owner == {}
 
 
@@ -592,15 +602,7 @@ def test_net_worth_series(case):
     _live(case)
     if case.capture is not None:
         cap = case.capture
-        rows = [
-            ScenarioValue(
-                scenario_id=uid(s.id),
-                created_on=s.created,
-                default=s.default,
-                value_today=s.value_today,
-            )
-            for s in cap.scenarios
-        ]
+        rows = [scenario(s.id, s.created, s.value_today, default=s.default) for s in cap.scenarios]
         check_estimate(rows, cap.month_end, cap.purchase_price, case.expect)
         for v in case.variants:
             check_estimate(rows, v.month_end, cap.purchase_price, v.expect.model_dump())
@@ -647,22 +649,25 @@ def test_a_month_not_closed_has_a_change_but_no_saved():
 
 def test_the_estimate_skips_a_withdrawn_scenario():
     rows = [
-        ScenarioValue(
-            scenario_id=uid("s1"),
-            created_on=date(2026, 12, 1),
-            default=True,
-            value_today=Decimal("310000.00"),
-        ),
-        ScenarioValue(
-            scenario_id=uid("s2"),
-            created_on=date(2027, 1, 5),
-            default=True,
-            withdrawn=True,
-            value_today=Decimal("1.00"),
-        ),
+        scenario("s1", date(2026, 12, 1), "310000.00"),
+        scenario("s2", date(2027, 1, 5), "1.00", withdrawn=True),
     ]
     got = F.estimate_on(rows, date(2027, 1, 31), Decimal("300000.00"))
     assert got.scenario_id == uid("s1") and got.value == Decimal("310000.00")
+
+
+def test_two_scenarios_of_one_day_the_later_wins_whatever_the_order():
+    """„Wert heute“ changed twice on one day: the later row is the default of that evening,
+    as services/scenarios.default_scenario orders it, not the first one handed in."""
+    day = date(2027, 1, 5)
+    morning = scenario("s1", day, "310000.00", at=time(9))
+    evening = scenario("s2", day, "315000.00", at=time(18))
+    for rows in ([morning, evening], [evening, morning]):
+        got = F.estimate_on(rows, date(2027, 1, 31), Decimal("300000.00"))
+        assert got.scenario_id == uid("s2") and got.value == Decimal("315000.00")
+    # the same instant: the smallest id, as the service's `ORDER BY recorded_at DESC, id`
+    twin = evening.model_copy(update={"scenario_id": UUID(int=1), "value_today": Decimal("1.00")})
+    assert F.estimate_on([evening, twin], day, Decimal("0.00")).scenario_id == UUID(int=1)
 
 
 # --- lights.yaml ---------------------------------------------------------------------
@@ -857,9 +862,8 @@ def test_health_worked(case):
         )
         for b in hh.balances
     ]
-    reserve = F.reserve(
-        balances, months, target_months=hh.levers.reserve_target_months, today=hh.today
-    )
+    levers = HouseholdLevers(reserve_target_months=hh.levers.reserve_target_months)
+    reserve = F.reserve(balances, months, levers, today=hh.today)
     if want.reserve is not None:
         r = want.reserve
         names = {uid(b.account): b.account for b in hh.balances}

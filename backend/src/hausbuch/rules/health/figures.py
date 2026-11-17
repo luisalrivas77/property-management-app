@@ -41,7 +41,7 @@ from hausbuch.schemas.health import (
 )
 from hausbuch.schemas.household import NetWorthClass
 from hausbuch.schemas.net_worth import NetWorth, NetWorthLineKind
-from hausbuch.schemas.plan import ReserveAccounts
+from hausbuch.schemas.plan import HouseholdLevers, ReserveAccounts
 
 ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
@@ -126,20 +126,20 @@ def _stale(balance: ReserveBalance, today: date) -> HealthTodo:
 def reserve(
     balances: Sequence[ReserveBalance],
     window_months: Sequence[HouseholdMonth],
+    levers: HouseholdLevers,
     *,
-    target_months: Decimal,
-    accounts: ReserveAccounts | None = None,
     today: date,
 ) -> Reserve:
     """The reserve in euros and in months of the need, against the target (D237, D238).
 
     `balances`: every account's newest balance (the service may pass them all; the kinds
-    and the lever `accounts` choose). `target_months` and `accounts` are the scenario's
-    `reserve_target_months` and `reserve_accounts`. An account removed by the lever is
+    and `levers.reserve_accounts` choose); `levers.reserve_target_months` sets the target.
+    An account removed by the lever is
     listed, not counted. `by_owner` splits each counted account by its shares with phase 6's
     cent rule; it is empty when a counted account has no shares recorded. Each counted
     balance older than STALE_AFTER_DAYS before `today` adds one to-do."""
-    lever = accounts or ReserveAccounts()
+    lever = levers.reserve_accounts
+    target_months = levers.reserve_target_months
     listed: list[ReserveAccount] = []
     counted: list[ReserveBalance] = []
     for balance in balances:
@@ -377,11 +377,14 @@ def estimate_on(
 ) -> PropertyEstimate:
     """D241 (amends phase 6 D167 (5)): a property's estimate on a past month-end is the
     default scenario as it stood that day (the newest default, non-withdrawn row written on
-    or before it), else its purchase price."""
+    or before it), else its purchase price. "Newest" is `services/scenarios.default_scenario`'s
+    order: the latest `recorded_at`, and between rows recorded at the same instant the
+    smallest id."""
     standing = [s for s in scenarios if s.default and not s.withdrawn and s.created_on <= month_end]
     if not standing:
         return PropertyEstimate(value=purchase_price, source=EstimateSource.PURCHASE_PRICE)
-    latest = max(standing, key=lambda s: s.created_on)
+    newest = max(s.recorded_at for s in standing)
+    latest = min((s for s in standing if s.recorded_at == newest), key=lambda s: s.scenario_id)
     return PropertyEstimate(
         value=latest.value_today, source=EstimateSource.SCENARIO, scenario_id=latest.scenario_id
     )

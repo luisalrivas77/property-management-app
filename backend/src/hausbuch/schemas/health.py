@@ -452,6 +452,7 @@ class ScenarioValue(Schema):
 
     scenario_id: UUID
     created_on: date  # the Berlin day the row was written
+    recorded_at: datetime  # its timestamp: orders two rows of one day
     default: bool
     withdrawn: bool = False
     value_today: Money
