@@ -7,7 +7,6 @@
 # invented, except `three_months`, which is §15.2's window.
 cases:
   - id: three_months
-    pending: "1"
     description: §15.2
     months:
       - {month: "2027-03", saved: "1490.00", income: "5390.00", one_off_spending: "0.00", principal: "310.00"}
@@ -19,7 +18,6 @@ cases:
       months: {"2027-03": "0.2764", "2027-04": "0.2302", "2027-05": "-1.7901"}}
 
   - id: with_one_off
-    pending: "1"
     months:
       - {month: "2027-01", saved: "800.00", income: "5000.00", one_off_spending: "0.00", principal: "300.00"}
       - {month: "2027-02", saved: "-1200.00", income: "5000.00", one_off_spending: "2500.00", principal: "300.00"}
@@ -30,7 +28,6 @@ cases:
       months: {"2027-01": "0.1600", "2027-02": "-0.2400", "2027-03": "0.1765"}}
 
   - id: rate_without_principal
-    pending: "1"
     description: the second figure, „ohne Tilgung“, shown in the derivation
     months:
       - {month: "2027-03", saved: "1000.00", income: "4000.00", one_off_spending: "0.00", principal: "1500.00"}
@@ -42,7 +39,6 @@ cases:
       months: {"2027-03": "0.2500", "2027-04": "0.2500", "2027-05": "0.2500"}}
 
   - id: income_zero
-    pending: "1"
     description: Σ E ≤ 0 gives no rate at all; a month with E > 0 keeps its own
     months:
       - {month: "2027-03", saved: "-500.00", income: "200.00", one_off_spending: "0.00", principal: "0.00"}
@@ -53,7 +49,6 @@ cases:
       months: {"2027-03": "-2.5000", "2027-04": null, "2027-05": null}}
 
   - id: twelve_months
-    pending: "1"
     months:
       - {month: "2026-06", saved: "400.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}
       - {month: "2026-07", saved: "450.00", income: "5000.00", one_off_spending: "0.00", principal: "310.00"}

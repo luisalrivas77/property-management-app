@@ -20,6 +20,7 @@ from pydantic import Field, model_validator
 
 from .allocation import AllocationCategory
 from .common import _STRING_ONLY, Money, Schema, _string_schema
+from .common import Fraction as ExactShare
 from .enums import AccountKind
 from .household import NetWorthClass
 from .household import SavingsRate as Ratio  # signed, four places (numeric(9,4))
@@ -333,6 +334,21 @@ class ReserveAccount(Schema):
         return self.origin is not ReserveOrigin.REMOVED
 
 
+class ReserveBalance(Schema):
+    """Input of `rules/health/figures.reserve` (step 1): one account's newest balance and
+    its owner shares (phase 6's account_ownership, summing to 1; empty when none are
+    recorded). `rental`: the account's purpose is rental, so it is no reserve account unless
+    the lever adds it (D237)."""
+
+    account_id: UUID
+    label: str
+    kind: AccountKind
+    rental: bool = False
+    balance: Money  # a card's debt negative
+    as_of: date
+    owners: dict[UUID, ExactShare] = Field(default_factory=dict)  # account_ownership as stored
+
+
 class Reserve(Schema):
     """D237, D238, §5.2. Compared in euros, never in rounded months."""
 
@@ -416,6 +432,38 @@ class Debt(Schema):
     @property
     def annualised(self) -> bool:
         return self.months < 12
+
+
+class RunTotals(Schema):
+    """Input of `rules/health/figures.series` (step 1): one stored net worth run
+    (valuation_snapshot rows of one net_worth_run_id) summed as phase 6 sums it."""
+
+    net_worth_run_id: UUID
+    month_end: date
+    created_at: datetime
+    total: Money
+    by_class: dict[NetWorthClass, Money] = Field(default_factory=dict)
+    by_owner: dict[UUID, Money] = Field(default_factory=dict)
+
+
+class ScenarioValue(Schema):
+    """Input of `rules/health/figures.estimate_on` (step 1, D241): one projection scenario
+    row of a property with its „Wert heute“ (phase 4's value_today of its levers)."""
+
+    scenario_id: UUID
+    created_on: date  # the Berlin day the row was written
+    default: bool
+    withdrawn: bool = False
+    value_today: Money
+
+
+class PropertyEstimate(Schema):
+    """`rules/health/figures.estimate_on`: the property's estimate on a month-end and where
+    it comes from (D239 (1), D241); `scenario_id` None for the purchase price."""
+
+    value: Money
+    source: EstimateSource
+    scenario_id: UUID | None = None
 
 
 class NetWorthPoint(Schema):

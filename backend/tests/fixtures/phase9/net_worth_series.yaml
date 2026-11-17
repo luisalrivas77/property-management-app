@@ -13,7 +13,6 @@
 # Step 0 recomputes change and other on load.
 cases:
   - id: three_points
-    pending: "1"
     description: §15.2
     runs:
       - {id: r1, month_end: "2027-03-31", created: "2027-04-08T08:00:00Z", total: "138900.00"}
@@ -28,7 +27,6 @@ cases:
       todos: []
 
   - id: month_without_run
-    pending: "1"
     runs:
       - {id: r1, month_end: "2027-03-31", created: "2027-04-08T08:00:00Z", total: "138900.00"}
       - {id: r3, month_end: "2027-05-31", created: "2027-06-03T08:00:00Z", total: "128380.00"}
@@ -41,7 +39,6 @@ cases:
       todos: [month_end_missing]
 
   - id: two_runs_newest_wins
-    pending: "1"
     description: a month-end stored again after a late card statement; the newer run counts
     runs:
       - {id: r1, month_end: "2027-03-31", created: "2027-04-08T08:00:00Z", total: "138900.00"}
@@ -55,7 +52,6 @@ cases:
       todos: []
 
   - id: past_month_end_uses_scenario_of_that_day
-    pending: "1"
     description: >-
       D241 amends phase 6 D167 (5): a run stored on 3 Jun 2027 for 31 Jan 2027 values the flat
       by the default scenario as it stood on 31 Jan (s1, created 2026-12-01), not by s2

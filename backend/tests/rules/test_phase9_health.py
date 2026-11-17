@@ -10,25 +10,42 @@ the series, the D234 recode of a flagged line, and two stale accounts."""
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
+from fractions import Fraction
 from uuid import UUID, uuid4
 
 import fixture_models_phase9 as phase9
 import pytest
 
+from hausbuch.rules.health import figures as F
 from hausbuch.rules.health import month as M
 from hausbuch.rules.health import window as W
 from hausbuch.rules.household.cashflow import month_cashflow
 from hausbuch.schemas.allocation import AllocationCategory as C
+from hausbuch.schemas.common import Fraction as ExactShare
 from hausbuch.schemas.health import (
     AccountCoverage,
     ClosedReasonCode,
+    EstimateSource,
     HealthTodoCode,
+    HouseholdMonth,
     MonthFacts,
     MonthLine,
+    ReserveBalance,
+    ReserveOrigin,
+    RunTotals,
+    ScenarioValue,
+    ratio,
 )
+from hausbuch.schemas.household import NetWorthClass
+from hausbuch.schemas.net_worth import NetWorth, NetWorthLine, NetWorthLineKind
+from hausbuch.schemas.plan import ReserveAccounts
 
 CLOSED = phase9.load("closed_month")
 MONTH = phase9.load("household_month")
+RATE = phase9.load("savings_rate")
+RESERVE = phase9.load("reserve")
+DEBT = phase9.load("debt")
+SERIES = phase9.load("net_worth_series")
 ZERO = Decimal("0.00")
 SAVING_KINDS = {"savings", "depot", "exchange"}  # services/transfers.saved_in's in-legs
 
@@ -237,3 +254,400 @@ def test_lines_that_do_not_match_the_cashflow_are_refused():
     other = M.rental_month("2027-04", uid("flat"), [])
     with pytest.raises(ValueError):
         M.household_month(flow, [other])
+
+
+def hm(
+    month,
+    *,
+    private_income=ZERO,
+    private_spending=ZERO,
+    one_off=ZERO,
+    rental_result=ZERO,
+    principal=ZERO,
+) -> HouseholdMonth:
+    """A valid HouseholdMonth from its five free fields; the rest follow §4.2."""
+    income = private_income + rental_result
+    regular = private_spending - one_off
+    cash = rental_result - principal
+    return HouseholdMonth(
+        month=month,
+        private_income=private_income,
+        private_spending=private_spending,
+        one_off_spending=one_off,
+        regular_spending=regular,
+        rental_result=rental_result,
+        rental_cash=cash,
+        income=income,
+        spending=private_spending,
+        saved=income - private_spending,
+        principal=principal,
+        invested_property=ZERO,
+        invested=ZERO,
+        free_cash=private_income - regular + cash,
+        savings_rate=ratio(income - private_spending, income),
+    )
+
+
+# --- savings_rate.yaml ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("case", RATE.cases, ids=lambda c: c.id)
+def test_savings_rate(case):
+    _live(case)
+    window = [
+        hm(
+            m.month,
+            private_income=m.income,
+            private_spending=m.income - m.saved,
+            one_off=m.one_off_spending,
+            principal=m.principal,
+        )
+        for m in case.months
+    ]
+    got = F.savings_rate(window)
+    want = case.expect
+    assert (got.saved, got.income, got.one_off_spending, got.principal) == (
+        want.saved,
+        want.income,
+        want.one_off_spending,
+        want.principal,
+    )
+    assert (got.rate, got.rate_regular, got.rate_without_principal) == (
+        want.rate,
+        want.rate_regular,
+        want.rate_without_principal,
+    )
+    assert {m.month: m.rate for m in got.months} == want.months
+
+
+# --- reserve.yaml --------------------------------------------------------------------
+
+
+def owner_ids(cases) -> dict[str, UUID]:
+    """Owner keys to ids that sort as the keys do (A before B), as phase 6's cent rule breaks
+    a tie by the owner's sort key; key_uuid's order would be arbitrary."""
+    keys = sorted({o for c in cases for b in c.balances for o in b.owners})
+    return {k: UUID(int=i + 1) for i, k in enumerate(keys)}
+
+
+OWNERS = owner_ids(RESERVE.cases)
+
+
+def exact(share: Decimal) -> ExactShare:
+    f = Fraction(share)
+    return ExactShare(numerator=f.numerator, denominator=f.denominator)
+
+
+def balance_of(b) -> ReserveBalance:
+    return ReserveBalance(
+        account_id=uid(b.key),
+        label=b.key,
+        kind=b.kind,
+        rental=b.purpose == "rental",
+        balance=b.balance,
+        as_of=b.as_of,
+        owners={OWNERS[o]: exact(share) for o, share in b.owners.items()},
+    )
+
+
+@pytest.mark.parametrize("case", RESERVE.cases, ids=lambda c: c.id)
+def test_reserve(case):
+    _live(case)
+    window = [
+        hm(
+            "2027-05",
+            private_spending=case.mean_regular_spending,
+            rental_result=case.mean_rental_cash,
+        )
+    ]
+    lever = ReserveAccounts(
+        added=[uid(k) for k in case.levers.reserve_accounts.added],
+        removed=[uid(k) for k in case.levers.reserve_accounts.removed],
+    )
+    got = F.reserve(
+        [balance_of(b) for b in case.balances],
+        window,
+        target_months=case.levers.reserve_target_months,
+        accounts=lever,
+        today=case.today,
+    )
+    want = case.expect
+    by_key = {uid(b.key): b.key for b in case.balances}
+    origin = {by_key[a.account_id]: a.origin for a in got.accounts}
+    assert [k for k, o in origin.items() if o is not ReserveOrigin.REMOVED] == want.counted
+    assert [k for k, o in origin.items() if o is ReserveOrigin.ADDED] == want.added
+    assert [k for k, o in origin.items() if o is ReserveOrigin.REMOVED] == want.removed
+    assert (got.amount, got.need, got.months, got.target, got.gap, got.state) == (
+        want.amount,
+        want.need,
+        want.months,
+        want.target,
+        want.gap,
+        want.state,
+    )
+    assert got.by_owner == {OWNERS[o]: v for o, v in want.by_owner.items()}
+    assert [t.code for t in got.todos] == want.todos
+
+
+def test_two_stale_accounts_each_get_their_todo():
+    owners = {UUID(int=1): exact(Decimal("1"))}
+    balances = [
+        ReserveBalance(
+            account_id=uid(key),
+            label=key,
+            kind=kind,
+            balance=Decimal("100.00"),
+            as_of=date(2027, 5, 20),
+            owners=owners,
+        )
+        for key, kind in (("giro", "bank_current"), ("karte", "credit_card"))
+    ]
+    got = F.reserve(
+        balances,
+        [hm("2027-05", private_spending=Decimal("100.00"))],
+        target_months=Decimal("6"),
+        today=date(2027, 6, 3),
+    )
+    assert [t.code for t in got.todos] == [HealthTodoCode.BALANCE_STALE] * 2
+    assert got.todos[0].action == "Kontoauszug hochladen"
+    assert got.todos[1].action == "Kreditkartenabrechnung hochladen"
+    assert got.todos[1].href == f"/accounts/{uid('karte')}?tab=kontoauszuege"
+    # seven days old is not stale yet (rules/valuation.STALE_AFTER_DAYS)
+    fresh = F.reserve(
+        balances, [hm("2027-05")], target_months=Decimal("6"), today=date(2027, 5, 27)
+    )
+    assert fresh.todos == [] and fresh.months is None
+
+
+def test_an_account_without_shares_leaves_by_owner_empty():
+    plain = ReserveBalance(
+        account_id=uid("giro"),
+        label="Giro",
+        kind="bank_current",
+        balance=Decimal("10.00"),
+        as_of=date(2027, 6, 2),
+    )
+    got = F.reserve([plain], [hm("2027-05")], target_months=Decimal("6"), today=date(2027, 6, 3))
+    assert got.amount == Decimal("10.00") and got.by_owner == {}
+
+
+def test_the_need_is_taken_from_the_window_means():
+    window = [
+        hm("2027-03", private_spending=Decimal("100.00"), rental_result=Decimal("-10.00")),
+        hm("2027-04", private_spending=Decimal("100.00"), rental_result=Decimal("-10.00")),
+        hm("2027-05", private_spending=Decimal("101.00"), rental_result=Decimal("20.00")),
+    ]
+    # mean regular 100.33, mean C 0.00: no shortfall
+    assert F.need(window) == Decimal("100.33")
+    with pytest.raises(ValueError):
+        F.need([])
+
+
+# --- debt.yaml -----------------------------------------------------------------------
+
+
+def net_worth_of(case) -> NetWorth:
+    loans = sum((loan.balance for loan in case.loans), ZERO)
+    by_class = {**case.classes, NetWorthClass.LIABILITIES: -(loans + case.card_debt)}
+    lines = [
+        NetWorthLine(
+            kind=NetWorthLineKind.PROPERTY,
+            net_worth_class=NetWorthClass.PROPERTY,
+            label=key,
+            property_id=uid(key),
+            value_eur=e.value,
+            estimate=True,
+        )
+        for key, e in case.estimates.items()
+    ] + [
+        NetWorthLine(
+            kind=NetWorthLineKind.LOAN,
+            net_worth_class=NetWorthClass.LIABILITIES,
+            label=f"Darlehen {i}",
+            property_id=uid(loan.property),
+            loan_id=uid(f"loan{i}"),
+            value_eur=-loan.balance,
+            estimate=True,
+        )
+        for i, loan in enumerate(case.loans)
+    ]
+    estimate = sum((e.value for e in case.estimates.values()), ZERO)
+    return NetWorth(
+        on=date(2027, 5, 31),
+        total=sum(by_class.values(), ZERO),
+        by_class=by_class,
+        by_owner={},
+        property_estimate=estimate,
+        loan_balances=loans,
+        property_net=estimate - loans,
+        lines=lines,
+    )
+
+
+def debt_window(w):
+    first = hm("2027-01", private_income=w.income, principal=w.principal)
+    return [first, *(hm(f"2027-{k + 2:02d}") for k in range(w.months - 1))]
+
+
+@pytest.mark.parametrize("case", DEBT.cases, ids=lambda c: c.id)
+def test_debt(case):
+    _live(case)
+    nw = net_worth_of(case)
+    got = F.debt(
+        nw,
+        debt_window(case.window),
+        interest=case.window.interest,
+        estimate_sources={uid(k): e.source for k, e in case.estimates.items()},
+    )
+    want = case.expect
+    assert (got.gross_assets, got.liabilities, got.debt_ratio) == (
+        want.gross,
+        want.liabilities,
+        want.debt_ratio,
+    )
+    assert {p.property_id: p.ltv for p in got.properties if p.ltv is not None} == {
+        uid(k): v for k, v in want.ltv.items()
+    }
+    assert (got.debt_service_year, got.income_year) == (want.debt_service_year, want.income_year)
+    assert (got.debt_service_ratio, got.debt_to_income) == (
+        want.debt_service_ratio,
+        want.debt_to_income,
+    )
+    if want.estimate_source is not None:
+        assert {p.property_id: p.estimate_source for p in got.properties} == {
+            uid(k): v for k, v in want.estimate_source.items()
+        }
+    if want.annualised_from_months is not None:
+        assert got.months == want.annualised_from_months and got.annualised
+    assert F.split(nw) == want.split
+    gapped = {g.figure.value for g in got.gaps}
+    assert ("debt_to_income" in gapped) == (want.debt_to_income is None)
+
+
+def test_two_properties_each_get_their_ltv():
+    base = DEBT.cases[0]  # one_loan
+    case = base.model_copy(
+        update={
+            "estimates": {
+                "p1": base.estimates["p1"],
+                "p2": base.estimates["p1"].model_copy(update={"value": Decimal("100000.00")}),
+            },
+            "loans": [
+                *base.loans,
+                base.loans[0].model_copy(update={"property": "p2", "balance": Decimal("50000.00")}),
+            ],
+        }
+    )
+    sources = {uid("p1"): EstimateSource.SCENARIO, uid("p2"): EstimateSource.PURCHASE_PRICE}
+    got = F.debt(
+        net_worth_of(case),
+        debt_window(case.window),
+        interest=case.window.interest,
+        estimate_sources=sources,
+    )
+    assert {p.property_id: p.ltv for p in got.properties} == {
+        uid("p1"): Decimal("0.7388"),
+        uid("p2"): Decimal("0.5000"),
+    }
+    with pytest.raises(ValueError):
+        F.debt(net_worth_of(case), debt_window(case.window), interest=ZERO, estimate_sources={})
+
+
+def test_a_property_without_a_loan_has_no_ltv():
+    case = next(c for c in DEBT.cases if c.id == "no_loan")
+    got = F.debt(
+        net_worth_of(case),
+        debt_window(case.window),
+        interest=ZERO,
+        estimate_sources={uid("p1"): EstimateSource.SCENARIO},
+    )
+    assert [(p.ltv, p.loan_balance) for p in got.properties] == [(None, ZERO)]
+
+
+# --- net_worth_series.yaml -----------------------------------------------------------
+
+
+def check_estimate(scenarios, month_end, purchase_price, want):
+    got = F.estimate_on(scenarios, month_end, purchase_price)
+    assert got.value == Decimal(want["property_estimate"])
+    key = want["scenario"]
+    assert got.scenario_id == (None if key is None else uid(key))
+    assert got.source is (EstimateSource.PURCHASE_PRICE if key is None else EstimateSource.SCENARIO)
+
+
+@pytest.mark.parametrize("case", SERIES.cases, ids=lambda c: c.id)
+def test_net_worth_series(case):
+    _live(case)
+    if case.capture is not None:
+        cap = case.capture
+        rows = [
+            ScenarioValue(
+                scenario_id=uid(s.id),
+                created_on=s.created,
+                default=s.default,
+                value_today=s.value_today,
+            )
+            for s in cap.scenarios
+        ]
+        check_estimate(rows, cap.month_end, cap.purchase_price, case.expect)
+        for v in case.variants:
+            check_estimate(rows, v.month_end, cap.purchase_price, v.expect.model_dump())
+        return
+    want = phase9.NsExpect.model_validate(case.expect)
+    runs = [
+        RunTotals(
+            net_worth_run_id=uid(r.id), month_end=r.month_end, created_at=r.created, total=r.total
+        )
+        for r in case.runs
+    ]
+    closed = [hm(m, private_income=s) for m, s in case.saved.items()]
+    got = F.series(runs, closed)
+    points = [p for p in got if p.net_worth_run_id is not None]
+    assert [
+        (p.month_end, p.net_worth_run_id, p.total, p.change, p.saved, p.other) for p in points
+    ] == [
+        (p.month_end, None if p.run is None else uid(p.run), p.total, p.change, p.saved, p.other)
+        for p in want.points
+    ]
+    gaps = [p for p in got if p.net_worth_run_id is None]
+    assert [p.month_end for p in gaps] == want.gaps
+    assert sorted({p.todo.code for p in gaps}) == want.todos
+    assert all(p.todo.action == "Monatsabschluss festhalten" for p in gaps)
+
+
+def test_a_month_not_closed_has_a_change_but_no_saved():
+    runs = [
+        RunTotals(
+            net_worth_run_id=uid(key),
+            month_end=end,
+            created_at=f"{end.isoformat()}T08:00:00Z",
+            total=Decimal(total),
+        )
+        for key, end, total in (
+            ("r1", date(2027, 3, 31), "100.00"),
+            ("r2", date(2027, 4, 30), "150.00"),
+        )
+    ]
+    _, second = F.series(runs, [])
+    assert second.change == Decimal("50.00") and second.saved is None and second.other is None
+    assert F.series([], []) == []
+
+
+def test_the_estimate_skips_a_withdrawn_scenario():
+    rows = [
+        ScenarioValue(
+            scenario_id=uid("s1"),
+            created_on=date(2026, 12, 1),
+            default=True,
+            value_today=Decimal("310000.00"),
+        ),
+        ScenarioValue(
+            scenario_id=uid("s2"),
+            created_on=date(2027, 1, 5),
+            default=True,
+            withdrawn=True,
+            value_today=Decimal("1.00"),
+        ),
+    ]
+    got = F.estimate_on(rows, date(2027, 1, 31), Decimal("300000.00"))
+    assert got.scenario_id == uid("s1") and got.value == Decimal("310000.00")

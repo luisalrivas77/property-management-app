@@ -21,7 +21,6 @@ bases:
 
 cases:
   - id: one_loan
-    pending: "1"
     description: §15.2
     classes: *classes
     estimates: {p1: {value: "320000.00", source: scenario}}
@@ -34,7 +33,6 @@ cases:
       split: {bank: "0.0546", depot: "0.0588", crypto: "0.0114", property: "0.8753"}}
 
   - id: two_loans_one_property
-    pending: "1"
     classes: *classes
     estimates: {p1: {value: "320000.00", source: scenario}}
     loans: [{property: p1, balance: "150000.00"}, {property: p1, balance: "86400.00"}]
@@ -46,7 +44,6 @@ cases:
       split: {bank: "0.0546", depot: "0.0588", crypto: "0.0114", property: "0.8753"}}
 
   - id: no_loan
-    pending: "1"
     classes: *classes
     estimates: {p1: {value: "320000.00", source: scenario}}
     loans: []
@@ -58,7 +55,6 @@ cases:
       split: {bank: "0.0546", depot: "0.0588", crypto: "0.0114", property: "0.8753"}}
 
   - id: estimate_is_purchase_price
-    pending: "1"
     description: no default scenario; the estimate is the purchase price and the screen says so
     classes: {bank: "19950.00", depot: "21500.00", crypto: "4150.00", property: "300000.00"}
     estimates: {p1: {value: "300000.00", source: purchase_price}}
@@ -72,7 +68,6 @@ cases:
       split: {bank: "0.0577", depot: "0.0622", crypto: "0.0120", property: "0.8681"}}
 
   - id: annualised_from_three
-    pending: "1"
     description: every annualised figure says „hochgerechnet aus 3 Monaten“
     classes: *classes
     estimates: {p1: {value: "320000.00", source: scenario}}
@@ -85,7 +80,6 @@ cases:
       split: {bank: "0.0546", depot: "0.0588", crypto: "0.0114", property: "0.8753"}}
 
   - id: card_debt_in_liabilities
-    pending: "1"
     description: the card's debt is a liability and no debt service
     classes: {bank: "10000.00", depot: "0.00", crypto: "0.00", property: "0.00"}
     estimates: {}
@@ -98,7 +92,6 @@ cases:
       split: {bank: "1.0000", depot: "0.0000", crypto: "0.0000", property: "0.0000"}}
 
   - id: income_not_positive
-    pending: "1"
     classes: *classes
     estimates: {p1: {value: "320000.00", source: scenario}}
     loans: [{property: p1, balance: "236400.00"}]
