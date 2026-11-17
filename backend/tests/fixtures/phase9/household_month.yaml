@@ -32,7 +32,6 @@ bases:
 
 cases:
   - id: baseline
-    pending: "1"
     description: §15.2's March
     month: "2027-03"
     lines: [*rental_march, *private_march]
@@ -42,7 +41,6 @@ cases:
       free_cash: "1180.00", savings_rate: "0.2764"}
 
   - id: flat_shortfall
-    pending: "1"
     description: §15.2's May; R is negative and lowers E (D233)
     month: "2027-05"
     lines:
@@ -65,7 +63,6 @@ cases:
       principal: "312.00", free_cash: "1230.00", savings_rate: "-1.7901"}
 
   - id: private_cost_once
-    pending: "1"
     description: a repair of the flat paid from A's account counts in A, not in R; its private_cost tax input is ignored
     month: "2027-03"
     lines:
@@ -79,7 +76,6 @@ cases:
       principal: "310.00", free_cash: "880.00", savings_rate: "0.2208"}
 
   - id: purchase_cost_paid_privately
-    pending: "1"
     description: D234; the notary's bill for the purchase, paid from B's account, leaves A and joins invested_property
     month: "2027-03"
     lines:
@@ -90,7 +86,6 @@ cases:
       saved: "1490.00", income: "5390.00"}
 
   - id: purchase_month
-    pending: "1"
     description: §15.2's second case; the price, the payout and the purchase costs in one month
     month: "2026-04"
     lines:
@@ -110,7 +105,6 @@ cases:
       invested_property: "79200.00", free_cash: "1400.00", savings_rate: "0.2642"}
 
   - id: payout_one_month_before_payment
-    pending: "1"
     description: the loan pays out in April, the price leaves in May; the two months net to the own money
     months:
       - month: "2026-04"
@@ -124,7 +118,6 @@ cases:
     net_invested_property: "60000.00"
 
   - id: tax_lines_not_tax_effect
-    pending: "1"
     description: a tax back-payment is a spending line; a tax effect given beside it is never read (D233)
     month: "2027-03"
     lines:
@@ -138,7 +131,6 @@ cases:
       principal: "310.00", free_cash: "480.00", savings_rate: "0.1466"}
 
   - id: owner_transfer_ignored
-    pending: "1"
     description: money from B's account to the rental account is in neither block
     month: "2027-03"
     lines:
@@ -149,7 +141,6 @@ cases:
     expect: {private_spending: "3900.00", rental_result: "90.00", saved: "1490.00"}
 
   - id: loan_payout_and_deposit_ignored
-    pending: "1"
     description: a deposit received and a loan payout are neither income nor spending
     month: "2027-03"
     lines:
@@ -160,7 +151,6 @@ cases:
     expect: {rental_result: "90.00", income: "5390.00", saved: "1490.00", invested_property: "-5000.00"}
 
   - id: transfer_into_depot_is_invested
-    pending: "1"
     description: a transfer from A's account to the depot is saving, not spending
     month: "2027-03"
     lines:
@@ -171,7 +161,6 @@ cases:
     expect: {private_spending: "3900.00", saved: "1490.00", invested: "400.00"}
 
   - id: refund_lowers_spending
-    pending: "1"
     description: a merchant's refund (hh_refund) lowers spending and is never income
     month: "2027-03"
     lines:
@@ -181,7 +170,6 @@ cases:
     expect: {private_income: "5300.00", private_spending: "3780.00", saved: "1610.00"}
 
   - id: tenant_refund_lowers_income
-    pending: "1"
     description: a refund to a tenant from the rental account lowers the Umlagen received
     month: "2027-03"
     lines:
@@ -191,7 +179,6 @@ cases:
     expect: {rental_result: "10.00", income: "5310.00", saved: "1410.00"}
 
   - id: year_end_rent
-    pending: "1"
     description: January's rent booked on 30 December counts in December (D230, not §11)
     month: "2026-12"
     lines:
@@ -200,7 +187,6 @@ cases:
     expect: {rental_result: "1900.00"}
 
   - id: no_income
-    pending: "1"
     description: E ≤ 0 gives no rate
     month: "2027-03"
     lines:
@@ -211,7 +197,6 @@ cases:
       free_cash: "-1450.00", savings_rate: null}
 
   - id: card_settlement_without_statements
-    pending: "1"
     description: a card whose statements are not in the app; its settlement (hh_credit_card) is spending
     month: "2027-03"
     lines:

@@ -6,7 +6,8 @@
 - GET /net-worth/overview: the Übersicht's card: today's figure, the latest stored month-end
   and the month-end still to store.
 - POST /net-worth/snapshots: „Monatsabschluss festhalten“, the last month-end before today
-  (Berlin time); a new run only when its figures differ from the stored one.
+  (Berlin time), or a past month-end named in the body (phase 9 D241); a new run only when
+  its figures differ from the stored one.
 - GET /net-worth/snapshots: every stored run, the newest month-end first.
 - GET /net-worth/snapshots/{run_id}: one stored run as a NetWorth. 404 for an unknown run.
 - GET /accounts/auto-rate?month=YYYY-MM: D172's measure. This module is included before
@@ -19,13 +20,14 @@ from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Query
+from fastapi import Body, Query
 
 from hausbuch.schemas.net_worth import (
     AutoRate,
     NetWorth,
     NetWorthOverview,
     NetWorthRun,
+    SnapshotRequest,
     SnapshotResult,
 )
 from hausbuch.services import auto_rate, net_worth
@@ -60,10 +62,14 @@ def net_worth_overview(cmd: Cmd) -> NetWorthOverview:
 
 
 @router.post("/net-worth/snapshots")
-def net_worth_snapshot(cmd: Cmd) -> SnapshotResult:
-    """200 in every case: the outcome says whether a run was written (written, recaptured)
-    or not (unchanged, empty)."""
-    return cmd.run(net_worth.capture_last_month_end)
+def net_worth_snapshot(
+    cmd: Cmd, body: Annotated[SnapshotRequest | None, Body()] = None
+) -> SnapshotResult:
+    """200 when the month-end may be stored: the outcome says whether a run was written
+    (written, recaptured) or not (unchanged, empty). A body's `as_of` stores a past month-end
+    (phase 9 D241); 422 net_worth.not_month_end, net_worth.month_end_before_history or
+    net_worth.month_end_not_closed when it cannot be stored."""
+    return cmd.run(net_worth.capture_last_month_end, None if body is None else body.as_of)
 
 
 @router.get("/net-worth/snapshots")

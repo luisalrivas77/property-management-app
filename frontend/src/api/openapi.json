@@ -4237,8 +4237,25 @@
       },
       "post": {
         "summary": "Net Worth Snapshot",
-        "description": "200 in every case: the outcome says whether a run was written (written, recaptured)\nor not (unchanged, empty).",
+        "description": "200 when the month-end may be stored: the outcome says whether a run was written\n(written, recaptured) or not (unchanged, empty). A body's `as_of` stores a past month-end\n(phase 9 D241); 422 net_worth.not_month_end, net_worth.month_end_before_history or\nnet_worth.month_end_not_closed when it cannot be stored.",
         "operationId": "net_worth_snapshot_api_net_worth_snapshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SnapshotRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -6442,6 +6459,178 @@
                     "$ref": "#/components/schemas/TaxInput"
                   },
                   "title": "Response Private Costs Year Api Transactions  Transaction Id  Private Costs Year Post"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Health Get",
+        "operationId": "health_get_api_health_get",
+        "parameters": [
+          {
+            "name": "scenario",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scenario"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/months": {
+      "get": {
+        "summary": "Health Months",
+        "operationId": "health_months_api_health_months_get",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HealthMonthView"
+                  },
+                  "title": "Response Health Months Api Health Months Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/net-worth-series": {
+      "get": {
+        "summary": "Health Net Worth Series",
+        "operationId": "health_net_worth_series_api_health_net_worth_series_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NetWorthPoint"
+                  },
+                  "type": "array",
+                  "title": "Response Health Net Worth Series Api Health Net Worth Series Get"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/snapshots": {
+      "post": {
+        "summary": "Health Snapshot",
+        "description": "200 with `stored` (a new row) or `unchanged` (the newest row of the month holds the\nsame run, rule version and figures).",
+        "operationId": "health_snapshot_api_health_snapshots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HealthSnapshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthSnapshotResult"
                 }
               }
             }
@@ -13238,6 +13427,64 @@
         "title": "BalanceSource",
         "description": "statement_import.balance_source: where the declared balances came from (D21)."
       },
+      "BandProposal": {
+        "properties": {
+          "figure": {
+            "$ref": "#/components/schemas/MarkedFigure"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/Direction"
+          },
+          "green": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposedLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "red": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposedLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reference_points": {
+            "items": {
+              "$ref": "#/components/schemas/ReferencePoint"
+            },
+            "type": "array",
+            "title": "Reference Points"
+          },
+          "sentences": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/LightColour"
+            },
+            "type": "object",
+            "title": "Sentences"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "figure",
+          "direction"
+        ],
+        "title": "BandProposal",
+        "description": "One figure of bands.yaml: direction, the proposed limits with their origins, the\nreference points and the sentence codes per colour (D250 (1))."
+      },
       "BankConnection": {
         "properties": {
           "id": {
@@ -14669,6 +14916,86 @@
         ],
         "title": "Choice"
       },
+      "ClosedMonth": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "closed": {
+            "type": "boolean",
+            "title": "Closed"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/ClosedReason"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/HealthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "closed"
+        ],
+        "title": "ClosedMonth"
+      },
+      "ClosedReason": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ClosedReasonCode"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "ClosedReason"
+      },
+      "ClosedReasonCode": {
+        "type": "string",
+        "enum": [
+          "account_not_covered",
+          "lines_waiting",
+          "transfer_open"
+        ],
+        "title": "ClosedReasonCode"
+      },
       "CommuteComponent": {
         "properties": {
           "amount": {
@@ -15779,6 +16106,138 @@
         "title": "DatedFlow",
         "description": "One flow of the IRR (D89): −E₀ on the purchase date, each year's net cash on 31 Dec,\nthe net sale proceeds on the sale date."
       },
+      "Debt": {
+        "properties": {
+          "properties": {
+            "items": {
+              "$ref": "#/components/schemas/PropertyLtv"
+            },
+            "type": "array",
+            "title": "Properties"
+          },
+          "liabilities": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Liabilities"
+          },
+          "gross_assets": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Gross Assets"
+          },
+          "debt_ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debt Ratio"
+          },
+          "interest": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Interest"
+          },
+          "principal": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Principal"
+          },
+          "debt_service_year": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Debt Service Year"
+          },
+          "income_year": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Income Year"
+          },
+          "debt_service_ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debt Service Ratio"
+          },
+          "debt_to_income": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debt To Income"
+          },
+          "months": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Months"
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/DebtGap"
+            },
+            "type": "array",
+            "title": "Gaps"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "liabilities",
+          "gross_assets",
+          "interest",
+          "principal",
+          "debt_service_year",
+          "income_year",
+          "months"
+        ],
+        "title": "Debt",
+        "description": "D239, §5.3. Annualised from n months when n < 12."
+      },
+      "DebtFigure": {
+        "type": "string",
+        "enum": [
+          "ltv",
+          "debt_ratio",
+          "debt_service_ratio",
+          "debt_to_income"
+        ],
+        "title": "DebtFigure"
+      },
+      "DebtGap": {
+        "properties": {
+          "figure": {
+            "$ref": "#/components/schemas/DebtFigure"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "figure",
+          "reason"
+        ],
+        "title": "DebtGap",
+        "description": "A debt figure whose denominator is 0 or below (§5.3)."
+      },
       "DeclareBalanceBody": {
         "properties": {
           "closing_balance": {
@@ -16264,6 +16723,14 @@
         "type": "object",
         "title": "DepotReportExtraction",
         "description": "Quartalsbericht (depot_report, D165 (3)): the positions on a date and the trades the\nreport lists, from which code proposes holding_statement rows. The list of trades runs\nfrom the mandate's start, so a later report repeats the earlier ones."
+      },
+      "Direction": {
+        "type": "string",
+        "enum": [
+          "lower",
+          "higher"
+        ],
+        "title": "Direction"
       },
       "DisbursementCorrection": {
         "properties": {
@@ -17919,6 +18386,14 @@
         "title": "EstimateLineSources",
         "description": "What each line of the whole-return estimate came from, so the Gesamt card opens the\nsources line by line (ReturnEstimate.sources stays their union). The Anlage N and V lines\ncarry theirs on OwnerIncome and PropertyIncome."
       },
+      "EstimateSource": {
+        "type": "string",
+        "enum": [
+          "scenario",
+          "purchase_price"
+        ],
+        "title": "EstimateSource"
+      },
       "EtfOverview": {
         "properties": {
           "accounts": {
@@ -18193,7 +18668,8 @@
           "transaction.reallocated",
           "transaction.resort_proposed",
           "rule.created",
-          "rule.disabled"
+          "rule.disabled",
+          "health.snapshot_stored"
         ],
         "title": "EventType"
       },
@@ -19622,6 +20098,396 @@
         "title": "HausgeldabrechnungExtraction",
         "description": "Hausgeldabrechnung: the year's settlement (read by phase 3's Hausgeld rule)."
       },
+      "Health": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "window": {
+            "$ref": "#/components/schemas/Window"
+          },
+          "newest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HouseholdMonth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "savings_rate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SavingsRate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reserve": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Reserve"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "debt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Debt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "split": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]{1,4})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NetWorthClass"
+            },
+            "type": "object",
+            "title": "Split"
+          },
+          "free_cash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Cash"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/NetWorthPoint"
+            },
+            "type": "array",
+            "title": "Series"
+          },
+          "marks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Light"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/MarkedFigure"
+            },
+            "type": "object",
+            "title": "Marks"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/BandProposal"
+            },
+            "type": "array",
+            "title": "Proposals"
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/HealthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "as_of",
+          "window"
+        ],
+        "title": "Health",
+        "description": "GET /health (§13): the window, the figures, the marks, the proposals not yet\nconfirmed, and the to-dos."
+      },
+      "HealthMonthView": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "household": {
+            "$ref": "#/components/schemas/HouseholdMonth"
+          },
+          "closed": {
+            "$ref": "#/components/schemas/ClosedMonth"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          },
+          "stored": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HouseholdMonth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HealthTodo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "household",
+          "closed"
+        ],
+        "title": "HealthMonthView",
+        "description": "GET /health/months: one calendar month on read (D232, D242). `household` with its\nsources; `closed` with its reasons and to-dos. `snapshot_id` names the newest stored row\nof the month; `stored` is that row's month (without sources) only when it differs from\nthe month on read, the screen's „seit dem Abschluss geändert“ with both values. `todo`\n(code month_end_missing), for a month that has ended and is closed but has no snapshot:\nthe first gap of its month-end read again (a missing or stale price, a balance not\nreconciled to the day) with the net worth's own button, while that month-end is\nincomplete; else „Monatsabschluss festhalten“ while no run holds the month-end and the\ndaily task would store the month the next morning."
+      },
+      "HealthSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "month_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Month End"
+          },
+          "net_worth_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Net Worth Run Id"
+          },
+          "figures": {
+            "$ref": "#/components/schemas/HealthSnapshotFigures"
+          },
+          "rule_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Rule Version"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "month_end",
+          "net_worth_run_id",
+          "figures",
+          "rule_version",
+          "created_at"
+        ],
+        "title": "HealthSnapshot",
+        "description": "health_snapshot row (immutable, D242). `rule_version` is the hash of rules/health/ and\nrules/plan/; created_by None for the daily task."
+      },
+      "HealthSnapshotFigures": {
+        "properties": {
+          "month": {
+            "$ref": "#/components/schemas/HouseholdMonth"
+          },
+          "window": {
+            "$ref": "#/components/schemas/Window"
+          },
+          "savings_rate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SavingsRate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reserve": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Reserve"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "debt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Debt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "split": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]{1,4})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NetWorthClass"
+            },
+            "type": "object",
+            "title": "Split"
+          },
+          "free_cash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Cash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "window"
+        ],
+        "title": "HealthSnapshotFigures",
+        "description": "`health_snapshot.figures` (§5.5): the month without sources, the window's savings rate\nand basis as of that month, the reserve, the debt figures and the split from the run, and\nthe free cash. No mark (§5.6)."
+      },
+      "HealthSnapshotOutcome": {
+        "type": "string",
+        "enum": [
+          "stored",
+          "unchanged"
+        ],
+        "title": "HealthSnapshotOutcome"
+      },
+      "HealthSnapshotRequest": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month"
+        ],
+        "title": "HealthSnapshotRequest",
+        "description": "POST /health/snapshots („Kennzahlen festhalten“)."
+      },
+      "HealthSnapshotResult": {
+        "properties": {
+          "outcome": {
+            "$ref": "#/components/schemas/HealthSnapshotOutcome"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/HealthSnapshot"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "outcome",
+          "snapshot"
+        ],
+        "title": "HealthSnapshotResult"
+      },
+      "HealthTodo": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/HealthTodoCode"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "href": {
+            "type": "string",
+            "title": "Href"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "text",
+          "action",
+          "href"
+        ],
+        "title": "HealthTodo",
+        "description": "A gap as a plain to-do with the button or page that closes it (principle 7)."
+      },
+      "HealthTodoCode": {
+        "type": "string",
+        "enum": [
+          "month_end_missing",
+          "account_not_covered",
+          "lines_waiting",
+          "transfer_open",
+          "too_few_months",
+          "balance_stale",
+          "bands_unconfirmed",
+          "no_default_scenario",
+          "scenario_check",
+          "rate_missing",
+          "income_change_link"
+        ],
+        "title": "HealthTodoCode"
+      },
       "HiddenToken": {
         "properties": {
           "asset_id": {
@@ -20006,6 +20872,123 @@
         ],
         "title": "HouseholdGroup",
         "description": "The group a household code is shown under (mockup 10's spending groups and the\nothers; rules/household/taxonomy.py)."
+      },
+      "HouseholdMonth": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "private_income": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Private Income"
+          },
+          "private_spending": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Private Spending"
+          },
+          "one_off_spending": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "One Off Spending"
+          },
+          "regular_spending": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Regular Spending"
+          },
+          "rental_result": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Rental Result"
+          },
+          "rental_cash": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Rental Cash"
+          },
+          "income": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Income"
+          },
+          "spending": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Spending"
+          },
+          "saved": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Saved"
+          },
+          "principal": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Principal"
+          },
+          "invested_property": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Invested Property"
+          },
+          "invested": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Invested"
+          },
+          "free_cash": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Free Cash"
+          },
+          "savings_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Savings Rate"
+          },
+          "sources": {
+            "additionalProperties": {
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "private_income",
+          "private_spending",
+          "one_off_spending",
+          "regular_spending",
+          "rental_result",
+          "rental_cash",
+          "income",
+          "spending",
+          "saved",
+          "principal",
+          "invested_property",
+          "invested",
+          "free_cash"
+        ],
+        "title": "HouseholdMonth",
+        "description": "§4.2. The identities between the fields are checked here; how each block is summed is\nrules/health/month (step 1). `sources`: the allocation ids per field (principle 2), empty\nin a stored snapshot (§5.5)."
       },
       "HouseholdServicesFact": {
         "properties": {
@@ -21393,6 +22376,88 @@
         "title": "Levers",
         "description": "What the user sets for a projection (D87). Defaults are the spec's (Q4, Luis)."
       },
+      "Light": {
+        "properties": {
+          "figure": {
+            "$ref": "#/components/schemas/MarkedFigure"
+          },
+          "colour": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LightColour"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "green": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Green"
+          },
+          "red": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Red"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LimitOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sentences": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sentences"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "figure"
+        ],
+        "title": "Light",
+        "description": "One figure's mark: the colour (None: unmarked), the limits used with their origins, and\nthe codes of its sentences (§5.6). Computed on read, never stored."
+      },
+      "LightColour": {
+        "type": "string",
+        "enum": [
+          "green",
+          "amber",
+          "red"
+        ],
+        "title": "LightColour"
+      },
+      "LimitOrigin": {
+        "type": "string",
+        "enum": [
+          "source",
+          "own_lever"
+        ],
+        "title": "LimitOrigin"
+      },
       "LimitStatus": {
         "properties": {
           "tax_year": {
@@ -22366,6 +23431,19 @@
         ],
         "title": "MarginalRateOverride"
       },
+      "MarkedFigure": {
+        "type": "string",
+        "enum": [
+          "reserve",
+          "savings_rate",
+          "ltv",
+          "debt_service_ratio",
+          "debt_ratio",
+          "debt_to_income"
+        ],
+        "title": "MarkedFigure",
+        "description": "The figures a mark may be put on. The split's shares are not among them (D240)."
+      },
       "MarketRent": {
         "properties": {
           "valid_from": {
@@ -22653,6 +23731,33 @@
         "additionalProperties": false,
         "type": "object",
         "title": "MonthAndYtd"
+      },
+      "MonthRate": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month"
+        ],
+        "title": "MonthRate"
       },
       "MovableAfaLine": {
         "properties": {
@@ -23420,6 +24525,114 @@
         ],
         "title": "NetWorthOverview",
         "description": "GET /net-worth/overview: the Übersicht's card. `today` on read; `month_end` the latest\nstored month-end, None before the first; `month_end_due` the last month-end when no run\nholds it yet (the button „Monatsabschluss festhalten“); `month_end_now` the total read\nnow for the stored month-end's day when it differs from the stored total, set only when\nthat day is the last month-end (the one the button stores again)."
+      },
+      "NetWorthPoint": {
+        "properties": {
+          "month_end": {
+            "type": "string",
+            "format": "date",
+            "title": "Month End"
+          },
+          "net_worth_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Worth Run Id"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          },
+          "by_class": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/NetWorthClass"
+            },
+            "type": "object",
+            "title": "By Class"
+          },
+          "by_owner": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "By Owner"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "saved": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved"
+          },
+          "other": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other"
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HealthTodo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month_end"
+        ],
+        "title": "NetWorthPoint",
+        "description": "One month-end of the series (D241, §5.4). A month-end without a stored run is a gap:\nno run, no figures, and the to-do „Monatsabschluss festhalten“."
       },
       "NetWorthRun": {
         "properties": {
@@ -25676,6 +26889,49 @@
         ],
         "title": "PropertyKind"
       },
+      "PropertyLtv": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "loan_balance": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Loan Balance"
+          },
+          "estimate": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Estimate"
+          },
+          "estimate_source": {
+            "$ref": "#/components/schemas/EstimateSource"
+          },
+          "ltv": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ltv"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "loan_balance",
+          "estimate",
+          "estimate_source"
+        ],
+        "title": "PropertyLtv"
+      },
       "PropertyOwnership": {
         "properties": {
           "property_id": {
@@ -26121,6 +27377,36 @@
         ],
         "title": "ProposalTargetMode",
         "description": "proposal.target_mode: whether the proposal creates new records or patches `targets`."
+      },
+      "ProposedLimit": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$",
+            "title": "Value"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/LimitOrigin"
+          },
+          "citation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "origin"
+        ],
+        "title": "ProposedLimit"
       },
       "PurchaseContractExtraction": {
         "properties": {
@@ -27037,6 +28323,30 @@
         ],
         "title": "ReducedRentResult"
       },
+      "ReferencePoint": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "says": {
+            "type": "string",
+            "title": "Says"
+          },
+          "does_not_say": {
+            "type": "string",
+            "title": "Does Not Say"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source",
+          "says",
+          "does_not_say"
+        ],
+        "title": "ReferencePoint"
+      },
       "RelatedDocument": {
         "properties": {
           "document": {
@@ -27603,6 +28913,139 @@
         ],
         "title": "RequirementCode",
         "description": "One kind of paperwork the return needs. German labels and hints live in the frontend."
+      },
+      "Reserve": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/ReserveAccount"
+            },
+            "type": "array",
+            "title": "Accounts"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "need": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Need"
+          },
+          "months": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months"
+          },
+          "target_months": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,1})?$",
+            "title": "Target Months"
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Target"
+          },
+          "gap": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Gap"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReserveState"
+          },
+          "by_owner": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "By Owner"
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/HealthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amount",
+          "need",
+          "target_months",
+          "target",
+          "gap",
+          "state"
+        ],
+        "title": "Reserve",
+        "description": "D237, D238, §5.2. Compared in euros, never in rounded months."
+      },
+      "ReserveAccount": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AccountKind"
+          },
+          "balance": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Balance"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/ReserveOrigin"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "kind",
+          "balance",
+          "as_of",
+          "origin"
+        ],
+        "title": "ReserveAccount"
+      },
+      "ReserveOrigin": {
+        "type": "string",
+        "enum": [
+          "default",
+          "added",
+          "removed"
+        ],
+        "title": "ReserveOrigin"
+      },
+      "ReserveState": {
+        "type": "string",
+        "enum": [
+          "below",
+          "reached"
+        ],
+        "title": "ReserveState"
       },
       "RetentionClass": {
         "type": "string",
@@ -28806,6 +30249,83 @@
         "title": "SaleResult",
         "description": "D88, D89. gain is None when the sale is outside §23 (taxable False); a negative gain is\na loss that is not offset (\"nicht verrechenbar\", sale_tax 0.00)."
       },
+      "SavingsRate": {
+        "properties": {
+          "saved": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Saved"
+          },
+          "income": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Income"
+          },
+          "one_off_spending": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "One Off Spending"
+          },
+          "principal": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Principal"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "rate_regular": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Regular"
+          },
+          "rate_without_principal": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Without Principal"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/MonthRate"
+            },
+            "type": "array",
+            "title": "Months"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "saved",
+          "income",
+          "one_off_spending",
+          "principal"
+        ],
+        "title": "SavingsRate",
+        "description": "D235, §5.1. Every ratio None when income ≤ 0."
+      },
       "Scenario": {
         "properties": {
           "property_id": {
@@ -29186,6 +30706,26 @@
           "empty"
         ],
         "title": "SnapshotOutcome"
+      },
+      "SnapshotRequest": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SnapshotRequest",
+        "description": "POST /net-worth/snapshots, optional body (phase 9 D241): a past month-end to store, from\n31 Jan 2026 to the last one before today. Without it, the last month-end before today."
       },
       "SnapshotResult": {
         "properties": {
@@ -34549,6 +36089,30 @@
         "additionalProperties": false,
         "type": "object",
         "title": "WerbungskostenComponents"
+      },
+      "Window": {
+        "properties": {
+          "months": {
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Months"
+          },
+          "enough": {
+            "type": "boolean",
+            "title": "Enough"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enough"
+        ],
+        "title": "Window",
+        "description": "The unbroken run of closed months ending at the newest, cut to 12 (D231)."
       },
       "WirtschaftsplanExtraction": {
         "properties": {

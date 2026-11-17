@@ -41,7 +41,12 @@ from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import unit as unit_table
 from hausbuch.rules.errors import REMINDER_SCOPE_INVALID, REMINDER_UNKNOWN, RuleError
-from hausbuch.rules.reminders import KIND_SCOPES, build_reminders, parse_reminder_id
+from hausbuch.rules.reminders import (
+    KIND_SCOPES,
+    build_reminders,
+    card_used_again,
+    parse_reminder_id,
+)
 from hausbuch.rules.statements import is_direct_debit
 from hausbuch.schemas.allocation import AllocationCategory, AllocationStatus
 from hausbuch.schemas.api import InboxItem, InboxItemKind
@@ -345,6 +350,34 @@ def _accounts(conn: Connection) -> list[ReminderAccount]:
             )
         )
     return out
+
+
+def idle_cards(conn: Connection) -> set[UUID]:
+    """The credit cards idle by D122 amended (6), as bank.statement_due reads them: the latest
+    reconciled statement closed at exactly 0 and no debit on another own account paid the
+    card after the D162 window of the day its statements and history reach
+    (rules.reminders.card_used_again). Phase 9 D231 (a) counts such a card as covered."""
+    zero = _cards_closed_at_zero(conn)
+    if not zero:
+        return set()
+    s = import_table.c
+    reconciled = dict(
+        conn.execute(
+            select(s.account_id, func.max(s.last_booking_on))
+            .where(s.status == ImportStatus.RECONCILED.value, s.account_id.in_(zero))
+            .group_by(s.account_id)
+        ).all()
+    )
+    history = history_ends(conn)
+    covered = {
+        card: max(day, history.get(card, day))
+        for card, day in reconciled.items()
+        if day is not None
+    }
+    paid = card_payments_after(conn, covered)
+    return {
+        card for card, day in covered.items() if card_used_again(day, paid.get(card, [])) is None
+    }
 
 
 def _cards_closed_at_zero(conn: Connection) -> set[UUID]:

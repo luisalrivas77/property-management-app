@@ -428,6 +428,16 @@ def _rent_missing(
         month = add_months(month, 1)
 
 
+def card_used_again(covered: date, paid_on: Iterable[date]) -> date | None:
+    """D122 amended (6): for a credit card whose last statement (covering through `covered`)
+    closed at exactly 0, the first day a debit on another own account paid it again after
+    the D162 window of `covered` (a debit inside it may settle what that statement already
+    shows as paid), None while none did: the card is idle (phase 9 D231 (a) counts an idle
+    card as covered)."""
+    window_end = transfer_window_end(covered)
+    return min((day for day in paid_on if day > window_end), default=None)
+
+
 def _statement_due(a: ReminderAccount) -> Reminder | None:
     """D122 amended: an account fed by statements with a reconciled import, unless its
     connection fetches daily (bank.sync_stale watches that one). Covered through the later of
@@ -448,11 +458,10 @@ def _statement_due(a: ReminderAccount) -> Reminder | None:
         # D162 window after the covered day may settle the balance the last statement already
         # shows as paid (its credit up to three banking days before the debit), so it proves
         # no new use.
-        window_end = transfer_window_end(covered)
-        later = [day for day in a.paid_on if day > window_end]
-        if not later:
+        used = card_used_again(covered, a.paid_on)
+        if used is None:
             return None
-        counted_from = min(later)
+        counted_from = used
     following_end = add_months(counted_from.replace(day=1), 2) - timedelta(days=1)
     return _reminder(
         K.STATEMENT_DUE,

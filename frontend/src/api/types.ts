@@ -1528,8 +1528,10 @@ export interface paths {
         put?: never;
         /**
          * Net Worth Snapshot
-         * @description 200 in every case: the outcome says whether a run was written (written, recaptured)
-         *     or not (unchanged, empty).
+         * @description 200 when the month-end may be stored: the outcome says whether a run was written
+         *     (written, recaptured) or not (unchanged, empty). A body's `as_of` stores a past month-end
+         *     (phase 9 D241); 422 net_worth.not_month_end, net_worth.month_end_before_history or
+         *     net_worth.month_end_not_closed when it cannot be stored.
          */
         post: operations["net_worth_snapshot_api_net_worth_snapshots_post"];
         delete?: never;
@@ -2363,6 +2365,78 @@ export interface paths {
          * @description The bill's current private_cost rows, in the year the line paid them.
          */
         post: operations["private_costs_year_api_transactions__transaction_id__private_costs_year_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Health Get */
+        get: operations["health_get_api_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health/months": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Health Months */
+        get: operations["health_months_api_health_months_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health/net-worth-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Health Net Worth Series */
+        get: operations["health_net_worth_series_api_health_net_worth_series_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Health Snapshot
+         * @description 200 with `stored` (a new row) or `unchanged` (the newest row of the month holds the
+         *     same run, rule version and figures).
+         */
+        post: operations["health_snapshot_api_health_snapshots_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4944,6 +5018,23 @@ export interface components {
          */
         BalanceSource: "file" | "user" | "none" | "bank";
         /**
+         * BandProposal
+         * @description One figure of bands.yaml: direction, the proposed limits with their origins, the
+         *     reference points and the sentence codes per colour (D250 (1)).
+         */
+        BandProposal: {
+            figure: components["schemas"]["MarkedFigure"];
+            direction: components["schemas"]["Direction"];
+            green?: components["schemas"]["ProposedLimit"] | null;
+            red?: components["schemas"]["ProposedLimit"] | null;
+            /** Reference Points */
+            reference_points?: components["schemas"]["ReferencePoint"][];
+            /** Sentences */
+            sentences?: {
+                [key: string]: string[];
+            };
+        };
+        /**
          * BankConnection
          * @description GET /accounts/{id}/bank-connection: the login masked, the client state only as a flag
          *     (client_data and its MAC never leave the database).
@@ -5582,6 +5673,30 @@ export interface components {
             /** Label De */
             label_de: string;
         };
+        /** ClosedMonth */
+        ClosedMonth: {
+            /** Month */
+            month: string;
+            /** Closed */
+            closed: boolean;
+            /** Reasons */
+            reasons?: components["schemas"]["ClosedReason"][];
+            /** Todos */
+            todos?: components["schemas"]["HealthTodo"][];
+        };
+        /** ClosedReason */
+        ClosedReason: {
+            code: components["schemas"]["ClosedReasonCode"];
+            /** Account Id */
+            account_id?: string | null;
+            /** Count */
+            count?: number | null;
+        };
+        /**
+         * ClosedReasonCode
+         * @enum {string}
+         */
+        ClosedReasonCode: "account_not_covered" | "lines_waiting" | "transfer_open";
         /**
          * CommuteComponent
          * @description §5.2: the routes' Pauschale (the non-car part capped), the tickets when higher, minus
@@ -6100,6 +6215,50 @@ export interface components {
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
+         * Debt
+         * @description D239, §5.3. Annualised from n months when n < 12.
+         */
+        Debt: {
+            /** Properties */
+            properties?: components["schemas"]["PropertyLtv"][];
+            /** Liabilities */
+            liabilities: string;
+            /** Gross Assets */
+            gross_assets: string;
+            /** Debt Ratio */
+            debt_ratio?: string | null;
+            /** Interest */
+            interest: string;
+            /** Principal */
+            principal: string;
+            /** Debt Service Year */
+            debt_service_year: string;
+            /** Income Year */
+            income_year: string;
+            /** Debt Service Ratio */
+            debt_service_ratio?: string | null;
+            /** Debt To Income */
+            debt_to_income?: string | null;
+            /** Months */
+            months: number;
+            /** Gaps */
+            gaps?: components["schemas"]["DebtGap"][];
+        };
+        /**
+         * DebtFigure
+         * @enum {string}
+         */
+        DebtFigure: "ltv" | "debt_ratio" | "debt_service_ratio" | "debt_to_income";
+        /**
+         * DebtGap
+         * @description A debt figure whose denominator is 0 or below (§5.3).
+         */
+        DebtGap: {
+            figure: components["schemas"]["DebtFigure"];
+            /** Reason */
+            reason: string;
+        };
+        /**
          * DeclareBalanceBody
          * @description POST /imports/{id}/balances: the closing balance Luis reads in online banking.
          */
@@ -6325,6 +6484,11 @@ export interface components {
             /** @description every trade of the report's Wertpapierumsätze list, one item per trade, each written `ISIN | trade date | units | amount | reference`, as printed: the trade date the Schlußtag, the units signed (a sale negative), the amount the Ausmachender Betrag with its sign (a purchase negative), the reference the Referenz; unbekannt for a part the row does not state; never the Depot-Nr. */
             trades?: components["schemas"]["ExtractedValue"];
         };
+        /**
+         * Direction
+         * @enum {string}
+         */
+        Direction: "lower" | "higher";
         /**
          * DisbursementCorrection
          * @description POST /loans/{id}/corrections/disbursement: the payout date and/or the principal; an
@@ -6901,6 +7065,11 @@ export interface components {
             withheld?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
+         * EstimateSource
+         * @enum {string}
+         */
+        EstimateSource: "scenario" | "purchase_price";
+        /**
          * EtfOverview
          * @description GET /assets/etf: every depot account with its funds, and the depot's documents.
          */
@@ -6966,7 +7135,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.movement_times_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "account.deposit_address_learned" | "account.deposit_address_forgotten" | "account.withdrawal_pair_learned" | "account.withdrawal_pair_forgotten" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "wallet.deposit_looked_up" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.movement_times_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "account.deposit_address_learned" | "account.deposit_address_forgotten" | "account.withdrawal_pair_learned" | "account.withdrawal_pair_forgotten" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "wallet.deposit_looked_up" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled" | "health.snapshot_stored";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -7580,6 +7749,153 @@ export interface components {
             ruecklage_spent?: components["schemas"]["ExtractedValue"];
         };
         /**
+         * Health
+         * @description GET /health (§13): the window, the figures, the marks, the proposals not yet
+         *     confirmed, and the to-dos.
+         */
+        Health: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            window: components["schemas"]["Window"];
+            newest?: components["schemas"]["HouseholdMonth"] | null;
+            savings_rate?: components["schemas"]["SavingsRate"] | null;
+            reserve?: components["schemas"]["Reserve"] | null;
+            debt?: components["schemas"]["Debt"] | null;
+            /** Split */
+            split?: {
+                [key: string]: string;
+            };
+            /** Free Cash */
+            free_cash?: string | null;
+            /** Series */
+            series?: components["schemas"]["NetWorthPoint"][];
+            /** Marks */
+            marks?: {
+                [key: string]: components["schemas"]["Light"];
+            };
+            /** Proposals */
+            proposals?: components["schemas"]["BandProposal"][];
+            /** Todos */
+            todos?: components["schemas"]["HealthTodo"][];
+        };
+        /**
+         * HealthMonthView
+         * @description GET /health/months: one calendar month on read (D232, D242). `household` with its
+         *     sources; `closed` with its reasons and to-dos. `snapshot_id` names the newest stored row
+         *     of the month; `stored` is that row's month (without sources) only when it differs from
+         *     the month on read, the screen's „seit dem Abschluss geändert“ with both values. `todo`
+         *     (code month_end_missing), for a month that has ended and is closed but has no snapshot:
+         *     the first gap of its month-end read again (a missing or stale price, a balance not
+         *     reconciled to the day) with the net worth's own button, while that month-end is
+         *     incomplete; else „Monatsabschluss festhalten“ while no run holds the month-end and the
+         *     daily task would store the month the next morning.
+         */
+        HealthMonthView: {
+            /** Month */
+            month: string;
+            household: components["schemas"]["HouseholdMonth"];
+            closed: components["schemas"]["ClosedMonth"];
+            /** Snapshot Id */
+            snapshot_id?: string | null;
+            stored?: components["schemas"]["HouseholdMonth"] | null;
+            todo?: components["schemas"]["HealthTodo"] | null;
+        };
+        /**
+         * HealthSnapshot
+         * @description health_snapshot row (immutable, D242). `rule_version` is the hash of rules/health/ and
+         *     rules/plan/; created_by None for the daily task.
+         */
+        HealthSnapshot: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Month End
+             * Format: date
+             */
+            month_end: string;
+            /**
+             * Net Worth Run Id
+             * Format: uuid
+             */
+            net_worth_run_id: string;
+            figures: components["schemas"]["HealthSnapshotFigures"];
+            /** Rule Version */
+            rule_version: string;
+            /** Created By */
+            created_by?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * HealthSnapshotFigures
+         * @description `health_snapshot.figures` (§5.5): the month without sources, the window's savings rate
+         *     and basis as of that month, the reserve, the debt figures and the split from the run, and
+         *     the free cash. No mark (§5.6).
+         */
+        HealthSnapshotFigures: {
+            month: components["schemas"]["HouseholdMonth"];
+            window: components["schemas"]["Window"];
+            savings_rate?: components["schemas"]["SavingsRate"] | null;
+            reserve?: components["schemas"]["Reserve"] | null;
+            debt?: components["schemas"]["Debt"] | null;
+            /** Split */
+            split?: {
+                [key: string]: string;
+            };
+            /** Free Cash */
+            free_cash?: string | null;
+        };
+        /**
+         * HealthSnapshotOutcome
+         * @enum {string}
+         */
+        HealthSnapshotOutcome: "stored" | "unchanged";
+        /**
+         * HealthSnapshotRequest
+         * @description POST /health/snapshots („Kennzahlen festhalten“).
+         */
+        HealthSnapshotRequest: {
+            /** Month */
+            month: string;
+        };
+        /** HealthSnapshotResult */
+        HealthSnapshotResult: {
+            outcome: components["schemas"]["HealthSnapshotOutcome"];
+            snapshot: components["schemas"]["HealthSnapshot"];
+        };
+        /**
+         * HealthTodo
+         * @description A gap as a plain to-do with the button or page that closes it (principle 7).
+         */
+        HealthTodo: {
+            code: components["schemas"]["HealthTodoCode"];
+            /** Text */
+            text: string;
+            /** Action */
+            action: string;
+            /** Href */
+            href: string;
+        };
+        /**
+         * HealthTodoCode
+         * @enum {string}
+         */
+        HealthTodoCode: "month_end_missing" | "account_not_covered" | "lines_waiting" | "transfer_open" | "too_few_months" | "balance_stale" | "bands_unconfirmed" | "no_default_scenario" | "scenario_check" | "rate_missing" | "income_change_link";
+        /**
          * HiddenToken
          * @description GET /wallets/{id}/hidden-tokens (D187 (3)): a token held as spam, by its asset's name
          *     (the masked contract with the symbol the chain tells), never priced.
@@ -7748,6 +8064,48 @@ export interface components {
          * @enum {string}
          */
         HouseholdGroup: "income" | "housing" | "groceries" | "family_child" | "mobility" | "insurance" | "subscriptions" | "leisure_travel" | "health" | "other" | "tax" | "movements" | "depot" | "personal_care" | "clothing" | "dining" | "home" | "electronics" | "online_shopping" | "fees" | "gifts" | "family_transfers" | "telecom" | "work_education" | "sport" | "travel" | "investment" | "refund";
+        /**
+         * HouseholdMonth
+         * @description §4.2. The identities between the fields are checked here; how each block is summed is
+         *     rules/health/month (step 1). `sources`: the allocation ids per field (principle 2), empty
+         *     in a stored snapshot (§5.5).
+         */
+        HouseholdMonth: {
+            /** Month */
+            month: string;
+            /** Private Income */
+            private_income: string;
+            /** Private Spending */
+            private_spending: string;
+            /** One Off Spending */
+            one_off_spending: string;
+            /** Regular Spending */
+            regular_spending: string;
+            /** Rental Result */
+            rental_result: string;
+            /** Rental Cash */
+            rental_cash: string;
+            /** Income */
+            income: string;
+            /** Spending */
+            spending: string;
+            /** Saved */
+            saved: string;
+            /** Principal */
+            principal: string;
+            /** Invested Property */
+            invested_property: string;
+            /** Invested */
+            invested: string;
+            /** Free Cash */
+            free_cash: string;
+            /** Savings Rate */
+            savings_rate?: string | null;
+            /** Sources */
+            sources?: {
+                [key: string]: string[];
+            };
+        };
         /** HouseholdServicesFact */
         HouseholdServicesFact: {
             /**
@@ -8286,6 +8644,32 @@ export interface components {
             /** Loans */
             loans?: components["schemas"]["LoanLever"][];
         };
+        /**
+         * Light
+         * @description One figure's mark: the colour (None: unmarked), the limits used with their origins, and
+         *     the codes of its sentences (§5.6). Computed on read, never stored.
+         */
+        Light: {
+            figure: components["schemas"]["MarkedFigure"];
+            colour?: components["schemas"]["LightColour"] | null;
+            /** Green */
+            green?: string | null;
+            /** Red */
+            red?: string | null;
+            origin?: components["schemas"]["LimitOrigin"] | null;
+            /** Sentences */
+            sentences?: string[];
+        };
+        /**
+         * LightColour
+         * @enum {string}
+         */
+        LightColour: "green" | "amber" | "red";
+        /**
+         * LimitOrigin
+         * @enum {string}
+         */
+        LimitOrigin: "source" | "own_lever";
         /** LimitStatus */
         LimitStatus: {
             /** Tax Year */
@@ -8682,6 +9066,12 @@ export interface components {
             rate: string;
         };
         /**
+         * MarkedFigure
+         * @description The figures a mark may be put on. The split's shares are not among them (D240).
+         * @enum {string}
+         */
+        MarkedFigure: "reserve" | "savings_rate" | "ltv" | "debt_service_ratio" | "debt_ratio" | "debt_to_income";
+        /**
          * MarketRent
          * @description The Mietspiegel's net cold rent per m² (D61); the running costs come from the ledger.
          */
@@ -8801,6 +9191,13 @@ export interface components {
             month: string;
             /** Ytd */
             ytd?: string | null;
+        };
+        /** MonthRate */
+        MonthRate: {
+            /** Month */
+            month: string;
+            /** Rate */
+            rate?: string | null;
         };
         /**
          * MovableAfaLine
@@ -9127,6 +9524,37 @@ export interface components {
             month_end_due?: string | null;
             /** Month End Now */
             month_end_now?: string | null;
+        };
+        /**
+         * NetWorthPoint
+         * @description One month-end of the series (D241, §5.4). A month-end without a stored run is a gap:
+         *     no run, no figures, and the to-do „Monatsabschluss festhalten“.
+         */
+        NetWorthPoint: {
+            /**
+             * Month End
+             * Format: date
+             */
+            month_end: string;
+            /** Net Worth Run Id */
+            net_worth_run_id?: string | null;
+            /** Total */
+            total?: string | null;
+            /** By Class */
+            by_class?: {
+                [key: string]: string;
+            };
+            /** By Owner */
+            by_owner?: {
+                [key: string]: string;
+            };
+            /** Change */
+            change?: string | null;
+            /** Saved */
+            saved?: string | null;
+            /** Other */
+            other?: string | null;
+            todo?: components["schemas"]["HealthTodo"] | null;
         };
         /**
          * NetWorthRun
@@ -10177,6 +10605,21 @@ export interface components {
          * @enum {string}
          */
         PropertyKind: "etw" | "efh" | "mfh";
+        /** PropertyLtv */
+        PropertyLtv: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Loan Balance */
+            loan_balance: string;
+            /** Estimate */
+            estimate: string;
+            estimate_source: components["schemas"]["EstimateSource"];
+            /** Ltv */
+            ltv?: string | null;
+        };
         /**
          * PropertyOwnership
          * @description Shares per property must sum to exactly 1 (service-layer rule, see fixtures).
@@ -10363,6 +10806,14 @@ export interface components {
          * @enum {string}
          */
         ProposalTargetMode: "create" | "patch";
+        /** ProposedLimit */
+        ProposedLimit: {
+            /** Value */
+            value: string;
+            origin: components["schemas"]["LimitOrigin"];
+            /** Citation */
+            citation?: string | null;
+        };
         /**
          * PurchaseContractExtraction
          * @description Kaufvertrag (contract / purchase_contract).
@@ -10700,6 +11151,15 @@ export interface components {
             /** Warnings */
             warnings?: components["schemas"]["DraftWarning"][];
         };
+        /** ReferencePoint */
+        ReferencePoint: {
+            /** Source */
+            source: string;
+            /** Says */
+            says: string;
+            /** Does Not Say */
+            does_not_say: string;
+        };
         /**
          * RelatedDocument
          * @description GET /properties/{id}/documents and GET /units/{id}/documents: a document linked to the
@@ -10930,6 +11390,60 @@ export interface components {
          * @enum {string}
          */
         RequirementCode: "purchase_contract" | "price_split" | "acquisition_cost_evidence" | "grundsteuerbescheid" | "loan_contract" | "zinsbescheinigung" | "lease" | "handover_protocol" | "deposit_record" | "wirtschaftsplan" | "hausgeldabrechnung" | "cost_receipt" | "market_rent";
+        /**
+         * Reserve
+         * @description D237, D238, §5.2. Compared in euros, never in rounded months.
+         */
+        Reserve: {
+            /** Accounts */
+            accounts?: components["schemas"]["ReserveAccount"][];
+            /** Amount */
+            amount: string;
+            /** Need */
+            need: string;
+            /** Months */
+            months?: string | null;
+            /** Target Months */
+            target_months: string;
+            /** Target */
+            target: string;
+            /** Gap */
+            gap: string;
+            state: components["schemas"]["ReserveState"];
+            /** By Owner */
+            by_owner?: {
+                [key: string]: string;
+            };
+            /** Todos */
+            todos?: components["schemas"]["HealthTodo"][];
+        };
+        /** ReserveAccount */
+        ReserveAccount: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            kind: components["schemas"]["AccountKind"];
+            /** Balance */
+            balance: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            origin: components["schemas"]["ReserveOrigin"];
+        };
+        /**
+         * ReserveOrigin
+         * @enum {string}
+         */
+        ReserveOrigin: "default" | "added" | "removed";
+        /**
+         * ReserveState
+         * @enum {string}
+         */
+        ReserveState: "below" | "reached";
         /**
          * RetentionClass
          * @enum {string}
@@ -11310,6 +11824,28 @@ export interface components {
             /** Flows */
             flows?: components["schemas"]["DatedFlow"][];
         };
+        /**
+         * SavingsRate
+         * @description D235, §5.1. Every ratio None when income ≤ 0.
+         */
+        SavingsRate: {
+            /** Saved */
+            saved: string;
+            /** Income */
+            income: string;
+            /** One Off Spending */
+            one_off_spending: string;
+            /** Principal */
+            principal: string;
+            /** Rate */
+            rate?: string | null;
+            /** Rate Regular */
+            rate_regular?: string | null;
+            /** Rate Without Principal */
+            rate_without_principal?: string | null;
+            /** Months */
+            months?: components["schemas"]["MonthRate"][];
+        };
         /** Scenario */
         Scenario: {
             /**
@@ -11506,6 +12042,15 @@ export interface components {
          * @enum {string}
          */
         SnapshotOutcome: "written" | "recaptured" | "unchanged" | "empty";
+        /**
+         * SnapshotRequest
+         * @description POST /net-worth/snapshots, optional body (phase 9 D241): a past month-end to store, from
+         *     31 Jan 2026 to the last one before today. Without it, the last month-end before today.
+         */
+        SnapshotRequest: {
+            /** As Of */
+            as_of?: string | null;
+        };
         /**
          * SnapshotResult
          * @description POST /net-worth/snapshots: what „Monatsabschluss festhalten“ did.
@@ -13727,6 +14272,16 @@ export interface components {
             dues?: components["schemas"]["SumComponent"] | null;
             training?: components["schemas"]["SumComponent"] | null;
             other?: components["schemas"]["SumComponent"] | null;
+        };
+        /**
+         * Window
+         * @description The unbroken run of closed months ending at the newest, cut to 12 (D231).
+         */
+        Window: {
+            /** Months */
+            months?: string[];
+            /** Enough */
+            enough: boolean;
         };
         /**
          * WirtschaftsplanExtraction
@@ -17121,7 +17676,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SnapshotRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -18772,6 +19331,131 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaxInput"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    health_get_api_health_get: {
+        parameters: {
+            query?: {
+                scenario?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Health"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    health_months_api_health_months_get: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthMonthView"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    health_net_worth_series_api_health_net_worth_series_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetWorthPoint"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    health_snapshot_api_health_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HealthSnapshotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthSnapshotResult"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

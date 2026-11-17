@@ -42,6 +42,12 @@ from .fetch_prices import (
     run_fetch_prices,
 )
 from .follow_accounts import run_follow_accounts
+from .health_daily import (
+    HEALTH_DAILY_CRON,
+    HEALTH_DAILY_LOCK,
+    HEALTH_DAILY_TASK,
+    run_health_daily,
+)
 from .inbound_mail import POLL_CRON, POLL_LOCK, POLL_TASK, run_poll_inbox
 from .matching import (
     run_match_import,
@@ -235,6 +241,13 @@ def month_end(context: JobContext, *, timestamp: int) -> None:
     run_month_end(deps)
 
 
+def health_daily(context: JobContext, *, timestamp: int) -> None:
+    """Phase 9 §11.5, daily at 08:30: a health_snapshot for every closed month with a
+    month-end run and no snapshot yet, per workspace."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_health_daily(deps)
+
+
 def sync_wallets(context: JobContext, *, timestamp: int) -> None:
     """Phase 7 D182 (1), daily at 06:45: every active wallet address, oldest sync first."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
@@ -294,6 +307,12 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     # a time; each capture takes its workspace's advisory lock and writes only a missing one.
     worth = app.task(name=MONTH_END_TASK, pass_context=True, lock=MONTH_END_LOCK)(month_end)
     app.periodic(cron=MONTH_END_CRON, periodic_id=MONTH_END_TASK)(worth)
+    # No retry: a month not stored today is stored by the next day's run. lock= keeps one run
+    # at a time; each workspace's writes take its advisory lock and store only a missing month.
+    figures = app.task(name=HEALTH_DAILY_TASK, pass_context=True, lock=HEALTH_DAILY_LOCK)(
+        health_daily
+    )
+    app.periodic(cron=HEALTH_DAILY_CRON, periodic_id=HEALTH_DAILY_TASK)(figures)
     # No retry: a failed address is read again the next day from the same cursor. One lock
     # for the daily run and „Jetzt abrufen“, so no address is read twice at once.
     wallets = app.task(name=SYNC_WALLETS_TASK, pass_context=True, lock=SYNC_WALLETS_LOCK)(
