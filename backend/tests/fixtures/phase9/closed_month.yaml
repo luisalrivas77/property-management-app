@@ -24,7 +24,6 @@ accounts: &accounts
 
 cases:
   - id: all_covered
-    pending: "1"
     month: "2027-03"
     accounts: *accounts
     covered_to: {a_current: "2027-04-02", b_current: "2027-03-31", savings: "2027-03-31", card: "2027-03-31", rental: "2027-04-06"}
@@ -33,7 +32,6 @@ cases:
     expect: {closed: true, reasons: [], todos: []}
 
   - id: card_statement_missing
-    pending: "1"
     month: "2027-03"
     accounts: *accounts
     covered_to: {a_current: "2027-04-02", b_current: "2027-03-31", savings: "2027-03-31", card: "2027-02-28", rental: "2027-04-06"}
@@ -45,7 +43,6 @@ cases:
       todos: [account_not_covered]
 
   - id: idle_card_counts_as_covered
-    pending: "1"
     description: the card's statement of 31 Jan closed at 0 € and no bank debit names it after that
     month: "2027-03"
     accounts: *accounts
@@ -56,7 +53,6 @@ cases:
     expect: {closed: true, reasons: [], todos: []}
 
   - id: line_waiting
-    pending: "1"
     month: "2027-03"
     accounts: *accounts
     covered_to: {a_current: "2027-04-02", b_current: "2027-03-31", savings: "2027-03-31", card: "2027-03-31", rental: "2027-04-06"}
@@ -68,7 +64,6 @@ cases:
       todos: [lines_waiting]
 
   - id: transfer_leg_open
-    pending: "1"
     month: "2027-03"
     accounts: *accounts
     covered_to: {a_current: "2027-04-02", b_current: "2027-03-31", savings: "2027-03-31", card: "2027-03-31", rental: "2027-04-06"}
@@ -80,12 +75,10 @@ cases:
       todos: [transfer_open]
 
   - id: window_cut_by_gap
-    pending: "1"
     closed_months: {"2027-01": true, "2027-02": false, "2027-03": true, "2027-04": true, "2027-05": true}
     expect_window: {months: ["2027-03", "2027-04", "2027-05"], enough: true}
 
   - id: window_capped_at_twelve
-    pending: "1"
     closed_months: {"2026-03": true, "2026-04": true, "2026-05": true, "2026-06": true,
       "2026-07": true, "2026-08": true, "2026-09": true, "2026-10": true, "2026-11": true,
       "2026-12": true, "2027-01": true, "2027-02": true, "2027-03": true, "2027-04": true,
@@ -94,14 +87,12 @@ cases:
       "2026-12", "2027-01", "2027-02", "2027-03", "2027-04", "2027-05"], enough: true}
 
   - id: two_months_only
-    pending: "1"
     description: the page shows the to-do in place of the cards (D231)
     closed_months: {"2027-03": false, "2027-04": true, "2027-05": true}
     expect_window: {months: ["2027-04", "2027-05"], enough: false}
     expect_todos: [too_few_months]
 
   - id: account_history_starts_later
-    pending: "1"
     description: a savings account first imported on 10 Apr 2027
     accounts:
       - {key: a_current, kind: bank_current, owners: {A: "1"}, first_day: "2026-01-01"}

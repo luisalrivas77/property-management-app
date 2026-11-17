@@ -24,7 +24,6 @@ bases:
 
 cases:
   - id: default_accounts
-    pending: "1"
     description: §15.2
     today: "2027-06-03"
     balances: *worked
@@ -36,7 +35,6 @@ cases:
       by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
 
   - id: card_debt_lowers
-    pending: "1"
     today: "2027-06-03"
     balances:
       - {key: a_current, kind: bank_current, balance: "2000.00", as_of: "2027-06-02", owners: {A: "1"}}
@@ -48,7 +46,6 @@ cases:
       target: "9000.00", gap: "7500.00", state: below, by_owner: {A: "1500.00"}, todos: []}
 
   - id: rental_account_added_by_lever
-    pending: "1"
     today: "2027-06-03"
     balances: *worked
     mean_regular_spending: "4116.67"
@@ -59,7 +56,6 @@ cases:
       gap: "7690.00", state: below, by_owner: {A: "10230.00", B: "8900.00"}, todos: []}
 
   - id: savings_account_removed_by_lever
-    pending: "1"
     description: the removed account is shown with origin `removed` and not counted
     today: "2027-06-03"
     balances: *worked
@@ -71,7 +67,6 @@ cases:
       by_owner: {A: "2580.00", B: "1250.00"}, todos: []}
 
   - id: flat_carries_itself
-    pending: "1"
     description: a positive mean C adds no shortfall to the need
     today: "2027-06-03"
     balances: *worked
@@ -83,7 +78,6 @@ cases:
       by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
 
   - id: target_three_reached
-    pending: "1"
     today: "2027-06-03"
     balances: *worked
     mean_regular_spending: "4116.67"
@@ -94,7 +88,6 @@ cases:
       by_owner: {A: "9080.00", B: "7750.00"}, todos: []}
 
   - id: need_zero
-    pending: "1"
     today: "2027-06-03"
     balances:
       - {key: a_current, kind: bank_current, balance: "500.00", as_of: "2027-06-02", owners: {A: "1"}}
@@ -105,7 +98,6 @@ cases:
       target: "0.00", gap: "0.00", state: reached, by_owner: {A: "500.00"}, todos: []}
 
   - id: by_owner_shares
-    pending: "1"
     description: the odd cent of a joint account goes to the owner with the lower sort key
     today: "2027-06-03"
     balances:
@@ -119,7 +111,6 @@ cases:
       by_owner: {A: "600.01", B: "500.00"}, todos: []}
 
   - id: stale_balance_todo
-    pending: "1"
     description: the savings balance is 9 days old; it still counts
     today: "2027-06-03"
     balances:

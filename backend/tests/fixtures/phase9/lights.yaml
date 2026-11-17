@@ -31,7 +31,6 @@ bases:
 
 cases:
   - id: worked
-    pending: "1"
     description: §15.2
     figures: *worked_figures
     bands: *worked_bands
@@ -46,7 +45,6 @@ cases:
       todos: []
 
   - id: on_the_limit_takes_the_better_colour
-    pending: "1"
     figures: {ltv: "0.6000", debt_service_ratio: "0.4000", savings_rate: "0.0000", savings_rate_regular: "0.0000"}
     bands:
       - {figure: ltv, green: "0.60", red: "1.00"}
@@ -60,7 +58,6 @@ cases:
       todos: []
 
   - id: just_past_the_limit
-    pending: "1"
     figures: {ltv: "1.0001", debt_service_ratio: "0.3001", savings_rate: "-0.0001", savings_rate_regular: "-0.0001"}
     bands:
       - {figure: ltv, green: "0.60", red: "1.00"}
@@ -74,7 +71,6 @@ cases:
       todos: []
 
   - id: compared_unrounded
-    pending: "1"
     description: both display as 60,0 %; the stored four decimals decide
     variants:
       - figures: {ltv: "0.6000"}
@@ -85,7 +81,6 @@ cases:
         expect: {lights: {ltv: {colour: amber, sentences: [ltv.intro, ltv.amber]}}, todos: []}
 
   - id: only_red_limit
-    pending: "1"
     description: with only a red limit a figure is red or unmarked
     variants:
       - figures: {debt_ratio: "0.8000"}
@@ -96,7 +91,6 @@ cases:
         expect: {lights: {debt_ratio: {colour: null, sentences: []}}, todos: []}
 
   - id: unconfirmed_proposal_no_mark
-    pending: "1"
     description: the same household before „Übernehmen“ on „Ampel-Grenzen festlegen“
     figures: *worked_figures
     bands: null
@@ -111,7 +105,6 @@ cases:
       todos: [bands_unconfirmed]
 
   - id: figure_none_no_mark
-    pending: "1"
     description: income_year ≤ 0 left the debt service ratio uncomputed
     figures: {debt_service_ratio: null, ltv: "0.7388"}
     bands: *worked_bands
@@ -122,7 +115,6 @@ cases:
       todos: []
 
   - id: reserve_against_own_target
-    pending: "1"
     variants:
       - description: at the target
         figures: {reserve: {amount: "26820.00", target: "26820.00"}}
@@ -138,20 +130,17 @@ cases:
         expect: {lights: {reserve: {colour: red, sentences: [reserve.red]}}, todos: []}
 
   - id: savings_rate_below_zero_red
-    pending: "1"
     figures: {savings_rate: "-0.0500", savings_rate_regular: "-0.0500"}
     bands: [{figure: savings_rate, red: "0"}]
     expect: {lights: {savings_rate: {colour: red, sentences: [savings_rate.red]}}, todos: []}
 
   - id: savings_rate_one_off_sentence
-    pending: "1"
     description: the second sentence only when the rate without one-offs is not below 0
     figures: {savings_rate: "-0.4648", savings_rate_regular: "0.2571"}
     bands: [{figure: savings_rate, red: "0"}]
     expect: {lights: {savings_rate: {colour: red, sentences: [savings_rate.red, savings_rate.red_regular]}}, todos: []}
 
   - id: own_green_limit_on_savings_rate
-    pending: "1"
     description: a member typed a green limit; the app proposes none (D249)
     variants:
       - figures: {savings_rate: "0.1500", savings_rate_regular: "0.1500"}
@@ -162,7 +151,6 @@ cases:
         expect: {lights: {savings_rate: {colour: amber, sentences: [savings_rate.amber]}}, todos: []}
 
   - id: limits_in_wrong_order_refused
-    pending: "1"
     refusals:
       - {band: {figure: ltv, green: "1.00", red: "0.60"}, refuses: band.limits_out_of_order}
       - {band: {figure: savings_rate, green: "0", red: "0.10"}, refuses: band.limits_out_of_order}
@@ -170,7 +158,6 @@ cases:
       - {band: {figure: reserve, red: "1.5"}, refuses: band.limits_out_of_order}
 
   - id: band_on_share_refused
-    pending: "1"
     refusals:
       - {band: {figure: share_property, red: "0.80"}, refuses: band.share_refused}
       - {band: {figure: share_crypto, green: "0.05"}, refuses: band.share_refused}

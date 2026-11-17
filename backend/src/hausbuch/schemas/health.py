@@ -18,7 +18,9 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from .allocation import AllocationCategory
 from .common import _STRING_ONLY, Money, Schema, _string_schema
+from .common import Fraction as ExactShare
 from .enums import AccountKind
 from .household import NetWorthClass
 from .household import SavingsRate as Ratio  # signed, four places (numeric(9,4))
@@ -103,6 +105,18 @@ class HealthTodo(Schema):
 # --- The household month (§4, D230–D236) ------------------------------------------------
 
 
+class MonthLine(Schema):
+    """Input of `rules/health/month` (step 1): one confirmed, non-zero allocation booked in
+    the month, signed as on the account (money in positive). `purchase_cost`: a private line
+    whose document is the Beleg of a property's Nebenkosten row (D234), counted as
+    hh_investment_property whatever it was booked as."""
+
+    allocation_id: UUID
+    category: AllocationCategory
+    amount: Money
+    purchase_cost: bool = False
+
+
 class RentalMonth(Schema):
     """The confirmed, non-zero allocations of one property's rental accounts booked in the
     month, summed by phase 4's sets (§4.1). Signed: a refund to a tenant lowers its block."""
@@ -119,6 +133,9 @@ class RentalMonth(Schema):
     invested: Money = Decimal("0.00")  # the INVESTED set (purchase price, acquisition costs)
     loan_disbursement: Money = Decimal("0.00")  # the loan's payout (D234)
     sources: list[UUID] = Field(default_factory=list)
+    # step 1: the same ids by block (the field names above), so a HouseholdMonth field can
+    # name exactly the allocations behind it (principle 2)
+    sources_by_block: dict[str, list[UUID]] = Field(default_factory=dict)
 
     @property
     def result(self) -> Decimal:
@@ -219,6 +236,29 @@ class ClosedMonth(Schema):
         return self
 
 
+class AccountCoverage(Schema):
+    """Input of `rules/health/window.closed` (step 1): one active bank account or credit card
+    of purpose private or rental, as the service read its coverage (Q-O133)."""
+
+    account_id: UUID
+    label: str
+    credit_card: bool = False  # names the card's upload in the to-do
+    first_day: date | None = None  # its first imported day; None: nothing imported yet
+    covered_to: date | None = None  # the last day its imports or fetches reach
+    idle: bool = False  # a card idle by phase 5 D122 amended (6): covered
+    own_opening: bool = False  # its opening on first_day is its first statement's own
+
+
+class MonthFacts(Schema):
+    """Input of `rules/health/window.closed` (step 1): what decides whether a month is
+    closed (D231)."""
+
+    month: YearMonth
+    accounts: list[AccountCoverage] = Field(default_factory=list)
+    lines_waiting: int = Field(default=0, ge=0)  # lines booked in the month in Zu prüfen
+    transfers_open: int = Field(default=0, ge=0)  # transfer legs of the month still open
+
+
 class Window(Schema):
     """The unbroken run of closed months ending at the newest, cut to 12 (D231)."""
 
@@ -292,6 +332,21 @@ class ReserveAccount(Schema):
     @property
     def counted(self) -> bool:
         return self.origin is not ReserveOrigin.REMOVED
+
+
+class ReserveBalance(Schema):
+    """Input of `rules/health/figures.reserve` (step 1): one account's newest balance and
+    its owner shares (phase 6's account_ownership, summing to 1; empty when none are
+    recorded). `rental`: the account's purpose is rental, so it is no reserve account unless
+    the lever adds it (D237)."""
+
+    account_id: UUID
+    label: str
+    kind: AccountKind
+    rental: bool = False
+    balance: Money  # a card's debt negative
+    as_of: date
+    owners: dict[UUID, ExactShare] = Field(default_factory=dict)  # account_ownership as stored
 
 
 class Reserve(Schema):
@@ -377,6 +432,39 @@ class Debt(Schema):
     @property
     def annualised(self) -> bool:
         return self.months < 12
+
+
+class RunTotals(Schema):
+    """Input of `rules/health/figures.series` (step 1): one stored net worth run
+    (valuation_snapshot rows of one net_worth_run_id) summed as phase 6 sums it."""
+
+    net_worth_run_id: UUID
+    month_end: date
+    created_at: datetime
+    total: Money
+    by_class: dict[NetWorthClass, Money] = Field(default_factory=dict)
+    by_owner: dict[UUID, Money] = Field(default_factory=dict)
+
+
+class ScenarioValue(Schema):
+    """Input of `rules/health/figures.estimate_on` (step 1, D241): one projection scenario
+    row of a property with its „Wert heute“ (phase 4's value_today of its levers)."""
+
+    scenario_id: UUID
+    created_on: date  # the Berlin day the row was written
+    recorded_at: datetime  # its timestamp: orders two rows of one day
+    default: bool
+    withdrawn: bool = False
+    value_today: Money
+
+
+class PropertyEstimate(Schema):
+    """`rules/health/figures.estimate_on`: the property's estimate on a month-end and where
+    it comes from (D239 (1), D241); `scenario_id` None for the purchase price."""
+
+    value: Money
+    source: EstimateSource
+    scenario_id: UUID | None = None
 
 
 class NetWorthPoint(Schema):
