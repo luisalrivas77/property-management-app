@@ -48,8 +48,8 @@ def _covered(account: AccountCoverage, end: date) -> bool | None:
     first = account.first_day
     if first is not None and first > end and account.own_opening:
         return None
-    if account.idle:  # a card idle by phase 5 D122 amended (6)
-        return True
+    if account.idle:  # a card idle by phase 5 D122 amended (6), from its first statement on
+        return first is not None and first <= end
     return (
         first is not None
         and first <= end

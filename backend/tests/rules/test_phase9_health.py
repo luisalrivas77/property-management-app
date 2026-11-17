@@ -147,6 +147,36 @@ def test_closed_month_todos_name_the_button():
     assert transfers.action == "Gegenbuchung zuordnen" and "3 Umbuchungen" in transfers.text
 
 
+def test_an_idle_card_does_not_cover_a_month_before_its_first_statement():
+    """Review finding 5: an idle card (D122 amended (6)) whose first statement starts after
+    the month and declares no opening of its own was in use before it, so the month is not
+    covered by it; from its first statement on it is."""
+
+    def month(name: str) -> MonthFacts:
+        return MonthFacts(
+            month=name,
+            accounts=[
+                AccountCoverage(
+                    account_id=uid("card"),
+                    label="Karte",
+                    credit_card=True,
+                    first_day=date(2026, 6, 3),
+                    covered_to=date(2026, 6, 30),
+                    idle=True,
+                    own_opening=False,
+                )
+            ],
+        )
+
+    before = W.closed(month("2026-03"))
+    assert not before.closed
+    assert [(r.code, r.account_id) for r in before.reasons] == [
+        (ClosedReasonCode.ACCOUNT_NOT_COVERED, uid("card"))
+    ]
+    assert W.closed(month("2026-06")).closed
+    assert W.closed(month("2026-09")).closed  # idle: covered after its last statement too
+
+
 def test_a_month_missing_from_the_mapping_is_not_closed():
     got = W.window({"2027-01": True, "2027-03": True, "2027-04": True})
     assert got.months == ["2027-03", "2027-04"] and not got.enough

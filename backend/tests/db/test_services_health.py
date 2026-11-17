@@ -535,6 +535,44 @@ def test_a_card_paid_again_after_a_zero_statement_is_not_idle(world):
     assert not accounts[card].idle
 
 
+def test_an_idle_card_covers_no_month_before_its_first_statement(world):
+    """Review finding 5: a card with a typed anchor (it was in use before its first statement),
+    whose first statement closes at 0 € without an opening of its own, is idle, yet it does not
+    cover a month before that statement; a card that is not idle blocks the month the same way."""
+    idle = _account(
+        world, "Karte ruhig", AccountKind.CREDIT_CARD, opening="-200.00", on=date(2026, 5, 31)
+    )
+    _statement(
+        world,
+        idle,
+        date(2026, 6, 3),
+        date(2026, 6, 30),
+        datetime(2026, 7, 2, tzinfo=UTC),
+        closing="0.00",
+        lines=[date(2026, 6, 3)],
+    )
+    busy = _account(
+        world, "Karte offen", AccountKind.CREDIT_CARD, opening="-200.00", on=date(2026, 5, 31)
+    )
+    _statement(
+        world,
+        busy,
+        date(2026, 6, 3),
+        date(2026, 6, 30),
+        datetime(2026, 7, 2, tzinfo=UTC),
+        closing="-50.00",
+        lines=[date(2026, 6, 3)],
+    )
+    accounts = {a.account_id: a for a in world.query(health.coverage_accounts)}
+    assert accounts[idle].idle and not accounts[idle].own_opening
+    assert not accounts[busy].idle
+    reads = world.query(health.read_months, ["2026-03", "2026-07"], date(2026, 11, 12))
+    march = {r.account_id for r in reads["2026-03"].closed.reasons}
+    july = {r.account_id for r in reads["2026-07"].closed.reasons}
+    assert idle in march and busy in march
+    assert idle not in july and busy in july
+
+
 def test_a_month_counts_its_waiting_lines_and_open_transfer_legs(world):
     """ClosedMonthFacts: the month's lines on the checked accounts with no confirmed row (a
     proposed one does not count as explained), not a line another month or a booked one; and
