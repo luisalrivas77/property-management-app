@@ -110,6 +110,7 @@ def test_every_router_is_included_under_api(engine, tmp_path, monkeypatch):
         "allocations",
         "household",
         "health_figures",  # phase 9 step 1: /health*
+        "household_plan",  # phase 9 step 2: /household-scenarios*, /household-plan
         "exchange",
         "holdings",  # before wallets: GET /wallets/holdings (phase 7 step 6)
         "wallet_sync",

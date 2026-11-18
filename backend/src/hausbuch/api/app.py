@@ -44,6 +44,7 @@ from .routes import (
     history,
     holdings,
     household,
+    household_plan,
     inbound_mail,
     income_inputs,
     loans,
@@ -91,6 +92,7 @@ ROUTE_MODULES = (
     allocations,
     household,
     health_figures,
+    household_plan,
     exchange,
     holdings,  # before wallets: GET /wallets/holdings, not /wallets/{account_id}
     wallet_sync,

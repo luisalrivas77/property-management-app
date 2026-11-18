@@ -229,6 +229,15 @@ HEALTH_MONTH_END_MISSING = "health.month_end_missing"  # no net worth run for it
 # the month-end read again has a position without a value or a missing value (review of PR #426)
 HEALTH_MONTH_END_INCOMPLETE = "health.month_end_incomplete"
 HEALTH_RANGE_INVALID = "health.range_invalid"  # from after to, or more than 24 months
+# Phase 9 D248, §7.3 (POST /household-scenarios, POST /household-scenarios/{id}/withdraw)
+# the superseded row is withdrawn or superseded, or a second default would be in force
+HOUSEHOLD_SCENARIO_NOT_CURRENT = "household_scenario.not_current"
+# a reserve account not of kind bank_current, bank_savings or credit_card
+HOUSEHOLD_SCENARIO_ACCOUNT_INVALID = "household_scenario.account_invalid"
+# a one-off outside the months 1 … horizon after the newest closed month
+HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE = "household_scenario.one_off_outside"
+# a withdrawal that does not repeat the withdrawn row's levers
+HOUSEHOLD_SCENARIO_WITHDRAWAL_INVALID = "household_scenario.withdrawal_invalid"
 # Phase 6 step 5b (PATCH /assets/{id}, POST /assets/{id}/prices)
 ASSET_NOT_CRYPTO = "asset.not_crypto"  # a CoinGecko id or Kraken pair on a fund or cash
 ASSET_IS_EURO = "asset.is_euro"  # a typed price for the euro, which is 1.0

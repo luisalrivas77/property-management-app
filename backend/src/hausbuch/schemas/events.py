@@ -1343,6 +1343,15 @@ class HealthSnapshotStored(Schema):
     net_worth_run_id: UUID
 
 
+class HouseholdScenarioRecorded(Schema):
+    """household_scenario.created and household_scenario.withdrawn (phase 9 D248, §11.6): one
+    new household_scenario row (entity_id = the new row). Ids and flags only: the levers hold
+    amounts and the name is free text, so neither is in the event; both are on the row."""
+
+    is_default: bool
+    supersedes_id: UUID | None = None
+
+
 class AiConsentRecorded(Schema):
     """workspace.ai_consent_recorded (D168): the second owner's own click, by the member it
     concerns; the first consent is the settings_changed event's consented_by."""
@@ -1536,6 +1545,8 @@ class EventType(StrEnum):
     RULE_DISABLED = "rule.disabled"
 
     HEALTH_SNAPSHOT_STORED = "health.snapshot_stored"  # phase 9 D242, §11.6
+    HOUSEHOLD_SCENARIO_CREATED = "household_scenario.created"  # phase 9 D248, §11.6
+    HOUSEHOLD_SCENARIO_WITHDRAWN = "household_scenario.withdrawn"  # phase 9 D248, §11.6
 
 
 E = EventType
@@ -1819,6 +1830,12 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     # Phase 9
     E.HEALTH_SNAPSHOT_STORED: EventSpec(
         HealthSnapshotStored, "forbidden", "A closed month's key figures stored (D242)"
+    ),
+    E.HOUSEHOLD_SCENARIO_CREATED: EventSpec(
+        HouseholdScenarioRecorded, "forbidden", "Household scenario recorded (D248)"
+    ),
+    E.HOUSEHOLD_SCENARIO_WITHDRAWN: EventSpec(
+        HouseholdScenarioRecorded, "forbidden", "Household scenario withdrawn (D248)"
     ),
 }
 del E
