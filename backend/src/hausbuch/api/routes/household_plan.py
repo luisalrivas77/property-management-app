@@ -13,12 +13,27 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
 - GET /household-plan?scenario=: the plan on read for today (Berlin time), with the levers
   of the scenario named (any row, a withdrawn one too), else of the default in force, else
   the defaults; 404 for an unknown scenario. Missing inputs are to-dos, never a 422.
+- POST /household-plan/preview {levers} (D263 (c)): the plan for typed levers, checked as a
+  new scenario row is (422 household_scenario.account_invalid, .one_off_outside,
+  .spending_invalid; 404 for an unknown account); stores nothing and writes no event, so it
+  runs as a read.
+- GET /household-plan/comparison?month=YYYY-MM (D263 (d), §7.7): the month's spending beside
+  the default scenario in force on its last day, today for the running month.
 """
 
 from datetime import date, datetime
+from typing import Annotated
 from uuid import UUID
 
-from hausbuch.schemas.plan import HouseholdPlan, HouseholdScenario, HouseholdScenarioCreate
+from fastapi import Query
+
+from hausbuch.schemas.plan import (
+    HouseholdPlan,
+    HouseholdPlanPreview,
+    HouseholdScenario,
+    HouseholdScenarioCreate,
+    SpendingComparison,
+)
 from hausbuch.services import household_scenarios as scenarios
 from hausbuch.services import plan as plan_service
 from hausbuch.services.documents import LOCAL_TIME_ZONE
@@ -50,3 +65,15 @@ def _today() -> date:
 @router.get("/household-plan")
 def household_plan_get(cmd: Cmd, scenario: UUID | None = None) -> HouseholdPlan:
     return cmd.read(plan_service.household_plan, _today(), scenario)
+
+
+@router.post("/household-plan/preview")
+def household_plan_preview(body: HouseholdPlanPreview, cmd: Cmd) -> HouseholdPlan:
+    return cmd.read(plan_service.preview_plan, _today(), body.levers)
+
+
+@router.get("/household-plan/comparison")
+def household_plan_comparison(
+    cmd: Cmd, month: Annotated[str, Query(pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$")]
+) -> SpendingComparison:
+    return cmd.read(plan_service.spending_comparison, _today(), month)

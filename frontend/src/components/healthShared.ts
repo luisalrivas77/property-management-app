@@ -279,6 +279,8 @@ export function fillLevers(levers: HouseholdLevers | null | undefined): Househol
     value_change: { depot: levers?.value_change?.depot ?? null, crypto: levers?.value_change?.crypto ?? null },
     net_worth_years: levers?.net_worth_years ?? 10,
     bands: levers?.bands ?? [],
+    // D263: kept on every save, from Übersicht's limits too; mean_at_save is the server's.
+    spending_changes: levers?.spending_changes ?? [],
   };
 }
 

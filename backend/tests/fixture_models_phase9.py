@@ -24,6 +24,9 @@ small, by the rule written once more here:
   hausbuch.schemas.plan.HouseholdLevers;
 - net_worth_projection: §7.5's points, stretches and change rows, each point through
   hausbuch.schemas.plan.ProjectionPoint;
+- spending_play and spending_comparison (step 3b, D263): §7.6's means, Δ, month function
+  and rate, the refusals of §7.6 (1) on the changes as typed, §7.7's comparison and the
+  scenario in force on a day;
 - health_worked: every figure recomputed from the household's own inputs with the functions
   above, and compared with the per-function fixtures that quote §15.2.
 
@@ -43,6 +46,7 @@ from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
+from zoneinfo import ZoneInfo
 
 import yaml
 from fixture_models import Lenient
@@ -50,6 +54,7 @@ from pydantic import Field, JsonValue, ValidationError, model_validator
 
 from hausbuch.rules.advice import rules as advice_rules
 from hausbuch.rules.health.bands import proposals
+from hausbuch.rules.household.taxonomy import FALLBACK_CODES, ONE_OFF, TAXONOMY
 from hausbuch.rules.net_worth import split
 from hausbuch.schemas.advice import (
     STATES,
@@ -85,7 +90,7 @@ from hausbuch.schemas.health import (
     TargetMonths,
     YearMonth,
 )
-from hausbuch.schemas.household import NetWorthClass
+from hausbuch.schemas.household import HouseholdGroup, NetWorthClass, Relevance
 from hausbuch.schemas.household import SavingsRate as Ratio
 from hausbuch.schemas.plan import (
     BufferPercent,
@@ -2252,6 +2257,380 @@ class InstrumentNamesFixture(Schema):
         return self
 
 
+# --- spending_play.yaml and spending_comparison.yaml (D263, §7.6, §7.7) -------
+#
+# The reference below is written once more from the spec, independent of rules/plan/spending.py:
+# the codes a change may name and the refusals of §7.6 (1), the per-code means of (2) with the
+# reading that apportions the cents by largest remainder, Δ and the month function of (3), the
+# rate of (4) on the window's exact sums, and §7.7's comparison with the scenario in force.
+
+_SP_SPENT = (Relevance.SPENDING, Relevance.TAX)
+_SP_UNLISTED = (AllocationCategory.BANK_FEES, AllocationCategory.UNCATEGORIZED)
+BERLIN = ZoneInfo("Europe/Berlin")
+
+
+def sp_group(code: AllocationCategory) -> HouseholdGroup:
+    """The group the Haushalt screen shows the code in (bank fees, uncategorised: Sonstiges)."""
+    row = TAXONOMY.get(code)
+    return HouseholdGroup.OTHER if row is None else row.group
+
+
+def sp_counted(code: AllocationCategory) -> bool:
+    """Counted in a month's regular spending: spending or tax relevance, never one-off."""
+    if code in _SP_UNLISTED:
+        return True
+    row = TAXONOMY.get(code)
+    return row is not None and row.relevance in _SP_SPENT and not row.one_off
+
+
+def sp_playable(code: AllocationCategory) -> bool:
+    """§7.6 (1): a household spending code a change may name (not bank fees, uncategorised,
+    a one-off code, a refund, an income or a transfer code)."""
+    return code in TAXONOMY and sp_counted(code) and code is not AllocationCategory.HH_REFUND
+
+
+def sp_members(code: AllocationCategory) -> set[AllocationCategory]:
+    """A group's fallback code stands for the whole group; any other code for itself."""
+    if code not in FALLBACK_CODES:
+        return {code}
+    group = TAXONOMY[code].group
+    every = [*TAXONOMY, *_SP_UNLISTED]
+    return {c for c in every if sp_counted(c) and sp_group(c) is group}
+
+
+class SpChange(Schema):
+    code: AllocationCategory
+    monthly: NonNegativeMoney | None = None
+    percent: Dec | None = None
+    from_month: YearMonth
+    to_month: YearMonth | None = None
+    mean_at_save: Money | None = None
+
+    def in_force(self, month: str) -> bool:
+        return self.from_month <= month and (self.to_month is None or month <= self.to_month)
+
+
+def sp_refusal(changes: list[dict[str, Any]]) -> str | None:
+    """§7.6 (1) on the changes as typed; the percent-on-zero refusal needs the means."""
+    parsed = []
+    for raw_change in changes:
+        try:
+            change = SpChange.model_validate(raw_change)
+        except ValidationError:
+            return "shape"
+        if (change.monthly is None) == (change.percent is None):
+            return "one of monthly and percent"
+        if change.percent is not None and not (
+            Decimal("-1") <= change.percent <= Decimal("2")
+            and change.percent == change.percent.quantize(CENT)
+        ):
+            return "percent bounds"
+        if change.to_month is not None and change.to_month < change.from_month:
+            return "order"
+        if not sp_playable(change.code):
+            return "code"
+        parsed.append(change)
+    for a in parsed:
+        for b in parsed:
+            if a is b:
+                continue
+            if a.code in FALLBACK_CODES and b.code != a.code and b.code in sp_members(a.code):
+                return "fallback beside its subcategory"
+            if a.code == b.code:
+                a_end = a.to_month or "9999-12"
+                b_end = b.to_month or "9999-12"
+                if a.from_month <= b_end and b.from_month <= a_end:
+                    return "overlap"
+    return None
+
+
+def sp_means(
+    window_spending: list[dict[AllocationCategory, Decimal]],
+) -> dict[AllocationCategory, Decimal]:
+    """§7.6 (2): each code's mean over the window, the cents apportioned by largest remainder
+    (ties: the code's value, ascending), so the means sum to mean_regular_spending exactly."""
+    n = len(window_spending)
+    sums: dict[AllocationCategory, Fraction] = {}
+    for month in window_spending:
+        for code, amount in month.items():
+            if sp_counted(code):
+                sums[code] = sums.get(code, Fraction(0)) + Fraction(amount)
+    exact = {c: v * 100 / n for c, v in sums.items()}
+    total = sum(exact.values(), Fraction(0))
+    target = int(cent(total / 100) * 100)
+    floors = {c: v.numerator // v.denominator for c, v in exact.items()}
+    left = target - sum(floors.values())
+    order = sorted(exact, key=lambda c: (-(exact[c] - floors[c]), c.value))
+    for c in order[:left]:
+        floors[c] += 1
+    return {c: Decimal(v) / 100 for c, v in floors.items()}
+
+
+def sp_mean_of(code: AllocationCategory, means: dict[AllocationCategory, Decimal]) -> Decimal:
+    return sum((means.get(c, ZERO) for c in sp_members(code)), ZERO)
+
+
+def sp_planned(change: SpChange, mean: Decimal) -> Decimal:
+    if change.monthly is not None:
+        return change.monthly
+    assert change.percent is not None
+    return cent(mean * (1 + change.percent))
+
+
+class SpWindowMonth(Schema):
+    month: YearMonth
+    income: Money  # the private accounts' income
+    rental_result: Money  # R
+    rental_cash: Money  # C
+    spending: dict[AllocationCategory, Money]  # by code, positive; one-off codes included
+
+
+class SpMonthExpect(Schema):
+    month: YearMonth
+    delta: Money
+    free: Money
+    buffer: Money
+    investable: Money
+    rate: Ratio | None
+
+
+class SpSegment(Schema):
+    from_month: YearMonth
+    to_month: YearMonth
+    rate: Ratio | None
+
+
+class SpPlanned(Schema):
+    code: AllocationCategory
+    from_month: YearMonth
+    mean: Money
+    planned: Money
+    delta: Money
+
+
+class SpExpectPlay(Schema):
+    mean_regular_spending: Money
+    means: dict[AllocationCategory, Money]
+    rate_regular_now: Ratio | None
+    months: list[SpMonthExpect]
+    rates: list[SpSegment]
+    planned: list[SpPlanned] = Field(default_factory=list)
+
+
+class SpPlayCase(Lenient):
+    pending: Pending | None = None  # None once its step has landed
+    window: list[SpWindowMonth] = Field(default_factory=list, max_length=12)
+    buffer_percent: BufferPercent = Decimal("10")
+    horizon_months: int = Field(default=6, ge=1, le=120)
+    income_changes: list[IncomeChange] = Field(default_factory=list)
+    one_offs: list[OneOff] = Field(default_factory=list)
+    changes: list[dict[str, JsonValue]] = Field(default_factory=list)
+    expect: SpExpectPlay | None = None
+    refused: list[list[dict[str, JsonValue]]] = Field(default_factory=list)
+    accepted: list[list[dict[str, JsonValue]]] = Field(default_factory=list)
+    # Refused once the means are known: a percent on a code with mean 0 (§7.6 (1)).
+    refused_with_means: list[list[dict[str, JsonValue]]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _recompute(self) -> Self:
+        for changes in self.accepted:
+            if (why := sp_refusal(changes)) is not None:
+                raise ValueError(f"{self.id}: {changes} must be accepted, refused for {why}")
+        for changes in self.refused:
+            if sp_refusal(changes) is None:
+                raise ValueError(f"{self.id}: {changes} must be refused")
+        spending = [{c: v for c, v in m.spending.items() if c not in ONE_OFF} for m in self.window]
+        means = sp_means(spending) if self.window else {}
+        for changes in self.refused_with_means:
+            if sp_refusal(changes) is not None:
+                raise ValueError(f"{self.id}: {changes} must pass the shape checks")
+            parsed = [SpChange.model_validate(c) for c in changes]
+            if not any(c.percent is not None and sp_mean_of(c.code, means) == 0 for c in parsed):
+                raise ValueError(f"{self.id}: {changes} names no percent on a mean of 0")
+        if self.expect is None:
+            if not (self.refused or self.accepted or self.refused_with_means):
+                raise ValueError(f"{self.id}: nothing to check")
+            return self
+        if (why := sp_refusal(self.changes)) is not None:
+            raise ValueError(f"{self.id}: the changes are refused ({why})")
+        changes = [SpChange.model_validate(c) for c in self.changes]
+        n = len(self.window)
+        regular = [sum(m.values(), ZERO) for m in spending]
+        mean_regular = mean_cent(regular)
+        check(mean_regular, self.expect.mean_regular_spending, f"{self.id}: mean regular")
+        check(sum(means.values(), ZERO), mean_regular, f"{self.id}: Σ means")
+        check(means, self.expect.means, f"{self.id}: means")
+        sum_e = sum((m.income + m.rental_result for m in self.window), ZERO)
+        sum_a = sum(regular, ZERO)
+        check(ratio4(sum_e - sum_a, sum_e), self.expect.rate_regular_now, f"{self.id}: now")
+        mean_income = mean_cent([m.income for m in self.window])
+        mean_cash = mean_cent([m.rental_cash for m in self.window])
+        newest = self.window[-1].month
+        got_months = []
+        for k in range(1, self.horizon_months + 1):
+            ym = add_months(newest, k)
+            delta = sum(
+                (
+                    sp_planned(c, sp_mean_of(c.code, means)) - sp_mean_of(c.code, means)
+                    for c in changes
+                    if c.in_force(ym)
+                ),
+                ZERO,
+            )
+            inc = sum(
+                (
+                    i.monthly_net
+                    for i in self.income_changes
+                    if i.from_month <= ym and (i.to_month is None or ym <= i.to_month)
+                ),
+                ZERO,
+            )
+            once = sum((o.amount for o in self.one_offs if o.month == ym), ZERO)
+            free = mean_income - mean_regular - delta + mean_cash + inc + once
+            buffer = cent(free * self.buffer_percent / 100) if free > 0 else ZERO
+            investable = free - buffer if free > 0 else free
+            e_k = sum_e + n * inc
+            rate = ratio4(e_k - sum_a - n * delta, e_k)
+            got_months.append(
+                SpMonthExpect(
+                    month=ym, delta=delta, free=free, buffer=buffer, investable=investable,
+                    rate=rate,
+                )
+            )  # fmt: skip
+        want = {m.month: m for m in self.expect.months}
+        if not want.keys() <= {m.month for m in got_months}:
+            raise ValueError(f"{self.id}: a month outside the horizon")
+        for got in got_months:
+            if got.month in want:
+                check(got, want[got.month], f"{self.id}: {got.month}")
+        segments: list[SpSegment] = []
+        for m in got_months:
+            if segments and segments[-1].rate == m.rate:
+                segments[-1] = segments[-1].model_copy(update={"to_month": m.month})
+            else:
+                segments.append(SpSegment(from_month=m.month, to_month=m.month, rate=m.rate))
+        check(segments, self.expect.rates, f"{self.id}: rates")
+        planned = []
+        for c in changes:
+            mean = sp_mean_of(c.code, means)
+            p = sp_planned(c, mean)
+            planned.append(
+                SpPlanned(
+                    code=c.code, from_month=c.from_month, mean=mean, planned=p, delta=p - mean
+                )
+            )
+        check(planned, self.expect.planned, f"{self.id}: planned")
+        return self
+
+
+class SpendingPlayFixture(Schema):
+    bases: dict[str, Any]
+    cases: list[SpPlayCase]
+
+
+def sp_words(difference: Decimal) -> tuple[str, str]:
+    """§7.7's words: „<Betrag> mehr/weniger als geplant“, „wie geplant“ under 1 €."""
+    if abs(difference) < 1:
+        return "as_planned", "wie geplant"
+    whole = int(abs(difference).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    amount = f"{whole:,}".replace(",", ".")
+    if difference > 0:
+        return "more", f"{amount} € mehr als geplant"
+    return "less", f"{amount} € weniger als geplant"
+
+
+class CpLine(Schema):
+    key: str
+    code: AllocationCategory
+    amount: Money  # signed, as booked: spending negative
+
+
+class CpRow(Schema):
+    code: AllocationCategory
+    planned: Money
+    actual: Money
+    difference: Money
+    words: Literal["more", "less", "as_planned"]
+    text: str
+    sources: list[str]
+
+
+class CpExpect(Schema):
+    final: bool
+    open_lines: int = Field(ge=0)
+    rows: list[CpRow]
+
+
+class CpScenario(Schema):
+    key: str
+    created_at: datetime
+    is_default: bool = True
+    supersedes: str | None = None
+    withdrawn: bool = False
+
+
+def cp_in_force(rows: list[CpScenario], day: date) -> str | None:
+    """§7.7: the default household scenario in force on `day` (Berlin): created on or before
+    it, not withdrawn, not superseded by a row created on or before it; the newest first."""
+    known = [r for r in rows if r.created_at.astimezone(BERLIN).date() <= day]
+    replaced = {r.supersedes for r in known if r.supersedes is not None}
+    live = [r for r in known if r.is_default and not r.withdrawn and r.key not in replaced]
+    live.sort(key=lambda r: r.created_at, reverse=True)
+    return live[0].key if live else None
+
+
+class CpCase(Lenient):
+    pending: Pending | None = None  # None once its step has landed
+    month: YearMonth | None = None
+    today: date | None = None
+    closed: bool = False
+    open_lines: int = Field(default=0, ge=0)
+    changes: list[SpChange] = Field(default_factory=list)
+    lines: list[CpLine] = Field(default_factory=list)
+    expect: CpExpect | None = None
+    scenarios: list[CpScenario] = Field(default_factory=list)
+    in_force: dict[date, str | None] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _recompute(self) -> Self:
+        for day, key in self.in_force.items():
+            check(cp_in_force(self.scenarios, day), key, f"{self.id}: {day}")
+        if self.expect is None:
+            if not self.in_force:
+                raise ValueError(f"{self.id}: nothing to check")
+            return self
+        if self.month is None or self.today is None:
+            raise ValueError(f"{self.id}: a comparison names its month and today")
+        if any(c.mean_at_save is None for c in self.changes):
+            raise ValueError(f"{self.id}: a stored change carries its mean_at_save")
+        running = self.today <= last_day(self.month)
+        rows = []
+        for c in self.changes:
+            if not c.in_force(self.month):
+                continue
+            assert c.mean_at_save is not None
+            planned = sp_planned(c, c.mean_at_save)
+            members = sp_members(c.code) - ONE_OFF
+            mine = [li for li in self.lines if li.code in members]
+            actual = -sum((li.amount for li in mine), ZERO)
+            difference = actual - planned
+            words, text = sp_words(difference)
+            rows.append(
+                CpRow(
+                    code=c.code, planned=planned, actual=actual, difference=difference,
+                    words=words, text=text, sources=[li.key for li in mine],
+                )
+            )  # fmt: skip
+        got = CpExpect(final=self.closed and not running, open_lines=self.open_lines, rows=rows)
+        check(got, self.expect, self.id)
+        return self
+
+
+class SpendingComparisonFixture(Schema):
+    bases: dict[str, Any] = Field(default_factory=dict)
+    cases: list[CpCase]
+
+
 MODELS: dict[str, type[Schema]] = {
     "closed_month": ClosedMonthFixture,
     "debt": DebtFixture,
@@ -2269,6 +2648,8 @@ MODELS: dict[str, type[Schema]] = {
     "reserve": ReserveFixture,
     "savings_plans": SavingsPlansFixture,
     "savings_rate": SavingsRateFixture,
+    "spending_comparison": SpendingComparisonFixture,
+    "spending_play": SpendingPlayFixture,
     "surplus": SurplusFixture,
 }
 

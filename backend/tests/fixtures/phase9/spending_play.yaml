@@ -1,0 +1,241 @@
+# Phase 9 step 3b (docs/phases/phase-9.md §7.6, D263): `rules/plan/spending`. Spending in
+# play per category: a change names a household spending code (a group's fallback code for
+# the whole group) with a planned amount per month or a percent change of the code's measured
+# mean, from a month and optionally to a month. The code means come from the window's regular
+# spending per code (one-off codes left out); Δ(k) = Σ (planned − mean) of the changes in force
+# in month k enters §7.1's free cash; the savings rate with the changes is (Ē − Ā) ÷ Ē per
+# month, cut into stretches where it changes.
+#
+# tests/fixture_models_phase9.py recomputes every expectation on load with the rule written
+# once more there; tests/rules/test_phase9_spending.py replays the cases through the rule and
+# hausbuch.schemas.plan (the refusals through HouseholdLevers and the service's mean check).
+#
+# Step 3b's readings (to be listed in docs/phases/phase-9.md §15.1):
+# - a code's mean is its window sum ÷ n to the cent, the cents apportioned by largest remainder
+#   (ties: the code's value, ascending), so Σ of the code means = mean_regular_spending exactly
+#   (§6.1's mean to the cent); a group code's mean is Σ of its codes' means (case `worked`:
+#   hh_mobility 423.34, not 423.33; case `apportioned_cents`: three equal codes);
+# - the codes counted are those of the Haushalt screen's spending (spending and tax relevance,
+#   bank fees and uncategorised lines under Sonstiges), one-off codes left out; a change may
+#   name any of them except bank fees, uncategorised lines, a refund (its mean is negative) and
+#   a one-off code; a group's fallback code stands for the group, bank fees and uncategorised
+#   lines included for „Sonstiges“;
+# - the rate is computed on the window's exact sums, (ΣE + n·inc − ΣA − n·Δ) ÷ (ΣE + n·inc),
+#   so with no change in force it is rate_regular of §5.1 to the last digit (case `no_change`);
+#   Ē holds the income changes active in the month, never a one-off (case `income_change`).
+bases:
+  window: &window
+    - month: "2027-03"
+      income: "5300.00"
+      rental_result: "91.00"
+      rental_cash: "-220.00"
+      spending: {hh_supermarket: "620.00", hh_housing: "1800.00", hh_insurance: "300.00",
+        hh_dining: "180.00", hh_mobility: "400.00", hh_subscriptions: "60.00",
+        bank_fees: "5.00", hh_refund: "-20.00", hh_other: "555.00"}
+    - month: "2027-04"
+      income: "5300.00"
+      rental_result: "91.00"
+      rental_cash: "-220.00"
+      spending: {hh_supermarket: "640.00", hh_lodging: "300.00", hh_housing: "1800.00",
+        hh_insurance: "300.00", hh_dining: "210.00", hh_mobility: "420.00",
+        hh_subscriptions: "60.00", bank_fees: "5.00", hh_other: "415.00"}
+    - month: "2027-05"
+      income: "6150.00"
+      rental_result: "-309.00"
+      rental_cash: "-620.00"
+      spending: {hh_supermarket: "690.00", hh_flights: "300.00", hh_housing: "1800.00",
+        hh_insurance: "300.00", hh_dining: "230.00", hh_mobility: "450.00",
+        hh_subscriptions: "60.00", bank_fees: "5.00", hh_other: "465.00",
+        hh_car_purchase: "12000.00"}
+  means: &means {hh_supermarket: "650.00", hh_lodging: "100.00", hh_flights: "100.00",
+    hh_housing: "1800.00", hh_insurance: "300.00", hh_dining: "206.67", hh_mobility: "423.34",
+    hh_subscriptions: "60.00", bank_fees: "5.00", hh_refund: "-6.67", hh_other: "478.33"}
+
+cases:
+  - id: worked
+    description: >-
+      §7.6 (6): Supermarkt (hh_supermarket) +5 % from June 2027, Reisen (the group's fallback
+      hh_travel, Σ of hh_lodging and hh_flights) planned at 500.00 from July to September
+      2027 on a mean of 200.00; the car's 12,000.00 in May is one-off and left out
+    window: *window
+    horizon_months: 6
+    changes:
+      - {code: hh_supermarket, percent: "0.05", from_month: "2027-06"}
+      - {code: hh_travel, monthly: "500.00", from_month: "2027-07", to_month: "2027-09"}
+    expect:
+      mean_regular_spending: "4116.67"
+      means: *means
+      rate_regular_now: "0.2571"
+      months:
+        - {month: "2027-06", delta: "32.50", free: "1080.83", buffer: "108.08", investable: "972.75", rate: "0.2512"}
+        - {month: "2027-07", delta: "332.50", free: "780.83", buffer: "78.08", investable: "702.75", rate: "0.1970"}
+        - {month: "2027-09", delta: "332.50", free: "780.83", buffer: "78.08", investable: "702.75", rate: "0.1970"}
+        - {month: "2027-10", delta: "32.50", free: "1080.83", buffer: "108.08", investable: "972.75", rate: "0.2512"}
+      rates:
+        - {from_month: "2027-06", to_month: "2027-06", rate: "0.2512"}
+        - {from_month: "2027-07", to_month: "2027-09", rate: "0.1970"}
+        - {from_month: "2027-10", to_month: "2027-11", rate: "0.2512"}
+      planned:
+        - {code: hh_supermarket, from_month: "2027-06", mean: "650.00", planned: "682.50", delta: "32.50"}
+        - {code: hh_travel, from_month: "2027-07", mean: "200.00", planned: "500.00", delta: "300.00"}
+
+  - id: no_change
+    description: §7.6 (4) asserted, no change in force; the rate is rate_regular of §5.1
+    window: *window
+    horizon_months: 3
+    expect:
+      mean_regular_spending: "4116.67"
+      means: *means
+      rate_regular_now: "0.2571"
+      months:
+        - {month: "2027-06", delta: "0.00", free: "1113.33", buffer: "111.33", investable: "1002.00", rate: "0.2571"}
+      rates:
+        - {from_month: "2027-06", to_month: "2027-08", rate: "0.2571"}
+
+  - id: change_not_yet_in_force
+    description: a change from a later month leaves the earlier months at the measured mean
+    window: *window
+    horizon_months: 3
+    changes:
+      - {code: hh_dining, monthly: "150.00", from_month: "2027-08"}
+    expect:
+      mean_regular_spending: "4116.67"
+      means: *means
+      rate_regular_now: "0.2571"
+      months:
+        - {month: "2027-07", delta: "0.00", free: "1113.33", buffer: "111.33", investable: "1002.00", rate: "0.2571"}
+        - {month: "2027-08", delta: "-56.67", free: "1170.00", buffer: "117.00", investable: "1053.00", rate: "0.2673"}
+      rates:
+        - {from_month: "2027-06", to_month: "2027-07", rate: "0.2571"}
+        - {from_month: "2027-08", to_month: "2027-08", rate: "0.2673"}
+      planned:
+        - {code: hh_dining, from_month: "2027-08", mean: "206.67", planned: "150.00", delta: "-56.67"}
+
+  - id: new_expense
+    description: >-
+      §7.6 (2): a code with no line in the window has mean 0 and may still be given a planned
+      amount (a Kita fee, hh_childcare, a tax-relevant spending code)
+    window: *window
+    horizon_months: 4
+    changes:
+      - {code: hh_childcare, monthly: "300.00", from_month: "2027-09"}
+    expect:
+      mean_regular_spending: "4116.67"
+      means: *means
+      rate_regular_now: "0.2571"
+      months:
+        - {month: "2027-09", delta: "300.00", free: "813.33", buffer: "81.33", investable: "732.00", rate: "0.2029"}
+      rates:
+        - {from_month: "2027-06", to_month: "2027-08", rate: "0.2571"}
+        - {from_month: "2027-09", to_month: "2027-09", rate: "0.2029"}
+      planned:
+        - {code: hh_childcare, from_month: "2027-09", mean: "0.00", planned: "300.00", delta: "300.00"}
+
+  - id: percent_to_zero
+    description: percent −1.00 plans nothing for the code; a percent is rounded to the cent half-up
+    window: *window
+    horizon_months: 1
+    changes:
+      - {code: hh_dining, percent: "-1.00", from_month: "2027-06"}
+      - {code: hh_mobility, percent: "0.15", from_month: "2027-06"}
+    expect:
+      mean_regular_spending: "4116.67"
+      means: *means
+      rate_regular_now: "0.2571"
+      months:
+        - {month: "2027-06", delta: "-143.17", free: "1256.50", buffer: "125.65", investable: "1130.85", rate: "0.2829"}
+      rates:
+        - {from_month: "2027-06", to_month: "2027-06", rate: "0.2829"}
+      planned:
+        - {code: hh_dining, from_month: "2027-06", mean: "206.67", planned: "0.00", delta: "-206.67"}
+        - {code: hh_mobility, from_month: "2027-06", mean: "423.34", planned: "486.84", delta: "63.50"}
+
+  - id: income_change
+    description: >-
+      Ē holds the income change active in the month (−600.00 from August, parental leave),
+      never the one-off (+1,500.00 in July), which only enters free cash
+    window: *window
+    horizon_months: 5
+    income_changes:
+      - {monthly_net: "-600.00", from_month: "2027-08", note_code: parental_leave}
+    one_offs:
+      - {month: "2027-07", amount: "1500.00"}
+    changes:
+      - {code: hh_supermarket, percent: "0.05", from_month: "2027-06"}
+      - {code: hh_travel, monthly: "500.00", from_month: "2027-07", to_month: "2027-09"}
+    expect:
+      mean_regular_spending: "4116.67"
+      means: *means
+      rate_regular_now: "0.2571"
+      months:
+        - {month: "2027-07", delta: "332.50", free: "2280.83", buffer: "228.08", investable: "2052.75", rate: "0.1970"}
+        - {month: "2027-08", delta: "332.50", free: "180.83", buffer: "18.08", investable: "162.75", rate: "0.0995"}
+        - {month: "2027-10", delta: "32.50", free: "480.83", buffer: "48.08", investable: "432.75", rate: "0.1603"}
+      rates:
+        - {from_month: "2027-06", to_month: "2027-06", rate: "0.2512"}
+        - {from_month: "2027-07", to_month: "2027-07", rate: "0.1970"}
+        - {from_month: "2027-08", to_month: "2027-09", rate: "0.0995"}
+        - {from_month: "2027-10", to_month: "2027-10", rate: "0.1603"}
+      planned:
+        - {code: hh_supermarket, from_month: "2027-06", mean: "650.00", planned: "682.50", delta: "32.50"}
+        - {code: hh_travel, from_month: "2027-07", mean: "200.00", planned: "500.00", delta: "300.00"}
+
+  - id: apportioned_cents
+    description: >-
+      three codes of 100.00 each over three months: 33.33 each would sum to 99.99, so the
+      largest remainder gives the first code by value (hh_dining) the cent
+    window:
+      - {month: "2027-03", income: "3000.00", rental_result: "0.00", rental_cash: "0.00",
+        spending: {hh_supermarket: "100.00", hh_dining: "100.00", hh_groceries: "100.00"}}
+      - {month: "2027-04", income: "3000.00", rental_result: "0.00", rental_cash: "0.00", spending: {}}
+      - {month: "2027-05", income: "3000.00", rental_result: "0.00", rental_cash: "0.00", spending: {}}
+    horizon_months: 1
+    expect:
+      mean_regular_spending: "100.00"
+      means: {hh_dining: "33.34", hh_groceries: "33.33", hh_supermarket: "33.33"}
+      rate_regular_now: "0.9667"
+      months:
+        - {month: "2027-06", delta: "0.00", free: "2900.00", buffer: "290.00", investable: "2610.00", rate: "0.9667"}
+      rates:
+        - {from_month: "2027-06", to_month: "2027-06", rate: "0.9667"}
+
+  - id: refusals
+    description: §7.6 (1), through HouseholdLevers.spending_changes and the service's mean check
+    window: *window
+    accepted:
+      - []
+      - [{code: hh_supermarket, monthly: "0.00", from_month: "2027-06"}]
+      - [{code: hh_supermarket, percent: "2.00", from_month: "2027-06", to_month: "2027-06"}]
+      - [{code: hh_supermarket, percent: "-1.00", from_month: "2027-06"}]
+      - [{code: hh_supermarket, monthly: "600.00", from_month: "2027-06", to_month: "2027-08"},
+         {code: hh_supermarket, percent: "0.10", from_month: "2027-09"}]
+      - [{code: hh_travel, monthly: "500.00", from_month: "2027-07"},
+         {code: hh_supermarket, monthly: "600.00", from_month: "2027-06"}]
+      - [{code: hh_childcare, monthly: "300.00", from_month: "2027-09"}]
+      - [{code: hh_cash, monthly: "200.00", from_month: "2027-06"}]
+    refused:
+      - [{code: hh_supermarket, from_month: "2027-06"}]
+      - [{code: hh_supermarket, monthly: "600.00", percent: "0.10", from_month: "2027-06"}]
+      - [{code: hh_supermarket, monthly: "-1.00", from_month: "2027-06"}]
+      - [{code: hh_supermarket, percent: "2.01", from_month: "2027-06"}]
+      - [{code: hh_supermarket, percent: "-1.01", from_month: "2027-06"}]
+      - [{code: hh_supermarket, percent: "0.055", from_month: "2027-06"}]
+      - [{code: hh_supermarket, monthly: "600.00", from_month: "2027-08", to_month: "2027-07"}]
+      - [{code: hh_car_purchase, monthly: "0.00", from_month: "2027-06"}]
+      - [{code: hh_salary, monthly: "100.00", from_month: "2027-06"}]
+      - [{code: hh_investment, monthly: "100.00", from_month: "2027-06"}]
+      - [{code: internal_transfer_out, monthly: "100.00", from_month: "2027-06"}]
+      - [{code: hh_refund, monthly: "0.00", from_month: "2027-06"}]
+      - [{code: bank_fees, monthly: "0.00", from_month: "2027-06"}]
+      - [{code: uncategorized, monthly: "0.00", from_month: "2027-06"}]
+      - [{code: rent_cold, monthly: "100.00", from_month: "2027-06"}]
+      - [{code: hh_groceries, monthly: "800.00", from_month: "2027-06"},
+         {code: hh_supermarket, monthly: "600.00", from_month: "2027-09"}]
+      - [{code: hh_supermarket, monthly: "600.00", from_month: "2027-06", to_month: "2027-09"},
+         {code: hh_supermarket, percent: "0.10", from_month: "2027-09"}]
+      - [{code: hh_supermarket, monthly: "600.00", from_month: "2027-06"},
+         {code: hh_supermarket, monthly: "650.00", from_month: "2028-01"}]
+    refused_with_means:
+      - [{code: hh_childcare, percent: "0.10", from_month: "2027-06"}]
+      - [{code: hh_travel, percent: "0.10", from_month: "2027-06"},
+         {code: hh_personal_care, percent: "0.10", from_month: "2027-06"}]

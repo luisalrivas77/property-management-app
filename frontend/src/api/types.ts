@@ -2495,6 +2495,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/household-plan/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Household Plan Preview */
+        post: operations["household_plan_preview_api_household_plan_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/household-plan/comparison": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Plan Comparison */
+        get: operations["household_plan_comparison_api_household_plan_comparison_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/movement-imports": {
         parameters: {
             query?: never;
@@ -5887,6 +5921,11 @@ export interface components {
             public_transport_costs?: string | null;
         };
         /**
+         * ComparisonWords
+         * @enum {string}
+         */
+        ComparisonWords: "more" | "less" | "as_planned";
+        /**
          * ConfirmAllocationsBody
          * @description PUT /transactions/{id}/allocations: the user's allocation set and the "Künftig immer
          *     so zuordnen" checkbox.
@@ -8190,6 +8229,8 @@ export interface components {
             net_worth_years: number;
             /** Bands */
             bands?: components["schemas"]["BandLimits"][];
+            /** Spending Changes */
+            spending_changes?: components["schemas"]["SpendingChange"][];
         };
         /**
          * HouseholdMonth
@@ -8268,8 +8309,16 @@ export interface components {
             /** Proposed One Offs */
             proposed_one_offs?: components["schemas"]["ProposedOneOff"][];
             projection?: components["schemas"]["NetWorthProjection"] | null;
+            spending_play?: components["schemas"]["SpendingPlay"] | null;
             /** Todos */
             todos?: components["schemas"]["HealthTodo"][];
+        };
+        /**
+         * HouseholdPlanPreview
+         * @description POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored.
+         */
+        HouseholdPlanPreview: {
+            levers: components["schemas"]["HouseholdLevers"];
         };
         /**
          * HouseholdScenario
@@ -10589,7 +10638,8 @@ export interface components {
         PlanClass: "depot" | "crypto";
         /**
          * PlanMonth
-         * @description One future month of §7.1.
+         * @description One future month of §7.1; `spending_delta` is §7.6 (3)'s Δ(k), Σ (planned − mean) over
+         *     the spending changes in force, already inside `free`.
          */
         PlanMonth: {
             /** Month */
@@ -10600,6 +10650,11 @@ export interface components {
             free: string;
             /** Investable */
             investable: string;
+            /**
+             * Spending Delta
+             * @default 0.00
+             */
+            spending_delta: string;
         };
         /**
          * PlanOverride
@@ -10615,6 +10670,18 @@ export interface components {
              * @default false
              */
             dropped: boolean;
+        };
+        /**
+         * PlayedChange
+         * @description One change of the levers with what it plans (§7.6 (3)): `planned` per month while it is
+         *     in force, `delta` = planned − the code's mean.
+         */
+        PlayedChange: {
+            change: components["schemas"]["SpendingChange"];
+            /** Planned */
+            planned: string;
+            /** Delta */
+            delta: string;
         };
         /**
          * PositionHoldings
@@ -11500,6 +11567,23 @@ export interface components {
          * @enum {string}
          */
         RateBasis: "monthly_payment" | "yearly_premium" | "schedule" | "twelve_months" | "none";
+        /**
+         * RateSegment
+         * @description The savings rate with the changes over consecutive months that share it and the
+         *     regular spending planned in them, Ā_regular + Δ(k) (§7.6 (4)).
+         */
+        RateSegment: {
+            /** From Month */
+            from_month: string;
+            /** To Month */
+            to_month: string;
+            /** Rate */
+            rate?: string | null;
+            /** Regular Spending */
+            regular_spending: string;
+            /** Investable */
+            investable?: string | null;
+        };
         /**
          * RebookBlockReason
          * @description Why an earlier line of the payee cannot be re-booked by „Diese auch auf … umbuchen“
@@ -12560,6 +12644,134 @@ export interface components {
             amount: string;
             /** Recipient Label */
             recipient_label: string;
+        };
+        /**
+         * SpendingChange
+         * @description One planned change of a household spending code (D263, §7.6 (1)): a planned amount per
+         *     month, or a percent change of the code's measured mean, from a month and optionally to a
+         *     month. A group's fallback code stands for the whole group, its subcategories included; a
+         *     subcategory code for itself. `mean_at_save` is the code's mean (§7.6 (2)) the service
+         *     writes when a new or altered change is stored; a change carried unaltered from the row
+         *     superseded keeps the value stored with it (§7.6 (1) amended). A typed value is never read
+         *     (§7.7 reads the stored one).
+         */
+        SpendingChange: {
+            code: components["schemas"]["AllocationCategory"];
+            /** Monthly */
+            monthly?: string | null;
+            /** Percent */
+            percent?: string | null;
+            /** From Month */
+            from_month: string;
+            /** To Month */
+            to_month?: string | null;
+            /** Mean At Save */
+            mean_at_save?: string | null;
+        };
+        /**
+         * SpendingComparison
+         * @description GET /household-plan/comparison?month= (§7.7): the default scenario in force on the
+         *     month's last day (today for the running month); `final` when the month has ended and is
+         *     closed, otherwise the figures are „bisher“ and `open_lines` wait in Zu prüfen. No colour,
+         *     no mark (D263 (e)).
+         */
+        SpendingComparison: {
+            /** Month */
+            month: string;
+            /** Final */
+            final: boolean;
+            /**
+             * Open Lines
+             * @default 0
+             */
+            open_lines: number;
+            /** Scenario Id */
+            scenario_id?: string | null;
+            /** Scenario Created At */
+            scenario_created_at?: string | null;
+            /** Rows */
+            rows?: components["schemas"]["SpendingComparisonRow"][];
+        };
+        /**
+         * SpendingComparisonRow
+         * @description One code the scenario plans for the month (§7.7).
+         */
+        SpendingComparisonRow: {
+            code: components["schemas"]["AllocationCategory"];
+            group: components["schemas"]["HouseholdGroup"];
+            /** Planned */
+            planned: string;
+            /** Actual */
+            actual: string;
+            /** Difference */
+            difference: string;
+            words: components["schemas"]["ComparisonWords"];
+            /** Text */
+            text: string;
+            /** Sources */
+            sources?: string[];
+        };
+        /**
+         * SpendingPlay
+         * @description §7.6 (5): every code with a mean or a change, grouped; today's rate without one-offs;
+         *     the rate with the changes per stretch of months, never a mean of the months.
+         */
+        SpendingPlay: {
+            /** Groups */
+            groups?: components["schemas"]["SpendingPlayGroup"][];
+            /** Mean Regular Spending */
+            mean_regular_spending: string;
+            /** Rate Regular Now */
+            rate_regular_now?: string | null;
+            /** Rates */
+            rates?: components["schemas"]["RateSegment"][];
+            /** Addable */
+            addable?: components["schemas"]["AllocationCategory"][];
+        };
+        /**
+         * SpendingPlayGroup
+         * @description A spending group as the Haushalt screen groups it. `code`: the code that stands for the
+         *     whole group (its fallback, or its only code), None for a group that has neither (Steuerlich
+         *     relevant, Bewegungen, Depot); `changes`: the changes naming that code. The group's mean is
+         *     Σ of its rows; `change_first` holds the group's and the rows' changes of the first month.
+         */
+        SpendingPlayGroup: {
+            group: components["schemas"]["HouseholdGroup"];
+            code?: components["schemas"]["AllocationCategory"] | null;
+            /** Mean */
+            mean: string;
+            /** Planned First */
+            planned_first: string;
+            /** Change First */
+            change_first: string;
+            /** Changes */
+            changes?: components["schemas"]["PlayedChange"][];
+            /** Rows */
+            rows: components["schemas"]["SpendingPlayRow"][];
+        };
+        /**
+         * SpendingPlayRow
+         * @description One spending code (§7.6 (5)): its measured mean (§7.6 (2)), the amount planned for the
+         *     first future month and its change against the mean, and the changes the levers hold for
+         *     it. `playable`: a change may name this code on its own row; a group's fallback code is
+         *     planned on the group's row (it stands for the whole group), and bank fees, uncategorised
+         *     lines and a refund count in the mean but are never planned (§7.6 (1)).
+         */
+        SpendingPlayRow: {
+            code: components["schemas"]["AllocationCategory"];
+            /** Mean */
+            mean: string;
+            /** Planned First */
+            planned_first: string;
+            /** Change First */
+            change_first: string;
+            /**
+             * Playable
+             * @default true
+             */
+            playable: boolean;
+            /** Changes */
+            changes?: components["schemas"]["PlayedChange"][];
         };
         /**
          * SplitMethod
@@ -20083,6 +20295,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HouseholdPlan"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_plan_preview_api_household_plan_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HouseholdPlanPreview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseholdPlan"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_plan_comparison_api_household_plan_comparison_get: {
+        parameters: {
+            query: {
+                month: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpendingComparison"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

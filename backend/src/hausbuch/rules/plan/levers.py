@@ -10,9 +10,11 @@ For the k-th month after the newest closed one:
    fixture_models_phase9.flat_by_year: the window gives one household mean, not one per
    property, so a year is replaced only as a whole). A year whose tax effect is None takes its
    net_cash as it is.
-2. free(k) = mean income − mean regular spending + flat(k) + the income changes active in k + the
-   one-offs dated in k. A one-off in the levers counts: a proposed one (phase 4b's refund or
-   back-payment) is in the levers only once a member accepted it (D247).
+2. free(k) = mean income − mean regular spending − Δ(k) + flat(k) + the income changes active
+   in k + the one-offs dated in k. A one-off in the levers counts: a proposed one (phase 4b's
+   refund or back-payment) is in the levers only once a member accepted it (D247). Δ(k) is the
+   spending changes' planned amounts less their codes' means (§7.6 (3), rules.plan.spending),
+   0 without a change.
 3. investable(k) = free(k) − free(k) × buffer ÷ 100 (to the cent, half-up) when free(k) > 0,
    else free(k).
 
@@ -20,23 +22,28 @@ Pure: no I/O, no tax computed (the flat's tax effect is phase 4's, read as it is
 """
 
 from collections.abc import Hashable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 
-from hausbuch.schemas.plan import IncomeChange, OneOff, PlanMonth
+from hausbuch.schemas.allocation import AllocationCategory
+from hausbuch.schemas.plan import IncomeChange, OneOff, PlanMonth, SpendingChange
 
+from .spending import delta
 from .surplus import ZERO, buffer_of, cent
 
 
 @dataclass(frozen=True)
 class MonthBasis:
-    """The window's measured means (§6.1) and the buffer the month function starts from."""
+    """The window's measured means (§6.1) and the buffer the month function starts from;
+    the spending changes of the levers with the codes' means they change (§7.6)."""
 
     newest_closed: str  # YYYY-MM
     mean_income: Decimal
     mean_regular_spending: Decimal
     mean_rental_cash: Decimal
     buffer_percent: Decimal
+    spending_changes: tuple[SpendingChange, ...] = ()
+    code_means: Mapping[AllocationCategory, Decimal] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -87,7 +94,8 @@ def month_at(
     flat = basis.mean_rental_cash
     if flat_years and year != int(basis.newest_closed[:4]) and year in flat_years:
         flat = flat_years[year]
-    free = basis.mean_income - basis.mean_regular_spending + flat
+    spent = delta(basis.spending_changes, basis.code_means, ym)
+    free = basis.mean_income - basis.mean_regular_spending - spent + flat
     for change in income_changes:
         if change.from_month <= ym and (change.to_month is None or ym <= change.to_month):
             free += change.monthly_net
@@ -95,7 +103,7 @@ def month_at(
         if one_off.month == ym:
             free += one_off.amount
     investable = free - buffer_of(free, basis.buffer_percent) if free > 0 else free
-    return PlanMonth(month=ym, flat=flat, free=free, investable=investable)
+    return PlanMonth(month=ym, flat=flat, free=free, investable=investable, spending_delta=spent)
 
 
 def months(

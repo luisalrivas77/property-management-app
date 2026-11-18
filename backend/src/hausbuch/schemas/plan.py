@@ -15,8 +15,11 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from .allocation import AllocationCategory
 from .common import _STRING_ONLY, Money, NonNegativeMoney, Schema, _string_schema
 from .health import BandLimits, HealthTodo, Reserve, TargetMonths, YearMonth, is_month_end
+from .household import HouseholdGroup
+from .household import SavingsRate as Ratio  # signed, four places
 
 # The buffer kept back from the free cash (D244, §7.3): 0 to 50 %, one place.
 BufferPercent = Annotated[
@@ -41,6 +44,13 @@ AssumptionValue = Annotated[
     Field(ge=Decimal("-0.5"), lt=Decimal("1"), max_digits=7, decimal_places=6),
     _STRING_ONLY,
     _string_schema(6, signed=True),
+]
+# A planned change of a code's measured mean (D263, §7.6 (1)): −1.00 to 2.00 in steps of 0.01.
+SpendingPercent = Annotated[
+    Decimal,
+    Field(ge=Decimal("-1"), le=Decimal("2"), max_digits=3, decimal_places=2),
+    _STRING_ONLY,
+    _string_schema(2, signed=True),
 ]
 # A savings plan's key: stable per destination (an account or a payee pattern).
 PlanKey = Annotated[str, Field(pattern=r"^[a-z0-9_-]{1,64}$")]
@@ -167,6 +177,40 @@ class ValueChange(Schema):
     crypto: ValueChangeRate | None = None
 
 
+class SpendingChange(Schema):
+    """One planned change of a household spending code (D263, §7.6 (1)): a planned amount per
+    month, or a percent change of the code's measured mean, from a month and optionally to a
+    month. A group's fallback code stands for the whole group, its subcategories included; a
+    subcategory code for itself. `mean_at_save` is the code's mean (§7.6 (2)) the service
+    writes when a new or altered change is stored; a change carried unaltered from the row
+    superseded keeps the value stored with it (§7.6 (1) amended). A typed value is never read
+    (§7.7 reads the stored one)."""
+
+    code: AllocationCategory
+    monthly: NonNegativeMoney | None = None
+    percent: SpendingPercent | None = None
+    from_month: YearMonth
+    to_month: YearMonth | None = None  # None: no end
+    mean_at_save: Money | None = None
+
+    @model_validator(mode="after")
+    def _one(self) -> Self:
+        # Lazy: the schemas import no rules at module level; the taxonomy imports schemas only.
+        from hausbuch.rules.plan.spending import refused_code
+
+        if (self.monthly is None) == (self.percent is None):
+            raise ValueError(f"{LEVER_INVALID}: a change is a planned amount or a percent")
+        if self.to_month is not None and self.to_month < self.from_month:
+            raise ValueError(f"{LEVER_INVALID}: a change ends on or after its start")
+        reason = refused_code(self.code)
+        if reason is not None:
+            raise ValueError(f"{LEVER_INVALID}: {self.code.value} {reason}")
+        return self
+
+    def in_force(self, month: str) -> bool:
+        return self.from_month <= month and (self.to_month is None or month <= self.to_month)
+
+
 class HouseholdLevers(Schema):
     """`household_scenario.levers` (D248). The defaults are the spec's (§18 Q1)."""
 
@@ -180,9 +224,15 @@ class HouseholdLevers(Schema):
     value_change: ValueChange = Field(default_factory=ValueChange)
     net_worth_years: int = Field(default=10, ge=1, le=30)
     bands: list[BandLimits] = Field(default_factory=list)  # confirmed limits (D250 (3))
+    spending_changes: list[SpendingChange] = Field(default_factory=list)  # D263, §7.6
 
     @model_validator(mode="after")
     def _unique(self) -> Self:
+        from hausbuch.rules.plan.spending import refused_together
+
+        reason = refused_together(self.spending_changes)
+        if reason is not None:
+            raise ValueError(f"{LEVER_INVALID}: {reason}")
         keys = [o.plan_key for o in self.plan_overrides]
         if len(keys) != len(set(keys)):
             raise ValueError(f"{LEVER_INVALID}: one override per plan")
@@ -289,12 +339,14 @@ class SavingsPlan(Schema):
 
 
 class PlanMonth(Schema):
-    """One future month of §7.1."""
+    """One future month of §7.1; `spending_delta` is §7.6 (3)'s Δ(k), Σ (planned − mean) over
+    the spending changes in force, already inside `free`."""
 
     month: YearMonth
     flat: Money
     free: Money
     investable: Money
+    spending_delta: Money = Decimal("0.00")
 
 
 class Path(Schema):
@@ -417,6 +469,126 @@ class NetWorthProjection(Schema):
         return self
 
 
+# --- Spending in play (D263, §7.6) and the comparison (§7.7) ---------------------------
+
+
+class PlayedChange(Schema):
+    """One change of the levers with what it plans (§7.6 (3)): `planned` per month while it is
+    in force, `delta` = planned − the code's mean."""
+
+    change: SpendingChange
+    planned: Money
+    delta: Money
+
+
+class SpendingPlayRow(Schema):
+    """One spending code (§7.6 (5)): its measured mean (§7.6 (2)), the amount planned for the
+    first future month and its change against the mean, and the changes the levers hold for
+    it. `playable`: a change may name this code on its own row; a group's fallback code is
+    planned on the group's row (it stands for the whole group), and bank fees, uncategorised
+    lines and a refund count in the mean but are never planned (§7.6 (1))."""
+
+    code: AllocationCategory
+    mean: Money
+    planned_first: Money
+    change_first: Money
+    playable: bool = True
+    changes: list[PlayedChange] = Field(default_factory=list)
+
+
+class SpendingPlayGroup(Schema):
+    """A spending group as the Haushalt screen groups it. `code`: the code that stands for the
+    whole group (its fallback, or its only code), None for a group that has neither (Steuerlich
+    relevant, Bewegungen, Depot); `changes`: the changes naming that code. The group's mean is
+    Σ of its rows; `change_first` holds the group's and the rows' changes of the first month."""
+
+    group: HouseholdGroup
+    code: AllocationCategory | None = None
+    mean: Money
+    planned_first: Money
+    change_first: Money
+    changes: list[PlayedChange] = Field(default_factory=list)
+    rows: list[SpendingPlayRow]
+
+
+class RateSegment(Schema):
+    """The savings rate with the changes over consecutive months that share it and the
+    regular spending planned in them, Ā_regular + Δ(k) (§7.6 (4))."""
+
+    from_month: YearMonth
+    to_month: YearMonth
+    rate: Ratio | None = None  # None when Ē ≤ 0
+    regular_spending: Money
+    # „Anlegbar pro Monat“ in these months by §7.1 with the flat at its measured mean and no
+    # one-off (the screen's „ohne Einmalausgaben“); None when the caller passes no month function
+    investable: Money | None = None
+
+
+class SpendingPlay(Schema):
+    """§7.6 (5): every code with a mean or a change, grouped; today's rate without one-offs;
+    the rate with the changes per stretch of months, never a mean of the months."""
+
+    groups: list[SpendingPlayGroup] = Field(default_factory=list)
+    mean_regular_spending: Money
+    rate_regular_now: Ratio | None = None
+    rates: list[RateSegment] = Field(default_factory=list)
+    # „Neue Ausgabe“: the codes a change may name that have no mean and no change yet, in the
+    # taxonomy's order; a group's fallback code only while its group has no row
+    addable: list[AllocationCategory] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _sum(self) -> Self:
+        total = sum((r.mean for g in self.groups for r in g.rows), Decimal("0.00"))
+        if total != self.mean_regular_spending:
+            raise ValueError("the codes' means sum to the mean regular spending (§7.6 (2))")
+        return self
+
+
+class ComparisonWords(StrEnum):
+    MORE = "more"  # „<Betrag> mehr als geplant“
+    LESS = "less"  # „<Betrag> weniger als geplant“
+    AS_PLANNED = "as_planned"  # „wie geplant“, |difference| < 1 €
+
+
+class SpendingComparisonRow(Schema):
+    """One code the scenario plans for the month (§7.7)."""
+
+    code: AllocationCategory
+    group: HouseholdGroup
+    planned: Money
+    actual: Money
+    difference: Money  # actual − planned, signed
+    words: ComparisonWords
+    text: str  # the words with the amount in whole euros, as the screen shows them
+    sources: list[UUID] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _difference(self) -> Self:
+        if self.difference != self.actual - self.planned:
+            raise ValueError("difference = actual − planned")
+        return self
+
+
+class SpendingComparison(Schema):
+    """GET /household-plan/comparison?month= (§7.7): the default scenario in force on the
+    month's last day (today for the running month); `final` when the month has ended and is
+    closed, otherwise the figures are „bisher“ and `open_lines` wait in Zu prüfen. No colour,
+    no mark (D263 (e))."""
+
+    month: YearMonth
+    final: bool
+    open_lines: int = Field(default=0, ge=0)
+    scenario_id: UUID | None = None
+    scenario_created_at: datetime | None = None
+    rows: list[SpendingComparisonRow] = Field(default_factory=list)
+
+
+class HouseholdPlanPreview(Schema):
+    """POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored."""
+
+    levers: HouseholdLevers
+
+
 class HouseholdPlan(Schema):
     """GET /household-plan (§13)."""
 
@@ -443,4 +615,5 @@ class HouseholdPlan(Schema):
     months: list[PlanMonth] = Field(default_factory=list)
     proposed_one_offs: list[ProposedOneOff] = Field(default_factory=list)
     projection: NetWorthProjection | None = None
+    spending_play: SpendingPlay | None = None  # D263, §7.6; None below three closed months
     todos: list[HealthTodo] = Field(default_factory=list)
