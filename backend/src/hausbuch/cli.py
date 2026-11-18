@@ -8,7 +8,8 @@ D167 (c) amended 15 Nov 2026, D162 amended (6) and (7) 15 Nov 2026, D178 amended
 Nov 2026).
 
 Also `hausbuch relink-chain` (phase 7 D184, step 5), `hausbuch survey-solana` (phase 7,
-17 Nov 2026) and `hausbuch health-check` (phase 9 D259 amended 17 Nov 2026), described below.
+17 Nov 2026), `hausbuch repair-solana-lamports` (phase 7 D186 (2) amended 18 Nov 2026) and
+`hausbuch health-check` (phase 9 D259 amended 17 Nov 2026), described below.
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -115,6 +116,16 @@ months and whether they matched (§15.3).
 holds its IBAN or number, and every ready depot suggestion is rebuilt with the depot it prints
 pre-selected and its Steuerjahr. The worker runs it because the stored files are read from the
 object store, which this computer does not hold. --dry-run counts and queues nothing.
+
+`repair-solana-lamports` queues one worker job (jobs.lamports_repair) once after the deploy of
+18 Nov 2026 (phase 7 D186 (2) amended): every active Solana address's stored originals are read
+again with the own token accounts they name, never the provider, and a transaction in which such
+a token account received lamports the earlier reading missed (a stranger's address-poisoning
+dust) gets its group superseded with the corrected SOL leg; a confirmed Kleinstbetrag (D262)
+stays confirmed while it is still dust, anything else is proposed for a person. A second run
+changes nothing. The worker runs it because the originals are in the object store. --dry-run
+queues the same job in a mode that writes nothing; both print the number of Solana addresses
+here and log their counts (never an address or a hash) in the worker.
 
 `survey-solana` (phase 7, 17 Nov 2026, before liquidity pools are supported) reads one Solana
 wallet's whole history from its RPC and reports what it holds and how the current classifier
@@ -1024,6 +1035,51 @@ def follow_accounts(args: argparse.Namespace, environ: Mapping[str, str]) -> int
     return EXIT_OK
 
 
+# --- repair-solana-lamports -----------------------------------------------------------
+
+
+def repair_solana_lamports(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """Queues one `repair_solana_lamports` job for the workspace (phase 7 D186 (2) amended
+    18 Nov 2026); the worker runs it, since reading the stored originals needs the object
+    store. `--dry-run` queues it in a mode that rolls back. Counts only, never an address."""
+    from sqlalchemy import func, select
+
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.db.tables import wallet_address
+    from hausbuch.jobs.enqueue import enqueue_repair_solana_lamports
+    from hausbuch.schemas.chain import Chain
+
+    engine = owner_engine(environ)
+    try:
+        with workspace_transaction(engine, args.workspace) as conn:
+            addresses = conn.execute(
+                select(func.count()).where(
+                    wallet_address.c.chain == Chain.SOLANA.value,
+                    wallet_address.c.active.is_(True),
+                )
+            ).scalar_one()
+            enqueue_repair_solana_lamports(
+                conn, workspace_id=args.workspace, dry_run=bool(args.dry_run)
+            )
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    print(f"{addresses} active Solana address(es) are read again from their stored originals")
+    if args.dry_run:
+        print(
+            "dry run queued: the worker counts and writes nothing "
+            "(see its log: solana lamports repaired, dry_run true)"
+        )
+    else:
+        print("queued; the worker does it within a minute (see its log: solana lamports repaired)")
+    return EXIT_OK
+
+
 # --- household-resort -----------------------------------------------------------------
 
 
@@ -1322,6 +1378,18 @@ def _parser() -> argparse.ArgumentParser:
     follow.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     follow.add_argument("--dry-run", action="store_true", help="count only, queue nothing")
     follow.set_defaults(command=follow_accounts, command_name="follow-accounts")
+
+    lamports = commands.add_parser(
+        "repair-solana-lamports",
+        help="read every Solana address's stored originals again and correct a transaction "
+        "whose lamports to an own token account were missed (a stranger's dust); once, after "
+        "the deploy of 18 Nov 2026",
+    )
+    lamports.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    lamports.add_argument(
+        "--dry-run", action="store_true", help="queue a run that counts and writes nothing"
+    )
+    lamports.set_defaults(command=repair_solana_lamports, command_name="repair-solana-lamports")
 
     resort = commands.add_parser(
         "household-resort",

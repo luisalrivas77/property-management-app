@@ -112,6 +112,19 @@ def test_follow_accounts_is_registered():
     assert FOLLOW_ACCOUNTS_TASK == "follow_accounts" and FOLLOW_ACCOUNTS_TASK in app.tasks
 
 
+def test_repair_solana_lamports_is_registered():
+    """`hausbuch repair-solana-lamports` queues it by name (phase 7 D186 (2), 18 Nov 2026)."""
+    from hausbuch.cli import _parser
+    from hausbuch.jobs.enqueue import REPAIR_SOLANA_LAMPORTS_TASK
+
+    app = tasks.register_tasks(procrastinate.App(connector=procrastinate.SyncPsycopgConnector()))
+    assert REPAIR_SOLANA_LAMPORTS_TASK in app.tasks
+    args = _parser().parse_args(
+        ["repair-solana-lamports", "--workspace", str(uuid4()), "--dry-run"]
+    )
+    assert (args.command_name, args.dry_run) == ("repair-solana-lamports", True)
+
+
 def test_rematch_waiting_is_registered_and_locked_per_trigger():
     app = tasks.register_tasks(procrastinate.App(connector=procrastinate.SyncPsycopgConnector()))
     assert REMATCH_WAITING_TASK == "rematch_waiting" and REMATCH_WAITING_TASK in app.tasks
