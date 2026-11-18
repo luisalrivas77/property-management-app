@@ -15,6 +15,7 @@ import { useAuth } from "@/auth/AuthGate";
 import { CashflowCard } from "@/components/cashflow";
 import { currentTenancy, partyNames } from "@/components/entities";
 import { formatArea, formatDate, formatMoney, todayIso } from "@/components/format";
+import { HealthSection } from "@/components/healthFigures";
 import { PROPERTY_KIND } from "@/components/labels";
 import { NetWorthSection } from "@/components/netWorth";
 import { OverviewTodos } from "@/components/overviewTodos";
@@ -77,6 +78,7 @@ export default function OverviewPage() {
       </div>
       <OverviewTodos reminders={reminders.data ?? []} onRemindersChanged={reminders.reload} />
       <NetWorthSection />
+      <HealthSection />
       <CashflowCard />
       <Loading state={reminders}>{(list) => <NextDates reminders={list} onChanged={reminders.reload} />}</Loading>
       <Loading state={overview}>

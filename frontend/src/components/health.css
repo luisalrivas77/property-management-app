@@ -1,0 +1,168 @@
+/* Phase 9 step 3: the key figures on Übersicht (mockups 13, 13b) and the household plan on
+ * Planung › Haushalt (mockups 12, 12b, 12c). Built on the planning and household classes;
+ * only what they lack is here. */
+
+.health-figure {
+  display: grid;
+  gap: 6px;
+  padding: 14px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.health-figure p {
+  margin: 0;
+}
+
+.health-figure-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.health-figure-value {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-mark {
+  margin-left: 8px;
+  vertical-align: middle;
+  font-size: 12px;
+}
+
+.health-texts p {
+  margin: 0 0 4px;
+}
+
+.health-sources > summary {
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-weight: 600;
+  min-height: 32px;
+}
+
+.health-todos {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.health-todo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn-border, var(--border));
+  border-radius: var(--radius-card);
+  background: var(--warn-bg, transparent);
+}
+
+.health-month-end {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.health-limit {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 14px 0;
+  border: none;
+  border-top: 1px solid var(--divider);
+}
+
+.health-limit legend {
+  padding: 0;
+  font-weight: 700;
+}
+
+.health-limit p {
+  margin: 0;
+}
+
+.health-limit-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.health-limit-input {
+  width: 8em;
+}
+
+.health-reference {
+  padding: 8px 12px;
+  border-left: 3px solid var(--border);
+}
+
+.health-reference-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.health-split-rows {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.health-split-rows li {
+  display: grid;
+  grid-template-columns: minmax(8em, 12em) 1fr auto;
+  align-items: center;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-confirmed p {
+  margin: 0;
+}
+
+.health-progress {
+  display: block;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--tag-bg);
+  overflow: hidden;
+}
+
+.health-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.health-plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.health-plan-row p {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .health-split-rows li {
+    grid-template-columns: 1fr auto;
+  }
+
+  .health-split-rows .household-share {
+    display: none;
+  }
+}
