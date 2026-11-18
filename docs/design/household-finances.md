@@ -372,7 +372,7 @@ Levers (Planung · Haushalt): reserve target in months (default 3), horizon, exp
 changes (e.g. Elternzeit months with reduced income), target savings rate. All stored as a
 scenario, like phase 4's property levers.
 
-**As specced for phase 9 (16 Nov 2026, `docs/phases/phase-9.md`; not built).** The spec keeps
+**As specced for phase 9 (16 Nov 2026, `docs/phases/phase-9.md`; the key figures built in step 1, 17 Nov 2026, and the plan in step 2, 18 Nov 2026, both without a screen until step 3; this said „not built“ until 18 Nov 2026).** The spec keeps
 the table's metrics and corrects it in four places; the table above is left as it was agreed
 on 6 Nov 2026.
 
