@@ -175,7 +175,10 @@ def test_the_plans_are_read_from_the_private_transfers_and_the_payees(world):
     assert got.already_invested == Decimal("80.00")
     investable = got.surplus.amount(SurplusKey.INVESTABLE)
     assert got.investable_left == investable - Decimal("80.00")
-    assert [t.code for t in got.todos] == [HealthTodoCode.SCENARIO_CHECK]
+    assert [t.code for t in got.todos] == [
+        HealthTodoCode.SCENARIO_CHECK,
+        HealthTodoCode.NO_DEFAULT_SCENARIO,
+    ]
     # The paths: every plan paused, each paused alone, all continued (D246).
     assert {p.key for p in got.paths} == {
         "reserve_first",
@@ -250,12 +253,16 @@ def test_without_a_run_or_a_scenario_the_projection_is_a_to_do(world):
     got = _plan(world)
     assert [t.code for t in got.projection.todos] == [HealthTodoCode.RATE_MISSING]
     assert got.paths and got.reserve is not None
+    # D247: a property without a default scenario is a to-do of the plan too, not only of the
+    # projection card.
+    assert HealthTodoCode.NO_DEFAULT_SCENARIO in [t.code for t in got.todos]
     _household(world)
     got = _plan(world)
     assert [t.code for t in got.projection.todos] == [
         HealthTodoCode.MONTH_END_MISSING,
         HealthTodoCode.NO_DEFAULT_SCENARIO,
     ]
+    assert [t.code for t in got.todos].count(HealthTodoCode.NO_DEFAULT_SCENARIO) == 1
     # Without a default scenario the flat keeps its measured mean in every month.
     assert {m.flat for m in got.months} == {Decimal("310.00")}
     # A default scenario phase 4 refuses to project (World's flat was bought in 2024, before
@@ -300,7 +307,7 @@ def test_a_reserve_account_that_no_longer_fits_and_an_income_change_are_named(wo
     savings = _savings(world)
     _covered(world, savings.import_id)
     with workspace_transaction(world.engine, world.ws) as conn:
-        conn.execute(  # a positive reserve: a negative one fails step 1's Reserve schema
+        conn.execute(  # a positive reserve, so the paths start above 0
             update(account_table)
             .where(account_table.c.id == savings.account_id)
             .values(opening_balance=Decimal("5000.00"))
@@ -314,7 +321,10 @@ def test_a_reserve_account_that_no_longer_fits_and_an_income_change_are_named(wo
         income_changes=[IncomeChange(monthly_net=Decimal("-600.00"), from_month="2027-06")],
     )
     got = _plan(world)
-    assert [t.code for t in got.todos] == [HealthTodoCode.INCOME_CHANGE_LINK]
+    assert [t.code for t in got.todos] == [
+        HealthTodoCode.INCOME_CHANGE_LINK,
+        HealthTodoCode.NO_DEFAULT_SCENARIO,
+    ]
     by_month = {m.month: m for m in got.months}
     assert by_month["2027-06"].free == by_month["2027-05"].free - Decimal("600.00")
     with workspace_transaction(world.engine, world.ws) as conn:
@@ -327,4 +337,5 @@ def test_a_reserve_account_that_no_longer_fits_and_an_income_change_are_named(wo
     assert [t.code for t in got.todos] == [
         HealthTodoCode.SCENARIO_CHECK,
         HealthTodoCode.INCOME_CHANGE_LINK,
+        HealthTodoCode.NO_DEFAULT_SCENARIO,
     ]

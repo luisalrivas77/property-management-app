@@ -260,6 +260,7 @@ def flat_scenarios(
     conn: Connection, today: date
 ) -> tuple[dict[UUID, N.FlatScenario | None], list[HealthTodo], list[ProjectionAssumption]]:
     """Per property its default phase 4 scenario's projected years (None without a default),
+    the to-do „Szenario für die Wohnung anlegen“ for a property without a default (D247),
     the to-do when phase 4 refuses to project it, and the flat's growth as an assumption."""
     flats: dict[UUID, N.FlatScenario | None] = {}
     todos: list[HealthTodo] = []
@@ -267,8 +268,10 @@ def flat_scenarios(
     ids = conn.execute(select(property_table.c.id).order_by(property_table.c.id)).scalars()
     for property_id in ids:
         scenario = property_default_scenario(conn, property_id)
-        if scenario is None:
+        if scenario is None:  # D247: the measured mean, with „Szenario für die Wohnung anlegen“
             flats[property_id] = None
+            if not any(t.code is HealthTodoCode.NO_DEFAULT_SCENARIO for t in todos):
+                todos.append(N.scenario_todo())
             continue
         try:
             projection = performance_projection(
@@ -409,8 +412,8 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
 
     if row is None:
         projection = NetWorthProjection(todos=[_no_scenario_todo()])
-    elif flat_todos:
-        projection = NetWorthProjection(todos=flat_todos)
+    elif refused := [t for t in flat_todos if t.code is HealthTodoCode.SCENARIO_CHECK]:
+        projection = NetWorthProjection(todos=refused)
     else:
         projection = N.project_net_worth(
             basis,

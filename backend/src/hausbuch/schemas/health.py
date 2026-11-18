@@ -37,8 +37,10 @@ Multiple = Annotated[
     Decimal, Field(ge=0, max_digits=9, decimal_places=2), _STRING_ONLY, _string_schema(2)
 ]
 # Reserve months (D237): one place.
+# Signed: a reserve below 0 (cards' debt above the balances, an overdrawn account, D237) is
+# below 0 months of the need, never an error.
 ReserveMonths = Annotated[
-    Decimal, Field(ge=0, max_digits=7, decimal_places=1), _STRING_ONLY, _string_schema(1)
+    Decimal, Field(max_digits=7, decimal_places=1), _STRING_ONLY, _string_schema(1)
 ]
 # The reserve target in months of the need (D238, §7.3): 0 to 24 in steps of 0.5.
 TargetMonths = Annotated[

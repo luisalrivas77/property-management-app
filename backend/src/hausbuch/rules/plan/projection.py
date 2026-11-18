@@ -139,7 +139,7 @@ def _month_end_todo(month_end: date) -> HealthTodo:
     )
 
 
-def _scenario_todo() -> HealthTodo:
+def scenario_todo() -> HealthTodo:
     return HealthTodo(
         code=HealthTodoCode.NO_DEFAULT_SCENARIO,
         text=(
@@ -179,7 +179,7 @@ def projection_todos(
     if start is None:
         todos.append(_month_end_todo(month_end))
     if any(f is None for f in flats.values()):
-        todos.append(_scenario_todo())
+        todos.append(scenario_todo())
     held = {c for c in CLASSES if start is not None and start.of(c) != 0}
     held |= {p.asset_class for p in plans}
     missing = [c for c in CLASSES if c in held and getattr(levers.value_change, c.value) is None]

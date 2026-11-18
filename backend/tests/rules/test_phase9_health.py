@@ -488,6 +488,23 @@ def test_an_account_without_shares_leaves_by_owner_empty():
     assert got.amount == Decimal("10.00") and got.by_owner == {}
 
 
+def test_a_reserve_below_zero_is_below_zero_months():
+    """An overdrawn account or a card's debt above the balances (D237) gives a reserve below
+    0: its months are negative, never a validation error (it raised until step 2)."""
+    overdrawn = ReserveBalance(
+        account_id=uid("giro"),
+        label="Giro",
+        kind="bank_current",
+        balance=Decimal("-300.00"),
+        as_of=date(2027, 6, 2),
+    )
+    window = [hm("2027-05", private_spending=Decimal("100.00"))]
+    got = F.reserve([overdrawn], window, SIX, today=date(2027, 6, 3))
+    assert got.amount == Decimal("-300.00")
+    assert got.months is not None and got.months < 0
+    assert got.state is ReserveState.BELOW
+
+
 def test_the_need_is_taken_from_the_window_means():
     window = [
         hm("2027-03", private_spending=Decimal("100.00"), rental_result=Decimal("-10.00")),
