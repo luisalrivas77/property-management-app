@@ -44,7 +44,7 @@ Design plans for later phases (not specs; only what the Decisions table records 
 
 ## UI mockups
 
-Fourteen screen mockups (PNG + static HTML) live in `docs/mockups/`: 01–06 for the landlord module, 07–12 (with 09b and 09c, the Anlagen tabs) for the household phases 6–9. Before building or changing a
+Eighteen screen mockups (PNG + static HTML) live in `docs/mockups/`: 01–06 for the landlord module, 07–13 (with 09b and 09c, the Anlagen tabs, 12b and 12c, the plan's projection and the page before three closed months, and 13b, the key figures with confirmed limits) for the household phases 6–9; 12, 12b, 12c, 13 and 13b were drawn and approved by Luis on 18 Nov 2026 (phase 9 Q-O136). Before building or changing a
 screen, read `docs/mockups/README.md` and look at the matching PNG. They set layout, content,
 flow and the visual style (tokens and classes in `frontend/src/app/globals.css`); labels stay
 German; their numbers are sample data, never fixtures.

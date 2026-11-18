@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<title>Übersicht Kennzahlen, Grenzen übernommen</title>
+<!-- Phase 9 mockup, drawn 18 Nov 2026 for Luis's approval (phase 9 spec Q-O136). Sample data from the spec's worked example (§15.2); never real household figures, never fixtures. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap"><style>
+body{margin:0}
+a{color:#1F6F54}a:hover{color:#14523E}
+</style></head>
+<body>
+
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #F4F5F2; font-family: Manrope, system-ui, sans-serif; color: #17201C; font-variant-numeric: tabular-nums">
+
+<nav aria-label="Hauptnavigation" style="flex: 1 1 220px; box-sizing: border-box; background: #FFFFFF; border-right: 1px solid #E1E4DE; padding: 24px 16px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+<div style="width: 32px; height: 32px; border-radius: 8px; background: #1F6F54; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"></path><path d="M9 20v-6h6v6"></path></svg></div>
+<span style="font-weight: 800; font-size: 18px; letter-spacing: -0.02em">Hausbuch</span>
+</div>
+<a href="13-overview-figures.html" aria-current="page" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 700; color: #14523E; background: #E3F0EA"><span>Übersicht</span></a>
+<a href="03-inbox.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Zu prüfen</span><span style="background: #3A4BA8; color: #FFFFFF; font-size: 12px; font-weight: 700; border-radius: 10px; padding: 2px 8px">2</span></a>
+<a href="08-accounts.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Konten</span></a>
+<a href="09-holdings.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Anlagen</span></a>
+<a href="10-household-cashflow.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Haushalt</span></a>
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Immobilien</span></a>
+<a href="11-tax-anlage-so.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Steuern</span></a>
+<a href="12-planning-household.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Planung</span></a>
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Dokumente</span></a>
+<div style="margin-top: 16px; padding: 16px 12px 0; border-top: 1px solid #E1E4DE; display: flex; justify-content: space-between; align-items: center; font-size: 14px"><span style="font-weight: 700">Luis</span><a href="13-overview-figures.html" style="font-size: 14px; font-weight: 600">Einstellungen</a></div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 32px 40px 48px">
+<div style="max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: flex-end">
+<div>
+<p style="margin: 0 0 4px; font-size: 13px; font-weight: 600; color: #5A635E; text-transform: uppercase; letter-spacing: 0.06em">Übersicht · Stand 14. Juni 2027</p>
+<h1 style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -0.02em">Guten Tag, Luis</h1>
+</div>
+
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; align-items: start">
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px">
+<p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Nettovermögen</p>
+<p style="margin: 0; font-size: 26px; font-weight: 800">128.380 €</p>
+<p style="margin: 0; font-size: 13px; color: #3E4843">−11.770 € gegenüber dem 30. April 2027</p><p style="margin: 0; font-size: 12px; color: #5A635E">Monatsabschluss 31. Mai 2027</p>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px">
+<p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Cashflow Mai 2027</p>
+<p style="margin: 0; font-size: 26px; font-weight: 800">−10.458 €</p>
+<div style="display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0"><span style="color: #3E4843">Einnahmen</span><span style="font-weight: 700">5.842 €</span></div><div style="display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0"><span style="color: #3E4843">Ausgaben</span><span style="font-weight: 700">−16.300 €</span></div><div style="display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0"><span style="color: #3E4843">darin einmalig: Auto</span><span style="font-weight: 700">12.000 €</span></div><a href="10-household-cashflow.html" style="font-size: 13px; font-weight: 600">Haushalt öffnen</a>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px">
+<p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Liquiditätsreserve</p>
+<p style="margin: 0; font-size: 26px; font-weight: 800">16.830 €</p>
+<p style="margin: 0; font-size: 13px; color: #3E4843">reicht für <strong>3,8 Monate</strong> eures Bedarfs von 4.470 € im Monat</p>
+<div style="position: relative; height: 10px; border-radius: 5px; background: #E1E4DE; margin-top: 6px" role="img" aria-label="16.830 € von 26.820 €, 63 % des Ziels"><div style="width: 62.75%; height: 100%; border-radius: 5px; background: #C98A4B"></div><div style="position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; background: #A3262A"></div></div>
+<p style="margin: 0; font-size: 12px; color: #5A635E">eigenes Ziel: 26.820 € = 6 Monate · <a href="12-planning-household.html" style="font-weight: 600">ändern</a></p>
+<p style="margin: 0; font-size: 12px; color: #5A635E">Strich: eure Grenze 13.410 € (die Hälfte des Ziels)</p>
+<div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 4px"><span style="display: inline-flex; align-items: center; gap: 6px; background: #FBEEDC; border: 1px solid #F0D6B0; color: #7A3F0B; font-size: 12px; font-weight: 800; border-radius: 20px; padding: 3px 10px 3px 8px"><span style="width: 10px; height: 10px; border-radius: 5px; background: #C98A4B"></span>Gelb</span><p style="margin: 0; font-size: 13px; color: #3E4843; line-height: 1.5">Eure Reserve reicht für 3,8 Monate. Bis zu eurem eigenen Ziel fehlen 9.990 €.</p></div>
+</div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px">
+<p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Braucht eure Antwort</p>
+<p style="margin: 0; font-size: 26px; font-weight: 800">2</p>
+<p style="margin: 0; font-size: 13px; color: #3E4843">Buchungen in „Zu prüfen“</p><a href="03-inbox.html" style="font-size: 13px; font-weight: 600">Zu prüfen öffnen</a>
+</div>
+</div>
+<div style="background: #E3F0EA; border: 1px solid #D5E6DE; color: #14523E; border-radius: 10px; padding: 12px 16px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between"><span><strong>Eure Ampel-Grenzen sind übernommen.</strong> Jede Farbe misst eine Kennzahl an eurer eigenen Grenze, nicht an einer Regel von außen.</span><a href="#" style="font-weight: 700; color: #14523E">Grenzen ändern</a></div>
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px; ">
+<div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: baseline">
+<div><h2 style="margin: 0 0 4px; font-size: 18px; font-weight: 800">Kennzahlen</h2><p style="margin: 0 0 6px; font-size: 13px; color: #5A635E">März bis Mai 2027 · Bestände am 31. Mai 2027 · Farben nach euren eigenen Grenzen, übernommen von Luis am 14. Juni 2027</p></div>
+<button style="min-height: 36px; padding: 0 16px; border-radius: 10px; background: #FFFFFF; color: #17201C; border: 1px solid #C9CEC6; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap">Grenzen ändern</button>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 16px 24px; padding: 14px 0; border-top: 1px solid #ECEEE9">
+<div style="min-width: 0">
+<p style="margin: 0; font-size: 14px; font-weight: 700; color: #3E4843">Sparquote</p>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px"><span style="font-size: 24px; font-weight: 800">−46,5 %</span><span style="display: inline-flex; align-items: center; gap: 6px; background: #FBEAEA; border: 1px solid #F0C8C9; color: #A3262A; font-size: 12px; font-weight: 800; border-radius: 20px; padding: 3px 10px 3px 8px"><span style="width: 10px; height: 10px; border-radius: 5px; background: #A3262A"></span>Rot</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 2px 0; max-width: 300px"><span style="color: #3E4843">ohne Einmalausgaben</span><span style="font-weight: 700">25,7 %</span></div><div style="display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 2px 0; max-width: 300px"><span style="color: #3E4843">davon Tilgung</span><span style="font-weight: 700">933 €</span></div><div style="display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 2px 0; max-width: 300px"><span style="color: #3E4843">ohne Tilgung</span><span style="font-weight: 700">−52,1 %</span></div>
+</div>
+<div style="min-width: 0; font-size: 14px; line-height: 1.55; color: #17201C">
+<p style="margin: 0; color: #5A635E; font-size: 13px">Wie viel von eurem Einkommen übrig blieb: Einkommen minus Ausgaben, geteilt durch das Einkommen. März bis Mai 2027. Die Tilgung des Darlehens zählt als gespart, weil sie eure Schulden senkt.</p>
+<p style="margin: 6px 0 0">In diesem Zeitraum habt ihr mehr ausgegeben als eingenommen. Ohne die Einmalausgaben läge die Sparquote bei 25,7 %.</p>
+<p style="margin: 4px 0 0; font-size: 12px; color: #5A635E">eigene Grenze: rot unter 0,0 %, keine Grenze für Grün</p>
+</div>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 16px 24px; padding: 14px 0; border-top: 1px solid #ECEEE9">
+<div style="min-width: 0">
+<p style="margin: 0; font-size: 14px; font-weight: 700; color: #3E4843">Schuldendienstquote</p>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px"><span style="font-size: 24px; font-weight: 800">15,4 %</span><span style="display: inline-flex; align-items: center; gap: 6px; background: #E3F0EA; border: 1px solid #D5E6DE; color: #14523E; font-size: 12px; font-weight: 800; border-radius: 20px; padding: 3px 10px 3px 8px"><span style="width: 10px; height: 10px; border-radius: 5px; background: #1F6F54"></span>Grün</span></div>
+
+</div>
+<div style="min-width: 0; font-size: 14px; line-height: 1.55; color: #17201C">
+<p style="margin: 0; color: #5A635E; font-size: 13px">Zins und Tilgung geteilt durch euer Einkommen vor diesen Zahlungen; hochgerechnet aus 3 Monaten (11.400 € von 74.160 € im Jahr).</p>
+<p style="margin: 6px 0 0">15,4 % eures Einkommens gehen für Zins und Tilgung an die Bank. Das liegt unter eurer Grenze von 30,0 %.</p>
+<p style="margin: 4px 0 0; font-size: 12px; color: #5A635E">eigene Grenze: grün bis 30,0 %, rot über 40,0 %</p>
+</div>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 16px 24px; padding: 14px 0; border-top: 1px solid #ECEEE9">
+<div style="min-width: 0">
+<p style="margin: 0; font-size: 14px; font-weight: 700; color: #3E4843">Beleihungsauslauf</p>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px"><span style="font-size: 24px; font-weight: 800">73,9 %</span><span style="display: inline-flex; align-items: center; gap: 6px; background: #FBEEDC; border: 1px solid #F0D6B0; color: #7A3F0B; font-size: 12px; font-weight: 800; border-radius: 20px; padding: 3px 10px 3px 8px"><span style="width: 10px; height: 10px; border-radius: 5px; background: #C98A4B"></span>Gelb</span></div>
+
+</div>
+<div style="min-width: 0; font-size: 14px; line-height: 1.55; color: #17201C">
+<p style="margin: 0; color: #5A635E; font-size: 13px">Die Kredite der Wohnung geteilt durch ihren geschätzten Wert (236.400 € von 320.000 €).</p>
+<p style="margin: 6px 0 0">Die Kredite der Wohnung machen 73,9 % ihres geschätzten Werts aus. Das liegt zwischen euren Grenzen von 60,0 % und 100,0 %.</p>
+<p style="margin: 4px 0 0; font-size: 12px; color: #5A635E">eigene Grenze: grün bis 60,0 %, rot über 100,0 %</p>
+</div>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 16px 24px; padding: 14px 0; border-top: 1px solid #ECEEE9">
+<div style="min-width: 0">
+<p style="margin: 0; font-size: 14px; font-weight: 700; color: #3E4843">Verschuldungsgrad</p>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px"><span style="font-size: 24px; font-weight: 800">64,9 %</span></div>
+
+</div>
+<div style="min-width: 0; font-size: 14px; line-height: 1.55; color: #17201C">
+<p style="margin: 0; color: #5A635E; font-size: 13px">Alle eure Schulden geteilt durch alles, was ihr besitzt (237.220 € von 365.600 €).</p>
+<p style="margin: 6px 0 0">Eure Schulden machen 64,9 % eures Vermögens aus.</p>
+<p style="margin: 4px 0 0; font-size: 12px; color: #5A635E">Keine Grenze festgelegt, deshalb keine Farbe. <a href="#" style="font-weight: 600">Grenze eintragen</a></p>
+</div>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 16px 24px; padding: 14px 0; border-top: 1px solid #ECEEE9">
+<div style="min-width: 0">
+<p style="margin: 0; font-size: 14px; font-weight: 700; color: #3E4843">Schulden zu Jahreseinkommen</p>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px"><span style="font-size: 24px; font-weight: 800">3,2</span></div>
+
+</div>
+<div style="min-width: 0; font-size: 14px; line-height: 1.55; color: #17201C">
+<p style="margin: 0; color: #5A635E; font-size: 13px">Alle eure Schulden geteilt durch euer Einkommen eines Jahres; hochgerechnet aus 3 Monaten.</p>
+<p style="margin: 6px 0 0">Eure Schulden sind 3,2 mal so hoch wie euer Jahreseinkommen.</p>
+<p style="margin: 4px 0 0; font-size: 12px; color: #5A635E">Keine Grenze festgelegt, deshalb keine Farbe. <a href="#" style="font-weight: 600">Grenze eintragen</a></p>
+</div>
+</div>
+<div style="padding: 14px 0 0; border-top: 1px solid #ECEEE9">
+<p style="margin: 0; font-size: 14px; font-weight: 700; color: #3E4843">Aufteilung des Vermögens</p>
+<p style="margin: 3px 0 8px; font-size: 13px; color: #5A635E">Welcher Teil von allem, was ihr besitzt (365.600 €), in welcher Anlageklasse steckt. Am 31. Mai 2027. Eine Aufteilung ist keine Bewertung und bekommt nie eine Farbe.</p>
+<div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 56px; gap: 10px; align-items: center; font-size: 13px; padding: 3px 0"><span style="color: #3E4843; font-weight: 600">Immobilien</span><span style="height: 8px; border-radius: 4px; background: #F4F5F2"><span style="display: block; width: 87.5%; min-width: 4px; height: 100%; border-radius: 4px; background: #8E9892"></span></span><span style="text-align: right; font-weight: 700">87,5 %</span></div><div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 56px; gap: 10px; align-items: center; font-size: 13px; padding: 3px 0"><span style="color: #3E4843; font-weight: 600">Fonds und Wertpapiere</span><span style="height: 8px; border-radius: 4px; background: #F4F5F2"><span style="display: block; width: 5.9%; min-width: 4px; height: 100%; border-radius: 4px; background: #8E9892"></span></span><span style="text-align: right; font-weight: 700">5,9 %</span></div><div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 56px; gap: 10px; align-items: center; font-size: 13px; padding: 3px 0"><span style="color: #3E4843; font-weight: 600">Bankguthaben</span><span style="height: 8px; border-radius: 4px; background: #F4F5F2"><span style="display: block; width: 5.5%; min-width: 4px; height: 100%; border-radius: 4px; background: #8E9892"></span></span><span style="text-align: right; font-weight: 700">5,5 %</span></div><div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 56px; gap: 10px; align-items: center; font-size: 13px; padding: 3px 0"><span style="color: #3E4843; font-weight: 600">Krypto</span><span style="height: 8px; border-radius: 4px; background: #F4F5F2"><span style="display: block; width: 1.1%; min-width: 4px; height: 100%; border-radius: 4px; background: #8E9892"></span></span><span style="text-align: right; font-weight: 700">1,1 %</span></div>
+</div>
+</section>
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px; ">
+<h2 style="margin: 0 0 4px; font-size: 18px; font-weight: 800">Vermögen im Verlauf</h2>
+<p style="margin: 0 0 12px; font-size: 13px; color: #5A635E; line-height: 1.5">Aus den gespeicherten Monatsabschlüssen. „Gespart“ ist Einkommen minus Ausgaben des Monats; der Rest der Veränderung kommt aus Kursen, dem geschätzten Wert der Wohnung und Sonstigem.</p>
+<svg viewBox="0 0 1000 230" width="100%" style="max-width: 1000px; display: block" role="img" aria-label="Nettovermögen: 138.900 € am 31. März, 140.150 € am 30. April, 128.380 € am 31. Mai 2027"><line x1="90" x2="970" y1="198.0" y2="198.0" stroke="#ECEEE9" stroke-width="1"/><text x="82" y="202.0" text-anchor="end" font-size="11" fill="#5A635E">120.000 €</text><line x1="90" x2="970" y1="141.3" y2="141.3" stroke="#ECEEE9" stroke-width="1"/><text x="82" y="145.3" text-anchor="end" font-size="11" fill="#5A635E">130.000 €</text><line x1="90" x2="970" y1="84.7" y2="84.7" stroke="#ECEEE9" stroke-width="1"/><text x="82" y="88.7" text-anchor="end" font-size="11" fill="#5A635E">140.000 €</text><line x1="90" x2="970" y1="28.0" y2="28.0" stroke="#ECEEE9" stroke-width="1"/><text x="82" y="32.0" text-anchor="end" font-size="11" fill="#5A635E">150.000 €</text><path d="M150.0,90.9 L530.0,83.8 L910.0,150.5" fill="none" stroke="#1F6F54" stroke-width="2"/><circle cx="150.0" cy="90.9" r="5" fill="#1F6F54" stroke="#FFFFFF" stroke-width="2"/><text x="150.0" y="78.9" text-anchor="middle" font-size="12" font-weight="700" fill="#17201C">138.900 €</text><text x="150.0" y="222" text-anchor="middle" font-size="12" fill="#5A635E">31. März</text><circle cx="530.0" cy="83.8" r="5" fill="#1F6F54" stroke="#FFFFFF" stroke-width="2"/><text x="530.0" y="71.8" text-anchor="middle" font-size="12" font-weight="700" fill="#17201C">140.150 €</text><text x="530.0" y="222" text-anchor="middle" font-size="12" fill="#5A635E">30. April</text><circle cx="910.0" cy="150.5" r="5" fill="#1F6F54" stroke="#FFFFFF" stroke-width="2"/><text x="910.0" y="138.5" text-anchor="middle" font-size="12" font-weight="700" fill="#17201C">128.380 €</text><text x="910.0" y="222" text-anchor="middle" font-size="12" fill="#5A635E">31. Mai</text></svg>
+<table style="width: 100%; border-collapse: collapse; margin-top: 8px"><thead><tr><th style="padding: 8px 10px; font-size: 12px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.04em; text-align: right; border-bottom: 1px solid #E1E4DE; text-align: left">Monat</th><th style="padding: 8px 10px; font-size: 12px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.04em; text-align: right; border-bottom: 1px solid #E1E4DE">Vermögen am Monatsende</th><th style="padding: 8px 10px; font-size: 12px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.04em; text-align: right; border-bottom: 1px solid #E1E4DE">Veränderung</th><th style="padding: 8px 10px; font-size: 12px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.04em; text-align: right; border-bottom: 1px solid #E1E4DE">davon gespart</th><th style="padding: 8px 10px; font-size: 12px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.04em; text-align: right; border-bottom: 1px solid #E1E4DE">Wertänderungen und Sonstiges</th></tr></thead><tbody><tr><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right; text-align: left; font-weight: 700; color: #3E4843">März 2027</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">138.900 €</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">–</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">1.490 €</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">–</td></tr><tr><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right; text-align: left; font-weight: 700; color: #3E4843">April 2027</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">140.150 €</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">+1.250 €</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">1.241 €</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">+9 €</td></tr><tr><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right; text-align: left; font-weight: 700; color: #3E4843">Mai 2027</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">128.380 €</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">−11.770 €</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">−10.458 €</td><td style="padding: 9px 10px; border-bottom: 1px solid #ECEEE9; font-size: 14px; text-align: right">−1.312 €</td></tr></tbody></table>
+<p style="margin: 8px 0 0; font-size: 12px; color: #5A635E">Im Mai: das Auto für 12.000 € ist als Ausgabe im gesparten Betrag enthalten. <a href="10-household-cashflow.html" style="font-weight: 600">Monat öffnen</a></p>
+</section>
+</div>
+</main>
+</div>
+
+</body></html>
