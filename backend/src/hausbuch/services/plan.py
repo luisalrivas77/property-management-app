@@ -36,7 +36,10 @@ rules/plan/. Nothing here writes, and no figure is computed outside those rules.
   of 0, or when the estimate refuses (`RuleError`, e.g. no rule set for the year).
 - **The paths' screen lines** (step 3): the plans without a pause row (`paths_others`), the
   flat's positive mean that lands on the rental account first, and `flat_change`, the month
-  the flat's scenario replaces the mean with each path's amount from then on.
+  the flat's scenario replaces the mean with each path's amount from then on, left out when
+  that one month's figure would not hold from then on (an income change or a one-off after it,
+  `holds_from`). A path's „im Monat“ comes from the months without one-offs, so a refund in
+  the first plan month is not shown as a monthly rate (PR #434 review B).
 """
 
 from collections.abc import Sequence
@@ -56,7 +59,7 @@ from hausbuch.rules.health.window import window_todos
 from hausbuch.rules.plan import levers as L
 from hausbuch.rules.plan import projection as N
 from hausbuch.rules.plan import savings_plans as S
-from hausbuch.rules.plan.paths import flat_change, paths
+from hausbuch.rules.plan.paths import flat_change, holds_from, paths
 from hausbuch.rules.plan.surplus import surplus
 from hausbuch.schemas.advice import AdviceMode
 from hausbuch.schemas.allocation import TransferLegSource
@@ -491,9 +494,12 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
         basis, levers.horizon_months, flat_years, levers.income_changes, levers.one_offs
     )
     mode = advice_mode(conn)
-    rows = paths(reserve.amount, reserve.target, plans, plan_months, newest, mode)
     steady = L.months(basis, levers.horizon_months, flat_years, levers.income_changes, ())
+    rows = paths(reserve.amount, reserve.target, plans, plan_months, newest, mode, steady)
     rental = sur.amount(SurplusKey.MEAN_RENTAL_CASH)
+    later = flat_change(plans, steady, rental, mode)
+    if later is not None and not holds_from(later, steady, levers.one_offs):
+        later = None  # one month's figure that does not hold from then on is not shown
 
     if row is None:
         projection = NetWorthProjection(todos=[_no_scenario_todo()])
@@ -525,7 +531,7 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
             "paths": rows.rows,
             "paths_others": rows.others,
             "paths_on_rental_account": rental if rental > 0 else None,
-            "flat_change": flat_change(plans, steady, rental, mode),
+            "flat_change": later,
             "months": plan_months,
             "proposed_one_offs": proposed_refund(conn, today, levers),
             "projection": projection,
