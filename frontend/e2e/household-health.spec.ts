@@ -1,0 +1,345 @@
+// The household's key figures and plan (docs/phases/phase-9.md §14, step 3; mockups 12, 12b,
+// 12c, 13, 13b). The reads of phase 9 (GET /health, /health/months, /household-plan) and the
+// scenario writes are mocked, since a workspace with three closed months needs a full ledger;
+// every other read is the real API of a fresh workspace. Synthetic figures only.
+//
+// - No key figure has a colour before the household's limits are confirmed with „Übernehmen“
+//   (D250).
+// - The plan's rate fields start empty with no placeholder, and the projection of the net worth
+//   appears only once a rate is saved (D247): the app proposes none.
+// - Below three closed months both screens show what holds the next month open, as to-dos whose
+//   buttons work (D231, 12c).
+// - Every figure opens what it is made of: its months, each a link to that month on Haushalt.
+//
+// §15.2's worked example (the figures of health_worked.yaml on screen) is not here: it needs the
+// fixture's ledger seeded through the API, and the backend test of that fixture covers the
+// figures themselves.
+import type { Page, Route } from "@playwright/test";
+
+import type { components } from "../src/api/types";
+import { expect, test } from "./support";
+
+type Health = components["schemas"]["Health"];
+type HealthMonthView = components["schemas"]["HealthMonthView"];
+type HealthTodo = components["schemas"]["HealthTodo"];
+type HouseholdMonth = components["schemas"]["HouseholdMonth"];
+type HouseholdPlan = components["schemas"]["HouseholdPlan"];
+type HouseholdScenario = components["schemas"]["HouseholdScenario"];
+type HouseholdScenarioCreate = components["schemas"]["HouseholdScenarioCreate"];
+type SnapshotResult = components["schemas"]["SnapshotResult"];
+
+const WORKSPACE = "00000000-0000-4000-8000-000000000901";
+
+/** YYYY-MM, `back` months before the current one. */
+function monthsBack(back: number): string {
+  const now = new Date();
+  const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1));
+  return day.toISOString().slice(0, 7);
+}
+
+function householdMonth(month: string, income = "5200.00", spending = "3900.00"): HouseholdMonth {
+  const saved = (Number(income) - Number(spending)).toFixed(2);
+  return {
+    month,
+    private_income: income,
+    private_spending: spending,
+    one_off_spending: "0.00",
+    regular_spending: spending,
+    rental_result: "0.00",
+    rental_cash: "0.00",
+    income,
+    spending,
+    saved,
+    principal: "0.00",
+    invested_property: "0.00",
+    invested: "0.00",
+    free_cash: saved,
+    savings_rate: (Number(saved) / Number(income)).toFixed(4),
+  };
+}
+
+function monthView(month: string, closed: boolean, todos: HealthTodo[] = []): HealthMonthView {
+  return { month, household: householdMonth(month), closed: { month, closed, todos } };
+}
+
+const TOO_FEW: HealthTodo = {
+  code: "too_few_months",
+  text: "Erst 1 Monat ist abgeschlossen; die Durchschnitte brauchen 3.",
+  action: "Zu prüfen öffnen",
+  href: "/inbox",
+};
+
+function health(window: string[], options: { coloured?: boolean } = {}): Health {
+  const enough = window.length >= 3;
+  return {
+    as_of: "2026-11-18",
+    window: { months: window, enough },
+    savings_rate: enough
+      ? {
+          saved: "3900.00",
+          income: "15600.00",
+          one_off_spending: "0.00",
+          principal: "0.00",
+          rate: "0.2500",
+          rate_regular: "0.2500",
+          rate_without_principal: "0.2500",
+          months: window.map((month) => ({ month, rate: "0.2500" })),
+        }
+      : null,
+    marks: {
+      savings_rate: {
+        figure: "savings_rate",
+        colour: options.coloured ? "green" : null,
+        red: options.coloured ? "0" : null,
+        origin: options.coloured ? "source" : null,
+        texts: [],
+      },
+    },
+    proposals: [{ figure: "savings_rate", direction: "higher", red: { value: "0", origin: "source" } }],
+    todos: enough
+      ? options.coloured
+        ? []
+        : [{ code: "bands_unconfirmed", text: "Eure Ampel-Grenzen fehlen.", action: "Grenzen festlegen", href: "/" }]
+      : [TOO_FEW],
+  };
+}
+
+function scenario(id: string, body: HouseholdScenarioCreate): HouseholdScenario {
+  return { ...body, id, workspace_id: WORKSPACE, created_at: "2026-11-18T09:00:00Z", created_by: null };
+}
+
+function plan(window: string[], scenarioId: string | null, depot: string | null): HouseholdPlan {
+  const last = window[window.length - 1] ?? null;
+  return {
+    as_of: "2026-11-18",
+    scenario_id: scenarioId,
+    levers: {
+      reserve_target_months: "6",
+      buffer_percent: "10",
+      horizon_months: 60,
+      net_worth_years: 10,
+      value_change: { depot, crypto: null },
+    },
+    newest_closed: last,
+    surplus: {
+      rows: [
+        { key: "mean_income", amount: "5200.00" },
+        { key: "mean_regular_spending", amount: "-3900.00" },
+        { key: "free_cash", amount: "1300.00" },
+        { key: "buffer", amount: "130.00" },
+        { key: "investable", amount: "1170.00" },
+      ],
+    },
+    months: [],
+    projection:
+      depot === null
+        ? { points: [], todos: [] }
+        : {
+            start: total(`${last}-30`, "20000.00"),
+            points: [total("2027-09-30", "35000.00"), total("2028-09-30", "51000.00")],
+            assumptions: [{ kind: "depot_rate", value: depot, scenario_id: scenarioId ?? "", created_at: "2026-11-18T09:00:00Z" }],
+            todos: [],
+          },
+    todos:
+      depot === null
+        ? [
+            {
+              code: "rate_missing",
+              text: "Für die Rechnung zu eurem Vermögen fehlt eure Annahme zur Wertänderung.",
+              action: "Annahme eintragen",
+              href: "/planning?tab=haushalt",
+            },
+          ]
+        : [],
+  };
+}
+
+function total(on: string, amount: string): components["schemas"]["ProjectionPoint"] {
+  return {
+    on,
+    bank: amount,
+    depot: "0.00",
+    crypto: "0.00",
+    property: "0.00",
+    loans: "0.00",
+    other_liabilities: "0.00",
+    total: amount,
+  };
+}
+
+/** Serve JSON for GET requests to exactly this API path; other methods go on to the real API. */
+async function serve(page: Page, path: string, body: (url: URL) => unknown): Promise<void> {
+  await page.route(
+    (url) => url.pathname === path,
+    (route: Route) =>
+      route.request().method() === "GET" ? route.fulfill({ json: body(new URL(route.request().url())) }) : route.fallback(),
+  );
+}
+
+/** The scenario history and its writes: each POST becomes the default in force. */
+async function scenarios(page: Page): Promise<HouseholdScenarioCreate[]> {
+  const posted: HouseholdScenarioCreate[] = [];
+  const rows: HouseholdScenario[] = [];
+  await page.route(
+    (url) => url.pathname === "/api/household-scenarios",
+    async (route: Route) => {
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON() as HouseholdScenarioCreate;
+        posted.push(body);
+        const row = scenario(`00000000-0000-4000-8000-00000000091${posted.length}`, body);
+        rows.push(row);
+        return route.fulfill({ status: 201, json: row });
+      }
+      return route.fulfill({ json: rows });
+    },
+  );
+  return posted;
+}
+
+async function monthsOf(page: Page, views: (from: string, to: string) => HealthMonthView[]): Promise<void> {
+  await serve(page, "/api/health/months", (url) =>
+    views(url.searchParams.get("from") ?? "", url.searchParams.get("to") ?? ""),
+  );
+}
+
+test("no key figure has a colour before „Übernehmen“, and the confirmed limits colour it", async ({ page, signedIn }) => {
+  void signedIn;
+  const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
+  const posted = await scenarios(page);
+  await serve(page, "/api/health", () => health(window, { coloured: posted.length > 0 }));
+  await serve(page, "/api/health/net-worth-series", () => []);
+
+  await page.goto("/");
+  const figure = page.locator('div.health-figure[aria-label="Sparquote"]');
+  await expect(figure).toContainText("25,0 %");
+  await expect(page.locator(".health-mark")).toHaveCount(0);
+  await expect(page.getByText("ohne Farben, bis ihr eure Grenzen übernehmt")).toBeVisible();
+
+  const bands = page.getByRole("region", { name: "Ampel-Grenzen festlegen" });
+  await bands.getByRole("button", { name: "Übernehmen" }).click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(posted[0]?.is_default).toBe(true);
+  const bands0 = posted[0]?.levers?.bands ?? [];
+  expect(bands0.map((band) => [band.figure, band.green ?? null, Number(band.red)])).toEqual([["savings_rate", null, 0]]);
+
+  await expect(figure.locator(".health-mark")).toHaveText("Grün");
+  await expect(page.getByText("Eure Ampel-Grenzen sind übernommen.")).toBeVisible();
+});
+
+test("the rate fields start empty, and the projection appears only after a rate is saved", async ({ page, signedIn }) => {
+  void signedIn;
+  const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
+  const posted = await scenarios(page);
+  await serve(page, "/api/health", () => health(window));
+  await monthsOf(page, () => window.map((month) => monthView(month, true)));
+  await serve(page, "/api/household-plan", () => {
+    const last = posted[posted.length - 1];
+    return plan(window, last ? `scenario-${posted.length}` : null, last?.levers?.value_change?.depot ?? null);
+  });
+
+  await page.goto("/planning?tab=haushalt");
+  const card = page.getByRole("region", { name: "Vermögen in einigen Jahren: eure Annahme" });
+  const depot = card.getByLabel("Fonds und Wertpapiere (% pro Jahr)");
+  const crypto = card.getByLabel("Krypto (% pro Jahr)");
+  for (const field of [depot, crypto]) {
+    await expect(field).toHaveValue("");
+    await expect(field).not.toHaveAttribute("placeholder");
+  }
+  await expect(card.getByText("Annahme fehlt")).toBeVisible();
+  await expect(card.getByRole("link", { name: "Annahme eintragen" })).toHaveAttribute("href", "#annahme");
+  await expect(card.getByText(/nach eurer Annahme:/)).toHaveCount(0);
+
+  await depot.fill("5");
+  await expect(page.getByText("Geändert, noch nicht gespeichert")).toBeVisible();
+  await card.getByRole("button", { name: "Szenario speichern" }).click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(Number(posted[0]?.levers?.value_change?.depot)).toBe(0.05);
+  expect(posted[0]?.levers?.value_change?.crypto ?? null).toBeNull();
+
+  await expect(card.getByText(/nach eurer Annahme: 51\.000 €/)).toBeVisible();
+  await expect(card.getByText("Annahme fehlt")).toHaveCount(0);
+});
+
+test("below three closed months both screens show what holds the next month open, with working buttons", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const window = [monthsBack(3)];
+  const shown = monthsBack(2);
+  const monthEnd: HealthTodo = {
+    code: "month_end_missing",
+    text: "Der Monatsabschluss fehlt.",
+    action: "Monatsabschluss festhalten",
+    href: "/?month_end=2026-10-31",
+  };
+  const snapshots: unknown[] = [];
+  await page.route(
+    (url) => url.pathname === "/api/net-worth/snapshots",
+    (route: Route) => {
+      snapshots.push(route.request().postDataJSON());
+      const result: SnapshotResult = { outcome: "written", as_of: "2026-10-31", unvalued_positions: 0 };
+      return route.fulfill({ status: 201, json: result });
+    },
+  );
+  await scenarios(page);
+  await serve(page, "/api/health", () => health(window));
+  await monthsOf(page, (from, to) =>
+    [...new Set([...window, shown])]
+      .filter((month) => month >= from && month <= to)
+      .map((month) => (month === shown ? monthView(month, false, [monthEnd]) : monthView(month, true))),
+  );
+  await serve(page, "/api/household-plan", () => ({ ...plan(window, null, null), surplus: null, todos: [TOO_FEW, monthEnd] }));
+
+  // Planung › Haushalt (12c): no figure, the to-dos instead.
+  await page.goto("/planning?tab=haushalt");
+  const card = page.getByRole("region", { name: "Noch zu wenige abgeschlossene Monate" });
+  await expect(card).toContainText("1 von 3 Monaten");
+  await expect(page.getByText("Anlegbar pro Monat")).toHaveCount(0);
+  await card.getByRole("button", { name: "Monatsabschluss festhalten" }).click();
+  await expect.poll(() => snapshots).toEqual([{ as_of: "2026-10-31" }]);
+
+  // Haushalt: the month from ?monat=, no averages, the to-dos of the month after the window.
+  await page.goto(`/household?monat=${shown}`);
+  await expect(page.getByRole("combobox", { name: "Monat" })).toHaveValue(shown);
+  const averages = page.getByRole("region", { name: "Noch keine Durchschnitte" });
+  await expect(averages.getByRole("button", { name: "Monatsabschluss festhalten" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Einnahmen" })).toContainText("Ø 1 Monat –");
+  await averages.getByRole("link", { name: "Zu prüfen öffnen" }).click();
+  await expect(page).toHaveURL("/inbox");
+});
+
+test("every figure opens the months it is made of, each a link to that month on Haushalt", async ({ page, signedIn }) => {
+  void signedIn;
+  const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
+  await scenarios(page);
+  await serve(page, "/api/health", () => health(window));
+  await serve(page, "/api/health/net-worth-series", () => []);
+  await monthsOf(page, () => window.map((month) => monthView(month, true)));
+  await serve(page, "/api/household-plan", () => plan(window, null, null));
+
+  // Übersicht: the savings rate's months.
+  await page.goto("/");
+  const rate = page.locator('div.health-figure[aria-label="Sparquote"]');
+  await rate.getByText("Monate ansehen").click();
+  for (const month of window) {
+    await expect(rate.locator(`a[href="/household?monat=${month}"]`)).toBeVisible();
+  }
+
+  // Planung › Haushalt: each row of „So entsteht die Zahl“ that has months opens them.
+  await page.goto("/planning?tab=haushalt");
+  const made = page.getByRole("region", { name: "So entsteht die Zahl" });
+  const rows = made.locator("details");
+  await expect(rows).toHaveCount(3); // mean income, mean regular spending, free cash; the buffer and the result have none
+  for (const row of await rows.all()) {
+    await row.locator("summary").click();
+    for (const month of window) {
+      await expect(row.locator(`a[href="/household?monat=${month}"]`)).toBeVisible();
+    }
+  }
+  // A month opens Haushalt on that month.
+  const first = window[0] ?? "";
+  await rows.first().locator(`a[href="/household?monat=${first}"]`).click();
+  await expect(page).toHaveURL(`/household?monat=${first}`);
+  await expect(page.getByRole("combobox", { name: "Monat" })).toHaveValue(first);
+});
