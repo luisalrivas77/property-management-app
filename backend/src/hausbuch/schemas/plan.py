@@ -400,10 +400,12 @@ class HouseholdPlan(Schema):
     # the plans with no pause row of their own (more than four plans): the screen's „weitere“
     paths_others: list[PlanKey] = Field(default_factory=list)
     # the flat's mean C when positive: that part lands on the rental account first, which is
-    # not a reserve account by default (D246's „davon X € auf dem Mietkonto“); None otherwise
+    # not a reserve account by default (D246's „davon X € auf dem Mietkonto“); None otherwise,
+    # and None while the lever `reserve_accounts.added` counts a rental account (PR #434 E)
     paths_on_rental_account: Money | None = None
     # the first month the flat's own scenario replaces the measured mean, with each path's
-    # monthly amount from then on (mockup 12: „ab Januar 2028: 1.139 € im Monat“)
+    # monthly amount from then on (mockup 12: „ab Januar 2028: 1.139 € im Monat“); None when
+    # that one month's figure would not hold from then on (paths.holds_from, PR #434 B)
     flat_change: FlatChange | None = None
     months: list[PlanMonth] = Field(default_factory=list)
     proposed_one_offs: list[ProposedOneOff] = Field(default_factory=list)

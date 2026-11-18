@@ -349,6 +349,25 @@ def test_a_reserve_account_that_no_longer_fits_and_an_income_change_are_named(wo
     ]
 
 
+def test_the_rental_line_is_said_only_while_the_rental_account_is_no_reserve(world):
+    """„davon … auf dem Mietkonto, das nicht zur Reserve zählt“: the flat's positive mean, but
+    not once the lever counts the rental account to the reserve (PR #434 review E)."""
+    _closed_history(world)
+    row = _household(world)
+    got = _plan(world)
+    assert got.paths_on_rental_account == Decimal("310.00")
+    counted = HouseholdLevers(reserve_accounts=ReserveAccounts(added=[world.account_id]))
+    world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis", is_default=True, levers=counted, supersedes_id=row.id
+        ),
+    )
+    got = _plan(world)
+    assert any(a.account_id == world.account_id and a.counted for a in got.reserve.accounts)
+    assert got.paths_on_rental_account is None
+
+
 def test_a_payment_linked_by_hand_and_booked_to_a_payee_is_one_plan(world):
     """D245: a private payment to a broker booked hh_investment_securities and linked by hand
     to the depot's credit (a hand link stays current whatever its legs are booked as) is the

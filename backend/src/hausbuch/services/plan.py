@@ -500,6 +500,14 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
     later = flat_change(plans, steady, rental, mode)
     if later is not None and not holds_from(later, steady, levers.one_offs):
         later = None  # one month's figure that does not hold from then on is not shown
+    # „… auf dem Mietkonto, das nicht zur Reserve zählt“ is said only while no rental account
+    # is counted: the lever `reserve_accounts.added` may count it (PR #434 review E).
+    rental_ids = set(
+        conn.execute(
+            select(account_table.c.id).where(account_table.c.purpose == AccountPurpose.RENTAL.value)
+        ).scalars()
+    )
+    rental_counted = any(a.counted and a.account_id in rental_ids for a in reserve.accounts)
 
     if row is None:
         projection = NetWorthProjection(todos=[_no_scenario_todo()])
@@ -530,7 +538,7 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
             "reserve": reserve,
             "paths": rows.rows,
             "paths_others": rows.others,
-            "paths_on_rental_account": rental if rental > 0 else None,
+            "paths_on_rental_account": rental if rental > 0 and not rental_counted else None,
             "flat_change": later,
             "months": plan_months,
             "proposed_one_offs": proposed_refund(conn, today, levers),
