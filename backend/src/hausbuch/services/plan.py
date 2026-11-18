@@ -22,7 +22,9 @@ rules/plan/. Nothing here writes, and no figure is computed outside those rules.
   the mean is the household's, not split by property).
 - **Net worth in some years** (§7.5): rules.plan.projection from the stored run at the
   newest closed month-end, or the to-dos that stand in its place. Without a saved household
-  scenario no projection is shown (D248).
+  scenario no projection is shown (D248). The run is used only while the month-end read
+  again is complete by step 1's guard (services.health._incomplete): phase 6 stores a run
+  that leaves an unvalued position out, which would start that class at 0.
 - **Advice mode** (D251): workspace.advice_mode; under `generic` the paths keep only their
   first and last row.
 
@@ -69,6 +71,7 @@ from hausbuch.schemas.plan import (
 
 from .errors import NotFoundError
 from .health import (
+    _incomplete,
     _run_figure,
     _window,
     ended_months,
@@ -111,8 +114,10 @@ def _scenario(conn: Connection, scenario_id: UUID | None) -> HouseholdScenario |
 def plan_lines(conn: Connection, months: Sequence[str]) -> list[S.PlanLine]:
     """The private accounts' confirmed outgoing payments that can make a plan, booked in the
     first to the last of `months`: the out-legs of current links into an own depot or exchange
-    (a link counts only while both legs are booked as transfers, D162), and the lines booked
-    hh_investment_securities or hh_investment_crypto to a payee."""
+    (D162: a matcher's link counts only while both legs are booked as transfers, a link by
+    hand stays current whatever its legs are booked as), and the lines booked
+    hh_investment_securities or hh_investment_crypto to a payee. A line taken as the out-leg
+    of a link is never read again as a payment to a payee, so one payment makes one plan."""
     start, end = month_bounds(months[0])[0], month_bounds(months[-1])[1]
     acc, a, t = account_table.c, allocation_table.c, transaction_table.c
     private = {
@@ -120,6 +125,7 @@ def plan_lines(conn: Connection, months: Sequence[str]) -> list[S.PlanLine]:
         for r in conn.execute(select(acc.id).where(acc.purpose == AccountPurpose.PRIVATE.value))
     }
     lines: list[S.PlanLine] = []
+    linked: set[UUID] = set()
     for view in saving_links(conn, start=start - LINK_MARGIN, end=end + LINK_MARGIN):
         out, into = view.out_leg, view.in_leg
         if (
@@ -134,6 +140,7 @@ def plan_lines(conn: Connection, months: Sequence[str]) -> list[S.PlanLine]:
             kind = AccountKind(
                 conn.execute(select(acc.kind).where(acc.id == into.account_id)).scalar_one()
             )
+        linked.add(out.id)
         lines.append(S.PlanLine(out.booked_on, out.amount, into.account_id, kind))
     rows = conn.execute(
         select(t.booking_date, a.amount, a.category, t.counterparty_name)
@@ -147,6 +154,7 @@ def plan_lines(conn: Connection, months: Sequence[str]) -> list[S.PlanLine]:
             a.amount < 0,
             t.booking_date >= start,
             t.booking_date <= end,
+            t.id.not_in(linked),
         )
         .order_by(t.booking_date, a.transaction_id, a.id)
     )
@@ -171,10 +179,12 @@ def _scenario_check(text: str) -> HealthTodo:
 
 
 def scenario_todos(
-    conn: Connection, levers: HouseholdLevers, detected: Sequence[SavingsPlan]
+    conn: Connection, levers: HouseholdLevers, detected: Sequence[SavingsPlan], newest: str
 ) -> list[HealthTodo]:
-    """§7.3: a reserve account that no longer exists or is no reserve account, and an override
-    of a plan that is not detected now, each named once."""
+    """§7.3: a reserve account that no longer exists or is no reserve account, an override
+    of a plan that is not detected now, and a one-off no longer inside the horizon after the
+    newest closed month `newest` (the scenario was saved months ago; rules.plan.levers.months
+    leaves its amount out), each named once."""
     todos = []
     named = [*levers.reserve_accounts.added, *levers.reserve_accounts.removed]
     if named:
@@ -208,6 +218,17 @@ def scenario_todos(
                 "abgeschlossenen Monaten nicht mehr findet; die Änderung zählt nicht mit."
             )
         )
+    outside = L.one_offs_outside(levers.one_offs, newest, levers.horizon_months)
+    if outside:
+        named = [f"{m[5:]}/{m[:4]}" for m in sorted({o.month for o in outside})]
+        text = (
+            f"Das Szenario enthält eine Einmalzahlung im Monat {named[0]}, der nicht mehr im "
+            "Zeitraum der Rechnung liegt; sie zählt nicht mehr mit."
+            if len(outside) == 1
+            else f"Das Szenario enthält Einmalzahlungen in den Monaten {', '.join(named)}, die "
+            "nicht mehr im Zeitraum der Rechnung liegen; sie zählen nicht mehr mit."
+        )
+        todos.append(_scenario_check(text))
     return todos
 
 
@@ -222,6 +243,25 @@ def _income_change_todo() -> HealthTodo:
         ),
         action="Erwartetes Bruttogehalt anpassen",
         href="/owners",
+    )
+
+
+def _incomplete_run_todo(end: date, figure: NetWorth) -> HealthTodo:
+    """§7.5 (1), (2): the stored run at the newest closed month-end left a gap out (phase 6
+    stores a run whose position has no value without it), so it is no start: the month-end
+    read again is tested with step 1's guard (services.health._incomplete, the daily step's),
+    and its first gap's text, button and link stand in the projection's place."""
+    gaps = _incomplete(figure)
+    more = len(gaps) - 1
+    tail = "" if not more else f" ({more} weitere Lücke{'n' if more > 1 else ''} im Nettovermögen)"
+    return HealthTodo(
+        code=HealthTodoCode.MONTH_END_MISSING,
+        text=(
+            f"Das Nettovermögen zum {end.strftime('%d.%m.%Y')} ist noch unvollständig, deshalb "
+            f"rechnet Hausbuch das Vermögen in einigen Jahren noch nicht: {gaps[0].text}{tail}"
+        ),
+        action=gaps[0].action,
+        href=gaps[0].href,
     )
 
 
@@ -372,7 +412,7 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
     detected = S.detect(plan_lines(conn, win.months[-3:]), win.months[-3:])
     plans = S.apply_overrides(detected, levers.plan_overrides)
     invested = S.already_invested(plans)
-    todos += scenario_todos(conn, levers, detected)
+    todos += scenario_todos(conn, levers, detected, newest)
     if levers.income_changes:
         todos.append(_income_change_todo())
 
@@ -414,6 +454,8 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
         projection = NetWorthProjection(todos=[_no_scenario_todo()])
     elif refused := [t for t in flat_todos if t.code is HealthTodoCode.SCENARIO_CHECK]:
         projection = NetWorthProjection(todos=refused)
+    elif run is not None and _incomplete(again := net_worth(conn, month_end)):
+        projection = NetWorthProjection(todos=[_incomplete_run_todo(month_end, again)])
     else:
         projection = N.project_net_worth(
             basis,

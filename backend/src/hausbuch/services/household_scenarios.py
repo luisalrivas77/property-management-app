@@ -3,8 +3,10 @@
 
 One append-only table `household_scenario` (migration 0048: SELECT and INSERT only for the
 app role). A row is never changed: a correction is a new row whose `supersedes_id` names the
-row it replaces, and a withdrawal is a new row with `withdrawn = true` that repeats the
-withdrawn row's name, flag and levers (phase 4's `projection_scenario` convention). Every row
+row it replaces, and a withdrawal is a new row with `withdrawn = true` (phase 4's
+`projection_scenario` convention). The withdraw command repeats the withdrawn row's name,
+flag and levers; a withdrawal posted to the create command is checked against the levers
+only, so its name and default flag may differ from the row it withdraws. Every row
 is written with its event in the caller's transaction (principle 4):
 `household_scenario.created` or `household_scenario.withdrawn`, ids and flags only (the
 levers hold amounts and the name is free text, §11.6).

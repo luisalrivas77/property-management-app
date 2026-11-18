@@ -5,14 +5,15 @@ fixtures (tests/rules/test_phase9_plan.py); these tests hold the reads, the to-d
 two done checks of the build order (§16, step 2): the projection's bank row equals the as_is
 path, and a projected year's flat cash equals phase 4's for the same scenario."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 import pytest
 from db.matching_support import World
 from db.test_services_health import _book
 from db.test_services_health import _scenario as _flat_scenario
-from db.test_services_health_snapshots import NOW, TODAY, _closed_history
+from db.test_services_health_snapshots import NOW, TODAY, _closed_history, _coin_held_since_july
+from db.test_services_net_worth import _price
 from db.test_services_private_matching import Private
 from db.test_services_transfers import SAVINGS_IBAN, _savings
 from sqlalchemy import update
@@ -31,6 +32,7 @@ from hausbuch.schemas.plan import (
     HouseholdLevers,
     HouseholdScenarioCreate,
     IncomeChange,
+    OneOff,
     PlanClass,
     PlanOverride,
     ReserveAccounts,
@@ -98,10 +100,9 @@ def _depot(world: World) -> Private:
     return depot
 
 
-def _savings_history(world: World) -> tuple[Private, Private]:
-    """Twelve closed months (the rental account's) plus, in January to March 2027, a monthly
-    transfer from the private account into the depot (50, 60, 50 €; linked) and a monthly
-    purchase at a broker booked hh_investment_securities (25 € each)."""
+def _private_and_depot(world: World) -> tuple[Private, Private]:
+    """Twelve closed months (the rental account's), a private current account holding
+    12,000 € and a depot, both covering the months."""
     _closed_history(world)
     private = Private(world)
     with workspace_transaction(world.engine, world.ws) as conn:
@@ -111,7 +112,14 @@ def _savings_history(world: World) -> tuple[Private, Private]:
             .values(opening_balance=Decimal("12000.00"))
         )
     _covered(world, private.import_id)
-    depot = _depot(world)
+    return private, _depot(world)
+
+
+def _savings_history(world: World) -> tuple[Private, Private]:
+    """Twelve closed months (the rental account's) plus, in January to March 2027, a monthly
+    transfer from the private account into the depot (50, 60, 50 €; linked) and a monthly
+    purchase at a broker booked hh_investment_securities (25 € each)."""
+    private, depot = _private_and_depot(world)
     for day, amount in ((date(2027, 1, 15), "50.00"), (date(2027, 2, 15), "60.00")):
         _transfer(world, private, depot, day, amount)
     _transfer(world, private, depot, date(2027, 3, 15), "50.00")
@@ -339,3 +347,73 @@ def test_a_reserve_account_that_no_longer_fits_and_an_income_change_are_named(wo
         HealthTodoCode.INCOME_CHANGE_LINK,
         HealthTodoCode.NO_DEFAULT_SCENARIO,
     ]
+
+
+def test_a_payment_linked_by_hand_and_booked_to_a_payee_is_one_plan(world):
+    """D245: a private payment to a broker booked hh_investment_securities and linked by hand
+    to the depot's credit (a hand link stays current whatever its legs are booked as) is the
+    out-leg of that link; it is not read again as a payment to the broker, so one plan."""
+    private, depot = _private_and_depot(world)
+    for month in (1, 2, 3):
+        day = date(2027, month, 15)
+        out = private.line(day, "-50.00", name=BROKER, purpose="Sparplan")
+        into = depot.line(day, "50.00", purpose="Einzahlung")
+        _book(world, out, "-50.00", C.HH_INVESTMENT_SECURITIES)
+        _book(world, into, "50.00", C.INTERNAL_TRANSFER_IN)
+        body = TransferLinkCreate(
+            kind=TransferLinkKind.DEPOT_CASH, out_transaction_id=out, in_transaction_id=into
+        )
+        world.cmd(transfers.link_by_hand, body)
+    got = _plan(world)
+    assert [(p.key, p.monthly) for p in got.plans] == [(str(depot.account_id), Decimal("50.00"))]
+    assert got.already_invested == Decimal("50.00")
+
+
+def test_a_one_off_fallen_out_of_the_horizon_is_named(world):
+    """§7.3: a one-off saved on 10 Feb 2027 for February lay inside the horizon then; read on
+    10 Apr 2027 (newest closed month March) it no longer counts, and „Szenario prüfen“ names
+    its month."""
+    _closed_history(world)
+    world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis",
+            is_default=True,
+            levers=HouseholdLevers(one_offs=[OneOff(month="2027-02", amount=Decimal("-900.00"))]),
+        ),
+        now=datetime(2027, 2, 10, 9, 0, tzinfo=UTC),
+    )
+    got = _plan(world)
+    checks = [t for t in got.todos if t.code is HealthTodoCode.SCENARIO_CHECK]
+    assert [t.text for t in checks] == [
+        "Das Szenario enthält eine Einmalzahlung im Monat 02/2027, der nicht mehr im Zeitraum "
+        "der Rechnung liegt; sie zählt nicht mehr mit."
+    ]
+    assert {m.free for m in got.months} == {Decimal("310.00")}  # the amount is left out
+
+
+def test_an_incomplete_stored_month_end_is_no_start(world):
+    """§7.5 (1), (2): phase 6 stores a month-end run that leaves a coin without a price on
+    the day out; the projection does not start from it (the coin would be 0 €) but shows the
+    gap's to-do, the guard step 1's daily step uses. Once the coin has a price on the day and
+    the month-end is captured again, the projection starts with its value."""
+    _closed_history(world)
+    _bought_in_2026(world)
+    _flat_scenario(world, None, NOW)
+    _, coin = _coin_held_since_july(world, date(2027, 4, 5))
+    world.cmd(net_worth.capture_month_end, date(2027, 3, 31))
+    _household(world, value_change={"crypto": Decimal("0.000")})
+    got = _plan(world)
+    [todo] = got.projection.todos
+    assert got.projection.points == []
+    assert todo.code is HealthTodoCode.MONTH_END_MISSING
+    assert "31.03.2027 ist noch unvollständig" in todo.text and "Bitcoin" in todo.text
+    assert (todo.action, todo.href) == ("Kursquelle wählen", "/assets")
+
+    world.cmd(lambda ctx: _price(ctx, coin, date(2027, 3, 31), "40000.00", "user"))
+    later = datetime(2027, 4, 10, 9, 0, tzinfo=UTC)  # a newer run than the first capture's
+    captured = world.cmd(net_worth.capture_month_end, date(2027, 3, 31), now=later)
+    assert captured.unvalued_positions == 0
+    got = _plan(world)
+    assert got.projection.todos == [] and got.projection.points
+    assert got.projection.start.crypto == Decimal("80000.00")
