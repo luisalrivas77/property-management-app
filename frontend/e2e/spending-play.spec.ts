@@ -273,8 +273,15 @@ test("a change as a percent of the mean, for some months, is saved as a percent"
   await section.getByRole("group", { name: "Betrag oder Prozent: Restaurant" }).getByRole("button", { name: "%" }).click();
   await section.getByLabel("bis: Restaurant").selectOption(HORIZON[2] ?? "");
   await expect(section.getByTestId("effect-investable")).toContainText("1.188,00 €");
+  // An entry the field cannot take keeps the draft's old change, so no save until it is fixed.
+  const save = page.getByRole("button", { name: "Szenario speichern" }).first();
+  const restaurant = section.getByLabel("Geplant pro Monat: Restaurant");
+  await restaurant.fill("-10x");
+  await expect(save).toBeDisabled();
+  await restaurant.fill("-10");
+  await expect(save).toBeEnabled();
 
-  await page.getByRole("button", { name: "Szenario speichern" }).first().click();
+  await save.click();
   await expect.poll(() => posted.length).toBe(1);
   const change = posted[0]?.levers?.spending_changes?.[0];
   expect(change?.code).toBe("hh_restaurant");

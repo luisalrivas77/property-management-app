@@ -181,6 +181,7 @@ export function SpendingPlaySection({
   preview,
   draft,
   setDraft,
+  onValidity,
 }: {
   saved: HouseholdPlan;
   /** The window's closed months the means come from (GET /health). */
@@ -188,6 +189,8 @@ export function SpendingPlaySection({
   preview: PlanPreview;
   draft: HouseholdLevers;
   setDraft: SetDraft;
+  /** A field holding an entry it cannot take keeps the draft's old change; no save until fixed. */
+  onValidity: (invalid: boolean) => void;
 }) {
   const ids = useId();
   const savedPlay = saved.spending_play;
@@ -219,15 +222,12 @@ export function SpendingPlaySection({
     const entry = { ...(entries[code] ?? entryOf(undefined, first)), ...patch };
     setEntries((previous) => ({ ...previous, [code]: entry }));
     const parsed = parseEntry(code, entry);
-    if (!parsed.ok) {
-      setErrors((previous) => ({ ...previous, [code]: parsed.message }));
-      return;
-    }
-    setErrors((previous) => {
-      const next = { ...previous };
-      delete next[code];
-      return next;
-    });
+    const nextErrors = { ...errors };
+    if (parsed.ok) delete nextErrors[code];
+    else nextErrors[code] = parsed.message;
+    setErrors(nextErrors);
+    onValidity(Object.keys(nextErrors).length > 0);
+    if (!parsed.ok) return;
     setDraft((previous) => {
       const list = [...(previous.spending_changes ?? [])];
       const index = list.findIndex((c) => c.code === code);

@@ -203,7 +203,10 @@ function PlanBody({ data, onSaved }: { data: PlanData; onSaved: () => void }) {
   const [error, setError] = useState<unknown>(null);
   // A projection field holding an entry it cannot take keeps the draft's old value, so a save
   // would store a value the field does not show (PR #434 review C): no save until it is fixed.
-  const [invalid, setInvalid] = useState(false);
+  const [projectionInvalid, setInvalid] = useState(false);
+  // The same for a field of „Ausgaben durchspielen“ (D263).
+  const [spendingInvalid, setSpendingInvalid] = useState(false);
+  const invalid = projectionInvalid || spendingInvalid;
   const saved = JSON.stringify(fillLevers(plan.levers));
   const dirty = JSON.stringify(draft) !== saved;
   const current = currentDefault(data.scenarios);
@@ -238,8 +241,10 @@ function PlanBody({ data, onSaved }: { data: PlanData; onSaved: () => void }) {
           Szenario speichern
         </button>
         <span className="muted">
-          {invalid
+          {projectionInvalid
             ? "Erst die Eingabe bei der Annahme korrigieren, die rot markiert ist; dann lässt sich das Szenario speichern."
+            : spendingInvalid
+            ? "Erst die Eingabe unter „Ausgaben durchspielen“ korrigieren; dann lässt sich das Szenario speichern."
             : "Gespeichert als neue Fassung eures Szenarios; die alte bleibt im Verlauf."}
         </span>
       </div>
@@ -292,7 +297,14 @@ function PlanBody({ data, onSaved }: { data: PlanData; onSaved: () => void }) {
 
       <Levers data={data} draft={draft} setDraft={setDraft} />
       <MoreAssumptions data={data} draft={draft} setDraft={setDraft} />
-      <SpendingPlaySection saved={plan} windowMonths={closedMonths} preview={preview} draft={draft} setDraft={setDraft} />
+      <SpendingPlaySection
+        saved={plan}
+        windowMonths={closedMonths}
+        preview={preview}
+        draft={draft}
+        setDraft={setDraft}
+        onValidity={setSpendingInvalid}
+      />
       {dirty ? (
         <p className="notice notice-warn" role="status">
           Geändert, noch nicht gespeichert; die Zahlen auf dieser Seite rechnen mit der gespeicherten Fassung, nur „Was eure Änderungen
