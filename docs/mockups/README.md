@@ -45,7 +45,7 @@ switch, levers); the static HTML shows one state. Owners appear as "Luis", "Part
 
 Phase 9 is specced in `docs/phases/phase-9.md` (merged 16 Nov 2026, PR #388); its key figures (step 1, 17 Nov 2026, PRs #426 and #427) and its plan's calculations (step 2, 18 Nov 2026, PR #429) are deployed without a new screen, and the screens are step 3. (This said „not built“ until 18 Nov 2026, stale since step 1 deployed.)
 
-- **Drawn 18 Nov 2026, pending Luis's approval (phase 9 Q-O136):** mockup 12 redrawn, and the
+- **Drawn 18 Nov 2026 and approved by Luis the same day (phase 9 Q-O136; „Looks ok for now“):** mockup 12 redrawn, and the
   new 12b, 12c, 13 and 13b. They cover what these notes listed as not drawn: the paths with one
   row per plan and none highlighted (D246), the reserve as the monthly need (D237), the card
   „Vermögen in einigen Jahren: eure Annahme“ empty and filled (D247), the page below three
