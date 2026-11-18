@@ -86,6 +86,17 @@ class OneOff(Schema):
     source: OneOffSource = OneOffSource.TYPED
 
 
+class ProposedOneOff(Schema):
+    """Phase 4b's expected refund (positive) or back-payment (negative) of one tax year, from
+    the whole-return estimate of Steuern › Gesamt, proposed without a month (Q-O168, answered
+    by mockup 12): a member picks the month the money is expected, and „Übernehmen“ adds it to
+    the levers as `OneOff(source=return_estimate)`. Until then the plan counts no refund."""
+
+    tax_year: int = Field(ge=2000, le=2100)
+    amount: Money  # signed like OneOff: −ReturnEstimate.result
+    source: OneOffSource = OneOffSource.RETURN_ESTIMATE
+
+
 class PlanOverride(Schema):
     """Sets a detected plan's monthly amount, or drops it (D245)."""
 
@@ -268,6 +279,28 @@ class Path(Schema):
 # --- The net worth in some years (§7.5, D247 amended) -----------------------------------
 
 
+class PathLater(Schema):
+    """One path's amount to the reserve per month from `FlatChange.month` on."""
+
+    key: PathKey
+    to_reserve: Money
+
+
+class FlatChange(Schema):
+    """The month the flat's default scenario first gives another monthly result than the
+    first plan month (phase 4's projected year after the newest closed month's year, §7.1),
+    computed without one-offs: that month's flat result, the flat result of the months before
+    it (`before_is_mean`: that is the window's measured mean, „statt im Schnitt“), and each
+    path's amount to the reserve from then on (the month's investable less the plans that
+    continue on that path), in the order of `HouseholdPlan.paths`."""
+
+    month: YearMonth
+    flat: Money
+    before: Money
+    before_is_mean: bool
+    paths: list[PathLater]
+
+
 class ProjectionChange(Schema):
     """The change since the start in five rows that sum to it (§7.5 (7))."""
 
@@ -364,7 +397,15 @@ class HouseholdPlan(Schema):
     investable_left: Money | None = None  # investable − already invested, signed
     reserve: Reserve | None = None
     paths: list[Path] = Field(default_factory=list)
+    # the plans with no pause row of their own (more than four plans): the screen's „weitere“
+    paths_others: list[PlanKey] = Field(default_factory=list)
+    # the flat's mean C when positive: that part lands on the rental account first, which is
+    # not a reserve account by default (D246's „davon X € auf dem Mietkonto“); None otherwise
+    paths_on_rental_account: Money | None = None
+    # the first month the flat's own scenario replaces the measured mean, with each path's
+    # monthly amount from then on (mockup 12: „ab Januar 2028: 1.139 € im Monat“)
+    flat_change: FlatChange | None = None
     months: list[PlanMonth] = Field(default_factory=list)
-    proposed_one_offs: list[OneOff] = Field(default_factory=list)
+    proposed_one_offs: list[ProposedOneOff] = Field(default_factory=list)
     projection: NetWorthProjection | None = None
     todos: list[HealthTodo] = Field(default_factory=list)

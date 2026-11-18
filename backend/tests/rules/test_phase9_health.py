@@ -1105,6 +1105,19 @@ def worked_plan(hh, want, months, reserve, run, kinds):
         named = expect.model_fields_set
         key = f"pause:{names[got.key[6:]]}" if got.key.startswith("pause:") else got.key
         assert {**got.model_dump(include=named), "key": key} == expect.model_dump(include=named)
+    # mockup 12's sub-line „ab Januar 2028: 1.139 € im Monat“ and its note „−201 € im Monat
+    # statt im Schnitt −353 €“: the month the flat's scenario takes over, each path from then
+    change = P.flat_change(plans, plan_months, basis.mean_rental_cash)
+    assert change is not None
+    assert (change.month, change.before_is_mean) == ("2028-01", True)
+    assert (round(change.flat), round(change.before)) == (-201, -353)
+    later = {p.key: p.to_reserve for p in change.paths}
+    assert [later[r.key] for r in paths.rows] == [
+        Decimal("1139.09"),
+        *[later[r.key] for r in paths.rows[1:-1]],
+        Decimal("589.09"),
+    ]
+    assert P.flat_change(plans, plan_months[:1], basis.mean_rental_cash) is None
     c, liabilities = run.by_class, run.liabilities
     start = N.ProjectionStart(
         month_end=run.month_end,

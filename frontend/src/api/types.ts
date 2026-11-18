@@ -7518,6 +7518,24 @@ export interface components {
             deadline: string;
         };
         /**
+         * FlatChange
+         * @description The month the flat's default scenario first gives another monthly result than the
+         *     first plan month (phase 4's projected year after the newest closed month's year, §7.1),
+         *     computed without one-offs.
+         */
+        FlatChange: {
+            /** Month */
+            month: string;
+            /** Flat */
+            flat: string;
+            /** Before */
+            before: string;
+            /** Before Is Mean */
+            before_is_mean: boolean;
+            /** Paths */
+            paths: components["schemas"]["PathLater"][];
+        };
+        /**
          * FlatRateCheck
          * @description GET /properties/{id}/flat-rate-check (D155): information, not advice; §560 BGB decides.
          *
@@ -8237,10 +8255,15 @@ export interface components {
             reserve?: components["schemas"]["Reserve"] | null;
             /** Paths */
             paths?: components["schemas"]["Path"][];
+            /** Paths Others */
+            paths_others?: string[];
+            /** Paths On Rental Account */
+            paths_on_rental_account?: string | null;
+            flat_change?: components["schemas"]["FlatChange"] | null;
             /** Months */
             months?: components["schemas"]["PlanMonth"][];
             /** Proposed One Offs */
-            proposed_one_offs?: components["schemas"]["OneOff"][];
+            proposed_one_offs?: components["schemas"]["ProposedOneOff"][];
             projection?: components["schemas"]["NetWorthProjection"] | null;
             /** Todos */
             todos?: components["schemas"]["HealthTodo"][];
@@ -10346,6 +10369,16 @@ export interface components {
             reserve_at_horizon: string;
         };
         /**
+         * PathLater
+         * @description One path's amount to the reserve per month from `FlatChange.month` on.
+         */
+        PathLater: {
+            /** Key */
+            key: string;
+            /** To Reserve */
+            to_reserve: string;
+        };
+        /**
          * PaymentIbanConfirmed
          * @description POST /accounts/{id}/payment-iban (D176 (4)): the card account, and how many learned
          *     rules on the confirmed IBAN were switched off by it (a payment to the card is a transfer
@@ -11183,6 +11216,19 @@ export interface components {
             origin: components["schemas"]["LimitOrigin"];
             /** Citation */
             citation?: string | null;
+        };
+        /**
+         * ProposedOneOff
+         * @description Phase 4b's expected refund (positive) or back-payment (negative) of one tax year, from
+         *     the whole-return estimate of Steuern › Gesamt, proposed without a month (Q-O168).
+         */
+        ProposedOneOff: {
+            /** Tax Year */
+            tax_year: number;
+            /** Amount */
+            amount: string;
+            /** @default return_estimate */
+            source: components["schemas"]["OneOffSource"];
         };
         /**
          * PurchaseContractExtraction

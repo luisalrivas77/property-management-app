@@ -28,8 +28,15 @@ rules/plan/. Nothing here writes, and no figure is computed outside those rules.
 - **Advice mode** (D251): workspace.advice_mode; under `generic` the paths keep only their
   first and last row.
 
-Phase 4b's refund or back-payment is not proposed as a one-off yet (`proposed_one_offs`
-stays empty): the spec does not say in which month it lands.
+- **Proposed one-off** (Q-O168, answered by mockup 12): phase 4b's whole-return estimate of
+  the most recent past tax year that has one and no confirmed Einkommensteuerbescheid (no
+  current household `bescheid_zve`), its result with the sign of a one-off (a refund
+  positive), without a month; nothing while the levers already hold a `return_estimate`
+  one-off (it carries no tax year, so one accepted refund ends the proposal), for a result
+  of 0, or when the estimate refuses (`RuleError`, e.g. no rule set for the year).
+- **The paths' screen lines** (step 3): the plans without a pause row (`paths_others`), the
+  flat's positive mean that lands on the rental account first, and `flat_change`, the month
+  the flat's scenario replaces the mean with each path's amount from then on.
 """
 
 from collections.abc import Sequence
@@ -49,11 +56,17 @@ from hausbuch.rules.health.window import window_todos
 from hausbuch.rules.plan import levers as L
 from hausbuch.rules.plan import projection as N
 from hausbuch.rules.plan import savings_plans as S
-from hausbuch.rules.plan.paths import paths
+from hausbuch.rules.plan.paths import flat_change, paths
 from hausbuch.rules.plan.surplus import surplus
 from hausbuch.schemas.advice import AdviceMode
 from hausbuch.schemas.allocation import TransferLegSource
-from hausbuch.schemas.enums import AccountKind, AccountPurpose, AllocationStatus, EntityType
+from hausbuch.schemas.enums import (
+    AccountKind,
+    AccountPurpose,
+    AllocationStatus,
+    EntityType,
+    IncomeInputKind,
+)
 from hausbuch.schemas.health import HealthTodo, HealthTodoCode
 from hausbuch.schemas.household import NetWorthClass
 from hausbuch.schemas.net_worth import NetWorth
@@ -64,7 +77,9 @@ from hausbuch.schemas.plan import (
     HouseholdPlan,
     HouseholdScenario,
     NetWorthProjection,
+    OneOffSource,
     ProjectionAssumption,
+    ProposedOneOff,
     SavingsPlan,
     SurplusKey,
 )
@@ -80,6 +95,7 @@ from .health import (
 )
 from .household import month_bounds
 from .household_scenarios import RESERVE_KINDS, default_scenario, get_scenario
+from .income_inputs import list_income_inputs
 from .net_worth import net_worth
 from .performance import performance_projection
 from .scenarios import default_scenario as property_default_scenario
@@ -387,6 +403,32 @@ def _rate_assumptions(row: HouseholdScenario) -> list[ProjectionAssumption]:
 # --- GET /household-plan ---------------------------------------------------------------------
 
 
+def proposed_refund(conn: Connection, today: date, levers: HouseholdLevers) -> list[ProposedOneOff]:
+    """Q-O168: the expected refund or back-payment to propose (see the module doc)."""
+    from hausbuch.rules.tax import registry
+
+    from .return_inputs import household_return_estimate
+
+    if any(o.source is OneOffSource.RETURN_ESTIMATE for o in levers.one_offs):
+        return []
+    assessed = {
+        row.tax_year
+        for row in list_income_inputs(conn)
+        if row.kind is IncomeInputKind.BESCHEID_ZVE and row.owner_id is None
+    }
+    for year in sorted((y for y in registry.anlage_n_years() if y < today.year), reverse=True):
+        if year in assessed:
+            continue
+        try:
+            estimate = household_return_estimate(conn, tax_year=year, today=today)
+        except RuleError:
+            continue
+        if estimate.result == 0:
+            return []
+        return [ProposedOneOff(tax_year=year, amount=-estimate.result)]
+    return []
+
+
 def household_plan(conn: Connection, today: date, scenario_id: UUID | None = None) -> HouseholdPlan:
     """GET /household-plan?scenario= on `today` (Berlin). NotFoundError for an unknown
     scenario. See the module doc."""
@@ -448,7 +490,10 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
     plan_months = L.months(
         basis, levers.horizon_months, flat_years, levers.income_changes, levers.one_offs
     )
-    rows = paths(reserve.amount, reserve.target, plans, plan_months, newest, advice_mode(conn))
+    mode = advice_mode(conn)
+    rows = paths(reserve.amount, reserve.target, plans, plan_months, newest, mode)
+    steady = L.months(basis, levers.horizon_months, flat_years, levers.income_changes, ())
+    rental = sur.amount(SurplusKey.MEAN_RENTAL_CASH)
 
     if row is None:
         projection = NetWorthProjection(todos=[_no_scenario_todo()])
@@ -478,11 +523,15 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
             "investable_left": sur.amount(SurplusKey.INVESTABLE) - invested,
             "reserve": reserve,
             "paths": rows.rows,
+            "paths_others": rows.others,
+            "paths_on_rental_account": rental if rental > 0 else None,
+            "flat_change": flat_change(plans, steady, rental, mode),
             "months": plan_months,
+            "proposed_one_offs": proposed_refund(conn, today, levers),
             "projection": projection,
             "todos": todos,
         }
     )
 
 
-__all__ = ["advice_mode", "household_plan", "plan_lines", "projection_start"]
+__all__ = ["advice_mode", "household_plan", "plan_lines", "projection_start", "proposed_refund"]
