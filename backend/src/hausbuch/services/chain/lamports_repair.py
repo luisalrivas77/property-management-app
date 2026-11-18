@@ -25,10 +25,10 @@ Where the result differs from the transaction's live movements on the address in
   acquisition at the corrected quantity;
 - anything else is proposed for a person, as the classifier reads it now (routing.chain_reread).
 
-A transaction with no live group and no stored movement gets a new proposed group whose
-movements carry the sync's own movement hash, so a later read of it writes nothing twice. A
-linked leg, another address's leg in the group, a legless card, or legs that differ in more than
-their quantity are left as they are and counted (`skipped`).
+A transaction whose corrected reading has legs but which holds no live movement on the address
+(lamports sent to the token account alone), a linked leg, another address's leg in the group, a
+legless card, or legs that differ in more than their quantity are left as they are and counted
+(`skipped`), for a person to look at; the repair writes no movement the sync never wrote.
 
 Each corrected movement copies the row it supersedes (source, address, index, time; a chain row
 gets a hash of its own, transfers._reopened_hash, so the superseded row keeps the sync's hash
@@ -55,7 +55,7 @@ from hausbuch.db.tables import movement_group as group_table
 from hausbuch.db.tables import transfer_link as link_table
 from hausbuch.db.tables import wallet_address as address_table
 from hausbuch.db.tables import wallet_sync as sync_table
-from hausbuch.rules.chain import movement_hash, solana
+from hausbuch.rules.chain import solana
 from hausbuch.rules.chain.classify import ChainGroup, ChainLeg, classify
 from hausbuch.rules.lots import berlin_day
 from hausbuch.schemas.chain import AssetKey, Chain, GroupKind, GroupStatus
@@ -89,7 +89,6 @@ from .transfers import _reopened_hash
 
 # The routing reason of a group this repair proposes for a person (MovementGroupRecorded).
 CHAIN_REREAD = "routing.chain_reread"
-TASK = "repair_solana_lamports"
 
 
 @dataclass
@@ -98,7 +97,7 @@ class LamportsRepaired:
     records: int = 0  # stored records in which an own token account's lamports move rowless
     unchanged: int = 0  # their live movements already hold those lamports
     carried: int = 0  # corrected, the person's Kleinstbetrag confirmation carried (D262)
-    proposed: int = 0  # corrected (or written), proposed for a person
+    proposed: int = 0  # corrected, proposed for a person
     skipped: int = 0  # left as they are (a linked leg, another shape, another address's leg)
 
 
@@ -107,7 +106,7 @@ class _Fix:
     record: dict[str, Any]
     group: ChainGroup
     legs: list[ChainLeg]
-    live: Any  # the live group row, None when the transaction has none
+    live: Any  # the live group row
     moves: list  # its live movements, matched to `legs` by position
     carry: bool
 
@@ -200,7 +199,6 @@ def _plan(
     address: str,
     address_id: UUID,
     account_id: UUID,
-    own: _Own,
 ) -> _Fix | str:
     """What one re-classified record needs: a _Fix, or "unchanged" / "skipped"."""
     signature = solana.signature(record)
@@ -228,18 +226,8 @@ def _plan(
     )
     if group is None or not legs:
         return "unchanged" if not moves else "skipped"
-    if not moves:
-        if lives:
-            return "skipped"  # a card without movements (a question) is answered by a person
-        digests = [
-            movement_hash(Chain.SOLANA, signature, own.hmac, leg.index, leg.role) for leg in legs
-        ]
-        stored = ctx.conn.execute(
-            select(m.id).where(m.account_id == account_id, m.movement_hash.in_(digests)).limit(1)
-        ).first()
-        if stored is not None:
-            return "skipped"
-        return _Fix(record, group, legs, None, [], carry=False)
+    if not moves:  # never a movement the sync did not write: a person looks at it
+        return "skipped"
     if len(lives) != 1 or any(
         x.address_id != address_id or x.group_id != lives[0].id for x in moves
     ):
@@ -327,7 +315,7 @@ def _new_group(
             account_id=account_id,
             chain=Chain.SOLANA.value,
             tx_hash=group.tx_hash,
-            occurred_at=fix.live.occurred_at if fix.live is not None else group.occurred_at,
+            occurred_at=fix.live.occurred_at,
             kind=kind.value,
             decoder=None if fix.carry else group.decoder,
             status=status.value,
@@ -346,12 +334,9 @@ def _new_group(
             account_id=account_id, chain=Chain.SOLANA.value, kind=kind.value, reason=reason
         ),
     )
-    if fix.live is not None:
-        ctx.conn.execute(
-            update(group_table)
-            .where(group_table.c.id == fix.live.id)
-            .values(superseded_by=group_id)
-        )
+    ctx.conn.execute(
+        update(group_table).where(group_table.c.id == fix.live.id).values(superseded_by=group_id)
+    )
     return group_id
 
 
@@ -372,14 +357,7 @@ def _recorded(ctx: CommandContext, movement_id: UUID, values: dict, document_id:
     )
 
 
-def _write(
-    ctx: CommandContext,
-    account_id: UUID,
-    address_id: UUID,
-    own: _Own,
-    fix: _Fix,
-    document_id: UUID,
-) -> None:
+def _write(ctx: CommandContext, account_id: UUID, fix: _Fix, document_id: UUID) -> None:
     group = fix.group
     if fix.carry:
         status, kind, question, reason = GroupStatus.CONFIRMED, GroupKind.TRANSFER, None, PERSON
@@ -394,37 +372,6 @@ def _write(
         ctx, account_id, fix, kind=kind, status=status, question=question, reason=reason
     )
     m = movement_table.c
-    if fix.live is None:  # a transaction no group held: the sync's own rows, proposed
-        for leg in fix.legs:
-            asset = chain_asset(ctx, leg.asset_key, leg)
-            values = {
-                "account_id": account_id,
-                "asset_id": asset.id,
-                "kind": leg.kind.value,
-                "source": MovementSource.CHAIN.value,
-                "status": MovementStatus.PROPOSED.value,
-            }
-            movement_id = ctx.conn.execute(
-                insert(movement_table)
-                .values(
-                    workspace_id=ctx.workspace_id,
-                    quantity=_units_to_quantity(leg.signed, asset.decimals),
-                    occurred_at=group.occurred_at,
-                    tx_hash=group.tx_hash,
-                    movement_hash=movement_hash(
-                        Chain.SOLANA, group.tx_hash, own.hmac, leg.index, leg.role
-                    ),
-                    document_id=document_id,
-                    group_id=group_id,
-                    address_id=address_id,
-                    index=leg.index,
-                    created_at=ctx.now,
-                    **values,
-                )
-                .returning(m.id)
-            ).scalar_one()
-            _recorded(ctx, movement_id, values, document_id)
-        return
     skip = {"id", "superseded_by", "created_at", "movement_hash", "group_id"}
     for move, leg in zip(fix.moves, fix.legs, strict=True):
         values = {c.name: getattr(move, c.name) for c in movement_table.c if c.name not in skip}
@@ -475,11 +422,20 @@ def repair_token_account_lamports(
         ctx.conn.execute(
             select(account_table.c.id).where(account_table.c.id == row.account_id).with_for_update()
         )
-        records = list(_records(ctx, store, row.id))
+        # Two passes over the stored originals, one record at a time, so a long history is
+        # never held whole (as sync._stored_records reads them): the own token accounts the
+        # records name first, then the records whose such accounts' lamports move rowless.
         known: set[str] = set()
-        for record in records:
+        for record in _records(ctx, store, row.id):
             known |= owned_token_accounts(record, row.address)
             known |= set(solana.recorded_token_accounts(record) or ())
+        if not known:
+            continue
+        records = [
+            r
+            for r in _records(ctx, store, row.id)
+            if solana.readable_meta(r) and solana.moves_rowless_token_account(r, known)
+        ]
         own = _own_of(ctx.conn, row.account_id, Chain.SOLANA)
         own.setdefault(row.address, _Own(row.id, bytes(row.address_hmac).hex()))
         native = chain_asset(ctx, AssetKey(chain=Chain.SOLANA))
@@ -489,12 +445,8 @@ def repair_token_account_lamports(
         seen: set[str] = set()
         fixes: list[_Fix] = []
         for record in records:
-            if not solana.readable_meta(record) or not known:
-                continue
             signature = solana.signature(record)
             if signature in seen:
-                continue
-            if not solana.moves_rowless_token_account(record, known):
                 continue
             seen.add(signature)
             out.records += 1
@@ -509,7 +461,6 @@ def repair_token_account_lamports(
                 row.address,
                 row.id,
                 row.account_id,
-                own[row.address],
             )
             if planned == "unchanged":
                 out.unchanged += 1
@@ -527,5 +478,5 @@ def repair_token_account_lamports(
             continue
         document_id = _store(ctx, store, fixes)
         for fix in fixes:
-            _write(ctx, row.account_id, row.id, own[row.address], fix, document_id)
+            _write(ctx, row.account_id, fix, document_id)
     return out

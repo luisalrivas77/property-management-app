@@ -10,7 +10,7 @@ and the address is unreconciled by 1 lamport. The receipt is confirmed as a Klei
 that group with a confirmed 2-lamport Kleinstbetrag; the next sync reconciles, and a second
 repair changes nothing. Every key, signature, amount and price is invented."""
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -19,6 +19,7 @@ from db.test_wallet_sync_solana import (
     A_USDC,
     FIRST,
     SETTINGS,
+    T0,
     A,
     _record,
     _rows,
@@ -30,6 +31,8 @@ from db.test_wallet_sync_solana import (
 )
 from solana_chain_fake import dust_into_token_account, signature
 
+from hausbuch.jobs.document_read import JobDeps
+from hausbuch.jobs.lamports_repair import run_repair_solana_lamports
 from hausbuch.rules.chain import solana
 from hausbuch.schemas.chain import WalletSyncStatus
 from hausbuch.services.chain.lamports_repair import (
@@ -37,7 +40,7 @@ from hausbuch.services.chain.lamports_repair import (
     LamportsRepaired,
     repair_token_account_lamports,
 )
-from hausbuch.services.wallet_groups import PERSON, confirm_group
+from hausbuch.services.wallet_groups import PERSON, answered_groups, confirm_group, undo_group
 
 pytestmark = pytest.mark.db
 
@@ -86,6 +89,8 @@ def test_the_repair_carries_the_kleinstbetrag_to_both_lamports(
     wallet,
     sync,
     run,
+    read,
+    app_engine,
     blob_store,
     monkeypatch,
 ):
@@ -132,13 +137,21 @@ def test_the_repair_carries_the_kleinstbetrag_to_both_lamports(
     )
 
     requests = len(chain.requests)
-    dry = run(
-        ws, repair_token_account_lamports, blob_store, hmac_key=SETTINGS.iban_hmac_key, dry_run=True
+    # the worker's job, as `hausbuch repair-solana-lamports` queues it: first --dry-run
+    deps = JobDeps(
+        engine=app_engine,
+        settings=SETTINGS,
+        blob_store=blob_store,
+        model_client=None,
+        clock=lambda: T0 + timedelta(hours=1),
     )
-    assert (dry.records, dry.carried, dry.proposed) == (1, 1, 0)
-    assert _live(dbname, account, sig)[0][0] == dust_group  # a dry run writes nothing
+    before = _counts(dbname, account)
+    dry = run_repair_solana_lamports(deps, workspace_id=ws, dry_run=True)
+    assert dry == LamportsRepaired(addresses=1, records=1, carried=1)
+    assert _counts(dbname, account) == before  # a dry run writes nothing
+    assert _live(dbname, account, sig)[0][0] == dust_group
 
-    done = run(ws, repair_token_account_lamports, blob_store, hmac_key=SETTINGS.iban_hmac_key)
+    done = run_repair_solana_lamports(deps, workspace_id=ws)
     assert done == LamportsRepaired(addresses=1, records=1, carried=1)
     assert len(chain.requests) == requests  # the stored originals only, never the provider (D192)
     [(new_group, kind, status, leg_kind, leg_status, quantity, eur, no_hash, document)] = _live(
@@ -185,6 +198,23 @@ def test_the_repair_carries_the_kleinstbetrag_to_both_lamports(
     assert again == LamportsRepaired(addresses=1, records=1, unchanged=1)
     assert _counts(dbname, account) == before
     assert _live(dbname, account, sig)[0][0] == new_group
+
+    # the carried answer is listed as answered, and „Antwort zurücknehmen“ re-proposes the
+    # receipt, with both lamports, as the card D262's „Bestätigen“ books again
+    answered = read(ws, answered_groups, account)
+    assert [(g.id, g.undoable) for g in answered] == [(new_group, True)]
+    undone = run(ws, undo_group, new_group)
+    [(group, kind, status, leg_kind, leg_status, quantity, eur, _, _)] = _live(dbname, account, sig)
+    assert (group, kind, status, leg_kind, leg_status, quantity, eur) == (
+        undone,
+        "transfer",
+        "proposed",
+        "uncategorized",
+        "proposed",
+        Decimal("0.000000002"),
+        None,
+    )
+    assert sync(ws, a).reconciled is True
 
 
 def test_a_receipt_not_yet_confirmed_is_proposed_with_both_lamports(
@@ -250,4 +280,35 @@ def test_an_address_read_with_the_amendment_needs_no_repair(
     before = _counts(dbname, account)
     done = run(ws, repair_token_account_lamports, blob_store, hmac_key=SETTINGS.iban_hmac_key)
     assert done == LamportsRepaired(addresses=1, records=1, unchanged=1)
+    assert _counts(dbname, account) == before
+
+
+def test_lamports_to_the_token_account_alone_are_left_for_a_person(
+    dbname,
+    chain,
+    wallet,
+    sync,
+    run,
+    blob_store,
+    monkeypatch,
+):
+    """The old reading wrote no movement for it, so the repair writes none either: it is
+    counted as skipped, nothing changes and a person looks at it."""
+    ws, account, a = wallet
+    for case_id in FIRST:
+        chain.add(_record(case_id))
+    dust = _dust()
+    meta, message = dust["meta"], dust["transaction"]["message"]
+    meta["postBalances"][0] = meta["preBalances"][0] - meta["fee"] - 1
+    meta["postBalances"][1] = meta["preBalances"][1]
+    message["instructions"] = message["instructions"][1:]
+    chain.add(dust)
+    sol, usdc = _sums(*FIRST)
+    _set_balance(chain, sol + 1, usdc)
+    with monkeypatch.context() as patched:
+        _old_reading(patched)
+        assert sync(ws, a).reconciled is False
+    before = _counts(dbname, account)
+    done = run(ws, repair_token_account_lamports, blob_store, hmac_key=SETTINGS.iban_hmac_key)
+    assert done == LamportsRepaired(addresses=1, records=1, skipped=1)
     assert _counts(dbname, account) == before
