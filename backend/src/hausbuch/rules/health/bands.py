@@ -226,9 +226,13 @@ def _slots(health: Health, mark: Light, value: Decimal) -> dict[str, str]:
         out = {
             "reserve": format_money(reserve.amount),
             "reserve_target": format_money(reserve.target),
-            "reserve_months": format_months(reserve.months),
             "reserve_gap": format_money(reserve.gap),
         }
+        # No months without a need (`months` is None when the need is 0). Then the target is
+        # 0 too, so the mark is green at 0 € or more and red below: `reserve.amber`, the one
+        # sentence with this slot, cannot be reached.
+        if reserve.months is not None:
+            out["reserve_months"] = format_months(reserve.months)
         if mark.red is not None:
             out["band_reserve_red"] = format_money(mark.red * reserve.target)
         return out

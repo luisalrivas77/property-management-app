@@ -948,6 +948,41 @@ def test_the_sentences_render_each_format():
     ]
 
 
+@pytest.mark.parametrize(
+    ("amount", "colour", "text"),
+    [
+        (
+            Decimal("500.00"),
+            LightColour.GREEN,
+            "Eure Reserve von 500 € erreicht euer eigenes Ziel von 0 €.",
+        ),
+        (
+            Decimal("-200.00"),
+            LightColour.RED,
+            "Eure Reserve von -200 € liegt unter der Grenze von 0 €, die ihr selbst gesetzt habt.",
+        ),
+    ],
+)
+def test_a_reserve_mark_without_a_need_has_no_months(amount, colour, text):
+    """A need of 0 leaves `months` None and the target 0: the mark is green or red (amber
+    cannot be reached) and its sentence renders without the months slot (PR #434 review A)."""
+    reserve = Reserve(
+        amount=amount,
+        need=ZERO,
+        months=None,
+        target_months=Decimal("6"),
+        target=ZERO,
+        gap=max(ZERO, -amount),
+        state=ReserveState.REACHED if amount >= 0 else ReserveState.BELOW,
+    )
+    health = Health(as_of=date(2027, 6, 3), window=WINDOW, reserve=reserve)
+    band = BandLimits(figure=MarkedFigure.RESERVE, red=Decimal("0.5"))
+    mark = B.light(amount, band, MarkedFigure.RESERVE, target=reserve.target)
+    assert mark.colour is colour
+    texts = B.with_texts(health, {MarkedFigure.RESERVE: mark})[MarkedFigure.RESERVE].texts
+    assert texts == [text]
+
+
 @pytest.mark.parametrize("case", WORKED.cases, ids=lambda c: c.id)
 def test_health_worked(case):
     """The whole of step 1 on §15.2's household: lines → months → window → figures → marks."""
