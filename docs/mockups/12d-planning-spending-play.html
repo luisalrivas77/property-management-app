@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<title>Planung Haushalt, Ausgaben</title>
+<!-- Phase 9 step 3b mockup (D263), drawn 18 Nov 2026 for Luis's approval. Sample data continuing the spec's worked example (§15.2, §7.6 (6)); never real household figures, never fixtures. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap"><style>
+body{margin:0}
+a{color:#1F6F54}a:hover{color:#14523E}
+</style></head>
+<body>
+
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #F4F5F2; font-family: Manrope, system-ui, sans-serif; color: #17201C; font-variant-numeric: tabular-nums">
+
+<nav aria-label="Hauptnavigation" style="flex: 1 1 220px; box-sizing: border-box; background: #FFFFFF; border-right: 1px solid #E1E4DE; padding: 24px 16px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+<div style="width: 32px; height: 32px; border-radius: 8px; background: #1F6F54; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"></path><path d="M9 20v-6h6v6"></path></svg></div>
+<span style="font-weight: 800; font-size: 18px; letter-spacing: -0.02em">Hausbuch</span>
+</div>
+<a href="13-overview-figures.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Übersicht</span></a>
+<a href="03-inbox.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Zu prüfen</span><span style="background: #3A4BA8; color: #FFFFFF; font-size: 12px; font-weight: 700; border-radius: 10px; padding: 2px 8px">2</span></a>
+<a href="08-accounts.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Konten</span></a>
+<a href="09-holdings.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Anlagen</span></a>
+<a href="10-household-cashflow.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Haushalt</span></a>
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Immobilien</span></a>
+<a href="11-tax-anlage-so.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Steuern</span></a>
+<a href="12-planning-household.html" aria-current="page" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 700; color: #14523E; background: #E3F0EA"><span>Planung</span></a>
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Dokumente</span></a>
+<div style="margin-top: 16px; padding: 16px 12px 0; border-top: 1px solid #E1E4DE; display: flex; justify-content: space-between; align-items: center; font-size: 14px"><span style="font-weight: 700">Luis</span><a href="13-overview-figures.html" style="font-size: 14px; font-weight: 600">Einstellungen</a></div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 32px 40px 48px">
+<div style="max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: flex-end">
+<div>
+<p style="margin: 0 0 4px; font-size: 13px; font-weight: 600; color: #5A635E; text-transform: uppercase; letter-spacing: 0.06em">Planung · Stand 14. Juni 2027</p>
+<h1 style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -0.02em">Wie viel könnt ihr anlegen?</h1>
+</div>
+
+</div>
+<div role="tablist" aria-label="Planung" style="display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid #E1E4DE">
+<a href="05-performance.html" role="tab" aria-selected="false" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; font-size: 14px; font-weight: 600; color: #5A635E; text-decoration: none">Immobilie · Projektion bis Verkauf</a>
+<button role="tab" aria-selected="true" style="min-height: 44px; padding: 0 14px; border: none; background: none; font: inherit; font-size: 14px; font-weight: 700; color: #14523E; border-bottom: 2px solid #1F6F54; cursor: pointer">Haushalt</button>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
+<div style="background: #1F6F54; color: #FFFFFF; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #D5E6DE">Anlegbar pro Monat</p><p style="margin: 6px 0 0; font-size: 26px; font-weight: 800">1.002 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #D5E6DE; line-height: 1.45">frei verfügbar 1.113 € minus 10 % Puffer</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Schon angelegt pro Monat</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">550 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E; line-height: 1.45"><span style="white-space: nowrap">ETF-Depot 400 €</span> · <span style="white-space: nowrap">Krypto-Börse 150 €</span><br>danach bleiben 452 € im Monat</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Reserve heute</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">16.830 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E; line-height: 1.45">reicht für 3,8 Monate eures Bedarfs von 4.470 € im Monat</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Bis zum Reserveziel fehlen</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">9.990 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E; line-height: 1.45">Ziel 26.820 € = 6 Monate Bedarf</p></div>
+</div>
+<p style="margin: -6px 0 0; font-size: 13px; color: #3E4843"><strong>Basis: 3 Monate, März bis Mai 2027.</strong> <span style="color: #5A635E">Die Durchschnitte und der Bedarf kommen aus diesen drei abgeschlossenen Monaten. Die Wege zum Reserveziel beginnen beim Monatsabschluss am 31. Mai 2027.</span> <a href="#basis" style="font-weight: 600">Monate ansehen</a></p>
+<p style="margin: 0; font-size: 13px; color: #5A635E"><span style="display: inline-block; border: 1.5px dashed #7B3FA0; color: #7B3FA0; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 700; background: #FFFFFF">Karten wie in Mockup 12, mit den gespeicherten Werten</span> <a href="12-planning-household.html">Mockup 12</a> zeigt die Stellschrauben und „Weitere Annahmen“ aufgeklappt; der Rest der Seite (Wege, „So entsteht die Zahl“, Vermögen, KI-Erklärung) folgt unter diesem Abschnitt unverändert.</p>
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px; ">
+<h2 style="margin: 0 0 4px; font-size: 18px; font-weight: 800">Stellschrauben</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 8px 0 16px">
+<div style="background: #F4F5F2; border-radius: 10px; padding: 12px 14px">
+<p style="margin: 0; font-size: 13px; font-weight: 700; color: #3E4843">Reserveziel</p>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px">
+<button aria-label="Reserveziel senken" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9CEC6; background: #FFFFFF; font: inherit; font-size: 20px; font-weight: 700; color: #17201C; cursor: pointer">−</button>
+<span style="font-size: 22px; font-weight: 800">6 Monate</span>
+<button aria-label="Reserveziel erhöhen" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9CEC6; background: #FFFFFF; font: inherit; font-size: 20px; font-weight: 700; color: #17201C; cursor: pointer">+</button>
+</div>
+<p style="margin: 6px 0 0; font-size: 12px; color: #5A635E; line-height: 1.45">in Monaten eures Bedarfs von 4.470 €</p>
+</div>
+<div style="background: #F4F5F2; border-radius: 10px; padding: 12px 14px">
+<p style="margin: 0; font-size: 13px; font-weight: 700; color: #3E4843">Puffer für Unvorhergesehenes</p>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px">
+<button aria-label="Puffer senken" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9CEC6; background: #FFFFFF; font: inherit; font-size: 20px; font-weight: 700; color: #17201C; cursor: pointer">−</button>
+<span style="font-size: 22px; font-weight: 800">10 %</span>
+<button aria-label="Puffer erhöhen" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #C9CEC6; background: #FFFFFF; font: inherit; font-size: 20px; font-weight: 700; color: #17201C; cursor: pointer">+</button>
+</div>
+<p style="margin: 6px 0 0; font-size: 12px; color: #5A635E; line-height: 1.45">so viel vom frei verfügbaren Geld bleibt unverplant</p>
+</div>
+</div>
+<details style="border: 1px solid #E1E4DE; border-radius: 10px; padding: 0 16px">
+<summary style="list-style: none; display: flex; justify-content: space-between; align-items: center; min-height: 48px; font-size: 15px; font-weight: 800; cursor: pointer">Weitere Annahmen <span style="font-size: 13px; font-weight: 600; color: #5A635E">aufklappen ▾</span></summary>
+</details>
+<details open style="border: 1px solid #E1E4DE; border-radius: 10px; padding: 0 16px 16px; margin-top: 12px">
+<summary style="list-style: none; display: flex; justify-content: space-between; align-items: center; min-height: 48px; font-size: 15px; font-weight: 800; cursor: pointer">Ausgaben durchspielen <span style="font-size: 13px; font-weight: 600; color: #5A635E">zuklappen ▴</span></summary>
+<p style="margin: 0 0 14px; font-size: 13px; color: #3E4843; line-height: 1.55">Tragt für eine Kategorie ein, wie viel ihr pro Monat ausgeben wollt, als Betrag oder als Prozent ihres Durchschnitts, und ab wann. Ein leeres Feld heißt: wie bisher, also der Durchschnitt. „Ø pro Monat“ ist euer gemessener Durchschnitt aus März bis Mai 2027, kein Vorschlag. Einmalausgaben wie ein Autokauf sind hier nicht dabei.</p>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; padding: 0 0 6px; font-size: 12px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #E1E4DE">
+<span>Kategorie</span><span style="text-align: right">Ø pro Monat</span><span>Geplant pro Monat</span></div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; ">
+<span style="font-size: 14px; font-weight: 700; color: #17201C"><span style="display: inline-block; width: 18px; color: #5A635E; font-size: 14px">›</span>Wohnen</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">1.450 €</span>
+<span style="display: inline-flex; align-items: center; gap: 4px"><span style="display: inline-flex; align-items: center; gap: 6px"><input type="text" inputmode="decimal" aria-label="Geplant pro Monat: Wohnen" value="" style="width: 96px; min-height: 40px; box-sizing: border-box; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 15px; font-weight: 700; color: #17201C; text-align: right; background: #FFFFFF"><span style="font-size: 14px; font-weight: 700; color: #3E4843; width: 14px">€</span></span></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; ">
+<span style="font-size: 14px; font-weight: 700; color: #17201C"><span style="display: inline-block; width: 18px; color: #5A635E; font-size: 14px">▾</span>Lebensmittel und Drogerie</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">890 €</span>
+<span style="display: inline-flex; align-items: center; gap: 4px"><span style="display: inline-flex; align-items: center; gap: 6px"><input type="text" inputmode="decimal" aria-label="Geplant pro Monat: Lebensmittel und Drogerie" value="" disabled style="width: 96px; min-height: 40px; box-sizing: border-box; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 15px; font-weight: 700; color: #17201C; text-align: right; background: #F4F5F2"><span style="font-size: 14px; font-weight: 700; color: #3E4843; width: 14px">€</span></span><span style="font-size: 12px; color: #5A635E; margin-left: 4px">ihr plant hier je Unterkategorie</span></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; background: #F4F5F2; border-radius: 8px; margin: 0 -10px; padding-left: 10px; padding-right: 10px;">
+<span style="font-size: 14px; font-weight: 600; color: #3E4843"><span style="display: inline-block; width: 26px"></span>Supermarkt</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">650 €</span>
+<div><div style="display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: flex-end"><span style="display: inline-flex; gap: 8px; align-items: center"><span style="display: inline-flex; align-items: center; gap: 6px"><input type="text" inputmode="decimal" aria-label="Geplant pro Monat: Supermarkt" value="5" style="width: 96px; min-height: 40px; box-sizing: border-box; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 15px; font-weight: 700; color: #17201C; text-align: right; background: #FFFFFF"><span style="font-size: 14px; font-weight: 700; color: #3E4843; width: 14px"></span></span><span role="group" aria-label="Betrag oder Prozent" style="display: inline-flex; border: 1px solid #C9CEC6; border-radius: 8px; overflow: hidden"><button aria-pressed="false" style="min-width: 36px; min-height: 36px; border: none; background: #FFFFFF; color: #3E4843; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer">€</button><button aria-pressed="true" style="min-width: 36px; min-height: 36px; border: none; background: #17201C; color: #FFFFFF; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer">%</button></span></span><label style="display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.04em">von<select style="min-height: 36px; width: 150px; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 8px; font: inherit; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; background: #FFFFFF; color: #17201C"><option selected>Juni 2027</option><option>Juli 2027</option><option>August 2027</option><option>September 2027</option><option>Oktober 2027</option><option>November 2027</option><option>Dezember 2027</option></select></label><label style="display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.04em">bis<select style="min-height: 36px; width: 150px; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 8px; font: inherit; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; background: #FFFFFF; color: #17201C"><option selected>ohne Ende</option><option>Juni 2027</option><option>Juli 2027</option><option>August 2027</option><option>September 2027</option><option>Oktober 2027</option><option>November 2027</option><option>Dezember 2027</option></select></label></div><p style="margin: 6px 0 0; font-size: 12px; color: #3E4843; line-height: 1.45">= 682,50 € im Monat, 32,50 € mehr als der Durchschnitt</p></div>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; ">
+<span style="font-size: 14px; font-weight: 600; color: #3E4843"><span style="display: inline-block; width: 26px"></span>Drogerie & Kosmetik</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">120 €</span>
+<span style="display: inline-flex; align-items: center; gap: 4px"><span style="display: inline-flex; align-items: center; gap: 6px"><input type="text" inputmode="decimal" aria-label="Geplant pro Monat: Drogerie & Kosmetik" value="" style="width: 96px; min-height: 40px; box-sizing: border-box; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 15px; font-weight: 700; color: #17201C; text-align: right; background: #FFFFFF"><span style="font-size: 14px; font-weight: 700; color: #3E4843; width: 14px">€</span></span></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; ">
+<span style="font-size: 14px; font-weight: 600; color: #3E4843"><span style="display: inline-block; width: 26px"></span>Bäckerei, Kiosk & Markt</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">80 €</span>
+<span style="display: inline-flex; align-items: center; gap: 4px"><span style="display: inline-flex; align-items: center; gap: 6px"><input type="text" inputmode="decimal" aria-label="Geplant pro Monat: Bäckerei, Kiosk & Markt" value="" style="width: 96px; min-height: 40px; box-sizing: border-box; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 15px; font-weight: 700; color: #17201C; text-align: right; background: #FFFFFF"><span style="font-size: 14px; font-weight: 700; color: #3E4843; width: 14px">€</span></span></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; ">
+<span style="font-size: 14px; font-weight: 600; color: #3E4843"><span style="display: inline-block; width: 26px"></span>Sonstige Lebensmittel</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">40 €</span>
+<span style="font-size: 12px; color: #5A635E; line-height: 1.45">zählt mit der ganzen Gruppe: planbar oben in der Gruppenzeile, wenn keine Unterkategorie geplant ist</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; ">
+<span style="font-size: 14px; font-weight: 700; color: #17201C"><span style="display: inline-block; width: 18px; color: #5A635E; font-size: 14px">›</span>Essen gehen & bestellen</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">260 €</span>
+<span style="display: inline-flex; align-items: center; gap: 4px"><span style="display: inline-flex; align-items: center; gap: 6px"><input type="text" inputmode="decimal" aria-label="Geplant pro Monat: Essen gehen & bestellen" value="" style="width: 96px; min-height: 40px; box-sizing: border-box; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 15px; font-weight: 700; color: #17201C; text-align: right; background: #FFFFFF"><span style="font-size: 14px; font-weight: 700; color: #3E4843; width: 14px">€</span></span></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; ">
+<span style="font-size: 14px; font-weight: 700; color: #17201C"><span style="display: inline-block; width: 18px; color: #5A635E; font-size: 14px">›</span>Mobilität</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">310 €</span>
+<span style="display: inline-flex; align-items: center; gap: 4px"><span style="display: inline-flex; align-items: center; gap: 6px"><input type="text" inputmode="decimal" aria-label="Geplant pro Monat: Mobilität" value="" style="width: 96px; min-height: 40px; box-sizing: border-box; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 15px; font-weight: 700; color: #17201C; text-align: right; background: #FFFFFF"><span style="font-size: 14px; font-weight: 700; color: #3E4843; width: 14px">€</span></span></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; background: #F4F5F2; border-radius: 8px; margin: 0 -10px; padding-left: 10px; padding-right: 10px;">
+<span style="font-size: 14px; font-weight: 700; color: #17201C"><span style="display: inline-block; width: 18px; color: #5A635E; font-size: 14px">›</span>Urlaub & Reisen</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">200 €</span>
+<div><div style="display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: flex-end"><span style="display: inline-flex; gap: 8px; align-items: center"><span style="display: inline-flex; align-items: center; gap: 6px"><input type="text" inputmode="decimal" aria-label="Geplant pro Monat: Urlaub & Reisen" value="500" style="width: 96px; min-height: 40px; box-sizing: border-box; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 15px; font-weight: 700; color: #17201C; text-align: right; background: #FFFFFF"><span style="font-size: 14px; font-weight: 700; color: #3E4843; width: 14px"></span></span><span role="group" aria-label="Betrag oder Prozent" style="display: inline-flex; border: 1px solid #C9CEC6; border-radius: 8px; overflow: hidden"><button aria-pressed="true" style="min-width: 36px; min-height: 36px; border: none; background: #17201C; color: #FFFFFF; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer">€</button><button aria-pressed="false" style="min-width: 36px; min-height: 36px; border: none; background: #FFFFFF; color: #3E4843; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer">%</button></span></span><label style="display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.04em">von<select style="min-height: 36px; width: 150px; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 8px; font: inherit; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; background: #FFFFFF; color: #17201C"><option>Juni 2027</option><option selected>Juli 2027</option><option>August 2027</option><option>September 2027</option><option>Oktober 2027</option><option>November 2027</option><option>Dezember 2027</option></select></label><label style="display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.04em">bis<select style="min-height: 36px; width: 150px; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 8px; font: inherit; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; background: #FFFFFF; color: #17201C"><option>ohne Ende</option><option>Juni 2027</option><option>Juli 2027</option><option>August 2027</option><option selected>September 2027</option><option>Oktober 2027</option><option>November 2027</option><option>Dezember 2027</option></select></label></div><p style="margin: 6px 0 0; font-size: 12px; color: #3E4843; line-height: 1.45">300 € mehr als der Durchschnitt, in diesen drei Monaten; danach wieder 200 €</p></div>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; ">
+<span style="font-size: 14px; font-weight: 700; color: #17201C"><span style="display: inline-block; width: 18px; color: #5A635E; font-size: 14px">›</span>Versicherungen</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">290 €</span>
+<span style="display: inline-flex; align-items: center; gap: 4px"><span style="display: inline-flex; align-items: center; gap: 6px"><input type="text" inputmode="decimal" aria-label="Geplant pro Monat: Versicherungen" value="" style="width: 96px; min-height: 40px; box-sizing: border-box; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 15px; font-weight: 700; color: #17201C; text-align: right; background: #FFFFFF"><span style="font-size: 14px; font-weight: 700; color: #3E4843; width: 14px">€</span></span></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; ">
+<span style="font-size: 14px; font-weight: 700; color: #17201C"><span style="display: inline-block; width: 18px; color: #5A635E; font-size: 14px">›</span>Familie und Kind</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">240 €</span>
+<span style="display: inline-flex; align-items: center; gap: 4px"><span style="display: inline-flex; align-items: center; gap: 6px"><input type="text" inputmode="decimal" aria-label="Geplant pro Monat: Familie und Kind" value="" style="width: 96px; min-height: 40px; box-sizing: border-box; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 15px; font-weight: 700; color: #17201C; text-align: right; background: #FFFFFF"><span style="font-size: 14px; font-weight: 700; color: #3E4843; width: 14px">€</span></span></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; ">
+<span style="font-size: 14px; font-weight: 700; color: #17201C"><span style="display: inline-block; width: 18px; color: #5A635E; font-size: 14px">›</span>Abos und Verträge</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">95 €</span>
+<span style="display: inline-flex; align-items: center; gap: 4px"><span style="display: inline-flex; align-items: center; gap: 6px"><input type="text" inputmode="decimal" aria-label="Geplant pro Monat: Abos und Verträge" value="" style="width: 96px; min-height: 40px; box-sizing: border-box; border: 1px solid #C9CEC6; border-radius: 8px; padding: 0 10px; font: inherit; font-size: 15px; font-weight: 700; color: #17201C; text-align: right; background: #FFFFFF"><span style="font-size: 14px; font-weight: 700; color: #3E4843; width: 14px">€</span></span></span>
+</div>
+<a href="#" style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; text-decoration: none; color: #17201C">
+<span style="font-size: 14px; font-weight: 600; color: #1F6F54"><span style="display: inline-block; width: 18px">›</span>9 weitere Gruppen anzeigen</span>
+<span style="text-align: right; font-size: 14px; color: #3E4843">382 €</span><span></span></a>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 2.3fr); gap: 16px; align-items: start; padding: 12px 0 0">
+<span style="font-size: 14px; font-weight: 800">Regelmäßige Ausgaben</span>
+<span style="text-align: right; font-size: 14px; font-weight: 800">4.117 €</span>
+<span style="font-size: 13px; color: #3E4843; line-height: 1.55">mit euren Änderungen:<br>Juni 2027: 4.149,17 €<br>Juli bis September 2027: 4.449,17 €<br>ab Oktober 2027: 4.149,17 €</span>
+</div>
+<div style="margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center">
+<a href="#" style="font-size: 14px; font-weight: 700">+ Neue Ausgabe hinzufügen</a>
+<span style="font-size: 12px; color: #5A635E">für eine Ausgabe, die es bei euch bisher nicht gibt (Ø 0 €)</span>
+</div>
+<div style="margin-top: 18px">
+<div style="border: 1px solid #E1E4DE; border-radius: 10px; padding: 14px 16px 6px">
+<p style="margin: 0 0 4px; font-size: 14px; font-weight: 800">Was eure Änderungen bewirken</p>
+<p style="margin: 0 0 8px; font-size: 12px; color: #5A635E; line-height: 1.5">Die App rechnet bei jeder Eingabe neu. Beide Spalten aus denselben gemessenen Monaten; welche Änderung passt, entscheidet ihr.</p>
+<div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; padding: 6px 0; border-bottom: 1px solid #E1E4DE">
+<span></span><span style="font-size: 11px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1.35">heute (ohne Einmalausgaben)</span><span style="font-size: 11px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1.35">mit euren Änderungen</span></div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; padding: 12px 0; border-bottom: 1px solid #ECEEE9">
+<span style="font-size: 14px; font-weight: 800; color: #17201C">Sparquote</span>
+<span style="font-size: 18px; font-weight: 800; color: #17201C">25,7 %</span>
+<span><span style="font-size: 18px; font-weight: 800; color: #17201C">25,1 %</span><span style="display: block; font-size: 13px; font-weight: 600; color: #3E4843; margin-top: 2px">ab Juni 2027</span><span style="display: block; font-size: 13px; font-weight: 600; color: #3E4843; margin-top: 2px">Juli bis September 2027: 19,7 %</span><span style="display: block; font-size: 13px; font-weight: 600; color: #3E4843; margin-top: 2px">ab Oktober 2027: 25,1 %</span></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; padding: 12px 0; border-bottom: 1px solid #ECEEE9">
+<span style="font-size: 14px; font-weight: 800; color: #17201C">Anlegbar pro Monat</span>
+<span style="font-size: 18px; font-weight: 800; color: #17201C">1.002 €</span>
+<span><span style="font-size: 18px; font-weight: 800; color: #17201C">972,75 €</span><span style="display: block; font-size: 13px; font-weight: 600; color: #3E4843; margin-top: 2px">ab Juni 2027</span><span style="display: block; font-size: 13px; font-weight: 600; color: #3E4843; margin-top: 2px">Juli bis September 2027: 702,75 €</span><span style="display: block; font-size: 13px; font-weight: 600; color: #3E4843; margin-top: 2px">ab Oktober 2027: 972,75 €</span></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; padding: 12px 0; border-bottom: 1px solid #ECEEE9">
+<span style="font-size: 14px; font-weight: 800; color: #17201C">Reserveziel erreicht<span style="display: block; font-size: 12px; color: #5A635E; font-weight: 500; margin-top: 2px">auf dem Weg „Alles weiter wie bisher“</span></span>
+<span style="font-size: 18px; font-weight: 800; color: #17201C">Dezember 2028</span>
+<span><span style="font-size: 18px; font-weight: 800; color: #17201C">März 2029</span></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; padding: 12px 0; border-bottom: 1px solid #ECEEE9">
+<span style="font-size: 14px; font-weight: 800; color: #17201C">Vermögen am 31. Dezember 2032<span style="display: block; font-size: 12px; color: #5A635E; font-weight: 500; margin-top: 2px">nach eurer Annahme für Fonds und Krypto, siehe „Vermögen in einigen Jahren“</span></span>
+<span style="font-size: 18px; font-weight: 800; color: #17201C">261.470 €</span>
+<span><span style="font-size: 18px; font-weight: 800; color: #17201C">258.700 €</span></span>
+</div>
+<p style="margin: 10px 0 8px; font-size: 12px; color: #5A635E; line-height: 1.5">Sparquote heute: aus März bis Mai 2027, ohne den Autokauf im Mai. Die Sparquote mit euren Änderungen zeigt jeden Monat, in dem sie sich ändert, nie einen Durchschnitt der Monate.</p>
+</div>
+</div>
+</details>
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 16px">
+<button style="min-height: 44px; padding: 0 16px; border-radius: 10px; background: #1F6F54; color: #FFFFFF; border: 1px solid #1F6F54; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap">Szenario speichern</button>
+<span style="font-size: 13px; color: #5A635E; line-height: 1.5">Noch nichts gespeichert: Durchspielen ändert nichts, bis ihr „Szenario speichern“ drückt. Dann wird es eine neue Fassung eures Szenarios; die alte bleibt im Verlauf.</span>
+</div>
+</section>
+</div>
+</main>
+</div>
+
+</body></html>
