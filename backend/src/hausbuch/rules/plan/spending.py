@@ -251,15 +251,20 @@ def rate_segments(
     sum_e = sum((m.income for m in window), ZERO)
     sum_a = sum((m.regular_spending for m in window), ZERO)
     newest = window[-1].month
+    mean_regular = mean_cent([m.regular_spending for m in window])
     out: list[RateSegment] = []
     for k in range(1, horizon_months + 1):
         month = _add_months(newest, k)
         e_k = sum_e + n * _income_change(income_changes, month)
-        rate = ratio(e_k - sum_a - n * delta(changes, means, month), e_k)
-        if out and out[-1].rate == rate:
+        spent = delta(changes, means, month)
+        rate = ratio(e_k - sum_a - n * spent, e_k)
+        regular = mean_regular + spent
+        if out and (out[-1].rate, out[-1].regular_spending) == (rate, regular):
             out[-1] = out[-1].model_copy(update={"to_month": month})
         else:
-            out.append(RateSegment(from_month=month, to_month=month, rate=rate))
+            out.append(
+                RateSegment(from_month=month, to_month=month, rate=rate, regular_spending=regular)
+            )
     return out
 
 
@@ -341,7 +346,27 @@ def play(
         mean_regular_spending=mean_regular,
         rate_regular_now=ratio(sum_e - sum_a, sum_e),
         rates=rate_segments(window, changes, means, income_changes, horizon_months),
+        addable=addable(means, changes, {g.group for g in groups}),
     )
+
+
+def addable(
+    means: Mapping[AllocationCategory, Decimal],
+    changes: Sequence[SpendingChange],
+    shown: set[HouseholdGroup],
+) -> list[AllocationCategory]:
+    """„Neue Ausgabe“: every code a change may name that has no mean and no change, in the
+    taxonomy's order; a group's fallback code only while its group shows no row (it stands
+    for the whole group, planned on the group's row)."""
+    named = {c.code for c in changes}
+    return [
+        code
+        for code in TAXONOMY
+        if playable(code)
+        and code not in means
+        and code not in named
+        and not (code in FALLBACK_CODES and group_of(code) in shown)
+    ]
 
 
 # --- The comparison (§7.7) -------------------------------------------------------------------

@@ -11569,7 +11569,8 @@ export interface components {
         RateBasis: "monthly_payment" | "yearly_premium" | "schedule" | "twelve_months" | "none";
         /**
          * RateSegment
-         * @description The savings rate with the changes over consecutive months that share it (§7.6 (4)).
+         * @description The savings rate with the changes over consecutive months that share it and the
+         *     regular spending planned in them, Ā_regular + Δ(k) (§7.6 (4)).
          */
         RateSegment: {
             /** From Month */
@@ -11578,6 +11579,8 @@ export interface components {
             to_month: string;
             /** Rate */
             rate?: string | null;
+            /** Regular Spending */
+            regular_spending: string;
         };
         /**
          * RebookBlockReason
@@ -12719,6 +12722,8 @@ export interface components {
             rate_regular_now?: string | null;
             /** Rates */
             rates?: components["schemas"]["RateSegment"][];
+            /** Addable */
+            addable?: components["schemas"]["AllocationCategory"][];
         };
         /**
          * SpendingPlayGroup

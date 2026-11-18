@@ -123,7 +123,7 @@ def test_spending_play(case):
     months = L.months(basis, case.horizon_months, None, case.income_changes, case.one_offs)
     by_month = {m.month: m for m in months}
     rate_of = {
-        L.add_months(s.from_month, k): s.rate
+        L.add_months(s.from_month, k): (s.rate, s.regular_spending)
         for s in got.rates
         for k in range(L.months_after(s.from_month, s.to_month) + 1)
     }
@@ -135,7 +135,7 @@ def test_spending_play(case):
             m.investable,
         ), m.month
         assert month.free - month.investable == m.buffer, m.month
-        assert rate_of[m.month] == m.rate, m.month
+        assert rate_of[m.month] == (m.rate, got.mean_regular_spending + m.delta), m.month
 
 
 def _played(play):
@@ -184,6 +184,11 @@ def test_play_groups_and_rows_of_the_worked_case():
     refund = groups[G.REFUND]
     assert refund.code is None and not refund.rows[0].playable
     assert refund.mean == Decimal("-6.67")
+    # „Neue Ausgabe“: playable codes without a mean or a change; a group shown on the play
+    # keeps its fallback code on its own row, never offered again.
+    assert C.HH_CHILDCARE in got.addable and C.HH_CASH in got.addable
+    assert not {C.HH_SUPERMARKET, C.HH_TRAVEL, C.HH_GROCERIES, C.HH_OTHER} & set(got.addable)
+    assert not {C.HH_REFUND, C.BANK_FEES, C.HH_CAR_PURCHASE} & set(got.addable)
 
 
 def test_play_refuses_codes_that_do_not_sum():

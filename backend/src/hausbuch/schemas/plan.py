@@ -511,11 +511,13 @@ class SpendingPlayGroup(Schema):
 
 
 class RateSegment(Schema):
-    """The savings rate with the changes over consecutive months that share it (§7.6 (4))."""
+    """The savings rate with the changes over consecutive months that share it and the
+    regular spending planned in them, Ā_regular + Δ(k) (§7.6 (4))."""
 
     from_month: YearMonth
     to_month: YearMonth
     rate: Ratio | None = None  # None when Ē ≤ 0
+    regular_spending: Money
 
 
 class SpendingPlay(Schema):
@@ -526,6 +528,9 @@ class SpendingPlay(Schema):
     mean_regular_spending: Money
     rate_regular_now: Ratio | None = None
     rates: list[RateSegment] = Field(default_factory=list)
+    # „Neue Ausgabe“: the codes a change may name that have no mean and no change yet, in the
+    # taxonomy's order; a group's fallback code only while its group has no row
+    addable: list[AllocationCategory] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _sum(self) -> Self:

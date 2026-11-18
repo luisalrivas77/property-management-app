@@ -465,11 +465,12 @@ def preview_plan(conn: Connection, today: date, levers: HouseholdLevers) -> Hous
     row no projection, as GET shows. Reads only: no row, no event."""
     from .household_scenarios import check_levers
 
-    check_levers(conn, levers, today)
+    reads = read_months(conn, ended_months(today), today)
+    check_levers(conn, levers, today, reads)
     row = default_scenario(conn)
     if row is not None:
         row = row.model_copy(update={"levers": levers})
-    return _plan(conn, today, row, levers)
+    return _plan(conn, today, row, levers, reads)
 
 
 def window_spending(
@@ -481,9 +482,14 @@ def window_spending(
 
 
 def _plan(
-    conn: Connection, today: date, row: HouseholdScenario | None, levers: HouseholdLevers
+    conn: Connection,
+    today: date,
+    row: HouseholdScenario | None,
+    levers: HouseholdLevers,
+    reads: dict[str, MonthRead] | None = None,
 ) -> HouseholdPlan:
-    reads = read_months(conn, ended_months(today), today)
+    if reads is None:
+        reads = read_months(conn, ended_months(today), today)
     win = _window(reads)
     newest = win.months[-1] if win.months else None
     todos = list(window_todos(win))

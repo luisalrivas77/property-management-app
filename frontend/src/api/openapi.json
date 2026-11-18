@@ -29433,16 +29433,22 @@
               }
             ],
             "title": "Rate"
+          },
+          "regular_spending": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Regular Spending"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "from_month",
-          "to_month"
+          "to_month",
+          "regular_spending"
         ],
         "title": "RateSegment",
-        "description": "The savings rate with the changes over consecutive months that share it (§7.6 (4))."
+        "description": "The savings rate with the changes over consecutive months that share it and the\nregular spending planned in them, Ā_regular + Δ(k) (§7.6 (4))."
       },
       "RebookBlockReason": {
         "type": "string",
@@ -32439,6 +32445,13 @@
             },
             "type": "array",
             "title": "Rates"
+          },
+          "addable": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            },
+            "type": "array",
+            "title": "Addable"
           }
         },
         "additionalProperties": false,

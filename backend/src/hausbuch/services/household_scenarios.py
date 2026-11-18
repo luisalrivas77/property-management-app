@@ -72,7 +72,7 @@ from .context import CommandContext
 from .documents import LOCAL_TIME_ZONE
 from .errors import ConflictError, NotFoundError, RuleViolationError, violated_constraint
 from .events import append_event
-from .health import _window, ended_months, read_months
+from .health import MonthRead, _window, ended_months, read_months
 
 RESERVE_KINDS = frozenset(
     {AccountKind.BANK_CURRENT, AccountKind.BANK_SAVINGS, AccountKind.CREDIT_CARD}
@@ -152,16 +152,24 @@ def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> House
 
 
 def check_levers(
-    conn: Connection, levers: HouseholdLevers, today: date
+    conn: Connection,
+    levers: HouseholdLevers,
+    today: date,
+    reads: dict[str, MonthRead] | None = None,
 ) -> dict[AllocationCategory, Decimal]:
     """The checks of a scenario's levers beyond HouseholdLevers' own (the module doc), for a
-    new row and for the preview; returns the codes' means over today's window (§7.6 (2)), read
-    only when the levers change spending."""
+    new row and for the preview; returns the codes' means over today's window (§7.6 (2)).
+    `reads`: today's months as services.health.read_months gives them (the preview passes the
+    reads its plan uses); read here once, and only for one-offs or spending changes."""
     _check_accounts(conn, levers)
-    _check_one_offs(conn, levers, today)
+    if not levers.one_offs and not levers.spending_changes:
+        return {}
+    if reads is None:
+        reads = read_months(conn, ended_months(today), today)
+    _check_one_offs(levers, today, reads)
     if not levers.spending_changes:
         return {}
-    means = window_means(conn, today)
+    means = window_means(reads)
     code = SP.percent_on_nothing(levers.spending_changes, means)
     if code is not None:
         raise RuleViolationError(
@@ -171,9 +179,8 @@ def check_levers(
     return means
 
 
-def window_means(conn: Connection, today: date) -> dict[AllocationCategory, Decimal]:
-    """§7.6 (2): each code's mean over today's window of closed months; none below three."""
-    reads = read_months(conn, ended_months(today), today)
+def window_means(reads: dict[str, MonthRead]) -> dict[AllocationCategory, Decimal]:
+    """§7.6 (2): each code's mean over the window of closed months; none below three."""
     win = _window(reads)
     if not win.enough:
         return {}
@@ -287,17 +294,21 @@ def _check_accounts(conn: Connection, levers: HouseholdLevers) -> None:
 def newest_closed_month(conn: Connection, today: date) -> str:
     """The month the plan's months count from: the newest closed month of today's window,
     else the last month that has ended."""
-    ended = ended_months(today)
-    win = _window(read_months(conn, ended, today))
+    return _newest(read_months(conn, ended_months(today), today), today)
+
+
+def _newest(reads: dict[str, MonthRead], today: date) -> str:
+    win = _window(reads)
     if win.months:
         return win.months[-1]
+    ended = ended_months(today)
     return ended[-1] if ended else month_of(today)
 
 
-def _check_one_offs(conn: Connection, levers: HouseholdLevers, today: date) -> None:
+def _check_one_offs(levers: HouseholdLevers, today: date, reads: dict[str, MonthRead]) -> None:
     if not levers.one_offs:
         return
-    newest = newest_closed_month(conn, today)
+    newest = _newest(reads, today)
     outside = one_offs_outside(levers.one_offs, newest, levers.horizon_months)
     if outside:
         last = add_months(newest, levers.horizon_months)
