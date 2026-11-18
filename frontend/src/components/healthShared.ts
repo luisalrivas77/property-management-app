@@ -263,7 +263,11 @@ export function saveDefaultScenario(levers: HouseholdLevers, current: HouseholdS
 /** The levers of a scenario with every default filled in, or HouseholdLevers' own defaults for
  * a household without one (6 months, 10 %, 60 months, 10 years). */
 export function leversOf(scenario: HouseholdScenario | null): HouseholdLevers {
-  const levers = scenario?.levers;
+  return fillLevers(scenario?.levers);
+}
+
+/** Levers with every optional part present, so a screen can edit them without checks. */
+export function fillLevers(levers: HouseholdLevers | null | undefined): HouseholdLevers {
   return {
     reserve_target_months: levers?.reserve_target_months ?? "6",
     buffer_percent: levers?.buffer_percent ?? "10",

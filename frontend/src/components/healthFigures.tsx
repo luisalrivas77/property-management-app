@@ -715,10 +715,23 @@ function FiguresCard({
             {gap("debt_ratio") ? <p className="muted">{gap("debt_ratio")}</p> : null}
             <LimitLine figure="debt_ratio" light={marks.debt_ratio} />
             <Texts light={marks.debt_ratio} />
-            <p className="muted">
-              Die Beträge kommen aus dem Monatsabschluss; jede Position steht unter <Link href="/assets">Anlagen</Link> und{" "}
-              <Link href="/accounts">Konten</Link>.
-            </p>
+            <details className="health-sources">
+              <summary>Woraus die Zahl besteht</summary>
+              <ul className="household-rows">
+                <li>
+                  <span>Alle Schulden am Monatsende</span>
+                  <span>{formatEuro(debt.liabilities)}</span>
+                </li>
+                <li>
+                  <span>Alles, was ihr besitzt</span>
+                  <span>{formatEuro(debt.gross_assets)}</span>
+                </li>
+              </ul>
+              <p className="muted">
+                Die Beträge kommen aus dem Monatsabschluss; jede Position steht unter <Link href="/assets">Anlagen</Link> und{" "}
+                <Link href="/accounts">Konten</Link>.
+              </p>
+            </details>
           </Figure>
           <Figure
             title="Schulden zu Jahreseinkommen"
@@ -729,6 +742,23 @@ function FiguresCard({
             {gap("debt_to_income") ? <p className="muted">{gap("debt_to_income")}</p> : null}
             <LimitLine figure="debt_to_income" light={marks.debt_to_income} />
             <Texts light={marks.debt_to_income} />
+            <details className="health-sources">
+              <summary>Woraus die Zahl besteht</summary>
+              <ul className="household-rows">
+                <li>
+                  <span>Alle Schulden am Monatsende</span>
+                  <span>{formatEuro(debt.liabilities)}</span>
+                </li>
+                <li>
+                  <span>Einkommen eines Jahres{annualised ? `, hochgerechnet aus ${debt.months} Monaten` : ""}</span>
+                  <span>{formatEuro(debt.income_year)}</span>
+                </li>
+              </ul>
+              <p className="muted">
+                Die Monate stehen unter „Sparquote › Monate ansehen“; die Schulden unter <Link href="/loans">Darlehen</Link> und{" "}
+                <Link href="/accounts">Konten</Link>.
+              </p>
+            </details>
           </Figure>
           {!confirmed ? null : (["debt_ratio", "debt_to_income"] as const).some((f) => !current?.levers?.bands?.some((b) => b.figure === f)) ? (
             <p className="muted">

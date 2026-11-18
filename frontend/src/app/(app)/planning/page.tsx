@@ -3,11 +3,13 @@
 // Planung (phase-4.md §9, docs/mockups/05-performance.png): the property is ?immobilie=… (the
 // first one when absent; the selector shows with more than one). The levers of the projection
 // live in the URL too, so the ± buttons only change query parameters and the screen refetches.
+// ?tab=haushalt is the household plan (phase-9.md §14, mockups 12, 12b, 12c).
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
 import { api, ok } from "@/api/client";
+import { HouseholdPlanScreen } from "@/components/householdPlan";
 import { PlanningScreen } from "@/components/planning";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -24,7 +26,17 @@ export default function PlanningPage() {
 
 function Planning() {
   const search = useSearchParams();
-  const requested = search.get("immobilie");
+  if (search.get("tab") === "haushalt") {
+    return (
+      <section>
+        <HouseholdPlanScreen />
+      </section>
+    );
+  }
+  return <PropertyPlanning requested={search.get("immobilie")} />;
+}
+
+function PropertyPlanning({ requested }: { requested: string | null }) {
   const properties = useLoad(loadProperties);
 
   return (

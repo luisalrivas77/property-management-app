@@ -330,9 +330,9 @@ export function PlanningScreen({ property, properties }: { property: Property; p
         <Link href={planningHref(multi ? property.id : null, NO_LEVERS)} aria-current="page" scroll={false}>
           Immobilie
         </Link>
-        <span className="tab-disabled" aria-disabled="true">
-          Haushalt <span className="tab-note">ab Phase 9</span>
-        </span>
+        <Link href="/planning?tab=haushalt" scroll={false}>
+          Haushalt
+        </Link>
       </nav>
       <div className="stack planning">
         {flatRate.data !== undefined || flatRate.error != null ? (
