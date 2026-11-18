@@ -6768,6 +6768,53 @@
         }
       }
     },
+    "/api/household-plan": {
+      "get": {
+        "summary": "Household Plan Get",
+        "operationId": "household_plan_get_api_household_plan_get",
+        "parameters": [
+          {
+            "name": "scenario",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scenario"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/movement-imports": {
       "post": {
         "summary": "Movement Import Create",
@@ -13354,6 +13401,15 @@
         ],
         "title": "Assumption",
         "description": "A stated assumption of the projection, as data; the frontend holds the German text."
+      },
+      "AssumptionKind": {
+        "type": "string",
+        "enum": [
+          "depot_rate",
+          "crypto_rate",
+          "flat_growth"
+        ],
+        "title": "AssumptionKind"
       },
       "AutoRate": {
         "properties": {
@@ -21218,6 +21274,139 @@
         "title": "HouseholdMonth",
         "description": "§4.2. The identities between the fields are checked here; how each block is summed is\nrules/health/month (step 1). `sources`: the allocation ids per field (principle 2), empty\nin a stored snapshot (§5.5)."
       },
+      "HouseholdPlan": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
+          "levers": {
+            "$ref": "#/components/schemas/HouseholdLevers"
+          },
+          "newest_closed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newest Closed"
+          },
+          "surplus": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Surplus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/SavingsPlan"
+            },
+            "type": "array",
+            "title": "Plans"
+          },
+          "already_invested": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Already Invested"
+          },
+          "investable_left": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investable Left"
+          },
+          "reserve": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Reserve"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paths": {
+            "items": {
+              "$ref": "#/components/schemas/Path"
+            },
+            "type": "array",
+            "title": "Paths"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/PlanMonth"
+            },
+            "type": "array",
+            "title": "Months"
+          },
+          "proposed_one_offs": {
+            "items": {
+              "$ref": "#/components/schemas/OneOff"
+            },
+            "type": "array",
+            "title": "Proposed One Offs"
+          },
+          "projection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetWorthProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/HealthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "as_of",
+          "levers"
+        ],
+        "title": "HouseholdPlan",
+        "description": "GET /household-plan (§13)."
+      },
       "HouseholdScenario": {
         "properties": {
           "name": {
@@ -25023,6 +25212,68 @@
         "title": "NetWorthPoint",
         "description": "One month-end of the series (D241, §5.4). A month-end without a stored run is a gap:\nno run, no figures, and the to-do „Monatsabschluss festhalten“."
       },
+      "NetWorthProjection": {
+        "properties": {
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectionPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectionPoint"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "assumptions": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectionAssumption"
+            },
+            "type": "array",
+            "title": "Assumptions"
+          },
+          "ends_before_sale_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends Before Sale Year"
+          },
+          "used_up": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Up"
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/HealthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "NetWorthProjection",
+        "description": "§7.5. Instead of the points, the to-dos when an input is missing (§7.5 (1))."
+      },
       "NetWorthRun": {
         "properties": {
           "net_worth_run_id": {
@@ -26206,6 +26457,78 @@
         "title": "PasskeyVerifyRequest",
         "description": "POST /auth/passkeys/verify: a further passkey for the signed-in user."
       },
+      "Path": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^(reserve_first|as_is|pause:[a-z0-9_-]{1,64})$",
+            "title": "Key"
+          },
+          "paused": {
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            },
+            "type": "array",
+            "title": "Paused"
+          },
+          "to_reserve_first_month": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "To Reserve First Month"
+          },
+          "reached": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached"
+          },
+          "months_needed": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months Needed"
+          },
+          "used_up": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Up"
+          },
+          "reserve_at_horizon": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Reserve At Horizon"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "to_reserve_first_month",
+          "reserve_at_horizon"
+        ],
+        "title": "Path",
+        "description": "D246, §7.2. None: not within the horizon."
+      },
       "PaymentIbanConfirmed": {
         "properties": {
           "account": {
@@ -26525,6 +26848,48 @@
         "type": "object",
         "title": "PayslipExtraction",
         "description": "Gehaltsabrechnung: one month, with the month column and the year-to-date column\n(Jahreswerte / kumuliert). Net pay and the bank account are not read."
+      },
+      "PlanClass": {
+        "type": "string",
+        "enum": [
+          "depot",
+          "crypto"
+        ],
+        "title": "PlanClass"
+      },
+      "PlanMonth": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "flat": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Flat"
+          },
+          "free": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Free"
+          },
+          "investable": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Investable"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "flat",
+          "free",
+          "investable"
+        ],
+        "title": "PlanMonth",
+        "description": "One future month of §7.1."
       },
       "PlanOverride": {
         "properties": {
@@ -27136,6 +27501,187 @@
           "sale"
         ],
         "title": "Projection"
+      },
+      "ProjectionAssumption": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AssumptionKind"
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,6})?$",
+            "title": "Value"
+          },
+          "scenario_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Scenario Id"
+          },
+          "property_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "value",
+          "scenario_id",
+          "created_at"
+        ],
+        "title": "ProjectionAssumption",
+        "description": "What was assumed, by which scenario row (§7.5 (9))."
+      },
+      "ProjectionChange": {
+        "properties": {
+          "on_accounts": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "On Accounts"
+          },
+          "paid_in": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Paid In"
+          },
+          "from_assumptions": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "From Assumptions"
+          },
+          "from_assumptions_by_class": {
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/PlanClass"
+            },
+            "type": "object",
+            "title": "From Assumptions By Class"
+          },
+          "flat_value": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Flat Value"
+          },
+          "loan_repaid": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Loan Repaid"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "on_accounts",
+          "paid_in",
+          "from_assumptions",
+          "flat_value",
+          "loan_repaid",
+          "total"
+        ],
+        "title": "ProjectionChange",
+        "description": "The change since the start in five rows that sum to it (§7.5 (7))."
+      },
+      "ProjectionPoint": {
+        "properties": {
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          },
+          "bank": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Bank"
+          },
+          "depot": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Depot"
+          },
+          "crypto": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Crypto"
+          },
+          "property": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Property"
+          },
+          "loans": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Loans"
+          },
+          "other_liabilities": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Other Liabilities"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectionChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "on",
+          "bank",
+          "depot",
+          "crypto",
+          "property",
+          "loans",
+          "other_liabilities",
+          "total"
+        ],
+        "title": "ProjectionPoint",
+        "description": "One 31 December (or the start): the classes, the liabilities, the total."
       },
       "Property": {
         "properties": {
@@ -30728,6 +31274,71 @@
         "title": "SaleResult",
         "description": "D88, D89. gain is None when the sale is outside §23 (taxable False); a negative gain is\na loss that is not offset (\"nicht verrechenbar\", sale_tax 0.00)."
       },
+      "SavingsPlan": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]{1,64}$",
+            "title": "Key"
+          },
+          "destination_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Account Id"
+          },
+          "destination_payee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination Payee"
+          },
+          "asset_class": {
+            "$ref": "#/components/schemas/PlanClass"
+          },
+          "monthly": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Monthly"
+          },
+          "months": {
+            "items": {
+              "type": "string",
+              "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Months"
+          },
+          "overridden": {
+            "type": "boolean",
+            "title": "Overridden",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "asset_class",
+          "monthly",
+          "months"
+        ],
+        "title": "SavingsPlan",
+        "description": "A savings plan detected from the last three closed months (D245): the same destination\nin each of the three, monthly = the median of the three sums."
+      },
       "SavingsRate": {
         "properties": {
           "saved": {
@@ -31980,6 +32591,79 @@
           "amount"
         ],
         "title": "SumComponent"
+      },
+      "Surplus": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SurplusRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "title": "Surplus",
+        "description": "§6.1. Free cash is the sum of the three rounded means (D244); the buffer is 0 when the\nfree cash is not positive; investable = max(0, free cash − buffer)."
+      },
+      "SurplusKey": {
+        "type": "string",
+        "enum": [
+          "mean_income",
+          "mean_regular_spending",
+          "mean_rental_cash",
+          "free_cash",
+          "buffer",
+          "investable",
+          "median_free_cash",
+          "lowest_free_cash",
+          "one_off_spending_left_out"
+        ],
+        "title": "SurplusKey",
+        "description": "The rows of „So entsteht die Zahl“, in this order (D244, §6.1)."
+      },
+      "SurplusRow": {
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/SurplusKey"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "month": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month"
+          },
+          "sources": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "amount"
+        ],
+        "title": "SurplusRow"
       },
       "SyncStatus": {
         "type": "string",

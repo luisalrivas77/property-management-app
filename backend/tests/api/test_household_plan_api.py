@@ -97,3 +97,26 @@ def test_another_workspace_sees_nothing(client_a, client_b, sessions):
     response = client_b.post(PATH, json={"name": "Basis", "supersedes_id": row["id"]})
     assert response.status_code == 404
     create(client_b, PATH, {"name": "Basis", "is_default": True})  # B's own default
+
+
+def test_the_plan_reads_and_refuses_an_unknown_scenario(client_a, client_b, sessions):
+    """GET /household-plan on an empty workspace: no account leaves a month open, so every
+    ended month counts as closed (as GET /health reads it) and the plan's figures are zeros,
+    decimals as strings; without a saved scenario the projection is the to-do „Annahme
+    eintragen“ (D248), with one the missing month-end. ?scenario= names a row, an unknown or
+    another workspace's id is a 404."""
+    got = ok(client_a.get("/api/household-plan"))
+    assert got["scenario_id"] is None and got["plans"] == []
+    assert got["levers"]["buffer_percent"] == "10"
+    assert {r["amount"] for r in got["surplus"]["rows"]} == {"0.00"}
+    assert [t["code"] for t in got["projection"]["todos"]] == ["rate_missing"]
+    row = create(client_a, PATH, {"name": "Basis", "is_default": True})
+    got = ok(client_a.get("/api/household-plan"))
+    assert got["scenario_id"] == row["id"]
+    assert [t["code"] for t in got["projection"]["todos"]] == ["month_end_missing"]
+    named = ok(client_a.get("/api/household-plan", params={"scenario": row["id"]}))
+    assert named["scenario_id"] == row["id"]
+    for client, scenario in ((client_a, str(uuid4())), (client_b, row["id"])):
+        response = client.get("/api/household-plan", params={"scenario": scenario})
+        assert response.status_code == 404
+        assert response.json()["entity_type"] == "household_scenario"
