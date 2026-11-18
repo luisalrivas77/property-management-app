@@ -51,7 +51,7 @@ Phase 9 is specced in `docs/phases/phase-9.md` (merged 16 Nov 2026, PR #388); it
   „Vermögen in einigen Jahren: eure Annahme“ empty and filled (D247), the page below three
   closed months (D231), and the new Übersicht with the Kennzahlen, the Verlauf and the marks
   before and after „Ampel-Grenzen festlegen“ (D250, D240). Until Luis approves them, step 3
-  does not start from them. The rates in 12b (5,0 % and 0,0 %) are sample values and must not
+  does not start from them, and where a drawing and the spec disagree, the spec wins. The rates in 12b (5,0 % and 0,0 %) are sample values and must not
   be read as a default or built as one; the empty fields of 12 are how the app must look.
 - **Mockup 10, not redrawn (text only):** the average is headed „Ø N Monate“ with its real
   basis, written as „Basis: N Monate, <Monat> bis <Monat> <Jahr>“ (with fewer than three
