@@ -392,6 +392,9 @@ def play(
             )
         )
     groups.sort(key=lambda g: (-g.mean, g.group.value))
+    # The groups the screen shows a row for: a mean or a row's mean other than 0.00 (a group
+    # whose lines cancel out shows none, so its fallback code is offered under „Neue Ausgabe“).
+    shown = {g.group for g in groups if g.mean != 0 or any(r.mean != 0 for r in g.rows)}
     sum_e = sum((m.income for m in window), ZERO)
     sum_a = sum((m.regular_spending for m in window), ZERO)
     return SpendingPlay(
@@ -399,7 +402,7 @@ def play(
         mean_regular_spending=mean_regular,
         rate_regular_now=ratio(sum_e - sum_a, sum_e),
         rates=rate_segments(window, changes, means, income_changes, horizon_months, investable_of),
-        addable=addable(means, changes, {g.group for g in groups}),
+        addable=addable(means, changes, shown),
     )
 
 

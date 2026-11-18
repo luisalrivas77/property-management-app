@@ -32312,7 +32312,7 @@
           "from_month"
         ],
         "title": "SpendingChange",
-        "description": "One planned change of a household spending code (D263, §7.6 (1)): a planned amount per\nmonth, or a percent change of the code's measured mean, from a month and optionally to a\nmonth. A group's fallback code stands for the whole group, its subcategories included; a\nsubcategory code for itself. `mean_at_save` is the code's mean (§7.6 (2)) the service\nwrites when the scenario row is stored; a typed value is overwritten, never read (§7.7\nreads it)."
+        "description": "One planned change of a household spending code (D263, §7.6 (1)): a planned amount per\nmonth, or a percent change of the code's measured mean, from a month and optionally to a\nmonth. A group's fallback code stands for the whole group, its subcategories included; a\nsubcategory code for itself. `mean_at_save` is the code's mean (§7.6 (2)) the service\nwrites when a new or altered change is stored; a change carried unaltered from the row\nsuperseded keeps the value stored with it (§7.6 (1) amended). A typed value is never read\n(§7.7 reads the stored one)."
       },
       "SpendingComparison": {
         "properties": {

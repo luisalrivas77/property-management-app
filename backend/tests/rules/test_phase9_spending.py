@@ -427,6 +427,19 @@ def test_a_zero_mean_code_is_offered_under_neue_ausgabe():
     assert means[C.HH_CHILDCARE] == ZERO
     offered = S.addable(means, [], set())
     assert C.HH_CHILDCARE in offered and C.HH_SUPERMARKET not in offered
+    # Through the play: Kleidung booked +50 € in one month and −50 € (a return) in the next
+    # has a group of its own at 0.00, which the screen does not show, so its fallback code
+    # is offered all the same.
+    case = next(c for c in PLAY.cases if c.id == "worked")
+    window = [m.model_copy(update={"spending": dict(m.spending)}) for m in case.window]
+    window[0].spending[C.HH_CLOTHING] = Decimal("50.00")
+    window[0].spending[C.HH_OTHER] -= Decimal("50.00")
+    window[1].spending[C.HH_CLOTHING] = Decimal("-50.00")
+    window[1].spending[C.HH_OTHER] += Decimal("50.00")
+    got = S.play([as_month(m) for m in window], [regular(m) for m in window], [], [], 6)
+    clothing = next(g for g in got.groups if g.group is G.CLOTHING)
+    assert clothing.mean == ZERO
+    assert C.HH_CLOTHING in got.addable
 
 
 def test_a_change_carried_unaltered_is_neither_refused_nor_given_a_new_mean():

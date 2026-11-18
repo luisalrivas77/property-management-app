@@ -182,8 +182,9 @@ class SpendingChange(Schema):
     month, or a percent change of the code's measured mean, from a month and optionally to a
     month. A group's fallback code stands for the whole group, its subcategories included; a
     subcategory code for itself. `mean_at_save` is the code's mean (§7.6 (2)) the service
-    writes when the scenario row is stored; a typed value is overwritten, never read (§7.7
-    reads it)."""
+    writes when a new or altered change is stored; a change carried unaltered from the row
+    superseded keeps the value stored with it (§7.6 (1) amended). A typed value is never read
+    (§7.7 reads the stored one)."""
 
     code: AllocationCategory
     monthly: NonNegativeMoney | None = None

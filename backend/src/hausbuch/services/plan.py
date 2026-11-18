@@ -289,8 +289,7 @@ def spending_todos(
             text=(
                 f"Das Szenario ändert die Ausgaben für „{CATEGORY_LABEL[code]}“ um einen "
                 "Prozentsatz, aber in den abgeschlossenen Monaten gibt es dafür keine "
-                "gemessenen Ausgaben; die Änderung zählt gerade nicht mit. Tragt einen Betrag "
-                "pro Monat ein oder entfernt die Änderung."
+                "gemessenen Ausgaben; die Änderung zählt gerade nicht mit."
             ),
             action="Szenario prüfen",
             href=SPENDING_PLAY_HREF,
