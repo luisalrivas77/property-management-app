@@ -39,7 +39,7 @@ switch, levers); the static HTML shows one state. Owners appear as "Luis", "Part
 
 ### Phase 9 notes (16 Nov 2026)
 
-Phase 9 is specced in `docs/phases/phase-9.md` (merged 16 Nov 2026, PR #388) and not built.
+Phase 9 is specced in `docs/phases/phase-9.md` (merged 16 Nov 2026, PR #388); its key figures (step 1, 17 Nov 2026, PRs #426 and #427) and its plan's calculations (step 2, 18 Nov 2026, PR #429) are deployed without a new screen, and the screens are step 3, whose new cards no mockup shows yet (phase 9 Q-O136). (This said „not built“ until 18 Nov 2026, stale since step 1 deployed.)
 The mockups were drawn on 6 Nov 2026, before the spec, and are **not redrawn yet**. Where a
 drawing and the spec disagree, the spec wins. Nothing below is drawn; the new drawings are
 agreed with Luis before phase 9's step 3 starts (phase 9 spec Q-O136), and the count above
