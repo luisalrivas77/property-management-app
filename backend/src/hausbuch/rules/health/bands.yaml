@@ -13,8 +13,8 @@
 # (D240) and is not in this file.
 #
 # Sentences are data with figure slots only ({f:key}), rendered by §8.4's renderer; each is a
-# must-accept case of the validator (tests/rules/test_phase9_data_files.py). No sentence says
-# what to do. The final German is agreed with the mockup (Q-O136).
+# must-accept case of the validator (tests/rules/test_phase9_fixture_coverage.py, which this
+# line named test_phase9_data_files.py, a file that never existed). No sentence says what to do. The final German is agreed with the mockup (Q-O136).
 # Loaded into hausbuch.schemas.health.BandProposal; this file is inside `rule_version`.
 version: bands-2026-11-16
 
@@ -86,6 +86,10 @@ figures:
       red: [debt_to_income.intro, debt_to_income.red]
 
 # `savings_rate.red_regular` is shown only when the rate without one-offs is not below 0.
+# `savings_rate.red_limit` is not in a figure's list: code says it alone, in place of
+# `savings_rate.red` and `savings_rate.red_regular`, when the rate is red but not below 0 (a
+# member's red limit above 0), where „mehr ausgegeben als eingenommen“ would be false (D250
+# amended, PR #434 review). Like every sentence it is a must-accept text of the validator.
 # `band_reserve_red` is an amount: the share times the target.
 sentences:
   reserve.green: "Eure Reserve von {f:reserve} erreicht euer eigenes Ziel von {f:reserve_target}."
@@ -94,6 +98,7 @@ sentences:
   savings_rate.green: "Eure Sparquote von {f:savings_rate} liegt auf oder über eurer Grenze von {f:band_savings_rate_green}."
   savings_rate.amber: "Eure Sparquote von {f:savings_rate} liegt zwischen euren Grenzen von {f:band_savings_rate_red} und {f:band_savings_rate_green}."
   savings_rate.red: "In diesem Zeitraum habt ihr mehr ausgegeben als eingenommen."
+  savings_rate.red_limit: "Eure Sparquote von {f:savings_rate} liegt unter eurer Grenze von {f:band_savings_rate_red}."
   savings_rate.red_regular: "Ohne die Einmalausgaben läge die Sparquote bei {f:savings_rate_regular}."
   ltv.intro: "Die Kredite der Wohnung machen {f:ltv} ihres geschätzten Werts aus."
   ltv.green: "Das liegt unter eurer Grenze von {f:band_ltv_green}."

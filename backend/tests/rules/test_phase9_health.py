@@ -983,6 +983,31 @@ def test_a_reserve_mark_without_a_need_has_no_months(amount, colour, text):
     assert texts == [text]
 
 
+def test_a_red_savings_rate_above_zero_names_the_limit_not_a_deficit():
+    """A red limit of 10 % and a rate of 5 %: the household earned more than it spent, so the
+    sentence names the limit; below 0 the deficit sentences stay (PR #434 review F)."""
+    band = BandLimits(figure=MarkedFigure.SAVINGS_RATE, red=Decimal("0.10"))
+    rate = SavingsRate(
+        saved=Decimal("500.00"),
+        income=Decimal("10000.00"),
+        one_off_spending=ZERO,
+        principal=ZERO,
+        rate=Decimal("0.0500"),
+        rate_regular=Decimal("0.0500"),
+        rate_without_principal=Decimal("0.0500"),
+    )
+    health = Health(as_of=date(2027, 6, 3), window=WINDOW, savings_rate=rate)
+    mark = B.light(rate.rate, band, MarkedFigure.SAVINGS_RATE, regular=rate.rate_regular)
+    assert (mark.colour, mark.sentences) == (LightColour.RED, ["savings_rate.red_limit"])
+    texts = B.with_texts(health, {MarkedFigure.SAVINGS_RATE: mark})[MarkedFigure.SAVINGS_RATE]
+    assert texts.texts == ["Eure Sparquote von 5,0 % liegt unter eurer Grenze von 10,0 %."]
+    # at 0 exactly the limit sentence too; below 0 the deficit and the regular rate
+    at_zero = B.light(ZERO, band, MarkedFigure.SAVINGS_RATE, regular=ZERO)
+    assert at_zero.sentences == ["savings_rate.red_limit"]
+    below = B.light(Decimal("-0.0100"), band, MarkedFigure.SAVINGS_RATE, regular=Decimal("0.0300"))
+    assert below.sentences == ["savings_rate.red", "savings_rate.red_regular"]
+
+
 @pytest.mark.parametrize("case", WORKED.cases, ids=lambda c: c.id)
 def test_health_worked(case):
     """The whole of step 1 on §15.2's household: lines → months → window → figures → marks."""

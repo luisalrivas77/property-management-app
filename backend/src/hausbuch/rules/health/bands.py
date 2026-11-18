@@ -87,6 +87,8 @@ def light(
     amount in euros). The reserve is compared with its `target` in euros (green at or above)
     and with `limits.red × target` (red below), unrounded. `regular`: the savings rate without
     one-offs; the sentence `savings_rate.red_regular` is said only when it is not below 0.
+    A red savings rate that is not below 0 (a member's red limit above 0) says
+    `savings_rate.red_limit` alone: „mehr ausgegeben als eingenommen“ would be false.
     No mark when the value, the limits or (for the reserve) the target is missing."""
     if value is None or limits is None:
         return Light(figure=figure)
@@ -100,6 +102,8 @@ def light(
     sentences: list[str] = []
     if found is not None:
         sentences = list(proposals()[1][figure].sentences.get(found, []))
+    if figure is MarkedFigure.SAVINGS_RATE and found is LightColour.RED and value >= 0:
+        sentences = ["savings_rate.red_limit"]
     if figure is MarkedFigure.SAVINGS_RATE and (regular is None or regular < 0):
         sentences = [code for code in sentences if code != "savings_rate.red_regular"]
     return Light(
