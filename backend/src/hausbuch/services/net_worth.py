@@ -118,6 +118,7 @@ from .errors import require_valid
 from .events import append_event
 from .loans import list_loans
 from .prices.overview import assets_overview
+from .reminders import idle_cards
 from .scenarios import estimate_on_day
 from .transfers import _last_days as history_ends  # D162 amended (9)'s history end
 
@@ -249,6 +250,15 @@ def _balances(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTod
             select(connection_table.c.account_id).where(connection_table.c.account_id.in_(ids))
         ).scalars()
     )
+    # A credit card idle by phase 5 D122 amended (6): its latest statement closed at 0 and no
+    # own account paid it since, so its issuer sends no statement and 0 is its balance on every
+    # later day; no to-do asks for a statement that will never come, and the month-end is not
+    # held open by it (Luis, 18 Nov 2026: the Consors Finanz card unused since January).
+    idle = (
+        idle_cards(conn)
+        if any(AccountKind(a.kind) is AccountKind.CREDIT_CARD for a in accounts)
+        else set()
+    )
     items: list[_Item] = []
     todos: list[NetWorthTodo] = []
     for a in accounts:
@@ -275,7 +285,7 @@ def _balances(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTod
                     account_label=a.label,
                     value_eur=balance,
                     as_of=through,
-                    stale=(on - through).days > valuation.STALE_AFTER_DAYS,
+                    stale=a.id not in idle and (on - through).days > valuation.STALE_AFTER_DAYS,
                 ),
                 a.id,
             )
@@ -297,7 +307,10 @@ def _balances(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTod
                     href="/inbox",
                 )
             )
-        elif (on - max(through, history.get(a.id, through))).days > valuation.STALE_AFTER_DAYS:
+        elif (
+            a.id not in idle
+            and (on - max(through, history.get(a.id, through))).days > valuation.STALE_AFTER_DAYS
+        ):
             todos.append(_outdated(a.id, a.label, kind, through, on, a.id in connected))
     return items, todos
 

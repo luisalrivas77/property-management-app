@@ -85,7 +85,7 @@ def _document(ctx):
     ).scalar_one()
 
 
-def _import(ctx, account_id, first, last, status=ImportStatus.RECONCILED):
+def _import(ctx, account_id, first, last, status=ImportStatus.RECONCILED, closing="0.00"):
     return ctx.conn.execute(
         insert(import_table)
         .values(
@@ -95,10 +95,11 @@ def _import(ctx, account_id, first, last, status=ImportStatus.RECONCILED):
             format="camt",
             status=status.value,
             # A reconciled import's declared and computed closing agree (0006's CHECK); the
-            # figure itself is not read here.
+            # balance is summed from the lines, the closing read only for an idle card (D122
+            # amended (6)), so a card's statement passes its real closing.
             balance_source="none" if status is ImportStatus.UNRECONCILED else "file",
-            declared_closing=None if status is ImportStatus.UNRECONCILED else Decimal("0.00"),
-            computed_closing=Decimal("0.00"),
+            declared_closing=None if status is ImportStatus.UNRECONCILED else Decimal(closing),
+            computed_closing=Decimal(closing),
             error_code="statement.unreconciled" if status is ImportStatus.UNRECONCILED else None,
             first_booking_on=first,
             last_booking_on=last,
@@ -436,7 +437,7 @@ def test_a_balance_reconciled_only_to_the_previous_month_is_a_to_do(run, read, f
     def stored(ctx):
         statement = _import(ctx, account, date(2026, 7, 1), date(2026, 9, 30))
         _line(ctx, account, statement, date(2026, 9, 30), "750.00")
-        billed = _import(ctx, card, date(2026, 9, 1), date(2026, 10, 27))
+        billed = _import(ctx, card, date(2026, 9, 1), date(2026, 10, 27), closing="-40.00")
         _line(ctx, card, billed, date(2026, 10, 27), "-40.00")
 
     run(ws, stored, now=NOW)
@@ -455,6 +456,36 @@ def test_a_balance_reconciled_only_to_the_previous_month_is_a_to_do(run, read, f
         (T.BALANCE_OUTDATED, "Kontoauszug hochladen"),
         (T.BALANCE_OUTDATED, "Kreditkartenabrechnung hochladen"),
     }
+
+
+def test_an_idle_card_needs_no_statement(run, read, fresh_workspaces):
+    """Luis, 18 Nov 2026: a credit card whose only statement (January) closed at 0 and that no
+    own account paid since gets no statement from its issuer. Its balance is 0 on every later
+    day, not stale, and no to-do asks for its Abrechnung (phase 5 D122 amended (6)), so the
+    month-end is complete without it. A card whose last statement closed at another amount
+    still asks."""
+    ws, _ = fresh_workspaces
+    owner = run(ws, create_owner, OwnerCreate(full_name="Eigentümer A"), now=NOW).id
+    idle = _account(run, ws, "Ruhende Karte", AccountKind.CREDIT_CARD)
+    used = _account(run, ws, "Genutzte Karte", AccountKind.CREDIT_CARD)
+    for own in (idle, used):
+        _own(run, ws, own, {owner: Fraction(1)})
+
+    def stored(ctx):
+        quiet = _import(ctx, idle, date(2026, 1, 1), date(2026, 1, 31))
+        _line(ctx, idle, quiet, date(2026, 1, 10), "-25.00")
+        _line(ctx, idle, quiet, date(2026, 1, 31), "25.00")
+        billed = _import(ctx, used, date(2026, 1, 1), date(2026, 1, 31), closing="-40.00")
+        _line(ctx, used, billed, date(2026, 1, 20), "-40.00")
+
+    run(ws, stored, now=NOW)
+    seen = read(ws, net_worth.net_worth, ON)
+    by_account = {line.account_id: line for line in seen.lines}
+    assert (by_account[idle].value_eur, by_account[idle].stale) == (Decimal("0.00"), False)
+    assert by_account[used].stale
+    assert [(t.code, t.href) for t in seen.todos] == [
+        (T.BALANCE_OUTDATED, f"/accounts/{used}?tab=kontoauszuege")
+    ]
 
 
 def test_a_fund_the_report_lists_with_nothing_booked_is_listed_unvalued(
