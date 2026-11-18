@@ -120,3 +120,38 @@ def test_the_plan_reads_and_refuses_an_unknown_scenario(client_a, client_b, sess
         response = client.get("/api/household-plan", params={"scenario": scenario})
         assert response.status_code == 404
         assert response.json()["entity_type"] == "household_scenario"
+
+
+PREVIEW = "/api/household-plan/preview"
+COMPARISON = "/api/household-plan/comparison"
+
+
+def _changes(*changes) -> dict:
+    return {"levers": {"spending_changes": list(changes)}}
+
+
+def test_the_preview_and_the_comparison(client_a, sessions):
+    """D263: POST /household-plan/preview answers the plan for typed levers and stores no
+    scenario; it refuses as a save does (a percent of a code with no measured spending, a
+    malformed change). GET /household-plan/comparison needs a month and has no rows without
+    a scenario that names a code."""
+    monthly = {"code": "hh_supermarket", "monthly": "250.00", "from_month": "2027-06"}
+    got = ok(client_a.post(PREVIEW, json=_changes(monthly)))
+    assert got["levers"]["spending_changes"][0]["monthly"] == "250.00"
+    percent = {"code": "hh_childcare", "percent": "0.10", "from_month": "2027-06"}
+    response = client_a.post(PREVIEW, json=_changes(percent))
+    assert _codes(response) == (422, ["household_scenario.spending_invalid"])
+    response = client_a.post(PATH, json={"name": "Basis"} | _changes(percent))
+    assert _codes(response) == (422, ["household_scenario.spending_invalid"])
+    for bad in (
+        {"code": "hh_car_purchase", "monthly": "1.00", "from_month": "2027-06"},
+        {"code": "hh_supermarket", "from_month": "2027-06"},
+    ):
+        response = client_a.post(PREVIEW, json=_changes(bad))
+        assert response.status_code == 422 and response.json()["error"] == "validation", bad
+    assert ok(client_a.get(PATH, params={"include_history": "true"})) == []
+
+    got = ok(client_a.get(COMPARISON, params={"month": "2027-03"}))
+    assert (got["month"], got["rows"], got["scenario_id"]) == ("2027-03", [], None)
+    for params in ({"month": "2027-13"}, {"month": "März"}, {}):
+        assert client_a.get(COMPARISON, params=params).status_code == 422

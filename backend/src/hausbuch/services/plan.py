@@ -64,10 +64,11 @@ from hausbuch.rules.health.window import window_todos
 from hausbuch.rules.plan import levers as L
 from hausbuch.rules.plan import projection as N
 from hausbuch.rules.plan import savings_plans as S
+from hausbuch.rules.plan import spending as SP
 from hausbuch.rules.plan.paths import flat_change, holds_from, paths
 from hausbuch.rules.plan.surplus import surplus
 from hausbuch.schemas.advice import AdviceMode
-from hausbuch.schemas.allocation import TransferLegSource
+from hausbuch.schemas.allocation import AllocationCategory, TransferLegSource
 from hausbuch.schemas.enums import (
     AccountKind,
     AccountPurpose,
@@ -89,11 +90,13 @@ from hausbuch.schemas.plan import (
     ProjectionAssumption,
     ProposedOneOff,
     SavingsPlan,
+    SpendingComparison,
     SurplusKey,
 )
 
 from .errors import NotFoundError
 from .health import (
+    MonthRead,
     _incomplete,
     _run_figure,
     _window,
@@ -102,7 +105,12 @@ from .health import (
     read_months,
 )
 from .household import month_bounds
-from .household_scenarios import RESERVE_KINDS, default_scenario, get_scenario
+from .household_scenarios import (
+    RESERVE_KINDS,
+    default_scenario,
+    get_scenario,
+    list_scenarios,
+)
 from .income_inputs import list_income_inputs
 from .net_worth import net_worth
 from .performance import performance_projection
@@ -447,7 +455,34 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
     """GET /household-plan?scenario= on `today` (Berlin). NotFoundError for an unknown
     scenario. See the module doc."""
     row = _scenario(conn, scenario_id)
-    levers = HouseholdLevers() if row is None else row.levers
+    return _plan(conn, today, row, HouseholdLevers() if row is None else row.levers)
+
+
+def preview_plan(conn: Connection, today: date, levers: HouseholdLevers) -> HouseholdPlan:
+    """POST /household-plan/preview (D263 (c)): the plan for typed levers, checked as a
+    scenario row would be (services.household_scenarios.check_levers), on the default scenario
+    in force with its levers replaced, so the projection keeps its saved row; without a saved
+    row no projection, as GET shows. Reads only: no row, no event."""
+    from .household_scenarios import check_levers
+
+    check_levers(conn, levers, today)
+    row = default_scenario(conn)
+    if row is not None:
+        row = row.model_copy(update={"levers": levers})
+    return _plan(conn, today, row, levers)
+
+
+def window_spending(
+    reads: dict[str, MonthRead], months: Sequence[str]
+) -> list[dict[AllocationCategory, Decimal]]:
+    """§7.6 (2): each window month's regular spending per code, from the private accounts'
+    cashflow (D234 and the one-off codes left out)."""
+    return [SP.month_spending(reads[m].private.cashflow) for m in months]
+
+
+def _plan(
+    conn: Connection, today: date, row: HouseholdScenario | None, levers: HouseholdLevers
+) -> HouseholdPlan:
     reads = read_months(conn, ended_months(today), today)
     win = _window(reads)
     newest = win.months[-1] if win.months else None
@@ -465,6 +500,8 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
     assert newest is not None
     months = [reads[m].household for m in win.months]
     sur = surplus(months, levers.buffer_percent)
+    spending = window_spending(reads, win.months)
+    means = SP.code_means(spending)
     detected = S.detect(plan_lines(conn, win.months[-3:]), win.months[-3:])
     plans = S.apply_overrides(detected, levers.plan_overrides)
     invested = S.already_invested(plans)
@@ -500,6 +537,8 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
         mean_regular_spending=sur.amount(SurplusKey.MEAN_REGULAR_SPENDING),
         mean_rental_cash=sur.amount(SurplusKey.MEAN_RENTAL_CASH),
         buffer_percent=levers.buffer_percent,
+        spending_changes=tuple(levers.spending_changes),
+        code_means=means,
     )
     plan_months = L.months(
         basis, levers.horizon_months, flat_years, levers.income_changes, levers.one_offs
@@ -552,6 +591,13 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
             "paths_on_rental_account": rental if rental > 0 and not rental_counted else None,
             "flat_change": later,
             "months": plan_months,
+            "spending_play": SP.play(
+                months,
+                spending,
+                levers.spending_changes,
+                levers.income_changes,
+                levers.horizon_months,
+            ),
             "proposed_one_offs": proposed_refund(conn, today, levers),
             "projection": projection,
             "todos": todos,
@@ -559,4 +605,36 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
     )
 
 
-__all__ = ["advice_mode", "household_plan", "plan_lines", "projection_start", "proposed_refund"]
+# --- GET /household-plan/comparison (D263 (d), §7.7) ------------------------------------------
+
+
+def spending_comparison(conn: Connection, today: date, month: str) -> SpendingComparison:
+    """The month's real spending beside the default household scenario in force on its last
+    day (today for the running month), for each code that scenario names with a change in
+    force in the month; no rows without such a scenario. Final only for a closed month that
+    has ended; otherwise „bisher“ with the month's lines still waiting in Zu prüfen. Reads
+    the month as the Haushalt screen does (services.health.read_months)."""
+    read = read_months(conn, [month], today)[month]
+    when = SP.as_of(month, today)
+    scenario = SP.in_force_on(list_scenarios(conn, include_history=True), when.day)
+    return SP.comparison(
+        month,
+        today,
+        closed=read.closed.closed,
+        open_lines=read.private.cashflow.open_lines,
+        scenario=scenario,
+        changes=[] if scenario is None else scenario.levers.spending_changes,
+        lines=read.private.lines,
+    )
+
+
+__all__ = [
+    "advice_mode",
+    "household_plan",
+    "plan_lines",
+    "preview_plan",
+    "projection_start",
+    "spending_comparison",
+    "proposed_refund",
+    "window_spending",
+]

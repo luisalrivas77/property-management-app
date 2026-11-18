@@ -28,13 +28,22 @@ beyond HouseholdScenarioCreate's own validator (HouseholdLevers checks the range
   row being superseded is refused (`household_scenario.not_current`). The table has no
   partial unique index (it cannot see supersession), so this is the service's rule.
 
-A withdrawal is not re-checked against the accounts or the horizon: it only ends a row.
+- spending changes (D263, §7.6 (1)): a percent change of a code with no measured spending
+  in today's window (`household_scenario.spending_invalid`); the other refusals are
+  HouseholdLevers' own. Every change's `mean_at_save` is written here, from the code's mean
+  over today's window (0 without three closed months), whatever the request carried.
+
+A withdrawal is not re-checked against the accounts, the horizon or the spending: it only
+ends a row, and it repeats the withdrawn row's levers with their `mean_at_save` as stored.
+`check_levers` is the same set of checks for POST /household-plan/preview, which writes
+nothing.
 
 Writes of one workspace are serialised by a transaction-scoped advisory lock, so the "one
 default" check cannot race; `supersedes_id` is UNIQUE in the table as well.
 """
 
 from datetime import date
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -47,13 +56,16 @@ from hausbuch.rules.errors import (
     HOUSEHOLD_SCENARIO_ACCOUNT_INVALID,
     HOUSEHOLD_SCENARIO_NOT_CURRENT,
     HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE,
+    HOUSEHOLD_SCENARIO_SPENDING_INVALID,
     HOUSEHOLD_SCENARIO_WITHDRAWAL_INVALID,
 )
+from hausbuch.rules.plan import spending as SP
 from hausbuch.rules.plan.levers import add_months, one_offs_outside
+from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AccountKind, EntityType
 from hausbuch.schemas.events import EventType, HouseholdScenarioRecorded
 from hausbuch.schemas.health import month_of
-from hausbuch.schemas.plan import HouseholdScenario, HouseholdScenarioCreate
+from hausbuch.schemas.plan import HouseholdLevers, HouseholdScenario, HouseholdScenarioCreate
 
 from .allocations import user_id
 from .context import CommandContext
@@ -128,11 +140,44 @@ def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> House
     if data.supersedes_id is not None:
         _check_supersedes(ctx.conn, data)
     if not data.withdrawn:
-        _check_accounts(ctx.conn, data)
-        _check_one_offs(ctx, data)
+        today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
+        means = check_levers(ctx.conn, data.levers, today)
         if data.is_default:
             _check_one_default(ctx.conn, data)
+        if data.levers.spending_changes:
+            changes = SP.with_means_at_save(data.levers.spending_changes, means)
+            levers = data.levers.model_copy(update={"spending_changes": changes})
+            data = data.model_copy(update={"levers": levers})
     return _insert(ctx, data)
+
+
+def check_levers(
+    conn: Connection, levers: HouseholdLevers, today: date
+) -> dict[AllocationCategory, Decimal]:
+    """The checks of a scenario's levers beyond HouseholdLevers' own (the module doc), for a
+    new row and for the preview; returns the codes' means over today's window (§7.6 (2)), read
+    only when the levers change spending."""
+    _check_accounts(conn, levers)
+    _check_one_offs(conn, levers, today)
+    if not levers.spending_changes:
+        return {}
+    means = window_means(conn, today)
+    code = SP.percent_on_nothing(levers.spending_changes, means)
+    if code is not None:
+        raise RuleViolationError(
+            [HOUSEHOLD_SCENARIO_SPENDING_INVALID],
+            f"a percent change of {code.value}, which has no measured spending in the window",
+        )
+    return means
+
+
+def window_means(conn: Connection, today: date) -> dict[AllocationCategory, Decimal]:
+    """§7.6 (2): each code's mean over today's window of closed months; none below three."""
+    reads = read_months(conn, ended_months(today), today)
+    win = _window(reads)
+    if not win.enough:
+        return {}
+    return SP.code_means([SP.month_spending(reads[m].private.cashflow) for m in win.months])
 
 
 def withdraw_scenario(ctx: CommandContext, scenario_id: UUID) -> HouseholdScenario:
@@ -219,8 +264,8 @@ def _check_supersedes(conn: Connection, data: HouseholdScenarioCreate) -> None:
         )
 
 
-def _check_accounts(conn: Connection, data: HouseholdScenarioCreate) -> None:
-    named = data.levers.reserve_accounts.added + data.levers.reserve_accounts.removed
+def _check_accounts(conn: Connection, levers: HouseholdLevers) -> None:
+    named = levers.reserve_accounts.added + levers.reserve_accounts.removed
     if not named:
         return
     acc = account_table.c
@@ -249,12 +294,10 @@ def newest_closed_month(conn: Connection, today: date) -> str:
     return ended[-1] if ended else month_of(today)
 
 
-def _check_one_offs(ctx: CommandContext, data: HouseholdScenarioCreate) -> None:
-    levers = data.levers
+def _check_one_offs(conn: Connection, levers: HouseholdLevers, today: date) -> None:
     if not levers.one_offs:
         return
-    today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
-    newest = newest_closed_month(ctx.conn, today)
+    newest = newest_closed_month(conn, today)
     outside = one_offs_outside(levers.one_offs, newest, levers.horizon_months)
     if outside:
         last = add_months(newest, levers.horizon_months)

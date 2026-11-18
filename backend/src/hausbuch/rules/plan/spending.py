@@ -170,7 +170,10 @@ def code_means(
     order = sorted(exact, key=lambda c: (-(exact[c] - floors[c]), c.value))
     for c in order[:left]:
         floors[c] += 1
-    return {c: Decimal(v) / 100 for c, v in sorted(floors.items(), key=lambda kv: kv[0].value)}
+    return {
+        c: (Decimal(v) / 100).quantize(ZERO)
+        for c, v in sorted(floors.items(), key=lambda kv: kv[0].value)
+    }
 
 
 def mean_of(code: AllocationCategory, means: Mapping[AllocationCategory, Decimal]) -> Decimal:

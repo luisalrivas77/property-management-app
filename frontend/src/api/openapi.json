@@ -6815,6 +6815,84 @@
         }
       }
     },
+    "/api/household-plan/preview": {
+      "post": {
+        "summary": "Household Plan Preview",
+        "operationId": "household_plan_preview_api_household_plan_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HouseholdPlanPreview"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/household-plan/comparison": {
+      "get": {
+        "summary": "Household Plan Comparison",
+        "operationId": "household_plan_comparison_api_household_plan_comparison_get",
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendingComparison"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/movement-imports": {
       "post": {
         "summary": "Movement Import Create",
@@ -15473,6 +15551,15 @@
         "title": "CommuteRouteDetail",
         "description": "One route as typed, with its part of the Pauschale (§5.2): the car km and the other km\n(Sammelbeförderung, Bus, Bahn, Rad) each × days × rate, to the cent."
       },
+      "ComparisonWords": {
+        "type": "string",
+        "enum": [
+          "more",
+          "less",
+          "as_planned"
+        ],
+        "title": "ComparisonWords"
+      },
       "ConfirmAllocationsBody": {
         "properties": {
           "allocation_set": {
@@ -21494,6 +21581,20 @@
         ],
         "title": "HouseholdPlan",
         "description": "GET /household-plan (§13)."
+      },
+      "HouseholdPlanPreview": {
+        "properties": {
+          "levers": {
+            "$ref": "#/components/schemas/HouseholdLevers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "levers"
+        ],
+        "title": "HouseholdPlanPreview",
+        "description": "POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored."
       },
       "HouseholdScenario": {
         "properties": {
@@ -32194,6 +32295,117 @@
         ],
         "title": "SpendingChange",
         "description": "One planned change of a household spending code (D263, §7.6 (1)): a planned amount per\nmonth, or a percent change of the code's measured mean, from a month and optionally to a\nmonth. A group's fallback code stands for the whole group, its subcategories included; a\nsubcategory code for itself. `mean_at_save` is the code's mean (§7.6 (2)) the service\nwrites when the scenario row is stored; a typed value is overwritten, never read (§7.7\nreads it)."
+      },
+      "SpendingComparison": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "final": {
+            "type": "boolean",
+            "title": "Final"
+          },
+          "open_lines": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Open Lines",
+            "default": 0
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
+          "scenario_created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Created At"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SpendingComparisonRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "final"
+        ],
+        "title": "SpendingComparison",
+        "description": "GET /household-plan/comparison?month= (§7.7): the default scenario in force on the\nmonth's last day (today for the running month); `final` when the month has ended and is\nclosed, otherwise the figures are „bisher“ and `open_lines` wait in Zu prüfen. No colour,\nno mark (D263 (e))."
+      },
+      "SpendingComparisonRow": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "group": {
+            "$ref": "#/components/schemas/HouseholdGroup"
+          },
+          "planned": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Planned"
+          },
+          "actual": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Actual"
+          },
+          "difference": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Difference"
+          },
+          "words": {
+            "$ref": "#/components/schemas/ComparisonWords"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "sources": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "group",
+          "planned",
+          "actual",
+          "difference",
+          "words",
+          "text"
+        ],
+        "title": "SpendingComparisonRow",
+        "description": "One code the scenario plans for the month (§7.7)."
       },
       "SpendingPlay": {
         "properties": {

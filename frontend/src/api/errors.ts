@@ -195,6 +195,8 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Eine einmalige Zahlung liegt nach dem Ende des Planungszeitraums. Bitte einen Monat darin wählen oder den Zeitraum verlängern.",
   "household_scenario.withdrawal_invalid":
     "Beim Zurückziehen bleiben die Annahmen des Szenarios unverändert. Bitte die Seite neu laden.",
+  "household_scenario.spending_invalid":
+    "Für diese Kategorie gibt es noch keine gemessenen Ausgaben, deshalb geht keine Änderung in Prozent. Bitte einen Betrag pro Monat eintragen.",
   "scenario.not_current":
     "Das Szenario ist nicht mehr aktuell, oder es gibt schon ein Standard-Szenario. Bitte die Seite neu laden.",
   "scenario.scope_invalid": "Das Szenario passt nicht zu dieser Immobilie oder ihren Darlehen.",

@@ -238,6 +238,8 @@ HOUSEHOLD_SCENARIO_ACCOUNT_INVALID = "household_scenario.account_invalid"
 HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE = "household_scenario.one_off_outside"
 # a withdrawal that does not repeat the withdrawn row's levers
 HOUSEHOLD_SCENARIO_WITHDRAWAL_INVALID = "household_scenario.withdrawal_invalid"
+# D263, §7.6 (1): a percent change of a code with no measured spending in today's window
+HOUSEHOLD_SCENARIO_SPENDING_INVALID = "household_scenario.spending_invalid"
 # Phase 6 step 5b (PATCH /assets/{id}, POST /assets/{id}/prices)
 ASSET_NOT_CRYPTO = "asset.not_crypto"  # a CoinGecko id or Kraken pair on a fund or cash
 ASSET_IS_EURO = "asset.is_euro"  # a typed price for the euro, which is 1.0

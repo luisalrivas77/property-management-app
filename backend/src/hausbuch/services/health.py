@@ -129,7 +129,7 @@ from .context import CommandContext
 from .documents import LOCAL_TIME_ZONE
 from .errors import NotFoundError, RuleViolationError
 from .events import append_event
-from .household import month_bounds, months_between, private_months
+from .household import PrivateMonth, month_bounds, months_between, private_months
 from .net_worth import (
     capture_month_end,
     last_month_end,
@@ -471,11 +471,13 @@ CENT = Decimal("0.01")
 @dataclass(frozen=True)
 class MonthRead:
     """One calendar month on read: the household month (with sources), its rental blocks
-    (the debt figures' interest), and whether it is closed (D231)."""
+    (the debt figures' interest), whether it is closed (D231), and the private accounts' month
+    it was read from (the plan's spending per code and the comparison's lines, D263)."""
 
     household: HouseholdMonth
     rental: list[RentalMonth]
     closed: ClosedMonth
+    private: PrivateMonth
 
 
 def read_months(conn: Connection, months: Sequence[str], today: date) -> dict[str, MonthRead]:
@@ -499,6 +501,7 @@ def read_months(conn: Connection, months: Sequence[str], today: date) -> dict[st
             ),
             rental=blocks,
             closed=closed(facts[month]),
+            private=p,
         )
     return out
 
