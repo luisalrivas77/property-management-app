@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<title>Haushalt, geplant</title>
+<!-- Phase 9 step 3b mockup (D263), drawn 18 Nov 2026 for Luis's approval. Sample data continuing the spec's worked example (§15.2, §7.6 (6)); never real household figures, never fixtures. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap"><style>
+body{margin:0}
+a{color:#1F6F54}a:hover{color:#14523E}
+</style></head>
+<body>
+
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #F4F5F2; font-family: Manrope, system-ui, sans-serif; color: #17201C; font-variant-numeric: tabular-nums">
+
+<nav aria-label="Hauptnavigation" style="flex: 1 1 220px; box-sizing: border-box; background: #FFFFFF; border-right: 1px solid #E1E4DE; padding: 24px 16px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 12px 20px">
+<div style="width: 32px; height: 32px; border-radius: 8px; background: #1F6F54; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"></path><path d="M9 20v-6h6v6"></path></svg></div>
+<span style="font-weight: 800; font-size: 18px; letter-spacing: -0.02em">Hausbuch</span>
+</div>
+<a href="13-overview-figures.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Übersicht</span></a>
+<a href="03-inbox.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Zu prüfen</span><span style="background: #3A4BA8; color: #FFFFFF; font-size: 12px; font-weight: 700; border-radius: 10px; padding: 2px 8px">3</span></a>
+<a href="08-accounts.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Konten</span></a>
+<a href="09-holdings.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Anlagen</span></a>
+<a href="10-household-cashflow.html" aria-current="page" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 700; color: #14523E; background: #E3F0EA"><span>Haushalt</span></a>
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Immobilien</span></a>
+<a href="11-tax-anlage-so.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Steuern</span></a>
+<a href="12-planning-household.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Planung</span></a>
+<a href="02-property.html" aria-current="false" style="display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; color: #3E4843"><span>Dokumente</span></a>
+<div style="margin-top: 16px; padding: 16px 12px 0; border-top: 1px solid #E1E4DE; display: flex; justify-content: space-between; align-items: center; font-size: 14px"><span style="font-weight: 700">Luis</span><a href="13-overview-figures.html" style="font-size: 14px; font-weight: 600">Einstellungen</a></div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 32px 40px 48px">
+<div style="max-width: 1160px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: flex-end">
+<div>
+<p style="margin: 0 0 4px; font-size: 13px; font-weight: 600; color: #5A635E; text-transform: uppercase; letter-spacing: 0.06em">Haushalt · August 2027</p>
+<h1 style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -0.02em">Wohin das Geld geht</h1>
+</div>
+<label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #3E4843">Monat
+<select style="min-height: 44px; border: 1px solid #C9CEC6; border-radius: 10px; padding: 0 12px; font: inherit; font-size: 14px; font-weight: 600; background: #FFFFFF; color: #17201C"><option>August 2027 (läuft)</option><option>Juli 2027</option><option>Juni 2027</option></select>
+</label>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 14px 20px; font-size: 14px">
+<span style="font-weight: 800">August 2027 läuft noch</span>
+<span style="color: #3E4843">Alle Beträge bisher, Stand 18. August 2027.</span>
+<a href="03-inbox.html" style="font-weight: 700">3 Umsätze warten in Zu prüfen</a>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px">
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Einnahmen bisher</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">5.538 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">Ø 5 Monate 5.541 €</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Ausgaben bisher</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">4.029,50 €</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">Ø 5 Monate 4.157 € ohne Einmalausgaben</p></div>
+<div style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 18px 20px"><p style="margin: 0; font-size: 13px; font-weight: 600; color: #5A635E">Sparquote bisher</p><p style="margin: 6px 0 0; font-size: 24px; font-weight: 800">27,2 %</p><p style="margin: 4px 0 0; font-size: 13px; color: #5A635E">Ø 5 Monate 25,0 % ohne Einmalausgaben</p></div>
+</div>
+<p style="margin: -6px 0 0; font-size: 13px; color: #3E4843"><strong>Basis: 5 Monate, März bis Juli 2027.</strong> <span style="color: #5A635E">Daraus kommen die Durchschnitte „Ø 5 Monate“.</span></p>
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 24px">
+<div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px">
+<h2 style="margin: 0; font-size: 18px; font-weight: 800">Überschuss je Monat</h2>
+<span style="font-size: 13px; color: #5A635E">Einnahmen minus Ausgaben · seit März 2027, dem ersten Monat mit allen Konten · August bisher</span>
+</div>
+<div style="display: flex; align-items: flex-end; gap: 8px; height: 160px; border-bottom: 1px solid #C9CEC6" role="img" aria-label="Monatlicher Überschuss März bis August 2027; Mai 2027 mit dem Autokauf negativ, August 2027 noch offen">
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E; text-align: center; line-height: 1.3">1.490</span>
+<div style="width: 100%; max-width: 48px; height: 129px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E; text-align: center; line-height: 1.3">1.241</span>
+<div style="width: 100%; max-width: 48px; height: 108px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E; text-align: center; line-height: 1.3">−10.458<br>Auto</span>
+<div style="width: 100%; max-width: 48px; height: 6px; border-radius: 0 0 6px 6px; background: #9CC9B5"></div></div><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E; text-align: center; line-height: 1.3">1.405</span>
+<div style="width: 100%; max-width: 48px; height: 122px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E; text-align: center; line-height: 1.3">1.380</span>
+<div style="width: 100%; max-width: 48px; height: 120px; border-radius: 6px 6px 0 0; background: #9CC9B5"></div>
+</div><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 160px; gap: 4px">
+<span style="font-size: 11px; color: #5A635E; text-align: center; line-height: 1.3">1.509<br>bisher</span>
+<div style="width: 100%; max-width: 48px; height: 131px; border-radius: 6px 6px 0 0; border: 2px dashed #1F6F54; background: #FFFFFF; box-sizing: border-box"></div>
+</div>
+</div>
+<div style="display: flex; gap: 8px; margin-top: 6px"><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Mär</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Apr</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Mai</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Jun</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Jul</span><span style="flex: 1; min-width: 0; text-align: center; font-size: 11px; color: #5A635E">Aug</span></div>
+</section>
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+<section style="flex: 3 1 720px; min-width: 0; background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px">
+<h2 style="margin: 0 0 4px; font-size: 18px; font-weight: 800">Ausgaben nach Kategorie</h2>
+<p style="margin: 0 0 8px; font-size: 13px; color: #5A635E; line-height: 1.5">„Geplant“ steht nur bei den Kategorien, für die ihr in eurem Szenario etwas geplant habt: gespeichert am 14. Juni 2027 unter <a href="12d-planning-spending-play.html" style="font-weight: 600">Planung › Haushalt › Ausgaben durchspielen</a>.</p>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; padding: 8px 0; font-size: 12px; font-weight: 700; color: #5A635E; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #E1E4DE">
+<span>Kategorie</span><span>Anteil</span><span style="text-align: right">August bisher</span><span style="text-align: right">Geplant</span><span>Unterschied</span><span style="text-align: right">Ø 5 Mon.</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700; color: #17201C"><span style="display: inline-block; width: 16px; color: #5A635E">›</span>Wohnen</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 100%"></span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">1.450 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap"></span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600"></span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">1.450 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700; color: #17201C"><span style="display: inline-block; width: 16px; color: #5A635E">▾</span>Lebensmittel und Drogerie</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 61%"></span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">897,50 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap"></span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600"></span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">905 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 600; color: #3E4843"><span style="display: inline-block; width: 22px"></span>Supermarkt</span>
+<span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">716,50 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap">682,50 €</span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600">34 € mehr als geplant</span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">662 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 600; color: #3E4843"><span style="display: inline-block; width: 22px"></span>Drogerie & Kosmetik</span>
+<span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">104 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap"></span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600"></span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">121 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 600; color: #3E4843"><span style="display: inline-block; width: 22px"></span>Bäckerei, Kiosk & Markt</span>
+<span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">58 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap"></span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600"></span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">81 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 600; color: #3E4843"><span style="display: inline-block; width: 22px"></span>Sonstige Lebensmittel</span>
+<span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">19 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap"></span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600"></span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">41 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700; color: #17201C"><span style="display: inline-block; width: 16px; color: #5A635E">›</span>Essen gehen & bestellen</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 15%"></span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">214 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap"></span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600"></span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">262 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700; color: #17201C"><span style="display: inline-block; width: 16px; color: #5A635E">›</span>Mobilität</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 19%"></span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">276 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap"></span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600"></span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">305 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700; color: #17201C"><span style="display: inline-block; width: 16px; color: #5A635E">›</span>Urlaub & Reisen</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 26%"></span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">380 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap">500 €</span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600">120 € weniger als geplant</span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">236 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700; color: #17201C"><span style="display: inline-block; width: 16px; color: #5A635E">›</span>Versicherungen</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 20%"></span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">290 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap"></span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600"></span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">290 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700; color: #17201C"><span style="display: inline-block; width: 16px; color: #5A635E">›</span>Familie und Kind</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 12%"></span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">176 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap"></span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600"></span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">238 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700; color: #17201C"><span style="display: inline-block; width: 16px; color: #5A635E">›</span>Abos und Verträge</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 7%"></span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">95 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap"></span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600"></span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">95 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px">
+<span style="font-weight: 700; color: #17201C"><span style="display: inline-block; width: 16px; color: #5A635E">›</span>Weitere 9 Gruppen</span>
+<span style="height: 8px; border-radius: 4px; background: #ECEEE9; overflow: hidden"><span style="display: block; height: 8px; border-radius: 4px; background: #4F9B7E; width: 17%"></span></span>
+<span style="text-align: right; font-weight: 800; white-space: nowrap">251 €</span>
+<span style="text-align: right; color: #3E4843; white-space: nowrap"></span>
+<span style="color: #17201C; font-size: 13px; font-weight: 600"></span>
+<span style="text-align: right; color: #5A635E; white-space: nowrap">376 €</span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 0.7fr) 96px 84px minmax(0, 1.5fr) 72px; gap: 12px; padding: 12px 0 0; font-weight: 800; font-size: 14px"><span>Summe bisher</span><span></span><span style="text-align: right">4.029,50 €</span><span></span><span></span><span style="text-align: right; color: #5A635E; font-weight: 600">4.157 €</span></div>
+<p style="margin: 14px 0 0; font-size: 12px; color: #5A635E; line-height: 1.5">Der Monat läuft noch: „bisher“ zählt die bestätigten Umsätze bis heute. Der Vergleich mit „Geplant“ ist erst nach dem Monatsabschluss endgültig.</p>
+<div style="margin-top: 12px"><span style="display: inline-block; border: 1.5px dashed #7B3FA0; color: #7B3FA0; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 700; background: #FFFFFF">Weniger als 1 € Unterschied: „wie geplant“. Diesen Monat trifft es keine Kategorie.</span></div>
+</section>
+<div style="flex: 2 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px">
+<h2 style="margin: 0 0 8px; font-size: 18px; font-weight: 800">Einnahmen bisher</h2>
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px"><span><span style="display: block; font-weight: 700">Gehalt Luis</span><span style="display: block; font-size: 12px; color: #5A635E">Girokonto A · monatlich</span></span><span style="font-weight: 800; white-space: nowrap">3.400 €</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px"><span><span style="display: block; font-weight: 700">Einkommen Partnerin</span><span style="display: block; font-size: 12px; color: #5A635E">Girokonto B · monatlich</span></span><span style="font-weight: 800; white-space: nowrap">2.180 €</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #ECEEE9; font-size: 14px"><span><span style="display: block; font-weight: 700">Wohnung (Ergebnis des Mietkontos)</span><span style="display: block; font-size: 12px; color: #5A635E">Miete und Umlagen, abzüglich Kosten und Zinsen; die Tilgung zählt als gespart</span></span><span style="font-weight: 800; white-space: nowrap">−42 €</span></div>
+</section>
+<section style="background: #FFFFFF; border: 1px solid #E1E4DE; border-radius: 12px; padding: 20px 24px">
+<h2 style="margin: 0 0 6px; font-size: 16px; font-weight: 800">Gespart, nicht ausgegeben</h2>
+<p style="margin: 0; font-size: 14px; line-height: 1.5; color: #3E4843">Überweisungen an eigene Konten zählen nicht als Ausgaben: ETF-Depot 400 €, Krypto-Börse 150 €.</p>
+</section>
+</div>
+</div>
+</div>
+</main>
+</div>
+
+</body></html>
