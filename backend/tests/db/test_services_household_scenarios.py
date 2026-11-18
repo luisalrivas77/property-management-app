@@ -212,15 +212,16 @@ def test_reserve_accounts_are_current_savings_or_card_accounts(app_engine, fresh
         )
 
 
-def test_a_one_off_lies_inside_the_horizon(app_engine, fresh_workspaces):
-    """Newest closed month October 2026, horizon 12: the one-offs may fall in November 2026
-    to October 2027."""
+def test_no_one_off_lies_after_the_horizon(app_engine, fresh_workspaces):
+    """Newest closed month October 2026, horizon 12: a one-off may fall up to October 2027.
+    §7.3 amended (PR #434 review D): one at or before October 2026 may stay (a refund already
+    received, kept so its tax year is not proposed again); the plan ignores it."""
     ws, _ = fresh_workspaces
     assert _read(app_engine, ws, svc.newest_closed_month, date(2026, 11, 7)) == "2026-10"
-    for month in ("2026-11", "2027-10"):
+    for month in ("2026-05", "2026-10", "2026-11", "2027-10"):
         levers = {"horizon_months": 12, "one_offs": [{"month": month, "amount": "500.00"}]}
         _cmd(app_engine, ws, svc.create_scenario, _body(levers=levers))
-    for month in ("2026-10", "2027-11"):
+    for month in ("2027-11",):
         levers = {"horizon_months": 12, "one_offs": [{"month": month, "amount": "500.00"}]}
         with pytest.raises(RuleViolationError) as exc:
             _cmd(app_engine, ws, svc.create_scenario, _body(levers=levers))

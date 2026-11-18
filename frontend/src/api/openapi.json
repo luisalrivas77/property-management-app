@@ -25543,7 +25543,16 @@
             "title": "Amount"
           },
           "source": {
-            "$ref": "#/components/schemas/OneOffSource",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OneOffSource"
+              },
+              {
+                "type": "string",
+                "pattern": "^return_estimate:[0-9]{4}$"
+              }
+            ],
+            "title": "Source",
             "default": "typed"
           }
         },
@@ -25553,7 +25562,8 @@
           "month",
           "amount"
         ],
-        "title": "OneOff"
+        "title": "OneOff",
+        "description": "A one-off in `month`. §7.3 amended (PR #434 review D): a one-off in a month at or\nbefore the newest closed month may stay in a scenario row; the plan ignores it, since the\nmeasured months already hold it. Only a month after the horizon's end is refused."
       },
       "OneOffSource": {
         "type": "string",
@@ -28534,7 +28544,7 @@
           "amount"
         ],
         "title": "ProposedOneOff",
-        "description": "Phase 4b's expected refund (positive) or back-payment (negative) of one tax year, from\nthe whole-return estimate of Steuern › Gesamt, proposed without a month (Q-O168, answered\nby mockup 12): a member picks the month the money is expected, and „Übernehmen“ adds it to\nthe levers as `OneOff(source=return_estimate)`. Until then the plan counts no refund."
+        "description": "Phase 4b's expected refund (positive) or back-payment (negative) of one tax year, from\nthe whole-return estimate of Steuern › Gesamt, proposed without a month (Q-O168, answered\nby mockup 12): a member picks the month the money is expected, and „Übernehmen“ adds it to\nthe levers as `OneOff(source=\"return_estimate:<tax_year>\")`. Until then the plan counts\nno refund."
       },
       "PurchaseContractExtraction": {
         "properties": {

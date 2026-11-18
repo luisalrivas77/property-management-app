@@ -328,7 +328,12 @@ def test_one_offs_outside_the_horizon():
     last = OneOff(month="2032-05", amount=Decimal("1.00"))
     past = OneOff(month="2027-05", amount=Decimal("5.00"))
     beyond = OneOff(month="2032-06", amount=Decimal("5.00"))
-    assert L.one_offs_outside([inside, last, past, beyond], "2027-05", 60) == [past, beyond]
+    # §7.3 amended (PR #434 review D): a one-off in a closed month may stay, only one after
+    # the horizon's end is outside; the months ignore the past one
+    assert L.one_offs_outside([inside, last, past, beyond], "2027-05", 60) == [beyond]
+    b = _review_basis()  # newest closed month 2027-05
+    with_past = L.months(b, 12, None, (), [past])
+    assert with_past == L.months(b, 12, None, (), ())
 
 
 def test_add_months_and_distance():

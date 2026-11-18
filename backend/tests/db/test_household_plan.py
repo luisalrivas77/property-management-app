@@ -25,7 +25,7 @@ from hausbuch.db.tables import statement_import as import_table
 from hausbuch.db.tables import workspace as workspace_table
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import EntityType
-from hausbuch.schemas.health import HealthTodoCode
+from hausbuch.schemas.health import BandLimits, HealthTodoCode, MarkedFigure
 from hausbuch.schemas.household import TransferLinkCreate, TransferLinkKind
 from hausbuch.schemas.performance import YearKind
 from hausbuch.schemas.plan import (
@@ -388,27 +388,44 @@ def test_a_payment_linked_by_hand_and_booked_to_a_payee_is_one_plan(world):
     assert got.already_invested == Decimal("50.00")
 
 
-def test_a_one_off_fallen_out_of_the_horizon_is_named(world):
-    """§7.3: a one-off saved on 10 Feb 2027 for February lay inside the horizon then; read on
-    10 Apr 2027 (newest closed month March) it no longer counts, and „Szenario prüfen“ names
-    its month."""
+def test_a_past_one_off_is_ignored_and_the_row_can_still_be_superseded(world):
+    """§7.3 amended (PR #434 review D): a one-off saved on 10 Feb 2027 for February is in a
+    closed month when read on 10 Apr 2027 (newest closed month March). The plan ignores it
+    (its month is measured), raises no to-do, and the row is superseded both by a plain save
+    and by „Übernehmen“ of the marks' limits, which saves the same levers with `bands`
+    (until then every later save was refused with household_scenario.one_off_outside)."""
     _closed_history(world)
-    world.cmd(
+    past = OneOff(month="2027-02", amount=Decimal("850.00"), source="return_estimate:2026")
+    row = world.cmd(
         household_scenarios.create_scenario,
         HouseholdScenarioCreate(
-            name="Basis",
-            is_default=True,
-            levers=HouseholdLevers(one_offs=[OneOff(month="2027-02", amount=Decimal("-900.00"))]),
+            name="Basis", is_default=True, levers=HouseholdLevers(one_offs=[past])
         ),
         now=datetime(2027, 2, 10, 9, 0, tzinfo=UTC),
     )
     got = _plan(world)
-    checks = [t for t in got.todos if t.code is HealthTodoCode.SCENARIO_CHECK]
-    assert [t.text for t in checks] == [
-        "Das Szenario enthält eine Einmalzahlung im Monat 02/2027, der nicht mehr im Zeitraum "
-        "der Rechnung liegt; sie zählt nicht mehr mit."
-    ]
+    assert [t for t in got.todos if t.code is HealthTodoCode.SCENARIO_CHECK] == []
     assert {m.free for m in got.months} == {Decimal("310.00")}  # the amount is left out
+    plain = world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis",
+            is_default=True,
+            levers=HouseholdLevers(one_offs=[past], buffer_percent=Decimal("20")),
+            supersedes_id=row.id,
+        ),
+    )
+    bands = [BandLimits(figure=MarkedFigure.RESERVE, red=Decimal("0.5"))]
+    taken = world.cmd(
+        household_scenarios.create_scenario,
+        HouseholdScenarioCreate(
+            name="Basis",
+            is_default=True,
+            levers=plain.levers.model_copy(update={"bands": bands}),
+            supersedes_id=plain.id,
+        ),
+    )
+    assert taken.levers.one_offs == [past]  # kept, so its tax year is not proposed again
 
 
 def test_an_incomplete_stored_month_end_is_no_start(world):

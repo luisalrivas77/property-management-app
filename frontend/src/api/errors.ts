@@ -192,7 +192,7 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "household_scenario.account_invalid":
     "Zur Reserve zählen nur Giro- und Sparkonten und Kreditkarten. Bitte ein solches Konto wählen.",
   "household_scenario.one_off_outside":
-    "Eine einmalige Zahlung liegt außerhalb des Planungszeitraums. Bitte einen Monat darin wählen oder den Zeitraum verlängern.",
+    "Eine einmalige Zahlung liegt nach dem Ende des Planungszeitraums. Bitte einen Monat darin wählen oder den Zeitraum verlängern.",
   "household_scenario.withdrawal_invalid":
     "Beim Zurückziehen bleiben die Annahmen des Szenarios unverändert. Bitte die Seite neu laden.",
   "scenario.not_current":

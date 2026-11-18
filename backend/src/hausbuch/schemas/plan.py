@@ -80,17 +80,50 @@ class OneOffSource(StrEnum):
     RETURN_ESTIMATE = "return_estimate"  # phase 4b's refund or back-payment, once accepted
 
 
+# An accepted refund or back-payment names its tax year inside `source` (PR #434 review D;
+# no new field): "return_estimate:2026". A bare "return_estimate" (saved before the year was
+# written) names no year.
+RETURN_ESTIMATE_PREFIX = f"{OneOffSource.RETURN_ESTIMATE.value}:"
+ReturnEstimateOfYear = Annotated[str, Field(pattern=r"^return_estimate:[0-9]{4}$")]
+
+
 class OneOff(Schema):
+    """A one-off in `month`. §7.3 amended (PR #434 review D): a one-off in a month at or
+    before the newest closed month may stay in a scenario row; the plan ignores it, since the
+    measured months already hold it. Only a month after the horizon's end is refused."""
+
     month: YearMonth
     amount: Money  # signed: a refund positive, a back-payment negative
-    source: OneOffSource = OneOffSource.TYPED
+    source: OneOffSource | ReturnEstimateOfYear = Field(
+        default=OneOffSource.TYPED, union_mode="left_to_right"
+    )
+
+    @property
+    def from_return_estimate(self) -> bool:
+        """Phase 4b's refund or back-payment, accepted from a proposal (with or without its
+        tax year)."""
+        return self.source is OneOffSource.RETURN_ESTIMATE or str(self.source).startswith(
+            RETURN_ESTIMATE_PREFIX
+        )
+
+    @property
+    def tax_year(self) -> int | None:
+        """The tax year an accepted refund names; None for a typed one or a bare
+        `return_estimate`."""
+        source = str(self.source)
+        return (
+            int(source[len(RETURN_ESTIMATE_PREFIX) :])
+            if source.startswith(RETURN_ESTIMATE_PREFIX)
+            else None
+        )
 
 
 class ProposedOneOff(Schema):
     """Phase 4b's expected refund (positive) or back-payment (negative) of one tax year, from
     the whole-return estimate of Steuern › Gesamt, proposed without a month (Q-O168, answered
     by mockup 12): a member picks the month the money is expected, and „Übernehmen“ adds it to
-    the levers as `OneOff(source=return_estimate)`. Until then the plan counts no refund."""
+    the levers as `OneOff(source="return_estimate:<tax_year>")`. Until then the plan counts
+    no refund."""
 
     tax_year: int = Field(ge=2000, le=2100)
     amount: Money  # signed like OneOff: −ReturnEstimate.result

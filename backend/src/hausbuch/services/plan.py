@@ -30,10 +30,15 @@ rules/plan/. Nothing here writes, and no figure is computed outside those rules.
 
 - **Proposed one-off** (Q-O168, answered by mockup 12): phase 4b's whole-return estimate of
   the most recent past tax year that has one and no confirmed Einkommensteuerbescheid (no
-  current household `bescheid_zve`), its result with the sign of a one-off (a refund
-  positive), without a month; nothing while the levers already hold a `return_estimate`
-  one-off (it carries no tax year, so one accepted refund ends the proposal), for a result
-  of 0, or when the estimate refuses (`RuleError`, e.g. no rule set for the year).
+  current household `bescheid_zve`) and that no one-off of the levers already names, its
+  result with the sign of a one-off (a refund positive), without a month. An accepted
+  one-off names its year in its source („return_estimate:2026“), kept in the scenario even
+  after its month has closed, so a refund already received is never proposed again; a bare
+  `return_estimate` (saved before the year was written) names none and ends the proposal.
+  Nothing for a result of 0, when the estimate refuses (`RuleError`, e.g. no rule set for the
+  year), or while it still lacks an owner's Lohnsteuerbescheinigung (its `missing` holds
+  `wage_certificate`): the withheld tax is then a projection, and so is the refund (PR #434
+  review G).
 - **The paths' screen lines** (step 3): the plans without a pause row (`paths_others`), the
   flat's positive mean that lands on the rental account first, and `flat_change`, the month
   the flat's scenario replaces the mean with each path's amount from then on, left out when
@@ -69,6 +74,7 @@ from hausbuch.schemas.enums import (
     AllocationStatus,
     EntityType,
     IncomeInputKind,
+    ReturnInputKind,
 )
 from hausbuch.schemas.health import HealthTodo, HealthTodoCode
 from hausbuch.schemas.household import NetWorthClass
@@ -80,7 +86,6 @@ from hausbuch.schemas.plan import (
     HouseholdPlan,
     HouseholdScenario,
     NetWorthProjection,
-    OneOffSource,
     ProjectionAssumption,
     ProposedOneOff,
     SavingsPlan,
@@ -201,9 +206,11 @@ def scenario_todos(
     conn: Connection, levers: HouseholdLevers, detected: Sequence[SavingsPlan], newest: str
 ) -> list[HealthTodo]:
     """§7.3: a reserve account that no longer exists or is no reserve account, an override
-    of a plan that is not detected now, and a one-off no longer inside the horizon after the
-    newest closed month `newest` (the scenario was saved months ago; rules.plan.levers.months
-    leaves its amount out), each named once."""
+    of a plan that is not detected now, and a one-off after the horizon's end (the newest
+    closed month `newest` moved back, a month that was closed is open again;
+    rules.plan.levers.months leaves its amount out), each named once. A one-off at or before
+    `newest` raises nothing: its month is measured and the plan ignores it (§7.3 amended,
+    PR #434 review D)."""
     todos = []
     named = [*levers.reserve_accounts.added, *levers.reserve_accounts.removed]
     if named:
@@ -241,11 +248,11 @@ def scenario_todos(
     if outside:
         named = [f"{m[5:]}/{m[:4]}" for m in sorted({o.month for o in outside})]
         text = (
-            f"Das Szenario enthält eine Einmalzahlung im Monat {named[0]}, der nicht mehr im "
-            "Zeitraum der Rechnung liegt; sie zählt nicht mehr mit."
+            f"Das Szenario enthält eine Einmalzahlung im Monat {named[0]}, der nach dem Ende "
+            "des Zeitraums der Rechnung liegt; sie zählt nicht mit."
             if len(outside) == 1
             else f"Das Szenario enthält Einmalzahlungen in den Monaten {', '.join(named)}, die "
-            "nicht mehr im Zeitraum der Rechnung liegen; sie zählen nicht mehr mit."
+            "nach dem Ende des Zeitraums der Rechnung liegen; sie zählen nicht mit."
         )
         todos.append(_scenario_check(text))
     return todos
@@ -412,21 +419,25 @@ def proposed_refund(conn: Connection, today: date, levers: HouseholdLevers) -> l
 
     from .return_inputs import household_return_estimate
 
-    if any(o.source is OneOffSource.RETURN_ESTIMATE for o in levers.one_offs):
-        return []
+    accepted = [o for o in levers.one_offs if o.from_return_estimate]
+    if any(o.tax_year is None for o in accepted):
+        return []  # a bare return_estimate names no year
+    named = {o.tax_year for o in accepted}
     assessed = {
         row.tax_year
         for row in list_income_inputs(conn)
         if row.kind is IncomeInputKind.BESCHEID_ZVE and row.owner_id is None
     }
     for year in sorted((y for y in registry.anlage_n_years() if y < today.year), reverse=True):
-        if year in assessed:
+        if year in assessed or year in named:
             continue
         try:
             estimate = household_return_estimate(conn, tax_year=year, today=today)
         except RuleError:
             continue
-        if estimate.result == 0:
+        if estimate.result == 0 or any(
+            m.key == ReturnInputKind.WAGE_CERTIFICATE for m in estimate.missing
+        ):
             return []
         return [ProposedOneOff(tax_year=year, amount=-estimate.result)]
     return []

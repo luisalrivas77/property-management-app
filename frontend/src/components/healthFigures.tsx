@@ -16,6 +16,7 @@ import { type FormEvent, type ReactNode, Suspense, useId, useState } from "react
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
+import { ApiError, ruleCodes } from "@/api/errors";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { formatDate, formatMonth } from "./format";
@@ -374,6 +375,12 @@ const FIGURE_INTRO: Record<MarkedFigure, string> = {
   debt_to_income: "Hausbuch schlägt keine Grenze vor; ohne eure Zahl bleibt diese Kennzahl ohne Farbe.",
 };
 
+/** A refusal of the default scenario the limits are saved in (`household_scenario.*`, PR #434
+ * review D): the fix is on Planung › Haushalt, where the scenario's other levers are. */
+function scenarioRefused(error: unknown): boolean {
+  return error instanceof ApiError && error.body !== null && ruleCodes(error.body).some((code) => code.startsWith("household_scenario."));
+}
+
 function BandsCard({
   health,
   proposals,
@@ -509,6 +516,13 @@ function BandsCard({
           </fieldset>
         ))}
         {error != null ? <ErrorNotice error={error} /> : null}
+        {scenarioRefused(error) ? (
+          <p className="muted" role="note">
+            Die Grenzen werden im Standard-Szenario gespeichert, und dessen Annahmen lassen sich so gerade nicht speichern. Bitte das
+            Szenario unter <Link href="/planning?tab=haushalt">Planung › Haushalt</Link> prüfen und dort speichern; danach lassen sich
+            die Grenzen hier übernehmen.
+          </p>
+        ) : null}
         <div className="row">
           <button type="submit" disabled={busy}>
             Übernehmen

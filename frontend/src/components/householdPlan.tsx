@@ -487,12 +487,27 @@ function IncomeChanges({ draft, setDraft }: { draft: HouseholdLevers; setDraft: 
   );
 }
 
+// An accepted refund names its tax year in its source, "return_estimate:2026" (PR #434 review D);
+// a bare "return_estimate" was saved before the year was written and names none.
+const RETURN_ESTIMATE = "return_estimate";
+
+function isReturnEstimate(source: string | undefined): boolean {
+  return source === RETURN_ESTIMATE || (source ?? "").startsWith(`${RETURN_ESTIMATE}:`);
+}
+
+function estimateYear(source: string | undefined): number | null {
+  return (source ?? "").startsWith(`${RETURN_ESTIMATE}:`) ? Number(source!.slice(RETURN_ESTIMATE.length + 1)) : null;
+}
+
 function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLevers; setDraft: SetDraft }) {
   const ids = useId();
   const months = (data.plan.months ?? []).map((m) => m.month);
   const proposals = data.plan.proposed_one_offs ?? [];
   const oneOffs = draft.one_offs ?? [];
-  const taken = oneOffs.some((o) => o.source === "return_estimate");
+  // a proposal is hidden once the draft holds a one-off of its tax year, or a bare one (no year)
+  const bareTaken = oneOffs.some((o) => o.source === RETURN_ESTIMATE);
+  const takenYears = new Set(oneOffs.map((o) => estimateYear(o.source)).filter((year) => year !== null));
+  const newestClosed = data.plan.newest_closed;
   const [chosen, setChosen] = useState<Record<number, string>>({});
   const [adding, setAdding] = useState(false);
   const [month, setMonth] = useState("");
@@ -527,8 +542,9 @@ function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLe
   return (
     <div className="stack">
       <h3>Einmalige Beträge</h3>
-      {!taken
+      {!bareTaken
         ? proposals.map((proposal, index) => {
+            if (takenYears.has(proposal.tax_year)) return null;
             const id = `${ids}-proposal-${index}`;
             const picked = chosen[index] ?? "";
             return (
@@ -550,7 +566,10 @@ function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLe
                     onClick={() =>
                       setDraft((previous) => ({
                         ...previous,
-                        one_offs: [...(previous.one_offs ?? []), { month: picked, amount: proposal.amount, source: "return_estimate" }],
+                        one_offs: [
+                          ...(previous.one_offs ?? []),
+                          { month: picked, amount: proposal.amount, source: `${RETURN_ESTIMATE}:${proposal.tax_year}` },
+                        ],
                       }))
                     }
                   >
@@ -571,7 +590,10 @@ function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLe
             <li key={`${oneOff.month}-${index}`}>
               <span>
                 {formatMonth(oneOff.month)}
-                {oneOff.source === "return_estimate" ? " · Einkommensteuer, aus der Schätzung" : ""}
+                {isReturnEstimate(oneOff.source)
+                  ? ` · Einkommensteuer${estimateYear(oneOff.source) !== null ? ` ${estimateYear(oneOff.source)}` : ""}, aus der Schätzung`
+                  : ""}
+                {newestClosed && oneOff.month <= newestClosed ? " · Monat abgeschlossen, zählt schon in den gemessenen Monaten" : ""}
               </span>
               <span>
                 {formatSignedEuro(oneOff.amount)}{" "}

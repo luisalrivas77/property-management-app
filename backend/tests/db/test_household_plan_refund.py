@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 from db.matching_support import World
-from db.test_services_return_inputs import _certificate, _create, _document, _owner
+from db.test_services_return_inputs import _certificate, _create, _document, _no_pay, _owner
 
 from hausbuch.schemas.performance import IncomeInputCreate
 from hausbuch.schemas.plan import HouseholdLevers, OneOff, OneOffSource, ProposedOneOff
@@ -72,3 +72,51 @@ def test_nothing_is_proposed_once_a_refund_is_taken_over(world):
     assert _proposed(world, HouseholdLevers(one_offs=[taken])) == []
     typed = OneOff(month="2027-08", amount=Decimal("850.00"))
     assert _proposed(world, HouseholdLevers(one_offs=[typed])) != []
+
+
+def test_a_year_a_one_off_names_is_not_proposed_again_even_once_received(world):
+    """PR #434 review D: „Übernehmen“ writes the tax year into the source; the one-off stays
+    in the scenario after its month has closed (§7.3 amended), so the year is not proposed
+    again. Another year still is."""
+    owner = _owner(world)
+    _create(world, **_certificate(owner.id, _document(world)))
+    received = OneOff(month="2027-03", amount=Decimal("850.00"), source="return_estimate:2026")
+    assert _proposed(world, HouseholdLevers(one_offs=[received])) == []
+    other = OneOff(month="2027-03", amount=Decimal("850.00"), source="return_estimate:2025")
+    assert [p.tax_year for p in _proposed(world, HouseholdLevers(one_offs=[other]))] == [2026]
+
+
+def test_nothing_is_proposed_before_the_wage_certificate(world):
+    """PR #434 review G: on an expected pay alone the withheld wage tax is a projection, so
+    the refund would be one too; the estimate names the missing Lohnsteuerbescheinigung and
+    the plan proposes nothing until it is confirmed."""
+    owner = _owner(world)
+    world.cmd(
+        create_income_input,
+        IncomeInputCreate.model_validate(
+            {
+                "owner_id": owner.id,
+                "kind": "expected_gross_pay",
+                "tax_year": 2026,
+                "value": {"amount": "20000.00"},
+            }
+        ),
+        now=world.now + timedelta(hours=1),
+    )
+    estimate = world.query(household_return_estimate, tax_year=2026, today=TODAY)
+    assert any(m.key == "wage_certificate" for m in estimate.missing)
+    assert _proposed(world) == []
+    _create(world, **_certificate(owner.id, _document(world), gross="20000.00"))
+    assert [p.tax_year for p in _proposed(world)] == [2026]
+
+
+def test_an_owner_without_pay_does_not_hold_the_proposal_back(world):
+    """G's gate asks for a certificate only where there is pay: „Kein Arbeitslohn“ (D195)
+    for the other owner leaves the proposal."""
+    owner = _owner(world)
+    other = _owner(world, "Person B")
+    _create(world, **_certificate(owner.id, _document(world), gross="20000.00"))
+    _create(world, **_no_pay(other.id))
+    estimate = world.query(household_return_estimate, tax_year=2026, today=TODAY)
+    assert not any(m.key == "wage_certificate" for m in estimate.missing)
+    assert [p.tax_year for p in _proposed(world)] == [2026]

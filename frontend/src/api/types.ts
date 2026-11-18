@@ -9905,14 +9905,22 @@ export interface components {
              */
             ends_on: string;
         };
-        /** OneOff */
+        /**
+         * OneOff
+         * @description A one-off in `month`. §7.3 amended (PR #434 review D): a one-off in a month at or
+         *     before the newest closed month may stay in a scenario row; the plan ignores it, since the
+         *     measured months already hold it. Only a month after the horizon's end is refused.
+         */
         OneOff: {
             /** Month */
             month: string;
             /** Amount */
             amount: string;
-            /** @default typed */
-            source: components["schemas"]["OneOffSource"];
+            /**
+             * Source
+             * @default typed
+             */
+            source: components["schemas"]["OneOffSource"] | string;
         };
         /**
          * OneOffSource
@@ -11225,7 +11233,8 @@ export interface components {
          * @description Phase 4b's expected refund (positive) or back-payment (negative) of one tax year, from
          *     the whole-return estimate of Steuern › Gesamt, proposed without a month (Q-O168, answered
          *     by mockup 12): a member picks the month the money is expected, and „Übernehmen“ adds it to
-         *     the levers as `OneOff(source=return_estimate)`. Until then the plan counts no refund.
+         *     the levers as `OneOff(source="return_estimate:<tax_year>")`. Until then the plan counts
+         *     no refund.
          */
         ProposedOneOff: {
             /** Tax Year */
