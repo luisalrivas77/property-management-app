@@ -8871,6 +8871,8 @@ export interface components {
             origin?: components["schemas"]["LimitOrigin"] | null;
             /** Sentences */
             sentences?: string[];
+            /** Texts */
+            texts?: string[];
         };
         /**
          * LightColour

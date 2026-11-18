@@ -57,7 +57,7 @@ from hausbuch.rules.errors import (
     HEALTH_MONTH_NOT_CLOSED,
     HEALTH_RANGE_INVALID,
 )
-from hausbuch.rules.health.bands import bands_todos, lights, proposals
+from hausbuch.rules.health.bands import bands_todos, lights, proposals, with_texts
 from hausbuch.rules.health.figures import debt, reserve, savings_rate, series, split
 from hausbuch.rules.health.month import household_month, rental_month
 from hausbuch.rules.health.window import closed, window, window_todos
@@ -712,7 +712,7 @@ def health(conn: Connection, today: date, scenario_id: UUID | None = None) -> He
         proposals=[] if levers.bands else list(proposals()[1].values()),
         todos=todos,
     )
-    return out.model_copy(update={"marks": lights(out, levers.bands)})
+    return out.model_copy(update={"marks": with_texts(out, lights(out, levers.bands))})
 
 
 def _check_range(first: str, last: str) -> list[str]:
