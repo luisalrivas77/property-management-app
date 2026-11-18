@@ -103,9 +103,11 @@ QUESTION_UNREADABLE = (
     "Hausbuch kann diese Transaktion nicht vollständig lesen. Welche Token hat sie bewegt?"
 )
 # The key under which the sync's source keeps, beside a stored record, the own token accounts
-# it knew, only when a token balance row of the record has no `owner` (every other record is
-# stored exactly as the provider served it). The classifier reads it from the stored
-# original, so a replay needs no provider (D192).
+# it knew, only when a token balance row of the record has no `owner`, or when the lamports of
+# an own token account change in a record with no token balance row for that account (a
+# stranger's System transfer into it, D186 (2) amended 18 Nov 2026); every other record is
+# stored exactly as the provider served it. The classifier reads it from the stored original,
+# so a replay needs no provider (D192).
 SYNC_KEY = "_hausbuch"
 
 Role = Literal["in", "out", "fee"]
@@ -385,6 +387,24 @@ def _own_token_accounts(b: _Balances) -> dict[int, str]:
     return {r.index: r.mint for r in b.pre_tokens + b.post_tokens if r.mine}
 
 
+def _rowless_own_token_accounts(
+    b: _Balances, own: Collection[str], own_token_accounts: Collection[str] | None
+) -> list[int]:
+    """The indexes of the own token accounts the caller knows (`own_token_accounts`) that no
+    token balance row of the record names: a System transfer into one moves its lamports and
+    leaves no row behind (address-poisoning dust, D186 (2) amended 18 Nov 2026). Their lamports
+    are the owner's SOL, as a token account's rent is; an account a row names is read through
+    its rows (_own_token_accounts), never twice."""
+    if not own_token_accounts:
+        return []
+    named = {r.index for r in b.pre_tokens + b.post_tokens}
+    return [
+        i
+        for i, k in enumerate(b.keys)
+        if k in own_token_accounts and k not in own and i not in named
+    ]
+
+
 def _sol_of_token_account(b: _Balances, i: int, mint: str) -> int:
     """A token account's SOL: its lamports, less the wrapped amount of a native-mint account
     (that amount is WSOL, never SOL twice)."""
@@ -404,12 +424,15 @@ def solana_deltas(
     (so a token account's rent moving from the main account is no delta), without the fee they
     paid; one delta per mint over the token balances they own. SOL first, then by mint.
     `own_token_accounts` resolves a token balance row that carries no `owner` (_token_rows);
-    a row it cannot resolve raises `wallet.record_unreadable`, never a dropped leg."""
+    a row it cannot resolve raises `wallet.record_unreadable`, never a dropped leg. A known own
+    token account that no token row names adds its lamport change to the SOL delta
+    (_rowless_own_token_accounts)."""
     b = _balances(tx, own, own_token_accounts)
     tokens = _own_token_accounts(b)
     mains = {i for i, k in enumerate(b.keys) if k in own and i not in tokens}
     sol = sum(b.lamports(i) for i in mains)
     sol += sum(_sol_of_token_account(b, i, mint) for i, mint in tokens.items())
+    sol += sum(b.lamports(i) for i in _rowless_own_token_accounts(b, own, own_token_accounts))
     if b.keys and b.keys[0] in own:
         sol += b.fee
     deltas: list[SolanaDelta] = []
@@ -898,15 +921,42 @@ def has_ownerless_token_row(record: Mapping[str, JsonValue]) -> bool:
     return any(isinstance(r, Mapping) and not isinstance(r.get("owner"), str) for r in rows)
 
 
+def moves_rowless_token_account(record: Mapping[str, JsonValue], accounts: Collection[str]) -> bool:
+    """Whether the lamports of one of `accounts` (the own token accounts the run knows) change
+    in the record while no token balance row names that account: a stranger's System transfer
+    into an own token account, which only the accounts kept under SYNC_KEY let a replay count
+    (D186 (2) amended 18 Nov 2026). A failed transaction moves nothing but its fee."""
+    meta = record.get("meta")
+    if not accounts or not isinstance(meta, Mapping) or meta.get("err") is not None:
+        return False
+    try:
+        keys = account_keys(record)
+        pre = _list(meta.get("preBalances"))
+        post = _list(meta.get("postBalances"))
+    except (KeyError, TypeError, ValueError):
+        return False
+    named = {
+        row.get("accountIndex")
+        for key in ("preTokenBalances", "postTokenBalances")
+        for row in (meta.get(key) or [])
+        if isinstance(row, Mapping)
+    }
+    return any(
+        k in accounts and i not in named and pre[i] != post[i]
+        for i, k in enumerate(keys[: min(len(pre), len(post))])
+    )
+
+
 def with_token_accounts(
     record: Mapping[str, JsonValue], accounts: Collection[str], block_time: int | None = None
 ) -> dict[str, JsonValue]:
     """The record as the sync stores it: with the own token accounts under SYNC_KEY when a
-    token row has no owner, and the block's time (from the listing or getBlockTime) when the
-    record carries no `blockTime` (an old slot's); else unchanged."""
+    token row has no owner or an own token account's lamports change with no token row naming
+    it (moves_rowless_token_account), and the block's time (from the listing or getBlockTime)
+    when the record carries no `blockTime` (an old slot's); else unchanged."""
     out = dict(record)
     kept: dict[str, JsonValue] = {}
-    if has_ownerless_token_row(record):
+    if has_ownerless_token_row(record) or moves_rowless_token_account(record, accounts):
         kept["own_token_accounts"] = list(sorted(accounts))
     if not isinstance(record.get("blockTime"), int) and block_time is not None:
         kept["block_time"] = block_time

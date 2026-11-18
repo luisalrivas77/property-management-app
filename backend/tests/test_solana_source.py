@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import fixture_models_phase7 as phase7
 import pytest
 from pydantic import SecretStr
-from solana_chain_fake import FakeChain, Records, signature, token_account
+from solana_chain_fake import FakeChain, Records, dust_into_token_account, signature, token_account
 
 from hausbuch.rules import errors as E
 from hausbuch.rules.chain import solana
@@ -165,6 +165,30 @@ def test_a_token_row_without_an_owner_replays_from_the_stored_accounts():
     plain.tokens[A] = chain.tokens[A]
     (tx,) = _source(plain).transactions(A, None).items
     assert tx.raw == _record("spl_in")
+
+
+def test_dust_into_an_own_token_account_replays_from_the_stored_accounts():
+    """D186 (2) amended 18 Nov 2026: a stranger's 1 lamport to A and 1 lamport to A's USDC
+    token account, no token row. The run knows the token account from getTokenAccountsByOwner
+    and keeps it beside the record, so the SOL leg is 2 lamports both read live and replayed
+    from the stored original without the provider (D192), and the address reconciles."""
+    record = dust_into_token_account(A, A_USDC)
+    chain = FakeChain([record])
+    chain.tokens[A] = [token_account(A, A_USDC, USDC, 0, 2_039_281)]
+    chain.lamports[A] = 10**9 + 1
+    source = _source(chain)
+    (tx,) = source.transactions(A, None).items
+    assert tx.raw[solana.SYNC_KEY] == {"own_token_accounts": [A_USDC]}
+    asked = len(chain.requests)
+    replayed = _replay(_stored(tx))
+    assert len(chain.requests) == asked
+    live, again = solana.classify_tx(tx, _ctx()), solana.classify_tx(replayed, _ctx())
+    assert _legs(live) == _legs(again) == [(MovementKind.UNCATEGORIZED, "in", 2, None, "0")]
+    # 10**9 before the record plus the token account's rent: the movements give A's SOL
+    moved = sum_movements([(SOL, 10**9 + 2_039_280), (SOL, 2)])
+    assert not reconcile(
+        moved, sum_balance_parts((b.asset_key, b.units) for b in source.balances(A))
+    )
 
 
 # --- the listing, the page and the cursor ---------------------------------------------------
