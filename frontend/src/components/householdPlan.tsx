@@ -200,6 +200,9 @@ function PlanBody({ data, onSaved }: { data: PlanData; onSaved: () => void }) {
   const [draft, setDraft] = useState<HouseholdLevers>(() => fillLevers(plan.levers));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  // A projection field holding an entry it cannot take keeps the draft's old value, so a save
+  // would store a value the field does not show (PR #434 review C): no save until it is fixed.
+  const [invalid, setInvalid] = useState(false);
   const saved = JSON.stringify(fillLevers(plan.levers));
   const dirty = JSON.stringify(draft) !== saved;
   const current = currentDefault(data.scenarios);
@@ -227,10 +230,14 @@ function PlanBody({ data, onSaved }: { data: PlanData; onSaved: () => void }) {
     <div className="stack">
       {error != null ? <ErrorNotice error={error} /> : null}
       <div className="row">
-        <button type="button" disabled={busy || !dirty} onClick={() => void save()}>
+        <button type="button" disabled={busy || !dirty || invalid} onClick={() => void save()}>
           Szenario speichern
         </button>
-        <span className="muted">Gespeichert als neue Fassung eures Szenarios; die alte bleibt im Verlauf.</span>
+        <span className="muted">
+          {invalid
+            ? "Erst die Eingabe bei der Annahme korrigieren, die rot markiert ist; dann lässt sich das Szenario speichern."
+            : "Gespeichert als neue Fassung eures Szenarios; die alte bleibt im Verlauf."}
+        </span>
       </div>
     </div>
   );
@@ -290,7 +297,15 @@ function PlanBody({ data, onSaved }: { data: PlanData; onSaved: () => void }) {
 
       <Paths data={data} />
       <HowItIsMade data={data} />
-      <ProjectionCard data={data} draft={draft} setDraft={setDraft} dirty={dirty} saveBar={saveBar} onChanged={onSaved} />
+      <ProjectionCard
+        data={data}
+        draft={draft}
+        setDraft={setDraft}
+        dirty={dirty}
+        saveBar={saveBar}
+        onChanged={onSaved}
+        onValidity={setInvalid}
+      />
     </>
   );
 }
@@ -1013,6 +1028,7 @@ function ProjectionCard({
   dirty,
   saveBar,
   onChanged,
+  onValidity,
 }: {
   data: PlanData;
   draft: HouseholdLevers;
@@ -1020,6 +1036,8 @@ function ProjectionCard({
   dirty: boolean;
   saveBar: ReactNode;
   onChanged: () => void;
+  /** true while a field holds an entry the draft cannot take */
+  onValidity: (invalid: boolean) => void;
 }) {
   const ids = useId();
   const projection = data.plan.projection;
@@ -1035,31 +1053,37 @@ function ProjectionCard({
   });
   const [errors, setErrors] = useState<Partial<Record<"depot" | "crypto" | "years", string>>>({});
 
+  function setError(key: "depot" | "crypto" | "years", message: string | undefined) {
+    const next = { ...errors, [key]: message };
+    setErrors(next);
+    onValidity(Object.values(next).some(Boolean));
+  }
+
   function apply(key: "depot" | "crypto" | "years", raw: string) {
     setTexts((previous) => ({ ...previous, [key]: raw }));
     if (key === "years") {
       const years = Number(raw);
       if (!/^\d{1,2}$/.test(raw.trim()) || years < 1 || years > 30) {
-        setErrors((previous) => ({ ...previous, years: "Zwischen 1 und 30 Jahren." }));
+        setError("years", "Zwischen 1 und 30 Jahren.");
         return;
       }
-      setErrors((previous) => ({ ...previous, years: undefined }));
+      setError("years", undefined);
       setDraft((previous) => ({ ...previous, net_worth_years: years }));
       return;
     }
     if (raw.trim() === "") {
-      setErrors((previous) => ({ ...previous, [key]: undefined }));
+      setError(key, undefined);
       setDraft((previous) => ({ ...previous, value_change: { ...previous.value_change, [key]: null } }));
       return;
     }
     const parsed = toSignedRate(raw, 3);
     if (!parsed.ok) {
-      setErrors((previous) => ({ ...previous, [key]: parsed.message }));
+      setError(key, parsed.message);
       return;
     }
     const value = parsed.value;
     const tooLarge = Math.abs(Number(value)) > 0.5;
-    setErrors((previous) => ({ ...previous, [key]: tooLarge ? "Zwischen −50 % und 50 % pro Jahr." : undefined }));
+    setError(key, tooLarge ? "Zwischen −50 % und 50 % pro Jahr." : undefined);
     if (!tooLarge) setDraft((previous) => ({ ...previous, value_change: { ...previous.value_change, [key]: value } }));
   }
 

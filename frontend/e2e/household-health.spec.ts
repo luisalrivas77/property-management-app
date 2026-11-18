@@ -282,6 +282,12 @@ test("the rate fields start empty, and the projection appears only after a rate 
 
   await depot.fill("5");
   await expect(page.getByText("Geändert, noch nicht gespeichert")).toBeVisible();
+  // An entry the field cannot take keeps the draft's 5 %: no save until it is fixed (review C).
+  await depot.fill("60");
+  await expect(card.getByText("Zwischen −50 % und 50 % pro Jahr.")).toBeVisible();
+  await expect(card.getByRole("button", { name: "Szenario speichern" })).toBeDisabled();
+  expect(posted).toHaveLength(0);
+  await depot.fill("5");
   await card.getByRole("button", { name: "Szenario speichern" }).click();
   await expect.poll(() => posted.length).toBe(1);
   expect(Number(posted[0]?.levers?.value_change?.depot)).toBe(0.05);
