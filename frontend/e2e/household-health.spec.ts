@@ -29,6 +29,8 @@ type HouseholdScenarioCreate = components["schemas"]["HouseholdScenarioCreate"];
 type SnapshotResult = components["schemas"]["SnapshotResult"];
 
 const WORKSPACE = "00000000-0000-4000-8000-000000000901";
+const SAVINGS = "00000000-0000-4000-8000-000000000902";
+const FLAT = "00000000-0000-4000-8000-000000000903";
 
 /** YYYY-MM, `back` months before the current one. */
 function monthsBack(back: number): string {
@@ -86,6 +88,35 @@ function health(window: string[], options: { coloured?: boolean } = {}): Health 
           months: window.map((month) => ({ month, rate: "0.2500" })),
         }
       : null,
+    reserve: enough
+      ? {
+          accounts: [{ account_id: SAVINGS, kind: "bank_savings", balance: "12000.00", as_of: "2026-10-31", origin: "default" }],
+          amount: "12000.00",
+          need: "3900.00",
+          months: "3.08",
+          target_months: "6",
+          target: "23400.00",
+          gap: "11400.00",
+          state: "below",
+        }
+      : null,
+    debt: enough
+      ? {
+          properties: [
+            { property_id: FLAT, loan_balance: "200000.00", estimate: "300000.00", estimate_source: "purchase_price", ltv: "0.6667" },
+          ],
+          liabilities: "200000.00",
+          gross_assets: "312000.00",
+          debt_ratio: "0.6410",
+          interest: "1500.00",
+          principal: "900.00",
+          debt_service_year: "9600.00",
+          income_year: "62400.00",
+          debt_service_ratio: "0.1538",
+          debt_to_income: "3.2051",
+          months: 3,
+        }
+      : null,
     marks: {
       savings_rate: {
         figure: "savings_rate",
@@ -135,7 +166,7 @@ function plan(window: string[], scenarioId: string | null, depot: string | null)
       depot === null
         ? { points: [], todos: [] }
         : {
-            start: total(`${last}-30`, "20000.00"),
+            start: total(`${last}-28`, "20000.00"),
             points: [total("2027-09-30", "35000.00"), total("2028-09-30", "51000.00")],
             assumptions: [{ kind: "depot_rate", value: depot, scenario_id: scenarioId ?? "", created_at: "2026-11-18T09:00:00Z" }],
             todos: [],
@@ -309,21 +340,54 @@ test("below three closed months both screens show what holds the next month open
   await expect(page).toHaveURL("/inbox");
 });
 
-test("every figure opens the months it is made of, each a link to that month on Haushalt", async ({ page, signedIn }) => {
+test("every figure opens what it is made of, and a month opens Haushalt with its averages, the flat and its closing", async ({
+  page,
+  signedIn,
+}) => {
   void signedIn;
   const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
+  const first = window[0] ?? "";
   await scenarios(page);
   await serve(page, "/api/health", () => health(window));
   await serve(page, "/api/health/net-worth-series", () => []);
-  await monthsOf(page, () => window.map((month) => monthView(month, true)));
+  // The first month: the flat lost 250 € on the rental account, and its stored closing differs.
+  await monthsOf(page, (from, to) =>
+    window
+      .filter((month) => month >= from && month <= to)
+      .map((month) => {
+        const view = monthView(month, true);
+        if (month !== first) return view;
+        return {
+          ...view,
+          household: { ...view.household, rental_result: "-250.00" },
+          snapshot_id: "00000000-0000-4000-8000-000000000904",
+          stored: householdMonth(month, "5000.00", "3900.00"),
+        };
+      }),
+  );
   await serve(page, "/api/household-plan", () => plan(window, null, null));
 
-  // Übersicht: the savings rate's months.
+  // Übersicht: the savings rate's months, each a link to that month on Haushalt.
   await page.goto("/");
   const rate = page.locator('div.health-figure[aria-label="Sparquote"]');
   await rate.getByText("Monate ansehen").click();
   for (const month of window) {
     await expect(rate.locator(`a[href="/household?monat=${month}"]`)).toBeVisible();
+  }
+  // The reserve and the four debt figures: each opens its rows and links to where they come from.
+  const reserve = page.getByRole("region", { name: "Liquiditätsreserve" });
+  await reserve.getByText("Woraus die Reserve besteht").click();
+  await expect(reserve.locator(`a[href="/accounts/${SAVINGS}"]`)).toBeVisible();
+  const links: Record<string, string> = {
+    Schuldendienstquote: "/planning",
+    Beleihungsauslauf: `/properties/${FLAT}`,
+    Verschuldungsgrad: "/assets",
+    "Schulden zu Jahreseinkommen": "/loans",
+  };
+  for (const [title, href] of Object.entries(links)) {
+    const figure = page.locator(`div.health-figure[aria-label="${title}"]`);
+    await figure.getByText("Woraus die Zahl besteht").click();
+    await expect(figure.locator(`details a[href="${href}"]`)).toBeVisible();
   }
 
   // Planung › Haushalt: each row of „So entsteht die Zahl“ that has months opens them.
@@ -337,9 +401,18 @@ test("every figure opens the months it is made of, each a link to that month on 
       await expect(row.locator(`a[href="/household?monat=${month}"]`)).toBeVisible();
     }
   }
-  // A month opens Haushalt on that month.
-  const first = window[0] ?? "";
+  // A month opens Haushalt on that month: the means over the 3 closed months with their basis,
+  // the flat's result as an income row, and the chip of a month changed since its closing.
   await rows.first().locator(`a[href="/household?monat=${first}"]`).click();
   await expect(page).toHaveURL(`/household?monat=${first}`);
   await expect(page.getByRole("combobox", { name: "Monat" })).toHaveValue(first);
+  await expect(page.getByRole("group", { name: "Einnahmen" })).toContainText("Ø 3 Monate");
+  await expect(page.getByText("Basis der Durchschnitte: 3 abgeschlossene Monate")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Noch keine Durchschnitte" })).toHaveCount(0);
+  const income = page.getByRole("region", { name: "Einnahmen" });
+  await expect(income.getByRole("listitem").filter({ hasText: "Wohnung (Ergebnis des Mietkontos)" })).toContainText("250");
+  const chip = page.locator("details").filter({ hasText: "seit dem Abschluss geändert" });
+  await chip.locator("summary").click();
+  await expect(chip.getByRole("row", { name: /Einnahmen mit der Wohnung/ })).toContainText("5.000");
+  await expect(chip.getByRole("row", { name: /Einnahmen mit der Wohnung/ })).toContainText("5.200");
 });

@@ -190,7 +190,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
         </div>
         <div className="planning-kpi" role="group" aria-label="Sparquote">
           <p className="planning-kpi-label">Sparquote</p>
-          <p className="planning-kpi-value planning-good">
+          <p className="planning-kpi-value">
             {householdNow?.savings_rate != null ? formatPercent(householdNow.savings_rate) : "–"}
           </p>
           <p className="planning-kpi-sub">
