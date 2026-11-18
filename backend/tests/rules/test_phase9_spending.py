@@ -363,3 +363,37 @@ def test_words():
     assert S.words(Decimal("-0.99"))[1] == "wie geplant"
     assert S.words(Decimal("1.00"))[1] == "1 € mehr als geplant"
     assert S.words(Decimal("-1234.50"))[1] == "1.235 € weniger als geplant"
+
+
+def test_a_windowed_change_beside_a_one_off_reaches_the_paths_and_leaves_the_flat_alone():
+    """PR #434's review fixes: Δ(k) enters the months with one-offs and the months without
+    them (`steady`), so a path's „im Monat“ carries the spending change of the first plan month
+    and never the refund in it, while `flat_change` (which reads the flat alone) sees no change
+    of the flat from a spending change that ends mid-horizon."""
+    from hausbuch.rules.plan.paths import flat_change, paths
+    from hausbuch.schemas.plan import OneOff
+
+    change = SpendingChange(
+        code=C.HH_RESTAURANT, monthly=Decimal("100.00"), from_month="2026-11", to_month="2027-01"
+    )
+    basis = L.MonthBasis(
+        newest_closed="2026-10",
+        mean_income=Decimal("5200.00"),
+        mean_regular_spending=Decimal("3900.00"),
+        mean_rental_cash=ZERO,
+        buffer_percent=Decimal("10"),
+        spending_changes=(change,),
+        code_means={C.HH_RESTAURANT: Decimal("200.00")},
+    )
+    refund = OneOff(month="2026-11", amount=Decimal("500.00"), source="typed")
+    months = L.months(basis, 12, None, (), (refund,))
+    steady = L.months(basis, 12, None, (), ())
+    assert [m.spending_delta for m in steady[:4]] == [Decimal("-100.00")] * 3 + [ZERO]
+    assert months[0].spending_delta == Decimal("-100.00")
+    assert months[0].free == steady[0].free + Decimal("500.00")
+    # 5200 − (3900 − 100) = 1400, less the 10 % buffer.
+    assert steady[0].investable == Decimal("1260.00")
+    rows = paths(ZERO, Decimal("23400.00"), [], months, "2026-10", steady=steady)
+    as_is = next(r for r in rows.rows if r.key == "as_is")
+    assert as_is.to_reserve_first_month == steady[0].investable
+    assert flat_change([], steady, ZERO) is None

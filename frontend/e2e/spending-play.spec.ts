@@ -184,8 +184,14 @@ async function planWithScenarios(page: Page): Promise<{ posted: HouseholdScenari
       if (route.request().method() === "POST") {
         const body = route.request().postDataJSON() as HouseholdScenarioCreate;
         posted.push(body);
+        // The server writes each change's mean_at_save from today's window (§7.6 (2)).
+        const levers = body.levers && {
+          ...body.levers,
+          spending_changes: (body.levers.spending_changes ?? []).map((change) => ({ ...change, mean_at_save: "200.00" })),
+        };
         const row: HouseholdScenario = {
           ...body,
+          levers,
           id: `00000000-0000-4000-8000-000000000a1${posted.length}`,
           workspace_id: WORKSPACE,
           created_at: "2026-11-18T09:00:00Z",
@@ -260,6 +266,10 @@ test("a typed amount moves the savings rate and „Anlegbar“ through the previ
   // The other levers are kept.
   expect(levers?.value_change?.depot).toBe("0.05");
   expect(levers?.reserve_target_months).toBe("6");
+  // The page reads the stored row back: nothing is left unsaved, and the field keeps the amount.
+  await expect(page.getByText("Geändert, noch nicht gespeichert")).toHaveCount(0);
+  await expect(section.getByLabel("Geplant pro Monat: Restaurant")).toHaveValue("100,00");
+  await expect(page.getByRole("button", { name: "Szenario speichern" }).first()).toBeDisabled();
 });
 
 test("a change as a percent of the mean, for some months, is saved as a percent", async ({ page, signedIn }) => {

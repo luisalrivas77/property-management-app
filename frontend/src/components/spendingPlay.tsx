@@ -242,6 +242,18 @@ export function SpendingPlaySection({
     });
   }
 
+  // A group's fallback stands for the whole group (§7.6 (1)): it and a subcategory of the same
+  // group never both carry a change, whether the subcategory is in the table or was added under
+  // „Neue Ausgabe“, so the other field is closed (the server refuses the pair).
+  function lockOf(code: AllocationCategory): string | null {
+    const group = groupOfCode(code);
+    const fallback = group ? fallbackOf(group) : null;
+    if (!group || !fallback) return null;
+    if (code !== fallback) return planned.has(fallback) ? "ihr plant hier für die ganze Gruppe" : null;
+    const members = HOUSEHOLD_SPENDING_GROUPS.find((entry) => entry.group === group)?.categories ?? [];
+    return members.some((member) => member !== code && planned.has(member)) ? "ihr plant hier je Unterkategorie" : null;
+  }
+
   const toggle = (group: string) =>
     setOpen((current) => {
       const next = new Set(current);
@@ -432,7 +444,7 @@ export function SpendingPlaySection({
                       </th>
                       <td className="num">{formatMoney("0.00")}</td>
                       <td>
-                        {field(code, categoryLabel(code), "0.00", null, false)}
+                        {field(code, categoryLabel(code), "0.00", lockOf(code), false)}
                         <button
                           type="button"
                           className="link"
@@ -489,7 +501,6 @@ export function SpendingPlaySection({
     const isOpen = open.has(group.group);
     const label = groupLabel(group.group);
     const rowId = `${ids}-group-${group.group}`;
-    const subPlanned = group.rows.some((row) => row.code !== own && planned.has(row.code));
     const out = [
       <tr key={group.group} className="spending-play-group">
         <th scope="row">
@@ -510,7 +521,7 @@ export function SpendingPlaySection({
         <td className="num">{formatMoney(group.mean)}</td>
         <td>
           {own
-            ? field(own, label, group.mean, subPlanned ? "ihr plant hier je Unterkategorie" : null, !isZero(group.mean))
+            ? field(own, label, group.mean, lockOf(own), !isZero(group.mean))
             : <span className="muted">wird hier nicht geplant</span>}
         </td>
       </tr>,
@@ -524,8 +535,7 @@ export function SpendingPlaySection({
       } else if (!row.playable) {
         cell = <span className="muted">zählt mit, wird aber nicht geplant</span>;
       } else {
-        const locked = own && planned.has(own) ? "ihr plant hier für die ganze Gruppe" : null;
-        cell = field(row.code, rowLabel, row.mean, locked, !isZero(row.mean));
+        cell = field(row.code, rowLabel, row.mean, lockOf(row.code), !isZero(row.mean));
       }
       out.push(
         <tr key={`${group.group}-${row.code}`} id={`${rowId}-${row.code}`} className="household-subrow">
