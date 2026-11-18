@@ -7521,7 +7521,10 @@ export interface components {
          * FlatChange
          * @description The month the flat's default scenario first gives another monthly result than the
          *     first plan month (phase 4's projected year after the newest closed month's year, §7.1),
-         *     computed without one-offs.
+         *     computed without one-offs: that month's flat result, the flat result of the months before
+         *     it (`before_is_mean`: that is the window's measured mean, „statt im Schnitt“), and each
+         *     path's amount to the reserve from then on (the month's investable less the plans that
+         *     continue on that path), in the order of `HouseholdPlan.paths`.
          */
         FlatChange: {
             /** Month */
@@ -11220,7 +11223,9 @@ export interface components {
         /**
          * ProposedOneOff
          * @description Phase 4b's expected refund (positive) or back-payment (negative) of one tax year, from
-         *     the whole-return estimate of Steuern › Gesamt, proposed without a month (Q-O168).
+         *     the whole-return estimate of Steuern › Gesamt, proposed without a month (Q-O168, answered
+         *     by mockup 12): a member picks the month the money is expected, and „Übernehmen“ adds it to
+         *     the levers as `OneOff(source=return_estimate)`. Until then the plan counts no refund.
          */
         ProposedOneOff: {
             /** Tax Year */
