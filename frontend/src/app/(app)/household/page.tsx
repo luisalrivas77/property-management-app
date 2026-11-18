@@ -7,8 +7,15 @@
 // the income rows, and „Gespart, nicht ausgegeben“: transfers to own savings, depot or
 // exchange accounts are saved, not spent (D162), listed from GET /transfers. No budget and no
 // target (household design §10, advice_mode own_use).
+//
+// Phase 9 (§14, D231, D232, D242): the month is ?monat=YYYY-MM, so Übersicht and Planung link to
+// it; the „Ø“ figures are the means over the window's closed months (GET /health), headed with
+// their real count, and stand back for a to-do below three; the flat's result R is an income row,
+// so the month's rate is visibly the household's; a month whose stored closing differs from the
+// month on read carries the chip „seit dem Abschluss geändert“ with both values.
 import Link from "next/link";
-import { useCallback, useId, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
@@ -27,6 +34,8 @@ import {
   toCents,
 } from "@/components/cashflow";
 import { formatMoney, formatMonth, formatPercent, todayIso } from "@/components/format";
+import { HealthTodoList } from "@/components/healthFigures";
+import { monthRange } from "@/components/healthShared";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -35,6 +44,8 @@ type HouseholdGroup = components["schemas"]["HouseholdGroup"];
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 type TransferLinkView = components["schemas"]["TransferLinkView"];
 type HealthMonthView = components["schemas"]["HealthMonthView"];
+type Health = components["schemas"]["Health"];
+type HouseholdMonthFigures = components["schemas"]["HouseholdMonth"];
 
 const MONTHS_SHOWN = 12;
 const MONTHS_OFFERED = 24;
@@ -47,16 +58,36 @@ interface Year {
   /** The same twelve months as the household counts them (phase 9 D232, D235): the private
    * accounts plus the flat's result, so the Sparquote is the household's (Q-O139). */
   health: HealthMonthView[];
+  /** GET /health: the window of closed months (D231) and its savings rate. */
+  overall: Health;
+  /** The window's months as the private accounts count them, oldest first; the „Ø“ columns. */
+  windowMonths: HouseholdCashflow[];
 }
 
 async function loadYear(month: string): Promise<Year> {
   const shown = monthsUpTo(month, MONTHS_SHOWN);
-  const [months, transfers, health] = await Promise.all([
+  const [months, transfers, health, overall] = await Promise.all([
     Promise.all(shown.map(loadCashflow)),
     ok(api.GET("/api/transfers", { params: { query: { month } } })),
     ok(api.GET("/api/health/months", { params: { query: { from: shown[0] ?? month, to: month } } })),
+    ok(api.GET("/api/health")),
   ]);
-  return { months, transfers, health };
+  const loaded = new Map(months.map((m) => [m.month, m]));
+  const windowMonths = await Promise.all((overall.window.months ?? []).map((m) => loaded.get(m) ?? loadCashflow(m)));
+  return { months, transfers, health, overall, windowMonths };
+}
+
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** ?monat=YYYY-MM when it is one of the months offered, else the last full month. */
+function chosenMonth(raw: string | null, current: string): string {
+  if (raw && MONTH.test(raw) && monthsUpTo(current, MONTHS_OFFERED).includes(raw)) return raw;
+  return lastFullMonth();
+}
+
+/** „Ø 5 Monate“: a mean headed with its real basis, the window's closed months (phase 9 D231). */
+function meanLabel(count: number, short = false): string {
+  return `Ø ${count} ${short ? "Mon." : count === 1 ? "Monat" : "Monate"}`;
 }
 
 /** The Geldanlage group's fallback („Sonstige Geldanlage“), listed last when the group opens. */
@@ -71,11 +102,21 @@ function categoryLabel(category: string): string {
 }
 
 export default function HouseholdPage() {
+  return (
+    <Suspense fallback={<p className="muted">Lädt …</p>}>
+      <Household />
+    </Suspense>
+  );
+}
+
+function Household() {
   const ids = useId();
-  const [month, setMonth] = useState(() => lastFullMonth());
-  const load = useCallback(() => loadYear(month), [month]);
-  const year = useLoad(load);
+  const search = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const current = todayIso().slice(0, 7);
+  const month = chosenMonth(search.get("monat"), current);
+  const setMonth = (next: string) => router.replace(`${pathname}?monat=${next}`, { scroll: false });
 
   return (
     <section>
@@ -99,30 +140,53 @@ export default function HouseholdPage() {
           </select>
         </label>
       </div>
-      <Loading state={year}>{(data) => <HouseholdMonth year={data} />}</Loading>
+      <HouseholdYear month={month} />
     </section>
   );
 }
 
-function HouseholdMonth({ year }: { year: Year }) {
-  const { months, transfers, health } = year;
+function HouseholdYear({ month }: { month: string }) {
+  const load = useCallback(() => loadYear(month), [month]);
+  const year = useLoad(load);
+  return <Loading state={year}>{(data) => <HouseholdMonth year={data} onChanged={year.reload} />}</Loading>;
+}
+
+function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void }) {
+  const { months, transfers, health, overall, windowMonths } = year;
   const month = months[months.length - 1];
   if (!month) return null;
-  const householdMonths = health.map((h) => h.household);
-  const householdNow = householdMonths.find((h) => h.month === month.month);
+  const view = health.find((h) => h.month === month.month);
+  const householdNow = view?.household;
   const spentNow = spent(month);
+  const closed = overall.window.months ?? [];
+  const enough = overall.window.enough;
+  const means = enough ? windowMonths : [];
+  const mean = (values: string[]) => (enough ? formatMoney(averageMoney(values)) : "–");
+  // The window's rate as the household counts it (D235), the same Σ S ÷ Σ E as Übersicht.
+  const windowViews = health.filter((h) => closed.includes(h.month)).map((h) => h.household);
+  const windowRate =
+    overall.savings_rate?.rate ?? (windowViews.length === closed.length ? rateOfSums(windowViews) : null);
+  const last = closed[closed.length - 1];
+  // What holds the month after the window open (its own closing to-dos), when it is loaded.
+  const after = health.find((h) => (last === undefined || h.month > last) && !h.closed.closed);
+  const tooFew = (overall.todos ?? []).filter((todo) => todo.code === "too_few_months");
   return (
     <div className="stack planning">
+      {view?.stored ? <ChangedSinceClosing month={month.month} now={view.household} stored={view.stored} /> : null}
       <div className="planning-kpis">
         <div className="planning-kpi" role="group" aria-label="Einnahmen">
           <p className="planning-kpi-label">Einnahmen</p>
           <p className="planning-kpi-value">{formatMoney(month.income)}</p>
-          <p className="planning-kpi-sub">Ø 12 Monate {formatMoney(averageMoney(months.map((m) => m.income)))}</p>
+          <p className="planning-kpi-sub">
+            {meanLabel(closed.length)} {mean(windowMonths.map((m) => m.income))}
+          </p>
         </div>
         <div className="planning-kpi" role="group" aria-label="Ausgaben">
           <p className="planning-kpi-label">Ausgaben</p>
           <p className="planning-kpi-value">{formatMoney(spentNow)}</p>
-          <p className="planning-kpi-sub">Ø 12 Monate {formatMoney(averageMoney(months.map(spent)))}</p>
+          <p className="planning-kpi-sub">
+            {meanLabel(closed.length)} {mean(windowMonths.map(spent))}
+          </p>
         </div>
         <div className="planning-kpi" role="group" aria-label="Sparquote">
           <p className="planning-kpi-label">Sparquote</p>
@@ -130,7 +194,8 @@ function HouseholdMonth({ year }: { year: Year }) {
             {householdNow?.savings_rate != null ? formatPercent(householdNow.savings_rate) : "–"}
           </p>
           <p className="planning-kpi-sub">
-            Ø 12 Monate {formatPercent(rateOfSums(householdMonths))} · Gespart ÷ Einnahmen, mit dem Ergebnis der Wohnung
+            {meanLabel(closed.length)} {enough && windowRate != null ? formatPercent(windowRate) : "–"} · Gespart ÷ Einnahmen, mit
+            dem Ergebnis der Wohnung
           </p>
         </div>
         <div className={month.open_lines > 0 ? "planning-kpi household-open" : "planning-kpi"} role="group" aria-label="Ohne Kategorie">
@@ -141,11 +206,24 @@ function HouseholdMonth({ year }: { year: Year }) {
           </p>
         </div>
       </div>
-      <SurplusBars months={months} />
+      {enough ? (
+        <p className="muted">
+          Basis der Durchschnitte: {closed.length} abgeschlossene Monate, {monthRange(closed)}.
+        </p>
+      ) : (
+        <section className="card stack" aria-labelledby="window-title">
+          <h2 id="window-title">Noch keine Durchschnitte</h2>
+          <p className="muted">
+            Die Durchschnitte erscheinen ab 3 abgeschlossenen Monaten in Folge; bisher {closed.length === 1 ? "ist es 1" : `sind es ${closed.length}`}.
+          </p>
+          <HealthTodoList todos={[...tooFew, ...(after?.closed.todos ?? [])]} onChanged={onChanged} />
+        </section>
+      )}
+      <SurplusBars months={months} windowMonths={means} />
       <div className="planning-split">
-        <SpendingTable months={months} />
+        <SpendingTable months={months} windowMonths={means} />
         <div className="stack household-side">
-          <IncomeCard month={month} />
+          <IncomeCard month={month} household={householdNow ?? null} />
           <SavedBox month={month} transfers={transfers} />
         </div>
       </div>
@@ -155,14 +233,19 @@ function HouseholdMonth({ year }: { year: Year }) {
 
 /** Überschuss je Monat: income less spending per month, the chosen month in the strong
  * colour. The heights are the returned figures relative to the largest, for display only. */
-function SurplusBars({ months }: { months: HouseholdCashflow[] }) {
+function SurplusBars({ months, windowMonths }: { months: HouseholdCashflow[]; windowMonths: HouseholdCashflow[] }) {
   const largest = Math.max(0, ...months.map((m) => Math.abs(Number(m.surplus))));
   return (
     <section className="card" aria-labelledby="surplus-title">
       <div className="planning-card-head">
         <h2 id="surplus-title">Überschuss je Monat</h2>
         <span className="spacer" />
-        <span className="muted">Einnahmen minus Ausgaben · Ø {formatMoney(averageMoney(months.map((m) => m.surplus)))}</span>
+        <span className="muted">
+          Einnahmen minus Ausgaben
+          {windowMonths.length > 0
+            ? ` · ${meanLabel(windowMonths.length)} ${formatMoney(averageMoney(windowMonths.map((m) => m.surplus)))}`
+            : ""}
+        </span>
       </div>
       <ul className="planning-bars">
         {months.map((m, index) => {
@@ -193,12 +276,15 @@ function SurplusBars({ months }: { months: HouseholdCashflow[] }) {
  * month's spending and their 12-month average. A group booked under more than one code, or
  * under a subcategory (D159 amended 14 Nov 2026, migration 0032), opens to its codes, indented
  * under it, largest first and the group's fallback („Sonstige …“) last. */
-function SpendingTable({ months }: { months: HouseholdCashflow[] }) {
+function SpendingTable({ months, windowMonths }: { months: HouseholdCashflow[]; windowMonths: HouseholdCashflow[] }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const month = months[months.length - 1];
   if (!month) return null;
   const total = toCents(spent(month));
-  const groups = [...new Set(months.flatMap((m) => Object.keys(m.spending_by_group)))];
+  const both = [...months, ...windowMonths];
+  const groups = [...new Set(both.flatMap((m) => Object.keys(m.spending_by_group)))];
+  const meanOf = (value: (m: HouseholdCashflow) => string) =>
+    windowMonths.length > 0 ? formatMoney(averageMoney(windowMonths.map(value))) : "–";
   const now = (group: string) => month.spending_by_group[group] ?? "0.00";
   groups.sort((a, b) => {
     const diff = toCents(now(b)) - toCents(now(a));
@@ -231,13 +317,13 @@ function SpendingTable({ months }: { months: HouseholdCashflow[] }) {
                   {formatMonth(month.month)}
                 </th>
                 <th scope="col" className="num">
-                  Ø 12 Mon.
+                  {windowMonths.length > 0 ? meanLabel(windowMonths.length, true) : "Ø"}
                 </th>
               </tr>
             </thead>
             <tbody>
               {groups.flatMap((group) => {
-                const codes = groupCodes(months, group);
+                const codes = groupCodes(both, group);
                 const expanded = open.has(group);
                 const rowId = `spending-${group}`;
                 const rows = [
@@ -263,7 +349,7 @@ function SpendingTable({ months }: { months: HouseholdCashflow[] }) {
                       </span>
                     </td>
                     <td className="num">{formatMoney(now(group))}</td>
-                    <td className="num muted">{formatMoney(averageMoney(months.map((m) => m.spending_by_group[group] ?? "0.00")))}</td>
+                    <td className="num muted">{meanOf((m) => m.spending_by_group[group] ?? "0.00")}</td>
                   </tr>,
                 ];
                 if (!expanded) return rows;
@@ -284,9 +370,7 @@ function SpendingTable({ months }: { months: HouseholdCashflow[] }) {
                         </span>
                       </td>
                       <td className="num">{formatMoney(codeNow(code))}</td>
-                      <td className="num muted">
-                        {formatMoney(averageMoney(months.map((m) => m.spending_by_category?.[group]?.[code] ?? "0.00")))}
-                      </td>
+                      <td className="num muted">{meanOf((m) => m.spending_by_category?.[group]?.[code] ?? "0.00")}</td>
                     </tr>,
                   );
                 }
@@ -327,12 +411,14 @@ function groupCodes(months: HouseholdCashflow[], group: string): string[] {
   return codes.length === 1 && fallback !== null && codes[0] !== fallback ? codes : [];
 }
 
-function IncomeCard({ month }: { month: HouseholdCashflow }) {
+function IncomeCard({ month, household }: { month: HouseholdCashflow; household: HouseholdMonthFigures | null }) {
   const rows = Object.entries(month.income_by_category ?? {});
+  // The flat's cash result before repayment (R, D233): part of the household's income, signed.
+  const flat = household && toCents(household.rental_result) !== 0n ? household.rental_result : null;
   return (
     <section className="card stack" aria-labelledby="income-title">
       <h2 id="income-title">Einnahmen</h2>
-      {rows.length === 0 ? (
+      {rows.length === 0 && flat === null ? (
         <p className="muted">In diesem Monat ist keine Einnahme bestätigt.</p>
       ) : (
         <ul className="household-rows">
@@ -342,9 +428,68 @@ function IncomeCard({ month }: { month: HouseholdCashflow }) {
               <strong>{formatMoney(amount)}</strong>
             </li>
           ))}
+          {flat !== null ? (
+            <li>
+              <span>Wohnung (Ergebnis des Mietkontos)</span>
+              <strong>{signedMoney(flat)}</strong>
+            </li>
+          ) : null}
         </ul>
       )}
+      {flat !== null ? (
+        <p className="muted">Das Ergebnis der Wohnung vor Tilgung zählt zu den Einnahmen des Haushalts; die Sparquote rechnet damit.</p>
+      ) : null}
     </section>
+  );
+}
+
+const CHANGED_ROWS: [keyof HouseholdMonthFigures, string][] = [
+  ["income", "Einnahmen mit der Wohnung"],
+  ["spending", "Ausgaben"],
+  ["saved", "Gespart"],
+];
+
+/** „seit dem Abschluss geändert“ (D242): the month's stored closing beside the month on read. */
+function ChangedSinceClosing({ month, now, stored }: { month: string; now: HouseholdMonthFigures; stored: HouseholdMonthFigures }) {
+  return (
+    <details className="health-sources">
+      <summary>
+        <span className="badge badge-warn">seit dem Abschluss geändert</span>
+      </summary>
+      <p className="muted">
+        Seit dem Abschluss von {formatMonth(month)} hat sich eine Buchung des Monats geändert. Die festgehaltenen Kennzahlen bleiben, wie
+        sie waren; diese Seite zeigt den Monat, wie er heute gebucht ist.
+      </p>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Zahl</th>
+              <th scope="col" className="num">
+                Beim Abschluss
+              </th>
+              <th scope="col" className="num">
+                Heute
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {CHANGED_ROWS.map(([key, label]) => (
+              <tr key={key}>
+                <th scope="row">{label}</th>
+                <td className="num">{formatMoney(stored[key] as string)}</td>
+                <td className="num">{formatMoney(now[key] as string)}</td>
+              </tr>
+            ))}
+            <tr>
+              <th scope="row">Sparquote</th>
+              <td className="num">{stored.savings_rate != null ? formatPercent(stored.savings_rate) : "–"}</td>
+              <td className="num">{now.savings_rate != null ? formatPercent(now.savings_rate) : "–"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
   );
 }
 
