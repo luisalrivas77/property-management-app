@@ -625,7 +625,7 @@ wanted for the SO pot (it is a planning figure, not a filing need, so I would no
 8. **Advice mode:** `own_use`.
 9. **Budgets:** none; measured figures only. *Amended by his answers of 16 Nov 2026 below:
    still no budget and no savings target, but marks against his own limits and a net-worth
-   projection on his own rates now go beyond measured figures (phase 9 D247, D249, D250).*
+   projection on his own rates now go beyond measured figures (phase 9 D247, D249, D250). Amended again 18 Nov 2026: a planned amount per spending category, typed by a member, played with on Planung and compared with the real month on Haushalt, with no colour or alert (phase 9 D263).*
 10. **Adviser:** none; Luis files 2026 himself (deadline 31 Jul 2027). The Steuerreport export
     still documents the settings and positions taken (BMF letter), in case the Finanzamt asks.
 
