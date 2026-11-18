@@ -21191,6 +21191,13 @@
             },
             "type": "array",
             "title": "Bands"
+          },
+          "spending_changes": {
+            "items": {
+              "$ref": "#/components/schemas/SpendingChange"
+            },
+            "type": "array",
+            "title": "Spending Changes"
           }
         },
         "additionalProperties": false,
@@ -21455,6 +21462,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/NetWorthProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "spending_play": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpendingPlay"
               },
               {
                 "type": "null"
@@ -26988,6 +27005,12 @@
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Investable"
+          },
+          "spending_delta": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Spending Delta",
+            "default": "0.00"
           }
         },
         "additionalProperties": false,
@@ -26999,7 +27022,7 @@
           "investable"
         ],
         "title": "PlanMonth",
-        "description": "One future month of §7.1."
+        "description": "One future month of §7.1; `spending_delta` is §7.6 (3)'s Δ(k), Σ (planned − mean) over\nthe spending changes in force, already inside `free`."
       },
       "PlanOverride": {
         "properties": {
@@ -27033,6 +27056,32 @@
         ],
         "title": "PlanOverride",
         "description": "Sets a detected plan's monthly amount, or drops it (D245)."
+      },
+      "PlayedChange": {
+        "properties": {
+          "change": {
+            "$ref": "#/components/schemas/SpendingChange"
+          },
+          "planned": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Planned"
+          },
+          "delta": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Delta"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "change",
+          "planned",
+          "delta"
+        ],
+        "title": "PlayedChange",
+        "description": "One change of the levers with what it plans (§7.6 (3)): `planned` per month while it is\nin force, `delta` = planned − the code's mean."
       },
       "PositionHoldings": {
         "properties": {
@@ -29259,6 +29308,40 @@
         ],
         "title": "RateBasis",
         "description": "How a category's monthly rate was found (D155 (2))."
+      },
+      "RateSegment": {
+        "properties": {
+          "from_month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "From Month"
+          },
+          "to_month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "To Month"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "from_month",
+          "to_month"
+        ],
+        "title": "RateSegment",
+        "description": "The savings rate with the changes over consecutive months that share it (§7.6 (4))."
       },
       "RebookBlockReason": {
         "type": "string",
@@ -32043,6 +32126,217 @@
           "recipient_label"
         ],
         "title": "SpecialExpenseFact"
+      },
+      "SpendingChange": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "monthly": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "from_month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "From Month"
+          },
+          "to_month": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Month"
+          },
+          "mean_at_save": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean At Save"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "from_month"
+        ],
+        "title": "SpendingChange",
+        "description": "One planned change of a household spending code (D263, §7.6 (1)): a planned amount per\nmonth, or a percent change of the code's measured mean, from a month and optionally to a\nmonth. A group's fallback code stands for the whole group, its subcategories included; a\nsubcategory code for itself. `mean_at_save` is the code's mean (§7.6 (2)) the service\nwrites when the scenario row is stored; a typed value is overwritten, never read (§7.7\nreads it)."
+      },
+      "SpendingPlay": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/SpendingPlayGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "mean_regular_spending": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Mean Regular Spending"
+          },
+          "rate_regular_now": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Regular Now"
+          },
+          "rates": {
+            "items": {
+              "$ref": "#/components/schemas/RateSegment"
+            },
+            "type": "array",
+            "title": "Rates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mean_regular_spending"
+        ],
+        "title": "SpendingPlay",
+        "description": "§7.6 (5): every code with a mean or a change, grouped; today's rate without one-offs;\nthe rate with the changes per stretch of months, never a mean of the months."
+      },
+      "SpendingPlayGroup": {
+        "properties": {
+          "group": {
+            "$ref": "#/components/schemas/HouseholdGroup"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllocationCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mean": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Mean"
+          },
+          "planned_first": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Planned First"
+          },
+          "change_first": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Change First"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/PlayedChange"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SpendingPlayRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "group",
+          "mean",
+          "planned_first",
+          "change_first",
+          "rows"
+        ],
+        "title": "SpendingPlayGroup",
+        "description": "A spending group as the Haushalt screen groups it. `code`: the code that stands for the\nwhole group (its fallback, or its only code), None for a group that has neither (Steuerlich\nrelevant, Bewegungen, Depot); `changes`: the changes naming that code. The group's mean is\nΣ of its rows; `change_first` holds the group's and the rows' changes of the first month."
+      },
+      "SpendingPlayRow": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "mean": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Mean"
+          },
+          "planned_first": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Planned First"
+          },
+          "change_first": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Change First"
+          },
+          "playable": {
+            "type": "boolean",
+            "title": "Playable",
+            "default": true
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/PlayedChange"
+            },
+            "type": "array",
+            "title": "Changes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "mean",
+          "planned_first",
+          "change_first"
+        ],
+        "title": "SpendingPlayRow",
+        "description": "One spending code (§7.6 (5)): its measured mean (§7.6 (2)), the amount planned for the\nfirst future month and its change against the mean, and the changes the levers hold for\nit. `playable`: a change may name this code on its own row; a group's fallback code is\nplanned on the group's row (it stands for the whole group), and bank fees, uncategorised\nlines and a refund count in the mean but are never planned (§7.6 (1))."
       },
       "SplitMethod": {
         "type": "string",
