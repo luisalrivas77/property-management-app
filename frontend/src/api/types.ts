@@ -2443,6 +2443,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/household-scenarios": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Scenarios List */
+        get: operations["household_scenarios_list_api_household_scenarios_get"];
+        put?: never;
+        /** Household Scenario Create */
+        post: operations["household_scenario_create_api_household_scenarios_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/household-scenarios/{scenario_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Household Scenario Withdraw */
+        post: operations["household_scenario_withdraw_api_household_scenarios__scenario_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/household-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Plan Get */
+        get: operations["household_plan_get_api_household_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/movement-imports": {
         parameters: {
             query?: never;
@@ -4915,6 +4967,11 @@ export interface components {
             };
         };
         /**
+         * AssumptionKind
+         * @enum {string}
+         */
+        AssumptionKind: "depot_rate" | "crypto_rate" | "flat_growth";
+        /**
          * AutoRate
          * @description GET /accounts/auto-rate?month=YYYY-MM (D172): per private bank account and in total.
          *     `criterion_*` count only the allocations outside each account's first import; `met`
@@ -5017,6 +5074,19 @@ export interface components {
          * @enum {string}
          */
         BalanceSource: "file" | "user" | "none" | "bank";
+        /**
+         * BandLimits
+         * @description A figure's limits as the household confirmed them (stored in the default scenario's
+         *     `levers.bands`, D248). The reserve's green is its own target (D238), so it takes no green
+         *     limit; its red is a share of the target. A side without a limit gives no colour.
+         */
+        BandLimits: {
+            figure: components["schemas"]["MarkedFigure"];
+            /** Green */
+            green?: string | null;
+            /** Red */
+            red?: string | null;
+        };
         /**
          * BandProposal
          * @description One figure of bands.yaml: direction, the proposed limits with their origins, the
@@ -7135,7 +7205,7 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.movement_times_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "account.deposit_address_learned" | "account.deposit_address_forgotten" | "account.withdrawal_pair_learned" | "account.withdrawal_pair_forgotten" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "wallet.deposit_looked_up" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled" | "health.snapshot_stored";
+        EventType: "owner.created" | "owner.updated" | "owner.income_input_recorded" | "owner.return_input_recorded" | "owner.anlage_n_exported" | "property.created" | "property.updated" | "property.purchase_notarized" | "property.possession_transferred" | "property.ownership_set" | "property.acquisition_cost_recorded" | "property.acquisition_cost_updated" | "property.acquisition_cost_removed" | "property.price_split_recorded" | "property.price_split_selected" | "property.tax_input_recorded" | "property.anlage_v_exported" | "property.scenario_recorded" | "unit.created" | "unit.updated" | "tenant.created" | "tenant.updated" | "tenant.erased" | "tenancy.created" | "tenancy.updated" | "tenancy.parties_set" | "tenancy.started" | "tenancy.rent_scheduled" | "tenancy.deposit_received" | "tenancy.notice_given" | "tenancy.ended" | "loan.created" | "loan.updated" | "loan.disbursed" | "document.uploaded" | "document.typed" | "document.linked" | "document.unlinked" | "document.deleted" | "document.classified" | "document.extracted" | "document.read_failed" | "document.received_by_email" | "workspace.settings_changed" | "workspace.income_input_recorded" | "workspace.return_input_recorded" | "workspace.questionnaire_answered" | "workspace.reminder_acknowledged" | "workspace.notification_sent" | "workspace.inbox_poll_failed" | "workspace.inbox_poll_recovered" | "workspace.ai_consent_recorded" | "workspace.prices_fetched" | "workspace.valuation_snapshot_written" | "workspace.bank_pin_set" | "workspace.bank_pin_deleted" | "workspace.app_secret_set" | "workspace.app_secret_deleted" | "proposal.created" | "proposal.superseded" | "proposal.rejected" | "proposal.applied" | "user.signed_in" | "user.signed_out" | "user.sessions_revoked" | "user.passkey_enrolled" | "user.passkey_renamed" | "user.passkey_removed" | "user.invited" | "user.enrolled" | "account.created" | "account.updated" | "account.connection_created" | "account.connection_updated" | "account.sync_started" | "account.sync_approval_needed" | "account.sync_completed" | "account.sync_failed" | "account.statement_fetched" | "account.statements_refused" | "account.statements_answered" | "account.bank_parameters_read" | "account.kind_set" | "account.ownership_set" | "account.movements_imported" | "account.movements_reconciled" | "account.movements_unreconciled" | "account.withdrawal_history_checked" | "account.balance_corrected" | "account.movement_times_corrected" | "account.holdings_confirmed" | "account.holdings_reconciled" | "account.holdings_mismatch" | "account.holding_corrected" | "account.holdings_exported" | "account.deposit_address_learned" | "account.deposit_address_forgotten" | "account.withdrawal_pair_learned" | "account.withdrawal_pair_forgotten" | "wallet.address_added" | "wallet.address_updated" | "wallet.address_revealed" | "asset.created" | "asset.updated" | "asset.price_recorded" | "asset.price_source_failed" | "movement.proposed" | "movement.confirmed" | "movement.superseded" | "wallet.sync_completed" | "wallet.sync_failed" | "wallet.payee_answered" | "wallet.deposit_looked_up" | "movement_group.proposed" | "movement_group.confirmed" | "movement_group.trade_recorded" | "transfer.linked" | "transfer.unlinked" | "statement.imported" | "statement.reconciled" | "statement.unreconciled" | "statement.duplicate_resolved" | "transaction.allocated" | "transaction.reallocated" | "transaction.resort_proposed" | "rule.created" | "rule.disabled" | "health.snapshot_stored" | "household_scenario.created" | "household_scenario.withdrawn";
         /**
          * ExchangeImport
          * @description An import on the exchange account's page, with its balances per asset.
@@ -8065,6 +8135,42 @@ export interface components {
          */
         HouseholdGroup: "income" | "housing" | "groceries" | "family_child" | "mobility" | "insurance" | "subscriptions" | "leisure_travel" | "health" | "other" | "tax" | "movements" | "depot" | "personal_care" | "clothing" | "dining" | "home" | "electronics" | "online_shopping" | "fees" | "gifts" | "family_transfers" | "telecom" | "work_education" | "sport" | "travel" | "investment" | "refund";
         /**
+         * HouseholdLevers
+         * @description `household_scenario.levers` (D248). The defaults are the spec's (§18 Q1).
+         */
+        HouseholdLevers: {
+            /**
+             * Reserve Target Months
+             * @default 6.0
+             */
+            reserve_target_months: string;
+            /**
+             * Buffer Percent
+             * @default 10
+             */
+            buffer_percent: string;
+            /**
+             * Horizon Months
+             * @default 60
+             */
+            horizon_months: number;
+            reserve_accounts?: components["schemas"]["ReserveAccounts"];
+            /** Plan Overrides */
+            plan_overrides?: components["schemas"]["PlanOverride"][];
+            /** Income Changes */
+            income_changes?: components["schemas"]["IncomeChange"][];
+            /** One Offs */
+            one_offs?: components["schemas"]["OneOff"][];
+            value_change?: components["schemas"]["ValueChange"];
+            /**
+             * Net Worth Years
+             * @default 10
+             */
+            net_worth_years: number;
+            /** Bands */
+            bands?: components["schemas"]["BandLimits"][];
+        };
+        /**
          * HouseholdMonth
          * @description §4.2. The identities between the fields are checked here; how each block is summed is
          *     rules/health/month (step 1). `sources`: the allocation ids per field (principle 2), empty
@@ -8105,6 +8211,95 @@ export interface components {
             sources?: {
                 [key: string]: string[];
             };
+        };
+        /**
+         * HouseholdPlan
+         * @description GET /household-plan (§13).
+         */
+        HouseholdPlan: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Scenario Id */
+            scenario_id?: string | null;
+            levers: components["schemas"]["HouseholdLevers"];
+            /** Newest Closed */
+            newest_closed?: string | null;
+            surplus?: components["schemas"]["Surplus"] | null;
+            /** Plans */
+            plans?: components["schemas"]["SavingsPlan"][];
+            /** Already Invested */
+            already_invested?: string | null;
+            /** Investable Left */
+            investable_left?: string | null;
+            reserve?: components["schemas"]["Reserve"] | null;
+            /** Paths */
+            paths?: components["schemas"]["Path"][];
+            /** Months */
+            months?: components["schemas"]["PlanMonth"][];
+            /** Proposed One Offs */
+            proposed_one_offs?: components["schemas"]["OneOff"][];
+            projection?: components["schemas"]["NetWorthProjection"] | null;
+            /** Todos */
+            todos?: components["schemas"]["HealthTodo"][];
+        };
+        /**
+         * HouseholdScenario
+         * @description household_scenario row (append-only; §11 names its columns created_*).
+         */
+        HouseholdScenario: {
+            /** Name */
+            name: string;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            levers?: components["schemas"]["HouseholdLevers"];
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by?: string | null;
+        };
+        /** HouseholdScenarioCreate */
+        HouseholdScenarioCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            levers?: components["schemas"]["HouseholdLevers"];
+            /** Supersedes Id */
+            supersedes_id?: string | null;
+            /**
+             * Withdrawn
+             * @default false
+             */
+            withdrawn: boolean;
         };
         /** HouseholdServicesFact */
         HouseholdServicesFact: {
@@ -8323,6 +8518,23 @@ export interface components {
          * @enum {string}
          */
         InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment" | "wallet_groups" | "wallet_change" | "wallet_question" | "wallet_sync" | "wallet_unreconciled" | "wallet_coins_left" | "app_secret_unreadable";
+        /** IncomeChange */
+        IncomeChange: {
+            /** Monthly Net */
+            monthly_net: string;
+            /** From Month */
+            from_month: string;
+            /** To Month */
+            to_month?: string | null;
+            /** @default other */
+            note_code: components["schemas"]["IncomeChangeNote"];
+        };
+        /**
+         * IncomeChangeNote
+         * @description A code, never a sentence (§12), as phase 4b stores questionnaire answers.
+         * @enum {string}
+         */
+        IncomeChangeNote: "parental_leave" | "job_change" | "part_time" | "other";
         /**
          * IncomeInput
          * @description API read model (the table names its timestamp recorded_at, so not Record).
@@ -9557,6 +9769,23 @@ export interface components {
             todo?: components["schemas"]["HealthTodo"] | null;
         };
         /**
+         * NetWorthProjection
+         * @description §7.5. Instead of the points, the to-dos when an input is missing (§7.5 (1)).
+         */
+        NetWorthProjection: {
+            start?: components["schemas"]["ProjectionPoint"] | null;
+            /** Points */
+            points?: components["schemas"]["ProjectionPoint"][];
+            /** Assumptions */
+            assumptions?: components["schemas"]["ProjectionAssumption"][];
+            /** Ends Before Sale Year */
+            ends_before_sale_year?: number | null;
+            /** Used Up */
+            used_up?: string | null;
+            /** Todos */
+            todos?: components["schemas"]["HealthTodo"][];
+        };
+        /**
          * NetWorthRun
          * @description One stored month-end: the valuation_snapshot rows of one net_worth_run_id.
          */
@@ -9648,6 +9877,20 @@ export interface components {
              */
             ends_on: string;
         };
+        /** OneOff */
+        OneOff: {
+            /** Month */
+            month: string;
+            /** Amount */
+            amount: string;
+            /** @default typed */
+            source: components["schemas"]["OneOffSource"];
+        };
+        /**
+         * OneOffSource
+         * @enum {string}
+         */
+        OneOffSource: "typed" | "return_estimate";
         /** OpenLines */
         OpenLines: {
             /** Count */
@@ -10081,6 +10324,26 @@ export interface components {
             label: string;
         };
         /**
+         * Path
+         * @description D246, §7.2. None: not within the horizon.
+         */
+        Path: {
+            /** Key */
+            key: string;
+            /** Paused */
+            paused?: string[];
+            /** To Reserve First Month */
+            to_reserve_first_month: string;
+            /** Reached */
+            reached?: string | null;
+            /** Months Needed */
+            months_needed?: number | null;
+            /** Used Up */
+            used_up?: string | null;
+            /** Reserve At Horizon */
+            reserve_at_horizon: string;
+        };
+        /**
          * PaymentIbanConfirmed
          * @description POST /accounts/{id}/payment-iban (D176 (4)): the card account, and how many learned
          *     rules on the confirmed IBAN were switched off by it (a payment to the card is a transfer
@@ -10272,6 +10535,40 @@ export interface components {
             tax_free_benefits_month?: components["schemas"]["ExtractedValue"];
             /** @description steuerfreie Bezüge, Jahreswerte / kumuliert */
             tax_free_benefits_ytd?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * PlanClass
+         * @enum {string}
+         */
+        PlanClass: "depot" | "crypto";
+        /**
+         * PlanMonth
+         * @description One future month of §7.1.
+         */
+        PlanMonth: {
+            /** Month */
+            month: string;
+            /** Flat */
+            flat: string;
+            /** Free */
+            free: string;
+            /** Investable */
+            investable: string;
+        };
+        /**
+         * PlanOverride
+         * @description Sets a detected plan's monthly amount, or drops it (D245).
+         */
+        PlanOverride: {
+            /** Plan Key */
+            plan_key: string;
+            /** Monthly */
+            monthly?: string | null;
+            /**
+             * Dropped
+             * @default false
+             */
+            dropped: boolean;
         };
         /**
          * PositionHoldings
@@ -10517,6 +10814,77 @@ export interface components {
             sale: components["schemas"]["SaleResult"];
             /** Assumptions */
             assumptions?: components["schemas"]["Assumption"][];
+        };
+        /**
+         * ProjectionAssumption
+         * @description What was assumed, by which scenario row (§7.5 (9)).
+         */
+        ProjectionAssumption: {
+            kind: components["schemas"]["AssumptionKind"];
+            /** Value */
+            value: string;
+            /**
+             * Scenario Id
+             * Format: uuid
+             */
+            scenario_id: string;
+            /** Property Id */
+            property_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by?: string | null;
+        };
+        /**
+         * ProjectionChange
+         * @description The change since the start in five rows that sum to it (§7.5 (7)).
+         */
+        ProjectionChange: {
+            /** On Accounts */
+            on_accounts: string;
+            /** Paid In */
+            paid_in: string;
+            /** From Assumptions */
+            from_assumptions: string;
+            /** From Assumptions By Class */
+            from_assumptions_by_class?: {
+                [key: string]: string;
+            };
+            /** Flat Value */
+            flat_value: string;
+            /** Loan Repaid */
+            loan_repaid: string;
+            /** Total */
+            total: string;
+        };
+        /**
+         * ProjectionPoint
+         * @description One 31 December (or the start): the classes, the liabilities, the total.
+         */
+        ProjectionPoint: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            /** Bank */
+            bank: string;
+            /** Depot */
+            depot: string;
+            /** Crypto */
+            crypto: string;
+            /** Property */
+            property: string;
+            /** Loans */
+            loans: string;
+            /** Other Liabilities */
+            other_liabilities: string;
+            /** Total */
+            total: string;
+            change?: components["schemas"]["ProjectionChange"] | null;
         };
         /** Property */
         Property: {
@@ -11435,6 +11803,17 @@ export interface components {
             origin: components["schemas"]["ReserveOrigin"];
         };
         /**
+         * ReserveAccounts
+         * @description Accounts added to or removed from the reserve's default set (D237). Their kind
+         *     (bank_current, bank_savings, credit_card) is checked by the service, which sees them.
+         */
+        ReserveAccounts: {
+            /** Added */
+            added?: string[];
+            /** Removed */
+            removed?: string[];
+        };
+        /**
          * ReserveOrigin
          * @enum {string}
          */
@@ -11823,6 +12202,29 @@ export interface components {
             irr?: string | null;
             /** Flows */
             flows?: components["schemas"]["DatedFlow"][];
+        };
+        /**
+         * SavingsPlan
+         * @description A savings plan detected from the last three closed months (D245): the same destination
+         *     in each of the three, monthly = the median of the three sums.
+         */
+        SavingsPlan: {
+            /** Key */
+            key: string;
+            /** Destination Account Id */
+            destination_account_id?: string | null;
+            /** Destination Payee */
+            destination_payee?: string | null;
+            asset_class: components["schemas"]["PlanClass"];
+            /** Monthly */
+            monthly: string;
+            /** Months */
+            months: string[];
+            /**
+             * Overridden
+             * @default false
+             */
+            overridden: boolean;
         };
         /**
          * SavingsRate
@@ -12382,6 +12784,31 @@ export interface components {
             amount: string;
             /** Items */
             items?: components["schemas"]["AmountItem"][];
+        };
+        /**
+         * Surplus
+         * @description §6.1. Free cash is the sum of the three rounded means (D244); the buffer is 0 when the
+         *     free cash is not positive; investable = max(0, free cash − buffer).
+         */
+        Surplus: {
+            /** Rows */
+            rows: components["schemas"]["SurplusRow"][];
+        };
+        /**
+         * SurplusKey
+         * @description The rows of „So entsteht die Zahl“, in this order (D244, §6.1).
+         * @enum {string}
+         */
+        SurplusKey: "mean_income" | "mean_regular_spending" | "mean_rental_cash" | "free_cash" | "buffer" | "investable" | "median_free_cash" | "lowest_free_cash" | "one_off_spending_left_out";
+        /** SurplusRow */
+        SurplusRow: {
+            key: components["schemas"]["SurplusKey"];
+            /** Amount */
+            amount: string;
+            /** Month */
+            month?: string | null;
+            /** Sources */
+            sources?: string[];
         };
         /**
          * SyncStatus
@@ -13598,6 +14025,18 @@ export interface components {
         UsefulLife: {
             /** Years */
             years: number;
+        };
+        /**
+         * ValueChange
+         * @description The yearly change of a class's value without its distributions (§7.5 (10)), typed by
+         *     a member. Neither field has a default value or an example: an empty field means no
+         *     projection, a typed 0 is a rate (D247 amended).
+         */
+        ValueChange: {
+            /** Depot */
+            depot?: string | null;
+            /** Crypto */
+            crypto?: string | null;
         };
         /** VorsorgeOverride */
         VorsorgeOverride: {
@@ -19456,6 +19895,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthSnapshotResult"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_scenarios_list_api_household_scenarios_get: {
+        parameters: {
+            query?: {
+                include_history?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseholdScenario"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_scenario_create_api_household_scenarios_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HouseholdScenarioCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseholdScenario"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_scenario_withdraw_api_household_scenarios__scenario_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scenario_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseholdScenario"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_plan_get_api_household_plan_get: {
+        parameters: {
+            query?: {
+                scenario?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseholdPlan"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

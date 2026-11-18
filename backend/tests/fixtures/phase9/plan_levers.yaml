@@ -29,7 +29,6 @@ bases:
 
 cases:
   - id: projection_year_replaces_mean
-    pending: "2"
     description: §15.2
     <<: *household
     flat_years: *flat_years
@@ -46,7 +45,6 @@ cases:
       todos: []
 
   - id: income_change_window
-    pending: "2"
     description: §15.2, −600.00 a month from September 2027 to August 2028
     <<: *household
     flat_years: *flat_years
@@ -64,7 +62,6 @@ cases:
       todos: []
 
   - id: reserve_used_up
-    pending: "2"
     description: §15.2, −1,500.00 a month from September 2027 with no end
     <<: *household
     flat_years: *flat_years
@@ -78,7 +75,6 @@ cases:
       todos: []
 
   - id: one_off_in_month
-    pending: "2"
     description: a typed one-off of −2,000.00 in August 2027 (free cash that month −886.67, no buffer)
     <<: *household
     flat_years: *flat_years
@@ -94,7 +90,6 @@ cases:
       todos: []
 
   - id: proposed_refund_not_counted_until_accepted
-    pending: "2"
     description: phase 4b's expected refund is proposed as a one-off; until accepted the rows are those without it
     <<: *household
     flat_years: *flat_years
@@ -108,7 +103,6 @@ cases:
       todos: []
 
   - id: no_default_scenario_todo
-    pending: "2"
     description: no default scenario for the flat; the measured mean every month and the to-do „Szenario für die Wohnung anlegen“
     <<: *household
     flat_years: null
@@ -121,7 +115,6 @@ cases:
       todos: [no_default_scenario]
 
   - id: lever_bounds
-    pending: "2"
     description: >-
       §7.3 through HouseholdLevers; a one-off outside the horizon and an account of another
       kind in reserve_accounts are refused by the rule and the service, which know the

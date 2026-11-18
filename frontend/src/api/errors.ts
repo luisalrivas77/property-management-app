@@ -186,6 +186,15 @@ export const RULE_CODE_TEXT: Record<string, string> = {
     "Das Nettovermögen zum Monatsende ist noch unvollständig: Ein Kurs, ein Kontoauszug oder eine Buchung fehlt. Was fehlt, steht beim Monat; danach lassen sich die Kennzahlen festhalten.",
   "health.range_invalid":
     "Dieser Zeitraum geht nicht: Der Anfang muss vor dem Ende liegen, und es sind höchstens 24 Monate.",
+  // the household plan's scenarios (phase-9.md §7.3, D248)
+  "household_scenario.not_current":
+    "Dieses Haushaltsszenario ist nicht mehr aktuell, oder es gibt schon ein Standard-Szenario. Bitte die Seite neu laden.",
+  "household_scenario.account_invalid":
+    "Zur Reserve zählen nur Giro- und Sparkonten und Kreditkarten. Bitte ein solches Konto wählen.",
+  "household_scenario.one_off_outside":
+    "Eine einmalige Zahlung liegt außerhalb des Planungszeitraums. Bitte einen Monat darin wählen oder den Zeitraum verlängern.",
+  "household_scenario.withdrawal_invalid":
+    "Beim Zurückziehen bleiben die Annahmen des Szenarios unverändert. Bitte die Seite neu laden.",
   "scenario.not_current":
     "Das Szenario ist nicht mehr aktuell, oder es gibt schon ein Standard-Szenario. Bitte die Seite neu laden.",
   "scenario.scope_invalid": "Das Szenario passt nicht zu dieser Immobilie oder ihren Darlehen.",

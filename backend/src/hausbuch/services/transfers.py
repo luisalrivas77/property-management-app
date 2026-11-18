@@ -2056,8 +2056,9 @@ def transfer_inbox_items(conn: Connection, today: date) -> list[InboxItem]:
 
 def saving_links(conn: Connection, *, start: date, end: date) -> list[TransferLinkView]:
     """The current links that moved money into a savings, depot or exchange account from a
-    current account, with the in-leg booked between the dates (what `saved_in` sums; phase 9
-    buckets them by the in-leg's month)."""
+    current account, with the in-leg booked between the dates (what `saved_in` sums, by the
+    in-leg's month). Phase 9's savings plans (services.plan.plan_lines) read a wider range and
+    bucket each link by its out-leg's booking month instead."""
     out = []
     for view in list_links(conn, start=start, end=end):
         if not start <= view.in_leg.booked_on <= end:

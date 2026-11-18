@@ -994,7 +994,7 @@ def surplus(months: list[SpMonth], buffer_percent: Decimal) -> SpExpect:
 
 
 class SpCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     months: list[SpMonth] = Field(min_length=1, max_length=12)
     buffer_percent: BufferPercent
     expect: SpExpect
@@ -1108,7 +1108,7 @@ def savings_plans(
 
 
 class PlCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     own_accounts: dict[str, PlOwnAccount]
     last_three_closed: list[YearMonth] = Field(min_length=3, max_length=3)
     lines: list[PlLine]
@@ -1256,7 +1256,7 @@ def same_rows(got: list[PaRow], want: list[PaRow], what: str) -> None:
 
 
 class PaCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     newest_closed: YearMonth
     month: PaMonth
     reserve: Money
@@ -1303,7 +1303,7 @@ class LvExpect(Schema):
 
 
 class LvCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     newest_closed: YearMonth | None = None
     month: PaMonth | None = None
     reserve: Money | None = None
@@ -1551,7 +1551,7 @@ def as_np(point: ProjectionPoint) -> NpPoint:
 
 
 class NpCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     newest_closed: YearMonth | None = None
     closed_months: int | None = None
     month: PaMonth | None = None

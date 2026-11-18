@@ -1,0 +1,280 @@
+"""Household scenarios: the levers of the household plan (docs/phases/phase-9.md D248, §7.3,
+§11.2, §13).
+
+One append-only table `household_scenario` (migration 0048: SELECT and INSERT only for the
+app role). A row is never changed: a correction is a new row whose `supersedes_id` names the
+row it replaces, and a withdrawal is a new row with `withdrawn = true` (phase 4's
+`projection_scenario` convention). The withdraw command repeats the withdrawn row's name,
+flag and levers; a withdrawal posted to the create command is checked against the levers
+only, so its name and default flag may differ from the row it withdraws. Every row
+is written with its event in the caller's transaction (principle 4):
+`household_scenario.created` or `household_scenario.withdrawn`, ids and flags only (the
+levers hold amounts and the name is free text, §11.6).
+
+"In force" = not withdrawn and not superseded by any other row. What a write must satisfy,
+beyond HouseholdScenarioCreate's own validator (HouseholdLevers checks the ranges):
+
+- `supersedes_id` names a row of this workspace (404 otherwise) that is in force
+  (`household_scenario.not_current`); a withdrawal repeats its levers
+  (`household_scenario.withdrawal_invalid`);
+- every account in `reserve_accounts` (added or removed) exists (404) and is of kind
+  bank_current, bank_savings or credit_card (`household_scenario.account_invalid`);
+- every one-off lies inside the horizon: the months 1 … `horizon_months` after the newest
+  closed month of today's window, or after the last ended month when no month is closed
+  (`household_scenario.one_off_outside`). The read checks the same against the window of its
+  day and names a one-off that has fallen out with „Szenario prüfen“;
+- at most one default in force: a new default while another default is in force and not the
+  row being superseded is refused (`household_scenario.not_current`). The table has no
+  partial unique index (it cannot see supersession), so this is the service's rule.
+
+A withdrawal is not re-checked against the accounts or the horizon: it only ends a row.
+
+Writes of one workspace are serialised by a transaction-scoped advisory lock, so the "one
+default" check cannot race; `supersedes_id` is UNIQUE in the table as well.
+"""
+
+from datetime import date
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import Connection, Row, and_, exists, func, insert, select
+from sqlalchemy.exc import IntegrityError
+
+from hausbuch.db.tables import account as account_table
+from hausbuch.db.tables import household_scenario as scenario_table
+from hausbuch.rules.errors import (
+    HOUSEHOLD_SCENARIO_ACCOUNT_INVALID,
+    HOUSEHOLD_SCENARIO_NOT_CURRENT,
+    HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE,
+    HOUSEHOLD_SCENARIO_WITHDRAWAL_INVALID,
+)
+from hausbuch.rules.plan.levers import add_months, one_offs_outside
+from hausbuch.schemas.enums import AccountKind, EntityType
+from hausbuch.schemas.events import EventType, HouseholdScenarioRecorded
+from hausbuch.schemas.health import month_of
+from hausbuch.schemas.plan import HouseholdScenario, HouseholdScenarioCreate
+
+from .allocations import user_id
+from .context import CommandContext
+from .documents import LOCAL_TIME_ZONE
+from .errors import ConflictError, NotFoundError, RuleViolationError, violated_constraint
+from .events import append_event
+from .health import _window, ended_months, read_months
+
+RESERVE_KINDS = frozenset(
+    {AccountKind.BANK_CURRENT, AccountKind.BANK_SAVINGS, AccountKind.CREDIT_CARD}
+)
+_SUPERSEDED_ONCE = "household_scenario_supersedes_id_key"
+
+
+# --- Reads -------------------------------------------------------------------------------
+
+
+def _in_force() -> Any:
+    """SQL: the row is neither withdrawn nor superseded by another row."""
+    later = scenario_table.alias("later")
+    return and_(
+        scenario_table.c.withdrawn.is_(False),
+        ~exists().where(later.c.supersedes_id == scenario_table.c.id),
+    )
+
+
+def list_scenarios(conn: Connection, *, include_history: bool = False) -> list[HouseholdScenario]:
+    """GET /household-scenarios: the scenarios in force, oldest first; with include_history
+    every row, the withdrawn and superseded ones too."""
+    query = select(scenario_table)
+    if not include_history:
+        query = query.where(_in_force())
+    rows = conn.execute(query.order_by(scenario_table.c.created_at, scenario_table.c.id))
+    return [_to_scenario(r) for r in rows]
+
+
+def get_scenario(conn: Connection, scenario_id: UUID) -> HouseholdScenario | None:
+    row = conn.execute(
+        select(scenario_table).where(scenario_table.c.id == scenario_id)
+    ).one_or_none()
+    return None if row is None else _to_scenario(row)
+
+
+def is_in_force(conn: Connection, scenario_id: UUID) -> bool:
+    row = conn.execute(
+        select(scenario_table.c.id).where(scenario_table.c.id == scenario_id, _in_force())
+    ).one_or_none()
+    return row is not None
+
+
+def default_scenario(conn: Connection) -> HouseholdScenario | None:
+    """The default household scenario in force (the newest when two are), None when none is.
+    The same row health.household_levers reads."""
+    row = conn.execute(
+        select(scenario_table)
+        .where(scenario_table.c.is_default.is_(True), _in_force())
+        .order_by(scenario_table.c.created_at.desc(), scenario_table.c.id)
+        .limit(1)
+    ).one_or_none()
+    return None if row is None else _to_scenario(row)
+
+
+# --- Writes ------------------------------------------------------------------------------
+
+
+def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> HouseholdScenario:
+    """POST /household-scenarios: one new row and its event (see the module doc for the
+    checks). NotFoundError for an unknown superseded row or reserve account;
+    RuleViolationError household_scenario.not_current, .account_invalid, .one_off_outside or
+    .withdrawal_invalid. Nothing is written then."""
+    _lock(ctx)
+    if data.supersedes_id is not None:
+        _check_supersedes(ctx.conn, data)
+    if not data.withdrawn:
+        _check_accounts(ctx.conn, data)
+        _check_one_offs(ctx, data)
+        if data.is_default:
+            _check_one_default(ctx.conn, data)
+    return _insert(ctx, data)
+
+
+def withdraw_scenario(ctx: CommandContext, scenario_id: UUID) -> HouseholdScenario:
+    """POST /household-scenarios/{id}/withdraw: a new row that repeats the scenario's name,
+    flag and levers with `withdrawn = true`. NotFoundError for an unknown row;
+    household_scenario.not_current when it is no longer in force."""
+    _lock(ctx)
+    old = get_scenario(ctx.conn, scenario_id)
+    if old is None:
+        raise NotFoundError(EntityType.HOUSEHOLD_SCENARIO, scenario_id)
+    data = HouseholdScenarioCreate(
+        name=old.name,
+        is_default=old.is_default,
+        levers=old.levers,
+        supersedes_id=old.id,
+        withdrawn=True,
+    )
+    _check_supersedes(ctx.conn, data)
+    return _insert(ctx, data)
+
+
+def _insert(ctx: CommandContext, data: HouseholdScenarioCreate) -> HouseholdScenario:
+    try:
+        row = ctx.conn.execute(
+            insert(scenario_table)
+            .values(
+                workspace_id=ctx.workspace_id,
+                name=data.name,
+                is_default=data.is_default,
+                levers=data.levers.model_dump(mode="json"),
+                supersedes_id=data.supersedes_id,
+                withdrawn=data.withdrawn,
+                created_by=user_id(ctx),
+                created_at=ctx.now,
+            )
+            .returning(*scenario_table.c)
+        ).one()
+    except IntegrityError as exc:
+        if violated_constraint(exc) == _SUPERSEDED_ONCE:
+            # Unreachable while the workspace lock holds; kept so a race is a 409, not a 500.
+            raise ConflictError(
+                f"household scenario {data.supersedes_id} was superseded concurrently",
+                constraint=_SUPERSEDED_ONCE,
+            ) from None
+        raise
+    created = _to_scenario(row)
+    append_event(
+        ctx,
+        EventType.HOUSEHOLD_SCENARIO_WITHDRAWN
+        if created.withdrawn
+        else EventType.HOUSEHOLD_SCENARIO_CREATED,
+        created.id,
+        HouseholdScenarioRecorded(
+            is_default=created.is_default, supersedes_id=created.supersedes_id
+        ),
+    )
+    return created
+
+
+# --- Checks ------------------------------------------------------------------------------
+
+
+def _lock(ctx: CommandContext) -> None:
+    """One household scenario write at a time per workspace."""
+    key = func.hashtextextended(f"household_scenario:{ctx.workspace_id}", 0)
+    ctx.conn.execute(select(func.pg_advisory_xact_lock(key)))
+
+
+def _not_current(message: str) -> RuleViolationError:
+    return RuleViolationError([HOUSEHOLD_SCENARIO_NOT_CURRENT], message)
+
+
+def _check_supersedes(conn: Connection, data: HouseholdScenarioCreate) -> None:
+    assert data.supersedes_id is not None
+    old = get_scenario(conn, data.supersedes_id)
+    if old is None:
+        raise NotFoundError(EntityType.HOUSEHOLD_SCENARIO, data.supersedes_id)
+    if not is_in_force(conn, old.id):
+        raise _not_current(f"household scenario {old.id} is withdrawn or already superseded")
+    if data.withdrawn and old.levers != data.levers:
+        raise RuleViolationError(
+            [HOUSEHOLD_SCENARIO_WITHDRAWAL_INVALID],
+            "a withdrawal repeats the withdrawn scenario's levers",
+        )
+
+
+def _check_accounts(conn: Connection, data: HouseholdScenarioCreate) -> None:
+    named = data.levers.reserve_accounts.added + data.levers.reserve_accounts.removed
+    if not named:
+        return
+    acc = account_table.c
+    kinds = {
+        r.id: AccountKind(r.kind)
+        for r in conn.execute(select(acc.id, acc.kind).where(acc.id.in_(named)))
+    }
+    for account_id in named:
+        if account_id not in kinds:
+            raise NotFoundError(EntityType.ACCOUNT, account_id)
+        if kinds[account_id] not in RESERVE_KINDS:
+            raise RuleViolationError(
+                [HOUSEHOLD_SCENARIO_ACCOUNT_INVALID],
+                f"account {account_id} is a {kinds[account_id].value}: the reserve counts"
+                " current and savings accounts and credit cards only",
+            )
+
+
+def newest_closed_month(conn: Connection, today: date) -> str:
+    """The month the plan's months count from: the newest closed month of today's window,
+    else the last month that has ended."""
+    ended = ended_months(today)
+    win = _window(read_months(conn, ended, today))
+    if win.months:
+        return win.months[-1]
+    return ended[-1] if ended else month_of(today)
+
+
+def _check_one_offs(ctx: CommandContext, data: HouseholdScenarioCreate) -> None:
+    levers = data.levers
+    if not levers.one_offs:
+        return
+    today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
+    newest = newest_closed_month(ctx.conn, today)
+    outside = one_offs_outside(levers.one_offs, newest, levers.horizon_months)
+    if outside:
+        last = add_months(newest, levers.horizon_months)
+        raise RuleViolationError(
+            [HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE],
+            f"a one-off in {outside[0].month} lies outside the horizon,"
+            f" {add_months(newest, 1)} to {last}",
+        )
+
+
+def _check_one_default(conn: Connection, data: HouseholdScenarioCreate) -> None:
+    rows = conn.execute(
+        select(scenario_table.c.id).where(scenario_table.c.is_default.is_(True), _in_force())
+    ).scalars()
+    others = [r for r in rows if r != data.supersedes_id]
+    if others:
+        raise _not_current(
+            f"household scenario {others[0]} is the default; supersede it (supersedes_id) or"
+            " record this one without is_default"
+        )
+
+
+def _to_scenario(row: Row) -> HouseholdScenario:
+    return HouseholdScenario.model_validate(row._asdict())

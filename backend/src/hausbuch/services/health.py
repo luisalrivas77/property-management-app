@@ -519,8 +519,9 @@ def _window(reads: dict[str, MonthRead], up_to: str | None = None) -> Window:
 def household_levers(conn: Connection, scenario_id: UUID | None = None) -> HouseholdLevers:
     """The levers of `scenario_id` (any row of the table, a withdrawn one included, so an
     old scenario can be looked at), else of the default household scenario in force (not
-    withdrawn, not superseded; the newest when two are), else the defaults. Step 2 writes the
-    rows; until then every household reads the defaults."""
+    withdrawn, not superseded; the newest when two are), else the defaults. The rows are
+    written by services/household_scenarios.py (POST /household-scenarios, step 2), which
+    keeps at most one default in force."""
     hs = household_scenario_table.c
     if scenario_id is not None:
         row = conn.execute(select(hs.levers).where(hs.id == scenario_id)).one_or_none()

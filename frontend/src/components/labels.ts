@@ -306,6 +306,8 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "workspace.prices_fetched": "Kurse abgerufen",
   "workspace.valuation_snapshot_written": "Monatsendstand des Vermögens gespeichert",
   "health.snapshot_stored": "Kennzahlen eines abgeschlossenen Monats festgehalten",
+  "household_scenario.created": "Haushaltsszenario gespeichert",
+  "household_scenario.withdrawn": "Haushaltsszenario zurückgezogen",
   "workspace.bank_pin_set": "PIN eines Online-Banking-Zugangs gespeichert (verschlüsselt)",
   "workspace.bank_pin_deleted": "PIN eines Online-Banking-Zugangs gelöscht",
   "proposal.created": "Vorschlag erstellt",

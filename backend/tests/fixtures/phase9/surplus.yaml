@@ -19,7 +19,6 @@ bases:
 
 cases:
   - id: baseline
-    pending: "2"
     description: §15.2
     months: *worked
     buffer_percent: "10"
@@ -29,7 +28,6 @@ cases:
       lowest_month: "2027-04", one_off_spending_left_out: "12000.00"}
 
   - id: buffer_zero
-    pending: "2"
     months: *worked
     buffer_percent: "0"
     expect: {mean_income: "5583.33", mean_regular_spending: "4116.67",
@@ -38,7 +36,6 @@ cases:
       lowest_month: "2027-04", one_off_spending_left_out: "12000.00"}
 
   - id: free_cash_negative
-    pending: "2"
     months:
       - {month: "2027-03", income: "3000.00", regular_spending: "3500.00", rental_cash: "-100.00", one_off_spending: "0.00"}
       - {month: "2027-04", income: "3000.00", regular_spending: "3500.00", rental_cash: "-100.00", one_off_spending: "0.00"}
@@ -50,7 +47,6 @@ cases:
       one_off_spending_left_out: "0.00"}
 
   - id: one_off_left_out
-    pending: "2"
     months:
       - {month: "2027-01", income: "5000.00", regular_spending: "3000.00", rental_cash: "0.00", one_off_spending: "0.00"}
       - {month: "2027-02", income: "5000.00", regular_spending: "3000.00", rental_cash: "0.00", one_off_spending: "2500.00"}
@@ -62,7 +58,6 @@ cases:
       one_off_spending_left_out: "2500.00"}
 
   - id: median_and_lowest
-    pending: "2"
     months:
       - {month: "2027-02", income: "5000.00", regular_spending: "4000.00", rental_cash: "0.00", one_off_spending: "0.00"}
       - {month: "2027-03", income: "5000.00", regular_spending: "3600.00", rental_cash: "0.00", one_off_spending: "0.00"}

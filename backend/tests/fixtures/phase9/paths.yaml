@@ -23,7 +23,6 @@ bases:
 
 cases:
   - id: four_rows
-    pending: "2"
     description: §15.2
     newest_closed: "2027-05"
     month: *worked_month
@@ -41,7 +40,6 @@ cases:
       others: []
 
   - id: already_reached
-    pending: "2"
     newest_closed: "2027-05"
     month: *worked_month
     reserve: "30000.00"
@@ -58,7 +56,6 @@ cases:
       others: []
 
   - id: as_is_never_reaches
-    pending: "2"
     description: the plan takes more than is left; as_is sends −100.00 a month to the reserve
     newest_closed: "2027-05"
     month: {mean_income: "4000.00", mean_regular_spending: "3444.44", mean_rental_cash: "0.00", buffer_percent: "10"}
@@ -75,7 +72,6 @@ cases:
       others: []
 
   - id: generic_two_rows
-    pending: "2"
     description: in advice_mode generic only the first and the last row exist (D251)
     newest_closed: "2027-05"
     month: *worked_month
@@ -91,7 +87,6 @@ cases:
       others: []
 
   - id: more_than_four_plans
-    pending: "2"
     newest_closed: "2027-05"
     month: {mean_income: "5000.00", mean_regular_spending: "3000.00", mean_rental_cash: "0.00", buffer_percent: "0"}
     reserve: "10000.00"

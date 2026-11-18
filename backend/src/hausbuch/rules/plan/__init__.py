@@ -8,6 +8,6 @@
 - `projection`: the net worth in some years on the household's typed rates (D247 amended,
   §7.5), step 2.
 
-Every function is pure and computes no tax (D247). Step 0 writes the stubs; each raises until
-step 2.
+Every function is pure and computes no tax (D247); step 2 built them (the services read them
+through services/plan.py).
 """
