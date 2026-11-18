@@ -41,6 +41,7 @@ import {
   toSignedRate,
 } from "./healthShared";
 import { percentInput, toSignedMoneyString } from "./input";
+import { SpendingPlaySection, usePlanPreview } from "./spendingPlay";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -211,6 +212,9 @@ function PlanBody({ data, onSaved }: { data: PlanData; onSaved: () => void }) {
   const investable = surplusRow(plan, "investable");
   const free = surplusRow(plan, "free_cash");
   const todos = (plan.todos ?? []).filter((todo) => todo.code !== "rate_missing");
+  // D263: every draft goes through the preview while a member types; the cards above keep the
+  // saved values, only „Was eure Änderungen bewirken“ moves.
+  const preview = usePlanPreview(plan, draft, dirty);
 
   async function save() {
     setBusy(true);
@@ -288,9 +292,11 @@ function PlanBody({ data, onSaved }: { data: PlanData; onSaved: () => void }) {
 
       <Levers data={data} draft={draft} setDraft={setDraft} />
       <MoreAssumptions data={data} draft={draft} setDraft={setDraft} />
+      <SpendingPlaySection saved={plan} windowMonths={closedMonths} preview={preview} draft={draft} setDraft={setDraft} />
       {dirty ? (
         <p className="notice notice-warn" role="status">
-          Geändert, noch nicht gespeichert; die Zahlen auf dieser Seite rechnen mit der gespeicherten Fassung.
+          Geändert, noch nicht gespeichert; die Zahlen auf dieser Seite rechnen mit der gespeicherten Fassung, nur „Was eure Änderungen
+          bewirken“ rechnet schon mit euren Änderungen.
         </p>
       ) : null}
       {saveBar}

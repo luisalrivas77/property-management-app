@@ -13,6 +13,11 @@
 // their real count, and stand back for a to-do below three; the flat's result R is an income row,
 // so the month's rate is visibly the household's; a month whose stored closing differs from the
 // month on read carries the chip „seit dem Abschluss geändert“ with both values.
+//
+// Phase 9 D263 (§7.7, mockup 10b): for each code the default scenario in force on the month's
+// last day names, „Geplant“ and „Unterschied“ beside the month's spending, from GET
+// /household-plan/comparison; „bisher“ while the month is not closed, with the lines that still
+// wait in Zu prüfen. No colour, no mark: the words are the server's.
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useId, useState } from "react";
@@ -35,7 +40,7 @@ import {
 } from "@/components/cashflow";
 import { formatMoney, formatMonth, formatPercent, todayIso } from "@/components/format";
 import { HealthTodoList } from "@/components/healthFigures";
-import { monthRange } from "@/components/healthShared";
+import { longDate, monthRange } from "@/components/healthShared";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -46,6 +51,8 @@ type TransferLinkView = components["schemas"]["TransferLinkView"];
 type HealthMonthView = components["schemas"]["HealthMonthView"];
 type Health = components["schemas"]["Health"];
 type HouseholdMonthFigures = components["schemas"]["HouseholdMonth"];
+type SpendingComparison = components["schemas"]["SpendingComparison"];
+type SpendingComparisonRow = components["schemas"]["SpendingComparisonRow"];
 
 const MONTHS_SHOWN = 12;
 const MONTHS_OFFERED = 24;
@@ -62,19 +69,22 @@ interface Year {
   overall: Health;
   /** The window's months as the private accounts count them, oldest first; the „Ø“ columns. */
   windowMonths: HouseholdCashflow[];
+  /** The chosen month beside the saved plan (D263 (d)); no rows when no scenario names a code. */
+  comparison: SpendingComparison;
 }
 
 async function loadYear(month: string): Promise<Year> {
   const shown = monthsUpTo(month, MONTHS_SHOWN);
-  const [months, transfers, health, overall] = await Promise.all([
+  const [months, transfers, health, overall, comparison] = await Promise.all([
     Promise.all(shown.map(loadCashflow)),
     ok(api.GET("/api/transfers", { params: { query: { month } } })),
     ok(api.GET("/api/health/months", { params: { query: { from: shown[0] ?? month, to: month } } })),
     ok(api.GET("/api/health")),
+    ok(api.GET("/api/household-plan/comparison", { params: { query: { month } } })),
   ]);
   const loaded = new Map(months.map((m) => [m.month, m]));
   const windowMonths = await Promise.all((overall.window.months ?? []).map((m) => loaded.get(m) ?? loadCashflow(m)));
-  return { months, transfers, health, overall, windowMonths };
+  return { months, transfers, health, overall, windowMonths, comparison };
 }
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -152,7 +162,7 @@ function HouseholdYear({ month }: { month: string }) {
 }
 
 function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void }) {
-  const { months, transfers, health, overall, windowMonths } = year;
+  const { months, transfers, health, overall, windowMonths, comparison } = year;
   const month = months[months.length - 1];
   if (!month) return null;
   const view = health.find((h) => h.month === month.month);
@@ -221,7 +231,7 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
       )}
       <SurplusBars months={months} windowMonths={means} />
       <div className="planning-split">
-        <SpendingTable months={months} windowMonths={means} />
+        <SpendingTable months={months} windowMonths={means} comparison={comparison} />
         <div className="stack household-side">
           <IncomeCard month={month} household={householdNow ?? null} />
           <SavedBox month={month} transfers={transfers} />
@@ -276,13 +286,35 @@ function SurplusBars({ months, windowMonths }: { months: HouseholdCashflow[]; wi
  * month's spending and their 12-month average. A group booked under more than one code, or
  * under a subcategory (D159 amended 14 Nov 2026, migration 0032), opens to its codes, indented
  * under it, largest first and the group's fallback („Sonstige …“) last. */
-function SpendingTable({ months, windowMonths }: { months: HouseholdCashflow[]; windowMonths: HouseholdCashflow[] }) {
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+function SpendingTable({
+  months,
+  windowMonths,
+  comparison,
+}: {
+  months: HouseholdCashflow[];
+  windowMonths: HouseholdCashflow[];
+  comparison: SpendingComparison;
+}) {
+  const planned = comparison.rows ?? [];
+  // A planned subcategory opens its group, as mockup 10b shows it.
+  const [open, setOpen] = useState<ReadonlySet<string>>(
+    () => new Set(planned.filter((row) => !onGroupRow(row)).map((row) => row.group)),
+  );
   const month = months[months.length - 1];
   if (!month) return null;
   const total = toCents(spent(month));
   const both = [...months, ...windowMonths];
-  const groups = [...new Set(both.flatMap((m) => Object.keys(m.spending_by_group)))];
+  const groups = [...new Set([...both.flatMap((m) => Object.keys(m.spending_by_group)), ...planned.map((row) => row.group)])];
+  const withPlan = planned.length > 0;
+  const plannedFor = (group: string, code: string | null) =>
+    planned.find((row) => row.group === group && (code === null ? onGroupRow(row) : row.code === code && !onGroupRow(row)));
+  const planCells = (row: SpendingComparisonRow | undefined) =>
+    withPlan ? (
+      <>
+        <td className="num muted">{row ? formatMoney(row.planned) : ""}</td>
+        <td>{row ? row.text : ""}</td>
+      </>
+    ) : null;
   const meanOf = (value: (m: HouseholdCashflow) => string) =>
     windowMonths.length > 0 ? formatMoney(averageMoney(windowMonths.map(value))) : "–";
   const now = (group: string) => month.spending_by_group[group] ?? "0.00";
@@ -304,6 +336,13 @@ function SpendingTable({ months, windowMonths }: { months: HouseholdCashflow[]; 
   return (
     <section className="card household-spending" aria-labelledby="spending-title">
       <h2 id="spending-title">Ausgaben nach Kategorie</h2>
+      {withPlan ? (
+        <p className="muted">
+          „Geplant“ steht nur bei den Kategorien, für die ihr in eurem Szenario etwas geplant habt
+          {comparison.scenario_created_at ? `: gespeichert am ${longDate(comparison.scenario_created_at)}` : ""} unter{" "}
+          <Link href="/planning?tab=haushalt#ausgaben-durchspielen">Planung › Haushalt › Ausgaben durchspielen</Link>.
+        </p>
+      ) : null}
       {groups.length === 0 ? (
         <p className="muted">In diesem Monat ist keine Ausgabe bestätigt.</p>
       ) : (
@@ -315,7 +354,16 @@ function SpendingTable({ months, windowMonths }: { months: HouseholdCashflow[]; 
                 <th scope="col">Anteil</th>
                 <th scope="col" className="num">
                   {formatMonth(month.month)}
+                  {withPlan && !comparison.final ? " bisher" : ""}
                 </th>
+                {withPlan ? (
+                  <>
+                    <th scope="col" className="num">
+                      Geplant
+                    </th>
+                    <th scope="col">Unterschied</th>
+                  </>
+                ) : null}
                 <th scope="col" className="num">
                   {windowMonths.length > 0 ? meanLabel(windowMonths.length, true) : "Ø"}
                 </th>
@@ -323,7 +371,9 @@ function SpendingTable({ months, windowMonths }: { months: HouseholdCashflow[]; 
             </thead>
             <tbody>
               {groups.flatMap((group) => {
-                const codes = groupCodes(both, group);
+                const codes = [
+                  ...new Set([...groupCodes(both, group), ...planned.filter((r) => r.group === group && !onGroupRow(r)).map((r) => r.code)]),
+                ];
                 const expanded = open.has(group);
                 const rowId = `spending-${group}`;
                 const rows = [
@@ -349,6 +399,7 @@ function SpendingTable({ months, windowMonths }: { months: HouseholdCashflow[]; 
                       </span>
                     </td>
                     <td className="num">{formatMoney(now(group))}</td>
+                    {planCells(plannedFor(group, null))}
                     <td className="num muted">{meanOf((m) => m.spending_by_group[group] ?? "0.00")}</td>
                   </tr>,
                 ];
@@ -370,6 +421,7 @@ function SpendingTable({ months, windowMonths }: { months: HouseholdCashflow[]; 
                         </span>
                       </td>
                       <td className="num">{formatMoney(codeNow(code))}</td>
+                      {planCells(plannedFor(group, code))}
                       <td className="num muted">{meanOf((m) => m.spending_by_category?.[group]?.[code] ?? "0.00")}</td>
                     </tr>,
                   );
@@ -379,19 +431,46 @@ function SpendingTable({ months, windowMonths }: { months: HouseholdCashflow[]; 
             </tbody>
             <tfoot>
               <tr>
-                <th scope="row">Summe</th>
+                <th scope="row">{withPlan && !comparison.final ? "Summe bisher" : "Summe"}</th>
                 <td />
                 <td className="num">
                   <strong>{formatMoney(spent(month))}</strong>
                 </td>
+                {withPlan ? (
+                  <>
+                    <td />
+                    <td />
+                  </>
+                ) : null}
                 <td />
               </tr>
             </tfoot>
           </table>
         </div>
       )}
+      {withPlan && !comparison.final ? (
+        <p className="muted">
+          Der Monat ist noch nicht abgeschlossen: „bisher“ zählt die bestätigten Umsätze bis heute. Der Vergleich mit „Geplant“ ist erst
+          nach dem Monatsabschluss endgültig.
+          {(comparison.open_lines ?? 0) > 0 ? (
+            <>
+              {" "}
+              <Link href="/inbox">
+                {openLinesText(comparison.open_lines ?? 0)} {comparison.open_lines === 1 ? "wartet" : "warten"} in Zu prüfen
+              </Link>
+            </>
+          ) : null}
+        </p>
+      ) : null}
     </section>
   );
+}
+
+/** A planned code shown on its group's row: the group's fallback, which stands for the whole
+ * group (§7.6 (1)), or the only code of a group without subcategories. */
+function onGroupRow(row: SpendingComparisonRow): boolean {
+  const fallback = fallbackOf(row.group);
+  return fallback === null || fallback === row.code;
 }
 
 /** The group's fallback code (the last of its codes in HOUSEHOLD_SPENDING_GROUPS), or null for

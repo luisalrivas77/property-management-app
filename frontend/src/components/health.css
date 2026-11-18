@@ -166,3 +166,67 @@
     display: none;
   }
 }
+
+/* Ausgaben durchspielen (phase 9 D263, mockup 12d): no colour, the figures are the server's. */
+.spending-play-table td,
+.spending-play-table th {
+  vertical-align: top;
+}
+
+.spending-play-field p,
+.spending-play-field ul {
+  margin: 4px 0 0;
+}
+
+.spending-play-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.spending-play-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.spending-play-input input {
+  width: 7.5em;
+  text-align: right;
+}
+
+.spending-play-unit {
+  display: inline-flex;
+}
+
+.spending-play-unit button {
+  min-width: 2.5em;
+  padding: 4px 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+
+.spending-play-unit button[aria-pressed="true"] {
+  font-weight: 800;
+  border-color: var(--text);
+}
+
+.spending-play-segments {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.spending-play-sub {
+  display: block;
+  font-weight: 400;
+  font-size: 0.85em;
+}
+
+.spending-play-effects {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
