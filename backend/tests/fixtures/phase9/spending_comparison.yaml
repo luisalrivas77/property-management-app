@@ -1,0 +1,192 @@
+# Phase 9 step 3b (docs/phases/phase-9.md §7.7, D263): `rules/plan/spending.compare`. A saved
+# plan beside the real month: for each spending change of the default household scenario in
+# force on the month's last day (today for the running month), the planned amount from the
+# mean stored when the scenario was saved (`mean_at_save`), the month's actual spending on the
+# change's code (a group's fallback code: every code of the group; a one-off code never), the
+# signed difference and its words. Nothing for a code the scenario does not name, and nothing
+# for a change not in force in the month.
+#
+# tests/fixture_models_phase9.py recomputes every expectation on load with the rule written
+# once more there; tests/rules/test_phase9_spending.py replays the cases through the rule.
+#
+# Step 3b's readings (to be listed in docs/phases/phase-9.md §15.1):
+# - a line's amount is signed as booked (spending negative), so actual = −Σ amounts and a
+#   credit on the code (a returned purchase booked on the code itself) lowers it; a refund
+#   booked as „Erstattung“ (hh_refund) is its own group and never lowers a change's code;
+# - the words are „wie geplant“ when |difference| < 1 €, else the difference in whole euros
+#   rounded half up with a thousands point, „<n> € mehr als geplant“ or „<n> € weniger als
+#   geplant“ (case `words_at_the_edges`);
+# - the result is final only for a closed month (§4.4) that has ended; for the running month
+#   or a month with lines still waiting the screen says „bisher“ and names the waiting count;
+# - the scenario in force on a day D (Berlin calendar): the default rows created on or before
+#   D, not withdrawn, not superseded by a row created on or before D, the newest first
+#   (case `scenario_in_force`).
+bases: {}
+
+cases:
+  - id: closed_month
+    description: >-
+      July 2027, closed: Supermarkt 5 % above its saved mean of 650.00; Reisen (the group's
+      fallback hh_travel) at 500.00 sums hh_lodging, hh_flights and hh_travel; Mobilität's
+      fallback hh_mobility leaves the car purchase out; Essen gehen is not named, and a change
+      from September is not in force
+    month: "2027-07"
+    today: "2027-08-10"
+    closed: true
+    open_lines: 0
+    changes:
+      - {code: hh_supermarket, percent: "0.05", from_month: "2027-06", mean_at_save: "650.00"}
+      - {code: hh_travel, monthly: "500.00", from_month: "2027-07", to_month: "2027-09", mean_at_save: "200.00"}
+      - {code: hh_mobility, monthly: "400.00", from_month: "2027-07", mean_at_save: "423.34"}
+      - {code: hh_restaurant, monthly: "80.00", from_month: "2027-09", mean_at_save: "95.00"}
+    lines:
+      - {key: super_1, code: hh_supermarket, amount: "-400.00"}
+      - {key: super_2, code: hh_supermarket, amount: "-330.00"}
+      - {key: super_back, code: hh_supermarket, amount: "10.00"}
+      - {key: hotel, code: hh_lodging, amount: "-250.00"}
+      - {key: flight, code: hh_flights, amount: "-180.00"}
+      - {key: travel_other, code: hh_travel, amount: "-20.00"}
+      - {key: travel_refund, code: hh_refund, amount: "40.00"}
+      - {key: fuel, code: hh_fuel, amount: "-150.00"}
+      - {key: car, code: hh_car_purchase, amount: "-15000.00"}
+      - {key: workshop, code: hh_mobility, amount: "-250.50"}
+      - {key: dinner, code: hh_restaurant, amount: "-60.00"}
+    expect:
+      final: true
+      open_lines: 0
+      rows:
+        - {code: hh_supermarket, planned: "682.50", actual: "720.00", difference: "37.50",
+           words: more, text: "38 € mehr als geplant", sources: [super_1, super_2, super_back]}
+        - {code: hh_travel, planned: "500.00", actual: "450.00", difference: "-50.00",
+           words: less, text: "50 € weniger als geplant", sources: [hotel, flight, travel_other]}
+        - {code: hh_mobility, planned: "400.00", actual: "400.50", difference: "0.50",
+           words: as_planned, text: "wie geplant", sources: [fuel, workshop]}
+
+  - id: running_month
+    description: >-
+      the running month (today in August 2027): the figures so far, never final, with the
+      lines still waiting in Zu prüfen; the scenario's change on Reisen is still in force
+    month: "2027-08"
+    today: "2027-08-15"
+    closed: false
+    open_lines: 3
+    changes:
+      - {code: hh_supermarket, percent: "0.05", from_month: "2027-06", mean_at_save: "650.00"}
+      - {code: hh_travel, monthly: "500.00", from_month: "2027-07", to_month: "2027-09", mean_at_save: "200.00"}
+    lines:
+      - {key: super_1, code: hh_supermarket, amount: "-310.40"}
+    expect:
+      final: false
+      open_lines: 3
+      rows:
+        - {code: hh_supermarket, planned: "682.50", actual: "310.40", difference: "-372.10",
+           words: less, text: "372 € weniger als geplant", sources: [super_1]}
+        - {code: hh_travel, planned: "500.00", actual: "0.00", difference: "-500.00",
+           words: less, text: "500 € weniger als geplant", sources: []}
+
+  - id: ended_not_closed
+    description: an ended month with lines still waiting is not final either
+    month: "2027-07"
+    today: "2027-08-03"
+    closed: false
+    open_lines: 2
+    changes:
+      - {code: hh_childcare, monthly: "300.00", from_month: "2027-07", mean_at_save: "0.00"}
+    lines:
+      - {key: kita, code: hh_childcare, amount: "-300.00"}
+    expect:
+      final: false
+      open_lines: 2
+      rows:
+        - {code: hh_childcare, planned: "300.00", actual: "300.00", difference: "0.00",
+           words: as_planned, text: "wie geplant", sources: [kita]}
+
+  - id: words_at_the_edges
+    description: >-
+      under 1 € either way is „wie geplant“; 1.00 is „1 € mehr“; whole euros rounded half up;
+      the thousands point; a percent of −1.00 plans 0.00
+    month: "2027-07"
+    today: "2027-08-10"
+    closed: true
+    changes:
+      - {code: hh_supermarket, monthly: "100.00", from_month: "2027-07", mean_at_save: "650.00"}
+      - {code: hh_bakery, monthly: "100.00", from_month: "2027-07", mean_at_save: "40.00"}
+      - {code: hh_drugstore, monthly: "100.00", from_month: "2027-07", mean_at_save: "60.00"}
+      - {code: hh_cafe, monthly: "100.00", from_month: "2027-07", mean_at_save: "30.00"}
+      - {code: hh_bar, monthly: "100.00", from_month: "2027-07", mean_at_save: "30.00"}
+      - {code: hh_fast_food, monthly: "100.00", from_month: "2027-07", mean_at_save: "30.00"}
+      - {code: hh_housing, monthly: "800.00", from_month: "2027-07", mean_at_save: "1800.00"}
+      - {code: hh_streaming, percent: "-1.00", from_month: "2027-07", mean_at_save: "25.98"}
+    lines:
+      - {key: a, code: hh_supermarket, amount: "-100.99"}
+      - {key: b, code: hh_bakery, amount: "-99.01"}
+      - {key: c, code: hh_drugstore, amount: "-101.00"}
+      - {key: d, code: hh_cafe, amount: "-99.00"}
+      - {key: e, code: hh_bar, amount: "-101.50"}
+      - {key: f, code: hh_fast_food, amount: "-98.51"}
+      - {key: g, code: hh_housing, amount: "-1800.00"}
+      - {key: h, code: hh_streaming, amount: "-12.99"}
+    expect:
+      final: true
+      open_lines: 0
+      rows:
+        - {code: hh_supermarket, planned: "100.00", actual: "100.99", difference: "0.99",
+           words: as_planned, text: "wie geplant", sources: [a]}
+        - {code: hh_bakery, planned: "100.00", actual: "99.01", difference: "-0.99",
+           words: as_planned, text: "wie geplant", sources: [b]}
+        - {code: hh_drugstore, planned: "100.00", actual: "101.00", difference: "1.00",
+           words: more, text: "1 € mehr als geplant", sources: [c]}
+        - {code: hh_cafe, planned: "100.00", actual: "99.00", difference: "-1.00",
+           words: less, text: "1 € weniger als geplant", sources: [d]}
+        - {code: hh_bar, planned: "100.00", actual: "101.50", difference: "1.50",
+           words: more, text: "2 € mehr als geplant", sources: [e]}
+        - {code: hh_fast_food, planned: "100.00", actual: "98.51", difference: "-1.49",
+           words: less, text: "1 € weniger als geplant", sources: [f]}
+        - {code: hh_housing, planned: "800.00", actual: "1800.00", difference: "1000.00",
+           words: more, text: "1.000 € mehr als geplant", sources: [g]}
+        - {code: hh_streaming, planned: "0.00", actual: "12.99", difference: "12.99",
+           words: more, text: "13 € mehr als geplant", sources: [h]}
+
+  - id: other_takes_bank_fees
+    description: >-
+      Sonstiges' fallback hh_other stands for the group, the bank's fees and uncategorised
+      lines included, as the Haushalt screen shows them
+    month: "2027-07"
+    today: "2027-08-10"
+    closed: true
+    changes:
+      - {code: hh_other, monthly: "450.00", from_month: "2027-06", mean_at_save: "478.33"}
+    lines:
+      - {key: post, code: hh_postage, amount: "-12.00"}
+      - {key: fee, code: bank_fees, amount: "-5.00"}
+      - {key: open, code: uncategorized, amount: "-80.00"}
+      - {key: misc, code: hh_other, amount: "-400.00"}
+      - {key: cash, code: hh_cash, amount: "-100.00"}
+    expect:
+      final: true
+      open_lines: 0
+      rows:
+        - {code: hh_other, planned: "450.00", actual: "497.00", difference: "47.00",
+           words: more, text: "47 € mehr als geplant", sources: [post, fee, open, misc]}
+
+  - id: scenario_in_force
+    description: >-
+      the default scenario in force on a Berlin calendar day: s2 was stored at 23:30 Berlin
+      time on 31 July and is in force that day; s3 was stored at 22:30 UTC the same evening,
+      already 1 August in Berlin; a row that is not the default never wins; the withdrawal of
+      5 September leaves no plan from that day
+    scenarios:
+      - {key: s1, created_at: "2027-06-10T10:00:00+02:00"}
+      - {key: s2, created_at: "2027-07-31T23:30:00+02:00", supersedes: s1}
+      - {key: s3, created_at: "2027-07-31T22:30:00+00:00", supersedes: s2}
+      - {key: other, created_at: "2027-08-20T09:00:00+02:00", is_default: false}
+      - {key: w, created_at: "2027-09-05T08:00:00+02:00", supersedes: s3, withdrawn: true}
+    in_force:
+      "2027-06-09": null
+      "2027-06-10": s1
+      "2027-07-30": s1
+      "2027-07-31": s2
+      "2027-08-01": s3
+      "2027-08-31": s3
+      "2027-09-04": s3
+      "2027-09-05": null
