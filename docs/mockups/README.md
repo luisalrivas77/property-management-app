@@ -99,8 +99,9 @@ The phase 1 screens that were already built were restyled to this look on 5 Nov 
 structure and German labels were kept. Do not restructure them to match the 02 mockup's
 layout unless a task asks for it.
 
-**Phone layout (18 Nov 2026, to do).** No mockup covers a phone width yet, and the built screens
-only stack the sidebar into a header and let wide tables scroll sideways. Luis asked for phone
-mockups before any change: a modern look with little scrolling or clicking and clear,
-understandable information. See `docs/ARCHITECTURE.md`, „Input for a later phase: the phone
-layout“.
+**Layout on the phone and the computer (18 Nov 2026, to do).** No mockup covers a phone width
+yet, and the built screens only stack the sidebar into a header and let wide tables scroll
+sideways. Luis asked for new mockups, for the phone and the computer alike („Not only for the
+phone but for the pc as well.“), before any change: a modern look with little scrolling or
+clicking and clear, understandable information. See `docs/ARCHITECTURE.md`, „Input for a later
+phase: the layout on the phone and the computer“.
