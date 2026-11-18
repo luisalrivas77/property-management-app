@@ -183,7 +183,6 @@ cases:
       todos: [bands_unconfirmed]
 
   - id: plan_and_projection
-    pending: "2"
     description: §15.2's surplus, savings plans, paths under the flat's scenario, and the net worth in five years
     household: *household
     expect:

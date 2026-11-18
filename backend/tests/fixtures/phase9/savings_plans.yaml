@@ -24,7 +24,6 @@ bases:
 
 cases:
   - id: depot_and_exchange
-    pending: "2"
     description: §15.2
     own_accounts: *own_accounts
     last_three_closed: *months
@@ -44,7 +43,6 @@ cases:
       investable_left: "452.00"
 
   - id: two_of_three_months_is_no_plan
-    pending: "2"
     own_accounts: *own_accounts
     last_three_closed: *months
     lines:
@@ -54,7 +52,6 @@ cases:
     expect: {plans: [], already_invested: "0.00", investable_left: "1002.00"}
 
   - id: doubled_month_uses_median
-    pending: "2"
     own_accounts: *own_accounts
     last_three_closed: *months
     lines:
@@ -70,7 +67,6 @@ cases:
       investable_left: "602.00"
 
   - id: transfer_to_savings_is_no_plan
-    pending: "2"
     own_accounts: *own_accounts
     last_three_closed: *months
     lines:
@@ -81,7 +77,6 @@ cases:
     expect: {plans: [], already_invested: "0.00", investable_left: "1002.00"}
 
   - id: payee_plan_by_investment_code
-    pending: "2"
     description: a fund plan paid to a payee that is not an own account, and a coin plan likewise
     own_accounts: *own_accounts
     last_three_closed: *months
@@ -104,7 +99,6 @@ cases:
       investable_left: "752.00"
 
   - id: override_amount
-    pending: "2"
     description: the depot plan was lowered at the bank last week
     own_accounts: *own_accounts
     last_three_closed: *months
@@ -121,7 +115,6 @@ cases:
       investable_left: "702.00"
 
   - id: override_dropped
-    pending: "2"
     own_accounts: *own_accounts
     last_three_closed: *months
     lines:

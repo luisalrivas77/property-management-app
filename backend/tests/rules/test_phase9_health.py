@@ -21,6 +21,11 @@ from hausbuch.rules.health import figures as F
 from hausbuch.rules.health import month as M
 from hausbuch.rules.health import window as W
 from hausbuch.rules.household.cashflow import month_cashflow
+from hausbuch.rules.plan import levers as L
+from hausbuch.rules.plan import paths as P
+from hausbuch.rules.plan import projection as N
+from hausbuch.rules.plan import savings_plans as S
+from hausbuch.rules.plan import surplus as U
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.common import Fraction as ExactShare
 from hausbuch.schemas.health import (
@@ -50,7 +55,7 @@ from hausbuch.schemas.health import (
 )
 from hausbuch.schemas.household import NetWorthClass
 from hausbuch.schemas.net_worth import NetWorth, NetWorthLine, NetWorthLineKind
-from hausbuch.schemas.plan import HouseholdLevers, ReserveAccounts
+from hausbuch.schemas.plan import HouseholdLevers, ReserveAccounts, SurplusKey
 
 CLOSED = phase9.load("closed_month")
 MONTH = phase9.load("household_month")
@@ -951,10 +956,82 @@ def test_health_worked(case):
         split=F.split(nw),
         series=series,
     )
-    marks = B.lights(health, hh.levers.bands)
-    for figure, expect in want.lights.items():
-        assert (marks[figure].colour, marks[figure].sentences) == (
-            expect.colour,
-            expect.sentences,
-        ), figure
-    assert [t.code for t in B.bands_todos(hh.levers.bands)] == (want.todos or [])
+    if want.lights is not None:
+        marks = B.lights(health, hh.levers.bands)
+        for figure, expect in want.lights.items():
+            assert (marks[figure].colour, marks[figure].sentences) == (
+                expect.colour,
+                expect.sentences,
+            ), figure
+        assert [t.code for t in B.bands_todos(hh.levers.bands)] == (want.todos or [])
+    if want.surplus is not None:
+        worked_plan(hh, want, months, reserve, run, kinds)
+
+
+def worked_plan(hh, want, months, reserve, run, kinds):
+    """Step 2 on §15.2's household: surplus → savings plans → paths → net worth in 5 years,
+    through rules/plan/ only (the service's assembly is tests/db/test_household_plan.py's)."""
+    surplus = U.surplus(months, hh.levers.buffer_percent)
+    for key in SurplusKey:
+        assert surplus.amount(key) == getattr(want.surplus, key.value), key
+    legs = defaultdict(list)
+    for line in hh.lines:
+        if line.links is not None:
+            legs[line.links].append(line)
+    lines = []
+    for pair in legs.values():
+        out = next(leg for leg in pair if leg.amount < 0)
+        into = next(leg for leg in pair if leg.amount > 0)
+        kind = kinds[into.account].kind
+        lines.append(S.PlanLine(out.booked, out.amount, uid(into.account), kind))
+    plans = S.detect(lines, [m.month for m in months[-3:]])
+    names = {str(uid(a)): a for a in kinds}
+    assert [(names[p.key], p.asset_class, p.monthly) for p in plans] == [
+        (p.key, p.asset_class, p.monthly) for p in want.savings_plans
+    ]
+    investable = surplus.amount(SurplusKey.INVESTABLE)
+    assert S.already_invested(plans) == want.already_invested
+    assert investable - S.already_invested(plans) == want.investable_left
+    basis = L.MonthBasis(
+        newest_closed=hh.newest_closed,
+        mean_income=surplus.amount(SurplusKey.MEAN_INCOME),
+        mean_regular_spending=surplus.amount(SurplusKey.MEAN_REGULAR_SPENDING),
+        mean_rental_cash=surplus.amount(SurplusKey.MEAN_RENTAL_CASH),
+        buffer_percent=hh.levers.buffer_percent,
+    )
+    flats = {
+        k: N.FlatScenario(
+            sale_year=prop.default_scenario.sale_year,
+            years={
+                y: L.FlatYear(f.net_cash, f.tax_effect, f.value, f.loan_balance)
+                for y, f in prop.default_scenario.years.items()
+            },
+        )
+        for k, prop in hh.properties.items()
+    }
+    flat_years = L.flat_by_year({k: f.years for k, f in flats.items()})
+    plan_months = L.months(basis, hh.levers.horizon_months, flat_years)
+    paths = P.paths(reserve.amount, reserve.target, plans, plan_months, hh.newest_closed)
+    for got, expect in zip(paths.rows, want.paths, strict=True):
+        named = expect.model_fields_set
+        key = f"pause:{names[got.key[6:]]}" if got.key.startswith("pause:") else got.key
+        assert {**got.model_dump(include=named), "key": key} == expect.model_dump(include=named)
+    c, liabilities = run.by_class, run.liabilities
+    start = N.ProjectionStart(
+        month_end=run.month_end,
+        bank=c[NetWorthClass.BANK],
+        depot=c[NetWorthClass.DEPOT],
+        crypto=c[NetWorthClass.CRYPTO],
+        property=c[NetWorthClass.PROPERTY],
+        loans=liabilities["loans"],
+        other_liabilities=liabilities["other"],
+    )
+    levers = HouseholdLevers(
+        value_change=hh.levers.value_change, net_worth_years=hh.levers.net_worth_years
+    )
+    got = N.project_net_worth(
+        basis, start, run.month_end, reserve.amount, plans, flats, levers
+    ).projection
+    assert [phase9.as_np(p) for p in got.points] == want.projection.points
+    assert got.points[-1].change == want.projection.change
+    assert got.todos == [] and want.todos == []
