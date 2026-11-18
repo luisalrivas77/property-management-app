@@ -118,6 +118,12 @@ function isZero(value: string | null | undefined): boolean {
   return value == null || /^-?0+(\.0+)?$/.test(value);
 }
 
+/** A measured mean a percent can apply to: above 0 (§7.6 (1) amended: refunds as large as the
+ * spending, or larger, are no measured spending, and the server refuses a percent of them). */
+function hasSpending(value: string | null | undefined): boolean {
+  return !isZero(value) && !(value ?? "").startsWith("-");
+}
+
 /** The months of a stretch in words: „ab Juni 2027“ when it runs to the horizon, else „Juli bis
  * September 2027“ or one month. */
 function stretch(segment: RateSegment, last: string | undefined): string {
@@ -521,7 +527,7 @@ export function SpendingPlaySection({
         <td className="num">{formatMoney(group.mean)}</td>
         <td>
           {own
-            ? field(own, label, group.mean, lockOf(own), !isZero(group.mean))
+            ? field(own, label, group.mean, lockOf(own), hasSpending(group.mean))
             : <span className="muted">wird hier nicht geplant</span>}
         </td>
       </tr>,
@@ -535,7 +541,7 @@ export function SpendingPlaySection({
       } else if (!row.playable) {
         cell = <span className="muted">zählt mit, wird aber nicht geplant</span>;
       } else {
-        cell = field(row.code, rowLabel, row.mean, lockOf(row.code), !isZero(row.mean));
+        cell = field(row.code, rowLabel, row.mean, lockOf(row.code), hasSpending(row.mean));
       }
       out.push(
         <tr key={`${group.group}-${row.code}`} id={`${rowId}-${row.code}`} className="household-subrow">
