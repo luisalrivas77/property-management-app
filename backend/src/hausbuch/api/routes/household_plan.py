@@ -6,7 +6,7 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
 - GET /household-scenarios?include_history=: the scenarios in force, oldest first.
 - POST /household-scenarios: one new row (201); 422 household_scenario.not_current (the
   superseded row is not in force, or another default is), .account_invalid (a reserve account
-  of another kind), .one_off_outside (a one-off outside the horizon) or .withdrawal_invalid;
+  of another kind), .one_off_outside (a one-off after the horizon's end) or .withdrawal_invalid;
   404 for an unknown superseded row or account.
 - POST /household-scenarios/{id}/withdraw: a withdrawal row (201); 404, or 422
   household_scenario.not_current when the row is no longer in force.

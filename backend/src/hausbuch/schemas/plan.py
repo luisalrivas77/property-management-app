@@ -80,10 +80,54 @@ class OneOffSource(StrEnum):
     RETURN_ESTIMATE = "return_estimate"  # phase 4b's refund or back-payment, once accepted
 
 
+# An accepted refund or back-payment names its tax year inside `source` (PR #434 review D;
+# no new field): "return_estimate:2026". A bare "return_estimate" (saved before the year was
+# written) names no year.
+RETURN_ESTIMATE_PREFIX = f"{OneOffSource.RETURN_ESTIMATE.value}:"
+ReturnEstimateOfYear = Annotated[str, Field(pattern=r"^return_estimate:[0-9]{4}$")]
+
+
 class OneOff(Schema):
+    """A one-off in `month`. §7.3 amended (PR #434 review D): a one-off in a month at or
+    before the newest closed month may stay in a scenario row; the plan ignores it, since the
+    measured months already hold it. Only a month after the horizon's end is refused."""
+
     month: YearMonth
     amount: Money  # signed: a refund positive, a back-payment negative
-    source: OneOffSource = OneOffSource.TYPED
+    source: OneOffSource | ReturnEstimateOfYear = Field(
+        default=OneOffSource.TYPED, union_mode="left_to_right"
+    )
+
+    @property
+    def from_return_estimate(self) -> bool:
+        """Phase 4b's refund or back-payment, accepted from a proposal (with or without its
+        tax year)."""
+        return self.source is OneOffSource.RETURN_ESTIMATE or str(self.source).startswith(
+            RETURN_ESTIMATE_PREFIX
+        )
+
+    @property
+    def tax_year(self) -> int | None:
+        """The tax year an accepted refund names; None for a typed one or a bare
+        `return_estimate`."""
+        source = str(self.source)
+        return (
+            int(source[len(RETURN_ESTIMATE_PREFIX) :])
+            if source.startswith(RETURN_ESTIMATE_PREFIX)
+            else None
+        )
+
+
+class ProposedOneOff(Schema):
+    """Phase 4b's expected refund (positive) or back-payment (negative) of one tax year, from
+    the whole-return estimate of Steuern › Gesamt, proposed without a month (Q-O168, answered
+    by mockup 12): a member picks the month the money is expected, and „Übernehmen“ adds it to
+    the levers as `OneOff(source="return_estimate:<tax_year>")`. Until then the plan counts
+    no refund."""
+
+    tax_year: int = Field(ge=2000, le=2100)
+    amount: Money  # signed like OneOff: −ReturnEstimate.result
+    source: OneOffSource = OneOffSource.RETURN_ESTIMATE
 
 
 class PlanOverride(Schema):
@@ -268,6 +312,28 @@ class Path(Schema):
 # --- The net worth in some years (§7.5, D247 amended) -----------------------------------
 
 
+class PathLater(Schema):
+    """One path's amount to the reserve per month from `FlatChange.month` on."""
+
+    key: PathKey
+    to_reserve: Money
+
+
+class FlatChange(Schema):
+    """The month the flat's default scenario first gives another monthly result than the
+    first plan month (phase 4's projected year after the newest closed month's year, §7.1),
+    computed without one-offs: that month's flat result, the flat result of the months before
+    it (`before_is_mean`: that is the window's measured mean, „statt im Schnitt“), and each
+    path's amount to the reserve from then on (the month's investable less the plans that
+    continue on that path), in the order of `HouseholdPlan.paths`."""
+
+    month: YearMonth
+    flat: Money
+    before: Money
+    before_is_mean: bool
+    paths: list[PathLater]
+
+
 class ProjectionChange(Schema):
     """The change since the start in five rows that sum to it (§7.5 (7))."""
 
@@ -364,7 +430,17 @@ class HouseholdPlan(Schema):
     investable_left: Money | None = None  # investable − already invested, signed
     reserve: Reserve | None = None
     paths: list[Path] = Field(default_factory=list)
+    # the plans with no pause row of their own (more than four plans): the screen's „weitere“
+    paths_others: list[PlanKey] = Field(default_factory=list)
+    # the flat's mean C when positive: that part lands on the rental account first, which is
+    # not a reserve account by default (D246's „davon X € auf dem Mietkonto“); None otherwise,
+    # and None while the lever `reserve_accounts.added` counts a rental account (PR #434 E)
+    paths_on_rental_account: Money | None = None
+    # the first month the flat's own scenario replaces the measured mean, with each path's
+    # monthly amount from then on (mockup 12: „ab Januar 2028: 1.139 € im Monat“); None when
+    # that one month's figure would not hold from then on (paths.holds_from, PR #434 B)
+    flat_change: FlatChange | None = None
     months: list[PlanMonth] = Field(default_factory=list)
-    proposed_one_offs: list[OneOff] = Field(default_factory=list)
+    proposed_one_offs: list[ProposedOneOff] = Field(default_factory=list)
     projection: NetWorthProjection | None = None
     todos: list[HealthTodo] = Field(default_factory=list)

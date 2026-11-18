@@ -19697,6 +19697,47 @@
         "title": "FilingCheck",
         "description": "§46 Abs. 2 EStG. deadline: 31 July of the following year (§149 Abs. 2 S. 1 AO), moved\nto the next working day when that is a Saturday, Sunday or a nationwide public holiday\n(§108 Abs. 3 AO); computed by rule, never typed. Regional holidays are not considered."
       },
+      "FlatChange": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "flat": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Flat"
+          },
+          "before": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Before"
+          },
+          "before_is_mean": {
+            "type": "boolean",
+            "title": "Before Is Mean"
+          },
+          "paths": {
+            "items": {
+              "$ref": "#/components/schemas/PathLater"
+            },
+            "type": "array",
+            "title": "Paths"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "flat",
+          "before",
+          "before_is_mean",
+          "paths"
+        ],
+        "title": "FlatChange",
+        "description": "The month the flat's default scenario first gives another monthly result than the\nfirst plan month (phase 4's projected year after the newest closed month's year, §7.1),\ncomputed without one-offs: that month's flat result, the flat result of the months before\nit (`before_is_mean`: that is the window's measured mean, „statt im Schnitt“), and each\npath's amount to the reserve from then on (the month's investable less the plans that\ncontinue on that path), in the order of `HouseholdPlan.paths`."
+      },
       "FlatRateCheck": {
         "properties": {
           "property_id": {
@@ -21366,6 +21407,36 @@
             "type": "array",
             "title": "Paths"
           },
+          "paths_others": {
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            },
+            "type": "array",
+            "title": "Paths Others"
+          },
+          "paths_on_rental_account": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paths On Rental Account"
+          },
+          "flat_change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FlatChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "months": {
             "items": {
               "$ref": "#/components/schemas/PlanMonth"
@@ -21375,7 +21446,7 @@
           },
           "proposed_one_offs": {
             "items": {
-              "$ref": "#/components/schemas/OneOff"
+              "$ref": "#/components/schemas/ProposedOneOff"
             },
             "type": "array",
             "title": "Proposed One Offs"
@@ -23009,6 +23080,13 @@
             },
             "type": "array",
             "title": "Sentences"
+          },
+          "texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Texts"
           }
         },
         "additionalProperties": false,
@@ -25465,7 +25543,16 @@
             "title": "Amount"
           },
           "source": {
-            "$ref": "#/components/schemas/OneOffSource",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OneOffSource"
+              },
+              {
+                "type": "string",
+                "pattern": "^return_estimate:[0-9]{4}$"
+              }
+            ],
+            "title": "Source",
             "default": "typed"
           }
         },
@@ -25475,7 +25562,8 @@
           "month",
           "amount"
         ],
-        "title": "OneOff"
+        "title": "OneOff",
+        "description": "A one-off in `month`. §7.3 amended (PR #434 review D): a one-off in a month at or\nbefore the newest closed month may stay in a scenario row; the plan ignores it, since the\nmeasured months already hold it. Only a month after the horizon's end is refused."
       },
       "OneOffSource": {
         "type": "string",
@@ -26528,6 +26616,28 @@
         ],
         "title": "Path",
         "description": "D246, §7.2. None: not within the horizon."
+      },
+      "PathLater": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^(reserve_first|as_is|pause:[a-z0-9_-]{1,64})$",
+            "title": "Key"
+          },
+          "to_reserve": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "To Reserve"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "to_reserve"
+        ],
+        "title": "PathLater",
+        "description": "One path's amount to the reserve per month from `FlatChange.month` on."
       },
       "PaymentIbanConfirmed": {
         "properties": {
@@ -28408,6 +28518,33 @@
           "origin"
         ],
         "title": "ProposedLimit"
+      },
+      "ProposedOneOff": {
+        "properties": {
+          "tax_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Tax Year"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Amount"
+          },
+          "source": {
+            "$ref": "#/components/schemas/OneOffSource",
+            "default": "return_estimate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tax_year",
+          "amount"
+        ],
+        "title": "ProposedOneOff",
+        "description": "Phase 4b's expected refund (positive) or back-payment (negative) of one tax year, from\nthe whole-return estimate of Steuern › Gesamt, proposed without a month (Q-O168, answered\nby mockup 12): a member picks the month the money is expected, and „Übernehmen“ adds it to\nthe levers as `OneOff(source=\"return_estimate:<tax_year>\")`. Until then the plan counts\nno refund."
       },
       "PurchaseContractExtraction": {
         "properties": {

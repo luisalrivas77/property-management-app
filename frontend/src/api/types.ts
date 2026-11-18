@@ -7518,6 +7518,27 @@ export interface components {
             deadline: string;
         };
         /**
+         * FlatChange
+         * @description The month the flat's default scenario first gives another monthly result than the
+         *     first plan month (phase 4's projected year after the newest closed month's year, §7.1),
+         *     computed without one-offs: that month's flat result, the flat result of the months before
+         *     it (`before_is_mean`: that is the window's measured mean, „statt im Schnitt“), and each
+         *     path's amount to the reserve from then on (the month's investable less the plans that
+         *     continue on that path), in the order of `HouseholdPlan.paths`.
+         */
+        FlatChange: {
+            /** Month */
+            month: string;
+            /** Flat */
+            flat: string;
+            /** Before */
+            before: string;
+            /** Before Is Mean */
+            before_is_mean: boolean;
+            /** Paths */
+            paths: components["schemas"]["PathLater"][];
+        };
+        /**
          * FlatRateCheck
          * @description GET /properties/{id}/flat-rate-check (D155): information, not advice; §560 BGB decides.
          *
@@ -8237,10 +8258,15 @@ export interface components {
             reserve?: components["schemas"]["Reserve"] | null;
             /** Paths */
             paths?: components["schemas"]["Path"][];
+            /** Paths Others */
+            paths_others?: string[];
+            /** Paths On Rental Account */
+            paths_on_rental_account?: string | null;
+            flat_change?: components["schemas"]["FlatChange"] | null;
             /** Months */
             months?: components["schemas"]["PlanMonth"][];
             /** Proposed One Offs */
-            proposed_one_offs?: components["schemas"]["OneOff"][];
+            proposed_one_offs?: components["schemas"]["ProposedOneOff"][];
             projection?: components["schemas"]["NetWorthProjection"] | null;
             /** Todos */
             todos?: components["schemas"]["HealthTodo"][];
@@ -8871,6 +8897,8 @@ export interface components {
             origin?: components["schemas"]["LimitOrigin"] | null;
             /** Sentences */
             sentences?: string[];
+            /** Texts */
+            texts?: string[];
         };
         /**
          * LightColour
@@ -9877,14 +9905,22 @@ export interface components {
              */
             ends_on: string;
         };
-        /** OneOff */
+        /**
+         * OneOff
+         * @description A one-off in `month`. §7.3 amended (PR #434 review D): a one-off in a month at or
+         *     before the newest closed month may stay in a scenario row; the plan ignores it, since the
+         *     measured months already hold it. Only a month after the horizon's end is refused.
+         */
         OneOff: {
             /** Month */
             month: string;
             /** Amount */
             amount: string;
-            /** @default typed */
-            source: components["schemas"]["OneOffSource"];
+            /**
+             * Source
+             * @default typed
+             */
+            source: components["schemas"]["OneOffSource"] | string;
         };
         /**
          * OneOffSource
@@ -10342,6 +10378,16 @@ export interface components {
             used_up?: string | null;
             /** Reserve At Horizon */
             reserve_at_horizon: string;
+        };
+        /**
+         * PathLater
+         * @description One path's amount to the reserve per month from `FlatChange.month` on.
+         */
+        PathLater: {
+            /** Key */
+            key: string;
+            /** To Reserve */
+            to_reserve: string;
         };
         /**
          * PaymentIbanConfirmed
@@ -11181,6 +11227,22 @@ export interface components {
             origin: components["schemas"]["LimitOrigin"];
             /** Citation */
             citation?: string | null;
+        };
+        /**
+         * ProposedOneOff
+         * @description Phase 4b's expected refund (positive) or back-payment (negative) of one tax year, from
+         *     the whole-return estimate of Steuern › Gesamt, proposed without a month (Q-O168, answered
+         *     by mockup 12): a member picks the month the money is expected, and „Übernehmen“ adds it to
+         *     the levers as `OneOff(source="return_estimate:<tax_year>")`. Until then the plan counts
+         *     no refund.
+         */
+        ProposedOneOff: {
+            /** Tax Year */
+            tax_year: number;
+            /** Amount */
+            amount: string;
+            /** @default return_estimate */
+            source: components["schemas"]["OneOffSource"];
         };
         /**
          * PurchaseContractExtraction

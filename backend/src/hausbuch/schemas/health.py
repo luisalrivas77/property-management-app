@@ -629,6 +629,10 @@ class Light(Schema):
     red: LimitValue | None = None
     origin: LimitOrigin | None = None  # of the limits used; None when no limit was confirmed
     sentences: list[str] = Field(default_factory=list)
+    # The German text for the screen, rendered by code from bands.yaml (phase 9 step 3,
+    # rules/health/bands.texts): the sentences of the codes above, or, for an unmarked figure
+    # with a value, its intro sentence alone (13, 13b: "Eure Schulden machen 64,9 % …").
+    texts: list[str] = Field(default_factory=list)
 
 
 # --- GET /health, the stored month, the closing check -----------------------------------

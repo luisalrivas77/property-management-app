@@ -19,10 +19,11 @@ beyond HouseholdScenarioCreate's own validator (HouseholdLevers checks the range
   (`household_scenario.withdrawal_invalid`);
 - every account in `reserve_accounts` (added or removed) exists (404) and is of kind
   bank_current, bank_savings or credit_card (`household_scenario.account_invalid`);
-- every one-off lies inside the horizon: the months 1 … `horizon_months` after the newest
+- no one-off lies after the horizon's end, the month `horizon_months` after the newest
   closed month of today's window, or after the last ended month when no month is closed
-  (`household_scenario.one_off_outside`). The read checks the same against the window of its
-  day and names a one-off that has fallen out with „Szenario prüfen“;
+  (`household_scenario.one_off_outside`). §7.3 amended (PR #434 review D): a one-off at or
+  before the newest closed month may stay, so a scenario holding a refund already received
+  can still be superseded; the plan ignores it, since its month is measured;
 - at most one default in force: a new default while another default is in force and not the
   row being superseded is refused (`household_scenario.not_current`). The table has no
   partial unique index (it cannot see supersession), so this is the service's rule.

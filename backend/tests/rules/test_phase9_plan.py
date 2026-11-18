@@ -24,6 +24,7 @@ from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.health import HealthTodoCode, HouseholdMonth, ratio
 from hausbuch.schemas.plan import (
     HouseholdLevers,
+    IncomeChange,
     OneOff,
     PlanClass,
     PlanOverride,
@@ -222,6 +223,65 @@ def test_paths(case):
     assert got.others == case.expect.others
 
 
+class _Plan:
+    def __init__(self, key: str, monthly: str) -> None:
+        self.key, self.monthly = key, Decimal(monthly)
+
+
+def _review_basis() -> L.MonthBasis:
+    return L.MonthBasis(
+        newest_closed="2027-05",
+        mean_income=Decimal("6000.00"),
+        mean_regular_spending=Decimal("4000.00"),
+        mean_rental_cash=ZERO,
+        buffer_percent=Decimal("10"),
+    )
+
+
+def test_a_one_off_in_the_first_month_is_not_the_monthly_rate():
+    """„im Monat“ is the first month without one-offs; the reserve still counts the refund
+    (PR #434 review B)."""
+    b = _review_basis()
+    plans = [_Plan("depot", "300.00")]
+    refund = [OneOff(month="2027-06", amount=Decimal("2500.00"))]
+    with_refund = L.months(b, 12, None, (), refund)
+    steady = L.months(b, 12, None, ())
+    got = P.paths(ZERO, Decimal("9000.00"), plans, with_refund, "2027-05", steady=steady)
+    plain = P.paths(ZERO, Decimal("9000.00"), plans, steady, "2027-05")
+    first = {r.key: r.to_reserve_first_month for r in got.rows}
+    assert first == {r.key: r.to_reserve_first_month for r in plain.rows}
+    assert first["as_is"] == Decimal("1800.00") - Decimal("300.00")
+    # the months with the refund still reach the target earlier and end higher
+    by_key = {r.key: r for r in plain.rows}
+    for row in got.rows:
+        assert row.reserve_at_horizon == by_key[row.key].reserve_at_horizon + Decimal("2250.00")
+        assert row.reached is not None and row.reached < by_key[row.key].reached
+    # without `steady` the first month is taken from `months`, as before
+    old = P.paths(ZERO, Decimal("9000.00"), plans, with_refund, "2027-05")
+    assert {r.key: r.to_reserve_first_month for r in old.rows}["as_is"] == Decimal("3750.00")
+
+
+def test_the_later_rate_holds_only_without_a_later_change():
+    """„ab <Monat>“ is one month's figure: shown only when no income change or one-off moves
+    the rate after it (PR #434 review B)."""
+    b = _review_basis()
+    flat_years = {2028: Decimal("-200.00"), 2029: Decimal("-150.00")}
+    steady = L.months(b, 36, flat_years, ())
+    change = P.flat_change([], steady, ZERO)
+    assert change is not None and change.month == "2028-01"
+    # the flat's own result may move from year to year
+    assert P.holds_from(change, steady, [])
+    # a one-off after the change month, or an income change that starts or ends after it
+    assert not P.holds_from(change, steady, [OneOff(month="2028-03", amount=Decimal("1.00"))])
+    assert P.holds_from(change, steady, [OneOff(month="2027-08", amount=Decimal("1.00"))])
+    starts = IncomeChange(monthly_net=Decimal("-600.00"), from_month="2028-06")
+    assert not P.holds_from(change, L.months(b, 36, flat_years, [starts]), [])
+    ends = IncomeChange(monthly_net=Decimal("-600.00"), from_month="2027-09", to_month="2028-04")
+    assert not P.holds_from(change, L.months(b, 36, flat_years, [ends]), [])
+    before = IncomeChange(monthly_net=Decimal("-600.00"), from_month="2027-09")
+    assert P.holds_from(change, L.months(b, 36, flat_years, [before]), [])
+
+
 def test_paths_need_a_month():
     with pytest.raises(ValueError):
         P.paths(ZERO, ZERO, [], [], "2027-05")
@@ -268,7 +328,12 @@ def test_one_offs_outside_the_horizon():
     last = OneOff(month="2032-05", amount=Decimal("1.00"))
     past = OneOff(month="2027-05", amount=Decimal("5.00"))
     beyond = OneOff(month="2032-06", amount=Decimal("5.00"))
-    assert L.one_offs_outside([inside, last, past, beyond], "2027-05", 60) == [past, beyond]
+    # §7.3 amended (PR #434 review D): a one-off in a closed month may stay, only one after
+    # the horizon's end is outside; the months ignore the past one
+    assert L.one_offs_outside([inside, last, past, beyond], "2027-05", 60) == [beyond]
+    b = _review_basis()  # newest closed month 2027-05
+    with_past = L.months(b, 12, None, (), [past])
+    assert with_past == L.months(b, 12, None, (), ())
 
 
 def test_add_months_and_distance():

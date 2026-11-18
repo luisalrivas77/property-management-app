@@ -115,7 +115,9 @@ def months(
 def one_offs_outside(
     one_offs: Sequence[OneOff], newest_closed: str, horizon_months: int
 ) -> list[OneOff]:
-    """§7.3: a one-off must lie inside the horizon, the months 1 … horizon after the newest
-    closed month; those that do not (the scenario was saved months ago) are returned."""
+    """§7.3 amended (PR #434 review D): the one-offs after the horizon's end, the month
+    `horizon` after the newest closed month. A one-off at or before the newest closed month
+    may stay (its month is measured, so `month_at` never counts it); refusing it blocked
+    every later save of a scenario that held a refund already received."""
     last = add_months(newest_closed, horizon_months)
-    return [o for o in one_offs if not (newest_closed < o.month <= last)]
+    return [o for o in one_offs if o.month > last]

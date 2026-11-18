@@ -878,6 +878,136 @@ def run_net_worth(run, properties) -> NetWorth:
     )
 
 
+# The sentences mockups 13 (limits not yet confirmed) and 13b (confirmed) print for §15.2,
+# word for word: the mark's sentences when marked, an unmarked figure's intro sentence alone.
+_INTROS = {
+    MarkedFigure.LTV: ["Die Kredite der Wohnung machen 73,9 % ihres geschätzten Werts aus."],
+    MarkedFigure.DEBT_SERVICE_RATIO: [
+        "15,4 % eures Einkommens gehen für Zins und Tilgung an die Bank."
+    ],
+    MarkedFigure.DEBT_RATIO: ["Eure Schulden machen 64,9 % eures Vermögens aus."],
+    MarkedFigure.DEBT_TO_INCOME: ["Eure Schulden sind 3,2 mal so hoch wie euer Jahreseinkommen."],
+}
+WORKED_TEXTS = {
+    "figures_and_marks": {
+        MarkedFigure.RESERVE: [
+            "Eure Reserve reicht für 3,8 Monate. Bis zu eurem eigenen Ziel fehlen 9.990 €."
+        ],
+        MarkedFigure.SAVINGS_RATE: [
+            "In diesem Zeitraum habt ihr mehr ausgegeben als eingenommen.",
+            "Ohne die Einmalausgaben läge die Sparquote bei 25,7 %.",
+        ],
+        MarkedFigure.LTV: [
+            *_INTROS[MarkedFigure.LTV],
+            "Das liegt zwischen euren Grenzen von 60,0 % und 100,0 %.",
+        ],
+        MarkedFigure.DEBT_SERVICE_RATIO: [
+            *_INTROS[MarkedFigure.DEBT_SERVICE_RATIO],
+            "Das liegt unter eurer Grenze von 30,0 %.",
+        ],
+        MarkedFigure.DEBT_RATIO: _INTROS[MarkedFigure.DEBT_RATIO],
+        MarkedFigure.DEBT_TO_INCOME: _INTROS[MarkedFigure.DEBT_TO_INCOME],
+    },
+    "before_confirm_no_mark": {
+        MarkedFigure.RESERVE: [],
+        MarkedFigure.SAVINGS_RATE: [],
+        **_INTROS,
+    },
+}
+
+
+def test_the_sentences_render_each_format():
+    """The formats of the marks' sentences (money, percent, months, multiple, a sign)."""
+    assert B.format_money(Decimal("111.50")) == "112 €"
+    assert B.format_money(Decimal("-11770.00")) == "-11.770 €"
+    assert B.format_percent(Decimal("-0.4648")) == "-46,5 %"
+    assert B.format_percent(Decimal("0")) == "0,0 %"
+    assert B.format_months(Decimal("1.0")) == "1,0 Monate"
+    assert B.format_multiple(Decimal("3.20")) == "3,2"
+    with pytest.raises(ValueError, match="slot"):
+        B.render("Eure Reserve von {f:unknown}.", {})
+    reserve = Reserve(
+        amount=Decimal("10000.00"),
+        need=Decimal("4470.00"),
+        months=Decimal("2.2"),
+        target_months=Decimal("6"),
+        target=Decimal("26820.00"),
+        gap=Decimal("16820.00"),
+        state=ReserveState.BELOW,
+    )
+    health = Health(as_of=date(2027, 6, 3), window=WINDOW, reserve=reserve)
+    band = BandLimits(figure=MarkedFigure.RESERVE, red=Decimal("0.5"))
+    marks = {
+        MarkedFigure.RESERVE: B.light(
+            reserve.amount, band, MarkedFigure.RESERVE, target=reserve.target
+        )
+    }
+    assert B.with_texts(health, marks)[MarkedFigure.RESERVE].texts == [
+        "Eure Reserve von 10.000 € liegt unter der Grenze von 13.410 €,"
+        " die ihr selbst gesetzt habt."
+    ]
+
+
+@pytest.mark.parametrize(
+    ("amount", "colour", "text"),
+    [
+        (
+            Decimal("500.00"),
+            LightColour.GREEN,
+            "Eure Reserve von 500 € erreicht euer eigenes Ziel von 0 €.",
+        ),
+        (
+            Decimal("-200.00"),
+            LightColour.RED,
+            "Eure Reserve von -200 € liegt unter der Grenze von 0 €, die ihr selbst gesetzt habt.",
+        ),
+    ],
+)
+def test_a_reserve_mark_without_a_need_has_no_months(amount, colour, text):
+    """A need of 0 leaves `months` None and the target 0: the mark is green or red (amber
+    cannot be reached) and its sentence renders without the months slot (PR #434 review A)."""
+    reserve = Reserve(
+        amount=amount,
+        need=ZERO,
+        months=None,
+        target_months=Decimal("6"),
+        target=ZERO,
+        gap=max(ZERO, -amount),
+        state=ReserveState.REACHED if amount >= 0 else ReserveState.BELOW,
+    )
+    health = Health(as_of=date(2027, 6, 3), window=WINDOW, reserve=reserve)
+    band = BandLimits(figure=MarkedFigure.RESERVE, red=Decimal("0.5"))
+    mark = B.light(amount, band, MarkedFigure.RESERVE, target=reserve.target)
+    assert mark.colour is colour
+    texts = B.with_texts(health, {MarkedFigure.RESERVE: mark})[MarkedFigure.RESERVE].texts
+    assert texts == [text]
+
+
+def test_a_red_savings_rate_above_zero_names_the_limit_not_a_deficit():
+    """A red limit of 10 % and a rate of 5 %: the household earned more than it spent, so the
+    sentence names the limit; below 0 the deficit sentences stay (PR #434 review F)."""
+    band = BandLimits(figure=MarkedFigure.SAVINGS_RATE, red=Decimal("0.10"))
+    rate = SavingsRate(
+        saved=Decimal("500.00"),
+        income=Decimal("10000.00"),
+        one_off_spending=ZERO,
+        principal=ZERO,
+        rate=Decimal("0.0500"),
+        rate_regular=Decimal("0.0500"),
+        rate_without_principal=Decimal("0.0500"),
+    )
+    health = Health(as_of=date(2027, 6, 3), window=WINDOW, savings_rate=rate)
+    mark = B.light(rate.rate, band, MarkedFigure.SAVINGS_RATE, regular=rate.rate_regular)
+    assert (mark.colour, mark.sentences) == (LightColour.RED, ["savings_rate.red_limit"])
+    texts = B.with_texts(health, {MarkedFigure.SAVINGS_RATE: mark})[MarkedFigure.SAVINGS_RATE]
+    assert texts.texts == ["Eure Sparquote von 5,0 % liegt unter eurer Grenze von 10,0 %."]
+    # at 0 exactly the limit sentence too; below 0 the deficit and the regular rate
+    at_zero = B.light(ZERO, band, MarkedFigure.SAVINGS_RATE, regular=ZERO)
+    assert at_zero.sentences == ["savings_rate.red_limit"]
+    below = B.light(Decimal("-0.0100"), band, MarkedFigure.SAVINGS_RATE, regular=Decimal("0.0300"))
+    assert below.sentences == ["savings_rate.red", "savings_rate.red_regular"]
+
+
 @pytest.mark.parametrize("case", WORKED.cases, ids=lambda c: c.id)
 def test_health_worked(case):
     """The whole of step 1 on §15.2's household: lines → months → window → figures → marks."""
@@ -981,6 +1111,8 @@ def test_health_worked(case):
                 expect.sentences,
             ), figure
         assert [t.code for t in B.bands_todos(hh.levers.bands)] == (want.todos or [])
+        texts = {f: m.texts for f, m in B.with_texts(health, marks).items()}
+        assert texts == WORKED_TEXTS[case.id], case.id
     if want.surplus is not None:
         worked_plan(hh, want, months, reserve, run, kinds)
 
@@ -1033,6 +1165,19 @@ def worked_plan(hh, want, months, reserve, run, kinds):
         named = expect.model_fields_set
         key = f"pause:{names[got.key[6:]]}" if got.key.startswith("pause:") else got.key
         assert {**got.model_dump(include=named), "key": key} == expect.model_dump(include=named)
+    # mockup 12's sub-line „ab Januar 2028: 1.139 € im Monat“ and its note „−201 € im Monat
+    # statt im Schnitt −353 €“: the month the flat's scenario takes over, each path from then
+    change = P.flat_change(plans, plan_months, basis.mean_rental_cash)
+    assert change is not None
+    assert (change.month, change.before_is_mean) == ("2028-01", True)
+    assert (round(change.flat), round(change.before)) == (-201, -353)
+    later = {p.key: p.to_reserve for p in change.paths}
+    assert [later[r.key] for r in paths.rows] == [
+        Decimal("1139.09"),
+        *[later[r.key] for r in paths.rows[1:-1]],
+        Decimal("589.09"),
+    ]
+    assert P.flat_change(plans, plan_months[:1], basis.mean_rental_cash) is None
     c, liabilities = run.by_class, run.liabilities
     start = N.ProjectionStart(
         month_end=run.month_end,
