@@ -55,15 +55,12 @@ Phase 9 is specced in `docs/phases/phase-9.md` (merged 16 Nov 2026, PR #388); it
   before and after „Ampel-Grenzen festlegen“ (D250, D240). Until Luis approves them, step 3
   does not start from them, and where a drawing and the spec disagree, the spec wins. The rates in 12b (5,0 % and 0,0 %) are sample values and must not
   be read as a default or built as one; the empty fields of 12 are how the app must look.
-- **Drawn 18 Nov 2026 for D263 (step 3b), pending Luis's approval:** 12d (planning the
-  spending) and 10b (the planned figures beside the month's real ones). Until Luis approves
-  them, step 3b does not start from them, and where a drawing and the spec disagree, the spec
-  wins. Their figures continue §15.2 and §7.6 (6); the reserve month (Dezember 2028 → März 2029)
+- **Drawn 18 Nov 2026 for D263 (step 3b) and approved by Luis the same day („Build as
+  drawn“):** 12d (planning the spending) and 10b (the planned figures beside the month's real
+  ones). The top cards keep the saved values while a member types; only the comparison moves.
+  Where a drawing and the spec disagree, the spec wins. Their figures continue §15.2 and §7.6 (6); the reserve month (Dezember 2028 → März 2029)
   and the net worth on 31 December 2032 (261.470 € → 258.700 €) were computed by a script
-  from that example, the latter only under 12b's sample rates. The group is labelled
-  „Urlaub & Reisen“ as the spec writes it; the app's taxonomy calls it „Reisen“, so one of the
-  two must change before step 3b is built. The top cards of 12d keep their saved values while
-  a member types; whether they should move with the preview is open.
+  from that example, the latter only under 12b's sample rates. The group is labelled „Urlaub & Reisen“ as the spec writes it; the build uses the app's own group names (Luis, 18 Nov 2026).
 - **Mockup 10, not redrawn (text only):** the average is headed „Ø N Monate“ with its real
   basis, written as „Basis: N Monate, <Monat> bis <Monat> <Jahr>“ (with fewer than three
   complete months no average is shown, and a to-do stands in its place, D231); the income rows
