@@ -182,10 +182,15 @@ def mean_of(code: AllocationCategory, means: Mapping[AllocationCategory, Decimal
 
 
 def planned(change: SpendingChange, mean: Decimal) -> Decimal:
-    """§7.6 (3): `monthly`, or the mean × (1 + percent) to the cent half-up."""
+    """§7.6 (3): `monthly`, or the mean × (1 + percent) to the cent half-up. A percent of a
+    code with no measured spending (a mean at or below 0, §7.6 (1) amended) plans the mean
+    itself: a carried change whose code lost its spending counts for nothing while it has
+    none, and the plan's to-do says so (services.plan.scenario_todos)."""
     if change.monthly is not None:
         return change.monthly
     assert change.percent is not None
+    if mean <= 0:
+        return mean
     return cent(mean * (1 + change.percent))
 
 
@@ -201,22 +206,60 @@ def delta(
     return total
 
 
+def percents_on_nothing(
+    changes: Iterable[SpendingChange], means: Mapping[AllocationCategory, Decimal]
+) -> list[AllocationCategory]:
+    """§7.6 (1): the codes of the changes with a percent on a code with no measured spending,
+    each once, in the changes' order. A mean at or below 0 (refunds as large as the
+    spending, or larger) is no measured spending (§7.6 (1) amended, PR #436 review)."""
+    found: list[AllocationCategory] = []
+    for change in changes:
+        if (
+            change.percent is not None
+            and mean_of(change.code, means) <= 0
+            and change.code not in found
+        ):
+            found.append(change.code)
+    return found
+
+
 def percent_on_nothing(
     changes: Iterable[SpendingChange], means: Mapping[AllocationCategory, Decimal]
 ) -> AllocationCategory | None:
     """§7.6 (1): the first change with a percent on a code with no measured spending."""
-    for change in changes:
-        if change.percent is not None and mean_of(change.code, means) == 0:
-            return change.code
-    return None
+    found = percents_on_nothing(changes, means)
+    return found[0] if found else None
+
+
+def _as_typed(change: SpendingChange) -> tuple[object, ...]:
+    """What a member types of a change: everything but the stored `mean_at_save`."""
+    return (change.code, change.monthly, change.percent, change.from_month, change.to_month)
+
+
+def typed_now(
+    changes: Iterable[SpendingChange], previous: Iterable[SpendingChange]
+) -> list[SpendingChange]:
+    """§7.6 (1) amended (PR #436 review): the changes new or altered against `previous` (the
+    row a save supersedes; for the preview the default in force), so the refusal of a
+    percent of nothing reaches only what was just typed, never a change carried unaltered."""
+    kept = {_as_typed(c) for c in previous}
+    return [c for c in changes if _as_typed(c) not in kept]
 
 
 def with_means_at_save(
-    changes: Iterable[SpendingChange], means: Mapping[AllocationCategory, Decimal]
+    changes: Iterable[SpendingChange],
+    means: Mapping[AllocationCategory, Decimal],
+    previous: Iterable[SpendingChange] = (),
 ) -> list[SpendingChange]:
-    """The changes as stored (§7.6 (1)): each with its code's mean now as `mean_at_save`,
-    whatever was typed."""
-    return [c.model_copy(update={"mean_at_save": mean_of(c.code, means)}) for c in changes]
+    """The changes as stored (§7.6 (1)): a change carried unaltered from `previous` (the row
+    superseded) keeps its stored `mean_at_save`, whatever the window holds now, so „Geplant“
+    does not move when another lever is saved; a new or altered change gets its code's mean
+    now. A typed `mean_at_save` is never read."""
+    stored = {_as_typed(c): c.mean_at_save for c in previous if c.mean_at_save is not None}
+    return [
+        c.model_copy(update={"mean_at_save": stored.get(_as_typed(c), mean_of(c.code, means))})
+        for c in changes
+    ]
 
 
 # --- The rate and the play (§7.6 (4), (5)) ---------------------------------------------------
@@ -365,15 +408,16 @@ def addable(
     changes: Sequence[SpendingChange],
     shown: set[HouseholdGroup],
 ) -> list[AllocationCategory]:
-    """„Neue Ausgabe“: every code a change may name that has no mean and no change, in the
-    taxonomy's order; a group's fallback code only while its group shows no row (it stands
+    """„Neue Ausgabe“: every code a change may name that has no mean (or a mean of 0.00: its
+    lines cancel out, and the screen shows no row for it) and no change, in the taxonomy's
+    order; a group's fallback code only while its group shows no row (it stands
     for the whole group, planned on the group's row)."""
     named = {c.code for c in changes}
     return [
         code
         for code in TAXONOMY
         if playable(code)
-        and code not in means
+        and means.get(code, ZERO) == 0
         and code not in named
         and not (code in FALLBACK_CODES and group_of(code) in shown)
     ]

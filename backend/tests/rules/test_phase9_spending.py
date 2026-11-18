@@ -397,3 +397,61 @@ def test_a_windowed_change_beside_a_one_off_reaches_the_paths_and_leaves_the_fla
     as_is = next(r for r in rows.rows if r.key == "as_is")
     assert as_is.to_reserve_first_month == steady[0].investable
     assert flat_change([], steady, ZERO) is None
+
+
+# --- PR #436 review: a percent of nothing, carried changes, a mean of 0.00 --------------------
+
+
+def test_a_mean_at_or_below_zero_is_no_measured_spending():
+    """§7.6 (1) amended: refunds larger than the spending (a mean of −20 €) are no measured
+    spending, so +50 % of it is refused like a percent of nothing; a carried one plans the
+    mean itself, so Δ is 0 and the change counts for nothing while the mean stays there."""
+    means = {C.HH_SUPERMARKET: Decimal("-20.00"), C.HH_TRAVEL: Decimal("100.00")}
+    (change,) = changes_of([{"code": "hh_supermarket", "percent": "0.50", "from_month": "2027-06"}])
+    assert S.percent_on_nothing([change], means) is C.HH_SUPERMARKET
+    assert S.percents_on_nothing([change, change], means) == [C.HH_SUPERMARKET]
+    assert S.planned(change, Decimal("-20.00")) == Decimal("-20.00")
+    assert S.delta([change], means, "2027-06") == ZERO
+    (ok,) = changes_of([{"code": "hh_travel", "percent": "0.50", "from_month": "2027-06"}])
+    assert S.percent_on_nothing([ok], means) is None
+
+
+def test_a_zero_mean_code_is_offered_under_neue_ausgabe():
+    """A code whose lines cancel out has a mean of 0.00: code_means keeps it, and „Neue
+    Ausgabe“ offers it as it offers a code with no line (the screen shows no row for it)."""
+    window = [
+        {C.HH_CHILDCARE: Decimal("50.00"), C.HH_SUPERMARKET: Decimal("650.00")},
+        {C.HH_CHILDCARE: Decimal("-50.00"), C.HH_SUPERMARKET: Decimal("650.00")},
+    ]
+    means = S.code_means(window)
+    assert means[C.HH_CHILDCARE] == ZERO
+    offered = S.addable(means, [], set())
+    assert C.HH_CHILDCARE in offered and C.HH_SUPERMARKET not in offered
+
+
+def test_a_change_carried_unaltered_is_neither_refused_nor_given_a_new_mean():
+    """§7.6 (1) amended: against the row superseded, a change with the same code, amount,
+    percent and months is carried: it is not refused though its code has no mean now, and it
+    keeps its stored `mean_at_save`; an altered or new one is checked and gets the mean now."""
+    previous = changes_of(
+        [{"code": "hh_supermarket", "percent": "0.10", "from_month": "2027-06",
+          "mean_at_save": "650.00"}]
+    )  # fmt: skip
+    carried, moved, new = changes_of(
+        [
+            {"code": "hh_supermarket", "percent": "0.1", "from_month": "2027-06",
+             "mean_at_save": "1.00"},
+            {"code": "hh_supermarket", "percent": "0.10", "from_month": "2027-07"},
+            {"code": "hh_childcare", "percent": "0.10", "from_month": "2027-06"},
+        ]
+    )  # fmt: skip
+    assert S.typed_now([carried], previous) == []
+    assert S.typed_now([moved, new], previous) == [moved, new]
+    assert S.percent_on_nothing(S.typed_now([carried], previous), {}) is None
+    assert S.percent_on_nothing(S.typed_now([moved], previous), {}) is C.HH_SUPERMARKET
+    means = {C.HH_SUPERMARKET: Decimal("900.00")}
+    stored = S.with_means_at_save([carried, moved], means, previous)
+    assert [c.mean_at_save for c in stored] == [Decimal("650.00"), Decimal("900.00")]
+    assert [c.mean_at_save for c in S.with_means_at_save([carried], {}, previous)] == [
+        Decimal("650.00")
+    ]

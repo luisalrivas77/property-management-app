@@ -28,10 +28,14 @@ beyond HouseholdScenarioCreate's own validator (HouseholdLevers checks the range
   row being superseded is refused (`household_scenario.not_current`). The table has no
   partial unique index (it cannot see supersession), so this is the service's rule.
 
-- spending changes (D263, §7.6 (1)): a percent change of a code with no measured spending
-  in today's window (`household_scenario.spending_invalid`); the other refusals are
-  HouseholdLevers' own. Every change's `mean_at_save` is written here, from the code's mean
-  over today's window (0 without three closed months), whatever the request carried.
+- spending changes (D263, §7.6 (1) amended, PR #436 review): a percent change, new or altered
+  against the row being superseded, of a code with no measured spending in today's window
+  (a mean at or below 0; `household_scenario.spending_invalid`); a change carried unaltered
+  is never refused, so a save of another lever (the limits on Übersicht) is never blocked by
+  a category that lost its spending since; GET /household-plan names such a change in a
+  „Szenario prüfen“ to-do instead. The other refusals are HouseholdLevers' own. A change
+  carried unaltered keeps its stored `mean_at_save`; a new or altered one gets the code's
+  mean over today's window (0 without three closed months), whatever the request carried.
 
 A withdrawal is not re-checked against the accounts, the horizon or the spending: it only
 ends a row, and it repeats the withdrawn row's levers with their `mean_at_save` as stored.
@@ -42,6 +46,7 @@ Writes of one workspace are serialised by a transaction-scoped advisory lock, so
 default" check cannot race; `supersedes_id` is UNIQUE in the table as well.
 """
 
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -52,6 +57,7 @@ from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import household_scenario as scenario_table
+from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.errors import (
     HOUSEHOLD_SCENARIO_ACCOUNT_INVALID,
     HOUSEHOLD_SCENARIO_NOT_CURRENT,
@@ -65,7 +71,12 @@ from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AccountKind, EntityType
 from hausbuch.schemas.events import EventType, HouseholdScenarioRecorded
 from hausbuch.schemas.health import month_of
-from hausbuch.schemas.plan import HouseholdLevers, HouseholdScenario, HouseholdScenarioCreate
+from hausbuch.schemas.plan import (
+    HouseholdLevers,
+    HouseholdScenario,
+    HouseholdScenarioCreate,
+    SpendingChange,
+)
 
 from .allocations import user_id
 from .context import CommandContext
@@ -137,15 +148,15 @@ def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> House
     RuleViolationError household_scenario.not_current, .account_invalid, .one_off_outside or
     .withdrawal_invalid. Nothing is written then."""
     _lock(ctx)
-    if data.supersedes_id is not None:
-        _check_supersedes(ctx.conn, data)
+    old = None if data.supersedes_id is None else _check_supersedes(ctx.conn, data)
     if not data.withdrawn:
         today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
-        means = check_levers(ctx.conn, data.levers, today)
+        previous = [] if old is None else old.levers.spending_changes
+        means = check_levers(ctx.conn, data.levers, today, previous=previous)
         if data.is_default:
             _check_one_default(ctx.conn, data)
         if data.levers.spending_changes:
-            changes = SP.with_means_at_save(data.levers.spending_changes, means)
+            changes = SP.with_means_at_save(data.levers.spending_changes, means, previous)
             levers = data.levers.model_copy(update={"spending_changes": changes})
             data = data.model_copy(update={"levers": levers})
     return _insert(ctx, data)
@@ -156,11 +167,16 @@ def check_levers(
     levers: HouseholdLevers,
     today: date,
     reads: dict[str, MonthRead] | None = None,
+    *,
+    previous: Sequence[SpendingChange] = (),
 ) -> dict[AllocationCategory, Decimal]:
     """The checks of a scenario's levers beyond HouseholdLevers' own (the module doc), for a
     new row and for the preview; returns the codes' means over today's window (§7.6 (2)).
     `reads`: today's months as services.health.read_months gives them (the preview passes the
-    reads its plan uses); read here once, and only for one-offs or spending changes."""
+    reads its plan uses); read here once, and only for one-offs or spending changes.
+    `previous`: the spending changes of the row a save supersedes (for the preview the default
+    in force); only a change new or altered against them is refused as a percent of
+    nothing (§7.6 (1) amended)."""
     _check_accounts(conn, levers)
     if not levers.one_offs and not levers.spending_changes:
         return {}
@@ -170,11 +186,12 @@ def check_levers(
     if not levers.spending_changes:
         return {}
     means = window_means(reads)
-    code = SP.percent_on_nothing(levers.spending_changes, means)
+    code = SP.percent_on_nothing(SP.typed_now(levers.spending_changes, previous), means)
     if code is not None:
         raise RuleViolationError(
             [HOUSEHOLD_SCENARIO_SPENDING_INVALID],
-            f"a percent change of {code.value}, which has no measured spending in the window",
+            f"a percent change of {code.value} ({CATEGORY_LABEL[code]}), which has no "
+            "measured spending in the window",
         )
     return means
 
@@ -257,7 +274,8 @@ def _not_current(message: str) -> RuleViolationError:
     return RuleViolationError([HOUSEHOLD_SCENARIO_NOT_CURRENT], message)
 
 
-def _check_supersedes(conn: Connection, data: HouseholdScenarioCreate) -> None:
+def _check_supersedes(conn: Connection, data: HouseholdScenarioCreate) -> HouseholdScenario:
+    """The row `data` supersedes, in force; refused otherwise (the module doc)."""
     assert data.supersedes_id is not None
     old = get_scenario(conn, data.supersedes_id)
     if old is None:
@@ -269,6 +287,7 @@ def _check_supersedes(conn: Connection, data: HouseholdScenarioCreate) -> None:
             [HOUSEHOLD_SCENARIO_WITHDRAWAL_INVALID],
             "a withdrawal repeats the withdrawn scenario's levers",
         )
+    return old
 
 
 def _check_accounts(conn: Connection, levers: HouseholdLevers) -> None:

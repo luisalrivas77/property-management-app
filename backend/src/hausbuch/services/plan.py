@@ -59,6 +59,7 @@ from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.db.tables import workspace as workspace_table
+from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.health.window import window_todos
 from hausbuch.rules.plan import levers as L
@@ -211,14 +212,19 @@ def _scenario_check(text: str) -> HealthTodo:
 
 
 def scenario_todos(
-    conn: Connection, levers: HouseholdLevers, detected: Sequence[SavingsPlan], newest: str
+    conn: Connection,
+    levers: HouseholdLevers,
+    detected: Sequence[SavingsPlan],
+    newest: str,
+    means: dict[AllocationCategory, Decimal],
 ) -> list[HealthTodo]:
     """§7.3: a reserve account that no longer exists or is no reserve account, an override
     of a plan that is not detected now, and a one-off after the horizon's end (the newest
     closed month `newest` moved back, a month that was closed is open again;
     rules.plan.levers.months leaves its amount out), each named once. A one-off at or before
     `newest` raises nothing: its month is measured and the plan ignores it (§7.3 amended,
-    PR #434 review D)."""
+    PR #434 review D). Last, a percent change of a code with no mean in `means`
+    (`spending_todos`)."""
     todos = []
     named = [*levers.reserve_accounts.added, *levers.reserve_accounts.removed]
     if named:
@@ -263,7 +269,34 @@ def scenario_todos(
             "nach dem Ende des Zeitraums der Rechnung liegen; sie zählen nicht mit."
         )
         todos.append(_scenario_check(text))
-    return todos
+    return todos + spending_todos(levers, means)
+
+
+SPENDING_PLAY_HREF = f"{PLAN_HREF}#ausgaben-durchspielen"
+
+
+def spending_todos(
+    levers: HouseholdLevers, means: dict[AllocationCategory, Decimal]
+) -> list[HealthTodo]:
+    """§7.6 (1) amended (PR #436 review): a stored percent change of a code with no measured
+    spending in today's window (re-booked away, a month opened again, fewer than three closed
+    months) is kept and saved again unaltered, but counts for nothing while the code has none
+    (rules.plan.spending.planned); one to-do per code names it, with „Ausgaben durchspielen“
+    as the place to change it."""
+    return [
+        HealthTodo(
+            code=HealthTodoCode.SCENARIO_CHECK,
+            text=(
+                f"Das Szenario ändert die Ausgaben für „{CATEGORY_LABEL[code]}“ um einen "
+                "Prozentsatz, aber in den abgeschlossenen Monaten gibt es dafür keine "
+                "gemessenen Ausgaben; die Änderung zählt gerade nicht mit. Tragt einen Betrag "
+                "pro Monat ein oder entfernt die Änderung."
+            ),
+            action="Szenario prüfen",
+            href=SPENDING_PLAY_HREF,
+        )
+        for code in SP.percents_on_nothing(levers.spending_changes, means)
+    ]
 
 
 def _income_change_todo() -> HealthTodo:
@@ -462,12 +495,15 @@ def preview_plan(conn: Connection, today: date, levers: HouseholdLevers) -> Hous
     """POST /household-plan/preview (D263 (c)): the plan for typed levers, checked as a
     scenario row would be (services.household_scenarios.check_levers), on the default scenario
     in force with its levers replaced, so the projection keeps its saved row; without a saved
-    row no projection, as GET shows. Reads only: no row, no event."""
+    row no projection, as GET shows. A spending change carried unaltered from that default is
+    not refused, as the save superseding it would not refuse it (§7.6 (1) amended). Reads
+    only: no row, no event."""
     from .household_scenarios import check_levers
 
     reads = read_months(conn, ended_months(today), today)
-    check_levers(conn, levers, today, reads)
     row = default_scenario(conn)
+    previous = [] if row is None else row.levers.spending_changes
+    check_levers(conn, levers, today, reads, previous=previous)
     if row is not None:
         row = row.model_copy(update={"levers": levers})
     return _plan(conn, today, row, levers, reads)
@@ -500,6 +536,7 @@ def _plan(
         newest_closed=newest,
     )
     if not win.enough:
+        todos += spending_todos(levers, {})  # no mean below three closed months (§7.6 (2))
         return plan.model_copy(
             update={"todos": todos, "projection": NetWorthProjection(todos=list(todos))}
         )
@@ -511,7 +548,7 @@ def _plan(
     detected = S.detect(plan_lines(conn, win.months[-3:]), win.months[-3:])
     plans = S.apply_overrides(detected, levers.plan_overrides)
     invested = S.already_invested(plans)
-    todos += scenario_todos(conn, levers, detected, newest)
+    todos += scenario_todos(conn, levers, detected, newest, means)
     if levers.income_changes:
         todos.append(_income_change_todo())
 
