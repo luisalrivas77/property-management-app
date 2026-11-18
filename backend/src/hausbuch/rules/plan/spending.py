@@ -22,7 +22,7 @@ D263). Fixtures: tests/fixtures/phase9/spending_play.yaml, spending_comparison.y
 Pure: no I/O.
 """
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
@@ -244,6 +244,7 @@ def rate_segments(
     means: Mapping[AllocationCategory, Decimal],
     income_changes: Sequence[IncomeChange],
     horizon_months: int,
+    investable_of: Callable[[str], Decimal] | None = None,
 ) -> list[RateSegment]:
     """The rate with the changes for each future month 1 … horizon, in stretches that share
     it (§7.6 (4))."""
@@ -259,11 +260,19 @@ def rate_segments(
         spent = delta(changes, means, month)
         rate = ratio(e_k - sum_a - n * spent, e_k)
         regular = mean_regular + spent
-        if out and (out[-1].rate, out[-1].regular_spending) == (rate, regular):
+        investable = None if investable_of is None else investable_of(month)
+        key = (rate, regular, investable)
+        if out and (out[-1].rate, out[-1].regular_spending, out[-1].investable) == key:
             out[-1] = out[-1].model_copy(update={"to_month": month})
         else:
             out.append(
-                RateSegment(from_month=month, to_month=month, rate=rate, regular_spending=regular)
+                RateSegment(
+                    from_month=month,
+                    to_month=month,
+                    rate=rate,
+                    regular_spending=regular,
+                    investable=investable,
+                )
             )
     return out
 
@@ -280,6 +289,7 @@ def play(
     changes: Sequence[SpendingChange],
     income_changes: Sequence[IncomeChange],
     horizon_months: int,
+    investable_of: Callable[[str], Decimal] | None = None,
 ) -> SpendingPlay:
     """§7.6 (5) over the window's household months and their spending per code
     (`month_spending`, one mapping per month, in the same order)."""
@@ -345,7 +355,7 @@ def play(
         groups=groups,
         mean_regular_spending=mean_regular,
         rate_regular_now=ratio(sum_e - sum_a, sum_e),
-        rates=rate_segments(window, changes, means, income_changes, horizon_months),
+        rates=rate_segments(window, changes, means, income_changes, horizon_months, investable_of),
         addable=addable(means, changes, {g.group for g in groups}),
     )
 

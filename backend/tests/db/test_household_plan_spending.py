@@ -96,6 +96,11 @@ def test_a_spending_change_moves_the_plan_and_its_mean_is_written_on_save(world)
     )
     assert [s.rate for s in before.spending_play.rates] == [before.spending_play.rate_regular_now]
     assert play.rates[0].rate > play.rate_regular_now
+    # Each stretch carries its planned spending and its Anlegbar without one-offs (§7.1 with
+    # the flat at its mean); with no one-off and no flat scenario that is the month's own.
+    assert play.rates[0].regular_spending == Decimal("1000.00")
+    assert play.rates[0].investable == first.investable
+    assert before.spending_play.rates[0].investable == was.investable
 
 
 def test_the_preview_computes_the_typed_levers_and_stores_nothing(world):

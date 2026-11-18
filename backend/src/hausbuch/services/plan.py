@@ -603,6 +603,11 @@ def _plan(
                 levers.spending_changes,
                 levers.income_changes,
                 levers.horizon_months,
+                lambda ym: (
+                    L.month_at(
+                        basis, L.months_after(newest, ym), None, levers.income_changes
+                    ).investable
+                ),
             ),
             "proposed_one_offs": proposed_refund(conn, today, levers),
             "projection": projection,

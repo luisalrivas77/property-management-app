@@ -11581,6 +11581,8 @@ export interface components {
             rate?: string | null;
             /** Regular Spending */
             regular_spending: string;
+            /** Investable */
+            investable?: string | null;
         };
         /**
          * RebookBlockReason

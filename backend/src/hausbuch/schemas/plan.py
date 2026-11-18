@@ -518,6 +518,9 @@ class RateSegment(Schema):
     to_month: YearMonth
     rate: Ratio | None = None  # None when Ē ≤ 0
     regular_spending: Money
+    # „Anlegbar pro Monat“ in these months by §7.1 with the flat at its measured mean and no
+    # one-off (the screen's „ohne Einmalausgaben“); None when the caller passes no month function
+    investable: Money | None = None
 
 
 class SpendingPlay(Schema):
