@@ -14,7 +14,7 @@ from db.test_services_health import _book
 from db.test_services_health import _scenario as _flat_scenario
 from db.test_services_health_snapshots import NOW, TODAY, _closed_history
 from db.test_services_private_matching import Private
-from db.test_services_transfers import SAVINGS_IBAN
+from db.test_services_transfers import SAVINGS_IBAN, _savings
 from sqlalchemy import update
 
 from hausbuch.db.session import workspace_transaction
@@ -30,8 +30,10 @@ from hausbuch.schemas.performance import YearKind
 from hausbuch.schemas.plan import (
     HouseholdLevers,
     HouseholdScenarioCreate,
+    IncomeChange,
     PlanClass,
     PlanOverride,
+    ReserveAccounts,
     SurplusKey,
 )
 from hausbuch.services import household_scenarios, net_worth, plan, transfers
@@ -288,3 +290,41 @@ def test_a_named_scenario_is_used_and_an_unknown_one_refused(world):
     with pytest.raises(NotFoundError) as unknown:
         _plan(world, world.property_id)
     assert unknown.value.entity_type is EntityType.HOUSEHOLD_SCENARIO
+
+
+def test_a_reserve_account_that_no_longer_fits_and_an_income_change_are_named(world):
+    """§7.3: a scenario counting an account to the reserve that is no reserve account any
+    more is „Szenario prüfen“; an income change typed in the scenario points to the owners'
+    expected pay (D248) and changes the free cash from its month on."""
+    _closed_history(world)
+    savings = _savings(world)
+    _covered(world, savings.import_id)
+    with workspace_transaction(world.engine, world.ws) as conn:
+        conn.execute(  # a positive reserve: a negative one fails step 1's Reserve schema
+            update(account_table)
+            .where(account_table.c.id == savings.account_id)
+            .values(opening_balance=Decimal("5000.00"))
+        )
+    for month in (1, 2, 3):  # a fee each month, so the account covers them
+        fee = savings.line(date(2027, month, 28), "-1.00", purpose="Gebühr")
+        _book(world, fee, "-1.00", C.HH_INTEREST_FEES)
+    _household(
+        world,
+        reserve_accounts=ReserveAccounts(added=[savings.account_id]),
+        income_changes=[IncomeChange(monthly_net=Decimal("-600.00"), from_month="2027-06")],
+    )
+    got = _plan(world)
+    assert [t.code for t in got.todos] == [HealthTodoCode.INCOME_CHANGE_LINK]
+    by_month = {m.month: m for m in got.months}
+    assert by_month["2027-06"].free == by_month["2027-05"].free - Decimal("600.00")
+    with workspace_transaction(world.engine, world.ws) as conn:
+        conn.execute(
+            update(account_table)
+            .where(account_table.c.id == savings.account_id)
+            .values(kind="depot")
+        )
+    got = _plan(world)
+    assert [t.code for t in got.todos] == [
+        HealthTodoCode.SCENARIO_CHECK,
+        HealthTodoCode.INCOME_CHANGE_LINK,
+    ]
