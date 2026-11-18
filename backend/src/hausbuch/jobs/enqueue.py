@@ -283,3 +283,27 @@ def follow_lock(workspace_id: UUID) -> str:
 def enqueue_follow_accounts(conn: Connection, *, workspace_id: UUID) -> None:
     """Queue `follow_accounts` for the workspace, in the caller's transaction."""
     _defer(conn, FOLLOW_ACCOUNTS_TASK, follow_lock(workspace_id), workspace_id=str(workspace_id))
+
+
+# --- Lamports sent to an own token account, read again (phase 7 D186 (2) amended 18 Nov 2026) -
+#
+# Once after the deploy, from `hausbuch repair-solana-lamports`: reading the stored chain
+# originals needs the object store the operator's computer does not hold, so the CLI only
+# queues. Locked per workspace: one run at a time.
+
+REPAIR_SOLANA_LAMPORTS_TASK = "repair_solana_lamports"
+
+
+def lamports_repair_lock(workspace_id: UUID) -> str:
+    return f"lamports-repair:{workspace_id}"
+
+
+def enqueue_repair_solana_lamports(conn: Connection, *, workspace_id: UUID, dry_run: bool) -> None:
+    """Queue `repair_solana_lamports` for the workspace, in the caller's transaction."""
+    _defer(
+        conn,
+        REPAIR_SOLANA_LAMPORTS_TASK,
+        lamports_repair_lock(workspace_id),
+        workspace_id=str(workspace_id),
+        dry_run="yes" if dry_run else "no",
+    )

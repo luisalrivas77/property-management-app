@@ -33,6 +33,7 @@ from .enqueue import (
     MATCH_TRANSACTION_TASK,
     REMATCH_TASK,
     REMATCH_WAITING_TASK,
+    REPAIR_SOLANA_LAMPORTS_TASK,
     TAX_EXPORT_TASK,
 )
 from .fetch_prices import (
@@ -49,6 +50,7 @@ from .health_daily import (
     run_health_daily,
 )
 from .inbound_mail import POLL_CRON, POLL_LOCK, POLL_TASK, run_poll_inbox
+from .lamports_repair import run_repair_solana_lamports
 from .matching import (
     run_match_import,
     run_match_transaction,
@@ -158,6 +160,12 @@ def follow_accounts(context: JobContext, *, workspace_id: str) -> None:
     """Once after the deploy of 14 Nov 2026 (`hausbuch follow-accounts`); no retry."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
     run_follow_accounts(deps, workspace_id=UUID(workspace_id))
+
+
+def repair_solana_lamports(context: JobContext, *, workspace_id: str, dry_run: str) -> None:
+    """Once after the deploy of 18 Nov 2026 (`hausbuch repair-solana-lamports`); no retry."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_repair_solana_lamports(deps, workspace_id=UUID(workspace_id), dry_run=dry_run == "yes")
 
 
 def tax_export(
@@ -275,6 +283,8 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     app.task(name=BANK_SYNC_TASK, pass_context=True, retry=retry)(bank_sync)
     # No retry: `hausbuch follow-accounts` can be run again; what it did no longer waits.
     app.task(name=FOLLOW_ACCOUNTS_TASK, pass_context=True)(follow_accounts)
+    # No retry: `hausbuch repair-solana-lamports` can be run again; a corrected group stays.
+    app.task(name=REPAIR_SOLANA_LAMPORTS_TASK, pass_context=True)(repair_solana_lamports)
     # No retry: a failed scrub runs again the next day. No queueing lock (jobs/enqueue.py
     # says why); Procrastinate's periodic_defers table already defers one job per schedule
     # however many instances run a deferrer, and a duplicate run would scrub nothing.

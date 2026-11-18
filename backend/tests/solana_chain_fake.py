@@ -233,3 +233,53 @@ class Records:
         balances = ([10**9, self.RENT, 1], [10**9 - 5000 + self.RENT, 0, 1])
         rows = ([self._row(1, self.owner, 0)], [])
         return self._record(slot, "CLOSE", keys, solana.TOKEN_PROGRAM, balances, rows)
+
+
+POISONER = "Pois1nPayerXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"  # base58, invented
+
+
+def dust_into_token_account(
+    owner: str, token_account: str, *, slot: int = 300_000_401, lamports: int = 1
+) -> dict:
+    """A stranger's address-poisoning transaction (D186 (2) amended 18 Nov 2026): the
+    stranger signs and pays, and two System transfers send `lamports` each to the owner's main
+    account and to its own token account. No token balance row: no Token program runs, so the
+    token account's lamports are the only trace of it in the record."""
+    fee = 5000
+    before = 10**9
+    rent = Records.RENT
+    keys = [POISONER, owner, token_account, solana.SYSTEM_PROGRAM]
+    return {
+        "version": 0,
+        "slot": slot,
+        "blockTime": 1_774_600_000,
+        "transaction": {
+            "signatures": ["Pois1nSig".ljust(88, "x")],
+            "message": {
+                "accountKeys": [
+                    {"pubkey": k, "signer": i == 0, "writable": i < 3, "source": "transaction"}
+                    for i, k in enumerate(keys)
+                ],
+                "instructions": [
+                    {
+                        "programId": solana.SYSTEM_PROGRAM,
+                        "parsed": {
+                            "type": "transfer",
+                            "info": {"source": POISONER, "destination": to, "lamports": lamports},
+                        },
+                    }
+                    for to in (owner, token_account)
+                ],
+            },
+        },
+        "meta": {
+            "err": None,
+            "fee": fee,
+            "preBalances": [before, before, rent, 1],
+            "postBalances": [before - fee - 2 * lamports, before + lamports, rent + lamports, 1],
+            "preTokenBalances": [],
+            "postTokenBalances": [],
+            "innerInstructions": [],
+            "loadedAddresses": {"writable": [], "readonly": []},
+        },
+    }

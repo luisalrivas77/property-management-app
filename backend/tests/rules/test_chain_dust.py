@@ -7,6 +7,7 @@ from decimal import Decimal
 import fixture_models_phase7 as phase7
 import pytest
 from pydantic import ValidationError
+from solana_chain_fake import dust_into_token_account
 
 from hausbuch.rules.chain import solana
 from hausbuch.rules.chain.decoders import public_decoders
@@ -79,3 +80,45 @@ def test_a_tiny_receipt_is_classified_as_the_shape_the_dust_check_reads(through_
     assert [(leg.kind, leg.role, leg.units) for leg in group.legs] == [
         (MovementKind.UNCATEGORIZED, "in", 20_000)
     ]
+
+
+# --- dust into an own token account (D186 (2) amended 18 Nov 2026) --------------------------
+
+OWNER = RECEIVE.own
+OWNER_USDC = "Dd2nAL9RJk7UUMMSAWszC9oJTi3jGoPGpjStUZ3ZH8ZU"  # the owner's USDC token account
+
+
+def test_lamports_sent_to_an_own_token_account_join_the_sol_receipt():
+    """A stranger sends 1 lamport to the owner and 1 lamport to the owner's own token account,
+    with no token balance row: the SOL leg is the sum, 2 lamports, one proposed receipt in the
+    shape D262 reads. Without the token account known, only the main account's lamport is
+    seen, which left the address unreconciled by 1 lamport."""
+    record = dust_into_token_account(OWNER, OWNER_USDC)
+    lookup = solana.rows_lookup(public_decoders())
+    group = solana.classify_solana(record, {OWNER}, lookup, own_token_accounts={OWNER_USDC})
+    assert (group.kind, group.question) == (GroupKind.TRANSFER, None)
+    assert [(leg.kind, leg.role, leg.units, leg.index) for leg in group.legs] == [
+        (MovementKind.UNCATEGORIZED, "in", 2, "0")
+    ]
+    assert [d.units for d in solana.solana_deltas(record, {OWNER}, {OWNER_USDC})] == [2]
+    assert [d.units for d in solana.solana_deltas(record, {OWNER})] == [1]
+
+
+def test_a_token_account_its_rows_name_is_never_counted_twice():
+    """`spl_in` names the owner's token account in its rows; knowing it as an own token
+    account changes nothing (its lamports stay the rent the rows already account for)."""
+    spl_in = next(c for c in phase7.load("solana_tx").cases if c.id == "spl_in")
+    with_known = solana.solana_deltas(spl_in.tx, {spl_in.own}, {OWNER_USDC})
+    assert with_known == solana.solana_deltas(spl_in.tx, {spl_in.own})
+
+
+def test_the_sync_keeps_the_token_accounts_only_when_their_lamports_move_rowless():
+    record = dust_into_token_account(OWNER, OWNER_USDC)
+    assert solana.moves_rowless_token_account(record, {OWNER_USDC})
+    assert not solana.moves_rowless_token_account(record, set())
+    assert not solana.moves_rowless_token_account(RECEIVE.tx, {OWNER_USDC})
+    stored = solana.with_token_accounts(record, {OWNER_USDC})
+    assert solana.recorded_token_accounts(stored) == [OWNER_USDC]
+    failed = deepcopy(record)
+    failed["meta"]["err"] = {"InstructionError": [0, "Custom"]}
+    assert not solana.moves_rowless_token_account(failed, {OWNER_USDC})

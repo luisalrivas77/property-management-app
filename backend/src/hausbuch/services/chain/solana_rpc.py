@@ -670,8 +670,10 @@ class SolanaSource:
     read yet (§15.1).
 
     **Stored as read.** `raw` is the provider's record; only a record with a token balance row
-    without an `owner` carries the own token accounts the run knew, under solana.SYNC_KEY, so
-    the classifier reads the same legs from the stored original without a provider (D192). A
+    without an `owner`, or one in which an own token account's lamports change with no token
+    balance row naming it (a stranger's System transfer into it, D186 (2) amended 18 Nov
+    2026), carries the own token accounts the run knew, under solana.SYNC_KEY, so the
+    classifier reads the same legs from the stored original without a provider (D192). A
     record whose token legs cannot be read anyway is a card, never a stopped sync. No token
     account's address leaves the run: never in a cursor, an event or a log.
 
