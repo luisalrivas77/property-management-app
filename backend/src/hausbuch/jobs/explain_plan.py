@@ -1,26 +1,34 @@
 """The explain_plan job (docs/phases/phase-9.md §8.2, §8.6, D252–D257; phase 9 step 4).
 
-One run writes exactly one plan_explanation row and its event plan.explanation_stored:
+One run writes one plan_explanation row and its event plan.explanation_stored:
 
 1. The facts are rebuilt here from the job's ids (the job never carries a figure or a
    label), under the workspace's current advice mode. ai_private_accounts is checked again:
    switched off since the job was queued, the row is the template with reason `consent_off`
-   and no request is built (D253).
+   and no request is built (D253). It is read once more before the retry: switched off
+   while the first call was out, no second request is sent and the row is the template with
+   reason `consent_off`, keeping the first attempt's codes and its ai_call row.
 2. One Haiku request (ai/requests.explain_plan_request), no second tier. Its answer is parsed
    and run through the validator (rules/advice/validator). A rejected answer is asked for
    once more, the request naming the violation codes only, never the rejected text (D257).
 3. A second rejection stores the template with reason `rejected`; a refusal or a cut-off
-   answer (stop_reason `refusal` or `max_tokens`) `refused`; the API's 402 (billing, the
-   Console's spend limit) `limit`; any other failed call, an answer that is not the schema's
-   JSON, or no model client `error`. None of these is retried: the template is always
-   there, and „Neu erklären“ asks again.
+   answer (stop_reason `refusal` or `max_tokens`) `refused`; the workspace's spend limit
+   (ModelCallError.limit: the API's 400 or 429 that says so) `limit`; any other failed
+   call, an answer that is not the schema's JSON, no model client, or any other failure
+   while asking (an exception of the client or the validator, or of an ai_call row's
+   transaction) `error`. None of these is retried: the template is always there, and „Neu
+   erklären“ asks again. A failure is logged by its exception class only.
 
 Each attempt is an ai_call row (job `explain`), written in its own transaction as soon as the
-call returns, so the provenance survives a crash before the explanation is stored. The
-plan_explanation row keeps the codes and positions of the rejected attempts, never their
-text (which is in ai_call.output and raw_text as for every call).
+call returns and before its answer is validated, so a sent call has its row even when the
+validator fails (error code `ai.internal_error`). The plan_explanation row keeps the codes
+and positions of the rejected attempts, never their text (which is in ai_call.output and
+raw_text as for every call).
 
-No retry of the task itself (jobs/tasks.py): every outcome is stored.
+What cannot be stored: a failure while the facts are built (before any request), or in the
+final transaction that stores the row. The task then fails with no row; the ai_call rows
+already written stay. No retry of the task itself (jobs/tasks.py): every other outcome is
+stored.
 """
 
 import logging
@@ -50,8 +58,8 @@ from .document_read import JobDeps
 
 SYSTEM_ACTOR = Actor(ActorType.SYSTEM, "explain_plan")
 ATTEMPTS = 2  # the first answer and the one retry after a rejection (D257)
-BILLING_STATUS = 402  # the API's billing_error: the Console's monthly spend limit reached
 OUTPUT_INVALID = "ai.output_invalid"
+INTERNAL_ERROR = "ai.internal_error"  # not a model error: a bug in the client or the validator
 
 logger = logging.getLogger("hausbuch.jobs.explain_plan")
 
@@ -96,30 +104,56 @@ def _record(
         )
 
 
+def _still_allowed(deps: JobDeps, workspace_id: UUID) -> bool:
+    with workspace_transaction(deps.engine, workspace_id) as conn:
+        return private_ai_allowed(conn)
+
+
 def _ask(deps: JobDeps, workspace_id: UUID, facts: ExplainFacts) -> _Outcome:
-    """Up to two calls; the outcome to store."""
+    """Up to two calls; the outcome to store. Never raises: a failure anywhere while asking
+    is the template with reason `error`, keeping the ai_call rows already written."""
     out = _Outcome()
+    try:
+        _attempts(deps, workspace_id, facts, out)
+    except Exception as exc:  # noqa: BLE001 - class name only: a message can quote data
+        out.status, out.reason, out.paragraphs = (
+            ExplanationStatus.TEMPLATE,
+            ExplanationReason.ERROR,
+            None,
+        )
+        fields = {"event": "plan_explanation_ask_failed", "exc_type": type(exc).__name__}
+        logger.error("a plan explanation could not be asked for", extra={"fields": fields})
+    return out
+
+
+def _attempts(deps: JobDeps, workspace_id: UUID, facts: ExplainFacts, out: _Outcome) -> None:
     client = deps.model_client
     if not deps.settings.ai_enabled or client is None:
-        return out  # template, error: no client for this workspace (no key, or unreadable)
+        return  # template, error: no client for this workspace (no key, or unreadable)
     codes: list[str] = []
     for attempt in range(1, ATTEMPTS + 1):
+        if attempt > 1 and not _still_allowed(deps, workspace_id):
+            out.reason = ExplanationReason.CONSENT_OFF  # switched off while the call was out
+            return
         request = explain_plan_request(deps.settings, facts, rejected_codes=codes)
         out.prompt_version = request.prompt_version
         try:
             response = client.send(request)
         except ModelCallError as failure:
             out.ai_call_ids.append(_record(deps, workspace_id, request, failure=failure))
-            out.reason = (
-                ExplanationReason.LIMIT
-                if failure.status == BILLING_STATUS
-                else ExplanationReason.ERROR
+            out.reason = ExplanationReason.LIMIT if failure.limit else ExplanationReason.ERROR
+            return
+        except Exception:
+            # Not the client's mapped failure: a bug. The sent call still gets its row.
+            failure = ModelCallError(retryable=False, status=None)
+            out.ai_call_ids.append(
+                _record(deps, workspace_id, request, failure=failure, error_code=INTERNAL_ERROR)
             )
-            return out
+            raise
         if response.stop_reason in ("refusal", "max_tokens"):
             out.ai_call_ids.append(_record(deps, workspace_id, request, response=response))
             out.reason = ExplanationReason.REFUSED
-            return out
+            return
         try:
             paragraphs = parse_explain_plan(response.text)
         except ValueError:
@@ -127,27 +161,32 @@ def _ask(deps: JobDeps, workspace_id: UUID, facts: ExplainFacts) -> _Outcome:
                 _record(deps, workspace_id, request, response=response, error_code=OUTPUT_INVALID)
             )
             out.reason = ExplanationReason.ERROR
-            return out
-        result = validate(paragraphs, facts, facts.mode)
-        out.ai_call_ids.append(
-            _record(
-                deps,
-                workspace_id,
-                request,
-                response=response,
-                output={
-                    "paragraphs": [p.model_dump(mode="json") for p in paragraphs],
-                    "violation_codes": sorted({v.code.value for v in result.violations}),
-                },
+            return
+        output = {"paragraphs": [p.model_dump(mode="json") for p in paragraphs]}
+        try:
+            result = validate(paragraphs, facts, facts.mode)
+        except Exception:
+            out.ai_call_ids.append(
+                _record(
+                    deps,
+                    workspace_id,
+                    request,
+                    response=response,
+                    output=output,
+                    error_code=INTERNAL_ERROR,
+                )
             )
+            raise
+        output["violation_codes"] = sorted({v.code.value for v in result.violations})
+        out.ai_call_ids.append(
+            _record(deps, workspace_id, request, response=response, output=output)
         )
         if result.ok:
             out.status, out.reason, out.paragraphs = ExplanationStatus.MODEL, None, paragraphs
-            return out
+            return
         out.violations.extend((attempt, v) for v in result.violations)
         codes = [v.code.value for v in result.violations]
     out.reason = ExplanationReason.REJECTED
-    return out
 
 
 def run_explain_plan(

@@ -28,6 +28,7 @@ from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import plan_explanation as explanation_table
+from hausbuch.jobs import explain_plan as explain_job
 from hausbuch.jobs.document_read import JobDeps
 from hausbuch.jobs.enqueue import EXPLAIN_PLAN_TASK
 from hausbuch.jobs.explain_plan import run_explain_plan
@@ -267,7 +268,7 @@ def test_a_rejection_then_a_pass_is_stored_as_the_model_text(world, app_engine, 
     [
         ([text_response("{}", stop_reason="refusal")], ExplanationReason.REFUSED),
         ([text_response('{"paragraphs": [', stop_reason="max_tokens")], ExplanationReason.REFUSED),
-        ([ModelCallError(retryable=False, status=402)], ExplanationReason.LIMIT),
+        ([ModelCallError(retryable=False, status=400, limit=True)], ExplanationReason.LIMIT),
         ([ModelCallError(retryable=True, status=529)], ExplanationReason.ERROR),
         ([text_response("not json")], ExplanationReason.ERROR),
     ],
@@ -283,6 +284,81 @@ def test_a_refusal_a_cut_off_the_limit_or_an_error_ends_in_the_template(
     assert (result.status, result.reason) == (ExplanationStatus.TEMPLATE, reason)
     (row,) = _rows(world)
     assert row.reason == reason.value and len(row.ai_call_ids) == 1
+
+
+def _calls(world: World):
+    with workspace_transaction(world.engine, world.ws) as conn:
+        return conn.execute(select(ai_call_table)).all()
+
+
+class _RaisingClient(FakeModelClient):
+    """A client bug: an exception that is not the client's ModelCallError."""
+
+    def send(self, request):
+        self.requests.append(request)
+        raise RuntimeError("unexpected SDK error")
+
+
+def test_an_unexpected_client_error_stores_the_template_and_the_call(world, app_engine, tmp_path):
+    _household(world)
+    _consent(world)
+    client = _RaisingClient()
+    result = _run(app_engine, tmp_path, world, client)
+    assert len(client.requests) == 1
+    assert (result.status, result.reason) == (ExplanationStatus.TEMPLATE, ExplanationReason.ERROR)
+    (row,) = _rows(world)
+    (call,) = _calls(world)
+    assert row.reason == "error" and row.ai_call_ids == [call.id]
+    assert call.error_code == explain_job.INTERNAL_ERROR
+
+
+def test_a_validator_failure_stores_one_row_and_the_call(world, app_engine, tmp_path, monkeypatch):
+    _household(world)
+    _consent(world)
+    answer = _honest(world)
+
+    def broken(*args, **kwargs):
+        raise KeyError("validator bug")
+
+    monkeypatch.setattr(explain_job, "validate", broken)
+    result = _run(app_engine, tmp_path, world, FakeModelClient([text_response(answer)]))
+    assert (result.status, result.reason) == (ExplanationStatus.TEMPLATE, ExplanationReason.ERROR)
+    (row,) = _rows(world)
+    (call,) = _calls(world)
+    assert row.ai_call_ids == [call.id] and call.error_code == explain_job.INTERNAL_ERROR
+    assert call.raw_text == answer  # the sent call's answer is kept, as for every call
+
+
+class _ConsentOffDuringTheCall(FakeModelClient):
+    """Switches ai_private_accounts off while the first call is out."""
+
+    def __init__(self, script, world: World) -> None:
+        super().__init__(script)
+        self.world = world
+
+    def send(self, request):
+        response = super().send(request)
+        if len(self.requests) == 1:
+            self.world.cmd(
+                workspace_settings.update_settings, ai_private_accounts=False, actor=OWNER_A
+            )
+        return response
+
+
+def test_consent_switched_off_during_the_first_call_sends_no_retry(world, app_engine, tmp_path):
+    _household(world)
+    _consent(world)
+    client = _ConsentOffDuringTheCall([text_response(REJECTED), text_response(REJECTED)], world)
+    result = _run(app_engine, tmp_path, world, client)
+    assert len(client.requests) == 1
+    assert (result.status, result.reason) == (
+        ExplanationStatus.TEMPLATE,
+        ExplanationReason.CONSENT_OFF,
+    )
+    (row,) = _rows(world)
+    (call,) = _calls(world)
+    assert row.reason == "consent_off" and row.ai_call_ids == [call.id]
+    assert row.violations and {v["attempt"] for v in row.violations} == {1}
 
 
 # --- The event --------------------------------------------------------------------------
