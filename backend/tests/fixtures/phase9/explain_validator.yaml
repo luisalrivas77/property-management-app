@@ -79,12 +79,12 @@ accept:
   - {id: generic_reserve, topic: reserve, mode: generic, text: "Eure Reserve reicht für {f:reserve_months}."}
   - {id: projection_crypto_rate, topic: projection, text: "Unter eurer Annahme von {f:assumed_change_crypto} pro Jahr für {c:crypto} käme euer Vermögen Ende {f:projection_until} auf {f:projection_total}."}
   # D255 amended 19 Nov 2026 (the step 4a review): what stays legal under the new rules.
-  - {id: slot_comma_then_clause, pending: "4", topic: reserve, text: "Eure Reserve reicht für {f:reserve_months}. Euer Ziel sind {f:reserve_target_months}, es fehlen noch {f:reserve_gap}.", description: "a slot followed by a comma and a space, and by a full stop at the end"}
-  - {id: slot_colon_then_clause, pending: "4", topic: reserve, text: "Eure Reserve liegt bei {f:reserve}: Sie reicht für {f:reserve_months}."}
-  - {id: two_figures_with_und, pending: "4", topic: debt, text: "Die Grenzen liegen bei {f:band_ltv_green} und {f:band_ltv_red}."}
-  - {id: comma_list_not_joined, pending: "4", topic: net_worth, text: "Zu eurem Vermögen gehören Bankguthaben, Fonds und Aktien.", description: "8b: a comma does not join two words"}
-  - {id: descriptive_class_paragraph, pending: "4", topic: net_worth, text: "Euer Vermögen liegt zum größten Teil in {c:property}. Ein Teil ist Bankguthaben.", description: "a paragraph with a class slot uses only descriptive words, in every sentence"}
-  - {id: colour_tied_to_its_light, pending: "4", topic: savings_rate, text: "Eure Sparquote von {f:savings_rate} liegt im roten Bereich.", description: "a colour word tied to the lit figure of its own colour"}
+  - {id: slot_comma_then_clause, topic: reserve, text: "Eure Reserve reicht für {f:reserve_months}. Euer Ziel sind {f:reserve_target_months}, es fehlen noch {f:reserve_gap}.", description: "a slot followed by a comma and a space, and by a full stop at the end"}
+  - {id: slot_colon_then_clause, topic: reserve, text: "Eure Reserve liegt bei {f:reserve}: Sie reicht für {f:reserve_months}."}
+  - {id: two_figures_with_und, topic: debt, text: "Die Grenzen liegen bei {f:band_ltv_green} und {f:band_ltv_red}."}
+  - {id: comma_list_not_joined, topic: net_worth, text: "Zu eurem Vermögen gehören Bankguthaben, Fonds und Aktien.", description: "8b: a comma does not join two words"}
+  - {id: descriptive_class_paragraph, topic: net_worth, text: "Euer Vermögen liegt zum größten Teil in {c:property}. Ein Teil ist Bankguthaben.", description: "a paragraph with a class slot uses only descriptive words, in every sentence"}
+  - {id: colour_tied_to_its_light, topic: savings_rate, text: "Eure Sparquote von {f:savings_rate} liegt im roten Bereich.", description: "a colour word tied to the lit figure of its own colour"}
   # Every sentence of a mark (§5.6) is a must-accept case too: the test reads them from
   # rules/health/bands.yaml, with the states of a light of that colour.
   - {id: every_mark_sentence, from_bands: true, text: ""}
@@ -202,106 +202,106 @@ reject:
   - {id: healthy_under_red, rejects: mark, topic: savings_rate, text: "Eure Sparquote ist gesund."}
   - {id: no_problem_under_amber_reserve, rejects: mark, topic: reserve, text: "Die Reserve ist kein Problem."}
   # D255 amended 19 Nov 2026 (the step 4a review). 2: a slot stands apart.
-  - {id: slot_glued_dot, pending: "4", rejects: slot, topic: surplus, text: "Ihr könnt {f:basis_months}.{f:investable} anlegen."}
-  - {id: slot_glued_slots, pending: "4", rejects: slot, topic: surplus, text: "Ihr könnt {f:basis_months}{f:investable} anlegen."}
-  - {id: slot_glued_comma, pending: "4", rejects: slot, topic: net_worth, text: "Euer Vermögen liegt bei {f:basis_months},{f:basis_months} Monaten."}
-  - {id: slot_glued_rate, pending: "4", rejects: slot, topic: savings_rate, text: "Eure Sparquote liegt bei {f:basis_months}{f:savings_rate}."}
-  - {id: slot_minus_sign, pending: "4", rejects: slot, topic: net_worth, text: "Euer Vermögen liegt bei -{f:net_worth}."}
-  - {id: slot_class_hyphen_etf, pending: "4", rejects: slot, topic: net_worth, text: "Ein {c:crypto}-ETF wäre breiter gestreut."}
-  - {id: slot_class_glued_letters, pending: "4", rejects: slot, topic: net_worth, text: "Ein {c:crypto}fonds wäre breiter gestreut."}
-  - {id: slot_letters_before, pending: "4", rejects: slot, topic: net_worth, text: "Ein Welt{c:depot} wäre breiter gestreut."}
-  - {id: slot_asset_hyphen, pending: "4", rejects: slot, topic: net_worth, text: "Der {a:a1}-Sparplan läuft weiter."}
-  - {id: slot_apostrophe, pending: "4", rejects: slot, topic: net_worth, text: "Der Anteil von {a:a1}'s Fonds ist gleich geblieben."}
-  - {id: slot_figure_then_account, pending: "4", rejects: slot, topic: reserve, text: "Eure Reserve liegt bei {f:reserve}{k:k1}."}
-  - {id: slot_account_then_asset, pending: "4", rejects: slot, topic: net_worth, text: "Auf {k:k3}{a:a1} liegt ein Teil eures Vermögens."}
-  - {id: slot_times_between_figures, pending: "4", rejects: slot, topic: surplus, text: "Ihr habt {f:basis_months} mal {f:free_cash} gespart."}
-  - {id: slot_plus_between_figures, pending: "4", rejects: slot, topic: reserve, text: "Eure Reserve liegt bei {f:reserve} plus {f:buffer}."}
-  - {id: slot_minus_between_figures, pending: "4", rejects: slot, topic: surplus, text: "Euch bleiben {f:free_cash} minus {f:buffer}."}
+  - {id: slot_glued_dot, rejects: slot, topic: surplus, text: "Ihr könnt {f:basis_months}.{f:investable} anlegen."}
+  - {id: slot_glued_slots, rejects: slot, topic: surplus, text: "Ihr könnt {f:basis_months}{f:investable} anlegen."}
+  - {id: slot_glued_comma, rejects: slot, topic: net_worth, text: "Euer Vermögen liegt bei {f:basis_months},{f:basis_months} Monaten."}
+  - {id: slot_glued_rate, rejects: slot, topic: savings_rate, text: "Eure Sparquote liegt bei {f:basis_months}{f:savings_rate}."}
+  - {id: slot_minus_sign, rejects: slot, topic: net_worth, text: "Euer Vermögen liegt bei -{f:net_worth}."}
+  - {id: slot_class_hyphen_etf, rejects: slot, topic: net_worth, text: "Ein {c:crypto}-ETF wäre breiter gestreut."}
+  - {id: slot_class_glued_letters, rejects: slot, topic: net_worth, text: "Ein {c:crypto}fonds wäre breiter gestreut."}
+  - {id: slot_letters_before, rejects: slot, topic: net_worth, text: "Ein Welt{c:depot} wäre breiter gestreut."}
+  - {id: slot_asset_hyphen, rejects: slot, topic: net_worth, text: "Der {a:a1}-Sparplan läuft weiter."}
+  - {id: slot_apostrophe, rejects: slot, topic: net_worth, text: "Der Anteil von {a:a1}'s Fonds ist gleich geblieben."}
+  - {id: slot_figure_then_account, rejects: slot, topic: reserve, text: "Eure Reserve liegt bei {f:reserve}{k:k1}."}
+  - {id: slot_account_then_asset, rejects: slot, topic: net_worth, text: "Auf {k:k3}{a:a1} liegt ein Teil eures Vermögens."}
+  - {id: slot_times_between_figures, rejects: slot, topic: surplus, text: "Ihr habt {f:basis_months} mal {f:free_cash} gespart."}
+  - {id: slot_plus_between_figures, rejects: slot, topic: reserve, text: "Eure Reserve liegt bei {f:reserve} plus {f:buffer}."}
+  - {id: slot_minus_between_figures, rejects: slot, topic: surplus, text: "Euch bleiben {f:free_cash} minus {f:buffer}."}
   # 9 (D256 amended 19 Nov 2026): a paragraph with an {a:} or {c:} slot, the slot of a lit
   # marked figure, or of topic `projection` uses only the descriptive words, in all its
   # sentences; recommendation and transaction words count in checks 9 and 13 alike.
-  - {id: asset_nachkaufen, pending: "4", rejects: recommendation, topic: net_worth, text: "{a:a1} könnt ihr nachkaufen."}
-  - {id: asset_abstossen, pending: "4", rejects: recommendation, topic: net_worth, text: "{a:a2} könnt ihr abstoßen."}
-  - {id: asset_mehr_anlegen, pending: "4", rejects: recommendation, topic: net_worth, text: "Ihr könnt mehr in {a:a1} anlegen."}
-  - {id: asset_legt_an, pending: "4", rejects: recommendation, topic: net_worth, text: "Legt mehr Geld in {a:a1} an."}
-  - {id: asset_muesst_erhoehen, pending: "4", rejects: recommendation, topic: net_worth, text: "{a:a1} müsst ihr erhöhen."}
-  - {id: asset_anteil_erhoehen, pending: "4", rejects: recommendation, topic: net_worth, text: "Den Anteil von {a:a1} müsst ihr erhöhen."}
-  - {id: asset_koennt_senken, pending: "4", rejects: recommendation, topic: net_worth, text: "{a:a2} könnt ihr senken."}
-  - {id: asset_anteil_senken, pending: "4", rejects: recommendation, topic: net_worth, text: "Den Anteil von {a:a2} könnt ihr senken."}
-  - {id: asset_nachlegen, pending: "4", rejects: recommendation, topic: net_worth, text: "Bei {a:a1} könnt ihr nachlegen."}
-  - {id: asset_zulegen, pending: "4", rejects: recommendation, topic: net_worth, text: "Ihr könnt bei {a:a1} zulegen."}
-  - {id: asset_setzt_auf, pending: "4", rejects: recommendation, topic: net_worth, text: "Setzt weiter auf {a:a1}."}
-  - {id: asset_bleibt_bei, pending: "4", rejects: recommendation, topic: net_worth, text: "Bleibt bei {a:a1}."}
-  - {id: asset_nehmt_heraus, pending: "4", rejects: recommendation, topic: net_worth, text: "Nehmt euer Geld aus {a:a2}."}
-  - {id: asset_gebt_auf, pending: "4", rejects: recommendation, topic: net_worth, text: "Gebt {a:a2} ganz auf."}
-  - {id: asset_waere_gut, pending: "4", rejects: recommendation, topic: net_worth, text: "Es wäre gut, mehr Geld in {a:a1} zu legen."}
-  - {id: asset_mehr_waere_gut, pending: "4", rejects: recommendation, topic: net_worth, text: "Mehr {a:a1} wäre gut für euch."}
-  - {id: asset_weniger_anlegen, pending: "4", rejects: recommendation, topic: net_worth, text: "Bei {a:a2} müsst ihr weniger anlegen."}
-  - {id: asset_next_sentence, pending: "4", rejects: recommendation, topic: net_worth, text: "Zu {a:a1}. Davon mehr anlegen wäre gut."}
-  - {id: asset_after_colon, pending: "4", rejects: recommendation, topic: net_worth, text: "Bei {a:a1} gilt: mehr anlegen wäre gut."}
-  - {id: asset_after_semicolon, pending: "4", rejects: recommendation, topic: net_worth, text: "Zu {a:a1}; legt dort mehr Geld an."}
-  - {id: asset_then_dort, pending: "4", rejects: recommendation, topic: net_worth, text: "{a:a1} liegt auf {k:k3}. Dort könnt ihr mehr anlegen."}
-  - {id: class_legt_an, pending: "4", rejects: recommendation, topic: net_worth, text: "Legt mehr Geld in {c:crypto} an."}
-  - {id: class_muesst_senken, pending: "4", rejects: recommendation, topic: net_worth, text: "Den Anteil an {c:crypto} müsst ihr senken."}
-  - {id: class_mehr_anlegen, pending: "4", rejects: recommendation, topic: net_worth, text: "Ihr könnt mehr in {c:depot} anlegen."}
-  - {id: class_umlegen, pending: "4", rejects: recommendation, topic: net_worth, text: "Nehmt Geld aus {c:crypto} und legt es in {c:depot}."}
-  - {id: class_nachlegen, pending: "4", rejects: recommendation, topic: net_worth, text: "Bei {c:crypto} könnt ihr nachlegen."}
-  - {id: marked_dsr_rate_senken, pending: "4", rejects: recommendation, topic: debt, text: "Bei {f:debt_service_ratio} müsst ihr die Rate senken."}
-  - {id: marked_ltv_mehr_tilgung, pending: "4", rejects: recommendation, topic: debt, text: "Mit {f:ltv} müsst ihr mehr Tilgung zahlen."}
-  - {id: marked_ltv_kredit_erhoehen, pending: "4", rejects: recommendation, topic: debt, text: "Bei {f:ltv} könnt ihr den Kredit erhöhen."}
-  - {id: marked_savings_weniger_ausgeben, pending: "4", rejects: recommendation, topic: savings_rate, text: "Bei einer Sparquote von {f:savings_rate} müsst ihr weniger ausgeben."}
-  - {id: projection_muesst_anlegen, pending: "4", rejects: recommendation, topic: projection, text: "Mit eurer Annahme von {f:assumed_change_depot} müsst ihr mehr anlegen."}
-  - {id: projection_class_mehr_anlegen, pending: "4", rejects: recommendation, topic: projection, text: "Mit eurer Annahme von {f:assumed_change_crypto} könnt ihr mehr in {c:crypto} anlegen."}
-  - {id: projection_nehmt_imperative, pending: "4", rejects: recommendation, topic: projection, text: "Nehmt {f:assumed_change_depot} pro Jahr, dann liegt euer Vermögen Ende {f:projection_until} bei {f:projection_total}."}
+  - {id: asset_nachkaufen, rejects: recommendation, topic: net_worth, text: "{a:a1} könnt ihr nachkaufen."}
+  - {id: asset_abstossen, rejects: recommendation, topic: net_worth, text: "{a:a2} könnt ihr abstoßen."}
+  - {id: asset_mehr_anlegen, rejects: recommendation, topic: net_worth, text: "Ihr könnt mehr in {a:a1} anlegen."}
+  - {id: asset_legt_an, rejects: recommendation, topic: net_worth, text: "Legt mehr Geld in {a:a1} an."}
+  - {id: asset_muesst_erhoehen, rejects: recommendation, topic: net_worth, text: "{a:a1} müsst ihr erhöhen."}
+  - {id: asset_anteil_erhoehen, rejects: recommendation, topic: net_worth, text: "Den Anteil von {a:a1} müsst ihr erhöhen."}
+  - {id: asset_koennt_senken, rejects: recommendation, topic: net_worth, text: "{a:a2} könnt ihr senken."}
+  - {id: asset_anteil_senken, rejects: recommendation, topic: net_worth, text: "Den Anteil von {a:a2} könnt ihr senken."}
+  - {id: asset_nachlegen, rejects: recommendation, topic: net_worth, text: "Bei {a:a1} könnt ihr nachlegen."}
+  - {id: asset_zulegen, rejects: recommendation, topic: net_worth, text: "Ihr könnt bei {a:a1} zulegen."}
+  - {id: asset_setzt_auf, rejects: recommendation, topic: net_worth, text: "Setzt weiter auf {a:a1}."}
+  - {id: asset_bleibt_bei, rejects: recommendation, topic: net_worth, text: "Bleibt bei {a:a1}."}
+  - {id: asset_nehmt_heraus, rejects: recommendation, topic: net_worth, text: "Nehmt euer Geld aus {a:a2}."}
+  - {id: asset_gebt_auf, rejects: recommendation, topic: net_worth, text: "Gebt {a:a2} ganz auf."}
+  - {id: asset_waere_gut, rejects: recommendation, topic: net_worth, text: "Es wäre gut, mehr Geld in {a:a1} zu legen."}
+  - {id: asset_mehr_waere_gut, rejects: recommendation, topic: net_worth, text: "Mehr {a:a1} wäre gut für euch."}
+  - {id: asset_weniger_anlegen, rejects: recommendation, topic: net_worth, text: "Bei {a:a2} müsst ihr weniger anlegen."}
+  - {id: asset_next_sentence, rejects: recommendation, topic: net_worth, text: "Zu {a:a1}. Davon mehr anlegen wäre gut."}
+  - {id: asset_after_colon, rejects: recommendation, topic: net_worth, text: "Bei {a:a1} gilt: mehr anlegen wäre gut."}
+  - {id: asset_after_semicolon, rejects: recommendation, topic: net_worth, text: "Zu {a:a1}; legt dort mehr Geld an."}
+  - {id: asset_then_dort, rejects: recommendation, topic: net_worth, text: "{a:a1} liegt auf {k:k3}. Dort könnt ihr mehr anlegen."}
+  - {id: class_legt_an, rejects: recommendation, topic: net_worth, text: "Legt mehr Geld in {c:crypto} an."}
+  - {id: class_muesst_senken, rejects: recommendation, topic: net_worth, text: "Den Anteil an {c:crypto} müsst ihr senken."}
+  - {id: class_mehr_anlegen, rejects: recommendation, topic: net_worth, text: "Ihr könnt mehr in {c:depot} anlegen."}
+  - {id: class_umlegen, rejects: recommendation, topic: net_worth, text: "Nehmt Geld aus {c:crypto} und legt es in {c:depot}."}
+  - {id: class_nachlegen, rejects: recommendation, topic: net_worth, text: "Bei {c:crypto} könnt ihr nachlegen."}
+  - {id: marked_dsr_rate_senken, rejects: recommendation, topic: debt, text: "Bei {f:debt_service_ratio} müsst ihr die Rate senken."}
+  - {id: marked_ltv_mehr_tilgung, rejects: recommendation, topic: debt, text: "Mit {f:ltv} müsst ihr mehr Tilgung zahlen."}
+  - {id: marked_ltv_kredit_erhoehen, rejects: recommendation, topic: debt, text: "Bei {f:ltv} könnt ihr den Kredit erhöhen."}
+  - {id: marked_savings_weniger_ausgeben, rejects: recommendation, topic: savings_rate, text: "Bei einer Sparquote von {f:savings_rate} müsst ihr weniger ausgeben."}
+  - {id: projection_muesst_anlegen, rejects: recommendation, topic: projection, text: "Mit eurer Annahme von {f:assumed_change_depot} müsst ihr mehr anlegen."}
+  - {id: projection_class_mehr_anlegen, rejects: recommendation, topic: projection, text: "Mit eurer Annahme von {f:assumed_change_crypto} könnt ihr mehr in {c:crypto} anlegen."}
+  - {id: projection_nehmt_imperative, rejects: recommendation, topic: projection, text: "Nehmt {f:assumed_change_depot} pro Jahr, dann liegt euer Vermögen Ende {f:projection_until} bei {f:projection_total}."}
   # 10 (D255 amended 19 Nov 2026): the reserve's and the trend's rows hold in every paragraph.
-  - {id: reserve_erreicht_in_surplus, pending: "4", rejects: contradiction, topic: surplus, text: "Die Reserve ist erreicht."}
-  - {id: reserve_erreicht_in_paths, pending: "4", rejects: contradiction, topic: paths, text: "Die Reserve ist erreicht."}
-  - {id: reserve_schon_voll, pending: "4", rejects: contradiction, topic: reserve, text: "Die Reserve ist schon voll."}
-  - {id: reserve_ueber_dem_ziel, pending: "4", rejects: contradiction, topic: reserve, text: "Eure Reserve liegt über dem Ziel."}
-  - {id: reserve_groesser_als_ziel, pending: "4", rejects: contradiction, topic: reserve, text: "Eure Reserve ist größer als euer Ziel."}
-  - {id: reserve_hoeher_als_ziel, pending: "4", rejects: contradiction, topic: surplus, text: "Eure Reserve ist schon höher als euer Ziel."}
-  - {id: reserve_fehlt_nichts, pending: "4", rejects: contradiction, topic: reserve, text: "Der Reserve fehlt nichts."}
-  - {id: reached_but_missing_in_surplus, pending: "4", rejects: contradiction, topic: surplus, states: {reserve_state: reached, light_reserve: green}, text: "Für die Reserve fehlen noch {f:reserve_gap}."}
-  - {id: down_but_higher, pending: "4", rejects: contradiction, topic: net_worth, text: "Euer Vermögen ist höher als im Vormonat."}
-  - {id: down_but_growing, pending: "4", rejects: contradiction, topic: net_worth, text: "Euer Vermögen wächst."}
-  - {id: down_but_risen_in_savings_rate, pending: "4", rejects: contradiction, topic: savings_rate, text: "Euer Vermögen ist gestiegen."}
+  - {id: reserve_erreicht_in_surplus, rejects: contradiction, topic: surplus, text: "Die Reserve ist erreicht."}
+  - {id: reserve_erreicht_in_paths, rejects: contradiction, topic: paths, text: "Die Reserve ist erreicht."}
+  - {id: reserve_schon_voll, rejects: contradiction, topic: reserve, text: "Die Reserve ist schon voll."}
+  - {id: reserve_ueber_dem_ziel, rejects: contradiction, topic: reserve, text: "Eure Reserve liegt über dem Ziel."}
+  - {id: reserve_groesser_als_ziel, rejects: contradiction, topic: reserve, text: "Eure Reserve ist größer als euer Ziel."}
+  - {id: reserve_hoeher_als_ziel, rejects: contradiction, topic: surplus, text: "Eure Reserve ist schon höher als euer Ziel."}
+  - {id: reserve_fehlt_nichts, rejects: contradiction, topic: reserve, text: "Der Reserve fehlt nichts."}
+  - {id: reached_but_missing_in_surplus, rejects: contradiction, topic: surplus, states: {reserve_state: reached, light_reserve: green}, text: "Für die Reserve fehlen noch {f:reserve_gap}."}
+  - {id: down_but_higher, rejects: contradiction, topic: net_worth, text: "Euer Vermögen ist höher als im Vormonat."}
+  - {id: down_but_growing, rejects: contradiction, topic: net_worth, text: "Euer Vermögen wächst."}
+  - {id: down_but_risen_in_savings_rate, rejects: contradiction, topic: savings_rate, text: "Euer Vermögen ist gestiegen."}
   # 13 (D255 amended 19 Nov 2026): the marks' rows hold in every paragraph; a colour word
   # needs a lit figure it can be tied to.
-  - {id: green_area_in_net_worth, pending: "4", rejects: mark, topic: net_worth, text: "Bei den Schulden ist alles im grünen Bereich."}
-  - {id: bare_gruen_tied_amber, pending: "4", rejects: mark, topic: debt, text: "Der Beleihungsauslauf von {f:ltv} ist grün."}
-  - {id: no_problem_in_net_worth, pending: "4", rejects: mark, topic: net_worth, text: "Die Reserve ist kein Problem."}
-  - {id: bare_gruen_under_amber, pending: "4", rejects: mark, topic: debt, text: "Der Beleihungsauslauf ist grün."}
-  - {id: colour_with_no_light, pending: "4", rejects: mark, topic: debt, states: {light_reserve: none, light_savings_rate: none, light_ltv: none, light_debt_service_ratio: none}, text: "Bei den Schulden ist alles im grünen Bereich."}
-  - {id: critical_with_no_light, pending: "4", rejects: mark, topic: savings_rate, states: {light_reserve: none, light_savings_rate: none, light_ltv: none, light_debt_service_ratio: none}, text: "Eure Sparquote ist kritisch."}
-  - {id: red_area_with_no_light, pending: "4", rejects: mark, topic: reserve, states: {light_reserve: none, light_savings_rate: none, light_ltv: none, light_debt_service_ratio: none}, text: "Eure Reserve ist im roten Bereich."}
-  - {id: colour_not_tied, pending: "4", rejects: mark, topic: net_worth, states: {light_reserve: none, light_ltv: none, light_debt_service_ratio: none}, text: "Euer Vermögen ist im roten Bereich.", description: "the only lit figure, the savings rate, is red, but nothing in the paragraph ties the colour to it"}
+  - {id: green_area_in_net_worth, rejects: mark, topic: net_worth, text: "Bei den Schulden ist alles im grünen Bereich."}
+  - {id: bare_gruen_tied_amber, rejects: mark, topic: debt, text: "Der Beleihungsauslauf von {f:ltv} ist grün."}
+  - {id: no_problem_in_net_worth, rejects: mark, topic: net_worth, text: "Die Reserve ist kein Problem."}
+  - {id: bare_gruen_under_amber, rejects: mark, topic: debt, text: "Der Beleihungsauslauf ist grün."}
+  - {id: colour_with_no_light, rejects: mark, topic: debt, states: {light_reserve: none, light_savings_rate: none, light_ltv: none, light_debt_service_ratio: none}, text: "Bei den Schulden ist alles im grünen Bereich."}
+  - {id: critical_with_no_light, rejects: mark, topic: savings_rate, states: {light_reserve: none, light_savings_rate: none, light_ltv: none, light_debt_service_ratio: none}, text: "Eure Sparquote ist kritisch."}
+  - {id: red_area_with_no_light, rejects: mark, topic: reserve, states: {light_reserve: none, light_savings_rate: none, light_ltv: none, light_debt_service_ratio: none}, text: "Eure Reserve ist im roten Bereich."}
+  - {id: colour_not_tied, rejects: mark, topic: net_worth, states: {light_reserve: none, light_ltv: none, light_debt_service_ratio: none}, text: "Euer Vermögen ist im roten Bereich.", description: "the only lit figure, the savings rate, is red, but nothing in the paragraph ties the colour to it"}
   # 11 (D255 amended 19 Nov 2026): a paragraph holds at least one word outside its slots.
-  - {id: empty_text, pending: "4", rejects: shape, topic: reserve, text: ""}
-  - {id: blank_text, pending: "4", rejects: shape, topic: reserve, text: " "}
-  - {id: punctuation_only, pending: "4", rejects: shape, topic: reserve, text: "."}
-  - {id: slot_only, pending: "4", rejects: shape, topic: reserve, text: "{f:reserve}"}
-  - {id: slots_only, pending: "4", rejects: shape, topic: reserve, text: "{f:reserve} {f:reserve_gap}."}
+  - {id: empty_text, rejects: shape, topic: reserve, text: ""}
+  - {id: blank_text, rejects: shape, topic: reserve, text: " "}
+  - {id: punctuation_only, rejects: shape, topic: reserve, text: "."}
+  - {id: slot_only, rejects: shape, topic: reserve, text: "{f:reserve}"}
+  - {id: slots_only, rejects: shape, topic: reserve, text: "{f:reserve} {f:reserve_gap}."}
   # 12 (D255 amended 19 Nov 2026): no forecast or future word in any paragraph; inside a
   # `projection` paragraph no judgement of the rate and no negated assumption.
-  - {id: future_phrase_outside_projection, pending: "4", rejects: projection, topic: net_worth, states: {trend_state: flat}, text: "Euer Vermögen wächst in den nächsten Jahren weiter."}
-  - {id: future_auxiliary_outside_projection, pending: "4", rejects: projection, topic: paths, text: "Die Reserve wird im {f:path_as_is_reached} voll."}
-  - {id: kuenftig_outside_projection, pending: "4", rejects: projection, topic: surplus, text: "Künftig bleiben euch {f:free_cash} im Monat."}
-  - {id: forecast_word_outside_projection, pending: "4", rejects: projection, topic: net_worth, states: {trend_state: flat}, text: "Euer Vermögen steigt voraussichtlich weiter."}
-  - {id: projection_rate_judged_high, pending: "4", rejects: projection, topic: projection, text: "Eure Annahme von {f:assumed_change_depot} ist sehr hoch."}
-  - {id: projection_rate_judged_low, pending: "4", rejects: projection, topic: projection, text: "Eure Annahme von {f:assumed_change_crypto} ist niedrig."}
-  - {id: projection_rate_judged_good, pending: "4", rejects: projection, topic: projection, text: "Eure Annahme von {f:assumed_change_depot} ist gut."}
-  - {id: projection_rate_judged_solid, pending: "4", rejects: projection, topic: projection, text: "Eure Annahme von {f:assumed_change_depot} ist solide."}
-  - {id: projection_rate_judged_exact, pending: "4", rejects: projection, topic: projection, text: "Mit eurer Annahme von {f:assumed_change_depot} erreicht euer Vermögen ganz genau {f:projection_total}."}
-  - {id: projection_negated_assumption, pending: "4", rejects: projection, topic: projection, text: "Das ist keine Annahme: {f:assumed_change_depot} pro Jahr kommen."}
+  - {id: future_phrase_outside_projection, rejects: projection, topic: net_worth, states: {trend_state: flat}, text: "Euer Vermögen wächst in den nächsten Jahren weiter."}
+  - {id: future_auxiliary_outside_projection, rejects: projection, topic: paths, text: "Die Reserve wird im {f:path_as_is_reached} voll."}
+  - {id: kuenftig_outside_projection, rejects: projection, topic: surplus, text: "Künftig bleiben euch {f:free_cash} im Monat."}
+  - {id: forecast_word_outside_projection, rejects: projection, topic: net_worth, states: {trend_state: flat}, text: "Euer Vermögen steigt voraussichtlich weiter."}
+  - {id: projection_rate_judged_high, rejects: projection, topic: projection, text: "Eure Annahme von {f:assumed_change_depot} ist sehr hoch."}
+  - {id: projection_rate_judged_low, rejects: projection, topic: projection, text: "Eure Annahme von {f:assumed_change_crypto} ist niedrig."}
+  - {id: projection_rate_judged_good, rejects: projection, topic: projection, text: "Eure Annahme von {f:assumed_change_depot} ist gut."}
+  - {id: projection_rate_judged_solid, rejects: projection, topic: projection, text: "Eure Annahme von {f:assumed_change_depot} ist solide."}
+  - {id: projection_rate_judged_exact, rejects: projection, topic: projection, text: "Mit eurer Annahme von {f:assumed_change_depot} erreicht euer Vermögen ganz genau {f:projection_total}."}
+  - {id: projection_negated_assumption, rejects: projection, topic: projection, text: "Das ist keine Annahme: {f:assumed_change_depot} pro Jahr kommen."}
   # 8b (D255 amended 19 Nov 2026): a spaced or doubled hyphen, an apostrophe, a colon, quotes
   # or brackets join two words as a hyphen does; a comma does not.
-  - {id: welt_hyphen_space_fonds, pending: "4", rejects: product_noun, topic: net_worth, text: "Der Wert- Fonds ist breit gestreut."}
-  - {id: welt_space_hyphen_fonds, pending: "4", rejects: product_noun, topic: net_worth, text: "Der Wert -Fonds ist breit gestreut."}
-  - {id: welt_spaced_hyphen_fonds, pending: "4", rejects: product_noun, topic: net_worth, text: "Der Wert - Fonds ist breit gestreut."}
-  - {id: welt_double_hyphen_fonds, pending: "4", rejects: product_noun, topic: net_worth, text: "Der Wert--Fonds ist breit gestreut."}
-  - {id: welt_quoted_fonds, pending: "4", rejects: product_noun, topic: net_worth, text: "Der Wert „Fonds“ ist breit gestreut."}
-  - {id: quoted_welt_fonds, pending: "4", rejects: product_noun, topic: net_worth, text: "Der „Wert“ Fonds ist breit gestreut."}
-  - {id: welt_bracketed_fonds, pending: "4", rejects: product_noun, topic: net_worth, text: "Der Wert (Fonds) ist breit gestreut."}
-  - {id: welt_apostrophe_fonds, pending: "4", rejects: product_noun, topic: net_worth, text: "Der Wert'Fonds ist breit gestreut."}
-  - {id: welt_colon_fonds, pending: "4", rejects: product_noun, topic: net_worth, text: "Der Wert:Fonds ist breit gestreut."}
-  - {id: fonds_quoted_name, pending: "4", rejects: product_noun, topic: net_worth, text: "Der Fonds „Wert und Zins“ ist breit gestreut."}
+  - {id: welt_hyphen_space_fonds, rejects: product_noun, topic: net_worth, text: "Der Wert- Fonds ist breit gestreut."}
+  - {id: welt_space_hyphen_fonds, rejects: product_noun, topic: net_worth, text: "Der Wert -Fonds ist breit gestreut."}
+  - {id: welt_spaced_hyphen_fonds, rejects: product_noun, topic: net_worth, text: "Der Wert - Fonds ist breit gestreut."}
+  - {id: welt_double_hyphen_fonds, rejects: product_noun, topic: net_worth, text: "Der Wert--Fonds ist breit gestreut."}
+  - {id: welt_quoted_fonds, rejects: product_noun, topic: net_worth, text: "Der Wert „Fonds“ ist breit gestreut."}
+  - {id: quoted_welt_fonds, rejects: product_noun, topic: net_worth, text: "Der „Wert“ Fonds ist breit gestreut."}
+  - {id: welt_bracketed_fonds, rejects: product_noun, topic: net_worth, text: "Der Wert (Fonds) ist breit gestreut."}
+  - {id: welt_apostrophe_fonds, rejects: product_noun, topic: net_worth, text: "Der Wert'Fonds ist breit gestreut."}
+  - {id: welt_colon_fonds, rejects: product_noun, topic: net_worth, text: "Der Wert:Fonds ist breit gestreut."}
+  - {id: fonds_quoted_name, rejects: product_noun, topic: net_worth, text: "Der Fonds „Wert und Zins“ ist breit gestreut."}

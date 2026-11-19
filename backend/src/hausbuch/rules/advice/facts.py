@@ -25,7 +25,7 @@ import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from hausbuch.schemas.advice import (
     FIGURE_KEYS,
@@ -123,20 +123,25 @@ def figure_type(key: str) -> FigureType:
 
 
 def _value(kind: FigureType, value: Decimal | int | str) -> str:
-    """A figure as the decimal string its type requires (§8.1)."""
+    """A figure as the decimal string its type requires (§8.1), rounded half up (a half cent
+    goes up, as the screens round; 19 Nov 2026, the step 4a review)."""
     if kind is T.MONTH:
         return str(value)[:7]
     number = Decimal(str(value))
+
+    def q(places: str) -> Decimal:
+        return number.quantize(Decimal(places), rounding=ROUND_HALF_UP)
+
     if kind is T.MONEY:
-        return f"{number.quantize(Decimal('0.01')):f}"
+        return f"{q('0.01'):f}"
     if kind is T.MONTHS:
-        return f"{number.quantize(Decimal('0.1')):f}"
+        return f"{q('0.1'):f}"
     if kind is T.COUNT:
         return str(int(number))
     if kind is T.MULTIPLE:
-        return f"{number.quantize(Decimal('0.01')):f}"
+        return f"{q('0.01'):f}"
     places = -number.as_tuple().exponent if number.as_tuple().exponent < 0 else 0
-    return f"{number.quantize(Decimal('0.0001')) if places > 4 else number:f}"
+    return f"{q('0.0001') if places > 4 else number:f}"
 
 
 def fact(key: str, value: Decimal | int | str) -> Fact:
@@ -248,7 +253,9 @@ def assemble(
         slot = BAND_SLOT[band.figure]
         if band.figure is MarkedFigure.RESERVE:
             if band.red is not None and target is not None:
-                out["band_reserve_red"] = fact("band_reserve_red", band.red * target)
+                # whole euros, half up, from the unrounded product (19 Nov 2026)
+                limit = (band.red * target).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                out["band_reserve_red"] = fact("band_reserve_red", limit)
         else:
             for side, limit in (("green", band.green), ("red", band.red)):
                 if limit is not None:

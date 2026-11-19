@@ -505,6 +505,69 @@ def test_template_in_every_state_and_light_at_most_four_and_valid(mode):
     assert n > 1000
 
 
+def _with_values(facts: ExplainFacts, values: dict[str, str]) -> ExplainFacts:
+    figures = [f.model_copy(update={"value": values.get(f.key, f.value)}) for f in facts.figures]
+    return facts.model_copy(update={"figures": figures})
+
+
+# 19 Nov 2026 (the step 4a review): the figures that choose a sentence of their own
+_FIGURE_CASES = {
+    "no_month": {"basis_months": "0"},
+    "one_month": {"basis_months": "1"},
+    "free_cash_buffered": {"free_cash": "250.00", "investable": "0.00"},
+    "no_free_cash": {"free_cash": "0.00", "investable": "0.00"},
+    "negative_reserve": {"reserve": "-120.00", "reserve_months": "-0.3"},
+    "no_plans": {"already_invested": "0.00"},
+    "no_principal": {"principal_total": "0.00"},
+}
+
+
+@pytest.mark.parametrize("mode", list(AdviceMode))
+@pytest.mark.parametrize("case", sorted(_FIGURE_CASES))
+def test_template_figure_choices_render_under_every_light(case, mode):
+    """Each sentence a figure chooses is rendered and validated as a whole paragraph, over
+    the state grid and under each light alone."""
+    base = _without_lights(VALIDATOR.facts)
+    for lights in _light_settings():
+        for grid in _STATE_GRID[::3]:
+            states = {k: v for k, v in grid.items() if k != "light_reserve"} | lights
+            if not _reachable(states):
+                continue
+            facts = _with_values(ev_facts(base, mode, states), _FIGURE_CASES[case])
+            _template_ok(facts, mode, (case, states))
+
+
+def test_template_figure_choices_pick_their_sentences():
+    facts = ev_facts(VALIDATOR.facts, None, {"investable_state": "zero"})
+    ids = {s.id for s, _ in template_rules.written(_with_values(facts, {"free_cash": "250.00"}))}
+    assert "template_surplus_buffer" in ids
+    ids = {s.id for s, _ in template_rules.written(_with_values(facts, {"basis_months": "1"}))}
+    assert {"template_surplus_buffer_one", "template_basis_short_one"} <= ids
+    ids = {s.id for s, _ in template_rules.written(_with_values(facts, {"basis_months": "0"}))}
+    assert not {"template_basis_short", "template_basis_short_one"} & ids
+    facts = ev_facts(VALIDATOR.facts)
+    ids = {s.id for s, _ in template_rules.written(_with_values(facts, {"reserve": "-1.00"}))}
+    assert "template_reserve_negative" in ids and "template_reserve_below" not in ids
+    ids = {s.id for s, _ in template_rules.written(_with_values(facts, {"principal_total": "0"}))}
+    assert "template_savings_rate_principal" not in ids
+    facts = ev_facts(VALIDATOR.facts, None, {"left_state": "positive"})
+    ids = {s.id for s, _ in template_rules.written(_with_values(facts, {"already_invested": "0"}))}
+    assert "template_surplus_plans" not in ids
+
+
+@pytest.mark.parametrize("mode", list(AdviceMode))
+def test_template_with_no_figures_is_the_fallback(mode):
+    """With nothing to say, render returns the fixed fallback sentence, never nothing."""
+    for lights in _light_settings():
+        facts = ev_facts(_without_lights(VALIDATOR.facts), mode, lights)
+        facts = facts.model_copy(update={"figures": []})
+        paragraphs = template_rules.render(facts, mode)
+        assert paragraphs == [
+            Paragraph(topic=template_rules.FALLBACK.topic, text=template_rules.FALLBACK.text)
+        ]
+        assert validate(paragraphs, facts, mode).ok, lights
+
+
 @pytest.mark.parametrize("mode", list(AdviceMode))
 @pytest.mark.parametrize("missing", VALIDATOR.facts.figures)
 def test_template_with_one_figure_absent(missing, mode):
@@ -785,3 +848,21 @@ def test_build_maps_health_and_plan():
     assert "assumed_change_crypto" not in value
     assert got.states["light_debt_service_ratio"] == "green"  # its band confirmed
     assert not (got.plans or got.labels.plans)  # generic
+
+
+def test_figures_round_half_up_and_the_reserve_red_limit_in_whole_euros():
+    """19 Nov 2026 (the step 4a review): a half cent goes up, and the reserve's red limit is
+    whole euros, half up, from the unrounded product of its share and the target."""
+    assert facts_rules.fact("free_cash", Decimal("0.125")).value == "0.13"
+    assert facts_rules.fact("reserve_months", Decimal("2.25")).value == "2.3"
+    assert facts_rules.fact("debt_to_income", Decimal("1.005")).value == "1.01"
+    bands = [BandLimits(figure="reserve", red=Decimal("0.5"))]
+    for target, limit in (("1001.00", "501.00"), ("1000.98", "500.00"), ("1234.57", "617.00")):
+        got = facts_rules.assemble(
+            AdviceMode.OWN_USE,
+            VALIDATOR.facts.as_of,
+            figures={},
+            reserve=(Decimal("100.00"), Decimal(target)),
+            bands=bands,
+        )
+        assert got.figure("band_reserve_red").value == limit, target
