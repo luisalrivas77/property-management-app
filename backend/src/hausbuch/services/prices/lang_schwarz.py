@@ -97,8 +97,9 @@ def history(fetch: Fetch, instrument_id: int, isin: str, today: date) -> list[Na
     dropped whatever its day (before the venue opens it is still yesterday's evening quote,
     beside yesterday's own day point). A day on or after `today` is dropped (the chart's own
     point of today is no close yet), Saturdays and Sundays too (they repeat Friday). A past
-    day twice, a price that is not positive or another shape is `parse`; an answer for
-    another ISIN is `isin_mismatch`."""
+    day twice, a price that is not positive, any other point not at 00:00 UTC or another
+    shape is `parse`, so nothing of the answer is stored; an answer for another ISIN is
+    `isin_mismatch`."""
     answer = parse_json(get(fetch, history_url(instrument_id), max_bytes=MAX_BYTES))
     points = _points(answer, _isin(isin))
     if points and _live(points[-1]):
@@ -111,9 +112,14 @@ def history(fetch: Fetch, instrument_id: int, isin: str, today: date) -> list[Na
         if not isinstance(stamp, Decimal) or not isinstance(price, Decimal):
             raise SourceError("parse")
         try:
+            midnight = stamp == stamp.to_integral_value() and int(stamp) % 86_400_000 == 0
             on = datetime.fromtimestamp(int(stamp) / 1000, UTC).date()
-        except (OverflowError, ValueError, OSError):
+        except (ArithmeticError, ValueError, OSError):
             raise SourceError("parse") from None
+        if not midnight:
+            # D264 (2) amended: only the last point may be off midnight; read as its UTC day,
+            # any other such point could shift a price by a day without a sign.
+            raise SourceError("parse")
         if on >= today:
             continue
         if price <= 0:

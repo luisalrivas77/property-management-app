@@ -165,8 +165,37 @@ def test_before_the_venue_opens_the_live_quote_is_yesterdays_and_is_dropped():
 
 
 def test_a_quote_inside_the_list_is_no_live_quote():
-    """Only the last point can be the live quote: one between day points is a day twice."""
+    """Only the last point can be the live quote: one between day points is off midnight, so
+    the whole answer is unreadable (D264 (2) amended)."""
     wed = date(2026, 11, 18)
     fetch = Answer([[_ms(wed), 8.4765], [_ms(wed, 21), 8.5], [_ms(date(2026, 11, 19)), 8.6]])
     with pytest.raises(SourceError, match="parse"):
         lang_schwarz.history(fetch, 9000001, "IE00LSINVNT1", date(2026, 11, 20))
+
+
+def test_a_past_day_point_off_midnight_stores_nothing_of_the_answer():
+    """D264 (2) amended, fail closed: a past point at 01:00 UTC, though its day appears once,
+    refuses the whole answer, never shifts or keeps the other days."""
+    fetch = Answer(
+        [
+            [_ms(date(2026, 11, 16)), 8.39],
+            [_ms(date(2026, 11, 17), 1), 8.44],
+            [_ms(date(2026, 11, 18)), 8.47],
+        ]
+    )
+    with pytest.raises(SourceError, match="parse"):
+        lang_schwarz.history(fetch, 9000001, "IE00LSINVNT1", date(2026, 11, 19))
+
+
+def test_an_off_midnight_point_of_today_is_refused_too():
+    """The guard runs before today's points are dropped: only the last point is exempt."""
+    thu = date(2026, 11, 19)
+    fetch = Answer([[_ms(date(2026, 11, 18)), 8.47], [_ms(thu, 2), 8.5], [_ms(thu, 9), 8.51]])
+    with pytest.raises(SourceError, match="parse"):
+        lang_schwarz.history(fetch, 9000001, "IE00LSINVNT1", thu)
+
+
+def test_a_stamp_with_a_fraction_of_a_millisecond_is_refused():
+    fetch = Answer([[_ms(date(2026, 11, 17)) + 0.5, 8.44], [_ms(date(2026, 11, 18)), 8.47]])
+    with pytest.raises(SourceError, match="parse"):
+        lang_schwarz.history(fetch, 9000001, "IE00LSINVNT1", date(2026, 11, 19))
