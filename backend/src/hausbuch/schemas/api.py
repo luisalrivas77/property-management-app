@@ -684,6 +684,10 @@ class InboxItemKind(StrEnum):
     # eintragen“), and a held asset nothing can price („Kursquelle wählen“).
     PRICE_SOURCE_FAILED = "price_source_failed"
     PRICE_NO_SOURCE = "price_no_source"
+    # Phase 6 D264 (7), computed on read: on the newest day a depot report priced a fund, its
+    # issuer NAV, else its Lang & Schwarz price, is more than 2 % from the report's price;
+    # `asset_id` the fund, `document_id` the report („Bericht öffnen“).
+    PRICE_REPORT_DIFFERS = "price_report_differs"
     # Phase 6 step 5a (D166 amended, D178): an exchange import waiting for the balances the
     # exchange shows, or whose typed balances disagree (`import_id`, `account_id`); its
     # proposed coin withdrawals, answered all at once (`import_id`); one coin movement that

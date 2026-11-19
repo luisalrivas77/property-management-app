@@ -132,6 +132,8 @@ class AssetRow(Schema):
     coingecko_id: str | None = None
     kraken_pair: str | None = None
     issuer: str | None = None  # the registry's issuer adapter for an ETF
+    # D264 (8): „Lang & Schwarz“ for a fund with no issuer source priced by the exchange
+    price_venue: str | None = None
     has_source: bool  # a fetched source can price it; False: „Kursquelle wählen“
     latest_price: PriceLabel | None = None
     updated_at: datetime

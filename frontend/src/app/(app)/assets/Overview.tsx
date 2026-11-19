@@ -41,7 +41,7 @@ import type { components } from "@/api/types";
 
 type AccountKind = components["schemas"]["AccountKind"];
 
-const ATTRIBUTION = "Kurse: CoinGecko, Kraken, EZB, NAV der Fondsgesellschaften.";
+const ATTRIBUTION = "Kurse: CoinGecko, Kraken, EZB, NAV der Fondsgesellschaften, Börsenkurse von Lang & Schwarz.";
 
 export function OverviewTab({ priceFor, priceDay = null }: { priceFor: string | null; priceDay?: string | null }) {
   const load = useCallback(() => ok(api.GET("/api/assets/overview")), []);
@@ -312,6 +312,10 @@ function howPriced(asset: AssetRow): string {
     return asset.has_source
       ? `Hausbuch holt den Kurs jeden Morgen bei CoinGecko oder Kraken.${latest}`
       : `Für diese Münze kennt Hausbuch keine Kursquelle. Tragen Sie die CoinGecko-ID oder das Kraken-Paar ein, dann holt Hausbuch den Kurs jeden Morgen; bis dahin können Sie einen Kurs von Hand eintragen.${latest}`;
+  }
+  if (asset.price_venue) {
+    // D264 (8): a fund with no issuer source, priced by the exchange's daily quote.
+    return `Hausbuch holt den Kurs jeden Morgen als Börsenkurs bei ${asset.price_venue}; die Fondsgesellschaft veröffentlicht keinen täglichen Kurs, den Hausbuch abrufen kann. Der Kurs aus einem Depotbericht gilt an seinem Tag. Fehlt er oder ist er falsch, können Sie ihn hier von Hand eintragen.${latest}`;
   }
   return asset.has_source
     ? `Hausbuch holt den Kurs jeden Morgen von der Fondsgesellschaft (NAV). Fehlt er oder ist er falsch, können Sie ihn hier von Hand eintragen.${latest}`

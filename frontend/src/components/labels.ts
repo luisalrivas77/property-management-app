@@ -486,6 +486,8 @@ export const PRICE_SOURCE: Record<PriceSourceKind, string> = {
   trade: "Wertpapierabrechnung",
   statement: "Depotbericht",
   issuer_nav: "NAV der Fondsgesellschaft",
+  // D264: an exchange's quote, never called a NAV
+  exchange_close: "Börsenkurs Lang & Schwarz",
   coingecko_daily: "CoinGecko",
   kraken_daily: "Kraken",
   ecb_fx: "EZB-Referenzkurs",
@@ -909,6 +911,8 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   // phase 6 step 5b (D167, D174)
   price_source_failed: "Kursquelle gestört",
   price_no_source: "Kursquelle fehlt",
+  // phase 6 D264 (7)
+  price_report_differs: "Kurs weicht vom Depotbericht ab",
   // phase 6 step 5a (D166, D178)
   exchange_pending_balance: "Bestand fehlt",
   exchange_unreconciled: "Bestand weicht ab",
