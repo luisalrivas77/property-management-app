@@ -35,9 +35,16 @@ from hausbuch.jobs.explain_plan import run_explain_plan
 from hausbuch.jobs.health_daily import run_health_daily
 from hausbuch.rules.advice import template
 from hausbuch.rules.advice.validator import validate
-from hausbuch.schemas.advice import AdviceMode, ExplanationReason, ExplanationStatus
+from hausbuch.schemas.advice import (
+    AdviceMode,
+    ExplanationReason,
+    ExplanationStatus,
+    Paragraph,
+    Topic,
+)
 from hausbuch.schemas.enums import AccountKind
-from hausbuch.services import advice, net_worth, workspace_settings
+from hausbuch.schemas.plan import HouseholdScenarioCreate
+from hausbuch.services import advice, household_scenarios, net_worth, workspace_settings
 
 # Distinctive invented labels: none of them may ever reach a request, a row's violations or
 # an event.
@@ -439,6 +446,50 @@ def test_a_row_of_the_other_mode_is_not_shown(world, app_engine, tmp_path):
     assert (shown.status, shown.reason) == (ExplanationStatus.TEMPLATE, None)
     world.cmd(workspace_settings.update_settings, advice_mode=AdviceMode.OWN_USE, actor=OWNER_A)
     assert world.query(advice.explanation, TODAY, None).id is not None
+
+
+def test_a_stored_model_text_the_current_validator_rejects_is_served_as_the_template(world):
+    """Finding 5: the validator's lists tightened after a row was stored as `model`; the GET
+    re-validates and shows the template of the row's own stored facts instead."""
+    _household(world)
+    facts = _facts(world)
+    rejected = [Paragraph(topic=Topic.SURPLUS, text="Ihr habt 500 Euro frei.")]
+    assert not validate(rejected, facts, facts.mode).ok
+    row_id = world.cmd(
+        advice.store_explanation,
+        scenario_id=None,
+        facts=facts,
+        status=ExplanationStatus.MODEL,
+        reason=None,
+        paragraphs=rejected,
+    )
+    shown = world.query(advice.explanation, TODAY, None)
+    assert shown.id == row_id and not shown.stale
+    assert (shown.status, shown.reason) == (ExplanationStatus.TEMPLATE, ExplanationReason.REJECTED)
+    template_text = [p.text for p in advice._rendered(template.render(facts, facts.mode), facts)]
+    assert [p.text for p in shown.paragraphs] == template_text
+    assert all("500" not in p.text for p in shown.paragraphs)
+    (row,) = _rows(world)
+    assert row.status == "model"  # the stored row is unchanged
+
+
+def test_a_superseded_or_withdrawn_scenario_is_not_found_and_queues_nothing(world, app_engine):
+    """Finding 7: only a scenario in force is explained, by GET and by POST."""
+    from hausbuch.services.errors import NotFoundError
+
+    _household(world)
+    _consent(world)
+    first = world.cmd(household_scenarios.create_scenario, HouseholdScenarioCreate(name="X"))
+    withdrawal = world.cmd(household_scenarios.withdraw_scenario, first.id)
+    for scenario_id in (first.id, withdrawal.id):  # superseded, then withdrawn
+        with pytest.raises(NotFoundError):
+            world.query(advice.explanation, TODAY, scenario_id)
+        with pytest.raises(NotFoundError):
+            world.cmd(advice.request, scenario_id)
+    assert _queued(app_engine) == 0
+    current = world.cmd(household_scenarios.create_scenario, HouseholdScenarioCreate(name="Y"))
+    assert world.query(advice.explanation, TODAY, current.id).scenario_id == current.id
+    assert world.cmd(advice.request, current.id).queued and _queued(app_engine) == 1
 
 
 def test_an_unknown_scenario_is_not_found(world):

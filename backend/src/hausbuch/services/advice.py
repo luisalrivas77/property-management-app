@@ -9,7 +9,10 @@
 - `explanation(conn, today, scenario_id)` (GET): the newest stored row of the workspace's
   current advice mode for the scenario, rendered from its own stored facts and labels
   (D257: a dated snapshot), with `stale` when today's facts differ from them; with none
-  stored, the template text rendered on read from today's facts.
+  stored, the template text rendered on read from today's facts. A stored model text is run
+  through the current validator on every read, against its stored facts and mode: one it no
+  longer passes is shown as the template of those stored facts, with the row's id and reason
+  `rejected`. A scenario named must be in force (404 otherwise, for the GET and the POST).
 - `explanation_facts(conn, today, scenario_id)`: the facts of one request, built by
   rules.advice.facts.build from the household's key figures, its plan and the "already
   held" sets of D254 (every account; every asset with a non-zero confirmed position on the
@@ -48,7 +51,7 @@ from hausbuch.jobs.enqueue import enqueue_explain_plan
 from hausbuch.rules.advice import facts as F
 from hausbuch.rules.advice import render as R
 from hausbuch.rules.advice import template as T
-from hausbuch.rules.advice.validator import versions
+from hausbuch.rules.advice.validator import validate, versions
 from hausbuch.schemas.advice import (
     AdviceMode,
     ExplainFacts,
@@ -70,7 +73,7 @@ from .context import CommandContext
 from .errors import NotFoundError
 from .events import append_event
 from .health import health
-from .household_scenarios import default_scenario, get_scenario
+from .household_scenarios import default_scenario, is_in_force
 from .plan import advice_mode, household_plan
 from .workspace_settings import private_ai_allowed
 
@@ -84,11 +87,12 @@ _ASSET_CLASS = {
 
 
 def resolve_scenario(conn: Connection, scenario_id: UUID | None) -> UUID | None:
-    """The scenario an explanation is stored and looked up under: the one named (any row, a
-    withdrawn one too, as the plan reads it; 404 for an unknown one), else the default in
+    """The scenario an explanation is stored and looked up under: the one named, which must be
+    in force (404 for an unknown, superseded or withdrawn one: its explanation would describe
+    levers no longer in force, and „Neu erklären“ queues nothing for it), else the default in
     force, else None (the defaults)."""
     if scenario_id is not None:
-        if get_scenario(conn, scenario_id) is None:
+        if not is_in_force(conn, scenario_id):
             raise NotFoundError(EntityType.HOUSEHOLD_SCENARIO, scenario_id)
         return scenario_id
     row = default_scenario(conn)
@@ -285,14 +289,22 @@ def explanation(conn: Connection, today: date, scenario_id: UUID | None) -> Plan
             paragraphs=_rendered(T.render(current, mode), current),
         )
     stored = _stored_facts(row)
+    stored_mode = AdviceMode(row.advice_mode)
     paragraphs = [Paragraph.model_validate(p) for p in row.paragraphs]
+    status = ExplanationStatus(row.status)
+    reason = None if row.reason is None else ExplanationReason(row.reason)
+    if status is ExplanationStatus.MODEL and not validate(paragraphs, stored, stored_mode).ok:
+        # A model text the current validator rejects (its lists tightened since it was
+        # stored) is never shown: the template of the same stored facts instead (D257).
+        status, reason = ExplanationStatus.TEMPLATE, ExplanationReason.REJECTED
+        paragraphs = T.render(stored, stored_mode)
     same_day = current.model_copy(update={"as_of": stored.as_of})
     return PlanExplanation(
         id=row.id,
         scenario_id=row.scenario_id,
-        mode=AdviceMode(row.advice_mode),
-        status=ExplanationStatus(row.status),
-        reason=None if row.reason is None else ExplanationReason(row.reason),
+        mode=stored_mode,
+        status=status,
+        reason=reason,
         paragraphs=_rendered(paragraphs, stored),
         created_at=row.created_at,
         stale=F.facts_sha256(same_day) != bytes(row.facts_sha256).hex(),

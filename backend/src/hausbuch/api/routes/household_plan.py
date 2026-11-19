@@ -22,10 +22,12 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
 - GET /household-plan/explanation?scenario= (§8.6, D257; step 4): the newest stored
   explanation of the workspace's advice mode for the scenario (else the default in force),
   rendered from its own stored facts, with `stale`; with none stored, the template text
-  rendered on read (`id` null; reason `consent_off` while ai_private_accounts is off). 404
-  for an unknown scenario. Never asks the model.
+  rendered on read (`id` null; reason `consent_off` while ai_private_accounts is off); a
+  stored model text the current validator rejects is shown as its template (`rejected`). 404
+  for an unknown, superseded or withdrawn scenario. Never asks the model.
 - POST /household-plan/explanation {scenario} („Neu erklären“): 202 with `queued`; queues one
-  explain_plan job, nothing while ai_private_accounts is off (D253).
+  explain_plan job, nothing while ai_private_accounts is off (D253); 404 and nothing queued
+  for an unknown, superseded or withdrawn scenario.
 """
 
 from datetime import date, datetime

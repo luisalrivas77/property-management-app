@@ -335,7 +335,9 @@ class PlanExplanation(Schema):
     `stale` when today's facts differ from them. With no row stored for the scenario and mode,
     the template text rendered on read from today's facts: `id` and `created_at` are null,
     `stale` is false, and `reason` is `consent_off` while ai_private_accounts is off (no
-    request is built then, D253), else null (none requested yet)."""
+    request is built then, D253), else null (none requested yet). A stored model text the
+    current validator no longer passes is shown as the template of its stored facts: the
+    row's `id`, status `template`, reason `rejected`."""
 
     id: UUID | None = None  # null: not stored, the template on read
     scenario_id: UUID | None = None

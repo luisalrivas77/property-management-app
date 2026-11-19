@@ -27264,7 +27264,7 @@
           "status"
         ],
         "title": "PlanExplanation",
-        "description": "GET /household-plan/explanation (§8.6): rendered from its own stored facts, with\n`stale` when today's facts differ from them. With no row stored for the scenario and mode,\nthe template text rendered on read from today's facts: `id` and `created_at` are null,\n`stale` is false, and `reason` is `consent_off` while ai_private_accounts is off (no\nrequest is built then, D253), else null (none requested yet)."
+        "description": "GET /household-plan/explanation (§8.6): rendered from its own stored facts, with\n`stale` when today's facts differ from them. With no row stored for the scenario and mode,\nthe template text rendered on read from today's facts: `id` and `created_at` are null,\n`stale` is false, and `reason` is `consent_off` while ai_private_accounts is off (no\nrequest is built then, D253), else null (none requested yet). A stored model text the\ncurrent validator no longer passes is shown as the template of its stored facts: the\nrow's `id`, status `template`, reason `rejected`."
       },
       "PlanExplanationQueued": {
         "properties": {
