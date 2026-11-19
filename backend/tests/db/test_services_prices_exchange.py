@@ -270,6 +270,10 @@ def test_a_fund_the_venue_does_not_list_is_a_lookup_miss(run, read, app_engine, 
     assert out.failed == [] and fund not in {n.asset_id for n in out.notes}
     assert ("exchange_close:search", "not_listed", None) in sources.misses
     assert venue.asked(HISTORY) == 0
+    # D264 (8): Anlagen names the venue only once a price of it is stored, so a fund the
+    # venue does not list never says it is fetched there every morning.
+    [row] = [a for a in read(ws, list_assets, NOW.date()) if a.id == fund]
+    assert row.price_venue is None and not row.has_source
 
 
 def test_a_first_read_far_from_the_report_stores_nothing(run, read, app_engine, fresh_workspaces):

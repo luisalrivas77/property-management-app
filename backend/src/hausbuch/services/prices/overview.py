@@ -364,14 +364,14 @@ def _asset_row(
     row: Any, latest: PricePoint | None, stored: NavSource | None, exchange: bool = False
 ) -> AssetRow:
     """`exchange`: an exchange_close row of the asset is stored (D264 (8)). A fund with
-    no issuer source is priced by Lang & Schwarz once one is stored, or when its name names
-    no issuer's brand (the daily fetch asks the exchange for it, fetch.collect)."""
+    no issuer source names Lang & Schwarz only once such a row is stored, never from its
+    name alone: a fund the venue does not list would otherwise say it is fetched daily
+    while no price ever comes."""
     kind = AssetKind(row.kind)
     ids = price_ids(row.symbol, row.coingecko_id, row.kraken_pair, chain=row.chain)
     fund = _fund(kind, row.isin, stored)
-    by_exchange = exchange or bool(row.isin and lang_schwarz.wants_exchange(row.name))
     etf = kind is AssetKind.ETF
-    venue = lang_schwarz.VENUE_NAME if etf and fund is None and by_exchange else None
+    venue = lang_schwarz.VENUE_NAME if etf and fund is None and exchange else None
     if kind is AssetKind.CRYPTO:
         # A chain asset is also priced through its priced_as asset (phase 7 D180 (3)).
         has_source = ids.any or row.priced_as_asset_id is not None
