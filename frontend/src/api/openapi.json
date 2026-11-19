@@ -18901,6 +18901,7 @@
           "workspace.bank_pin_deleted",
           "workspace.app_secret_set",
           "workspace.app_secret_deleted",
+          "workspace.advice_mode_changed",
           "proposal.created",
           "proposal.superseded",
           "proposal.rejected",
@@ -18972,7 +18973,8 @@
           "rule.disabled",
           "health.snapshot_stored",
           "household_scenario.created",
-          "household_scenario.withdrawn"
+          "household_scenario.withdrawn",
+          "plan.explanation_stored"
         ],
         "title": "EventType"
       },
@@ -38308,6 +38310,10 @@
             "type": "boolean",
             "title": "Reminder Emails Available",
             "default": false
+          },
+          "advice_mode": {
+            "$ref": "#/components/schemas/AdviceMode",
+            "default": "own_use"
           }
         },
         "additionalProperties": false,
@@ -38337,6 +38343,9 @@
           "ai_private_accounts": {
             "type": "boolean",
             "title": "Ai Private Accounts"
+          },
+          "advice_mode": {
+            "$ref": "#/components/schemas/AdviceMode"
           }
         },
         "additionalProperties": false,

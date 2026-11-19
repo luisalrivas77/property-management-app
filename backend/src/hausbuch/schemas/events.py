@@ -23,6 +23,7 @@ from uuid import UUID
 
 from pydantic import Field, JsonValue, model_validator
 
+from .advice import AdviceMode, ExplanationReason, ExplanationStatus, ViolationCode
 from .ai import ConfidenceLevel
 from .allocation import (
     HMAC_PATTERN,
@@ -1352,6 +1353,25 @@ class HouseholdScenarioRecorded(Schema):
     supersedes_id: UUID | None = None
 
 
+class AdviceModeChanged(Schema):
+    """workspace.advice_mode_changed (phase 9 D251, §11.6): what the plan and its explanation
+    may name, from one mode to the other."""
+
+    from_mode: AdviceMode
+    to_mode: AdviceMode
+
+
+class PlanExplanationStored(Schema):
+    """plan.explanation_stored (phase 9 D257, §11.6; entity_id = plan_explanation.id): one
+    explanation stored. Status, reason, mode and the violation codes of the rejected attempts
+    only: no amount, no label and no text."""
+
+    status: ExplanationStatus
+    reason: ExplanationReason | None = None
+    mode: AdviceMode
+    violation_codes: list[ViolationCode] = Field(default_factory=list)
+
+
 class AiConsentRecorded(Schema):
     """workspace.ai_consent_recorded (D168): the second owner's own click, by the member it
     concerns; the first consent is the settings_changed event's consented_by."""
@@ -1460,6 +1480,7 @@ class EventType(StrEnum):
     WORKSPACE_BANK_PIN_DELETED = "workspace.bank_pin_deleted"  # D196
     WORKSPACE_APP_SECRET_SET = "workspace.app_secret_set"  # D260
     WORKSPACE_APP_SECRET_DELETED = "workspace.app_secret_deleted"  # D260
+    WORKSPACE_ADVICE_MODE_CHANGED = "workspace.advice_mode_changed"  # phase 9 D251
 
     PROPOSAL_CREATED = "proposal.created"
     PROPOSAL_SUPERSEDED = "proposal.superseded"
@@ -1547,6 +1568,7 @@ class EventType(StrEnum):
     HEALTH_SNAPSHOT_STORED = "health.snapshot_stored"  # phase 9 D242, §11.6
     HOUSEHOLD_SCENARIO_CREATED = "household_scenario.created"  # phase 9 D248, §11.6
     HOUSEHOLD_SCENARIO_WITHDRAWN = "household_scenario.withdrawn"  # phase 9 D248, §11.6
+    PLAN_EXPLANATION_STORED = "plan.explanation_stored"  # phase 9 D257, §11.6
 
 
 E = EventType
@@ -1836,6 +1858,12 @@ EVENT_CATALOG: dict[EventType, EventSpec] = {
     ),
     E.HOUSEHOLD_SCENARIO_WITHDRAWN: EventSpec(
         HouseholdScenarioRecorded, "forbidden", "Household scenario withdrawn (D248)"
+    ),
+    E.PLAN_EXPLANATION_STORED: EventSpec(
+        PlanExplanationStored, "forbidden", "The plan's explanation stored (D257)"
+    ),
+    E.WORKSPACE_ADVICE_MODE_CHANGED: EventSpec(
+        AdviceModeChanged, "forbidden", "What the plan may name changed (D251)"
     ),
 }
 del E

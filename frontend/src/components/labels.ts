@@ -308,6 +308,8 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "health.snapshot_stored": "Kennzahlen eines abgeschlossenen Monats festgehalten",
   "household_scenario.created": "Haushaltsszenario gespeichert",
   "household_scenario.withdrawn": "Haushaltsszenario zurückgezogen",
+  "plan.explanation_stored": "Erklärung des Haushaltsplans gespeichert",
+  "workspace.advice_mode_changed": "Modus des Haushaltsplans geändert",
   "workspace.bank_pin_set": "PIN eines Online-Banking-Zugangs gespeichert (verschlüsselt)",
   "workspace.bank_pin_deleted": "PIN eines Online-Banking-Zugangs gelöscht",
   "proposal.created": "Vorschlag erstellt",

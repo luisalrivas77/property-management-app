@@ -15,6 +15,10 @@ the settings_changed event), and that one consent is enough (`private_ai_allowed
 household's expenses, not the other owner's pay or purchases. Another member may still record
 their own consent (`record_ai_consent`, workspace.ai_consent_recorded); switching it off and on
 again records the consent afresh.
+
+Phase 9 D251: `advice_mode` (`own_use` or `generic`, what the household plan and its
+explanation may name) is changed through the same PATCH but is not a switch: it writes its own
+workspace.advice_mode_changed event (from, to), never a settings_changed one.
 """
 
 from uuid import UUID
@@ -28,8 +32,10 @@ from hausbuch.rules.errors import (
     SETTINGS_CONSENT_NOT_A_MEMBER,
     SETTINGS_CONSENT_SWITCH_OFF,
 )
+from hausbuch.schemas.advice import AdviceMode
 from hausbuch.schemas.api import WorkspaceSettings
 from hausbuch.schemas.events import (
+    AdviceModeChanged,
     AiConsentRecorded,
     EventType,
     WorkspaceSetting,
@@ -42,6 +48,7 @@ from .errors import RuleViolationError
 from .events import append_event
 
 _COLUMNS = [workspace_table.c[s.value] for s in WorkspaceSetting]
+_ADVICE_MODE = workspace_table.c.advice_mode
 # The consents the switch needs: the switching member's (D168 as amended 12 Nov 2026; it said
 # both owners, each by their own click, and so could never take effect with one member).
 CONSENTS_NEEDED = 1
@@ -50,7 +57,7 @@ CONSENTS_NEEDED = 1
 def get_settings(conn: Connection) -> WorkspaceSettings:
     """The current workspace's settings (RLS shows only its own row), with the members who
     consented to ai_private_accounts since it was switched on."""
-    row = conn.execute(select(*_COLUMNS)).one()
+    row = conn.execute(select(*_COLUMNS, _ADVICE_MODE)).one()
     data = row._asdict()
     consents = private_ai_consents(conn) if data["ai_private_accounts"] else []
     return WorkspaceSettings.model_validate(
@@ -143,9 +150,11 @@ def update_settings(
     auto_accept_llm: bool | None = None,
     reminder_emails: bool | None = None,
     ai_private_accounts: bool | None = None,
+    advice_mode: AdviceMode | None = None,
 ) -> WorkspaceSettings:
     """Set the settings passed (None = unchanged); one event naming those that changed.
-    Switching ai_private_accounts on records the signed-in member's consent (D168)."""
+    Switching ai_private_accounts on records the signed-in member's consent (D168). A changed
+    advice_mode writes its own workspace.advice_mode_changed event (phase 9 D251)."""
     requested = {
         WorkspaceSetting.AI_TENANT_DOCUMENTS: ai_tenant_documents,
         WorkspaceSetting.AUTO_ACCEPT_LLM: auto_accept_llm,
@@ -155,8 +164,22 @@ def update_settings(
     if ai_private_accounts:
         _member(ctx)
     current = ctx.conn.execute(
-        select(*_COLUMNS).where(workspace_table.c.id == ctx.workspace_id).with_for_update()
+        select(*_COLUMNS, _ADVICE_MODE)
+        .where(workspace_table.c.id == ctx.workspace_id)
+        .with_for_update()
     ).one()
+    if advice_mode is not None and current.advice_mode != advice_mode.value:
+        ctx.conn.execute(
+            update(workspace_table)
+            .where(workspace_table.c.id == ctx.workspace_id)
+            .values(advice_mode=advice_mode.value)
+        )
+        append_event(
+            ctx,
+            EventType.WORKSPACE_ADVICE_MODE_CHANGED,
+            ctx.workspace_id,
+            AdviceModeChanged(from_mode=AdviceMode(current.advice_mode), to_mode=advice_mode),
+        )
     changes = {
         setting: value
         for setting, value in requested.items()

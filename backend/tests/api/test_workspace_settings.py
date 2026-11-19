@@ -18,6 +18,7 @@ OFF = {
     "auto_accept_llm": False,
     "reminder_emails": False,
     "reminder_emails_available": False,
+    "advice_mode": "own_use",  # phase 9 D251: not a switch, the default mode
 }
 
 
@@ -168,3 +169,45 @@ def test_a_consent_counts_only_in_its_own_workspace(client_a, client_b):
     assert ok(client_b.get("/api/workspace/settings")) == OFF
     refused = client_b.post("/api/workspace/settings/ai-consent")
     assert refused.json()["code"] == "settings.consent_switch_off"
+
+
+def _advice_events(client) -> list[dict]:
+    return [
+        event
+        for event in ok(client.get("/api/events?entity_type=workspace"))
+        if event["type"] == "workspace.advice_mode_changed"
+    ]
+
+
+def test_advice_mode_changes_through_its_own_event(client_a, client_b, auth_a):
+    """Phase 9 D251: advice_mode is set by the same PATCH and writes workspace.advice_mode_changed
+    (from, to), never a settings_changed event; an unchanged mode writes nothing."""
+    generic = ok(client_a.patch("/api/workspace/settings", json={"advice_mode": "generic"}))
+    assert generic == {**OFF, "advice_mode": "generic"}
+    assert ok(client_a.get("/api/workspace/settings")) == generic
+    [event] = _advice_events(client_a)
+    assert event["entity_type"] == "workspace"
+    assert event["entity_id"] == str(auth_a.workspace_id)
+    assert event["payload"] == {"from_mode": "own_use", "to_mode": "generic"}
+    assert _settings_events(client_a) == []
+
+    # Unchanged: no event. Together with a switch: one event each.
+    ok(client_a.patch("/api/workspace/settings", json={"advice_mode": "generic"}))
+    both = ok(
+        client_a.patch(
+            "/api/workspace/settings", json={"advice_mode": "own_use", "auto_accept_llm": True}
+        )
+    )
+    assert both == {**OFF, "auto_accept_llm": True}
+    assert [e["payload"] for e in _advice_events(client_a)] == [
+        {"from_mode": "own_use", "to_mode": "generic"},
+        {"from_mode": "generic", "to_mode": "own_use"},
+    ]
+    assert [e["payload"] for e in _settings_events(client_a)] == [
+        {"changes": {"auto_accept_llm": True}, "consented_by": None},
+    ]
+    assert ok(client_b.get("/api/workspace/settings")) == OFF
+
+    for body in ({"advice_mode": "advice"}, {"advice_mode": None}):
+        response = client_a.patch("/api/workspace/settings", json=body)
+        assert response.status_code == 422, body
