@@ -8,6 +8,7 @@
 // „Szenario speichern“ stores it as a new version of the default (D248, append-only), and the
 // figures follow on the next read. No figure is computed here; no row of the paths is
 // highlighted (D246); the rate fields are empty with no placeholder until a member types (D247).
+// Beside the sections, the KI panel with the plan's explanation (step 5, components/planExplanation.tsx).
 import Link from "next/link";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
 
@@ -41,6 +42,7 @@ import {
   toSignedRate,
 } from "./healthShared";
 import { percentInput, toSignedMoneyString } from "./input";
+import { PlanExplanationPanel } from "./planExplanation";
 import { SpendingPlaySection, usePlanPreview } from "./spendingPlay";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
@@ -295,35 +297,42 @@ function PlanBody({ data, onSaved }: { data: PlanData; onSaved: () => void }) {
       </p>
       <PlanTodos todos={todos} onChanged={onSaved} />
 
-      <Levers data={data} draft={draft} setDraft={setDraft} />
-      <MoreAssumptions data={data} draft={draft} setDraft={setDraft} />
-      <SpendingPlaySection
-        saved={plan}
-        windowMonths={closedMonths}
-        preview={preview}
-        draft={draft}
-        setDraft={setDraft}
-        onValidity={setSpendingInvalid}
-      />
-      {dirty ? (
-        <p className="notice notice-warn" role="status">
-          Geändert, noch nicht gespeichert; die Zahlen auf dieser Seite rechnen mit der gespeicherten Fassung, nur „Was eure Änderungen
-          bewirken“ rechnet schon mit euren Änderungen.
-        </p>
-      ) : null}
-      {saveBar}
+      {/* Mockup 12: the sections on the left, the KI panel beside them (below them on a narrow
+          screen). The panel follows the scenario the page shows, the default in force. */}
+      <div className="planning-columns">
+        <div className="planning-main stack">
+          <Levers data={data} draft={draft} setDraft={setDraft} />
+          <MoreAssumptions data={data} draft={draft} setDraft={setDraft} />
+          <SpendingPlaySection
+            saved={plan}
+            windowMonths={closedMonths}
+            preview={preview}
+            draft={draft}
+            setDraft={setDraft}
+            onValidity={setSpendingInvalid}
+          />
+          {dirty ? (
+            <p className="notice notice-warn" role="status">
+              Geändert, noch nicht gespeichert; die Zahlen auf dieser Seite rechnen mit der gespeicherten Fassung, nur „Was eure Änderungen
+              bewirken“ rechnet schon mit euren Änderungen.
+            </p>
+          ) : null}
+          {saveBar}
 
-      <Paths data={data} />
-      <HowItIsMade data={data} />
-      <ProjectionCard
-        data={data}
-        draft={draft}
-        setDraft={setDraft}
-        dirty={dirty}
-        saveBar={saveBar}
-        onChanged={onSaved}
-        onValidity={setInvalid}
-      />
+          <Paths data={data} />
+          <HowItIsMade data={data} />
+          <ProjectionCard
+            data={data}
+            draft={draft}
+            setDraft={setDraft}
+            dirty={dirty}
+            saveBar={saveBar}
+            onChanged={onSaved}
+            onValidity={setInvalid}
+          />
+        </div>
+        <PlanExplanationPanel scenarioId={plan.scenario_id ?? null} asOf={plan.as_of} />
+      </div>
     </>
   );
 }
