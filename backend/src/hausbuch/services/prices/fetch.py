@@ -115,6 +115,9 @@ class Plan:
     held: list[Held]
     stored: dict[tuple[UUID, str], set[date]]
     ecb_days: set[date]  # the days of the workspace's stored ECB rows (any currency)
+    # The depot reports' prices (EUR) per held fund and day, for the first-read check of a
+    # new NAV source (D174 amended 19 Nov 2026 (g)).
+    reports: dict[UUID, dict[date, Decimal]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -138,6 +141,7 @@ class Collected:
     discovered: dict[UUID, NavSource] = field(default_factory=dict)  # found this run
     unconverted: dict[UUID, str] = field(default_factory=dict)  # NAV currency the ECB lacks
     notes: list[FundSourceNote] = field(default_factory=list)  # failed or unconverted funds
+    nav_disagreed: list[UUID] = field(default_factory=list)  # first reads the check refused
 
 
 @dataclass
@@ -155,6 +159,7 @@ class Sources:
     _coingecko_error: SourceError | None = None
     _nav: dict[tuple[str, str, str], NavFile | SourceError] = field(default_factory=dict)
     _catalogues: dict[str, dict[str, str] | SourceError] = field(default_factory=dict)
+    _history: dict[str, list[FxRate]] | SourceError | None = None
 
     def _failed(self, source: str, exc: SourceError) -> SourceError:
         self.errors[(source, exc.kind, exc.status)] += 1
@@ -169,6 +174,15 @@ class Sources:
             except SourceError as exc:
                 self._ecb[backfill] = self._failed(S.ECB_FX.value, exc)
         return self._ecb[backfill]
+
+    def ecb_history(self) -> dict[str, list[FxRate]] | SourceError:
+        """The ECB's full history ZIP (D174 amended 19 Nov 2026 (a)), asked once a run."""
+        if self._history is None:
+            try:
+                self._history = ecb_fx.history(self.fetch)
+            except SourceError as exc:
+                self._history = self._failed(f"{S.ECB_FX.value}:history", exc)
+        return self._history
 
     def kraken(self, pair: str) -> dict[date, Decimal] | SourceError:
         if pair not in self._kraken:
@@ -408,7 +422,27 @@ def plan(conn: Connection) -> Plan:
         stored[(row.asset_id, row.source)].add(row.on)
         if row.source == S.ECB_FX.value:
             ecb_days.add(row.on)
-    return Plan(held=held_assets(conn), stored=dict(stored), ecb_days=ecb_days)
+    held = held_assets(conn)
+    return Plan(
+        held=held, stored=dict(stored), ecb_days=ecb_days, reports=report_prices(conn, held)
+    )
+
+
+def report_prices(conn: Connection, held: list[Held]) -> dict[UUID, dict[date, Decimal]]:
+    """The held funds' `statement` prices (the depot reports'), per day, the latest fetched
+    row of a day winning, as price_on reads one source's rows."""
+    funds = [h.id for h in held if h.kind is AssetKind.ETF]
+    if not funds:
+        return {}
+    p = price_table.c
+    found: dict[UUID, dict[date, Decimal]] = defaultdict(dict)
+    for row in conn.execute(
+        select(p.asset_id, p.on, p.price_eur)
+        .where(p.source == S.STATEMENT.value, p.asset_id.in_(funds))
+        .order_by(p.fetched_at, p.id)
+    ):
+        found[row.asset_id][row.on] = row.price_eur
+    return dict(found)
 
 
 def stored_rates(conn: Connection) -> dict[str, list[FxRate]]:
@@ -468,6 +502,7 @@ class Fx:
     base: dict[str, list[FxRate]] | SourceError
     merged: dict[str, list[FxRate]] = field(default_factory=dict)
     covered: dict[str, bool | None] = field(default_factory=dict)
+    history: dict[str, list[FxRate]] | None = None  # the history ZIP's rates, when read
 
     def answers(self, code: str) -> list[dict[str, list[FxRate]]]:
         """The run's readable ECB answers for `code`: the first call's, plus the 90-day
@@ -475,6 +510,8 @@ class Fx:
         answers = [self.base]
         if not self.backfill and _gap(self.stored.get(code, []), self.today):
             answers.append(self.sources.ecb(True))
+        if self.history is not None:
+            answers.append(self.history)
         return [a for a in answers if not isinstance(a, SourceError)]
 
     def add(self, code: str, answers: list[dict[str, list[FxRate]]]) -> None:
@@ -541,6 +578,38 @@ def _ecb(
             if code != "EUR" and code not in ecb_fx.FX_CURRENCIES:
                 fx.add(code, fx.answers(code))
     return fx
+
+
+def _history(plan: Plan, sources: Sources, fx: Fx) -> None:
+    """D174 amended 19 Nov 2026 (a): the ECB's full history when the run's earliest rate of
+    FX_CURRENCIES is later than the earliest first movement of a held fund, so a foreign NAV
+    before the 90-day file finds its own day's rate. Only the days from that first movement
+    on (plus the last rate before it) pass through the run's FX, so only missing days are
+    stored. A failure is counted in the log line and never fails the run; the next run asks
+    again while the gap lasts."""
+    first = min((h.first_on for h in plan.held if h.kind is AssetKind.ETF), default=None)
+    if first is None:
+        return
+    need = max(first, ecb_fx.HISTORY_START)
+    earliest = [
+        min((r.on for r in fx.merged.get(code, [])), default=None) for code in ecb_fx.FX_CURRENCIES
+    ]
+    if all(on is not None and on <= need for on in earliest):
+        return
+    answer = sources.ecb_history()
+    if isinstance(answer, SourceError):
+        return
+    trimmed: dict[str, list[FxRate]] = {}
+    for code, listed in answer.items():
+        before = [r for r in listed if r.on <= need]
+        start = max(before, key=lambda r: r.on).on if before else need
+        trimmed[code] = [r for r in listed if r.on >= start]
+    fx.history = trimmed
+    for code in ecb_fx.FX_CURRENCIES:
+        fx.add(code, [trimmed])
+    for code in sorted(fx.merged):
+        if code != "EUR" and code not in ecb_fx.FX_CURRENCIES:
+            fx.add(code, [trimmed])
 
 
 def _coin(held: Held, plan: Plan, sources: Sources, today: date, out: Collected) -> None:
@@ -639,6 +708,15 @@ def _etf(
         out.notes.append(_note(held, fund, answer.currency))
         return
     stored = plan.stored.get((held.id, S.ISSUER_NAV.value), set())
+    if not stored:
+        # The first read of this fund from its issuer (D174 amended 19 Nov 2026 (g)): the
+        # whole file's newest day the depot report also priced decides whether it is stored.
+        check = valuation.nav_check(
+            answer.points, fx.merged.get(answer.currency, []), plan.reports.get(held.id, {})
+        )
+        if check is not None and check.refused:
+            out.nav_disagreed.append(held.id)
+            return
     rows = valuation.nav_rows(
         answer.points, held.first_on, fx.merged.get(answer.currency, []), stored_days=stored
     )
@@ -657,6 +735,7 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
     if not plan.held:
         return out
     fx = _ecb(plan, sources, today, rates, out)
+    _history(plan, sources, fx)
     for held in plan.held:
         if held.kind is AssetKind.CRYPTO and held.ids.any:
             _coin(held, plan, sources, today, out)
@@ -809,6 +888,7 @@ def write(ctx: CommandContext, plan: Plan, out: Collected) -> int:
             assets_failed=len(out.failed),
             failed_asset_ids=out.failed,
             fund_sources=out.notes,
+            nav_disagreed=out.nav_disagreed,
         ),
     )
     since = ctx.now - timedelta(days=STREAK_WINDOW_DAYS)

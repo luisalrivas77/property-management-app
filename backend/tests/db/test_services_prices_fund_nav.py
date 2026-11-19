@@ -706,3 +706,180 @@ def test_an_unknown_product_s_400_asks_the_catalogue(
     assert out.failed == [] and out.discovered[fund].fund_ref == "2"
     [new_row] = [r for r in _nav_rows(read, ws) if r.asset_id == fund and r.on == TODAY]
     assert new_row.raw["fund_ref"] == "2"
+
+
+# --- D174 amended 19 Nov 2026: the ECB history (a) and the first-read check (g) ------------
+
+FIRST_MARCH = datetime(2026, 3, 1, 9, 30, tzinfo=UTC)  # a Sunday: the rate before is Friday's
+
+
+def _history_zip(days: dict[date, str]) -> bytes:
+    """The ECB's eurofxref-hist.zip in its layout (one CSV, newest first, a trailing comma)
+    with these USD rates and the other columns empty („N/A“)."""
+    import io
+    import zipfile
+
+    lines = ["Date,USD,JPY,GBP,CHF,"]
+    for on in sorted(days, reverse=True):
+        lines.append(f"{on.isoformat()},{days[on]},N/A,0.85000,0.95000,")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("eurofxref-hist.csv", "\n".join(lines) + "\n")
+    return buffer.getvalue()
+
+
+HISTORY = {
+    date(2026, 2, 26): "1.0380",
+    date(2026, 2, 27): "1.0390",
+    date(2026, 3, 2): "1.0400",
+    date(2026, 5, 29): "1.0700",
+    date(2026, 6, 26): "1.0850",
+}
+
+
+def _fund_held_since(run, ws, occurred_at):
+    """The iShares fund the catalogue names, held since `occurred_at`."""
+    depot = _depot(run, ws, "Depot")
+
+    def seed(ctx):
+        asset_id = asset_for_isin(ctx, ISHARES_ISIN, "iShsIII-Invented USD U.ETF")
+        ctx.conn.execute(
+            insert(movement_table).values(
+                workspace_id=ctx.workspace_id,
+                account_id=depot,
+                asset_id=asset_id,
+                kind="internal_transfer_in",
+                quantity=Decimal("2"),
+                occurred_at=occurred_at,
+                source="securities_transfer",
+                status="confirmed",
+                created_at=ctx.now,
+            )
+        )
+        return asset_id
+
+    return run(ws, seed, now=occurred_at)
+
+
+def test_a_fund_held_before_the_90_day_file_gets_its_rates_from_the_ecb_history(
+    run, read, app_engine, fresh_workspaces
+):
+    """(a): the 90-day file starts in June, the fund is held since 1 Mar. The run asks the
+    history ZIP once and stores its dollar rates from the last one before 1 Mar (Friday
+    27 Feb) on, never the 26th, so the 2 Mar NAV is converted by its own day's rate; the next
+    run asks the ZIP no more."""
+    ws, _ = fresh_workspaces
+    fund = _fund_held_since(run, ws, FIRST_MARCH)
+    fetch = Served({"eurofxref-hist.zip": (200, _history_zip(HISTORY))})
+    _, out = _run(app_engine, ws, fetch, NOW)
+    assert fetch.asked("eurofxref-hist.zip") == 1
+    assert out.failed == [] and out.nav_disagreed == []
+    usd = {r.on: r.raw["per_eur"] for r in _ecb_rows(read, ws, "USD")}
+    assert date(2026, 2, 26) not in usd
+    assert usd[date(2026, 2, 27)] == "1.0390" and usd[date(2026, 3, 2)] == "1.0400"
+    assert usd[date(2026, 6, 24)] == "1.0800"  # the 90-day file's, not the history's
+    navs = {r.on: r.raw for r in _nav_rows(read, ws) if r.asset_id == fund}
+    assert navs[date(2026, 3, 2)] == {
+        "nav": "95.10000000",
+        "currency": "USD",
+        "rate_on": "2026-03-02",
+        "issuer": "ishares",
+        "fund_ref": "1",
+    }
+    assert date(2025, 9, 15) not in navs  # before the first movement ((3) unchanged)
+
+    again = Served({"eurofxref-hist.zip": (200, _history_zip(HISTORY))})
+    _run(app_engine, ws, again, NOW + timedelta(days=1))
+    assert again.asked("eurofxref-hist.zip") == 0
+
+
+def test_a_failed_ecb_history_is_counted_and_never_fails_the_run(
+    run, read, app_engine, fresh_workspaces
+):
+    """(a): the ZIP answers 503: the log line counts it, the June NAVs the 90-day file
+    converts are stored, the March one waits for its rate, and the next run asks again."""
+    ws, _ = fresh_workspaces
+    fund = _fund_held_since(run, ws, FIRST_MARCH)
+    sources = Sources(fetch=Served({"eurofxref-hist.zip": (503, b"")}), coingecko=None)
+    _, out = run_workspace(app_engine, ws, ACTOR, sources, NOW)
+    assert dict(sources.errors) == {("ecb_fx:history", "HTTPError", 503): 1}
+    assert out.failed == []
+    days = {r.on for r in _nav_rows(read, ws) if r.asset_id == fund}
+    assert date(2026, 6, 26) in days and date(2026, 3, 2) not in days
+
+    again = Served({"eurofxref-hist.zip": (200, _history_zip(HISTORY))})
+    _run(app_engine, ws, again, NOW + timedelta(days=1))
+    assert again.asked("eurofxref-hist.zip") == 1
+    assert date(2026, 3, 2) in {r.on for r in _nav_rows(read, ws) if r.asset_id == fund}
+
+
+def _report_price(run, ws, asset_id, on, price):
+    def seed(ctx):
+        ctx.conn.execute(
+            insert(price_table).values(
+                workspace_id=ctx.workspace_id,
+                asset_id=asset_id,
+                on=on,
+                price_eur=Decimal(price),
+                source="statement",
+                fetched_at=ctx.now,
+                raw={},
+                created_at=ctx.now,
+            )
+        )
+
+    run(ws, seed, now=FIRST)
+
+
+def _fetched_events(read, ws):
+    def query(conn):
+        e = event_table.c
+        return (
+            conn.execute(
+                select(e.payload).where(e.type == "workspace.prices_fetched").order_by(e.seq)
+            )
+            .scalars()
+            .all()
+        )
+
+    return read(ws, query)
+
+
+def test_a_first_read_far_from_the_report_stores_nothing_and_is_named(
+    run, read, app_engine, fresh_workspaces
+):
+    """(g): the report priced the fund at 50.00 € on 26 Jun; the file's NAV that day is
+    81.20 USD, 74.84 € at 1.0850, more than 2 % away. Nothing is stored for it, the run's
+    event names it, it is no failed fetch; the other fund of the run is stored."""
+    ws, _ = fresh_workspaces
+    ids = _unlisted_funds(run, ws)
+    fund = ids[ISHARES_ISIN]
+    _report_price(run, ws, fund, date(2026, 6, 26), "50.00")
+    _, out = _run(app_engine, ws, Recorded(), NOW)
+    assert out.nav_disagreed == [fund] and out.failed == []
+    rows = _nav_rows(read, ws)
+    assert fund not in {r.asset_id for r in rows}
+    assert ids[SPDR_ISIN] in {r.asset_id for r in rows}
+    [event] = _fetched_events(read, ws)
+    assert event["nav_disagreed"] == [str(fund)] and event["failed_asset_ids"] == []
+
+
+def test_a_first_read_within_two_percent_of_the_report_is_stored_and_not_checked_again(
+    run, read, app_engine, fresh_workspaces
+):
+    """(g): the report's 74.00 € is within 2 % of 74.84 €, so the file is stored. Once the
+    fund has issuer rows the check no longer runs: a report far from the next NAV changes
+    nothing."""
+    ws, _ = fresh_workspaces
+    ids = _unlisted_funds(run, ws)
+    fund = ids[ISHARES_ISIN]
+    _report_price(run, ws, fund, date(2026, 6, 26), "74.00")
+    _, out = _run(app_engine, ws, Recorded(), NOW)
+    assert out.nav_disagreed == []
+    assert date(2026, 6, 26) in {r.on for r in _nav_rows(read, ws) if r.asset_id == fund}
+
+    _report_price(run, ws, fund, TODAY, "10.00")
+    later = Served({"portfolioId=1&": (200, _ishares_file(day=b"27.Juni2026"))})
+    _, out = _run(app_engine, ws, later, NOW + timedelta(days=1))
+    assert out.nav_disagreed == []
+    assert TODAY in {r.on for r in _nav_rows(read, ws) if r.asset_id == fund}
