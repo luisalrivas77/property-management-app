@@ -299,6 +299,23 @@ read_cases:
         - {"on": 2026-06-29, nav: "15.31000000", currency: USD}
         - {"on": 2026-06-30, nav: "15.44170000", currency: USD}
 
+  - id: ark_live_layout
+    description: >-
+      the layout of the live pages read on 19 Nov 2026: the key facts also name the ISIN of
+      the fund's intraday indicative value („iNAV ISIN“), which is never the fund's, and the
+      „NAV per share“ is printed without its currency, which is then the base currency
+    issuer: ark
+    isin: IE000INVENT7
+    fund_ref: index-etfs/invented-infrastructure
+    answers: {/funds/index-etfs/invented-infrastructure/: ark_fund_page_live_layout.html}
+    expect:
+      isin: IE000INVENT7
+      currency: USD
+      navs:
+        - {"on": 2026-06-26, nav: "15.20000000", currency: USD}
+        - {"on": 2026-06-29, nav: "15.31000000", currency: USD}
+        - {"on": 2026-06-30, nav: "15.44170000", currency: USD}
+
   - id: ark_last_differs
     description: the series' last value is not the page's NAV per share
     issuer: ark
