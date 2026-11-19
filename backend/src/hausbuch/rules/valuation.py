@@ -55,6 +55,7 @@ SOURCE_PRECEDENCE: tuple[PriceSourceKind, ...] = (
     PriceSourceKind.TRADE,
     PriceSourceKind.ISSUER_NAV,
     PriceSourceKind.STATEMENT,
+    PriceSourceKind.EXCHANGE_CLOSE,
     PriceSourceKind.KRAKEN_DAILY,
     PriceSourceKind.COINGECKO_DAILY,
     PriceSourceKind.ECB_FX,
