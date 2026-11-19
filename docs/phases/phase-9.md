@@ -488,6 +488,17 @@ Where step 2 differs from the text of this spec, and why:
 - Savings plans are bucketed by the out-leg's booking month (step 1's month by the in-leg's); a link is seen when its in-leg is booked up to 7 days after the out-leg.
 - The rule version of `health_snapshot` changes with this PR, since `rules/plan/` is part of its hash; a stored snapshot is not rewritten and `health-check` compares figures, not the version.
 
+**Step 4a, 19 Nov 2026** (the explanation's pure rules: `rules/advice/facts.py`, `validator.py`, `render.py`, `template.py`; no DB, no model call, no service, no endpoint, no job; not merged when this was written). The fixtures `explain_facts`, `explain_render`, `explain_validator`, `instrument_names` and `lights::every_sentence_passes_validator` are no longer pending and are replayed (`tests/rules/test_phase9_advice.py`). D258 layer 1: every must-accept text accepted (27 replayed directly, the mark sentences of `bands.yaml` replayed per colour and mode) and every must-reject text rejected with the code it names. Layer 2, generated in code: 2,574 texts (every name × the 11 carriers × both modes), all rejected; none by the lexicon alone, since every name is also an unknown word (the vocabulary check finds all 2,574, the lexicon 53 %); a control replaces the name by „Depot“ in each carrier and is accepted. No word was added to `advice_vocabulary.txt`.
+
+Where step 4a differs from the text of this spec, and why:
+
+- `FigureType` gains `multiple` for `debt_to_income`, which no type of §8.1 held; `months` is signed, so a reserve below zero can be sent.
+- `facts.build` also takes the household's accounts and assets and the plans' destination labels, which neither `Health` nor `HouseholdPlan` holds; `facts.assemble` is the pure core both `build` and the fixture replay call.
+- A pause path is keyed by the plan's opaque key (`path_pause_p1_*`), never by the plan's own key, which a member's account can name.
+- When the facts' mode and the mode passed to `validate` differ, the stricter (`generic`) applies.
+- Check 8b reads a product noun inside a word: the word must be a product noun, a permitted compound or a vocabulary word („Sparplänen“ passes, „Chancenfonds“ is rejected), and a capitalised word right before a product noun, or hyphen-joined to one, must be a function word or a permitted compound.
+- Template wording where the draft of `explain_validator.yaml` would render wrongly: `template_reserve_below` would print „von 6,0 Monate Monaten“, so its target is its own clause; `template_net_worth_down` would print „-11.770 € weniger“, so it states the change; a negative savings rate gets its own sentence (`template_savings_rate_negative`, chosen by the figure's sign). Added: `template_reserve_amount` (the reserve below its target when its months are absent), `template_net_worth_flat`, `template_basis_full`. A sentence part whose figure is absent is dropped, and at most four topics are kept (surplus, reserve, basis, projection first).
+
 The rest of this section will record, per step, the CI run, the pass rates of D258, and for the closing step the date, the three months and "match" or the largest difference, never a household figure.
 
 ## 16. Implementation steps
