@@ -155,3 +155,21 @@ def test_the_preview_and_the_comparison(client_a, sessions):
     assert (got["month"], got["rows"], got["scenario_id"]) == ("2027-03", [], None)
     for params in ({"month": "2027-13"}, {"month": "März"}, {}):
         assert client_a.get(COMPARISON, params=params).status_code == 422
+
+
+EXPLANATION = "/api/household-plan/explanation"
+
+
+def test_the_explanation_reads_the_template_and_queues_nothing_without_consent(client_a, sessions):
+    """Phase 9 step 4 (§8.6, D253): with no row stored and ai_private_accounts off, GET is the
+    template rendered on read (no id, reason consent_off) and POST queues nothing (202); an
+    unknown scenario is 404."""
+    shown = ok(client_a.get(EXPLANATION))
+    assert shown["id"] is None and shown["created_at"] is None
+    assert (shown["status"], shown["reason"], shown["stale"]) == ("template", "consent_off", False)
+    assert shown["mode"] == "own_use"
+    queued = ok(client_a.post(EXPLANATION, json={}), 202)
+    assert queued == {"scenario_id": None, "queued": False}
+    unknown = client_a.get(EXPLANATION, params={"scenario": str(uuid4())})
+    assert unknown.status_code == 404
+    assert client_a.post(EXPLANATION, json={"scenario": str(uuid4())}).status_code == 404

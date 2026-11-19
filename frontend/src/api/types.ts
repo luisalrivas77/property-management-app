@@ -2529,6 +2529,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/household-plan/explanation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Plan Explanation */
+        get: operations["household_plan_explanation_api_household_plan_explanation_get"];
+        put?: never;
+        /** Household Plan Explain */
+        post: operations["household_plan_explain_api_household_plan_explanation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/movement-imports": {
         parameters: {
             query?: never;
@@ -7472,6 +7490,17 @@ export interface components {
             amount: string;
         };
         /**
+         * ExplanationReason
+         * @description Why the template text was used (plan_explanation.reason).
+         * @enum {string}
+         */
+        ExplanationReason: "rejected" | "refused" | "consent_off" | "limit" | "error";
+        /**
+         * ExplanationStatus
+         * @enum {string}
+         */
+        ExplanationStatus: "model" | "template";
+        /**
          * ExtractedValue
          * @description One field of a per-type extraction, or of a proposal record.
          *
@@ -10637,6 +10666,51 @@ export interface components {
          */
         PlanClass: "depot" | "crypto";
         /**
+         * PlanExplanation
+         * @description GET /household-plan/explanation (§8.6): rendered from its own stored facts, with
+         *     `stale` when today's facts differ from them. With no row stored for the scenario and mode,
+         *     the template text rendered on read from today's facts: `id` and `created_at` are null,
+         *     `stale` is false, and `reason` is `consent_off` while ai_private_accounts is off (no
+         *     request is built then, D253), else null (none requested yet).
+         */
+        PlanExplanation: {
+            /** Id */
+            id?: string | null;
+            /** Scenario Id */
+            scenario_id?: string | null;
+            mode: components["schemas"]["AdviceMode"];
+            status: components["schemas"]["ExplanationStatus"];
+            reason?: components["schemas"]["ExplanationReason"] | null;
+            /** Paragraphs */
+            paragraphs?: components["schemas"]["RenderedParagraph"][];
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+        };
+        /**
+         * PlanExplanationQueued
+         * @description POST /household-plan/explanation, 202: whether explain_plan was queued. Never while
+         *     ai_private_accounts is off (D253): the template text is then rendered on read.
+         */
+        PlanExplanationQueued: {
+            /** Scenario Id */
+            scenario_id?: string | null;
+            /** Queued */
+            queued: boolean;
+        };
+        /**
+         * PlanExplanationRequest
+         * @description POST /household-plan/explanation („Neu erklären“): the scenario, else the default.
+         */
+        PlanExplanationRequest: {
+            /** Scenario */
+            scenario?: string | null;
+        };
+        /**
          * PlanMonth
          * @description One future month of §7.1; `spending_delta` is §7.6 (3)'s Δ(k), Σ (planned − mean) over
          *     the spending changes in force, already inside `free`.
@@ -11768,6 +11842,12 @@ export interface components {
          * @enum {string}
          */
         ReminderScope: "workspace" | "property" | "loan" | "tenancy" | "owner" | "account";
+        /** RenderedParagraph */
+        RenderedParagraph: {
+            topic: components["schemas"]["Topic"];
+            /** Text */
+            text: string;
+        };
         /** RenovationTreatment */
         RenovationTreatment: {
             /**
@@ -13678,6 +13758,11 @@ export interface components {
             /** Iban */
             iban?: string | null;
         };
+        /**
+         * Topic
+         * @enum {string}
+         */
+        Topic: "surplus" | "reserve" | "paths" | "savings_rate" | "debt" | "net_worth" | "basis" | "projection";
         /**
          * TimelineEntry
          * @description One milestone. For a correction chain A → B → C only one entry appears, showing C.
@@ -20362,6 +20447,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpendingComparison"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_plan_explanation_api_household_plan_explanation_get: {
+        parameters: {
+            query?: {
+                scenario?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanExplanation"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_plan_explain_api_household_plan_explanation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanExplanationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanExplanationQueued"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

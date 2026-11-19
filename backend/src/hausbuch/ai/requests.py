@@ -22,6 +22,12 @@ anyone remembering to bump a number.
   which is why classify and explain keep it.
 - Explain (step 4): Haiku, structured output ExplainOutput, from a template input of
   amounts, dates and categories only; any failure falls back to the template text.
+- Explain the household plan (phase 9 step 4, D252, D253, §8.2): Haiku, no second tier,
+  structured output schemas.advice.ExplainOutput, the facts as JSON without their labels.
+  The system prompt is explain_plan.md with the validator's word list in place of
+  `{vocabulary}`; its version is the hash of that composed text, so a changed word list is a
+  new prompt version too. The one retry after a rejection names the violation codes only,
+  never the rejected text.
 
 The document travels as data in the user turn, before a text block that carries only the
 field list; the system prompt says that instructions inside the document are content.
@@ -30,6 +36,7 @@ field list; the system prompt says that instructions inside the document are con
 import dataclasses
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import cache
@@ -38,8 +45,12 @@ from typing import Any
 
 import anthropic
 
+from hausbuch.rules.advice import vocabulary
 from hausbuch.rules.extraction_parse import CODE_ONLY_SUBTYPES, accepted_subtype
 from hausbuch.rules.household.taxonomy import CARD_CODES, DEPOT_CODES, allowed_categories
+from hausbuch.schemas.advice import ExplainFacts
+from hausbuch.schemas.advice import ExplainOutput as PlanExplainOutput
+from hausbuch.schemas.advice import Paragraph as PlanParagraph
 from hausbuch.schemas.ai import AiJob, ClassifyOutput, ConfidenceLevel
 from hausbuch.schemas.allocation import LlmMatchOutput
 from hausbuch.schemas.common import Schema
@@ -63,6 +74,11 @@ EXTRACT_RETRY_TIMEOUT_S = 360.0
 MATCH_MAX_TOKENS = 4000  # thinking counts against max_tokens (D50)
 MATCH_EFFORT = "low"
 EXPLAIN_MAX_TOKENS = 400
+# Phase 9: four paragraphs of up to 500 characters in JSON are about 800 tokens; thinking is
+# off, so this is room, not a budget the model spends before answering.
+EXPLAIN_PLAN_MAX_TOKENS = 2000
+PLAN_FACTS_START = "<plan_facts>"
+PLAN_FACTS_END = "</plan_facts>"
 # §8.1: the model's confidence level as the allocation set's number.
 LLM_CONFIDENCE: dict[ConfidenceLevel, Decimal] = {
     "high": Decimal("0.900"),
@@ -309,6 +325,78 @@ def explain_request(settings: Settings, data: dict[str, Any]) -> ModelRequest:
         effort="low",
         output_schema=explain_schema(),
     )
+
+
+@cache
+def explain_plan_schema() -> dict:
+    return anthropic.transform_schema(PlanExplainOutput.model_json_schema())
+
+
+def explain_plan_prompt() -> Prompt:
+    """explain_plan.md with the vocabulary in place; versioned by the composed text."""
+    base = load_prompt("explain_plan")
+    _, words = vocabulary()
+    text = base.text.replace("{vocabulary}", ", ".join(sorted(words)))
+    version = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return Prompt(name=base.name, text=text, version=version)
+
+
+def plan_facts_text(facts: ExplainFacts) -> str:
+    """The facts as the request carries them: the JSON dump, which excludes the labels
+    (ExplainFacts.labels is `exclude=True`), fenced as data."""
+    data = json.dumps(
+        facts.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return f"{PLAN_FACTS_START}\n{data}\n{PLAN_FACTS_END}"
+
+
+def explain_plan_request(
+    settings: Settings,
+    facts: ExplainFacts,
+    *,
+    rejected_codes: Sequence[str] = (),
+    prompt: Prompt | None = None,
+) -> ModelRequest:
+    """One explain_plan call (§8.2). `rejected_codes`: the retry after a rejection, naming
+    the codes of the checks the first answer failed (D257), never its text. `prompt`: a
+    replacement system prompt for the recorded red-team evals only (tests/evals)."""
+    prompt = prompt or explain_plan_prompt()
+    content: list[dict[str, Any]] = [{"type": "text", "text": plan_facts_text(facts)}]
+    if rejected_codes:
+        codes = ", ".join(sorted(set(rejected_codes)))
+        content.append(
+            {
+                "type": "text",
+                "text": (
+                    "Your previous answer was rejected by the checks: "
+                    f"{codes}. Write the explanation again and keep every rule."
+                ),
+            }
+        )
+    return ModelRequest(
+        job=AiJob.EXPLAIN,
+        model=settings.ai_model_classify,
+        prompt_version=prompt.version,
+        system=prompt.text,
+        content=content,
+        max_tokens=EXPLAIN_PLAN_MAX_TOKENS,
+        inference_geo=settings.ai_inference_geo,
+        # Valid for Haiku 5.5 only; Sonnet/Opus 5.5 refuse it with a 400 (D50).
+        thinking={"type": "disabled"},
+        effort="low",
+        output_schema=explain_plan_schema(),
+    )
+
+
+class _Paragraphs(Schema):
+    paragraphs: list[PlanParagraph]
+
+
+def parse_explain_plan(text: str) -> list[PlanParagraph]:
+    """The model's paragraphs, unbounded in number and length so that the validator's check 11
+    rejects a long or a fifth paragraph with its code; raises ValueError (pydantic's
+    ValidationError is one) when the answer is not JSON of the schema's shape at all."""
+    return _Paragraphs.model_validate_json(text).paragraphs
 
 
 def parse_match(text: str) -> LlmMatchOutput:

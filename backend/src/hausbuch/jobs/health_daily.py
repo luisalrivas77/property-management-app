@@ -12,8 +12,11 @@ same day stores nothing; a month that closes later (a line confirmed, a statemen
 imported), whose month before closes later, or whose month-end gap is closed later (a price,
 a statement) is stored by the next day's run.
 
-Step 4 adds the second half of §11.5 (one explain_plan job for the default scenario when a
-row was stored and ai_private_accounts is on); this step stores the snapshot only.
+The second half of §11.5 (phase 9 step 4): when a workspace's run stored at least one row
+and ai_private_accounts is on, one explain_plan job is queued for the default scenario in
+the same transaction (services.advice.queue_daily). A run that stores nothing queues
+nothing, so the second run of a day, and every day without a newly closed month, asks the
+model nothing.
 
 No retry: a failed workspace is logged by its exception class and the next day's run (or
 „Kennzahlen festhalten“) stores the month. lock= keeps one run at a time; each workspace's
@@ -28,6 +31,7 @@ from uuid import UUID
 from hausbuch.auth.lookup import provisioned_workspace_ids
 from hausbuch.db.session import workspace_transaction
 from hausbuch.schemas.enums import ActorType
+from hausbuch.services.advice import queue_daily
 from hausbuch.services.context import Actor, new_command
 from hausbuch.services.health import store_missing_snapshots
 
@@ -45,6 +49,7 @@ logger = logging.getLogger("hausbuch.jobs.health_daily")
 class HealthDailyResult:
     stored: int = 0
     failed_workspaces: int = 0
+    explanations_queued: int = 0
 
 
 def run_health_daily(
@@ -59,16 +64,19 @@ def run_health_daily(
             with workspace_transaction(deps.engine, ws) as conn:
                 ctx = new_command(conn, ws, SYSTEM_ACTOR, now=now)
                 stored = store_missing_snapshots(ctx)
+                queued = bool(stored) and queue_daily(ctx)
         except Exception as exc:  # noqa: BLE001 - class name only: a message can quote data
             result.failed_workspaces += 1
             fields = {"event": "health_daily_workspace_failed", "exc_type": type(exc).__name__}
             logger.error("a workspace's key figures were not stored", extra={"fields": fields})
             continue
         result.stored += len(stored)
+        result.explanations_queued += int(queued)
     fields = {
         "event": "health_snapshots_stored",
         "stored": result.stored,
         "failed_workspaces": result.failed_workspaces,
+        "explanations_queued": result.explanations_queued,
     }
     level = logging.WARNING if result.failed_workspaces else logging.INFO
     logger.log(level, "health daily run", extra={"fields": fields})

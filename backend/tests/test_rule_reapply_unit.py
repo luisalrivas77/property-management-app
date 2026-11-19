@@ -125,6 +125,17 @@ def test_repair_solana_lamports_is_registered():
     assert (args.command_name, args.dry_run) == ("repair-solana-lamports", True)
 
 
+def test_explain_plan_is_registered_without_retry():
+    """The household plan's explanation (phase 9 D257): every outcome is stored, so no retry."""
+    from hausbuch.jobs.enqueue import EXPLAIN_PLAN_TASK, explain_lock
+
+    app = tasks.register_tasks(procrastinate.App(connector=procrastinate.SyncPsycopgConnector()))
+    task = app.tasks[EXPLAIN_PLAN_TASK]
+    assert EXPLAIN_PLAN_TASK == "explain_plan" and task.retry_strategy is None
+    ws = uuid4()
+    assert explain_lock(ws) == f"explain:{ws}"
+
+
 def test_rematch_waiting_is_registered_and_locked_per_trigger():
     app = tasks.register_tasks(procrastinate.App(connector=procrastinate.SyncPsycopgConnector()))
     assert REMATCH_WAITING_TASK == "rematch_waiting" and REMATCH_WAITING_TASK in app.tasks

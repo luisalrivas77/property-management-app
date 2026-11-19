@@ -332,19 +332,43 @@ class RenderedParagraph(Schema):
 
 class PlanExplanation(Schema):
     """GET /household-plan/explanation (§8.6): rendered from its own stored facts, with
-    `stale` when today's facts hash differently."""
+    `stale` when today's facts differ from them. With no row stored for the scenario and mode,
+    the template text rendered on read from today's facts: `id` and `created_at` are null,
+    `stale` is false, and `reason` is `consent_off` while ai_private_accounts is off (no
+    request is built then, D253), else null (none requested yet)."""
 
-    id: UUID
+    id: UUID | None = None  # null: not stored, the template on read
     scenario_id: UUID | None = None
     mode: AdviceMode
     status: ExplanationStatus
     reason: ExplanationReason | None = None
     paragraphs: list[RenderedParagraph] = Field(default_factory=list)
-    created_at: datetime
+    created_at: datetime | None = None
     stale: bool = False
 
     @model_validator(mode="after")
     def _reason(self) -> Self:
-        if (self.status is ExplanationStatus.TEMPLATE) != (self.reason is not None):
+        if (self.id is None) != (self.created_at is None):
+            raise ValueError("a stored explanation has an id and a date, one on read neither")
+        if self.id is None:
+            if self.status is not ExplanationStatus.TEMPLATE:
+                raise ValueError("only the template text is rendered on read")
+            if self.reason not in (None, ExplanationReason.CONSENT_OFF):
+                raise ValueError("a text on read is the template for want of consent or a row")
+        elif (self.status is ExplanationStatus.TEMPLATE) != (self.reason is not None):
             raise ValueError("a template text says why; a model text has no reason")
         return self
+
+
+class PlanExplanationRequest(Schema):
+    """POST /household-plan/explanation („Neu erklären“): the scenario, else the default."""
+
+    scenario: UUID | None = None
+
+
+class PlanExplanationQueued(Schema):
+    """POST /household-plan/explanation, 202: whether explain_plan was queued. Never while
+    ai_private_accounts is off (D253): the template text is then rendered on read."""
+
+    scenario_id: UUID | None = None
+    queued: bool

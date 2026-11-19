@@ -6893,6 +6893,89 @@
         }
       }
     },
+    "/api/household-plan/explanation": {
+      "get": {
+        "summary": "Household Plan Explanation",
+        "operationId": "household_plan_explanation_api_household_plan_explanation_get",
+        "parameters": [
+          {
+            "name": "scenario",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scenario"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanExplanation"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Household Plan Explain",
+        "operationId": "household_plan_explain_api_household_plan_explanation_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanExplanationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanExplanationQueued"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/movement-imports": {
       "post": {
         "summary": "Movement Import Create",
@@ -19591,6 +19674,26 @@
         ],
         "title": "ExpectedGrossPay"
       },
+      "ExplanationReason": {
+        "type": "string",
+        "enum": [
+          "rejected",
+          "refused",
+          "consent_off",
+          "limit",
+          "error"
+        ],
+        "title": "ExplanationReason",
+        "description": "Why the template text was used (plan_explanation.reason)."
+      },
+      "ExplanationStatus": {
+        "type": "string",
+        "enum": [
+          "model",
+          "template"
+        ],
+        "title": "ExplanationStatus"
+      },
       "ExtractedValue": {
         "properties": {
           "value": {
@@ -27087,6 +27190,129 @@
         ],
         "title": "PlanClass"
       },
+      "PlanExplanation": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AdviceMode"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExplanationStatus"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExplanationReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paragraphs": {
+            "items": {
+              "$ref": "#/components/schemas/RenderedParagraph"
+            },
+            "type": "array",
+            "title": "Paragraphs"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode",
+          "status"
+        ],
+        "title": "PlanExplanation",
+        "description": "GET /household-plan/explanation (§8.6): rendered from its own stored facts, with\n`stale` when today's facts differ from them. With no row stored for the scenario and mode,\nthe template text rendered on read from today's facts: `id` and `created_at` are null,\n`stale` is false, and `reason` is `consent_off` while ai_private_accounts is off (no\nrequest is built then, D253), else null (none requested yet)."
+      },
+      "PlanExplanationQueued": {
+        "properties": {
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
+          "queued": {
+            "type": "boolean",
+            "title": "Queued"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "queued"
+        ],
+        "title": "PlanExplanationQueued",
+        "description": "POST /household-plan/explanation, 202: whether explain_plan was queued. Never while\nai_private_accounts is off (D253): the template text is then rendered on read."
+      },
+      "PlanExplanationRequest": {
+        "properties": {
+          "scenario": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PlanExplanationRequest",
+        "description": "POST /household-plan/explanation („Neu erklären“): the scenario, else the default."
+      },
       "PlanMonth": {
         "properties": {
           "month": {
@@ -29938,6 +30164,24 @@
         ],
         "title": "ReminderScope",
         "description": "reminder_ack.scope_type (migration 0019). WORKSPACE is §6.2's \"household\"."
+      },
+      "RenderedParagraph": {
+        "properties": {
+          "topic": {
+            "$ref": "#/components/schemas/Topic"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "topic",
+          "text"
+        ],
+        "title": "RenderedParagraph"
       },
       "RenovationTreatment": {
         "properties": {
@@ -35068,6 +35312,20 @@
         ],
         "title": "TimelineEntry",
         "description": "One milestone. For a correction chain A → B → C only one entry appears, showing C."
+      },
+      "Topic": {
+        "type": "string",
+        "enum": [
+          "surplus",
+          "reserve",
+          "paths",
+          "savings_rate",
+          "debt",
+          "net_worth",
+          "basis",
+          "projection"
+        ],
+        "title": "Topic"
       },
       "TrackedAmount": {
         "properties": {
