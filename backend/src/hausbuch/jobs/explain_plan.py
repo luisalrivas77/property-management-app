@@ -20,10 +20,11 @@ One run writes one plan_explanation row and its event plan.explanation_stored:
    erklären“ asks again. A failure is logged by its exception class only.
 
 Each attempt is an ai_call row (job `explain`), written in its own transaction as soon as the
-call returns and before its answer is validated, so a sent call has its row even when the
-validator fails (error code `ai.internal_error`). The plan_explanation row keeps the codes
-and positions of the rejected attempts, never their text (which is in ai_call.output and
-raw_text as for every call).
+call returns with its validated codes, so the provenance survives a crash before the
+explanation is stored; when the client or the validator raises, the sent call's row is
+written before the failure ends the run (error code `ai.internal_error`). The
+plan_explanation row keeps the codes and positions of the rejected attempts, never their
+text (which is in ai_call.output and raw_text as for every call).
 
 What cannot be stored: a failure while the facts are built (before any request), or in the
 final transaction that stores the row. The task then fails with no row; the ai_call rows
