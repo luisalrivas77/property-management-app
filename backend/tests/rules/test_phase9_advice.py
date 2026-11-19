@@ -545,6 +545,24 @@ def test_template_figure_choices_pick_their_sentences():
     assert {"template_surplus_buffer_one", "template_basis_short_one"} <= ids
     ids = {s.id for s, _ in template_rules.written(_with_values(facts, {"basis_months": "0"}))}
     assert not {"template_basis_short", "template_basis_short_one"} & ids
+    nothing = {"free_cash": "0.00", "investable": "0.00"}
+    ids = {s.id for s, _ in template_rules.written(_with_values(facts, nothing))}
+    assert "template_surplus_zero" in ids and "template_surplus_buffer" not in ids
+    ids = {
+        s.id
+        for s, _ in template_rules.written(_with_values(facts, nothing | {"basis_months": "1"}))
+    }
+    assert "template_surplus_zero_one" in ids and "template_surplus_zero" not in ids
+    facts = ev_facts(VALIDATOR.facts, None, {"investable_state": "positive"})
+    ids = {s.id for s, _ in template_rules.written(_with_values(facts, {"basis_months": "1"}))}
+    assert "template_surplus_positive_one" in ids and "template_surplus_positive" not in ids
+    # no closed month: the part naming the months is dropped, „Nach dem Puffer …“ (the
+    # antecedent of „Davon …“) stays
+    for left in ("positive", "negative"):
+        zero = ev_facts(VALIDATOR.facts, None, {"investable_state": "positive", "left_state": left})
+        parts = [p for _, p in template_rules.written(_with_values(zero, {"basis_months": "0"}))]
+        assert not any("{f:basis_months}" in p for p in parts)
+        assert any(p.startswith("Nach dem Puffer von {f:buffer}") for p in parts), left
     facts = ev_facts(VALIDATOR.facts)
     ids = {s.id for s, _ in template_rules.written(_with_values(facts, {"reserve": "-1.00"}))}
     assert "template_reserve_negative" in ids and "template_reserve_below" not in ids
