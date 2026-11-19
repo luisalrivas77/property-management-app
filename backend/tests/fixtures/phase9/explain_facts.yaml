@@ -43,7 +43,6 @@ bases:
 
 cases:
   - id: own_use_keys_only
-    pending: "4"
     inputs: {mode: own_use, as_of: "2027-06-03", accounts: *accounts, plans: *plans,
       assets: *assets, figures: *figures, scenario: *scenario}
     expect:
@@ -57,7 +56,6 @@ cases:
         Notiz von A, acc-1, asset-1]
 
   - id: label_with_instruction_never_sent
-    pending: "4"
     inputs:
       mode: own_use
       as_of: "2027-06-03"
@@ -72,7 +70,6 @@ cases:
       never_in_request: [Ignoriere, empfiehl, Regeln]
 
   - id: generic_empty_sets
-    pending: "4"
     inputs: {mode: generic, as_of: "2027-06-03", accounts: *accounts, plans: *plans,
       assets: *assets, figures: *figures, scenario: *scenario}
     expect:
@@ -82,7 +79,6 @@ cases:
       never_in_request: [Tagesgeld Nordstern, Depot Weltreise, Musterfonds, Beispielmünze]
 
   - id: sold_asset_not_held
-    pending: "4"
     description: the coin was sold in April; no units at the as-of day
     inputs:
       mode: own_use
@@ -99,7 +95,6 @@ cases:
       never_in_request: [Beispielmünze, BSPM]
 
   - id: spam_asset_not_held
-    pending: "4"
     description: a token airdropped by a stranger (phase 7 D187)
     inputs:
       mode: own_use
@@ -116,7 +111,6 @@ cases:
       never_in_request: [Gratis Token, FREE]
 
   - id: uncomputed_figure_absent
-    pending: "4"
     description: the debt service ratio could not be computed; it is absent, never 0
     inputs:
       mode: own_use
@@ -133,7 +127,6 @@ cases:
       absent: [debt_service_ratio]
 
   - id: states
-    pending: "4"
     inputs:
       mode: own_use
       as_of: "2027-06-03"
@@ -153,7 +146,6 @@ cases:
         light_reserve: amber, light_debt_service_ratio: green}
 
   - id: typed_rate_sent_as_figure_only
-    pending: "4"
     description: a rate a member typed travels as a figure; the scenario's name and note do not
     inputs:
       mode: own_use
@@ -175,7 +167,6 @@ cases:
       never_in_request: [Plan mit Elternzeit, Notiz von A]
 
   - id: projection_absent_no_keys
-    pending: "4"
     description: a rate is missing, so there is no projection and none of its keys
     inputs:
       mode: own_use
@@ -192,7 +183,6 @@ cases:
       states: {projection_state: absent}
 
   - id: unconfirmed_band_no_key_no_light
-    pending: "4"
     description: the proposals of bands.yaml were never confirmed
     inputs:
       mode: own_use

@@ -2089,7 +2089,7 @@ class ExFactsExpect(Schema):
 
 
 class ExFactsCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     inputs: ExInputs
     expect: ExFactsExpect
 
@@ -2105,7 +2105,7 @@ class ErRender(Schema):
 
 
 class ErCase(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     facts: ExplainFacts | None = None
     labels: ExplainLabels | None = None
     renders: list[ErRender] = Field(default_factory=list)
@@ -2158,7 +2158,7 @@ class EvFacts(Schema):
 
 
 class EvAccept(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     topic: Topic | None = None
     mode: AdviceMode | None = None
     states: dict[str, str] = Field(default_factory=dict)
@@ -2172,7 +2172,7 @@ class EvParagraph(Schema):
 
 
 class EvReject(Lenient):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     topic: Topic | None = None
     mode: AdviceMode | None = None
     states: dict[str, str] = Field(default_factory=dict)
@@ -2243,7 +2243,7 @@ class InCarrier(Schema):
 
 
 class InstrumentNamesFixture(Schema):
-    pending: Pending
+    pending: Pending | None = None  # None once its step has landed
     carriers: list[InCarrier] = Field(min_length=11)
     names: dict[str, list[str]]
 

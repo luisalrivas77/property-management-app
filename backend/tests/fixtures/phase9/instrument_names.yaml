@@ -17,8 +17,7 @@
 #   zero_width (U+200B after the first letter), lookalike (the first a, e, o, p, c or x
 #   replaced by its Cyrillic look-alike; a name with none of them gets U+0430 prefixed),
 #   dollar ($ before the name), braces ({ } around the name).
-# Every case is pending until step 4.
-pending: "4"
+# Step 4a (rules/advice/validator.py) replays every case; none is pending any more.
 
 carriers:
   - {id: plain, transform: plain, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}

@@ -37,6 +37,9 @@ class FigureType(StrEnum):
     MONTHS = "months"  # one decimal
     MONTH = "month"  # "2027-05", shown as „Mai 2027“
     COUNT = "count"
+    # Added in step 4a: `debt_to_income` and its limits are a multiple („3,2 mal so hoch“, as
+    # rules/health/bands.py formats them); none of the five types of §8.1 renders one.
+    MULTIPLE = "multiple"
 
 
 # --- Facts (D252–D254, §8.1) ------------------------------------------------------------
@@ -110,9 +113,11 @@ AssetKey = Annotated[str, Field(pattern=r"^a[0-9]{1,4}$")]
 _VALUE_FORMS = {
     FigureType.MONEY: re.compile(r"^-?[0-9]+\.[0-9]{2}$"),
     FigureType.PERCENT: re.compile(r"^-?[0-9]+(\.[0-9]{1,4})?$"),
-    FigureType.MONTHS: re.compile(r"^[0-9]+(\.[0-9])?$"),
+    # signed since step 4a: the reserve in months is negative when the cards' debt exceeds it
+    FigureType.MONTHS: re.compile(r"^-?[0-9]+(\.[0-9])?$"),
     FigureType.MONTH: re.compile(r"^[0-9]{4}-(0[1-9]|1[0-2])$"),
     FigureType.COUNT: re.compile(r"^[0-9]+$"),
+    FigureType.MULTIPLE: re.compile(r"^-?[0-9]+(\.[0-9]{1,2})?$"),
 }
 
 

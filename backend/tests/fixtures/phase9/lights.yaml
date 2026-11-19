@@ -163,7 +163,6 @@ cases:
       - {band: {figure: share_crypto, green: "0.05"}, refuses: band.share_refused}
 
   - id: every_sentence_passes_validator
-    pending: "4"
     description: >-
       every sentence of rules/health/bands.yaml, its {f:} slots filled from the facts of
       explain_validator.yaml, passes the validator in both modes (D250 (7)); step 0 checks
