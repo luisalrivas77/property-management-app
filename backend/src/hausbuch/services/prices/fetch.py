@@ -60,7 +60,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Connection, Engine, func, select
+from sqlalchemy import Connection, Engine, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from hausbuch.db.session import workspace_transaction
@@ -812,6 +812,14 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
 # --- 3. write -----------------------------------------------------------------------------
 
 
+# The partial unique index's predicate as SQL text, never as bind parameters: psycopg prepares
+# a statement server-side after five executions, and a generic plan's parameters cannot prove
+# the index's predicate, so the sixth prepared chunk of one write failed with „no unique or
+# exclusion constraint matching the ON CONFLICT specification“ and rolled back the whole run.
+# The values are the enum's own constants, never input.
+_DAILY_KEY_WHERE = text("source IN (" + ", ".join(f"'{s.value}'" for s in DAILY_SOURCES) + ")")
+
+
 def _insert(ctx: CommandContext, rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
@@ -821,7 +829,7 @@ def _insert(ctx: CommandContext, rows: list[dict[str, Any]]) -> int:
         .values(rows)
         .on_conflict_do_nothing(
             index_elements=[p.workspace_id, p.asset_id, p.on, p.source],
-            index_where=p.source.in_([s.value for s in DAILY_SOURCES]),
+            index_where=_DAILY_KEY_WHERE,
         )
         .returning(p.id)
     )

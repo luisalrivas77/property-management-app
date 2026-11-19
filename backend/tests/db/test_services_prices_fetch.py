@@ -360,3 +360,31 @@ def test_the_job_runs_every_workspace_and_logs_counts_only(
     [record] = caplog.records
     assert record.levelno == logging.WARNING and record.fields["errors"] == result.errors
     assert KEY not in caplog.text and "invented-coin" not in caplog.text
+
+
+def test_many_chunks_of_one_write_are_all_stored(run, fresh_workspaces):
+    # psycopg prepares a statement after five executions; the partial index's predicate must
+    # still match a prepared chunk, so a first run with thousands of rows stores them all.
+    ws, _ = fresh_workspaces
+
+    def write_many(ctx):
+        asset_id = _asset(ctx, kind="etf", isin="IE000INVENT7", name="Invented Many")
+        stored = 0
+        for chunk in range(12):  # the same statement text twelve times on one connection
+            rows = [
+                {
+                    "workspace_id": ctx.workspace_id,
+                    "asset_id": asset_id,
+                    "on": date(2000, 1, 1) + timedelta(days=chunk * 3 + i),
+                    "price_eur": Decimal("10.00000000"),
+                    "source": "issuer_nav",
+                    "fetched_at": ctx.now,
+                    "raw": {},
+                    "created_at": ctx.now,
+                }
+                for i in range(3)
+            ]
+            stored += prices_fetch._insert(ctx, rows)
+        return stored, prices_fetch._insert(ctx, rows)  # a repeat stores nothing
+
+    assert run(ws, write_many, now=FIRST) == (36, 0)
