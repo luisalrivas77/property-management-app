@@ -137,7 +137,7 @@ function explanation(fields: Partial<PlanExplanation>): PlanExplanation {
     mode: "own_use",
     status: "model",
     reason: null,
-    paragraphs: [{ topic: "investable", text: "Im Schnitt sind 1.170 € im Monat anlegbar." }],
+    paragraphs: [{ topic: "surplus", text: "Im Schnitt sind 1.170 € im Monat anlegbar." }],
     created_at: "2026-11-18T09:00:00Z",
     stale: false,
     ...fields,
@@ -207,7 +207,7 @@ test("a template text shows „Standardtext“ and one sentence on why, a stale 
   let shown = explanation({
     status: "template",
     reason: "rejected",
-    paragraphs: [{ topic: "investable", text: "Nach dem Puffer sind 1.170 € im Monat anlegbar." }],
+    paragraphs: [{ topic: "surplus", text: "Nach dem Puffer sind 1.170 € im Monat anlegbar." }],
     // 23:30 UTC is already the next day in Berlin: the date is the household's, not UTC's.
     created_at: "2026-11-18T23:30:00Z",
     stale: true,
@@ -342,8 +342,8 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   // The API answers with the explanation of the workspace's current mode only (§10).
   await serve(page, "/api/household-plan/explanation", async () =>
     (await adviceMode(page)) === "generic"
-      ? explanation({ mode: "generic", paragraphs: [{ topic: "plans", text: "In Fonds und Wertpapiere fließen 300 € im Monat." }] })
-      : explanation({ paragraphs: [{ topic: "plans", text: "In Fondsdepot A fließen 300 € im Monat." }] }),
+      ? explanation({ mode: "generic", paragraphs: [{ topic: "basis", text: "In Fonds und Wertpapiere fließen 300 € im Monat." }] })
+      : explanation({ paragraphs: [{ topic: "basis", text: "In Fondsdepot A fließen 300 € im Monat." }] }),
   );
 
   await page.goto("/planning?tab=haushalt");
