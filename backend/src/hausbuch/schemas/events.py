@@ -1324,7 +1324,9 @@ class PricesFetched(Schema):
     `nav_unresolved` (D174 amended after the review (h)) names the funds whose issuer
     reference could not be decided (BNP answering in none or several currencies, or a
     stored currency that stopped answering while another answers); nothing was stored
-    for them, and they are not failed fetches either."""
+    for them, and they are not failed fetches either. `exchange_disagreed` (D264 (5)) names
+    the funds whose first Lang & Schwarz read differed from the depot report by more than 2 %
+    and stored nothing; not failed fetches."""
 
     sources: list[PriceSourceKind] = Field(min_length=1)
     assets: int = Field(ge=0)
@@ -1334,6 +1336,7 @@ class PricesFetched(Schema):
     fund_sources: list[FundSourceNote] = Field(default_factory=list)
     nav_disagreed: list[UUID] = Field(default_factory=list)
     nav_unresolved: list[UUID] = Field(default_factory=list)
+    exchange_disagreed: list[UUID] = Field(default_factory=list)
 
 
 class ValuationSnapshotWritten(Schema):

@@ -51,6 +51,18 @@ Follow-ups of the same day's review:
   does not publish, or stopped publishing) stores nothing and is named in the event, which
   raises a card naming the fund and the currency. A price is never stored in another
   currency than the euro, nor converted at a frozen rate.
+
+The Lang & Schwarz exchange price (D264, `lang_schwarz`): a held fund with an ISIN whose name
+names no adapter's brand is asked every run; a fund whose issuer's adapter is `latest_only`
+(L&G) is asked once for its history, while no `exchange_close` row of it is stored, and that
+one read stores every missing day from the first movement on (no MAX_ROWS). The instrument
+id comes from the fund's latest `exchange_close` row (`raw.instrument_id`), else the search
+by ISIN; a stored id whose history is gone or names another ISIN is searched again once in
+the run (as follow-up A). A first read more than 2 % from the report's price on a report day
+stores nothing (`PricesFetched.exchange_disagreed`). A daily fund whose read fails is a
+failed fetch naming `ls_tc` (D174's card after seven days, `source = exchange_close`); the
+one-off read failing is only counted in the log line. A search that finds no one listing is
+a lookup miss, never a failure.
 """
 
 from collections import Counter, defaultdict
@@ -71,11 +83,11 @@ from hausbuch.db.tables import price as price_table
 from hausbuch.rules import valuation
 from hausbuch.schemas.events import EventType, FundSourceNote, PricesFetched, PriceSourceFailed
 from hausbuch.schemas.household import AssetKind, MovementStatus
-from hausbuch.schemas.prices import FxRate, PriceSourceKind
+from hausbuch.schemas.prices import FxRate, NavPoint, PriceSourceKind
 from hausbuch.services.context import Actor, CommandContext, new_command
 from hausbuch.services.events import append_event
 
-from . import ecb_fx, kraken
+from . import ecb_fx, kraken, lang_schwarz
 from .assets import (
     FundSource,
     NavSource,
@@ -91,7 +103,7 @@ from .http import Fetch, SourceError
 from .issuer_nav import ADAPTERS, IssuerAdapter, NavFile, read_points
 
 S = PriceSourceKind
-DAILY_SOURCES = (S.ECB_FX, S.COINGECKO_DAILY, S.KRAKEN_DAILY, S.ISSUER_NAV)
+DAILY_SOURCES = (S.ECB_FX, S.COINGECKO_DAILY, S.KRAKEN_DAILY, S.ISSUER_NAV, S.EXCHANGE_CLOSE)
 MAX_COIN_DAYS = 31  # D167 (3): CoinGecko calls per asset and run
 MAX_ROWS = 400  # D174 (3): rows per asset and run from one file
 PLACES = Decimal("0.00000001")
@@ -118,6 +130,8 @@ class Plan:
     # The depot reports' prices (EUR) per held fund and day, for the first-read check of a
     # new NAV source (D174 amended 19 Nov 2026 (g)).
     reports: dict[UUID, dict[date, Decimal]] = field(default_factory=dict)
+    # D264: per fund the Lang & Schwarz instrument id of its latest exchange_close row
+    exchange_ids: dict[UUID, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -143,6 +157,9 @@ class Collected:
     notes: list[FundSourceNote] = field(default_factory=list)  # failed or unconverted funds
     nav_disagreed: list[UUID] = field(default_factory=list)  # first reads the check refused
     nav_unresolved: list[UUID] = field(default_factory=list)  # no one reference (h)
+    exchange_disagreed: list[UUID] = field(default_factory=list)  # D264 (5)
+    # D264 (6): the source a failed asset was asked from, when not its issuer's NAV
+    failed_sources: dict[UUID, PriceSourceKind] = field(default_factory=dict)
 
 
 @dataclass
@@ -167,6 +184,8 @@ class Sources:
     _nav: dict[tuple[str, str, str], NavFile | SourceError] = field(default_factory=dict)
     _catalogues: dict[str, dict[str, str] | SourceError] = field(default_factory=dict)
     _history: dict[str, list[FxRate]] | SourceError | None = None
+    _exchange_ids: dict[str, int | SourceError] = field(default_factory=dict)
+    _exchange: dict[tuple[int, str], list[NavPoint] | SourceError] = field(default_factory=dict)
 
     def _failed(self, source: str, exc: SourceError) -> SourceError:
         self.errors[(source, exc.kind, exc.status)] += 1
@@ -190,6 +209,33 @@ class Sources:
             except SourceError as exc:
                 self._history = self._failed(f"{S.ECB_FX.value}:history", exc)
         return self._history
+
+    def exchange_instrument(self, isin: str) -> int | SourceError:
+        """D264 (2): the fund's Lang & Schwarz instrument id, searched once a run; a search
+        that finds no one listing is a miss, counted apart from the failures."""
+        if isin not in self._exchange_ids:
+            try:
+                self._exchange_ids[isin] = lang_schwarz.instrument(self.fetch, isin)
+            except SourceError as exc:
+                key = f"{S.EXCHANGE_CLOSE.value}:search"
+                if exc.kind == "not_listed":
+                    self.misses[(key, exc.kind, exc.status)] += 1
+                else:
+                    exc = self._failed(key, exc)
+                self._exchange_ids[isin] = exc
+        return self._exchange_ids[isin]
+
+    def exchange_history(
+        self, instrument_id: int, isin: str, today: date
+    ) -> list[NavPoint] | SourceError:
+        """D264 (2): the instrument's past weekdays, read once a run."""
+        key = (instrument_id, isin)
+        if key not in self._exchange:
+            try:
+                self._exchange[key] = lang_schwarz.history(self.fetch, instrument_id, isin, today)
+            except SourceError as exc:
+                self._exchange[key] = self._failed(S.EXCHANGE_CLOSE.value, exc)
+        return self._exchange[key]
 
     def kraken(self, pair: str) -> dict[date, Decimal] | SourceError:
         if pair not in self._kraken:
@@ -470,8 +516,28 @@ def plan(conn: Connection) -> Plan:
             ecb_days.add(row.on)
     held = held_assets(conn)
     return Plan(
-        held=held, stored=dict(stored), ecb_days=ecb_days, reports=report_prices(conn, held)
+        held=held,
+        stored=dict(stored),
+        ecb_days=ecb_days,
+        reports=report_prices(conn, held),
+        exchange_ids=exchange_ids(conn),
     )
+
+
+def exchange_ids(conn: Connection) -> dict[UUID, int]:
+    """D264 (3): per fund the instrument id its latest exchange_close row names."""
+    p = price_table.c
+    rows = conn.execute(
+        select(p.asset_id, p.raw["instrument_id"].astext)
+        .where(p.source == S.EXCHANGE_CLOSE.value, p.raw.has_key("instrument_id"))
+        .order_by(p.asset_id, p.on.desc(), p.created_at.desc())
+        .distinct(p.asset_id)
+    )
+    found: dict[UUID, int] = {}
+    for asset_id, value in rows:
+        if value and value.isdigit() and int(value) > 0:
+            found[asset_id] = int(value)
+    return found
 
 
 def report_prices(conn: Connection, held: list[Held]) -> dict[UUID, dict[date, Decimal]]:
@@ -784,6 +850,71 @@ def _etf(
         out.drafts.append(Draft(held.id, row.on, row.price_eur, S.ISSUER_NAV, raw))
 
 
+def _exchange_failed(held: Held, instrument_id: int | None, out: Collected) -> None:
+    out.failed.append(held.id)
+    out.failed_sources[held.id] = S.EXCHANGE_CLOSE
+    out.notes.append(
+        FundSourceNote(
+            asset_id=held.id,
+            issuer=lang_schwarz.VENUE,
+            fund_ref=None if instrument_id is None else str(instrument_id),
+        )
+    )
+
+
+def _exchange(
+    held: Held, plan: Plan, sources: Sources, today: date, out: Collected, *, once: bool
+) -> None:
+    """D264: the fund's Lang & Schwarz prices. `once`: the one-off history of a fund whose
+    issuer gives its latest NAV only; it stores every missing day and its failure is only
+    counted in the log line. Otherwise the fund's daily source, at most MAX_ROWS a run."""
+    assert held.isin is not None
+    out.sources.add(S.EXCHANGE_CLOSE)
+    if not once:
+        out.assets += 1
+    stored = plan.stored.get((held.id, S.EXCHANGE_CLOSE.value), set())
+    instrument_id: int | SourceError | None = plan.exchange_ids.get(held.id)
+    searched = instrument_id is None
+    if instrument_id is None:
+        instrument_id = sources.exchange_instrument(held.isin)
+    if isinstance(instrument_id, SourceError):
+        if instrument_id.kind != "not_listed" and not once:
+            _exchange_failed(held, None, out)
+        return
+    answer = sources.exchange_history(instrument_id, held.isin, today)
+    if isinstance(answer, SourceError) and not searched and _moved(answer):
+        # A stored id gone or naming another ISIN: the venue renumbered it (as follow-up A).
+        found = sources.exchange_instrument(held.isin)
+        if not isinstance(found, SourceError) and found != instrument_id:
+            instrument_id = found
+            answer = sources.exchange_history(instrument_id, held.isin, today)
+    if isinstance(answer, SourceError):
+        if not once:
+            _exchange_failed(held, instrument_id, out)
+        return
+    if not stored:
+        check = valuation.nav_check(answer, [], plan.reports.get(held.id, {}))
+        if check is not None and check.refused:
+            out.exchange_disagreed.append(held.id)
+            return
+    rows = valuation.nav_rows(answer, held.first_on, [], stored_days=stored)
+    newest = sorted(rows, key=lambda r: r.on, reverse=True)
+    for row in newest if once else newest[:MAX_ROWS]:
+        raw = {
+            "close": str(row.nav),
+            "currency": "EUR",
+            "venue": lang_schwarz.VENUE,
+            "instrument_id": instrument_id,
+            "quote": "mid",
+        }
+        out.drafts.append(Draft(held.id, row.on, row.price_eur, S.EXCHANGE_CLOSE, raw))
+
+
+def _latest_only(fund: FundSource) -> bool:
+    adapter = ADAPTERS.get(fund.issuer)
+    return adapter is not None and adapter.latest_only
+
+
 def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxRate]]) -> Collected:
     """`rates` are the workspace's stored ECB rates; the day's new ones are added to them."""
     out = Collected()
@@ -806,6 +937,14 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
                 out.nav_unresolved.append(held.id)  # D174 amended (h)
         if fund is not None:
             _etf(held, fund, plan, sources, fx, out)
+            if (
+                held.isin
+                and _latest_only(fund)
+                and not plan.stored.get((held.id, S.EXCHANGE_CLOSE.value))
+            ):
+                _exchange(held, plan, sources, today, out, once=True)  # D264 (1)
+        elif held.isin and lang_schwarz.wants_exchange(held.name):
+            _exchange(held, plan, sources, today, out, once=False)  # D264 (1)
     return out
 
 
@@ -955,6 +1094,7 @@ def write(ctx: CommandContext, plan: Plan, out: Collected) -> int:
             fund_sources=out.notes,
             nav_disagreed=out.nav_disagreed,
             nav_unresolved=out.nav_unresolved,
+            exchange_disagreed=out.exchange_disagreed,
         ),
     )
     since = ctx.now - timedelta(days=STREAK_WINDOW_DAYS)
@@ -970,12 +1110,13 @@ def write(ctx: CommandContext, plan: Plan, out: Collected) -> int:
         start = datetime.combine(first, datetime.min.time(), UTC)
         if _raised_since(ctx.conn, asset_id, start):
             continue
-        last = max(plan.stored.get((asset_id, S.ISSUER_NAV.value), set()), default=None)
+        source = out.failed_sources.get(asset_id, S.ISSUER_NAV)
+        last = max(plan.stored.get((asset_id, source.value), set()), default=None)
         append_event(
             ctx,
             EventType.ASSET_PRICE_SOURCE_FAILED,
             asset_id,
-            PriceSourceFailed(source=S.ISSUER_NAV, failed_days=days, last_price_on=last),
+            PriceSourceFailed(source=source, failed_days=days, last_price_on=last),
         )
     return new
 
@@ -1007,6 +1148,7 @@ __all__ = [
     "RunNote",
     "Sources",
     "collect",
+    "exchange_ids",
     "failure_runs",
     "fund_notes",
     "held_assets",

@@ -303,6 +303,9 @@ def test_a_file_naming_another_isin_stores_nothing(
     monkeypatch.setattr(
         prices_fetch, "fund_source", lambda isin: wrong if isin == EUR_FUND.isin else None
     )
+    # The patch leaves the USD fund with no issuer source, which D264 (1) would ask Lang &
+    # Schwarz for; this test is about the EUR fund's file only.
+    monkeypatch.setattr(prices_fetch.lang_schwarz, "wants_exchange", lambda name: False)
     sources = Sources(fetch=Fake(), coingecko=None)
     _, out = run_workspace(app_engine, ws, ACTOR, sources, NOW)
     assert ids["eur"] in out.failed

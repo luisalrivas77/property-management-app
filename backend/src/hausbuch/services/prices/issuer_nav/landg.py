@@ -55,6 +55,7 @@ def share_classes(body: bytes) -> list[dict[str, Any]]:
 class LandgAdapter(IssuerAdapter):
     issuer: ClassVar[str] = "landg"
     isin_keyed: ClassVar[bool] = True
+    latest_only: ClassVar[bool] = True  # D264 (1)
     brands: ClassVar[tuple[str, ...]] = ("l&g", "legal & general")
 
     def url(self, fund_ref: str) -> str:
