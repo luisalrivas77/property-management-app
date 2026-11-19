@@ -142,6 +142,7 @@ class Collected:
     unconverted: dict[UUID, str] = field(default_factory=dict)  # NAV currency the ECB lacks
     notes: list[FundSourceNote] = field(default_factory=list)  # failed or unconverted funds
     nav_disagreed: list[UUID] = field(default_factory=list)  # first reads the check refused
+    nav_unresolved: list[UUID] = field(default_factory=list)  # no one reference (h)
 
 
 @dataclass
@@ -153,6 +154,12 @@ class Sources:
     coingecko: CoinGeckoDaily | None
     adapters: dict[str, IssuerAdapter] = field(default_factory=dict)
     errors: Counter = field(default_factory=Counter)
+    # D174 amended (d), (k): a lookup's miss (no such fund, another fund), counted for
+    # the log line apart from `errors`, since a miss is no failure
+    misses: Counter = field(default_factory=Counter)
+    # (issuer, ISIN, the stored reference or "") of the lookups that found no one
+    # reference for an adapter whose candidates exclude each other (D174 amended (h))
+    unresolved: set[tuple[str, str, str]] = field(default_factory=set)
     _ecb: dict[bool, dict[str, list[FxRate]] | SourceError] = field(default_factory=dict)
     _kraken: dict[str, dict[date, Decimal] | SourceError] = field(default_factory=dict)
     _coingecko: dict[tuple[str, date], Decimal | None] = field(default_factory=dict)
@@ -250,6 +257,11 @@ class Sources:
         except Exception:  # noqa: BLE001 - a lookup that cannot read the issuer finds nothing
             self._failed(f"{S.ISSUER_NAV.value}:{issuer}:find", SourceError("parse"))
             return None
+        if not refs:
+            self.misses[(f"{S.ISSUER_NAV.value}:{issuer}", "no_candidate", None)] += 1
+            return None
+        if adapter.one_answer:
+            return self._one_answer(issuer, isin, refs, since, skip)
         for ref in refs:
             if ref == skip:
                 continue
@@ -262,6 +274,38 @@ class Sources:
             if not _missing(answer):
                 break
         return None
+
+    def _one_answer(
+        self, issuer: str, isin: str, refs: list[str], since: date | None, skip: str
+    ) -> NavSource | None:
+        """D174 amended after the review (h): every candidate is read once. Discovery
+        keeps the one that answers when exactly one does; none or several leave the fund
+        unresolved. A stored reference (`skip`) is never replaced: another candidate that
+        answers leaves it unresolved, none answering is a failed fetch as before. An
+        answer that cannot tell (a timeout, a 5xx) ends the lookup and names nothing."""
+        answered: list[NavSource] = []
+        for ref in refs:
+            if ref == skip:
+                continue
+            found = NavSource(issuer=issuer, fund_ref=ref, isin=isin)
+            answer = self.nav(found, since, count_missing=False)
+            if isinstance(answer, SourceError):
+                if _missing(answer):
+                    continue
+                return None  # counted in errors; asked again the next run
+            answered.append(found)
+        if not skip and len(answered) == 1:
+            return answered[0]
+        if answered or not skip:
+            self.unresolved.add((issuer, isin, skip))
+        return None
+
+    def is_unresolved(self, fund: NavSource | None, isin: str) -> bool:
+        """Whether this run's lookup for `fund`'s stored reference (or, with None, for
+        the fund's discovery) found no one reference (D174 amended (h))."""
+        if fund is None:
+            return any(i == isin and not s for _, i, s in self.unresolved)
+        return (fund.issuer, isin, fund.fund_ref) in self.unresolved
 
     def relocate(self, fund: NavSource, name: str, since: date | None = None) -> NavSource | None:
         """Another reference for a stored one that stopped working (follow-up A): the
@@ -300,6 +344,8 @@ class Sources:
             except SourceError as exc:
                 if count_missing or not _missing(exc):
                     exc = self._failed(f"{S.ISSUER_NAV.value}:{fund.issuer}", exc)
+                else:
+                    self.misses[(f"{S.ISSUER_NAV.value}:{fund.issuer}", exc.kind, exc.status)] += 1
                 self._nav[key] = exc
         return self._nav[key]
 
@@ -698,6 +744,15 @@ def _etf(
     out.assets += 1
     out.sources.add(S.ISSUER_NAV)
     answer, fund = _read(held, fund, sources, out)
+    if (
+        isinstance(answer, SourceError)
+        and isinstance(fund, NavSource)
+        and sources.is_unresolved(fund, fund.isin)
+    ):
+        # D174 amended (h): another currency answers; the stored reference is kept and
+        # nothing is stored, no failed fetch
+        out.nav_unresolved.append(held.id)
+        return
     if isinstance(answer, SourceError):
         out.failed.append(held.id)
         out.notes.append(_note(held, fund))
@@ -747,6 +802,8 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
             fund = sources.discover(held.isin, held.name, held.first_on)
             if fund is not None:
                 out.discovered[held.id] = fund
+            elif sources.is_unresolved(None, held.isin):
+                out.nav_unresolved.append(held.id)  # D174 amended (h)
         if fund is not None:
             _etf(held, fund, plan, sources, fx, out)
     return out
@@ -889,6 +946,7 @@ def write(ctx: CommandContext, plan: Plan, out: Collected) -> int:
             failed_asset_ids=out.failed,
             fund_sources=out.notes,
             nav_disagreed=out.nav_disagreed,
+            nav_unresolved=out.nav_unresolved,
         ),
     )
     since = ctx.now - timedelta(days=STREAK_WINDOW_DAYS)

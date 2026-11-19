@@ -97,12 +97,14 @@ class InvescoAdapter(IssuerAdapter):
         if not isinstance(value, Decimal) or nav(on, value, currency) is None:
             raise SourceError("parse")
         workbook = get(self.fetcher, PERFORMANCE_URL.format(isin=stated), max_bytes=self.max_bytes)
-        named = [days for title, days in _blocks(xlsx.rows(workbook)) if title == name]
-        if not named:
-            raise SourceError("isin_mismatch")  # another share class's workbook
-        if len(named) > 1:
+        blocks = _blocks(xlsx.rows(workbook))
+        if len(blocks) != 1:
+            # D174 amended (b), (i): one share class per workbook; no multi-class workbook
+            # was ever read, so one is refused whatever its blocks' names
             raise SourceError("parse")
-        days = named[0]
+        [(title, days)] = blocks
+        if title != name:
+            raise SourceError("isin_mismatch")  # another share class's workbook
         if on not in days:
             raise SourceError("parse")
         if nav(on, days[on], currency) != nav(on, value, currency):

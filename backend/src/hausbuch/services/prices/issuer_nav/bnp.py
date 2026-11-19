@@ -6,7 +6,9 @@ Request (read live 19 Nov 2026, the service bnpparibas-am.com's fund pages call)
 Answer: JSON `{"<ISIN>": [{"date": "YYYY-MM-DD", "value": <NAV>, "type": "PRICE_NAV"}, ...]}`,
 rows not in date order, other types (dividends) beside the NAV. The answer states no
 currency, and a currency the share class is not quoted in answers an empty list, so the
-reference is `<CUR>:<ISIN>`: found once by asking EUR, USD, GBP and CHF in turn, then kept.
+reference is `<CUR>:<ISIN>`: found once by asking EUR, USD, GBP and CHF, kept only when
+exactly one of them has rows, and never moved to another currency (D174 amended after
+the review (h)).
 """
 
 import re
@@ -38,6 +40,7 @@ class BnpAdapter(IssuerAdapter):
     issuer: ClassVar[str] = "bnp"
     isin_keyed: ClassVar[bool] = True
     brands: ClassVar[tuple[str, ...]] = ("bnp p", "bnpp")
+    one_answer: ClassVar[bool] = True
 
     def candidates(self, isin: str, name: str) -> list[str]:
         return [f"{currency}:{isin}" for currency in CURRENCIES] if ISIN.fullmatch(isin) else []

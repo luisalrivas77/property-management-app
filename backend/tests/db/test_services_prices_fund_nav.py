@@ -5,6 +5,7 @@ its ISIN, its reference kept in the workspace's price rows. The registry's funds
 from the registry itself, so no test names a fund a household holds; every other ISIN is
 invented, and the recorded files are the synthetic samples of fixtures/phase6/samples/."""
 
+import logging
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -16,6 +17,8 @@ from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import price as price_table
+from hausbuch.jobs.document_read import JobDeps
+from hausbuch.jobs.fetch_prices import run_fetch_prices
 from hausbuch.rules.household.assets import registry
 from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.bank import AccountCreate
@@ -29,6 +32,7 @@ from hausbuch.services.prices import overview as prices_overview
 from hausbuch.services.prices.fetch import Sources, run_workspace
 from hausbuch.services.prices.issuer_nav import ADAPTERS, ISharesAdapter
 from hausbuch.services.prices.overview import record_price
+from hausbuch.settings import Settings
 
 pytestmark = pytest.mark.db
 
@@ -883,3 +887,92 @@ def test_a_first_read_within_two_percent_of_the_report_is_stored_and_not_checked
     _, out = _run(app_engine, ws, later, NOW + timedelta(days=1))
     assert out.nav_disagreed == []
     assert TODAY in {r.on for r in _nav_rows(read, ws) if r.asset_id == fund}
+
+
+# --- the review of the build (D174 amended after the review, 19 Nov 2026) -------------------
+
+BNP_ISIN = "IE000INVENT8"
+BNP_FILE = (SAMPLES / "bnp_navs.json").read_bytes()
+BNP_EMPTY = (SAMPLES / "bnp_navs_empty.json").read_bytes()
+
+
+def _bnp_fund(run, ws):
+    depot = _depot(run, ws, "Depot")
+
+    def seed(ctx):
+        fund = asset_for_isin(ctx, BNP_ISIN, "BNPP Invented Equity ETF")
+        _move(ctx, depot, fund, "internal_transfer_in", "2")
+        return fund
+
+    return run(ws, seed, now=FIRST)
+
+
+def test_bnp_discovery_with_two_currencies_answering_stores_nothing_and_names_the_fund(
+    run, read, app_engine, fresh_workspaces
+):
+    """(h): EUR and USD both have rows for the ISIN: no currency is chosen, nothing is
+    stored, the run's event names the fund, and it is no failed fetch."""
+    ws, _ = fresh_workspaces
+    fund = _bnp_fund(run, ws)
+    fetch = Served({"currency=EUR": (200, BNP_FILE), "currency=USD": (200, BNP_FILE)})
+    _, out = _run(app_engine, ws, fetch, NOW)
+    assert out.nav_unresolved == [fund] and out.failed == [] and fund not in out.discovered
+    assert fund not in {r.asset_id for r in _nav_rows(read, ws)}
+    [event] = _fetched_events(read, ws)
+    assert event["nav_unresolved"] == [str(fund)] and event["failed_asset_ids"] == []
+
+
+def test_a_stored_bnp_currency_that_stops_answering_is_never_switched(
+    run, read, app_engine, fresh_workspaces
+):
+    """(h): day 1 finds the fund in USD alone and stores its reference; on day 2 USD has no
+    rows and EUR has: nothing is stored, the USD reference stays, the fund is named and is no
+    failed fetch; day 3, USD back, reads USD again."""
+    ws, _ = fresh_workspaces
+    fund = _bnp_fund(run, ws)
+    _, out = _run(app_engine, ws, Served({"currency=USD": (200, BNP_FILE)}), NOW)
+    assert out.discovered[fund].fund_ref == f"USD:{BNP_ISIN}"
+    before = _nav_rows(read, ws)
+    assert {r.raw["fund_ref"] for r in before if r.asset_id == fund} == {f"USD:{BNP_ISIN}"}
+
+    moved = Served({"currency=USD": (200, BNP_EMPTY), "currency=EUR": (200, BNP_FILE)})
+    _, out = _run(app_engine, ws, moved, NOW + timedelta(days=1))
+    assert out.nav_unresolved == [fund] and out.failed == [] and fund not in out.discovered
+    assert _nav_rows(read, ws) == before
+    events = _fetched_events(read, ws)
+    assert events[-1]["nav_unresolved"] == [str(fund)]
+    assert events[-1]["failed_asset_ids"] == []
+
+    back = Served({"currency=USD": (200, BNP_FILE)})
+    _, out = _run(app_engine, ws, back, NOW + timedelta(days=2))
+    assert out.nav_unresolved == [] and out.failed == []
+    assert back.asked("currency=USD") == 1 and back.asked("currency=EUR") == 0
+
+
+def test_the_run_s_log_line_counts_lookup_misses_apart_from_errors(
+    run, app_engine, fresh_workspaces, caplog
+):
+    """(d), (k): the Xtrackers fund no issuer lists is asked once and answered 404: the log
+    line counts it under `lookup_misses`, not `errors`, and the run is no warning."""
+    ws, _ = fresh_workspaces
+    _unlisted_funds(run, ws)
+    settings = Settings(
+        database_url="postgresql+psycopg://unused",
+        iban_hmac_key=bytes(range(32)),
+        session_key=bytes(range(1, 33)),
+        rp_id="testserver",
+        origin="https://testserver",
+        blob_store="local",
+        blob_root="/tmp/unused",
+    )
+    deps = JobDeps(
+        engine=app_engine, settings=settings, blob_store=None, model_client=None, clock=lambda: NOW
+    )
+    with caplog.at_level(logging.INFO, logger="hausbuch.jobs.fetch_prices"):
+        result = run_fetch_prices(deps, fetch=Recorded(), workspace_ids=[ws])
+    assert result.lookup_misses == {"issuer_nav:xtrackers:HTTPError:404": 1}
+    assert result.errors == {} and result.assets_failed == 0
+    [record] = caplog.records
+    assert record.levelno == logging.INFO
+    assert record.fields["lookup_misses"] == result.lookup_misses
+    assert OTHER_ISIN not in caplog.text

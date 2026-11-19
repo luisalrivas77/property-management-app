@@ -79,6 +79,10 @@ class IssuerAdapter:
     # `candidates` already checked each reference against the ISIN (HANetf's fund page):
     # the lookup takes the first without reading its file, which the run reads next anyway.
     checked_candidates: ClassVar[bool] = False
+    # The candidates are alternatives of which exactly one may answer (BNP's per
+    # currency, D174 amended after the review (h)): a lookup reads them all and keeps
+    # one only when exactly one answers, and a stored reference is never replaced.
+    one_answer: ClassVar[bool] = False
 
     def candidates(self, isin: str, name: str) -> list[str]:
         """The references to try, in order, for a fund the registry and the catalogues do
