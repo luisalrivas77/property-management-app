@@ -80,9 +80,10 @@ it.
 
 ## Topics and shape
 
-Answer with 1 to 4 paragraphs, each with one `topic` and a `text` of at most 400
-characters; each topic at most once; never an empty text. Pick the topics with something to
-say, most useful first: `surplus` (what is left each month and what is free to invest after
+Answer with **at most four paragraphs**: an answer with a fifth paragraph is rejected as a
+whole, so choose four topics and leave the others out. Each paragraph has one `topic` and a
+`text` of at most 400 characters; each topic at most once; never an empty text. Pick the
+four topics with the most to say, most useful first: `surplus` (what is left each month and what is free to invest after
 the buffer), `reserve` (the reserve against its target), `paths` (when the reserve target is
 reached on each path), `savings_rate`, `debt`, `net_worth`, `basis` (on how many closed
 months the figures rest), and `projection` (only while `projection_state` is `shown`).
