@@ -97,6 +97,16 @@ history_cases:
     today: 2026-11-19
     expect: {error: parse}
 
+  - id: a_past_point_off_midnight_is_unreadable
+    description: >-
+      13 Nov stands at 01:00 UTC, not 00:00; read as its UTC day it could shift a price by a
+      day without a sign, so the whole answer stores nothing (only the last point, the live
+      quote, may be off midnight)
+    isin: IE00LSINVNT1
+    sample: lstc_history_off_midnight.json
+    today: 2026-11-19
+    expect: {error: parse}
+
 selection_cases:
   - id: no_issuer_brand_asks_every_run
     name: Nordlicht Fds-Weltakt. Indexfonds A
