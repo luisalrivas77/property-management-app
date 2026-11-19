@@ -115,6 +115,9 @@ class Plan:
     held: list[Held]
     stored: dict[tuple[UUID, str], set[date]]
     ecb_days: set[date]  # the days of the workspace's stored ECB rows (any currency)
+    # The depot reports' prices (EUR) per held fund and day, for the first-read check of a
+    # new NAV source (D174 amended 19 Nov 2026 (g)).
+    reports: dict[UUID, dict[date, Decimal]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -138,6 +141,8 @@ class Collected:
     discovered: dict[UUID, NavSource] = field(default_factory=dict)  # found this run
     unconverted: dict[UUID, str] = field(default_factory=dict)  # NAV currency the ECB lacks
     notes: list[FundSourceNote] = field(default_factory=list)  # failed or unconverted funds
+    nav_disagreed: list[UUID] = field(default_factory=list)  # first reads the check refused
+    nav_unresolved: list[UUID] = field(default_factory=list)  # no one reference (h)
 
 
 @dataclass
@@ -149,12 +154,19 @@ class Sources:
     coingecko: CoinGeckoDaily | None
     adapters: dict[str, IssuerAdapter] = field(default_factory=dict)
     errors: Counter = field(default_factory=Counter)
+    # D174 amended (d), (k): a lookup's miss (no such fund, another fund), counted for
+    # the log line apart from `errors`, since a miss is no failure
+    misses: Counter = field(default_factory=Counter)
+    # (issuer, ISIN, the stored reference or "") of the lookups that found no one
+    # reference for an adapter whose candidates exclude each other (D174 amended (h))
+    unresolved: set[tuple[str, str, str]] = field(default_factory=set)
     _ecb: dict[bool, dict[str, list[FxRate]] | SourceError] = field(default_factory=dict)
     _kraken: dict[str, dict[date, Decimal] | SourceError] = field(default_factory=dict)
     _coingecko: dict[tuple[str, date], Decimal | None] = field(default_factory=dict)
     _coingecko_error: SourceError | None = None
     _nav: dict[tuple[str, str, str], NavFile | SourceError] = field(default_factory=dict)
     _catalogues: dict[str, dict[str, str] | SourceError] = field(default_factory=dict)
+    _history: dict[str, list[FxRate]] | SourceError | None = None
 
     def _failed(self, source: str, exc: SourceError) -> SourceError:
         self.errors[(source, exc.kind, exc.status)] += 1
@@ -169,6 +181,15 @@ class Sources:
             except SourceError as exc:
                 self._ecb[backfill] = self._failed(S.ECB_FX.value, exc)
         return self._ecb[backfill]
+
+    def ecb_history(self) -> dict[str, list[FxRate]] | SourceError:
+        """The ECB's full history ZIP (D174 amended 19 Nov 2026 (a)), asked once a run."""
+        if self._history is None:
+            try:
+                self._history = ecb_fx.history(self.fetch)
+            except SourceError as exc:
+                self._history = self._failed(f"{S.ECB_FX.value}:history", exc)
+        return self._history
 
     def kraken(self, pair: str) -> dict[date, Decimal] | SourceError:
         if pair not in self._kraken:
@@ -218,26 +239,114 @@ class Sources:
             return None
         return NavSource(issuer=issuer, fund_ref=found[isin], isin=isin)
 
-    def discover(self, isin: str, name: str) -> NavSource | None:
-        """The fund's reference from the catalogue of the issuer its name names (an iShares
-        fund's from iShares'). A fund whose name names no issuer with a catalogue asks
-        nothing."""
-        for issuer, cls in ADAPTERS.items():
-            if cls.catalogue_url is None or not cls.names_brand(name):
+    def probe(
+        self, issuer: str, isin: str, name: str, since: date | None = None, skip: str = ""
+    ) -> NavSource | None:
+        """D174 amended 19 Nov 2026: an issuer without a catalogue is asked by the fund
+        itself. Each candidate reference (the ISIN; BNP's per currency; HANetf's pages for
+        the name) is read until one states the ISIN; the file read is kept for the run. A
+        miss (no such fund, another fund) is no failure and is not counted: the fund stays
+        on its report price.
+        An answer that is neither „no such fund“ nor „another fund“ ends the lookup."""
+        adapter = self._adapter(issuer)
+        try:
+            refs = adapter.candidates(isin, name)
+        except SourceError as exc:
+            self._failed(f"{S.ISSUER_NAV.value}:{issuer}:find", exc)
+            return None
+        except Exception:  # noqa: BLE001 - a lookup that cannot read the issuer finds nothing
+            self._failed(f"{S.ISSUER_NAV.value}:{issuer}:find", SourceError("parse"))
+            return None
+        if not refs:
+            self.misses[(f"{S.ISSUER_NAV.value}:{issuer}", "no_candidate", None)] += 1
+            return None
+        if adapter.one_answer:
+            return self._one_answer(issuer, isin, refs, since, skip)
+        for ref in refs:
+            if ref == skip:
                 continue
-            found = self.listed(issuer, isin)
+            found = NavSource(issuer=issuer, fund_ref=ref, isin=isin)
+            if adapter.checked_candidates:
+                return found  # its page stated the ISIN; the run reads its file next
+            answer = self.nav(found, since, count_missing=False)
+            if not isinstance(answer, SourceError):
+                return found
+            if not _missing(answer):
+                break
+        return None
+
+    def _one_answer(
+        self, issuer: str, isin: str, refs: list[str], since: date | None, skip: str
+    ) -> NavSource | None:
+        """D174 amended after the review (h): every candidate is read once. Discovery
+        keeps the one that answers when exactly one does; none or several leave the fund
+        unresolved. A stored reference (`skip`) is never replaced: another candidate that
+        answers leaves it unresolved, none answering is a failed fetch as before. An
+        answer that cannot tell (a timeout, a 5xx) ends the lookup and names nothing."""
+        answered: list[NavSource] = []
+        for ref in refs:
+            if ref == skip:
+                continue
+            found = NavSource(issuer=issuer, fund_ref=ref, isin=isin)
+            answer = self.nav(found, since, count_missing=False)
+            if isinstance(answer, SourceError):
+                if _missing(answer):
+                    continue
+                return None  # counted in errors; asked again the next run
+            answered.append(found)
+        if not skip and len(answered) == 1:
+            return answered[0]
+        if answered or not skip:
+            self.unresolved.add((issuer, isin, skip))
+        return None
+
+    def is_unresolved(self, fund: NavSource | None, isin: str) -> bool:
+        """Whether this run's lookup for `fund`'s stored reference (or, with None, for
+        the fund's discovery) found no one reference (D174 amended (h))."""
+        if fund is None:
+            return any(i == isin and not s for _, i, s in self.unresolved)
+        return (fund.issuer, isin, fund.fund_ref) in self.unresolved
+
+    def relocate(self, fund: NavSource, name: str, since: date | None = None) -> NavSource | None:
+        """Another reference for a stored one that stopped working (follow-up A): the
+        issuer's catalogue, else its other candidates."""
+        if fund.issuer not in ADAPTERS:
+            return None
+        if ADAPTERS[fund.issuer].catalogue_url is not None:
+            return self.listed(fund.issuer, fund.isin)
+        return self.probe(fund.issuer, fund.isin, name, since, skip=fund.fund_ref)
+
+    def discover(self, isin: str, name: str, since: date | None = None) -> NavSource | None:
+        """The fund's reference from the issuer its name names: the issuer's catalogue (an
+        iShares fund's from iShares'), or the issuer asked by the fund itself (D174 amended
+        19 Nov 2026). A fund whose name names no adapter's brand asks nothing."""
+        for issuer, cls in ADAPTERS.items():
+            if not cls.names_brand(name):
+                continue
+            if cls.catalogue_url is not None:
+                found = self.listed(issuer, isin)
+            else:
+                found = self.probe(issuer, isin, name, since)
             if found is not None:
                 return found
         return None
 
-    def nav(self, fund: FundSource) -> NavFile | SourceError:
+    def nav(
+        self, fund: FundSource, since: date | None = None, *, count_missing: bool = True
+    ) -> NavFile | SourceError:
+        """The fund's file, read once a run (from `since`, the first movement, where the
+        issuer takes a date range). A lookup's miss (`count_missing` False) is not counted."""
         key = (fund.issuer, fund.fund_ref or "", fund.isin)
         if key not in self._nav:
             adapter = self._adapter(fund.issuer)
             try:
-                self._nav[key] = read_points(adapter, fund.fund_ref or "", fund.isin)
+                self._nav[key] = read_points(adapter, fund.fund_ref or "", fund.isin, since)
             except SourceError as exc:
-                self._nav[key] = self._failed(f"{S.ISSUER_NAV.value}:{fund.issuer}", exc)
+                if count_missing or not _missing(exc):
+                    exc = self._failed(f"{S.ISSUER_NAV.value}:{fund.issuer}", exc)
+                else:
+                    self.misses[(f"{S.ISSUER_NAV.value}:{fund.issuer}", exc.kind, exc.status)] += 1
+                self._nav[key] = exc
         return self._nav[key]
 
 
@@ -359,7 +468,27 @@ def plan(conn: Connection) -> Plan:
         stored[(row.asset_id, row.source)].add(row.on)
         if row.source == S.ECB_FX.value:
             ecb_days.add(row.on)
-    return Plan(held=held_assets(conn), stored=dict(stored), ecb_days=ecb_days)
+    held = held_assets(conn)
+    return Plan(
+        held=held, stored=dict(stored), ecb_days=ecb_days, reports=report_prices(conn, held)
+    )
+
+
+def report_prices(conn: Connection, held: list[Held]) -> dict[UUID, dict[date, Decimal]]:
+    """The held funds' `statement` prices (the depot reports'), per day, the latest fetched
+    row of a day winning, as price_on reads one source's rows."""
+    funds = [h.id for h in held if h.kind is AssetKind.ETF]
+    if not funds:
+        return {}
+    p = price_table.c
+    found: dict[UUID, dict[date, Decimal]] = defaultdict(dict)
+    for row in conn.execute(
+        select(p.asset_id, p.on, p.price_eur)
+        .where(p.source == S.STATEMENT.value, p.asset_id.in_(funds))
+        .order_by(p.fetched_at, p.id)
+    ):
+        found[row.asset_id][row.on] = row.price_eur
+    return dict(found)
 
 
 def stored_rates(conn: Connection) -> dict[str, list[FxRate]]:
@@ -419,6 +548,7 @@ class Fx:
     base: dict[str, list[FxRate]] | SourceError
     merged: dict[str, list[FxRate]] = field(default_factory=dict)
     covered: dict[str, bool | None] = field(default_factory=dict)
+    history: dict[str, list[FxRate]] | None = None  # the history ZIP's rates, when read
 
     def answers(self, code: str) -> list[dict[str, list[FxRate]]]:
         """The run's readable ECB answers for `code`: the first call's, plus the 90-day
@@ -426,6 +556,8 @@ class Fx:
         answers = [self.base]
         if not self.backfill and _gap(self.stored.get(code, []), self.today):
             answers.append(self.sources.ecb(True))
+        if self.history is not None:
+            answers.append(self.history)
         return [a for a in answers if not isinstance(a, SourceError)]
 
     def add(self, code: str, answers: list[dict[str, list[FxRate]]]) -> None:
@@ -494,6 +626,38 @@ def _ecb(
     return fx
 
 
+def _history(plan: Plan, sources: Sources, fx: Fx) -> None:
+    """D174 amended 19 Nov 2026 (a): the ECB's full history when the run's earliest rate of
+    FX_CURRENCIES is later than the earliest first movement of a held fund, so a foreign NAV
+    before the 90-day file finds its own day's rate. Only the days from that first movement
+    on (plus the last rate before it) pass through the run's FX, so only missing days are
+    stored. A failure is counted in the log line and never fails the run; the next run asks
+    again while the gap lasts."""
+    first = min((h.first_on for h in plan.held if h.kind is AssetKind.ETF), default=None)
+    if first is None:
+        return
+    need = max(first, ecb_fx.HISTORY_START)
+    earliest = [
+        min((r.on for r in fx.merged.get(code, [])), default=None) for code in ecb_fx.FX_CURRENCIES
+    ]
+    if all(on is not None and on <= need for on in earliest):
+        return
+    answer = sources.ecb_history()
+    if isinstance(answer, SourceError):
+        return
+    trimmed: dict[str, list[FxRate]] = {}
+    for code, listed in answer.items():
+        before = [r for r in listed if r.on <= need]
+        start = max(before, key=lambda r: r.on).on if before else need
+        trimmed[code] = [r for r in listed if r.on >= start]
+    fx.history = trimmed
+    for code in ecb_fx.FX_CURRENCIES:
+        fx.add(code, [trimmed])
+    for code in sorted(fx.merged):
+        if code != "EUR" and code not in ecb_fx.FX_CURRENCIES:
+            fx.add(code, [trimmed])
+
+
 def _coin(held: Held, plan: Plan, sources: Sources, today: date, out: Collected) -> None:
     stored = plan.stored.get((held.id, S.COINGECKO_DAILY.value), set()) | plan.stored.get(
         (held.id, S.KRAKEN_DAILY.value), set()
@@ -538,9 +702,15 @@ def _moved(error: SourceError) -> bool:
     or naming another fund: the issuer moved or renumbered the fund (follow-up A). A
     timeout, a 5xx or an unreadable file is not. A wrong guess costs one catalogue lookup,
     and the file read through the catalogue's reference must state the ISIN anyway."""
-    if error.kind == "isin_mismatch":
+    if error.kind in ("isin_mismatch", "not_listed"):
         return True
     return error.kind == "HTTPError" and error.status in (400, 404, 410)
+
+
+def _missing(error: SourceError) -> bool:
+    """The issuer answered and has no such fund under this reference (D174 amended 19 Nov
+    2026): the next candidate may still be it."""
+    return _moved(error)
 
 
 def _read(
@@ -548,17 +718,17 @@ def _read(
 ) -> tuple[NavFile | SourceError, FundSource]:
     """The fund's file. A stored catalogue reference that stopped working is looked up again
     in its issuer's catalogue, and a different reference listed there is read at once."""
-    answer = sources.nav(fund)
+    answer = sources.nav(fund, held.first_on)
     if (
         isinstance(answer, SourceError)
         and isinstance(fund, NavSource)
         and fund is held.fund  # the stored reference, not one the catalogue gave this run
         and _moved(answer)
     ):
-        found = sources.listed(fund.issuer, fund.isin)
+        found = sources.relocate(fund, held.name, held.first_on)
         if found is not None and found.fund_ref != fund.fund_ref:
             out.discovered[held.id] = found
-            return sources.nav(found), found
+            return sources.nav(found, held.first_on), found
     return answer, fund
 
 
@@ -574,6 +744,15 @@ def _etf(
     out.assets += 1
     out.sources.add(S.ISSUER_NAV)
     answer, fund = _read(held, fund, sources, out)
+    if (
+        isinstance(answer, SourceError)
+        and isinstance(fund, NavSource)
+        and sources.is_unresolved(fund, fund.isin)
+    ):
+        # D174 amended (h): another currency answers; the stored reference is kept and
+        # nothing is stored, no failed fetch
+        out.nav_unresolved.append(held.id)
+        return
     if isinstance(answer, SourceError):
         out.failed.append(held.id)
         out.notes.append(_note(held, fund))
@@ -584,6 +763,15 @@ def _etf(
         out.notes.append(_note(held, fund, answer.currency))
         return
     stored = plan.stored.get((held.id, S.ISSUER_NAV.value), set())
+    if not stored:
+        # The first read of this fund from its issuer (D174 amended 19 Nov 2026 (g)): the
+        # whole file's newest day the depot report also priced decides whether it is stored.
+        check = valuation.nav_check(
+            answer.points, fx.merged.get(answer.currency, []), plan.reports.get(held.id, {})
+        )
+        if check is not None and check.refused:
+            out.nav_disagreed.append(held.id)
+            return
     rows = valuation.nav_rows(
         answer.points, held.first_on, fx.merged.get(answer.currency, []), stored_days=stored
     )
@@ -602,6 +790,7 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
     if not plan.held:
         return out
     fx = _ecb(plan, sources, today, rates, out)
+    _history(plan, sources, fx)
     for held in plan.held:
         if held.kind is AssetKind.CRYPTO and held.ids.any:
             _coin(held, plan, sources, today, out)
@@ -610,9 +799,11 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
             continue
         fund = held.fund
         if fund is None and held.isin:
-            fund = sources.discover(held.isin, held.name)
+            fund = sources.discover(held.isin, held.name, held.first_on)
             if fund is not None:
                 out.discovered[held.id] = fund
+            elif sources.is_unresolved(None, held.isin):
+                out.nav_unresolved.append(held.id)  # D174 amended (h)
         if fund is not None:
             _etf(held, fund, plan, sources, fx, out)
     return out
@@ -754,6 +945,8 @@ def write(ctx: CommandContext, plan: Plan, out: Collected) -> int:
             assets_failed=len(out.failed),
             failed_asset_ids=out.failed,
             fund_sources=out.notes,
+            nav_disagreed=out.nav_disagreed,
+            nav_unresolved=out.nav_unresolved,
         ),
     )
     since = ctx.now - timedelta(days=STREAK_WINDOW_DAYS)

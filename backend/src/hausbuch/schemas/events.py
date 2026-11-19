@@ -1318,7 +1318,13 @@ class PricesFetched(Schema):
     (never a price or an amount): D174's card counts an asset's failed days from these
     events, on read, so no table holds a fetch's state. `fund_sources` (16 Nov 2026) names,
     per fund whose issuer file failed or whose NAV currency could not be converted, the
-    issuer source asked (FundSourceNote); a fund read fine with no new NAV day is not named."""
+    issuer source asked (FundSourceNote); a fund read fine with no new NAV day is not named.
+    `nav_disagreed` (D174 amended 19 Nov 2026 (g)) names the funds whose first read differed
+    from the depot report by more than 2 % and stored nothing; they are not failed fetches.
+    `nav_unresolved` (D174 amended after the review (h)) names the funds whose issuer
+    reference could not be decided (BNP answering in none or several currencies, or a
+    stored currency that stopped answering while another answers); nothing was stored
+    for them, and they are not failed fetches either."""
 
     sources: list[PriceSourceKind] = Field(min_length=1)
     assets: int = Field(ge=0)
@@ -1326,6 +1332,8 @@ class PricesFetched(Schema):
     assets_failed: int = Field(ge=0)
     failed_asset_ids: list[UUID] = Field(default_factory=list)
     fund_sources: list[FundSourceNote] = Field(default_factory=list)
+    nav_disagreed: list[UUID] = Field(default_factory=list)
+    nav_unresolved: list[UUID] = Field(default_factory=list)
 
 
 class ValuationSnapshotWritten(Schema):

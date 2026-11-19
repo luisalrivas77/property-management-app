@@ -60,6 +60,8 @@ class FetchResult:
     assets_failed: int = 0
     coingecko: bool = False  # a key is set (the container's, or one a workspace typed)
     errors: dict[str, int] = field(default_factory=dict)
+    # D174 amended (d), (k): lookups that found no such fund; no failure, no warning
+    lookup_misses: dict[str, int] = field(default_factory=dict)
 
 
 KEY_UNREADABLE = ("coingecko", "key_unreadable", None)  # an errors entry, never the key
@@ -150,6 +152,10 @@ def run_fetch_prices(
         f"{source}:{kind}" + ("" if status is None else f":{status}"): n
         for (source, kind, status), n in sorted(sources.errors.items(), key=str)
     }
+    result.lookup_misses = {
+        f"{source}:{kind}" + ("" if status is None else f":{status}"): n
+        for (source, kind, status), n in sorted(sources.misses.items(), key=str)
+    }
     fields = {
         "event": "prices_fetched",
         "workspaces": result.workspaces,
@@ -159,6 +165,7 @@ def run_fetch_prices(
         "assets_failed": result.assets_failed,
         "coingecko": result.coingecko,
         "errors": result.errors,
+        "lookup_misses": result.lookup_misses,
     }
     level = logging.WARNING if result.errors or result.failed_workspaces else logging.INFO
     logger.log(level, "price fetch run", extra={"fields": fields})

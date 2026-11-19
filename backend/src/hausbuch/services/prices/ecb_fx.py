@@ -14,7 +14,10 @@ A rate the reader cannot read fails the file for FX_CURRENCIES; for any other cu
 only drops that currency, so a currency no held fund needs never stops the prices.
 """
 
+import csv
+import io
 import re
+import zipfile
 from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -92,3 +95,64 @@ def fetch(
 ) -> dict[str, list[FxRate]]:
     """The daily file, or the 90-day file when `backfill`."""
     return parse(get(fetch, HIST_90D_URL if backfill else DAILY_URL), currencies)
+
+
+# D174 amended 19 Nov 2026 (e): the full history from 1999, for a fund held from before the
+# 90-day file's first day. The XML of it (eurofxref-hist.xml, about 8 MB) is over the client's
+# cap; the ZIP (about 640 kB) holds one CSV, newest first, a column per currency, „N/A“ for a
+# day a currency has no rate, and a trailing comma on every line.
+HIST_ZIP_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.zip"
+HISTORY_START = date(1999, 1, 4)  # the first day of the history
+HIST_MAX_UNPACKED = 8 * 1024 * 1024  # the CSV is about 2.5 MB (19 Nov 2026)
+
+
+def parse_history(body: bytes, currencies: Iterable[str] | None = None) -> dict[str, list[FxRate]]:
+    """Currency -> its rates, oldest first, from the history ZIP; a day a currency has no
+    positive rate is left out for that currency. SourceError("parse") for a file that is not
+    one CSV with a Date column and at least one rate."""
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(body))
+    except zipfile.BadZipFile:
+        raise SourceError("parse") from None
+    members = [i for i in archive.infolist() if not i.is_dir()]
+    if len(members) != 1 or members[0].file_size > HIST_MAX_UNPACKED:
+        raise SourceError("parse")
+    try:
+        text = archive.read(members[0]).decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise SourceError("parse") from None
+    lines = csv.reader(io.StringIO(text))
+    header = [cell.strip() for cell in next(lines, [])]
+    if not header or header[0] != "Date":
+        raise SourceError("parse")
+    wanted = None if currencies is None else set(currencies)
+    columns = [
+        (i, code)
+        for i, code in enumerate(header)
+        if i > 0 and _CODE.fullmatch(code) and (wanted is None or code in wanted)
+    ]
+    rates: dict[str, list[FxRate]] = {code: [] for _, code in columns}
+    for cells in lines:
+        if not cells or not cells[0].strip():
+            continue
+        try:
+            on = date.fromisoformat(cells[0].strip())
+        except ValueError:
+            raise SourceError("parse") from None
+        for i, code in columns:
+            try:
+                rate = Decimal(cells[i].strip()) if i < len(cells) else Decimal(0)
+            except InvalidOperation:
+                continue  # N/A
+            if rate.is_finite() and rate > 0:
+                rates[code].append(FxRate(on=on, per_eur=rate))
+    for listed in rates.values():
+        listed.sort(key=lambda r: r.on)
+    if not any(rates.values()):
+        raise SourceError("parse")
+    return rates
+
+
+def history(fetch: Fetch, currencies: Iterable[str] | None = None) -> dict[str, list[FxRate]]:
+    """The full history ZIP, read once by a run that needs a day before its stored rates."""
+    return parse_history(get(fetch, HIST_ZIP_URL), currencies)
