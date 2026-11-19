@@ -77,3 +77,33 @@ test("the reminder email switch is saved and says when sending is not set up", a
     { changes: { reminder_emails: true }, consented_by: null },
   ]);
 });
+
+// Hinweis-Modus (docs/phases/phase-9.md §10, §14, D251): „Eigene Nutzung“ by default; choosing
+// „Allgemein“ is saved (it survives a reload) and recorded as one workspace.advice_mode_changed
+// event, never as a settings_changed one.
+test("the Hinweis-Modus is saved and recorded as its own event", async ({ page, signedIn }) => {
+  void signedIn;
+  await page.goto("/settings");
+  const own = page.getByRole("radio", { name: "Eigene Nutzung" });
+  const generic = page.getByRole("radio", { name: "Allgemein" });
+  await expect(own).toBeChecked();
+  await expect(generic).not.toBeChecked();
+  await expect(page.getByTestId("advice-mode-saved")).toHaveText("Gespeichert: Eigene Nutzung");
+  await expect(page.getByText("nennt nur Beträge und Anlageklassen, keine Konten und keine Produkte")).toBeVisible();
+
+  const saved = page.waitForResponse((r) => r.url().endsWith("/api/workspace/settings") && r.request().method() === "PATCH");
+  await generic.click();
+  expect((await saved).status()).toBe(200);
+  await expect(generic).toBeChecked();
+  await expect(page.getByTestId("advice-mode-saved")).toHaveText("Gespeichert: Allgemein");
+
+  await page.reload();
+  await expect(page.getByRole("radio", { name: "Allgemein" })).toBeChecked();
+  const settings = await apiCall<{ advice_mode: string }>(page, "GET", "/api/workspace/settings");
+  expect(settings.advice_mode).toBe("generic");
+  const events = await apiCall<{ type: string; payload: unknown }[]>(page, "GET", "/api/events?entity_type=workspace");
+  expect(events.filter((e) => e.type === "workspace.advice_mode_changed").map((e) => e.payload)).toEqual([
+    { from_mode: "own_use", to_mode: "generic" },
+  ]);
+  expect(events.filter((e) => e.type === "workspace.settings_changed")).toEqual([]);
+});

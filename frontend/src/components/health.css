@@ -230,3 +230,71 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
 }
+
+/* Planung › Haushalt, step 5 (mockup 12): the sections and, beside them, the KI panel with the
+   plan's explanation; on a narrow screen the panel follows the sections. */
+.planning-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.planning-main {
+  flex: 3 1 540px;
+  min-width: 0;
+}
+
+.plan-ai {
+  flex: 2 1 320px;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-card);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.plan-ai > * {
+  margin: 0;
+}
+
+.plan-ai-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-ai-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--info-text);
+}
+
+.plan-ai-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.plan-ai-text p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.plan-ai-text p + p {
+  margin-top: 14px;
+}
+
+.plan-ai-footer {
+  background: var(--tag-bg);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}

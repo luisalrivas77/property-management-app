@@ -28,6 +28,22 @@ type HouseholdScenario = components["schemas"]["HouseholdScenario"];
 type HouseholdScenarioCreate = components["schemas"]["HouseholdScenarioCreate"];
 type SnapshotResult = components["schemas"]["SnapshotResult"];
 
+// The KI panel beside the plan (step 5) reads its explanation: served here as the app's template
+// with no text, so these tests, which are not about it, never read a real explanation of a
+// mocked plan (e2e/plan-explanation.spec.ts covers the panel).
+test.beforeEach(async ({ page }) => {
+  await serve(page, "/api/household-plan/explanation", () => ({
+    id: null,
+    scenario_id: null,
+    mode: "own_use",
+    status: "template",
+    reason: null,
+    paragraphs: [],
+    created_at: null,
+    stale: false,
+  }));
+});
+
 const WORKSPACE = "00000000-0000-4000-8000-000000000901";
 const SAVINGS = "00000000-0000-4000-8000-000000000902";
 const FLAT = "00000000-0000-4000-8000-000000000903";
