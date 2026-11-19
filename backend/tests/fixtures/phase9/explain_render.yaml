@@ -41,7 +41,6 @@ labels: &labels
 
 cases:
   - id: money_whole_euros
-    pending: "4"
     facts: *facts
     labels: *labels
     renders:
@@ -51,7 +50,6 @@ cases:
       - {text: "{f:projection_total}", expect: "257.748 €"}
 
   - id: percent_one_decimal
-    pending: "4"
     facts: *facts
     labels: *labels
     renders:
@@ -59,7 +57,6 @@ cases:
       - {text: "{f:assumed_change_depot}", expect: "3,7 %"}
 
   - id: months
-    pending: "4"
     facts: *facts
     labels: *labels
     renders:
@@ -67,7 +64,6 @@ cases:
       - {text: "{f:reserve_target_months}", expect: "1,0 Monate"}
 
   - id: month_name
-    pending: "4"
     facts: *facts
     labels: *labels
     renders:
@@ -75,7 +71,6 @@ cases:
       - {text: "{f:projection_until}", expect: "Dezember 2032"}
 
   - id: account_label
-    pending: "4"
     facts: *facts
     labels: *labels
     renders:
@@ -83,7 +78,6 @@ cases:
       - {text: "{p:p1} läuft weiter.", expect: "Depot Weltreise läuft weiter."}
 
   - id: asset_name
-    pending: "4"
     facts: *facts
     labels: *labels
     renders:
@@ -91,39 +85,33 @@ cases:
       - {text: "Für {c:depot} und {c:liabilities}.", expect: "Für Fonds und Wertpapiere und Schulden."}
 
   - id: unknown_slot_raises
-    pending: "4"
     facts: *facts
     labels: *labels
     raises: ["{f:monthly_need}", "{k:k9}", "{a:a7}", "{c:gold}", "{x:reserve}"]
 
   - id: template_below_target
-    pending: "4"
     facts: *facts
     states: {reserve_state: below, investable_state: positive, left_state: positive, basis_state: full, trend_state: down, projection_state: absent}
     expect_sentences: [template_reserve_below, template_surplus_positive]
 
   - id: template_reached
-    pending: "4"
     facts: *facts
     states: {reserve_state: reached, investable_state: positive, left_state: positive, basis_state: full, trend_state: up, projection_state: absent, light_reserve: green}
     expect_sentences: [template_reserve_reached, template_surplus_positive]
 
   - id: template_generic
-    pending: "4"
     description: generic mode names no account, plan or asset
     facts: {mode: generic, as_of: "2027-06-03", figures: [{key: reserve, type: money, value: "16830.00"}]}
     states: {reserve_state: below, investable_state: positive, left_state: positive, basis_state: full, trend_state: down, projection_state: absent}
     expect_no_slots: [k, p, a]
 
   - id: template_short_basis
-    pending: "4"
     facts: *facts
     states: {reserve_state: below, investable_state: positive, left_state: positive, basis_state: short, trend_state: down, projection_state: absent}
     expect_sentences: [template_basis_short]
     expect_rendered_contains: ["erst auf 3 abgeschlossene Monate"]
 
   - id: negative_percent
-    pending: "4"
     facts: *facts
     labels: *labels
     renders:
@@ -131,7 +119,6 @@ cases:
       - {text: "{f:net_worth_change}", expect: "-11.770 €"}
 
   - id: template_projection
-    pending: "4"
     facts: *facts
     labels: *labels
     states: {reserve_state: below, investable_state: positive, left_state: positive, basis_state: full, trend_state: down, projection_state: shown}
@@ -139,7 +126,6 @@ cases:
     expect_rendered_contains: ["Mit eurer Annahme von 3,7 % pro Jahr für Fonds und Wertpapiere läge euer Vermögen Ende Dezember 2032 bei 257.748 €."]
 
   - id: mark_sentence
-    pending: "4"
     description: a sentence of rules/health/bands.yaml rendered with its figures
     facts:
       mode: own_use
