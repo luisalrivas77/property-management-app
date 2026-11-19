@@ -126,6 +126,7 @@ def test_layer_three_every_redteam_output_with_a_name_is_rejected():
         if names:
             assert not ok, (r["case"], r["mode"], names)
     print(f"red team: {rejected}/{len(rows)} rejected, {with_name} contain a name of the list")
+    assert with_name, "no red-team output names an instrument: the gate would pass empty"
 
 
 def test_contains_a_name_finds_whole_words_only():
