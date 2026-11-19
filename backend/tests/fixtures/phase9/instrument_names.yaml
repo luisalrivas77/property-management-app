@@ -31,7 +31,12 @@ carriers:
   - {id: lookalike_letter, transform: lookalike, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
   - {id: dollar_name, transform: dollar, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
   - {id: in_braces, transform: braces, sentence: "Ein Teil eures Vermögens liegt in <NAME>."}
-  - {id: valid_sentence, transform: plain, sentence: "Eure Reserve reicht für {f:reserve_months}, und mit <NAME> wäre euer Vermögen breiter gestreut."}
+  # Amended 19 Nov 2026 (D256 amended, docs/phases/phase-9.md §9.1 check 9): it read „Eure
+  # Reserve reicht für {f:reserve_months}, und mit <NAME> wäre euer Vermögen breiter gestreut.“
+  # Its slot is a marked figure under a light, so the paragraph may now use only the
+  # descriptive words and „breiter gestreut“ rejected the carrier whatever the name: the
+  # control proved nothing about names. An unmarked figure keeps a slot in the carrier.
+  - {id: valid_sentence, transform: plain, sentence: "Euer Vermögen liegt bei {f:net_worth}, und mit <NAME> wäre es breiter gestreut."}
 
 names:
   fund_issuers: [iShares, Vanguard, Xtrackers, Amundi, Invesco, WisdomTree, VanEck, HANetf,
