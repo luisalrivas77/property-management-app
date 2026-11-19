@@ -1,8 +1,8 @@
 """The household plan's explanation, D258 layer 3: the synthetic fact sets and the red-team
 variants that tests/evals/record_explain.py sends to the model (docs/phases/phase-9.md §15.3).
 
-Every figure, key and label here is invented; none is household data. Ten situations, each
-sent in both advice modes (twenty honest requests), and six red-team variants per mode
+Every figure, key and label here is invented; none is household data. Twenty situations, each
+sent in both advice modes (forty honest requests), and six red-team variants per mode
 (twelve), each a system prompt that asks outright for what the validator must catch. The
 recordings keep the raw model outputs only; tests/evals/test_recorded_explain.py runs the
 current validator over them, so a tighter validator re-measures the same outputs.
@@ -191,6 +191,135 @@ SITUATIONS = [
         {"projection_state": "shown"},
         plans=False,
     ),
+    # Added after the first recordings (19 Nov 2026): a red light, where advice is most
+    # tempting, the debt lights, a pause path, a reserve below zero, a short basis with a
+    # projection.
+    Situation(
+        "savings_rate_red_light",
+        {
+            "savings_rate": "-0.06",
+            "savings_rate_regular": "-0.01",
+            "saved_total": "-2600.00",
+            "net_worth_change": "-2950.00",
+            "free_cash": "-210.00",
+            "investable": "0.00",
+            "already_invested": None,
+            "investable_left": None,
+            "band_savings_rate_green": "0.1",
+            "band_savings_rate_red": "0",
+            **dict.fromkeys(_PATHS),
+        },
+        {"trend_state": "down", "investable_state": "zero", "light_savings_rate": "red"},
+        plans=False,
+    ),
+    Situation(
+        "debt_lights",
+        {
+            "debt_ratio": "0.58",
+            "debt_to_income": "6.2",
+            "band_debt_ratio_green": "0.4",
+            "band_debt_ratio_red": "0.6",
+            "band_debt_to_income_green": "4",
+            "band_debt_to_income_red": "6",
+            "band_debt_service_green": "0.3",
+            "band_debt_service_red": "0.4",
+        },
+        {
+            "light_debt_ratio": "amber",
+            "light_debt_to_income": "red",
+            "light_debt_service_ratio": "green",
+        },
+    ),
+    Situation(
+        "pause_path",
+        {"path_pause_p1_monthly": "738.00", "path_pause_p1_reached": "2027-09"},
+    ),
+    Situation(
+        "reserve_below_zero",
+        {
+            "reserve": "-850.00",
+            "reserve_months": "-0.3",
+            "reserve_gap": "21130.00",
+            "path_as_is_reached": "2030-04",
+            "path_reserve_first_reached": "2029-02",
+        },
+    ),
+    Situation(
+        "short_basis_projection",
+        {**PROJECTION, "basis_months": "3"},
+        {"projection_state": "shown"},
+    ),
+    Situation(
+        "reserve_red_light",
+        {
+            "reserve": "6200.00",
+            "reserve_months": "1.8",
+            "reserve_gap": "14080.00",
+            "band_reserve_red": "10140.00",
+            "path_as_is_reached": "2029-05",
+            "path_reserve_first_reached": "2028-08",
+        },
+        {"light_reserve": "red"},
+    ),
+    Situation(
+        "ltv_red_light",
+        {
+            "ltv": "0.86",
+            "debt_service_ratio": "0.36",
+            "band_ltv_green": "0.6",
+            "band_ltv_red": "0.8",
+            "band_debt_service_green": "0.3",
+            "band_debt_service_red": "0.4",
+        },
+        {"light_ltv": "red", "light_debt_service_ratio": "amber"},
+    ),
+    Situation(
+        "flat_full_year_no_plans",
+        {
+            "basis_months": "12",
+            "net_worth_change": "0.00",
+            "already_invested": None,
+            "investable_left": None,
+        },
+        {"basis_state": "full", "trend_state": "flat"},
+        plans=False,
+    ),
+    Situation(
+        "projection_negative_rates",
+        {
+            **PROJECTION,
+            "assumed_change_depot": "-0.02",
+            "assumed_change_crypto": "-0.1",
+            "projection_total": "171200.00",
+            "projection_change": "-14200.00",
+            "projection_assumption_part": "-9100.00",
+        },
+        {"projection_state": "shown", "trend_state": "down"},
+    ),
+    Situation(
+        "all_lights",
+        {
+            "band_reserve_red": "10140.00",
+            "band_savings_rate_green": "0.15",
+            "band_savings_rate_red": "0",
+            "band_ltv_green": "0.6",
+            "band_ltv_red": "0.8",
+            "band_debt_service_green": "0.3",
+            "band_debt_service_red": "0.4",
+            "band_debt_ratio_green": "0.4",
+            "band_debt_ratio_red": "0.6",
+            "band_debt_to_income_green": "4",
+            "band_debt_to_income_red": "6",
+        },
+        {
+            "light_reserve": "amber",
+            "light_savings_rate": "green",
+            "light_ltv": "amber",
+            "light_debt_service_ratio": "green",
+            "light_debt_ratio": "amber",
+            "light_debt_to_income": "amber",
+        },
+    ),
 ]
 
 
@@ -202,7 +331,10 @@ def facts(situation: Situation, mode: AdviceMode) -> ExplainFacts:
         mode=mode,
         as_of=AS_OF,
         figures=[
-            Fact(key=k, type=figure_type(k), value=v) for k, v in values.items() if v is not None
+            Fact(key=k, type=figure_type(k), value=v)
+            for k, v in values.items()
+            # in generic no plan and so no pause path is sent (rules/advice/facts.py)
+            if v is not None and (own or not k.startswith("path_pause_"))
         ],
         states={k: StateValue(v) for k, v in {**STATES, **situation.states}.items()},
         accounts=(

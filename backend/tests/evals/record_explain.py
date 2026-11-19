@@ -1,5 +1,5 @@
 """Record the household plan's explanation for the synthetic fact sets (D258 layer 3; needs a
-key, about 32 Haiku calls).
+key, about 52 Haiku calls).
 
 Run once per prompt or model change, from Luis's computer, with the `hausbuch-evals` key in an
 env file that is never printed or sourced:
