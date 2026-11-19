@@ -19,6 +19,15 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
   runs as a read.
 - GET /household-plan/comparison?month=YYYY-MM (D263 (d), §7.7): the month's spending beside
   the default scenario in force on its last day, today for the running month.
+- GET /household-plan/explanation?scenario= (§8.6, D257; step 4): the newest stored
+  explanation of the workspace's advice mode for the scenario (else the default in force),
+  rendered from its own stored facts, with `stale`; with none stored, the template text
+  rendered on read (`id` null; reason `consent_off` while ai_private_accounts is off); a
+  stored model text the current validator rejects is shown as its template (`rejected`). 404
+  for an unknown, superseded or withdrawn scenario. Never asks the model.
+- POST /household-plan/explanation {scenario} („Neu erklären“): 202 with `queued`; queues one
+  explain_plan job, nothing while ai_private_accounts is off (D253); 404 and nothing queued
+  for an unknown, superseded or withdrawn scenario.
 """
 
 from datetime import date, datetime
@@ -27,6 +36,11 @@ from uuid import UUID
 
 from fastapi import Query
 
+from hausbuch.schemas.advice import (
+    PlanExplanation,
+    PlanExplanationQueued,
+    PlanExplanationRequest,
+)
 from hausbuch.schemas.plan import (
     HouseholdPlan,
     HouseholdPlanPreview,
@@ -34,6 +48,7 @@ from hausbuch.schemas.plan import (
     HouseholdScenarioCreate,
     SpendingComparison,
 )
+from hausbuch.services import advice as advice_service
 from hausbuch.services import household_scenarios as scenarios
 from hausbuch.services import plan as plan_service
 from hausbuch.services.documents import LOCAL_TIME_ZONE
@@ -77,3 +92,13 @@ def household_plan_comparison(
     cmd: Cmd, month: Annotated[str, Query(pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$")]
 ) -> SpendingComparison:
     return cmd.read(plan_service.spending_comparison, _today(), month)
+
+
+@router.get("/household-plan/explanation")
+def household_plan_explanation(cmd: Cmd, scenario: UUID | None = None) -> PlanExplanation:
+    return cmd.read(advice_service.explanation, _today(), scenario)
+
+
+@router.post("/household-plan/explanation", status_code=202)
+def household_plan_explain(body: PlanExplanationRequest, cmd: Cmd) -> PlanExplanationQueued:
+    return cmd.run(advice_service.request, body.scenario)

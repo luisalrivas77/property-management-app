@@ -47,12 +47,12 @@ def _client_raising(exc: Exception) -> AnthropicModelClient:
     return client
 
 
-def _status_error(cls, status: int):
+def _status_error(cls, status: int, body: object = None):
     request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
     response = httpx2.Response(
         status, request=request, headers={"request-id": "req_123"}, json={"error": {}}
     )
-    return cls(f"Error code: {status} - body quoting {KEY}", response=response, body=None)
+    return cls(f"Error code: {status} - body quoting {KEY}", response=response, body=body)
 
 
 def test_body_has_the_optional_parts_only_when_set():
@@ -113,10 +113,47 @@ def test_status_errors_map_to_model_call_error(cls, status, retryable, code):
     assert exc.status == status
     assert exc.request_id == "req_123"
     assert exc.error_code == code
+    assert exc.limit is False
     # The SDK's message (which quotes the response body) is neither kept nor chained.
     assert KEY not in str(exc)
     assert exc.__cause__ is None
     assert exc.__suppress_context__ is True
+
+
+_LIMIT_MESSAGE = "You have reached your specified workspace API usage limits. You will regain"
+
+
+def _error(kind: str, message: str, **extra) -> dict:
+    return {"type": "error", "error": {"type": kind, "message": message, **extra}}
+
+
+@pytest.mark.parametrize(
+    ("cls", "status", "body", "limit"),
+    [
+        (anthropic.BadRequestError, 400, _error("invalid_request_error", _LIMIT_MESSAGE), True),
+        (
+            anthropic.RateLimitError,
+            429,
+            _error(
+                "rate_limit_error",
+                "spend limit",
+                details={"error_code": "enforced_spend_limit_reached"},
+            ),
+            True,
+        ),
+        (anthropic.BadRequestError, 400, _error("invalid_request_error", "bad"), False),
+        (anthropic.RateLimitError, 429, _error("rate_limit_error", "slow down"), False),
+        (anthropic.APIStatusError, 402, _error("billing_error", _LIMIT_MESSAGE), False),
+        (anthropic.BadRequestError, 400, "not json", False),
+    ],
+)
+def test_the_spend_limit_is_read_from_the_error_body(cls, status, body, limit):
+    client = _client_raising(_status_error(cls, status, body))
+    with pytest.raises(ModelCallError) as info:
+        client.send(_request())
+    assert info.value.limit is limit
+    assert info.value.status == status
+    assert KEY not in str(info.value)
 
 
 def test_connection_errors_are_retryable():

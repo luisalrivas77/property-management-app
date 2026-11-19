@@ -18,6 +18,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
+from .advice import AdviceMode
 from .allocation import Allocation, AllocationCategory, AllocationSet, MatchingRule
 from .bank import StatementFileImport, StatementFileOffer, Transaction
 from .common import (
@@ -418,6 +419,8 @@ class WorkspaceSettings(Schema):
     # Not a workspace column: whether the process can send mail (TEM configured), set by the
     # route so the settings page can say when the switch has no effect yet.
     reminder_emails_available: bool = False
+    # Phase 9 D251 (migration 0048): what the household plan and its explanation may name.
+    advice_mode: AdviceMode = AdviceMode.OWN_USE
 
 
 class WorkspaceSettingsPatch(Patch):
@@ -425,6 +428,7 @@ class WorkspaceSettingsPatch(Patch):
     auto_accept_llm: bool = Field(default=None)
     reminder_emails: bool = Field(default=None)
     ai_private_accounts: bool = Field(default=None)
+    advice_mode: AdviceMode = Field(default=None)
 
 
 class DocumentUploadResult(Schema):

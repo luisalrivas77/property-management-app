@@ -110,6 +110,7 @@ class ModelCallError(Exception):
         status: int | None,
         request_id: str | None = None,
         duration_ms: int = 0,
+        limit: bool = False,
     ) -> None:
         kind = "retryable" if retryable else "terminal"
         super().__init__(f"model call failed ({kind}, status {status})")
@@ -117,6 +118,9 @@ class ModelCallError(Exception):
         self.status = status
         self.request_id = request_id
         self.duration_ms = duration_ms
+        # The workspace's spend limit is reached (spend_limit_reached); read from the
+        # answer's error body, which is never kept.
+        self.limit = limit
 
     @property
     def error_code(self) -> str:
@@ -157,6 +161,7 @@ class AnthropicModelClient:
                 status=exc.status_code,
                 request_id=exc.request_id,
                 duration_ms=_elapsed_ms(started),
+                limit=spend_limit_reached(exc.status_code, exc.body),
             ) from None
         except anthropic.APIStatusError as exc:
             # Any other 4xx: the same request gets the same answer, so never retried.
@@ -165,12 +170,36 @@ class AnthropicModelClient:
                 status=exc.status_code,
                 request_id=exc.request_id,
                 duration_ms=_elapsed_ms(started),
+                limit=spend_limit_reached(exc.status_code, exc.body),
             ) from None
         except anthropic.APIConnectionError:  # includes APITimeoutError
             raise ModelCallError(
                 retryable=True, status=None, duration_ms=_elapsed_ms(started)
             ) from None
         return message_to_response(message, _elapsed_ms(started))
+
+
+SPEND_LIMIT_MESSAGE = "You have reached your specified workspace API usage limits"
+SPEND_LIMIT_CODE = "enforced_spend_limit_reached"
+
+
+def spend_limit_reached(status: int | None, body: object) -> bool:
+    """Whether an error answer says the workspace's spend limit is reached: a 400
+    invalid_request_error whose message starts with SPEND_LIMIT_MESSAGE, or a 429 whose
+    error.details.error_code is SPEND_LIMIT_CODE (platform.claude.com/docs/en/api/rate-limits,
+    read 19 Nov 2026). Only these two fields are read; the body is never kept or logged."""
+    error = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(error, dict):
+        return False
+    if status == 400:
+        message = error.get("message")
+        return error.get("type") == "invalid_request_error" and (
+            isinstance(message, str) and message.startswith(SPEND_LIMIT_MESSAGE)
+        )
+    if status == 429:
+        details = error.get("details")
+        return isinstance(details, dict) and details.get("error_code") == SPEND_LIMIT_CODE
+    return False
 
 
 def cached(body: dict[str, Any]) -> dict[str, Any]:

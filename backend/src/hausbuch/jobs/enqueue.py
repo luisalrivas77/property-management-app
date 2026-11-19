@@ -307,3 +307,36 @@ def enqueue_repair_solana_lamports(conn: Connection, *, workspace_id: UUID, dry_
         workspace_id=str(workspace_id),
         dry_run="yes" if dry_run else "no",
     )
+
+
+# --- The household plan's explanation (phase 9 step 4, D257, §11.5) -------------------------
+#
+# From „Neu erklären“ (services.advice.request) and once by health_daily after a month's key
+# figures were stored, in the caller's transaction. Locked per workspace: one explanation at a
+# time. A duplicate job is harmless: it writes one more row, and the screen shows the newest.
+
+EXPLAIN_PLAN_TASK = "explain_plan"
+
+
+def explain_lock(workspace_id: UUID) -> str:
+    return f"explain:{workspace_id}"
+
+
+def enqueue_explain_plan(
+    conn: Connection,
+    *,
+    workspace_id: UUID,
+    scenario_id: UUID | None,
+    requested_by: UUID | None,
+) -> None:
+    """Queue `explain_plan` for the resolved scenario ("" for the defaults); `requested_by`
+    is the member who pressed „Neu erklären“ ("" for the daily task). Ids only: the job
+    rebuilds the facts itself, so no figure or label is ever a job argument."""
+    _defer(
+        conn,
+        EXPLAIN_PLAN_TASK,
+        explain_lock(workspace_id),
+        workspace_id=str(workspace_id),
+        scenario_id="" if scenario_id is None else str(scenario_id),
+        requested_by="" if requested_by is None else str(requested_by),
+    )

@@ -27,6 +27,7 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
   await expect(page.getByRole("switch", { name: "KI-Zuordnungen automatisch bestätigen" })).not.toBeChecked();
 
   const settings = await apiCall<{
+    advice_mode: string;
     ai_private_accounts: boolean;
     ai_private_accounts_active: boolean;
     ai_private_accounts_consented_by: string[];
@@ -36,7 +37,9 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
     reminder_emails_available: boolean;
   }>(page, "GET", "/api/workspace/settings");
   // reminder_emails_available: the e2e server has no Transactional Email settings.
+  // advice_mode: phase 9 D251, `own_use` by default.
   expect(settings).toEqual({
+    advice_mode: "own_use",
     ai_private_accounts: false,
     ai_private_accounts_active: false,
     ai_private_accounts_consented_by: [],

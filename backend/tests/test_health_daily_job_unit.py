@@ -38,4 +38,5 @@ def test_no_workspace_logs_one_line(caplog):
         "event": "health_snapshots_stored",
         "stored": 0,
         "failed_workspaces": 0,
+        "explanations_queued": 0,
     }

@@ -28,6 +28,7 @@ from .bank_sync_schedule import (
 from .document_read import TASK_NAME, JobDeps, RetryLater, run_document_read
 from .enqueue import (
     BANK_SYNC_TASK,
+    EXPLAIN_PLAN_TASK,
     FOLLOW_ACCOUNTS_TASK,
     MATCH_IMPORT_TASK,
     MATCH_TRANSACTION_TASK,
@@ -36,6 +37,7 @@ from .enqueue import (
     REPAIR_SOLANA_LAMPORTS_TASK,
     TAX_EXPORT_TASK,
 )
+from .explain_plan import run_explain_plan
 from .fetch_prices import (
     FETCH_PRICES_CRON,
     FETCH_PRICES_LOCK,
@@ -162,6 +164,19 @@ def follow_accounts(context: JobContext, *, workspace_id: str) -> None:
     run_follow_accounts(deps, workspace_id=UUID(workspace_id))
 
 
+def explain_plan(
+    context: JobContext, *, workspace_id: str, scenario_id: str, requested_by: str
+) -> None:
+    """The household plan's explanation (phase 9 D257); no retry: every outcome is stored."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    run_explain_plan(
+        deps,
+        workspace_id=UUID(workspace_id),
+        scenario_id=UUID(scenario_id) if scenario_id else None,
+        requested_by=UUID(requested_by) if requested_by else None,
+    )
+
+
 def repair_solana_lamports(context: JobContext, *, workspace_id: str, dry_run: str) -> None:
     """Once after the deploy of 18 Nov 2026 (`hausbuch repair-solana-lamports`); no retry."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
@@ -285,6 +300,9 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
     app.task(name=FOLLOW_ACCOUNTS_TASK, pass_context=True)(follow_accounts)
     # No retry: `hausbuch repair-solana-lamports` can be run again; a corrected group stays.
     app.task(name=REPAIR_SOLANA_LAMPORTS_TASK, pass_context=True)(repair_solana_lamports)
+    # No retry: a failed or refused call ends in the template row (D257); „Neu erklären“ asks
+    # again. Procrastinate's lock (enqueue.explain_lock) runs one explanation at a time.
+    app.task(name=EXPLAIN_PLAN_TASK, pass_context=True)(explain_plan)
     # No retry: a failed scrub runs again the next day. No queueing lock (jobs/enqueue.py
     # says why); Procrastinate's periodic_defers table already defers one job per schedule
     # however many instances run a deferrer, and a duplicate run would scrub nothing.
