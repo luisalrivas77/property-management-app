@@ -67,11 +67,26 @@ def test_a_catalogue_is_asked_with_the_apps_agent_and_no_redirect_status():
         ("SPDR Invented UCITS ETF", "spdr"),
         ("SSgA SPDR ETFs Europe I-Invented", "spdr"),
         ("State Street Invented UCITS ETF", "spdr"),
-        ("Xtrackers Invented", None),
+        # D174 amended 19 Nov 2026 (skipped until the adapter is built); until then
+        # „Xtrackers Invented“ named no adapter
+        ("Xtrackers Invented", "xtrackers"),
+        ("Xtr.(IE) Plc-Invented", "xtrackers"),
+        ("AIS-Amundi Invented", "amundi"),
+        ("MUL-Lyxor Invented", "amundi"),
+        ("Invesco Markets II-Invented", "invesco"),
+        ("ARK Invest UCITS ICAV-Invented", "ark"),
+        ("Rize UCITS ICAV-Invented", "ark"),
+        ("BNP P.E.I-Invented", "bnp"),
+        ("BNPP Invented", "bnp"),
+        ("L&G ETF-L&G Invented", "landg"),
+        ("HANetf ICAV-Invented", "hanetf"),
         ("Fishs Invented", None),
+        ("Darkside Invested", None),
     ],
 )
 def test_the_fund_name_decides_which_catalogue_is_asked(name, issuer):
+    if issuer is not None and issuer not in ADAPTERS:
+        pytest.skip(f"no {issuer} adapter yet (D174 amended 19 Nov 2026)")
     named = [key for key, cls in ADAPTERS.items() if cls.names_brand(name)]
     assert named == ([] if issuer is None else [issuer])
 

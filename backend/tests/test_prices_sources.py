@@ -80,7 +80,8 @@ def test_parse_cases(case):
 
 
 def test_every_adapter_has_a_parse_case():
-    assert {c.issuer for c in ISSUER_NAV.parse_cases} == set(ADAPTERS)
+    """A parse case here or a read case in test_prices_issuers (D174 amended 19 Nov 2026)."""
+    assert set(ADAPTERS) <= {c.issuer for c in ISSUER_NAV.parse_cases + ISSUER_NAV.read_cases}
 
 
 def test_an_adapter_refuses_a_file_naming_another_isin():
