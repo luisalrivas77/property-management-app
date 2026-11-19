@@ -433,13 +433,27 @@ discovery_cases:
     expect: {requests: 1}
 
   - id: discover_bnp_currency
-    description: BNP is asked in EUR, then USD, GBP and CHF until the ISIN has rows
+    description: >-
+      BNP is asked in EUR, USD, GBP and CHF once each; exactly one currency has rows for the
+      ISIN, so its reference is kept (amended 19 Nov 2026 after the review: it stopped at the
+      first currency with rows, two requests)
     name: BNPP Invented Equity ETF
     isin: IE000INVENT8
     answers:
       "navs/fast?currency=EUR": bnp_navs_empty.json
       "navs/fast?currency=USD": bnp_navs.json
-    expect: {issuer: bnp, fund_ref: USD:IE000INVENT8, requests: 2}
+    expect: {issuer: bnp, fund_ref: USD:IE000INVENT8, requests: 4}
+
+  - id: discover_bnp_two_currencies
+    description: >-
+      two currencies have rows for the ISIN: the share class's currency cannot be decided, so
+      nothing is found (the run names the fund in `nav_unresolved`)
+    name: BNPP Invented Equity ETF
+    isin: IE000INVENT8
+    answers:
+      "navs/fast?currency=EUR": bnp_navs.json
+      "navs/fast?currency=USD": bnp_navs.json
+    expect: {requests: 4}
 
   - id: discover_no_brand
     description: a name no adapter's brand starts asks nothing
