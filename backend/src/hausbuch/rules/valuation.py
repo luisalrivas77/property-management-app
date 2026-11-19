@@ -29,6 +29,10 @@ sums the valuations into the net worth.
 - `failed_days(runs)`: how many daily runs in a row, ending at the latest, failed for one
   asset (D174 (4): seven raise price.source_failed); a success or a day without a run ends
   the count.
+- `report_gap(prices)`: D264 (7): on the newest day a depot report priced a fund, its
+  issuer_nav row, else its exchange_close row, more than REPORT_GAP_TOLERANCE from the
+  report's price; None when a person typed a price for that day. exchange_close (D264) is a
+  fund's daily exchange price, below a NAV and a report's own day in SOURCE_PRECEDENCE.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -55,6 +59,7 @@ SOURCE_PRECEDENCE: tuple[PriceSourceKind, ...] = (
     PriceSourceKind.TRADE,
     PriceSourceKind.ISSUER_NAV,
     PriceSourceKind.STATEMENT,
+    PriceSourceKind.EXCHANGE_CLOSE,
     PriceSourceKind.KRAKEN_DAILY,
     PriceSourceKind.COINGECKO_DAILY,
     PriceSourceKind.ECB_FX,
@@ -197,6 +202,56 @@ def nav_check(
             eur = converted[1]
         gap = abs(eur - report) / report
         return NavCheck(on=point.on, refused=gap > NAV_CHECK_TOLERANCE)
+    return None
+
+
+# D264 (7): a stored daily price this share or less from the report's price raises no card.
+REPORT_GAP_TOLERANCE = NAV_CHECK_TOLERANCE
+
+
+@dataclass(frozen=True)
+class ReportGap:
+    on: date  # the newest day a depot report priced the fund
+    source: PriceSourceKind  # issuer_nav or exchange_close
+    report_price: Decimal
+    price: Decimal
+    gap_percent: Decimal  # one place, half up
+
+
+def _latest(rows: Sequence[PricePoint]) -> PricePoint:
+    return max(rows, key=lambda p: p.fetched_at)
+
+
+def report_gap(prices: Sequence[PricePoint]) -> ReportGap | None:
+    """D264 (7): one fund's rows. The newest `statement` day is compared with that day's
+    issuer_nav row (the latest fetched), else its exchange_close row; a gap of more than
+    REPORT_GAP_TOLERANCE of the report's price is returned. A `user` row of that day ends
+    it, and only the newest report day is ever compared."""
+    reports = [p for p in prices if p.source is PriceSourceKind.STATEMENT]
+    if not reports:
+        return None
+    on = max(p.on for p in reports)
+    day = [p for p in prices if p.on == on]
+    if any(p.source is PriceSourceKind.USER for p in day):
+        return None
+    report = _latest([p for p in day if p.source is PriceSourceKind.STATEMENT]).price_eur
+    if report <= 0:
+        return None
+    for source in (PriceSourceKind.ISSUER_NAV, PriceSourceKind.EXCHANGE_CLOSE):
+        rows = [p for p in day if p.source is source]
+        if not rows:
+            continue
+        price = _latest(rows).price_eur
+        gap = abs(price - report) / report
+        if gap <= REPORT_GAP_TOLERANCE:
+            return None
+        return ReportGap(
+            on=on,
+            source=source,
+            report_price=report,
+            price=price,
+            gap_percent=(gap * 100).quantize(Decimal("0.1"), ROUND_HALF_UP),
+        )
     return None
 
 

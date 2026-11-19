@@ -1,0 +1,246 @@
+# Rule fixture: the Lang & Schwarz exchange price as a price source of its own
+# (services/prices/lang_schwarz.py, the fetch's choice of fund, rules.valuation.price_on with
+# exchange_close, the first-read check, rules.valuation.report_gap; docs/phases/phase-6.md
+# D264, D174 amended 19 Nov 2026 (g), §14).
+#
+# The samples under tests/fixtures/phase6/samples/lstc_*.json are written in the layout the
+# two endpoints answered on 19 Nov 2026 (§3's „Lang & Schwarz exchange prices“ row): the
+# search a JSON list of instruments, the chart `{info: {isin, …}, series: {history: {data:
+# [[epoch ms, price], …]}}}` with one point per calendar day at 00:00 UTC, the weekend
+# repeating Friday, and the live quote of the moment last. Every ISIN, id, name and price is
+# invented; the real answers were read live and never committed.
+#
+# Recomputed on load (tests/fixture_models_phase6.py): the selection, the precedence and the
+# report card from the rule as D264 states it; the search and history cases are replayed by
+# tests/test_prices_exchange.py against the samples.
+#
+# The key "on" is quoted: YAML 1.1 reads a bare on as true.
+
+search_cases:
+  - id: the_listing_of_the_isin_gives_its_id
+    isin: IE00LSINVNT1
+    sample: lstc_search.json
+    expect: {instrument_id: 9000001}
+
+  - id: the_other_listing_of_the_answer
+    isin: IE00LSINVNT2
+    sample: lstc_search.json
+    expect: {instrument_id: 9000002}
+
+  - id: an_isin_not_in_the_answer_is_a_lookup_miss
+    description: a search matches names too; only an entry stating the ISIN counts
+    isin: IE00LSINVNT3
+    sample: lstc_search.json
+    expect: {error: not_listed}
+
+  - id: an_empty_answer_is_a_lookup_miss
+    isin: IE00LSINVNT1
+    sample: lstc_search_empty.json
+    expect: {error: not_listed}
+
+  - id: two_ids_for_one_isin_is_a_lookup_miss
+    description: never a guess between two instruments
+    isin: IE00LSINVNT1
+    sample: lstc_search_two.json
+    expect: {error: not_listed}
+
+  - id: an_answer_that_is_no_list_is_unreadable
+    isin: IE00LSINVNT1
+    sample: lstc_search_object.json
+    expect: {error: parse}
+
+history_cases:
+  - id: the_past_weekdays_six_places
+    description: >-
+      read on Thursday 19 Nov: today's midnight point and its live quote are dropped, the
+      weekend's repeats of Friday are dropped, 8.432000000000002 becomes 8.432
+    isin: IE00LSINVNT1
+    sample: lstc_history.json
+    today: 2026-11-19
+    expect:
+      points:
+        - {"on": 2026-11-12, price_eur: "8.432"}
+        - {"on": 2026-11-13, price_eur: "8.5025"}
+        - {"on": 2026-11-16, price_eur: "8.391"}
+        - {"on": 2026-11-17, price_eur: "8.44"}
+        - {"on": 2026-11-18, price_eur: "8.4765"}
+
+  - id: read_a_day_later_the_last_day_counts
+    isin: IE00LSINVNT1
+    sample: lstc_history.json
+    today: 2026-11-20
+    expect:
+      points:
+        - {"on": 2026-11-12, price_eur: "8.432"}
+        - {"on": 2026-11-13, price_eur: "8.5025"}
+        - {"on": 2026-11-16, price_eur: "8.391"}
+        - {"on": 2026-11-17, price_eur: "8.44"}
+        - {"on": 2026-11-18, price_eur: "8.4765"}
+        - {"on": 2026-11-19, price_eur: "8.4765"}
+
+  - id: an_answer_for_another_isin_stores_nothing
+    isin: IE00LSINVNT1
+    sample: lstc_history_other.json
+    today: 2026-11-19
+    expect: {error: isin_mismatch}
+
+  - id: a_past_day_twice_is_unreadable
+    description: never a choice between two prices of one day
+    isin: IE00LSINVNT1
+    sample: lstc_history_twice.json
+    today: 2026-11-19
+    expect: {error: parse}
+
+  - id: a_price_of_zero_is_unreadable
+    isin: IE00LSINVNT1
+    sample: lstc_history_zero.json
+    today: 2026-11-19
+    expect: {error: parse}
+
+  - id: a_past_point_off_midnight_is_unreadable
+    description: >-
+      13 Nov stands at 01:00 UTC, not 00:00; read as its UTC day it could shift a price by a
+      day without a sign, so the whole answer stores nothing (only the last point, the live
+      quote, may be off midnight)
+    isin: IE00LSINVNT1
+    sample: lstc_history_off_midnight.json
+    today: 2026-11-19
+    expect: {error: parse}
+
+selection_cases:
+  - id: no_issuer_brand_asks_every_run
+    name: Nordlicht Fds-Weltakt. Indexfonds A
+    expect: daily
+
+  - id: no_issuer_brand_still_asks_once_prices_are_stored
+    name: Nordlicht Fds-Weltakt. Indexfonds A
+    exchange_stored: true
+    expect: daily
+
+  - id: a_latest_nav_only_issuer_asks_its_history_once
+    name: L&G ETF-Erfundenes Thema B o.N.
+    issuer: landg
+    expect: history
+
+  - id: a_latest_nav_only_issuer_after_the_history
+    name: L&G ETF-Erfundenes Thema B o.N.
+    issuer: landg
+    exchange_stored: true
+    expect: none
+
+  - id: an_issuer_with_its_history_never_asks
+    name: SPDR Erfundenes Thema UCITS ETF C
+    issuer: spdr
+    expect: none
+
+  - id: a_branded_fund_whose_lookup_missed_never_asks
+    description: an issuer's miss or outage never switches the fund's source
+    name: Xtr.(IE)-Erfundenes Thema 1C o.N.
+    expect: none
+
+  - id: a_latest_nav_only_fund_whose_lookup_missed_never_asks
+    name: L&G-Zweites Erfundenes Thema o.N.
+    expect: none
+
+precedence_cases:
+  - id: a_nav_beats_the_exchange_on_one_day
+    prices:
+      - {"on": 2026-11-18, price_eur: "8.47650000", source: exchange_close}
+      - {"on": 2026-11-18, price_eur: "8.50120000", source: issuer_nav}
+    "on": 2026-11-18
+    expect: issuer_nav
+
+  - id: a_report_beats_the_exchange_on_its_day
+    prices:
+      - {"on": 2026-09-30, price_eur: "10.00000000", source: statement}
+      - {"on": 2026-09-30, price_eur: "10.03500000", source: exchange_close}
+    "on": 2026-09-30
+    expect: statement
+
+  - id: a_later_exchange_day_beats_an_earlier_report
+    prices:
+      - {"on": 2026-09-30, price_eur: "10.00000000", source: statement}
+      - {"on": 2026-10-01, price_eur: "10.03500000", source: exchange_close}
+    "on": 2026-10-02
+    expect: exchange_close
+
+  - id: a_typed_price_beats_the_exchange
+    prices:
+      - {"on": 2026-11-18, price_eur: "8.47650000", source: exchange_close}
+      - {"on": 2026-11-18, price_eur: "8.40000000", source: user}
+    "on": 2026-11-18
+    expect: user
+
+guard_cases:
+  - id: a_first_read_within_two_percent_is_stored
+    navs:
+      - {"on": 2026-09-29, nav: "10.05000000", currency: EUR}
+      - {"on": 2026-09-30, nav: "10.10000000", currency: EUR}
+    reports:
+      - {"on": 2026-09-30, price_eur: "10.00000000"}
+    expect: {checked_on: 2026-09-30, refused: false}
+
+  - id: a_first_read_beyond_two_percent_stores_nothing
+    navs:
+      - {"on": 2026-09-30, nav: "10.30000000", currency: EUR}
+    reports:
+      - {"on": 2026-09-30, price_eur: "10.00000000"}
+    expect: {checked_on: 2026-09-30, refused: true}
+
+  - id: a_first_read_with_no_report_day_in_it_is_stored
+    navs:
+      - {"on": 2026-11-18, nav: "8.47650000", currency: EUR}
+    reports:
+      - {"on": 2026-09-30, price_eur: "10.00000000"}
+    expect: {refused: false}
+
+report_cases:
+  - id: the_exchange_price_beyond_two_percent_raises_a_card
+    prices:
+      - {"on": 2026-09-30, price_eur: "10.00000000", source: statement}
+      - {"on": 2026-09-30, price_eur: "10.35000000", source: exchange_close}
+    expect:
+      {"on": 2026-09-30, source: exchange_close, report_price: "10", price: "10.35",
+       gap_percent: "3.5"}
+
+  - id: a_nav_beyond_two_percent_raises_a_card
+    prices:
+      - {"on": 2026-09-30, price_eur: "10.00000000", source: statement}
+      - {"on": 2026-09-30, price_eur: "9.70000000", source: issuer_nav}
+    expect:
+      {"on": 2026-09-30, source: issuer_nav, report_price: "10", price: "9.7",
+       gap_percent: "3.0"}
+
+  - id: the_nav_is_compared_before_the_exchange
+    prices:
+      - {"on": 2026-09-30, price_eur: "10.00000000", source: statement}
+      - {"on": 2026-09-30, price_eur: "10.10000000", source: issuer_nav}
+      - {"on": 2026-09-30, price_eur: "10.50000000", source: exchange_close}
+    expect: null
+
+  - id: exactly_two_percent_raises_none
+    prices:
+      - {"on": 2026-09-30, price_eur: "10.00000000", source: statement}
+      - {"on": 2026-09-30, price_eur: "10.20000000", source: exchange_close}
+    expect: null
+
+  - id: a_price_typed_for_the_day_ends_the_card
+    prices:
+      - {"on": 2026-09-30, price_eur: "10.00000000", source: statement}
+      - {"on": 2026-09-30, price_eur: "10.35000000", source: exchange_close}
+      - {"on": 2026-09-30, price_eur: "10.00000000", source: user}
+    expect: null
+
+  - id: only_the_newest_report_day_is_compared
+    prices:
+      - {"on": 2026-06-30, price_eur: "10.00000000", source: statement}
+      - {"on": 2026-06-30, price_eur: "11.00000000", source: exchange_close}
+      - {"on": 2026-09-30, price_eur: "10.00000000", source: statement}
+      - {"on": 2026-09-30, price_eur: "10.10000000", source: exchange_close}
+    expect: null
+
+  - id: no_daily_price_on_the_report_day_raises_none
+    prices:
+      - {"on": 2026-09-30, price_eur: "10.00000000", source: statement}
+      - {"on": 2026-09-29, price_eur: "11.00000000", source: exchange_close}
+    expect: null

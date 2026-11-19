@@ -13424,6 +13424,17 @@
             ],
             "title": "Issuer"
           },
+          "price_venue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Venue"
+          },
           "has_source": {
             "type": "boolean",
             "title": "Has Source"
@@ -22434,6 +22445,7 @@
           "holdings_mismatch",
           "price_source_failed",
           "price_no_source",
+          "price_report_differs",
           "exchange_pending_balance",
           "exchange_unreconciled",
           "exchange_withdrawals",
@@ -27615,7 +27627,8 @@
           "coingecko_daily",
           "kraken_daily",
           "ecb_fx",
-          "user"
+          "user",
+          "exchange_close"
         ],
         "title": "PriceSourceKind",
         "description": "price.source (migration 0025). Named ...Kind because §11's PriceSource is the fetcher\nprotocol below. The precedence among one day's rows is rules.valuation's data."

@@ -22,7 +22,11 @@
   currency) and `price_no_source` (D167 (1):
   a held coin with neither a CoinGecko id nor a Kraken pair, „Kursquelle wählen“; a held fund
   or stock with no adapter and no price at all, which the next depot report or a typed price
-  values).
+  values), and `price_report_differs` (D264 (7): on the newest day a depot report priced a
+  fund, its issuer NAV, else its Lang & Schwarz price, more than 2 % from the report's price;
+  it only alerts, and ends with a newer report or a price typed for that day). A fund priced
+  by Lang & Schwarz (D264) says so: `AssetRow.price_venue`, and its failure card names the
+  exchange, which the runs' notes carry as the issuer `ls_tc`.
 
 The reconciled date (D167 (4), D165 (3)): units come from the confirmed movements, which
 the trade confirmations and the exchange imports write. On a depot account the latest
@@ -40,7 +44,7 @@ accounts once their imports (5a) state their reconciliation.
 
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
@@ -86,8 +90,9 @@ from hausbuch.services.events import append_event, diff_changes
 from hausbuch.services.lookup import require_row
 from hausbuch.services.wallet_groups import waiting
 
+from . import lang_schwarz
 from .assets import FundSource, NavSource, fund_source, nav_source, price_ids, stored_nav_sources
-from .fetch import STREAK_WINDOW_DAYS, failure_runs, fund_notes, held_subquery
+from .fetch import STREAK_WINDOW_DAYS, exchange_ids, failure_runs, fund_notes, held_subquery
 from .issuer_nav import issuer_name
 
 S = PriceSourceKind
@@ -355,17 +360,25 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
     )
 
 
-def _asset_row(row: Any, latest: PricePoint | None, stored: NavSource | None) -> AssetRow:
+def _asset_row(
+    row: Any, latest: PricePoint | None, stored: NavSource | None, exchange: bool = False
+) -> AssetRow:
+    """`exchange`: an exchange_close row of the asset is stored (D264 (8)). A fund with
+    no issuer source names Lang & Schwarz only once such a row is stored, never from its
+    name alone: a fund the venue does not list would otherwise say it is fetched daily
+    while no price ever comes."""
     kind = AssetKind(row.kind)
     ids = price_ids(row.symbol, row.coingecko_id, row.kraken_pair, chain=row.chain)
     fund = _fund(kind, row.isin, stored)
+    etf = kind is AssetKind.ETF
+    venue = lang_schwarz.VENUE_NAME if etf and fund is None and exchange else None
     if kind is AssetKind.CRYPTO:
         # A chain asset is also priced through its priced_as asset (phase 7 D180 (3)).
         has_source = ids.any or row.priced_as_asset_id is not None
     elif kind is AssetKind.CASH:
         has_source = True  # EUR is 1.0; other currencies by the ECB
     else:
-        has_source = fund is not None
+        has_source = fund is not None or venue is not None
     return AssetRow(
         id=row.id,
         kind=kind,
@@ -380,6 +393,7 @@ def _asset_row(row: Any, latest: PricePoint | None, stored: NavSource | None) ->
         coingecko_id=ids.coingecko_id if kind is AssetKind.CRYPTO else None,
         kraken_pair=ids.kraken_pair if kind is AssetKind.CRYPTO else None,
         issuer=fund.issuer if fund else None,
+        price_venue=venue,
         has_source=has_source,
         latest_price=None if latest is None else _label(latest, fund),
         updated_at=row.updated_at,
@@ -390,7 +404,8 @@ def list_assets(conn: Connection, today: date) -> list[AssetRow]:
     rows = conn.execute(select(asset_table).order_by(asset_table.c.kind, asset_table.c.name)).all()
     latest = _latest_prices(conn, {r.id for r in rows}, today)
     stored = stored_nav_sources(conn)
-    return [_asset_row(r, latest.get(r.id), stored.get(r.id)) for r in rows]
+    venue = exchange_ids(conn)
+    return [_asset_row(r, latest.get(r.id), stored.get(r.id), r.id in venue) for r in rows]
 
 
 # --- commands -------------------------------------------------------------------------------
@@ -529,6 +544,99 @@ def _last_run_at(conn: Connection) -> datetime | None:
     return conn.execute(
         select(func.max(e.recorded_at)).where(e.type == EventType.WORKSPACE_PRICES_FETCHED.value)
     ).scalar_one()
+
+
+def _price_text(value: Decimal) -> str:
+    """Decimal("8.47650000") → "8,4765 €", Decimal("8.7") → "8,70 €": a fund price to at
+    most four places and at least two, German style."""
+    text = f"{value.quantize(Decimal('0.0001'), ROUND_HALF_UP):f}"
+    whole, _, fraction = text.partition(".")
+    fraction = fraction.rstrip("0").ljust(2, "0")
+    return f"{int(whole):,}".replace(",", ".") + f",{fraction} €"
+
+
+_REPORT_SOURCES = (S.STATEMENT, S.ISSUER_NAV, S.EXCHANGE_CLOSE, S.USER)
+
+
+def _report_day_rows(conn: Connection, asset_ids: list[UUID]) -> dict[UUID, list[Any]]:
+    """Per fund the rows of the newest day a depot report priced it, of the sources
+    valuation.report_gap reads (one query; never the fund's whole history)."""
+    if not asset_ids:
+        return {}
+    p = price_table.c
+    newest = (
+        select(p.asset_id, func.max(p.on).label("on"))
+        .where(p.source == S.STATEMENT.value, p.asset_id.in_(asset_ids))
+        .group_by(p.asset_id)
+        .subquery()
+    )
+    rows = conn.execute(
+        select(p.asset_id, p.on, p.price_eur, p.source, p.fetched_at, p.document_id)
+        .join(newest, and_(newest.c.asset_id == p.asset_id, newest.c.on == p.on))
+        .where(p.source.in_([s.value for s in _REPORT_SOURCES]))
+        .order_by(p.fetched_at, p.id)
+    ).all()
+    found: dict[UUID, list[Any]] = defaultdict(list)
+    for row in rows:
+        found[row.asset_id].append(row)
+    return dict(found)
+
+
+def _report_differs(
+    conn: Connection, held: list[Any], stored: dict[UUID, NavSource]
+) -> list[InboxItem]:
+    """D264 (7): one card per held fund whose newest report day's issuer NAV, else Lang &
+    Schwarz price, is more than 2 % from the report's price. Only alerts."""
+    funds = [r for r in held if AssetKind(r.kind) is AssetKind.ETF]
+    by_asset = _report_day_rows(conn, [r.id for r in funds])
+    items: list[InboxItem] = []
+    for row in funds:
+        rows = by_asset.get(row.id)
+        if not rows:
+            continue
+        points = [
+            PricePoint(
+                asset_id=r.asset_id,
+                on=r.on,
+                price_eur=r.price_eur,
+                source=PriceSourceKind(r.source),
+                fetched_at=r.fetched_at,
+            )
+            for r in rows
+        ]
+        gap = valuation.report_gap(points)
+        if gap is None:
+            continue
+        report = [r for r in rows if r.source == S.STATEMENT.value][-1]  # the latest fetched
+        if gap.source is S.ISSUER_NAV:
+            fund = _fund(AssetKind.ETF, row.isin, stored.get(row.id))
+            issuer = issuer_name(fund.issuer) if fund is not None else "der Fondsgesellschaft"
+            other = f"der Fondspreis (NAV), den {issuer} für diesen Tag veröffentlicht,"
+            valued = f"Hausbuch bewertet den Fonds an diesem Tag mit dem NAV von {issuer}."
+        else:
+            other = f"der Börsenkurs von {lang_schwarz.VENUE_NAME} desselben Tages"
+            valued = "Hausbuch bewertet den Fonds an diesem Tag mit dem Kurs des Berichts."
+        percent = f"{gap.gap_percent:f}".replace(".", ",")
+        items.append(
+            InboxItem(
+                kind=InboxItemKind.PRICE_REPORT_DIFFERS,
+                created_at=max(r.fetched_at for r in rows),
+                reasoning=(
+                    f"Der Depotbericht bewertet {row.name} am {_german_day(gap.on)} mit "
+                    f"{_price_text(gap.report_price)} je Anteil, {other} liegt bei "
+                    f"{_price_text(gap.price)}: {percent} % Abstand. {valued}"
+                ),
+                question=(
+                    "Bitte im Bericht prüfen, welcher Kurs stimmt („Bericht öffnen“). Ist ein "
+                    "anderer Kurs richtig, ihn unter Anlagen › Übersicht mit „Kurs eintragen“ "
+                    "für diesen Tag eintragen; dann gilt er, und dieser Hinweis entfällt. "
+                    "Hausbuch ändert von sich aus keinen Kurs."
+                ),
+                asset_id=row.id,
+                document_id=report.document_id,
+            )
+        )
+    return items
 
 
 def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
@@ -680,6 +788,7 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 asset_id=row.id,
             )
         )
+    items += _report_differs(conn, held, stored)
     return items
 
 

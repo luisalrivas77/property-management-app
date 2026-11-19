@@ -56,6 +56,9 @@ ISSUER_NAMES: dict[str, str] = {
     "landg": "L&G",
     "ark": "ARK Invest",
     "hanetf": "HANetf",
+    # D264: the exchange whose daily price values a fund no issuer prices; named on the
+    # failure card („kam seit N Tagen nicht von Lang & Schwarz“), never an adapter.
+    "ls_tc": "Lang & Schwarz",
 }
 
 

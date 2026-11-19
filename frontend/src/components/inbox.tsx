@@ -166,6 +166,8 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   // prices (D167).
   price_source_failed: "automatic",
   price_no_source: "other",
+  // Phase 6 D264 (7): a fund's daily price more than 2 % from its newest report's.
+  price_report_differs: "other",
   // Phase 6 step 5a: an exchange's imports and movements.
   exchange_pending_balance: "exchanges",
   exchange_unreconciled: "exchanges",
@@ -218,6 +220,7 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   holdings_mismatch: "badge badge-warn",
   price_source_failed: "badge badge-danger",
   price_no_source: "badge badge-warn",
+  price_report_differs: "badge badge-warn",
   exchange_pending_balance: "badge badge-warn",
   exchange_unreconciled: "badge badge-danger",
   exchange_withdrawals: "badge badge-info",
@@ -882,7 +885,11 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
     return <strong>Depotbestand{account ? ` · ${account.label}` : ""}</strong>;
   }
-  if (item.kind === "price_source_failed" || item.kind === "price_no_source") {
+  if (
+    item.kind === "price_source_failed" ||
+    item.kind === "price_no_source" ||
+    item.kind === "price_report_differs"
+  ) {
     return <strong>Kurs einer Anlage</strong>;
   }
   if (
@@ -1210,6 +1217,13 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       return item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>Kurs eintragen</Link> : null;
     case "price_no_source":
       return item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>Kursquelle wählen</Link> : null;
+    case "price_report_differs":
+      return (
+        <>
+          {item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>Kurs eintragen</Link> : null}
+          {item.document_id ? <Link href={`/documents/${item.document_id}`}>Bericht öffnen</Link> : null}
+        </>
+      );
     case "app_secret_unreadable":
       return <Link href={`/settings#${APP_SECRETS_ANCHOR}`}>Zugangsschlüssel öffnen</Link>;
     default:

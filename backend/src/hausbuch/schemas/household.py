@@ -882,6 +882,9 @@ class PriceSourceKind(StrEnum):
     KRAKEN_DAILY = "kraken_daily"
     ECB_FX = "ecb_fx"
     USER = "user"
+    # Phase 6 D264 (migration 0049): an exchange's daily price in euros (Lang & Schwarz),
+    # for a fund whose issuer publishes no usable daily NAV; never a NAV.
+    EXCHANGE_CLOSE = "exchange_close"
 
 
 class PriceDraft(Schema):

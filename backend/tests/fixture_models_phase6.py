@@ -2230,6 +2230,182 @@ class IssuerNavFixture(_Fixture):
         return self
 
 
+# --- exchange_price.yaml: Lang & Schwarz exchange prices (D264) -------------------------------
+
+# D264 (1): the adapters whose issuer gives only its latest NAV; such a fund is asked once for
+# its exchange history. Written here as the contract, not read from the adapters.
+LATEST_ONLY_ISSUERS = frozenset({"landg"})
+# D264 (7): a stored daily price more than this share of the report's price away raises the
+# card, as the first-read check's tolerance (D174 amended 19 Nov 2026 (g)).
+REPORT_GAP_TOLERANCE = Decimal("0.02")
+
+
+class SearchExpect(Schema):
+    instrument_id: int | None = Field(default=None, gt=0)
+    error: str | None = None  # SourceError.kind
+
+    @model_validator(mode="after")
+    def _one(self) -> Self:
+        if (self.instrument_id is None) == (self.error is None):
+            raise ValueError("a search case expects an instrument id or an error")
+        return self
+
+
+class SearchCase(_Case):
+    """lang_schwarz.instrument over a recorded search answer (the real layout, invented
+    values): exactly one entry whose `isin` is the fund's gives its `instrumentId`."""
+
+    isin: Isin
+    sample: str
+    expect: SearchExpect
+
+    @model_validator(mode="after")
+    def _exists(self) -> Self:
+        _recorded(self.id, {"": self.sample})
+        return self
+
+
+class ExchangePoint(Schema):
+    on: date
+    price_eur: PriceEur
+
+
+class HistoryExpect(Schema):
+    points: list[ExchangePoint] = Field(default_factory=list)  # oldest first
+    error: str | None = None
+
+    @model_validator(mode="after")
+    def _one(self) -> Self:
+        if (self.error is None) == (not self.points):
+            raise ValueError("a history case expects points or an error")
+        for point in self.points:
+            if point.on.weekday() >= 5:
+                raise ValueError(f"a weekend day is never stored ({point.on})")
+            if point.price_eur != point.price_eur.quantize(Decimal("0.000001")):
+                raise ValueError(f"a price has six places at most ({point.price_eur})")
+        return self
+
+
+class HistoryCase(_Case):
+    """lang_schwarz.history over a recorded chart answer, read on `today` (UTC): the past
+    weekdays, oldest first, each price quantized to six places half up."""
+
+    isin: Isin
+    sample: str
+    today: date
+    expect: HistoryExpect
+
+    @model_validator(mode="after")
+    def _exists(self) -> Self:
+        _recorded(self.id, {"": self.sample})
+        if any(p.on >= self.today for p in self.expect.points):
+            raise ValueError(f"{self.id}: a point on or after today is never stored")
+        return self
+
+
+class SelectionCase(_Case):
+    """D264 (1): whether a held fund asks Lang & Schwarz, from its name, the issuer source it
+    has (the registry's or the discovered one, None for none) and whether an exchange price
+    of it is stored: `daily` every run, `history` once, `none` never this run."""
+
+    name: str
+    issuer: str | None = None
+    exchange_stored: bool = False
+    expect: Literal["daily", "history", "none"]
+
+    def recompute(self) -> str:
+        from hausbuch.services.prices.issuer_nav import ADAPTERS
+
+        if self.issuer is not None:
+            latest_only = self.issuer in LATEST_ONLY_ISSUERS
+            return "history" if latest_only and not self.exchange_stored else "none"
+        if any(adapter.names_brand(self.name) for adapter in ADAPTERS.values()):
+            return "none"
+        return "daily"
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if self.recompute() != self.expect:
+            raise ValueError(f"{self.id}: the rule gives {self.recompute()}")
+        return self
+
+
+class ExchangePrecedenceCase(_Case):
+    """D264 (4): date first, then SOURCE_PRECEDENCE, with exchange_close below a NAV and a
+    report's own day."""
+
+    prices: list[PriceRow] = Field(min_length=1)
+    on: date
+    expect: PriceSourceKind
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        best = _price_on(self.prices, self.on)
+        if best is None or best.source != self.expect:
+            raise ValueError(f"{self.id}: the rule gives {best}")
+        return self
+
+
+class ReportCard(Schema):
+    on: date
+    source: PriceSourceKind
+    report_price: PriceEur
+    price: PriceEur
+    gap_percent: Decimal  # one place, half up
+
+
+class ReportCase(_Case):
+    """D264 (7): the newest day a depot report priced the fund; its issuer_nav row of that day,
+    else its exchange_close row, more than REPORT_GAP_TOLERANCE of the report's price away
+    raises one card, unless a person typed a price (user) for that day."""
+
+    prices: list[PriceRow] = Field(min_length=1)
+    expect: ReportCard | None
+
+    def recompute(self) -> ReportCard | None:
+        reports = [p for p in self.prices if p.source == PriceSourceKind.STATEMENT]
+        if not reports:
+            return None
+        on = max(p.on for p in reports)
+        if any(p.on == on and p.source == PriceSourceKind.USER for p in self.prices):
+            return None
+        report = max(p.price_eur for p in reports if p.on == on)  # one report a day here
+        for source in (PriceSourceKind.ISSUER_NAV, PriceSourceKind.EXCHANGE_CLOSE):
+            rows = [p for p in self.prices if p.on == on and p.source == source]
+            if not rows:
+                continue
+            price = rows[0].price_eur
+            gap = abs(price - report) / report
+            if gap <= REPORT_GAP_TOLERANCE:
+                return None
+            percent = (gap * 100).quantize(Decimal("0.1"), ROUND_HALF_UP)
+            return ReportCard(
+                on=on, source=source, report_price=report, price=price, gap_percent=percent
+            )
+        return None
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if self.recompute() != self.expect:
+            raise ValueError(f"{self.id}: the rule gives {self.recompute()}")
+        return self
+
+
+class ExchangePriceFixture(_Fixture):
+    search_cases: list[SearchCase] = Field(min_length=1)
+    history_cases: list[HistoryCase] = Field(min_length=1)
+    selection_cases: list[SelectionCase] = Field(min_length=1)
+    precedence_cases: list[ExchangePrecedenceCase] = Field(min_length=1)
+    guard_cases: list[GuardCase] = Field(min_length=1)
+    report_cases: list[ReportCase] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _eur_only(self) -> Self:
+        if any(n.currency != "EUR" for c in self.guard_cases for n in c.navs):
+            raise ValueError("an exchange price is in euros")
+        return self
+
+
 # --- net_worth.yaml: services.net_worth over a fixture ledger (D167 (4)) --------------------
 
 _CLASS_OF_KIND = {
@@ -2379,6 +2555,7 @@ MODELS: dict[str, type[Schema]] = {
     "card_pdf_consors": ConsorsFixture,
     "valuation": ValuationFixture,
     "issuer_nav": IssuerNavFixture,
+    "exchange_price": ExchangePriceFixture,
     "net_worth": NetWorthFixture,
 }
 

@@ -4953,6 +4953,8 @@ export interface components {
             kraken_pair?: string | null;
             /** Issuer */
             issuer?: string | null;
+            /** Price Venue */
+            price_venue?: string | null;
             /** Has Source */
             has_source: boolean;
             latest_price?: components["schemas"]["PriceLabel"] | null;
@@ -8621,7 +8623,7 @@ export interface components {
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment" | "wallet_groups" | "wallet_change" | "wallet_question" | "wallet_sync" | "wallet_unreconciled" | "wallet_coins_left" | "app_secret_unreadable";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "price_report_differs" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment" | "wallet_groups" | "wallet_change" | "wallet_question" | "wallet_sync" | "wallet_unreconciled" | "wallet_coins_left" | "app_secret_unreadable";
         /** IncomeChange */
         IncomeChange: {
             /** Monthly Net */
@@ -10858,7 +10860,7 @@ export interface components {
          *     protocol below. The precedence among one day's rows is rules.valuation's data.
          * @enum {string}
          */
-        PriceSourceKind: "trade" | "statement" | "issuer_nav" | "coingecko_daily" | "kraken_daily" | "ecb_fx" | "user";
+        PriceSourceKind: "trade" | "statement" | "issuer_nav" | "coingecko_daily" | "kraken_daily" | "ecb_fx" | "user" | "exchange_close";
         /** PriceSplit */
         PriceSplit: {
             /**

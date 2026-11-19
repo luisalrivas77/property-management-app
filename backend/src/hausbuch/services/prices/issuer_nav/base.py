@@ -83,6 +83,9 @@ class IssuerAdapter:
     # currency, D174 amended after the review (h)): a lookup reads them all and keeps
     # one only when exactly one answers, and a stored reference is never replaced.
     one_answer: ClassVar[bool] = False
+    # The issuer publishes its latest NAV only (L&G): its fund's past days are asked once
+    # from the Lang & Schwarz exchange (D264 (1)).
+    latest_only: ClassVar[bool] = False
 
     def candidates(self, isin: str, name: str) -> list[str]:
         """The references to try, in order, for a fund the registry and the catalogues do
