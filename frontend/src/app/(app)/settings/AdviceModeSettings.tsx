@@ -28,7 +28,7 @@ const MODES: { mode: AdviceMode; label: string; text: string }[] = [
     label: "Eigene Nutzung",
     text:
       "Die KI-Erklärung unter Planung › Haushalt nennt Beträge, Anlageklassen und eure bestehenden Konten, erkannten Sparpläne " +
-      "und Anlagen, nie ein neues Produkt. Die Wege zum Reserveziel zeigen jeden Sparplan als eigene Zeile.",
+      "und Anlagen, nie ein neues Produkt. Die Wege zum Reserveziel zeigen auch Wege, in denen einzelne Sparpläne pausieren.",
   },
   {
     mode: "generic",

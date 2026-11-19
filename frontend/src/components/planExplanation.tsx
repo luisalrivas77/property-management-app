@@ -60,7 +60,7 @@ const FOOTER: Record<AdviceMode, string> = {
     "Konten, nie ein neues Produkt (Modus: eigene Nutzung). Keine Anlageberatung.",
   generic:
     "Alle Beträge rechnet die App aus euren Umsätzen; die KI formuliert nur. Sie nennt Beträge und Anlageklassen, nennt keine " +
-    "Produkte und keine Konten (Modus: allgemein). Keine Anlageberatung.",
+    "Produkte und keine Konten. Keine Anlageberatung.",
 };
 
 type Phase = "idle" | "waiting" | "timeout" | "off";

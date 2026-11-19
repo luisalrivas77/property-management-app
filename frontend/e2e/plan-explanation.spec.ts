@@ -357,7 +357,7 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await page.goto("/planning?tab=haushalt");
   await expect(panel.getByText("In Fonds und Wertpapiere fließen 300 € im Monat.")).toBeVisible();
   await expect(panel.getByText("In Fondsdepot A fließen 300 € im Monat.")).toHaveCount(0);
-  await expect(panel.getByText("(Modus: allgemein)")).toBeVisible();
+  await expect(panel.getByText("nennt keine Produkte und keine Konten. Keine Anlageberatung.")).toBeVisible();
   await expect(panel.getByText("(Modus: eigene Nutzung)")).toHaveCount(0);
   await expect(paths.locator("tbody tr")).toHaveCount(2);
   await expect(paths.locator("tbody tr").nth(0)).toContainText("Reserve zuerst");
