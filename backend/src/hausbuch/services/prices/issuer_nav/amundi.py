@@ -77,7 +77,7 @@ class AmundiAdapter(IssuerAdapter):
             raise SourceError("fund_ref")
         return URL
 
-    def load(self, fund_ref: str, since: date | None) -> NavFile:
+    def load(self, fund_ref: str, since: date | None, isin: str | None = None) -> NavFile:
         body = get(
             self.fetcher,
             self.url(fund_ref),

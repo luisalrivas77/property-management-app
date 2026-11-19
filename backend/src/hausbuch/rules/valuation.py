@@ -23,12 +23,16 @@ sums the valuations into the net worth.
 - `nav_rows(navs, first_movement_on, rates, stored_days)`: the price rows an issuer's NAV
   file adds (D174 (3)): one per NAV day on or after the asset's first movement and not yet
   stored, converted by `to_eur` when the NAV is not in EUR.
+- `nav_check(navs, rates, reports)`: the first-read check of a new NAV source (D174 amended
+  19 Nov 2026 (g)): the newest NAV day the depot report also priced, in euros, against the
+  report's price; more than NAV_CHECK_TOLERANCE apart refuses the file.
 - `failed_days(runs)`: how many daily runs in a row, ending at the latest, failed for one
   asset (D174 (4): seven raise price.source_failed); a success or a day without a run ends
   the count.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -56,6 +60,9 @@ SOURCE_PRECEDENCE: tuple[PriceSourceKind, ...] = (
     PriceSourceKind.ECB_FX,
 )
 STALE_AFTER_DAYS = 7
+# D174 amended 19 Nov 2026 (g): a first read whose NAV, in euros, differs from the depot
+# report's price of the same day by more than this share of the report's price stores nothing.
+NAV_CHECK_TOLERANCE = Decimal("0.02")
 SOURCE_FAILED_AFTER_DAYS = 7  # D174: seven failed days raise price.source_failed
 
 if set(SOURCE_PRECEDENCE) != set(PriceSourceKind):  # pragma: no cover
@@ -161,6 +168,36 @@ def nav_rows(
             on=nav.on, price_eur=price, nav=nav.nav, currency=nav.currency, rate_on=rate_on
         )
     return [rows[day] for day in sorted(rows)]
+
+
+@dataclass(frozen=True)
+class NavCheck:
+    on: date  # the day compared
+    refused: bool  # the NAV in euros is more than NAV_CHECK_TOLERANCE from the report
+
+
+def nav_check(
+    navs: Iterable[NavPoint], rates: Sequence[FxRate], reports: Mapping[date, Decimal]
+) -> NavCheck | None:
+    """D174 amended 19 Nov 2026 (g): the first read of a fund from a new source is compared
+    with the depot report's price on the newest NAV day that the report also priced and,
+    for a NAV not in EUR, that has an ECB rate on or before it. `rates` are the NAV
+    currency's, `reports` the report price in EUR per day. None when no day can be compared
+    (a latest-NAV-only source before the next report): the rows are stored."""
+    for point in sorted(navs, key=lambda n: n.on, reverse=True):
+        report = reports.get(point.on)
+        if report is None or report <= 0:
+            continue
+        if point.currency == "EUR":
+            eur = point.nav
+        else:
+            converted = to_eur(point.nav, point.on, rates)
+            if converted is None:
+                continue
+            eur = converted[1]
+        gap = abs(eur - report) / report
+        return NavCheck(on=point.on, refused=gap > NAV_CHECK_TOLERANCE)
+    return None
 
 
 def failed_days(runs: Iterable[tuple[date, bool]]) -> int:

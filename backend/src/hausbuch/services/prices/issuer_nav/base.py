@@ -76,6 +76,9 @@ class IssuerAdapter:
 
     # A fund reference this adapter can derive from the ISIN alone (no catalogue needed).
     isin_keyed: ClassVar[bool] = False
+    # `candidates` already checked each reference against the ISIN (HANetf's fund page):
+    # the lookup takes the first without reading its file, which the run reads next anyway.
+    checked_candidates: ClassVar[bool] = False
 
     def candidates(self, isin: str, name: str) -> list[str]:
         """The references to try, in order, for a fund the registry and the catalogues do
@@ -110,13 +113,13 @@ class IssuerAdapter:
             raise SourceError("parse")
         return found
 
-    def load(self, fund_ref: str, since: date | None) -> NavFile:
+    def load(self, fund_ref: str, since: date | None, isin: str | None = None) -> NavFile:
         """The request(s) and the reading; one GET of `url` by default."""
         return self.parse(get(self.fetcher, self.url(fund_ref), max_bytes=self.max_bytes))
 
-    def read(self, fund_ref: str, since: date | None = None) -> NavFile:
+    def read(self, fund_ref: str, since: date | None = None, isin: str | None = None) -> NavFile:
         try:
-            return self.load(fund_ref, since)
+            return self.load(fund_ref, since, isin)
         except SourceError:
             raise
         except Exception:  # noqa: BLE001 - any reader failure is "the file changed"
@@ -145,7 +148,7 @@ def read_points(
 ) -> NavFile:
     """The file for a registry entry, refused (SourceError "isin_mismatch") when it states
     another ISIN than the registry's."""
-    found = adapter.read(fund_ref, since)
+    found = adapter.read(fund_ref, since, isin)
     if found.isin != isin:
         raise SourceError("isin_mismatch")
     return found

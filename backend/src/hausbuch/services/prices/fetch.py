@@ -224,7 +224,8 @@ class Sources:
         """D174 amended 19 Nov 2026: an issuer without a catalogue is asked by the fund
         itself. Each candidate reference (the ISIN; BNP's per currency; HANetf's pages for
         the name) is read until one states the ISIN; the file read is kept for the run. A
-        miss is no failure (only the log's counter): the fund stays on its report price.
+        miss (no such fund, another fund) is no failure and is not counted: the fund stays
+        on its report price.
         An answer that is neither „no such fund“ nor „another fund“ ends the lookup."""
         adapter = self._adapter(issuer)
         try:
@@ -232,11 +233,16 @@ class Sources:
         except SourceError as exc:
             self._failed(f"{S.ISSUER_NAV.value}:{issuer}:find", exc)
             return None
+        except Exception:  # noqa: BLE001 - a lookup that cannot read the issuer finds nothing
+            self._failed(f"{S.ISSUER_NAV.value}:{issuer}:find", SourceError("parse"))
+            return None
         for ref in refs:
             if ref == skip:
                 continue
             found = NavSource(issuer=issuer, fund_ref=ref, isin=isin)
-            answer = self.nav(found, since)
+            if adapter.checked_candidates:
+                return found  # its page stated the ISIN; the run reads its file next
+            answer = self.nav(found, since, count_missing=False)
             if not isinstance(answer, SourceError):
                 return found
             if not _missing(answer):
@@ -267,16 +273,20 @@ class Sources:
                 return found
         return None
 
-    def nav(self, fund: FundSource, since: date | None = None) -> NavFile | SourceError:
+    def nav(
+        self, fund: FundSource, since: date | None = None, *, count_missing: bool = True
+    ) -> NavFile | SourceError:
         """The fund's file, read once a run (from `since`, the first movement, where the
-        issuer takes a date range)."""
+        issuer takes a date range). A lookup's miss (`count_missing` False) is not counted."""
         key = (fund.issuer, fund.fund_ref or "", fund.isin)
         if key not in self._nav:
             adapter = self._adapter(fund.issuer)
             try:
                 self._nav[key] = read_points(adapter, fund.fund_ref or "", fund.isin, since)
             except SourceError as exc:
-                self._nav[key] = self._failed(f"{S.ISSUER_NAV.value}:{fund.issuer}", exc)
+                if count_missing or not _missing(exc):
+                    exc = self._failed(f"{S.ISSUER_NAV.value}:{fund.issuer}", exc)
+                self._nav[key] = exc
         return self._nav[key]
 
 
