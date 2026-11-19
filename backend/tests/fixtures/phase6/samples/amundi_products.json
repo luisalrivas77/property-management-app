@@ -1,0 +1,51 @@
+{
+ "products": [
+  {
+   "productId": "LU000INVENT4",
+   "characteristics": {
+    "ISIN": "LU000INVENT4",
+    "SHARE_MARKETING_NAME": "Amundi Invented Equity UCITS ETF Acc",
+    "CURRENCY": "USD"
+   },
+   "productType": "PRODUCT",
+   "currencies": {},
+   "metrics": [],
+   "historics": [
+    {
+     "indicator": "officialNav",
+     "historicalData": [
+      {
+       "date": 1782777600000,
+       "data": 41.2817
+      },
+      {
+       "date": 1782432000000,
+       "data": 40.9
+      },
+      {
+       "date": 1782691200000,
+       "data": 41.05
+      }
+     ]
+    },
+    {
+     "indicator": "navCurrency",
+     "historicalData": [
+      {
+       "date": 1782777600000,
+       "data": "USD"
+      },
+      {
+       "date": 1782432000000,
+       "data": "USD"
+      },
+      {
+       "date": 1782691200000,
+       "data": "USD"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

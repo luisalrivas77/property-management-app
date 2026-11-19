@@ -2086,9 +2086,134 @@ class ParseCase(_Case):
         return self
 
 
+def _recorded(case_id: str, answers: dict[str, str]) -> None:
+    for sample in answers.values():
+        if not (SAMPLES / sample).is_file():
+            raise ValueError(f"{case_id}: no recorded file {sample}")
+
+
+class ReadCase(_Case):
+    """D174 amended 19 Nov 2026: one adapter's read of one fund (`read_points`), every request
+    it makes answered by a recorded sample whose URL contains the key (any other URL answers
+    404). `fund_ref` defaults to the ISIN, the reference of an adapter keyed by the ISIN."""
+
+    issuer: str
+    isin: Isin
+    fund_ref: str | None = None
+    answers: dict[str, str] = Field(min_length=1)  # URL part -> sample file
+    expect: ParseExpect
+
+    @model_validator(mode="after")
+    def _exists(self) -> Self:
+        _recorded(self.id, self.answers)
+        return self
+
+
+class CatalogueCase(_Case):
+    """An adapter's `parse_catalogue` of a recorded list of its funds: ISIN -> reference, an
+    ISIN listed under two references left out."""
+
+    issuer: str
+    sample: str
+    expect: dict[str, str]
+
+    @model_validator(mode="after")
+    def _exists(self) -> Self:
+        _recorded(self.id, {"": self.sample})
+        return self
+
+
+class DiscoveryExpect(Schema):
+    issuer: str | None = None
+    fund_ref: str | None = None
+    requests: int = Field(ge=0)  # every request the lookup made, catalogue or file
+
+    @model_validator(mode="after")
+    def _both(self) -> Self:
+        if (self.issuer is None) != (self.fund_ref is None):
+            raise ValueError("a discovery finds an issuer with its reference, or nothing")
+        return self
+
+
+class DiscoveryCase(_Case):
+    """services.prices.fetch.Sources.discover for a held fund with no registry row and no
+    stored reference: the fund's name and ISIN, the recorded answers; what it finds, and how
+    many requests that cost. A miss is no failure: the fund stays on its report price."""
+
+    name: str
+    isin: Isin
+    answers: dict[str, str] = Field(default_factory=dict)
+    expect: DiscoveryExpect
+
+    @model_validator(mode="after")
+    def _exists(self) -> Self:
+        _recorded(self.id, self.answers)
+        return self
+
+
+class EcbHistoryCase(_Case):
+    """ecb_fx's read of the ECB's full history ZIP (one CSV, newest first, „N/A“ cells, a
+    trailing comma): the rates of the currencies named, oldest first, N/A days left out."""
+
+    sample: str
+    expect: dict[str, list[FxRate]]
+
+    @model_validator(mode="after")
+    def _exists(self) -> Self:
+        _recorded(self.id, {"": self.sample})
+        return self
+
+
+# D174 amended 19 Nov 2026 (g): a first read whose NAV, in euros, differs from the depot
+# report's price of the same day by more than this share of the report's price stores nothing.
+NAV_CHECK_TOLERANCE = Decimal("0.02")
+
+
+class GuardExpect(Schema):
+    checked_on: date | None = None  # the day compared; None when no day can be compared
+    refused: bool
+
+
+class GuardCase(_Case):
+    """The first-read check (D174 amended 19 Nov 2026 (g)): the newest NAV day for which the
+    depot's report also stored a price and an ECB rate on or before it exists (a EUR NAV
+    needs none) is compared in euros; above NAV_CHECK_TOLERANCE the fund's file is refused."""
+
+    navs: list[NavPoint] = Field(min_length=1)
+    rates: list[FxRate] = Field(default_factory=list)
+    reports: list[StoredPrice] = Field(default_factory=list)
+    expect: GuardExpect
+
+    def recompute(self) -> GuardExpect:
+        report = {r.on: r.price_eur for r in self.reports}
+        for point in sorted(self.navs, key=lambda n: n.on, reverse=True):
+            if point.on not in report:
+                continue
+            if point.currency == "EUR":
+                eur = point.nav
+            elif any(r.on <= point.on for r in self.rates):
+                eur = _to_eur(point.nav, point.on, self.rates)[1]
+            else:
+                continue
+            gap = abs(eur - report[point.on]) / report[point.on]
+            return GuardExpect(checked_on=point.on, refused=gap > NAV_CHECK_TOLERANCE)
+        return GuardExpect(refused=False)
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        if self.recompute() != self.expect:
+            raise ValueError(f"{self.id}: the rule gives {self.recompute()}")
+        return self
+
+
 class IssuerNavFixture(_Fixture):
     cases: list[IssuerNavCase] = Field(min_length=1)
     parse_cases: list[ParseCase] = Field(default_factory=list)
+    read_cases: list[ReadCase] = Field(default_factory=list)
+    catalogue_cases: list[CatalogueCase] = Field(default_factory=list)
+    discovery_cases: list[DiscoveryCase] = Field(default_factory=list)
+    ecb_history_cases: list[EcbHistoryCase] = Field(default_factory=list)
+    guard_cases: list[GuardCase] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _samples(self) -> Self:
