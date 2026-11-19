@@ -90,7 +90,8 @@ function path(key: string, paused: string[], reached: string): Path {
   return { key, paused, to_reserve_first_month: "1170.00", reached, reserve_at_horizon: "20000.00" };
 }
 
-/** The plan with two savings plans: four paths under `own_use`, the two of D251 under `generic`. */
+/** The plan with three savings plans, the third without a row of its own (`paths_others`): four
+ * paths under `own_use`, the two of D251 under `generic`. */
 function plan(mode: AdviceMode): HouseholdPlan {
   const last = WINDOW[WINDOW.length - 1] ?? null;
   const reachedLater = monthsBack(-20);
@@ -117,7 +118,11 @@ function plan(mode: AdviceMode): HouseholdPlan {
     plans: [
       { key: "p1", destination_payee: "Fondsdepot A", asset_class: "depot", monthly: "300.00", months: WINDOW, overridden: false },
       { key: "p2", destination_payee: "Kryptobörse B", asset_class: "crypto", monthly: "100.00", months: WINDOW, overridden: false },
+      { key: "p3", destination_payee: "Fondsdepot C", asset_class: "depot", monthly: "50.00", months: WINDOW, overridden: false },
     ],
+    already_invested: "450.00",
+    investable_left: "720.00",
+    paths_others: ["p3"],
     months: [],
     paths: mode === "generic" ? all.filter((p) => p.key === "reserve_first" || p.key === "as_is") : all,
     projection: { points: [], todos: [] },
@@ -347,6 +352,14 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await expect(panel.getByText("In Fondsdepot A fließen 300 € im Monat.")).toBeVisible();
   await expect(panel.getByText("(Modus: eigene Nutzung)")).toBeVisible();
   await expect(paths.locator("tbody tr")).toHaveCount(4);
+  // Eigene Nutzung names each plan by its account: the card, the paths and „Weitere Annahmen“.
+  const invested = page.locator(".planning-kpi").filter({ hasText: "Schon angelegt pro Monat" });
+  await expect(invested).toContainText("450 €");
+  await expect(invested).toContainText("Fondsdepot A 300 € · Kryptobörse B 100 € · Fondsdepot C 50 €");
+  await expect(paths.getByText("Sparplan Fondsdepot A pausiert")).toBeVisible();
+  await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile: Fondsdepot C.")).toBeVisible();
+  const more = page.getByRole("region", { name: "Weitere Annahmen" });
+  await expect(more.getByText("Kryptobörse B", { exact: true })).toBeVisible();
 
   await page.goto("/settings");
   const saved = page.waitForResponse((r) => r.url().endsWith("/api/workspace/settings") && r.request().method() === "PATCH");
@@ -362,4 +375,13 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await expect(paths.locator("tbody tr")).toHaveCount(2);
   await expect(paths.locator("tbody tr").nth(0)).toContainText("Reserve zuerst");
   await expect(paths.locator("tbody tr").nth(1)).toContainText("Alles weiter wie bisher");
+  // Allgemein: the plans are one total, and no plan's account is named anywhere on the page.
+  await expect(invested).toContainText("450 €");
+  await expect(invested).toContainText("aus 3 Sparplänen zusammen");
+  await expect(more.getByTestId("plans-total")).toHaveText("450 € im Monat, aus 3 Sparplänen zusammen");
+  await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile")).toHaveCount(0);
+  for (const label of ["Fondsdepot A", "Kryptobörse B", "Fondsdepot C"]) {
+    await expect(page.getByText(label)).toHaveCount(0);
+  }
+  await expect(more.getByRole("button", { name: "Betrag ändern" })).toHaveCount(0);
 });

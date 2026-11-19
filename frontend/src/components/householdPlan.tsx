@@ -54,6 +54,7 @@ type SavingsPlan = components["schemas"]["SavingsPlan"];
 type SurplusKey = components["schemas"]["SurplusKey"];
 type IncomeChangeNote = components["schemas"]["IncomeChangeNote"];
 type ProjectionPoint = components["schemas"]["ProjectionPoint"];
+type AdviceMode = components["schemas"]["AdviceMode"];
 
 interface PlanData {
   plan: HouseholdPlan;
@@ -62,21 +63,25 @@ interface PlanData {
   accounts: Account[];
   names: Map<string, string>;
   months: HealthMonthView[];
+  /** workspace.advice_mode (D251), from GET /workspace/settings: GET /household-plan does not
+   * carry it. Under `generic` no plan and no plan's account is named on this page (§10). */
+  mode: AdviceMode;
 }
 
 async function loadPlan(): Promise<PlanData> {
-  const [plan, health, scenarios, accounts, names] = await Promise.all([
+  const [plan, health, scenarios, accounts, names, settings] = await Promise.all([
     ok(api.GET("/api/household-plan")),
     ok(api.GET("/api/health")),
     loadScenarioHistory(),
     ok(api.GET("/api/accounts")),
     loadMemberNames(),
+    ok(api.GET("/api/workspace/settings")),
   ]);
   const closedMonths = health.window.months ?? [];
   const first = closedMonths[0];
   const last = closedMonths[closedMonths.length - 1];
   const months = first && last ? await ok(api.GET("/api/health/months", { params: { query: { from: first, to: last } } })) : [];
-  return { plan, health, scenarios, accounts, names, months };
+  return { plan, health, scenarios, accounts, names, months, mode: settings.advice_mode };
 }
 
 /** The tab „Haushalt“ of Planung (`/planning?tab=haushalt`). */
@@ -190,6 +195,11 @@ function surplusRow(plan: HouseholdPlan, key: SurplusKey) {
   return plan.surplus?.rows.find((row) => row.key === key) ?? null;
 }
 
+/** Under `generic` (§10) the savings plans are one total: „aus 2 Sparplänen zusammen“. */
+function plansTogether(count: number): string {
+  return count === 1 ? "aus einem Sparplan" : `aus ${count} Sparplänen zusammen`;
+}
+
 function planName(plan: SavingsPlan | undefined, accounts: Account[]): string {
   if (!plan) return "Sparplan";
   const account = plan.destination_account_id ? accounts.find((a) => a.id === plan.destination_account_id) : undefined;
@@ -267,9 +277,11 @@ function PlanBody({ data, onSaved }: { data: PlanData; onSaved: () => void }) {
           <p className="planning-kpi-label">Schon angelegt pro Monat</p>
           <p className="planning-kpi-value">{formatEuro(plan.already_invested ?? "0")}</p>
           <p className="planning-kpi-sub">
-            {plans.length > 0
-              ? plans.map((p) => `${planName(p, data.accounts)} ${formatEuro(p.monthly)}`).join(" · ")
-              : "kein Sparplan erkannt"}
+            {plans.length === 0
+              ? "kein Sparplan erkannt"
+              : data.mode === "generic"
+                ? plansTogether(plans.length)
+                : plans.map((p) => `${planName(p, data.accounts)} ${formatEuro(p.monthly)}`).join(" · ")}
           </p>
           {plan.investable_left != null ? (
             <p className="planning-kpi-sub">danach bleiben {formatEuro(plan.investable_left)} im Monat</p>
@@ -756,6 +768,29 @@ function SavingsPlans({ data, draft, setDraft }: { data: PlanData; draft: Househ
     });
   }
 
+  if (data.mode === "generic") {
+    // §10: one total, no plan and no account named; changing a single plan needs its name, so
+    // it is done in „Eigene Nutzung“.
+    return (
+      <div className="stack">
+        <h3>Sparpläne</h3>
+        {plans.length === 0 ? (
+          <p className="muted">Kein Sparplan erkannt: kein Ziel bekam in jedem der letzten drei Monate Geld von euch.</p>
+        ) : (
+          <p data-testid="plans-total">
+            {formatEuro(data.plan.already_invested ?? "0")} im Monat, {plansTogether(plans.length)}
+          </p>
+        )}
+        {plans.length > 0 || dropped.length > 0 ? (
+          <p className="muted">
+            Im Hinweis-Modus „Allgemein“ zeigt die App die Sparpläne nur zusammen. Einen einzelnen ändern oder nicht mitrechnen könnt ihr
+            im Modus „Eigene Nutzung“ (<Link href="/settings">Einstellungen</Link> › „Hinweis-Modus“).
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="stack">
       <h3>Sparpläne</h3>
@@ -870,6 +905,7 @@ function Paths({ data }: { data: PlanData }) {
       return { title: "Reserve zuerst", sub: plans.length === 1 ? "Sparplan pausiert" : plans.length === 2 ? "beide Sparpläne pausiert" : "alle Sparpläne pausiert" };
     }
     if (key === "as_is") return { title: "Alles weiter wie bisher", sub: "jeder Sparplan läuft weiter" };
+    if (data.mode === "generic") return { title: "Ein Sparplan pausiert", sub: "" };
     return { title: `Sparplan ${name(key.slice("pause:".length))} pausiert`, sub: runningText };
   }
 
@@ -928,7 +964,7 @@ function Paths({ data }: { data: PlanData }) {
           </tbody>
         </table>
       </div>
-      {others.length > 0 ? <p className="muted">Weitere Sparpläne ohne eigene Zeile: {others.map(name).join(", ")}.</p> : null}
+      {others.length > 0 && data.mode !== "generic" ? <p className="muted">Weitere Sparpläne ohne eigene Zeile: {others.map(name).join(", ")}.</p> : null}
       {plan.paths_on_rental_account ? (
         <p className="muted">
           Davon kommen {formatEuro(plan.paths_on_rental_account)} im Monat zuerst auf dem Mietkonto an, das nicht zur Reserve zählt.

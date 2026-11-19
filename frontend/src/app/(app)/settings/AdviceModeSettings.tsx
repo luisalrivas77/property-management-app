@@ -35,7 +35,7 @@ const MODES: { mode: AdviceMode; label: string; text: string }[] = [
     label: "Allgemein",
     text:
       "Die KI-Erklärung nennt nur Beträge und Anlageklassen, keine Konten und keine Produkte. Die Wege zum Reserveziel zeigen nur " +
-      "„Reserve zuerst“ und „Alles weiter wie bisher“.",
+      "„Reserve zuerst“ und „Alles weiter wie bisher“, und die Sparpläne stehen nur zusammen als eine Summe da.",
   },
 ];
 
