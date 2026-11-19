@@ -9,7 +9,12 @@
 # - Forms of a word are listed out, as German inflects; a separable verb is listed in its
 #   joined forms (aufstocken, aufgestockt, aufzustocken), and its split form ("stockt … auf")
 #   is caught by the stem ("stockt") in the same list.
-version: advice-rules-2026-11-17
+#
+# Amended 19 Nov 2026 (D255, D256 amended, the step 4a review; docs/phases/phase-9.md §9.1):
+# checks 9 and 13 read the recommendation and the transaction words as one list; the closed
+# `descriptive_words` of check 9; the `colour_words` and `future_phrases`; the reserve's, the
+# trend's and the lights' contradiction rows hold in every paragraph (a row without `topic`).
+version: advice-rules-2026-11-19
 
 # Check 1: after NFKC, every character outside a slot is one of these. Anything else (another
 # script, a format character, $ / @ & % # _ and digits) is a violation.
@@ -66,7 +71,13 @@ recommendation_words: [kaufen, kauft, kaufe, kaufst, kauf, kaufte, kauften, geka
   reduzierst, umschichten, umgeschichtet, umzuschichten, schichtet, halten, haltet, hältst,
   hält, gehalten, behalten, behaltet, behältst, behält, empfehlen, empfehle, empfiehlt,
   empfehlt, empfohlen, empfehlung, empfehlenswert, sollte, solltest, solltet, sollten, soll,
-  sollst, lohnt, lohnen, lohnend, lohnenswert, ratsam]
+  sollst, lohnt, lohnen, lohnend, lohnenswert, ratsam,
+  # 19 Nov 2026: the transaction words' forms, so both lists hold every form (checks 9, 13)
+  nachkaufen, nachgekauft, nachzukaufen, abstoßen, abgestoßen, abzustoßen, stoßt, stößt,
+  nachlegen, nachgelegt, nachzulegen, zulegen, zuzulegen, aufbauen, aufgebaut, aufzubauen,
+  abbauen, abgebaut, abzubauen, umlegen, umgelegt, umzulegen, auflösen, aufgelöst, aufzulösen,
+  erhöhen, erhöht, senken, gesenkt, besparen, bespart, investieren, investiert,
+  investiere, investierst, ratschlag, tipp]
 
 # D256 amended 16 Nov 2026: a transaction word may not stand in a sentence with a {c:} slot or
 # with the slot of a marked figure (check 13), nor anywhere in a `projection` paragraph
@@ -74,7 +85,11 @@ recommendation_words: [kaufen, kauft, kaufe, kaufst, kauf, kaufte, kauften, geka
 transaction_words: [kaufen, kauft, kaufe, kaufst, kauf, gekauft, verkaufen, verkauft, verkaufe,
   verkaufst, verkauf, aufstocken, aufgestockt, aufzustocken, stockt, reduzieren,
   reduziert, reduziere, umschichten, umgeschichtet, umzuschichten, schichtet, nachkaufen,
-  nachgekauft, nachzukaufen, abstoßen, abgestoßen, abzustoßen, stoßt, stößt]
+  nachgekauft, nachzukaufen, abstoßen, abgestoßen, abzustoßen, stoßt, stößt,
+  # 19 Nov 2026: the recommendation words' forms of buying and selling (checks 9, 12, 13)
+  kaufte, kauften, zukaufen, verkaufte, verkauften, stockst, reduzierst, abstoßt, nachlegen,
+  nachgelegt, nachzulegen, umlegen, umgelegt, umzulegen, auflösen, aufgelöst, aufzulösen,
+  investieren, investiert, investiere, investierst]
 
 # Entries with a space are phrases, matched as consecutive words.
 # Check 12 (added 16 Nov 2026): a `projection` paragraph holds a typed-rate slot and an
@@ -87,45 +102,94 @@ forecast_words: [prognose, prognosen, prognostiziert, vorhersage, vorhersagen, v
   erwartbar, bestimmt, gewiss]
 judging_words: [realistisch, unrealistisch, vorsichtig, konservativ, optimistisch,
   pessimistisch, üblich, üblichen, typisch, historisch, marktüblich, angemessen, plausibel,
-  sinnvoll, vernünftig, "hoch gegriffen", "niedrig gegriffen", gewagt, "zu hoch", "zu niedrig"]
+  sinnvoll, vernünftig, "hoch gegriffen", "niedrig gegriffen", gewagt, "zu hoch", "zu niedrig",
+  # 19 Nov 2026 (D255 amended): a plain judgement of the rate
+  hoch, hohe, hohen, hoher, niedrig, niedrige, niedrigen, niedriger, gut, gute, guten, guter,
+  solide, soliden, solider, genau, genaue, genauen, verlässlich, zuverlässig, stark, schwach]
+# 19 Nov 2026 (D255 amended): a negated assumption in a `projection` paragraph (check 12).
+negated_assumptions: [keine annahme, keine annahmen, ohne annahme, ohne annahmen, nicht angenommen]
+# 19 Nov 2026 (D255 amended): outside a `projection` paragraph, check 12 rejects the future
+# auxiliaries, the forecast words and these phrases of the future (code `projection`).
+future_phrases: [in den nächsten jahren, in den kommenden jahren, in den nächsten monaten,
+  in den kommenden monaten, künftig, künftige, künftigen, künftiger, zukünftig, zukünftige,
+  zukünftigen, in zukunft, demnächst, langfristig, auf dauer]
 
-# Checks 10 and 13: per topic, phrases that may not appear under a state of the facts. A
-# phrase is matched as words on the lower-cased text. The `light_*` rows are check 13's.
+# Check 9 (D256 amended 19 Nov 2026): a paragraph that holds an {a:} or {c:} slot, the slot of
+# a marked figure whose light is green, amber or red, or that is of topic `projection`, uses
+# only these words (exact lower-case forms, no compound splitting). The list describes: it
+# holds no modal verb, no imperative, no recommendation or transaction word and no „gut“,
+# „besser“ or „sinnvoll“. A word is added only when a must-accept case, the template or a
+# mark's sentence needs it.
+descriptive_words: [
+  # articles, pronouns, function words
+  der, die, das, den, dem, des, ein, eine, einen, einem, einer, eines, kein, keine, keinen,
+  keinem, keiner, euer, eure, euren, eurem, eurer, eures, dein, deine, deinen, deinem, deiner,
+  deines, ihr, ihre, ihren, ihrem, ihrer, ihres, euch, es, sie, diese, diesem, diesen, dieser,
+  dieses, selbst, damit, davon,
+  # prepositions, conjunctions, particles
+  an, auf, aus, bei, bis, für, im, in, mit, nach, ohne, pro, unter, über, von, vom, zu, zum,
+  zur, zwischen, als, und, oder, wie, so, noch, mal,
+  # the verbs that describe
+  ist, sind, liegt, liegen, gehört, machen, gehen, stammen, reicht, fehlen, hat, habt,
+  gestiegen, gefallen, angenommen, läge, wäre, wären, käme, ausgegeben, eingenommen, gespart,
+  gelegt, gesetzt, erreicht,
+  # the nouns and adjectives of the plan
+  annahme, annahmen, anteil, bank, bankguthaben, bereich, breit, eigenen, eigenes, einkommen,
+  einkommens, einmalausgaben, ende, geschätzten, gestreute, grenze, grenzen, größten, hoch,
+  jahr, jahreseinkommen, kredit, kredite, kredits, kreditkarte, mehr, monat, monaten, reserve, roten,
+  schulden, sparquote, teil, tilgung, vermögen, vermögens, veränderung, werts, wohnung,
+  zählen, zeitraum, ziel, zins]
+# Check 13 (D255 amended 19 Nov 2026): a colour word needs, in its paragraph, the slot of a
+# marked figure, and every marked figure slotted there must have one of the word's lights.
+colour_words:
+  - {lights: [green], words: [grün, grüne, grünen, grüner, grünes, grünem]}
+  - {lights: [amber], words: [gelb, gelbe, gelben, gelber, gelbes, gelbem, orange]}
+  - {lights: [red], words: [rot, rote, roten, roter, rotes, rotem]}
+  - {lights: [amber, red], words: [kritisch, kritische, kritischen, kritischer, kritisches]}
+  - {lights: [green, amber, red], words: [ampel, ampeln, ampelfarbe, ampelfarben]}
+
+# Checks 10 and 13: phrases that may not appear under a state of the facts, matched as words on
+# the lower-cased text. A row with a `topic` holds in that topic's paragraphs; since 19 Nov 2026
+# (D255 amended) the reserve's, the trend's and the lights' rows have none and hold in every
+# paragraph. A `light_*` row is check 13's: a paragraph that holds the slot of a marked figure
+# is judged by that figure's light only, one that holds none by every confirmed light.
 contradictions:
-  - {topic: reserve, state: reserve_state, value: below,
-     phrases: [erreicht, geschafft, ist voll, ausreichend, reicht aus, genug]}
-  - {topic: reserve, state: reserve_state, value: reached,
-     phrases: [fehlt, fehlen, noch nicht erreicht, unter dem ziel, zu wenig]}
-  - {topic: paths, state: reserve_state, value: reached,
-     phrases: [fehlt, fehlen, noch nicht erreicht]}
+  - {state: reserve_state, value: below,
+     phrases: [erreicht, geschafft, ist voll, schon voll, ausreichend, reicht aus, genug,
+       über dem ziel, über eurem ziel, über deinem ziel, höher als euer ziel,
+       höher als dein ziel, größer als euer ziel, größer als dein ziel, fehlt nichts,
+       fehlt kein]}
+  - {state: reserve_state, value: reached,
+     phrases: [fehlt, fehlen, noch nicht erreicht, unter dem ziel, unter eurem ziel, zu wenig]}
   - {topic: surplus, state: investable_state, value: zero,
      phrases: [könnt ihr anlegen, kannst du anlegen, bleibt übrig, bleiben übrig]}
   - {topic: surplus, state: left_state, value: negative,
      phrases: [bleibt noch, bleiben noch, reicht für eure sparpläne]}
-  - {topic: net_worth, state: trend_state, value: up,
-     phrases: [gefallen, gesunken, verloren, weniger als im vormonat]}
-  - {topic: net_worth, state: trend_state, value: down,
-     phrases: [gestiegen, gewachsen, zugelegt, mehr als im vormonat]}
+  - {state: trend_state, value: up,
+     phrases: [gefallen, gesunken, verloren, weniger als im vormonat, schrumpft, sinkt]}
+  - {state: trend_state, value: down,
+     phrases: [gestiegen, gewachsen, zugelegt, mehr als im vormonat, wächst, wachsen, steigt,
+       höher als]}
   - {topic: basis, state: basis_state, value: short,
      phrases: [ganzes jahr, ganzen jahr, ganzen jahres]}
-  - {topic: reserve, state: light_reserve, value: green, phrases: &bad [kritisch, bedenklich, gefährlich, alarmierend, rot, roten bereich]}
-  - {topic: reserve, state: light_reserve, value: amber, phrases: &good [im grünen bereich, unbedenklich, gesund, kein problem, alles gut, solide]}
-  - {topic: reserve, state: light_reserve, value: red, phrases: *good}
-  - {topic: savings_rate, state: light_savings_rate, value: green, phrases: *bad}
-  - {topic: savings_rate, state: light_savings_rate, value: amber, phrases: *good}
-  - {topic: savings_rate, state: light_savings_rate, value: red, phrases: *good}
-  - {topic: debt, state: light_ltv, value: green, phrases: *bad}
-  - {topic: debt, state: light_ltv, value: amber, phrases: *good}
-  - {topic: debt, state: light_ltv, value: red, phrases: *good}
-  - {topic: debt, state: light_debt_service_ratio, value: green, phrases: *bad}
-  - {topic: debt, state: light_debt_service_ratio, value: amber, phrases: *good}
-  - {topic: debt, state: light_debt_service_ratio, value: red, phrases: *good}
-  - {topic: debt, state: light_debt_ratio, value: green, phrases: *bad}
-  - {topic: debt, state: light_debt_ratio, value: amber, phrases: *good}
-  - {topic: debt, state: light_debt_ratio, value: red, phrases: *good}
-  - {topic: debt, state: light_debt_to_income, value: green, phrases: *bad}
-  - {topic: debt, state: light_debt_to_income, value: amber, phrases: *good}
-  - {topic: debt, state: light_debt_to_income, value: red, phrases: *good}
+  - {state: light_reserve, value: green, phrases: &bad [kritisch, bedenklich, gefährlich, alarmierend, rot, roten bereich]}
+  - {state: light_reserve, value: amber, phrases: &good [im grünen bereich, unbedenklich, gesund, kein problem, alles gut, solide]}
+  - {state: light_reserve, value: red, phrases: *good}
+  - {state: light_savings_rate, value: green, phrases: *bad}
+  - {state: light_savings_rate, value: amber, phrases: *good}
+  - {state: light_savings_rate, value: red, phrases: *good}
+  - {state: light_ltv, value: green, phrases: *bad}
+  - {state: light_ltv, value: amber, phrases: *good}
+  - {state: light_ltv, value: red, phrases: *good}
+  - {state: light_debt_service_ratio, value: green, phrases: *bad}
+  - {state: light_debt_service_ratio, value: amber, phrases: *good}
+  - {state: light_debt_service_ratio, value: red, phrases: *good}
+  - {state: light_debt_ratio, value: green, phrases: *bad}
+  - {state: light_debt_ratio, value: amber, phrases: *good}
+  - {state: light_debt_ratio, value: red, phrases: *good}
+  - {state: light_debt_to_income, value: green, phrases: *bad}
+  - {state: light_debt_to_income, value: amber, phrases: *good}
+  - {state: light_debt_to_income, value: red, phrases: *good}
 
 # Check 13: the slot of a marked figure, per light state. A transaction word may not stand in
 # a sentence with one of these slots while its light is green, amber or red.

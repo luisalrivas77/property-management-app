@@ -23,6 +23,18 @@ Readings (recorded in docs/phases/phase-9.md §15.3, step 4a):
   (D255); the table of §9.1 lists their absence as the violation. A `projection` paragraph
   while `projection_state` is not `shown` is check 12's too (§8.3).
 - The `light_*` rows of the contradiction table are check 13's and report `mark`.
+- Amended 19 Nov 2026 (D255, D256 amended, the step 4a review): a text that is not NFKC-normal,
+  or holds a NUL, fails check 1 as it stands. A slot stands apart (check 2): whitespace or the
+  start of the text before it; whitespace, the end, or one of `.,;:!?` followed by whitespace or
+  the end after it; no `mal`, `plus` or `minus` between two figure slots of a sentence. Check
+  8b's join: a gap of hyphens, apostrophes, colons, quotation marks or brackets (spaces
+  allowed) joins two words, a comma never. Check 9's descriptive list is read per paragraph and
+  reports `recommendation`. Checks 9, 12 and 13 read the recommendation and the transaction
+  words as one list. A contradiction row without a topic holds in every paragraph; the lights'
+  rows judge a paragraph by the lights of the marked figures it slots, else by every light.
+  Check 12 reports the future and forecast words outside a `projection` paragraph as
+  `projection`; check 13 reports a colour word it cannot tie as `mark`. Check 11 needs a word
+  outside the slots in every paragraph.
 - When the facts' mode and the mode passed differ, the stricter one (`generic`) applies.
 - `output` may be an `ExplainOutput` or a plain list of paragraphs, so that check 11 can name a
   fifth paragraph or a long one that the schema itself would refuse.
@@ -59,6 +71,9 @@ _SINGLE_LETTER_GAP = re.compile(r"^[\s\-–.]+$")
 _HYPHEN = re.compile(r"^[-–]$")
 _SQUASHED = re.compile(r"[\s\-–.]")
 _COLOURED = frozenset({StateValue.GREEN, StateValue.AMBER, StateValue.RED})
+_JOIN = re.compile(r"^\s*[-–'\"„“”():]+(?:\s*[-–'\"„“”():]+)*\s*$")
+_AFTER_SLOT = re.compile(r"[.,;:!?](?:\s|$)")
+_SLOT_OPERATORS = frozenset({"mal", "plus", "minus"})
 
 
 def versions() -> dict[str, str]:
@@ -88,9 +103,14 @@ class _Data:
     function_words: frozenset[str]
     recommendation: frozenset[str]
     transaction: frozenset[str]
+    advice: frozenset[str]  # the two lists as one (D256 amended 19 Nov 2026)
+    descriptive: frozenset[str]
+    colours: tuple[tuple[frozenset[StateValue], frozenset[str]], ...]
     assumption: tuple[str, ...]
+    negated_assumption: tuple[str, ...]
     future: tuple[str, ...]
     forecast: tuple[str, ...]
+    future_phrases: tuple[str, ...]
     judging: tuple[str, ...]
     contradictions: tuple[dict, ...]
     marked_slots: dict[str, frozenset[str]]
@@ -119,9 +139,17 @@ def _data() -> _Data:
         function_words=frozenset(r["function_words"]),
         recommendation=frozenset(r["recommendation_words"]),
         transaction=frozenset(r["transaction_words"]),
+        advice=frozenset(r["recommendation_words"]) | frozenset(r["transaction_words"]),
+        descriptive=frozenset(r["descriptive_words"]),
+        colours=tuple(
+            (frozenset(StateValue(x) for x in row["lights"]), frozenset(row["words"]))
+            for row in r["colour_words"]
+        ),
         assumption=tuple(r["assumption_words"]),
+        negated_assumption=tuple(r["negated_assumptions"]),
         future=tuple(r["future_auxiliaries"]),
         forecast=tuple(r["forecast_words"]),
+        future_phrases=tuple(r["future_phrases"]),
         judging=tuple(r["judging_words"]),
         contradictions=tuple(r["contradictions"]),
         marked_slots={k: frozenset(v) for k, v in r["marked_figure_slots"].items()},
@@ -215,6 +243,11 @@ def _in_span(start: int, span: tuple[int, int]) -> bool:
 
 def _characters(read: _Read, data: _Data) -> list[Violation]:  # 1
     out = []
+    if read.raw != read.text:  # not NFKC-normal: rejected as written, never read as its form
+        out.append(_v(V.CHARACTER, read))
+    for i, ch in enumerate(read.text):  # a NUL is found before the slots are masked
+        if ch == _MASK:
+            out.append(_v(V.CHARACTER, read, i, i + 1))
     for i, ch in enumerate(read.masked):
         if ch != _MASK and ch not in data.allowed:
             out.append(_v(V.CHARACTER, read, i, i + 1))
@@ -237,6 +270,28 @@ def _slots(read: _Read, facts: ExplainFacts, mode: AdviceMode, data: _Data) -> l
     for slot in read.slots:
         if slot.letter not in allowed or slot.key not in held[slot.letter]:
             out.append(_v(V.SLOT, read, slot.start, slot.end))
+    return out + _slot_bounds(read)
+
+
+def _slot_bounds(read: _Read) -> list[Violation]:
+    """A slot stands apart (D255 amended 19 Nov 2026): whitespace or the text's start before
+    it; whitespace, the end, or sentence punctuation followed by either after it."""
+    out = []
+    text = read.text
+    for slot in read.slots:
+        if slot.start > 0 and not text[slot.start - 1].isspace():
+            out.append(_v(V.SLOT, read, slot.start - 1, slot.end))
+        after = text[slot.end :]
+        if after and not after[0].isspace() and not _AFTER_SLOT.match(after):
+            out.append(_v(V.SLOT, read, slot.start, slot.end + 1))
+    figures = [s for s in read.slots if s.letter == "f"]
+    for left, right in zip(figures, figures[1:], strict=False):
+        gap = read.masked[left.end : right.start]
+        if _SENTENCE_END.search(gap):
+            continue
+        words = {m.group(0).lower() for m in _WORD.finditer(gap)}
+        if words & _SLOT_OPERATORS:  # a figure is never computed in the text
+            out.append(_v(V.SLOT, read, left.start, right.end))
     return out
 
 
@@ -380,13 +435,13 @@ def _product_nouns(read: _Read, data: _Data) -> list[Violation]:  # 8b
             fine = before.lower in data.function_words or before.lower in data.permitted
             if gap.isspace() and before.text[:1].isupper() and not fine:
                 out.append(_v(V.PRODUCT_NOUN, read, before.start, w.end))
-            if _HYPHEN.match(gap) and not fine:
+            if _JOIN.match(gap) and not fine:
                 out.append(_v(V.PRODUCT_NOUN, read, before.start, w.end))
         if i + 1 < len(words):
             after = words[i + 1]
             gap = read.masked[w.end : after.start]
             fine = after.lower in data.function_words or after.lower in data.permitted
-            if _HYPHEN.match(gap) and not fine:
+            if _JOIN.match(gap) and not fine:
                 out.append(_v(V.PRODUCT_NOUN, read, w.start, after.end))
     return out
 
@@ -399,13 +454,35 @@ def _sentence_slots(read: _Read, span: tuple[int, int]) -> list[_Slot]:
     return [s for s in read.slots if _in_span(s.start, span)]
 
 
-def _recommendations(read: _Read, data: _Data) -> list[Violation]:  # 9
+def _lit_slots(facts: ExplainFacts, data: _Data) -> set[str]:
+    """The figure keys whose light is green, amber or red."""
+    lit: set[str] = set()
+    for light, keys in data.marked_slots.items():
+        if facts.states.get(light) in _COLOURED:
+            lit |= keys
+    return lit
+
+
+def _descriptive_only(read: _Read, facts: ExplainFacts, data: _Data) -> bool:
+    """A paragraph about what the household holds, a lit figure or the projection uses only
+    the descriptive words (D256 amended 19 Nov 2026)."""
+    if read.topic is Topic.PROJECTION:
+        return True
+    lit = _lit_slots(facts, data)
+    return any(s.letter in "ac" or (s.letter == "f" and s.key in lit) for s in read.slots)
+
+
+def _recommendations(read: _Read, facts: ExplainFacts, data: _Data) -> list[Violation]:  # 9
     out = []
     for span in read.sentences:
         if not any(s.letter == "a" for s in _sentence_slots(read, span)):
             continue
         for w in _sentence_words(read, span):
-            if w.lower in data.recommendation:
+            if w.lower in data.advice:
+                out.append(_v(V.RECOMMENDATION, read, w.start, w.end))
+    if _descriptive_only(read, facts, data):
+        for w in read.words:
+            if w.lower not in data.descriptive:
                 out.append(_v(V.RECOMMENDATION, read, w.start, w.end))
     return out
 
@@ -414,19 +491,40 @@ def _contradictions(read: _Read, facts: ExplainFacts, data: _Data) -> list[Viola
     """Checks 10 and 13's rows: per topic and state, phrases that may not appear."""
     out = []
     lower = read.masked.lower()
+    slotted = _marked_lights(read, data)
     for row in data.contradictions:
-        if row["topic"] != read.topic.value or facts.states.get(row["state"]) != row["value"]:
+        if row.get("topic", read.topic.value) != read.topic.value:
             continue
-        code = V.MARK if row["state"].startswith("light_") else V.CONTRADICTION
+        if facts.states.get(row["state"]) != row["value"]:
+            continue
+        is_light = row["state"].startswith("light_")
+        if is_light and slotted and row["state"] not in slotted:
+            continue  # a paragraph slotting a marked figure is judged by its own light
+        code = V.MARK if is_light else V.CONTRADICTION
         for m in _found(_phrases(tuple(row["phrases"])), lower):
             out.append(_v(code, read, m.start(), m.end()))
     return out
 
 
-def _shape(paragraphs: Sequence[Paragraph], data: _Data) -> list[Violation]:  # 11
+def _marked_lights(read: _Read, data: _Data) -> set[str]:
+    """The lights of the marked figures a paragraph slots."""
+    return {
+        light
+        for light, keys in data.marked_slots.items()
+        for s in read.slots
+        if s.letter == "f" and s.key in keys
+    }
+
+
+def _shape(
+    paragraphs: Sequence[Paragraph], reads: Sequence[_Read], data: _Data
+) -> list[Violation]:  # 11
     out = []
     if not paragraphs:
         return [Violation(code=V.SHAPE, paragraph=0)]
+    for read in reads:
+        if not read.words:  # a word outside the slots (D255 amended 19 Nov 2026)
+            out.append(_v(V.SHAPE, read))
     if len(paragraphs) > data.paragraphs_max:
         out.append(Violation(code=V.SHAPE, paragraph=data.paragraphs_max))
     seen: set[Topic] = set()
@@ -441,23 +539,28 @@ def _shape(paragraphs: Sequence[Paragraph], data: _Data) -> list[Violation]:  # 
 
 def _projection(read: _Read, facts: ExplainFacts, data: _Data) -> list[Violation]:  # 12
     out = []
+    lower = read.masked.lower()
     if read.topic is not Topic.PROJECTION:
         for s in read.slots:
             if s.letter == "f" and s.key in PROJECTION_KEYS:
                 out.append(_v(V.PROJECTION, read, s.start, s.end))
+        # the future is the projection's alone (D255 amended 19 Nov 2026)
+        banned = data.future + data.forecast + data.future_phrases
+        for m in _found(_phrases(banned), lower):
+            out.append(_v(V.PROJECTION, read, m.start(), m.end()))
         return out
     if facts.states.get("projection_state") != StateValue.SHOWN:
         out.append(_v(V.PROJECTION, read))
     if not any(s.letter == "f" and s.key in TYPED_RATE_KEYS for s in read.slots):
         out.append(_v(V.PROJECTION, read))
-    lower = read.masked.lower()
     if not _found(_phrases(data.assumption), lower):
         out.append(_v(V.PROJECTION, read))
-    banned = data.future + data.forecast + data.judging
+    banned = data.future + data.forecast + data.future_phrases + data.judging
+    banned += data.negated_assumption
     for m in _found(_phrases(banned), lower):
         out.append(_v(V.PROJECTION, read, m.start(), m.end()))
     for w in read.words:
-        if w.lower in data.recommendation or w.lower in data.transaction:
+        if w.lower in data.advice:
             out.append(_v(V.PROJECTION, read, w.start, w.end))
     for s in read.slots:
         if s.letter in "apk":
@@ -466,17 +569,20 @@ def _projection(read: _Read, facts: ExplainFacts, data: _Data) -> list[Violation
 
 
 def _marks(read: _Read, facts: ExplainFacts, data: _Data) -> list[Violation]:  # 13
-    marked = set()
-    for light, keys in data.marked_slots.items():
-        if facts.states.get(light) in _COLOURED:
-            marked |= keys
+    marked = _lit_slots(facts, data)
     out = []
     for span in read.sentences:
         slots = _sentence_slots(read, span)
         if not any(s.letter == "c" or (s.letter == "f" and s.key in marked) for s in slots):
             continue
         for w in _sentence_words(read, span):
-            if w.lower in data.transaction:
+            if w.lower in data.advice:
+                out.append(_v(V.MARK, read, w.start, w.end))
+    # a colour word is tied to the lit figures its paragraph slots, each of its colour
+    lights = {facts.states.get(light) for light in _marked_lights(read, data)}
+    for w in read.words:
+        for colours, words in data.colours:
+            if w.lower in words and (not lights or not lights <= colours):
                 out.append(_v(V.MARK, read, w.start, w.end))
     return out
 
@@ -512,10 +618,10 @@ def validate(
         found[V.LEXICON] += _lexicon(read, data, names)
         found[V.VOCABULARY] += _vocabulary(read, data)
         found[V.PRODUCT_NOUN] += _product_nouns(read, data)
-        found[V.RECOMMENDATION] += _recommendations(read, data)
+        found[V.RECOMMENDATION] += _recommendations(read, facts, data)
         for v in _contradictions(read, facts, data):
             found[v.code].append(v)
         found[V.PROJECTION] += _projection(read, facts, data)
         found[V.MARK] += _marks(read, facts, data)
-    found[V.SHAPE] += _shape(paragraphs, data)
+    found[V.SHAPE] += _shape(paragraphs, reads, data)
     return ValidationResult(violations=[v for code in ViolationCode for v in found[code]])

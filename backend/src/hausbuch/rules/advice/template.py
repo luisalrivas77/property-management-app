@@ -21,6 +21,15 @@ typed) are added. `template_paths` is split: its second sentence, `template_path
 names the reserve itself (the draft's „sie“ had no antecedent once the first was dropped) and
 is said only while plans run. A part that refers back („Davon …“) is dropped with the figure
 it refers to (`needs`).
+
+Amended 19 Nov 2026 (the step 4a review, D255 amended): `template_surplus_left_negative` reads
+„Für eure Sparpläne reicht der Betrag nicht, …“ (its „höher als“ is a contradiction under a
+falling trend now). „Davon fließen …“ is said only while plans run, the Tilgung only when
+there is one. A negative reserve has its own sentence (`template_reserve_negative`); free cash
+that the buffer takes in full says so (`template_surplus_buffer`); one closed month is said in
+the singular (`template_surplus_positive_one`, `template_surplus_zero_one`,
+`template_basis_short_one`), and no month at all drops every sentence that names the basis.
+When nothing else can be said, `render` returns `template_fallback`, never nothing.
 """
 
 import re
@@ -52,6 +61,29 @@ SURPLUS_POSITIVE = _s(
     "Im Schnitt der letzten {f:basis_months} Monate bleiben euch {f:free_cash} im Monat. "
     "Nach dem Puffer von {f:buffer} könnt ihr {f:investable} anlegen.",
 )
+SURPLUS_POSITIVE_ONE = _s(
+    "template_surplus_positive_one",
+    Topic.SURPLUS,
+    "Im letzten abgeschlossenen Monat bleiben euch {f:free_cash}. "
+    "Nach dem Puffer von {f:buffer} könnt ihr {f:investable} anlegen.",
+)
+SURPLUS_BUFFER = _s(
+    "template_surplus_buffer",
+    Topic.SURPLUS,
+    "Im Schnitt der letzten {f:basis_months} Monate bleiben euch {f:free_cash} im Monat. "
+    "Der Betrag geht ganz in den Puffer von {f:buffer}, zum Anlegen ist nichts übrig.",
+)
+SURPLUS_BUFFER_ONE = _s(
+    "template_surplus_buffer_one",
+    Topic.SURPLUS,
+    "Im letzten abgeschlossenen Monat bleiben euch {f:free_cash}. "
+    "Der Betrag geht ganz in den Puffer von {f:buffer}, zum Anlegen ist nichts übrig.",
+)
+SURPLUS_ZERO_ONE = _s(
+    "template_surplus_zero_one",
+    Topic.SURPLUS,
+    "Im letzten abgeschlossenen Monat ist nach den laufenden Ausgaben nichts zum Anlegen übrig.",
+)
 SURPLUS_ZERO = _s(
     "template_surplus_zero",
     Topic.SURPLUS,
@@ -68,13 +100,19 @@ SURPLUS_PLANS = _s(
 SURPLUS_LEFT_NEGATIVE = _s(
     "template_surplus_left_negative",
     Topic.SURPLUS,
-    "Eure Sparpläne sind höher als der Betrag, den ihr nach dem Puffer anlegen könnt.",
+    "Für eure Sparpläne reicht der Betrag nicht, den ihr nach dem Puffer anlegen könnt.",
 )
 RESERVE_BELOW = _s(
     "template_reserve_below",
     Topic.RESERVE,
     "Eure Reserve reicht für {f:reserve_months}. Euer Ziel sind {f:reserve_target_months}, es "
     "fehlen noch {f:reserve_gap}.",
+)
+RESERVE_NEGATIVE = _s(
+    "template_reserve_negative",
+    Topic.RESERVE,
+    "Eure Reserve liegt bei {f:reserve} und reicht damit für keinen Monat. Euer Ziel sind "
+    "{f:reserve_target_months}, es fehlen noch {f:reserve_gap}.",
 )
 RESERVE_AMOUNT = _s(
     "template_reserve_amount",
@@ -142,6 +180,12 @@ BASIS_SHORT = _s(
     "Die Zahlen stützen sich erst auf {f:basis_months} abgeschlossene Monate und sind auf das "
     "Jahr hochgerechnet.",
 )
+BASIS_SHORT_ONE = _s(
+    "template_basis_short_one",
+    Topic.BASIS,
+    "Die Zahlen stützen sich erst auf einen abgeschlossenen Monat und sind auf das Jahr "
+    "hochgerechnet.",
+)
 BASIS_FULL = _s(
     "template_basis_full",
     Topic.BASIS,
@@ -167,12 +211,23 @@ PROJECTION_PART = _s(
     "der Veränderung aus diesen Annahmen.",
 )
 
+FALLBACK = _s(
+    "template_fallback",
+    Topic.BASIS,
+    "Für diesen Zeitraum gibt es noch keine Zahlen.",
+)
+
 ALL = (
     SURPLUS_POSITIVE,
+    SURPLUS_POSITIVE_ONE,
+    SURPLUS_BUFFER,
+    SURPLUS_BUFFER_ONE,
     SURPLUS_ZERO,
+    SURPLUS_ZERO_ONE,
     SURPLUS_PLANS,
     SURPLUS_LEFT_NEGATIVE,
     RESERVE_BELOW,
+    RESERVE_NEGATIVE,
     RESERVE_AMOUNT,
     RESERVE_REACHED,
     PATHS,
@@ -185,10 +240,12 @@ ALL = (
     NET_WORTH_DOWN,
     NET_WORTH_FLAT,
     BASIS_SHORT,
+    BASIS_SHORT_ONE,
     BASIS_FULL,
     PROJECTION,
     PROJECTION_CRYPTO,
     PROJECTION_PART,
+    FALLBACK,
 )
 
 # The four topics kept when more have something to say: what can be invested and the reserve
@@ -227,22 +284,35 @@ def _positive(facts: ExplainFacts, key: str) -> bool:
     return fact is not None and Decimal(fact.value) > 0
 
 
+def _number(facts: ExplainFacts, key: str) -> Decimal | None:
+    fact = facts.figure(key)
+    return None if fact is None else Decimal(fact.value)
+
+
 def sentences(facts: ExplainFacts) -> list[Sentence]:
     """The template's sentences for the facts' states, before any figure is checked."""
     st = facts.states.get
+    one = _number(facts, "basis_months") == 1  # one closed month: said in the singular
     out: list[Sentence] = []
     if st("investable_state") == S.ZERO:
-        out.append(SURPLUS_ZERO)
+        if _positive(facts, "free_cash"):  # the buffer takes it all
+            out.append(SURPLUS_BUFFER_ONE if one else SURPLUS_BUFFER)
+        else:
+            out.append(SURPLUS_ZERO_ONE if one else SURPLUS_ZERO)
     elif st("investable_state") == S.POSITIVE:
-        out.append(SURPLUS_POSITIVE)
+        out.append(SURPLUS_POSITIVE_ONE if one else SURPLUS_POSITIVE)
         if st("left_state") == S.NEGATIVE:
             out.append(SURPLUS_LEFT_NEGATIVE)
-        elif st("left_state") == S.POSITIVE:
-            out.append(SURPLUS_PLANS)
+        elif st("left_state") == S.POSITIVE and _positive(facts, "already_invested"):
+            out.append(SURPLUS_PLANS)  # „Davon fließen …“ only while plans run
     if st("reserve_state") == S.BELOW:
-        # without the months the reserve covers, its amount alone
+        # a negative reserve covers no month; without the months, its amount alone
         months = facts.figure("reserve_months") is not None
-        out += [RESERVE_BELOW if months else RESERVE_AMOUNT, PATHS]
+        if _negative(facts, "reserve"):
+            out.append(RESERVE_NEGATIVE)
+        else:
+            out.append(RESERVE_BELOW if months else RESERVE_AMOUNT)
+        out.append(PATHS)
         if _positive(facts, "already_invested"):  # a pause path only when plans run
             out.append(PATHS_PAUSED)
     elif st("reserve_state") == S.REACHED:
@@ -250,11 +320,13 @@ def sentences(facts: ExplainFacts) -> list[Sentence]:
     if _negative(facts, "savings_rate"):
         out.append(SAVINGS_RATE_NEGATIVE)
     else:
-        out += [SAVINGS_RATE, SAVINGS_RATE_PRINCIPAL]
+        out.append(SAVINGS_RATE)
+        if _positive(facts, "principal_total"):  # the Tilgung only when there is one
+            out.append(SAVINGS_RATE_PRINCIPAL)
     out.append(DEBT)
     out.append({S.UP: NET_WORTH_UP, S.DOWN: NET_WORTH_DOWN}.get(st("trend_state"), NET_WORTH_FLAT))
     if st("basis_state") == S.SHORT:
-        out.append(BASIS_SHORT)
+        out.append(BASIS_SHORT_ONE if one else BASIS_SHORT)
     elif st("basis_state") == S.FULL:
         out.append(BASIS_FULL)
     if st("projection_state") == S.SHOWN:
@@ -269,6 +341,8 @@ def sentences(facts: ExplainFacts) -> list[Sentence]:
 
 def _fillable(text: str, facts: ExplainFacts) -> bool:
     figures = {f.key for f in facts.figures}
+    if _number(facts, "basis_months") == 0:  # no closed month: no sentence names the basis
+        figures.discard("basis_months")
     classes = {c.value for c in facts.classes}
     for letter, key in re.findall(rules()["slot_pattern"], text):
         if (letter == "f" and key not in figures) or (letter == "c" and key not in classes):
@@ -303,4 +377,5 @@ def render(facts: ExplainFacts, mode: AdviceMode) -> list[Paragraph]:
         priority.remove(Topic.BASIS)
         priority.append(Topic.BASIS)
     kept = [t for t in priority if t in by_topic][: rules()["shape"]["paragraphs_max"]]
-    return [Paragraph(topic=t, text=" ".join(by_topic[t])) for t in _ORDER if t in kept]
+    out = [Paragraph(topic=t, text=" ".join(by_topic[t])) for t in _ORDER if t in kept]
+    return out or [Paragraph(topic=FALLBACK.topic, text=FALLBACK.text)]  # never nothing

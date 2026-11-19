@@ -394,6 +394,10 @@ _CHOSEN_BY = {
     "template_projection": {"projection_state": "shown"},
     "template_projection_part": {"projection_state": "shown"},
     "template_projection_crypto": {"projection_state": "shown"},
+    # 19 Nov 2026 (the step 4a review): chosen by a figure, under these states
+    "template_surplus_buffer": {"investable_state": "zero"},
+    "template_surplus_buffer_one": {"investable_state": "zero"},
+    "template_surplus_zero_one": {"investable_state": "zero"},
 }
 
 
@@ -409,6 +413,14 @@ def test_every_template_sentence_passes_the_validator(sentence, mode):
         "template_savings_rate_negative",
         "template_reserve_amount",
         "template_projection_crypto",
+        # 19 Nov 2026: one closed month, free cash the buffer takes or none, a negative reserve
+        "template_surplus_positive_one",
+        "template_surplus_buffer_one",
+        "template_surplus_zero",
+        "template_surplus_zero_one",
+        "template_reserve_negative",
+        "template_basis_short_one",
+        "template_fallback",
     }
     if sentence.id not in by_figure:
         assert sentence in template_rules.sentences(facts), sentence.id
