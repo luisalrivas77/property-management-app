@@ -16,6 +16,7 @@ fund reference, asked only for a fund whose name carries the adapter's brand; th
 found is stored with the price (price.raw) and the file's own ISIN still decides.
 """
 
+from .amundi import AmundiAdapter
 from .base import IssuerAdapter, NavFile, read_points
 from .ishares import ISharesAdapter
 from .spdr import SpdrAdapter
@@ -23,12 +24,14 @@ from .spdr import SpdrAdapter
 ADAPTERS: dict[str, type[IssuerAdapter]] = {
     SpdrAdapter.issuer: SpdrAdapter,
     ISharesAdapter.issuer: ISharesAdapter,
+    AmundiAdapter.issuer: AmundiAdapter,
 }
 
 # The name the screens show for an issuer's NAV („NAV <Fondsgesellschaft>“, §13).
 ISSUER_NAMES: dict[str, str] = {
     "spdr": "State Street SPDR",
     "ishares": "iShares",
+    "amundi": "Amundi",
 }
 
 

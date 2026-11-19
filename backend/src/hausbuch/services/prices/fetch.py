@@ -218,24 +218,63 @@ class Sources:
             return None
         return NavSource(issuer=issuer, fund_ref=found[isin], isin=isin)
 
-    def discover(self, isin: str, name: str) -> NavSource | None:
-        """The fund's reference from the catalogue of the issuer its name names (an iShares
-        fund's from iShares'). A fund whose name names no issuer with a catalogue asks
-        nothing."""
-        for issuer, cls in ADAPTERS.items():
-            if cls.catalogue_url is None or not cls.names_brand(name):
+    def probe(
+        self, issuer: str, isin: str, name: str, since: date | None = None, skip: str = ""
+    ) -> NavSource | None:
+        """D174 amended 19 Nov 2026: an issuer without a catalogue is asked by the fund
+        itself. Each candidate reference (the ISIN; BNP's per currency; HANetf's pages for
+        the name) is read until one states the ISIN; the file read is kept for the run. A
+        miss is no failure (only the log's counter): the fund stays on its report price.
+        An answer that is neither „no such fund“ nor „another fund“ ends the lookup."""
+        adapter = self._adapter(issuer)
+        try:
+            refs = adapter.candidates(isin, name)
+        except SourceError as exc:
+            self._failed(f"{S.ISSUER_NAV.value}:{issuer}:find", exc)
+            return None
+        for ref in refs:
+            if ref == skip:
                 continue
-            found = self.listed(issuer, isin)
+            found = NavSource(issuer=issuer, fund_ref=ref, isin=isin)
+            answer = self.nav(found, since)
+            if not isinstance(answer, SourceError):
+                return found
+            if not _missing(answer):
+                break
+        return None
+
+    def relocate(self, fund: NavSource, name: str, since: date | None = None) -> NavSource | None:
+        """Another reference for a stored one that stopped working (follow-up A): the
+        issuer's catalogue, else its other candidates."""
+        if fund.issuer not in ADAPTERS:
+            return None
+        if ADAPTERS[fund.issuer].catalogue_url is not None:
+            return self.listed(fund.issuer, fund.isin)
+        return self.probe(fund.issuer, fund.isin, name, since, skip=fund.fund_ref)
+
+    def discover(self, isin: str, name: str, since: date | None = None) -> NavSource | None:
+        """The fund's reference from the issuer its name names: the issuer's catalogue (an
+        iShares fund's from iShares'), or the issuer asked by the fund itself (D174 amended
+        19 Nov 2026). A fund whose name names no adapter's brand asks nothing."""
+        for issuer, cls in ADAPTERS.items():
+            if not cls.names_brand(name):
+                continue
+            if cls.catalogue_url is not None:
+                found = self.listed(issuer, isin)
+            else:
+                found = self.probe(issuer, isin, name, since)
             if found is not None:
                 return found
         return None
 
-    def nav(self, fund: FundSource) -> NavFile | SourceError:
+    def nav(self, fund: FundSource, since: date | None = None) -> NavFile | SourceError:
+        """The fund's file, read once a run (from `since`, the first movement, where the
+        issuer takes a date range)."""
         key = (fund.issuer, fund.fund_ref or "", fund.isin)
         if key not in self._nav:
             adapter = self._adapter(fund.issuer)
             try:
-                self._nav[key] = read_points(adapter, fund.fund_ref or "", fund.isin)
+                self._nav[key] = read_points(adapter, fund.fund_ref or "", fund.isin, since)
             except SourceError as exc:
                 self._nav[key] = self._failed(f"{S.ISSUER_NAV.value}:{fund.issuer}", exc)
         return self._nav[key]
@@ -538,9 +577,15 @@ def _moved(error: SourceError) -> bool:
     or naming another fund: the issuer moved or renumbered the fund (follow-up A). A
     timeout, a 5xx or an unreadable file is not. A wrong guess costs one catalogue lookup,
     and the file read through the catalogue's reference must state the ISIN anyway."""
-    if error.kind == "isin_mismatch":
+    if error.kind in ("isin_mismatch", "not_listed"):
         return True
     return error.kind == "HTTPError" and error.status in (400, 404, 410)
+
+
+def _missing(error: SourceError) -> bool:
+    """The issuer answered and has no such fund under this reference (D174 amended 19 Nov
+    2026): the next candidate may still be it."""
+    return _moved(error)
 
 
 def _read(
@@ -548,17 +593,17 @@ def _read(
 ) -> tuple[NavFile | SourceError, FundSource]:
     """The fund's file. A stored catalogue reference that stopped working is looked up again
     in its issuer's catalogue, and a different reference listed there is read at once."""
-    answer = sources.nav(fund)
+    answer = sources.nav(fund, held.first_on)
     if (
         isinstance(answer, SourceError)
         and isinstance(fund, NavSource)
         and fund is held.fund  # the stored reference, not one the catalogue gave this run
         and _moved(answer)
     ):
-        found = sources.listed(fund.issuer, fund.isin)
+        found = sources.relocate(fund, held.name, held.first_on)
         if found is not None and found.fund_ref != fund.fund_ref:
             out.discovered[held.id] = found
-            return sources.nav(found), found
+            return sources.nav(found, held.first_on), found
     return answer, fund
 
 
@@ -610,7 +655,7 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
             continue
         fund = held.fund
         if fund is None and held.isin:
-            fund = sources.discover(held.isin, held.name)
+            fund = sources.discover(held.isin, held.name, held.first_on)
             if fund is not None:
                 out.discovered[held.id] = fund
         if fund is not None:

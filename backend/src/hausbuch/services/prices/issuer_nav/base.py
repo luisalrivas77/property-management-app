@@ -5,13 +5,23 @@ catalogue of its funds (`catalogue_url`) also finds a fund's reference by its IS
 fetch job asks the catalogue once a run for a held fund the registry does not list, so the
 household's funds never have to be written into the repository. A reference found there is
 only a candidate: `read_points` still refuses a file stating another ISIN.
+
+D174 amended 19 Nov 2026: an adapter whose issuer answers by the ISIN itself (Amundi,
+Xtrackers, Invesco, BNP Paribas, L&G) needs no catalogue: `candidates` names the references
+to try for an ISIN (the ISIN, or BNP's one per currency), and HANetf's names the fund pages
+its sitemap suggests for the fund's name. A read may make more than one request (`load`), a
+service with a date range is asked from `since` (the fund's first movement), and an
+adapter may keep one answer for every fund of the run (L&G's one document), since the job
+builds one adapter per issuer and run. `not_listed` is the issuer's answer that it lists no
+such fund.
 """
 
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from hausbuch.schemas.prices import NavPoint
 
@@ -61,6 +71,17 @@ class IssuerAdapter:
         return any(re.search(rf"(^| ){re.escape(b)}", words) for b in cls.brands)
 
     fetcher: Fetch = field(repr=False)
+    # Answers kept for the run (an issuer whose one document lists every fund).
+    memo: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    # A fund reference this adapter can derive from the ISIN alone (no catalogue needed).
+    isin_keyed: ClassVar[bool] = False
+
+    def candidates(self, isin: str, name: str) -> list[str]:
+        """The references to try, in order, for a fund the registry and the catalogues do
+        not name; each is read until one states the ISIN. The ISIN itself for an adapter
+        keyed by it, nothing otherwise. May ask the issuer (HANetf's sitemap)."""
+        return [isin] if self.isin_keyed else []
 
     def url(self, fund_ref: str) -> str:
         raise NotImplementedError
@@ -89,10 +110,13 @@ class IssuerAdapter:
             raise SourceError("parse")
         return found
 
-    def read(self, fund_ref: str) -> NavFile:
-        body = get(self.fetcher, self.url(fund_ref), max_bytes=self.max_bytes)
+    def load(self, fund_ref: str, since: date | None) -> NavFile:
+        """The request(s) and the reading; one GET of `url` by default."""
+        return self.parse(get(self.fetcher, self.url(fund_ref), max_bytes=self.max_bytes))
+
+    def read(self, fund_ref: str, since: date | None = None) -> NavFile:
         try:
-            return self.parse(body)
+            return self.load(fund_ref, since)
         except SourceError:
             raise
         except Exception:  # noqa: BLE001 - any reader failure is "the file changed"
@@ -111,10 +135,17 @@ def unique_refs(pairs: list[tuple[str, str]]) -> dict[str, str]:
     return {isin: next(iter(found)) for isin, found in refs.items() if len(found) == 1}
 
 
-def read_points(adapter: IssuerAdapter, fund_ref: str, isin: str) -> NavFile:
+def parse_json(body: bytes) -> Any:
+    """JSON with every number a Decimal (never a float: a NAV is money)."""
+    return json.loads(body, parse_float=Decimal, parse_int=Decimal)
+
+
+def read_points(
+    adapter: IssuerAdapter, fund_ref: str, isin: str, since: date | None = None
+) -> NavFile:
     """The file for a registry entry, refused (SourceError "isin_mismatch") when it states
     another ISIN than the registry's."""
-    found = adapter.read(fund_ref)
+    found = adapter.read(fund_ref, since)
     if found.isin != isin:
         raise SourceError("isin_mismatch")
     return found
