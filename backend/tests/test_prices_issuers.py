@@ -179,3 +179,13 @@ def test_bnp_discovery_with_no_currency_answering_is_unresolved():
     sources = Sources(fetch=Recorder({"currency=": "bnp_navs_empty.json"}), coingecko=None)
     assert sources.discover(BNP_ISIN, BNP_NAME) is None
     assert sources.is_unresolved(None, BNP_ISIN)
+
+
+def test_a_name_no_fund_page_matches_is_a_lookup_miss():
+    """(d), (k): HANetf's sitemap lists no page the fund's name starts: no page is read, and
+    the run's log line counts one lookup miss, no error."""
+    fetch = Recorder({"fund-sitemap.xml": "hanetf_sitemap.xml"})
+    sources = Sources(fetch=fetch, coingecko=None)
+    assert sources.discover("IE000INVENT5", "HANetf Nothing Matches Here UCITS ETF") is None
+    assert dict(sources.misses) == {("issuer_nav:hanetf", "no_candidate", None): 1}
+    assert not sources.errors and len(fetch.calls) == 1
