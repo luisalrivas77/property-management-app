@@ -15,8 +15,12 @@ clause; `template_reserve_reached` names no target amount, which the reserve's f
 lack; `template_net_worth_down` would render „-11.770 € weniger“, so it states the change; a
 negative savings rate says so instead of „-46,5 % gespart“ (chosen by the figure's sign, as no
 state carries it). `template_net_worth_flat`, `template_basis_full`,
-`template_savings_rate_negative` and `template_reserve_amount` (the reserve below its target
-when the months it covers are absent) are added.
+`template_savings_rate_negative`, `template_reserve_amount` (the reserve below its target
+when the months it covers are absent) and `template_projection_crypto` (only a crypto rate
+typed) are added. `template_paths` is split: its second sentence, `template_paths_paused`,
+names the reserve itself (the draft's „sie“ had no antecedent once the first was dropped) and
+is said only while plans run. A part that refers back („Davon …“) is dropped with the figure
+it refers to (`needs`).
 """
 
 import re
@@ -34,10 +38,12 @@ class Sentence:
     id: str
     topic: Topic
     text: str
+    # figures a part refers back to without naming them („Davon …“): without them it is dropped
+    needs: tuple[str, ...] = ()
 
 
-def _s(id_: str, topic: Topic, text: str) -> Sentence:
-    return Sentence(id_, topic, text)
+def _s(id_: str, topic: Topic, text: str, needs: tuple[str, ...] = ()) -> Sentence:
+    return Sentence(id_, topic, text, needs)
 
 
 SURPLUS_POSITIVE = _s(
@@ -57,6 +63,7 @@ SURPLUS_PLANS = _s(
     Topic.SURPLUS,
     "Davon fließen schon {f:already_invested} im Monat in eure Sparpläne, danach sind es noch "
     "{f:investable_left}.",
+    needs=("investable",),
 )
 SURPLUS_LEFT_NEGATIVE = _s(
     "template_surplus_left_negative",
@@ -82,19 +89,25 @@ RESERVE_REACHED = _s(
 PATHS = _s(
     "template_paths",
     Topic.PATHS,
-    "Wenn alles so weiterläuft wie bisher, ist die Reserve im {f:path_as_is_reached} voll. "
-    "Mit allen Sparplänen pausiert wäre sie im {f:path_reserve_first_reached} voll.",
+    "Wenn alles so weiterläuft wie bisher, ist die Reserve im {f:path_as_is_reached} voll.",
+)
+PATHS_PAUSED = _s(
+    "template_paths_paused",
+    Topic.PATHS,
+    "Mit allen Sparplänen pausiert wäre die Reserve im {f:path_reserve_first_reached} voll.",
 )
 SAVINGS_RATE = _s(
     "template_savings_rate",
     Topic.SAVINGS_RATE,
     "Von eurem Einkommen habt ihr {f:savings_rate} gespart. Ohne die Einmalausgaben wären es "
     "{f:savings_rate_regular}.",
+    needs=("savings_rate",),
 )
 SAVINGS_RATE_PRINCIPAL = _s(
     "template_savings_rate_principal",
     Topic.SAVINGS_RATE,
     "Davon sind {f:principal_total} Tilgung des Kredits der Wohnung.",
+    needs=("savings_rate",),
 )
 SAVINGS_RATE_NEGATIVE = _s(
     "template_savings_rate_negative",
@@ -140,6 +153,12 @@ PROJECTION = _s(
     "Mit eurer Annahme von {f:assumed_change_depot} pro Jahr für {c:depot} läge euer Vermögen "
     "Ende {f:projection_until} bei {f:projection_total}.",
 )
+PROJECTION_CRYPTO = _s(
+    "template_projection_crypto",
+    Topic.PROJECTION,
+    "Mit eurer Annahme von {f:assumed_change_crypto} pro Jahr für {c:crypto} läge euer Vermögen "
+    "Ende {f:projection_until} bei {f:projection_total}.",
+)
 PROJECTION_PART = _s(
     "template_projection_part",
     Topic.PROJECTION,
@@ -157,6 +176,7 @@ ALL = (
     RESERVE_AMOUNT,
     RESERVE_REACHED,
     PATHS,
+    PATHS_PAUSED,
     SAVINGS_RATE,
     SAVINGS_RATE_PRINCIPAL,
     SAVINGS_RATE_NEGATIVE,
@@ -167,11 +187,13 @@ ALL = (
     BASIS_SHORT,
     BASIS_FULL,
     PROJECTION,
+    PROJECTION_CRYPTO,
     PROJECTION_PART,
 )
 
 # The four topics kept when more have something to say: what can be invested and the reserve
-# first, then the caveat of a short basis and the household's own projection.
+# first, then the caveat of a short basis and the household's own projection; a full basis is
+# no caveat and comes last.
 _PRIORITY = (
     Topic.SURPLUS,
     Topic.RESERVE,
@@ -200,6 +222,11 @@ def _negative(facts: ExplainFacts, key: str) -> bool:
     return fact is not None and Decimal(fact.value) < 0
 
 
+def _positive(facts: ExplainFacts, key: str) -> bool:
+    fact = facts.figure(key)
+    return fact is not None and Decimal(fact.value) > 0
+
+
 def sentences(facts: ExplainFacts) -> list[Sentence]:
     """The template's sentences for the facts' states, before any figure is checked."""
     st = facts.states.get
@@ -216,12 +243,14 @@ def sentences(facts: ExplainFacts) -> list[Sentence]:
         # without the months the reserve covers, its amount alone
         months = facts.figure("reserve_months") is not None
         out += [RESERVE_BELOW if months else RESERVE_AMOUNT, PATHS]
+        if _positive(facts, "already_invested"):  # a pause path only when plans run
+            out.append(PATHS_PAUSED)
     elif st("reserve_state") == S.REACHED:
         out.append(RESERVE_REACHED)
     if _negative(facts, "savings_rate"):
         out.append(SAVINGS_RATE_NEGATIVE)
-    elif facts.figure("savings_rate") is not None:
-        out += [SAVINGS_RATE, SAVINGS_RATE_PRINCIPAL]  # „Davon“ needs the rate before it
+    else:
+        out += [SAVINGS_RATE, SAVINGS_RATE_PRINCIPAL]
     out.append(DEBT)
     out.append({S.UP: NET_WORTH_UP, S.DOWN: NET_WORTH_DOWN}.get(st("trend_state"), NET_WORTH_FLAT))
     if st("basis_state") == S.SHORT:
@@ -229,7 +258,12 @@ def sentences(facts: ExplainFacts) -> list[Sentence]:
     elif st("basis_state") == S.FULL:
         out.append(BASIS_FULL)
     if st("projection_state") == S.SHOWN:
-        out += [PROJECTION, PROJECTION_PART]
+        # the rate the household typed is named; both typed: the part from them as well
+        if facts.figure("assumed_change_depot") is not None:
+            out.append(PROJECTION)
+        else:
+            out.append(PROJECTION_CRYPTO)
+        out.append(PROJECTION_PART)
     return out
 
 
@@ -247,7 +281,10 @@ def _fillable(text: str, facts: ExplainFacts) -> bool:
 def written(facts: ExplainFacts) -> list[tuple[Sentence, str]]:
     """Each chosen sentence's parts whose figures the facts hold, in the order chosen."""
     out = []
+    figures = {f.key for f in facts.figures}
     for sentence in sentences(facts):
+        if not figures.issuperset(sentence.needs):
+            continue
         for part in _SENTENCE.findall(sentence.text):
             part = part.strip()
             if _fillable(part, facts):
@@ -261,5 +298,9 @@ def render(facts: ExplainFacts, mode: AdviceMode) -> list[Paragraph]:
     by_topic: dict[Topic, list[str]] = {}
     for sentence, part in written(facts):
         by_topic.setdefault(sentence.topic, []).append(part)
-    kept = [t for t in _PRIORITY if t in by_topic][: rules()["shape"]["paragraphs_max"]]
+    priority = list(_PRIORITY)
+    if facts.states.get("basis_state") != S.SHORT:  # a full basis is no caveat: said last
+        priority.remove(Topic.BASIS)
+        priority.append(Topic.BASIS)
+    kept = [t for t in priority if t in by_topic][: rules()["shape"]["paragraphs_max"]]
     return [Paragraph(topic=t, text=" ".join(by_topic[t])) for t in _ORDER if t in kept]

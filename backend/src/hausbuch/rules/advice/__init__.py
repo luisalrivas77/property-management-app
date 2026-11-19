@@ -8,7 +8,7 @@
 - `render.render`: slots to German text after validation (§8.4), step 4.
 - `template.render`: the app's own text from the same facts (D257), step 4.
 
-Step 0 writes the data and the loaders; every rule is a stub until step 4.
+Step 0 wrote the data and the loaders; step 4a (19 Nov 2026) the four rules above.
 """
 
 from functools import cache

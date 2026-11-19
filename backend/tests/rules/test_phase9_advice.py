@@ -7,6 +7,7 @@ code), explain_facts.yaml, explain_render.yaml and lights.yaml's every_sentence_
 from collections import Counter
 from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 from fixture_models_phase9 import EvFacts, load
@@ -30,6 +31,7 @@ from hausbuch.schemas.advice import (
     Topic,
     ViolationCode,
 )
+from hausbuch.schemas.health import BandLimits
 from hausbuch.schemas.household import NetWorthClass
 
 V = ViolationCode
@@ -244,36 +246,61 @@ def transform(name: str, how: str) -> str:
 
 
 def generated():
-    every = [n for names in NAMES.names.values() for n in names]
     for mode in AdviceMode:
         for carrier in NAMES.carriers:
-            for name in every:
-                text = carrier.sentence.replace("<NAME>", transform(name, carrier.transform))
-                yield mode, carrier.id, name, text
+            for block, names in NAMES.names.items():
+                for name in names:
+                    text = carrier.sentence.replace("<NAME>", transform(name, carrier.transform))
+                    yield mode, carrier.id, block, name, text
+
+
+def _pct(n: int, d: int) -> str:
+    return f"{n}/{d} ({100 * n / d:.1f} %)"
 
 
 def test_layer_two_every_name_in_every_carrier_rejected():
     """Every name × every carrier × both modes is rejected, on the shipped lexicon only. Prints
-    the count and the checks that rejected each text, so the lexicon's own share is visible."""
+    the count, the checks that rejected the texts, the lexicon's hit rate per name block and
+    per carrier (the invented names are in no lexicon by design), and the texts only the
+    vocabulary check caught."""
     by_check: Counter[str] = Counter()
-    lexicon_alone = 0
+    lexicon_hit: Counter[tuple[str, str]] = Counter()
+    seen: Counter[tuple[str, str]] = Counter()
+    only_vocabulary: Counter[str] = Counter()
+    lexicon_missed_plain: set[str] = set()
     escaped = []
     texts = list(generated())
-    for mode, carrier, name, text in texts:
+    for mode, carrier, block, name, text in texts:
         result = check(text, Topic.NET_WORTH, ev_facts(VALIDATOR.facts, mode))
         codes = {v.code for v in result.violations}
         if not codes:
             escaped.append((mode.value, carrier, name))
         by_check.update(c.value for c in codes)
-        lexicon_alone += codes == {V.LEXICON}
+        seen[("block", block)] += 1
+        seen[("carrier", carrier)] += block != "invented"
+        hit = V.LEXICON in codes
+        lexicon_hit[("block", block)] += hit
+        lexicon_hit[("carrier", carrier)] += hit and block != "invented"
+        if codes == {V.VOCABULARY}:
+            only_vocabulary[block] += 1
+        if carrier == "plain" and block != "invented" and not hit:
+            lexicon_missed_plain.add(name)
     total = len(texts)
     print(f"\nlayer 2: {total} texts generated, {total - len(escaped)} rejected")
-    print(
-        f"layer 2: rejected by the lexicon alone: {lexicon_alone} "
-        f"({100 * lexicon_alone / total:.1f} %)"
-    )
     for code, n in sorted(by_check.items(), key=lambda kv: -kv[1]):
-        print(f"layer 2: {code:15} found in {n} texts ({100 * n / total:.1f} %)")
+        print(f"layer 2: {code:15} found in {_pct(n, total)}")
+    for kind in ("block", "carrier"):
+        for (k, key), n in seen.items():
+            if k == kind and n:
+                print(f"layer 2: lexicon hits, {kind} {key:20} {_pct(lexicon_hit[(k, key)], n)}")
+    print(
+        f"layer 2: caught by the vocabulary check only: {sum(only_vocabulary.values())} "
+        f"{dict(only_vocabulary)}"
+    )
+    print(
+        f"layer 2: real names the lexicon misses in the plain carrier: "
+        f"{sorted(lexicon_missed_plain)}"
+    )
     assert not escaped, escaped
 
 
@@ -366,6 +393,7 @@ _CHOSEN_BY = {
     "template_basis_full": {"basis_state": "full"},
     "template_projection": {"projection_state": "shown"},
     "template_projection_part": {"projection_state": "shown"},
+    "template_projection_crypto": {"projection_state": "shown"},
 }
 
 
@@ -376,8 +404,13 @@ def test_every_template_sentence_passes_the_validator(sentence, mode):
     facts = ev_facts(VALIDATOR.facts, mode, _CHOSEN_BY.get(sentence.id, {}))
     result = check(sentence.text, sentence.topic, facts)
     assert result.ok, f"{sentence.id}: {_codes(result)}"
-    # chosen by a figure (its sign, or the reserve months absent), not by a state
-    if sentence.id not in {"template_savings_rate_negative", "template_reserve_amount"}:
+    # chosen by a figure (its sign, or one absent), not by a state
+    by_figure = {
+        "template_savings_rate_negative",
+        "template_reserve_amount",
+        "template_projection_crypto",
+    }
+    if sentence.id not in by_figure:
         assert sentence in template_rules.sentences(facts), sentence.id
 
 
@@ -414,15 +447,101 @@ _STATE_GRID = [
 ]
 
 
+def _light_settings():
+    """No light at all (no band confirmed), then each light alone in each of its values."""
+    yield {}
+    for name in _LIGHTS:
+        for value in ("none", "green", "amber", "red"):
+            yield {name: value}
+
+
+def _reachable(states: dict[str, str]) -> bool:
+    """The reserve's green is its target reached (D238): green only when reached, and a
+    reached reserve is green or unmarked."""
+    light = states.get("light_reserve")
+    if states["reserve_state"] == "reached":
+        return light in (None, "green")
+    return light != "green"
+
+
+def _without_lights(base: EvFacts) -> EvFacts:
+    kept = {k: v for k, v in base.states.items() if not k.startswith("light_")}
+    return base.model_copy(update={"states": kept})
+
+
+def _template_ok(facts: ExplainFacts, mode: AdviceMode, where: object) -> None:
+    paragraphs = template_rules.render(facts, mode)
+    assert 1 <= len(paragraphs) <= 4, where
+    result = validate(paragraphs, facts, mode)
+    assert result.ok, (where, _codes(result), [p.text for p in paragraphs])
+    render_rules.render(paragraphs, facts, ExplainLabels())  # no k/p/a, so no label needed
+
+
 @pytest.mark.parametrize("mode", list(AdviceMode))
-def test_template_in_every_state_at_most_four_and_valid(mode):
-    for states in _STATE_GRID:
-        facts = ev_facts(VALIDATOR.facts, mode, states)
-        paragraphs = template_rules.render(facts, mode)
-        assert 1 <= len(paragraphs) <= 4, states
-        result = validate(paragraphs, facts, mode)
-        assert result.ok, (states, _codes(result))
-        render_rules.render(paragraphs, facts, ExplainLabels())  # no k/p/a, so no label needed
+def test_template_in_every_state_and_light_at_most_four_and_valid(mode):
+    """The template is the fallback that must always pass: every state of the grid under no
+    light, and under each light alone in each value that can occur."""
+    base = _without_lights(VALIDATOR.facts)
+    n = 0
+    for lights in _light_settings():
+        for grid in _STATE_GRID:
+            states = {k: v for k, v in grid.items() if k != "light_reserve"} | lights
+            if not _reachable(states):
+                continue
+            _template_ok(ev_facts(base, mode, states), mode, states)
+            n += 1
+    assert n > 1000
+
+
+@pytest.mark.parametrize("mode", list(AdviceMode))
+@pytest.mark.parametrize("missing", VALIDATOR.facts.figures)
+def test_template_with_one_figure_absent(missing, mode):
+    """A figure the facts lack drops the parts that name it, and those that refer back to it;
+    what is left still passes and renders."""
+    for grid in _STATE_GRID[::5]:
+        facts = ev_facts(VALIDATOR.facts, mode, grid)
+        facts = facts.model_copy(update={"figures": [f for f in facts.figures if f.key != missing]})
+        _template_ok(facts, mode, (missing, grid))
+        for _, part in template_rules.written(facts):
+            assert f"{{f:{missing}}}" not in part
+
+
+def _drop(facts: ExplainFacts, *keys: str) -> ExplainFacts:
+    return facts.model_copy(update={"figures": [f for f in facts.figures if f.key not in keys]})
+
+
+def test_template_dependent_parts_follow_their_antecedent():
+    facts = ev_facts(VALIDATOR.facts, None, {"left_state": "positive"})
+    ids = [s.id for s, _ in template_rules.written(_drop(facts, "investable"))]
+    assert "template_surplus_plans" not in ids  # „Davon fließen …“ without the investable
+    ids = [s.id for s, _ in template_rules.written(_drop(facts, "savings_rate"))]
+    assert "template_savings_rate" not in ids
+    assert "template_savings_rate_principal" not in ids
+    texts = [p for _, p in template_rules.written(_drop(facts, "path_as_is_reached"))]
+    assert any(t.startswith("Mit allen Sparplänen pausiert wäre die Reserve") for t in texts)
+
+
+def test_template_paused_path_only_while_plans_run():
+    facts = ev_facts(VALIDATOR.facts)
+    zero = [
+        f if f.key != "already_invested" else f.model_copy(update={"value": "0.00"})
+        for f in facts.figures
+    ]
+    picked = template_rules.sentences(facts.model_copy(update={"figures": zero}))
+    assert template_rules.PATHS_PAUSED not in picked
+    assert template_rules.PATHS_PAUSED in template_rules.sentences(facts)
+
+
+@pytest.mark.parametrize("mode", list(AdviceMode))
+def test_template_projection_with_a_crypto_rate_only(mode):
+    facts = _drop(
+        ev_facts(VALIDATOR.facts, mode, {"projection_state": "shown"}), "assumed_change_depot"
+    )
+    paragraphs = template_rules.render(facts, mode)
+    projection = [p for p in paragraphs if p.topic is Topic.PROJECTION]
+    assert projection, [p.topic for p in paragraphs]
+    assert "{f:assumed_change_crypto}" in projection[0].text
+    assert validate(paragraphs, facts, mode).ok
 
 
 # --- facts (explain_facts.yaml) ---------------------------------------------------------
@@ -558,7 +677,9 @@ def test_build_maps_health_and_plan():
             h.NetWorthPoint.model_construct(total=c("128380.00"), change=c("-11770.00")),
             h.NetWorthPoint.model_construct(total=None, change=None),
         ],
-        marks={"debt_service_ratio": h.Light.model_construct(colour="green")},
+        marks={
+            h.MarkedFigure.DEBT_SERVICE_RATIO: h.Light.model_construct(colour=h.LightColour.GREEN)
+        },
     )
     reserve = h.Reserve.model_construct(
         amount=c("16830.00"),
@@ -612,3 +733,43 @@ def test_build_maps_health_and_plan():
     assert got.states["projection_state"] == "absent"
     assert "light_debt_service_ratio" not in got.states  # no confirmed band, no light state
     assert "Depot Weltreise" not in got.model_dump_json()
+
+    # the projection branch: the last point and the typed rates
+    point = pl.ProjectionPoint.model_construct(
+        on=date(2032, 12, 31),
+        total=c("257747.90"),
+        change=pl.ProjectionChange.model_construct(
+            total=c("30000.00"), from_assumptions=c("8000.00")
+        ),
+    )
+    sid = UUID(int=1)
+    projection = pl.NetWorthProjection.model_construct(
+        points=[pl.ProjectionPoint.model_construct(on=date(2027, 6, 30), change=None), point],
+        assumptions=[
+            pl.ProjectionAssumption.model_construct(
+                kind=pl.AssumptionKind.DEPOT_RATE, value=c("0.037"), scenario_id=sid
+            ),
+            pl.ProjectionAssumption.model_construct(
+                kind=pl.AssumptionKind.FLAT_GROWTH, value=c("0.02"), scenario_id=sid
+            ),
+        ],
+    )
+    bands = [BandLimits(figure="debt_service_ratio", green=c("0.30"), red=c("0.40"))]
+    shown = plan.model_copy(
+        update={
+            "projection": projection,
+            "levers": pl.HouseholdLevers.model_construct(bands=bands),
+        }
+    )
+    got = facts_rules.build(health, shown, AdviceMode.GENERIC)
+    value = {f.key: f.value for f in got.figures}
+    assert got.states["projection_state"] == "shown"
+    assert value["projection_until"] == "2032-12"
+    assert value["projection_total"] == "257747.90"
+    assert value["projection_change"] == "30000.00"
+    assert value["projection_assumption_part"] == "8000.00"
+    assert value["assumed_change_depot"] == "0.037"
+    assert value["flat_value_growth"] == "0.02"
+    assert "assumed_change_crypto" not in value
+    assert got.states["light_debt_service_ratio"] == "green"  # its band confirmed
+    assert not (got.plans or got.labels.plans)  # generic
