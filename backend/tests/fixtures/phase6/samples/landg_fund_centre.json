@@ -1,0 +1,98 @@
+{
+ "metadata": {
+  "fund_fields": [
+   {
+    "code_name": "fundName",
+    "label": "Fund"
+   }
+  ],
+  "share_class_fields": [
+   {
+    "code_name": "shareclassName",
+    "label": "Share class"
+   },
+   {
+    "code_name": "shareclassISIN",
+    "label": "ISIN"
+   },
+   {
+    "code_name": "shareclassCurrency",
+    "label": "Currency"
+   },
+   {
+    "code_name": "midPrice",
+    "label": "NAV"
+   },
+   {
+    "code_name": "midPrice__date",
+    "label": "NAV date"
+   }
+  ],
+  "listing_fields": [],
+  "as_at_date": "2026-06-30"
+ },
+ "funds": [
+  {
+   "data": [
+    "L&G Invented Equity UCITS ETF"
+   ],
+   "share_classes": [
+    {
+     "id": 97,
+     "currency": "USD",
+     "listings": [],
+     "data": [
+      "USD Acc",
+      "IE000INVENT9",
+      "USD",
+      "52.6183",
+      "2026-06-30"
+     ]
+    }
+   ]
+  },
+  {
+   "data": [
+    "L&G Invented Bond UCITS ETF"
+   ],
+   "share_classes": [
+    {
+     "id": 57,
+     "currency": "USD",
+     "listings": [],
+     "data": [
+      "USD Acc",
+      "IE000INVEN15",
+      "USD",
+      "29.3176",
+      "2026-06-30"
+     ]
+    },
+    {
+     "id": 58,
+     "currency": "USD",
+     "listings": [],
+     "data": [
+      "USD Dist",
+      "IE000INVEN15",
+      "USD",
+      "29.0042",
+      "2026-06-30"
+     ]
+    },
+    {
+     "id": 67,
+     "currency": "USD",
+     "listings": [],
+     "data": [
+      "USD Acc",
+      "IE000INVEN16",
+      "USD",
+      "17.0563",
+      null
+     ]
+    }
+   ]
+  }
+ ]
+}

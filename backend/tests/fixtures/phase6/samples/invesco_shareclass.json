@@ -1,0 +1,14 @@
+{
+ "aliases": {
+  "isin": "IE000INVENT6",
+  "ticker": "INVD"
+ },
+ "shareClassCurrency": "USD",
+ "shareClassFullName": "Invesco Invented Equity UCITS ETF Acc",
+ "nav": {
+  "isin": "IE000INVENT6",
+  "effectiveDate": "2026-06-30",
+  "navPerShare": 23.41768,
+  "shareclassCurrency": "USD"
+ }
+}

@@ -162,3 +162,373 @@ parse_cases:
     sample: ecb_daily.xml
     expect:
       error: parse
+
+# --- D174 amended 19 Nov 2026: more issuers, the ECB history, the first-read check ---------
+# Synthetic samples in the real layouts read on 19 Nov 2026 (invented ISINs, names, values;
+# the real files stayed in the dev box's scratch directory and were never committed). A read
+# case names every request's answer by a part of its URL; a request no key matches answers
+# 404. Error codes: `parse` (the file is not what the adapter reads, or is ambiguous),
+# `isin_mismatch` (the answer states another fund: another ISIN, or for Invesco a workbook
+# whose share class or NAV differs from the share class's own record), `not_listed` (the
+# issuer answered and lists no such fund). None of them stores a row.
+
+read_cases:
+  - id: amundi_parse
+    description: >-
+      Amundi's product service: the ISIN and currency from `characteristics`, `officialNav`
+      per day as epoch milliseconds at 00:00 UTC, out of order; `navCurrency` agrees
+    issuer: amundi
+    isin: LU000INVENT4
+    answers: {getProductsData: amundi_products.json}
+    expect:
+      isin: LU000INVENT4
+      currency: USD
+      navs:
+        - {"on": 2026-06-26, nav: "40.90000000", currency: USD}
+        - {"on": 2026-06-29, nav: "41.05000000", currency: USD}
+        - {"on": 2026-06-30, nav: "41.28170000", currency: USD}
+
+  - id: amundi_other_isin
+    issuer: amundi
+    isin: LU000INVENT4
+    answers: {getProductsData: amundi_other_isin.json}
+    expect: {error: isin_mismatch}
+
+  - id: amundi_no_product
+    description: an ISIN Amundi does not know answers a product without history
+    issuer: amundi
+    isin: LU000INVENT4
+    answers: {getProductsData: amundi_no_product.json}
+    expect: {error: not_listed}
+
+  - id: amundi_weekend_point
+    description: a point dated on a Saturday (an overnight fund) keeps its own day
+    issuer: amundi
+    isin: LU000INVENT4
+    answers: {getProductsData: amundi_weekend.json}
+    expect:
+      isin: LU000INVENT4
+      currency: EUR
+      navs:
+        - {"on": 2026-06-26, nav: "63.12940000", currency: EUR}
+        - {"on": 2026-06-27, nav: "63.13110000", currency: EUR}
+
+  - id: xtrackers_parse
+    description: >-
+      DWS's XLSX (an `x:` namespace prefix, the sheet named after the ISIN and reached
+      through the workbook's relationship as sheet2.xml, rich-text shared strings,
+      disclaimer rows, a gap between rows), the NAV column found by its header, newest first
+    issuer: xtrackers
+    isin: IE000INVENT5
+    answers: {historicaldata/download: xtrackers_history.xlsx}
+    expect:
+      isin: IE000INVENT5
+      currency: USD
+      navs:
+        - {"on": 2026-06-26, nav: "185.75000000", currency: USD}
+        - {"on": 2026-06-29, nav: "186.90000000", currency: USD}
+        - {"on": 2026-06-30, nav: "187.42600000", currency: USD}
+
+  - id: xtrackers_blank_nav
+    description: a row whose NAV is „N/A“ or missing is skipped, the others are read
+    issuer: xtrackers
+    isin: IE000INVENT5
+    answers: {historicaldata/download: xtrackers_blank_nav.xlsx}
+    expect:
+      isin: IE000INVENT5
+      currency: USD
+      navs:
+        - {"on": 2026-06-26, nav: "185.75000000", currency: USD}
+        - {"on": 2026-06-30, nav: "187.42600000", currency: USD}
+
+  - id: xtrackers_no_isin_row
+    issuer: xtrackers
+    isin: IE000INVENT5
+    answers: {historicaldata/download: xtrackers_no_isin_row.xlsx}
+    expect: {error: parse}
+
+  - id: invesco_parse
+    description: >-
+      the share class's JSON (ISIN, currency, full name, the latest NAV) and its workbook
+      (Excel day numbers written as 46203.0, numbers in E notation, no ISIN, no currency);
+      the workbook's name and its NAV on the JSON's day equal the JSON's
+    issuer: invesco
+    isin: IE000INVENT6
+    answers:
+      expand=nav: invesco_shareclass.json
+      /performance: invesco_performance.xlsx
+    expect:
+      isin: IE000INVENT6
+      currency: USD
+      navs:
+        - {"on": 2026-06-26, nav: "23.21000000", currency: USD}
+        - {"on": 2026-06-29, nav: "23.30000000", currency: USD}
+        - {"on": 2026-06-30, nav: "23.41768000", currency: USD}
+
+  - id: invesco_name_differs
+    description: the workbook's share class is not the JSON's (another share class's file)
+    issuer: invesco
+    isin: IE000INVENT6
+    answers:
+      expand=nav: invesco_shareclass_other_name.json
+      /performance: invesco_performance.xlsx
+    expect: {error: isin_mismatch}
+
+  - id: invesco_nav_differs
+    issuer: invesco
+    isin: IE000INVENT6
+    answers:
+      expand=nav: invesco_shareclass_other_nav.json
+      /performance: invesco_performance.xlsx
+    expect: {error: isin_mismatch}
+
+  - id: ark_parse
+    description: >-
+      the fund page's inline series (`rawChartData`, a trailing comma), the ISIN and base
+      currency from its key facts (a constituent's ISIN in the holdings table is not the
+      fund's), the series' last value equal to the page's „NAV per share“
+    issuer: ark
+    isin: IE000INVENT7
+    fund_ref: index-etfs/invented-infrastructure
+    answers: {/funds/index-etfs/invented-infrastructure/: ark_fund_page.html}
+    expect:
+      isin: IE000INVENT7
+      currency: USD
+      navs:
+        - {"on": 2026-06-26, nav: "15.20000000", currency: USD}
+        - {"on": 2026-06-29, nav: "15.31000000", currency: USD}
+        - {"on": 2026-06-30, nav: "15.44170000", currency: USD}
+
+  - id: ark_live_layout
+    description: >-
+      the layout of the live pages read on 19 Nov 2026: the key facts also name the ISIN of
+      the fund's intraday indicative value („iNAV ISIN“), which is never the fund's, and the
+      „NAV per share“ is printed without its currency, which is then the base currency
+    issuer: ark
+    isin: IE000INVENT7
+    fund_ref: index-etfs/invented-infrastructure
+    answers: {/funds/index-etfs/invented-infrastructure/: ark_fund_page_live_layout.html}
+    expect:
+      isin: IE000INVENT7
+      currency: USD
+      navs:
+        - {"on": 2026-06-26, nav: "15.20000000", currency: USD}
+        - {"on": 2026-06-29, nav: "15.31000000", currency: USD}
+        - {"on": 2026-06-30, nav: "15.44170000", currency: USD}
+
+  - id: ark_last_differs
+    description: the series' last value is not the page's NAV per share
+    issuer: ark
+    isin: IE000INVENT7
+    fund_ref: index-etfs/invented-infrastructure
+    answers: {/funds/index-etfs/invented-infrastructure/: ark_fund_page_last_differs.html}
+    expect: {error: parse}
+
+  - id: bnp_parse
+    description: >-
+      rows keyed by the ISIN, out of order, only `PRICE_NAV` read; the reference carries the
+      currency the answer does not state
+    issuer: bnp
+    isin: IE000INVENT8
+    fund_ref: EUR:IE000INVENT8
+    answers: {"navs/fast?currency=EUR": bnp_navs.json}
+    expect:
+      isin: IE000INVENT8
+      currency: EUR
+      navs:
+        - {"on": 2026-06-26, nav: "88.30000000", currency: EUR}
+        - {"on": 2026-06-29, nav: "88.45000000", currency: EUR}
+        - {"on": 2026-06-30, nav: "88.74210000", currency: EUR}
+
+  - id: bnp_wrong_currency
+    description: a currency the share class is not in answers an empty list
+    issuer: bnp
+    isin: IE000INVENT8
+    fund_ref: USD:IE000INVENT8
+    answers: {"navs/fast?currency=USD": bnp_navs_empty.json}
+    expect: {error: not_listed}
+
+  - id: bnp_other_key
+    issuer: bnp
+    isin: IE000INVENT8
+    fund_ref: EUR:IE000INVENT8
+    answers: {"navs/fast?currency=EUR": bnp_navs_other_key.json}
+    expect: {error: isin_mismatch}
+
+  - id: landg_parse
+    description: >-
+      one document for every share class, its values positional by
+      `metadata.share_class_fields`: the latest NAV (`midPrice`, labelled NAV) and its day
+    issuer: landg
+    isin: IE000INVENT9
+    answers: {fund-centre/48: landg_fund_centre.json}
+    expect:
+      isin: IE000INVENT9
+      currency: USD
+      navs:
+        - {"on": 2026-06-30, nav: "52.61830000", currency: USD}
+
+  - id: landg_isin_twice
+    description: an ISIN under two share classes with different prices is never guessed
+    issuer: landg
+    isin: IE000INVEN15
+    answers: {fund-centre/48: landg_fund_centre.json}
+    expect: {error: parse}
+
+  - id: landg_no_date
+    issuer: landg
+    isin: IE000INVEN16
+    answers: {fund-centre/48: landg_fund_centre.json}
+    expect: {error: parse}
+
+  - id: hanetf_parse
+    description: >-
+      two requests: the fund page (its ISIN, „Base Currency“ and the NAV history link), then
+      the XLSX the link names (Fund Name, Ticker and ISIN above the table, Excel day numbers,
+      oldest first), whose ISIN must equal the page's
+    issuer: hanetf
+    isin: IE000INVEN11
+    fund_ref: invd-invented-clean-power-ucits-etf
+    answers:
+      /fund/invd-invented-clean-power-ucits-etf/: hanetf_fund_page.html
+      NAV_history-INVD-IE000INVEN11: hanetf_nav_history.xlsx
+    expect:
+      isin: IE000INVEN11
+      currency: USD
+      navs:
+        - {"on": 2026-06-26, nav: "9.14000000", currency: USD}
+        - {"on": 2026-06-29, nav: "9.22640000", currency: USD}
+        - {"on": 2026-06-30, nav: "9.31870000", currency: USD}
+
+  - id: hanetf_page_other_isin
+    description: the page states another fund; its file is never asked
+    issuer: hanetf
+    isin: IE000INVEN11
+    fund_ref: invd-invented-clean-power-ucits-etf
+    answers: {/fund/invd-invented-clean-power-ucits-etf/: hanetf_fund_page_other.html}
+    expect: {error: isin_mismatch}
+
+catalogue_cases:
+  - id: ark_catalogue
+    description: the fund list's rows, ISIN -> `<section>/<slug>`; an ISIN under two links is left out
+    issuer: ark
+    sample: ark_funds.html
+    expect:
+      IE000INVENT7: index-etfs/invented-infrastructure
+      IE000INVEN12: active-etfs/invented-two
+
+discovery_cases:
+  - id: discover_by_isin
+    description: a held fund named by an ISIN-keyed adapter's brand is asked by its ISIN
+    name: AIS-Amundi Invented Equity ETF Acc
+    isin: LU000INVENT4
+    answers: {getProductsData: amundi_products.json}
+    expect: {issuer: amundi, fund_ref: LU000INVENT4, requests: 1}
+
+  - id: discover_answer_names_another_fund
+    description: the answer states another ISIN; nothing is found, and it is no failure
+    name: Amundi Invented Equity ETF
+    isin: LU000INVENT4
+    answers: {getProductsData: amundi_other_isin.json}
+    expect: {requests: 1}
+
+  - id: discover_bnp_currency
+    description: BNP is asked in EUR, then USD, GBP and CHF until the ISIN has rows
+    name: BNPP Invented Equity ETF
+    isin: IE000INVENT8
+    answers:
+      "navs/fast?currency=EUR": bnp_navs_empty.json
+      "navs/fast?currency=USD": bnp_navs.json
+    expect: {issuer: bnp, fund_ref: USD:IE000INVENT8, requests: 2}
+
+  - id: discover_no_brand
+    description: a name no adapter's brand starts asks nothing
+    name: Invented Fund plc
+    isin: IE000INVENT5
+    expect: {requests: 0}
+
+  - id: discover_hanetf_by_name
+    description: >-
+      HANetf's fund sitemap lists English fund pages without ISINs: the pages whose slug
+      words the fund's name starts (at least two) are read, the best first and at most
+      three, until one states the ISIN
+    name: HANetf ICAV-Inv.Clean Pow.UETF Acc
+    isin: IE000INVEN11
+    answers:
+      fund-sitemap.xml: hanetf_sitemap.xml
+      /fund/invd-invented-clean-power-ucits-etf/: hanetf_fund_page.html
+    expect: {issuer: hanetf, fund_ref: invd-invented-clean-power-ucits-etf, requests: 2}
+
+ecb_history_cases:
+  - id: ecb_history_zip
+    description: >-
+      the ECB's eurofxref-hist.zip: one CSV, newest first, a trailing comma, „N/A“ for a day
+      a currency has no rate
+    sample: ecb_history.zip
+    expect:
+      USD:
+        - {"on": 1999-01-04, per_eur: "1.1789"}
+        - {"on": 2026-06-29, per_eur: "1.1690"}
+        - {"on": 2026-06-30, per_eur: "1.1712"}
+      GBP:
+        - {"on": 1999-01-04, per_eur: "0.7111"}
+        - {"on": 2026-06-26, per_eur: "0.8530"}
+        - {"on": 2026-06-30, per_eur: "0.8541"}
+
+guard_cases:
+  - id: guard_agrees
+    description: a USD NAV in euros within 2 % of the report's price of the same day is stored
+    navs:
+      - {"on": 2026-06-29, nav: "41.05000000", currency: USD}
+      - {"on": 2026-06-30, nav: "41.28170000", currency: USD}
+    rates:
+      - {"on": 2026-06-30, per_eur: "1.1712"}
+    reports:
+      - {"on": 2026-06-30, price_eur: "35.10000000"}
+    expect: {checked_on: 2026-06-30, refused: false}
+
+  - id: guard_disagrees
+    description: more than 2 % apart (another share class, or a figure that is not the NAV)
+    navs:
+      - {"on": 2026-06-30, nav: "88.74210000", currency: EUR}
+    reports:
+      - {"on": 2026-06-30, price_eur: "80.00000000"}
+    expect: {checked_on: 2026-06-30, refused: true}
+
+  - id: guard_two_percent_is_kept
+    navs:
+      - {"on": 2026-06-30, nav: "102.00000000", currency: EUR}
+    reports:
+      - {"on": 2026-06-30, price_eur: "100.00000000"}
+    expect: {checked_on: 2026-06-30, refused: false}
+
+  - id: guard_newest_common_day
+    description: the newest day both have decides, not the newest NAV
+    navs:
+      - {"on": 2026-03-31, nav: "80.00000000", currency: EUR}
+      - {"on": 2026-06-30, nav: "99.00000000", currency: EUR}
+    reports:
+      - {"on": 2026-03-31, price_eur: "90.00000000"}
+    expect: {checked_on: 2026-03-31, refused: true}
+
+  - id: guard_no_common_day
+    description: >-
+      no report day in the file (a latest-NAV-only source before the next report): nothing
+      can be compared, the rows are stored
+    navs:
+      - {"on": 2026-11-18, nav: "52.61830000", currency: USD}
+    rates:
+      - {"on": 2026-11-18, per_eur: "1.1600"}
+    reports:
+      - {"on": 2026-09-30, price_eur: "45.00000000"}
+    expect: {refused: false}
+
+  - id: guard_no_rate_that_day
+    description: a report day with no ECB rate on or before it cannot be compared
+    navs:
+      - {"on": 2026-06-30, nav: "41.28170000", currency: USD}
+    rates:
+      - {"on": 2026-07-01, per_eur: "1.1712"}
+    reports:
+      - {"on": 2026-06-30, price_eur: "10.00000000"}
+    expect: {refused: false}
