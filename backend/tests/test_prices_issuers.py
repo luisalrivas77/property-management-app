@@ -83,7 +83,7 @@ def test_ecb_history_cases(case):
         pytest.skip("the ECB history ZIP is not read yet (D174 amended 19 Nov 2026)")
     rates = ecb_fx.parse_history((phase6.SAMPLES / case.sample).read_bytes())
     for code, expected in case.expect.items():
-        assert rates[code] == expected
+        assert [(r.on, r.per_eur) for r in rates[code]] == [(r.on, r.per_eur) for r in expected]
 
 
 @pytest.mark.parametrize("case", ISSUER_NAV.guard_cases, ids=lambda c: c.id)
