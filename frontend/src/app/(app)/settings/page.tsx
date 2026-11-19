@@ -4,16 +4,18 @@
 // members (invite → one-time enrollment link, pending invites), the two AI switches
 // (docs/phases/phase-2.md D42), the reminder email switch (docs/phases/phase-5.md D123), the
 // email-in address (docs/phases/phase-5.md §5.2), the provider keys typed in the app
-// (docs/phases/phase-6.md D260) and signing out.
+// (docs/phases/phase-6.md D260), the Hinweis-Modus of the household plan (docs/phases/phase-9.md
+// D251) and signing out.
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Passkey } from "@/api/schemas";
 import { useAuth } from "@/auth/AuthGate";
 import { addPasskey, defaultPasskeyLabel } from "@/auth/passkeys";
-import { APP_SECRETS_ANCHOR } from "@/components/labels";
+import { AI_SETTINGS_ANCHOR, APP_SECRETS_ANCHOR } from "@/components/labels";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
+import { AdviceModeSettings } from "./AdviceModeSettings";
 import { AiSettings } from "./AiSettings";
 import { AppSecrets } from "./AppSecrets";
 import { InboxAddress } from "./InboxAddress";
@@ -147,8 +149,9 @@ export default function SettingsPage() {
       <h2>Mitglieder</h2>
       <Members />
 
-      <h2>KI</h2>
+      <h2 id={AI_SETTINGS_ANCHOR}>KI</h2>
       <AiSettings />
+      <AdviceModeSettings />
 
       <h2>Erinnerungen</h2>
       <ReminderSettings />

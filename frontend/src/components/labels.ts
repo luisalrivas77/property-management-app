@@ -931,6 +931,10 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
  * target of the links that send a person there. */
 export const APP_SECRETS_ANCHOR = "zugangsschluessel";
 
+/** The id of the heading „KI“ on Einstellungen, where „Private Konten mit KI zuordnen“ is
+ * switched on (phase 6 D168); the KI panel on Planung › Haushalt links there (phase 9 D253). */
+export const AI_SETTINGS_ANCHOR = "ki";
+
 /** asset_movement.kind (phase 6 D165, D166): what a coin or fund movement was, in plain words. */
 export const MOVEMENT_KIND: Record<MovementKind, string> = {
   acquisition: "Kauf",
