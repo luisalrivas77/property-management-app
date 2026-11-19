@@ -13761,11 +13761,6 @@ export interface components {
             iban?: string | null;
         };
         /**
-         * Topic
-         * @enum {string}
-         */
-        Topic: "surplus" | "reserve" | "paths" | "savings_rate" | "debt" | "net_worth" | "basis" | "projection";
-        /**
          * TimelineEntry
          * @description One milestone. For a correction chain A → B → C only one entry appears, showing C.
          */
@@ -13801,6 +13796,11 @@ export interface components {
                 [key: string]: components["schemas"]["JsonValue"];
             };
         };
+        /**
+         * Topic
+         * @enum {string}
+         */
+        Topic: "surplus" | "reserve" | "paths" | "savings_rate" | "debt" | "net_worth" | "basis" | "projection";
         /**
          * TrackedAmount
          * @description Booked, not deductible this year (Tilgung, Erhaltungsrücklage).
