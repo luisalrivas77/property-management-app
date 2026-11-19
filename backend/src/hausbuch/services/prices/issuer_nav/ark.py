@@ -34,9 +34,11 @@ _POINT = re.compile(
 )
 _SCRIPT = re.compile(r"<(script|style)\b.*?</\1\s*>", re.S | re.I)
 _TAG = re.compile(r"<[^>]+>")
-_ISIN_FACT = re.compile(r"\bISIN:?\s+([A-Z]{2}[A-Z0-9]{9}[0-9])\b")
+# the fund's own ISIN; the page also prints its intraday value's ("iNAV ISIN"), never it
+_ISIN_FACT = re.compile(r"(?<!iNAV )(?<!INAV )\bISIN:?\s+([A-Z]{2}[A-Z0-9]{9}[0-9])\b")
 _CURRENCY_FACT = re.compile(r"\bBase Currency:?\s+([A-Z]{3})\b")
-_NAV_FACT = re.compile(r"\bNAV per share:?\s+([A-Z]{3})\s+(\d+(?:[.,]\d+)?)\b")
+# a page may print the NAV without its currency, which is then the base currency
+_NAV_FACT = re.compile(r"\bNAV per share:?\s+(?:([A-Z]{3})\s+)?(\d+(?:[.,]\d+)?)\b")
 _ROW = re.compile(r"<tr\b.*?</tr>", re.S | re.I)
 _LINK = re.compile(r'href="(?:https://europe\.ark-funds\.com)?/funds/([a-z0-9-]+/[a-z0-9-]+)/"')
 _CELL_ISIN = re.compile(r"<td[^>]*>\s*([A-Z]{2}[A-Z0-9]{9}[0-9])\s*</td>")
@@ -79,7 +81,7 @@ class ArkAdapter(IssuerAdapter):
         isin, currency = next(iter(isins)), next(iter(currencies))
         nav_currency, nav_text = next(iter(stated))
         series = _SERIES.search(page)
-        if nav_currency != currency or series is None:
+        if nav_currency not in ("", currency) or series is None:
             raise SourceError("parse")
         points: dict[date, NavPoint] = {}
         for day, value in _POINT.findall(series.group(1)):
