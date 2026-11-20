@@ -240,6 +240,12 @@ def test_a_property_and_a_unit_roll_up_the_documents_of_their_children(client_a)
     _link(client_a, loan_contract, "loan", loan)
     _link(client_a, by_tenant, "tenant", setup["tenant"]["id"])  # never rolled up
     _link(client_a, elsewhere, "unit", other_unit)
+    # Read again after linking: a document's section follows its links (phase 10 D282).
+    deed, lease, loan_contract, elsewhere = (
+        ok(client_a.get(f"/api/documents/{d['id']}"))["document"]
+        for d in (deed, lease, loan_contract, elsewhere)
+    )
+    assert {d["section"] for d in (deed, lease, loan_contract, elsewhere)} == {"property"}
 
     assert ok(client_a.get(f"/api/properties/{prop}/documents")) == [
         {"document": deed, "via": [{"target_type": "property", "target_id": prop}]},

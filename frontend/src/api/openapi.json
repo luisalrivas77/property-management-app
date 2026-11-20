@@ -3270,7 +3270,7 @@
       },
       "get": {
         "summary": "Documents List",
-        "description": "Oldest first; optionally only those linked to a target type, or to one target\n(target_id needs target_type, else 422).",
+        "description": "Oldest first; optionally only those linked to a target type, or to one target\n(target_id needs target_type, else 422); only one Dokumente section, and only those the\nsearch `q` finds (phase 10 D282).",
         "operationId": "documents_list_api_documents_get",
         "parameters": [
           {
@@ -3304,6 +3304,39 @@
                 }
               ],
               "title": "Target Id"
+            }
+          },
+          {
+            "name": "section",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DocumentSection"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Section"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
             }
           }
         ],
@@ -18139,6 +18172,10 @@
                 "type": "null"
               }
             ]
+          },
+          "section": {
+            "$ref": "#/components/schemas/DocumentSection",
+            "default": "other"
           }
         },
         "additionalProperties": false,
@@ -18557,6 +18594,18 @@
         ],
         "title": "DocumentLink",
         "description": "Links a document to exactly one entity (the thing it proves)."
+      },
+      "DocumentSection": {
+        "type": "string",
+        "enum": [
+          "property",
+          "tax",
+          "accounts",
+          "investments",
+          "other"
+        ],
+        "title": "DocumentSection",
+        "description": "Which part of the app a document belongs to on Dokumente (phase 10 D282): computed by\ncode on read (rules/document_section.py), never stored. The members are in priority\norder: a document two sections could claim takes the first."
       },
       "DocumentSource": {
         "type": "string",

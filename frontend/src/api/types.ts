@@ -1135,7 +1135,8 @@ export interface paths {
         /**
          * Documents List
          * @description Oldest first; optionally only those linked to a target type, or to one target
-         *     (target_id needs target_type, else 422).
+         *     (target_id needs target_type, else 422); only one Dokumente section, and only those the
+         *     search `q` finds (phase 10 D282).
          */
         get: operations["documents_list_api_documents_get"];
         put?: never;
@@ -7020,6 +7021,8 @@ export interface components {
              */
             updated_at: string;
             typing?: components["schemas"]["DocumentTyping"] | null;
+            /** @default other */
+            section: components["schemas"]["DocumentSection"];
         };
         /**
          * DocumentChecklist
@@ -7168,6 +7171,14 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * DocumentSection
+         * @description Which part of the app a document belongs to on Dokumente (phase 10 D282): computed by
+         *     code on read (rules/document_section.py), never stored. The members are in priority
+         *     order: a document two sections could claim takes the first.
+         * @enum {string}
+         */
+        DocumentSection: "property" | "tax" | "accounts" | "investments" | "other";
         /**
          * DocumentSource
          * @enum {string}
@@ -18080,6 +18091,8 @@ export interface operations {
             query?: {
                 target_type?: components["schemas"]["LinkTarget"] | null;
                 target_id?: string | null;
+                section?: components["schemas"]["DocumentSection"] | null;
+                q?: string | null;
             };
             header?: never;
             path?: never;

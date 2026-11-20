@@ -193,6 +193,18 @@ class DocumentSubtype(StrEnum):
     CHAIN_SYNC = "chain_sync"
 
 
+class DocumentSection(StrEnum):
+    """Which part of the app a document belongs to on Dokumente (phase 10 D282): computed by
+    code on read (rules/document_section.py), never stored. The members are in priority
+    order: a document two sections could claim takes the first."""
+
+    PROPERTY = "property"  # Immobilie
+    TAX = "tax"  # Steuern
+    ACCOUNTS = "accounts"  # Konten
+    INVESTMENTS = "investments"  # Anlagen
+    OTHER = "other"  # Haushalt & Sonstiges
+
+
 class DepotDocumentKind(StrEnum):
     """Which of the depot's documents a file is, by its text layer's heading (phase 6 D177,
     rules/depot_explain.yaml, migration 0027): finer than the subtype, which the classifier

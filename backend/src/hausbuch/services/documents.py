@@ -21,6 +21,7 @@ from sqlalchemy import Connection, Text, cast, delete, exists, func, insert, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import asset_movement as asset_movement_table
@@ -46,8 +47,16 @@ from hausbuch.db.tables import tax_export as tax_export_table
 from hausbuch.db.tables import tax_input as tax_input_table
 from hausbuch.db.tables import tenancy as tenancy_table
 from hausbuch.db.tables import unit as unit_table
+from hausbuch.db.tables import wallet_sync as wallet_sync_table
 from hausbuch.jobs import enqueue
 from hausbuch.rules import retention
+from hausbuch.rules.document_section import (
+    SectionSignal,
+    document_section,
+    matches,
+    query_words,
+    search_texts,
+)
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.hand_fields import HAND_FIELD_MAP, HAND_FIELDS, hand_values
 from hausbuch.schemas.ai import ExtractedValue
@@ -64,6 +73,9 @@ from hausbuch.schemas.document import (
     RetentionResult,
 )
 from hausbuch.schemas.enums import (
+    BANK_ACCOUNT_KINDS,
+    AccountKind,
+    DocumentSection,
     DocumentSource,
     DocumentSubtype,
     DocumentType,
@@ -254,7 +266,7 @@ def upload_document(
     if row is None:  # lost the race: the other upload registered it and wrote the event
         return _select_document_by_sha(ctx.conn, sha_bytes, lock=True)
 
-    uploaded = _to_document(row)
+    uploaded = _to_documents(ctx.conn, [row])[0]
     append_event(
         ctx,
         EventType.DOCUMENT_UPLOADED,
@@ -347,7 +359,7 @@ def type_document(
         )
         .returning(*document_table.c)
     ).one()
-    typed = _to_document(row)
+    typed = _to_documents(ctx.conn, [row])[0]
     # In the DocumentField order; an untyped document had no value for any field. The title
     # is named here but its value never enters the payload (D5).
     previous = current.typing
@@ -862,9 +874,13 @@ def list_documents(
     *,
     target_type: LinkTarget | None = None,
     target_id: UUID | None = None,
+    section: DocumentSection | None = None,
+    q: str | None = None,
 ) -> list[Document]:
     """Documents in the current workspace, oldest first; optionally only those linked to a
-    target type, or to one target (target_id needs target_type)."""
+    target type, or to one target (target_id needs target_type); only those of one section
+    and those a search finds (phase 10 D282: every word of `q`, case- and umlaut-insensitive,
+    in the title, the type label, the file name, the issuer, a date or the amount)."""
     query = select(document_table).order_by(document_table.c.received_at, document_table.c.id)
     if target_id is not None and target_type is None:
         raise ValueError("target_id needs target_type")
@@ -873,7 +889,50 @@ def list_documents(
         linked = select(link_table.c.id).where(link_table.c.document_id == document_table.c.id)
         linked = linked.where(column.is_not(None) if target_id is None else column == target_id)
         query = query.where(exists(linked))
-    return [_to_document(r) for r in conn.execute(query)]
+    documents = _to_documents(conn, list(conn.execute(query)))
+    if section is not None:
+        documents = [d for d in documents if d.section is DocumentSection(section)]
+    words = query_words(q)
+    if words:
+        documents = _search(conn, documents, words)
+    return documents
+
+
+def _search(conn: Connection, documents: list[Document], words: list[str]) -> list[Document]:
+    """The documents every word finds; the issuer and amount come from each document's current
+    reading as the hand fields show them (D37), loaded in one query."""
+    if not documents:
+        return []
+    ids = [d.id for d in documents]
+    latest = (
+        select(extraction_table)
+        .where(extraction_table.c.document_id.in_(ids))
+        .order_by(extraction_table.c.document_id, extraction_table.c.version.desc())
+        .distinct(extraction_table.c.document_id)
+    )
+    readings = {
+        row.document_id: DocumentExtraction.model_validate(dict(row._mapping))
+        for row in conn.execute(latest)
+    }
+    found = []
+    for document in documents:
+        values = hand_fields(readings.get(document.id)).values
+        typing = document.typing
+        amount = values.amount_total if isinstance(values.amount_total, Decimal) else None
+        texts = search_texts(
+            title=typing.title if typing else None,
+            doc_type=typing.type if typing else None,
+            subtype=typing.subtype if typing else None,
+            original_filename=document.original_filename,
+            issuer=values.counterparty,
+            document_date=typing.document_date if typing else None,
+            received_on=document.received_at.astimezone(LOCAL_TIME_ZONE).date(),
+            tax_year=typing.tax_year if typing else None,
+            amount=amount,
+        )
+        if matches(words, texts):
+            found.append(document)
+    return found
 
 
 def list_related_documents(
@@ -913,14 +972,16 @@ def list_related_documents(
         raise ValueError(f"documents roll up to a property or a unit only, not {target_type}")
 
     linked = select(links.id).where(links.document_id == document_table.c.id).where(matches)
-    documents = [
-        _to_document(r)
-        for r in conn.execute(
-            select(document_table)
-            .where(exists(linked))
-            .order_by(document_table.c.received_at, document_table.c.id)
-        )
-    ]
+    documents = _to_documents(
+        conn,
+        list(
+            conn.execute(
+                select(document_table)
+                .where(exists(linked))
+                .order_by(document_table.c.received_at, document_table.c.id)
+            )
+        ),
+    )
     if not documents:
         return []
     via: dict[UUID, list[DocumentLink]] = {d.id: [] for d in documents}
@@ -1139,7 +1200,7 @@ def _select_document(conn: Connection, document_id: UUID, *, for_update: bool) -
     if for_update:
         query = query.with_for_update()
     row = conn.execute(query).one_or_none()
-    return None if row is None else _to_document(row)
+    return None if row is None else _to_documents(conn, [row])[0]
 
 
 def _file_lock(conn: Connection, storage_key: str) -> None:
@@ -1156,10 +1217,87 @@ def _select_document_by_sha(
     if lock:
         query = query.with_for_update(read=True, key_share=True)
     row = conn.execute(query).one_or_none()
-    return None if row is None else _to_document(row)
+    return None if row is None else _to_documents(conn, [row])[0]
 
 
-def _to_document(row) -> Document:
+_PROPERTY_LINK_COLUMNS = ("property_id", "unit_id", "tenant_id", "tenancy_id", "loan_id")
+_HOLDING_ACCOUNT_KINDS = frozenset({AccountKind.DEPOT, AccountKind.EXCHANGE, AccountKind.WALLET})
+
+
+def _section_signals(conn: Connection, ids: list[UUID]) -> dict[UUID, set[SectionSignal]]:
+    """What relies on each document, for its Dokumente section (phase 10 D282), in one query
+    per kind of record."""
+    signals: dict[UUID, set[SectionSignal]] = {i: set() for i in ids}
+    if not ids:
+        return signals
+
+    def mark(rows, signal: SectionSignal) -> None:
+        for (document_id,) in rows:
+            if document_id in signals:
+                signals[document_id].add(signal)
+
+    links = link_table.c
+    for row in conn.execute(
+        select(
+            links.document_id,
+            links.owner_id,
+            links.target_document_id,
+            *(links[c] for c in _PROPERTY_LINK_COLUMNS),
+        ).where(links.document_id.in_(ids))
+    ):
+        m = row._mapping
+        if any(m[c] is not None for c in _PROPERTY_LINK_COLUMNS) or m["target_document_id"]:
+            signals[m["document_id"]].add(SectionSignal.PROPERTY_RECORD)
+        if m["owner_id"] is not None:
+            signals[m["document_id"]].add(SectionSignal.TAX_RECORD)
+    # A bill a payment proof is linked to (phase 3 D143).
+    mark(
+        conn.execute(select(links.target_document_id).where(links.target_document_id.in_(ids))),
+        SectionSignal.PROPERTY_RECORD,
+    )
+    for column, signal, condition in (
+        (cost_table.c.document_id, SectionSignal.PROPERTY_RECORD, None),
+        (tax_input_table.c.document_id, SectionSignal.PROPERTY_RECORD, None),
+        (rent_schedule_table.c.document_id, SectionSignal.PROPERTY_RECORD, None),
+        (
+            allocation_table.c.document_id,
+            SectionSignal.PROPERTY_RECORD,
+            allocation_table.c.property_id.is_not(None),
+        ),
+        (income_input_table.c.document_id, SectionSignal.TAX_RECORD, None),
+        (return_input_table.c.document_id, SectionSignal.TAX_RECORD, None),
+        (bank_statement_table.c.document_id, SectionSignal.BANK_STATEMENT, None),
+        (movement_import_table.c.document_id, SectionSignal.HOLDING_RECORD, None),
+        (asset_movement_table.c.document_id, SectionSignal.HOLDING_RECORD, None),
+        (holding_statement_table.c.document_id, SectionSignal.HOLDING_RECORD, None),
+        (price_table.c.document_id, SectionSignal.HOLDING_RECORD, None),
+        (wallet_sync_table.c.document_id, SectionSignal.HOLDING_RECORD, None),
+    ):
+        query = select(column).where(column.in_(ids)).distinct()
+        if condition is not None:
+            query = query.where(condition)
+        mark(conn.execute(query), signal)
+    imports = (
+        select(statement_import_table.c.document_id, account_table.c.kind)
+        .join(account_table, account_table.c.id == statement_import_table.c.account_id)
+        .where(statement_import_table.c.document_id.in_(ids))
+        .distinct()
+    )
+    for document_id, kind in conn.execute(imports):
+        if kind in _HOLDING_ACCOUNT_KINDS:
+            signals[document_id].add(SectionSignal.HOLDING_RECORD)
+        elif kind in BANK_ACCOUNT_KINDS or kind == AccountKind.CREDIT_CARD:
+            signals[document_id].add(SectionSignal.BANK_STATEMENT)
+    return signals
+
+
+def _to_documents(conn: Connection, rows: list) -> list[Document]:
+    """Document rows as records, each with its section (phase 10 D282)."""
+    signals = _section_signals(conn, [r._mapping["id"] for r in rows])
+    return [_to_document(r, signals[r._mapping["id"]]) for r in rows]
+
+
+def _to_document(row, signals: set[SectionSignal]) -> Document:
     m = row._mapping
     typing = None
     if m["type"] is not None:
@@ -1170,6 +1308,12 @@ def _to_document(row) -> Document:
             document_date=m["document_date"],
             tax_year=m["tax_year"],
         )
+    section = document_section(
+        DocumentType(m["type"]) if m["type"] is not None else None,
+        DocumentSubtype(m["subtype"]) if m["subtype"] is not None else None,
+        depot_kind=m["depot_kind"],
+        signals=signals,
+    )
     return Document(
         id=m["id"],
         workspace_id=m["workspace_id"],
@@ -1180,6 +1324,7 @@ def _to_document(row) -> Document:
         received_at=m["received_at"],
         updated_at=m["updated_at"],
         typing=typing,
+        section=section,
     )
 
 

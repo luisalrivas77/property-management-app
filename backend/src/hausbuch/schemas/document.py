@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 
 from .common import Money, Record, Schema, Sha256Hex, TaxYear
 from .enums import (
+    DocumentSection,
     DocumentSource,
     DocumentSubtype,
     DocumentType,
@@ -50,6 +51,9 @@ class Document(Record):
     received_at: datetime
     updated_at: datetime
     typing: DocumentTyping | None = None  # null until typed
+    # Phase 10 D282: the Dokumente section, computed on read from what the document is and
+    # what relies on it (rules/document_section.py), never stored.
+    section: DocumentSection = DocumentSection.OTHER
 
 
 class DocumentExplanation(Schema):

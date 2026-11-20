@@ -33,7 +33,7 @@ from hausbuch.schemas.bank import (
     StatementImport,
 )
 from hausbuch.schemas.document import Document, DocumentLink, RetentionResult
-from hausbuch.schemas.enums import DocumentSource, EntityType, LinkTarget
+from hausbuch.schemas.enums import DocumentSection, DocumentSource, EntityType, LinkTarget
 from hausbuch.schemas.proposal import Proposal
 from hausbuch.services.accounts import create_account_from_statement
 from hausbuch.services.context import CommandContext
@@ -214,10 +214,15 @@ def documents_list(
     cmd: Cmd,
     target_type: LinkTarget | None = None,
     target_id: UUID | None = None,
+    section: DocumentSection | None = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
 ) -> list[Document]:
     """Oldest first; optionally only those linked to a target type, or to one target
-    (target_id needs target_type, else 422)."""
-    return cmd.read(list_documents, target_type=target_type, target_id=target_id)
+    (target_id needs target_type, else 422); only one Dokumente section, and only those the
+    search `q` finds (phase 10 D282)."""
+    return cmd.read(
+        list_documents, target_type=target_type, target_id=target_id, section=section, q=q
+    )
 
 
 def _detail(
