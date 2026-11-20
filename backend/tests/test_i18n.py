@@ -102,7 +102,7 @@ def test_every_catalogue_is_complete() -> None:
     """Every German text of every catalogue has its English, naming the same placeholders
     (the constructors refuse otherwise; this imports every module so each one is built)."""
     _every_module()
-    # (non-empty once the first module has its catalogue)
+    assert i18n.CATALOGUES
     for catalogue in i18n.CATALOGUES:
         if isinstance(catalogue, i18n.Texts):
             assert catalogue.entries, catalogue.name

@@ -63,6 +63,7 @@ from sqlalchemy import Connection, Row, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import bank_connection as connection_table
 from hausbuch.db.tables import bank_statement as statement_table
@@ -929,12 +930,8 @@ _REFUSED_CARD: dict[str, tuple[str, str]] = {
 def _pin_missing_card(credential_slot: str) -> tuple[str, str]:
     variable = rules.pin_variable(credential_slot)
     return (
-        f"Für den Zugang „{credential_slot}“ ist keine PIN hinterlegt, weder in Hausbuch noch"
-        f" als Variable {variable} im API-Container.",
-        "Im Bankabruf des Kontos die PIN unter „PIN (Online-Banking)“ eingeben und „PIN"
-        " speichern“ wählen, dann erneut abrufen. Alternativ in der Scaleway-Konsole"
-        f" (Serverless › Containers › API-Container › Einstellungen) das Secret {variable}"
-        " anlegen und den Container neu bereitstellen (Runbook Schritt 17).",
+        TEXTS("pin_missing", slot=credential_slot, variable=variable),
+        TEXTS("pin_missing.question", variable=variable),
     )
 
 
@@ -957,12 +954,288 @@ _DKB_UNSUPPORTED_FORMAT = (
 )
 
 
+# --- English (phase 10 D284): the same cards, key for key, beside the German above ---------
+
+_FAILED_CARD_EN = {
+    E.BANK_NOT_CONFIGURED: (
+        "Bank sync is not set up: the product ID is missing (or the one stored in Hausbuch"
+        " can no longer be read).",
+        "Enter it under Settings › Access keys (or as the variable HAUSBUCH_FINTS_PRODUCT_ID"
+        " in the container, runbook step 14), then sync again.",
+    ),
+    E.BANK_PIN_UNREADABLE: (
+        "The PIN stored in Hausbuch can no longer be read: the server's key was changed.",
+        "Choose “Change PIN” in bank sync, enter the PIN again and sync again.",
+    ),
+    E.BANK_PIN_SERVER_CHANGED: (
+        "The PIN stored in Hausbuch must be entered once more: Hausbuch sends it only to the"
+        " FinTS address it was entered for. A PIN entered before 16 Nov 2026 names no address"
+        " yet; otherwise the address has changed since.",
+        "Choose “Change PIN” in bank sync, enter the PIN again and sync again.",
+    ),
+    E.BANK_LOGIN_UNREADABLE: (
+        "The stored login name can no longer be read: the server's key was changed.",
+        "Under “Change access” in bank sync, enter the login name and the PIN again, then"
+        " sync again.",
+    ),
+    E.BANK_TAN_NOT_DECOUPLED: (
+        "The bank offers no approval by app (pushTAN) for this login.",
+        "In online banking, set up S-pushTAN, then sync again.",
+    ),
+    E.BANK_APPROVAL_TIMEOUT: (
+        "The approval in the S-pushTAN app did not come within five minutes.",
+        "Sync again and approve the request in the app.",
+    ),
+    E.BANK_ACCOUNT_NOT_FOUND: (
+        "Under this login the bank holds no account with this account's IBAN.",
+        "Check the login name and bank code (BLZ) in bank sync.",
+    ),
+    E.BANK_STATE_REJECTED: (
+        "The stored connection to the bank no longer fitted and was dropped.",
+        "Sync again; the bank will then ask for an approval again.",
+    ),
+    E.BANK_UNREACHABLE: (
+        "The bank could not be reached.",
+        "Sync again later; if it persists, check the FinTS address.",
+    ),
+    E.BANK_REFUSED: (
+        "The bank refused the sync: because of the login (login name or PIN), an approval"
+        " declined in the S-pushTAN app, or because it does not allow the first setup. The"
+        " bank's four-digit code says which.",
+        "Do not simply sync again: after three wrong PINs the bank locks the login."
+        " First look up the code in the runbook (step 14) and fix the cause.",
+    ),
+    E.BANK_UNSUPPORTED_FORMAT: (
+        "The bank delivers transactions in no format Hausbuch can read.",
+        "Keep uploading statements as files.",
+    ),
+    E.BANK_WINDOW_INVALID: (
+        "The sync would have started after today: the account's opening balance is dated"
+        " today or later.",
+        "Check the date of the account's opening balance.",
+    ),
+}
+_FAILED_DEFAULT_EN = (
+    "The last bank sync failed.",
+    "Sync again; if it persists, upload the file as a statement.",
+)
+_PIN_WARNING_EN = "Do not simply sync again: after three wrong PINs the bank locks the login."
+_CHECK_PIN_EN = (
+    "Compare the PIN in the container (HAUSBUCH_FINTS_PIN) with the online banking PIN"
+    " and correct it (runbook step 14), only then sync again. " + _PIN_WARNING_EN
+)
+_DROP_CONNECTION_EN = (
+    "Drop the stored connection: under “Change access” in bank sync, change the login name"
+    " once and then set it back to the right one (only a new address or a new login name"
+    " drops it). The next sync signs Hausbuch in afresh and asks for an approval in the"
+    " S-pushTAN app for it."
+)
+_METHOD_NOT_ALLOWED_EN = (
+    "The bank does not (or no longer) allow the approval method Hausbuch signs in with.",
+    "In online banking, check that S-pushTAN is set up and active for this login."
+    " Then: " + _DROP_CONNECTION_EN,
+)
+_OUTDATED_EN = (
+    "The bank refuses a version of the banking protocol that Hausbuch uses.",
+    "This is not about the login details: Hausbuch needs an update (python-fints)."
+    " Until then, upload statements as files.",
+)
+_REFUSED_CARD_EN: dict[str, tuple[str, str]] = {
+    "9078": (
+        "The bank does not let Hausbuch in: it does not know the product ID Hausbuch signs in"
+        " with (the registration number from the Deutsche Kreditwirtschaft). Either a"
+        " different number is entered, or the registration has not reached this bank yet."
+        " The code concerns the product ID, not the PIN.",
+        "Compare the product ID under Settings › Access keys (or in the container,"
+        " HAUSBUCH_FINTS_PRODUCT_ID) character by character with the number in the"
+        " Deutsche Kreditwirtschaft's email and enter it again if it differs (runbook step"
+        " 14). If it matches, wait a few days and then sync again: a new registration takes"
+        " a while to reach the banks.",
+    ),
+    "9942": ("The bank rejected the PIN.", _CHECK_PIN_EN),
+    "9340": (
+        "The bank rejected the sign-in because its signature is wrong; with PIN and approval"
+        " app this means the PIN is wrong.",
+        _CHECK_PIN_EN,
+    ),
+    "9910": (
+        "The bank reports the PIN as wrong or the login as locked.",
+        "Sign in to the bank's online banking yourself once. If that fails, the login is"
+        " locked: the bank unlocks it (often with a new PIN letter), then put the new PIN"
+        " into the container. If it works, correct the PIN in the container. " + _PIN_WARNING_EN,
+    ),
+    "9930": (
+        "The bank has locked the PIN.",
+        "Have the lock lifted in online banking or at the bank, then check the PIN in the"
+        " container. Until then, do not sync again.",
+    ),
+    "9931": (
+        "The bank has locked the login after too many failed attempts.",
+        "Call the bank and have the login unlocked; then check the PIN in the container."
+        " Until then, do not sync again.",
+    ),
+    "3938": (
+        "The bank has temporarily locked the login, usually after wrong PINs.",
+        "Sign in to the bank's online banking yourself once and lift the lock there; then"
+        " check the PIN in the container. Until then, do not sync again.",
+    ),
+    "9333": (
+        "The bank has not yet enabled this login for online banking with PIN.",
+        "Sign in to the bank's online banking once with the details from the PIN letter"
+        " (this usually changes the starting PIN) or ask the bank to enable the login; then"
+        " put the valid PIN into the container and sync again.",
+    ),
+    "9951": (
+        "The approval expired at the bank before it was confirmed in the S-pushTAN app.",
+        "Sync again and approve the request in the app straight away.",
+    ),
+    "9941": (
+        "The bank did not accept the approval, for instance because it was declined in the"
+        " S-pushTAN app; the code can also mean an invalid signature, that is the PIN.",
+        "If no request arrived in the app, check the PIN in the container first. "
+        + _PIN_WARNING_EN
+        + " If a request arrived: sync again and approve it in the app, do not decline it.",
+    ),
+    "9980": (
+        "The bank cancelled the approval.",
+        "Sync again and approve the request in the app. If the code comes back, check in"
+        " online banking whether the bank asks for a change of the approval method.",
+    ),
+    "9075": (
+        "The bank requires an approval in the S-pushTAN app for this sync.",
+        "Sync again and approve the request in the app. If no request comes, check in"
+        " online banking that S-pushTAN is set up.",
+    ),
+    "9955": _METHOD_NOT_ALLOWED_EN,
+    "9361": _METHOD_NOT_ALLOWED_EN,
+    "9958": _METHOD_NOT_ALLOWED_EN,
+    "9380": (
+        "The bank does not allow the approval method Hausbuch signs in with, or this sync,"
+        " for the login.",
+        "In online banking, check that S-pushTAN is active and the login may fetch"
+        " transactions. Then: " + _DROP_CONNECTION_EN,
+    ),
+    "9391": (
+        "The bank requires a new customer system ID, the identifier by which it recognises"
+        " Hausbuch.",
+        _DROP_CONNECTION_EN,
+    ),
+    "9210": (
+        "The bank rejected an item of the request as invalid. The code has many meanings;"
+        " after an earlier successful sync it is usually the stored customer system ID, the"
+        " identifier by which the bank recognises Hausbuch.",
+        _DROP_CONNECTION_EN + " Which item was meant is in the container log"
+        " (bank_answers, runbook step 14).",
+    ),
+    "9997": ("The bank is carrying out maintenance.", "Sync again later."),
+    "9311": ("The bank's PIN/TAN system is unavailable right now.", "Sync again later."),
+    "9185": _OUTDATED_EN,
+    "9180": _OUTDATED_EN,
+}
+_DKB_WORDING_EN = (
+    ("set up S-pushTAN", "set up the DKB app as the approval method"),
+    (
+        "that S-pushTAN is set up and active for this login",
+        "that the DKB app is set up and active as the approval method for this login",
+    ),
+    ("that S-pushTAN is set up", "that the DKB app is set up as the approval method"),
+    ("that S-pushTAN is active", "that the DKB app is active as the approval method"),
+    ("(pushTAN)", "(DKB app)"),
+    ("S-pushTAN app", "DKB app"),
+)
+_DKB_UNSUPPORTED_FORMAT_EN = (
+    "DKB delivers no transactions over FinTS in a format Hausbuch can read (no camt).",
+    "Keep uploading the transactions as a CSV export from DKB online banking (“Umsätze"
+    " exportieren”).",
+)
+TEXTS = i18n.Texts(
+    "bank_sync",
+    {
+        "refused": (
+            "Die Bank hat den Abruf abgelehnt. {reason}",
+            "The bank refused the sync. {reason}",
+        ),
+        "codes": (
+            "{error_code}, Code der Bank {response_code}",
+            "{error_code}, bank's code {response_code}",
+        ),
+        "pin_missing": (
+            "Für den Zugang „{slot}“ ist keine PIN hinterlegt, weder in Hausbuch noch als"
+            " Variable {variable} im API-Container.",
+            "No PIN is stored for the login “{slot}”, neither in Hausbuch nor as the variable"
+            " {variable} in the API container.",
+        ),
+        "pin_missing.question": (
+            "Im Bankabruf des Kontos die PIN unter „PIN (Online-Banking)“ eingeben und „PIN"
+            " speichern“ wählen, dann erneut abrufen. Alternativ in der Scaleway-Konsole"
+            " (Serverless › Containers › API-Container › Einstellungen) das Secret {variable}"
+            " anlegen und den Container neu bereitstellen (Runbook Schritt 17).",
+            "In the account's bank sync, enter the PIN under “PIN (online banking)” and choose"
+            " “Save PIN”, then sync again. Alternatively, in the Scaleway console (Serverless ›"
+            " Containers › API container › Settings) create the secret {variable} and redeploy"
+            " the container (runbook step 17).",
+        ),
+        "approval_needed": (
+            "Der automatische Abruf braucht eine Freigabe: jetzt abrufen und in der"
+            " S-pushTAN-App bestätigen.",
+            "The automatic sync needs an approval: sync now and confirm in the S-pushTAN app.",
+        ),
+        "approval_needed.question": (
+            "„Jetzt abrufen“ drücken und die Anfrage gleich in der S-pushTAN-App freigeben. Bis"
+            " dahin ruft Hausbuch dieses Konto nicht automatisch ab, damit keine weiteren"
+            " Anfragen aufs Handy kommen.",
+            "Press “Sync now” and approve the request straight away in the S-pushTAN app. Until"
+            " then Hausbuch does not sync this account automatically, so that no further"
+            " requests reach the phone.",
+        ),
+        "balance_drift": (
+            "Der Kontostand der Bank weicht vom letzten abgeglichenen Saldo ab, obwohl keine"
+            " neuen Umsätze kamen ({code}).",
+            "The bank's balance differs from the last reconciled balance, although no new"
+            " transactions came ({code}).",
+        ),
+        "balance_drift.question": (
+            "Fehlt ein Kontoauszug? Den Zeitraum als Datei hochladen oder den Anfangssaldo des"
+            " Kontos prüfen.",
+            "Is a statement missing? Upload the period as a file or check the account's opening"
+            " balance.",
+        ),
+        "statements.code": ("Code {code}", "code {code}"),
+        "statements.code_meaning": ("Code {code}: {meaning}", "code {code}: {meaning}"),
+        "statements.bank": ("Die {bank}", "{bank}"),
+        "statements.a_bank": ("Die Bank", "The bank"),
+        "statements.refused": (
+            "{bank} erlaubt diesem Online-Banking-Zugang den Abruf der Kontoauszüge als PDF"
+            " nicht ({code}).",
+            "{bank} does not allow this online banking login to fetch statements as PDF ({code}).",
+        ),
+        "statements.refused.question": (
+            "Die Bank bitten, für diesen Online-Banking-Zugang den Abruf elektronischer"
+            " Kontoauszüge als PDF über FinTS/HBCI (HKEKP) für dieses Konto freizuschalten; das"
+            " elektronische Postfach allein genügt nicht, und über FinTS lässt es sich nicht"
+            " beantragen. Bis dahin „Kontoauszüge als PDF abrufen“ ausschalten: die"
+            " Zahlungsnachweise im Jahresarchiv erstellt Hausbuch ohnehin.",
+            "Ask the bank to enable fetching electronic statements as PDF over FinTS/HBCI"
+            " (HKEKP) for this account and this online banking login; the electronic mailbox"
+            " alone is not enough, and it cannot be requested over FinTS. Until then, switch"
+            " off “Fetch statements as PDF”: Hausbuch makes the proofs of payment in the yearly"
+            " archive anyway.",
+        ),
+        "meaning.9370": (
+            "Signaturberechtigung reicht nicht aus",
+            "signing authority not sufficient",
+        ),
+        "meaning.9380": ("keine Auftragsberechtigung", "no permission for the order"),
+    },
+)
+
+
 def for_bank(text: str, bank_name: str | None) -> str:
     """A card text for the connection's bank: DKB's app instead of the Sparkasse's S-pushTAN
     app (D173 (1)); any other bank's text unchanged."""
     if not rules.is_dkb(bank_name):
         return text
-    for sparkasse, dkb in _DKB_WORDING:
+    for sparkasse, dkb in _DKB_WORDING_EN if i18n.english() else _DKB_WORDING:
         text = text.replace(sparkasse, dkb)
     return text
 
@@ -978,17 +1251,22 @@ def failed_card_text(
     code the code's own text (D151), for bank.pin_missing the slot's variable (D163), else
     the error code's; worded for the connection's bank (D173 (1)). The reasoning ends with
     the error code and the bank's code, e.g. "(bank.refused, Code der Bank 9078)"."""
-    reasoning, question = _FAILED_CARD.get(error_code or "", _FAILED_DEFAULT)
-    if error_code == E.BANK_REFUSED and response_code in _REFUSED_CARD:
-        reason, question = _REFUSED_CARD[response_code]
-        reasoning = f"Die Bank hat den Abruf abgelehnt. {reason}"
+    english = i18n.english()
+    failed = _FAILED_CARD_EN if english else _FAILED_CARD
+    refused = _REFUSED_CARD_EN if english else _REFUSED_CARD
+    reasoning, question = failed.get(
+        error_code or "", _FAILED_DEFAULT_EN if english else _FAILED_DEFAULT
+    )
+    if error_code == E.BANK_REFUSED and response_code in refused:
+        reason, question = refused[response_code]
+        reasoning = TEXTS("refused", reason=reason)
     elif error_code == E.BANK_PIN_MISSING and rules.valid_slot(credential_slot):
         reasoning, question = _pin_missing_card(credential_slot)
     elif error_code == E.BANK_UNSUPPORTED_FORMAT and rules.is_dkb(bank_name):
-        reasoning, question = _DKB_UNSUPPORTED_FORMAT
+        reasoning, question = _DKB_UNSUPPORTED_FORMAT_EN if english else _DKB_UNSUPPORTED_FORMAT
     shown = error_code
     if response_code is not None:
-        shown = f"{error_code}, Code der Bank {response_code}"
+        shown = TEXTS("codes", error_code=error_code, response_code=response_code)
     reasoning, question = for_bank(reasoning, bank_name), for_bank(question, bank_name)
     if credential_slot != PRIMARY_SLOT and rules.valid_slot(credential_slot):
         # the PIN to check is the slot's own container secret
@@ -1013,42 +1291,26 @@ def _response_code(conn: Connection, row: Row) -> str | None:
 
 
 # The bank_approval_needed card (D120): its first sentence is the spec's.
-APPROVAL_NEEDED_REASONING = (
-    "Der automatische Abruf braucht eine Freigabe: jetzt abrufen und in der S-pushTAN-App"
-    " bestätigen."
-)
-APPROVAL_NEEDED_QUESTION = (
-    "„Jetzt abrufen“ drücken und die Anfrage gleich in der S-pushTAN-App freigeben. Bis dahin"
-    " ruft Hausbuch dieses Konto nicht automatisch ab, damit keine weiteren Anfragen aufs"
-    " Handy kommen."
-)
+APPROVAL_NEEDED_REASONING = TEXTS.german("approval_needed")
+APPROVAL_NEEDED_QUESTION = TEXTS.german("approval_needed.question")
 
 
-# 14 Nov 2026: what a permission refusal of the PDF statement fetch means, by its code.
-_STATEMENTS_REFUSAL_MEANING = {
-    "9370": "Signaturberechtigung reicht nicht aus",
-    "9380": "keine Auftragsberechtigung",
-}
+# 14 Nov 2026: the permission refusals of the PDF statement fetch whose meaning the card
+# names (TEXTS "meaning.<code>").
+_STATEMENTS_REFUSAL_MEANING = ("9370", "9380")
 
 
 def statements_refused_text(refusal: StatementsRefusal, bank_name: str | None) -> tuple[str, str]:
     """The bank_statements_refused card's reasoning and question (the Bankabruf card's notice
     in one sentence each; principle 7: what it means and what to do)."""
-    meaning = _STATEMENTS_REFUSAL_MEANING.get(refusal.code)
-    code = f"Code {refusal.code}: {meaning}" if meaning else f"Code {refusal.code}"
-    bank = f"Die {bank_name}" if bank_name else "Die Bank"
-    reasoning = (
-        f"{bank} erlaubt diesem Online-Banking-Zugang den Abruf der Kontoauszüge als PDF nicht"
-        f" ({code})."
-    )
-    question = (
-        "Die Bank bitten, für diesen Online-Banking-Zugang den Abruf elektronischer"
-        " Kontoauszüge als PDF über FinTS/HBCI (HKEKP) für dieses Konto freizuschalten; das"
-        " elektronische Postfach allein genügt nicht, und über FinTS lässt es sich nicht"
-        " beantragen. Bis dahin „Kontoauszüge als PDF abrufen“ ausschalten: die"
-        " Zahlungsnachweise im Jahresarchiv erstellt Hausbuch ohnehin."
-    )
-    return reasoning, question
+    if refusal.code in _STATEMENTS_REFUSAL_MEANING:
+        meaning = TEXTS(f"meaning.{refusal.code}")
+        code = TEXTS("statements.code_meaning", code=refusal.code, meaning=meaning)
+    else:
+        code = TEXTS("statements.code", code=refusal.code)
+    bank = TEXTS("statements.bank", bank=bank_name) if bank_name else TEXTS("statements.a_bank")
+    reasoning = TEXTS("statements.refused", bank=bank, code=code)
+    return reasoning, TEXTS("statements.refused.question")
 
 
 def _statements_refused_items(conn: Connection, names: dict[UUID, str | None]) -> list[InboxItem]:
@@ -1103,8 +1365,8 @@ def bank_sync_items(conn: Connection) -> list[InboxItem]:
         InboxItem(
             kind=InboxItemKind.BANK_APPROVAL_NEEDED,
             created_at=row.updated_at,
-            reasoning=for_bank(APPROVAL_NEEDED_REASONING, bank_name(row)),
-            question=for_bank(APPROVAL_NEEDED_QUESTION, bank_name(row)),
+            reasoning=for_bank(TEXTS("approval_needed"), bank_name(row)),
+            question=for_bank(TEXTS("approval_needed.question"), bank_name(row)),
             account_id=row.account_id,
             sync_id=row.id,
         )
@@ -1153,15 +1415,8 @@ def bank_sync_items(conn: Connection) -> list[InboxItem]:
                 InboxItem(
                     kind=InboxItemKind.BANK_BALANCE_DRIFT,
                     created_at=row.finished_at,
-                    reasoning=(
-                        "Der Kontostand der Bank weicht vom letzten abgeglichenen Saldo ab,"
-                        " obwohl keine neuen Umsätze kamen"
-                        f" ({E.BANK_BALANCE_DRIFT})."
-                    ),
-                    question=(
-                        "Fehlt ein Kontoauszug? Den Zeitraum als Datei hochladen oder den"
-                        " Anfangssaldo des Kontos prüfen."
-                    ),
+                    reasoning=TEXTS("balance_drift", code=E.BANK_BALANCE_DRIFT),
+                    question=TEXTS("balance_drift.question"),
                     account_id=row.account_id,
                     sync_id=row.id,
                 )
