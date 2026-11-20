@@ -13,6 +13,7 @@ from decimal import Decimal
 
 import pytest
 from db.db_support import TEST_IBAN_KEY
+from db.test_phase7_chain_assets import _priced_as_world
 from db.test_services_prices_exchange import SEARCH, Venue, _history, _search
 from db.test_services_prices_fetch import (  # noqa: F401  (funds is a fixture)
     ACTOR,
@@ -26,7 +27,9 @@ from db.test_services_prices_fetch import (  # noqa: F401  (funds is a fixture)
     _prices,
     funds,
 )
+from sqlalchemy import select
 
+from hausbuch.db.tables import account as account_table
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.events import EventType
@@ -177,3 +180,73 @@ def test_a_sold_fund_without_an_issuer_source_ends_its_exchange_prices_at_the_sa
     again = Venue({SEARCH: _search(isin, 4711), "dataForInstrument": _history(isin, weekdays)})
     _, out = _run(app_engine, ws, again, now + timedelta(days=1))
     assert again.urls == [] and out.sources == set()
+
+
+def test_a_movement_of_no_units_after_the_sale_does_not_extend_the_days(
+    run, read, fresh_workspaces, funds
+):
+    ws, _ = fresh_workspaces
+    ids = _world(run, ws)
+    depot = read(ws, lambda conn: conn.execute(select(account_table.c.id)).scalar_one())
+
+    def note(ctx):  # a distribution note of 0 units a month after the sale
+        _held(ctx, depot, ids["sold_fund"], "0", at=SOLD + timedelta(days=30))
+
+    run(ws, note, now=NOW)
+    planned = {h.id: h for h in read(ws, prices_fetch.planned_assets)}
+    assert planned[ids["sold_fund"]].last_on == SOLD.date()
+
+
+def test_a_coin_sold_beyond_its_sources_reach_is_not_asked(run, read, fresh_workspaces):
+    ws, _ = fresh_workspaces
+    depot = _depot(run, ws)
+
+    def seed(ctx):
+        coin = _asset(
+            ctx, kind="crypto", symbol="OLDINV", name="Old Invented Coin", kraken_pair="OLDEUR"
+        )
+        _held(ctx, depot, coin, "5", at=datetime(2023, 1, 10, 9, 0, tzinfo=UTC))
+        _held(ctx, depot, coin, "-5", at=datetime(2023, 6, 1, 9, 0, tzinfo=UTC))
+        return coin
+
+    coin = run(ws, seed, now=BOUGHT)
+    # Kraken's 720 days from 27 Jun 2026 reach back to July 2024: nothing to ask for.
+    assert read(ws, prices_fetch.plan, NOW.date()).held == []
+    # Without a day to count back from, every held day is still owed.
+    assert [h.id for h in read(ws, prices_fetch.plan).held] == [coin]
+
+
+def test_sold_assets_no_source_prices_ask_nothing_and_write_no_event(
+    run, read, app_engine, fresh_workspaces
+):
+    ws, _ = fresh_workspaces
+    depot = _depot(run, ws)
+
+    def seed(ctx):
+        stock = _asset(ctx, kind="stock", isin="DE000BEISPL1", name="Beispiel AG")
+        coin = _asset(ctx, kind="crypto", symbol="NOSRC", name="Invented Coin Without Source")
+        for asset_id in (stock, coin):  # an ETF always carries an ISIN (asset_check)
+            _held(ctx, depot, asset_id, "1", at=BOUGHT)
+            _held(ctx, depot, asset_id, "-1", at=SOLD)
+
+    run(ws, seed, now=BOUGHT)
+    assert len(read(ws, prices_fetch.planned_assets)) == 2
+    fake = Fake()
+    new, out = _run(app_engine, ws, fake)
+    assert (new, out.sources, fake.calls) == (0, set(), [])
+    assert _events(read, ws, EventType.WORKSPACE_PRICES_FETCHED) == []
+
+
+def test_a_sold_coin_that_chain_assets_are_priced_as_stays_priced_to_today(
+    run, read, fresh_workspaces
+):
+    ws, _ = fresh_workspaces
+    ids = run(ws, _priced_as_world, now=BOUGHT)
+
+    def sold(ctx):  # the chainless INV itself bought and sold on the depot
+        _held(ctx, ids["account"], ids["twin"], "1", at=BOUGHT)
+        _held(ctx, ids["account"], ids["twin"], "-1", at=SOLD)
+
+    run(ws, sold, now=BOUGHT)
+    planned = {h.id: h for h in read(ws, prices_fetch.planned_assets)}
+    assert planned[ids["twin"]].last_on is None  # its chain assets' lots need today's price

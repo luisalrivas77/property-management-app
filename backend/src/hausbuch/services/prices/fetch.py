@@ -103,7 +103,7 @@ from .assets import (
     price_ids,
     stored_nav_sources,
 )
-from .coingecko import CoinGeckoDaily
+from .coingecko import HISTORY_DAYS, CoinGeckoDaily
 from .http import Fetch, SourceError
 from .issuer_nav import ADAPTERS, IssuerAdapter, NavFile, read_points
 
@@ -111,6 +111,8 @@ S = PriceSourceKind
 DAILY_SOURCES = (S.ECB_FX, S.COINGECKO_DAILY, S.KRAKEN_DAILY, S.ISSUER_NAV, S.EXCHANGE_CLOSE)
 MAX_COIN_DAYS = 31  # D167 (3): CoinGecko calls per asset and run
 MAX_ROWS = 400  # D174 (3): rows per asset and run from one file
+KRAKEN_DAYS = 720  # kraken.daily: the 720 most recent daily candles
+COINGECKO_DAYS = HISTORY_DAYS  # the Demo tier's reach
 PLACES = Decimal("0.00000001")
 STREAK_WINDOW_DAYS = 31  # the prices_fetched events read for a failure streak
 
@@ -579,10 +581,15 @@ def planned_assets(conn: Connection) -> list[Held]:
     return sorted(planned, key=lambda h: h.last_on is not None)  # stable: by name within
 
 
-def _done(held: Held, stored: dict[tuple[UUID, str], set[date]]) -> bool:
+def _done(held: Held, stored: dict[tuple[UUID, str], set[date]], today: date | None = None) -> bool:
     """Whether an asset no account holds today needs no more asking (D174 amended 20 Nov
-    2026), so a sold asset is not asked every day for good. A coin: every day it was held
-    has a CoinGecko or Kraken price (coins trade every day). A fund: a daily-source price
+    2026), so a sold asset is not asked every day for good. An asset `collect` never asks
+    (a coin without ids, a fund with neither a source nor an ISIN, a stock) is done at
+    once, so a workspace that holds nothing today stays a run that asks nothing. A coin:
+    every day it was held that its sources still reach (Kraken's 720 days with a pair,
+    else CoinGecko's 365, counted back from `today`; every day without `today`) has a
+    CoinGecko or Kraken price (coins trade every day), so a coin sold years ago is not
+    asked for days no source serves any more. A fund: a daily-source price
     (its issuer's NAV or the exchange's, D264) lies within STALE_AFTER_DAYS of both ends of
     the days it was held. Both ends, since a file's 400-row cut (newest first) and a NAV
     waiting for an older ECB rate leave the oldest days for a later run; the files are
@@ -596,7 +603,13 @@ def _done(held: Held, stored: dict[tuple[UUID, str], set[date]]) -> bool:
         days = stored.get((held.id, S.COINGECKO_DAILY.value), set()) | stored.get(
             (held.id, S.KRAKEN_DAILY.value), set()
         )
-        return all(d in days for d in _days(held.first_on, held.last_on))
+        start = held.first_on
+        if today is not None:
+            reach = KRAKEN_DAYS if held.ids.kraken_pair is not None else COINGECKO_DAYS
+            start = max(start, today - timedelta(days=reach - 1))
+        return all(d in days for d in _days(start, held.last_on))
+    if held.kind is not AssetKind.ETF or (held.fund is None and not held.isin):
+        return True  # never asked (collect prices coins and funds only)
     days = stored.get((held.id, S.ISSUER_NAV.value), set()) | stored.get(
         (held.id, S.EXCHANGE_CLOSE.value), set()
     )
@@ -606,7 +619,8 @@ def _done(held: Held, stored: dict[tuple[UUID, str], set[date]]) -> bool:
     return first and last
 
 
-def plan(conn: Connection) -> Plan:
+def plan(conn: Connection, today: date | None = None) -> Plan:
+    """`today` bounds how far back a sold coin's sources still reach (`_done`)."""
     p = price_table.c
     stored: dict[tuple[UUID, str], set[date]] = defaultdict(set)
     ecb_days: set[date] = set()
@@ -616,7 +630,7 @@ def plan(conn: Connection) -> Plan:
         stored[(row.asset_id, row.source)].add(row.on)
         if row.source == S.ECB_FX.value:
             ecb_days.add(row.on)
-    held = [h for h in planned_assets(conn) if not _done(h, stored)]
+    held = [h for h in planned_assets(conn) if not _done(h, stored, today)]
     return Plan(
         held=held,
         stored=dict(stored),
@@ -1235,7 +1249,7 @@ def run_workspace(
     """Plan, collect and write one workspace: two short transactions around the network."""
     today = now.astimezone(UTC).date()
     with workspace_transaction(engine, workspace_id) as conn:
-        planned = plan(conn)
+        planned = plan(conn, today)
         rates = stored_rates(conn)
     out = collect(planned, sources, today, rates)
     if not out.sources:
