@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B · Umsätze, Computer</title>
+<!-- Layout overhaul mockup, drafted 20 Nov 2026 for Luis's choice; not approved, nothing built.
+     Invented sample data only: never real household figures, never fixtures. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
+<style>
+:root{
+--bg:#f4f5f2;--surface:#ffffff;--border:#e1e4de;--border-strong:#c9cec6;--divider:#eceee9;--tag-bg:#f4f5f2;
+--text:#17201c;--text-2:#3e4843;--muted:#5a635e;
+--accent:#1f6f54;--accent-strong:#14523e;--accent-text:#ffffff;--accent-tint:#e3f0ea;--accent-tint-2:#d5e6de;
+--info:#3a4ba8;--info-bg:#e8ebf8;--info-border:#ccd3f0;--info-text:#3b4370;
+--warn:#7a3f0b;--warn-bg:#fbeedc;--warn-border:#f0d6b0;
+--danger:#a3262a;--danger-bg:#fbeaea;--danger-border:#f0c8c9;
+--font:Manrope,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none}
+p{margin:0}
+h1,h2,h3{margin:0}
+button{font:inherit;cursor:pointer}
+.num{text-align:right;white-space:nowrap}
+.pos{color:var(--accent-strong)}
+.fold{position:absolute;left:0;right:0;height:0;border-top:2px dashed #3a4ba8;z-index:50;pointer-events:none}
+.fold span{position:absolute;right:6px;top:-22px;background:#3a4ba8;color:#fff;font:700 11px/1 var(--font);padding:5px 8px;border-radius:6px}
+.mark{display:inline-flex;align-items:center;gap:5px;font-weight:700}
+.mark i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.mark.green i{background:#2e8b57}.mark.amber i{background:#d4a017}.mark.none i{background:transparent;border:1.5px solid var(--border-strong)}
+
+body{font-size:13px;line-height:1.4}
+.t{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;min-width:0}
+.k{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.v{font-size:21px;font-weight:800;letter-spacing:-.02em;line-height:1.2}
+.v.l{font-size:28px}
+.v.s{font-size:17px}
+.sub{font-size:11.5px;color:var(--muted)}
+.row{display:flex;align-items:center;gap:8px}
+.between{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.kv{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:2px 0}
+.kv span:first-child{color:var(--muted)}
+.kv b{font-weight:700;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+.dot.ok{background:#2e8b57}.dot.proposed{background:#d4a017}.dot.open{background:var(--info)}
+.st{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;color:var(--text-2);white-space:nowrap}
+.count{background:var(--info);color:#fff;font-size:10.5px;font-weight:800;border-radius:9px;padding:0 6px;line-height:1.55}
+.seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:7px;overflow:hidden;background:var(--surface)}
+.seg a{padding:5px 11px;font-size:12px;font-weight:700;color:var(--text-2);border-left:1px solid var(--border)}
+.seg a:first-child{border-left:0}
+.seg a.on{background:var(--accent);color:#fff}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:7px;background:var(--accent);color:#fff;font-weight:700;font-size:12.5px;white-space:nowrap}
+.btn.sec{background:var(--surface);color:var(--text);border:1px solid var(--border-strong)}
+.bar2{height:6px;border-radius:3px;background:var(--divider);overflow:hidden;display:flex}
+.bar2 i{display:block;height:100%}
+.lnk{font-size:11.5px;font-weight:700}
+table{border-collapse:collapse;width:100%}
+th{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:5px 8px;border-bottom:1px solid var(--divider);font-size:12.5px;white-space:nowrap}
+td.wrap{white-space:normal}
+/* desktop */
+.shell{display:grid;grid-template-columns:auto minmax(0,1fr);min-height:100vh}
+.rail{background:#17201c;color:#c9d3cd;display:flex;flex-direction:column;gap:2px;padding:12px 8px}
+.rail a{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:7px;color:#c9d3cd;font-weight:600;font-size:12.5px;position:relative;white-space:nowrap}
+.rail a.on{background:#2b3a33;color:#fff}
+.rail a .count{margin-left:auto}
+.rail.closed{width:60px;align-items:center}
+.rail.closed a{width:40px;justify-content:center;padding:0}
+.rail.closed a .count{position:absolute;top:1px;right:-2px;margin:0;font-size:9.5px;padding:0 4px}
+.rail.open{width:196px}
+.rail .grp{font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7f8c85;padding:10px 10px 2px}
+.rail.closed .grp{height:1px;background:#2b3a33;width:28px;padding:0;margin:8px 0;font-size:0}
+.rail .brandrow{display:flex;align-items:center;gap:9px;padding:2px 6px 12px;font-weight:800;font-size:15px;color:#fff}
+.rail .foot{margin-top:auto}
+.top{display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface)}
+.top h1{font-size:16px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
+.search{display:flex;align-items:center;gap:8px;height:32px;border:1px solid var(--border);border-radius:7px;padding:0 10px;color:var(--muted);font-size:12.5px;background:var(--bg);flex:1;max-width:360px;margin-left:auto}
+.main{padding:14px 20px 24px;min-width:0}
+.grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+/* phone */
+.ph{width:390px;min-height:100vh;position:relative;display:flex;flex-direction:column}
+.tb{position:sticky;top:0;z-index:20;height:52px;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--surface);border-bottom:1px solid var(--border)}
+.tb h1{font-size:16px;font-weight:800;letter-spacing:-.01em;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbtn{height:36px;min-width:36px;border-radius:8px;border:1px solid var(--border);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 10px;color:var(--text-2);font-weight:700;font-size:12.5px;position:relative}
+.tbtn .count{position:absolute;top:-5px;right:-5px}
+.pb{padding:10px 12px 16px;display:flex;flex-direction:column;gap:8px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.lst a{display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--divider);color:var(--text)}
+.lst a:first-child{border-top:0}
+</style>
+</head>
+<body>
+<div class="shell"><nav class="rail closed"><div class="brandrow"><span style="flex:none;width:28px;height:28px;border-radius:8px;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg></span></div><a class="" href="#" title="Übersicht"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg></a><a class="" href="#" title="Zu prüfen"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13l1.5 8v6H4v-6z"/></svg><span class="count">7</span></a><a class="" href="#" title="Haushalt"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h15a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4z"/><path d="M4 7V5.5A1.5 1.5 0 0 1 5.5 4H16v3"/><circle cx="16" cy="13.5" r="1.2"/></svg></a><div class="grp">Geld</div><a class="on" href="#" title="Konten"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 4z"/><path d="M5.5 10v8M10 10v8M14 10v8M18.5 10v8M3 20h18"/></svg></a><a class="" href="#" title="Anlagen"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v16h16"/><path d="m7 15 4-4 3 3 6-6"/></svg></a><div class="grp">Immobilie</div><a class="" href="#" title="Immobilien"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/><path d="M2 21h20"/></svg></a><a class="" href="#" title="Mieter"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3.2 3.2 0 0 1 0 6.2M18 14.5c2 .8 3 2.8 3 5.5"/></svg></a><a class="" href="#" title="Eigentümer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/></svg></a><div class="grp">Steuern & Planung</div><a class="" href="#" title="Steuern"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="m9.5 16 5-6"/><circle cx="10" cy="10.5" r=".9"/><circle cx="14" cy="15.5" r=".9"/></svg></a><a class="" href="#" title="Planung"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></a><div class="grp">Ablage</div><a class="" href="#" title="Dokumente"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5"/><path d="M9 13h7M9 17h5"/></svg></a><div class="foot"><a class="" href="#" title="Einstellungen"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg></a><a href="#" title="Leiste aufklappen"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a></div></nav><div style="min-width:0"><header class="top"><div><p class="k">Konten · Girokonto A · Luis</p><h1>Umsätze</h1></div><div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>Suchen: Umsatz, Beleg, Konto …</div><a class="btn" href="#"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>Hochladen</a></header><main class="main"><div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px"><div class="t"><p class="k">Kontostand 19.11.</p><p class="v s">3.800 €</p></div><div class="t"><p class="k">Eingänge November</p><p class="v s pos">+3.400,00 €</p></div><div class="t"><p class="k">Ausgänge November</p><p class="v s">−1.934,79 €</p></div><div class="t"><p class="k">Offen</p><p class="v s">3 Umsätze</p></div></div>
+<div class="between" style="align-items:center;margin:12px 0 8px"><div class="row" style="gap:10px"><div class="seg"><a class="on" href="#">Alle 12</a><a class="" href="#">Offen 3</a><a class="" href="#">Gebucht 9</a></div><a class="btn sec" href="#"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>November 2026</a><a class="btn sec" href="#"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>Kategorie</a></div>
+<div class="row" style="gap:14px;font-size:12.5px;font-weight:700"><a href="#" style="color:var(--muted)">Kontoauszüge</a><a href="#">Umsätze</a><a href="#" style="color:var(--muted)">Doppelbuchungen</a><a href="#" style="color:var(--muted)">Bankabruf</a></div></div>
+<div class="t" style="padding:0 4px"><table><thead><tr><th>Datum</th><th>Gegenseite</th><th>Verwendungszweck</th><th>Kategorie</th><th class="num">Betrag</th><th class="num">Saldo</th><th>Status</th></tr></thead><tbody><tr><td>19.11.2026</td><td><b>Supermarkt Muster</b></td><td class="wrap" style="color:var(--text-2)">Kartenzahlung 18.11. Filiale 0815</td><td>Supermarkt</td><td class="num"><b>−64,20 €</b></td><td class="num" style="color:var(--muted)">3.800,00 €</td><td><span class="st"><span class="dot ok"></span>Gebucht</span></td></tr><tr><td>19.11.2026</td><td><b>Online-Versand Beispiel</b></td><td class="wrap" style="color:var(--text-2)">Bestellung 12345 Lastschrift</td><td>–</td><td class="num"><b>−129,90 €</b></td><td class="num" style="color:var(--muted)">3.864,20 €</td><td><span class="st"><span class="dot open"></span>Offen</span></td></tr><tr><td>18.11.2026</td><td><b>Stadtwerke Beispielstadt</b></td><td class="wrap" style="color:var(--text-2)">Abschlag Strom November</td><td>Strom & Gas</td><td class="num"><b>−85,00 €</b></td><td class="num" style="color:var(--muted)">3.994,10 €</td><td><span class="st"><span class="dot ok"></span>Gebucht</span></td></tr><tr><td>17.11.2026</td><td><b>Arbeitgeber Beispiel AG</b></td><td class="wrap" style="color:var(--text-2)">Gehalt November</td><td>Lohn & Gehalt</td><td class="num pos"><b>+3.400,00 €</b></td><td class="num" style="color:var(--muted)">4.079,10 €</td><td><span class="st"><span class="dot ok"></span>Gebucht</span></td></tr><tr><td>15.11.2026</td><td><b>Streamingdienst Beispiel</b></td><td class="wrap" style="color:var(--text-2)">Abo Monat November</td><td>Streaming</td><td class="num"><b>−13,99 €</b></td><td class="num" style="color:var(--muted)">679,10 €</td><td><span class="st"><span class="dot proposed"></span>Vorschlag prüfen</span></td></tr><tr><td>14.11.2026</td><td><b>Tagesgeld (eigenes Konto)</b></td><td class="wrap" style="color:var(--text-2)">Sparen November</td><td>Umbuchung</td><td class="num"><b>−500,00 €</b></td><td class="num" style="color:var(--muted)">693,09 €</td><td><span class="st"><span class="dot ok"></span>Gebucht</span></td></tr><tr><td>13.11.2026</td><td><b>Restaurant Am Markt</b></td><td class="wrap" style="color:var(--text-2)">Kartenzahlung 12.11.</td><td>Restaurant</td><td class="num"><b>−48,50 €</b></td><td class="num" style="color:var(--muted)">1.193,09 €</td><td><span class="st"><span class="dot proposed"></span>Vorschlag prüfen</span></td></tr><tr><td>11.11.2026</td><td><b>Drogerie Muster</b></td><td class="wrap" style="color:var(--text-2)">Kartenzahlung 10.11.</td><td>Drogerie & Kosmetik</td><td class="num"><b>−23,40 €</b></td><td class="num" style="color:var(--muted)">1.241,59 €</td><td><span class="st"><span class="dot ok"></span>Gebucht</span></td></tr><tr><td>10.11.2026</td><td><b>Bäckerei Beispiel</b></td><td class="wrap" style="color:var(--text-2)">Kartenzahlung 10.11.</td><td>Bäckerei, Kiosk & Markt</td><td class="num"><b>−7,80 €</b></td><td class="num" style="color:var(--muted)">1.264,99 €</td><td><span class="st"><span class="dot ok"></span>Gebucht</span></td></tr><tr><td>08.11.2026</td><td><b>Kfz-Versicherung Beispiel</b></td><td class="wrap" style="color:var(--text-2)">Beitrag November</td><td>Kfz-Versicherung</td><td class="num"><b>−62,00 €</b></td><td class="num" style="color:var(--muted)">1.272,79 €</td><td><span class="st"><span class="dot ok"></span>Gebucht</span></td></tr><tr><td>03.11.2026</td><td><b>Kita Beispielstadt</b></td><td class="wrap" style="color:var(--text-2)">Elternbeitrag November</td><td>Kita</td><td class="num"><b>−180,00 €</b></td><td class="num" style="color:var(--muted)">1.334,79 €</td><td><span class="st"><span class="dot ok"></span>Gebucht</span></td></tr><tr><td>02.11.2026</td><td><b>Kreditkarte (eigenes Konto)</b></td><td class="wrap" style="color:var(--text-2)">Abrechnung Oktober</td><td>Kreditkarte</td><td class="num"><b>−820,00 €</b></td><td class="num" style="color:var(--muted)">1.514,79 €</td><td><span class="st"><span class="dot ok"></span>Gebucht</span></td></tr></tbody></table></div>
+<p class="sub" style="margin-top:8px">12 Umsätze im November 2026 · Saldo nach der Buchung · Umbuchungen zwischen euren Konten zählen nicht als Ausgabe</p></main></div></div>
+</body></html>
