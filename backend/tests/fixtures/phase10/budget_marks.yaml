@@ -1,0 +1,365 @@
+# Phase 10 (docs/phases/phase-10.md D273, D274, §4): the marks against the household's own
+# targets. Green when the target is met (at or below a maximum, at or above the saving minimum;
+# an equal share meets it), amber when it is missed, never red; no mark without a target; no
+# share and no mark when Σ E ≤ 0 (no_shares); below three closed months no figure at all and
+# the window's to-do (D231). gap_points = (share − target) in points, one place half-up;
+# gap_monthly = the line's monthly amount − the target's part of the monthly income (to the
+# cent half-up); the sentence names both.
+#
+# Same input shape and arithmetic as budget_partition.yaml. Computed by
+# tests/fixture_gen_phase10.py for invented owners A and B.
+cases:
+- id: targets_met
+  months: &id001
+  - &id002
+    month: 2027-01
+    private:
+    - {category: hh_salary, amount: '4000.00'}
+    - {category: hh_rent, amount: '-1200.00'}
+    - {category: hh_energy, amount: '-80.00'}
+    - {category: hh_groceries, amount: '-600.00'}
+    - {category: hh_restaurant, amount: '-150.00'}
+    - {category: hh_travel, amount: '-250.00'}
+    saved_links: '0.00'
+    rental: []
+  - &id003
+    month: 2027-02
+    private:
+    - {category: hh_salary, amount: '4000.00'}
+    - {category: hh_rent, amount: '-1200.00'}
+    - {category: hh_energy, amount: '-80.00'}
+    - {category: hh_groceries, amount: '-610.00'}
+    - {category: hh_restaurant, amount: '-140.00'}
+    - {category: hh_travel, amount: '-250.00'}
+    saved_links: '0.00'
+    rental: []
+  - month: 2027-03
+    private:
+    - {category: hh_salary, amount: '4000.00'}
+    - {category: hh_rent, amount: '-1200.00'}
+    - {category: hh_energy, amount: '-80.00'}
+    - {category: hh_groceries, amount: '-590.00'}
+    - {category: hh_restaurant, amount: '-160.00'}
+    - {category: hh_travel, amount: '-250.00'}
+    saved_links: '0.00'
+    rental: []
+  targets: {needs_max: '50.0', wants_max: '20.0', saving_min: '30.0', housing_max: '35.0'}
+  expect:
+    window: [2027-01, 2027-02, 2027-03]
+    enough: true
+    months:
+    - {month: 2027-01, income: '4000.00', need: '1880.00', want: '400.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '1720.00'}
+    - {month: 2027-02, income: '4000.00', need: '1890.00', want: '390.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '1720.00'}
+    - {month: 2027-03, income: '4000.00', need: '1870.00', want: '410.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '1720.00'}
+    income: {monthly: '4000.00', total: '12000.00', rental_monthly: '0.00', private_monthly: '4000.00'}
+    lines:
+    - key: need
+      monthly: '1880.00'
+      total: '5640.00'
+      share: '0.4700'
+      codes:
+        hh_energy: {monthly: '80.00', total: '240.00', budget_class: need, overridden: false}
+        hh_groceries: {monthly: '600.00', total: '1800.00', budget_class: need, overridden: false}
+        hh_rent: {monthly: '1200.00', total: '3600.00', budget_class: need, overridden: false}
+      target: '50.0'
+      mark: {colour: green, gap_points: '-3.0', gap_monthly: '-120.00', text: 'Notwendiges: 47,0 % eures
+          Einkommens, 3,0 Prozentpunkte unter eurem Ziel von höchstens 50,0 % (120 € im Monat Luft).'}
+    - key: want
+      monthly: '400.00'
+      total: '1200.00'
+      share: '0.1000'
+      codes:
+        hh_restaurant: {monthly: '150.00', total: '450.00', budget_class: want, overridden: false}
+        hh_travel: {monthly: '250.00', total: '750.00', budget_class: want, overridden: false}
+      target: '20.0'
+      mark: {colour: green, gap_points: '-10.0', gap_monthly: '-400.00', text: 'Wünsche: 10,0 % eures
+          Einkommens, 10,0 Prozentpunkte unter eurem Ziel von höchstens 20,0 % (400 € im Monat Luft).'}
+    - key: saving
+      monthly: '1720.00'
+      total: '5160.00'
+      share: '0.4300'
+      target: '30.0'
+      mark: {colour: green, gap_points: '13.0', gap_monthly: '520.00', text: 'Sparen: 43,0 % eures Einkommens,
+          13,0 Prozentpunkte über eurem Ziel von mindestens 30,0 % (520 € im Monat mehr).'}
+    housing:
+      monthly: '1280.00'
+      total: '3840.00'
+      share: '0.3200'
+      codes: [hh_energy, hh_rent]
+      target: '35.0'
+      mark: {colour: green, gap_points: '-3.0', gap_monthly: '-120.00', text: 'Wohnen: 32,0 % eures Einkommens,
+          3,0 Prozentpunkte unter eurem Ziel von höchstens 35,0 % (120 € im Monat Luft).'}
+    savings_rate: '0.4300'
+    no_shares: false
+    todos: []
+- id: targets_missed
+  months: *id001
+  targets: {needs_max: '40.0', wants_max: '5.0', saving_min: '50.0', housing_max: '30.0'}
+  expect:
+    window: [2027-01, 2027-02, 2027-03]
+    enough: true
+    months:
+    - {month: 2027-01, income: '4000.00', need: '1880.00', want: '400.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '1720.00'}
+    - {month: 2027-02, income: '4000.00', need: '1890.00', want: '390.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '1720.00'}
+    - {month: 2027-03, income: '4000.00', need: '1870.00', want: '410.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '1720.00'}
+    income: {monthly: '4000.00', total: '12000.00', rental_monthly: '0.00', private_monthly: '4000.00'}
+    lines:
+    - key: need
+      monthly: '1880.00'
+      total: '5640.00'
+      share: '0.4700'
+      codes:
+        hh_energy: {monthly: '80.00', total: '240.00', budget_class: need, overridden: false}
+        hh_groceries: {monthly: '600.00', total: '1800.00', budget_class: need, overridden: false}
+        hh_rent: {monthly: '1200.00', total: '3600.00', budget_class: need, overridden: false}
+      target: '40.0'
+      mark: {colour: amber, gap_points: '7.0', gap_monthly: '280.00', text: 'Notwendiges: 47,0 % eures
+          Einkommens, 7,0 Prozentpunkte über eurem Ziel von höchstens 40,0 %; das sind 280 € im Monat
+          zu viel.'}
+    - key: want
+      monthly: '400.00'
+      total: '1200.00'
+      share: '0.1000'
+      codes:
+        hh_restaurant: {monthly: '150.00', total: '450.00', budget_class: want, overridden: false}
+        hh_travel: {monthly: '250.00', total: '750.00', budget_class: want, overridden: false}
+      target: '5.0'
+      mark: {colour: amber, gap_points: '5.0', gap_monthly: '200.00', text: 'Wünsche: 10,0 % eures Einkommens,
+          5,0 Prozentpunkte über eurem Ziel von höchstens 5,0 %; das sind 200 € im Monat zu viel.'}
+    - key: saving
+      monthly: '1720.00'
+      total: '5160.00'
+      share: '0.4300'
+      target: '50.0'
+      mark: {colour: amber, gap_points: '-7.0', gap_monthly: '-280.00', text: 'Sparen: 43,0 % eures Einkommens,
+          7,0 Prozentpunkte unter eurem Ziel von mindestens 50,0 %; das sind 280 € im Monat zu wenig.'}
+    housing:
+      monthly: '1280.00'
+      total: '3840.00'
+      share: '0.3200'
+      codes: [hh_energy, hh_rent]
+      target: '30.0'
+      mark: {colour: amber, gap_points: '2.0', gap_monthly: '80.00', text: 'Wohnen: 32,0 % eures Einkommens,
+          2,0 Prozentpunkte über eurem Ziel von höchstens 30,0 %; das sind 80 € im Monat zu viel.'}
+    savings_rate: '0.4300'
+    no_shares: false
+    todos: []
+- id: targets_exactly_met
+  description: a share equal to its target meets it, and the sentence says so
+  months:
+  - month: 2027-01
+    private:
+    - {category: hh_salary, amount: '5000.00'}
+    - {category: hh_rent, amount: '-1500.00'}
+    - {category: hh_energy, amount: '-80.00'}
+    - {category: hh_groceries, amount: '-800.00'}
+    - {category: hh_restaurant, amount: '-200.00'}
+    - {category: hh_travel, amount: '-300.00'}
+    saved_links: '0.00'
+    rental: []
+  - month: 2027-02
+    private:
+    - {category: hh_salary, amount: '5000.00'}
+    - {category: hh_rent, amount: '-1500.00'}
+    - {category: hh_energy, amount: '-80.00'}
+    - {category: hh_groceries, amount: '-800.00'}
+    - {category: hh_restaurant, amount: '-200.00'}
+    - {category: hh_travel, amount: '-300.00'}
+    saved_links: '0.00'
+    rental: []
+  - month: 2027-03
+    private:
+    - {category: hh_salary, amount: '5000.00'}
+    - {category: hh_rent, amount: '-1500.00'}
+    - {category: hh_energy, amount: '-80.00'}
+    - {category: hh_groceries, amount: '-800.00'}
+    - {category: hh_restaurant, amount: '-200.00'}
+    - {category: hh_travel, amount: '-300.00'}
+    saved_links: '0.00'
+    rental: []
+  targets: {needs_max: '47.6', wants_max: '10.0', saving_min: '42.4', housing_max: '31.6'}
+  expect:
+    window: [2027-01, 2027-02, 2027-03]
+    enough: true
+    months:
+    - {month: 2027-01, income: '5000.00', need: '2380.00', want: '500.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '2120.00'}
+    - {month: 2027-02, income: '5000.00', need: '2380.00', want: '500.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '2120.00'}
+    - {month: 2027-03, income: '5000.00', need: '2380.00', want: '500.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '2120.00'}
+    income: {monthly: '5000.00', total: '15000.00', rental_monthly: '0.00', private_monthly: '5000.00'}
+    lines:
+    - key: need
+      monthly: '2380.00'
+      total: '7140.00'
+      share: '0.4760'
+      codes:
+        hh_energy: {monthly: '80.00', total: '240.00', budget_class: need, overridden: false}
+        hh_groceries: {monthly: '800.00', total: '2400.00', budget_class: need, overridden: false}
+        hh_rent: {monthly: '1500.00', total: '4500.00', budget_class: need, overridden: false}
+      target: '47.6'
+      mark: {colour: green, gap_points: '0.0', gap_monthly: '0.00', text: 'Notwendiges: 47,6 % eures Einkommens,
+          genau auf eurem Ziel von höchstens 47,6 %.'}
+    - key: want
+      monthly: '500.00'
+      total: '1500.00'
+      share: '0.1000'
+      codes:
+        hh_restaurant: {monthly: '200.00', total: '600.00', budget_class: want, overridden: false}
+        hh_travel: {monthly: '300.00', total: '900.00', budget_class: want, overridden: false}
+      target: '10.0'
+      mark: {colour: green, gap_points: '0.0', gap_monthly: '0.00', text: 'Wünsche: 10,0 % eures Einkommens,
+          genau auf eurem Ziel von höchstens 10,0 %.'}
+    - key: saving
+      monthly: '2120.00'
+      total: '6360.00'
+      share: '0.4240'
+      target: '42.4'
+      mark: {colour: green, gap_points: '0.0', gap_monthly: '0.00', text: 'Sparen: 42,4 % eures Einkommens,
+          genau auf eurem Ziel von mindestens 42,4 %.'}
+    housing:
+      monthly: '1580.00'
+      total: '4740.00'
+      share: '0.3160'
+      codes: [hh_energy, hh_rent]
+      target: '31.6'
+      mark: {colour: green, gap_points: '0.0', gap_monthly: '0.00', text: 'Wohnen: 31,6 % eures Einkommens,
+          genau auf eurem Ziel von höchstens 31,6 %.'}
+    savings_rate: '0.4240'
+    no_shares: false
+    todos: []
+- id: targets_empty
+  description: 'only housing set: no mark on the lines'
+  months: *id001
+  targets: {housing_max: '30.0'}
+  expect:
+    window: [2027-01, 2027-02, 2027-03]
+    enough: true
+    months:
+    - {month: 2027-01, income: '4000.00', need: '1880.00', want: '400.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '1720.00'}
+    - {month: 2027-02, income: '4000.00', need: '1890.00', want: '390.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '1720.00'}
+    - {month: 2027-03, income: '4000.00', need: '1870.00', want: '410.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '1720.00'}
+    income: {monthly: '4000.00', total: '12000.00', rental_monthly: '0.00', private_monthly: '4000.00'}
+    lines:
+    - key: need
+      monthly: '1880.00'
+      total: '5640.00'
+      share: '0.4700'
+      codes:
+        hh_energy: {monthly: '80.00', total: '240.00', budget_class: need, overridden: false}
+        hh_groceries: {monthly: '600.00', total: '1800.00', budget_class: need, overridden: false}
+        hh_rent: {monthly: '1200.00', total: '3600.00', budget_class: need, overridden: false}
+      target: null
+      mark: null
+    - key: want
+      monthly: '400.00'
+      total: '1200.00'
+      share: '0.1000'
+      codes:
+        hh_restaurant: {monthly: '150.00', total: '450.00', budget_class: want, overridden: false}
+        hh_travel: {monthly: '250.00', total: '750.00', budget_class: want, overridden: false}
+      target: null
+      mark: null
+    - {key: saving, monthly: '1720.00', total: '5160.00', share: '0.4300', target: null, mark: null}
+    housing:
+      monthly: '1280.00'
+      total: '3840.00'
+      share: '0.3200'
+      codes: [hh_energy, hh_rent]
+      target: '30.0'
+      mark: {colour: amber, gap_points: '2.0', gap_monthly: '80.00', text: 'Wohnen: 32,0 % eures Einkommens,
+          2,0 Prozentpunkte über eurem Ziel von höchstens 30,0 %; das sind 80 € im Monat zu viel.'}
+    savings_rate: '0.4300'
+    no_shares: false
+    todos: []
+- id: income_not_positive
+  description: 'Σ E ≤ 0: the lines stand, no share, no mark'
+  months:
+  - month: 2027-01
+    private:
+    - {category: hh_rent, amount: '-900.00'}
+    saved_links: '0.00'
+    rental:
+    - {category: loan_interest, amount: '-410.00'}
+    - {category: loan_principal, amount: '-305.00'}
+    - {category: hausgeld_verwaltung, amount: '-38.00'}
+    - {category: hausgeld_umlagefaehig, amount: '-210.00'}
+  - month: 2027-02
+    private:
+    - {category: hh_rent, amount: '-900.00'}
+    - {category: hh_groceries, amount: '-300.00'}
+    saved_links: '0.00'
+    rental:
+    - {category: loan_interest, amount: '-410.00'}
+    - {category: loan_principal, amount: '-305.00'}
+    - {category: hausgeld_verwaltung, amount: '-38.00'}
+    - {category: hausgeld_umlagefaehig, amount: '-210.00'}
+  - month: 2027-03
+    private:
+    - {category: hh_wage_replacement, amount: '300.00'}
+    - {category: hh_rent, amount: '-900.00'}
+    saved_links: '0.00'
+    rental:
+    - {category: loan_interest, amount: '-410.00'}
+    - {category: loan_principal, amount: '-305.00'}
+    - {category: hausgeld_verwaltung, amount: '-38.00'}
+    - {category: hausgeld_umlagefaehig, amount: '-210.00'}
+  targets: {needs_max: '50.0', saving_min: '20.0', housing_max: '30.0'}
+  expect:
+    window: [2027-01, 2027-02, 2027-03]
+    enough: true
+    months:
+    - {month: 2027-01, income: '-658.00', need: '900.00', want: '0.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '-1558.00'}
+    - {month: 2027-02, income: '-658.00', need: '1200.00', want: '0.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '-1858.00'}
+    - {month: 2027-03, income: '-358.00', need: '900.00', want: '0.00', one_off: '0.00', uncategorized: '0.00',
+      saving: '-1258.00'}
+    income: {monthly: '-558.00', total: '-1674.00', rental_monthly: '-658.00', private_monthly: '100.00'}
+    lines:
+    - key: need
+      monthly: '1000.00'
+      total: '3000.00'
+      share: null
+      codes:
+        hh_groceries: {monthly: '100.00', total: '300.00', budget_class: need, overridden: false}
+        hh_rent: {monthly: '900.00', total: '2700.00', budget_class: need, overridden: false}
+      target: '50.0'
+      mark: null
+    - key: want
+      monthly: '0.00'
+      total: '0.00'
+      share: null
+      codes: {}
+      target: null
+      mark: null
+    - {key: saving, monthly: '-1558.00', total: '-4674.00', share: null, target: '20.0', mark: null}
+    housing:
+      monthly: '900.00'
+      total: '2700.00'
+      share: null
+      codes: [hh_rent]
+      target: '30.0'
+      mark: null
+    savings_rate: null
+    no_shares: true
+    todos: []
+- id: too_few_months
+  months:
+  - *id002
+  - *id003
+  targets: {needs_max: '50.0'}
+  expect:
+    window: [2027-01, 2027-02]
+    enough: false
+    todos: [too_few_months]

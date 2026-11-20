@@ -33,18 +33,41 @@ from types import MappingProxyType
 
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.enums import AccountPurpose
-from hausbuch.schemas.household import HouseholdCode, HouseholdGroup, ProposedInput, Relevance
+from hausbuch.schemas.household import (
+    BudgetClass,
+    HouseholdCode,
+    HouseholdGroup,
+    ProposedInput,
+    Relevance,
+)
 
 G = HouseholdGroup
 R = Relevance
 P = ProposedInput
+# Phase 10 D272: the Budget's class of a spending or tax code, Luis's answer to Q-O176
+# (20 Nov 2026): §9's proposal, Friseur & Körperpflege a need, Geld an Familie a need, cash
+# and a card settlement whose contents the app cannot see wants, a refund lowering wants; a
+# group's „Sonstige …“ fallback follows its group.
+N = BudgetClass.NEED
+W = BudgetClass.WANT
 
 
 def _code(
-    category: C, group: G, relevance: R, proposes: P | None = None, *, one_off: bool = False
+    category: C,
+    group: G,
+    relevance: R,
+    proposes: P | None = None,
+    *,
+    one_off: bool = False,
+    budget_class: BudgetClass | None = None,
 ) -> HouseholdCode:
     return HouseholdCode(
-        category=category, group=group, relevance=relevance, proposes=proposes, one_off=one_off
+        category=category,
+        group=group,
+        relevance=relevance,
+        proposes=proposes,
+        one_off=one_off,
+        budget_class=budget_class,
     )
 
 
@@ -62,83 +85,87 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_CAPITAL_INCOME, G.INCOME, R.INCOME),  # read by phase 8's KAP
             _code(C.HH_OTHER_INCOME, G.INCOME, R.INCOME),
             # Spending, the groups of mockup 10
-            _code(C.HH_HOUSING, G.HOUSING, R.SPENDING),
-            _code(C.HH_GROCERIES, G.GROCERIES, R.SPENDING),
-            _code(C.HH_FAMILY_CHILD, G.FAMILY_CHILD, R.SPENDING),
-            _code(C.HH_MOBILITY, G.MOBILITY, R.SPENDING),
-            _code(C.HH_INSURANCE, G.INSURANCE, R.SPENDING),
-            _code(C.HH_SUBSCRIPTIONS, G.SUBSCRIPTIONS, R.SPENDING),
-            _code(C.HH_LEISURE_TRAVEL, G.LEISURE_TRAVEL, R.SPENDING),
-            _code(C.HH_HEALTH, G.HEALTH, R.SPENDING),
-            _code(C.HH_OTHER, G.OTHER, R.SPENDING),
-            _code(C.HH_INTEREST_FEES, G.OTHER, R.SPENDING),  # a card's interest, D176 (3)
+            _code(C.HH_HOUSING, G.HOUSING, R.SPENDING, budget_class=N),
+            _code(C.HH_GROCERIES, G.GROCERIES, R.SPENDING, budget_class=N),
+            _code(C.HH_FAMILY_CHILD, G.FAMILY_CHILD, R.SPENDING, budget_class=N),
+            _code(C.HH_MOBILITY, G.MOBILITY, R.SPENDING, budget_class=N),
+            _code(C.HH_INSURANCE, G.INSURANCE, R.SPENDING, budget_class=N),
+            _code(C.HH_SUBSCRIPTIONS, G.SUBSCRIPTIONS, R.SPENDING, budget_class=W),
+            _code(C.HH_LEISURE_TRAVEL, G.LEISURE_TRAVEL, R.SPENDING, budget_class=W),
+            _code(C.HH_HEALTH, G.HEALTH, R.SPENDING, budget_class=N),
+            _code(C.HH_OTHER, G.OTHER, R.SPENDING, budget_class=W),
+            _code(
+                C.HH_INTEREST_FEES, G.OTHER, R.SPENDING, budget_class=N
+            ),  # a card's interest, D176 (3)
             # D159 amended 13 Nov 2026 (migration 0029): finer spending, one group each
-            _code(C.HH_PERSONAL_CARE, G.PERSONAL_CARE, R.SPENDING),
-            _code(C.HH_CLOTHING, G.CLOTHING, R.SPENDING),
-            _code(C.HH_DINING, G.DINING, R.SPENDING),
-            _code(C.HH_HOME, G.HOME, R.SPENDING),
-            _code(C.HH_ELECTRONICS, G.ELECTRONICS, R.SPENDING),
-            _code(C.HH_ONLINE_SHOPPING, G.ONLINE_SHOPPING, R.SPENDING),
-            _code(C.HH_FEES, G.FEES, R.SPENDING),
-            _code(C.HH_GIFTS, G.GIFTS, R.SPENDING),
-            _code(C.HH_FAMILY_TRANSFERS, G.FAMILY_TRANSFERS, R.SPENDING),
-            _code(C.HH_TELECOM, G.TELECOM, R.SPENDING),
-            _code(C.HH_WORK_EDUCATION, G.WORK_EDUCATION, R.SPENDING),
-            _code(C.HH_SPORT, G.SPORT, R.SPENDING),
-            _code(C.HH_TRAVEL, G.TRAVEL, R.SPENDING),
-            _code(C.HH_REFUND, G.REFUND, R.SPENDING),  # a negative amount among spending
+            _code(C.HH_PERSONAL_CARE, G.PERSONAL_CARE, R.SPENDING, budget_class=N),
+            _code(C.HH_CLOTHING, G.CLOTHING, R.SPENDING, budget_class=W),
+            _code(C.HH_DINING, G.DINING, R.SPENDING, budget_class=W),
+            _code(C.HH_HOME, G.HOME, R.SPENDING, budget_class=W),
+            _code(C.HH_ELECTRONICS, G.ELECTRONICS, R.SPENDING, budget_class=W),
+            _code(C.HH_ONLINE_SHOPPING, G.ONLINE_SHOPPING, R.SPENDING, budget_class=W),
+            _code(C.HH_FEES, G.FEES, R.SPENDING, budget_class=N),
+            _code(C.HH_GIFTS, G.GIFTS, R.SPENDING, budget_class=W),
+            _code(C.HH_FAMILY_TRANSFERS, G.FAMILY_TRANSFERS, R.SPENDING, budget_class=N),
+            _code(C.HH_TELECOM, G.TELECOM, R.SPENDING, budget_class=N),
+            _code(C.HH_WORK_EDUCATION, G.WORK_EDUCATION, R.SPENDING, budget_class=N),
+            _code(C.HH_SPORT, G.SPORT, R.SPENDING, budget_class=W),
+            _code(C.HH_TRAVEL, G.TRAVEL, R.SPENDING, budget_class=W),
+            _code(
+                C.HH_REFUND, G.REFUND, R.SPENDING, budget_class=W
+            ),  # a negative amount among spending
             # D159 amended 14 Nov 2026 (migration 0031): fuel, inside the Mobilität group
-            _code(C.HH_FUEL, G.MOBILITY, R.SPENDING),
+            _code(C.HH_FUEL, G.MOBILITY, R.SPENDING, budget_class=N),
             # D159 amended 14 Nov 2026 (migration 0032): subcategories inside their parent's group
-            _code(C.HH_STREAMING, G.SUBSCRIPTIONS, R.SPENDING),
+            _code(C.HH_STREAMING, G.SUBSCRIPTIONS, R.SPENDING, budget_class=W),
             # D159 amended (4) 14 Nov 2026 (migration 0033): cable and pay TV beside streaming
-            _code(C.HH_PAY_TV, G.SUBSCRIPTIONS, R.SPENDING),
-            _code(C.HH_MUSIC_AUDIO, G.SUBSCRIPTIONS, R.SPENDING),
-            _code(C.HH_SOFTWARE, G.SUBSCRIPTIONS, R.SPENDING),
-            _code(C.HH_CLOUD, G.SUBSCRIPTIONS, R.SPENDING),
-            _code(C.HH_GAMING, G.SUBSCRIPTIONS, R.SPENDING),
-            _code(C.HH_NEWS, G.SUBSCRIPTIONS, R.SPENDING),
-            _code(C.HH_MEMBERSHIPS, G.SUBSCRIPTIONS, R.SPENDING),
-            _code(C.HH_PUBLIC_TRANSPORT, G.MOBILITY, R.SPENDING),
-            _code(C.HH_TAXI, G.MOBILITY, R.SPENDING),
-            _code(C.HH_PARKING, G.MOBILITY, R.SPENDING),
-            _code(C.HH_CAR_SERVICE, G.MOBILITY, R.SPENDING),
-            _code(C.HH_CAR_TAX, G.MOBILITY, R.SPENDING),
+            _code(C.HH_PAY_TV, G.SUBSCRIPTIONS, R.SPENDING, budget_class=W),
+            _code(C.HH_MUSIC_AUDIO, G.SUBSCRIPTIONS, R.SPENDING, budget_class=W),
+            _code(C.HH_SOFTWARE, G.SUBSCRIPTIONS, R.SPENDING, budget_class=W),
+            _code(C.HH_CLOUD, G.SUBSCRIPTIONS, R.SPENDING, budget_class=W),
+            _code(C.HH_GAMING, G.SUBSCRIPTIONS, R.SPENDING, budget_class=W),
+            _code(C.HH_NEWS, G.SUBSCRIPTIONS, R.SPENDING, budget_class=W),
+            _code(C.HH_MEMBERSHIPS, G.SUBSCRIPTIONS, R.SPENDING, budget_class=W),
+            _code(C.HH_PUBLIC_TRANSPORT, G.MOBILITY, R.SPENDING, budget_class=N),
+            _code(C.HH_TAXI, G.MOBILITY, R.SPENDING, budget_class=W),
+            _code(C.HH_PARKING, G.MOBILITY, R.SPENDING, budget_class=N),
+            _code(C.HH_CAR_SERVICE, G.MOBILITY, R.SPENDING, budget_class=N),
+            _code(C.HH_CAR_TAX, G.MOBILITY, R.SPENDING, budget_class=N),
             # D159 amended (7) 15 Nov 2026 (migration 0037): buying or financing a car
             # Phase 9 D236: one-off spending, out of the regular spending of a month
-            _code(C.HH_CAR_PURCHASE, G.MOBILITY, R.SPENDING, one_off=True),
-            _code(C.HH_SUPERMARKET, G.GROCERIES, R.SPENDING),
-            _code(C.HH_DRUGSTORE, G.GROCERIES, R.SPENDING),
-            _code(C.HH_BAKERY, G.GROCERIES, R.SPENDING),
-            _code(C.HH_RESTAURANT, G.DINING, R.SPENDING),
-            _code(C.HH_CAFE, G.DINING, R.SPENDING),
+            _code(C.HH_CAR_PURCHASE, G.MOBILITY, R.SPENDING, one_off=True, budget_class=N),
+            _code(C.HH_SUPERMARKET, G.GROCERIES, R.SPENDING, budget_class=N),
+            _code(C.HH_DRUGSTORE, G.GROCERIES, R.SPENDING, budget_class=N),
+            _code(C.HH_BAKERY, G.GROCERIES, R.SPENDING, budget_class=N),
+            _code(C.HH_RESTAURANT, G.DINING, R.SPENDING, budget_class=W),
+            _code(C.HH_CAFE, G.DINING, R.SPENDING, budget_class=W),
             # D159 amended (5) 15 Nov 2026 (migration 0034): bars and pubs beside the café
-            _code(C.HH_BAR, G.DINING, R.SPENDING),
-            _code(C.HH_SWEETS, G.DINING, R.SPENDING),
-            _code(C.HH_FAST_FOOD, G.DINING, R.SPENDING),
-            _code(C.HH_DELIVERY, G.DINING, R.SPENDING),
-            _code(C.HH_RENT, G.HOUSING, R.SPENDING),
-            _code(C.HH_ENERGY, G.HOUSING, R.SPENDING),
-            _code(C.HH_BROADCAST_FEE, G.HOUSING, R.SPENDING),
-            _code(C.HH_FLAT_SEARCH, G.HOUSING, R.SPENDING),
-            _code(C.HH_INS_CAR, G.INSURANCE, R.SPENDING),
-            _code(C.HH_INS_LIABILITY_CONTENTS, G.INSURANCE, R.SPENDING),
-            _code(C.HH_INS_HEALTH, G.INSURANCE, R.SPENDING),
-            _code(C.HH_INS_LIFE, G.INSURANCE, R.SPENDING),
-            _code(C.HH_PHARMACY, G.HEALTH, R.SPENDING),
-            _code(C.HH_DOCTOR, G.HEALTH, R.SPENDING),
-            _code(C.HH_DENTAL_OPTICAL, G.HEALTH, R.SPENDING),
-            _code(C.HH_OUTINGS, G.LEISURE_TRAVEL, R.SPENDING),
-            _code(C.HH_BOOKS_MEDIA, G.LEISURE_TRAVEL, R.SPENDING),
-            _code(C.HH_HOBBIES, G.LEISURE_TRAVEL, R.SPENDING),
-            _code(C.HH_LODGING, G.TRAVEL, R.SPENDING),
-            _code(C.HH_FLIGHTS, G.TRAVEL, R.SPENDING),
-            _code(C.HH_KIDS_GEAR, G.FAMILY_CHILD, R.SPENDING),
-            _code(C.HH_TOYS, G.FAMILY_CHILD, R.SPENDING),
-            _code(C.HH_PREGNANCY_BIRTH, G.FAMILY_CHILD, R.SPENDING),
-            _code(C.HH_MOBILE_PHONE, G.TELECOM, R.SPENDING),
-            _code(C.HH_INTERNET, G.TELECOM, R.SPENDING),
-            _code(C.HH_POSTAGE, G.OTHER, R.SPENDING),
+            _code(C.HH_BAR, G.DINING, R.SPENDING, budget_class=W),
+            _code(C.HH_SWEETS, G.DINING, R.SPENDING, budget_class=W),
+            _code(C.HH_FAST_FOOD, G.DINING, R.SPENDING, budget_class=W),
+            _code(C.HH_DELIVERY, G.DINING, R.SPENDING, budget_class=W),
+            _code(C.HH_RENT, G.HOUSING, R.SPENDING, budget_class=N),
+            _code(C.HH_ENERGY, G.HOUSING, R.SPENDING, budget_class=N),
+            _code(C.HH_BROADCAST_FEE, G.HOUSING, R.SPENDING, budget_class=N),
+            _code(C.HH_FLAT_SEARCH, G.HOUSING, R.SPENDING, budget_class=N),
+            _code(C.HH_INS_CAR, G.INSURANCE, R.SPENDING, budget_class=N),
+            _code(C.HH_INS_LIABILITY_CONTENTS, G.INSURANCE, R.SPENDING, budget_class=N),
+            _code(C.HH_INS_HEALTH, G.INSURANCE, R.SPENDING, budget_class=N),
+            _code(C.HH_INS_LIFE, G.INSURANCE, R.SPENDING, budget_class=N),
+            _code(C.HH_PHARMACY, G.HEALTH, R.SPENDING, budget_class=N),
+            _code(C.HH_DOCTOR, G.HEALTH, R.SPENDING, budget_class=N),
+            _code(C.HH_DENTAL_OPTICAL, G.HEALTH, R.SPENDING, budget_class=N),
+            _code(C.HH_OUTINGS, G.LEISURE_TRAVEL, R.SPENDING, budget_class=W),
+            _code(C.HH_BOOKS_MEDIA, G.LEISURE_TRAVEL, R.SPENDING, budget_class=W),
+            _code(C.HH_HOBBIES, G.LEISURE_TRAVEL, R.SPENDING, budget_class=W),
+            _code(C.HH_LODGING, G.TRAVEL, R.SPENDING, budget_class=W),
+            _code(C.HH_FLIGHTS, G.TRAVEL, R.SPENDING, budget_class=W),
+            _code(C.HH_KIDS_GEAR, G.FAMILY_CHILD, R.SPENDING, budget_class=N),
+            _code(C.HH_TOYS, G.FAMILY_CHILD, R.SPENDING, budget_class=W),
+            _code(C.HH_PREGNANCY_BIRTH, G.FAMILY_CHILD, R.SPENDING, budget_class=N),
+            _code(C.HH_MOBILE_PHONE, G.TELECOM, R.SPENDING, budget_class=N),
+            _code(C.HH_INTERNET, G.TELECOM, R.SPENDING, budget_class=N),
+            _code(C.HH_POSTAGE, G.OTHER, R.SPENDING, budget_class=N),
             _code(C.HH_INVESTMENT, G.INVESTMENT, R.TRANSFER),  # saved, not spent
             # D159 amended (6) 15 Nov 2026 (migration 0036): the Geldanlage subcategories,
             # saved like their fallback hh_investment
@@ -147,22 +174,24 @@ TAXONOMY = MappingProxyType(
             _code(C.HH_INVESTMENT_CRYPTO, G.INVESTMENT, R.TRANSFER),
             _code(C.HH_INVESTMENT_SAVINGS, G.INVESTMENT, R.TRANSFER),
             # Tax-relevant spending: each proposes the input its form already reads
-            _code(C.HH_DONATION, G.TAX, R.TAX, P.RETURN_SPECIAL_EXPENSE),
-            _code(C.HH_HOUSEHOLD_SERVICES, G.TAX, R.TAX, P.RETURN_HOUSEHOLD_SERVICES),
-            _code(C.HH_CHILDCARE, G.TAX, R.TAX, P.RETURN_CHILDCARE_COST),
-            _code(C.HH_PROPERTY_COST, G.TAX, R.TAX, P.TAX_PRIVATE_COST),  # D161
-            _code(C.HH_TAX_PAYMENT, G.TAX, R.TAX),  # not modelled (phase 4b D95)
+            _code(C.HH_DONATION, G.TAX, R.TAX, P.RETURN_SPECIAL_EXPENSE, budget_class=W),
+            _code(
+                C.HH_HOUSEHOLD_SERVICES, G.TAX, R.TAX, P.RETURN_HOUSEHOLD_SERVICES, budget_class=N
+            ),
+            _code(C.HH_CHILDCARE, G.TAX, R.TAX, P.RETURN_CHILDCARE_COST, budget_class=N),
+            _code(C.HH_PROPERTY_COST, G.TAX, R.TAX, P.TAX_PRIVATE_COST, budget_class=N),  # D161
+            _code(C.HH_TAX_PAYMENT, G.TAX, R.TAX, budget_class=N),  # not modelled (phase 4b D95)
             # Movements
             _code(C.INTERNAL_TRANSFER_IN, G.MOVEMENTS, R.TRANSFER),
             _code(C.INTERNAL_TRANSFER_OUT, G.MOVEMENTS, R.TRANSFER),
-            _code(C.HH_CASH, G.MOVEMENTS, R.SPENDING),
-            _code(C.HH_CREDIT_CARD, G.MOVEMENTS, R.SPENDING),
+            _code(C.HH_CASH, G.MOVEMENTS, R.SPENDING, budget_class=W),
+            _code(C.HH_CREDIT_CARD, G.MOVEMENTS, R.SPENDING, budget_class=W),
             # The depot's own bookings (D165 (1))
             _code(C.SECURITY_PURCHASE, G.DEPOT, R.TRANSFER),
             _code(C.SECURITY_SALE, G.DEPOT, R.TRANSFER),
             _code(C.DISTRIBUTION, G.DEPOT, R.INCOME),
-            _code(C.CAPITAL_INCOME_TAX, G.DEPOT, R.TAX),
-            _code(C.DEPOT_FEE, G.DEPOT, R.SPENDING),
+            _code(C.CAPITAL_INCOME_TAX, G.DEPOT, R.TAX, budget_class=N),
+            _code(C.DEPOT_FEE, G.DEPOT, R.SPENDING, budget_class=N),
         )
     }
 )
@@ -193,6 +222,15 @@ if set(TAXONOMY) != PRIVATE_ONLY:  # pragma: no cover - a code without its row
 ONE_OFF = frozenset(c for c, row in TAXONOMY.items() if row.one_off)
 if any(TAXONOMY[c].relevance is not R.SPENDING for c in ONE_OFF):  # pragma: no cover
     raise RuntimeError("a one-off code must count as spending")
+
+# Phase 10 D272: every code the household month counts as spending (relevance spending or
+# tax) has a budget class, and no other code has one; the two private codes outside this
+# table get theirs in rules/budget (bank_fees need, uncategorized its own line).
+if any(
+    (row.budget_class is not None) != (row.relevance in (R.SPENDING, R.TAX))
+    for row in TAXONOMY.values()
+):  # pragma: no cover - a spending code without its class
+    raise RuntimeError("every spending or tax code, and only those, needs a budget class")
 
 # „Alle bestätigen“ in Zu prüfen (D159 amended 13 Nov 2026): the plain income and spending
 # codes whose waiting proposals a person may confirm as a group (POST /inbox/confirm-category).

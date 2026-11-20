@@ -1,0 +1,30 @@
+# Phase 10 (docs/phases/phase-10.md D275, D276, §3, §4): rules/budget/references.yaml and the
+# goals sheet's one tap (rules/budget/references.fill). `references`: the keys and kinds in the
+# file's order. A split's tap writes its three numbers into the form (needs_max, wants_max,
+# saving_min) and leaves the housing target as it was, empty or typed; a housing reference
+# fills nothing (refused). Nothing is stored by a tap.
+references:
+  - {key: split_50_30_20, kind: split}
+  - {key: split_60_20_20, kind: split}
+  - {key: split_70_20_10, kind: split}
+  - {key: housing_iwu_mieterbund, kind: housing}
+  - {key: housing_destatis_eu_silc, kind: housing}
+  - {key: housing_sparkasse_third, kind: housing}
+cases:
+  - id: fill_empty_form
+    reference: split_50_30_20
+    expect:
+      targets: {needs_max: "50", wants_max: "30", saving_min: "20", housing_max: null}
+  - id: fill_keeps_housing
+    description: the typed housing target stays; the other three are replaced
+    reference: split_70_20_10
+    form: {needs_max: "55.0", wants_max: null, saving_min: "15.0", housing_max: "35.0"}
+    expect:
+      targets: {needs_max: "70", wants_max: "20", saving_min: "10", housing_max: "35.0"}
+  - id: fill_60_20_20
+    reference: split_60_20_20
+    expect:
+      targets: {needs_max: "60", wants_max: "20", saving_min: "20", housing_max: null}
+  - id: housing_fills_nothing
+    reference: housing_iwu_mieterbund
+    expect: {refused: true}

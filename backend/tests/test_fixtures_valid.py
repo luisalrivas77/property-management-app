@@ -12,6 +12,7 @@ import fixture_models_phase5 as phase5
 import fixture_models_phase6 as phase6
 import fixture_models_phase7 as phase7
 import fixture_models_phase9 as phase9
+import fixture_models_phase10 as phase10
 import pytest
 from fixture_models import RentFixture
 from pydantic import ValidationError
@@ -35,6 +36,7 @@ PHASES = {
     "phase6": phase6,
     "phase7": phase7,
     "phase9": phase9,
+    "phase10": phase10,
 }
 FIXTURE_FILES = [(p, name) for p, mod in PHASES.items() for name in sorted(mod.MODELS)]
 

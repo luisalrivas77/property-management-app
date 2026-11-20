@@ -1,0 +1,156 @@
+# Phase 10 (docs/phases/phase-10.md D272, D273, §4): rules/budget/budget.budget over one window
+# that holds every awkward case at once: a one-off purchase (hh_car_purchase), a refund
+# (hh_refund, a negative amount in Wünsche), a tax-relevant payment (hh_tax_payment), a cash
+# withdrawal (hh_cash), a card settlement (hh_credit_card), money to family, a bank fee (outside
+# the taxonomy, a need), an uncategorised line (its own line and a to-do), a depot fee, the
+# flat's shortfall (April, empty) and its principal (Sparen, never spending), and a transfer
+# into the depot (saved, never spent).
+#
+# Input per month, as phase 9 reads it: `private` the private accounts' confirmed allocations
+# signed as on the account, `saved_links` the transfer links' saved amount, `rental` the rental
+# account's confirmed allocations. tests/fixture_models_phase10.household turns them into
+# phase 9's HouseholdMonth with the production functions.
+#
+# expect: per month the exact partition (need + want + one_off + uncategorized + saving =
+# income, D273); over the window E's monthly mean half-up, the lines' means by largest remainder
+# (ties in the order need, want, one_off, uncategorized, saving) and each line's codes the same
+# way (ties by the code's value); shares of Σ E to four places half-up; savings_rate is
+# rules.health.figures.savings_rate(months).rate, which saving's share must equal.
+# Computed by tests/fixture_gen_phase10.py for invented owners A and B; never regenerated to
+# fit the rule.
+cases:
+- id: every_awkward_case
+  description: three months, every case of §4 at once, no targets
+  months:
+  - month: 2027-03
+    private:
+    - {category: hh_salary, amount: '4200.00'}
+    - {category: hh_child_benefit, amount: '255.00'}
+    - {category: hh_rent, amount: '-1100.00'}
+    - {category: hh_energy, amount: '-95.40'}
+    - {category: hh_broadcast_fee, amount: '-55.08'}
+    - {category: hh_groceries, amount: '-612.37'}
+    - {category: hh_restaurant, amount: '-84.50'}
+    - {category: hh_cash, amount: '-100.00'}
+    - {category: hh_credit_card, amount: '-342.18'}
+    - {category: hh_family_transfers, amount: '-150.00'}
+    - {category: bank_fees, amount: '-4.95'}
+    - {category: depot_fee, amount: '-3.20'}
+    - {category: hh_tax_payment, amount: '-230.00'}
+    - {category: uncategorized, amount: '-27.99'}
+    - {category: hh_refund, amount: '19.99'}
+    - {category: hh_investment_securities, amount: '-300.00'}
+    saved_links: '200.00'
+    rental:
+    - {category: rent_cold, amount: '850.00'}
+    - {category: loan_interest, amount: '-410.00'}
+    - {category: loan_principal, amount: '-305.00'}
+    - {category: hausgeld_verwaltung, amount: '-38.00'}
+    - {category: hausgeld_umlagefaehig, amount: '-210.00'}
+  - month: 2027-04
+    private:
+    - {category: hh_salary, amount: '4200.00'}
+    - {category: hh_child_benefit, amount: '255.00'}
+    - {category: hh_rent, amount: '-1100.00'}
+    - {category: hh_energy, amount: '-95.40'}
+    - {category: hh_groceries, amount: '-588.10'}
+    - {category: hh_restaurant, amount: '-61.20'}
+    - {category: hh_car_purchase, amount: '-8500.00'}
+    - {category: hh_cash, amount: '-50.00'}
+    - {category: hh_credit_card, amount: '-298.44'}
+    - {category: hh_family_transfers, amount: '-150.00'}
+    - {category: bank_fees, amount: '-4.95'}
+    - {category: uncategorized, amount: '-12.00'}
+    - {category: hh_refund, amount: '45.00'}
+    saved_links: '0.00'
+    rental:
+    - {category: loan_interest, amount: '-409.10'}
+    - {category: loan_principal, amount: '-305.90'}
+    - {category: hausgeld_verwaltung, amount: '-38.00'}
+    - {category: hausgeld_umlagefaehig, amount: '-210.00'}
+  - month: 2027-05
+    private:
+    - {category: hh_salary, amount: '4350.00'}
+    - {category: hh_child_benefit, amount: '255.00'}
+    - {category: hh_rent, amount: '-1100.00'}
+    - {category: hh_energy, amount: '-95.40'}
+    - {category: hh_groceries, amount: '-640.03'}
+    - {category: hh_restaurant, amount: '-97.80'}
+    - {category: hh_streaming, amount: '-12.99'}
+    - {category: hh_credit_card, amount: '-310.07'}
+    - {category: hh_family_transfers, amount: '-150.00'}
+    - {category: bank_fees, amount: '-4.95'}
+    - {category: hh_tax_payment, amount: '-85.00'}
+    saved_links: '0.00'
+    rental:
+    - {category: rent_cold, amount: '850.00'}
+    - {category: loan_interest, amount: '-408.20'}
+    - {category: loan_principal, amount: '-306.80'}
+    - {category: hausgeld_verwaltung, amount: '-38.00'}
+    - {category: hausgeld_umlagefaehig, amount: '-210.00'}
+  expect:
+    window: [2027-03, 2027-04, 2027-05]
+    enough: true
+    months:
+    - {month: 2027-03, income: '4647.00', need: '2251.00', want: '506.69', one_off: '0.00', uncategorized: '27.99',
+      saving: '1861.32'}
+    - {month: 2027-04, income: '3797.90', need: '1938.45', want: '364.64', one_off: '8500.00', uncategorized: '12.00',
+      saving: '-7017.19'}
+    - {month: 2027-05, income: '4798.80', need: '2075.38', want: '420.86', one_off: '0.00', uncategorized: '0.00',
+      saving: '2302.56'}
+    income: {monthly: '4414.57', total: '13243.70', rental_monthly: '-90.43', private_monthly: '4505.00'}
+    lines:
+    - key: need
+      monthly: '2088.28'
+      total: '6264.83'
+      share: '0.4730'
+      codes:
+        bank_fees: {monthly: '4.95', total: '14.85', budget_class: need, overridden: false}
+        depot_fee: {monthly: '1.07', total: '3.20', budget_class: need, overridden: false}
+        hh_broadcast_fee: {monthly: '18.36', total: '55.08', budget_class: need, overridden: false}
+        hh_energy: {monthly: '95.40', total: '286.20', budget_class: need, overridden: false}
+        hh_family_transfers: {monthly: '150.00', total: '450.00', budget_class: need, overridden: false}
+        hh_groceries: {monthly: '613.50', total: '1840.50', budget_class: need, overridden: false}
+        hh_rent: {monthly: '1100.00', total: '3300.00', budget_class: need, overridden: false}
+        hh_tax_payment: {monthly: '105.00', total: '315.00', budget_class: need, overridden: false}
+      target: null
+      mark: null
+    - key: want
+      monthly: '430.73'
+      total: '1292.19'
+      share: '0.0976'
+      codes:
+        hh_cash: {monthly: '50.00', total: '150.00', budget_class: want, overridden: false}
+        hh_credit_card: {monthly: '316.90', total: '950.69', budget_class: want, overridden: false}
+        hh_refund: {monthly: '-21.66', total: '-64.99', budget_class: want, overridden: false}
+        hh_restaurant: {monthly: '81.16', total: '243.50', budget_class: want, overridden: false}
+        hh_streaming: {monthly: '4.33', total: '12.99', budget_class: want, overridden: false}
+      target: null
+      mark: null
+    - key: one_off
+      monthly: '2833.33'
+      total: '8500.00'
+      share: '0.6418'
+      codes:
+        hh_car_purchase: {monthly: '2833.33', total: '8500.00', budget_class: null, overridden: false}
+      target: null
+      mark: null
+    - key: uncategorized
+      monthly: '13.33'
+      total: '39.99'
+      share: '0.0030'
+      codes:
+        uncategorized: {monthly: '13.33', total: '39.99', budget_class: null, overridden: false}
+      target: null
+      mark: null
+    - {key: saving, monthly: '-951.10', total: '-2853.31', share: '-0.2154', target: null, mark: null}
+    housing:
+      monthly: '1213.76'
+      total: '3641.28'
+      share: '0.2749'
+      codes: [hh_broadcast_fee, hh_energy, hh_rent]
+      target: null
+      mark: null
+    savings_rate: '-0.2154'
+    no_shares: false
+    todos: [uncategorized_lines]

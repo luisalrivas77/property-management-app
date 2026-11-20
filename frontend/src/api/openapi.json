@@ -14657,6 +14657,71 @@
         ],
         "title": "BridgeRow"
       },
+      "BudgetClass": {
+        "type": "string",
+        "enum": [
+          "need",
+          "want"
+        ],
+        "title": "BudgetClass",
+        "description": "Phase 10 D272: where a spending euro sits in the Budget, Notwendiges or Wünsche."
+      },
+      "BudgetTargets": {
+        "properties": {
+          "needs_max": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Needs Max"
+          },
+          "wants_max": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wants Max"
+          },
+          "saving_min": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saving Min"
+          },
+          "housing_max": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Housing Max"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BudgetTargets",
+        "description": "The household's own targets, each a percent of the income with one place, None while\nnot set (no mark then). Needs, wants and the housing share are maxima, saving a minimum.\nNo default and no proposal: a reference's one tap only fills the form (D275)."
+      },
       "CarriedField": {
         "properties": {
           "key": {
@@ -20945,7 +21010,8 @@
           "no_default_scenario",
           "scenario_check",
           "rate_missing",
-          "income_change_link"
+          "income_change_link",
+          "uncategorized_lines"
         ],
         "title": "HealthTodoCode"
       },
@@ -21402,6 +21468,19 @@
             },
             "type": "array",
             "title": "Spending Changes"
+          },
+          "budget_targets": {
+            "$ref": "#/components/schemas/BudgetTargets"
+          },
+          "budget_class_overrides": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BudgetClass"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            },
+            "type": "object",
+            "title": "Budget Class Overrides"
           }
         },
         "additionalProperties": false,

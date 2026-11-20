@@ -5525,6 +5525,28 @@ export interface components {
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
         };
         /**
+         * BudgetClass
+         * @description Phase 10 D272: where a spending euro sits in the Budget, Notwendiges or Wünsche.
+         * @enum {string}
+         */
+        BudgetClass: "need" | "want";
+        /**
+         * BudgetTargets
+         * @description The household's own targets, each a percent of the income with one place, None while
+         *     not set (no mark then). Needs, wants and the housing share are maxima, saving a minimum.
+         *     No default and no proposal: a reference's one tap only fills the form (D275).
+         */
+        BudgetTargets: {
+            /** Needs Max */
+            needs_max?: string | null;
+            /** Wants Max */
+            wants_max?: string | null;
+            /** Saving Min */
+            saving_min?: string | null;
+            /** Housing Max */
+            housing_max?: string | null;
+        };
+        /**
          * CarriedField
          * @description A field of another record of the same proposal (D132): its record key and field name,
          *     dotted as the apply body names it ("tax_input:interest_certified", "value.amount").
@@ -8055,7 +8077,7 @@ export interface components {
          * HealthTodoCode
          * @enum {string}
          */
-        HealthTodoCode: "month_end_missing" | "account_not_covered" | "lines_waiting" | "transfer_open" | "too_few_months" | "balance_stale" | "bands_unconfirmed" | "no_default_scenario" | "scenario_check" | "rate_missing" | "income_change_link";
+        HealthTodoCode: "month_end_missing" | "account_not_covered" | "lines_waiting" | "transfer_open" | "too_few_months" | "balance_stale" | "bands_unconfirmed" | "no_default_scenario" | "scenario_check" | "rate_missing" | "income_change_link" | "uncategorized_lines";
         /**
          * HiddenToken
          * @description GET /wallets/{id}/hidden-tokens (D187 (3)): a token held as spam, by its asset's name
@@ -8262,6 +8284,11 @@ export interface components {
             bands?: components["schemas"]["BandLimits"][];
             /** Spending Changes */
             spending_changes?: components["schemas"]["SpendingChange"][];
+            budget_targets?: components["schemas"]["BudgetTargets"];
+            /** Budget Class Overrides */
+            budget_class_overrides?: {
+                [key: string]: components["schemas"]["BudgetClass"];
+            };
         };
         /**
          * HouseholdMonth
