@@ -3,17 +3,18 @@
 Spec drafted 20 Nov 2026 from the four mockups Luis chose that day (`docs/mockups/` 14-C2, 15-B2, 16-C2,
 17-C2) and his decision on budgets („the household's own targets“, 20 Nov 2026). Not built. Q-O176 (the default sorting
 of the spending codes into needs and wants, §9) answered by Luis the same day. On the same day Luis asked for
-mockups of every screen not yet drawn, so the build covers the whole app at once (D278 amended); the build waits
-for them.
+mockups of every screen not yet drawn, so the build covers the whole app at once (D278 amended); the screens' steps
+wait for them, steps 0 and 1 (the Budget's rules and reads, no screen) are being built meanwhile.
 
 | Step | What | State |
 | --- | --- | --- |
 | Spec | This file, the edits of §8 | drafted 20 Nov 2026 |
-| 0 | Taxonomy field `budget_class`, `rules/budget/references.yaml`, schemas, fixtures; no migration | not started (Q-O176 answered 20 Nov 2026) |
-| 1 | `rules/budget/`, `services/budget.py`, `GET /household-budget`, `GET /accounts/{id}/month` | not started |
+| 0 | Taxonomy field `budget_class`, `rules/budget/references.yaml`, schemas, fixtures; no migration | being built 20 Nov 2026 (Q-O176 answered the same day) |
+| 1 | `rules/budget/`, `services/budget.py`, `GET /household-budget`, `GET /accounts/{id}/month` | being built 20 Nov 2026 |
 | 2 | The shell: the menu, the detail panel, the route map, Steuern › „Einkommen & Haushalt“ | not started |
 | 3 | Übersicht (15-B2) and Konten › Umsätze (16-C2) | not started |
 | 4 | Planung in five sections with the Budget (17-C2) | not started |
+| 4b | The remaining screens as drawn in `docs/mockups/` 18–25 (D278 amended), each once Luis chooses it | mockups drawn 20 Nov 2026, not yet chosen |
 | 5 | Closing (§7.1) | not started |
 
 ## 1. Scope
@@ -24,14 +25,16 @@ needs-and-wants Budget on Planung, against targets the household sets itself.
 - The menu (14-C2): a bottom bar on the phone, tabs with „Mehr“ on the computer; Mieter and Eigentümer leave
   the menu; the owners' income for the tax moves to Steuern.
 - The detail panel, app-wide in rule, built in this phase for the lists §5.2 names.
-- Übersicht (15-B2), Konten › Umsätze (16-C2), Planung (17-C2) as drawn.
+- Übersicht (15-B2), Konten › Umsätze (16-C2), Planung (17-C2) as drawn, and every other screen as drawn in
+  `docs/mockups/` 18–25 once Luis chooses it (D278 amended): content re-arranged into the shell and the panel,
+  nothing added that no endpoint serves.
 - The Budget: the month's income split into Notwendiges, Wünsche and Sparen, the housing share beside them,
   the household's own targets, the published splits as reference points.
 - The two noted defects of „Was eure Änderungen bewirken“ (ARCHITECTURE.md, „Input for a later phase: the
   layout“).
 
-**Out.** No screen other than the four drawn gets new content (§5.3). Wide tables on undrawn screens keep their
-sideways scroll until each gets its own pass. No budget reminder, email, to-do or AI sentence. No new ledger
+**Out.** No screen gets content its mockup does not draw (§5.3); until a screen's mockup (18–25) is chosen it
+gets the shell only, and its wide tables keep their sideways scroll. No budget reminder, email, to-do or AI sentence. No new ledger
 data, no migration. The finer household-purchase reader, the net-worth goal and the other parked ideas stay
 parked.
 
@@ -51,7 +54,7 @@ parked.
 | D275 | **The published splits are reference points, and one tap only fills the form.** `rules/budget/references.yaml` (outside `rules/health/` and `rules/plan/`, so `rule_version()` stays) lists each reference with its source, the date it was read, what it measures and what it does not (§3). The goals sheet shows them under „Zum Vergleich“; the buttons 50/30/20, 60/20/20 and 70/20/10 write those numbers into the empty fields and store nothing; nothing is stored or coloured until „Ziele speichern“. No reference is a default, and none fills the housing target. | The app proposes no target (D249 as amended here); a one-tap fill is a typing aid the household confirms, the same as typing the numbers. Luis kept the buttons as drawn. |
 | D276 | **The housing share** is the window's spending in the Wohnen group (`hh_housing`, `hh_rent`, `hh_energy`, `hh_broadcast_fee`, `hh_flat_search`, and any code moved there later) ÷ E. It is the household's own home only: the rental flat's costs are inside its result, and a code the household overrides to „want“ still counts in housing. The screen says that the IWU figure is a tenant's gross cold rent of the household's net income and Destatis's all housing costs of disposable income, so neither is the same figure as the app's. | Two published thresholds with two different denominators (§3); the screen must not imply either is the app's figure. |
 | D277 | **Spending in play is reached from the Budget.** A tapped class opens its codes in the panel with their window means and the „geplant“ field of D263; the panel shows the class's amount and share with the plan, from `POST /household-plan/preview`. A code's class switch sits on its row there and becomes an override when saved. The explanation of the plan (D252, D253) gets no target, class or mark among its facts. | D263 is the one place amounts are typed; the explanation's validator was tested without budget facts and stays so. |
-| D278 | **What undrawn screens get in this build:** the new shell, the panel where §5.2 names it, and nothing else; their content, tables and forms are unchanged. A screen gets its own mockup before its content changes. | Luis drew four screens; „one build“ needs an edge. **Amended 20 Nov 2026 (Luis: „let's do mock ups for the rest of the cards so it's all done at once“):** every screen not yet drawn gets its own mockup before the build (`docs/mockups/` 18 onwards), and the build carries out each one Luis chooses; until a screen's mockup is chosen this decision stands for it. |
+| D278 | **What undrawn screens get in this build:** the new shell, the panel where §5.2 names it, and nothing else; their content, tables and forms are unchanged. A screen gets its own mockup before its content changes. | Luis drew four screens; „one build“ needs an edge. **Amended 20 Nov 2026 (Luis: „let's do mock ups for the rest of the cards so it's all some [done] at once“):** every screen not yet drawn gets its own mockup before the build (`docs/mockups/` 18 onwards), and the build carries out each one Luis chooses; until a screen's mockup is chosen this decision stands for it. |
 
 ## 3. Sources (read 20 Nov 2026)
 
@@ -100,12 +103,17 @@ Fixtures, computed by script for invented owners A and B, never from the mockups
 ### 5.2 The panel in this build
 
 Bank lines (Konten › Umsätze), Übersicht's tiles, the Budget's classes, a tenancy and an owner on
-Immobilien's card. Later, each with its screen's pass: Zu prüfen cards, documents, positions, to-do lists.
+Immobilien's card; and, once their mockups (18–25) are chosen, Zu prüfen cards, documents, positions, accounts,
+settings, the tax lines and to-do lists, as each mockup draws them.
 
 ### 5.3 Undrawn screens
 
-Zu prüfen, Haushalt, Anlagen, Konten (list), Steuern, Dokumente, Einstellungen, the property pages: new shell,
-unchanged content (D278).
+Zu prüfen (18), Haushalt (19), Anlagen (20), Konten and an account's settings (21), Steuern (22), Dokumente
+(23), Einstellungen (24) and the property, unit, tenancy, tenant and loan pages with their forms (25) were drawn
+on 20 Nov 2026 at Luis's word (D278 amended), not yet chosen. Each re-arranges today's content: every card,
+button and figure of the screen kept, on the page or in the panel; a wide table's row keeps its label and
+amount on the phone, its other columns in the panel, never a sideways scroll. Until one is chosen, that screen
+gets the new shell and unchanged content.
 
 ## 6. API and schemas
 
@@ -131,7 +139,7 @@ unchanged content (D278).
 
 ### 7.1 Done when
 
-Luis uses the new menu and the four screens on his phone and computer and finds no page that starts with a
+Luis uses the new menu and every screen on his phone and computer and finds no page that starts with a
 scroll past the menu; on the live data the Budget's Sparen ÷ E equals the Sparquote `hausbuch health-check`
 recomputes for the same window, to four places; Luis finds the split into needs and wants plausible; and
 nothing is coloured before he saves a target.
@@ -159,10 +167,10 @@ a group's „Sonstige …“ code follows its group:
   Wohnung, Depotgebühr, Kapitalertragsteuer.
 - **Wünsche:** Essen gehen und bestellen, Freizeit, Reisen, Sport, Kleidung,
   Elektronik, Online-Shopping, Haushalt und Einrichtung, Abos und Streaming, Geschenke, Spenden, Spielzeug, Taxi, Sonstiges.
-- **Unsure, to decide:** Geld an Familie (proposed: Notwendiges), Bargeld and Kreditkartenabrechnung, whose
-  contents the app cannot see (proposed: Wünsche), Erstattungen (proposed: lowers Wünsche).
+- **Unsure, accepted as proposed:** Geld an Familie under Notwendiges; Bargeld and Kreditkartenabrechnung,
+  whose contents the app cannot see, under Wünsche; Erstattungen lower Wünsche.
 
 ## 10. Open for the orchestrator
 
-- Q-O177: whether `/household-budget` should also serve one closed month (the Haushalt screen) or only the
-  window; the screen draws the window.
+- Q-O177 (settled 20 Nov 2026): `/household-budget` serves the window only. The Haushalt mockup (19) draws
+  no Budget, so no screen asks for one month; a month view can be added later without a schema change.
