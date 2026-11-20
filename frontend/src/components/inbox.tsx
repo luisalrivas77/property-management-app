@@ -536,8 +536,9 @@ function AiSuggestions({ onChanged }: { onChanged: () => void }) {
 
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 /** The API's fallback question for a proposal without a model question (review.py's
- * _PROPOSED_QUESTION); the bulk list shows a line's question only when it is the model's own. */
-const GENERIC_PROPOSED_QUESTION = "Stimmt diese Zuordnung?";
+ * "proposed.question", German or English by the request's language); the bulk list shows a
+ * line's question only when it is the model's own. */
+const GENERIC_PROPOSED_QUESTIONS: ReadonlySet<string> = new Set(["Stimmt diese Zuordnung?", "Is this categorisation right?"]);
 type ConfirmCategoryResult = components["schemas"]["ConfirmCategoryResult"];
 
 /** „Alle bestätigen“ (phase 6 D159 amended 13 Nov 2026): the private lines' plain proposals
@@ -738,7 +739,7 @@ function BulkConfirmList({
               const id = item.transaction_id;
               if (!id) return null;
               const line = data.transactions.get(id);
-              const question = item.question && item.question !== GENERIC_PROPOSED_QUESTION ? item.question : null;
+              const question = item.question && !GENERIC_PROPOSED_QUESTIONS.has(item.question) ? item.question : null;
               const payee = line?.counterparty_name ?? line?.booking_text ?? "Ohne Gegenseite";
               const amount = line ? signedMoney(line.amount) : "–";
               const account = line ? data.accounts.get(line.account_id) : undefined;
