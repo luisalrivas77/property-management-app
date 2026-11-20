@@ -8,6 +8,8 @@ RequestMiddleware is the outermost of the API's middlewares:
 - catch-all: an exception nothing else handled is rendered by errors.render() as a 500
   ErrorResponse here, so it never reaches Starlette's ServerErrorMiddleware, which would
   re-raise it to the server and have the traceback (with a DBAPI error's values) logged;
+- language (phase 10 D284): the request's `Accept-Language` sets hausbuch.i18n's language
+  for the whole request, the error rendering included, and is reset after it;
 - one log line, JSON: ts, level, request_id, method, route (the template, never the raw path
   or a query string), status, duration_ms, user_id, workspace_id, and for errors the fields
   errors.render() allows. Never a body, a header value or an exception's text beyond that.
@@ -23,6 +25,7 @@ from uuid import UUID, uuid4
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from hausbuch import i18n
 from hausbuch.schemas.api import ErrorKind, ErrorResponse
 from hausbuch.services.bank.fints import pin_fints_logging
 
@@ -48,6 +51,14 @@ def request_id_from(scope: Scope) -> UUID:
     return uuid4()
 
 
+def locale_from(scope: Scope) -> i18n.Locale:
+    """The language the request's Accept-Language prefers (German without one)."""
+    for name, value in scope.get("headers", ()):
+        if name == b"accept-language":
+            return i18n.from_accept_language(value.decode("latin-1"))
+    return i18n.DE
+
+
 class RequestMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -70,20 +81,21 @@ class RequestMiddleware:
                 message = message | {"headers": [*message.get("headers", ()), header]}
             await send(message)
 
-        try:
-            await self.app(scope, receive, send_with_id)
-        except Exception as exc:  # the catch-all: rendered, logged without its data
-            rendered = _render_safely(exc, request_id)
-            state["error_log"] = rendered.log
-            if status is None:
-                await rendered.response()(scope, receive, send_with_id)
-            else:
-                # The response had started: nothing can be sent. Not re-raised, so the server
-                # does not log the traceback; the client sees a truncated response.
-                state["error_log"] = rendered.log | {"response_started": True}
-                status = 500
-        finally:
-            _log_request(scope, state, status, started)
+        with i18n.use(locale_from(scope)):
+            try:
+                await self.app(scope, receive, send_with_id)
+            except Exception as exc:  # the catch-all: rendered, logged without its data
+                rendered = _render_safely(exc, request_id)
+                state["error_log"] = rendered.log
+                if status is None:
+                    await rendered.response()(scope, receive, send_with_id)
+                else:
+                    # The response had started: nothing can be sent. Not re-raised, so the
+                    # server does not log the traceback; the client sees a truncated response.
+                    state["error_log"] = rendered.log | {"response_started": True}
+                    status = 500
+            finally:
+                _log_request(scope, state, status, started)
 
 
 def _render_safely(exc: Exception, request_id: UUID) -> Rendered:
