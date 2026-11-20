@@ -1100,12 +1100,15 @@ class MonthRecapture:
     no stored run (left to the daily task) or the capture was refused. `snapshot`: the key
     figures' outcome, None when the month had no stored snapshot or it was refused.
     `refused`: the refusal's codes (the run's or the snapshot's) and, for an incomplete
-    month-end, its gaps' to-do codes; never a text, since a to-do's text can carry amounts."""
+    month-end, its gaps' to-do codes; never a text, since a to-do's text can carry amounts.
+    `gaps`: the month-end's gap codes (D172's to-dos) when the month was skipped for them,
+    nothing captured or stored (D265 amended (b))."""
 
     month: str
     run: SnapshotOutcome | None
     snapshot: HealthSnapshotOutcome | None = None
     refused: tuple[str, ...] = ()
+    gaps: tuple[str, ...] = ()
 
 
 def recapture_months(ctx: CommandContext, first: str, last: str) -> list[MonthRecapture]:
@@ -1116,14 +1119,26 @@ def recapture_months(ctx: CommandContext, first: str, last: str) -> list[MonthRe
     run through store_snapshot, the path of POST /health/snapshots („Kennzahlen
     festhalten“; a new row only when the figures differ). A refusal is returned with its
     codes and never forced: the snapshot's runs in a savepoint, so it writes nothing. A
-    month without a stored run is skipped. Insert-only, like both paths it calls."""
+    month without a stored run is skipped. Insert-only, like both paths it calls.
+
+    D265 amended (the build's review): (a) the key figures' lock is taken before the
+    month-end's (inside capture_month_end), the order of „Kennzahlen festhalten“ and the
+    daily task, so they never wait on each other; (b) a month whose reading has a month-end
+    gap (`_incomplete`, D172's to-dos) is skipped with its gap codes, nothing captured or
+    stored, since a stored run is never changed and a gapped one would miss a debt."""
     months = months_between(first, last)
     held = _newest_snapshots(ctx.conn, months)
     out: list[MonthRecapture] = []
     for month in months:
+        _lock(ctx)  # (a): the health lock first, held to the transaction's end
         end = month_bounds(month)[1]
         if latest_run(ctx.conn, end) is None:
             out.append(MonthRecapture(month=month, run=None))
+            continue
+        gaps = _incomplete(net_worth(ctx.conn, end))
+        if gaps:  # (b)
+            codes = tuple(dict.fromkeys(gap.code.value for gap in gaps))
+            out.append(MonthRecapture(month=month, run=None, gaps=codes))
             continue
         try:
             captured = capture_month_end(ctx, end)

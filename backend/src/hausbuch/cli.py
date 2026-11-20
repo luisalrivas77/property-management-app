@@ -119,8 +119,10 @@ again through net_worth.capture_month_end (a new run only when the reading diffe
 stays), and where the month holds a stored key-figures snapshot a new one is stored beside it
 through the path of „Kennzahlen festhalten“ (a new row only when the figures differ). It prints
 per month „unverändert“, „neu festgehalten“ or the refusal with its codes, never an amount; a
-month with no stored run is skipped and left to the daily task. Insert-only; --dry-run rolls
-everything back.
+month with no stored run is skipped and left to the daily task, and a month whose month-end has
+a gap (D172's to-dos, a loan's missing payout among them) is skipped with the gaps' codes and
+nothing stored (D265 amended). The key figures' lock is taken before the month-end's, as the
+button and the daily task do. Insert-only; --dry-run rolls everything back.
 
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
 14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
@@ -603,6 +605,10 @@ def recapture_months(args: argparse.Namespace, environ: Mapping[str, str]) -> in
     finally:
         engine.dispose()
     for result in results:
+        if result.gaps:  # the codes only: a to-do's text can carry amounts
+            gaps = ", ".join(result.gaps)
+            print(f"{result.month}: übersprungen, Monatsabschluss mit Lücken ({gaps})")
+            continue
         if result.run is None and not result.refused:
             print(f"{result.month}: kein gespeicherter Monatsabschluss, übersprungen")
             continue

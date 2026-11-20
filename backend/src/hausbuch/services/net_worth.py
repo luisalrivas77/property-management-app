@@ -738,8 +738,8 @@ def _before_handover(
                 NetWorthTodo(
                     code=T.LOAN_PAYOUT_MISSING,
                     text=(
-                        f"Die Auszahlung des Darlehens „{loan.lender}“ ist nicht gebucht; bis "
-                        "zur Übergabe fehlt seine Restschuld im Nettovermögen."
+                        f"Keine Auszahlung ist mit dem Darlehen „{loan.lender}“ verknüpft; bis zur "
+                        "Übergabe fehlt seine Restschuld im Nettovermögen."
                     ),
                     action="Zu prüfen öffnen",
                     href="/inbox",

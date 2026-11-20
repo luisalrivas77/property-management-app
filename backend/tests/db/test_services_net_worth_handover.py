@@ -5,6 +5,7 @@ advance's label and notes, the missing payout leaving the month-end incomplete, 
 loan-to-value naming the advance as its source. Invented owners A and B, bank and amounts."""
 
 import hashlib
+import re
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -12,11 +13,14 @@ from decimal import Decimal
 import fixture_models_phase6 as phase6
 import pytest
 from db.db_support import TEST_IBAN_KEY
+from db.test_cli_evals_report import _owner_url
 from db.test_services_net_worth import _import
-from sqlalchemy import insert
+from sqlalchemy import func, insert, select
 
+from hausbuch import cli
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.db.tables import valuation_snapshot as snapshot_table
 from hausbuch.rules.health import figures as F
 from hausbuch.schemas.allocation import AllocationMethod
 from hausbuch.schemas.bank import AccountCreate
@@ -105,14 +109,15 @@ def _ledger(run, ws, without=(), extra=(), shares=True):
         now=NOW,
     ).id
 
-    def booked(ctx):
-        imports = {
-            name: _import(ctx, account, date(2026, 5, 1), date(2026, 9, 30))
-            for name, account in accounts.items()
-        }
-        for a in [*FIXTURE.allocations, *extra]:
-            if a.id in without:
-                continue
+    imports: dict[str, uuid.UUID] = {}
+
+    def booked(ctx, allocations):
+        if not imports:
+            imports.update(
+                (name, _import(ctx, account, date(2026, 5, 1), date(2026, 9, 30)))
+                for name, account in accounts.items()
+            )
+        for a in allocations:
             tx = ctx.conn.execute(
                 insert(transaction_table)
                 .values(
@@ -144,8 +149,14 @@ def _ledger(run, ws, without=(), extra=(), shares=True):
                 )
             )
 
-    run(ws, booked, now=NOW)
-    return {"owners": owners, "property": prop, "loan": loan}
+    run(ws, booked, [a for a in [*FIXTURE.allocations, *extra] if a.id not in without], now=NOW)
+
+    def book(*names):
+        """Book the fixture's allocations `names` later (a line confirmed after a month-end
+        was stored)."""
+        run(ws, booked, [a for a in FIXTURE.allocations if a.id in names], now=NOW)
+
+    return {"owners": owners, "property": prop, "loan": loan, "book": book}
 
 
 def _check(seen, case, ids):
@@ -203,7 +214,7 @@ def test_the_missing_payout_leaves_the_month_end_incomplete(run, read, fresh_wor
     seen = read(ws, net_worth.net_worth, date(2026, 5, 31))
     todo = next(t for t in seen.todos if t.code is T.LOAN_PAYOUT_MISSING)
     assert todo.text == (
-        f"Die Auszahlung des Darlehens „{FIXTURE.loan.lender}“ ist nicht gebucht; bis zur "
+        f"Keine Auszahlung ist mit dem Darlehen „{FIXTURE.loan.lender}“ verknüpft; bis zur "
         "Übergabe fehlt seine Restschuld im Nettovermögen."
     )
     assert (todo.action, todo.href) == ("Zu prüfen öffnen", "/inbox")
@@ -354,3 +365,66 @@ def test_an_advance_without_shares_raises_the_shares_todo(run, read, fresh_works
     assert [t.code for t in seen.todos] == [T.PROPERTY_SHARES_MISSING]
     assert set(seen.by_owner.values()) == {Decimal("0.00")}
     assert seen.unassigned == [ids["property"]]
+
+
+class _November(datetime):
+    """The CLI's clock on 2 Nov 2026, a day after the older run (May 2026 has ended)."""
+
+    @classmethod
+    def now(cls, tz=None):  # noqa: ANN001, ANN206
+        return datetime(2026, 11, 2, 5, 0, tzinfo=UTC).astimezone(tz)
+
+
+def _runs(conn) -> int:
+    return conn.execute(
+        select(func.count(func.distinct(snapshot_table.c.net_worth_run_id)))
+    ).scalar_one()
+
+
+def _recapture(ws, dbname, capsys) -> list[str]:
+    argv = ["recapture-months", "--workspace", str(ws), "--from", "2026-05", "--to", "2026-05"]
+    assert cli.main(argv, {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}) == cli.EXIT_OK
+    return capsys.readouterr().out.splitlines()
+
+
+def test_recapture_stores_a_month_before_the_handover_again(
+    run, read, fresh_workspaces, dbname, monkeypatch, capsys
+):
+    """D265 (5): a month-end before the handover stored while the private down payment was
+    not yet confirmed (the advance 150000, the payout 150000: nothing of the own money) is
+    captured again once it is: one new run, its two rows netting to the own money paid; a
+    second recapture changes nothing. No amount is printed."""
+    ws, _ = fresh_workspaces
+    ids = _ledger(run, ws, without=("down_payment",))
+    may = date(2026, 5, 31)
+    old = run(ws, net_worth.capture_month_end, may, now=NOW)
+    assert old.run.rows == 2 and read(ws, net_worth.month_end_figure, old.run).total == 0
+    ids["book"]("down_payment")
+    monkeypatch.setattr(cli, "datetime", _November)
+
+    assert _recapture(ws, dbname, capsys) == ["2026-05: Monatsabschluss neu festgehalten"]
+    assert read(ws, _runs) == 2
+    new = read(ws, net_worth.latest_run, may)
+    assert new.net_worth_run_id != old.run.net_worth_run_id and new.rows == 2
+    figure = read(ws, net_worth.month_end_figure, new)
+    assert figure.total == figure.property_net == Decimal("15000.00")  # the own money
+
+    out = _recapture(ws, dbname, capsys)
+    assert out == ["2026-05: Monatsabschluss unverändert"]
+    assert read(ws, _runs) == 2
+    assert not any(re.search(r"\d+[.,]\d{2}\b|€", line) for line in out)
+
+
+def test_recapture_skips_a_month_whose_payout_is_missing(
+    run, read, fresh_workspaces, dbname, monkeypatch, capsys
+):
+    """D265 amended (b): with the loan's payout not linked, the month-end has a gap: nothing
+    is captured, the gap's code is printed, never its text (it can carry amounts)."""
+    ws, _ = fresh_workspaces
+    _ledger(run, ws, without=("first_payout",))
+    run(ws, net_worth.capture_month_end, date(2026, 5, 31), now=NOW)  # an older run
+    monkeypatch.setattr(cli, "datetime", _November)
+    assert _recapture(ws, dbname, capsys) == [
+        "2026-05: übersprungen, Monatsabschluss mit Lücken (net_worth.loan_payout_missing)"
+    ]
+    assert read(ws, _runs) == 1
