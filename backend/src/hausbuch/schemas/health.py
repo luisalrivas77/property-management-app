@@ -93,6 +93,7 @@ class HealthTodoCode(StrEnum):
     SCENARIO_CHECK = "scenario_check"  # „Szenario prüfen“ (§7.3)
     RATE_MISSING = "rate_missing"  # „Annahme eintragen“ (§7.5 (1))
     INCOME_CHANGE_LINK = "income_change_link"  # an income change beside Eigentümer (Q-O141)
+    UNCATEGORIZED_LINES = "uncategorized_lines"  # „N Zahlungen einordnen“ (phase 10 D272 (4))
 
 
 class HealthTodo(Schema):

@@ -16,9 +16,10 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from .allocation import AllocationCategory
+from .budget import BudgetTargets
 from .common import _STRING_ONLY, Money, NonNegativeMoney, Schema, _string_schema
 from .health import BandLimits, HealthTodo, Reserve, TargetMonths, YearMonth, is_month_end
-from .household import HouseholdGroup
+from .household import BudgetClass, HouseholdGroup
 from .household import SavingsRate as Ratio  # signed, four places
 
 # The buffer kept back from the free cash (D244, §7.3): 0 to 50 %, one place.
@@ -225,6 +226,13 @@ class HouseholdLevers(Schema):
     net_worth_years: int = Field(default=10, ge=1, le=30)
     bands: list[BandLimits] = Field(default_factory=list)  # confirmed limits (D250 (3))
     spending_changes: list[SpendingChange] = Field(default_factory=list)  # D263, §7.6
+    # Phase 10 D274: the household's own budget targets and its moves of a code to the other
+    # class, both empty by default so every row stored before still validates. Only the shape
+    # is checked here: which codes may be moved is refused when a scenario is saved
+    # (services.household_scenarios.check_levers), and rules/budget ignores a stored move the
+    # taxonomy no longer allows, so a later taxonomy change never breaks a stored row's read.
+    budget_targets: BudgetTargets = Field(default_factory=BudgetTargets)
+    budget_class_overrides: dict[AllocationCategory, BudgetClass] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _unique(self) -> Self:
@@ -584,9 +592,12 @@ class SpendingComparison(Schema):
 
 
 class HouseholdPlanPreview(Schema):
-    """POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored."""
+    """POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored.
+    `scenario_id`: the row previewed (its levers replaced; what is carried from it is not
+    refused), else the default scenario in force."""
 
     levers: HouseholdLevers
+    scenario_id: UUID | None = None
 
 
 class HouseholdPlan(Schema):

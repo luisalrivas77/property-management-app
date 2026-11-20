@@ -1,0 +1,86 @@
+# Phase 10 D275, D276, §3: the published reference points the goals sheet shows under
+# „Zum Vergleich“. Never a default and never a target: a split's button only writes its three
+# numbers into the form, and nothing fills the housing target. Each entry keeps its source's
+# own denominator (what it is a share of) and says why it is not the app's figure.
+#
+# This file sits outside rules/health/ and rules/plan/ on purpose: services.health.rule_version()
+# hashes those two folders, and a stored key-figure snapshot must not change version because a
+# reference text changed. Read on 20 Nov 2026 (docs/phases/phase-10.md §3); no web address is
+# kept, since none was recorded with the spec.
+version: 1
+references:
+  - key: split_50_30_20
+    kind: split
+    label: "50/30/20"
+    source: "Elizabeth Warren, Amelia Warren Tyagi: All Your Worth (2005)"
+    read_on: 2026-11-20
+    measures: "Notwendiges, Wünsche und Sparen als Anteile am Nettoeinkommen."
+    does_not_measure: >-
+      Eine Faustregel aus den USA; keine deutsche Behörde legt eine Aufteilung fest. Euer
+      Einkommen in Hausbuch enthält auch das Ergebnis der Wohnung.
+    needs: "50"
+    wants: "30"
+    saving: "20"
+  - key: split_60_20_20
+    kind: split
+    label: "60/20/20"
+    source: "Sparkasse.de"
+    read_on: 2026-11-20
+    measures: >-
+      Notwendiges, Wünsche und Sparen als Anteile am Nettoeinkommen; von der Sparkasse neben
+      50/30/20 genannt, wenn die festen Kosten hoch sind.
+    does_not_measure: "Eine Faustregel, keine Vorgabe; keine deutsche Behörde legt eine Aufteilung fest."
+    needs: "60"
+    wants: "20"
+    saving: "20"
+  - key: split_70_20_10
+    kind: split
+    label: "70/20/10"
+    source: "Sparkasse.de"
+    read_on: 2026-11-20
+    measures: >-
+      Notwendiges, Wünsche und Sparen als Anteile am Nettoeinkommen; von der Sparkasse neben
+      50/30/20 genannt, wenn die festen Kosten hoch sind.
+    does_not_measure: "Eine Faustregel, keine Vorgabe; keine deutsche Behörde legt eine Aufteilung fest."
+    needs: "70"
+    wants: "20"
+    saving: "10"
+  - key: housing_iwu_mieterbund
+    kind: housing
+    label: "Mietbelastung (IWU für den Deutschen Mieterbund)"
+    source: "IWU-Studie für den Deutschen Mieterbund, Stand 30. März 2026"
+    read_on: 2026-11-20
+    measures: "Die Bruttokaltmiete eines Mieterhaushalts als Anteil an seinem Nettohaushaltseinkommen."
+    does_not_measure: >-
+      Nicht dieselbe Zahl wie euer Wohnanteil: Hausbuch zählt alle Ausgaben der Gruppe Wohnen
+      (auch Energie und Rundfunkbeitrag) und teilt durch euer Einkommen samt dem Ergebnis der
+      Wohnung.
+    thresholds:
+      - {up_to: "30", label: "vertretbar"}
+      - {above: "30", up_to: "40", label: "hoch"}
+      - {above: "40", label: "Überlastung"}
+  - key: housing_destatis_eu_silc
+    kind: housing
+    label: "Wohnkostenüberbelastung (Destatis, EU-SILC)"
+    source: "Statistisches Bundesamt (Destatis), EU-SILC"
+    read_on: 2026-11-20
+    measures: >-
+      Alle Wohnkosten abzüglich Zuschüssen (Miete, Zinsen und Grundsteuer der Eigentümer,
+      Energie, Instandhaltung) als Anteil am verfügbaren Haushaltseinkommen.
+    does_not_measure: >-
+      Nicht dieselbe Zahl wie euer Wohnanteil: Destatis rechnet mit dem verfügbaren
+      Haushaltseinkommen und allen Wohnkosten, Hausbuch mit den Ausgaben der Gruppe Wohnen und
+      eurem Einkommen samt dem Ergebnis der Wohnung.
+    thresholds:
+      - {above: "40", label: "Wohnkostenüberbelastung"}
+  - key: housing_sparkasse_third
+    kind: housing
+    label: "Faustregel: höchstens ein Drittel"
+    source: "Sparkasse"
+    read_on: 2026-11-20
+    measures: "Die Kaltmiete als Anteil am Nettoeinkommen."
+    does_not_measure: >-
+      Eine Faustregel zur Kaltmiete allein; euer Wohnanteil enthält alle Ausgaben der Gruppe
+      Wohnen.
+    thresholds:
+      - {up_to: "33.3", label: "höchstens ein Drittel"}

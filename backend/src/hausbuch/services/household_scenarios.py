@@ -36,6 +36,9 @@ beyond HouseholdScenarioCreate's own validator (HouseholdLevers checks the range
   „Szenario prüfen“ to-do instead. The other refusals are HouseholdLevers' own. A change
   carried unaltered keeps its stored `mean_at_save`; a new or altered one gets the code's
   mean over today's window (0 without three closed months), whatever the request carried.
+- budget class overrides (phase 10 D272 (2)): a code that cannot move between Notwendiges and
+  Wünsche (a one-off code, `uncategorized`, a code without a class;
+  `household_scenario.budget_class_invalid`). rules/budget ignores such a stored override.
 
 A withdrawal is not re-checked against the accounts, the horizon or the spending: it only
 ends a row, and it repeats the withdrawn row's levers with their `mean_at_save` as stored.
@@ -46,7 +49,7 @@ Writes of one workspace are serialised by a transaction-scoped advisory lock, so
 default" check cannot race; `supersedes_id` is UNIQUE in the table as well.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -57,9 +60,11 @@ from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import household_scenario as scenario_table
+from hausbuch.rules.budget.budget import refused_overrides
 from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.errors import (
     HOUSEHOLD_SCENARIO_ACCOUNT_INVALID,
+    HOUSEHOLD_SCENARIO_BUDGET_CLASS_INVALID,
     HOUSEHOLD_SCENARIO_NOT_CURRENT,
     HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE,
     HOUSEHOLD_SCENARIO_SPENDING_INVALID,
@@ -71,6 +76,7 @@ from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AccountKind, EntityType
 from hausbuch.schemas.events import EventType, HouseholdScenarioRecorded
 from hausbuch.schemas.health import month_of
+from hausbuch.schemas.household import BudgetClass
 from hausbuch.schemas.plan import (
     HouseholdLevers,
     HouseholdScenario,
@@ -152,7 +158,13 @@ def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> House
     if not data.withdrawn:
         today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
         previous = [] if old is None else old.levers.spending_changes
-        means = check_levers(ctx.conn, data.levers, today, previous=previous)
+        means = check_levers(
+            ctx.conn,
+            data.levers,
+            today,
+            previous=previous,
+            previous_overrides=carried_overrides(data.levers, old, default_scenario(ctx.conn)),
+        )
         if data.is_default:
             _check_one_default(ctx.conn, data)
         if data.levers.spending_changes:
@@ -162,6 +174,20 @@ def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> House
     return _insert(ctx, data)
 
 
+def carried_overrides(
+    levers: HouseholdLevers, *rows: HouseholdScenario | None
+) -> dict[AllocationCategory, BudgetClass]:
+    """The levers' budget class overrides that equal one of `rows`' (a save: the row it
+    supersedes and the default in force; the preview: the row previewed), so they are carried,
+    never refused (phase 10 D272 (2)): a scenario created beside the default with the
+    default's overrides copied into it does not fail on a code that stopped being movable."""
+    return {
+        code: cls
+        for code, cls in levers.budget_class_overrides.items()
+        if any(r is not None and r.levers.budget_class_overrides.get(code) is cls for r in rows)
+    }
+
+
 def check_levers(
     conn: Connection,
     levers: HouseholdLevers,
@@ -169,6 +195,7 @@ def check_levers(
     reads: dict[str, MonthRead] | None = None,
     *,
     previous: Sequence[SpendingChange] = (),
+    previous_overrides: Mapping[AllocationCategory, BudgetClass] | None = None,
 ) -> dict[AllocationCategory, Decimal]:
     """The checks of a scenario's levers beyond HouseholdLevers' own (the module doc), for a
     new row and for the preview; returns the codes' means over today's window (§7.6 (2)).
@@ -176,8 +203,11 @@ def check_levers(
     reads its plan uses); read here once, and only for one-offs or spending changes.
     `previous`: the spending changes of the row a save supersedes (for the preview the default
     in force); only a change new or altered against them is refused as a percent of
-    nothing (§7.6 (1) amended)."""
+    nothing (§7.6 (1) amended). `previous_overrides`: the overrides counted as carried
+    (`carried_overrides`); one carried unaltered is not refused (phase 10 D272 (2), as a
+    carried spending change)."""
     _check_accounts(conn, levers)
+    _check_budget_classes(levers, previous_overrides or {})
     if not levers.one_offs and not levers.spending_changes:
         return {}
     if reads is None:
@@ -194,6 +224,29 @@ def check_levers(
             "measured spending in the window",
         )
     return means
+
+
+def _check_budget_classes(
+    levers: HouseholdLevers, previous: Mapping[AllocationCategory, BudgetClass]
+) -> None:
+    """Phase 10 D272 (2): a code moved to the other class must be movable: it has a class and
+    is not one-off (rules.budget.budget.movable). rules/budget ignores such an override on
+    read, so a stored row still reads; a save carrying one new or altered against `previous`
+    (the row it supersedes) is refused, one carried unaltered is not, so a code that stops
+    being movable never blocks saving the other levers."""
+    added = {
+        code: cls
+        for code, cls in levers.budget_class_overrides.items()
+        if previous.get(code) is not cls
+    }
+    refused = refused_overrides(added)
+    if refused:
+        raise RuleViolationError(
+            [HOUSEHOLD_SCENARIO_BUDGET_CLASS_INVALID],
+            "a budget class for "
+            + ", ".join(f"{c.value} ({CATEGORY_LABEL[c]})" for c in refused)
+            + ", which cannot be moved between Notwendiges and Wünsche",
+        )
 
 
 def window_means(reads: dict[str, MonthRead]) -> dict[AllocationCategory, Decimal]:

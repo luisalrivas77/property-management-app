@@ -1041,6 +1041,13 @@ class ProposedInput(StrEnum):
     TAX_PRIVATE_COST = "tax_input:private_cost"
 
 
+class BudgetClass(StrEnum):
+    """Phase 10 D272: where a spending euro sits in the Budget, Notwendiges or Wünsche."""
+
+    NEED = "need"
+    WANT = "want"
+
+
 class HouseholdCode(Schema):
     """One row of rules/household/taxonomy.py's table."""
 
@@ -1050,6 +1057,8 @@ class HouseholdCode(Schema):
     proposes: ProposedInput | None = None
     # Phase 9 D236: one-off spending (hh_car_purchase), out of the regular spending.
     one_off: bool = False
+    # Phase 10 D272: every spending or tax code's default class (Q-O176), None elsewhere.
+    budget_class: BudgetClass | None = None
 
 
 class HouseholdCashflow(Schema):

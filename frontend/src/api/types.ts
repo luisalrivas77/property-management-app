@@ -1760,6 +1760,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/{account_id}/month": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Account Month Get
+         * @description Phase 10 D269: the month's balances, Eingänge and Ausgänge without the transfers
+         *     between own accounts, the transfers, and how many lines are not yet booked; the running
+         *     month to today (Berlin). 404 for another workspace's account; 422
+         *     account.month_in_future for a month after the running one.
+         */
+        get: operations["account_month_get_api_accounts__account_id__month_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/transactions": {
         parameters: {
             query?: never;
@@ -2541,6 +2564,23 @@ export interface paths {
         put?: never;
         /** Household Plan Explain */
         post: operations["household_plan_explain_api_household_plan_explanation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/household-budget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Household Budget Get */
+        get: operations["household_budget_get_api_household_budget_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4094,6 +4134,65 @@ export interface components {
          */
         AccountKind: "bank_current" | "bank_savings" | "depot" | "exchange" | "wallet" | "credit_card";
         /**
+         * AccountMonth
+         * @description GET /accounts/{id}/month?month=YYYY-MM (D269). The balances are the net worth's
+         *     (services.net_worth): opening balance plus the lines through the day its statements are
+         *     reconciled to, `as_of` that day; None for a month ending before the account's opening
+         *     balance, and for an account kind without a euro balance of lines (an exchange, a wallet).
+         *     Eingänge and Ausgänge leave out the transfers between own accounts, which have their own
+         *     figures; a line not yet confirmed counts by its sign and is counted in `open_lines`.
+         *     Amounts are positive sums of each direction. A duplicate merged away counts nowhere.
+         */
+        AccountMonth: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Month */
+            month: string;
+            /** Running */
+            running: boolean;
+            /** Opening Balance */
+            opening_balance?: string | null;
+            /** Opening As Of */
+            opening_as_of?: string | null;
+            /** Closing Balance */
+            closing_balance?: string | null;
+            /** Closing As Of */
+            closing_as_of?: string | null;
+            /**
+             * Incoming
+             * @default 0.00
+             */
+            incoming: string;
+            /**
+             * Outgoing
+             * @default 0.00
+             */
+            outgoing: string;
+            /**
+             * Transfers In
+             * @default 0.00
+             */
+            transfers_in: string;
+            /**
+             * Transfers Out
+             * @default 0.00
+             */
+            transfers_out: string;
+            /**
+             * Lines
+             * @default 0
+             */
+            lines: number;
+            /**
+             * Open Lines
+             * @default 0
+             */
+            open_lines: number;
+        };
+        /**
          * AccountOwnership
          * @description account_ownership row (append-only; a change is a new set under a new
          *     effective_from, an old row's superseded_by names the row that replaced it).
@@ -5523,6 +5622,220 @@ export interface components {
             amount: string;
             /** Sources */
             sources?: components["schemas"]["hausbuch__schemas__tax__SourceRef"][];
+        };
+        /**
+         * BudgetClass
+         * @description Phase 10 D272: where a spending euro sits in the Budget, Notwendiges or Wünsche.
+         * @enum {string}
+         */
+        BudgetClass: "need" | "want";
+        /**
+         * BudgetCode
+         * @description One code inside a line or the housing share: its window mean (largest remainder within
+         *     its line, D273), the class shown (the override, else the taxonomy's) and the default.
+         */
+        BudgetCode: {
+            category: components["schemas"]["AllocationCategory"];
+            group: components["schemas"]["HouseholdGroup"];
+            budget_class?: components["schemas"]["BudgetClass"] | null;
+            default_class?: components["schemas"]["BudgetClass"] | null;
+            /**
+             * Overridden
+             * @default false
+             */
+            overridden: boolean;
+            /** Monthly */
+            monthly: string;
+            /** Total */
+            total: string;
+        };
+        /**
+         * BudgetHousing
+         * @description D276: the window's spending in the Wohnen group ÷ E; an override does not move it.
+         */
+        BudgetHousing: {
+            /** Monthly */
+            monthly: string;
+            /** Total */
+            total: string;
+            /** Share */
+            share?: string | null;
+            /** Codes */
+            codes?: components["schemas"]["BudgetCode"][];
+            /** Target */
+            target?: string | null;
+            mark?: components["schemas"]["BudgetMark"] | null;
+        };
+        /**
+         * BudgetIncome
+         * @description E over the window (D232, D273): its monthly mean, of which the flat's result.
+         */
+        BudgetIncome: {
+            /** Monthly */
+            monthly: string;
+            /** Total */
+            total: string;
+            /** Rental Monthly */
+            rental_monthly: string;
+            /** Private Monthly */
+            private_monthly: string;
+        };
+        /** BudgetLine */
+        BudgetLine: {
+            key: components["schemas"]["BudgetLineKey"];
+            /** Monthly */
+            monthly: string;
+            /** Total */
+            total: string;
+            /** Share */
+            share?: string | null;
+            /** Codes */
+            codes?: components["schemas"]["BudgetCode"][];
+            /** Target */
+            target?: string | null;
+            mark?: components["schemas"]["BudgetMark"] | null;
+        };
+        /**
+         * BudgetLineKey
+         * @description The lines of the partition, in this order on screen (D272, D273).
+         * @enum {string}
+         */
+        BudgetLineKey: "need" | "want" | "one_off" | "uncategorized" | "saving";
+        /**
+         * BudgetMark
+         * @description A line's or the housing share's mark against its target, with the sentence that says by
+         *     how many points and euros a month it meets or misses it (D274). Computed on read.
+         */
+        BudgetMark: {
+            colour: components["schemas"]["BudgetMarkColour"];
+            /** Target */
+            target: string;
+            /** Gap Points */
+            gap_points: string;
+            /** Gap Monthly */
+            gap_monthly: string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * BudgetMarkColour
+         * @description D274: green when the target is met, amber when it is missed; never red.
+         * @enum {string}
+         */
+        BudgetMarkColour: "green" | "amber";
+        /**
+         * BudgetMonth
+         * @description One window month's partition, exact sums (D273 per month): the lines add up to E.
+         */
+        BudgetMonth: {
+            /** Month */
+            month: string;
+            /** Income */
+            income: string;
+            /** Need */
+            need: string;
+            /** Want */
+            want: string;
+            /** One Off */
+            one_off: string;
+            /** Uncategorized */
+            uncategorized: string;
+            /** Saving */
+            saving: string;
+        };
+        /**
+         * BudgetReference
+         * @description One published reference point of rules/budget/references.yaml (D275, D276, §3): never a
+         *     default, never a target until the household saves one.
+         */
+        BudgetReference: {
+            /** Key */
+            key: string;
+            kind: components["schemas"]["BudgetReferenceKind"];
+            /** Label */
+            label: string;
+            /** Source */
+            source: string;
+            /**
+             * Read On
+             * Format: date
+             */
+            read_on: string;
+            /** Measures */
+            measures: string;
+            /** Does Not Measure */
+            does_not_measure: string;
+            /** Needs */
+            needs?: string | null;
+            /** Wants */
+            wants?: string | null;
+            /** Saving */
+            saving?: string | null;
+            /** Thresholds */
+            thresholds?: components["schemas"]["BudgetThreshold"][];
+        };
+        /**
+         * BudgetReferenceKind
+         * @enum {string}
+         */
+        BudgetReferenceKind: "split" | "housing";
+        /**
+         * BudgetTargets
+         * @description The household's own targets, each a percent of the income with one place, None while
+         *     not set (no mark then). Needs, wants and the housing share are maxima, saving a minimum.
+         *     No default and no proposal: a reference's one tap only fills the form (D275).
+         */
+        BudgetTargets: {
+            /** Needs Max */
+            needs_max?: string | null;
+            /** Wants Max */
+            wants_max?: string | null;
+            /** Saving Min */
+            saving_min?: string | null;
+            /** Housing Max */
+            housing_max?: string | null;
+        };
+        /**
+         * BudgetThreshold
+         * @description One band of a housing reference: from `above` (exclusive) up to `up_to` (inclusive),
+         *     in percent of that source's own denominator; None is open.
+         */
+        BudgetThreshold: {
+            /** Above */
+            above?: string | null;
+            /** Up To */
+            up_to?: string | null;
+            /** Label */
+            label: string;
+        };
+        /**
+         * BudgetView
+         * @description GET /household-budget?scenario_id= (§6). Below three closed months, `income`, `months`
+         *     and `lines` are empty and a to-do says why (D231); with ΣE ≤ 0 the lines stand without
+         *     shares or marks and `no_shares` says why (D273).
+         */
+        BudgetView: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Scenario Id */
+            scenario_id?: string | null;
+            window: components["schemas"]["Window"];
+            /** Months */
+            months?: components["schemas"]["BudgetMonth"][];
+            income?: components["schemas"]["BudgetIncome"] | null;
+            /** Lines */
+            lines?: components["schemas"]["BudgetLine"][];
+            housing?: components["schemas"]["BudgetHousing"] | null;
+            targets?: components["schemas"]["BudgetTargets"];
+            /** No Shares */
+            no_shares?: string | null;
+            /** References */
+            references?: components["schemas"]["BudgetReference"][];
+            /** Todos */
+            todos?: components["schemas"]["HealthTodo"][];
         };
         /**
          * CarriedField
@@ -8055,7 +8368,7 @@ export interface components {
          * HealthTodoCode
          * @enum {string}
          */
-        HealthTodoCode: "month_end_missing" | "account_not_covered" | "lines_waiting" | "transfer_open" | "too_few_months" | "balance_stale" | "bands_unconfirmed" | "no_default_scenario" | "scenario_check" | "rate_missing" | "income_change_link";
+        HealthTodoCode: "month_end_missing" | "account_not_covered" | "lines_waiting" | "transfer_open" | "too_few_months" | "balance_stale" | "bands_unconfirmed" | "no_default_scenario" | "scenario_check" | "rate_missing" | "income_change_link" | "uncategorized_lines";
         /**
          * HiddenToken
          * @description GET /wallets/{id}/hidden-tokens (D187 (3)): a token held as spam, by its asset's name
@@ -8262,6 +8575,11 @@ export interface components {
             bands?: components["schemas"]["BandLimits"][];
             /** Spending Changes */
             spending_changes?: components["schemas"]["SpendingChange"][];
+            budget_targets?: components["schemas"]["BudgetTargets"];
+            /** Budget Class Overrides */
+            budget_class_overrides?: {
+                [key: string]: components["schemas"]["BudgetClass"];
+            };
         };
         /**
          * HouseholdMonth
@@ -8347,9 +8665,13 @@ export interface components {
         /**
          * HouseholdPlanPreview
          * @description POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored.
+         *     `scenario_id`: the row previewed (its levers replaced; what is carried from it is not
+         *     refused), else the default scenario in force.
          */
         HouseholdPlanPreview: {
             levers: components["schemas"]["HouseholdLevers"];
+            /** Scenario Id */
+            scenario_id?: string | null;
         };
         /**
          * HouseholdScenario
@@ -18941,6 +19263,39 @@ export interface operations {
             };
         };
     };
+    account_month_get_api_accounts__account_id__month_get: {
+        parameters: {
+            query: {
+                month: string;
+            };
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountMonth"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     account_transactions_api_accounts__account_id__transactions_get: {
         parameters: {
             query?: {
@@ -20519,6 +20874,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanExplanationQueued"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    household_budget_get_api_household_budget_get: {
+        parameters: {
+            query?: {
+                scenario_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetView"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

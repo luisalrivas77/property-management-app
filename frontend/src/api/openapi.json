@@ -4849,6 +4849,57 @@
         }
       }
     },
+    "/api/accounts/{account_id}/month": {
+      "get": {
+        "summary": "Account Month Get",
+        "description": "Phase 10 D269: the month's balances, Eingänge and Ausgänge without the transfers\nbetween own accounts, the transfers, and how many lines are not yet booked; the running\nmonth to today (Berlin). 404 for another workspace's account; 422\naccount.month_in_future for a month after the running one.",
+        "operationId": "account_month_get_api_accounts__account_id__month_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountMonth"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/accounts/{account_id}/transactions": {
       "get": {
         "summary": "Account Transactions",
@@ -6959,6 +7010,53 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PlanExplanationQueued"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/household-budget": {
+      "get": {
+        "summary": "Household Budget Get",
+        "operationId": "household_budget_get_api_household_budget_get",
+        "parameters": [
+          {
+            "name": "scenario_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scenario Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetView"
                 }
               }
             }
@@ -11021,6 +11119,117 @@
         "title": "AccountKind",
         "description": "account.kind (migration 0025, phase 6 D156). `wallet` was in the CHECK from the start\nso phase 7 adds no migration for it; create_account takes it since phase 7 step 1 (D179).\nAccountSource.AGGREGATOR stays refused (account.kind_not_available)."
       },
+      "AccountMonth": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "running": {
+            "type": "boolean",
+            "title": "Running"
+          },
+          "opening_balance": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Balance"
+          },
+          "opening_as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening As Of"
+          },
+          "closing_balance": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Balance"
+          },
+          "closing_as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing As Of"
+          },
+          "incoming": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Incoming",
+            "default": "0.00"
+          },
+          "outgoing": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Outgoing",
+            "default": "0.00"
+          },
+          "transfers_in": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Transfers In",
+            "default": "0.00"
+          },
+          "transfers_out": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Transfers Out",
+            "default": "0.00"
+          },
+          "lines": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Lines",
+            "default": 0
+          },
+          "open_lines": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Open Lines",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "month",
+          "running"
+        ],
+        "title": "AccountMonth",
+        "description": "GET /accounts/{id}/month?month=YYYY-MM (D269). The balances are the net worth's\n(services.net_worth): opening balance plus the lines through the day its statements are\nreconciled to, `as_of` that day; None for a month ending before the account's opening\nbalance, and for an account kind without a euro balance of lines (an exchange, a wallet).\nEingänge and Ausgänge leave out the transfers between own accounts, which have their own\nfigures; a line not yet confirmed counts by its sign and is counted in `open_lines`.\nAmounts are positive sums of each direction. A duplicate merged away counts nowhere."
+      },
       "AccountOwnership": {
         "properties": {
           "id": {
@@ -14656,6 +14865,629 @@
           "amount"
         ],
         "title": "BridgeRow"
+      },
+      "BudgetClass": {
+        "type": "string",
+        "enum": [
+          "need",
+          "want"
+        ],
+        "title": "BudgetClass",
+        "description": "Phase 10 D272: where a spending euro sits in the Budget, Notwendiges or Wünsche."
+      },
+      "BudgetCode": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/AllocationCategory"
+          },
+          "group": {
+            "$ref": "#/components/schemas/HouseholdGroup"
+          },
+          "budget_class": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetClass"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_class": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetClass"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overridden": {
+            "type": "boolean",
+            "title": "Overridden",
+            "default": false
+          },
+          "monthly": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Monthly"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "group",
+          "monthly",
+          "total"
+        ],
+        "title": "BudgetCode",
+        "description": "One code inside a line or the housing share: its window mean (largest remainder within\nits line, D273), the class shown (the override, else the taxonomy's) and the default."
+      },
+      "BudgetHousing": {
+        "properties": {
+          "monthly": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Monthly"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total"
+          },
+          "share": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share"
+          },
+          "codes": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetCode"
+            },
+            "type": "array",
+            "title": "Codes"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "mark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetMark"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "monthly",
+          "total"
+        ],
+        "title": "BudgetHousing",
+        "description": "D276: the window's spending in the Wohnen group ÷ E; an override does not move it."
+      },
+      "BudgetIncome": {
+        "properties": {
+          "monthly": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Monthly"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total"
+          },
+          "rental_monthly": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Rental Monthly"
+          },
+          "private_monthly": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Private Monthly"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "monthly",
+          "total",
+          "rental_monthly",
+          "private_monthly"
+        ],
+        "title": "BudgetIncome",
+        "description": "E over the window (D232, D273): its monthly mean, of which the flat's result."
+      },
+      "BudgetLine": {
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/BudgetLineKey"
+          },
+          "monthly": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Monthly"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total"
+          },
+          "share": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,4})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share"
+          },
+          "codes": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetCode"
+            },
+            "type": "array",
+            "title": "Codes"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "mark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetMark"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "monthly",
+          "total"
+        ],
+        "title": "BudgetLine"
+      },
+      "BudgetLineKey": {
+        "type": "string",
+        "enum": [
+          "need",
+          "want",
+          "one_off",
+          "uncategorized",
+          "saving"
+        ],
+        "title": "BudgetLineKey",
+        "description": "The lines of the partition, in this order on screen (D272, D273)."
+      },
+      "BudgetMark": {
+        "properties": {
+          "colour": {
+            "$ref": "#/components/schemas/BudgetMarkColour"
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,1})?$",
+            "title": "Target"
+          },
+          "gap_points": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,1})?$",
+            "title": "Gap Points"
+          },
+          "gap_monthly": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Gap Monthly"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "colour",
+          "target",
+          "gap_points",
+          "gap_monthly",
+          "text"
+        ],
+        "title": "BudgetMark",
+        "description": "A line's or the housing share's mark against its target, with the sentence that says by\nhow many points and euros a month it meets or misses it (D274). Computed on read."
+      },
+      "BudgetMarkColour": {
+        "type": "string",
+        "enum": [
+          "green",
+          "amber"
+        ],
+        "title": "BudgetMarkColour",
+        "description": "D274: green when the target is met, amber when it is missed; never red."
+      },
+      "BudgetMonth": {
+        "properties": {
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "title": "Month"
+          },
+          "income": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Income"
+          },
+          "need": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Need"
+          },
+          "want": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Want"
+          },
+          "one_off": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "One Off"
+          },
+          "uncategorized": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Uncategorized"
+          },
+          "saving": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Saving"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "month",
+          "income",
+          "need",
+          "want",
+          "one_off",
+          "uncategorized",
+          "saving"
+        ],
+        "title": "BudgetMonth",
+        "description": "One window month's partition, exact sums (D273 per month): the lines add up to E."
+      },
+      "BudgetReference": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "title": "Key"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BudgetReferenceKind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "read_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Read On"
+          },
+          "measures": {
+            "type": "string",
+            "title": "Measures"
+          },
+          "does_not_measure": {
+            "type": "string",
+            "title": "Does Not Measure"
+          },
+          "needs": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Needs"
+          },
+          "wants": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wants"
+          },
+          "saving": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saving"
+          },
+          "thresholds": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetThreshold"
+            },
+            "type": "array",
+            "title": "Thresholds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "kind",
+          "label",
+          "source",
+          "read_on",
+          "measures",
+          "does_not_measure"
+        ],
+        "title": "BudgetReference",
+        "description": "One published reference point of rules/budget/references.yaml (D275, D276, §3): never a\ndefault, never a target until the household saves one."
+      },
+      "BudgetReferenceKind": {
+        "type": "string",
+        "enum": [
+          "split",
+          "housing"
+        ],
+        "title": "BudgetReferenceKind"
+      },
+      "BudgetTargets": {
+        "properties": {
+          "needs_max": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Needs Max"
+          },
+          "wants_max": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wants Max"
+          },
+          "saving_min": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saving Min"
+          },
+          "housing_max": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Housing Max"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BudgetTargets",
+        "description": "The household's own targets, each a percent of the income with one place, None while\nnot set (no mark then). Needs, wants and the housing share are maxima, saving a minimum.\nNo default and no proposal: a reference's one tap only fills the form (D275)."
+      },
+      "BudgetThreshold": {
+        "properties": {
+          "above": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above"
+          },
+          "up_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Up To"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "title": "BudgetThreshold",
+        "description": "One band of a housing reference: from `above` (exclusive) up to `up_to` (inclusive),\nin percent of that source's own denominator; None is open."
+      },
+      "BudgetView": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
+          "window": {
+            "$ref": "#/components/schemas/Window"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetMonth"
+            },
+            "type": "array",
+            "title": "Months"
+          },
+          "income": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetIncome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "housing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetHousing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targets": {
+            "$ref": "#/components/schemas/BudgetTargets"
+          },
+          "no_shares": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Shares"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetReference"
+            },
+            "type": "array",
+            "title": "References"
+          },
+          "todos": {
+            "items": {
+              "$ref": "#/components/schemas/HealthTodo"
+            },
+            "type": "array",
+            "title": "Todos"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "as_of",
+          "window"
+        ],
+        "title": "BudgetView",
+        "description": "GET /household-budget?scenario_id= (§6). Below three closed months, `income`, `months`\nand `lines` are empty and a to-do says why (D231); with ΣE ≤ 0 the lines stand without\nshares or marks and `no_shares` says why (D273)."
       },
       "CarriedField": {
         "properties": {
@@ -20945,7 +21777,8 @@
           "no_default_scenario",
           "scenario_check",
           "rate_missing",
-          "income_change_link"
+          "income_change_link",
+          "uncategorized_lines"
         ],
         "title": "HealthTodoCode"
       },
@@ -21402,6 +22235,19 @@
             },
             "type": "array",
             "title": "Spending Changes"
+          },
+          "budget_targets": {
+            "$ref": "#/components/schemas/BudgetTargets"
+          },
+          "budget_class_overrides": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BudgetClass"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/AllocationCategory"
+            },
+            "type": "object",
+            "title": "Budget Class Overrides"
           }
         },
         "additionalProperties": false,
@@ -21703,6 +22549,18 @@
         "properties": {
           "levers": {
             "$ref": "#/components/schemas/HouseholdLevers"
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
           }
         },
         "additionalProperties": false,
@@ -21711,7 +22569,7 @@
           "levers"
         ],
         "title": "HouseholdPlanPreview",
-        "description": "POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored."
+        "description": "POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored.\n`scenario_id`: the row previewed (its levers replaced; what is carried from it is not\nrefused), else the default scenario in force."
       },
       "HouseholdScenario": {
         "properties": {
