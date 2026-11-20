@@ -150,11 +150,11 @@ longest of the three) and unused width on a large computer screen.
 
 | File | What it shows, and what it changes against today |
 | --- | --- |
-| `layout-gallery.html` | Every draft below in one page with a switcher for direction and screen, phone and computer side by side; light and dark |
-| `14-A-nav.png` / `.html` | The phone menu, closed and open: a bottom bar with Übersicht, Zu prüfen (with its count), Haushalt, Anlagen and „Mehr“, which opens the rest grouped as in the sidebar. Today the eleven entries wrap over several lines at the top of every page |
+| `layout-gallery.html` | Every draft below in one page with a switcher for direction and screen, phone and computer side by side; the gallery's own frame follows the light or dark setting, the drafts inside it are drawn light |
+| `14-A-nav.png` / `.html` | The phone menu, closed and open: a bottom bar with Übersicht, Zu prüfen (with its count), Haushalt, Anlagen and „Mehr“, which opens the rest in groups (Geld, Immobilie, Steuern & Planung, Ablage). Today the sidebar is one flat list of eleven entries, which on the phone wraps over several lines at the top of every page |
 | `15-A-overview-phone.png` / `.html` | Übersicht on the phone: net worth with its sparkline, the four kinds of investment as a 2×2 grid, Zu prüfen with the coming dates, the three key figures in one row. Today the cards stack one per row below the wrapped menu |
 | `15-A-overview-desktop.png` / `.html` | Übersicht on the computer: a slimmer sidebar, net worth, Zu prüfen and the month's cash flow in the first row, a card per kind of investment with a link into its area, the key figures in one strip |
-| `16-A-table-phone.png` / `.html` | Konten › Umsätze on the phone as two-line rows (payee and amount, date with category and status), with the balance and filters above; no sideways scrolling. Today the seven-column table scrolls sideways |
+| `16-A-table-phone.png` / `.html` | Konten › Umsätze on the phone as two-line rows (payee and amount, date with category and status), with the balance and filters above; no sideways scrolling. Today the table (Buchungstag, Gegenseite, Verwendungszweck, Betrag, Zuordnung) sits in a box that scrolls sideways on a narrow screen |
 | `16-A-table-desktop.png` / `.html` | The same table on the computer, denser, with the account's balance above it |
 | `17-A-planning-phone.png` / `.html` | Planung › Haushalt on the phone: the four cards as a 2×2 grid, the box „Was eure Änderungen bewirken“ as stacked rows, every other section folded to its title and a one-line summary |
 | `17-A-planning-desktop.png` / `.html` | Planung › Haushalt on the computer in two columns, the sections folded except the levers and the ways to the reserve target |
@@ -186,10 +186,13 @@ Both were the options shown to Luis on 18 Nov 2026.
 under „Mehr“, because its daily task (deciding what a line is) happens in Zu prüfen, while
 Anlagen holds the investments by kind that Luis wants to see more of (the parked „overview by
 kind of investment“ in `docs/ARCHITECTURE.md`). Swapping Anlagen for Konten is a one-word
-change if he prefers it.
+change if he prefers it. The drafts' menus also name Immobilien, as the household design of 6 Nov 2026
+listed it; today's sidebar has no such entry (the flat is reached through links from Übersicht, Steuern, Planung and Mieter),
+so adding it would be part of the build.
 
-**Tables become rows on the phone.** Konten › Umsätze was drawn because it is the widest table
-(seven columns). On the phone each line becomes a row showing what decides something (payee,
+**Tables become rows on the phone.** Konten › Umsätze was drawn because it is the table looked at
+most and one of the wide ones; the drafts draw it with seven columns (Kategorie, Saldo and Status
+added to today's five), so the row pattern is tested on its widest form. On the phone each line becomes a row showing what decides something (payee,
 amount, category, status) and the rest (purpose, running balance) opens with a tap, so nothing
 scrolls sideways. The same pattern would apply to the other wide tables.
 
