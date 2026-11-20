@@ -210,7 +210,7 @@ function FundRow({ position, link }: { position: EtfPosition; link: LinkProps })
           "–"
         )}
       </span>
-      <span className="num asset-value">{position.value_today_eur != null ? f.money(position.value_today_eur) : t.notValued}</span>
+      <span className="num asset-value">{valueText(t, f, position)}</span>
       <span className="num asset-col" title={position.cost_eur == null ? t.costAfterSale : undefined}>
         {position.cost_eur != null ? f.money(position.cost_eur) : "–"}
       </span>
@@ -219,13 +219,25 @@ function FundRow({ position, link }: { position: EtfPosition; link: LinkProps })
   );
 }
 
-/** Why a fund shows no value, as a plain to-do (principle 7); "" when it has one. */
+/**
+ * A fund's value today; „nicht bewertet“ only when the server gives a reason, so a fund sold in
+ * full (no units today, no reason) shows „–“.
+ */
+function valueText(t: T, f: Formatter, position: EtfPosition): string {
+  if (position.value_today_eur != null) return f.money(position.value_today_eur);
+  return position.not_valued_reason ? t.notValued : "–";
+}
+
+/**
+ * Why a fund shows no value, as a plain to-do (principle 7), by the server's reason only; ""
+ * when it has a value or no reason (a fund sold in full).
+ */
 function valueNote(t: T, f: Formatter, position: EtfPosition): string {
   if (position.value_today_eur != null) return "";
   if (position.not_valued_reason === "valuation.not_valued") {
     return position.report_on ? t.noteReportMismatch(f.date(position.report_on)) : t.noteReportMismatchUndated;
   }
-  if (position.price == null) return t.noteNoPrice;
+  if (position.not_valued_reason === "price.no_source") return t.noteNoPrice;
   return "";
 }
 
@@ -257,7 +269,7 @@ function FundPanel({ account, position }: { account: EtfAccount; position: EtfPo
         <div>
           <dt>{t.valueToday}</dt>
           <dd>
-            <strong>{position.value_today_eur != null ? f.money(position.value_today_eur) : t.notValued}</strong>
+            <strong>{valueText(t, f, position)}</strong>
           </dd>
         </div>
         <div>

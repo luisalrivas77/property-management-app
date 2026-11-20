@@ -368,7 +368,9 @@ def etf_today(conn: Connection, on: date) -> EtfToday:
     funds and documents, each fund joined by account and asset to the Übersicht's position
     on `on` (`assets_overview`, the net worth's valuation, D167), whose units, price, value,
     stale marker, reason and report marker it copies; nothing is valued here. A fund the
-    Übersicht does not hold on `on` keeps its row with no value. An account's value is Σ of
+    Übersicht does not hold on `on` keeps its row with no value: with the reason
+    `valuation.not_valued` when its latest report disagrees with the bookings (a fund on
+    the report with nothing booked), else none (a fund sold in full). An account's value is Σ of
     its valued rows, which is the Übersicht's value of that account, since every position
     the Übersicht holds on a depot is a row here (the ETF tab lists every asset with a
     confirmed movement)."""
@@ -382,7 +384,12 @@ def etf_today(conn: Connection, on: date) -> EtfToday:
             match = today.get((account.account_id, position.asset_id))
             fields = position.model_dump()
             if match is None:
-                rows.append(EtfPositionToday(**fields))
+                # A fund the latest report lists while nothing is booked (or the bookings
+                # disagree) is the net worth's „not valued“ line (D167 (c)), so its reason
+                # is the same and the screen says „siehe Zu prüfen“; a fund sold in full
+                # keeps its row with no value and no reason.
+                reason = E.VALUATION_NOT_VALUED if position.reconciled is False else None
+                rows.append(EtfPositionToday(**fields, not_valued_reason=reason))
                 continue
             fields["units"] = match.units
             value = match.value_eur

@@ -1691,7 +1691,7 @@ export interface paths {
         /**
          * Assets Etf
          * @description The Anlagen ETF tab: per depot account its funds at the newest stored daily price on
-         *     `on` (today, Berlin time, by default), valued as the Übersicht and the net worth value
+         *     today (Berlin time), valued as the Übersicht and the net worth value
          *     them (phase 10 D280: units, price with its source and day, value, „Kurs aus dem Bericht
          *     vom …“ for a fund no daily source prices), with the latest report's figures kept as the
          *     panel's check, and the depot's documents with the status of their reading. The mockup's
@@ -19160,9 +19160,7 @@ export interface operations {
     };
     assets_etf_api_assets_etf_get: {
         parameters: {
-            query?: {
-                on?: string | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;

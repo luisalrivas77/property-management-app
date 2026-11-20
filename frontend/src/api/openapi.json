@@ -4678,27 +4678,8 @@
     "/api/assets/etf": {
       "get": {
         "summary": "Assets Etf",
-        "description": "The Anlagen ETF tab: per depot account its funds at the newest stored daily price on\n`on` (today, Berlin time, by default), valued as the Übersicht and the net worth value\nthem (phase 10 D280: units, price with its source and day, value, „Kurs aus dem Bericht\nvom …“ for a fund no daily source prices), with the latest report's figures kept as the\npanel's check, and the depot's documents with the status of their reading. The mockup's\ntwo tax cards are phase 8 (D170) and carry no figure.",
+        "description": "The Anlagen ETF tab: per depot account its funds at the newest stored daily price on\ntoday (Berlin time), valued as the Übersicht and the net worth value\nthem (phase 10 D280: units, price with its source and day, value, „Kurs aus dem Bericht\nvom …“ for a fund no daily source prices), with the latest report's figures kept as the\npanel's check, and the depot's documents with the status of their reading. The mockup's\ntwo tax cards are phase 8 (D170) and carry no figure.",
         "operationId": "assets_etf_api_assets_etf_get",
-        "parameters": [
-          {
-            "name": "on",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "On"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",

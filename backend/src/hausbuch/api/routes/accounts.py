@@ -128,14 +128,14 @@ def account_iban_confirm(
 
 
 @router.get("/assets/etf")
-def assets_etf(cmd: Cmd, on: date | None = None) -> EtfToday:
+def assets_etf(cmd: Cmd) -> EtfToday:
     """The Anlagen ETF tab: per depot account its funds at the newest stored daily price on
-    `on` (today, Berlin time, by default), valued as the Übersicht and the net worth value
+    today (Berlin time), valued as the Übersicht and the net worth value
     them (phase 10 D280: units, price with its source and day, value, „Kurs aus dem Bericht
     vom …“ for a fund no daily source prices), with the latest report's figures kept as the
     panel's check, and the depot's documents with the status of their reading. The mockup's
     two tax cards are phase 8 (D170) and carry no figure."""
-    return cmd.read(etf_today, on or datetime.now(LOCAL_TIME_ZONE).date())
+    return cmd.read(etf_today, datetime.now(LOCAL_TIME_ZONE).date())
 
 
 def _book_report_trades(ctx: CommandContext, account_id: UUID) -> depot.ReportTradesBooked:
