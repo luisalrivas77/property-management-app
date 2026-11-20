@@ -4,6 +4,10 @@
 // of (GET /tenants/{id}/tenancies, with property, unit and role), documents, and erasure
 // (GDPR). Erasure is refused with 409 retention_hold while the data must still be kept; the
 // page then says until when, or why no date can be given yet.
+//
+// Phase 10 (mockup 25): a tenancy is a row (unit, property, role and move-in, its status) that
+// opens the rest in the detail panel; "Bearbeiten" slides the tenant form in from the right (its
+// PATCH body unchanged).
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useState } from "react";
@@ -13,65 +17,89 @@ import { ApiError } from "@/api/errors";
 import type { Property, RetentionResult, Tenancy, Tenant, Unit } from "@/api/schemas";
 import { LinkedDocuments } from "@/components/documents";
 import { tenancyStatus, tenantName } from "@/components/entities";
-import { formatDate, formatDateTime, todayIso } from "@/components/format";
+import { DetailLayout, DetailPanel, useDetail, type Detail } from "@/components/DetailPanel";
+import { todayIso } from "@/components/format";
 import { RETENTION_CLASS, RETENTION_HOLD, TENANCY_ROLE } from "@/components/labels";
+import { SheetDialog } from "@/components/SheetDialog";
 import { ActionDialog, Breadcrumbs, Facts, Loading, Notice } from "@/components/ui";
-import { useLoad } from "@/components/useLoad";
+import { useLoad, type Loaded } from "@/components/useLoad";
+import { formatter, translate, useFormat, useT } from "@/i18n";
+import { tenants } from "@/i18n/tenants";
 import { ErrorNotice } from "@/lib/ErrorNotice";
+import { Icon } from "@/lib/icons";
+
+import "@/components/pageRows.css";
 
 import { TenantForm } from "../TenantForm";
 
 export default function TenantPage() {
   const { id } = useParams<{ id: string }>();
+  const t = useT(tenants);
+  const f = useFormat();
   const load = useCallback(() => ok(api.GET("/api/tenants/{tenant_id}", { params: { path: { tenant_id: id } } })), [id]);
   const tenant = useLoad(load);
+  const loadRows = useCallback(() => loadTenantTenancies(id), [id]);
+  const rows = useLoad(loadRows);
+  const detail = useDetail("tenancy");
   const [saved, setSaved] = useState(false);
+
+  const open = detail.id ? rows.data?.find((row) => row.tenancy.id === detail.id) : undefined;
+  const panel = open ? <TenancyPanel row={open} tenantId={id} onClose={detail.close} /> : null;
 
   return (
     <section>
-      <Loading state={tenant}>
-        {(data) => (
-          <>
-            <Breadcrumbs items={[{ href: "/tenants", label: "Mieter" }, { label: tenantName(data) }]} />
-            <h1>{tenantName(data)}</h1>
-            {data.erased_at ? (
-              <Notice>Die personenbezogenen Daten wurden am {formatDateTime(data.erased_at)} gelöscht.</Notice>
-            ) : (
-              <>
-                <Facts
-                  rows={[
-                    ["E-Mail", data.email ?? "–"],
-                    ["Telefon", data.phone ?? "–"],
-                    ["IBAN", data.iban_masked ?? "–"],
-                  ]}
-                />
-                <h2>Bearbeiten</h2>
-                {saved ? <Notice>Gespeichert.</Notice> : null}
-                <div className="card">
-                  <TenantForm
-                    key={data.updated_at}
-                    tenant={data}
-                    onSaved={() => {
-                      setSaved(true);
-                      tenant.reload();
-                    }}
+      <DetailLayout panel={panel}>
+        <Loading state={tenant}>
+          {(data) => (
+            <>
+              <Breadcrumbs items={[{ href: "/tenants", label: t.list }, { label: tenantName(data) }]} />
+              <div className="page-head">
+                <h1>{tenantName(data)}</h1>
+                <span className="spacer" />
+                {data.erased_at ? null : (
+                  <SheetDialog label={t.edit} title={t.editTitle}>
+                    {(close) => (
+                      <TenantForm
+                        key={data.updated_at}
+                        tenant={data}
+                        onSaved={() => {
+                          close();
+                          setSaved(true);
+                          tenant.reload();
+                        }}
+                      />
+                    )}
+                  </SheetDialog>
+                )}
+              </div>
+              {data.erased_at ? (
+                <Notice>{t.erased(f.dateTime(data.erased_at))}</Notice>
+              ) : (
+                <>
+                  {saved ? <Notice>{t.saved}</Notice> : null}
+                  <Facts
+                    rows={[
+                      [t.email, data.email ?? "–"],
+                      [t.phone, data.phone ?? "–"],
+                      [t.iban, data.iban_masked ?? "–"],
+                    ]}
                   />
-                </div>
-              </>
-            )}
-            <h2>Mietverhältnisse</h2>
-            <TenantTenancies tenantId={data.id} />
-            <h2>Dokumente</h2>
-            <LinkedDocuments targetType="tenant" targetId={data.id} />
-            {data.erased_at ? null : (
-              <>
-                <h2>Daten löschen</h2>
-                <EraseTenant tenant={data} onErased={tenant.reload} />
-              </>
-            )}
-          </>
-        )}
-      </Loading>
+                </>
+              )}
+              <h2>{t.tenancies}</h2>
+              <TenantTenancies rows={rows} tenantId={data.id} detail={detail} />
+              <h2>{t.documents}</h2>
+              <LinkedDocuments targetType="tenant" targetId={data.id} />
+              {data.erased_at ? null : (
+                <>
+                  <h2>{t.erase}</h2>
+                  <EraseTenant tenant={data} onErased={tenant.reload} />
+                </>
+              )}
+            </>
+          )}
+        </Loading>
+      </DetailLayout>
     </section>
   );
 }
@@ -104,69 +132,80 @@ async function loadTenantTenancies(tenantId: string): Promise<TenancyRow[]> {
   });
 }
 
-function TenantTenancies({ tenantId }: { tenantId: string }) {
-  const load = useCallback(() => loadTenantTenancies(tenantId), [tenantId]);
-  const rows = useLoad(load);
+function roleOf(row: TenancyRow, tenantId: string): string {
+  const role = row.tenancy.parties.find((party) => party.tenant_id === tenantId)?.role;
+  return role ? TENANCY_ROLE[role] : "–";
+}
+
+/** The tenancies as rows: the unit, then property, role and move-in, and the status; the rest
+ * (links to the property and the unit, the move-out) in the panel. */
+function TenantTenancies({ rows, tenantId, detail }: { rows: Loaded<TenancyRow[]>; tenantId: string; detail: Detail }) {
+  const t = useT(tenants);
+  const f = useFormat();
   const today = todayIso();
   return (
     <Loading state={rows}>
       {(list) =>
         list.length === 0 ? (
-          <p className="muted">Kein Mietverhältnis.</p>
+          <p className="muted">{t.noTenancy}</p>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Immobilie</th>
-                  <th>Einheit</th>
-                  <th>Rolle</th>
-                  <th>Einzug</th>
-                  <th>Auszug</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map(({ tenancy, unit, property }) => {
-                  const role = tenancy.parties.find((party) => party.tenant_id === tenantId)?.role;
-                  return (
-                    <tr key={tenancy.id}>
-                      <td>{property ? <Link href={`/properties/${property.id}`}>{property.label}</Link> : "–"}</td>
-                      <td>{unit ? <Link href={`/units/${unit.id}`}>{unit.label}</Link> : "–"}</td>
-                      <td>{role ? TENANCY_ROLE[role] : "–"}</td>
-                      <td>{formatDate(tenancy.start_date)}</td>
-                      <td>{formatDate(tenancy.end_date)}</td>
-                      <td>
-                        <Link href={`/tenancies/${tenancy.id}`}>{tenancyStatus(tenancy, today)}</Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ul className="detail-rows" aria-label={t.tenancies}>
+            {list.map((row) => (
+              <li key={row.tenancy.id}>
+                <a {...detail.linkProps(row.tenancy.id)} className="detail-row">
+                  <span className="detail-row-text">
+                    <span className="detail-row-title">{row.unit?.label ?? "–"}</span>
+                    <span className="detail-row-sub">
+                      {t.rowSub(row.property?.label ?? "–", roleOf(row, tenantId), f.date(row.tenancy.start_date))}
+                    </span>
+                  </span>
+                  <span className="row-amount">{tenancyStatus(row.tenancy, today)}</span>
+                  <Icon name="chevronRight" size={18} />
+                </a>
+              </li>
+            ))}
+          </ul>
         )
       }
     </Loading>
   );
 }
 
+function TenancyPanel({ row, tenantId, onClose }: { row: TenancyRow; tenantId: string; onClose: () => void }) {
+  const t = useT(tenants);
+  const f = useFormat();
+  const { tenancy, unit, property } = row;
+  return (
+    <DetailPanel title={unit?.label ?? t.tenancies} backLabel={t.tenancies} onClose={onClose}>
+      <Facts
+        rows={[
+          [t.property, property ? <Link href={`/properties/${property.id}`}>{property.label}</Link> : "–"],
+          [t.unit, unit ? <Link href={`/units/${unit.id}`}>{unit.label}</Link> : "–"],
+          [t.role, roleOf(row, tenantId)],
+          [t.moveIn, f.date(tenancy.start_date)],
+          [t.moveOut, f.date(tenancy.end_date)],
+          [t.status, <Link key="status" href={`/tenancies/${tenancy.id}`}>{tenancyStatus(tenancy, todayIso())}</Link>],
+        ]}
+      />
+    </DetailPanel>
+  );
+}
+
 function retentionExplanation(result: RetentionResult): string {
-  const kind = result.retention_class ? ` Aufbewahrungsklasse: ${RETENTION_CLASS[result.retention_class]}.` : "";
-  if (result.retain_until) return `Die Daten müssen bis ${formatDate(result.retain_until)} aufbewahrt werden.${kind}`;
-  if (result.hold) return `Die Daten müssen aufbewahrt werden, ${RETENTION_HOLD[result.hold]}.${kind}`;
-  return `Die Aufbewahrungsfrist läuft noch.${kind}`;
+  const t = translate(tenants);
+  const f = formatter();
+  const kind = result.retention_class ? t.retainClass(RETENTION_CLASS[result.retention_class]) : "";
+  if (result.retain_until) return t.retainUntil(f.date(result.retain_until), kind);
+  if (result.hold) return t.retainHold(RETENTION_HOLD[result.hold], kind);
+  return t.retainRunning(kind);
 }
 
 function EraseTenant({ tenant, onErased }: { tenant: Tenant; onErased: () => void }) {
+  const t = useT(tenants);
   return (
     <div className="stack">
-      <p className="muted">
-        Löscht Name, Kontaktdaten und IBAN. Der Verlauf bleibt, er enthält keine personenbezogenen Daten. Möglich, sobald die
-        Aufbewahrungsfrist (Mietende + 4 Jahre) abgelaufen ist, für Interessenten ohne Mietverhältnis, oder nach dem Auszug auf
-        Wunsch des Mieters.
-      </p>
-      <ActionDialog label="Daten löschen …" title="Mieterdaten löschen" buttonClass="danger">
+      <p className="muted">{t.eraseIntro}</p>
+      <ActionDialog label={t.eraseButton} title={t.eraseTitle} buttonClass="danger">
         {(close) => (
           <EraseForm
             tenant={tenant}
@@ -182,6 +221,7 @@ function EraseTenant({ tenant, onErased }: { tenant: Tenant; onErased: () => voi
 }
 
 function EraseForm({ tenant, onDone }: { tenant: Tenant; onDone: () => void }) {
+  const t = useT(tenants);
   const [onRequest, setOnRequest] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -202,19 +242,19 @@ function EraseForm({ tenant, onDone }: { tenant: Tenant; onDone: () => void }) {
   const hold = error instanceof ApiError && error.kind === "retention_hold" ? error.body?.result : null;
   return (
     <div className="stack">
-      <p>Die personenbezogenen Daten von „{tenantName(tenant)}“ werden endgültig gelöscht.</p>
+      <p>{t.eraseConfirm(tenantName(tenant))}</p>
       <label className="inline">
         <input type="checkbox" checked={onRequest} onChange={(e) => setOnRequest(e.target.checked)} />
-        Auf Wunsch des Mieters (Art. 17 DSGVO), nach dem Auszug
+        {t.onRequest}
       </label>
       <div>
         <button type="button" className="danger" onClick={() => void erase()} disabled={busy}>
-          {busy ? "Löscht …" : "Endgültig löschen"}
+          {busy ? t.erasing : t.eraseNow}
         </button>
       </div>
       {hold ? (
         <div className="notice notice-warn" role="alert">
-          <p>Löschen noch nicht möglich. {retentionExplanation(hold)}</p>
+          <p>{t.notYet(retentionExplanation(hold))}</p>
         </div>
       ) : (
         <ErrorNotice error={error} />

@@ -90,3 +90,45 @@ test("„Bearbeiten“ slides the loan form in and saves the same PATCH body as 
   await expect(page).toHaveURL(new RegExp(`/loans/${loan.id}$`));
   await expect(page.getByText("1.200,00 € / Monat")).toBeVisible();
 });
+
+test("the tenant page reads in English: contact facts, the tenancy as a row and its panel, the edit sheet", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const { property } = await propertyWithLoan(page);
+  const unit = await apiCall<{ id: string }>(page, "POST", "/api/units", { property_id: property.id, label: "Zimmer 2", floor_area_m2: "14.00" });
+  const tenant = await apiCall<{ id: string }>(page, "POST", "/api/tenants", { full_name: "Mieterin B", email: "b@example.org" });
+  const tenancy = await apiCall<{ id: string }>(page, "POST", "/api/tenancies", {
+    unit_id: unit.id,
+    parties: [{ tenant_id: tenant.id, role: "primary" }],
+    start_date: "2026-05-01",
+    rent_model: "fixed",
+    operating_costs_terms: "flat_rate",
+  });
+
+  await page.goto("/settings#d-setting-language");
+  await page.getByRole("radio", { name: "English" }).check();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+
+  await page.goto(`/tenants/${tenant.id}`);
+  await expect(page.getByRole("heading", { level: 1, name: "Mieterin B" })).toBeVisible();
+  await expect(page.getByText("Email", { exact: true })).toBeVisible();
+  await expect(page.getByText("b@example.org")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Tenancies" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Erase data" })).toBeVisible();
+
+  const row = page.getByRole("list", { name: "Tenancies" }).getByRole("link").filter({ hasText: "Zimmer 2" });
+  await expect(row).toContainText("Wohnung Seitenansicht");
+  await expect(row).toContainText(" · from ");
+  await row.click();
+  const panel = page.getByRole("complementary", { name: "Zimmer 2" });
+  await expect(panel.getByText("Move-in", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("link", { name: "Wohnung Seitenansicht" })).toHaveAttribute("href", `/properties/${property.id}`);
+  await expect(panel.locator(`a[href="/tenancies/${tenancy.id}"]`)).toBeVisible();
+
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Edit tenant" });
+  await expect(sheet.getByLabel("Email (optional)")).toHaveValue("b@example.org");
+  await expect(sheet.getByRole("button", { name: "Save" })).toBeVisible();
+});

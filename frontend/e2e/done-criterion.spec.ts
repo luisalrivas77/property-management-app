@@ -165,11 +165,15 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
     await page.getByRole("link", { name: /^Mieter\b/ }).click();
     await page.getByRole("link", { name: "Max Muster" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Max Muster" })).toBeVisible();
-    const tenancy = page.getByRole("table").getByRole("row").filter({ hasText: "WE 3" });
+    // Phase 10 (mockup 25): a tenancy is a row that opens its details beside the list.
+    const tenancy = page.getByRole("list", { name: "Mietverhältnisse" }).getByRole("link").filter({ hasText: "WE 3" });
     await expect(tenancy).toContainText("Wohnung Lindenstraße");
     await expect(tenancy).toContainText("Hauptmieter");
     await expect(tenancy).toContainText("01.07.2024");
-    await expect(tenancy.getByRole("link", { name: "läuft" })).toHaveAttribute("href", tenancyUrl);
+    await expect(tenancy).toContainText("läuft");
+    await tenancy.click();
+    const tenancyPanel = page.getByRole("complementary", { name: "WE 3" });
+    await expect(tenancyPanel.getByRole("link", { name: "läuft" })).toHaveAttribute("href", tenancyUrl);
   });
 
   await test.step("Verlauf: purchase → financing → possession → move-in (corrected) → rent", async () => {
