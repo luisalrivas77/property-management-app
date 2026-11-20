@@ -584,7 +584,8 @@ def _reserve_balances(conn: Connection, figure: NetWorth) -> list[ReserveBalance
 def estimate_sources(conn: Connection, figure: NetWorth) -> dict[UUID, EstimateSource]:
     """Per property with an estimate line: whether its estimate on the figure's day is the
     default scenario's „Wert heute“ or the purchase price (D239 (1)), decided as the net worth
-    decided it (services.scenarios.estimate_on_day)."""
+    decided it (services.scenarios.estimate_on_day). Before the handover the line is the price
+    paid so far, „Anzahlung Kaufpreis“ (phase 6 D265), and its source says so."""
     ids = {
         line.property_id
         for line in figure.lines
@@ -593,9 +594,16 @@ def estimate_sources(conn: Connection, figure: NetWorth) -> dict[UUID, EstimateS
     if not ids:
         return {}
     p = property_table.c
-    prices = conn.execute(select(p.id, p.purchase_price).where(p.id.in_(ids))).all()
+    prices = conn.execute(
+        select(p.id, p.purchase_price, p.purchase_date).where(p.id.in_(ids))
+    ).all()
     return {
-        r.id: estimate_on_day(conn, r.id, r.purchase_price, figure.on)[0].source for r in prices
+        r.id: (
+            EstimateSource.ADVANCE
+            if figure.on < r.purchase_date
+            else estimate_on_day(conn, r.id, r.purchase_price, figure.on)[0].source
+        )
+        for r in prices
     }
 
 
@@ -791,7 +799,8 @@ def _month_end_todo(end: date) -> HealthTodo:
 # The net worth's to-dos that leave a month-end without a value it should hold (review of PR
 # #426, findings 1 and 2): a position with no price or a stale one, a depot report that does
 # not agree or lists an unbooked fund, a balance not reconciled to the day or older than it, a
-# wallet's waiting coins, a loan without a balance. The owner-share to-dos move no total and
+# wallet's waiting coins, a loan without a balance (or, before the handover, without its
+# booked payout, D265). The owner-share to-dos move no total and
 # do not count.
 MONTH_END_GAPS = frozenset(
     {
@@ -802,6 +811,8 @@ MONTH_END_GAPS = frozenset(
         NetWorthTodoCode.POSITION_NOT_RECONCILED,
         NetWorthTodoCode.POSITION_NOT_BOOKED,
         NetWorthTodoCode.LOAN_NOT_VALUED,
+        # D265 (2): a loan paid out before the handover whose payout is not booked.
+        NetWorthTodoCode.LOAN_PAYOUT_MISSING,
         NetWorthTodoCode.WALLET_WAITING,
     }
 )
