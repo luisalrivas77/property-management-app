@@ -20,16 +20,11 @@ import { useT } from "@/i18n";
 import { lineLabel, planning, type PlanningText, sectionLabel } from "@/i18n/planning";
 
 import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
-import { formatDate, formatMonth } from "./format";
 import { Field } from "./form";
 import { HealthTodoItem } from "./healthFigures";
 import {
   currentDefault,
   fillLevers,
-  formatEuro,
-  formatOneDecimal,
-  formatRatio,
-  formatSignedEuro,
   type Health,
   type HealthMonthView,
   type HealthTodo,
@@ -38,17 +33,14 @@ import {
   type HouseholdScenario,
   loadMemberNames,
   loadScenarioHistory,
-  longDate,
   monthEnd,
-  monthName,
-  monthRange,
   saveDefaultScenario,
   toSignedRate,
 } from "./healthShared";
 import { percentInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY } from "./labels";
 import { PlanExplanationPanel } from "./planExplanation";
-import { usePlanFormat } from "./planFormat";
+import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, PlanError } from "./planningBudget";
 import { Effects, type PlanPreview, SpendingPlaySection, usePlanPreview } from "./spendingPlay";
 import { Loading } from "./ui";
@@ -255,7 +247,7 @@ function PlanTodos({ todos, onChanged }: { todos: HealthTodo[]; onChanged: () =>
           <li key={key} className="health-todo">
             <span>{todo.text}</span>
             {todo.code === "rate_missing" ? (
-              <Link href="/planning?section=vermoegen#annahme" scroll={false} className="button-link secondary">
+              <Link href="/planning?section=vermoegen#annahme" className="button-link secondary">
                 {todo.action}
               </Link>
             ) : (
@@ -314,15 +306,10 @@ function surplusRow(plan: HouseholdPlan, key: SurplusKey) {
   return plan.surplus?.rows.find((row) => row.key === key) ?? null;
 }
 
-/** Under `generic` (§10) the savings plans are one total: „aus 2 Sparplänen zusammen“. */
-function plansTogether(count: number): string {
-  return count === 1 ? "aus einem Sparplan" : `aus ${count} Sparplänen zusammen`;
-}
-
-function planName(plan: SavingsPlan | undefined, accounts: Account[]): string {
-  if (!plan) return "Sparplan";
+function planName(plan: SavingsPlan | undefined, accounts: Account[], t: PlanningText): string {
+  if (!plan) return t.planFallback;
   const account = plan.destination_account_id ? accounts.find((a) => a.id === plan.destination_account_id) : undefined;
-  return account?.label ?? plan.destination_payee ?? (plan.asset_class === "crypto" ? "Krypto" : "Fonds und Wertpapiere");
+  return account?.label ?? plan.destination_payee ?? (plan.asset_class === "crypto" ? t.classCrypto : t.classDepot);
 }
 
 function PlanBody({
@@ -347,6 +334,7 @@ function PlanBody({
   onChanged: () => void;
 }) {
   const t = useT(planning);
+  const f = usePlanFormat();
   const { plan } = data;
   const closedMonths = data.health.window.months ?? [];
   const newest = plan.newest_closed ?? closedMonths[closedMonths.length - 1] ?? "";
@@ -481,10 +469,9 @@ function PlanBody({
           <>
             {section !== "vermoegen" ? (
               <p className="muted">
-                Basis: {closedMonths.length} Monate, {monthRange(closedMonths)}. Die Durchschnitte und der Bedarf kommen aus diesen{" "}
-                {closedMonths.length} abgeschlossenen Monaten.
-                {section === "reserve" ? ` Die Wege zum Reserveziel beginnen beim Monatsabschluss am ${longDate(newest ? monthEnd(newest) : null)}.` : ""}{" "}
-                <Link href={`/household?monat=${newest}`}>Monate ansehen</Link>
+                {t.baseLine(closedMonths.length, f.monthRange(closedMonths))}
+                {section === "reserve" ? t.basePaths(f.longDate(newest ? monthEnd(newest) : null)) : ""}{" "}
+                <Link href={`/household?monat=${newest}`}>{t.baseMonths}</Link>
               </p>
             ) : null}
             <PlanTodos todos={todos} onChanged={onChanged} />
@@ -548,7 +535,7 @@ function InvestKpis({ data }: { data: PlanData }) {
             ? t.kpiNoPlan
             : data.mode === "generic"
               ? t.kpiPlansTogether(plans.length)
-              : plans.map((p) => `${planName(p, data.accounts)} ${f.euro(p.monthly)}`).join(" · ")}
+              : plans.map((p) => `${planName(p, data.accounts, t)} ${f.euro(p.monthly)}`).join(" · ")}
         </p>
         {plan.investable_left != null ? <p className="planning-kpi-sub">{t.kpiLeft(f.euro(plan.investable_left))}</p> : null}
       </div>
@@ -706,22 +693,18 @@ function Levers({
 
 // --- Weitere Annahmen -----------------------------------------------------------------------
 
-const INCOME_NOTE: Record<IncomeChangeNote, string> = {
-  parental_leave: "Elternzeit",
-  job_change: "Jobwechsel",
-  part_time: "Teilzeit",
-  other: "Sonstiges",
-};
+const INCOME_NOTES: IncomeChangeNote[] = ["parental_leave", "job_change", "part_time", "other"];
 
 function MoreAssumptions({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLevers; setDraft: SetDraft }) {
+  const t = useT(planning);
   const [open, setOpen] = useState(true);
   return (
     <section className="card stack" id="weitere-annahmen" aria-labelledby="more-title">
       <div className="planning-card-head">
-        <h2 id="more-title">Weitere Annahmen</h2>
+        <h2 id="more-title">{t.moreTitle}</h2>
         <span className="spacer" />
         <button type="button" className="link" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-          {open ? "zuklappen ▴" : "aufklappen ▾"}
+          {open ? t.collapse : t.expand}
         </button>
       </div>
       {open ? (
@@ -737,6 +720,8 @@ function MoreAssumptions({ data, draft, setDraft }: { data: PlanData; draft: Hou
 }
 
 function IncomeChanges({ draft, setDraft }: { draft: HouseholdLevers; setDraft: SetDraft }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
   const ids = useId();
   const [adding, setAdding] = useState(false);
   const [amount, setAmount] = useState("");
@@ -751,8 +736,8 @@ function IncomeChanges({ draft, setDraft }: { draft: HouseholdLevers; setDraft: 
     const parsed = toSignedMoneyString(amount);
     const found: typeof errors = {};
     if (!parsed.ok) found.amount = parsed.message;
-    if (!/^\d{4}-\d{2}$/.test(from)) found.from = "Bitte einen Monat wählen.";
-    if (to !== "" && (!/^\d{4}-\d{2}$/.test(to) || to < from)) found.to = "Das Ende liegt am oder nach dem Beginn.";
+    if (!/^\d{4}-\d{2}$/.test(from)) found.from = t.pickMonth;
+    if (to !== "" && (!/^\d{4}-\d{2}$/.test(to) || to < from)) found.to = t.endAfterStart;
     setErrors(found);
     if (!parsed.ok || Object.keys(found).length > 0) return;
     setDraft((previous) => ({
@@ -767,19 +752,18 @@ function IncomeChanges({ draft, setDraft }: { draft: HouseholdLevers; setDraft: 
 
   return (
     <div className="stack">
-      <h3>Einkommen ändert sich</h3>
+      <h3>{t.incomeTitle}</h3>
       {changes.length === 0 ? (
-        <p className="muted">Keine Änderung eingetragen. Für eine Zeit mit mehr oder weniger Netto im Monat, mit Beginn und Ende.</p>
+        <p className="muted">{t.incomeNone}</p>
       ) : (
         <ul className="household-rows">
           {changes.map((change, index) => (
             <li key={`${change.from_month}-${index}`}>
               <span>
-                {INCOME_NOTE[change.note_code]}: ab {formatMonth(change.from_month)}
-                {change.to_month ? ` bis ${formatMonth(change.to_month)}` : ", ohne Ende"}
+                {t.incomeNote(change.note_code)}: {t.incomeSpan(f.month(change.from_month), change.to_month ? f.month(change.to_month) : null)}
               </span>
               <span>
-                {formatSignedEuro(change.monthly_net)} im Monat{" "}
+                {t.perMonth(f.signedEuro(change.monthly_net))}{" "}
                 <button
                   type="button"
                   className="link"
@@ -787,7 +771,7 @@ function IncomeChanges({ draft, setDraft }: { draft: HouseholdLevers; setDraft: 
                     setDraft((previous) => ({ ...previous, income_changes: (previous.income_changes ?? []).filter((_, i) => i !== index) }))
                   }
                 >
-                  Entfernen
+                  {t.remove}
                 </button>
               </span>
             </li>
@@ -795,38 +779,38 @@ function IncomeChanges({ draft, setDraft }: { draft: HouseholdLevers; setDraft: 
         </ul>
       )}
       {adding ? (
-        <form className="stack" onSubmit={add} aria-label="Änderung des Einkommens">
+        <form className="stack" onSubmit={add} aria-label={t.incomeFormLabel}>
           <div className="health-limit-fields">
-            <Field id={`${ids}-amount`} label="Netto im Monat mehr (+) oder weniger (−)" hint="z. B. −600,00" errors={errors.amount ? [errors.amount] : []}>
+            <Field id={`${ids}-amount`} label={t.incomeAmount} hint={t.incomeAmountHint} errors={errors.amount ? [errors.amount] : []}>
               <input type="text" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
             </Field>
-            <Field id={`${ids}-from`} label="ab Monat" errors={errors.from ? [errors.from] : []}>
+            <Field id={`${ids}-from`} label={t.fromMonth} errors={errors.from ? [errors.from] : []}>
               <input type="month" value={from} onChange={(event) => setFrom(event.target.value)} />
             </Field>
-            <Field id={`${ids}-to`} label="bis Monat (leer: ohne Ende)" errors={errors.to ? [errors.to] : []}>
+            <Field id={`${ids}-to`} label={t.toMonth} errors={errors.to ? [errors.to] : []}>
               <input type="month" value={to} onChange={(event) => setTo(event.target.value)} />
             </Field>
-            <Field id={`${ids}-note`} label="Anlass">
+            <Field id={`${ids}-note`} label={t.reason}>
               <select value={note} onChange={(event) => setNote(event.target.value as IncomeChangeNote)}>
-                {(Object.keys(INCOME_NOTE) as IncomeChangeNote[]).map((code) => (
+                {INCOME_NOTES.map((code) => (
                   <option key={code} value={code}>
-                    {INCOME_NOTE[code]}
+                    {t.incomeNote(code)}
                   </option>
                 ))}
               </select>
             </Field>
           </div>
           <div className="row">
-            <button type="submit">Hinzufügen</button>
+            <button type="submit">{t.add}</button>
             <button type="button" className="secondary" onClick={() => setAdding(false)}>
-              Abbrechen
+              {t.cancel}
             </button>
           </div>
         </form>
       ) : (
         <p>
           <button type="button" className="secondary" onClick={() => setAdding(true)}>
-            Änderung eintragen
+            {t.addIncome}
           </button>
         </p>
       )}
@@ -847,6 +831,8 @@ function estimateYear(source: string | undefined): number | null {
 }
 
 function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLevers; setDraft: SetDraft }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
   const ids = useId();
   const months = (data.plan.months ?? []).map((m) => m.month);
   const proposals = data.plan.proposed_one_offs ?? [];
@@ -866,7 +852,7 @@ function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLe
     const parsed = toSignedMoneyString(amount);
     const found: typeof errors = {};
     if (!parsed.ok) found.amount = parsed.message;
-    if (month === "") found.month = "Bitte einen Monat wählen.";
+    if (month === "") found.month = t.pickMonth;
     setErrors(found);
     if (!parsed.ok || month === "") return;
     setDraft((previous) => ({ ...previous, one_offs: [...(previous.one_offs ?? []), { month, amount: parsed.value, source: "typed" }] }));
@@ -877,10 +863,10 @@ function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLe
 
   const monthSelect = (id: string, value: string, onChange: (value: string) => void) => (
     <select id={id} value={value} onChange={(event) => onChange(event.target.value)}>
-      <option value="">Monat wählen …</option>
+      <option value="">{t.pickMonthOption}</option>
       {months.map((m) => (
         <option key={m} value={m}>
-          {formatMonth(m)}
+          {f.month(m)}
         </option>
       ))}
     </select>
@@ -888,7 +874,7 @@ function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLe
 
   return (
     <div className="stack">
-      <h3>Einmalige Beträge</h3>
+      <h3>{t.oneOffsTitle}</h3>
       {!bareTaken
         ? proposals.map((proposal, index) => {
             if (takenYears.has(proposal.tax_year)) return null;
@@ -897,14 +883,14 @@ function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLe
             return (
               <div key={proposal.tax_year} className="health-plan-row">
                 <p>
-                  Einkommensteuer {proposal.tax_year}: erwartete {proposal.amount.startsWith("-") ? "Nachzahlung" : "Erstattung"}{" "}
-                  <span className="badge badge-info">Vorschlag</span> <strong>{formatSignedEuro(proposal.amount)}</strong>{" "}
+                  {t.oneOffTax(proposal.tax_year, proposal.amount.startsWith("-"))}{" "}
+                  <span className="badge badge-info">{t.proposal}</span> <strong>{f.signedEuro(proposal.amount)}</strong>{" "}
                   <span className="muted">
-                    aus der Schätzung unter <Link href={`/tax/${proposal.tax_year}`}>Steuern › Gesamt</Link>
+                    {t.fromEstimateAt} <Link href={`/tax/${proposal.tax_year}`}>{t.taxTotal}</Link>
                   </span>
                 </p>
                 <span className="row">
-                  <label htmlFor={id}>Monat</label>
+                  <label htmlFor={id}>{t.monthLabel}</label>
                   {monthSelect(id, picked, (value) => setChosen((previous) => ({ ...previous, [index]: value })))}
                   <button
                     type="button"
@@ -920,13 +906,10 @@ function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLe
                       }))
                     }
                   >
-                    Übernehmen
+                    {t.apply}
                   </button>
                 </span>
-                <p className="muted">
-                  Wählt den Monat, in dem ihr das Geld auf dem Konto erwartet. Bis ihr den Vorschlag übernehmt, rechnet die App ohne diesen
-                  Betrag.
-                </p>
+                <p className="muted">{t.oneOffPickHint}</p>
               </div>
             );
           })
@@ -936,49 +919,49 @@ function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLe
           {oneOffs.map((oneOff, index) => (
             <li key={`${oneOff.month}-${index}`}>
               <span>
-                {formatMonth(oneOff.month)}
+                {f.month(oneOff.month)}
                 {isReturnEstimate(oneOff.source)
-                  ? ` · Einkommensteuer${estimateYear(oneOff.source) !== null ? ` ${estimateYear(oneOff.source)}` : ""}, aus der Schätzung`
+                  ? ` · ${t.oneOffFromEstimate(estimateYear(oneOff.source))}`
                   : ""}
-                {newestClosed && oneOff.month <= newestClosed ? " · Monat abgeschlossen, zählt schon in den gemessenen Monaten" : ""}
+                {newestClosed && oneOff.month <= newestClosed ? ` · ${t.oneOffClosed}` : ""}
               </span>
               <span>
-                {formatSignedEuro(oneOff.amount)}{" "}
+                {f.signedEuro(oneOff.amount)}{" "}
                 <button
                   type="button"
                   className="link"
                   onClick={() => setDraft((previous) => ({ ...previous, one_offs: (previous.one_offs ?? []).filter((_, i) => i !== index) }))}
                 >
-                  Entfernen
+                  {t.remove}
                 </button>
               </span>
             </li>
           ))}
         </ul>
       ) : proposals.length === 0 ? (
-        <p className="muted">Kein einmaliger Betrag eingetragen.</p>
+        <p className="muted">{t.oneOffNone}</p>
       ) : null}
       {adding ? (
-        <form className="stack" onSubmit={add} aria-label="Einmaliger Betrag">
+        <form className="stack" onSubmit={add} aria-label={t.oneOffFormLabel}>
           <div className="health-limit-fields">
-            <Field id={`${ids}-month`} label="Monat" errors={errors.month ? [errors.month] : []}>
+            <Field id={`${ids}-month`} label={t.monthLabel} errors={errors.month ? [errors.month] : []}>
               {monthSelect(`${ids}-month`, month, setMonth)}
             </Field>
-            <Field id={`${ids}-amount`} label="Betrag (+ Einnahme, − Ausgabe)" hint="z. B. −2.400,00" errors={errors.amount ? [errors.amount] : []}>
+            <Field id={`${ids}-amount`} label={t.oneOffAmount} hint={t.oneOffAmountHint} errors={errors.amount ? [errors.amount] : []}>
               <input type="text" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
             </Field>
           </div>
           <div className="row">
-            <button type="submit">Hinzufügen</button>
+            <button type="submit">{t.add}</button>
             <button type="button" className="secondary" onClick={() => setAdding(false)}>
-              Abbrechen
+              {t.cancel}
             </button>
           </div>
         </form>
       ) : (
         <p>
           <button type="button" className="secondary" onClick={() => setAdding(true)}>
-            Betrag eintragen
+            {t.addOneOff}
           </button>
         </p>
       )}
@@ -989,6 +972,8 @@ function OneOffs({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLe
 const RESERVE_KINDS = new Set<Account["kind"]>(["bank_current", "bank_savings", "credit_card"]);
 
 function ReserveAccountsBlock({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLevers; setDraft: SetDraft }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
   const ids = useId();
   const rows = data.plan.reserve?.accounts ?? [];
   // The default set: the accounts the server lists as default or removed (D237).
@@ -1012,7 +997,7 @@ function ReserveAccountsBlock({ data, draft, setDraft }: { data: PlanData; draft
 
   return (
     <div className="stack">
-      <h3>Konten der Reserve</h3>
+      <h3>{t.reserveAccountsTitle}</h3>
       <ul className="household-rows">
         {accounts.map((account) => {
           const counted = byDefault.has(account.id) ? !removed.has(account.id) : added.has(account.id);
@@ -1025,25 +1010,27 @@ function ReserveAccountsBlock({ data, draft, setDraft }: { data: PlanData; draft
                 <label htmlFor={id}>{account.label}</label>{" "}
                 <span className="muted">
                   {account.purpose === "rental" && !counted
-                    ? "zählt nicht: das Geld der Wohnung für ihre nächsten Raten"
+                    ? t.reserveRentalNot
                     : account.kind === "credit_card"
-                      ? "Schulden auf der Karte mindern die Reserve"
+                      ? t.reserveCardDebt
                       : counted
-                        ? "zählt zur Reserve"
-                        : "zählt nicht zur Reserve"}
+                        ? t.reserveCounts
+                        : t.reserveNotCounted}
                 </span>
               </span>
-              <span>{row ? formatEuro(row.balance) : ""}</span>
+              <span>{row ? f.euro(row.balance) : ""}</span>
             </li>
           );
         })}
       </ul>
-      <p className="muted">Reserve laut gespeicherter Fassung: {formatEuro(data.plan.reserve?.amount)}</p>
+      <p className="muted">{t.reserveSaved(f.euro(data.plan.reserve?.amount))}</p>
     </div>
   );
 }
 
 function SavingsPlans({ data, draft, setDraft }: { data: PlanData; draft: HouseholdLevers; setDraft: SetDraft }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
   const ids = useId();
   const [editing, setEditing] = useState<string | null>(null);
   const [value, setValue] = useState("");
@@ -1066,18 +1053,17 @@ function SavingsPlans({ data, draft, setDraft }: { data: PlanData; draft: Househ
     // it is done in „Eigene Nutzung“.
     return (
       <div className="stack">
-        <h3>Sparpläne</h3>
+        <h3>{t.plansTitle}</h3>
         {plans.length === 0 ? (
-          <p className="muted">Kein Sparplan erkannt: kein Ziel bekam in jedem der letzten drei Monate Geld von euch.</p>
+          <p className="muted">{t.noPlanFound}</p>
         ) : (
           <p data-testid="plans-total">
-            {formatEuro(data.plan.already_invested ?? "0")} im Monat, {plansTogether(plans.length)}
+            {t.perMonth(f.euro(data.plan.already_invested ?? "0"))}, {t.kpiPlansTogether(plans.length)}
           </p>
         )}
         {plans.length > 0 || dropped.length > 0 ? (
           <p className="muted">
-            Im Hinweis-Modus „Allgemein“ zeigt die App die Sparpläne nur zusammen. Einen einzelnen ändern oder nicht mitrechnen könnt ihr
-            im Modus „Eigene Nutzung“ (<Link href="/settings">Einstellungen</Link> › „Hinweis-Modus“).
+            {t.plansGeneric} (<Link href="/settings">{t.settingsLink}</Link> › {t.adviceModeName}).
           </p>
         ) : null}
       </div>
@@ -1086,9 +1072,9 @@ function SavingsPlans({ data, draft, setDraft }: { data: PlanData; draft: Househ
 
   return (
     <div className="stack">
-      <h3>Sparpläne</h3>
+      <h3>{t.plansTitle}</h3>
       {plans.length === 0 && dropped.length === 0 ? (
-        <p className="muted">Kein Sparplan erkannt: kein Ziel bekam in jedem der letzten drei Monate Geld von euch.</p>
+        <p className="muted">{t.noPlanFound}</p>
       ) : null}
       {plans.map((p) => {
         const override = overrides.find((o) => o.plan_key === p.key);
@@ -1096,19 +1082,19 @@ function SavingsPlans({ data, draft, setDraft }: { data: PlanData; draft: Househ
         return (
           <div key={p.key} className="health-plan-row">
             <p>
-              <strong>{planName(p, data.accounts)}</strong>{" "}
+              <strong>{planName(p, data.accounts, t)}</strong>{" "}
               <span className="muted">
-                erkannt aus euren Überweisungen: {joinMonths(p.months)}
-                {p.overridden ? " · Betrag von euch geändert" : ""}
+                {t.planFound(joinMonths(p.months, f, t.and))}
+                {p.overridden ? ` · ${t.planChanged}` : ""}
               </span>
             </p>
             <span className="row">
               <span>
-                {override?.dropped ? "nicht mitgerechnet" : `${formatEuro(override?.monthly ?? p.monthly)} im Monat`}
+                {override?.dropped ? t.notCounted : t.perMonth(f.euro(override?.monthly ?? p.monthly))}
               </span>
               {editing === p.key ? (
                 <span className="row">
-                  <label htmlFor={id}>Betrag im Monat</label>
+                  <label htmlFor={id}>{t.amountPerMonth}</label>
                   <input id={id} type="text" inputMode="decimal" value={value} onChange={(event) => setValue(event.target.value)} />
                   <button
                     type="button"
@@ -1116,7 +1102,7 @@ function SavingsPlans({ data, draft, setDraft }: { data: PlanData; draft: Househ
                     onClick={() => {
                       const parsed = toSignedMoneyString(value);
                       if (!parsed.ok || parsed.value.startsWith("-")) {
-                        setMessage(parsed.ok ? "Bitte einen Betrag ab 0 eingeben." : parsed.message);
+                        setMessage(parsed.ok ? t.amountFromZero : parsed.message);
                         return;
                       }
                       setOverride(p.key, { monthly: parsed.value, dropped: false });
@@ -1124,7 +1110,7 @@ function SavingsPlans({ data, draft, setDraft }: { data: PlanData; draft: Househ
                       setMessage(null);
                     }}
                   >
-                    Übernehmen
+                    {t.apply}
                   </button>
                 </span>
               ) : (
@@ -1137,15 +1123,15 @@ function SavingsPlans({ data, draft, setDraft }: { data: PlanData; draft: Househ
                       setValue((override?.monthly ?? p.monthly).replace(".", ","));
                     }}
                   >
-                    Betrag ändern
+                    {t.changeAmount}
                   </button>
                   {override?.dropped ? (
                     <button type="button" className="link" onClick={() => setOverride(p.key, null)}>
-                      Wieder mitrechnen
+                      {t.countAgain}
                     </button>
                   ) : (
                     <button type="button" className="link" onClick={() => setOverride(p.key, { dropped: true })}>
-                      Nicht mitrechnen
+                      {t.dropPlan}
                     </button>
                   )}
                 </>
@@ -1157,9 +1143,9 @@ function SavingsPlans({ data, draft, setDraft }: { data: PlanData; draft: Househ
       })}
       {dropped.map((o) => (
         <div key={o.plan_key} className="health-plan-row">
-          <p className="muted">Ein Sparplan wird nicht mitgerechnet.</p>
+          <p className="muted">{t.planDropped}</p>
           <button type="button" className="link" onClick={() => setOverride(o.plan_key, null)}>
-            Wieder mitrechnen
+            {t.countAgain}
           </button>
         </div>
       ))}
@@ -1167,25 +1153,27 @@ function SavingsPlans({ data, draft, setDraft }: { data: PlanData; draft: Househ
   );
 }
 
-function joinMonths(months: readonly string[]): string {
+function joinMonths(months: readonly string[], f: PlanFormat, and: string): string {
   const sorted = [...months].sort();
   const year = sorted[sorted.length - 1]?.slice(0, 4) ?? "";
   const sameYear = sorted.every((m) => m.startsWith(year));
-  const names = sorted.map((m) => (sameYear ? monthName(m) : formatMonth(m)));
-  const text = names.length > 1 ? `${names.slice(0, -1).join(", ")} und ${names[names.length - 1]}` : (names[0] ?? "");
+  const names = sorted.map((m) => (sameYear ? f.monthName(m) : f.month(m)));
+  const text = names.length > 1 ? `${names.slice(0, -1).join(", ")} ${and} ${names[names.length - 1]}` : (names[0] ?? "");
   return sameYear && year ? `${text} ${year}` : text;
 }
 
 // --- Wege zum Reserveziel --------------------------------------------------------------------
 
 function Paths({ data }: { data: PlanData }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
   const { plan } = data;
   const paths = plan.paths ?? [];
   const plans = plan.plans ?? [];
   const later = plan.flat_change;
   const target = plan.reserve?.target;
   const others = plan.paths_others ?? [];
-  const name = (key: string) => planName(plans.find((p) => p.key === key), data.accounts);
+  const name = (key: string) => planName(plans.find((p) => p.key === key), data.accounts, t);
   if (paths.length === 0) return null;
 
   function label(key: string, paused: string[]): { title: string; sub: string } {
@@ -1193,31 +1181,30 @@ function Paths({ data }: { data: PlanData }) {
     const runningText =
       running.length === 0
         ? ""
-        : `${running.map((p) => `${planName(p, data.accounts)} ${formatEuro(p.monthly)}`).join(", ")} ${running.length === 1 ? "läuft" : "laufen"} weiter`;
+        : t.pathRunning(running.map((p) => `${planName(p, data.accounts, t)} ${f.euro(p.monthly)}`).join(", "), running.length);
     if (key === "reserve_first") {
-      return { title: "Reserve zuerst", sub: plans.length === 1 ? "Sparplan pausiert" : plans.length === 2 ? "beide Sparpläne pausiert" : "alle Sparpläne pausiert" };
+      return { title: t.pathReserveFirst, sub: t.pathAllPaused(plans.length) };
     }
-    if (key === "as_is") return { title: "Alles weiter wie bisher", sub: "jeder Sparplan läuft weiter" };
-    if (data.mode === "generic") return { title: "Ein Sparplan pausiert", sub: "" };
-    return { title: `Sparplan ${name(key.slice("pause:".length))} pausiert`, sub: runningText };
+    if (key === "as_is") return { title: t.pathAsIs, sub: t.pathAsIsSub };
+    if (data.mode === "generic") return { title: t.pathOnePaused, sub: "" };
+    return { title: t.pathPaused(name(key.slice("pause:".length))), sub: runningText };
   }
 
   return (
     <section className="card stack" aria-labelledby="paths-title">
-      <h2 id="paths-title">Wege zum Reserveziel</h2>
+      <h2 id="paths-title">{t.pathsTitle}</h2>
       <p className="muted">
-        Jeder Weg mit denselben Zahlen, nach dem Monat sortiert, in dem die Reserve {formatEuro(target)} erreicht. Die App rechnet; welcher
-        Weg passt, entscheidet ihr. Start: {formatEuro(plan.reserve?.amount)} am {longDate(plan.newest_closed ? monthEnd(plan.newest_closed) : null)}.
+        {t.pathsIntro(f.euro(target), f.euro(plan.reserve?.amount), f.longDate(plan.newest_closed ? monthEnd(plan.newest_closed) : null))}
       </p>
       <div className="table-wrap">
         <table className="planning-table">
           <thead>
             <tr>
-              <th scope="col">Weg</th>
+              <th scope="col">{t.pathCol}</th>
               <th scope="col" className="num">
-                Zur Reserve
+                {t.toReserveCol}
               </th>
-              <th scope="col">Ziel erreicht</th>
+              <th scope="col">{t.reachedCol}</th>
             </tr>
           </thead>
           <tbody>
@@ -1231,24 +1218,24 @@ function Paths({ data }: { data: PlanData }) {
                     {sub ? <span className="muted"> · {sub}</span> : null}
                   </th>
                   <td className="num">
-                    {formatEuro(path.to_reserve_first_month)} im Monat
+                    {t.perMonth(f.euro(path.to_reserve_first_month))}
                     {after && later ? (
                       <span className="muted">
                         <br />
-                        ab {formatMonth(later.month)}: {formatEuro(after.to_reserve)} im Monat
+                        {t.from(f.month(later.month))}: {t.perMonth(f.euro(after.to_reserve))}
                       </span>
                     ) : null}
                   </td>
                   <td>
                     {path.reached ? (
                       <>
-                        {formatMonth(path.reached)}
-                        {path.months_needed != null ? <span className="muted"> · in {path.months_needed} Monaten</span> : null}
+                        {f.month(path.reached)}
+                        {path.months_needed != null ? <span className="muted"> · {t.inMonths(path.months_needed)}</span> : null}
                       </>
                     ) : path.used_up ? (
-                      <>nicht erreicht; die Reserve ist im {formatMonth(path.used_up)} aufgebraucht</>
+                      <>{t.pathUsedUp(f.month(path.used_up))}</>
                     ) : (
-                      <>nicht in {Math.round(plan.levers.horizon_months / 12)} Jahren; Reserve dann {formatEuro(path.reserve_at_horizon)}</>
+                      <>{t.pathNotIn(Math.round(plan.levers.horizon_months / 12), f.euro(path.reserve_at_horizon))}</>
                     )}
                   </td>
                 </tr>
@@ -1257,38 +1244,24 @@ function Paths({ data }: { data: PlanData }) {
           </tbody>
         </table>
       </div>
-      {others.length > 0 && data.mode !== "generic" ? <p className="muted">Weitere Sparpläne ohne eigene Zeile: {others.map(name).join(", ")}.</p> : null}
+      {others.length > 0 && data.mode !== "generic" ? <p className="muted">{t.pathsOthers(others.map(name).join(", "))}</p> : null}
       {plan.paths_on_rental_account ? (
         <p className="muted">
-          Davon kommen {formatEuro(plan.paths_on_rental_account)} im Monat zuerst auf dem Mietkonto an, das nicht zur Reserve zählt.
+          {t.pathsRental(f.euro(plan.paths_on_rental_account))}
         </p>
       ) : null}
       {later ? (
         <p className="muted">
-          Ab {formatMonth(later.month)} rechnet die App für die Wohnung mit ihrem Szenario: {formatSignedEuro(later.flat)} im Monat statt
-          {later.before_is_mean ? " im Schnitt " : " "}
-          {formatSignedEuro(later.before)}. Jeder Weg nimmt an, dass Geld, das in keinen Sparplan geht, auf einem Konto der Reserve landet.
+          {t.pathsLater(f.month(later.month), f.signedEuro(later.flat), f.signedEuro(later.before), later.before_is_mean)} {t.pathsAssume}
         </p>
       ) : (
-        <p className="muted">Jeder Weg nimmt an, dass Geld, das in keinen Sparplan geht, auf einem Konto der Reserve landet.</p>
+        <p className="muted">{t.pathsAssume}</p>
       )}
     </section>
   );
 }
 
 // --- So entsteht die Zahl -----------------------------------------------------------------
-
-const SURPLUS_LABEL: Record<SurplusKey, string> = {
-  mean_income: "Ø Einnahmen der privaten Konten",
-  mean_regular_spending: "Ø regelmäßige Ausgaben",
-  mean_rental_cash: "Ø Wohnung nach Zins und Tilgung",
-  free_cash: "Frei verfügbar pro Monat",
-  buffer: "Puffer",
-  investable: "Anlegbar pro Monat",
-  median_free_cash: "Mittlerer Monat (Median), frei verfügbar",
-  lowest_free_cash: "Schwächster Monat, frei verfügbar",
-  one_off_spending_left_out: "Nicht im Schnitt: Einmalausgaben",
-};
 
 /** The household month's field each row is the mean (or median, lowest, sum) of. */
 const SURPLUS_FIELD: Partial<Record<SurplusKey, keyof components["schemas"]["HouseholdMonth"]>> = {
@@ -1302,6 +1275,8 @@ const SURPLUS_FIELD: Partial<Record<SurplusKey, keyof components["schemas"]["Hou
 };
 
 function HowItIsMade({ data }: { data: PlanData }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
   const { plan } = data;
   const rows = plan.surplus?.rows ?? [];
   const closedMonths = data.health.window.months ?? [];
@@ -1310,20 +1285,20 @@ function HowItIsMade({ data }: { data: PlanData }) {
   const last = closedMonths[closedMonths.length - 1];
   return (
     <section className="card stack" aria-labelledby="made-title">
-      <h2 id="made-title">So entsteht die Zahl</h2>
+      <h2 id="made-title">{t.madeTitle}</h2>
       <p className="muted">
-        Jede Zeile öffnet ihre Monate und Buchungen. Basis: {closedMonths.length} abgeschlossene Monate, {monthRange(closedMonths)}.
+        {t.madeIntro(closedMonths.length, f.monthRange(closedMonths))}
       </p>
       <div className="stack">
         {rows.map((row) => {
           const field = SURPLUS_FIELD[row.key];
           const title =
             row.key === "buffer"
-              ? `Puffer ${formatOneDecimal(plan.levers.buffer_percent).replace(/,0$/, "")} %`
+              ? t.madeBuffer(f.percentValue(plan.levers.buffer_percent))
               : row.key === "lowest_free_cash" && row.month
-                ? `${SURPLUS_LABEL[row.key]}: ${formatMonth(row.month)}`
-                : SURPLUS_LABEL[row.key];
-          const amount = row.key === "buffer" ? formatSignedEuro(`-${row.amount.replace(/^-/, "")}`) : formatSignedEuro(row.amount);
+                ? `${t.surplusLabel(row.key)}: ${f.month(row.month)}`
+                : t.surplusLabel(row.key);
+          const amount = row.key === "buffer" ? f.signedEuro(`-${row.amount.replace(/^-/, "")}`) : f.signedEuro(row.amount);
           if (!field) {
             return (
               <div key={row.key} className="health-plan-row">
@@ -1346,20 +1321,20 @@ function HowItIsMade({ data }: { data: PlanData }) {
                 {data.months.map((view) => (
                   <li key={view.month}>
                     <Link href={row.key === "mean_rental_cash" && rental ? rentalHref(rental.id, view.month) : `/household?monat=${view.month}`}>
-                      {formatMonth(view.month)}
+                      {f.month(view.month)}
                     </Link>
-                    <span>{formatSignedEuro(view.household[field] as string)}</span>
+                    <span>{f.signedEuro(view.household[field] as string)}</span>
                   </li>
                 ))}
               </ul>
               {row.key === "mean_rental_cash" && rental && first && last ? (
                 <p>
                   <Link href={`/accounts/${rental.id}?tab=umsaetze&von=${first}-01&bis=${monthEnd(last)}`}>
-                    Alle Buchungen des Mietkontos dieser Monate
+                    {t.madeRentalAll}
                   </Link>
                 </p>
               ) : (
-                <p className="muted">Jeder Monat öffnet die Buchungen der privaten Konten unter Haushalt.</p>
+                <p className="muted">{t.madeMonthsOpen}</p>
               )}
             </details>
           );
@@ -1374,8 +1349,6 @@ function rentalHref(accountId: string, month: string): string {
 }
 
 // --- Vermögen in einigen Jahren -------------------------------------------------------------
-
-const CLASS_LABEL = { depot: "Fonds und Wertpapiere", crypto: "Krypto" } as const;
 
 function ProjectionCard({
   data,
@@ -1395,6 +1368,8 @@ function ProjectionCard({
   /** true while a field holds an entry the draft cannot take */
   onValidity: (invalid: boolean) => void;
 }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
   const ids = useId();
   const projection = data.plan.projection;
   const points = projection?.points ?? [];
@@ -1420,7 +1395,7 @@ function ProjectionCard({
     if (key === "years") {
       const years = Number(raw);
       if (!/^\d{1,2}$/.test(raw.trim()) || years < 1 || years > 30) {
-        setError("years", "Zwischen 1 und 30 Jahren.");
+        setError("years", t.yearsRange);
         return;
       }
       setError("years", undefined);
@@ -1439,7 +1414,7 @@ function ProjectionCard({
     }
     const value = parsed.value;
     const tooLarge = Math.abs(Number(value)) > 0.5;
-    setError(key, tooLarge ? "Zwischen −50 % und 50 % pro Jahr." : undefined);
+    setError(key, tooLarge ? t.rateRange : undefined);
     if (!tooLarge) setDraft((previous) => ({ ...previous, value_change: { ...previous.value_change, [key]: value } }));
   }
 
@@ -1450,23 +1425,22 @@ function ProjectionCard({
     const by = assumption.created_by ? data.names.get(assumption.created_by) : undefined;
     return (
       <li key={kind}>
-        {label}: {formatRatio(assumption.value)} pro Jahr, eingetragen{by ? ` von ${by}` : ""} am {longDate(assumption.created_at)}.
+        {t.rateLine(label, f.ratio(assumption.value), by ?? null, f.longDate(assumption.created_at))}
       </li>
     );
   };
 
   return (
     <section className="card stack" id="annahme" aria-labelledby="projection-title">
-      <h2 id="projection-title">Vermögen in einigen Jahren: eure Annahme</h2>
+      <h2 id="projection-title">{t.projTitle}</h2>
       <p className="muted">
-        Eine Rechnung auf eure eigenen Annahmen, keine Vorhersage. Die App schlägt keine Wertänderung vor; ihr tragt sie selbst ein, je eine
-        für Fonds und Wertpapiere und eine für Krypto.
+        {t.projIntro}
       </p>
       <fieldset className="health-limit">
-        <legend>Angenommene Wertänderung pro Jahr</legend>
+        <legend>{t.projLegend}</legend>
         <div className="health-limit-fields">
           {(["depot", "crypto"] as const).map((key) => (
-            <Field key={key} id={`${ids}-${key}`} label={`${CLASS_LABEL[key]} (% pro Jahr)`} errors={errors[key] ? [errors[key] as string] : []}>
+            <Field key={key} id={`${ids}-${key}`} label={t.rateField(key === "depot" ? t.classDepot : t.classCrypto)} errors={errors[key] ? [errors[key] as string] : []}>
               <input
                 type="text"
                 inputMode="decimal"
@@ -1476,7 +1450,7 @@ function ProjectionCard({
               />
             </Field>
           ))}
-          <Field id={`${ids}-years`} label="Jahre" errors={errors.years ? [errors.years] : []}>
+          <Field id={`${ids}-years`} label={t.years} errors={errors.years ? [errors.years] : []}>
             <input
               type="text"
               inputMode="numeric"
@@ -1487,50 +1461,48 @@ function ProjectionCard({
           </Field>
         </div>
         <p className="muted">
-          Wohnung{flat ? ` ${formatRatio(flat.value)} pro Jahr, aus ihrem Szenario` : ": Wertänderung aus ihrem Szenario"}{" "}
-          <Link href={flat?.property_id ? `/planning?immobilie=${flat.property_id}` : "/planning"}>im Szenario der Wohnung ändern</Link>
+          {t.projFlat(flat ? f.ratio(flat.value) : null)}{" "}
+          <Link href={flat?.property_id ? `/planning?immobilie=${flat.property_id}` : "/planning?section=immobilie"}>{t.projFlatChange}</Link>
         </p>
       </fieldset>
       {dirty ? saveBar : null}
       {points.length === 0 ? (
         <>
-          {rateTodos.length > 0 ? <p className="health-reference-title">Annahme fehlt</p> : null}
+          {rateTodos.length > 0 ? <p className="health-reference-title">{t.rateMissing}</p> : null}
           <PlanTodos todos={[...rateTodos, ...projectionTodos.filter((t) => t.code !== "rate_missing")]} onChanged={onChanged} />
         </>
       ) : (
         <>
           <ul className="muted">
-            {rateLine("depot_rate", "Fonds und Wertpapiere")}
-            {rateLine("crypto_rate", "Krypto")}
+            {rateLine("depot_rate", t.classDepot)}
+            {rateLine("crypto_rate", t.classCrypto)}
             <li>
-              Wohnung: {flat ? `${formatRatio(flat.value)} pro Jahr aus ihrem Szenario` : "aus ihrem Szenario"}; Wert und Darlehen kommen aus
-              der Projektion der Wohnung.
+              {t.projFlatLine(flat ? f.ratio(flat.value) : null)}
             </li>
             <li>
-              Einnahmen, Ausgaben und Sparpläne bleiben beim Schnitt von {monthRange(data.health.window.months ?? [])}, mit den Änderungen aus
-              eurem Szenario. Das Geld, das in keinen Sparplan geht, bleibt auf den Konten.
+              {t.projSameMean(f.monthRange(data.health.window.months ?? []))}
             </li>
-            <li>Nominale Euro: vor Steuern auf Gewinne, vor Kosten, ohne Inflation.</li>
+            <li>{t.projNominal}</li>
           </ul>
           {last ? (
             <p className="cashflow-value">
-              Vermögen am {longDate(last.on)} nach eurer Annahme: {formatEuro(last.total)}
+              {t.projAt(f.longDate(last.on), f.euro(last.total))}
             </p>
           ) : null}
           {projection?.start ? (
             <p className="muted">
-              Start ({longDate(projection.start.on)}): {formatEuro(projection.start.total)}
+              {t.projStart(f.longDate(projection.start.on), f.euro(projection.start.total))}
             </p>
           ) : null}
           <ProjectionTable start={projection?.start ?? null} points={points} />
           {projection?.ends_before_sale_year != null ? (
             <p className="muted">
-              Die Rechnung endet {projection.ends_before_sale_year - 1}, weil das Szenario der Wohnung danach den Verkauf vorsieht.{" "}
-              <Link href="/planning">Planung › Immobilie</Link>
+              {t.projEnds(projection.ends_before_sale_year - 1)}{" "}
+              <Link href="/planning?section=immobilie">{t.projEndsLink}</Link>
             </p>
           ) : null}
           {projection?.used_up ? (
-            <p className="muted">Das Geld auf den Konten ist im {formatMonth(projection.used_up)} aufgebraucht; danach bleibt die Rechnung bei 0 €.</p>
+            <p className="muted">{t.projUsedUp(f.month(projection.used_up))}</p>
           ) : null}
           {last?.change ? <ChangeRows point={last} /> : null}
           <PlanTodos todos={projectionTodos} onChanged={onChanged} />
@@ -1547,48 +1519,50 @@ function percentText(value: string | null | undefined): string {
 }
 
 function ProjectionTable({ start, points }: { start: ProjectionPoint | null; points: ProjectionPoint[] }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
   const rows = start ? [start, ...points] : points;
   return (
     <div className="table-wrap">
       <table className="planning-table">
         <thead>
           <tr>
-            <th scope="col">Stichtag</th>
+            <th scope="col">{t.colDate}</th>
             <th scope="col" className="num">
-              Bankguthaben
+              {t.colBank}
             </th>
             <th scope="col" className="num">
-              Fonds und Wertpapiere
+              {t.classDepot}
             </th>
             <th scope="col" className="num">
-              Krypto
+              {t.classCrypto}
             </th>
             <th scope="col" className="num">
-              Wohnung
+              {t.colFlat}
             </th>
             <th scope="col" className="num">
-              Darlehen
+              {t.colLoans}
             </th>
             <th scope="col" className="num">
-              Kreditkarte
+              {t.colCard}
             </th>
             <th scope="col" className="num">
-              Vermögen
+              {t.colNetWorth}
             </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((point) => (
             <tr key={point.on}>
-              <th scope="row">{formatDate(point.on)}</th>
-              <td className="num">{formatEuro(point.bank)}</td>
-              <td className="num">{formatEuro(point.depot)}</td>
-              <td className="num">{formatEuro(point.crypto)}</td>
-              <td className="num">{formatEuro(point.property)}</td>
-              <td className="num">{formatEuro(negated(point.loans))}</td>
-              <td className="num">{formatEuro(negated(point.other_liabilities))}</td>
+              <th scope="row">{f.date(point.on)}</th>
+              <td className="num">{f.euro(point.bank)}</td>
+              <td className="num">{f.euro(point.depot)}</td>
+              <td className="num">{f.euro(point.crypto)}</td>
+              <td className="num">{f.euro(point.property)}</td>
+              <td className="num">{f.euro(negated(point.loans))}</td>
+              <td className="num">{f.euro(negated(point.other_liabilities))}</td>
               <td className="num">
-                <strong>{formatEuro(point.total)}</strong>
+                <strong>{f.euro(point.total)}</strong>
               </td>
             </tr>
           ))}
@@ -1605,31 +1579,33 @@ function negated(value: string): string {
 }
 
 function ChangeRows({ point }: { point: ProjectionPoint }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
   const change = point.change;
   if (!change) return null;
   return (
     <div className="stack">
-      <h3>Woraus die Veränderung von {formatSignedEuro(change.total)} besteht</h3>
+      <h3>{t.changeTitle(f.signedEuro(change.total))}</h3>
       <ul className="household-rows">
         <li>
-          <span>Auf den Konten</span>
-          <span>{formatSignedEuro(change.on_accounts)}</span>
+          <span>{t.changeAccounts}</span>
+          <span>{f.signedEuro(change.on_accounts)}</span>
         </li>
         <li>
-          <span>In die Sparpläne eingezahlt</span>
-          <span>{formatSignedEuro(change.paid_in)}</span>
+          <span>{t.changePaidIn}</span>
+          <span>{f.signedEuro(change.paid_in)}</span>
         </li>
         <li>
-          <span>Aus euren Annahmen</span>
-          <span>{formatSignedEuro(change.from_assumptions)}</span>
+          <span>{t.changeAssumptions}</span>
+          <span>{f.signedEuro(change.from_assumptions)}</span>
         </li>
         <li>
-          <span>Wert der Wohnung laut ihrem Szenario</span>
-          <span>{formatSignedEuro(change.flat_value)}</span>
+          <span>{t.changeFlat}</span>
+          <span>{f.signedEuro(change.flat_value)}</span>
         </li>
         <li>
-          <span>Darlehen getilgt</span>
-          <span>{formatSignedEuro(change.loan_repaid)}</span>
+          <span>{t.changeLoan}</span>
+          <span>{f.signedEuro(change.loan_repaid)}</span>
         </li>
       </ul>
     </div>

@@ -293,7 +293,7 @@ test("the rate fields start empty, and the projection appears only after a rate 
     await expect(field).not.toHaveAttribute("placeholder");
   }
   await expect(card.getByText("Annahme fehlt")).toBeVisible();
-  await expect(card.getByRole("link", { name: "Annahme eintragen" })).toHaveAttribute("href", "#annahme");
+  await expect(card.getByRole("link", { name: "Annahme eintragen" })).toHaveAttribute("href", "/planning?section=vermoegen#annahme");
   await expect(card.getByText(/nach eurer Annahme:/)).toHaveCount(0);
 
   await depot.fill("5");
