@@ -19,6 +19,7 @@ import type { Owner } from "@/api/schemas";
 import { useT } from "@/i18n";
 import { tax as messages } from "@/i18n/tax";
 
+import { todayIso } from "./format";
 import { IncomeSection } from "./income";
 import { REPLACEMENT_BENEFIT, STATE_CODE } from "./labels";
 import { InputsPanel, type BenefitForm } from "./returnInputs";
@@ -74,11 +75,19 @@ export function TaxInputsScreen({
   );
 }
 
-/** „Steuern 2026“, the year chips (the years with a rule set, plus the one shown) and the tabs. */
+/** The year chips: two years back to next year (the range the Eigentümer page offered, so next
+ * year's expected pay and a carried Bescheid stay one tap away), the years with a rule set and the
+ * year shown. */
+function angabenYears(thisYear: number, ruleYears: readonly number[], shown: number): number[] {
+  const years = new Set<number>([thisYear - 2, thisYear - 1, thisYear, thisYear + 1, ...ruleYears, shown]);
+  return [...years].sort((a, b) => a - b);
+}
+
+/** „Steuern 2026“, the year chips and the tabs. */
 function TaxInputsHead({ state }: { state: TaxYearState }) {
   const t = useT(messages);
   const years = useLoad(loadYears);
-  const choices = years.data && !years.data.includes(state.year) ? [...years.data, state.year].sort((a, b) => a - b) : (years.data ?? [state.year]);
+  const choices = angabenYears(Number(todayIso().slice(0, 4)), years.data ?? [], state.year);
   return (
     <>
       <div className="page-head tax-head">

@@ -45,6 +45,7 @@ import {
 } from "./input";
 import { NoPayMarker } from "./noPay";
 import { Loading } from "./ui";
+import { payInputsHref } from "./taxYear";
 import { useLoad } from "./useLoad";
 
 type RateSource = ZveEstimate["source"];
@@ -158,7 +159,7 @@ export function TaxEffectLine({
     return (
       <p className="tax-subline tax-effect">
         <span>Steuerwirkung</span> <strong>—</strong> ·{" "}
-        <Link href="/owners">Einkommen eintragen</Link>
+        <Link href={payInputsHref(taxYear)}>Einkommen eintragen</Link>
       </p>
     );
   }
@@ -187,9 +188,9 @@ export function TaxEffectLine({
       {rateText ? <span className="muted"> · {rateText}</span> : null}
       {" · "}
       <Link
-        href="/owners"
+        href={payInputsHref(taxYear)}
         className="badge"
-        title="Einkommen und Steuersatz auf der Seite Eigentümer"
+        title="Einkommen und Steuersatz unter Steuern › Eure Angaben"
       >
         {sourceText(rate.zve)}
         {rate.zve.carried_forward ? " (fortgeschrieben)" : null}

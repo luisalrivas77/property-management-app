@@ -55,6 +55,16 @@ test("the Einkommen section shows the pay source and adds a child and household 
   const rowB = income.getByRole("row").filter({ hasText: /^B/ });
   await expect(rowB).toContainText("Hochrechnung aus Gehaltsabrechnung August (4 Monate verbleibend)");
 
+  // Next year is one chip away (the expected pay, a rate or „Kein Arbeitslohn“ for it), as the
+  // Eigentümer page's year picker offered, though no rule set exists for it yet.
+  const next = new Date().getFullYear() + 1;
+  const chips = page.getByRole("navigation", { name: "Steuerjahre" });
+  await expect(chips.getByRole("link", { name: String(next), exact: true })).toBeVisible();
+  await chips.getByRole("link", { name: String(next), exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/tax/${next}\\?tab=angaben`));
+  await expect(page.getByRole("table").filter({ hasText: `Erwartetes Bruttogehalt ${next}` })).toBeVisible();
+  await page.goto(`/tax/${YEAR}?tab=angaben`);
+
   await expect(page.getByRole("link", { name: `Anlage N ${YEAR} ansehen` })).toHaveAttribute("href", `/tax/${YEAR}?tab=anlage-n`);
   await expect(page.getByRole("link", { name: `Jahresfragen ${YEAR} beantworten` })).toHaveAttribute(
     "href",

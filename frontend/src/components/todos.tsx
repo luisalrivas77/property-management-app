@@ -536,7 +536,7 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
   },
   "return.children_mismatch": {
     todo: false,
-    text: () => "Auf der Seite Eigentümer unter Kinder prüfen, ob alle Kinder erfasst sind. Stimmt es, ist nichts zu tun.",
+    text: () => "Unter Steuern › Eure Angaben bei Kinder prüfen, ob alle Kinder erfasst sind. Stimmt es, ist nichts zu tun.",
     action: owners("kinder", "Kinder ansehen"),
   },
   "return.kindergeld_apply": {

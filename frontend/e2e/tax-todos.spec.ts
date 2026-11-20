@@ -431,7 +431,10 @@ test("an owner without any pay this year is a to-do, and an expected gross pay c
   await expect(entry).toContainText("A. Lohnlos");
   await expect(entry).toContainText("letzte Gehaltsabrechnung hochladen");
   await expect(entry.getByRole("button", { name: "Gehaltsabrechnung hochladen" })).toBeVisible();
-  await expect(entry.getByRole("link", { name: "Bruttogehalt eintragen" })).toHaveAttribute("href", "/owners");
+  await expect(entry.getByRole("link", { name: "Bruttogehalt eintragen" })).toHaveAttribute(
+    "href",
+    `/tax/${year}?tab=angaben&eigentuemer=${owner.id}#arbeitslohn`,
+  );
 
   // Typing the expected pay by hand waives the payslip.
   await apiCall(page, "POST", "/api/income-inputs", {

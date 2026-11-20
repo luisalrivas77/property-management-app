@@ -48,6 +48,7 @@ import { Field, FormBanner, Submit, useFormErrors } from "./form";
 import { formatDate, formatDateTime, formatDecimal, formatMoney, shiftDecimal, todayIso } from "./format";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND } from "./labels";
 import { linkFor } from "./tax";
+import { payInputsHref } from "./taxYear";
 import { ActionDialog, Loading, Notice } from "./ui";
 import { useLoad, type Loaded } from "./useLoad";
 
@@ -472,7 +473,7 @@ function ActualsCard({ years, propertyId, flatRateCard }: { years: YearFigures[]
                 .filter(Boolean)
                 .join(" · ")
             ) : (
-              <Link href="/owners">Einkommen eintragen</Link>
+              <Link href={payInputsHref(year.year)}>Einkommen eintragen</Link>
             )
           }
         />
@@ -870,6 +871,7 @@ function TaxLever({ year, propertyId }: { year: YearFigures | undefined; propert
   const effect = year?.tax_effect ?? null;
   const taxYear = year?.year ?? null;
   const result = year?.taxable_result ?? null;
+  const payHref = payInputsHref(taxYear ?? Number(todayIso().slice(0, 4)));
   const loadRate = useCallback(
     (): Promise<TaxRateResult | null> =>
       taxYear === null || result === null
@@ -901,18 +903,18 @@ function TaxLever({ year, propertyId }: { year: YearFigures | undefined; propert
       </p>
       <div className="planning-lever-control">
         <span className="planning-lever-value">{value}</span>
-        <Link href="/owners" className="planning-lever-edit" aria-label="Steuersatz manuell setzen" title="Steuersatz manuell setzen">
+        <Link href={payHref} className="planning-lever-edit" aria-label="Steuersatz manuell setzen" title="Steuersatz manuell setzen">
           ✎
         </Link>
       </div>
       <p className="planning-lever-sub">
         {chip ? (
-          <Link href="/owners" className="badge" title="Einkommen und Steuersatz auf der Seite Eigentümer">
+          <Link href={payHref} className="badge" title="Einkommen und Steuersatz unter Steuern › Eure Angaben">
             {chip}
           </Link>
         ) : (
           <>
-            — · <Link href="/owners">Einkommen eintragen</Link>
+            — · <Link href={payHref}>Einkommen eintragen</Link>
           </>
         )}
       </p>
@@ -1487,8 +1489,7 @@ function PaymentSource({ source, fact }: { source: TaxSourceRef; fact: Allocatio
 }
 
 function OtherSource({ source, propertyId }: { source: TaxSourceRef; propertyId: string }) {
-  const link =
-    linkFor(source, propertyId) ?? (source.kind === "income_input" ? { href: "/owners", label: "Einkommen ansehen" } : null);
+  const link = linkFor(source, propertyId); // an income input links to Eure Angaben there
   return (
     <>
       <span>{TAX_SOURCE_KIND[source.kind]}</span>

@@ -88,6 +88,13 @@ export function taxFormHref(form: TaxForm, state: TaxYearState): string {
   ])}`;
 }
 
+/** Steuern › Eure Angaben › Arbeitslohn of a year (phase 10 D281): where the expected gross pay,
+ * a Bescheid's zvE, a typed rate and „Kein Arbeitslohn“ are entered (Eigentümer › Einkommen until
+ * then), on the given owner when the caller knows one. */
+export function payInputsHref(year: number, ownerId: string | null = null): string {
+  return `${taxFormHref("angaben", { year, propertyId: null, ownerId })}#arbeitslohn`;
+}
+
 /** One answer slot of the Jahresfragen: the question's key and whose it is. */
 export interface QuestionTarget {
   key: string;
