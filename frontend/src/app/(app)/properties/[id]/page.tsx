@@ -70,7 +70,7 @@ function PropertyDetail() {
       <Loading state={property}>
         {(data) => (
           <>
-            <Breadcrumbs items={[{ href: "/", label: "Übersicht" }, { label: data.label }]} />
+            <Breadcrumbs items={[{ href: "/properties", label: "Immobilien" }, { label: data.label }]} />
             <div className="page-head">
               <h1>{data.label}</h1>
               <span className="muted">
