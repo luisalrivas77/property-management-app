@@ -17,6 +17,7 @@ from db.test_services_transfer_named_leg import DEPOT_B_IBAN, DEPOT_IBAN
 from db.test_services_transfer_named_leg import _depot as _depot_account
 from sqlalchemy import insert, select, update
 
+from hausbuch import i18n
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
@@ -174,6 +175,10 @@ def test_two_equal_counterparts_are_ambiguous_from_either_side(world, private):
     assert sorted(c.id for c in card.candidates) == sorted([first, second])
     [item] = [i for i in world.query(review.inbox, TODAY) if i.kind is InboxItemKind.TRANSFER_LINK]
     assert (item.transaction_id, item.question) == (out, "Welche Buchung ist die Gegenbuchung?")
+    with i18n.use("en"):  # phase 10 D284: the card in the request's language
+        [en] = [i for i in world.query(review.inbox, TODAY) if i.kind is item.kind]
+    assert en.question == "Which transaction is the matching transaction?"
+    assert en.reasoning.startswith("Several matching transactions fit")
 
 
 def test_a_third_partys_credit_of_the_same_amount_is_never_the_counterpart(world, private):
@@ -768,6 +773,10 @@ def test_path_1_a_row_of_another_year_is_moved_to_the_year_paid_once_confirmed(w
     )
     assert card.question == "In 2027 zählen?"
     assert "05.01.2027" in card.reasoning and "2026" in card.reasoning
+    with i18n.use("en"):
+        [en] = _cards(world, InboxItemKind.PROPERTY_COST_YEAR)
+    assert en.question == "Count in 2027?"
+    assert "paid on 5 Jan 2027" in en.reasoning and "tax year 2026" in en.reasoning
     assert _cards(world, InboxItemKind.PROPERTY_COST_ROW) == []
     assert row.id in _cited_rows(world, 2026)  # unchanged until the person confirms
 

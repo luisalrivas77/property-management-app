@@ -22,6 +22,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, select
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import property_acquisition_cost as acquisition_cost_table
@@ -46,40 +47,65 @@ from .tax_inputs import (
 
 _LIVE = (AllocationStatus.CONFIRMED.value, AllocationStatus.PROPOSED.value)
 _NO_KEY = b"\x00" * 32  # the bill's IBAN HMAC is not read here, only its parts
-_ROW_REASON = (
-    "Diese Zahlung von einem privaten Konto bezahlt eine Rechnung des Mietobjekts, die noch "
-    "nicht als privat bezahlte Werbungskosten erfasst ist."
+# The cards' texts, German beside English (phase 10 D284); chosen when Zu prüfen is read.
+# Review F4: the doc.* texts say why an attached bill yields no row (the card links the
+# document's page).
+TEXTS = i18n.Texts(
+    "property_costs",
+    {
+        "row": (
+            "Diese Zahlung von einem privaten Konto bezahlt eine Rechnung des Mietobjekts, die"
+            " noch nicht als privat bezahlte Werbungskosten erfasst ist.",
+            "This payment from a private account pays a bill of the rental property that is not"
+            " yet recorded as privately paid Werbungskosten (deductible expenses).",
+        ),
+        "row.question": (
+            "Als Werbungskosten des Mietobjekts übernehmen?",
+            "Apply as Werbungskosten of the rental property?",
+        ),
+        "bill": (
+            "Diese Zahlung gehört zum Mietobjekt, aber es ist keine Rechnung dazu hinterlegt."
+            " Ohne Rechnung zählt sie nicht in der Anlage V.",
+            "This payment belongs to the rental property, but no bill is stored for it. Without"
+            " a bill it does not count in the Anlage V (rental income form).",
+        ),
+        "bill.question": ("Beleg hochladen", "Upload receipt"),
+        "year": (
+            "Diese Rechnung wurde am {paid} von einem privaten Konto bezahlt, also {year}."
+            " Privat bezahlte Kosten zählen im Jahr der Zahlung, die Kosten stehen aber noch im"
+            " Steuerjahr {rows}.",
+            "This bill was paid on {paid} from a private account, so in {year}. Privately paid"
+            " costs count in the year of payment, but the costs are still in tax year {rows}.",
+        ),
+        "year.question": ("In {year} zählen?", "Count in {year}?"),
+        "doc.not_read": (
+            "Zu dieser Zahlung ist ein Beleg hinterlegt, aber er ist noch nicht gelesen oder"
+            " konnte nicht gelesen werden. Ohne gelesene Rechnung zählt die Zahlung nicht in der"
+            " Anlage V.",
+            "A receipt is stored for this payment, but it has not been read yet or could not be"
+            " read. Without a read bill the payment does not count in the Anlage V.",
+        ),
+        "doc.not_a_bill": (
+            "Der hinterlegte Beleg wurde nicht als Rechnung oder Bescheid gelesen. Ohne Rechnung"
+            " zählt die Zahlung nicht in der Anlage V.",
+            "The stored receipt was not read as a bill or notice. Without a bill the payment"
+            " does not count in the Anlage V.",
+        ),
+        "doc.no_property": (
+            "Der hinterlegte Beleg ist noch keinem Mietobjekt zugeordnet: sein Vorschlag ist"
+            " noch nicht übernommen. Erst dann zählt die Zahlung in der Anlage V.",
+            "The stored receipt is not yet assigned to a rental property: its suggestion has"
+            " not been applied yet. Only then does the payment count in the Anlage V.",
+        ),
+        "doc.no_amount": (
+            "Im hinterlegten Beleg fehlt der Betrag oder das Datum der Rechnung. Ohne beides"
+            " zählt die Zahlung nicht in der Anlage V.",
+            "The stored receipt lacks the bill's amount or date. Without both the payment does"
+            " not count in the Anlage V.",
+        ),
+        "doc.question": ("Beleg öffnen und prüfen", "Open and check the receipt"),
+    },
 )
-_ROW_QUESTION = "Als Werbungskosten des Mietobjekts übernehmen?"
-_BILL_REASON = (
-    "Diese Zahlung gehört zum Mietobjekt, aber es ist keine Rechnung dazu hinterlegt. Ohne "
-    "Rechnung zählt sie nicht in der Anlage V."
-)
-_BILL_QUESTION = "Beleg hochladen"
-_YEAR_REASON = (
-    "Diese Rechnung wurde am {paid} von einem privaten Konto bezahlt, also {year}. Privat "
-    "bezahlte Kosten zählen im Jahr der Zahlung, die Kosten stehen aber noch im Steuerjahr "
-    "{rows}."
-)
-_YEAR_QUESTION = "In {year} zählen?"
-# Review F4: why an attached bill yields no row (the card links the document's page).
-_DOC_NOT_READ = (
-    "Zu dieser Zahlung ist ein Beleg hinterlegt, aber er ist noch nicht gelesen oder konnte "
-    "nicht gelesen werden. Ohne gelesene Rechnung zählt die Zahlung nicht in der Anlage V."
-)
-_DOC_NOT_A_BILL = (
-    "Der hinterlegte Beleg wurde nicht als Rechnung oder Bescheid gelesen. Ohne Rechnung "
-    "zählt die Zahlung nicht in der Anlage V."
-)
-_DOC_NO_PROPERTY = (
-    "Der hinterlegte Beleg ist noch keinem Mietobjekt zugeordnet: sein Vorschlag ist noch "
-    "nicht übernommen. Erst dann zählt die Zahlung in der Anlage V."
-)
-_DOC_NO_AMOUNT = (
-    "Im hinterlegten Beleg fehlt der Betrag oder das Datum der Rechnung. Ohne beides zählt "
-    "die Zahlung nicht in der Anlage V."
-)
-_DOC_QUESTION = "Beleg öffnen und prüfen"
 
 
 class _Line(NamedTuple):
@@ -142,8 +168,8 @@ def property_cost_items(conn: Connection) -> list[InboxItem]:
                 InboxItem(
                     kind=InboxItemKind.PROPERTY_COST_ROW,
                     created_at=r.recorded_at,
-                    reasoning=_ROW_REASON,
-                    question=_ROW_QUESTION,
+                    reasoning=TEXTS("row"),
+                    question=TEXTS("row.question"),
                     transaction_id=r.transaction_id,
                     document_id=r.document_id,
                     property_id=r.property_id,
@@ -156,7 +182,7 @@ def property_cost_items(conn: Connection) -> list[InboxItem]:
                     kind=InboxItemKind.PROPERTY_COST_DOCUMENT,
                     created_at=r.recorded_at,
                     reasoning=why,
-                    question=_DOC_QUESTION,
+                    question=TEXTS("doc.question"),
                     transaction_id=r.transaction_id,
                     document_id=r.document_id,
                     property_id=r.property_id,
@@ -169,8 +195,8 @@ def _bill_item(transaction_id: UUID, property_id: UUID, at) -> InboxItem:  # noq
     return InboxItem(
         kind=InboxItemKind.PROPERTY_COST_BILL,
         created_at=at,
-        reasoning=_BILL_REASON,
-        question=_BILL_QUESTION,
+        reasoning=TEXTS("bill"),
+        question=TEXTS("bill.question"),
         transaction_id=transaction_id,
         property_id=property_id,
     )
@@ -183,12 +209,13 @@ def _year_item(line: _Line, other_years: list[int]) -> InboxItem:
     return InboxItem(
         kind=InboxItemKind.PROPERTY_COST_YEAR,
         created_at=line.recorded_at,
-        reasoning=_YEAR_REASON.format(
-            paid=line.booking_date.strftime("%d.%m.%Y"),
+        reasoning=TEXTS(
+            "year",
+            paid=i18n.day(line.booking_date),
             year=year,
             rows=", ".join(str(y) for y in other_years),
         ),
-        question=_YEAR_QUESTION.format(year=year),
+        question=TEXTS("year.question", year=year),
         transaction_id=line.transaction_id,
         document_id=line.document_id,
         property_id=line.property_id,
@@ -206,17 +233,17 @@ def _proposed(
     record every part (D161 widened: never a second row for a recorded cost)."""
     extraction = current_extraction(conn, document_id)
     if extraction is None:
-        return [], _DOC_NOT_READ
+        return [], TEXTS("doc.not_read")
     if extraction.kind not in EVIDENCE_KINDS:
-        return [], _DOC_NOT_A_BILL
+        return [], TEXTS("doc.not_a_bill")
     evidence = matching.evidence_of(conn, document_id)
     if evidence is None:
-        return [], _DOC_NOT_A_BILL
+        return [], TEXTS("doc.not_a_bill")
     if evidence.property_id is None:
-        return [], _DOC_NO_PROPERTY
+        return [], TEXTS("doc.no_property")
     bill = matching.document_facts(evidence, iban_key=_NO_KEY, loans_by_property={})
     if bill is None:
-        return [], _DOC_NO_AMOUNT
+        return [], TEXTS("doc.no_amount")
     label = (evidence.row.title or "Rechnung")[:120]
     recorded = list(
         conn.execute(
