@@ -2,7 +2,9 @@
 
 Nov 5, 2026 (01–06), Nov 6, 2026 (07–12) and Nov 18, 2026 (12 redrawn, 12b, 12c, 12d, 13, 13b and 10b, for phase 9) · from the design canvas made with the architecture spec, and the phase 9 spec for the later ones
 
-Twenty screens that show what Hausbuch should look like and how its flows fit together. Each one
+Twenty screens that show what Hausbuch should look like and how its flows fit together
+(plus the layout overhaul drafts 14–17 of 20 Nov 2026, three design directions that are not
+approved; see the section at the end). Each one
 comes as a PNG (look at it) and a static HTML file (read the exact structure, labels and
 spacing). Links between the HTML files work, so you can click through them in a browser.
 
@@ -99,9 +101,119 @@ The phase 1 screens that were already built were restyled to this look on 5 Nov 
 structure and German labels were kept. Do not restructure them to match the 02 mockup's
 layout unless a task asks for it.
 
-**Layout on the phone and the computer (18 Nov 2026, to do).** No mockup covers a phone width
-yet, and the built screens only stack the sidebar into a header and let wide tables scroll
-sideways. Luis asked for new mockups, for the phone and the computer alike („Not only for the
-phone but for the pc as well.“), before any change: a modern look with little scrolling or
-clicking and clear, understandable information. See `docs/ARCHITECTURE.md`, „Input for a later
-phase: the layout on the phone and the computer“.
+**Layout on the phone and the computer (18 Nov 2026).** Luis asked for new mockups, for the
+phone and the computer alike („Not only for the phone but for the pc as well.“), before any
+change: a modern look with little scrolling or clicking and clear, understandable information.
+See `docs/ARCHITECTURE.md`, „Input for a later phase: the layout on the phone and the
+computer“. This paragraph said until 20 Nov 2026 that no mockup covered a phone width; that
+was already not quite true (06 is drawn at 390 px), and the drafts below now cover every
+screen they redraw at 390 px.
+
+## Layout overhaul (drafted 20 Nov 2026, not approved)
+
+**Nothing in this section is approved or built.** These are drafts for Luis to choose from:
+three design directions, each drawing the same four screens at phone width (390 px) and
+computer width (1440 px). The app keeps its current layout until he picks a direction (or a
+mix), and the choice is recorded in the Decisions table of `docs/ARCHITECTURE.md`. The colours,
+font and tokens are today's (`frontend/src/app/globals.css`); only the arrangement changes.
+Every figure is invented sample data, the same in all three directions (net worth 226.900 €,
+an ETF depot of 39.000 €, Girokonto A of „Luis“, and so on), so the directions can be compared
+screen by screen; none is a household figure or a fixture.
+
+**Start with the gallery.** `layout-gallery.html` is one self-contained page with every draft
+embedded: pick a direction and a screen, and the phone and the computer version show side by
+side (the computer one scaled down to fit, „Originalgröße“ to see it at full size). Open it
+from the file, no server needed.
+
+### The three directions
+
+**A · Ruhig & klassisch.** Today's app, tidied: the sidebar stays on the computer but slimmer,
+the cards get denser, and on the phone the menu moves into a bar at the bottom. It optimises
+for little to relearn; the trade-off is that it saves the least space of the three on the
+computer.
+
+**B · Dashboard kompakt.** Figures first: smaller type, everything in tiles on a grid, a dark
+icon rail on the computer that opens to show its names, and on the phone a top bar with
+„Menü“ that opens a full-screen menu of tiles with a search box. It shows the most at a glance
+(Übersicht and Planung fit on one computer screen without scrolling); the trade-off is density:
+smaller text and smaller tap targets, and on the phone every place outside the current page is
+one tap further away than with a bottom bar.
+
+**C · Mobil zuerst.** Built for the thumb: 16 px type, touch targets of 48 to 56 px, a bottom
+bar on the phone, the kinds of investment as cards swiped sideways, and sections that fold. On
+the computer it keeps one centred column (720 px) with a side panel (360 px) for the details of
+what is selected, and tabs in a top header instead of a sidebar. It is the most comfortable on
+the phone and the same on both devices; the trade-off is length (the phone pages are the
+longest of the three) and unused width on a large computer screen.
+
+### Files
+
+| File | What it shows, and what it changes against today |
+| --- | --- |
+| `layout-gallery.html` | Every draft below in one page with a switcher for direction and screen, phone and computer side by side; the gallery's own frame follows the light or dark setting, the drafts inside it are drawn light |
+| `14-A-nav.png` / `.html` | The phone menu, closed and open: a bottom bar with Übersicht, Zu prüfen (with its count), Haushalt, Anlagen and „Mehr“, which opens the rest in groups (Geld, Immobilie, Steuern & Planung, Ablage). Today the sidebar is one flat list of eleven entries, which on the phone wraps over several lines at the top of every page |
+| `15-A-overview-phone.png` / `.html` | Übersicht on the phone: net worth with its sparkline, the four kinds of investment as a 2×2 grid, Zu prüfen with the coming dates, the three key figures in one row. Today the cards stack one per row below the wrapped menu |
+| `15-A-overview-desktop.png` / `.html` | Übersicht on the computer: a slimmer sidebar, net worth, Zu prüfen and the month's cash flow in the first row, a card per kind of investment with a link into its area, the key figures in one strip |
+| `16-A-table-phone.png` / `.html` | Konten › Umsätze on the phone as two-line rows (payee and amount, date with category and status), with the balance and filters above; no sideways scrolling. Today the table (Buchungstag, Gegenseite, Verwendungszweck, Betrag, Zuordnung) sits in a box that scrolls sideways on a narrow screen |
+| `16-A-table-desktop.png` / `.html` | The same table on the computer, denser, with the account's balance above it |
+| `17-A-planning-phone.png` / `.html` | Planung › Haushalt on the phone: the four cards as a 2×2 grid, the box „Was eure Änderungen bewirken“ as stacked rows, every other section folded to its title and a one-line summary |
+| `17-A-planning-desktop.png` / `.html` | Planung › Haushalt on the computer in two columns, the sections folded except the levers and the ways to the reserve target |
+| `14-B-nav.png` / `.html` | The phone menu: a top bar with the inbox count and „Menü“, which opens a full-screen menu of tiles in three columns with a search box; no bottom bar |
+| `15-B-overview-phone.png` / `.html` | Übersicht on the phone as small tiles: net worth with a split bar by kind, the four kinds, the key figures with their marks, Zu prüfen, the coming dates and the cash flow, all of it within the first screen |
+| `15-B-overview-desktop.png` / `.html` | Übersicht on the computer on one screen: a six-column grid with net worth, the four kinds, the key figures, cash flow, Zu prüfen with the coming dates, twelve month-ends as bars and the latest lines; the icon rail opened |
+| `16-B-table-phone.png` / `.html` | Konten › Umsätze on the phone as dense one-line-plus rows with a coloured status dot; balance, in and out in one card above |
+| `16-B-table-desktop.png` / `.html` | The table on the computer with four figure tiles above it and a running balance column, the rail closed to icons |
+| `17-B-planning-phone.png` / `.html` | Planung › Haushalt on the phone: the four cards as tiles, the effects as a compact table, the sections as a list of folded rows |
+| `17-B-planning-desktop.png` / `.html` | Planung › Haushalt on the computer on one screen, three columns with every section open |
+| `14-C-nav.png` / `.html` | The phone menu: a large bottom bar (Übersicht, Zu prüfen, Haushalt, Anlagen, „Mehr“); „Mehr“ opens quick actions (Hochladen, Foto aufnehmen, Suchen) and the rest as large rows with a one-line description |
+| `15-C-overview-phone.png` / `.html` | Übersicht on the phone: a green net-worth card, the kinds of investment as cards swiped sideways with dots, Zu prüfen with a full-width button, the coming dates, the key figures and the cash flow folded |
+| `15-C-overview-desktop.png` / `.html` | Übersicht on the computer: tabs in the header, one centred column, and a side panel with the selected kind (the ETF depot) and the key figures |
+| `16-C-table-phone.png` / `.html` | Konten › Umsätze on the phone as a list grouped under weekday headings, each line with an initial, payee, category, amount and status, large enough to tap |
+| `16-C-table-desktop.png` / `.html` | The same list on the computer with the selected open line in the side panel: its purpose, account, category choices and „Beleg hochladen“ |
+| `17-C-planning-phone.png` / `.html` | Planung › Haushalt on the phone: Anlegbar pro Monat as the green card, the other three as rows, the effects box, the sections folded |
+| `17-C-planning-desktop.png` / `.html` | Planung › Haushalt on the computer: one column with „Wege zum Reserveziel“ opened, the effects box and „Szenario speichern“ in the side panel |
+
+### Design choices common to the drafts
+
+**A bottom bar or a top bar on the phone.** Today the sidebar becomes a header that wraps all
+eleven entries over several lines, so every page starts with a scroll past the menu. A and C
+put the menu in a bar at the bottom that stays on screen: the four places used most are one
+tap away with the thumb, and the page starts with its content. B uses a top bar with „Menü“
+instead: it leaves more height for figures, at the cost of one more tap to reach another page.
+Both were the options shown to Luis on 18 Nov 2026.
+
+**The four entries of the bar are Übersicht, Zu prüfen, Haushalt and Anlagen.** Konten sits
+under „Mehr“, because its daily task (deciding what a line is) happens in Zu prüfen, while
+Anlagen holds the investments by kind that Luis wants to see more of (the parked „overview by
+kind of investment“ in `docs/ARCHITECTURE.md`). Swapping Anlagen for Konten is a one-word
+change if he prefers it. The drafts' menus also name Immobilien, as the household design of 6 Nov 2026
+listed it; today's sidebar has no such entry (the flat is reached through links from Übersicht, Steuern, Planung and Mieter),
+so adding it would be part of the build.
+
+**Tables become rows on the phone.** Konten › Umsätze was drawn because it is the table looked at
+most and one of the wide ones; the drafts draw it with seven columns (Kategorie, Saldo and Status
+added to today's five), so the row pattern is tested on its widest form. On the phone each line becomes a row showing what decides something (payee,
+amount, category, status) and the rest (purpose, running balance) opens with a tap, so nothing
+scrolls sideways. The same pattern would apply to the other wide tables.
+
+**Long pages fold into sections.** Planung › Haushalt is the longest page; each section folds
+to its title and a one-line summary that already carries its main figure, so the page fits on
+far fewer screens and the reader opens only what they need. B on the computer keeps every
+section open, since it fits on one screen there.
+
+**The comparison box bolds the stretch the change affects.** In „Was eure Änderungen
+bewirken“ the app today prints the first stretch of months in bold even when a change starts
+later (a change from January 2027 showed its effect only on a grey line under the unchanged
+figure). In every draft the stretch the change affects is the bold one, and the months before
+it read „wie heute“. The drafts do not address the second point noted on 18 Nov 2026, a first
+stretch that starts in a month already over.
+
+**The dashed line marks the end of the first screen** (844 px, an iPhone's height, less the
+bottom bar where there is one), so how much each draft shows before a scroll can be compared.
+It is not part of the design. The phone drawings are full-page captures, so the bottom bar,
+which would stay fixed on the screen, is drawn once at the end of the page.
+
+**Sample data and marks.** The key figures are drawn with their marks in the confirmed state
+(green, amber, none), as in 13b; Verschuldungsgrad carries the sample value 38 % and no limit.
+The generator that wrote these files is not in the repository; edit the HTML directly or
+redraw.

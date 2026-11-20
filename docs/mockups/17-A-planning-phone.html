@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A · Planung Haushalt, Telefon</title>
+<!-- Layout overhaul mockup, drafted 20 Nov 2026 for Luis's choice; not approved, nothing built.
+     Invented sample data only: never real household figures, never fixtures. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
+<style>
+:root{
+--bg:#f4f5f2;--surface:#ffffff;--border:#e1e4de;--border-strong:#c9cec6;--divider:#eceee9;--tag-bg:#f4f5f2;
+--text:#17201c;--text-2:#3e4843;--muted:#5a635e;
+--accent:#1f6f54;--accent-strong:#14523e;--accent-text:#ffffff;--accent-tint:#e3f0ea;--accent-tint-2:#d5e6de;
+--info:#3a4ba8;--info-bg:#e8ebf8;--info-border:#ccd3f0;--info-text:#3b4370;
+--warn:#7a3f0b;--warn-bg:#fbeedc;--warn-border:#f0d6b0;
+--danger:#a3262a;--danger-bg:#fbeaea;--danger-border:#f0c8c9;
+--font:Manrope,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none}
+p{margin:0}
+h1,h2,h3{margin:0}
+button{font:inherit;cursor:pointer}
+.num{text-align:right;white-space:nowrap}
+.pos{color:var(--accent-strong)}
+.fold{position:absolute;left:0;right:0;height:0;border-top:2px dashed #3a4ba8;z-index:50;pointer-events:none}
+.fold span{position:absolute;right:6px;top:-22px;background:#3a4ba8;color:#fff;font:700 11px/1 var(--font);padding:5px 8px;border-radius:6px}
+.mark{display:inline-flex;align-items:center;gap:5px;font-weight:700}
+.mark i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.mark.green i{background:#2e8b57}.mark.amber i{background:#d4a017}.mark.none i{background:transparent;border:1.5px solid var(--border-strong)}
+
+body{font-size:14px;line-height:1.45}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+.eyebrow{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.lbl{font-size:13px;font-weight:600;color:var(--muted)}
+.big{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+.mid{font-size:19px;font-weight:800;letter-spacing:-.01em}
+.sub{font-size:12.5px;color:var(--muted)}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 14px;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;font-size:14px;border:0}
+.btn.sec{background:var(--surface);color:var(--text);border:1px solid var(--border-strong)}
+.pill{display:inline-block;font-size:12px;font-weight:700;border-radius:20px;padding:3px 10px;white-space:nowrap}
+.pill.ok{background:var(--accent-tint);color:var(--accent-strong)}
+.pill.proposed{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-border)}
+.pill.open{background:var(--info-bg);color:var(--info-text);border:1px solid var(--info-border)}
+.chip{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 14px;border-radius:20px;border:1px solid var(--border-strong);background:var(--surface);font-weight:700;font-size:13px;color:var(--text-2);white-space:nowrap}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.count{background:var(--info);color:#fff;font-size:11.5px;font-weight:800;border-radius:10px;padding:1px 7px;line-height:1.5}
+.row{display:flex;align-items:center;gap:10px}
+.between{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+/* desktop shell */
+.shell{display:grid;grid-template-columns:200px minmax(0,1fr);min-height:100vh}
+.side{background:var(--surface);border-right:1px solid var(--border);padding:18px 12px;display:flex;flex-direction:column;gap:2px}
+.side .brandrow{display:flex;align-items:center;gap:10px;padding:0 8px 14px;font-weight:800;font-size:17px;letter-spacing:-.02em}
+.side a{display:flex;align-items:center;gap:10px;min-height:36px;padding:0 10px;border-radius:8px;color:var(--text-2);font-weight:600;font-size:13.5px}
+.side a.on{background:var(--accent-tint);color:var(--accent-strong);font-weight:700}
+.side a .count{margin-left:auto}
+.side .grp{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);padding:14px 10px 4px}
+.side .foot{margin-top:auto;border-top:1px solid var(--border);padding-top:10px}
+.side .user{display:flex;justify-content:space-between;align-items:center;padding:8px 10px 0;font-size:13px}
+.main{padding:22px 32px 40px;min-width:0}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+/* phone */
+.ph{width:390px;min-height:100vh;position:relative;display:flex;flex-direction:column}
+.ph-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;background:var(--bg)}
+.ph-head h1{font-size:22px;font-weight:800;letter-spacing:-.02em}
+.ph-body{padding:4px 16px 20px;display:flex;flex-direction:column;gap:12px;flex:1}
+.iconbtn{width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;color:var(--text-2)}
+.bar{position:relative;z-index:20;display:grid;grid-template-columns:repeat(5,1fr);background:var(--surface);border-top:1px solid var(--border);padding:6px 4px 18px}
+.bar a{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;font-weight:700;color:var(--muted);position:relative;padding-top:4px}
+.bar a .ic{width:52px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center}
+.bar a.on{color:var(--accent-strong)}
+.bar a.on .ic{background:var(--accent-tint)}
+.bar a .count{position:absolute;top:0;left:50%;margin-left:6px;font-size:10.5px}
+</style>
+</head>
+<body>
+<div class="ph"><header class="ph-head"><div><p class="eyebrow" style="font-size:11px">Haushalt · Stand 20.11.</p><h1>Planung</h1></div><a class="iconbtn" href="#" aria-label="Szenario speichern"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></a></header><div class="ph-body"><div class="row" style="gap:6px"><a class="chip" href="#">Immobilie</a><a class="chip on" href="#">Haushalt</a></div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px"><div class="card" style="padding:12px 14px"><span class="lbl" style="font-size:12px">Anlegbar pro Monat</span><br><span class="mid" style="font-size:20px">1.002 €</span><br><span class="sub">frei verfügbar 1.113 € minus 10 % Puffer</span></div><div class="card" style="padding:12px 14px"><span class="lbl" style="font-size:12px">Schon angelegt</span><br><span class="mid" style="font-size:20px">550 €</span><br><span class="sub">ETF-Depot 400 € · Krypto-Börse 150 €</span></div><div class="card" style="padding:12px 14px"><span class="lbl" style="font-size:12px">Reserve heute</span><br><span class="mid" style="font-size:20px">19.200 €</span><br><span class="sub">reicht für 4,3 Monate Bedarf</span></div><div class="card" style="padding:12px 14px"><span class="lbl" style="font-size:12px">Bis zum Reserveziel</span><br><span class="mid" style="font-size:20px">7.620 €</span><br><span class="sub">Ziel 26.820 € = 6 Monate</span></div></div>
+<p class="sub"><strong style="color:var(--text)">Basis: 3 Monate, August bis Oktober 2026.</strong> <a href="#">Monate ansehen</a></p>
+<div class="card" style="border-color:var(--border-strong);padding:14px">
+<p style="font-weight:800;font-size:15px">Was eure Änderungen bewirken</p>
+<p class="sub" style="margin:2px 0 4px">Urlaub & Reisen: 350 € statt Ø 200 € ab Januar 2027. Fett ist die Zeitspanne, die die Änderung trifft.</p>
+<div style="padding:9px 0;border-top:1px solid var(--divider)"><div class="between"><strong style="font-size:13.5px">Sparquote</strong><span class="sub">heute 24,0 %</span></div><p class="sub">Nov. bis Dez. 2026: wie heute</p><p style="font-size:13.5px"><strong style="font-size:16px">21,3 %</strong> <strong>ab Januar 2027</strong></p></div><div style="padding:9px 0;border-top:1px solid var(--divider)"><div class="between"><strong style="font-size:13.5px">Anlegbar pro Monat</strong><span class="sub">heute 1.002 €</span></div><p class="sub">Nov. bis Dez. 2026: wie heute</p><p style="font-size:13.5px"><strong style="font-size:16px">867 €</strong> <strong>ab Januar 2027</strong></p></div><div style="padding:9px 0;border-top:1px solid var(--divider)"><div class="between"><strong style="font-size:13.5px">Reserveziel erreicht</strong><span class="sub">heute März 2028</span></div><p style="font-size:13.5px"><strong style="font-size:16px">November 2028</strong> <strong>auf dem Weg „wie bisher“</strong></p></div></div><div class="card" style="padding:0"><a href="#" style="display:flex;align-items:center;gap:10px;padding:12px 14px;color:inherit;min-height:56px"><span style="flex:1;min-width:0"><strong style="font-size:14.5px">Stellschrauben</strong><br><span class="sub">Reserveziel 6 Monate · Puffer 10 %</span></span><span style="color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></a></div><div class="card" style="padding:0"><a href="#" style="display:flex;align-items:center;gap:10px;padding:12px 14px;color:inherit;min-height:56px"><span style="flex:1;min-width:0"><strong style="font-size:14.5px">Weitere Annahmen</strong><br><span class="sub">1 Vorschlag offen: Steuererstattung +850 € · 2 Sparpläne · 4 Konten der Reserve</span></span><span style="color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></a></div><div class="card" style="padding:0"><a href="#" style="display:flex;align-items:center;gap:10px;padding:12px 14px;color:inherit;min-height:56px"><span style="flex:1;min-width:0"><strong style="font-size:14.5px">Ausgaben durchspielen</strong><br><span class="sub">1 Änderung: Urlaub & Reisen 350 € ab Januar 2027</span></span><span style="color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></a></div><div class="card" style="padding:0"><a href="#" style="display:flex;align-items:center;gap:10px;padding:12px 14px;color:inherit;min-height:56px"><span style="flex:1;min-width:0"><strong style="font-size:14.5px">Wege zum Reserveziel</strong><br><span class="sub">4 Wege · frühestens Juni 2027 · wie bisher März 2028</span></span><span style="color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></a></div><div class="card" style="padding:0"><a href="#" style="display:flex;align-items:center;gap:10px;padding:12px 14px;color:inherit;min-height:56px"><span style="flex:1;min-width:0"><strong style="font-size:14.5px">So entsteht die Zahl</strong><br><span class="sub">5.583 € − 4.117 € − 353 € = 1.113 € frei, minus Puffer = 1.002 €</span></span><span style="color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></a></div><div class="card" style="padding:0"><a href="#" style="display:flex;align-items:center;gap:10px;padding:12px 14px;color:inherit;min-height:56px"><span style="flex:1;min-width:0"><strong style="font-size:14.5px">Vermögen in einigen Jahren</strong><br><span class="sub">Annahme fehlt: Wertänderung für Fonds und Krypto eintragen</span></span><span style="color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></a></div><div class="card" style="padding:0"><a href="#" style="display:flex;align-items:center;gap:10px;padding:12px 14px;color:inherit;min-height:56px"><span style="flex:1;min-width:0"><strong style="font-size:14.5px">Erklärung zu euren Zahlen</strong><br><span class="sub">Standardtext vom 1. November 2026</span></span><span style="color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></a></div></div><nav class="bar" aria-label="Hauptnavigation"><a href="#"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg></span>Übersicht</a><a href="#"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13l1.5 8v6H4v-6z"/></svg></span>Zu prüfen<span class="count">7</span></a><a href="#"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h15a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4z"/><path d="M4 7V5.5A1.5 1.5 0 0 1 5.5 4H16v3"/><circle cx="16" cy="13.5" r="1.2"/></svg></span>Haushalt</a><a href="#"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v16h16"/><path d="m7 15 4-4 3 3 6-6"/></svg></span>Anlagen</a><a href="#" class="on"><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></span>Mehr</a></nav><div class="fold" style="top:778px"><span>erster Bildschirm endet hier; die Leiste bleibt unten stehen</span></div></div>
+</body></html>

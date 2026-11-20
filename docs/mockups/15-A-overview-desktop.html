@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A · Übersicht, Computer</title>
+<!-- Layout overhaul mockup, drafted 20 Nov 2026 for Luis's choice; not approved, nothing built.
+     Invented sample data only: never real household figures, never fixtures. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
+<style>
+:root{
+--bg:#f4f5f2;--surface:#ffffff;--border:#e1e4de;--border-strong:#c9cec6;--divider:#eceee9;--tag-bg:#f4f5f2;
+--text:#17201c;--text-2:#3e4843;--muted:#5a635e;
+--accent:#1f6f54;--accent-strong:#14523e;--accent-text:#ffffff;--accent-tint:#e3f0ea;--accent-tint-2:#d5e6de;
+--info:#3a4ba8;--info-bg:#e8ebf8;--info-border:#ccd3f0;--info-text:#3b4370;
+--warn:#7a3f0b;--warn-bg:#fbeedc;--warn-border:#f0d6b0;
+--danger:#a3262a;--danger-bg:#fbeaea;--danger-border:#f0c8c9;
+--font:Manrope,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none}
+p{margin:0}
+h1,h2,h3{margin:0}
+button{font:inherit;cursor:pointer}
+.num{text-align:right;white-space:nowrap}
+.pos{color:var(--accent-strong)}
+.fold{position:absolute;left:0;right:0;height:0;border-top:2px dashed #3a4ba8;z-index:50;pointer-events:none}
+.fold span{position:absolute;right:6px;top:-22px;background:#3a4ba8;color:#fff;font:700 11px/1 var(--font);padding:5px 8px;border-radius:6px}
+.mark{display:inline-flex;align-items:center;gap:5px;font-weight:700}
+.mark i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.mark.green i{background:#2e8b57}.mark.amber i{background:#d4a017}.mark.none i{background:transparent;border:1.5px solid var(--border-strong)}
+
+body{font-size:14px;line-height:1.45}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 18px}
+.eyebrow{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.lbl{font-size:13px;font-weight:600;color:var(--muted)}
+.big{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+.mid{font-size:19px;font-weight:800;letter-spacing:-.01em}
+.sub{font-size:12.5px;color:var(--muted)}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 14px;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;font-size:14px;border:0}
+.btn.sec{background:var(--surface);color:var(--text);border:1px solid var(--border-strong)}
+.pill{display:inline-block;font-size:12px;font-weight:700;border-radius:20px;padding:3px 10px;white-space:nowrap}
+.pill.ok{background:var(--accent-tint);color:var(--accent-strong)}
+.pill.proposed{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-border)}
+.pill.open{background:var(--info-bg);color:var(--info-text);border:1px solid var(--info-border)}
+.chip{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 14px;border-radius:20px;border:1px solid var(--border-strong);background:var(--surface);font-weight:700;font-size:13px;color:var(--text-2);white-space:nowrap}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.count{background:var(--info);color:#fff;font-size:11.5px;font-weight:800;border-radius:10px;padding:1px 7px;line-height:1.5}
+.row{display:flex;align-items:center;gap:10px}
+.between{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+/* desktop shell */
+.shell{display:grid;grid-template-columns:200px minmax(0,1fr);min-height:100vh}
+.side{background:var(--surface);border-right:1px solid var(--border);padding:18px 12px;display:flex;flex-direction:column;gap:2px}
+.side .brandrow{display:flex;align-items:center;gap:10px;padding:0 8px 14px;font-weight:800;font-size:17px;letter-spacing:-.02em}
+.side a{display:flex;align-items:center;gap:10px;min-height:36px;padding:0 10px;border-radius:8px;color:var(--text-2);font-weight:600;font-size:13.5px}
+.side a.on{background:var(--accent-tint);color:var(--accent-strong);font-weight:700}
+.side a .count{margin-left:auto}
+.side .grp{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);padding:14px 10px 4px}
+.side .foot{margin-top:auto;border-top:1px solid var(--border);padding-top:10px}
+.side .user{display:flex;justify-content:space-between;align-items:center;padding:8px 10px 0;font-size:13px}
+.main{padding:22px 32px 40px;min-width:0}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+/* phone */
+.ph{width:390px;min-height:100vh;position:relative;display:flex;flex-direction:column}
+.ph-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;background:var(--bg)}
+.ph-head h1{font-size:22px;font-weight:800;letter-spacing:-.02em}
+.ph-body{padding:4px 16px 20px;display:flex;flex-direction:column;gap:12px;flex:1}
+.iconbtn{width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;color:var(--text-2)}
+.bar{position:relative;z-index:20;display:grid;grid-template-columns:repeat(5,1fr);background:var(--surface);border-top:1px solid var(--border);padding:6px 4px 18px}
+.bar a{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;font-weight:700;color:var(--muted);position:relative;padding-top:4px}
+.bar a .ic{width:52px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center}
+.bar a.on{color:var(--accent-strong)}
+.bar a.on .ic{background:var(--accent-tint)}
+.bar a .count{position:absolute;top:0;left:50%;margin-left:6px;font-size:10.5px}
+</style>
+</head>
+<body>
+<div class="shell"><nav class="side" aria-label="Hauptnavigation"><div class="brandrow"><span style="flex:none;width:30px;height:30px;border-radius:8px;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg></span><span>Hausbuch</span></div><a href="#" class="on"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg><span>Übersicht</span></a><a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13l1.5 8v6H4v-6z"/></svg><span>Zu prüfen</span><span class="count">7</span></a><a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h15a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4z"/><path d="M4 7V5.5A1.5 1.5 0 0 1 5.5 4H16v3"/><circle cx="16" cy="13.5" r="1.2"/></svg><span>Haushalt</span></a><div class="grp">Geld</div><a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 4z"/><path d="M5.5 10v8M10 10v8M14 10v8M18.5 10v8M3 20h18"/></svg><span>Konten</span></a><a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v16h16"/><path d="m7 15 4-4 3 3 6-6"/></svg><span>Anlagen</span></a><div class="grp">Immobilie</div><a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/><path d="M2 21h20"/></svg><span>Immobilien</span></a><a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3.2 3.2 0 0 1 0 6.2M18 14.5c2 .8 3 2.8 3 5.5"/></svg><span>Mieter</span></a><a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/></svg><span>Eigentümer</span></a><div class="grp">Steuern & Planung</div><a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="m9.5 16 5-6"/><circle cx="10" cy="10.5" r=".9"/><circle cx="14" cy="15.5" r=".9"/></svg><span>Steuern</span></a><a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><span>Planung</span></a><div class="grp">Ablage</div><a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5"/><path d="M9 13h7M9 17h5"/></svg><span>Dokumente</span></a><div class="foot"><a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg><span>Einstellungen</span></a><div class="user"><strong>Luis</strong><a href="#" style="min-height:0;padding:0;font-size:13px;color:var(--accent)">Abmelden</a></div></div></nav><main class="main"><div class="wrap">
+<div class="between" style="align-items:flex-end"><div><p class="eyebrow">Übersicht · Stand 20. November 2026</p><h1 style="font-size:28px;font-weight:800;letter-spacing:-.02em">Hallo Luis</h1></div>
+<a class="btn" href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>Hochladen</a></div>
+<div style="display:grid;grid-template-columns:5fr 4fr 3fr;gap:16px">
+<a class="card" href="#" style="display:flex;flex-direction:column;color:inherit">
+<div class="between"><span class="lbl">Nettovermögen</span><span class="sub">Monatsabschluss 31. Oktober 2026</span></div>
+<div class="between" style="margin-top:4px;align-items:flex-end"><span class="big">226.900 €</span>
+<span class="pos" style="font-weight:800;font-size:14px">+2.900 € <span style="font-weight:600;color:var(--muted)">seit 31. Oktober</span></span></div>
+<div style="margin-top:auto;padding-top:8px"><svg width="100%" height="150" viewBox="0 0 300 150" preserveAspectRatio="none" role="img" aria-label="Nettovermögen der letzten 12 Monatsabschlüsse, steigend"><polygon points="3.0,150 3.0,147.0 29.7,134.4 56.5,139.7 83.2,116.0 109.9,104.7 136.6,108.7 163.4,84.2 190.1,88.2 216.8,62.4 243.5,43.3 270.3,22.2 297.0,3.0 297.0,150" fill="var(--accent-tint)" stroke="none"/><polyline points="3.0,147.0 29.7,134.4 56.5,139.7 83.2,116.0 109.9,104.7 136.6,108.7 163.4,84.2 190.1,88.2 216.8,62.4 243.5,43.3 270.3,22.2 297.0,3.0" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/><circle cx="297.0" cy="3.0" r="3" fill="var(--accent)"/></svg></div>
+</a>
+<div class="card" style="padding:14px 16px">
+<a href="#" class="between" style="color:inherit;padding-bottom:10px;align-items:center">
+<span class="row"><span style="width:34px;height:34px;border-radius:10px;background:var(--warn-bg);color:var(--warn);display:inline-flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13l1.5 8v6H4v-6z"/></svg></span>
+<span><strong style="font-size:15px">7 in Zu prüfen</strong><br><span class="sub">4 Umsätze · 2 Belege · 1 Überweisung ohne Gegenbuchung</span></span></span>
+<span style="color:var(--accent)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></a>
+<p class="lbl" style="padding:2px 0 2px">Demnächst</p><div class="row" style="padding:8px 0;border-top:1px solid var(--divider);align-items:flex-start"><span style="flex:none;width:48px;font-weight:800;font-size:13px;color:var(--warn)">10.12.</span><span style="min-width:0"><strong style="font-size:13.5px">Kreditkartenabrechnung hochladen</strong><br><span class="sub">Kontoauszug fällig · Kreditkarte</span></span></div><div class="row" style="padding:8px 0;border-top:1px solid var(--divider);align-items:flex-start"><span style="flex:none;width:48px;font-weight:800;font-size:13px;color:var(--text-2)">31.12.</span><span style="min-width:0"><strong style="font-size:13.5px">Krypto-Bestandsnachweis 2026</strong><br><span class="sub">für jede Wallet und jede Börse</span></span></div></div>
+<a class="card" href="#" style="color:inherit;display:flex;flex-direction:column;gap:4px">
+<span class="lbl">Cashflow Oktober 2026</span><span class="big pos">+1.350 €</span>
+<div class="between"><span class="sub">Einnahmen</span><strong>5.600 €</strong></div>
+<div class="between"><span class="sub">Ausgaben</span><strong>−4.250 €</strong></div>
+<span style="margin-top:auto;font-size:13px;font-weight:700;color:var(--accent)">Haushalt öffnen →</span></a>
+</div>
+<div class="between" style="margin-top:4px"><h2 style="font-size:16px;font-weight:800">Nach Anlageart</h2><span class="sub">jede Karte öffnet ihren Bereich · Kurse vom 19.11. (Tagesschluss)</span></div>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px"><a class="card" href="#" style="display:flex;flex-direction:column;gap:6px;color:inherit">
+<div class="between"><span class="row" style="gap:8px;color:var(--text-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/><path d="M2 21h20"/></svg><strong style="font-size:14px">Immobilie</strong></span><span class="sub">Musterstraße 12, WE 3</span></div>
+<div><span class="mid" style="font-size:22px">156.000 €</span> <span class="sub">Eigenkapital</span></div>
+<div class="between"><span class="sub">Wert</span><span style="font-weight:700;font-size:13px">300.000 €</span></div><div class="between"><span class="sub">Darlehen</span><span style="font-weight:700;font-size:13px">−144.000 €</span></div>
+<span style="margin-top:2px;font-size:13px;font-weight:700;color:var(--accent)">Immobilie öffnen →</span></a><a class="card" href="#" style="display:flex;flex-direction:column;gap:6px;color:inherit">
+<div class="between"><span class="row" style="gap:8px;color:var(--text-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><strong style="font-size:14px">ETF-Depot</strong></span><span class="sub">gemeinsam 50/50</span></div>
+<div><span class="mid" style="font-size:22px">39.000 €</span> <span class="sub">Wert</span></div>
+<div class="between"><span class="sub">Gewinn</span><span style="font-weight:700;font-size:13px">+4.200 € · +12,1 %</span></div><div class="between"><span class="sub">Sparplan</span><span style="font-weight:700;font-size:13px">400 € im Monat</span></div>
+<span style="margin-top:2px;font-size:13px;font-weight:700;color:var(--accent)">Anlagen › ETF →</span></a><a class="card" href="#" style="display:flex;flex-direction:column;gap:6px;color:inherit">
+<div class="between"><span class="row" style="gap:8px;color:var(--text-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M9.5 8h4a2 2 0 0 1 0 4h-4zm0 4h4.5a2 2 0 0 1 0 4H9.5zM11 6.5V8m0 8v1.5"/></svg><strong style="font-size:14px">Krypto</strong></span><span class="sub">Börse und 2 Wallets</span></div>
+<div><span class="mid" style="font-size:22px">10.400 €</span> <span class="sub">Wert</span></div>
+<div class="between"><span class="sub">Gewinn</span><span style="font-weight:700;font-size:13px">+1.800 € · +20,9 %</span></div><div class="between"><span class="sub">heute steuerfrei</span><span style="font-weight:700;font-size:13px">3.100 €</span></div>
+<span style="margin-top:2px;font-size:13px;font-weight:700;color:var(--accent)">Anlagen › Krypto →</span></a><a class="card" href="#" style="display:flex;flex-direction:column;gap:6px;color:inherit">
+<div class="between"><span class="row" style="gap:8px;color:var(--text-2)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 4z"/><path d="M5.5 10v8M10 10v8M14 10v8M18.5 10v8M3 20h18"/></svg><strong style="font-size:14px">Bank</strong></span><span class="sub">4 Konten, 1 Karte</span></div>
+<div><span class="mid" style="font-size:22px">21.500 €</span> <span class="sub">Guthaben</span></div>
+<div class="between"><span class="sub">Reserve</span><span style="font-weight:700;font-size:13px">4,3 Monate · Ziel 6</span></div><div class="between"><span class="sub">Kreditkarte</span><span style="font-weight:700;font-size:13px">−800 €</span></div>
+<span style="margin-top:2px;font-size:13px;font-weight:700;color:var(--accent)">Konten öffnen →</span></a></div>
+<div class="card" style="padding:14px 18px"><div class="between" style="margin-bottom:8px;"><span class="lbl">Kennzahlen</span><a href="#" style="font-size:13px;font-weight:700">Alle Kennzahlen →</a></div><div style="display:flex"><div style="flex:1 1 0;min-width:0;padding:0 18px;border-left:0"><span class="lbl" style="font-size:12px">Sparquote</span><br><span style="font-weight:800;font-size:20px">24 %</span><br><span class="mark green" style="font-size:12px"><i></i>Grün</span><br><span class="sub">Ø August bis Oktober 2026</span></div><div style="flex:1 1 0;min-width:0;padding:0 18px;border-left:1px solid var(--divider)"><span class="lbl" style="font-size:12px">Reserve</span><br><span style="font-weight:800;font-size:20px">4,3 Monate</span><br><span class="mark amber" style="font-size:12px"><i></i>Gelb</span><br><span class="sub">19.200 € · euer Ziel 6 Monate</span></div><div style="flex:1 1 0;min-width:0;padding:0 18px;border-left:1px solid var(--divider)"><span class="lbl" style="font-size:12px">Verschuldungsgrad</span><br><span style="font-weight:800;font-size:20px">38 %</span><br><span class="mark none" style="font-size:12px"><i></i>ohne Grenze</span><br><span class="sub">Schulden je Euro Vermögen</span></div></div></div>
+</div></main></div>
+</body></html>
