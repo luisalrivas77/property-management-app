@@ -99,7 +99,7 @@ def household_plan_preview(body: HouseholdPlanPreview, cmd: Cmd) -> HouseholdPla
 def household_plan_comparison(
     cmd: Cmd, month: Annotated[str, Query(pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$")]
 ) -> SpendingComparison:
-    return cmd.read(plan_service.spending_comparison, _today(), month)
+    return english(cmd.read(plan_service.spending_comparison, _today(), month))
 
 
 @router.get("/household-plan/explanation")

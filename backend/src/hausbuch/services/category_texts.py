@@ -1,0 +1,152 @@
+"""The categories' English names (phase 10 D284, step 4c), for the texts the server words on
+read. The German names stay in `rules/categories.CATEGORY_LABEL`, which every stored reasoning,
+paper and export reads; this table only answers a request that asked for English. The frontend's
+`components/labels.ts` carries the same words (`ALLOCATION_CATEGORY`'s `en`), so a category
+reads the same on a screen and in a to-do; `tests/test_i18n_read_texts.py` checks both cover
+every category.
+"""
+
+from collections.abc import Mapping
+from types import MappingProxyType
+
+from hausbuch.rules.categories import CATEGORY_LABEL
+from hausbuch.schemas.allocation import AllocationCategory as C
+
+CATEGORY_LABEL_EN: Mapping[C, str] = MappingProxyType(
+    {
+        C.RENT_COLD: "Base rent",
+        C.OPERATING_COSTS_PREPAYMENT: "Service charge prepayment",
+        C.OPERATING_COSTS_SETTLEMENT: "Service charge settlement (back-payment or refund)",
+        C.DEPOSIT_IN: "Kaution received",
+        C.DEPOSIT_OUT: "Kaution repaid",
+        C.OWNER_TRANSFER_IN: "Contribution from an owner",
+        C.OWNER_TRANSFER_OUT: "Withdrawal to an owner",
+        C.LOAN_INTEREST: "Loan interest",
+        C.LOAN_PRINCIPAL: "Repayment",
+        C.LOAN_FEES: "Loan costs (Geldbeschaffungskosten)",
+        C.LOAN_DISBURSEMENT: "Loan payout",
+        C.HAUSGELD_UMLAGEFAEHIG: "Hausgeld, rechargeable to tenants",
+        C.HAUSGELD_VERWALTUNG: "Hausgeld, not rechargeable (administration)",
+        C.HAUSGELD_RUECKLAGE: "Hausgeld, maintenance reserve",
+        C.PROPERTY_MANAGEMENT: "Rental management (Sondereigentumsverwaltung)",
+        C.GRUNDSTEUER: "Grundsteuer",
+        C.INSURANCE: "Insurance",
+        C.ELECTRICITY: "Electricity",
+        C.REPAIRS: "Maintenance (repair)",
+        C.RENOVATION: "Renovation or modernisation",
+        C.PURCHASE_PRICE: "Purchase price payment",
+        C.ACQUISITION_COST: "Incidental purchase costs",
+        C.PROFESSIONAL_FEES: "Advice and legal costs",
+        C.BANK_FEES: "Account and bank fees",
+        C.OTHER_INCOME: "Other income",
+        C.OTHER_EXPENSE: "Other expense",
+        C.UNCATEGORIZED: "Still open (not categorised)",
+        C.HH_SALARY: "Salary",
+        C.HH_CHILD_BENEFIT: "Child benefit (Kindergeld)",
+        C.HH_WAGE_REPLACEMENT: "Parental allowance & wage replacement",
+        C.HH_TAX_REFUND: "Tax refund",
+        C.HH_CAPITAL_INCOME: "Interest and dividends",
+        C.HH_OTHER_INCOME: "Other income (private)",
+        C.HH_HOUSING: "Other housing",
+        C.HH_GROCERIES: "Other food",
+        C.HH_FAMILY_CHILD: "Other family and children",
+        C.HH_MOBILITY: "Other mobility",
+        C.HH_INSURANCE: "Other insurance",
+        C.HH_SUBSCRIPTIONS: "Other subscriptions & contracts",
+        C.HH_LEISURE_TRAVEL: "Other leisure & hobbies",
+        C.HH_HEALTH: "Other health",
+        C.HH_OTHER: "Other",
+        C.HH_DONATION: "Donation",
+        C.HH_HOUSEHOLD_SERVICES: "Household service or craftsman",
+        C.HH_CHILDCARE: "Childcare",
+        C.HH_PROPERTY_COST: "Property cost, paid privately",
+        C.HH_TAX_PAYMENT: "Income tax (prepayment or back-payment)",
+        C.INTERNAL_TRANSFER_IN: "Transfer from own account",
+        C.INTERNAL_TRANSFER_OUT: "Transfer to own account",
+        C.HH_CASH: "Cash withdrawal",
+        C.HH_CREDIT_CARD: "Credit card settlement",
+        C.HH_INTEREST_FEES: "Interest and fees",
+        C.HH_PERSONAL_CARE: "Hairdresser & personal care",
+        C.HH_CLOTHING: "Clothing & shoes",
+        C.HH_DINING: "Other eating out",
+        C.HH_HOME: "Home & furnishing",
+        C.HH_ELECTRONICS: "Electronics & tech",
+        C.HH_ONLINE_SHOPPING: "Online shopping",
+        C.HH_FEES: "Authorities & fees",
+        C.HH_GIFTS: "Gifts & celebrations",
+        C.HH_FAMILY_TRANSFERS: "Money to family / abroad",
+        C.HH_TELECOM: "Other phone & internet",
+        C.HH_WORK_EDUCATION: "Work equipment & training",
+        C.HH_SPORT: "Sport & fitness",
+        C.HH_TRAVEL: "Other travel",
+        C.HH_INVESTMENT: "Other investments",
+        C.HH_INVESTMENT_PROPERTY: "Property",
+        C.HH_INVESTMENT_SECURITIES: "Securities & ETFs",
+        C.HH_INVESTMENT_CRYPTO: "Crypto",
+        C.HH_INVESTMENT_SAVINGS: "Savings & instant access",
+        C.HH_REFUND: "Refund",
+        C.HH_FUEL: "Fuel (car)",
+        C.HH_STREAMING: "Streaming (video)",
+        C.HH_PAY_TV: "Cable & pay TV",
+        C.HH_MUSIC_AUDIO: "Music & audiobooks",
+        C.HH_SOFTWARE: "Software & AI",
+        C.HH_CLOUD: "Cloud & servers",
+        C.HH_GAMING: "Gaming",
+        C.HH_NEWS: "Newspapers & magazines",
+        C.HH_MEMBERSHIPS: "Memberships & clubs",
+        C.HH_PUBLIC_TRANSPORT: "Train, bus & public transport",
+        C.HH_TAXI: "Taxi & ride services",
+        C.HH_PARKING: "Parking & tolls",
+        C.HH_CAR_SERVICE: "Car: garage & servicing",
+        C.HH_CAR_TAX: "Car: vehicle tax & registration",
+        C.HH_CAR_PURCHASE: "Car: purchase & financing",
+        C.HH_SUPERMARKET: "Supermarket",
+        C.HH_DRUGSTORE: "Drugstore & cosmetics",
+        C.HH_BAKERY: "Bakery, kiosk & market",
+        C.HH_RESTAURANT: "Restaurant",
+        C.HH_CAFE: "Café",
+        C.HH_BAR: "Bar & pub",
+        C.HH_SWEETS: "Ice cream & sweets",
+        C.HH_FAST_FOOD: "Snacks & fast food",
+        C.HH_DELIVERY: "Food delivery",
+        C.HH_RENT: "Rent",
+        C.HH_ENERGY: "Electricity, gas & heating",
+        C.HH_BROADCAST_FEE: "Broadcasting fee (Rundfunkbeitrag)",
+        C.HH_FLAT_SEARCH: "Flat search & moving",
+        C.HH_INS_CAR: "Car insurance",
+        C.HH_INS_LIABILITY_CONTENTS: "Liability & contents",
+        C.HH_INS_HEALTH: "Health & care",
+        C.HH_INS_LIFE: "Life, disability & pension",
+        C.HH_PHARMACY: "Pharmacy",
+        C.HH_DOCTOR: "Doctor & lab",
+        C.HH_DENTAL_OPTICAL: "Dentist & glasses",
+        C.HH_OUTINGS: "Outings & culture",
+        C.HH_BOOKS_MEDIA: "Books & media",
+        C.HH_HOBBIES: "Hobbies",
+        C.HH_LODGING: "Accommodation",
+        C.HH_FLIGHTS: "Flights",
+        C.HH_KIDS_GEAR: "Baby & children's equipment",
+        C.HH_TOYS: "Toys",
+        C.HH_PREGNANCY_BIRTH: "Pregnancy & birth",
+        C.HH_MOBILE_PHONE: "Mobile phone",
+        C.HH_INTERNET: "Internet & landline",
+        C.HH_POSTAGE: "Postage & shipping",
+        C.SECURITY_PURCHASE: "Securities purchase",
+        C.SECURITY_SALE: "Securities sale",
+        C.DISTRIBUTION: "Distribution or dividend",
+        C.CAPITAL_INCOME_TAX: "Capital gains tax and Vorabpauschale",
+        C.DEPOT_FEE: "Depot and management fee",
+    }
+)
+
+if set(CATEGORY_LABEL_EN) != set(C):  # pragma: no cover - a new category without English
+    raise RuntimeError("services/category_texts: every category needs its English name")
+
+_BY_GERMAN = {CATEGORY_LABEL[code]: code for code in C}
+
+
+def english_label(german: str) -> str:
+    """A category's German name in English; any other text unchanged (a converter for
+    `i18n.Patterns`)."""
+    code = _BY_GERMAN.get(german)
+    return german if code is None else CATEGORY_LABEL_EN[code]

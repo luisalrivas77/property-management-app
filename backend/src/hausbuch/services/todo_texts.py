@@ -20,6 +20,8 @@ from hausbuch import i18n
 from hausbuch.schemas.chain import WalletWaiting
 from hausbuch.schemas.health import HealthTodo
 from hausbuch.schemas.net_worth import NetWorthTodo
+from hausbuch.services.category_texts import english_label
+from hausbuch.services.read_texts import SWAPS
 
 
 def _nested(text: str) -> str:
@@ -237,8 +239,8 @@ PATTERNS = i18n.Patterns(
             " period; they do not count.",
         ),
         (
-            "Das Szenario ändert die Ausgaben für „{label}“ um einen Prozentsatz, aber in den"
-            " abgeschlossenen Monaten gibt es dafür keine gemessenen Ausgaben; die Änderung"
+            "Das Szenario ändert die Ausgaben für „{label:category}“ um einen Prozentsatz, aber"
+            " in den abgeschlossenen Monaten gibt es dafür keine gemessenen Ausgaben; die Änderung"
             " zählt gerade nicht mit.",
             "The scenario changes the spending on “{label}” by a percentage, but the closed"
             " months hold no measured spending for it; the change does not count for now.",
@@ -389,6 +391,7 @@ PATTERNS = i18n.Patterns(
         "classes": _classes,
         "counted": _counted,
         "quoted": _quoted,
+        "category": english_label,
     },
 )
 
@@ -440,7 +443,10 @@ def _walk(value: Any, swap: Callable[[BaseModel], BaseModel]) -> Any:
             walked = _walk(item, swap)
             if walked is not item:
                 update[name] = walked
-        return value.model_copy(update=update) if update else value
+        copied = value.model_copy(update=update) if update else value
+        # The figures' own sentences (services/read_texts): a mark's, a gap's, a note's.
+        own = SWAPS.get(type(value))
+        return copied if own is None else own(copied)
     if isinstance(value, list):
         walked = [_walk(item, swap) for item in value]
         return walked if any(a is not b for a, b in zip(walked, value, strict=True)) else value
@@ -452,7 +458,8 @@ def _walk(value: Any, swap: Callable[[BaseModel], BaseModel]) -> Any:
 
 def english[M](response: M) -> M:
     """The response with every to-do (and a wallet's waiting coins) in the request's
-    language: unchanged in German, a copy with the English texts and button words in English.
+    language, and the figures' own sentences with them (`read_texts.SWAPS`): unchanged in
+    German, a copy with the English texts and button words in English.
     Read routes only; nothing a write path stores passes through here."""
     if not i18n.english():
         return response
