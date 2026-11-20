@@ -19,6 +19,7 @@ from hausbuch.schemas.household import AssetPatch
 from hausbuch.schemas.prices import AssetPriceRow, AssetRow, AssetsOverview, TypedPriceBody
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.prices import overview
+from hausbuch.services.todo_texts import english
 
 from ..deps import Cmd, domain_router
 
@@ -32,7 +33,7 @@ def _today() -> date:
 @router.get("/assets/overview")
 def assets_overview(cmd: Cmd, on: date | None = None) -> AssetsOverview:
     """Valued on read from the stored prices; every figure names its source and day."""
-    return cmd.read(overview.assets_overview, on or _today())
+    return english(cmd.read(overview.assets_overview, on or _today()))
 
 
 @router.get("/assets")

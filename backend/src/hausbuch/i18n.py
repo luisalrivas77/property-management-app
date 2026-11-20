@@ -242,7 +242,11 @@ CONVERTERS: Mapping[str, Callable[[str], str]] = {
     "number": _en_number_like,
     "percent": _convert_percent,
     "month": _convert_month,
+    "count": lambda text: text,  # digits only, so a nested text before it cannot swallow it
 }
+
+# What a placeholder may match: any text by default, a plain count only digits.
+_CAPTURE = {"count": r"\d+"}
 
 
 # --- Catalogues -----------------------------------------------------------------------------
@@ -294,10 +298,17 @@ class Patterns:
     turns the captured German format into the English one, and the English template names
     the placeholder bare (`{d}`). `translate` returns the text unchanged in German, and also
     when no entry matches, so a new German text shows in German until its entry is added (the
-    tests run every producer against its catalogue)."""
+    tests run every producer against its catalogue). `converters` adds a catalogue's own
+    kinds, such as one that translates a text embedded in another with a second catalogue."""
 
-    def __init__(self, name: str, entries: Sequence[tuple[str, str]]) -> None:
+    def __init__(
+        self,
+        name: str,
+        entries: Sequence[tuple[str, str]],
+        converters: Mapping[str, Callable[[str], str]] | None = None,
+    ) -> None:
         self.name = name
+        self.converters: dict[str, Callable[[str], str]] = {**CONVERTERS, **(converters or {})}
         self.entries: list[tuple[re.Pattern[str], dict[str, str], str]] = []
         for german, english_text in entries:
             pattern, converters = self._compile(german)
@@ -306,21 +317,20 @@ class Patterns:
             self.entries.append((pattern, converters, english_text))
         CATALOGUES.append(self)
 
-    @staticmethod
-    def _compile(german: str) -> tuple[re.Pattern[str], dict[str, str]]:
+    def _compile(self, german: str) -> tuple[re.Pattern[str], dict[str, str]]:
         converters: dict[str, str] = {}
         parts: list[str] = []
         last = 0
         for match in _PLACEHOLDER.finditer(german):
             parts.append(re.escape(german[last : match.start()]))
             name, kind = match.group(1), match.group(2) or ""
-            if kind not in CONVERTERS:
+            if kind not in self.converters:
                 raise ValueError(f"unknown converter {kind!r} in {german!r}")
             if name in converters:
                 parts.append(f"(?P={name})")
             else:
                 converters[name] = kind
-                parts.append(f"(?P<{name}>.+?)")
+                parts.append(f"(?P<{name}>{_CAPTURE.get(kind, '.+?')})")
             last = match.end()
         parts.append(re.escape(german[last:]))
         return re.compile("".join(parts), re.DOTALL), converters
@@ -332,7 +342,7 @@ class Patterns:
             if match is None:
                 continue
             values = {
-                name: CONVERTERS[kind](match.group(name)) for name, kind in converters.items()
+                name: self.converters[kind](match.group(name)) for name, kind in converters.items()
             }
             return english_text.format(**values)
         return None

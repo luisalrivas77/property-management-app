@@ -32,6 +32,7 @@ from hausbuch.schemas.net_worth import (
 )
 from hausbuch.services import auto_rate, net_worth
 from hausbuch.services.documents import LOCAL_TIME_ZONE
+from hausbuch.services.todo_texts import english
 
 from ..deps import Cmd, domain_router, found
 
@@ -53,12 +54,12 @@ def accounts_auto_rate(month: Month, cmd: Cmd) -> AutoRate:
 
 @router.get("/net-worth")
 def net_worth_get(cmd: Cmd, on: date | None = None) -> NetWorth:
-    return cmd.read(net_worth.net_worth, on or _today())
+    return english(cmd.read(net_worth.net_worth, on or _today()))
 
 
 @router.get("/net-worth/overview")
 def net_worth_overview(cmd: Cmd) -> NetWorthOverview:
-    return cmd.read(net_worth.overview, _today())
+    return english(cmd.read(net_worth.overview, _today()))
 
 
 @router.post("/net-worth/snapshots")
@@ -79,4 +80,4 @@ def net_worth_snapshots(cmd: Cmd) -> list[NetWorthRun]:
 
 @router.get("/net-worth/snapshots/{run_id}")
 def net_worth_snapshot_get(run_id: UUID, cmd: Cmd) -> NetWorth:
-    return found(cmd.read(net_worth.stored_run, run_id), "valuation_snapshot", run_id)
+    return english(found(cmd.read(net_worth.stored_run, run_id), "valuation_snapshot", run_id))
