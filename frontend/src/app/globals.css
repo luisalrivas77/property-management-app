@@ -1,6 +1,6 @@
 /* One stylesheet, a handful of utility classes; no component library (§9).
    Visual style from the UI mockups (docs/mockups/, decided 5 Nov 2026): green palette,
-   Manrope, a left sidebar shell. Dark mode keeps the same roles with a green-derived palette. */
+   Manrope; since phase 10 (D266) a menu at the top on the computer and at the bottom on the phone. Dark mode keeps the same roles with a green-derived palette. */
 
 :root {
   /* surfaces and lines */
@@ -46,11 +46,40 @@
   --radius-tag: 6px;
   --content-width: 1160px;
   --font: "Manrope Variable", Manrope, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* phase 10 (D283): the kinds of assets as stripes (15-B2, never green, yellow or red so they
+     cannot read as a mark), and the Budget bar's three classes (17-C2) */
+  --kind-property: #46587a; /* Immobilie, muted slate blue */
+  --kind-funds: #7f9cc1; /* ETF-Depot, soft blue */
+  --kind-crypto: #9a86b5; /* Krypto, lavender */
+  --kind-cash: #aab0ba; /* Bank, light grey */
+  --budget-need: #46587a; /* Notwendiges */
+  --budget-want: #7f9cc1; /* Wünsche */
+  --budget-save: #9a86b5; /* Sparen */
+
+  /* a key figure's mark as a dot before its name (15-B2): green, amber, or empty while no limit
+     is set */
+  --mark-green: #2e8b57;
+  --mark-amber: #d4a017;
+  --mark-empty: #c9cec6;
+
+  /* the detail panel (D267) and the menu (D266) */
+  --panel-bg: #ffffff;
+  --panel-shadow: 0 12px 40px rgba(23, 32, 28, 0.18);
+  --scrim: rgba(23, 32, 28, 0.38);
+  --bar-bg: #ffffff;
+  --bar-shadow: 0 -1px 0 #e1e4de, 0 -6px 18px rgba(23, 32, 28, 0.06);
+  --topbar-height: 64px;
+  --bottombar-height: 64px;
+  --panel-width: 380px;
   color-scheme: light;
 }
 
+/* Dark (D283): the device's choice unless „Hell“ is chosen on this device, and always when
+   „Dunkel“ is. The same values twice, because a media query cannot share a block with a
+   plain selector: keep the two in step. Every token here also exists on bare :root above. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #121815;
     --surface: #1a221e;
     --border: #2c3631;
@@ -80,8 +109,77 @@
     --danger: #f08b8e;
     --danger-bg: #3a1d1f;
     --danger-border: #5e2d30;
+
+    --kind-property: #8ea2c8;
+    --kind-funds: #a9c3e3;
+    --kind-crypto: #bba9d8;
+    --kind-cash: #8c939e;
+    --budget-need: #8ea2c8;
+    --budget-want: #a9c3e3;
+    --budget-save: #bba9d8;
+
+    --mark-green: #5cc08a;
+    --mark-amber: #e8bd4a;
+    --mark-empty: #64716b;
+
+    --panel-bg: #1a221e;
+    --panel-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+    --scrim: rgba(0, 0, 0, 0.55);
+    --bar-bg: #1a221e;
+    --bar-shadow: 0 -1px 0 #2c3631, 0 -6px 18px rgba(0, 0, 0, 0.35);
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #121815;
+  --surface: #1a221e;
+  --border: #2c3631;
+  --border-strong: #64716b; /* 3.2:1 on surface, so inputs stay visible */
+  --divider: #252e2a;
+  --tag-bg: #252e2a;
+
+  --text: #e6ede9;
+  --text-2: #c5d0ca;
+  --muted: #9aa7a0;
+
+  --accent: #6fc3a0;
+  --accent-strong: #93d8bb;
+  --accent-text: #0e1a15;
+  --accent-tint: #1e3a2f;
+  --accent-tint-2: #26483a;
+
+  --info: #a9b4f2;
+  --info-bg: #1e2340;
+  --info-border: #353d6b;
+  --info-text: #c9cff7;
+
+  --warn: #f0b77a;
+  --warn-bg: #3a2a18;
+  --warn-border: #5c4327;
+
+  --danger: #f08b8e;
+  --danger-bg: #3a1d1f;
+  --danger-border: #5e2d30;
+
+  --kind-property: #8ea2c8;
+  --kind-funds: #a9c3e3;
+  --kind-crypto: #bba9d8;
+  --kind-cash: #8c939e;
+  --budget-need: #8ea2c8;
+  --budget-want: #a9c3e3;
+  --budget-save: #bba9d8;
+
+  --mark-green: #5cc08a;
+  --mark-amber: #e8bd4a;
+  --mark-empty: #64716b;
+
+  --panel-bg: #1a221e;
+  --panel-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  --scrim: rgba(0, 0, 0, 0.55);
+  --bar-bg: #1a221e;
+  --bar-shadow: 0 -1px 0 #2c3631, 0 -6px 18px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
 }
 
 *,
@@ -138,33 +236,26 @@ code {
   outline-offset: 2px;
 }
 
-/* --- shell: sidebar + content (a wrapping row: on a phone the sidebar sits above) --- */
-
-.shell {
-  display: flex;
-  flex-wrap: wrap;
+/* Read out, not shown (moved here from screens.css, since the menu uses it on every page). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
-.sidebar {
-  flex: 1 1 220px;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  padding: 24px 16px;
-}
-
-.sidebar nav {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+/* --- shell (phase 10 D266, mockup 14-C2): one menu, placed by width ---
+   From 800 px a bar at the top: the brand, the tabs with „Mehr“ as a drop-down, „Hochladen“.
+   Below 800 px the same <nav> is a bar fixed at the bottom of the screen (five entries, icon
+   over label), „Mehr“ a sheet above it; there is no header, so no page scrolls past a menu. */
 
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 44px;
-  padding: 0 12px;
-  margin-bottom: 16px;
   color: var(--text);
   text-decoration: none;
   font-size: 18px;
@@ -188,58 +279,163 @@ a.brand:hover {
   justify-content: center;
 }
 
-.nav-link {
+.shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.appbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
-  min-height: 44px;
-  padding: 0 12px;
-  border-radius: var(--radius-nav);
-  text-decoration: none;
+  gap: 24px;
+  min-height: var(--topbar-height);
+  padding: 0 24px;
+  background: var(--bar-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.appbar-brand {
+  flex: none;
+}
+
+.mainnav {
+  flex: 1;
+  min-width: 0;
+}
+
+.mainnav-list {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+}
+
+.mainnav-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: none;
+  font: inherit;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-2);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
-.nav-link:hover {
+.mainnav-link:hover {
   background: var(--bg);
   color: var(--text);
 }
 
-.nav-link[aria-current="page"] {
+.mainnav-link[aria-current="page"],
+.mainnav-link[data-current],
+.mainnav-link[aria-expanded="true"] {
   background: var(--accent-tint);
   color: var(--accent-strong);
   font-weight: 700;
 }
 
-/* The number of open items next to "Zu prüfen" (hidden at 0). */
-.nav-count {
-  margin-left: auto;
-  min-width: 22px;
-  padding: 1px 8px;
+/* „Mehr“ is a <button>: the global button hover (button:not(:disabled):hover) must not paint it
+   as a primary button. */
+button.mainnav-link:not(:disabled):hover {
+  border-color: transparent;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button.mainnav-link[aria-expanded="true"]:not(:disabled):hover,
+button.mainnav-link[data-current]:not(:disabled):hover {
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+
+.mainnav-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.mainnav-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* The number of open items on „Zu prüfen“ (none at 0); read out by the link's hidden text. */
+.mainnav-count {
+  position: absolute;
+  top: -7px;
+  left: 12px;
+  min-width: 18px;
+  padding: 0 5px;
   border-radius: var(--radius-pill);
-  background: var(--warn-bg);
-  color: var(--warn);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.5;
+  background: var(--warn);
+  color: var(--surface);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 17px;
   text-align: center;
+  box-shadow: 0 0 0 2px var(--bar-bg);
 }
 
-.nav-link[aria-current="page"] .nav-count {
-  background: var(--surface);
+.mainnav-more {
+  position: relative;
 }
 
-.sidebar-user {
+.mainnav-chevron {
+  margin-left: -2px;
+}
+
+.mainnav-link[aria-expanded="true"] .mainnav-chevron {
+  transform: rotate(180deg);
+}
+
+/* „Mehr“: a drop-down under its button on the computer. */
+.more-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 40;
+  width: 340px;
+  max-height: calc(100vh - var(--topbar-height) - 24px);
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--panel-shadow);
+}
+
+.more-menu[hidden] {
+  display: none;
+}
+
+.more-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   gap: 4px 12px;
-  margin-top: 16px;
-  padding: 16px 12px 0;
-  border-top: 1px solid var(--divider);
+  padding: 8px 12px 12px;
+  border-bottom: 1px solid var(--divider);
+  margin-bottom: 4px;
 }
 
-.sidebar-user .user-name {
+.more-title {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 20px;
+}
+
+.more-user {
   font-size: 14px;
   font-weight: 700;
   color: var(--text-2);
@@ -247,8 +443,111 @@ a.brand:hover {
   overflow-wrap: anywhere;
 }
 
+.more-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px 4px 12px;
+}
+
+.more-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  border-radius: var(--radius-card);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  text-align: center;
+}
+
+.more-action-icon {
+  display: inline-flex;
+  color: var(--accent-strong);
+}
+
+.more-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.more-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 12px;
+  border-radius: var(--radius-nav);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.more-link:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.more-link[aria-current="page"] {
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+
+.more-link-icon {
+  flex: none;
+  color: var(--text-2);
+}
+
+.more-link[aria-current="page"] .more-link-icon {
+  color: var(--accent-strong);
+}
+
+.more-link-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.more-link-label {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.more-link-hint {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.more-link-chevron {
+  flex: none;
+  color: var(--text-2);
+}
+
+.more-note {
+  margin: 8px 12px 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.appbar-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+a.button-link.appbar-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .content {
-  flex: 999 1 560px;
   min-width: 0;
   padding: 32px 40px 48px;
 }
@@ -258,40 +557,144 @@ a.brand:hover {
   margin: 0 auto;
 }
 
-/* Side by side from here: the sidebar runs the full height of the window. */
+/* The drop-down's quick actions are the header's „Hochladen“ on the computer. */
 @media (min-width: 800px) {
-  .shell {
-    min-height: 100vh;
+  .more-actions,
+  .more-title {
+    display: none;
   }
 }
 
-/* Stacked: the sidebar becomes a compact header row above the content. */
+/* Room for the labels: the tabs keep their icons, the brand its mark. */
+@media (min-width: 800px) and (max-width: 1099px) {
+  .appbar {
+    gap: 12px;
+    padding: 0 16px;
+  }
+  .appbar-brand-name,
+  .appbar-upload-label {
+    display: none;
+  }
+  .mainnav-link {
+    padding: 0 10px;
+  }
+}
+
+/* The phone: the menu is a bar at the bottom, clear of the home indicator. */
 @media (max-width: 799px) {
-  .sidebar {
-    flex-basis: 100%;
-    border-right: none;
+  .appbar {
+    position: static;
+    display: block;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    background: none;
+  }
+  .appbar-brand,
+  .appbar-actions {
+    display: none;
+  }
+  .mainnav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    padding: 0 4px env(safe-area-inset-bottom);
+    padding-left: max(4px, env(safe-area-inset-left));
+    padding-right: max(4px, env(safe-area-inset-right));
+    background: var(--bar-bg);
+    box-shadow: var(--bar-shadow);
+  }
+  .mainnav-list {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
+    height: var(--bottombar-height);
+  }
+  .mainnav-list > li {
+    height: 100%;
+    min-width: 0;
+  }
+  .mainnav-link,
+  .mainnav-link:hover {
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 4px 2px;
+    border-radius: 0;
+    background: none;
+    font-size: 11px;
+  }
+  .mainnav-link[aria-current="page"],
+  .mainnav-link[data-current],
+  .mainnav-link[aria-expanded="true"] {
+    background: none;
+    color: var(--accent-strong);
+  }
+  button.mainnav-link:not(:disabled):hover,
+  button.mainnav-link[aria-expanded="true"]:not(:disabled):hover,
+  button.mainnav-link[data-current]:not(:disabled):hover {
+    background: none;
+  }
+  .mainnav-link .mainnav-icon {
+    padding: 3px 14px;
+    border-radius: var(--radius-pill);
+  }
+  .mainnav-link[aria-current="page"] .mainnav-icon,
+  .mainnav-link[data-current] .mainnav-icon,
+  .mainnav-link[aria-expanded="true"] .mainnav-icon {
+    background: var(--accent-tint);
+  }
+  .mainnav-icon svg {
+    width: 22px;
+    height: 22px;
+  }
+  .mainnav-count {
+    top: -4px;
+    left: 26px;
+  }
+  .mainnav-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mainnav-chevron {
+    display: none;
+  }
+  .mainnav-more {
+    position: static;
+  }
+  /* „Mehr“: a sheet that rises above the bar. */
+  .more-menu {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--bottombar-height) + env(safe-area-inset-bottom));
+    width: auto;
+    max-height: calc(100dvh - var(--bottombar-height) - env(safe-area-inset-bottom) - max(16px, env(safe-area-inset-top)));
+    padding: 12px 12px 8px;
+    border: none;
+    border-radius: 18px 18px 0 0;
     border-bottom: 1px solid var(--border);
-    padding: 12px 16px;
-  }
-  .sidebar nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-  .brand {
-    flex-basis: 100%;
-    margin-bottom: 4px;
-    padding: 0 4px;
-  }
-  .sidebar-user {
-    flex-basis: 100%;
-    margin-top: 8px;
-    padding: 8px 4px 0;
   }
   .content {
-    padding: 24px 16px 40px;
+    padding: max(20px, env(safe-area-inset-top)) 16px calc(var(--bottombar-height) + env(safe-area-inset-bottom) + 32px);
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
   }
   h1 {
     font-size: 26px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mainnav-chevron {
+    transition: transform 0.15s ease;
   }
 }
 

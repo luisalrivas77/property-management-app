@@ -2,7 +2,7 @@
 // lever (Wertsteigerung) changes only the URL and the screen recalculates through the API,
 // and "Szenario speichern" writes a scenario row with the levers in force. A property whose
 // purchase year has no rule set gets a plain notice instead of figures. Synthetic data only.
-import { apiCall, expect, test } from "./support";
+import { apiCall, expect, navigateTo, test } from "./support";
 
 type Projection = { scenario: { sale_year: number; value_growth: string }; sale: { value: string } };
 type Scenario = { name: string; levers: { value_growth: string } };
@@ -41,7 +41,7 @@ test("the projection renders, a lever recalculates and a scenario is saved", asy
   const before = await apiCall<Projection>(page, "GET", projectionPath);
   const saleYear = before.scenario.sale_year;
 
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Planung" }).click();
+  await navigateTo(page, "Planung");
   await expect(page).toHaveURL("/planning");
   await expect(page.getByRole("heading", { name: "Rechnet sich die Immobilie?" })).toBeVisible();
   await expect(page.getByRole("group", { name: `Verkaufspreis ${saleYear}` })).toContainText(euro(before.sale.value));

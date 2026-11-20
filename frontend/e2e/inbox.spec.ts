@@ -7,7 +7,7 @@ import path from "node:path";
 
 import type { Page } from "@playwright/test";
 
-import { apiCall, expect, test } from "./support";
+import { apiCall, expect, mainNav, navigateTo, test } from "./support";
 
 const ZIP = path.resolve(import.meta.dirname, "..", "..", "backend", "tests", "fixtures", "phase2", "bank_samples", "camt052.zip");
 const CSV = path.resolve(import.meta.dirname, "..", "..", "backend", "tests", "fixtures", "phase2", "bank_samples", "csv_camt.csv");
@@ -28,7 +28,7 @@ async function importSample(page: Page): Promise<string> {
 }
 
 async function openInbox(page: Page): Promise<void> {
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" }).click();
+  await navigateTo(page, "Zu prüfen");
   await expect(page.getByRole("heading", { name: "Hochladen, bestätigen, fertig" })).toBeVisible();
   await openSection(page, "Zahlungen zuordnen");
 }
@@ -51,8 +51,8 @@ test("an unmatched line is split by hand into two rows; Bestätigen waits until 
 
   const queue = page.getByRole("list", { name: "Zahlungen zuordnen" });
   await expect(queue.getByRole("button")).toHaveCount(22);
-  // The sidebar counts the same items the page lists.
-  const navEntry = page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" });
+  // The menu counts the same items the page lists.
+  const navEntry = mainNav(page).getByRole("link", { name: "Zu prüfen" });
   await expect(navEntry).toHaveAccessibleName(/22 offen/);
   await expect(page.getByRole("heading", { name: /^Zahlungen zuordnen/ })).toContainText("22");
   // The section folds from its heading row and opens again on a click; the only section here
@@ -280,7 +280,7 @@ test("a folded section opens on a click of its heading, and the choice is rememb
   await expect(page.getByRole("row").filter({ hasText: "csv_camt.csv" })).toBeVisible();
   await page.getByLabel("Kontoauszug hochladen").setInputFiles(ZIP);
   await expect(page.getByRole("row").filter({ hasText: "camt052.zip" }).locator(".badge")).toHaveText("nicht abgestimmt");
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" }).click();
+  await navigateTo(page, "Zu prüfen");
 
   const duplicates = sectionToggle(page, "Mögliche Doppelbuchungen");
   const pairs = page.getByRole("list", { name: "Mögliche Doppelbuchungen" });

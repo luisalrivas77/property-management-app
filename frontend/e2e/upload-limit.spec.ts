@@ -5,7 +5,7 @@
 // default, so a scanned PDF above 10 MB reached the API cut short and the upload failed after
 // half a minute. next.config.ts raises both (proxyClientMaxBodySize, proxyTimeout). This
 // uploads a file of exactly the API's limit, 25 MiB, through the documents screen.
-import { expect, test } from "./support";
+import { expect, navigateTo, test } from "./support";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // HAUSBUCH_MAX_UPLOAD_BYTES' default (settings.py)
 
@@ -21,7 +21,7 @@ test("a 25 MiB upload through the web server reaches the API", async ({ page, si
   const file = pdfOfSize(MAX_UPLOAD_BYTES);
   expect(file.length).toBe(MAX_UPLOAD_BYTES);
 
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Dokumente" }).click();
+  await navigateTo(page, "Dokumente");
   const uploaded = page.waitForResponse((r) => r.url().endsWith("/api/documents") && r.request().method() === "POST", {
     timeout: 60_000,
   });

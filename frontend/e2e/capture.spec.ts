@@ -6,7 +6,7 @@
 import type { Page } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
 
-import { apiCall, expect, test } from "./support";
+import { apiCall, expect, mainNav, navigateTo, test } from "./support";
 
 // Real PNGs, so the browser can decode them: 40×30 (landscape) and 30×40 (portrait).
 const LANDSCAPE = Buffer.from(
@@ -40,12 +40,12 @@ function documentIdOf(href: string | null): string {
 
 test("one photo becomes a one-page PDF with source photo, listed with its status and linked to its page", async ({ page, signedIn }) => {
   void signedIn;
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" }).click();
+  await navigateTo(page, "Zu prüfen");
   await page.getByRole("link", { name: "Beleg fotografieren" }).click();
   await expect(page).toHaveURL("/capture");
   await expect(page.getByRole("heading", { name: "Beleg fotografieren" })).toBeVisible();
-  // The capture page belongs to "Zu prüfen" in the sidebar.
-  await expect(page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Zu prüfen" })).toHaveAttribute(
+  // The capture page belongs to "Zu prüfen" in the menu.
+  await expect(mainNav(page).getByRole("link", { name: "Zu prüfen" })).toHaveAttribute(
     "aria-current",
     "page",
   );

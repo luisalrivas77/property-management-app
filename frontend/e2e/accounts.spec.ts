@@ -6,7 +6,7 @@ import path from "node:path";
 
 import type { Page } from "@playwright/test";
 
-import { apiCall, expect, test } from "./support";
+import { apiCall, expect, navigateTo, test } from "./support";
 
 const SAMPLES = path.resolve(import.meta.dirname, "..", "..", "backend", "tests", "fixtures", "phase2", "bank_samples");
 const ZIP = path.join(SAMPLES, "camt052.zip");
@@ -26,7 +26,7 @@ async function createAccountViaApi(page: Page): Promise<string> {
 
 test("a camt ZIP imports reconciled, a second upload adds nothing, Umsätze filter by date", async ({ page, signedIn }) => {
   void signedIn;
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Konten" }).click();
+  await navigateTo(page, "Konten");
   await expect(page.getByRole("heading", { name: "Konten" })).toBeVisible();
   await page.getByRole("link", { name: "Konto anlegen" }).click();
   await page.getByLabel("Bezeichnung").fill("Mietkonto");

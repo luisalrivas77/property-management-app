@@ -1,6 +1,6 @@
 // Flow 1 (§10.3): enroll from the bootstrap link, sign out and back in with the passkey, add
 // a second passkey and remove it again (§6.3, §6.7).
-import { acceptNextConfirm, alert, enroll, expect, signIn, signOut, test } from "./support";
+import { acceptNextConfirm, alert, enroll, expect, navigateTo, signIn, signOut, test } from "./support";
 
 test("enroll from the bootstrap link, sign in again, add and remove a second passkey", async ({
   page,
@@ -34,7 +34,7 @@ test("enroll from the bootstrap link, sign in again, add and remove a second pas
     // The API excludes the user's registered credentials, so the same authenticator would
     // refuse; empty it to act as a second device, and keep the first passkey to restore.
     await authenticator.replaceCredentials([]);
-    await page.getByRole("link", { name: "Einstellungen" }).click();
+    await navigateTo(page, "Einstellungen");
     await expect(page.getByRole("heading", { name: "Einstellungen" })).toBeVisible();
     await page.getByLabel("Passkey hinzufügen").fill("Telefon");
     await page.getByRole("button", { name: "Passkey hinzufügen" }).click();
