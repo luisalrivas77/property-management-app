@@ -32,6 +32,13 @@ from hausbuch.services.documents import record_ai_extraction, upload_document
 
 pytestmark = pytest.mark.db
 
+
+def _listed(response) -> list[dict]:
+    """The Dokumente list without each row's section (phase 10 D282), which only the list
+    carries and test_document_sections.py checks; the rest is the document as recorded."""
+    return [{k: v for k, v in row.items() if k != "section"} for row in ok(response)]
+
+
 PDF = b"%PDF-1.7 Kaufvertrag Lindenstrasse"
 
 
@@ -44,7 +51,7 @@ def test_upload_and_dedup(client_a):
 
     again = upload(client_a, PDF, filename="copy.pdf", source="photo")
     assert (again.status_code, again.json()) == (200, document)  # the same document (D9)
-    assert ok(client_a.get("/api/documents")) == [document]
+    assert _listed(client_a.get("/api/documents")) == [document]
     [uploaded] = ok(client_a.get(f"/api/events?entity_id={document['id']}"))
     assert uploaded["payload"]["media_type"] == "application/pdf"
 
@@ -137,7 +144,9 @@ def test_typing_links_detail_and_retention(client_a):
 
     tenancy_id = setup["tenancy"]["id"]
     assert ok(client_a.get(f"/api/tenancies/{tenancy_id}/documents")) == [typed]
-    assert ok(client_a.get(f"/api/documents?target_type=tenancy&target_id={tenancy_id}")) == [typed]
+    assert _listed(client_a.get(f"/api/documents?target_type=tenancy&target_id={tenancy_id}")) == [
+        typed
+    ]
     assert ok(client_a.get("/api/documents?target_type=loan")) == []
     response = client_a.get(f"/api/documents?target_id={tenancy_id}")
     assert (response.status_code, response.json()["error"]) == (422, "invalid")
@@ -240,12 +249,6 @@ def test_a_property_and_a_unit_roll_up_the_documents_of_their_children(client_a)
     _link(client_a, loan_contract, "loan", loan)
     _link(client_a, by_tenant, "tenant", setup["tenant"]["id"])  # never rolled up
     _link(client_a, elsewhere, "unit", other_unit)
-    # Read again after linking: a document's section follows its links (phase 10 D282).
-    deed, lease, loan_contract, elsewhere = (
-        ok(client_a.get(f"/api/documents/{d['id']}"))["document"]
-        for d in (deed, lease, loan_contract, elsewhere)
-    )
-    assert {d["section"] for d in (deed, lease, loan_contract, elsewhere)} == {"property"}
 
     assert ok(client_a.get(f"/api/properties/{prop}/documents")) == [
         {"document": deed, "via": [{"target_type": "property", "target_id": prop}]},
@@ -267,7 +270,7 @@ def test_a_property_and_a_unit_roll_up_the_documents_of_their_children(client_a)
     ]
     # The direct read is unchanged.
     query = f"/api/documents?target_type=property&target_id={prop}"
-    assert ok(client_a.get(query)) == [deed, lease]
+    assert _listed(client_a.get(query)) == [deed, lease]
 
 
 def test_documents_of_unknown_targets_are_404(client_a):

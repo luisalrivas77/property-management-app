@@ -65,6 +65,7 @@ from hausbuch.schemas.document import (
     Document,
     DocumentExtraction,
     DocumentLink,
+    DocumentListItem,
     DocumentRetentionInput,
     DocumentTyping,
     HandFields,
@@ -266,7 +267,7 @@ def upload_document(
     if row is None:  # lost the race: the other upload registered it and wrote the event
         return _select_document_by_sha(ctx.conn, sha_bytes, lock=True)
 
-    uploaded = _to_documents(ctx.conn, [row])[0]
+    uploaded = _to_document(row)
     append_event(
         ctx,
         EventType.DOCUMENT_UPLOADED,
@@ -359,7 +360,7 @@ def type_document(
         )
         .returning(*document_table.c)
     ).one()
-    typed = _to_documents(ctx.conn, [row])[0]
+    typed = _to_document(row)
     # In the DocumentField order; an untyped document had no value for any field. The title
     # is named here but its value never enters the payload (D5).
     previous = current.typing
@@ -874,13 +875,9 @@ def list_documents(
     *,
     target_type: LinkTarget | None = None,
     target_id: UUID | None = None,
-    section: DocumentSection | None = None,
-    q: str | None = None,
 ) -> list[Document]:
     """Documents in the current workspace, oldest first; optionally only those linked to a
-    target type, or to one target (target_id needs target_type); only those of one section
-    and those a search finds (phase 10 D282: every word of `q`, case- and umlaut-insensitive,
-    in the title, the type label, the file name, the issuer, a date or the amount)."""
+    target type, or to one target (target_id needs target_type)."""
     query = select(document_table).order_by(document_table.c.received_at, document_table.c.id)
     if target_id is not None and target_type is None:
         raise ValueError("target_id needs target_type")
@@ -889,16 +886,57 @@ def list_documents(
         linked = select(link_table.c.id).where(link_table.c.document_id == document_table.c.id)
         linked = linked.where(column.is_not(None) if target_id is None else column == target_id)
         query = query.where(exists(linked))
-    documents = _to_documents(conn, list(conn.execute(query)))
+    return [_to_document(r) for r in conn.execute(query)]
+
+
+def list_document_items(
+    conn: Connection,
+    *,
+    target_type: LinkTarget | None = None,
+    target_id: UUID | None = None,
+    section: DocumentSection | None = None,
+    q: str | None = None,
+) -> list[DocumentListItem]:
+    """The Dokumente list (phase 10 D282): list_documents, each with its section computed on
+    read from what the document is and what relies on it; only those of one section, and only
+    those a search finds (every word of `q`, case- and umlaut-insensitive, in the title, the
+    type label, the file name, the issuer, a date or the amount)."""
+    documents = list_documents(conn, target_type=target_type, target_id=target_id)
+    ids = [d.id for d in documents]
+    signals = _section_signals(conn, ids)
+    depot_kinds = _depot_kinds(conn, ids)
+    items = []
+    for document in documents:
+        typing = document.typing
+        item_section = document_section(
+            typing.type if typing else None,
+            typing.subtype if typing else None,
+            depot_kind=depot_kinds.get(document.id),
+            signals=signals[document.id],
+        )
+        items.append(DocumentListItem(**document.model_dump(), section=item_section))
     if section is not None:
-        documents = [d for d in documents if d.section is DocumentSection(section)]
+        items = [d for d in items if d.section is DocumentSection(section)]
     words = query_words(q)
     if words:
-        documents = _search(conn, documents, words)
-    return documents
+        items = _search(conn, items, words)
+    return items
 
 
-def _search(conn: Connection, documents: list[Document], words: list[str]) -> list[Document]:
+def _depot_kinds(conn: Connection, ids: list[UUID]) -> dict[UUID, str]:
+    if not ids:
+        return {}
+    rows = conn.execute(
+        select(document_table.c.id, document_table.c.depot_kind).where(
+            document_table.c.id.in_(ids), document_table.c.depot_kind.is_not(None)
+        )
+    )
+    return {r.id: r.depot_kind for r in rows}
+
+
+def _search(
+    conn: Connection, documents: list[DocumentListItem], words: list[str]
+) -> list[DocumentListItem]:
     """The documents every word finds; the issuer and amount come from each document's current
     reading as the hand fields show them (D37), loaded in one query."""
     if not documents:
@@ -972,16 +1010,14 @@ def list_related_documents(
         raise ValueError(f"documents roll up to a property or a unit only, not {target_type}")
 
     linked = select(links.id).where(links.document_id == document_table.c.id).where(matches)
-    documents = _to_documents(
-        conn,
-        list(
-            conn.execute(
-                select(document_table)
-                .where(exists(linked))
-                .order_by(document_table.c.received_at, document_table.c.id)
-            )
-        ),
-    )
+    documents = [
+        _to_document(r)
+        for r in conn.execute(
+            select(document_table)
+            .where(exists(linked))
+            .order_by(document_table.c.received_at, document_table.c.id)
+        )
+    ]
     if not documents:
         return []
     via: dict[UUID, list[DocumentLink]] = {d.id: [] for d in documents}
@@ -1200,7 +1236,7 @@ def _select_document(conn: Connection, document_id: UUID, *, for_update: bool) -
     if for_update:
         query = query.with_for_update()
     row = conn.execute(query).one_or_none()
-    return None if row is None else _to_documents(conn, [row])[0]
+    return None if row is None else _to_document(row)
 
 
 def _file_lock(conn: Connection, storage_key: str) -> None:
@@ -1217,7 +1253,7 @@ def _select_document_by_sha(
     if lock:
         query = query.with_for_update(read=True, key_share=True)
     row = conn.execute(query).one_or_none()
-    return None if row is None else _to_documents(conn, [row])[0]
+    return None if row is None else _to_document(row)
 
 
 _PROPERTY_LINK_COLUMNS = ("property_id", "unit_id", "tenant_id", "tenancy_id", "loan_id")
@@ -1291,13 +1327,7 @@ def _section_signals(conn: Connection, ids: list[UUID]) -> dict[UUID, set[Sectio
     return signals
 
 
-def _to_documents(conn: Connection, rows: list) -> list[Document]:
-    """Document rows as records, each with its section (phase 10 D282)."""
-    signals = _section_signals(conn, [r._mapping["id"] for r in rows])
-    return [_to_document(r, signals[r._mapping["id"]]) for r in rows]
-
-
-def _to_document(row, signals: set[SectionSignal]) -> Document:
+def _to_document(row) -> Document:
     m = row._mapping
     typing = None
     if m["type"] is not None:
@@ -1308,12 +1338,6 @@ def _to_document(row, signals: set[SectionSignal]) -> Document:
             document_date=m["document_date"],
             tax_year=m["tax_year"],
         )
-    section = document_section(
-        DocumentType(m["type"]) if m["type"] is not None else None,
-        DocumentSubtype(m["subtype"]) if m["subtype"] is not None else None,
-        depot_kind=m["depot_kind"],
-        signals=signals,
-    )
     return Document(
         id=m["id"],
         workspace_id=m["workspace_id"],
@@ -1324,7 +1348,6 @@ def _to_document(row, signals: set[SectionSignal]) -> Document:
         received_at=m["received_at"],
         updated_at=m["updated_at"],
         typing=typing,
-        section=section,
     )
 
 

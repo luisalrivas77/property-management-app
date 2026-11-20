@@ -7021,8 +7021,6 @@ export interface components {
              */
             updated_at: string;
             typing?: components["schemas"]["DocumentTyping"] | null;
-            /** @default other */
-            section: components["schemas"]["DocumentSection"];
         };
         /**
          * DocumentChecklist
@@ -7170,6 +7168,47 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * DocumentListItem
+         * @description A row of the Dokumente list (GET /documents): the document with its section, computed
+         *     on read from what the document is and what relies on it (phase 10 D282,
+         *     rules/document_section.py), never stored. Only the list carries it, since a link or a cost
+         *     row added later changes it.
+         */
+        DocumentListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** File Sha256 */
+            file_sha256: string;
+            source: components["schemas"]["DocumentSource"];
+            /** Original Filename */
+            original_filename: string | null;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            typing?: components["schemas"]["DocumentTyping"] | null;
+            section: components["schemas"]["DocumentSection"];
         };
         /**
          * DocumentSection
@@ -18106,7 +18145,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Document"][];
+                    "application/json": components["schemas"]["DocumentListItem"][];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

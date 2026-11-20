@@ -22,7 +22,7 @@ def _sections(client, **params) -> dict[str, str]:
 
 def test_sections_from_typing_and_links(client_a):
     untyped = ok(upload(client_a, b"%PDF-1.7 a", filename="scan.pdf"), 201)
-    assert untyped["section"] == "other"
+    assert "section" not in untyped  # only the list carries it: a later link changes it
 
     payslip = _typed(client_a, b"%PDF-1.7 b", "lohn.pdf", {"type": "gehaltsabrechnung"})
     statement = _typed(client_a, b"%PDF-1.7 c", "konto.pdf", {"type": "statement"})
@@ -31,13 +31,15 @@ def test_sections_from_typing_and_links(client_a):
     )
     lease = _typed(client_a, b"%PDF-1.7 e", "mv.pdf", {"type": "contract", "subtype": "lease"})
     invoice = _typed(client_a, b"%PDF-1.7 f", "rechnung.pdf", {"type": "invoice"})
-    assert (payslip["section"], statement["section"], depot["section"], lease["section"]) == (
+    sections = _sections(client_a)
+    assert [sections[d["id"]] for d in (untyped, payslip, statement, depot, lease)] == [
+        "other",
         "tax",
         "accounts",
         "investments",
         "property",
-    )
-    assert invoice["section"] == "other"  # a plain invoice: its links decide
+    ]
+    assert sections[invoice["id"]] == "other"  # a plain invoice: its links decide
 
     # A Bescheid that is a Nebenkosten row's Beleg (a Grunderwerbsteuerbescheid) is Immobilie
     # even when it is also linked to an owner, which alone would make it Steuern.
@@ -62,7 +64,6 @@ def test_sections_from_typing_and_links(client_a):
     )
     sections = _sections(client_a)
     assert sections[bescheid["id"]] == "property"
-    assert ok(client_a.get(f"/api/documents/{bescheid['id']}"))["document"]["section"] == "property"
 
     # The invoice moves to Immobilie once it is linked to the property.
     create(

@@ -3348,7 +3348,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Document"
+                    "$ref": "#/components/schemas/DocumentListItem"
                   },
                   "title": "Response Documents List Api Documents Get"
                 }
@@ -18172,10 +18172,6 @@
                 "type": "null"
               }
             ]
-          },
-          "section": {
-            "$ref": "#/components/schemas/DocumentSection",
-            "default": "other"
           }
         },
         "additionalProperties": false,
@@ -18594,6 +18590,82 @@
         ],
         "title": "DocumentLink",
         "description": "Links a document to exactly one entity (the thing it proves)."
+      },
+      "DocumentListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "file_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "File Sha256"
+          },
+          "source": {
+            "$ref": "#/components/schemas/DocumentSource"
+          },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Received At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "typing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentTyping"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "section": {
+            "$ref": "#/components/schemas/DocumentSection"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "file_sha256",
+          "source",
+          "original_filename",
+          "received_at",
+          "updated_at",
+          "section"
+        ],
+        "title": "DocumentListItem",
+        "description": "A row of the Dokumente list (GET /documents): the document with its section, computed\non read from what the document is and what relies on it (phase 10 D282,\nrules/document_section.py), never stored. Only the list carries it, since a link or a cost\nrow added later changes it."
       },
       "DocumentSection": {
         "type": "string",
