@@ -268,7 +268,7 @@ function LotsPanel({ coin, account, owner }: { coin: CryptoCoin; account: Crypto
   const f = useFormat();
   const lots = coin.lots ?? [];
   return (
-    <div className="stack detail-body">
+    <div className="stack">
       <p className="muted">{[account?.label, owner].filter(Boolean).join(" · ")}</p>
       <dl className="facts">
         <div>

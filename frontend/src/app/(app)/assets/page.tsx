@@ -236,7 +236,7 @@ function FundPanel({ account, position }: { account: EtfAccount; position: EtfPo
   const note = valueNote(t, f, position);
   const gain = position.gain_today_eur;
   return (
-    <div className="stack detail-body">
+    <div className="stack">
       <p className="muted">{[account.label, position.isin].filter(Boolean).join(" · ")}</p>
       <dl className="facts">
         <div>
