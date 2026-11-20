@@ -154,11 +154,20 @@ def document_section(
     signals: Iterable[SectionSignal] = (),
 ) -> DocumentSection:
     """The one section of a document: the first in priority order that anything claims."""
+    signals = set(signals)
     claims: set[DocumentSection] = {_SECTION_BY_SIGNAL[s] for s in signals}
     if subtype is not None:
         claims.add(SECTION_BY_SUBTYPE[subtype])
     elif doc_type is not None and (by_type := SECTION_BY_TYPE[doc_type]) is not None:
-        claims.add(by_type)
+        # A plain statement is a bank's or a card's, unless a depot, exchange or wallet record
+        # relies on it (or its text layer carries a depot's heading) and no bank import does:
+        # then it is that holding's statement (a depot's cash statement is typed `statement`
+        # with no subtype, since its retention keys on the subtype), and Anlagen wins over Konten.
+        holding_only = (
+            SectionSignal.HOLDING_RECORD in signals or depot_kind is not None
+        ) and SectionSignal.BANK_STATEMENT not in signals
+        if not (doc_type is DocumentType.STATEMENT and holding_only):
+            claims.add(by_type)
     if depot_kind is not None:  # a depot's heading read from the text layer (D177)
         claims.add(DocumentSection.INVESTMENTS)
     for section in _ORDER:

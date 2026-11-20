@@ -88,6 +88,24 @@ def test_two_claims_take_the_first_section():
     )
 
 
+def test_a_depot_cash_statement_is_anlagen():
+    """A depot's cash statement is typed a plain `statement` (its retention keys on the subtype);
+    a holding record relying on it, and no bank import, places it under Anlagen, not Konten."""
+    holding = [SectionSignal.HOLDING_RECORD]
+    assert (
+        document_section(T.STATEMENT, None, depot_kind="cash_statement", signals=holding)
+        is S.INVESTMENTS
+    )
+    assert document_section(T.STATEMENT, None, signals=holding) is S.INVESTMENTS
+    # Uploaded with a depot's heading, before its import onto the depot.
+    assert document_section(T.STATEMENT, None, depot_kind="cash_statement") is S.INVESTMENTS
+    # Imported onto a bank account too: Konten stays first.
+    both = [SectionSignal.HOLDING_RECORD, SectionSignal.BANK_STATEMENT]
+    assert document_section(T.STATEMENT, None, signals=both) is S.ACCOUNTS
+    # A plain statement nothing relies on yet is still a bank or card statement.
+    assert document_section(T.STATEMENT, None) is S.ACCOUNTS
+
+
 def _texts(**overrides):
     base = {
         "title": "Übergabeprotokoll WE 3",

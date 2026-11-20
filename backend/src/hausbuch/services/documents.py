@@ -8,6 +8,7 @@ the current typing, document_extraction an append-only version per change (D9, p
 
 import contextlib
 import hashlib
+import logging
 import mimetypes
 import re
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
 from sqlalchemy import Connection, Text, cast, delete, exists, func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -101,6 +103,8 @@ from .context import CommandContext
 from .errors import ConflictError, NotFoundError
 from .events import append_event
 from .parties import tenancies_ever_of
+
+logger = logging.getLogger("hausbuch.services.documents")
 
 # Extraction kinds that are evidence for matching (phase-2.md §8.1 step 3 and the Hausgeld
 # split): a new version of one queues rematch_on_evidence (§5.1) in the same transaction.
@@ -938,7 +942,9 @@ def _search(
     conn: Connection, documents: list[DocumentListItem], words: list[str]
 ) -> list[DocumentListItem]:
     """The documents every word finds; the issuer and amount come from each document's current
-    reading as the hand fields show them (D37), loaded in one query."""
+    reading as the hand fields show them (D37), loaded in one query. A stored reading that no
+    longer validates is left out, so one bad row never fails the whole search: that document is
+    still found by its title, type, file name and dates, and a warning names its id only."""
     if not documents:
         return []
     ids = [d.id for d in documents]
@@ -948,10 +954,16 @@ def _search(
         .order_by(extraction_table.c.document_id, extraction_table.c.version.desc())
         .distinct(extraction_table.c.document_id)
     )
-    readings = {
-        row.document_id: DocumentExtraction.model_validate(dict(row._mapping))
-        for row in conn.execute(latest)
-    }
+    readings: dict[UUID, DocumentExtraction] = {}
+    for row in conn.execute(latest):
+        try:
+            readings[row.document_id] = DocumentExtraction.model_validate(dict(row._mapping))
+        except ValidationError:
+            # Never the error itself: its message quotes the stored values.
+            logger.warning(
+                "document search: skipped the reading of document %s (not valid)",
+                row.document_id,
+            )
     found = []
     for document in documents:
         values = hand_fields(readings.get(document.id)).values
