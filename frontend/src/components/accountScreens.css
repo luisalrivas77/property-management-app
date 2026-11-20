@@ -1,0 +1,337 @@
+/* Konten and Konten › Umsätze (phase 10 D269, D279; mockups 16-C2 and 21). Tokens only, so
+   dark mode follows globals.css. */
+
+/* --- Umsätze: heading, month card --- */
+
+.lines-head .page-head {
+  margin-bottom: 0.25rem;
+}
+
+.lines-back {
+  display: inline-block;
+  margin-bottom: 0.25rem;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.lines-back:hover {
+  color: var(--accent-strong);
+}
+
+.month-card {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  padding: 0;
+  margin: 0.75rem 0 1rem;
+  overflow: hidden;
+}
+
+.month-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.9rem 1rem;
+  border-left: 1px solid var(--divider);
+  min-width: 0;
+}
+
+.month-figure:first-child {
+  border-left: 0;
+}
+
+.month-label {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.month-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.month-value-small {
+  font-size: 1rem;
+}
+
+.month-sub {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.month-foot {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.55rem 1rem;
+  border-top: 1px solid var(--divider);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 799px) {
+  .month-card {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .month-figure {
+    padding: 0.7rem 0.85rem;
+    border-left: 0;
+  }
+
+  .month-balance,
+  .month-transfers {
+    grid-column: 1 / -1;
+  }
+
+  .month-figure:nth-child(n + 2) {
+    border-top: 1px solid var(--divider);
+  }
+
+  .month-figure:nth-child(3) {
+    border-left: 1px solid var(--divider);
+  }
+
+  .month-value {
+    font-size: 1.15rem;
+  }
+}
+
+/* --- Umsätze: chips, month, the lines by day --- */
+
+.lines-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.lines-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 36px;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+}
+
+.chip-on,
+.chip[aria-current="page"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.chip-count {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.lines-month select {
+  min-height: 36px;
+}
+
+.line-days {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.line-day-title {
+  margin: 0 0 0.3rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.line-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.line-list > li + li {
+  border-top: 1px solid var(--divider);
+}
+
+.line-row {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr) minmax(0, 11rem) auto 9.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.line-row:hover {
+  background: var(--tag-bg);
+}
+
+.line-row[aria-current="true"] {
+  background: var(--accent-tint);
+}
+
+.line-row.excluded .line-payee,
+.line-row.excluded .line-amount {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.line-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--tag-bg);
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.line-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.line-payee {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-purpose,
+.line-category-sub {
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-category-sub {
+  display: none;
+}
+
+.line-category {
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.line-amount {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.line-state {
+  text-align: right;
+}
+
+.line-status-booked {
+  color: var(--accent-strong);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 799px) {
+  /* The phone: the payee with its category, the amount with its status under it (§5.3). */
+  .line-row {
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    grid-template-areas:
+      "initial text amount"
+      "initial text state";
+    row-gap: 0.15rem;
+    column-gap: 0.6rem;
+    padding: 0.55rem 0.75rem;
+  }
+
+  .line-initial {
+    grid-area: initial;
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .line-text {
+    grid-area: text;
+  }
+
+  .line-amount {
+    grid-area: amount;
+  }
+
+  .line-state {
+    grid-area: state;
+  }
+
+  .line-purpose,
+  .line-category {
+    display: none;
+  }
+
+  .line-category-sub {
+    display: block;
+  }
+}
+
+/* --- the line in the panel --- */
+
+.line-panel-amount {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.line-facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.line-facts dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.line-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

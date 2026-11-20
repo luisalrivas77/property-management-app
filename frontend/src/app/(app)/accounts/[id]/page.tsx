@@ -2,7 +2,7 @@
 
 // Konto (phase-2.md §7): the account's facts, then tabs as ?tab=… links. Kontoauszüge (upload,
 // the imports with their reconciliation status, the closing-balance form for a CSV), Umsätze
-// (with a booking-date filter, or the lines of one import), and mögliche Doppelbuchungen
+// (phase 10 D269: the month card and the lines by day, components/accountLines.tsx), and mögliche Doppelbuchungen
 // (the same payment imported in two formats, D22). Since phase 6 (D156) a private account
 // imports like the rental one; its owners (D157) are a card under the facts, with the to-do
 // „Eigentümer festlegen“ while none is set. Kontoauszüge starts, on the rental account, with
@@ -17,12 +17,13 @@
 // none either: its page is its addresses, masked, with „Adresse hinzufügen“, „kopieren“ and
 // „Adresse stilllegen“ (components/wallet.tsx).
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useState, type FormEvent } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Account } from "@/api/schemas";
-import { DuplicatesList, ImportsTable, openDuplicateCount, StatementUpload, TransactionsTable } from "@/components/accounts";
+import { DuplicatesList, ImportsTable, openDuplicateCount, StatementUpload } from "@/components/accounts";
+import { AccountLinesView } from "@/components/accountLines";
 import { BankSyncCard } from "@/components/bankSync";
 import { ExchangeSection } from "@/components/exchange";
 import { formatDate, formatMoney } from "@/components/format";
@@ -90,7 +91,11 @@ function AccountDetail() {
   return (
     <section>
       <Loading state={account}>
-        {(data) => (
+        {(data) =>
+          tab === "umsaetze" && data.kind !== "exchange" && data.kind !== "wallet" ? (
+            // Konten › Umsätze (phase 10 D269, 16-C2): its own heading and month card.
+            <AccountLinesView account={data} tabs={<TabBar tabs={tabs} current={tab} href={(key) => `/accounts/${id}?tab=${key}`} />} />
+          ) : (
           <>
             <Breadcrumbs items={[{ href: "/accounts", label: "Konten" }, { label: data.label }]} />
             <div className="page-head">
@@ -185,7 +190,6 @@ function AccountDetail() {
                     </Loading>
                   </div>
                 ) : null}
-                {tab === "umsaetze" ? <TransactionsTab accountId={id} /> : null}
                 {tab === "doppelbuchungen" ? (
                   <Loading state={statements}>
                     {(loaded) => (
@@ -201,7 +205,8 @@ function AccountDetail() {
               </>
             )}
           </>
-        )}
+          )
+        }
       </Loading>
     </section>
   );
@@ -252,90 +257,6 @@ function AccountFacts({ account }: { account: Account }) {
         ["Wofür", ACCOUNT_PURPOSE[account.purpose]],
       ]}
     />
-  );
-}
-
-/** Umsätze, newest booking day first, as GET /accounts/{id}/transactions returns them. The
- * filter lives in the URL (?von=…&bis=…, or ?import=… from an import row). */
-function TransactionsTab({ accountId }: { accountId: string }) {
-  const router = useRouter();
-  const search = useSearchParams();
-  const from = search.get("von") ?? "";
-  const to = search.get("bis") ?? "";
-  const importId = search.get("import");
-  const [fromInput, setFromInput] = useState(from);
-  const [toInput, setToInput] = useState(to);
-
-  const load = useCallback(
-    () =>
-      ok(
-        api.GET("/api/accounts/{account_id}/transactions", {
-          params: {
-            path: { account_id: accountId },
-            query: { booked_from: from || null, booked_to: to || null, import_id: importId },
-          },
-        }),
-      ),
-    [accountId, from, to, importId],
-  );
-  const transactions = useLoad(load);
-
-  function href(params: Record<string, string>): string {
-    const query = new URLSearchParams({ tab: "umsaetze", ...params });
-    return `/accounts/${accountId}?${query.toString()}`;
-  }
-
-  function apply(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const params: Record<string, string> = {};
-    if (fromInput) params.von = fromInput;
-    if (toInput) params.bis = toInput;
-    router.replace(href(params), { scroll: false });
-  }
-
-  function reset() {
-    setFromInput("");
-    setToInput("");
-    router.replace(href({}), { scroll: false });
-  }
-
-  return (
-    <div className="stack">
-      {importId ? (
-        <div className="notice notice-info">
-          <p>
-            Nur die Umsätze, die ein Kontoauszug neu gespeichert hat. <Link href={href({})}>Alle Umsätze anzeigen</Link>
-          </p>
-        </div>
-      ) : (
-        <form className="filter-row" onSubmit={apply} noValidate>
-          <div className="field">
-            <label htmlFor="transactions-from">Buchungstag von</label>
-            <input id="transactions-from" type="date" value={fromInput} onChange={(e) => setFromInput(e.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="transactions-to">bis</label>
-            <input id="transactions-to" type="date" value={toInput} onChange={(e) => setToInput(e.target.value)} />
-          </div>
-          <div className="row">
-            <button type="submit">Anzeigen</button>
-            {from || to ? (
-              <button type="button" className="secondary" onClick={reset}>
-                Zurücksetzen
-              </button>
-            ) : null}
-          </div>
-        </form>
-      )}
-      <Loading state={transactions}>
-        {(lines) => (
-          <>
-            <p className="muted">{lines.length === 1 ? "1 Umsatz" : `${lines.length} Umsätze`}</p>
-            <TransactionsTable transactions={lines} />
-          </>
-        )}
-      </Loading>
-    </div>
   );
 }
 
