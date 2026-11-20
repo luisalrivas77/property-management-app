@@ -391,6 +391,9 @@ class Reserve(Schema):
 class EstimateSource(StrEnum):
     SCENARIO = "scenario"  # the default scenario's „Wert heute“
     PURCHASE_PRICE = "purchase_price"  # labelled „geschätzt“ all the same (D239 (1))
+    # Before the handover: the price paid so far, „Anzahlung Kaufpreis“, no estimate (phase 6
+    # D265).
+    ADVANCE = "advance"
 
 
 class PropertyLtv(Schema):
