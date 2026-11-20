@@ -1,0 +1,213 @@
+/* Planung in five sections (phase 10 D270, mockup 17-C2): the chips, the scenario row and the
+   Budget (D272–D277). Every colour is a token of globals.css, so dark mode follows. */
+
+.planning-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 16px;
+  scrollbar-width: none;
+}
+
+.planning-chips a {
+  flex: none;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-2);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.planning-chips a:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.planning-chips a[aria-current="page"] {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.planning-scenario-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.planning-scenario-row:hover {
+  border-color: var(--accent);
+}
+
+.planning-scenario-row[data-dirty] .planning-scenario-state {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.planning-scenario-open {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.planning-change-list {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+/* --- the Budget --- */
+
+.budget-big {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-income p {
+  margin: 0;
+}
+
+.budget-bar {
+  display: flex;
+  height: 12px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--bar-bg);
+}
+
+.budget-bar span {
+  flex-basis: 0;
+  min-width: 0;
+}
+
+.budget-lines,
+.budget-codes,
+.budget-references {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.budget-line {
+  display: grid;
+  grid-template-columns: 4px 14px minmax(0, 1fr) auto 12px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px 10px 0;
+  border-top: 1px solid var(--divider);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.budget-lines li:first-child .budget-line {
+  border-top: 0;
+}
+
+.budget-line:hover {
+  background: var(--accent-tint-2);
+}
+
+.budget-edge {
+  align-self: stretch;
+  border-radius: 2px;
+}
+
+.budget-line-name,
+.budget-line-figures {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.budget-line-name .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.budget-line-figures {
+  align-items: flex-end;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-line-figures .muted {
+  font-size: 0.8rem;
+}
+
+.budget-chevron {
+  color: var(--muted);
+}
+
+.budget-dot,
+.budget-dot-space {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+  vertical-align: middle;
+}
+
+.budget-dot {
+  border: 2px solid var(--mark-empty);
+}
+
+.budget-dot-green {
+  background: var(--mark-green);
+  border-color: var(--mark-green);
+}
+
+.budget-dot-amber {
+  background: var(--mark-amber);
+  border-color: var(--mark-amber);
+}
+
+.budget-sentences p {
+  margin: 0;
+}
+
+.budget-codes li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.budget-class-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-weight: 400;
+  font-size: 0.85rem;
+}
+
+.budget-references > li {
+  padding: 10px 0;
+  border-top: 1px solid var(--divider);
+}
+
+.budget-references ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.budget-with-plan {
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}

@@ -281,7 +281,17 @@ export function fillLevers(levers: HouseholdLevers | null | undefined): Househol
     bands: levers?.bands ?? [],
     // D263: kept on every save, from Übersicht's limits too; mean_at_save is the server's.
     spending_changes: levers?.spending_changes ?? [],
-  };
+    // Phase 10 D274: the household's own budget targets and class moves, kept on every save.
+    budget_targets: {
+      needs_max: levers?.budget_targets?.needs_max ?? null,
+      wants_max: levers?.budget_targets?.wants_max ?? null,
+      saving_min: levers?.budget_targets?.saving_min ?? null,
+      housing_max: levers?.budget_targets?.housing_max ?? null,
+    },
+    budget_class_overrides: levers?.budget_class_overrides ?? {},
+    // Every key, so a lever added to the schema and not carried here fails the typecheck instead
+    // of being dropped by a save.
+  } satisfies Required<HouseholdLevers>;
 }
 
 /** Each member's display name by user id, for „eingetragen von …“. */

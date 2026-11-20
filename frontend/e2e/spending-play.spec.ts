@@ -189,11 +189,21 @@ async function serve(page: Page, path: string, body: (url: URL) => unknown): Pro
   );
 }
 
-/** The scenario history and its writes, and the plan that reads the newest one. */
-async function planWithScenarios(page: Page): Promise<{ posted: HouseholdScenarioCreate[]; previews: HouseholdLevers[] }> {
+/** The scenario history and its writes, and the plan that reads the newest one; `initial` is the
+ * history before the test. `previewIds` is the scenario id each preview request named. */
+async function planWithScenarios(
+  page: Page,
+  initial: HouseholdScenario[] = [],
+): Promise<{
+  posted: HouseholdScenarioCreate[];
+  previews: HouseholdLevers[];
+  previewIds: (string | null)[];
+  rows: HouseholdScenario[];
+}> {
   const posted: HouseholdScenarioCreate[] = [];
   const previews: HouseholdLevers[] = [];
-  const rows: HouseholdScenario[] = [];
+  const previewIds: (string | null)[] = [];
+  const rows: HouseholdScenario[] = [...initial];
   await page.route(
     (url) => url.pathname === "/api/household-scenarios",
     async (route: Route) => {
@@ -226,8 +236,9 @@ async function planWithScenarios(page: Page): Promise<{ posted: HouseholdScenari
   await page.route(
     (url) => url.pathname === "/api/household-plan/preview",
     (route: Route) => {
-      const body = route.request().postDataJSON() as { levers: HouseholdLevers };
+      const body = route.request().postDataJSON() as { levers: HouseholdLevers; scenario_id?: string | null };
       previews.push(body.levers);
+      previewIds.push(body.scenario_id ?? null);
       return route.fulfill({ json: plan(body.levers, null) });
     },
   );
@@ -240,7 +251,7 @@ async function planWithScenarios(page: Page): Promise<{ posted: HouseholdScenari
       .filter((month) => month >= from && month <= to)
       .map((month) => monthView(month, WINDOW.includes(month)));
   });
-  return { posted, previews };
+  return { posted, previews, previewIds, rows };
 }
 
 test("a typed amount moves the savings rate and „Anlegbar“ through the preview, and nothing is stored until „Szenario speichern“", async ({
@@ -248,12 +259,14 @@ test("a typed amount moves the savings rate and „Anlegbar“ through the previ
   signedIn,
 }) => {
   void signedIn;
-  const { posted, previews } = await planWithScenarios(page);
+  const { posted, previews, previewIds } = await planWithScenarios(page);
 
-  await page.goto("/planning?tab=haushalt");
+  // „Anlegbar“ is a tile of the Anlegen section (D270); the hash opens the scenario sheet beside it.
+  await page.goto("/planning?section=anlegen#ausgaben-durchspielen");
   const section = page.getByRole("region", { name: "Ausgaben durchspielen" });
-  const rate = section.getByTestId("effect-rate");
-  const investable = section.getByTestId("effect-investable");
+  // „Was eure Änderungen bewirken“ (D271) heads the scenario sheet, above the save and the play.
+  const rate = page.getByTestId("effect-rate");
+  const investable = page.getByTestId("effect-investable");
   await expect(rate).toContainText("25,0 %");
   await expect(investable).toContainText("1.170,00 €");
   // The fields start empty: the mean is shown beside them, never filled in.
@@ -271,6 +284,8 @@ test("a typed amount moves the savings rate and „Anlegbar“ through the previ
   // The cards at the top keep the saved plan, and nothing was stored.
   await expect(page.locator(".planning-kpi-main")).toContainText("1.170 €");
   expect(previews.length).toBeGreaterThan(0);
+  // No default is saved yet, so the preview names no scenario.
+  expect(new Set(previewIds)).toEqual(new Set([null]));
   expect(posted).toHaveLength(0);
 
   await page.getByRole("button", { name: "Szenario speichern" }).first().click();
@@ -292,13 +307,13 @@ test("a change as a percent of the mean, for some months, is saved as a percent"
   void signedIn;
   const { posted } = await planWithScenarios(page);
 
-  await page.goto("/planning?tab=haushalt");
+  await page.goto("/planning?tab=haushalt#ausgaben-durchspielen");
   const section = page.getByRole("region", { name: "Ausgaben durchspielen" });
   await section.getByRole("button", { name: "Essen gehen & bestellen" }).click();
   await section.getByLabel("Geplant pro Monat: Restaurant").fill("-10");
   await section.getByRole("group", { name: "Betrag oder Prozent: Restaurant" }).getByRole("button", { name: "%" }).click();
   await section.getByLabel("bis: Restaurant").selectOption(HORIZON[2] ?? "");
-  await expect(section.getByTestId("effect-investable")).toContainText("1.188,00 €");
+  await expect(page.getByTestId("effect-investable")).toContainText("1.188,00 €");
   // An entry the field cannot take keeps the draft's old change, so no save until it is fixed.
   const save = page.getByRole("button", { name: "Szenario speichern" }).first();
   const restaurant = section.getByLabel("Geplant pro Monat: Restaurant");
@@ -361,4 +376,191 @@ test("Haushalt shows „Geplant“ and „Unterschied“ only for the codes the 
   const restaurant = panel.getByRole("listitem").filter({ hasText: "Restaurant" });
   await expect(restaurant).toContainText("Geplant 100,00 € · 60,00 € weniger als geplant");
   await expect(panel.getByText("Geplant laut eurem Szenario vom 18. November 2026.")).toBeVisible();
+});
+
+// --- Planung › Budget: the household's own targets (phase 10 D274) ------------------------------
+
+type BudgetView = components["schemas"]["BudgetView"];
+type BudgetTargets = components["schemas"]["BudgetTargets"];
+
+/** The budget with Sonstige Lebensmittel (a need by default) and Restaurant (a want); a saved
+ * class move in `overrides` serves the code in its new line, as the server does. */
+function budget(targets: BudgetTargets, overrides: Record<string, "need" | "want"> = {}): BudgetView {
+  const code = (category: "hh_groceries" | "hh_restaurant", defaultClass: "need" | "want", monthly: string) => ({
+    category,
+    group: category === "hh_groceries" ? ("groceries" as const) : ("dining" as const),
+    budget_class: overrides[category] ?? defaultClass,
+    default_class: defaultClass,
+    overridden: category in overrides,
+    monthly,
+    total: (Number(monthly) * 3).toFixed(2),
+  });
+  const codes = [code("hh_groceries", "need", "2600.00"), code("hh_restaurant", "want", "1300.00")];
+  const of = (cls: "need" | "want") => codes.filter((c) => c.budget_class === cls);
+  const wants = targets.wants_max ?? null;
+  return {
+    as_of: "2026-11-18",
+    scenario_id: null,
+    window: { months: WINDOW, enough: true },
+    months: [],
+    income: { monthly: "5200.00", total: "15600.00", rental_monthly: "0.00", private_monthly: "5200.00" },
+    lines: [
+      { key: "need", monthly: "2600.00", total: "7800.00", share: "0.5000", codes: of("need") },
+      {
+        key: "want",
+        monthly: "1300.00",
+        total: "3900.00",
+        share: "0.2500",
+        codes: of("want"),
+        target: wants,
+        mark: wants
+          ? {
+              colour: "green",
+              target: wants,
+              gap_points: "-5.0",
+              gap_monthly: "-260.00",
+              text: "Wünsche liegen 5 Prozentpunkte unter eurem Ziel, rund 260 € im Monat.",
+            }
+          : null,
+      },
+      { key: "one_off", monthly: "0.00", total: "0.00", share: "0.0000", codes: [] },
+      { key: "uncategorized", monthly: "0.00", total: "0.00", share: "0.0000", codes: [] },
+      { key: "saving", monthly: "1300.00", total: "3900.00", share: "0.2500" },
+    ],
+    housing: null,
+    targets,
+    references: [],
+    todos: [],
+  };
+}
+
+test("a budget target saved under Budget survives a later „Szenario speichern“ from Reserve, and an unsaved change stays out of it", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const { posted } = await planWithScenarios(page);
+  await serve(page, "/api/household-budget", () => budget(posted[posted.length - 1]?.levers?.budget_targets ?? {}));
+
+  // An unsaved spending change in the scenario sheet first.
+  await page.goto("/planning?tab=haushalt#ausgaben-durchspielen");
+  const section = page.getByRole("region", { name: "Ausgaben durchspielen" });
+  await section.getByRole("button", { name: "Essen gehen & bestellen" }).click();
+  await section.getByLabel("Geplant pro Monat: Restaurant").fill("150");
+  await expect(page.getByText("1 Änderung, nicht gespeichert")).toBeVisible();
+
+  // „Eigene Ziele festlegen“ stores the target alone, on the saved levers.
+  await page.getByRole("link", { name: "Eigene Ziele festlegen" }).click();
+  await page.getByLabel("Wünsche höchstens").fill("30");
+  await page.getByRole("button", { name: "Ziele speichern" }).click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(posted[0]?.levers?.budget_targets?.wants_max).toBe("30");
+  expect(posted[0]?.levers?.spending_changes ?? []).toEqual([]);
+  await expect(page.getByText("Wünsche liegen 5 Prozentpunkte unter eurem Ziel, rund 260 € im Monat.")).toBeVisible();
+  await expect(page.getByText("Ziel höchstens 30 %")).toBeVisible();
+  // The spending change is still a draft.
+  await expect(page.getByText("1 Änderung, nicht gespeichert")).toBeVisible();
+
+  // A lever changed under Reserve and saved there keeps the target and the spending change.
+  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve" }).click();
+  await page.getByRole("button", { name: "Reserveziel erhöhen" }).click();
+  await expect(page.getByText("2 Änderungen, nicht gespeichert")).toBeVisible();
+  await page.getByRole("button", { name: "Szenario speichern" }).first().click();
+  await expect.poll(() => posted.length).toBe(2);
+  expect(posted[1]?.levers?.budget_targets?.wants_max).toBe("30");
+  expect(posted[1]?.levers?.reserve_target_months).toBe("6.5");
+  expect(posted[1]?.levers?.spending_changes?.map((change) => change.code)).toEqual(["hh_restaurant"]);
+  expect(posted[1]?.supersedes_id).toBe("00000000-0000-4000-8000-000000000a11");
+  await expect(page.getByText("gespeichert", { exact: true })).toBeVisible();
+});
+
+// --- Class moves (D272) and a field left invalid in another section ----------------------------
+
+const SAVED_ID = "00000000-0000-4000-8000-000000000a00";
+
+/** A default saved before the test, with these extra levers. */
+function savedDefault(levers: Partial<HouseholdLevers>): HouseholdScenario {
+  return {
+    name: "Standard",
+    is_default: true,
+    withdrawn: false,
+    supersedes_id: null,
+    levers: { ...LEVERS, ...levers },
+    id: SAVED_ID,
+    workspace_id: WORKSPACE,
+    created_at: "2026-11-17T09:00:00Z",
+    created_by: null,
+  };
+}
+
+test("a saved class move set back to its default shows the default pressed, and the save drops the override", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const { posted, previewIds, rows } = await planWithScenarios(page, [savedDefault({ budget_class_overrides: { hh_groceries: "want" } })]);
+  await serve(page, "/api/household-budget", () => budget({}, rows[rows.length - 1]?.levers?.budget_class_overrides ?? {}));
+
+  await page.goto("/planning?section=budget");
+  await page.getByRole("link", { name: "Wünsche öffnen" }).click();
+  const switcher = page.getByRole("group", { name: "Klasse von Sonstige Lebensmittel" });
+  await expect(switcher.getByRole("button", { name: "Wünsche" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("verschoben, zählt nach dem Speichern")).toHaveCount(0);
+
+  await switcher.getByRole("button", { name: "Notwendiges" }).click();
+  await expect(switcher.getByRole("button", { name: "Notwendiges" })).toHaveAttribute("aria-pressed", "true");
+  await expect(switcher.getByRole("button", { name: "Wünsche" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByText("verschoben, zählt nach dem Speichern")).toBeVisible();
+  await expect(page.getByText("1 Änderung, nicht gespeichert")).toBeVisible();
+  // The preview names the saved default.
+  await expect.poll(() => previewIds.length).toBeGreaterThan(0);
+  expect(new Set(previewIds)).toEqual(new Set([SAVED_ID]));
+
+  // The sheet names the move back to the default class, never „gehört zu –“.
+  await page.getByRole("link", { name: /Annahmen$/ }).click();
+  await expect(page.getByText("Sonstige Lebensmittel gehört zu Notwendiges")).toBeVisible();
+  await page.getByRole("button", { name: "Szenario speichern" }).first().click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(posted[0]?.supersedes_id).toBe(SAVED_ID);
+  expect(posted[0]?.levers?.budget_class_overrides).toEqual({});
+});
+
+test("a new class move is saved as an override", async ({ page, signedIn }) => {
+  void signedIn;
+  const { posted, rows } = await planWithScenarios(page);
+  await serve(page, "/api/household-budget", () => budget({}, rows[rows.length - 1]?.levers?.budget_class_overrides ?? {}));
+
+  await page.goto("/planning?section=budget");
+  await page.getByRole("link", { name: "Notwendiges öffnen" }).click();
+  const switcher = page.getByRole("group", { name: "Klasse von Sonstige Lebensmittel" });
+  await expect(switcher.getByRole("button", { name: "Notwendiges" })).toHaveAttribute("aria-pressed", "true");
+  await switcher.getByRole("button", { name: "Wünsche" }).click();
+  await expect(switcher.getByRole("button", { name: "Wünsche" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("verschoben, zählt nach dem Speichern")).toBeVisible();
+
+  await page.getByRole("button", { name: "Szenario speichern" }).first().click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(posted[0]?.levers?.budget_class_overrides).toEqual({ hh_groceries: "want" });
+});
+
+test("a rate left invalid on Vermögen does not block a save from Reserve, which keeps the old rate", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const { posted } = await planWithScenarios(page);
+  await serve(page, "/api/household-budget", () => budget({}));
+
+  await page.goto("/planning?section=vermoegen");
+  await page.getByLabel("Fonds und Wertpapiere (% pro Jahr)").fill("80");
+  await expect(page.getByText("Zwischen −50 % und 50 % pro Jahr.")).toBeVisible();
+
+  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve" }).click();
+  await page.getByRole("button", { name: "Reserveziel erhöhen" }).click();
+  const save = page.getByRole("button", { name: "Szenario speichern" }).first();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(posted[0]?.levers?.reserve_target_months).toBe("6.5");
+  expect(posted[0]?.levers?.value_change?.depot).toBe("0.05");
 });
