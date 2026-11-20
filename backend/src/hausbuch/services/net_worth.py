@@ -664,9 +664,9 @@ def _paid_before_handover(
     )
     base = (
         select()
-        .select_from(a)
-        .join(t, t.id == a.transaction_id)
-        .join(acc, acc.id == t.account_id)
+        .select_from(allocation_table)
+        .join(transaction_table, t.id == a.transaction_id)
+        .join(account_table, acc.id == t.account_id)
         .where(
             a.status == AllocationStatus.CONFIRMED.value,
             t.excluded_as_duplicate_of.is_(None),
