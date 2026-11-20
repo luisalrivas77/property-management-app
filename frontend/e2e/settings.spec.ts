@@ -6,7 +6,10 @@ import { apiCall, expect, navigateTo, test } from "./support";
 test("switching on Mieterdokumente is saved and recorded as one event", async ({ page, signedIn }) => {
   void signedIn;
   await navigateTo(page, "Einstellungen");
-  await expect(page.getByRole("heading", { name: "KI", level: 2 })).toBeVisible();
+  // Each group is a row that opens its forms in the panel (phase 10 mockup 24).
+  await page.getByRole("link", { name: /^KI-Schalter/ }).click();
+  await expect(page).toHaveURL(/\/settings#d-setting-ai$/);
+  await expect(page.getByRole("heading", { name: "KI-Schalter", level: 2 })).toBeVisible();
 
   const tenantDocuments = page.getByRole("switch", { name: "Mieterdokumente von der KI lesen lassen" });
   const autoAccept = page.getByRole("switch", { name: "KI-Zuordnungen automatisch bestätigen" });
@@ -59,7 +62,8 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
 test("the reminder email switch is saved and says when sending is not set up", async ({ page, signedIn }) => {
   void signedIn;
   await navigateTo(page, "Einstellungen");
-  await expect(page.getByRole("heading", { name: "Erinnerungen" })).toBeVisible();
+  await page.getByRole("link", { name: /^Erinnerungen per E-Mail/ }).click();
+  await expect(page.getByRole("heading", { name: "Erinnerungen per E-Mail", level: 2 })).toBeVisible();
 
   const reminders = page.getByRole("switch", { name: "Erinnerungen per E-Mail" });
   await expect(reminders).not.toBeChecked();
@@ -84,6 +88,7 @@ test("the reminder email switch is saved and says when sending is not set up", a
 test("the Hinweis-Modus is saved and recorded as its own event", async ({ page, signedIn }) => {
   void signedIn;
   await page.goto("/settings");
+  await page.getByRole("link", { name: /^Hinweis-Modus/ }).click();
   const own = page.getByRole("radio", { name: "Eigene Nutzung" });
   const generic = page.getByRole("radio", { name: "Allgemein" });
   await expect(own).toBeChecked();

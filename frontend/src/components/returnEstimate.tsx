@@ -387,7 +387,7 @@ function Missing({ items, owners, year }: { items: MissingItem[]; owners: Owner[
               : `Bescheid über Lohnersatzleistungen ${ownerName(owners, item.owner_id)} noch nicht eingetragen`}
             {" · "}
             <Link
-              href={`${taxFormHref("n", { year, propertyId: null, ownerId: item.owner_id ?? null })}#${
+              href={`${taxFormHref(item.kind === "document" ? "n" : "angaben", { year, propertyId: null, ownerId: item.owner_id ?? null })}#${
                 item.kind === "document" ? "tax-n-documents" : "eingabe-replacement_income"
               }`}
             >

@@ -141,6 +141,7 @@ test("„Hell“ wins over a dark device, and English changes the menu and the r
   const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   const darkBackground = await background();
 
+  await page.getByRole("link", { name: /^Darstellung\b/ }).click();
   await page.getByRole("radio", { name: "Hell", exact: true }).check();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   expect(await background()).not.toBe(darkBackground);
@@ -159,7 +160,7 @@ test("„Hell“ wins over a dark device, and English changes the menu and the r
   await nav.getByRole("link", { name: "To review" }).click();
   expect((await request).headers()["accept-language"]).toBe("en");
 
-  await page.goto("/settings");
+  await page.goto("/settings#d-setting-language");
   await page.getByRole("radio", { name: "Deutsch" }).check();
   await expect(mainNav(page).getByRole("link", { name: "Übersicht" })).toBeVisible();
 });

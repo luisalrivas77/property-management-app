@@ -3270,7 +3270,7 @@
       },
       "get": {
         "summary": "Documents List",
-        "description": "Oldest first; optionally only those linked to a target type, or to one target\n(target_id needs target_type, else 422).",
+        "description": "Oldest first; optionally only those linked to a target type, or to one target\n(target_id needs target_type, else 422); only one Dokumente section, and only those the\nsearch `q` finds (phase 10 D282).",
         "operationId": "documents_list_api_documents_get",
         "parameters": [
           {
@@ -3305,6 +3305,39 @@
               ],
               "title": "Target Id"
             }
+          },
+          {
+            "name": "section",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DocumentSection"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Section"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
           }
         ],
         "responses": {
@@ -3315,7 +3348,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/Document"
+                    "$ref": "#/components/schemas/DocumentListItem"
                   },
                   "title": "Response Documents List Api Documents Get"
                 }
@@ -18392,6 +18425,94 @@
         ],
         "title": "DocumentLink",
         "description": "Links a document to exactly one entity (the thing it proves)."
+      },
+      "DocumentListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "file_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "File Sha256"
+          },
+          "source": {
+            "$ref": "#/components/schemas/DocumentSource"
+          },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Received At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "typing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentTyping"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "section": {
+            "$ref": "#/components/schemas/DocumentSection"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "created_at",
+          "file_sha256",
+          "source",
+          "original_filename",
+          "received_at",
+          "updated_at",
+          "section"
+        ],
+        "title": "DocumentListItem",
+        "description": "A row of the Dokumente list (GET /documents): the document with its section, computed\non read from what the document is and what relies on it (phase 10 D282,\nrules/document_section.py), never stored. Only the list carries it, since a link or a cost\nrow added later changes it."
+      },
+      "DocumentSection": {
+        "type": "string",
+        "enum": [
+          "property",
+          "tax",
+          "accounts",
+          "investments",
+          "other"
+        ],
+        "title": "DocumentSection",
+        "description": "Which part of the app a document belongs to on Dokumente (phase 10 D282): computed by\ncode on read (rules/document_section.py), never stored. The members are in priority\norder: a document two sections could claim takes the first."
       },
       "DocumentSource": {
         "type": "string",

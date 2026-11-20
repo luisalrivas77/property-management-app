@@ -23,7 +23,7 @@ import { flatRateTodos } from "./flatRate";
 import { todayIso } from "./format";
 import { NO_PAY_HINT, NoPayButton } from "./noPay";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
-import { questionnaireHref, taxFormHref } from "./taxYear";
+import { payInputsHref, questionnaireHref, taxFormHref } from "./taxYear";
 import {
   REMINDER_GUIDE,
   TodoList,
@@ -161,12 +161,12 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
         title: `Arbeitslohn ${data.year} fehlt`,
         text:
           "Die letzte Gehaltsabrechnung hochladen: Sie zeigt die Summen des Jahres bis dahin, die App liest sie aus und rechnet damit. " +
-          "Wer keine hochladen möchte, trägt auf der Eigentümer-Seite das erwartete Bruttogehalt ein; beides erledigt diesen Punkt. " +
+          "Wer keine hochladen möchte, trägt unter Steuern › Eure Angaben das erwartete Bruttogehalt ein; beides erledigt diesen Punkt. " +
           NO_PAY_HINT,
         action: (
           <>
             <ReadUpload label="Gehaltsabrechnung hochladen" onUploaded={onChanged} />
-            <Link href="/owners">Bruttogehalt eintragen</Link>
+            <Link href={payInputsHref(data.year, owner.id)}>Bruttogehalt eintragen</Link>
             <NoPayButton ownerId={owner.id} year={data.year} onDone={onChanged} />
           </>
         ),

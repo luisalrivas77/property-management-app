@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 
 from .common import Money, Record, Schema, Sha256Hex, TaxYear
 from .enums import (
+    DocumentSection,
     DocumentSource,
     DocumentSubtype,
     DocumentType,
@@ -50,6 +51,15 @@ class Document(Record):
     received_at: datetime
     updated_at: datetime
     typing: DocumentTyping | None = None  # null until typed
+
+
+class DocumentListItem(Document):
+    """A row of the Dokumente list (GET /documents): the document with its section, computed
+    on read from what the document is and what relies on it (phase 10 D282,
+    rules/document_section.py), never stored. Only the list carries it, since a link or a cost
+    row added later changes it."""
+
+    section: DocumentSection
 
 
 class DocumentExplanation(Schema):

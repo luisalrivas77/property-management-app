@@ -1,16 +1,23 @@
 "use client";
 
-// The tab bar of Steuern › one tax year (phase-3.md §11, phase-4b.md §10): Anlage V, Anlage N,
-// KAP and SO (disabled until phase 8), and the way into the Jahresfragen. Each tab is a URL:
+// The tab bar of Steuern › one tax year (phase-3.md §11, phase-4b.md §10, phase 10 D281): Eure
+// Angaben (every input the forms read), Anlage V, Anlage N, KAP and SO (disabled until phase 8),
+// and the way into the Jahresfragen. Each tab is a URL: /tax/2026?tab=angaben (?eigentuemer=…),
 // /tax/2026 (Anlage V, ?immobilie=…), /tax/2026?tab=anlage-n (?eigentuemer=…), and
 // /tax/2026/fragen for the questionnaire. The chosen property and owner travel along, so
 // switching back keeps them.
 import Link from "next/link";
 
-export type TaxForm = "v" | "n";
+import { useT } from "@/i18n";
+import { tax as messages } from "@/i18n/tax";
+
+export type TaxForm = "angaben" | "v" | "n";
 
 /** The value of ?tab= (the TabBar key) for the Anlage N tab. */
 export const ANLAGE_N_PARAM = "anlage-n";
+
+/** The value of ?tab= for the Eure Angaben tab (D281). */
+export const ANGABEN_PARAM = "angaben";
 
 export interface TaxYearState {
   year: number;
@@ -71,14 +78,21 @@ export function withBenefitPrefill(href: string, prefill: BenefitPrefill | null)
   return `${path}${path.includes("?") ? "&" : "?"}${extra}${hash}`;
 }
 
-/** The URL of one form of the year. */
+/** The URL of one form of the year; „angaben“ is the Eure Angaben tab (D281). */
 export function taxFormHref(form: TaxForm, state: TaxYearState): string {
   if (form === "v") return `/tax/${state.year}${query([["immobilie", state.propertyId]])}`;
   return `/tax/${state.year}${query([
-    ["tab", ANLAGE_N_PARAM],
+    ["tab", form === "n" ? ANLAGE_N_PARAM : ANGABEN_PARAM],
     ["eigentuemer", state.ownerId],
     ["immobilie", state.propertyId],
   ])}`;
+}
+
+/** Steuern › Eure Angaben › Arbeitslohn of a year (phase 10 D281): where the expected gross pay,
+ * a Bescheid's zvE, a typed rate and „Kein Arbeitslohn“ are entered (Eigentümer › Einkommen until
+ * then), on the given owner when the caller knows one. */
+export function payInputsHref(year: number, ownerId: string | null = null): string {
+  return `${taxFormHref("angaben", { year, propertyId: null, ownerId })}#arbeitslohn`;
 }
 
 /** One answer slot of the Jahresfragen: the question's key and whose it is. */
@@ -100,8 +114,12 @@ export function questionnaireHref(year: number, target?: QuestionTarget): string
 }
 
 export function TaxTabs({ current, state }: { current: TaxForm; state: TaxYearState }) {
+  const t = useT(messages);
   return (
-    <nav aria-label="Formulare" className="tabs">
+    <nav aria-label={t.forms} className="tabs">
+      <Link href={taxFormHref("angaben", state)} aria-current={current === "angaben" ? "page" : undefined} scroll={false}>
+        {t.inputsTab}
+      </Link>
       <Link href={taxFormHref("v", state)} aria-current={current === "v" ? "page" : undefined} scroll={false}>
         Anlage V
       </Link>
@@ -109,13 +127,13 @@ export function TaxTabs({ current, state }: { current: TaxForm; state: TaxYearSt
         Anlage N
       </Link>
       <span className="tab-disabled" aria-disabled="true">
-        KAP <span className="tab-note">ab Phase 8</span>
+        KAP <span className="tab-note">{t.fromPhase8}</span>
       </span>
       <span className="tab-disabled" aria-disabled="true">
-        SO <span className="tab-note">ab Phase 8</span>
+        SO <span className="tab-note">{t.fromPhase8}</span>
       </span>
       <Link href={questionnaireHref(state.year)} className="tax-tab-questions">
-        Jahresfragen
+        {t.questionnaire}
       </Link>
     </nav>
   );

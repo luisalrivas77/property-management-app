@@ -45,6 +45,7 @@ import {
 } from "./input";
 import { NoPayMarker } from "./noPay";
 import { Loading } from "./ui";
+import { payInputsHref } from "./taxYear";
 import { useLoad } from "./useLoad";
 
 type RateSource = ZveEstimate["source"];
@@ -158,7 +159,7 @@ export function TaxEffectLine({
     return (
       <p className="tax-subline tax-effect">
         <span>Steuerwirkung</span> <strong>—</strong> ·{" "}
-        <Link href="/owners">Einkommen eintragen</Link>
+        <Link href={payInputsHref(taxYear)}>Einkommen eintragen</Link>
       </p>
     );
   }
@@ -187,9 +188,9 @@ export function TaxEffectLine({
       {rateText ? <span className="muted"> · {rateText}</span> : null}
       {" · "}
       <Link
-        href="/owners"
+        href={payInputsHref(taxYear)}
         className="badge"
-        title="Einkommen und Steuersatz auf der Seite Eigentümer"
+        title="Einkommen und Steuersatz unter Steuern › Eure Angaben"
       >
         {sourceText(rate.zve)}
         {rate.zve.carried_forward ? " (fortgeschrieben)" : null}
@@ -212,9 +213,12 @@ function yearChoices(current: number): number[] {
  * current value and a way to enter, change or remove it. The default deductions come from
  * /api/tax-rate (owner_estimates), computed by the backend.
  */
-export function IncomeSection({ owners }: { owners: Owner[] }) {
+/** The household's income inputs of one year; with `fixedYear` (Steuern › Eure Angaben, phase 10
+ * D281, whose page picks the year) no year picker of its own. */
+export function IncomeSection({ owners, fixedYear }: { owners: Owner[]; fixedYear?: number }) {
   const thisYear = Number(todayIso().slice(0, 4));
-  const [year, setYear] = useState(thisYear);
+  const [pickedYear, setYear] = useState(thisYear);
+  const year = fixedYear ?? pickedYear;
   const ids = useId();
   const loadRows = useCallback(
     () =>
@@ -245,22 +249,24 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
 
   return (
     <div className="stack">
-      <div className="row">
-        <label htmlFor={`${ids}-year`} className="inline">
-          Steuerjahr
-          <select
-            id={`${ids}-year`}
-            value={year}
-            onChange={(event) => setYear(Number(event.target.value))}
-          >
-            {yearChoices(thisYear).map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {fixedYear === undefined ? (
+        <div className="row">
+          <label htmlFor={`${ids}-year`} className="inline">
+            Steuerjahr
+            <select
+              id={`${ids}-year`}
+              value={year}
+              onChange={(event) => setYear(Number(event.target.value))}
+            >
+              {yearChoices(thisYear).map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
       <p className="muted">
         Aus dem erwarteten Bruttogehalt schätzt die App das zu versteuernde
         Einkommen (zvE) und damit, wie sich das Ergebnis der Vermietung auf die

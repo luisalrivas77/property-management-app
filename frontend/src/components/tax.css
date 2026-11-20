@@ -584,3 +584,106 @@ button.link.tax-sources-button {
   display: block;
   color: var(--muted);
 }
+
+/* Steuern › Eure Angaben (phase 10 D281, mockup 22) */
+
+.tax-year-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.tax-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-2);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.tax-chip[aria-current="page"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.tax-inputs-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .tax-inputs-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.tax-owner-facts {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tax-owner-facts > li + li {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.tax-owner-name {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tax-owner-name p {
+  margin: 0;
+}
+
+.tax-owner-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--tag-bg);
+  font-weight: 800;
+}
+
+.tax-progress {
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--tag-bg);
+  overflow: hidden;
+}
+
+.tax-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.tax-line-open {
+  color: inherit;
+  text-decoration: none;
+}
+
+.tax-line-open:hover,
+.tax-line-open[aria-current="true"] {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+.tax-line-calc h3 {
+  margin: 0 0 6px;
+}

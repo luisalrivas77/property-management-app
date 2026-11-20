@@ -1,4 +1,5 @@
-// Eigentümer › Einkommen, phase 4b (docs/phases/phase-4b.md §10): the gross pay's source chip
+// Steuern › Eure Angaben (Eigentümer › Einkommen until phase 10 D281), phase 4b
+// (docs/phases/phase-4b.md §10): the gross pay's source chip
 // (a typed estimate, and a payslip's projection naming its month), a child added on the Kinder
 // block shown by its birth month only, a §35a cost and a donation added on the Haushalt block,
 // and the links to the Anlage N tab and the Jahresfragen. Synthetic data only (owners A and B).
@@ -47,13 +48,22 @@ test("the Einkommen section shows the pay source and adds a child and household 
     withdrawn: false,
   });
 
-  await page.goto("/owners");
-  await page.getByLabel("Steuerjahr").selectOption(String(YEAR));
+  await page.goto(`/tax/${YEAR}?tab=angaben`);
   const income = page.getByRole("table").filter({ hasText: `Erwartetes Bruttogehalt ${YEAR}` });
   const rowA = income.getByRole("row").filter({ hasText: /^A/ });
   await expect(rowA).toContainText("Schätzung");
   const rowB = income.getByRole("row").filter({ hasText: /^B/ });
   await expect(rowB).toContainText("Hochrechnung aus Gehaltsabrechnung August (4 Monate verbleibend)");
+
+  // Next year is one chip away (the expected pay, a rate or „Kein Arbeitslohn“ for it), as the
+  // Eigentümer page's year picker offered, though no rule set exists for it yet.
+  const next = new Date().getFullYear() + 1;
+  const chips = page.getByRole("navigation", { name: "Steuerjahre" });
+  await expect(chips.getByRole("link", { name: String(next), exact: true })).toBeVisible();
+  await chips.getByRole("link", { name: String(next), exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/tax/${next}\\?tab=angaben`));
+  await expect(page.getByRole("table").filter({ hasText: `Erwartetes Bruttogehalt ${next}` })).toBeVisible();
+  await page.goto(`/tax/${YEAR}?tab=angaben`);
 
   await expect(page.getByRole("link", { name: `Anlage N ${YEAR} ansehen` })).toHaveAttribute("href", `/tax/${YEAR}?tab=anlage-n`);
   await expect(page.getByRole("link", { name: `Jahresfragen ${YEAR} beantworten` })).toHaveAttribute(
@@ -109,7 +119,6 @@ test("the Einkommen section shows the pay source and adds a child and household 
     withdrawn: false,
   });
   await page.reload();
-  await page.getByLabel("Steuerjahr").selectOption(String(YEAR));
   const withReceipt = page.getByRole("listitem").filter({ hasText: "Verein Y" });
   await expect(withReceipt.getByRole("link", { name: "Beleg" })).toHaveAttribute("href", `/documents/${document.id}`);
   await expect(page.getByRole("listitem").filter({ hasText: "Handwerkerleistung" }).getByRole("link", { name: "Beleg" })).toHaveCount(0);

@@ -55,7 +55,7 @@ import { DocumentExplanationBox, ImportStoredStatement, NO_TAX_YEAR } from "./do
 import type { Directory } from "./entities";
 import { targets, tenantName } from "./entities";
 import { FieldDescription, FormBanner, InfoToggle, useFormErrors, type FieldMessages } from "./form";
-import { formatArea, formatDate, formatDateTime, formatFraction, formatMoney, formatPercent, formatShare } from "./format";
+import { formatArea, formatDate, formatDateTime, formatFraction, formatMoney, formatPercent, formatShare, todayIso } from "./format";
 import {
   decimalInput,
   percentInput,
@@ -87,6 +87,7 @@ import {
   RENT_MODEL,
 } from "./labels";
 import { OPERATING_COSTS_TERMS } from "./taxInputs";
+import { payInputsHref } from "./taxYear";
 import { Notice } from "./ui";
 
 const POLL_MS = 2_000;
@@ -595,7 +596,7 @@ const FIELDS: Record<string, Record<string, FieldSpec>> = {
       kind: "money",
       signed: true,
       description:
-        "Die Zeile „zu versteuerndes Einkommen“ des Bescheids, nicht Summe der Einkünfte, Gesamtbetrag der Einkünfte oder Einkommen. Mit „Übernehmen“ wird sie zum zvE laut Bescheid für dieses Jahr (Eigentümer-Seite) und ersetzt einen früheren Bescheid desselben Jahres; die Steuerwirkung rechnet dann mit diesem Betrag statt mit der Schätzung.",
+        "Die Zeile „zu versteuerndes Einkommen“ des Bescheids, nicht Summe der Einkünfte, Gesamtbetrag der Einkünfte oder Einkommen. Mit „Übernehmen“ wird sie zum zvE laut Bescheid für dieses Jahr (Steuern › Eure Angaben) und ersetzt einen früheren Bescheid desselben Jahres; die Steuerwirkung rechnet dann mit diesem Betrag statt mit der Schätzung.",
     },
   },
 };
@@ -1428,6 +1429,9 @@ function AppliedSummary({ result }: { result: ProposalApplyResult }) {
     result.applied.find((a) => a.key === "property" && a.entity_id)?.entity_id ??
     result.applied.find((a) => a.key === "link:property" && a.entity_id)?.entity_id ??
     null;
+  // A Bescheid's zvE links to Eure Angaben of the year it was saved for (phase 10 D281).
+  const zveYear =
+    Number(scalar((result.proposal.records ?? []).find((r) => r.key.startsWith("income_input"))?.fields?.tax_year?.value)) || null;
   const done = result.applied.filter((a) => !a.skipped);
   return (
     <Notice>
@@ -1435,7 +1439,7 @@ function AppliedSummary({ result }: { result: ProposalApplyResult }) {
       {done.length > 0 ? (
         <>
           {done.map((entity, index) => {
-            const href = entityHref(entity, property);
+            const href = entityHref(entity, property, zveYear);
             const label = appliedLabel(entity);
             return (
               <span key={entity.key}>
@@ -1499,7 +1503,7 @@ function appliedLabel(entity: AppliedEntity): string {
   }
 }
 
-function entityHref(entity: AppliedEntity, propertyId: string | null): string | null {
+function entityHref(entity: AppliedEntity, propertyId: string | null, zveYear: number | null): string | null {
   const id = entity.entity_id;
   if (!id) return null;
   const [prefix, rest] = prefixOf(entity.key);
@@ -1523,7 +1527,8 @@ function entityHref(entity: AppliedEntity, propertyId: string | null): string | 
     case "ownership":
       return `/properties/${id}?tab=eigentuemer`;
     case "income_input":
-      return "/owners"; // the Eigentümer page's Einkommen section, "zvE laut Bescheid"
+      // „zvE laut Bescheid“ under Steuern › Eure Angaben › Arbeitslohn (phase 10 D281).
+      return payInputsHref(zveYear ?? Number(todayIso().slice(0, 4)));
     case "document":
       return `/documents/${id}`; // a payment proof's bill (D149)
     default:

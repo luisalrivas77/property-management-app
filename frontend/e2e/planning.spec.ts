@@ -46,8 +46,12 @@ test("the projection renders, a lever recalculates and a scenario is saved", asy
   await expect(page.getByRole("heading", { name: "Rechnet sich die Immobilie?" })).toBeVisible();
   await expect(page.getByRole("group", { name: `Verkaufspreis ${saleYear}` })).toContainText(euro(before.sale.value));
   await expect(page.getByRole("group", { name: "Wertsteigerung pro Jahr" })).toContainText("2,0 %");
-  // No household income yet: the tax effect asks for it instead of guessing.
-  await expect(page.getByRole("link", { name: "Einkommen eintragen" }).first()).toHaveAttribute("href", "/owners");
+  // No household income yet: the tax effect asks for it instead of guessing, on Steuern ›
+  // Eure Angaben of the year it is for (phase 10 D281; the Eigentümer page until then).
+  await expect(page.getByRole("link", { name: "Einkommen eintragen" }).first()).toHaveAttribute(
+    "href",
+    /^\/tax\/\d{4}\?tab=angaben#arbeitslohn$/,
+  );
   await expect(page.getByText("Eine Planungsschätzung, keine Steuer- oder Anlageberatung.")).toBeVisible();
 
   // One step up on Wertsteigerung: only the URL changes, the API recalculates.

@@ -361,7 +361,7 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   const more = page.getByRole("region", { name: "Weitere Annahmen" });
   await expect(more.getByText("Kryptobörse B", { exact: true })).toBeVisible();
 
-  await page.goto("/settings");
+  await page.goto("/settings#d-setting-advice");
   const saved = page.waitForResponse((r) => r.url().endsWith("/api/workspace/settings") && r.request().method() === "PATCH");
   await page.getByRole("radio", { name: "Allgemein" }).click();
   expect((await saved).status()).toBe(200);

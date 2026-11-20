@@ -1135,7 +1135,8 @@ export interface paths {
         /**
          * Documents List
          * @description Oldest first; optionally only those linked to a target type, or to one target
-         *     (target_id needs target_type, else 422).
+         *     (target_id needs target_type, else 422); only one Dokumente section, and only those the
+         *     search `q` finds (phase 10 D282).
          */
         get: operations["documents_list_api_documents_get"];
         put?: never;
@@ -7112,6 +7113,55 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * DocumentListItem
+         * @description A row of the Dokumente list (GET /documents): the document with its section, computed
+         *     on read from what the document is and what relies on it (phase 10 D282,
+         *     rules/document_section.py), never stored. Only the list carries it, since a link or a cost
+         *     row added later changes it.
+         */
+        DocumentListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** File Sha256 */
+            file_sha256: string;
+            source: components["schemas"]["DocumentSource"];
+            /** Original Filename */
+            original_filename: string | null;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            typing?: components["schemas"]["DocumentTyping"] | null;
+            section: components["schemas"]["DocumentSection"];
+        };
+        /**
+         * DocumentSection
+         * @description Which part of the app a document belongs to on Dokumente (phase 10 D282): computed by
+         *     code on read (rules/document_section.py), never stored. The members are in priority
+         *     order: a document two sections could claim takes the first.
+         * @enum {string}
+         */
+        DocumentSection: "property" | "tax" | "accounts" | "investments" | "other";
         /**
          * DocumentSource
          * @enum {string}
@@ -18110,6 +18160,8 @@ export interface operations {
             query?: {
                 target_type?: components["schemas"]["LinkTarget"] | null;
                 target_id?: string | null;
+                section?: components["schemas"]["DocumentSection"] | null;
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -18123,7 +18175,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Document"][];
+                    "application/json": components["schemas"]["DocumentListItem"][];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

@@ -76,6 +76,12 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   await expect(handOver.getByRole("button", { name: "Feldblatt (PDF)" })).toBeDisabled();
   await expect(handOver.getByRole("alert")).toHaveCount(0);
 
+  // The inputs are typed under Eure Angaben (phase 10 D281); Anlage N shows the form only.
+  await expect(page.getByRole("region", { name: "Eingaben", exact: true })).toHaveCount(0);
+  await tabs.getByRole("link", { name: "Eure Angaben" }).click();
+  await expect(page).toHaveURL(new RegExp(`/tax/${YEAR}\\?tab=angaben`));
+  await expect(page.getByRole("heading", { level: 1, name: `Steuern ${YEAR}` })).toBeVisible();
+
   // One input per block.
   await save(page, "Arbeitsweg hinzufügen", "Arbeitsweg eintragen", {
     "Arbeitsstätte (Ort, Straße)": "Werk Nord",
@@ -132,7 +138,10 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   expect(rows.find((row) => row.kind === "commute")?.value).toMatchObject({ workplace_label: "Werk Nord", days: 200, km: 20 });
 
   // The draft now itemises: the Werbungskosten card explains each block and lists the totals;
-  // the form lines (route 1 as days and km) fold out below.
+  // the form lines (route 1 as days and km) fold out below. A line opens in the panel with
+  // „So gerechnet“ and the way back to its input.
+  await tabs.getByRole("link", { name: "Anlage N" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "A. Muster" })).toBeVisible();
   const costs = page.getByRole("region", { name: "Werbungskosten", exact: true });
   await expect(costs).toContainText("Werk Nord: Auto: 200 Tage × 20 km × 0,38 € = 1.520,00 €");
   await expect(costs).toContainText("40 Tage × 6,00 € = 240,00 €");
@@ -147,6 +156,15 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   );
   await expect(costs).toContainText(euro(draft.wk_itemised));
   await expect(costs).toContainText(euro(draft.wk_applied));
+  await costs.getByRole("link", { name: "Arbeitsweg 1: Arbeitstage, an denen die Arbeitsstätte aufgesucht wurde" }).click();
+  const linePanel = page.getByRole("complementary", { name: "Arbeitsweg 1: Arbeitstage, an denen die Arbeitsstätte aufgesucht wurde" });
+  await expect(linePanel).toContainText("So gerechnet");
+  await expect(linePanel.getByRole("link", { name: "Ändern in Eure Angaben ›" })).toHaveAttribute(
+    "href",
+    `/tax/${YEAR}?tab=angaben&eigentuemer=${a.id}#eingabe-commute`,
+  );
+  await linePanel.getByRole("link", { name: "Ändern in Eure Angaben ›" }).click();
+  await expect(page).toHaveURL(new RegExp(`tab=angaben&eigentuemer=${a.id}#eingabe-commute$`));
 
   // A change is a new row naming the old one; Entfernen withdraws a row.
   const training = rows.find((row) => row.kind === "training");
@@ -167,9 +185,9 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   expect(after.some((row) => row.kind === "other_insurance")).toBe(false);
 
   // The owner switch changes only the URL; B has none of A's inputs.
-  await page.getByRole("navigation", { name: "Eigentümer", exact: true }).getByRole("link", { name: "B. Muster" }).click();
+  await page.getByRole("navigation", { name: "Eigentümer wählen", exact: true }).getByRole("link", { name: "B. Muster" }).click();
   await expect(page).toHaveURL(new RegExp(`eigentuemer=${b.id}`));
-  await expect(page.getByRole("heading", { level: 1, name: "B. Muster" })).toBeVisible();
+  await expect(page.getByText("Die Angaben von B. Muster.", { exact: false })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Arbeitsweg hinzufügen" })).toBeVisible();
   await expect(panel.getByRole("group", { name: "Arbeitsweg", exact: true })).not.toContainText("Werk Nord");
 
@@ -234,7 +252,7 @@ test("the Anlage N tab names the open questions, the Gesamt card the tax classes
   await expect(sources).toContainText("Einkommensangabe");
   const incomeLinks = sources.getByRole("link", { name: "Einkommen ansehen" });
   await expect(incomeLinks).toHaveCount(2);
-  await expect(incomeLinks.first()).toHaveAttribute("href", "/owners");
+  await expect(incomeLinks.first()).toHaveAttribute("href", "/tax?tab=angaben");
   await sources.getByRole("button", { name: "Schließen" }).click();
   await expect(card.getByRole("listitem").filter({ hasText: /^Einkommensteuer/ }).getByRole("button", { name: "2 Quellen" })).toBeVisible();
 
@@ -295,9 +313,10 @@ test("the Lohnersatz to-do opens its pre-filled form on the owner on screen, and
   });
   expect(booked.status()).toBe(200);
 
-  // A is on screen; the to-do's button names A, so the URL changes on the same page.
-  await page.goto(`/tax/${YEAR}?tab=anlage-n&eigentuemer=${a.id}`);
-  await expect(page.getByRole("heading", { level: 1, name: "A. Muster" })).toBeVisible();
+  // A is on screen under Eure Angaben (the form lives there since phase 10 D281); the to-do's
+  // button names A, so the URL changes on the same page.
+  await page.goto(`/tax/${YEAR}?tab=angaben&eigentuemer=${a.id}`);
+  await expect(page.getByText("Die Angaben von A. Muster.", { exact: false })).toBeVisible();
   const card = page.getByRole("region", { name: "Gesamt" });
   await expect(card).toContainText("Bei Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag");
   await card.getByRole("link", { name: "Lohnersatzleistung eintragen" }).click();
