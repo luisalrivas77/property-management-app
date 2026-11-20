@@ -66,3 +66,22 @@ def test_the_explanation_is_the_template_in_english(client_a):
     for paragraph in english["paragraphs"]:
         assert not any(m in paragraph["text"] for m in GERMAN_MARKS), paragraph["text"]
     assert english["paragraphs"] != german["paragraphs"]
+
+
+def test_the_budget_reference_points_follow_the_request(client_a):
+    german = ok(client_a.get("/api/household-budget"))
+    english = ok(client_a.get("/api/household-budget", headers=EN))
+    assert english.keys() == german.keys()
+    by_key = {r["key"]: r for r in german["references"]}
+    assert by_key["split_60_20_20"]["does_not_measure"].startswith("Eine Faustregel, keine")
+    shown = {r["key"]: r for r in english["references"]}
+    assert shown.keys() == by_key.keys()
+    assert shown["split_60_20_20"]["does_not_measure"].startswith("A rule of thumb, not")
+    assert shown["housing_iwu_mieterbund"]["thresholds"][2]["label"] == "overburden"
+    assert shown["split_50_30_20"]["needs"] == by_key["split_50_30_20"]["needs"]
+    for ref in english["references"]:
+        assert not any(m in ref["measures"] for m in GERMAN_MARKS), ref["measures"]
+    # The comparison is read through the same walk (an empty month has no rows either way).
+    month = {"month": "2027-03"}
+    shown_month = ok(client_a.get("/api/household-plan/comparison", params=month, headers=EN))
+    assert shown_month == ok(client_a.get("/api/household-plan/comparison", params=month))
