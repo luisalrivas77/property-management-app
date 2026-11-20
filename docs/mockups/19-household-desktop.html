@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Haushalt, Computer</title>
+<!-- Layout overhaul mockup (phase 10, D278 amended), drafted 20 Nov 2026: 19 Haushalt at computer width;
+     a tapped row or card opens its details in the side panel (computer) or sliding in from the right (phone);
+     not approved, nothing built. Invented sample data only: never real household figures, never fixtures. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
+<style>
+:root{
+--bg:#f4f5f2;--surface:#ffffff;--border:#e1e4de;--border-strong:#c9cec6;--divider:#eceee9;--tag-bg:#f4f5f2;
+--text:#17201c;--text-2:#3e4843;--muted:#5a635e;
+--accent:#1f6f54;--accent-strong:#14523e;--accent-text:#ffffff;--accent-tint:#e3f0ea;--accent-tint-2:#d5e6de;
+--info:#3a4ba8;--info-bg:#e8ebf8;--info-border:#ccd3f0;--info-text:#3b4370;
+--warn:#7a3f0b;--warn-bg:#fbeedc;--warn-border:#f0d6b0;
+--danger:#a3262a;--danger-bg:#fbeaea;--danger-border:#f0c8c9;
+--font:Manrope,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none}
+p{margin:0}
+h1,h2,h3{margin:0}
+button{font:inherit;cursor:pointer}
+.num{text-align:right;white-space:nowrap}
+.pos{color:var(--accent-strong)}
+.fold{position:absolute;left:0;right:0;height:0;border-top:2px dashed #3a4ba8;z-index:50;pointer-events:none}
+.fold span{position:absolute;right:6px;top:-22px;background:#3a4ba8;color:#fff;font:700 11px/1 var(--font);padding:5px 8px;border-radius:6px}
+.mark{display:inline-flex;align-items:center;gap:5px;font-weight:700}
+.mark i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.mark.green i{background:#2e8b57}.mark.amber i{background:#d4a017}.mark.none i{background:transparent;border:1.5px solid var(--border-strong)}
+
+body{font-size:16px;line-height:1.45}
+.c{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:18px 20px;min-width:0}
+.k{font-size:14px;font-weight:600;color:var(--muted)}
+.v{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.2}
+.sub{font-size:14px;color:var(--muted)}
+.row{display:flex;align-items:center;gap:12px}
+.between{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:0 22px;border-radius:16px;background:var(--accent);color:#fff;font-weight:800;font-size:16px;white-space:nowrap}
+.btn.sec{background:var(--surface);color:var(--accent-strong);border:1.5px solid var(--accent)}
+.btn.full{width:100%}
+.count{background:var(--info);color:#fff;font-size:12px;font-weight:800;border-radius:11px;padding:1px 8px;line-height:1.6}
+.pill{display:inline-block;font-size:13px;font-weight:700;border-radius:20px;padding:4px 11px;white-space:nowrap}
+.pill.proposed{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-border)}
+.pill.open{background:var(--info-bg);color:var(--info-text);border:1px solid var(--info-border)}
+.okmark{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:700;color:var(--accent-strong)}
+.chip{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px;border-radius:24px;border:1.5px solid var(--border-strong);background:var(--surface);font-weight:700;font-size:15px;color:var(--text-2);white-space:nowrap}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.hero{background:var(--accent);color:#fff;border-radius:24px;padding:20px 22px 14px}
+.hero .k{color:#cfe5da}
+.hero .v{font-size:36px;color:#fff}
+.carousel{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding:2px 2px 6px;scrollbar-width:none}
+.carousel::-webkit-scrollbar{display:none}
+.kc{flex:none;width:280px;scroll-snap-align:start;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:18px 20px;color:var(--text);display:flex;flex-direction:column;gap:6px}
+.kc .ic{width:44px;height:44px;border-radius:14px;background:var(--accent-tint);color:var(--accent-strong);display:flex;align-items:center;justify-content:center}
+.dots{display:flex;gap:7px;justify-content:center}
+.dots i{width:8px;height:8px;border-radius:50%;background:var(--border-strong)}
+.dots i.on{background:var(--accent);width:22px;border-radius:4px}
+.item{display:flex;align-items:center;gap:14px;min-height:64px;padding:10px 0;border-top:1px solid var(--divider);color:var(--text)}
+.item:first-child{border-top:0}
+.acc{display:flex;align-items:center;gap:14px;min-height:72px;padding:12px 20px;background:var(--surface);border:1px solid var(--border);border-radius:20px;color:var(--text)}
+.acc b{font-size:17px}
+.chev{width:40px;height:40px;border-radius:12px;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--text-2);flex:none}
+.av{width:44px;height:44px;border-radius:50%;background:var(--tag-bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--text-2);flex:none}
+.dayhead{font-size:14px;font-weight:800;color:var(--text-2);padding:16px 4px 6px}
+/* phone */
+.ph{width:390px;min-height:100vh;position:relative;display:flex;flex-direction:column}
+.ph-head{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 10px}
+.ph-head h1{font-size:28px;font-weight:800;letter-spacing:-.02em}
+.ph-body{padding:4px 16px 24px;display:flex;flex-direction:column;gap:14px;flex:1}
+.iconbtn{width:52px;height:52px;border-radius:16px;border:1px solid var(--border);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;color:var(--text-2);flex:none}
+.bar{position:relative;z-index:20;display:grid;grid-template-columns:repeat(5,1fr);background:var(--surface);border-top:1px solid var(--border);padding:8px 4px 20px;height:78px}
+.bar a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px;font-weight:700;color:var(--muted);position:relative}
+.bar a .ic{width:60px;height:34px;border-radius:17px;display:flex;align-items:center;justify-content:center}
+.bar a.on{color:var(--accent-strong)}
+.bar a.on .ic{background:var(--accent-tint)}
+.bar a .count{position:absolute;top:-4px;left:50%;margin-left:8px;font-size:11px}
+/* computer */
+.top{display:flex;align-items:center;gap:16px;padding:14px 32px;background:var(--surface);border-bottom:1px solid var(--border)}
+.tabs{display:flex;gap:6px;margin:0 auto}
+.tabs a{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px;border-radius:24px;font-weight:700;font-size:15px;color:var(--text-2)}
+.tabs a.on{background:var(--accent-tint);color:var(--accent-strong)}
+.cols{display:grid;grid-template-columns:720px 360px;gap:28px;justify-content:center;padding:28px 32px 40px;align-items:start}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:24px;padding:22px;display:flex;flex-direction:column;gap:14px;position:sticky;top:20px}
+.panel h2{font-size:20px;font-weight:800;letter-spacing:-.01em}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--divider);font-size:15px}
+.kv span:first-child{color:var(--muted)}
+.kv b{text-align:right;min-width:0}
+
+body{background:#dfe3dd}
+.frames{display:flex;gap:32px;padding:20px 24px 28px;align-items:flex-start}
+.frame{width:390px;height:844px;border-radius:30px;overflow:hidden;position:relative;background:var(--bg);box-shadow:0 0 0 8px #17201c,0 12px 30px rgba(0,0,0,.25);flex:none}
+.frame .bar{position:absolute;left:0;right:0;bottom:0}
+.cap{font-weight:800;font-size:15px;margin:0 0 14px 4px}
+.more{position:absolute;inset:0 0 78px 0;background:var(--bg);z-index:30;overflow:hidden;display:flex;flex-direction:column;gap:12px;padding:18px 16px}
+.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.quick a{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border-radius:18px;background:var(--surface);border:1px solid var(--border);font-weight:700;font-size:13.5px;color:var(--text);text-align:center}
+.quick a span{width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center}
+.mrow{display:flex;align-items:center;gap:14px;min-height:60px;padding:6px 16px;color:var(--text);border-top:1px solid var(--divider)}
+.mrow:first-child{border-top:0}
+.mrow .ic{color:var(--accent)}
+</style>
+
+
+<style>
+.sec{display:flex;flex-direction:column}
+.sech{display:flex;justify-content:space-between;align-items:baseline;padding:14px 0 4px;border-top:1px solid var(--divider);margin-top:6px}
+.sech b{font-size:15px;color:var(--text-2);letter-spacing:.01em}
+.lrow{display:flex;align-items:center;gap:12px;min-height:56px;padding:6px 0;border-top:1px solid var(--divider);color:var(--text)}
+.lrow:first-of-type{border-top:0}
+.lrow .t{flex:1;min-width:0}
+.lrow .t b{font-size:15.5px}
+.lrow .r{font-weight:800;white-space:nowrap;font-size:15px}
+.figs{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-top:4px}
+.figs span{font-size:14px;color:var(--muted)}
+.figs b{font-size:15px;text-align:right}
+.cols .c .figs{max-width:440px}
+.btn{flex-direction:row}
+.crumb{font-size:15px;font-weight:700;color:var(--accent)}
+.note{font-size:13px;color:var(--muted)}
+.menu{position:absolute;top:70px;left:50%;margin-left:150px;width:360px;background:var(--surface);border:1px solid var(--border);border-radius:20px;box-shadow:0 14px 40px rgba(23,32,28,.18);padding:6px 0;z-index:60}
+.menu .mrow{padding:6px 18px}
+.menu .mrow.on{background:var(--accent-tint)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0 28px}
+.sheet{position:absolute;top:0;bottom:78px;right:0;left:52px;background:var(--bg);z-index:40;box-shadow:-10px 0 30px rgba(23,32,28,.28);border-radius:22px 0 0 22px;display:flex;flex-direction:column;gap:14px;padding:18px 18px 20px 22px;overflow:hidden}
+.dim{position:absolute;inset:0 0 78px 0;background:rgba(23,32,28,.42);z-index:35}
+.grip{position:absolute;left:8px;top:50%;width:5px;height:48px;margin-top:-24px;border-radius:3px;background:var(--border-strong)}
+.chips{display:flex;gap:8px;overflow:hidden}
+.chips .chip{min-height:42px;padding:0 14px;font-size:14px;white-space:nowrap}
+.selrow{background:var(--accent-tint);border-radius:14px;margin:0 -10px;padding:6px 10px;border-top-color:transparent}
+</style>
+
+<style>
+.t{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:12px 14px;min-width:0;color:var(--text);display:block;position:relative}
+.t .k,.k{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.t.st{border-left-width:6px}
+.kp{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kp .t b,.kp .t .v{font-size:21px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;display:block;margin-top:2px}
+.kp .t .sub{font-size:12.5px;line-height:1.3;display:block;margin-top:2px}
+.lnk{font-weight:700;font-size:14px;color:var(--accent)}
+.pill{display:inline-block;font-size:12.5px;font-weight:700;border-radius:20px;padding:3px 10px;white-space:nowrap}
+.pill.warn{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-border)}
+.pill.info{background:var(--info-bg);color:var(--info-text);border:1px solid var(--info-border)}
+.pill.mut{background:var(--tag-bg);color:var(--text-2);border:1px solid var(--border)}
+.okmark{display:inline-flex;align-items:center;gap:3px;font-size:12.5px;font-weight:700;color:var(--accent-strong)}
+.item{display:flex;align-items:center;gap:12px;min-height:56px;padding:8px 0;border-top:1px solid var(--divider);color:var(--text)}
+.item:first-child{border-top:0}
+.item.sel{background:var(--accent-tint);margin:0 -14px;padding:8px 14px;border-radius:12px;border-top-color:transparent}
+.item .p{flex:1;min-width:0}
+.item .p b{font-size:15px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .p .sub{font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .a{text-align:right;flex:none}
+.item .a b{white-space:nowrap;font-size:15px}
+.item.sub2{padding-left:16px;min-height:46px}
+.item.sub2 .p b{font-weight:600;font-size:14.5px}
+.share{display:block;height:5px;border-radius:3px;background:var(--divider);margin-top:5px;max-width:170px}
+.share i{display:block;height:100%;border-radius:3px;background:var(--accent)}
+.box{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:11px 13px;display:flex;flex-direction:column;gap:7px;font-size:14px}
+.box.warn{background:var(--warn-bg);border-color:var(--warn-border)}
+.box.info{background:var(--info-bg);border-color:var(--info-border)}
+.hint{font-size:13px;color:var(--muted)}
+.ph-body.tight{gap:10px;padding:2px 14px 20px}
+.tbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tbar .chip{min-height:40px;padding:0 13px;font-size:14px}
+.sheet{gap:11px}
+.sheet h2{font-size:23px;font-weight:800;letter-spacing:-.01em}
+.sheet h3,.dpanel h3{font-size:16px;font-weight:800;margin-top:4px}
+.sheet .kv,.dpanel .kv{padding:8px 0;font-size:14.5px}
+.fld{display:flex;flex-direction:column;gap:4px;font-size:13.5px;font-weight:700;color:var(--text-2)}
+.fld span.inp{display:block;border:1.5px solid var(--border-strong);border-radius:12px;padding:10px 12px;font-weight:500;color:var(--text);background:var(--surface);font-size:15px}
+.fld span.inp.plh{color:var(--muted)}
+.bars{display:flex;align-items:flex-end;gap:5px;height:96px;margin-top:8px;border-bottom:1px solid var(--border-strong);position:relative}
+.bars .b{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;position:relative}
+.bars .b i{display:block;width:100%;border-radius:4px 4px 0 0;background:#c5d6cd}
+.bars .b.neg i{background:#d8d2c8;border-radius:0 0 4px 4px;position:absolute;top:100%}
+.bars .b.on i{background:var(--accent)}
+.blab{display:flex;gap:5px;margin-top:20px}
+.blab span{flex:1;text-align:center;font-size:11px;color:var(--muted)}
+.blab span.on{font-weight:800;color:var(--text)}
+.ctab{width:100%;border-collapse:collapse;font-size:14px}
+.ctab th,.ctab td{padding:8px 6px;border-top:1px solid var(--divider);text-align:left}
+.ctab .n{text-align:right;white-space:nowrap}
+.ctab thead th{border-top:0;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.ctab tr.sel td,.ctab tr.sel th{background:var(--accent-tint)}
+.ctab tr.subr th{padding-left:26px;font-weight:600}
+.ctab tfoot th,.ctab tfoot td{font-weight:800;border-top:2px solid var(--border-strong)}
+.lot{border-top:1px solid var(--divider);padding:8px 0;display:flex;flex-direction:column;gap:3px;font-size:14px}
+.lot:first-of-type{border-top:0}
+.lot .between b{font-size:14.5px}
+.av{width:36px;height:36px;border-radius:50%;background:var(--tag-bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--text-2);flex:none;font-size:13px}
+.dwrap{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:22px;padding:18px 32px 28px;max-width:1440px;align-items:start}
+.dfig{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;padding:0 32px;max-width:1440px}
+.dfig .t{padding:14px 18px}
+.dfig .t b{font-size:26px;font-weight:800;letter-spacing:-.02em;display:block}
+.dfig .t .sub{font-size:13px}
+.dpanel{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:20px 22px;display:flex;flex-direction:column;gap:11px;position:sticky;top:16px}
+.dpanel h2{font-size:26px;font-weight:800}
+.dleft{min-width:0;display:flex;flex-direction:column;gap:14px}
+.d2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.sect{border-top:4px solid #17201c;margin-top:12px}
+</style>
+</head>
+<body>
+<p class="cap" style="padding:20px 24px 0">Haushalt: Monat oben, Kategorien als Tabelle, die angeklickte Gruppe rechts mit ihren Unterkategorien</p><header class="top"><span class="row" style="gap:10px;font-weight:800;font-size:18px"><span style="flex:none;width:36px;height:36px;border-radius:8px;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg></span>Hausbuch</span><nav class="tabs"><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg>Übersicht</a><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13l1.5 8v6H4v-6z"/></svg>Zu prüfen<span class="count">7</span></a><a class="on" href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h15a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4z"/><path d="M4 7V5.5A1.5 1.5 0 0 1 5.5 4H16v3"/><circle cx="16" cy="13.5" r="1.2"/></svg>Haushalt</a><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v16h16"/><path d="m7 15 4-4 3 3 6-6"/></svg>Anlagen</a><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>Mehr<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a></nav><a class="iconbtn" href="#" aria-label="Suchen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></a><a class="btn" href="#" style="min-height:52px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>Hochladen</a></header><div class="between" style="padding:22px 32px 14px;max-width:1440px"><div><p class="k">Haushalt · Oktober 2026</p><h1 style="font-size:30px;font-weight:800;letter-spacing:-.02em">Wohin das Geld geht</h1></div><span class="row" style="gap:10px"><a class="pill warn" href="#">seit dem Abschluss geändert ›</a><a class="btn sec" href="#" style="min-height:48px">Monat: Okt. 2026<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a></span></div><div class="dfig"><div class="t"><p class="k">Einnahmen</p><b>5.600 €</b><p class="sub">Ø 3 Monate 5.480 €</p></div><div class="t"><p class="k">Ausgaben</p><b>4.250 €</b><p class="sub">Ø 3 Monate 4.180 €</p></div><div class="t"><p class="k">Sparquote</p><b>24,1 %</b><p class="sub">Ø 3 Monate 24 % · Gespart ÷ Einnahmen, mit dem Ergebnis der Wohnung</p></div><div class="t" style="background:var(--info-bg);border-color:var(--info-border)"><p class="k">Ohne Kategorie</p><b>2 Umsätze</b><p class="sub"><a class="lnk" href="#" style="font-size:13px">In Zu prüfen beantworten ›</a></p></div></div><div class="dwrap"><div class="dleft"><p class="hint" style="margin-top:-6px">Basis der Durchschnitte: 3 abgeschlossene Monate, August bis Oktober 2026.</p><div class="t"><div class="between"><span class="k">Überschuss je Monat</span><span class="sub" style="font-size:12.5px">Ø 3 Monate 1.300 €</span></div><p class="sub" style="font-size:12.5px">Einnahmen minus Ausgaben · Okt. 2026: +1.350 €</p><div class="bars"><span class="b" title="Nov"><i style="height:60%"></i></span><span class="b" title="Dez"><i style="height:73%"></i></span><span class="b neg" title="Jan"><i style="height:4px"></i></span><span class="b" title="Feb"><i style="height:47%"></i></span><span class="b" title="Mär"><i style="height:80%"></i></span><span class="b" title="Apr"><i style="height:53%"></i></span><span class="b" title="Mai"><i style="height:67%"></i></span><span class="b" title="Jun"><i style="height:100%"></i></span><span class="b" title="Jul"><i style="height:40%"></i></span><span class="b" title="Aug"><i style="height:87%"></i></span><span class="b" title="Sep"><i style="height:83%"></i></span><span class="b on" title="Okt"><i style="height:90%"></i></span></div><div class="blab"><span>Nov</span><span>Dez</span><span>Jan</span><span>Feb</span><span>Mär</span><span>Apr</span><span>Mai</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span class=on>Okt</span></div></div><div class="t" style="padding:14px 18px"><span class="k">Ausgaben nach Kategorie</span><p class="hint">„Geplant“ steht nur bei den Kategorien, für die ihr in eurem Szenario etwas geplant habt: gespeichert am 18. November 2026 unter <a class="lnk" style="font-size:13px" href="#">Planung › Budget</a>.</p><table class="ctab"><thead><tr><th>Kategorie</th><th>Anteil</th><th class="n">Okt. 2026</th><th class="n">Geplant</th><th>Unterschied</th><th class="n">Ø 3 Mon.</th></tr></thead><tbody><tr><th>Wohnen</th><td><span class="share" style="margin:0;width:120px"><i style="width:100%"></i></span></td><td class="n">1.250 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">1.250 €</td></tr><tr><th>▾ Lebensmittel und Drogerie</th><td><span class="share" style="margin:0;width:120px"><i style="width:63%"></i></span></td><td class="n">780 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">760 €</td></tr><tr class="subr"><th>Supermarkt</th><td><span class="share" style="margin:0;width:120px"><i style="width:51%"></i></span></td><td class="n">640 €</td><td class="n sub">600 €</td><td class="sub">40 € mehr als geplant</td><td class="n sub">620 €</td></tr><tr class="subr"><th>Drogerie</th><td><span class="share" style="margin:0;width:120px"><i style="width:7%"></i></span></td><td class="n">90 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">90 €</td></tr><tr class="subr"><th>Bäckerei, Kiosk & Markt</th><td><span class="share" style="margin:0;width:120px"><i style="width:4%"></i></span></td><td class="n">50 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">50 €</td></tr><tr><th>Mobilität</th><td><span class="share" style="margin:0;width:120px"><i style="width:41%"></i></span></td><td class="n">520 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">480 €</td></tr><tr><th>Versicherungen</th><td><span class="share" style="margin:0;width:120px"><i style="width:33%"></i></span></td><td class="n">410 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">410 €</td></tr><tr><th>Familie und Kind</th><td><span class="share" style="margin:0;width:120px"><i style="width:30%"></i></span></td><td class="n">380 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">380 €</td></tr><tr class="sel"><th>▾ Essen gehen & bestellen</th><td><span class="share" style="margin:0;width:120px"><i style="width:25%"></i></span></td><td class="n">310 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">290 €</td></tr><tr class="subr"><th>Restaurant</th><td><span class="share" style="margin:0;width:120px"><i style="width:13%"></i></span></td><td class="n">160 €</td><td class="n sub">120 €</td><td class="sub">40 € mehr als geplant</td><td class="n sub">150 €</td></tr><tr class="subr"><th>Lieferdienst</th><td><span class="share" style="margin:0;width:120px"><i style="width:5%"></i></span></td><td class="n">70 €</td><td class="n sub">80 €</td><td class="sub">10 € weniger als geplant</td><td class="n sub">75 €</td></tr><tr class="subr"><th>Café</th><td><span class="share" style="margin:0;width:120px"><i style="width:4%"></i></span></td><td class="n">45 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">40 €</td></tr><tr class="subr"><th>Bar & Kneipe</th><td><span class="share" style="margin:0;width:120px"><i style="width:3%"></i></span></td><td class="n">35 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">25 €</td></tr><tr><th>Abos und Verträge</th><td><span class="share" style="margin:0;width:120px"><i style="width:19%"></i></span></td><td class="n">240 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">240 €</td></tr><tr><th>Sonstiges</th><td><span class="share" style="margin:0;width:120px"><i style="width:29%"></i></span></td><td class="n">360 €</td><td class="n sub"></td><td class="sub"></td><td class="n sub">370 €</td></tr></tbody><tfoot><tr><th>Summe</th><td></td><td class="n">4.250 €</td><td></td><td></td><td></td></tr></tfoot></table></div><div class="d2"><div class="t"><span class="k">Einnahmen</span><div class="kv"><span>Lohn & Gehalt</span><b>4.700 €</b></div><div class="kv"><span>Kindergeld</span><b>255 €</b></div><div class="kv"><span>Wohnung (Ergebnis des Mietkontos)</span><b>+645 €</b></div><p class="hint">Das Ergebnis der Wohnung vor Tilgung zählt zu den Einnahmen des Haushalts; die Sparquote rechnet damit.</p></div><div class="box info"><span class="k" style="color:var(--info-text)">Gespart, nicht ausgegeben</span><p>Auf Spar-, Depot- und Börsenkonten und in Geldanlagen gingen 1.050 €.</p><div><div class="kv"><span>Tagesgeld</span><b>500 €</b></div><div class="kv"><span>ETF-Depot</span><b>400 €</b></div><div class="kv"><span>Börse A</span><b>150 €</b></div></div><p>Vom Überschuss (+1.350 €) sind 300 € auf den Girokonten geblieben.</p></div></div></div><aside class="dpanel"><div class="between"><span class="sub">Ausgewählte Kategorie</span><a class="iconbtn" href="#" aria-label="Schließen" style="width:44px;height:44px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></a></div><p class="sub">Okt. 2026 · Ausgaben nach Kategorie</p><h2>Essen gehen &amp; bestellen</h2><div class="figs" style="grid-template-columns:auto auto"><span>Oktober</span><b>310 €</b><span>Anteil an den Ausgaben</span><b>7,3 %</b><span>Ø 3 Monate (Aug. bis Okt.)</span><b>290 €</b></div><span class="k" style="margin-top:4px">Unterkategorien</span><div class="t" style="padding:2px 14px"><div class="item" style="min-height:50px"><span class="p"><b>Restaurant</b><span class="sub">3,8 % · Ø 150 €</span><span class="sub" style="white-space:normal;color:var(--text-2)">Geplant 120 € · 40 € mehr als geplant</span></span><span class="a"><b>160 €</b></span></div><div class="item" style="min-height:50px"><span class="p"><b>Lieferdienst</b><span class="sub">1,6 % · Ø 75 €</span><span class="sub" style="white-space:normal;color:var(--text-2)">Geplant 80 € · 10 € weniger als geplant</span></span><span class="a"><b>70 €</b></span></div><div class="item" style="min-height:50px"><span class="p"><b>Café</b><span class="sub">1,1 % · Ø 40 €</span></span><span class="a"><b>45 €</b></span></div><div class="item" style="min-height:50px"><span class="p"><b>Bar & Kneipe</b><span class="sub">0,8 % · Ø 25 €</span></span><span class="a"><b>35 €</b></span></div></div><p class="hint">Geplant laut eurem Szenario vom 18. November 2026. Ändern unter <a class="lnk" style="font-size:13px" href="#">Planung › Budget</a>.</p></aside></div>
+</body></html>
