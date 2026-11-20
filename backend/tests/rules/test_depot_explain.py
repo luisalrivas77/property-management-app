@@ -9,6 +9,7 @@ from decimal import Decimal
 
 import pytest
 
+from hausbuch import i18n
 from hausbuch.rules import depot_explain as explain
 from hausbuch.schemas.enums import DepotDocumentKind as K
 
@@ -205,3 +206,71 @@ def test_german_formatting():
     assert explain.units(Decimal("1234.123456")) == "1.234,123456"
     assert explain.units(Decimal("-12")) == "12"
     assert explain.units(Decimal("1E+3")) == "1.000"
+
+
+# --- English (phase 10 D284) ------------------------------------------------------------------
+
+EN_FACTS = {
+    **FACTS,
+    "datum": "14 May 2026",
+    "stichtag": "30 Jun 2026",
+    "anteile": "4.8",
+    "betrag": "€1,234.56",
+    "brutto": "€12.34",
+    "netto": "€9.08",
+    "gebuehren": "€1.00",
+    "steuern": "€3.26",
+    "gesamtwert": "€45,678.90",
+}
+
+
+@pytest.mark.parametrize("kind", list(K))
+def test_each_kind_has_english_with_every_figure_filled(kind):
+    with i18n.use("en"):
+        result = explain.explain(kind, EN_FACTS)
+    german = explain.explain(kind, FACTS)
+    assert result.was and result.aktion and result.bedeutung
+    assert "{" not in result.bedeutung
+    assert (result.was, result.aktion) != (german.was, german.aktion)
+    # The same sentences are kept or left out in either language.
+    assert result.bedeutung.count(".") >= 1
+    assert "„" not in result.aktion  # English quotation marks
+
+
+def test_the_english_follows_the_request_and_german_stays_the_default():
+    with i18n.use("en"):
+        assert explain.explain(K.WERTPAPIERABRECHNUNG_KAUF, EN_FACTS).bedeutung == (
+            "4.8 units of the fund Beispiel Welt UCITS ETF were bought. Trade date: 14 May 2026. "
+            "Paid (Ausmachender Betrag): €1,234.56. Of which fees: €1.00. "
+            "Depot: Beispiel-Depot A."
+        )
+        assert "“Apply”" in explain.explain(K.PM_REPORTING, {}).aktion
+    assert (
+        explain.explain(K.WERTPAPIERABRECHNUNG_KAUF, FACTS).bedeutung
+        == (EXPECTED[K.WERTPAPIERABRECHNUNG_KAUF])
+    )
+
+
+def test_an_english_sentence_whose_figure_was_not_read_is_left_out_too():
+    with i18n.use("en"):
+        assert explain.explain(K.WERTPAPIERABRECHNUNG_KAUF, {"datum": "14 May 2026"}).bedeutung == (
+            "Trade date: 14 May 2026."
+        )
+
+
+def test_english_formatting():
+    with i18n.use("en"):
+        assert explain.money(Decimal("-1234567.891")) == "€1,234,567.89"
+        assert explain.day(date(2026, 5, 14)) == "14 May 2026"
+        assert explain.units(Decimal("1234.123456")) == "1,234.123456"
+        assert explain.units(Decimal("4.8000")) == "4.8"
+
+
+def test_an_entry_whose_english_differs_in_its_placeholders_is_refused():
+    entry = explain.catalogue().entry(K.EINBUCHUNG).model_dump()
+    entry["en"]["bedeutung"][0] = "{fonds} came in."
+    with pytest.raises(ValueError, match="English sentences differ"):
+        explain.KindEntry.model_validate(entry)
+    entry["en"]["bedeutung"] = entry["en"]["bedeutung"][:1]
+    with pytest.raises(ValueError, match="English sentences differ"):
+        explain.KindEntry.model_validate(entry)
