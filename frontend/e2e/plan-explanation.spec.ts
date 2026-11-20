@@ -361,7 +361,8 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await expect(paths.locator("tbody tr")).toHaveCount(4);
   await expect(paths.getByText("Sparplan Fondsdepot A pausiert")).toBeVisible();
   await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile: Fondsdepot C.")).toBeVisible();
-  await page.getByRole("link", { name: /Annahmen ›/ }).click();
+  // The scenario row opens the sheet; its „›“ is hidden from the accessible name.
+  await page.getByRole("link", { name: /Annahmen$/ }).click();
   const more = page.getByRole("region", { name: "Weitere Annahmen" });
   await expect(more.getByText("Kryptobörse B", { exact: true })).toBeVisible();
 
@@ -387,7 +388,7 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   await expect(paths.locator("tbody tr").nth(1)).toContainText("Alles weiter wie bisher");
   await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile")).toHaveCount(0);
   for (const label of labels) await expect(page.getByText(label)).toHaveCount(0);
-  await page.getByRole("link", { name: /Annahmen ›/ }).click();
+  await page.getByRole("link", { name: /Annahmen$/ }).click();
   await expect(more.getByTestId("plans-total")).toHaveText("450 € im Monat, aus 3 Sparplänen zusammen");
   for (const label of labels) await expect(page.getByText(label)).toHaveCount(0);
   await expect(more.getByRole("button", { name: "Betrag ändern" })).toHaveCount(0);

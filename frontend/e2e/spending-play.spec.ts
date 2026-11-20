@@ -252,8 +252,9 @@ test("a typed amount moves the savings rate and „Anlegbar“ through the previ
 
   await page.goto("/planning?tab=haushalt#ausgaben-durchspielen");
   const section = page.getByRole("region", { name: "Ausgaben durchspielen" });
-  const rate = section.getByTestId("effect-rate");
-  const investable = section.getByTestId("effect-investable");
+  // „Was eure Änderungen bewirken“ (D271) heads the scenario sheet, above the save and the play.
+  const rate = page.getByTestId("effect-rate");
+  const investable = page.getByTestId("effect-investable");
   await expect(rate).toContainText("25,0 %");
   await expect(investable).toContainText("1.170,00 €");
   // The fields start empty: the mean is shown beside them, never filled in.
@@ -298,7 +299,7 @@ test("a change as a percent of the mean, for some months, is saved as a percent"
   await section.getByLabel("Geplant pro Monat: Restaurant").fill("-10");
   await section.getByRole("group", { name: "Betrag oder Prozent: Restaurant" }).getByRole("button", { name: "%" }).click();
   await section.getByLabel("bis: Restaurant").selectOption(HORIZON[2] ?? "");
-  await expect(section.getByTestId("effect-investable")).toContainText("1.188,00 €");
+  await expect(page.getByTestId("effect-investable")).toContainText("1.188,00 €");
   // An entry the field cannot take keeps the draft's old change, so no save until it is fixed.
   const save = page.getByRole("button", { name: "Szenario speichern" }).first();
   const restaurant = section.getByLabel("Geplant pro Monat: Restaurant");
