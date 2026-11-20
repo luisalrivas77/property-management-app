@@ -16,6 +16,7 @@ import { AI_SETTINGS_ANCHOR, APP_SECRETS_ANCHOR } from "@/components/labels";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { AdviceModeSettings } from "./AdviceModeSettings";
+import { AppearanceSettings } from "./AppearanceSettings";
 import { AiSettings } from "./AiSettings";
 import { AppSecrets } from "./AppSecrets";
 import { InboxAddress } from "./InboxAddress";
@@ -74,6 +75,8 @@ export default function SettingsPage() {
   return (
     <section>
       <h1>Einstellungen</h1>
+
+      <AppearanceSettings />
 
       <h2>Passkeys</h2>
       <ErrorNotice error={listError} />

@@ -1,11 +1,11 @@
 // Einstellungen, the KI switches (docs/phases/phase-2.md D42): both start off; switching one
 // on is saved (it survives a reload) and recorded as one workspace.settings_changed event
 // naming only that setting; the other switch is untouched.
-import { apiCall, expect, test } from "./support";
+import { apiCall, expect, navigateTo, test } from "./support";
 
 test("switching on Mieterdokumente is saved and recorded as one event", async ({ page, signedIn }) => {
   void signedIn;
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Einstellungen" }).click();
+  await navigateTo(page, "Einstellungen");
   await expect(page.getByRole("heading", { name: "KI", level: 2 })).toBeVisible();
 
   const tenantDocuments = page.getByRole("switch", { name: "Mieterdokumente von der KI lesen lassen" });
@@ -58,7 +58,7 @@ test("switching on Mieterdokumente is saved and recorded as one event", async ({
 // switches; without Transactional Email settings the page says sending is not set up yet.
 test("the reminder email switch is saved and says when sending is not set up", async ({ page, signedIn }) => {
   void signedIn;
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Einstellungen" }).click();
+  await navigateTo(page, "Einstellungen");
   await expect(page.getByRole("heading", { name: "Erinnerungen" })).toBeVisible();
 
   const reminders = page.getByRole("switch", { name: "Erinnerungen per E-Mail" });

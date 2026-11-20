@@ -73,9 +73,32 @@ export async function enroll(page: Page, enrollmentUrl: string, label = "Laptop"
   await expect(page).toHaveURL("/");
 }
 
-/** The top bar's sign-out; ends on /login. */
+/** The entries the menu keeps under „Mehr“ (phase 10 D266). */
+const MORE_ENTRIES = new Set(["Konten", "Immobilien", "Steuern", "Planung", "Dokumente", "Einstellungen"]);
+
+/** The menu (phase 10 D266): its five entries, „Mehr“ a button that opens the other six. */
+export function mainNav(page: Page): Locator {
+  return page.getByRole("navigation", { name: "Hauptnavigation" });
+}
+
+/** Go to a menu entry by its label, opening „Mehr“ first when the entry lives there. */
+export async function navigateTo(page: Page, label: string): Promise<void> {
+  const nav = mainNav(page);
+  if (MORE_ENTRIES.has(label)) await openMore(page);
+  await nav.getByRole("link", { name: label, exact: MORE_ENTRIES.has(label) }).click();
+}
+
+/** Open „Mehr“ (once; a second click would close it). */
+export async function openMore(page: Page): Promise<void> {
+  const more = mainNav(page).getByRole("button", { name: "Mehr" });
+  if ((await more.getAttribute("aria-expanded")) !== "true") await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+}
+
+/** The sign-out under „Mehr“; ends on /login. */
 export async function signOut(page: Page): Promise<void> {
-  await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("button", { name: "Abmelden" }).click();
+  await openMore(page);
+  await mainNav(page).getByRole("button", { name: "Abmelden" }).click();
   await expect(page.getByRole("heading", { name: "Anmelden" })).toBeVisible();
   await expect(page).toHaveURL("/login");
 }

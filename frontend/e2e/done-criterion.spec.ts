@@ -3,7 +3,7 @@
 // linked to the tenancy, then the move-in corrected. The property's Verlauf (History) must
 // show purchase → financing → possession → move-in (marked corrected) → rent, in that order.
 // The dates are those of the timeline.yaml scenario (backend/tests/fixtures/phase1).
-import { expect, test } from "./support";
+import { expect, navigateTo, test } from "./support";
 
 const LEASE_PDF = Buffer.from(
   "%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n" +
@@ -105,7 +105,7 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
   });
 
   await test.step("upload the lease as a PDF, type it and link it to the tenancy", async () => {
-    await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Dokumente" }).click();
+    await navigateTo(page, "Dokumente");
     await page.getByLabel("Dokumente hochladen").setInputFiles({
       name: "Mietvertrag-WE3.pdf",
       mimeType: "application/pdf",
@@ -160,7 +160,9 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
     await expect(rows.filter({ hasText: "WE 3" }).getByRole("link", { name: "Max Muster" })).toHaveAttribute("href", tenancyUrl);
     await expect(rows.filter({ hasText: "TG-Stellplatz 12" })).toContainText("leer");
 
-    await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Mieter" }).click();
+    // Mieter left the menu (phase 10 D266): Immobilien leads to it.
+    await navigateTo(page, "Immobilien");
+    await page.getByRole("link", { name: /^Mieter\b/ }).click();
     await page.getByRole("link", { name: "Max Muster" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Max Muster" })).toBeVisible();
     const tenancy = page.getByRole("table").getByRole("row").filter({ hasText: "WE 3" });

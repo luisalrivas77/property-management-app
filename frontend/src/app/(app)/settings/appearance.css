@@ -1,0 +1,35 @@
+/* Einstellungen › „Darstellung & Sprache“ (AppearanceSettings.tsx): one radio row per choice. */
+
+.choice-group {
+  display: grid;
+  gap: 4px;
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 0;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.choice input[type="radio"] {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.choice-hint {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.choice-note {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
