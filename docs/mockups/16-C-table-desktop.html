@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C · Umsätze, Computer</title>
+<!-- Layout overhaul mockup, drafted 20 Nov 2026 for Luis's choice; not approved, nothing built.
+     Invented sample data only: never real household figures, never fixtures. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
+<style>
+:root{
+--bg:#f4f5f2;--surface:#ffffff;--border:#e1e4de;--border-strong:#c9cec6;--divider:#eceee9;--tag-bg:#f4f5f2;
+--text:#17201c;--text-2:#3e4843;--muted:#5a635e;
+--accent:#1f6f54;--accent-strong:#14523e;--accent-text:#ffffff;--accent-tint:#e3f0ea;--accent-tint-2:#d5e6de;
+--info:#3a4ba8;--info-bg:#e8ebf8;--info-border:#ccd3f0;--info-text:#3b4370;
+--warn:#7a3f0b;--warn-bg:#fbeedc;--warn-border:#f0d6b0;
+--danger:#a3262a;--danger-bg:#fbeaea;--danger-border:#f0c8c9;
+--font:Manrope,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none}
+p{margin:0}
+h1,h2,h3{margin:0}
+button{font:inherit;cursor:pointer}
+.num{text-align:right;white-space:nowrap}
+.pos{color:var(--accent-strong)}
+.fold{position:absolute;left:0;right:0;height:0;border-top:2px dashed #3a4ba8;z-index:50;pointer-events:none}
+.fold span{position:absolute;right:6px;top:-22px;background:#3a4ba8;color:#fff;font:700 11px/1 var(--font);padding:5px 8px;border-radius:6px}
+.mark{display:inline-flex;align-items:center;gap:5px;font-weight:700}
+.mark i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.mark.green i{background:#2e8b57}.mark.amber i{background:#d4a017}.mark.none i{background:transparent;border:1.5px solid var(--border-strong)}
+
+body{font-size:16px;line-height:1.45}
+.c{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:18px 20px;min-width:0}
+.k{font-size:14px;font-weight:600;color:var(--muted)}
+.v{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.2}
+.sub{font-size:14px;color:var(--muted)}
+.row{display:flex;align-items:center;gap:12px}
+.between{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:0 22px;border-radius:16px;background:var(--accent);color:#fff;font-weight:800;font-size:16px;white-space:nowrap}
+.btn.sec{background:var(--surface);color:var(--accent-strong);border:1.5px solid var(--accent)}
+.btn.full{width:100%}
+.count{background:var(--info);color:#fff;font-size:12px;font-weight:800;border-radius:11px;padding:1px 8px;line-height:1.6}
+.pill{display:inline-block;font-size:13px;font-weight:700;border-radius:20px;padding:4px 11px;white-space:nowrap}
+.pill.proposed{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-border)}
+.pill.open{background:var(--info-bg);color:var(--info-text);border:1px solid var(--info-border)}
+.okmark{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:700;color:var(--accent-strong)}
+.chip{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px;border-radius:24px;border:1.5px solid var(--border-strong);background:var(--surface);font-weight:700;font-size:15px;color:var(--text-2);white-space:nowrap}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.hero{background:var(--accent);color:#fff;border-radius:24px;padding:20px 22px 14px}
+.hero .k{color:#cfe5da}
+.hero .v{font-size:36px;color:#fff}
+.carousel{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding:2px 2px 6px;scrollbar-width:none}
+.carousel::-webkit-scrollbar{display:none}
+.kc{flex:none;width:280px;scroll-snap-align:start;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:18px 20px;color:var(--text);display:flex;flex-direction:column;gap:6px}
+.kc .ic{width:44px;height:44px;border-radius:14px;background:var(--accent-tint);color:var(--accent-strong);display:flex;align-items:center;justify-content:center}
+.dots{display:flex;gap:7px;justify-content:center}
+.dots i{width:8px;height:8px;border-radius:50%;background:var(--border-strong)}
+.dots i.on{background:var(--accent);width:22px;border-radius:4px}
+.item{display:flex;align-items:center;gap:14px;min-height:64px;padding:10px 0;border-top:1px solid var(--divider);color:var(--text)}
+.item:first-child{border-top:0}
+.acc{display:flex;align-items:center;gap:14px;min-height:72px;padding:12px 20px;background:var(--surface);border:1px solid var(--border);border-radius:20px;color:var(--text)}
+.acc b{font-size:17px}
+.chev{width:40px;height:40px;border-radius:12px;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--text-2);flex:none}
+.av{width:44px;height:44px;border-radius:50%;background:var(--tag-bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--text-2);flex:none}
+.dayhead{font-size:14px;font-weight:800;color:var(--text-2);padding:16px 4px 6px}
+/* phone */
+.ph{width:390px;min-height:100vh;position:relative;display:flex;flex-direction:column}
+.ph-head{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 10px}
+.ph-head h1{font-size:28px;font-weight:800;letter-spacing:-.02em}
+.ph-body{padding:4px 16px 24px;display:flex;flex-direction:column;gap:14px;flex:1}
+.iconbtn{width:52px;height:52px;border-radius:16px;border:1px solid var(--border);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;color:var(--text-2);flex:none}
+.bar{position:relative;z-index:20;display:grid;grid-template-columns:repeat(5,1fr);background:var(--surface);border-top:1px solid var(--border);padding:8px 4px 20px;height:78px}
+.bar a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px;font-weight:700;color:var(--muted);position:relative}
+.bar a .ic{width:60px;height:34px;border-radius:17px;display:flex;align-items:center;justify-content:center}
+.bar a.on{color:var(--accent-strong)}
+.bar a.on .ic{background:var(--accent-tint)}
+.bar a .count{position:absolute;top:-4px;left:50%;margin-left:8px;font-size:11px}
+/* computer */
+.top{display:flex;align-items:center;gap:16px;padding:14px 32px;background:var(--surface);border-bottom:1px solid var(--border)}
+.tabs{display:flex;gap:6px;margin:0 auto}
+.tabs a{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px;border-radius:24px;font-weight:700;font-size:15px;color:var(--text-2)}
+.tabs a.on{background:var(--accent-tint);color:var(--accent-strong)}
+.cols{display:grid;grid-template-columns:720px 360px;gap:28px;justify-content:center;padding:28px 32px 40px;align-items:start}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:24px;padding:22px;display:flex;flex-direction:column;gap:14px;position:sticky;top:20px}
+.panel h2{font-size:20px;font-weight:800;letter-spacing:-.01em}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--divider);font-size:15px}
+.kv span:first-child{color:var(--muted)}
+.kv b{text-align:right;min-width:0}
+</style>
+</head>
+<body>
+<header class="top"><span class="row" style="gap:10px;font-weight:800;font-size:18px"><span style="flex:none;width:36px;height:36px;border-radius:8px;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg></span>Hausbuch</span><nav class="tabs"><a class="" href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg>Übersicht</a><a class="" href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13l1.5 8v6H4v-6z"/></svg>Zu prüfen<span class="count">7</span></a><a class="" href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h15a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4z"/><path d="M4 7V5.5A1.5 1.5 0 0 1 5.5 4H16v3"/><circle cx="16" cy="13.5" r="1.2"/></svg>Haushalt</a><a class="" href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v16h16"/><path d="m7 15 4-4 3 3 6-6"/></svg>Anlagen</a><a class="on" href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>Mehr<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a></nav><a class="iconbtn" href="#" aria-label="Suchen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></a><a class="btn" href="#" style="min-height:52px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>Hochladen</a></header><div class="cols"><div class="col"><div class="between"><div><p class="k">Konten · Umsätze · November 2026</p><h1 style="font-size:30px;font-weight:800;letter-spacing:-.02em">Girokonto A</h1></div></div>
+<div class="c"><div class="between"><span><span class="k">Stand 19.11. · Luis</span><br><span class="v">3.800 €</span></span><a class="btn sec" href="#" style="min-height:48px;padding:0 16px">Konto wechseln</a></div></div><div class="row" style="gap:8px"><a class="chip on" href="#">Alle 12</a><a class="chip" href="#">Offen 3</a><a class="chip" href="#">Gebucht 9</a></div><div style="margin-top:-12px"><p class="dayhead">Donnerstag, 19. November</p><div class="c" style="padding:4px 18px"><a class="item" href="#"><span class="av">S</span><span style="flex:1;min-width:0"><b>Supermarkt Muster</b><br><span class="sub">Supermarkt</span></span><span style="text-align:right"><b class="" style="white-space:nowrap">−64,20 €</b><br><span class="okmark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Gebucht</span></span></a><a class="item" href="#" style="background:var(--accent-tint);margin:0 -18px;padding:10px 18px;border-radius:14px"><span class="av">O</span><span style="flex:1;min-width:0"><b>Online-Versand Beispiel</b><br><span class="sub">noch keine Kategorie</span></span><span style="text-align:right"><b class="" style="white-space:nowrap">−129,90 €</b><br><span class="pill open">Offen</span></span></a></div><p class="dayhead">Mittwoch, 18. November</p><div class="c" style="padding:4px 18px"><a class="item" href="#"><span class="av">S</span><span style="flex:1;min-width:0"><b>Stadtwerke Beispielstadt</b><br><span class="sub">Strom & Gas</span></span><span style="text-align:right"><b class="" style="white-space:nowrap">−85,00 €</b><br><span class="okmark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Gebucht</span></span></a></div><p class="dayhead">Dienstag, 17. November</p><div class="c" style="padding:4px 18px"><a class="item" href="#"><span class="av">A</span><span style="flex:1;min-width:0"><b>Arbeitgeber Beispiel AG</b><br><span class="sub">Lohn & Gehalt</span></span><span style="text-align:right"><b class="pos" style="white-space:nowrap">+3.400,00 €</b><br><span class="okmark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Gebucht</span></span></a></div><p class="dayhead">Sonntag, 15. November</p><div class="c" style="padding:4px 18px"><a class="item" href="#"><span class="av">S</span><span style="flex:1;min-width:0"><b>Streamingdienst Beispiel</b><br><span class="sub">Streaming</span></span><span style="text-align:right"><b class="" style="white-space:nowrap">−13,99 €</b><br><span class="pill proposed">Vorschlag prüfen</span></span></a></div><p class="dayhead">Samstag, 14. November</p><div class="c" style="padding:4px 18px"><a class="item" href="#"><span class="av">T</span><span style="flex:1;min-width:0"><b>Tagesgeld (eigenes Konto)</b><br><span class="sub">Umbuchung</span></span><span style="text-align:right"><b class="" style="white-space:nowrap">−500,00 €</b><br><span class="okmark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Gebucht</span></span></a></div><p class="dayhead">Freitag, 13. November</p><div class="c" style="padding:4px 18px"><a class="item" href="#"><span class="av">R</span><span style="flex:1;min-width:0"><b>Restaurant Am Markt</b><br><span class="sub">Restaurant</span></span><span style="text-align:right"><b class="" style="white-space:nowrap">−48,50 €</b><br><span class="pill proposed">Vorschlag prüfen</span></span></a></div><p class="dayhead">Mittwoch, 11. November</p><div class="c" style="padding:4px 18px"><a class="item" href="#"><span class="av">D</span><span style="flex:1;min-width:0"><b>Drogerie Muster</b><br><span class="sub">Drogerie & Kosmetik</span></span><span style="text-align:right"><b class="" style="white-space:nowrap">−23,40 €</b><br><span class="okmark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Gebucht</span></span></a></div><p class="dayhead">Dienstag, 10. November</p><div class="c" style="padding:4px 18px"><a class="item" href="#"><span class="av">B</span><span style="flex:1;min-width:0"><b>Bäckerei Beispiel</b><br><span class="sub">Bäckerei, Kiosk & Markt</span></span><span style="text-align:right"><b class="" style="white-space:nowrap">−7,80 €</b><br><span class="okmark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Gebucht</span></span></a></div><p class="dayhead">Sonntag, 8. November</p><div class="c" style="padding:4px 18px"><a class="item" href="#"><span class="av">K</span><span style="flex:1;min-width:0"><b>Kfz-Versicherung Beispiel</b><br><span class="sub">Kfz-Versicherung</span></span><span style="text-align:right"><b class="" style="white-space:nowrap">−62,00 €</b><br><span class="okmark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Gebucht</span></span></a></div><p class="dayhead">Dienstag, 3. November</p><div class="c" style="padding:4px 18px"><a class="item" href="#"><span class="av">K</span><span style="flex:1;min-width:0"><b>Kita Beispielstadt</b><br><span class="sub">Kita</span></span><span style="text-align:right"><b class="" style="white-space:nowrap">−180,00 €</b><br><span class="okmark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Gebucht</span></span></a></div><p class="dayhead">Montag, 2. November</p><div class="c" style="padding:4px 18px"><a class="item" href="#"><span class="av">K</span><span style="flex:1;min-width:0"><b>Kreditkarte (eigenes Konto)</b><br><span class="sub">Kreditkarte</span></span><span style="text-align:right"><b class="" style="white-space:nowrap">−820,00 €</b><br><span class="okmark"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>Gebucht</span></span></a></div></div></div><aside class="panel"><p class="k">Ausgewählt · Offen</p><h2>Online-Versand Beispiel</h2>
+<p class="v">−129,90 €</p>
+<div><div class="kv"><span>Buchungstag</span><b>19.11.2026</b></div><div class="kv"><span>Verwendungszweck</span><b>Bestellung 12345 Lastschrift</b></div>
+<div class="kv"><span>Konto</span><b>Girokonto A · Luis</b></div></div>
+<p class="k">Kategorie wählen</p>
+<div class="row" style="flex-wrap:wrap;gap:8px"><a class="chip" href="#">Kleidung</a><a class="chip" href="#">Haushalt & Einrichtung</a><a class="chip" href="#">Sonstiges</a></div>
+<a class="btn full" href="#">Beleg hochladen</a>
+<p class="sub">Ein Beleg zeigt, was bestellt wurde; daraus schlägt die App die Kategorie vor.</p></aside></div>
+</body></html>
