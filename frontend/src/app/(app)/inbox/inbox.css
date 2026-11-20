@@ -1,0 +1,10 @@
+/* Zu prüfen (phase 10 step 4b, mockup 18): the queue beside the detail panel, which holds the
+   chosen line's allocation (DetailPanel). Tokens from globals.css only. */
+
+.inbox-page-list {
+  margin-top: 24px;
+}
+
+.inbox-page-list .card.inbox-queue {
+  flex: none;
+}
