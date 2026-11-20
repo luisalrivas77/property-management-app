@@ -1,13 +1,15 @@
 # Phase 10 · Layout und Budget
 
 Spec drafted 20 Nov 2026 from the four mockups Luis chose that day (`docs/mockups/` 14-C2, 15-B2, 16-C2,
-17-C2) and his decision on budgets („the household's own targets“, 20 Nov 2026). Not built. Step 0 waits for
-his answer to Q-O176 (the default sorting of the spending codes into needs and wants, §9).
+17-C2) and his decision on budgets („the household's own targets“, 20 Nov 2026). Not built. Q-O176 (the default sorting
+of the spending codes into needs and wants, §9) answered by Luis the same day. On the same day Luis asked for
+mockups of every screen not yet drawn, so the build covers the whole app at once (D278 amended); the build waits
+for them.
 
 | Step | What | State |
 | --- | --- | --- |
 | Spec | This file, the edits of §8 | drafted 20 Nov 2026 |
-| 0 | Taxonomy field `budget_class`, `rules/budget/references.yaml`, schemas, fixtures; no migration | not started (waits for Q-O176) |
+| 0 | Taxonomy field `budget_class`, `rules/budget/references.yaml`, schemas, fixtures; no migration | not started (Q-O176 answered 20 Nov 2026) |
 | 1 | `rules/budget/`, `services/budget.py`, `GET /household-budget`, `GET /accounts/{id}/month` | not started |
 | 2 | The shell: the menu, the detail panel, the route map, Steuern › „Einkommen & Haushalt“ | not started |
 | 3 | Übersicht (15-B2) and Konten › Umsätze (16-C2) | not started |
@@ -49,7 +51,7 @@ parked.
 | D275 | **The published splits are reference points, and one tap only fills the form.** `rules/budget/references.yaml` (outside `rules/health/` and `rules/plan/`, so `rule_version()` stays) lists each reference with its source, the date it was read, what it measures and what it does not (§3). The goals sheet shows them under „Zum Vergleich“; the buttons 50/30/20, 60/20/20 and 70/20/10 write those numbers into the empty fields and store nothing; nothing is stored or coloured until „Ziele speichern“. No reference is a default, and none fills the housing target. | The app proposes no target (D249 as amended here); a one-tap fill is a typing aid the household confirms, the same as typing the numbers. Luis kept the buttons as drawn. |
 | D276 | **The housing share** is the window's spending in the Wohnen group (`hh_housing`, `hh_rent`, `hh_energy`, `hh_broadcast_fee`, `hh_flat_search`, and any code moved there later) ÷ E. It is the household's own home only: the rental flat's costs are inside its result, and a code the household overrides to „want“ still counts in housing. The screen says that the IWU figure is a tenant's gross cold rent of the household's net income and Destatis's all housing costs of disposable income, so neither is the same figure as the app's. | Two published thresholds with two different denominators (§3); the screen must not imply either is the app's figure. |
 | D277 | **Spending in play is reached from the Budget.** A tapped class opens its codes in the panel with their window means and the „geplant“ field of D263; the panel shows the class's amount and share with the plan, from `POST /household-plan/preview`. A code's class switch sits on its row there and becomes an override when saved. The explanation of the plan (D252, D253) gets no target, class or mark among its facts. | D263 is the one place amounts are typed; the explanation's validator was tested without budget facts and stays so. |
-| D278 | **What undrawn screens get in this build:** the new shell, the panel where §5.2 names it, and nothing else; their content, tables and forms are unchanged. A screen gets its own mockup before its content changes. | Luis drew four screens; „one build“ needs an edge. |
+| D278 | **What undrawn screens get in this build:** the new shell, the panel where §5.2 names it, and nothing else; their content, tables and forms are unchanged. A screen gets its own mockup before its content changes. | Luis drew four screens; „one build“ needs an edge. **Amended 20 Nov 2026 (Luis: „let's do mock ups for the rest of the cards so it's all done at once“):** every screen not yet drawn gets its own mockup before the build (`docs/mockups/` 18 onwards), and the build carries out each one Luis chooses; until a screen's mockup is chosen this decision stands for it. |
 
 ## 3. Sources (read 20 Nov 2026)
 
@@ -145,15 +147,17 @@ nothing is coloured before he saves a target.
 
 ## 9. Question for Luis
 
-**Q-O176 (open): the default sorting.** Proposed, each switchable per category by the household (D272 (1));
+**Q-O176 (answered 20 Nov 2026): the default sorting.** As proposed below, except Friseur & Körperpflege
+(`hh_personal_care`), which Luis put under Notwendiges („I think Friseur is a need. Other than that it looks good.“).
+The proposal, each switchable per category by the household (D272 (1));
 a group's „Sonstige …“ code follows its group:
 
 - **Notwendiges:** Wohnen (Miete, Energie, Rundfunkbeitrag, Wohnungssuche), Lebensmittel (Supermarkt,
   Drogerie, Bäckerei), Versicherungen, Gesundheit, Mobilität (Tanken, ÖPNV, Parken, Werkstatt, Kfz-Steuer),
   Telefon und Internet, Familie und Kind (Kinderausstattung, Schwangerschaft und Geburt), Kinderbetreuung,
-  haushaltsnahe Dienste, Steuerzahlungen, Behörden und Gebühren, Bankgebühren, Kartenzinsen, Arbeit und Bildung, Porto, privat bezahlte Kosten der
+  haushaltsnahe Dienste, Steuerzahlungen, Behörden und Gebühren, Bankgebühren, Kartenzinsen, Arbeit und Bildung, Porto, Körperpflege und Friseur (Luis), privat bezahlte Kosten der
   Wohnung, Depotgebühr, Kapitalertragsteuer.
-- **Wünsche:** Essen gehen und bestellen, Freizeit, Reisen, Sport, Kleidung, Körperpflege und Friseur,
+- **Wünsche:** Essen gehen und bestellen, Freizeit, Reisen, Sport, Kleidung,
   Elektronik, Online-Shopping, Haushalt und Einrichtung, Abos und Streaming, Geschenke, Spenden, Spielzeug, Taxi, Sonstiges.
 - **Unsure, to decide:** Geld an Familie (proposed: Notwendiges), Bargeld and Kreditkartenabrechnung, whose
   contents the app cannot see (proposed: Wünsche), Erstattungen (proposed: lowers Wünsche).
