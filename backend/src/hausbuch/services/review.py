@@ -732,8 +732,8 @@ TEXTS = i18n.Texts(
             "private accounts with AI”.",
         ),
         "unmatched.question": ("Wofür war diese Buchung?", "What was this payment for?"),
-        # The frontend's bulk list hides this generic question (inbox.tsx
-        # GENERIC_PROPOSED_QUESTION).
+        # The frontend's bulk list hides this generic question in either language (inbox.tsx
+        # GENERIC_PROPOSED_QUESTIONS).
         "proposed.question": ("Stimmt diese Zuordnung?", "Is this categorisation right?"),
         "questionnaire": (
             "Die Jahresfragen {year} sind noch offen: {answered} von {total} beantwortet.",
