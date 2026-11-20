@@ -24,7 +24,7 @@ async function createAccountViaApi(page: Page): Promise<string> {
   return account.id;
 }
 
-test("a camt ZIP imports reconciled, a second upload adds nothing, Umsätze filter by date", async ({ page, signedIn }) => {
+test("a camt ZIP imports reconciled, a second upload adds nothing, Umsätze by month", async ({ page, signedIn }) => {
   void signedIn;
   await navigateTo(page, "Konten");
   await expect(page.getByRole("heading", { name: "Konten" })).toBeVisible();
@@ -53,14 +53,41 @@ test("a camt ZIP imports reconciled, a second upload adds nothing, Umsätze filt
   await expect(page.getByRole("status").filter({ hasText: "Bereits importiert: camt052.zip" })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "camt052.zip" })).toHaveCount(1);
 
+  // Konten › Umsätze (phase 10 D269) opens on the newest month with lines: November's five,
+  // grouped by day, under the month card the server computes.
   await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Umsätze" }).click();
-  await expect(page.getByText("22 Umsätze")).toBeVisible();
-  await page.getByLabel("Buchungstag von").fill("2026-11-01");
-  await page.getByRole("button", { name: "Anzeigen" }).click();
-  await expect(page).toHaveURL(/von=2026-11-01/);
-  await expect(page.getByText("5 Umsätze")).toBeVisible();
-  await page.getByRole("button", { name: "Zurücksetzen" }).click();
-  await expect(page.getByText("22 Umsätze")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Umsätze · Mietkonto" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Alle 5" })).toBeVisible();
+  const card = page.getByRole("region", { name: "November 2026" });
+  await expect(card).toContainText("5 Umsätze");
+  await expect(card).toContainText("-3.028,51 €");
+  // Another month by the month field; October holds six lines.
+  await page.getByLabel("Monat").selectOption("2026-10");
+  await expect(page).toHaveURL(/monat=2026-10/);
+  await expect(page.getByRole("button", { name: "Alle 6" })).toBeVisible();
+  // A booking-date range (Planung's links) lists every line in it, without the month card.
+  const linesPath = new URL(page.url()).pathname;
+  await page.goto(`${linesPath}?tab=umsaetze&von=2026-04-01&bis=2026-11-30`);
+  await expect(page.getByText(/^Nur die Umsätze vom 01\.04\.2026 bis 30\.11\.2026\./)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Alle 22" })).toBeVisible();
+  await page.getByRole("link", { name: "Alle Umsätze anzeigen" }).click();
+  await expect(page.getByRole("button", { name: "Alle 5" })).toBeVisible();
+  // A future month is never shown; typed into the address it falls back to the newest month.
+  await page.goto(`${linesPath}?tab=umsaetze&monat=2099-01`);
+  await expect(page.getByRole("button", { name: "Alle 5" })).toBeVisible();
+
+  // Konten (phase 10 D279) lists one kind of account at a time: the one bank account under
+  // „Bankkonten“, its stored closing balance, and a tap opens it in the detail panel.
+  await page.goto("/accounts");
+  const kinds = page.getByRole("navigation", { name: "Kontoarten" });
+  await expect(kinds.getByRole("link", { name: "Bankkonten 1" })).toHaveAttribute("aria-current", "page");
+  await expect(kinds.getByRole("link")).toHaveCount(1); // no other kind is held
+  const account = page.getByRole("link").filter({ hasText: "Mietkonto" });
+  await expect(account).toContainText("-3.028,51 €");
+  await account.click();
+  const accountPanel = page.getByRole("complementary", { name: "Mietkonto" });
+  await expect(accountPanel.getByRole("link", { name: /^Umsätze/ })).toHaveAttribute("href", `${linesPath}?tab=umsaetze`);
+  await expect(accountPanel.getByRole("heading", { name: "Eigentümer" })).toBeVisible();
 });
 
 test("a CSV labelled as Excel (Windows) imports, waits for its balance, then reconciles", async ({ page, signedIn }) => {
@@ -109,7 +136,8 @@ test("the same payments in CSV and camt become possible duplicates to merge", as
   await expect(tab).toHaveText("Mögliche Doppelbuchungen (18)");
   await expect(page.getByText("1 bereits entschieden")).toBeVisible();
 
-  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Umsätze" }).click();
-  await expect(page.getByText("44 Umsätze")).toBeVisible();
+  // Every line of both files, April to November, by a booking-date range.
+  await page.goto(`${new URL(page.url()).pathname}?tab=umsaetze&von=2026-04-01&bis=2026-11-30`);
+  await expect(page.getByRole("button", { name: "Alle 44" })).toBeVisible();
   await expect(page.getByText("Doppelbuchung, zählt nicht")).toHaveCount(1);
 });

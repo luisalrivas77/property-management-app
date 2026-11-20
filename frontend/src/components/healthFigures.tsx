@@ -83,22 +83,28 @@ async function loadHealth(): Promise<HealthData> {
   return { health, series, scenarios, names, accounts: new Map(accounts.map((account) => [account.id, account])) };
 }
 
-/** The Übersicht's phase 9 block; one request set for all of it. */
-export function HealthSection() {
+/** The Übersicht's phase 9 block; one request set for all of it. `onChanged` lets a page that
+ * shows the same figures elsewhere (Übersicht's tiles, phase 10 D268) reload them when this
+ * block saves something. */
+export function HealthSection({ onChanged }: { onChanged?: () => void } = {}) {
   return (
     <Suspense fallback={null}>
-      <HealthBlock />
+      <HealthBlock onChanged={onChanged} />
     </Suspense>
   );
 }
 
-function HealthBlock() {
+function HealthBlock({ onChanged }: { onChanged?: () => void }) {
   const state = useLoad(loadHealth);
   const requested = useSearchParams().get("month_end");
+  const changed = () => {
+    state.reload();
+    onChanged?.();
+  };
   return (
     <>
-      {requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? <MonthEndCard day={requested} onDone={state.reload} /> : null}
-      <Loading state={state}>{(data) => <HealthFigures data={data} onChanged={state.reload} />}</Loading>
+      {requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? <MonthEndCard day={requested} onDone={changed} /> : null}
+      <Loading state={state}>{(data) => <HealthFigures data={data} onChanged={changed} />}</Loading>
     </>
   );
 }
