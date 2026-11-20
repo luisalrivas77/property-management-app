@@ -273,17 +273,6 @@ def explanation(conn: Connection, today: date, scenario_id: UUID | None) -> Plan
     """GET /household-plan/explanation?scenario= (§8.6)."""
     resolved = resolve_scenario(conn, scenario_id)
     mode = advice_mode(conn)
-    if i18n.english():
-        # Phase 10 Q-O178: the validator and its evals are German, so in English the screen
-        # shows the app's template text in English, rendered on read from today's facts like
-        # a text with no row; a stored model text is never shown translated.
-        return PlanExplanation(
-            scenario_id=resolved,
-            mode=mode,
-            status=ExplanationStatus.TEMPLATE,
-            reason=None if private_ai_allowed(conn) else ExplanationReason.CONSENT_OFF,
-            paragraphs=advice_texts.template(explanation_facts(conn, today, resolved), mode),
-        )
     e = explanation_table.c
     row = conn.execute(
         select(explanation_table)
@@ -299,7 +288,11 @@ def explanation(conn: Connection, today: date, scenario_id: UUID | None) -> Plan
             mode=mode,
             status=ExplanationStatus.TEMPLATE,
             reason=None if consent else ExplanationReason.CONSENT_OFF,
-            paragraphs=_rendered(T.render(current, mode), current),
+            paragraphs=(
+                advice_texts.template(current, mode)
+                if i18n.english()
+                else _rendered(T.render(current, mode), current)
+            ),
         )
     stored = _stored_facts(row)
     stored_mode = AdviceMode(row.advice_mode)
@@ -312,6 +305,22 @@ def explanation(conn: Connection, today: date, scenario_id: UUID | None) -> Plan
         status, reason = ExplanationStatus.TEMPLATE, ExplanationReason.REJECTED
         paragraphs = T.render(stored, stored_mode)
     same_day = current.model_copy(update={"as_of": stored.as_of})
+    if i18n.english():
+        # Phase 10 Q-O178: the validator and its evals are German, so in English the row is
+        # shown as the app's template text of its own stored facts, in English; a model text
+        # is never shown translated. Id, day and staleness stay the row's, nothing is stored.
+        if status is ExplanationStatus.MODEL:
+            status, reason = ExplanationStatus.TEMPLATE, None
+        return PlanExplanation(
+            id=row.id,
+            scenario_id=row.scenario_id,
+            mode=stored_mode,
+            status=status,
+            reason=reason,
+            paragraphs=advice_texts.template(stored, stored_mode),
+            created_at=row.created_at,
+            stale=F.facts_sha256(same_day) != bytes(row.facts_sha256).hex(),
+        )
     return PlanExplanation(
         id=row.id,
         scenario_id=row.scenario_id,

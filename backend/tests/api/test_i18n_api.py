@@ -23,7 +23,7 @@ def test_the_key_figures_to_dos_follow_the_request(client_a):
     assert english.keys() == german.keys() and english["todo"].keys() == german["todo"].keys()
 
 
-def test_an_english_write_stores_german(client_a):
+def test_net_worth_todos_in_english_and_a_stored_run_in_either_language(client_a):
     created = create(
         client_a,
         "/api/accounts",
@@ -47,12 +47,10 @@ def test_an_english_write_stores_german(client_a):
     assert written["outcome"] == "written"
     run_id = written["run"]["net_worth_run_id"]
     stored = ok(client_a.get(f"/api/net-worth/snapshots/{run_id}"))
-    assert [t["action"] for t in stored["todos"]] == [
-        "Kontoauszug hochladen",
-        "Eigentümer festlegen",
-    ]
+    # A stored run is rebuilt from its rows: only the owners' to-do comes back with it.
+    assert [t["action"] for t in stored["todos"]] == ["Eigentümer festlegen"]
     shown = ok(client_a.get(f"/api/net-worth/snapshots/{run_id}", headers=EN))
-    assert [t["action"] for t in shown["todos"]] == ["Upload statement", "Set owners"]
+    assert [t["action"] for t in shown["todos"]] == ["Set owners"]
     # The stored figures are the same whichever language read them.
     assert {k: v for k, v in shown.items() if k != "todos"} == {
         k: v for k, v in stored.items() if k != "todos"
