@@ -370,7 +370,7 @@ const FIGURE_INTRO: Record<MarkedFigure, string> = {
   reserve: "",
   savings_rate:
     "Rot, wenn ihr mehr ausgegeben als eingenommen habt. Eine Grenze für Grün schlägt Hausbuch nicht vor; ihr könnt eine eintragen.",
-  ltv: "Wie viel die Kredite der Wohnung von ihrem geschätzten Wert ausmachen.",
+  ltv: "Wie viel die Kredite der Wohnung von ihrem Wert ausmachen.",
   debt_service_ratio: "Welcher Teil eures Einkommens für Zins und Tilgung an die Bank geht.",
   debt_ratio: "Hausbuch schlägt keine Grenze vor; ohne eure Zahl bleibt diese Kennzahl ohne Farbe.",
   debt_to_income: "Hausbuch schlägt keine Grenze vor; ohne eure Zahl bleibt diese Kennzahl ohne Farbe.",
@@ -711,7 +711,7 @@ function FiguresCard({
                     <span>
                       <Link href={`/properties/${row.property_id}`}>Immobilie</Link>{" "}
                       <span className="muted">
-                        Wert {ESTIMATE_SOURCE_TEXT[row.estimate_source]}{" "}
+                        {ESTIMATE_SOURCE_TEXT[row.estimate_source]}{" "}
                         {formatEuro(row.estimate)}, Darlehen {formatEuro(row.loan_balance)}
                       </span>
                     </span>
@@ -833,12 +833,13 @@ function Figure({
   );
 }
 
-/** Where the loan-to-value's property value comes from; „advance“ before the handover (phase 6
- * D265): the price paid so far, a booked figure. */
+/** Where the loan-to-value's property value comes from (phase 9 D239 amended): the scenario's
+ * estimate, the purchase price, or before the handover the price paid so far, „Anzahlung,
+ * gebucht“ (phase 6 D265), a booked figure and no estimate. */
 const ESTIMATE_SOURCE_TEXT: Record<EstimateSource, string> = {
-  scenario: "aus ihrem Szenario",
-  purchase_price: "nach dem Kaufpreis",
-  advance: "nach der Anzahlung bis zur Übergabe",
+  scenario: "Wert aus ihrem Szenario",
+  purchase_price: "Wert nach dem Kaufpreis",
+  advance: "Anzahlung, gebucht",
 };
 
 // --- Vermögen im Verlauf ------------------------------------------------------------------

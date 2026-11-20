@@ -296,16 +296,22 @@ export function slices(figure: NetWorth): Slice[] {
   return all.filter((slice) => (slice.key === "property" ? hasProperty : toCents(slice.value) !== 0n));
 }
 
-/** The property slice's detail: an estimate from the handover on; before it (D265) the price paid
- * so far less the loans' payouts, which are booked figures; both when one property is before its
- * handover and another after it. */
+/** The property slice's detail, saying only what its valued lines hold: an estimate from the
+ * handover on; before it (D265) the price paid so far and the loans' payouts, which are booked
+ * figures; „teils geschätzt“ when one property is before its handover and another after it. No
+ * „geschätzt“ while no line holds a value, and no payout named while no loan is valued (D265
+ * amended, the build's review). */
 function propertyDetail(lines: NetWorthLine[]): string {
   const own = lines.filter((line) => (line.kind === "property" || line.kind === "loan") && line.value_eur != null);
-  const paid = own.some(isPaidBeforeHandover);
   const estimated = own.some((line) => line.estimate);
-  if (paid && !estimated) return "Anzahlung minus ausgezahltes Darlehen";
-  if (paid) return "Wert minus Darlehen, teils geschätzt";
-  return "Wert minus Darlehen, geschätzt";
+  const advance = own.some((line) => line.kind === "property" && !line.estimate);
+  const payout = own.some((line) => line.kind === "loan" && !line.estimate);
+  if (advance || payout) {
+    if (estimated) return "Wert minus Darlehen, teils geschätzt";
+    if (advance && payout) return "Anzahlung minus ausgezahltes Darlehen";
+    return advance ? "Anzahlung Kaufpreis" : "ausgezahltes Darlehen";
+  }
+  return estimated ? "Wert minus Darlehen, geschätzt" : "Wert minus Darlehen";
 }
 
 /** A slice's share of the positive slices, in whole percent ("68"); null for a negative one. */
