@@ -3,8 +3,13 @@
 In the order D167 (3) gives: the ECB rates first (the NAVs in another currency need them),
 then each held coin, then each held ETF's NAV. "Held" is a positive sum of confirmed,
 current movements on at least one of the workspace's accounts; the first of those movements bounds
-every source (no price before it). Three phases, so no network call runs inside a database
-transaction:
+every source (no price before it). Since D174 amended 20 Nov 2026 an asset held earlier and
+sold or moved out since is planned too, for the days it was held only (`planned_assets`,
+`Held.last_on`, its last movement): every source, the first-read check and „no guess“ as for
+a held asset, nothing stored after its last held day, until its days are priced (`_done`);
+it raises no card and no `asset.price_source_failed` event, since no account holds it today.
+The cards keep reading `held_subquery` („held today“). Three phases, so no network call runs
+inside a database transaction:
 
 1. `plan` reads what is held and which days each daily source has already stored;
 2. `collect` asks the sources for the missing days, through `Sources`, which keeps every
@@ -72,7 +77,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Connection, Engine, func, select, text
+from sqlalchemy import Connection, Engine, case, func, null, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from hausbuch.db.session import workspace_transaction
@@ -120,6 +125,17 @@ class Held:
     first_on: date
     ids: PriceIds
     fund: FundSource | None  # the registry's entry or the stored catalogue reference
+    # D174 amended 20 Nov 2026: the last day an asset no account holds today was held (its
+    # last movement); None while some account holds it (priced to today).
+    last_on: date | None = None
+
+    def end(self, today: date) -> date:
+        """The last day the asset is priced for: today while held, else its last held day."""
+        return today if self.last_on is None else min(self.last_on, today)
+
+    def within(self, on: date) -> bool:
+        """Whether `on` is not after the last held day (always, while held)."""
+        return self.last_on is None or on <= self.last_on
 
 
 @dataclass
@@ -399,6 +415,24 @@ class Sources:
 # --- 1. plan ------------------------------------------------------------------------------
 
 
+def _current() -> list[Any]:
+    m = movement_table.c
+    return [m.status == MovementStatus.CONFIRMED.value, m.superseded_by.is_(None)]
+
+
+def _held_ids():
+    """The ids of the assets some account holds today: a positive sum of confirmed, current
+    movements on at least one account."""
+    m = movement_table.c
+    per_account = (
+        select(m.asset_id, func.sum(m.quantity).label("units"))
+        .where(*_current())
+        .group_by(m.account_id, m.asset_id)
+        .subquery()
+    )
+    return select(per_account.c.asset_id).where(per_account.c.units > 0)
+
+
 def held_subquery():
     """(asset_id, first_at) of every asset some account holds: a positive sum of confirmed,
     current movements on at least one account, as the Übersicht shows positions per account.
@@ -407,14 +441,8 @@ def held_subquery():
     leave the position the Übersicht shows unpriced. `first_at` is the asset's first movement
     on any account."""
     m = movement_table.c
-    current = [m.status == MovementStatus.CONFIRMED.value, m.superseded_by.is_(None)]
-    per_account = (
-        select(m.asset_id, func.sum(m.quantity).label("units"))
-        .where(*current)
-        .group_by(m.account_id, m.asset_id)
-        .subquery()
-    )
-    held_ids = select(per_account.c.asset_id).where(per_account.c.units > 0)
+    current = _current()
+    held_ids = _held_ids()
     return (
         select(m.asset_id, func.min(m.occurred_at).label("first_at"))
         .where(*current, m.asset_id.in_(held_ids))
@@ -423,7 +451,9 @@ def held_subquery():
     )
 
 
-def _held(row: Any, first_at: datetime, stored: dict[UUID, NavSource]) -> Held:
+def _held(
+    row: Any, first_at: datetime, stored: dict[UUID, NavSource], last_at: datetime | None = None
+) -> Held:
     return Held(
         id=row.id,
         kind=AssetKind(row.kind),
@@ -435,6 +465,7 @@ def _held(row: Any, first_at: datetime, stored: dict[UUID, NavSource]) -> Held:
         fund=nav_source(fund_source(row.isin), row.isin, stored.get(row.id))
         if row.kind == AssetKind.ETF.value
         else None,
+        last_on=None if last_at is None else last_at.astimezone(UTC).date(),
     )
 
 
@@ -459,8 +490,9 @@ def _with_priced_as(
     if not twins:
         return held
     # The held assets keep their order; a priced_as asset not held itself comes after them.
+    # A twin is priced to today whether or not the symbol-level asset is still held itself.
     out = [
-        replace(h, first_on=min(h.first_on, twins[h.id].astimezone(UTC).date()))
+        replace(h, first_on=min(h.first_on, twins[h.id].astimezone(UTC).date()), last_on=None)
         if h.id in twins
         else h
         for h in held
@@ -477,31 +509,101 @@ def _with_priced_as(
     return out
 
 
+def _asset_columns() -> list[Any]:
+    a = asset_table.c
+    return [a.id, a.kind, a.symbol, a.isin, a.name, a.coingecko_id, a.kraken_pair, a.chain]
+
+
+def _fetched_where() -> list[Any]:
+    """Phase 7: priced through its priced_as asset (`_with_priced_as`), or spam: never
+    fetched."""
+    a = asset_table.c
+    return [a.priced_as_asset_id.is_(None), a.spam.is_(False)]
+
+
 def held_assets(conn: Connection) -> list[Held]:
+    """The assets some account holds today (`held_subquery`), each with `last_on` None."""
     a = asset_table.c
     sums = held_subquery()
     stored = stored_nav_sources(conn)
     rows = conn.execute(
-        select(
-            a.id,
-            a.kind,
-            a.symbol,
-            a.isin,
-            a.name,
-            a.coingecko_id,
-            a.kraken_pair,
-            a.chain,
-            sums.c.first_at,
-        )
+        select(*_asset_columns(), sums.c.first_at)
         .join(sums, sums.c.asset_id == a.id)
-        .where(
-            # Phase 7: priced through its priced_as asset (below), or spam: never fetched.
-            a.priced_as_asset_id.is_(None),
-            a.spam.is_(False),
-        )
+        .where(*_fetched_where())
         .order_by(a.name, a.id)
     ).all()
     return _with_priced_as(conn, [_held(r, r.first_at, stored) for r in rows], stored)
+
+
+def held_ever_subquery():
+    """(asset_id, first_at, last_at) of every asset with confirmed, current movements on some
+    own account (D174 amended 20 Nov 2026): `first_at` its first movement on any account;
+    `last_at` None while some account holds a unit (`held_subquery`'s rule), else its last
+    movement with a quantity, after which no own account holds a unit (a later movement of
+    0 units, such as a distribution note, does not extend it). An asset held again after a
+    sale is priced from its first movement on, never beyond its last held day."""
+    m = movement_table.c
+    current = _current()
+    held_ids = _held_ids()
+    last_moved = func.max(m.occurred_at).filter(m.quantity != 0)
+    return (
+        select(
+            m.asset_id,
+            func.min(m.occurred_at).label("first_at"),
+            case(
+                (func.bool_or(m.asset_id.in_(held_ids)), null()),
+                else_=func.coalesce(last_moved, func.max(m.occurred_at)),
+            ).label("last_at"),
+        )
+        .where(*current)
+        .group_by(m.asset_id)
+        .subquery()
+    )
+
+
+def planned_assets(conn: Connection) -> list[Held]:
+    """The assets the daily fetch prices (D174 amended 20 Nov 2026): every asset held at
+    some time, each for the days it was held (`Held.last_on`), the ones some account holds
+    today first, so a past asset's failing source never ends a source (CoinGecko) before a
+    held asset was asked. `held_assets` keeps meaning „held today“ for the cards."""
+    a = asset_table.c
+    sums = held_ever_subquery()
+    stored = stored_nav_sources(conn)
+    rows = conn.execute(
+        select(*_asset_columns(), sums.c.first_at, sums.c.last_at)
+        .join(sums, sums.c.asset_id == a.id)
+        .where(*_fetched_where())
+        .order_by(a.name, a.id)
+    ).all()
+    planned = _with_priced_as(conn, [_held(r, r.first_at, stored, r.last_at) for r in rows], stored)
+    return sorted(planned, key=lambda h: h.last_on is not None)  # stable: by name within
+
+
+def _done(held: Held, stored: dict[tuple[UUID, str], set[date]]) -> bool:
+    """Whether an asset no account holds today needs no more asking (D174 amended 20 Nov
+    2026), so a sold asset is not asked every day for good. A coin: every day it was held
+    has a CoinGecko or Kraken price (coins trade every day). A fund: a daily-source price
+    (its issuer's NAV or the exchange's, D264) lies within STALE_AFTER_DAYS of both ends of
+    the days it was held. Both ends, since a file's 400-row cut (newest first) and a NAV
+    waiting for an older ECB rate leave the oldest days for a later run; the files are
+    full histories, so the days between are stored by the same read. A source with no
+    history for those days is asked again every run, like a held fund's (never a guess)."""
+    if held.last_on is None:
+        return False
+    if held.kind is AssetKind.CRYPTO:
+        if not held.ids.any:
+            return True  # never asked (no source), as a held coin without ids
+        days = stored.get((held.id, S.COINGECKO_DAILY.value), set()) | stored.get(
+            (held.id, S.KRAKEN_DAILY.value), set()
+        )
+        return all(d in days for d in _days(held.first_on, held.last_on))
+    days = stored.get((held.id, S.ISSUER_NAV.value), set()) | stored.get(
+        (held.id, S.EXCHANGE_CLOSE.value), set()
+    )
+    near = timedelta(days=valuation.STALE_AFTER_DAYS)
+    first = any(held.first_on <= d <= held.first_on + near for d in days)
+    last = any(held.last_on - near <= d <= held.last_on for d in days)
+    return first and last
 
 
 def plan(conn: Connection) -> Plan:
@@ -514,7 +616,7 @@ def plan(conn: Connection) -> Plan:
         stored[(row.asset_id, row.source)].add(row.on)
         if row.source == S.ECB_FX.value:
             ecb_days.add(row.on)
-    held = held_assets(conn)
+    held = [h for h in planned_assets(conn) if not _done(h, stored)]
     return Plan(
         held=held,
         stored=dict(stored),
@@ -728,7 +830,7 @@ def _coin(held: Held, plan: Plan, sources: Sources, today: date, out: Collected)
     stored = plan.stored.get((held.id, S.COINGECKO_DAILY.value), set()) | plan.stored.get(
         (held.id, S.KRAKEN_DAILY.value), set()
     )
-    missing = [d for d in _days(held.first_on, today) if d not in stored]
+    missing = [d for d in _days(held.first_on, held.end(today)) if d not in stored]
     if not missing:
         return
     out.assets += 1
@@ -838,8 +940,11 @@ def _etf(
         if check is not None and check.refused:
             out.nav_disagreed.append(held.id)
             return
+    # D174 amended 20 Nov 2026: a sold fund's rows end with its last held day; the check
+    # above reads the whole file.
+    held_points = [n for n in answer.points if held.within(n.on)]
     rows = valuation.nav_rows(
-        answer.points, held.first_on, fx.merged.get(answer.currency, []), stored_days=stored
+        held_points, held.first_on, fx.merged.get(answer.currency, []), stored_days=stored
     )
     for row in sorted(rows, key=lambda r: r.on, reverse=True)[:MAX_ROWS]:
         raw: dict[str, Any] = {"nav": str(row.nav), "currency": row.currency}
@@ -897,7 +1002,8 @@ def _exchange(
         if check is not None and check.refused:
             out.exchange_disagreed.append(held.id)
             return
-    rows = valuation.nav_rows(answer, held.first_on, [], stored_days=stored)
+    held_points = [n for n in answer if held.within(n.on)]  # D174 amended 20 Nov 2026
+    rows = valuation.nav_rows(held_points, held.first_on, [], stored_days=stored)
     newest = sorted(rows, key=lambda r: r.on, reverse=True)
     for row in newest if once else newest[:MAX_ROWS]:
         raw = {
@@ -1102,6 +1208,8 @@ def write(ctx: CommandContext, plan: Plan, out: Collected) -> int:
     for asset_id in out.failed:
         if held[asset_id].kind is not AssetKind.ETF:
             continue  # a coin's failure never raises a card (D167 (3))
+        if held[asset_id].last_on is not None:
+            continue  # held by no account today: no card (D174 amended 20 Nov 2026)
         runs = failure_runs(ctx.conn, asset_id, since)
         days = valuation.failed_days(runs)
         if days < valuation.SOURCE_FAILED_AFTER_DAYS:
@@ -1152,8 +1260,10 @@ __all__ = [
     "failure_runs",
     "fund_notes",
     "held_assets",
+    "held_ever_subquery",
     "held_subquery",
     "plan",
+    "planned_assets",
     "run_workspace",
     "stored_rates",
     "write",
