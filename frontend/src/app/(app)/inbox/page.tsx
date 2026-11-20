@@ -67,10 +67,14 @@ function Inbox() {
     detail.open(transactionId);
   }
 
-  /** Closes the panel, and drops a ?umsatz= another screen linked with. */
+  /**
+   * Closes the panel. A page another screen opened with ?umsatz= is replaced by /inbox, which
+   * drops the hash too; closeDetail's history.back() would race the replace and bring the
+   * linked line back.
+   */
   function close() {
-    detail.close();
     if (linked) router.replace("/inbox", { scroll: false });
+    else detail.close();
   }
 
   // A learned rule re-checks the waiting lines it names in the background (rematch_waiting):
