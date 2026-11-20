@@ -62,7 +62,9 @@ export function usePlanPreview(saved: HouseholdPlan, draft: HouseholdLevers, dir
     const id = latest.current + 1;
     latest.current = id;
     const timer = window.setTimeout(() => {
-      const preview = (body: HouseholdLevers) => ok(api.POST("/api/household-plan/preview", { body: { levers: body } }));
+      // The row previewed (phase 10 §6): its stored spending changes keep their mean_at_save.
+      const preview = (body: HouseholdLevers) =>
+        ok(api.POST("/api/household-plan/preview", { body: { levers: body, scenario_id: saved.scenario_id ?? null } }));
       const withChanges = dirty ? preview(levers) : Promise.resolve(saved);
       const base = (levers.spending_changes ?? []).length > 0 ? preview({ ...levers, spending_changes: [] }) : withChanges;
       Promise.all([withChanges, base]).then(
