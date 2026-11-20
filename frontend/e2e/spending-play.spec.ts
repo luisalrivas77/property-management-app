@@ -352,9 +352,13 @@ test("Haushalt shows „Geplant“ and „Unterschied“ only for the codes the 
   await expect(row).toContainText("100,00 €");
   await expect(row).toContainText("60,00 € weniger als geplant");
   await expect(table.getByText("gespeichert am 18. November 2026")).toBeVisible();
-  await expect(table.getByRole("link", { name: "Planung › Haushalt › Ausgaben durchspielen" })).toHaveAttribute(
-    "href",
-    "/planning?tab=haushalt#ausgaben-durchspielen",
-  );
+  await expect(table.getByRole("link", { name: "Planung › Budget" })).toHaveAttribute("href", "/planning?section=budget");
   await expect(table.getByRole("link", { name: "2 Umsätze warten in Zu prüfen" })).toHaveAttribute("href", "/inbox");
+  // A tapped group opens the panel (mockup 19): its subcategories, each with its plan.
+  await table.getByRole("link", { name: "Essen gehen & bestellen" }).click();
+  await expect(page).toHaveURL(/#d-gruppe-dining$/);
+  const panel = page.getByRole("complementary", { name: "Essen gehen & bestellen" });
+  const restaurant = panel.getByRole("listitem").filter({ hasText: "Restaurant" });
+  await expect(restaurant).toContainText("Geplant 100,00 € · 60,00 € weniger als geplant");
+  await expect(panel.getByText("Geplant laut eurem Szenario vom 18. November 2026.")).toBeVisible();
 });
