@@ -91,6 +91,8 @@ import { api, ok } from "@/api/client";
 import { ruleCodeText } from "@/api/errors";
 import type { Account, Document, ExchangeMovementRow, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
 import type { components } from "@/api/types";
+import { useT } from "@/i18n";
+import { inbox } from "@/i18n/inbox";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { notifyInboxChanged } from "@/lib/inboxCount";
 
@@ -117,18 +119,18 @@ export function isLineItem(item: InboxItem): boolean {
 
 /** The groups of the queue, in this order; a group without items is not shown. */
 const SECTIONS = [
-  { key: "lines", title: "Zahlungen zuordnen" },
-  { key: "proposals", title: "KI-Vorschläge zu Dokumenten" },
-  { key: "unread", title: "Dokumente, die nicht gelesen wurden" },
-  { key: "imports", title: "Kontoauszüge" },
-  { key: "duplicates", title: "Mögliche Doppelbuchungen" },
-  { key: "automatic", title: "Automatisch" },
-  { key: "transfers", title: "Überweisungen zwischen eigenen Konten" },
-  { key: "property_costs", title: "Immobilie, privat bezahlt" },
-  { key: "exchanges", title: "Börsen" },
-  { key: "wallets", title: "Wallets" },
-  { key: "other", title: "Weitere Punkte" },
-] as const;
+  { key: "lines", title: "sectionLines" },
+  { key: "proposals", title: "sectionProposals" },
+  { key: "unread", title: "sectionUnread" },
+  { key: "imports", title: "sectionImports" },
+  { key: "duplicates", title: "sectionDuplicates" },
+  { key: "automatic", title: "sectionAutomatic" },
+  { key: "transfers", title: "sectionTransfers" },
+  { key: "property_costs", title: "sectionPropertyCosts" },
+  { key: "exchanges", title: "sectionExchanges" },
+  { key: "wallets", title: "sectionWallets" },
+  { key: "other", title: "sectionOther" },
+] as const satisfies readonly { key: string; title: keyof (typeof inbox)["de"] }[];
 
 type SectionKey = (typeof SECTIONS)[number]["key"];
 
@@ -295,10 +297,6 @@ export async function loadInbox(): Promise<InboxData> {
   };
 }
 
-/** "5 offene Punkte": the total; each section heading carries its own count. */
-export function inboxSummary(items: InboxItem[]): string {
-  return items.length === 1 ? "1 offener Punkt" : `${items.length} offene Punkte`;
-}
 
 function isCredit(amount: string): boolean {
   return !amount.startsWith("-") && !/^0+(\.0+)?$/.test(amount);
@@ -356,6 +354,7 @@ export function InboxList({
   onSelect: (transactionId: string) => void;
   onChanged: () => void;
 }) {
+  const t = useT(inbox);
   // „Empfänger suchen“: narrows the Zahlungen zuordnen section only; kept in this component.
   const [query, setQuery] = useState("");
   const searchId = useId();
@@ -394,14 +393,15 @@ export function InboxList({
       {shown.length > 1 ? (
         <div className="inbox-fold-all">
           <button type="button" className="link" onClick={() => setAll(true)}>
-            Alle aufklappen
+            {t.openAll}
           </button>
           <button type="button" className="link" onClick={() => setAll(false)}>
-            Alle zuklappen
+            {t.closeAll}
           </button>
         </div>
       ) : null}
-      {shown.map(({ key: section, title }) => {
+      {shown.map(({ key: section, title: titleKey }) => {
+        const title = t[titleKey];
         const all = data.items.filter((item) => sectionOf(item) === section);
         const filtering = section === "lines" && needle !== "";
         const items = filtering ? all.filter((item) => lineMatches(data.transactions.get(item.transaction_id ?? ""), needle)) : all;
@@ -424,18 +424,18 @@ export function InboxList({
             <div id={bodyId} hidden={!open}>
               {section === "lines" ? (
                 <div className="inbox-section-action inbox-search">
-                  <label htmlFor={searchId}>Empfänger suchen</label>
+                  <label htmlFor={searchId}>{t.searchPayee}</label>
                   <input
                     id={searchId}
                     type="search"
                     value={query}
                     autoComplete="off"
-                    placeholder="Name oder Verwendungszweck"
+                    placeholder={t.searchPlaceholder}
                     onChange={(e) => setQuery(e.target.value)}
                   />
                   {filtering ? (
                     <p className="muted" role="status">
-                      {items.length} von {all.length}
+                      {t.matchCount(items.length, all.length)}
                     </p>
                   ) : null}
                 </div>
@@ -443,7 +443,7 @@ export function InboxList({
               {section === "lines" && all.some((item) => item.kind === "unmatched") ? <AiSuggestions onChanged={onChanged} /> : null}
               {section === "lines" ? <BulkConfirm items={items} data={data} onChanged={onChanged} onSelect={onSelect} /> : null}
               {filtering && items.length === 0 ? (
-                <p className="muted inbox-empty">Keine Zahlung passt zu „{needle}“.</p>
+                <p className="muted inbox-empty">{t.noMatch(needle)}</p>
               ) : (
                 <ul className="inbox-list" aria-label={title}>
                   {items.map((item) => {
@@ -808,14 +808,15 @@ function LineEntry({
   pressed: boolean;
   onSelect: (transactionId: string) => void;
 }) {
+  const t = useT(inbox);
   const id = item.transaction_id ?? "";
   return (
     <button type="button" className="inbox-entry inbox-line" aria-pressed={pressed} onClick={() => onSelect(id)}>
       <span className="inbox-when">{line ? formatDate(line.booking_date) : formatDateTime(item.created_at)}</span>
       <span className="inbox-main">
-        <strong>{line?.counterparty_name ?? line?.booking_text ?? "Ohne Gegenseite"}</strong>
-        <span className="inbox-detail">{line ? line.purpose || "Kein Verwendungszweck" : "Buchung"}</span>
-        {account ? <span className="inbox-detail">Privatkonto · {account.label}</span> : null}
+        <strong>{line?.counterparty_name ?? line?.booking_text ?? t.noCounterparty}</strong>
+        <span className="inbox-detail">{line ? line.purpose || t.noPurpose : t.line}</span>
+        {account ? <span className="inbox-detail">{t.privateAccount(account.label)}</span> : null}
       </span>
       <span className={line && isCredit(line.amount) ? "inbox-amount amount-in" : "inbox-amount"}>
         {line ? signedMoney(line.amount) : "–"}
