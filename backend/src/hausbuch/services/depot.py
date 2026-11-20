@@ -21,6 +21,7 @@ from uuid import UUID
 from pydantic import Field, ValidationError
 from sqlalchemy import Connection, func, insert, select, update
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
@@ -769,14 +770,16 @@ def finish_report(ctx: CommandContext, document_id: UUID) -> list[ReportChecked]
     return results
 
 
-def _german_day(day: date) -> str:
-    return day.strftime("%d.%m.%Y")
+def _units(units: Decimal) -> str:
+    """4.8000000000 → de "4,8", en "4.8"; 0 → "0"."""
+    text = f"{units.normalize():f}" if units else "0"
+    return text if i18n.english() else text.replace(".", ",")
 
 
 def _german_units(units: Decimal) -> str:
-    """4.8000000000 → "4,8"; 0 → "0"."""
-    text = f"{units.normalize():f}" if units else "0"
-    return text.replace(".", ",")
+    """Always German (net_worth's stored texts): 4.8000000000 → "4,8"."""
+    with i18n.use(i18n.DE):
+        return _units(units)
 
 
 def _asset_names(conn: Connection, ids: list[Any]) -> dict[UUID, str]:
@@ -1092,11 +1095,74 @@ def latest_report_agreement(conn: Connection) -> dict[UUID, bool]:
     return agreed
 
 
+# The holdings card's texts, German beside English (phase 10 D284); chosen when Zu prüfen is
+# read.
+TEXTS = i18n.Texts(
+    "depot",
+    {
+        "days.range": ("zwischen dem {first} und dem {last}", "between {first} and {last}"),
+        "days.list": ("vom {days}", "of {days}"),
+        "and": (" und ", " and "),
+        "left_out": (
+            " Nicht aus dem Bericht gebucht: {names} (Bestand würde nicht zum Bericht passen)."
+            " Dafür bitte die Wertpapierabrechnungen unter Dokumente hochladen.",
+            " Not booked from the report: {names} (the holding would not match the report)."
+            " For these, please upload the trade confirmations under Documents.",
+        ),
+        "unreadable.row": ("vom {day} ({name})", "of {day} ({name})"),
+        "unreadable.one": (
+            " Ein Umsatz des Berichts ist nicht lesbar: {rows}. Bitte die Wertpapierabrechnung"
+            " dieses Umsatzes unter Dokumente hochladen.",
+            " One trade of the report cannot be read: {rows}. Please upload the trade"
+            " confirmation of this trade under Documents.",
+        ),
+        "unreadable.many": (
+            " Umsätze des Berichts sind nicht lesbar: {rows}. Bitte die Wertpapierabrechnung"
+            " dieser Umsätze unter Dokumente hochladen.",
+            " Trades of the report cannot be read: {rows}. Please upload the trade"
+            " confirmation of these trades under Documents.",
+        ),
+        "fund": (
+            "{name}: laut Bericht {declared}, gebucht {held} Anteile",
+            "{name}: {declared} per the report, {held} units booked",
+        ),
+        "fund.unnamed": ("Wertpapier", "Security"),
+        "count.one": ("einen Kauf oder Verkauf", "one purchase or sale"),
+        "count.many": ("{n} Käufe und Verkäufe", "{n} purchases and sales"),
+        "unbooked.question": (
+            "Der Bericht nennt {count} {days}, zu denen nichts gebucht ist. „Umsätze aus dem"
+            " Bericht buchen“ bucht sie mit Stückzahl und Betrag aus dem Bericht (Gebühren und"
+            " Steuern stehen in der Jahressteuerbescheinigung); einzelne Wertpapierabrechnungen"
+            " unter Dokumente hochladen geht auch. Der Abgleich läuft dann von selbst neu. Sobald"
+            " der Bericht stimmt, liefert er auch die Kurse der Fonds.",
+            "The report lists {count} {days} for which nothing is booked. “Book trades from the"
+            " report” books them with units and amount from the report (fees and taxes are in"
+            " the Jahressteuerbescheinigung, the annual tax certificate); uploading single trade"
+            " confirmations under Documents works too. The check then runs again by itself."
+            " Once the report agrees, it also provides the funds' prices.",
+        ),
+        "missing.question": (
+            "Fehlt eine Wertpapierabrechnung oder eine Umbuchung zwischen eigenen Depots? Bitte"
+            " das Dokument unter Dokumente hochladen und übernehmen; der Abgleich läuft dann von"
+            " selbst neu. Sobald der Bericht stimmt, liefert er auch die Kurse der Fonds.",
+            "Is a trade confirmation or a transfer between own depots missing? Please upload the"
+            " document under Documents and apply it; the check then runs again by itself. Once"
+            " the report agrees, it also provides the funds' prices.",
+        ),
+        "mismatch": (
+            "Der Depotbericht zum {day} nennt eine andere Stückzahl als die gebuchten"
+            " Abrechnungen ({funds}).",
+            "The depot report of {day} states other units than the booked confirmations ({funds}).",
+        ),
+    },
+)
+
+
 def _days_text(days: Sequence[date]) -> str:
     """Up to three days listed, more as their range."""
     if len(days) > 3:
-        return f"zwischen dem {_german_day(days[0])} und dem {_german_day(days[-1])}"
-    return "vom " + ", ".join(_german_day(day) for day in days)
+        return TEXTS("days.range", first=i18n.day(days[0]), last=i18n.day(days[-1]))
+    return TEXTS("days.list", days=", ".join(i18n.day(day) for day in days))
 
 
 def _left_out_text(plan: ReportTradesPlan) -> str:
@@ -1104,25 +1170,25 @@ def _left_out_text(plan: ReportTradesPlan) -> str:
     15 Nov 2026), by fund and day only; empty when it books everything."""
     text = ""
     if plan.left_out:
-        text += (
-            f" Nicht aus dem Bericht gebucht: {_names_text(plan.left_out)} (Bestand würde "
-            "nicht zum Bericht passen). Dafür bitte die Wertpapierabrechnungen unter Dokumente "
-            "hochladen."
-        )
+        text += TEXTS("left_out", names=_names_text(plan.left_out))
     if plan.unreadable:
-        rows = _names_text([f"vom {_german_day(r.trade_date)} ({r.name})" for r in plan.unreadable])
-        one = len(plan.unreadable) == 1
-        text += (
-            f" {'Ein Umsatz' if one else 'Umsätze'} des Berichts {'ist' if one else 'sind'} "
-            f"nicht lesbar: {rows}. Bitte die Wertpapierabrechnung "
-            f"{'dieses Umsatzes' if one else 'dieser Umsätze'} unter Dokumente hochladen."
+        rows = _names_text(
+            [
+                TEXTS("unreadable.row", day=i18n.day(r.trade_date), name=r.name)
+                for r in plan.unreadable
+            ]
+        )
+        text += TEXTS(
+            "unreadable.one" if len(plan.unreadable) == 1 else "unreadable.many", rows=rows
         )
     return text
 
 
 def _names_text(names: Sequence[str]) -> str:
-    """["A"] -> "A"; ["A", "B", "C"] -> "A, B und C"."""
-    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} und {names[-1]}"
+    """["A"] -> "A"; ["A", "B", "C"] -> "A, B und C" ("A, B and C")."""
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])}{TEXTS('and')}{names[-1]}"
 
 
 def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
@@ -1148,41 +1214,28 @@ def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
         unbooked = plan.trades
         names = _asset_names(conn, [c.asset for c in wrong])
         funds = "; ".join(
-            f"{names.get(c.asset, 'Wertpapier')}: laut Bericht {_german_units(c.declared_units)}"
-            f", gebucht {_german_units(c.held_units)} Anteile"
+            TEXTS(
+                "fund",
+                name=names[c.asset] if c.asset in names else TEXTS("fund.unnamed"),
+                declared=_units(c.declared_units),
+                held=_units(c.held_units),
+            )
             for c in wrong
         )
         if unbooked:
             days = _days_text(sorted({t.trade.trade_date for t in unbooked}))
             count = (
-                "einen Kauf oder Verkauf"
-                if len(unbooked) == 1
-                else f"{len(unbooked)} Käufe und Verkäufe"
+                TEXTS("count.one") if len(unbooked) == 1 else TEXTS("count.many", n=len(unbooked))
             )
-            question = (
-                f"Der Bericht nennt {count} {days}, zu denen nichts gebucht ist. "
-                "„Umsätze aus dem Bericht buchen“ bucht sie mit Stückzahl und Betrag aus dem "
-                "Bericht (Gebühren und Steuern stehen in der Jahressteuerbescheinigung); "
-                "einzelne Wertpapierabrechnungen unter Dokumente hochladen geht auch. Der "
-                "Abgleich läuft dann von selbst neu. Sobald der Bericht stimmt, liefert er "
-                "auch die Kurse der Fonds."
-            )
+            question = TEXTS("unbooked.question", count=count, days=days)
         else:
-            question = (
-                "Fehlt eine Wertpapierabrechnung oder eine Umbuchung zwischen eigenen Depots? "
-                "Bitte das Dokument unter Dokumente hochladen und übernehmen; der Abgleich "
-                "läuft dann von selbst neu. Sobald der Bericht stimmt, liefert er auch die "
-                "Kurse der Fonds."
-            )
+            question = TEXTS("missing.question")
         question += _left_out_text(plan)
         items.append(
             InboxItem(
                 kind=InboxItemKind.HOLDINGS_MISMATCH,
                 created_at=newest.created_at,
-                reasoning=(
-                    f"Der Depotbericht zum {_german_day(as_of)} nennt eine andere "
-                    f"Stückzahl als die gebuchten Abrechnungen ({funds})."
-                ),
+                reasoning=TEXTS("mismatch", day=i18n.day(as_of), funds=funds),
                 question=question,
                 document_id=newest.document_id,
                 account_id=account_id,

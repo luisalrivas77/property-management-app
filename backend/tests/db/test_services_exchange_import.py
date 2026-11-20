@@ -19,6 +19,7 @@ from db.test_services_private_matching import Private
 from db.test_services_transfers import _book
 from sqlalchemy import select
 
+from hausbuch import i18n
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import holding_statement as holding_table
@@ -236,6 +237,9 @@ def test_a_bison_export_imports_dedups_and_reconciles_against_the_typed_balances
     assert sum(r.superseded_by is None for r in rows) == 2
     [card] = _cards(read, ws, InboxItemKind.EXCHANGE_UNRECONCILED)
     assert "EUR: laut Börse 150,01, gebucht 150" in card.reasoning
+    with i18n.use("en"):  # phase 10 D284
+        [en] = _cards(read, ws, InboxItemKind.EXCHANGE_UNRECONCILED)
+    assert "EUR: per the exchange 150.01, booked 150" in en.reasoning
     overview = read(ws, imports.exchange_overview, account.id)
     [eur_position] = [p for p in overview.positions if p.symbol == "EUR"]
     assert (eur_position.typed_units, eur_position.reconciled) == (Decimal("150.01"), False)
@@ -335,6 +339,11 @@ def test_the_withdrawals_are_answered_at_once_and_a_deposit_one_by_one(
     [all_at_once] = _cards(read, ws, InboxItemKind.EXCHANGE_WITHDRAWALS)
     assert all_at_once.import_id == imported.id
     assert all_at_once.reasoning.startswith("1 Auszahlung von Coins")
+    with i18n.use("en"):
+        [en] = _cards(read, ws, InboxItemKind.EXCHANGE_WITHDRAWALS)
+    assert en.reasoning == (
+        "1 coin withdrawal from the export: Hausbuch does not know where it went."
+    )
     [single] = _cards(read, ws, InboxItemKind.EXCHANGE_MOVEMENT)
     assert single.error_code == E.EXCHANGE_DEPOSIT_QUESTION
     assert "BTC" in single.reasoning

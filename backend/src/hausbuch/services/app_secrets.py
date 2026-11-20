@@ -37,6 +37,7 @@ from pydantic import SecretStr
 from sqlalchemy import Connection, Row, delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from hausbuch import i18n
 from hausbuch.db.tables import app_secret as secret_table
 from hausbuch.rules import errors as E
 from hausbuch.rules.bank_sync import product_id_usable
@@ -207,6 +208,80 @@ SPECS: dict[AppSecretName, Spec] = {
 assert list(SPECS) == list(N)
 
 
+# English beside the German of SPECS, GROUP_LABELS and STOPPED (phase 10 D284), chosen when
+# Einstellungen or Zu prüfen is read: (label, purpose) per name.
+SPECS_EN: dict[AppSecretName, tuple[str, str]] = {
+    N.ANTHROPIC_API_KEY: (
+        "Anthropic API key (Claude)",
+        "Reads uploaded documents and suggests categories for transactions.",
+    ),
+    N.ETHERSCAN_KEY: ("Etherscan", "Reads Ethereum and Arbitrum addresses."),
+    N.SOLANA_RPC_URL: (
+        "Solana RPC address",
+        "Reads Solana addresses. Without an entry Hausbuch uses the public access.",
+    ),
+    N.BSC_RPC_URL: (
+        "BNB Smart Chain RPC address",
+        "Reads balances on BNB Smart Chain. Without an entry Hausbuch uses the public access.",
+    ),
+    N.HELIUS_KEY: (
+        "Helius",
+        "Short descriptions of Solana transactions; not used yet.",
+    ),
+    N.COINGECKO_KEY: (
+        "CoinGecko",
+        "Daily coin prices. Without a key they come from Kraken only.",
+    ),
+    N.FINTS_PRODUCT_ID: (
+        "FinTS product ID",
+        "The registration number of the Deutsche Kreditwirtschaft (the German banking"
+        " association); without it Hausbuch fetches no transactions from the bank.",
+    ),
+    N.TEM_SECRET_KEY: (
+        "Scaleway TEM key",
+        "Sends the daily reminder email (with project ID and sender address).",
+    ),
+    N.TEM_PROJECT_ID: (
+        "Scaleway project ID",
+        "The Scaleway project through which the reminder email is sent.",
+    ),
+    N.MAIL_FROM: (
+        "Sender address",
+        "The address of the verified domain the reminder email comes from.",
+    ),
+    N.INBOX_IMAP_USER: (
+        "Gmail account for email-in",
+        "The Gmail account whose label Hausbuch reads (with app password, address and label).",
+    ),
+    N.INBOX_IMAP_PASSWORD: (
+        "Gmail app password",
+        "The app password of this Gmail account; Hausbuch reads only the one label with it.",
+    ),
+    N.INBOX_ADDRESS: (
+        "Forwarding address",
+        "The address with a token (name+token@gmail.com) receipts are forwarded to.",
+    ),
+    N.INBOX_LABEL: (
+        "Gmail label",
+        "The label Gmail puts the forwarded receipts in.",
+    ),
+    N.ELSTER_HERSTELLER_ID: (
+        "ELSTER manufacturer ID",
+        "The number ELSTER assigned to Hausbuch as a software maker (Hersteller-ID); needed"
+        " once Hausbuch checks or sends tax returns through ELSTER (not built yet).",
+    ),
+}
+assert list(SPECS_EN) == list(N)
+
+
+def _label(name: AppSecretName) -> str:
+    return SPECS_EN[name][0] if i18n.english() else SPECS[name].label
+
+
+def _purpose(name: AppSecretName) -> str:
+    return SPECS_EN[name][1] if i18n.english() else SPECS[name].purpose
+
+
 # --- Keys and the cipher ---------------------------------------------------------------------
 
 
@@ -345,8 +420,8 @@ def secret_states(conn: Connection, settings: Settings) -> list[AppSecretState]:
             AppSecretState(
                 name=name,
                 group=spec.group,
-                label=spec.label,
-                purpose=spec.purpose,
+                label=_label(name),
+                purpose=_purpose(name),
                 secret=name.secret,
                 variable=name.variable,
                 source=found.source,
@@ -397,6 +472,56 @@ STOPPED: dict[AppSecretName, str | None] = {
 }
 assert list(STOPPED) == list(N)
 
+_DIGEST_EN = "The daily reminder email is not sent."
+_EMAIL_IN_EN = "Forwarded receipts are not fetched from Gmail (email-in)."
+GROUP_LABELS_EN: dict[AppSecretGroup, str] = {
+    G.AI: "AI",
+    G.CHAINS: "Blockchains & prices",
+    G.BANK: "Bank",
+    G.MAIL: "Email",
+    G.ELSTER: "ELSTER",
+}
+STOPPED_EN: dict[AppSecretName, str | None] = {
+    N.ANTHROPIC_API_KEY: (
+        "Documents are not read automatically, and the AI suggests no categorisation of payments."
+    ),
+    N.ETHERSCAN_KEY: "Ethereum and Arbitrum addresses are not read.",
+    N.SOLANA_RPC_URL: "Solana addresses are not read.",
+    N.BSC_RPC_URL: "Balances on BNB Smart Chain are not read.",
+    N.HELIUS_KEY: None,
+    N.COINGECKO_KEY: "The daily coin prices come from Kraken only.",
+    N.FINTS_PRODUCT_ID: "The bank sync does not run, neither daily nor with “Fetch now”.",
+    N.TEM_SECRET_KEY: _DIGEST_EN,
+    N.TEM_PROJECT_ID: _DIGEST_EN,
+    N.MAIL_FROM: _DIGEST_EN,
+    N.INBOX_IMAP_USER: _EMAIL_IN_EN,
+    N.INBOX_IMAP_PASSWORD: _EMAIL_IN_EN,
+    N.INBOX_ADDRESS: _EMAIL_IN_EN,
+    N.INBOX_LABEL: _EMAIL_IN_EN,
+    N.ELSTER_HERSTELLER_ID: None,
+}
+assert list(STOPPED_EN) == list(N)
+CARD = i18n.Texts(
+    "app_secrets",
+    {
+        "unreadable": (
+            "In der App gespeicherte Zugangsschlüssel lassen sich nicht mehr lesen, meist weil"
+            " der Sitzungsschlüssel des Servers gewechselt wurde.",
+            "Access keys stored in the app can no longer be read, usually because the server's"
+            " session key was changed.",
+        ),
+        "affected": ("Betroffen – {groups}.", "Affected – {groups}."),
+        "no_fallback": (
+            "Hausbuch nimmt dafür nicht den Wert aus der Server-Konfiguration.",
+            "Hausbuch does not use the value from the server configuration instead.",
+        ),
+        "question": (
+            "Unter Einstellungen › Zugangsschlüssel neu eintragen oder löschen.",
+            "Enter again or delete under Settings › Access keys.",
+        ),
+    },
+)
+
 # The jobs' log code for a group that is off because its typed value cannot be read.
 KEY_UNREADABLE = "key_unreadable"
 
@@ -429,24 +554,25 @@ def unreadable_inbox_items(conn: Connection, settings: Settings) -> list[InboxIt
         return []
     by_group: dict[AppSecretGroup, list[str]] = {}
     for name, _ in lost:
-        by_group.setdefault(SPECS[name].group, []).append(SPECS[name].label)
+        by_group.setdefault(SPECS[name].group, []).append(_label(name))
+    english = i18n.english()
+    group_labels = GROUP_LABELS_EN if english else GROUP_LABELS
     groups = "; ".join(
-        f"{GROUP_LABELS[group]}: {', '.join(by_group[group])}"
+        f"{group_labels[group]}: {', '.join(by_group[group])}"
         for group in GROUP_LABELS
         if group in by_group
     )
     stopped: list[str] = []
     for name, _ in lost:
-        sentence = STOPPED[name]
+        sentence = (STOPPED_EN if english else STOPPED)[name]
         if sentence is not None and sentence not in stopped:
             stopped.append(sentence)
     reasoning = " ".join(
         [
-            "In der App gespeicherte Zugangsschlüssel lassen sich nicht mehr lesen, meist weil "
-            "der Sitzungsschlüssel des Servers gewechselt wurde.",
-            f"Betroffen – {groups}.",
+            CARD("unreadable"),
+            CARD("affected", groups=groups),
             *stopped,
-            "Hausbuch nimmt dafür nicht den Wert aus der Server-Konfiguration.",
+            CARD("no_fallback"),
         ]
     )
     return [
@@ -454,7 +580,7 @@ def unreadable_inbox_items(conn: Connection, settings: Settings) -> list[InboxIt
             kind=InboxItemKind.APP_SECRET_UNREADABLE,
             created_at=max(updated for _, updated in lost),
             reasoning=reasoning,
-            question="Unter Einstellungen › Zugangsschlüssel neu eintragen oder löschen.",
+            question=CARD("question"),
         )
     ]
 

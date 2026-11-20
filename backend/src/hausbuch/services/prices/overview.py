@@ -44,13 +44,14 @@ accounts once their imports (5a) state their reconciliation.
 
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Connection, and_, func, insert, select, update
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
@@ -91,18 +92,16 @@ from hausbuch.services.lookup import require_row
 from hausbuch.services.wallet_groups import waiting
 
 from . import lang_schwarz
+from . import texts as price_texts
 from .assets import FundSource, NavSource, fund_source, nav_source, price_ids, stored_nav_sources
 from .fetch import STREAK_WINDOW_DAYS, exchange_ids, failure_runs, fund_notes, held_subquery
 from .issuer_nav import issuer_name
+from .texts import TEXTS as T
 
 S = PriceSourceKind
 ASSET_ACCOUNT_KINDS = (AccountKind.DEPOT, AccountKind.EXCHANGE, AccountKind.WALLET)
 # A person's or a document's price: it values the fund while its issuer's file fails.
 _HAND_SOURCES = (S.USER, S.TRADE, S.STATEMENT)
-
-
-def _german_day(day: date) -> str:
-    return day.strftime("%d.%m.%Y")
 
 
 # --- reads ----------------------------------------------------------------------------------
@@ -548,15 +547,6 @@ def _last_run_at(conn: Connection) -> datetime | None:
     ).scalar_one()
 
 
-def _price_text(value: Decimal) -> str:
-    """Decimal("8.47650000") → "8,4765 €", Decimal("8.7") → "8,70 €": a fund price to at
-    most four places and at least two, German style."""
-    text = f"{value.quantize(Decimal('0.0001'), ROUND_HALF_UP):f}"
-    whole, _, fraction = text.partition(".")
-    fraction = fraction.rstrip("0").ljust(2, "0")
-    return f"{int(whole):,}".replace(",", ".") + f",{fraction} €"
-
-
 _REPORT_SOURCES = (S.STATEMENT, S.ISSUER_NAV, S.EXCHANGE_CLOSE, S.USER)
 
 
@@ -612,28 +602,27 @@ def _report_differs(
         report = [r for r in rows if r.source == S.STATEMENT.value][-1]  # the latest fetched
         if gap.source is S.ISSUER_NAV:
             fund = _fund(AssetKind.ETF, row.isin, stored.get(row.id))
-            issuer = issuer_name(fund.issuer) if fund is not None else "der Fondsgesellschaft"
-            other = f"der Fondspreis (NAV), den {issuer} für diesen Tag veröffentlicht,"
-            valued = f"Hausbuch bewertet den Fonds an diesem Tag mit dem NAV von {issuer}."
+            issuer = issuer_name(fund.issuer) if fund is not None else T("issuer.unknown")
+            other = T("differs.nav", issuer=issuer)
+            valued = T("differs.nav.valued", issuer=issuer)
         else:
-            other = f"der Börsenkurs von {lang_schwarz.VENUE_NAME} desselben Tages"
-            valued = "Hausbuch bewertet den Fonds an diesem Tag mit dem Kurs des Berichts."
-        percent = f"{gap.gap_percent:f}".replace(".", ",")
+            other = T("differs.exchange", venue=lang_schwarz.VENUE_NAME)
+            valued = T("differs.exchange.valued")
         items.append(
             InboxItem(
                 kind=InboxItemKind.PRICE_REPORT_DIFFERS,
                 created_at=max(r.fetched_at for r in rows),
-                reasoning=(
-                    f"Der Depotbericht bewertet {row.name} am {_german_day(gap.on)} mit "
-                    f"{_price_text(gap.report_price)} je Anteil, {other} liegt bei "
-                    f"{_price_text(gap.price)}: {percent} % Abstand. {valued}"
+                reasoning=T(
+                    "differs",
+                    name=row.name,
+                    day=i18n.day(gap.on),
+                    report_price=price_texts.price(gap.report_price),
+                    other=other,
+                    price=price_texts.price(gap.price),
+                    percent=price_texts.percent(gap.gap_percent),
+                    valued=valued,
                 ),
-                question=(
-                    "Bitte im Bericht prüfen, welcher Kurs stimmt („Bericht öffnen“). Ist ein "
-                    "anderer Kurs richtig, ihn unter Anlagen › Übersicht mit „Kurs eintragen“ "
-                    "für diesen Tag eintragen; dann gilt er, und dieser Hinweis entfällt. "
-                    "Hausbuch ändert von sich aus keinen Kurs."
-                ),
+                question=T("differs.question"),
                 asset_id=row.id,
                 document_id=report.document_id,
             )
@@ -664,15 +653,8 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 InboxItem(
                     kind=InboxItemKind.PRICE_NO_SOURCE,
                     created_at=row.created_at,
-                    reasoning=(
-                        f"Für {row.name} kennt Hausbuch keine Kursquelle, daher fehlt sein "
-                        "Wert in der Vermögensübersicht."
-                    ),
-                    question=(
-                        "Bitte unter Anlagen › Übersicht „Kursquelle wählen“: die CoinGecko-ID "
-                        "oder das Kraken-Paar der Münze eintragen. Bis dahin kann ein Kurs "
-                        "von Hand eingetragen werden."
-                    ),
+                    reasoning=T("coin.no_source", name=row.name),
+                    question=T("coin.no_source.question"),
                     asset_id=row.id,
                 )
             )
@@ -697,23 +679,14 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 InboxItem(
                     kind=InboxItemKind.PRICE_SOURCE_FAILED,
                     created_at=last_run or now,
-                    reasoning=(
-                        f"{issuer} veröffentlicht den Kurs von {row.name} in {note.currency}. "
-                        "Für diese Währung gibt die Europäische Zentralbank keinen "
-                        "Referenzkurs heraus, daher kann Hausbuch den Kurs nicht in Euro "
-                        "umrechnen; "
-                        + (
-                            "der Wert in der Vermögensübersicht beruht auf einem älteren Kurs."
-                            if priced
-                            else "in der Vermögensübersicht fehlt sein Wert."
-                        )
+                    reasoning=T(
+                        "currency",
+                        issuer=issuer,
+                        name=row.name,
+                        currency=note.currency,
+                        value=T("value.older" if priced else "value.missing"),
                     ),
-                    question=(
-                        "Bitte unter Anlagen › Übersicht „Kurs eintragen“ den aktuellen Kurs "
-                        "in Euro eintragen, zum Beispiel aus der Depotansicht der Bank. Der "
-                        "nächste Depotbericht oder eine Wertpapierabrechnung bewertet den "
-                        "Fonds ebenfalls neu."
-                    ),
+                    question=T("currency.question"),
                     asset_id=row.id,
                 )
             )
@@ -722,44 +695,30 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
             # Follow-up B: the latest run asked an issuer and failed (only a fund it asked
             # an issuer for is ever a failed asset), so the card is D174's, never „keinen
             # Kurs“. An older note only names the issuer (review of PR #391).
-            issuer = issuer or "der Fondsgesellschaft"
+            issuer = issuer or T("issuer.unknown")
         elif fund is None:
             if _any_price(conn, row.id):
                 continue  # „Kurs aus dem letzten Bericht“, no card (D174 (4))
             if in_reports.get(row.id) is False:
                 continue  # the holdings card („Depotbericht stimmt nicht“) covers it
             if row.id in in_reports:
-                report = (
-                    "der letzte Depotbericht nennt für ihn keinen Wert, aus dem sich ein Kurs "
-                    "ergibt"
-                )
+                report = T("report.silent")
             elif _in_any_report(conn, row.id):
-                report = "kein aktueller Depotbericht bewertet ihn"
+                report = T("report.stale")
             else:
-                report = "bisher nennt ihn kein Depotbericht"
+                report = T("report.none")
             if issuer is not None:
                 # An older run asked this issuer (a note), the latest did not fail it: the
                 # issuer may well publish a price, so the card never says it does not.
-                reasoning = (
-                    f"Für {row.name} hat Hausbuch keinen aktuellen Kurs: {issuer} hat ihn "
-                    f"zuletzt nicht geliefert, und {report}."
-                )
+                reasoning = T("fund.not_delivered", name=row.name, issuer=issuer, report=report)
             else:
-                reasoning = (
-                    f"Für {row.name} veröffentlicht die Fondsgesellschaft keinen Kurs, den "
-                    f"Hausbuch abrufen kann, und {report}."
-                )
+                reasoning = T("fund.no_issuer", name=row.name, report=report)
             items.append(
                 InboxItem(
                     kind=InboxItemKind.PRICE_NO_SOURCE,
                     created_at=row.created_at,
                     reasoning=reasoning,
-                    question=(
-                        "Der nächste Depotbericht unter Dokumente bewertet den Fonds von "
-                        "selbst („Kurs aus dem letzten Bericht“). Bis dahin kann unter "
-                        "Anlagen › Übersicht „Kurs eintragen“ ein Kurs von Hand eingetragen "
-                        "werden."
-                    ),
+                    question=T("fund.question"),
                     asset_id=row.id,
                 )
             )
@@ -769,24 +728,20 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
         first = now.astimezone(UTC).date() - timedelta(days=days - 1)
         if _priced_by_hand_since(conn, row.id, datetime.combine(first, datetime.min.time(), UTC)):
             continue
-        value = (
-            "der Wert in der Vermögensübersicht beruht auf einem älteren Kurs."
-            if _any_price(conn, row.id)
-            else "in der Vermögensübersicht fehlt sein Wert."
-        )
+        value = T("value.older" if _any_price(conn, row.id) else "value.missing")
         items.append(
             InboxItem(
                 kind=InboxItemKind.PRICE_SOURCE_FAILED,
                 created_at=last_run or now,
-                reasoning=(
-                    f"Der Kurs von {row.name} kam seit {days} Tagen nicht von "
-                    f"{issuer} (seit dem {_german_day(first)}); {value}"
+                reasoning=T(
+                    "failed",
+                    name=row.name,
+                    days=days,
+                    issuer=issuer,
+                    first=i18n.day(first),
+                    value=value,
                 ),
-                question=(
-                    "Hausbuch versucht es jeden Morgen erneut. Soll ein aktueller Kurs von Hand "
-                    "eingetragen werden („Kurs eintragen“)? Der nächste Depotbericht oder eine "
-                    "Wertpapierabrechnung bewertet den Fonds ebenfalls neu."
-                ),
+                question=T("failed.question"),
                 asset_id=row.id,
             )
         )

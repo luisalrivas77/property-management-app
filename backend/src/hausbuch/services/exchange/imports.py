@@ -33,12 +33,13 @@ file is kept as uploaded (principle 6).
 
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import Connection, Row, func, insert, select, update
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
@@ -1335,9 +1336,75 @@ def exchange_movements(conn: Connection, account_id: UUID) -> list[ExchangeMovem
     return out
 
 
-def _german_units(units: Decimal) -> str:
+# The exchange cards' texts, German beside English (phase 10 D284); chosen when Zu prüfen is
+# read.
+TEXTS = i18n.Texts(
+    "exchange",
+    {
+        "pending": (
+            "Der Export von {label} bis {day} ist eingelesen. Zum Abgleich fehlt der Bestand,"
+            " den die Börse je Coin zeigt.",
+            "The export of {label} up to {day} has been read. To reconcile it, the balance the"
+            " exchange shows per coin is missing.",
+        ),
+        "pending.question": (
+            "Wie viel zeigt die Börse je Coin? Bitte unter „Bestand laut Börse eingeben“"
+            " eintragen.",
+            "How much does the exchange show per coin? Please enter it under “Enter balance per"
+            " exchange”.",
+        ),
+        "wrong": (
+            "{symbol}: laut Börse {typed}, gebucht {held}",
+            "{symbol}: per the exchange {typed}, booked {held}",
+        ),
+        "unreconciled": (
+            "Der Bestand laut Börse zum {day} weicht ab ({wrong}).",
+            "The balance per the exchange on {day} differs ({wrong}).",
+        ),
+        "unreconciled.question": (
+            "Fehlt ein Teil des Exports, oder wurde ein Bestand falsch abgelesen? Bitte einen"
+            " vollständigen Export hochladen oder den Bestand neu eingeben. Fehlt im Export eine"
+            " Bewegung, die die Börse selbst nicht aufführt, lässt sich die Differenz eines Coins"
+            " mit Grund als Korrektur buchen; Hausbuch gleicht nie selbst aus.",
+            "Is part of the export missing, or was a balance read wrongly? Please upload a"
+            " complete export or enter the balance again. If the export lacks a movement the"
+            " exchange itself does not list, a coin's difference can be booked as a correction"
+            " with a reason; Hausbuch never balances it by itself.",
+        ),
+        "withdrawals.one": (
+            "{n} Auszahlung von Coins aus dem Export: Hausbuch weiß nicht, wohin sie gingen.",
+            "{n} coin withdrawal from the export: Hausbuch does not know where it went.",
+        ),
+        "withdrawals.many": (
+            "{n} Auszahlungen von Coins aus dem Export: Hausbuch weiß nicht, wohin sie gingen.",
+            "{n} coin withdrawals from the export: Hausbuch does not know where they went.",
+        ),
+        "withdrawals.question": (
+            "Gingen alle an eigene Wallets? Sonst einzeln auf der Kontoseite beantworten.",
+            "Did they all go to own wallets? Otherwise answer them one by one on the account's"
+            " page.",
+        ),
+        "cashback": (
+            "Eingang von {symbol} am {day} ohne Kauf.",
+            "Receipt of {symbol} on {day} without a purchase.",
+        ),
+        "cashback.question": (
+            "Ist dieser Eingang ein Bonus oder kam er von einer eigenen Wallet?",
+            "Is this receipt a bonus or did it come from an own wallet?",
+        ),
+        "unknown": (
+            "Eine Bewegung von {symbol} am {day}, die Hausbuch nicht kennt.",
+            "A movement of {symbol} on {day} that Hausbuch does not know.",
+        ),
+        "unknown.question": ("Was war diese Bewegung?", "What was this movement?"),
+    },
+)
+
+
+def _units(units: Decimal) -> str:
+    """A coin's units as typed, no grouping: de „150,01“, en „150.01“."""
     text = format(units.normalize(), "f") if units != 0 else "0"
-    return text.replace(".", ",")
+    return text if i18n.english() else text.replace(".", ",")
 
 
 def exchange_inbox_items(conn: Connection) -> list[InboxItem]:
@@ -1363,18 +1430,14 @@ def exchange_inbox_items(conn: Connection) -> list[InboxItem]:
         if r.account_id in seen:
             continue
         seen.add(r.account_id)
-        day = _german_day(r.last_at.date())
+        day = i18n.day(r.last_at.date())
         if r.status == ImportStatus.IMPORTED.value:
             items.append(
                 InboxItem(
                     kind=InboxItemKind.EXCHANGE_PENDING_BALANCE,
                     created_at=r.created_at,
-                    reasoning=(
-                        f"Der Export von {r.account_label} bis {day} ist eingelesen. Zum "
-                        "Abgleich fehlt der Bestand, den die Börse je Coin zeigt."
-                    ),
-                    question="Wie viel zeigt die Börse je Coin? Bitte unter „Bestand laut "
-                    "Börse eingeben“ eintragen.",
+                    reasoning=TEXTS("pending", label=r.account_label, day=day),
+                    question=TEXTS("pending.question"),
                     import_id=r.id,
                     account_id=r.account_id,
                 )
@@ -1382,8 +1445,12 @@ def exchange_inbox_items(conn: Connection) -> list[InboxItem]:
         elif r.status == ImportStatus.UNRECONCILED.value:
             exchange_import = _exchange_import(conn, r)
             wrong = "; ".join(
-                f"{b.symbol}: laut Börse {_german_units(b.typed or Decimal(0))}, gebucht "
-                f"{_german_units(b.held)}"
+                TEXTS(
+                    "wrong",
+                    symbol=b.symbol,
+                    typed=_units(b.typed or Decimal(0)),
+                    held=_units(b.held),
+                )
                 for b in exchange_import.balances
                 if b.reconciled is False
             )
@@ -1391,14 +1458,8 @@ def exchange_inbox_items(conn: Connection) -> list[InboxItem]:
                 InboxItem(
                     kind=InboxItemKind.EXCHANGE_UNRECONCILED,
                     created_at=r.updated_at,
-                    reasoning=f"Der Bestand laut Börse zum {day} weicht ab ({wrong}).",
-                    question=(
-                        "Fehlt ein Teil des Exports, oder wurde ein Bestand falsch abgelesen? "
-                        "Bitte einen vollständigen Export hochladen oder den Bestand neu "
-                        "eingeben. Fehlt im Export eine Bewegung, die die Börse selbst nicht "
-                        "aufführt, lässt sich die Differenz eines Coins mit Grund als "
-                        "Korrektur buchen; Hausbuch gleicht nie selbst aus."
-                    ),
+                    reasoning=TEXTS("unreconciled", day=day, wrong=wrong),
+                    question=TEXTS("unreconciled.question"),
                     import_id=r.id,
                     account_id=r.account_id,
                     error_code=E.EXCHANGE_UNRECONCILED,
@@ -1422,13 +1483,8 @@ def exchange_inbox_items(conn: Connection) -> list[InboxItem]:
             InboxItem(
                 kind=InboxItemKind.EXCHANGE_WITHDRAWALS,
                 created_at=r.created_at,
-                reasoning=(
-                    f"{r.n} Auszahlung{'en' if r.n != 1 else ''} von Coins aus dem Export: "
-                    "Hausbuch weiß nicht, wohin sie gingen."
-                ),
-                question=(
-                    "Gingen alle an eigene Wallets? Sonst einzeln auf der Kontoseite beantworten."
-                ),
+                reasoning=TEXTS("withdrawals.one" if r.n == 1 else "withdrawals.many", n=r.n),
+                question=TEXTS("withdrawals.question"),
                 import_id=r.id,
                 account_id=r.account_id,
             )
@@ -1446,13 +1502,9 @@ def exchange_inbox_items(conn: Connection) -> list[InboxItem]:
         )
     ).all()
     for r in singles:
-        day = _german_day(r.occurred_at.date())
-        if r.kind == MovementKind.CASHBACK_REWARD.value:
-            reasoning = f"Eingang von {r.symbol} am {day} ohne Kauf."
-            question = "Ist dieser Eingang ein Bonus oder kam er von einer eigenen Wallet?"
-        else:
-            reasoning = f"Eine Bewegung von {r.symbol} am {day}, die Hausbuch nicht kennt."
-            question = "Was war diese Bewegung?"
+        key = "cashback" if r.kind == MovementKind.CASHBACK_REWARD.value else "unknown"
+        reasoning = TEXTS(key, symbol=r.symbol, day=i18n.day(r.occurred_at.date()))
+        question = TEXTS(f"{key}.question")
         items.append(
             InboxItem(
                 kind=InboxItemKind.EXCHANGE_MOVEMENT,
@@ -1465,10 +1517,6 @@ def exchange_inbox_items(conn: Connection) -> list[InboxItem]:
             )
         )
     return items
-
-
-def _german_day(day: date) -> str:
-    return day.strftime("%d.%m.%Y")
 
 
 __all__ = [

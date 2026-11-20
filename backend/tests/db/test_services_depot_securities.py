@@ -16,6 +16,7 @@ from sqlalchemy import select, update
 from test_card_pdf import draw
 from test_depot_pdf import page
 
+from hausbuch import i18n
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
@@ -796,6 +797,12 @@ def test_a_report_naming_an_unbooked_trade_is_a_card_until_that_trade_is_applied
         "Der Depotbericht zum 30.06.2026 nennt eine andere Stückzahl als die gebuchten "
         "Abrechnungen (Beispiel Euro Geldmarkt UCITS ETF: laut Bericht 7,2, gebucht 4,8 "
         "Anteile)."
+    )
+    with i18n.use("en"):  # phase 10 D284
+        (en,) = cards()
+    assert en.reasoning == (
+        "The depot report of 30 Jun 2026 states other units than the booked confirmations"
+        " (Beispiel Euro Geldmarkt UCITS ETF: 7.2 per the report, 4.8 units booked)."
     )
     # The trade booked already is not named; the one the report lists without a booking is.
     assert "15.04.2026" in card.question and "13.03.2026" not in card.question

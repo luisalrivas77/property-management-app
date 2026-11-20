@@ -13,6 +13,7 @@ import pytest
 from db.db_support import TEST_IBAN_KEY
 from sqlalchemy import insert, select
 
+from hausbuch import i18n
 from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import price as price_table
@@ -375,6 +376,13 @@ def test_a_report_the_exchange_disagrees_with_raises_a_card_until_a_price_is_typ
     assert "18.11.2026" in card.reasoning and "8,97 €" in card.reasoning
     assert "8,70 €" in card.reasoning and "Lang & Schwarz" in card.reasoning
     assert "3,0 % Abstand" in card.reasoning
+    with i18n.use("en"):  # phase 10 D284
+        [en] = cards()
+    assert en.reasoning.startswith("The depot report values ") and "on 18 Nov 2026 at €8.97" in (
+        en.reasoning
+    )
+    assert "Lang & Schwarz on the same day is €8.70: 3.0 % apart." in en.reasoning
+    assert en.question.startswith("Please check in the report which price is right")
     run(ws, record_price, fund, TypedPriceBody(on=day, price_eur=Decimal("8.97")), now=NOW)
     assert cards() == []
 
