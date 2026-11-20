@@ -481,7 +481,9 @@ def record_price(ctx: CommandContext, asset_id: UUID, body: TypedPriceBody) -> A
 
 def _held(conn: Connection) -> list[Any]:
     a = asset_table.c
-    sums = held_subquery()  # the fetch's own rule: positive on some account
+    # Held today: positive on some account. The fetch also prices an asset sold since for
+    # its held days (D174 amended 20 Nov 2026); such an asset gets no card here.
+    sums = held_subquery()
     return conn.execute(
         select(
             a.id,
