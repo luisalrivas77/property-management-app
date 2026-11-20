@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C · Menü mit Immobilien, Computer</title>
+<!-- Layout overhaul mockup, drafted 20 Nov 2026 at Luis's request (direction C's menu with
+     Eigentümer and Mieter inside Immobilien); not approved, nothing built.
+     Invented sample data only: never real household figures, never fixtures. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap">
+<style>
+:root{
+--bg:#f4f5f2;--surface:#ffffff;--border:#e1e4de;--border-strong:#c9cec6;--divider:#eceee9;--tag-bg:#f4f5f2;
+--text:#17201c;--text-2:#3e4843;--muted:#5a635e;
+--accent:#1f6f54;--accent-strong:#14523e;--accent-text:#ffffff;--accent-tint:#e3f0ea;--accent-tint-2:#d5e6de;
+--info:#3a4ba8;--info-bg:#e8ebf8;--info-border:#ccd3f0;--info-text:#3b4370;
+--warn:#7a3f0b;--warn-bg:#fbeedc;--warn-border:#f0d6b0;
+--danger:#a3262a;--danger-bg:#fbeaea;--danger-border:#f0c8c9;
+--font:Manrope,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none}
+p{margin:0}
+h1,h2,h3{margin:0}
+button{font:inherit;cursor:pointer}
+.num{text-align:right;white-space:nowrap}
+.pos{color:var(--accent-strong)}
+.fold{position:absolute;left:0;right:0;height:0;border-top:2px dashed #3a4ba8;z-index:50;pointer-events:none}
+.fold span{position:absolute;right:6px;top:-22px;background:#3a4ba8;color:#fff;font:700 11px/1 var(--font);padding:5px 8px;border-radius:6px}
+.mark{display:inline-flex;align-items:center;gap:5px;font-weight:700}
+.mark i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.mark.green i{background:#2e8b57}.mark.amber i{background:#d4a017}.mark.none i{background:transparent;border:1.5px solid var(--border-strong)}
+
+body{font-size:16px;line-height:1.45}
+.c{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:18px 20px;min-width:0}
+.k{font-size:14px;font-weight:600;color:var(--muted)}
+.v{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.2}
+.sub{font-size:14px;color:var(--muted)}
+.row{display:flex;align-items:center;gap:12px}
+.between{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:56px;padding:0 22px;border-radius:16px;background:var(--accent);color:#fff;font-weight:800;font-size:16px;white-space:nowrap}
+.btn.sec{background:var(--surface);color:var(--accent-strong);border:1.5px solid var(--accent)}
+.btn.full{width:100%}
+.count{background:var(--info);color:#fff;font-size:12px;font-weight:800;border-radius:11px;padding:1px 8px;line-height:1.6}
+.pill{display:inline-block;font-size:13px;font-weight:700;border-radius:20px;padding:4px 11px;white-space:nowrap}
+.pill.proposed{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-border)}
+.pill.open{background:var(--info-bg);color:var(--info-text);border:1px solid var(--info-border)}
+.okmark{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:700;color:var(--accent-strong)}
+.chip{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px;border-radius:24px;border:1.5px solid var(--border-strong);background:var(--surface);font-weight:700;font-size:15px;color:var(--text-2);white-space:nowrap}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.hero{background:var(--accent);color:#fff;border-radius:24px;padding:20px 22px 14px}
+.hero .k{color:#cfe5da}
+.hero .v{font-size:36px;color:#fff}
+.carousel{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding:2px 2px 6px;scrollbar-width:none}
+.carousel::-webkit-scrollbar{display:none}
+.kc{flex:none;width:280px;scroll-snap-align:start;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:18px 20px;color:var(--text);display:flex;flex-direction:column;gap:6px}
+.kc .ic{width:44px;height:44px;border-radius:14px;background:var(--accent-tint);color:var(--accent-strong);display:flex;align-items:center;justify-content:center}
+.dots{display:flex;gap:7px;justify-content:center}
+.dots i{width:8px;height:8px;border-radius:50%;background:var(--border-strong)}
+.dots i.on{background:var(--accent);width:22px;border-radius:4px}
+.item{display:flex;align-items:center;gap:14px;min-height:64px;padding:10px 0;border-top:1px solid var(--divider);color:var(--text)}
+.item:first-child{border-top:0}
+.acc{display:flex;align-items:center;gap:14px;min-height:72px;padding:12px 20px;background:var(--surface);border:1px solid var(--border);border-radius:20px;color:var(--text)}
+.acc b{font-size:17px}
+.chev{width:40px;height:40px;border-radius:12px;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--text-2);flex:none}
+.av{width:44px;height:44px;border-radius:50%;background:var(--tag-bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--text-2);flex:none}
+.dayhead{font-size:14px;font-weight:800;color:var(--text-2);padding:16px 4px 6px}
+/* phone */
+.ph{width:390px;min-height:100vh;position:relative;display:flex;flex-direction:column}
+.ph-head{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 10px}
+.ph-head h1{font-size:28px;font-weight:800;letter-spacing:-.02em}
+.ph-body{padding:4px 16px 24px;display:flex;flex-direction:column;gap:14px;flex:1}
+.iconbtn{width:52px;height:52px;border-radius:16px;border:1px solid var(--border);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;color:var(--text-2);flex:none}
+.bar{position:relative;z-index:20;display:grid;grid-template-columns:repeat(5,1fr);background:var(--surface);border-top:1px solid var(--border);padding:8px 4px 20px;height:78px}
+.bar a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:12px;font-weight:700;color:var(--muted);position:relative}
+.bar a .ic{width:60px;height:34px;border-radius:17px;display:flex;align-items:center;justify-content:center}
+.bar a.on{color:var(--accent-strong)}
+.bar a.on .ic{background:var(--accent-tint)}
+.bar a .count{position:absolute;top:-4px;left:50%;margin-left:8px;font-size:11px}
+/* computer */
+.top{display:flex;align-items:center;gap:16px;padding:14px 32px;background:var(--surface);border-bottom:1px solid var(--border)}
+.tabs{display:flex;gap:6px;margin:0 auto}
+.tabs a{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px;border-radius:24px;font-weight:700;font-size:15px;color:var(--text-2)}
+.tabs a.on{background:var(--accent-tint);color:var(--accent-strong)}
+.cols{display:grid;grid-template-columns:720px 360px;gap:28px;justify-content:center;padding:28px 32px 40px;align-items:start}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:24px;padding:22px;display:flex;flex-direction:column;gap:14px;position:sticky;top:20px}
+.panel h2{font-size:20px;font-weight:800;letter-spacing:-.01em}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--divider);font-size:15px}
+.kv span:first-child{color:var(--muted)}
+.kv b{text-align:right;min-width:0}
+
+body{background:#dfe3dd}
+.frames{display:flex;gap:32px;padding:20px 24px 28px;align-items:flex-start}
+.frame{width:390px;height:844px;border-radius:30px;overflow:hidden;position:relative;background:var(--bg);box-shadow:0 0 0 8px #17201c,0 12px 30px rgba(0,0,0,.25);flex:none}
+.frame .bar{position:absolute;left:0;right:0;bottom:0}
+.cap{font-weight:800;font-size:15px;margin:0 0 14px 4px}
+.more{position:absolute;inset:0 0 78px 0;background:var(--bg);z-index:30;overflow:hidden;display:flex;flex-direction:column;gap:12px;padding:18px 16px}
+.quick{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.quick a{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border-radius:18px;background:var(--surface);border:1px solid var(--border);font-weight:700;font-size:13.5px;color:var(--text);text-align:center}
+.quick a span{width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center}
+.mrow{display:flex;align-items:center;gap:14px;min-height:60px;padding:6px 16px;color:var(--text);border-top:1px solid var(--divider)}
+.mrow:first-child{border-top:0}
+.mrow .ic{color:var(--accent)}
+</style>
+
+
+<style>
+.sec{display:flex;flex-direction:column}
+.sech{display:flex;justify-content:space-between;align-items:baseline;padding:14px 0 4px;border-top:1px solid var(--divider);margin-top:6px}
+.sech b{font-size:15px;color:var(--text-2);letter-spacing:.01em}
+.lrow{display:flex;align-items:center;gap:12px;min-height:56px;padding:6px 0;border-top:1px solid var(--divider);color:var(--text)}
+.lrow:first-of-type{border-top:0}
+.lrow .t{flex:1;min-width:0}
+.lrow .t b{font-size:15.5px}
+.lrow .r{font-weight:800;white-space:nowrap;font-size:15px}
+.figs{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-top:4px}
+.figs span{font-size:14px;color:var(--muted)}
+.figs b{font-size:15px;text-align:right}
+.cols .c .figs{max-width:440px}
+.btn{flex-direction:row}
+.crumb{font-size:15px;font-weight:700;color:var(--accent)}
+.note{font-size:13px;color:var(--muted)}
+.menu{position:absolute;top:70px;left:50%;margin-left:150px;width:360px;background:var(--surface);border:1px solid var(--border);border-radius:20px;box-shadow:0 14px 40px rgba(23,32,28,.18);padding:6px 0;z-index:60}
+.menu .mrow{padding:6px 18px}
+.menu .mrow.on{background:var(--accent-tint)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0 28px}
+.selrow{background:var(--accent-tint);border-radius:14px;margin:0 -10px;padding:6px 10px;border-top-color:transparent}
+</style>
+
+</head>
+<body>
+<p class="cap" style="padding:20px 24px 0">„Mehr“ geöffnet: Immobilien ist eine Zeile, Mieter und Eigentümer stehen darin</p><div style="height:470px;overflow:hidden;border-bottom:4px solid #17201c"><header class="top" style="position:relative"><span class="row" style="gap:10px;font-weight:800;font-size:18px"><span style="flex:none;width:36px;height:36px;border-radius:8px;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg></span>Hausbuch</span><nav class="tabs"><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg>Übersicht</a><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13l1.5 8v6H4v-6z"/></svg>Zu prüfen<span class="count">7</span></a><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h15a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4z"/><path d="M4 7V5.5A1.5 1.5 0 0 1 5.5 4H16v3"/><circle cx="16" cy="13.5" r="1.2"/></svg>Haushalt</a><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v16h16"/><path d="m7 15 4-4 3 3 6-6"/></svg>Anlagen</a><a class="on" href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>Mehr<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a></nav><a class="iconbtn" href="#" aria-label="Suchen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></a><a class="btn" href="#" style="min-height:52px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>Hochladen</a><div class="menu"><a class="mrow" href="#"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h18L12 4z"/><path d="M5.5 10v8M10 10v8M14 10v8M18.5 10v8M3 20h18"/></svg></span><span style="flex:1;min-width:0"><b style="font-size:16px">Konten</b><br><span class="sub" style="font-size:13px">Umsätze, Kontoauszüge, Bankabruf</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a><a class="mrow on" href="#"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/><path d="M2 21h20"/></svg></span><span style="flex:1;min-width:0"><b style="font-size:16px">Immobilien</b><br><span class="sub" style="font-size:13px">Wohnung, Mieter und Eigentümer</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a><a class="mrow" href="#"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="m9.5 16 5-6"/><circle cx="10" cy="10.5" r=".9"/><circle cx="14" cy="15.5" r=".9"/></svg></span><span style="flex:1;min-width:0"><b style="font-size:16px">Steuern</b><br><span class="sub" style="font-size:13px">Steuerjahr 2026</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a><a class="mrow" href="#"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span><span style="flex:1;min-width:0"><b style="font-size:16px">Planung</b><br><span class="sub" style="font-size:13px">Haushalt und Immobilie</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a><a class="mrow" href="#"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5"/><path d="M9 13h7M9 17h5"/></svg></span><span style="flex:1;min-width:0"><b style="font-size:16px">Dokumente</b><br><span class="sub" style="font-size:13px">alle Belege und Verträge</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a><a class="mrow" href="#"><span class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg></span><span style="flex:1;min-width:0"><b style="font-size:16px">Einstellungen</b></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a></div></header></div><p class="cap" style="padding:20px 24px 0">Immobilien: eine Karte je Wohnung, rechts das ausgewählte Mietverhältnis</p><header class="top" style="position:relative"><span class="row" style="gap:10px;font-weight:800;font-size:18px"><span style="flex:none;width:36px;height:36px;border-radius:8px;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg></span>Hausbuch</span><nav class="tabs"><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg>Übersicht</a><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13l1.5 8v6H4v-6z"/></svg>Zu prüfen<span class="count">7</span></a><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h15a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4z"/><path d="M4 7V5.5A1.5 1.5 0 0 1 5.5 4H16v3"/><circle cx="16" cy="13.5" r="1.2"/></svg>Haushalt</a><a href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v16h16"/><path d="m7 15 4-4 3 3 6-6"/></svg>Anlagen</a><a class="on" href="#"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>Mehr<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></a></nav><a class="iconbtn" href="#" aria-label="Suchen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></a><a class="btn" href="#" style="min-height:52px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>Hochladen</a></header><div class="cols"><div class="col"><div><p class="k">Mehr › Immobilien</p><div class="between"><h1 style="font-size:30px;font-weight:800;letter-spacing:-.02em">Immobilien</h1><a class="btn sec" href="#" style="min-height:48px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Immobilie hinzufügen</a></div></div><div class="c" style="padding:18px 18px 8px"><div class="row"><span class="ic" style="width:48px;height:48px;border-radius:14px;background:var(--accent-tint);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;flex:none"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/><path d="M2 21h20"/></svg></span><span style="min-width:0"><b style="font-size:18px">Musterstraße 12, WE 3</b><br><span class="sub">Eigentumswohnung · übergeben am 2. Okt. 2026</span></span></div><div style="margin-top:12px"><span class="v">156.000 €</span><br><span class="sub">Eigenkapital</span></div><div class="figs"><span>Wert (Schätzung)</span><b>300.000 €</b><span>Darlehen</span><b>−144.000 €</b><span>Miete im Monat</span><b>1.000 € + 220 €</b></div><p class="note" style="margin-top:8px">Verkauf steuerfrei ab 26. Juni 2036</p><div class="two"><div><div class="sec"><div class="sech"><b>Mieter</b><a href="#" style="font-size:14px;font-weight:700">+ Mietverhältnis</a></div><a class="lrow selrow" href="#"><span class="t"><b>Zimmer 1 · J. Becker</b><br><span class="sub">seit 1. Mai 2026 · Pauschale 110 €</span></span><span class="r">520 €</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a><a class="lrow" href="#"><span class="t"><b>Zimmer 2 · M. Schulz</b><br><span class="sub">seit 1. Mai 2026 · Pauschale 110 €</span></span><span class="r">480 €</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a></div><div class="sec"><div class="sech"><b>Eigentümer</b><span class="note">Anteile und Einkommen</span></div><a class="lrow" href="#"><span class="t"><b>Eigentümer A</b><br><span class="sub">Kirchensteuer nein</span></span><span class="r">50 %</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a><a class="lrow" href="#"><span class="t"><b>Eigentümer B</b><br><span class="sub">Kirchensteuer nein</span></span><span class="r">50 %</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a></div></div><div><div class="sec"><div class="sech"><b>Zur Wohnung</b></div><a class="lrow" href="#"><span class="ic" style="color:var(--accent)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16v10H4z"/><circle cx="12" cy="12" r="2.4"/><path d="M7 10v4M17 10v4"/></svg></span><span class="t"><b>Darlehen</b><br><span class="sub">1 Darlehen · Zinsbindung bis 2036</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a><a class="lrow" href="#"><span class="ic" style="color:var(--accent)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M15 8l2 2"/></svg></span><span class="t"><b>Kauf & Nebenkosten</b><br><span class="sub">Kaufpreis, Aufteilung, AfA</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a><a class="lrow" href="#"><span class="ic" style="color:var(--accent)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6v3H9z"/><path d="M7 5H5v16h14V5h-2"/><path d="m9 14 2 2 4-4"/></svg></span><span class="t"><b>Unterlagen</b><br><span class="sub"><span class="pill open" style="font-size:12px;padding:1px 8px">1 fehlt</span> Grundsteuerbescheid</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a><a class="lrow" href="#"><span class="ic" style="color:var(--accent)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5"/><path d="M9 13h7M9 17h5"/></svg></span><span class="t"><b>Dokumente</b><br><span class="sub">14 Dokumente zu dieser Wohnung</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a><a class="lrow" href="#"><span class="ic" style="color:var(--accent)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span><span class="t"><b>Verlauf</b><br><span class="sub">alle Änderungen mit Datum</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a></div></div></div></div></div><aside class="panel"><p class="k">Ausgewählt</p><h2>Zimmer 1 · J. Becker</h2><div><span class="v">520 €</span><br><span class="sub">Kaltmiete im Monat · seit 1. Mai 2026</span></div><div class="figs"><span>Nebenkosten</span><b>110 € Pauschale</b><span>Fällig am</span><b>3. des Monats</b><span>Kaution</span><b>1.560 € · belegt</b><span>Mietvertrag</span><b>unbefristet</b></div><div class="sech"><b>Letzte Mieten</b></div><div class="figs"><span>November 2026</span><b class="pos">630 € ✓</b><span>Oktober 2026</span><b class="pos">630 € ✓</b></div><a class="btn sec full" href="#">Mietverhältnis öffnen</a><a href="#" style="font-weight:700">Mieter J. Becker: Kontakt und Dokumente →</a></aside></div>
+</body></html>
