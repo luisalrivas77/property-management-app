@@ -592,9 +592,12 @@ class SpendingComparison(Schema):
 
 
 class HouseholdPlanPreview(Schema):
-    """POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored."""
+    """POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored.
+    `scenario_id`: the row previewed (its levers replaced; what is carried from it is not
+    refused), else the default scenario in force."""
 
     levers: HouseholdLevers
+    scenario_id: UUID | None = None
 
 
 class HouseholdPlan(Schema):

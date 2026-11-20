@@ -13,10 +13,11 @@ replaces (supersedes_id); services/household_scenarios.py holds the checks.
 - GET /household-plan?scenario=: the plan on read for today (Berlin time), with the levers
   of the scenario named (any row, a withdrawn one too), else of the default in force, else
   the defaults; 404 for an unknown scenario. Missing inputs are to-dos, never a 422.
-- POST /household-plan/preview {levers} (D263 (c)): the plan for typed levers, checked as a
-  new scenario row is (422 household_scenario.account_invalid, .one_off_outside,
-  .spending_invalid; 404 for an unknown account); stores nothing and writes no event, so it
-  runs as a read.
+- POST /household-plan/preview {levers, scenario_id?} (D263 (c)): the plan for typed levers
+  on the row named (else the default in force), checked as a new scenario row superseding it
+  is (422 household_scenario.account_invalid, .one_off_outside, .spending_invalid,
+  .budget_class_invalid; 404 for an unknown account or scenario); stores nothing and writes
+  no event, so it runs as a read.
 - GET /household-plan/comparison?month=YYYY-MM (D263 (d), §7.7): the month's spending beside
   the default scenario in force on its last day, today for the running month.
 - GET /household-plan/explanation?scenario= (§8.6, D257; step 4): the newest stored
@@ -90,7 +91,7 @@ def household_plan_get(cmd: Cmd, scenario: UUID | None = None) -> HouseholdPlan:
 
 @router.post("/household-plan/preview")
 def household_plan_preview(body: HouseholdPlanPreview, cmd: Cmd) -> HouseholdPlan:
-    return cmd.read(plan_service.preview_plan, _today(), body.levers)
+    return cmd.read(plan_service.preview_plan, _today(), body.levers, body.scenario_id)
 
 
 @router.get("/household-plan/comparison")

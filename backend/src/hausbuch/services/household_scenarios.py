@@ -163,7 +163,7 @@ def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> House
             data.levers,
             today,
             previous=previous,
-            previous_overrides={} if old is None else old.levers.budget_class_overrides,
+            previous_overrides=carried_overrides(data.levers, old, default_scenario(ctx.conn)),
         )
         if data.is_default:
             _check_one_default(ctx.conn, data)
@@ -172,6 +172,20 @@ def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> House
             levers = data.levers.model_copy(update={"spending_changes": changes})
             data = data.model_copy(update={"levers": levers})
     return _insert(ctx, data)
+
+
+def carried_overrides(
+    levers: HouseholdLevers, *rows: HouseholdScenario | None
+) -> dict[AllocationCategory, BudgetClass]:
+    """The levers' budget class overrides that equal one of `rows`' (a save: the row it
+    supersedes and the default in force; the preview: the row previewed), so they are carried,
+    never refused (phase 10 D272 (2)): a scenario created beside the default with the
+    default's overrides copied into it does not fail on a code that stopped being movable."""
+    return {
+        code: cls
+        for code, cls in levers.budget_class_overrides.items()
+        if any(r is not None and r.levers.budget_class_overrides.get(code) is cls for r in rows)
+    }
 
 
 def check_levers(
@@ -189,8 +203,9 @@ def check_levers(
     reads its plan uses); read here once, and only for one-offs or spending changes.
     `previous`: the spending changes of the row a save supersedes (for the preview the default
     in force); only a change new or altered against them is refused as a percent of
-    nothing (§7.6 (1) amended). `previous_overrides`: that row's budget class overrides; one
-    carried unaltered is not refused (phase 10 D272 (2), as a carried spending change)."""
+    nothing (§7.6 (1) amended). `previous_overrides`: the overrides counted as carried
+    (`carried_overrides`); one carried unaltered is not refused (phase 10 D272 (2), as a
+    carried spending change)."""
     _check_accounts(conn, levers)
     _check_budget_classes(levers, previous_overrides or {})
     if not levers.one_offs and not levers.spending_changes:

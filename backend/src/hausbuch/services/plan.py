@@ -490,17 +490,20 @@ def household_plan(conn: Connection, today: date, scenario_id: UUID | None = Non
     return _plan(conn, today, row, HouseholdLevers() if row is None else row.levers)
 
 
-def preview_plan(conn: Connection, today: date, levers: HouseholdLevers) -> HouseholdPlan:
+def preview_plan(
+    conn: Connection, today: date, levers: HouseholdLevers, scenario_id: UUID | None = None
+) -> HouseholdPlan:
     """POST /household-plan/preview (D263 (c)): the plan for typed levers, checked as a
-    scenario row would be (services.household_scenarios.check_levers), on the default scenario
-    in force with its levers replaced, so the projection keeps its saved row; without a saved
-    row no projection, as GET shows. A spending change carried unaltered from that default is
-    not refused, as the save superseding it would not refuse it (§7.6 (1) amended). Reads
-    only: no row, no event."""
-    from .household_scenarios import check_levers
+    scenario row would be (services.household_scenarios.check_levers), on the row previewed
+    (`scenario_id`, any row as GET reads it, else the default scenario in force) with its
+    levers replaced, so the projection keeps its saved row; without a saved row no projection,
+    as GET shows. A spending change or a budget class override carried unaltered from that row
+    is not refused, as the save superseding it would not refuse it (§7.6 (1) amended, phase 10
+    D272 (2)). NotFoundError for an unknown `scenario_id`. Reads only: no row, no event."""
+    from .household_scenarios import carried_overrides, check_levers
 
     reads = read_months(conn, ended_months(today), today)
-    row = default_scenario(conn)
+    row = _scenario(conn, scenario_id)
     previous = [] if row is None else row.levers.spending_changes
     check_levers(
         conn,
@@ -508,7 +511,7 @@ def preview_plan(conn: Connection, today: date, levers: HouseholdLevers) -> Hous
         today,
         reads,
         previous=previous,
-        previous_overrides=None if row is None else row.levers.budget_class_overrides,
+        previous_overrides=carried_overrides(levers, row),
     )
     if row is not None:
         row = row.model_copy(update={"levers": levers})

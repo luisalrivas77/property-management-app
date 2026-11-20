@@ -22549,6 +22549,18 @@
         "properties": {
           "levers": {
             "$ref": "#/components/schemas/HouseholdLevers"
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
           }
         },
         "additionalProperties": false,
@@ -22557,7 +22569,7 @@
           "levers"
         ],
         "title": "HouseholdPlanPreview",
-        "description": "POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored."
+        "description": "POST /household-plan/preview (D263 (c)): the levers as typed; nothing is stored.\n`scenario_id`: the row previewed (its levers replaced; what is carried from it is not\nrefused), else the default scenario in force."
       },
       "HouseholdScenario": {
         "properties": {
