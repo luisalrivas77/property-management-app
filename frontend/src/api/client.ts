@@ -6,7 +6,11 @@
 //   that returns has succeeded; use `ok()` to get its data without the error branch.
 // - A 401 also calls the handler registered by the AuthGate, which routes to /login (§6.4).
 // - A 503 `shutting_down` (a deploy in progress, §3.7) is retried once after Retry-After.
+// - Every request carries Accept-Language, the language chosen on this device (de or en,
+//   phase 10 D284), so the server can answer in it once its English templates exist (step 4c).
 import createClient, { type Middleware } from "openapi-fetch";
+
+import { getLocale } from "@/i18n/locale";
 
 import { ApiError, readErrorBody } from "./errors";
 import type { paths } from "./types"; // generated from openapi.json: `npm run gen:types`
@@ -47,6 +51,7 @@ async function fetchWithDeployRetry(request: Request): Promise<Response> {
 const requestId: Middleware = {
   onRequest({ request }) {
     request.headers.set("X-Request-Id", crypto.randomUUID());
+    request.headers.set("Accept-Language", getLocale());
     return request;
   },
 };
