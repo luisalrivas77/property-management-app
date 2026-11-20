@@ -79,16 +79,19 @@ function useMoreMenu(pathname: string) {
     if (!open) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape" || event.defaultPrevented) return;
+      // Handled here, so a detail panel under the menu stays open (it skips a prevented Escape).
+      event.preventDefault();
       setOpenOn(null);
       buttonRef.current?.focus();
     }
     function onPointerDown(event: PointerEvent) {
       if (!containerRef.current?.contains(event.target as Node)) setOpenOn(null);
     }
-    document.addEventListener("keydown", onKeyDown);
+    // Capture phase: before the panel's listener, which was added earlier on the same node.
+    document.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("pointerdown", onPointerDown);
     return () => {
-      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("pointerdown", onPointerDown);
     };
   }, [open]);

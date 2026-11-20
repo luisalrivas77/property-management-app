@@ -162,12 +162,14 @@ export function DetailPanel({
     };
   }, [wide]);
 
-  // The computer: Escape closes the panel, unless a dialog or the menu is open over it.
+  // The computer: Escape closes the panel, unless something over it handled the key first (the
+  // menu prevents it) or a dialog is open over it. A component with its own Escape over the
+  // panel calls event.preventDefault().
   useEffect(() => {
     if (!wide) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (document.querySelector("dialog[open]") || document.querySelector('[aria-expanded="true"]')) return;
+      if (document.querySelector("dialog[open]")) return;
       onCloseRef.current();
     }
     document.addEventListener("keydown", onKeyDown);

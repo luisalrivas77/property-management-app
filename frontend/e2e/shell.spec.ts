@@ -105,6 +105,16 @@ test("the detail panel opens from a row, keeps its state in the hash and closes 
   await expect(panel).toHaveCount(0);
   await expect(page).toHaveURL("/properties");
 
+  // With „Mehr“ open over the panel, the first Escape closes the menu only, the second the panel.
+  await row.click();
+  await expect(panel).toBeVisible();
+  await openMore(page);
+  await page.keyboard.press("Escape");
+  await expect(mainNav(page).getByRole("button", { name: "Mehr" })).toHaveAttribute("aria-expanded", "false");
+  await expect(panel).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+
   // Opened from the row, Escape gives the row the focus back.
   await row.click();
   await expect(panel.getByRole("heading", { name: "Wohnung Panel" })).toBeFocused();

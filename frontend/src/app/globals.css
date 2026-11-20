@@ -346,6 +346,20 @@ a.brand:hover {
   font-weight: 700;
 }
 
+/* „Mehr“ is a <button>: the global button hover (button:not(:disabled):hover) must not paint it
+   as a primary button. */
+button.mainnav-link:not(:disabled):hover {
+  border-color: transparent;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button.mainnav-link[aria-expanded="true"]:not(:disabled):hover,
+button.mainnav-link[data-current]:not(:disabled):hover {
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+
 .mainnav-icon {
   position: relative;
   display: inline-flex;
@@ -620,6 +634,11 @@ a.button-link.appbar-upload {
   .mainnav-link[aria-expanded="true"] {
     background: none;
     color: var(--accent-strong);
+  }
+  button.mainnav-link:not(:disabled):hover,
+  button.mainnav-link[aria-expanded="true"]:not(:disabled):hover,
+  button.mainnav-link[data-current]:not(:disabled):hover {
+    background: none;
   }
   .mainnav-link .mainnav-icon {
     padding: 3px 14px;
