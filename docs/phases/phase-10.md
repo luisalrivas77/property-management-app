@@ -1,7 +1,7 @@
 # Phase 10 · Layout und Budget
 
 Spec drafted 20 Nov 2026 from the four mockups Luis chose that day (`docs/mockups/` 14-C2, 15-B2, 16-C2,
-17-C2) and his decision on budgets („the household's own targets“, 20 Nov 2026). Not built. Q-O176 (the default sorting
+17-C2) and his decision on budgets („the household's own targets“, 20 Nov 2026). Being built (this said „Not built“ until steps 0 to 3 had deployed). Q-O176 (the default sorting
 of the spending codes into needs and wants, §9) answered by Luis the same day. On the same day Luis asked for
 mockups of every screen not yet drawn, so the build covers the whole app at once (D278 amended); the screens' steps
 wait for them, steps 0 and 1 (the Budget's rules and reads, no screen) were built meanwhile and deployed the same day (PR #490). Luis chose the
@@ -15,10 +15,10 @@ dark choice, and English), so every screen is drawn and the build covers the who
 | 0 | Taxonomy field `budget_class`, `rules/budget/references.yaml`, schemas, fixtures; no migration | merged and deployed 20 Nov 2026 (PR #490, images 4b5883d233e9, no migration; review: ship after fixes, all applied; no rollback once a household scenario is saved by this image) (Q-O176 answered the same day; this said „being built“ until then) |
 | 1 | `rules/budget/`, `services/budget.py`, `GET /household-budget`, `GET /accounts/{id}/month` | merged and deployed 20 Nov 2026 (PR #490, images 4b5883d233e9, no migration; review: ship after fixes, all applied; no rollback once a household scenario is saved by this image); the review's fixes: the Budget sums each code from the month's private lines (a group netting to 0 had lost its codes), a mark is decided at the precision its sentence prints, an override carried from the default or the previewed row is not refused (`HouseholdPlanPreview.scenario_id`, optional, not yet sent by the screen) |
 | 2 | The shell: the menu, the detail panel, the route map, the message catalogue (D284), „Darstellung“ (D283) | merged and deployed 20 Nov 2026 (PR #493, images f175dade8d26, no migration): bottom bar and tabs with „Mehr“, `DetailPanel` (a column beside the list from 1100 px, the sliding sheet below), `frontend/src/i18n/` with `glossary.md`, „Darstellung & Sprache“ per device, `Accept-Language` sent (read by the server from step 4c); `/properties` an interim list until step 4b; no review (frontend only, CI proves it) |
-| 3 | Übersicht (15-B2) and Konten › Umsätze (16-C2) | not started |
-| 4 | Planung in five sections with the Budget (17-C2) | not started |
-| 4b | The remaining screens as drawn in `docs/mockups/` 18–25 (D278 amended) with D279–D282 | chosen 20 Nov 2026 with Luis's changes (20–24 redrawn the same day) |
-| 4c | English (D284) | not started |
+| 3 | Übersicht (15-B2) and Konten › Umsätze (16-C2) | merged and deployed 21 Nov 2026 (PR #497, images 443b68ae59a7, no migration; no review: no figure computed in the browser, CI's e2e green): Übersicht as tiles with the key figures' marks as dots and each tile's summary in the panel (D268), Konten one kind at a time (D279), Konten › Umsätze with the month card from `GET /accounts/{id}/month` and the lines by day (D269); the cards embedded from earlier phases (`netWorth.tsx`, `overviewTodos.tsx`) still German in English (this said „not started“ until then, while it was being built) |
+| 4 | Planung in five sections with the Budget (17-C2) | in review (PR #496): e2e locators fixed for the moved effects box; the saving path's review: ship after fixes (no save drops a lever; the need/want switch must show an override set back, an invalid Vermögen rate must stop blocking saves once its card is gone, `fillLevers()` checked by the compiler, tests for the overrides and the preview's `scenario_id`), being fixed; Q-O179 open (this said „not started“ until then) |
+| 4b | The remaining screens as drawn in `docs/mockups/` 18–25 (D278 amended) with D279–D282 | chosen 20 Nov 2026 with Luis's changes (20–24 redrawn the same day); being built in two parts: Zu prüfen, Haushalt and Anlagen with `GET /assets/etf` at the Übersicht's newest price (D280) in PR #495 (review: values equal the Übersicht's; ship after a fix of a false „Noch kein Kurs“ note on a report-only or sold fund, being fixed; `?on=` dropped), and Steuern › Eure Angaben (D281), Dokumente by section with a search (D282), Einstellungen and Immobilien in PR #498 (CI green, in review); the property, loan, unit, tenancy and tenant pages of mockup 25 not built yet (only the crumb changed) |
+| 4c | English (D284) | being built: each screen's coder writes its English catalogue; the server's texts in English by `Accept-Language` (cards, to-dos, errors, the plan's template) in a separate change; the forms and cards inside the screens shared with earlier phases still German (this said „not started“ until then) |
 | 5 | Closing (§7.1) | not started |
 
 ## 1. Scope
@@ -195,6 +195,14 @@ a group's „Sonstige …“ code follows its group:
 - **Q-O178 (open, not blocking): the plan's AI explanation in English.** Until an English validator, lexicon and
   evals exist (D255, D258), English shows the app's template text in English (D284). Building them is a later step
   once Luis uses the app in English.
+- **Q-O179 (open, not blocking): a stale plan draft can overwrite another person's save.** Planung keeps one
+  unsaved draft of every lever for all sections, and it survives a reload of the page's data. If one person saves
+  (for example „Ziele speichern“) while the other has an unsaved change open and that page reloads its data without
+  being left (a to-do's „Monatsabschluss festhalten“), the second person's „Szenario speichern“ supersedes the new row
+  with the old snapshot, and the first person's targets leave the row in force without a message. Without that
+  reload the server refuses the stale save, which is safe. Options: remember the row the draft started from and warn
+  when the default is another row, or keep the draft as changes applied onto the saved levers. Found by the review of
+  step 4's saving path, 21 Nov 2026; small harm for a two-person household.
 - **Same gap in phase 9, open:** `rules/plan/spending.month_spending` also reads `spending_by_category`, so a group netting to exactly 0 in a month drops its codes from the per-code means of „Ausgaben durchspielen“ (the totals stay right). Not fixed in phase 10, since `rules/plan/` feeds `rule_version()`; to be decided with a phase 9 rule-version change.
 - **Rollback limit (from step 1's review):** once a household scenario is saved by the step 1 image, its row carries
   `budget_targets` and `budget_class_overrides`, which an older image refuses (`extra="forbid"`), so that image
