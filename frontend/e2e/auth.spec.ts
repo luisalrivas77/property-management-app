@@ -36,6 +36,7 @@ test("enroll from the bootstrap link, sign in again, add and remove a second pas
     await authenticator.replaceCredentials([]);
     await navigateTo(page, "Einstellungen");
     await expect(page.getByRole("heading", { name: "Einstellungen" })).toBeVisible();
+    await page.getByRole("link", { name: /^Passkeys und Mitglieder/ }).click();
     await page.getByLabel("Passkey hinzufügen").fill("Telefon");
     await page.getByRole("button", { name: "Passkey hinzufügen" }).click();
     const rows = page.getByRole("table").first().getByRole("row");
