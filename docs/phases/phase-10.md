@@ -4,7 +4,7 @@ Spec drafted 20 Nov 2026 from the four mockups Luis chose that day (`docs/mockup
 17-C2) and his decision on budgets („the household's own targets“, 20 Nov 2026). Not built. Q-O176 (the default sorting
 of the spending codes into needs and wants, §9) answered by Luis the same day. On the same day Luis asked for
 mockups of every screen not yet drawn, so the build covers the whole app at once (D278 amended); the screens' steps
-wait for them, steps 0 and 1 (the Budget's rules and reads, no screen) are being built meanwhile. Luis chose the
+wait for them, steps 0 and 1 (the Budget's rules and reads, no screen) were built meanwhile and deployed the same day (PR #490). Luis chose the
 remaining screens the same day with five changes and two additions (D279–D284: account kinds as tabs, Anlagen at
 the newest price, one Steuern tab „Eure Angaben“ for every input, Dokumente by section with a search, a light and
 dark choice, and English), so every screen is drawn and the build covers the whole app.
@@ -12,8 +12,8 @@ dark choice, and English), so every screen is drawn and the build covers the who
 | Step | What | State |
 | --- | --- | --- |
 | Spec | This file, the edits of §8 | drafted 20 Nov 2026 |
-| 0 | Taxonomy field `budget_class`, `rules/budget/references.yaml`, schemas, fixtures; no migration | being built 20 Nov 2026 (Q-O176 answered the same day) |
-| 1 | `rules/budget/`, `services/budget.py`, `GET /household-budget`, `GET /accounts/{id}/month` | being built 20 Nov 2026 |
+| 0 | Taxonomy field `budget_class`, `rules/budget/references.yaml`, schemas, fixtures; no migration | merged and deployed 20 Nov 2026 (PR #490, images 4b5883d233e9, no migration; review: ship after fixes, all applied; no rollback once a household scenario is saved by this image) (Q-O176 answered the same day; this said „being built“ until then) |
+| 1 | `rules/budget/`, `services/budget.py`, `GET /household-budget`, `GET /accounts/{id}/month` | merged and deployed 20 Nov 2026 (PR #490, images 4b5883d233e9, no migration; review: ship after fixes, all applied; no rollback once a household scenario is saved by this image); the review's fixes: the Budget sums each code from the month's private lines (a group netting to 0 had lost its codes), a mark is decided at the precision its sentence prints, an override carried from the default or the previewed row is not refused (`HouseholdPlanPreview.scenario_id`, optional, not yet sent by the screen) |
 | 2 | The shell: the menu, the detail panel, the route map, the message catalogue (D284), „Darstellung“ (D283) | not started |
 | 3 | Übersicht (15-B2) and Konten › Umsätze (16-C2) | not started |
 | 4 | Planung in five sections with the Budget (17-C2) | not started |
@@ -195,6 +195,7 @@ a group's „Sonstige …“ code follows its group:
 - **Q-O178 (open, not blocking): the plan's AI explanation in English.** Until an English validator, lexicon and
   evals exist (D255, D258), English shows the app's template text in English (D284). Building them is a later step
   once Luis uses the app in English.
+- **Same gap in phase 9, open:** `rules/plan/spending.month_spending` also reads `spending_by_category`, so a group netting to exactly 0 in a month drops its codes from the per-code means of „Ausgaben durchspielen“ (the totals stay right). Not fixed in phase 10, since `rules/plan/` feeds `rule_version()`; to be decided with a phase 9 rule-version change.
 - **Rollback limit (from step 1's review):** once a household scenario is saved by the step 1 image, its row carries
   `budget_targets` and `budget_class_overrides`, which an older image refuses (`extra="forbid"`), so that image
   cannot be rolled back after the first save. The frontend's `fillLevers()` must carry both fields from step 4 on,
