@@ -26,9 +26,10 @@ import fixture_models_phase10 as phase10  # noqa: E402
 
 from hausbuch.rules.health.bands import format_money, format_multiple, format_percent  # noqa: E402
 from hausbuch.rules.health.figures import savings_rate  # noqa: E402
+from hausbuch.rules.health.month import cashflow_rows  # noqa: E402
 from hausbuch.rules.household.taxonomy import ONE_OFF, TAXONOMY  # noqa: E402
 from hausbuch.schemas.allocation import AllocationCategory as C  # noqa: E402
-from hausbuch.schemas.household import HouseholdGroup  # noqa: E402
+from hausbuch.schemas.household import HouseholdGroup, Relevance  # noqa: E402
 
 KEYS = ["need", "want", "one_off", "uncategorized", "saving"]
 LABELS = {"need": "Notwendiges", "want": "Wünsche", "saving": "Sparen"}
@@ -229,16 +230,18 @@ def mark(label: str, share: Decimal | None, monthly: Decimal, income: Decimal, t
     if target is None or share is None:
         return None
     limit = Decimal(target) / 100
-    met = share >= limit if minimum else share <= limit
-    gap_points = ((share - limit) * 100).quantize(Decimal("0.1"), ROUND_HALF_UP)
+    # decided as the sentence prints the share: percent, one place, half-up (PR #490 review)
+    shown = (share * 100).quantize(Decimal("0.1"), ROUND_HALF_UP)
+    met = shown >= Decimal(target) if minimum else shown <= Decimal(target)
+    gap_points = shown - Decimal(target)
     gap_monthly = monthly - (limit * income).quantize(Decimal("0.01"), ROUND_HALF_UP)
     goal = f"eurem Ziel von {'mindestens' if minimum else 'höchstens'} {format_percent(limit)}"
     start = f"{label}: {format_percent(share)} eures Einkommens"
-    if share == limit:
+    if not gap_points:
         text = f"{start}, genau auf {goal}."
     else:
         points = f"{format_multiple(abs(gap_points))} Prozentpunkte"
-        side = "über" if share > limit else "unter"
+        side = "über" if gap_points > 0 else "unter"
         amount = format_money(abs(gap_monthly))
         if met:
             room = "mehr" if minimum else "Luft"
@@ -250,7 +253,7 @@ def mark(label: str, share: Decimal | None, monthly: Decimal, income: Decimal, t
             )
     return {
         "colour": "green" if met else "amber",
-        "gap_points": f"{gap_points:.1f}",
+        "gap_points": f"{gap_points or abs(gap_points):.1f}",
         "gap_monthly": dec(gap_monthly),
         "text": text,
     }
@@ -270,14 +273,24 @@ def expect(case: dict) -> dict:
     n = len(months)
     totals: dict[C, Fraction] = {}
     out["months"] = []
-    for hm, cashflow, _ in built:
+    uncategorized_lines = 0
+    for hm, lines in built:
         sums = dict.fromkeys(KEYS, Fraction(0))
         spent = Fraction(0)
-        for by_code in cashflow.spending_by_category.values():
-            for code, amount in by_code.items():
-                sums[line_of(code, overrides)] += frac(amount)
-                totals[code] = totals.get(code, Fraction(0)) + frac(amount)
-                spent += frac(amount)
+        # Each code from the month's private lines, so a group netting to 0 keeps its codes
+        # (PR #490 review); spending as month_cashflow counts it.
+        for code, signed in cashflow_rows(lines):
+            uncategorized_lines += code is C.UNCATEGORIZED
+            row = TAXONOMY.get(code)
+            if row is not None and (
+                row.group is HouseholdGroup.INVESTMENT
+                or row.relevance not in (Relevance.SPENDING, Relevance.TAX)
+            ):
+                continue
+            amount = -signed
+            sums[line_of(code, overrides)] += frac(amount)
+            totals[code] = totals.get(code, Fraction(0)) + frac(amount)
+            spent += frac(amount)
         assert spent == frac(hm.spending)
         sums["saving"] = frac(hm.income) - spent
         out["months"].append(
@@ -375,7 +388,7 @@ def expect(case: dict) -> dict:
     rate = savings_rate(months).rate
     out["savings_rate"] = None if rate is None else f"{rate:.4f}"
     out["no_shares"] = not shares
-    out["todos"] = ["uncategorized_lines"] if line_totals["uncategorized"] else []
+    out["todos"] = ["uncategorized_lines"] if uncategorized_lines else []
     return out
 
 

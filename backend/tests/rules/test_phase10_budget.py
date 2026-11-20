@@ -341,3 +341,12 @@ def test_a_share_printed_past_the_target_misses_it() -> None:
         minimum=True,
     )
     assert m is not None and m.colour.value == "amber" and m.gap_points == Decimal("-0.1")
+
+
+def test_spending_per_code_is_what_household_month_counts_as_spending() -> None:
+    """rules/budget sums the lines month_cashflow counts as spending; rules.health.month's
+    own reading of month_cashflow must agree for every code, or the check against A fails."""
+    from hausbuch.rules.health.month import _role
+
+    for code in C:
+        assert B.is_spending(code) is (_role(code) == "spending"), code
