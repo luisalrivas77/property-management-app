@@ -1,0 +1,66 @@
+/* Haushalt (phase 10 step 4b, mockup 19): the category table keeps its columns on the computer;
+   on the phone only the name, its share bar and the month's amount stay, and a tapped group
+   opens the detail panel with its subcategories and the plan. Tokens from globals.css only. */
+
+.household-sub {
+  margin: 2px 0 0;
+  color: var(--text-2);
+}
+
+.household-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+a.household-changed {
+  text-decoration: none;
+}
+
+.household-table th a.household-group {
+  color: inherit;
+  text-decoration: none;
+}
+
+.household-table th a.household-group:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+.household-table tr[aria-current="true"] th,
+.household-table tr[aria-current="true"] td {
+  background: var(--accent-tint);
+}
+
+.household-bar-phone,
+.household-plan-chip {
+  display: none;
+}
+
+@media (max-width: 719px) {
+  .household-table .household-wide {
+    display: none;
+  }
+  .household-table .household-bar-phone {
+    display: block;
+    max-width: 160px;
+    margin-top: 6px;
+  }
+  .household-table .household-plan-chip {
+    display: inline-block;
+    margin-top: 4px;
+  }
+  .household-table th,
+  .household-table td {
+    white-space: normal;
+  }
+}
+
+.household-panel-rows .detail-row {
+  align-items: flex-start;
+}
+
+.household-panel-rows .detail-row strong {
+  font-variant-numeric: tabular-nums;
+}
