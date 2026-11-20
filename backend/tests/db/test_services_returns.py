@@ -20,7 +20,7 @@ from db.test_services_private_matching import NOW, PRIVATE_IBAN, Private
 from db.test_services_transfers import FRIEND_IBAN, SAVINGS_IBAN, _savings
 from sqlalchemy import insert, select
 
-from hausbuch import cli
+from hausbuch import cli, i18n
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import event as event_table
@@ -154,6 +154,10 @@ def test_the_recall_is_one_card_naming_both_lines(world, private):
     assert card.account_id == private.account_id
     assert card.question == returns.QUESTION_ONE
     assert "zählen die beiden Buchungen als nichts" in card.reasoning
+    with i18n.use("en"):  # phase 10 D284
+        [en] = _cards(world)
+    assert en.question == "Book as a returned payment?"
+    assert "count as nothing" in en.reasoning
     assert card.returned.leg.id == credit
     assert [c.id for c in card.returned.candidates] == [debit]
     assert card.returned.candidates[0].amount == Decimal("-3200.00")

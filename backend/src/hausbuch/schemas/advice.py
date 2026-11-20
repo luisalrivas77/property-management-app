@@ -16,6 +16,8 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from hausbuch.i18n import english
+
 from .common import Schema
 from .enums import AccountKind
 from .household import NetWorthClass
@@ -357,8 +359,12 @@ class PlanExplanation(Schema):
                 raise ValueError("only the template text is rendered on read")
             if self.reason not in (None, ExplanationReason.CONSENT_OFF):
                 raise ValueError("a text on read is the template for want of consent or a row")
-        elif (self.status is ExplanationStatus.TEMPLATE) != (self.reason is not None):
-            raise ValueError("a template text says why; a model text has no reason")
+        elif self.status is ExplanationStatus.MODEL and self.reason is not None:
+            raise ValueError("a model text has no reason")
+        elif self.status is ExplanationStatus.TEMPLATE and self.reason is None and not english():
+            # Phase 10 Q-O178: in English a stored row is shown as the app's template of its
+            # own facts, in English, with no reason; in German a stored template says why.
+            raise ValueError("a template text says why")
         return self
 
 

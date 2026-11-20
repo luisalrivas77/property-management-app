@@ -25,6 +25,7 @@ from hausbuch.schemas.holdings import (
 from hausbuch.services import holdings, holdings_export
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.errors import NotFoundError
+from hausbuch.services.todo_texts import english
 
 from ..deps import Cmd, SettingsDep, StoreDep, domain_router
 from .documents import content_disposition
@@ -41,7 +42,7 @@ def crypto_holdings(cmd: Cmd, on: date | None = None) -> CryptoHoldings:
     """Every wallet and exchange account with its coins and their open lots (FIFO per account
     and coin), each lot with its day, units, cost and „steuerfrei ab“, or the prices whose
     absence leaves it without a cost („Kurs fehlt“); the four cards of the tab."""
-    return cmd.read(holdings.crypto_holdings, on or _today())
+    return english(cmd.read(holdings.crypto_holdings, on or _today()))
 
 
 @router.get("/wallets/holdings")

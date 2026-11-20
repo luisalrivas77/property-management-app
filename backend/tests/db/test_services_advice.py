@@ -21,6 +21,7 @@ from db.test_services_private_matching import OWNER_A, OWNER_B, _deps
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import DBAPIError
 
+from hausbuch import i18n
 from hausbuch.ai.client import ModelCallError
 from hausbuch.ai.fake import FakeModelClient, text_response
 from hausbuch.db.session import workspace_transaction
@@ -531,3 +532,28 @@ def test_health_daily_queues_nothing_without_consent(world, app_engine):
     first = run_health_daily(_daily_deps(world), workspace_ids=[world.ws])
     assert first.stored > 0 and first.explanations_queued == 0
     assert _queued(app_engine) == 0
+
+
+def test_in_english_a_stored_model_text_is_its_own_facts_template(world, app_engine, tmp_path):
+    """Phase 10 Q-O178: in English the row keeps its id, day and staleness (the screen polls
+    for a new id), and its text is the app's template of the row's stored facts in English,
+    never the model's German text."""
+    _household(world)
+    _consent(world)
+    _run(app_engine, tmp_path, world, FakeModelClient([text_response(_honest(world))]))
+    german = world.query(advice.explanation, TODAY, None)
+    assert german.status is ExplanationStatus.MODEL
+    with i18n.use(i18n.EN):
+        english = world.query(advice.explanation, TODAY, None)
+    assert (english.id, english.created_at, english.stale) == (
+        german.id,
+        german.created_at,
+        german.stale,
+    )
+    assert (english.status, english.reason) == (ExplanationStatus.TEMPLATE, None)
+    assert [p.topic for p in english.paragraphs] == [p.topic for p in german.paragraphs]
+    for paragraph in english.paragraphs:
+        assert not any(mark in paragraph.text for mark in ("ä", "ö", "ü", "ß", "„"))
+        assert not any(label in paragraph.text for label in LABELS)
+    # Nothing English was stored.
+    assert len(_rows(world)) == 1

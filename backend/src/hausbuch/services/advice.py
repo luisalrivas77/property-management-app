@@ -43,6 +43,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, func, insert, select
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
@@ -67,6 +68,7 @@ from hausbuch.schemas.advice import (
 from hausbuch.schemas.enums import AccountKind, EntityType
 from hausbuch.schemas.events import EventType, PlanExplanationStored
 from hausbuch.schemas.household import AssetKind, MovementStatus, NetWorthClass
+from hausbuch.services import advice_texts
 
 from .allocations import user_id
 from .context import CommandContext
@@ -286,7 +288,11 @@ def explanation(conn: Connection, today: date, scenario_id: UUID | None) -> Plan
             mode=mode,
             status=ExplanationStatus.TEMPLATE,
             reason=None if consent else ExplanationReason.CONSENT_OFF,
-            paragraphs=_rendered(T.render(current, mode), current),
+            paragraphs=(
+                advice_texts.template(current, mode)
+                if i18n.english()
+                else _rendered(T.render(current, mode), current)
+            ),
         )
     stored = _stored_facts(row)
     stored_mode = AdviceMode(row.advice_mode)
@@ -299,6 +305,22 @@ def explanation(conn: Connection, today: date, scenario_id: UUID | None) -> Plan
         status, reason = ExplanationStatus.TEMPLATE, ExplanationReason.REJECTED
         paragraphs = T.render(stored, stored_mode)
     same_day = current.model_copy(update={"as_of": stored.as_of})
+    if i18n.english():
+        # Phase 10 Q-O178: the validator and its evals are German, so in English the row is
+        # shown as the app's template text of its own stored facts, in English; a model text
+        # is never shown translated. Id, day and staleness stay the row's, nothing is stored.
+        if status is ExplanationStatus.MODEL:
+            status, reason = ExplanationStatus.TEMPLATE, None
+        return PlanExplanation(
+            id=row.id,
+            scenario_id=row.scenario_id,
+            mode=stored_mode,
+            status=status,
+            reason=reason,
+            paragraphs=advice_texts.template(stored, stored_mode),
+            created_at=row.created_at,
+            stale=F.facts_sha256(same_day) != bytes(row.facts_sha256).hex(),
+        )
     return PlanExplanation(
         id=row.id,
         scenario_id=row.scenario_id,

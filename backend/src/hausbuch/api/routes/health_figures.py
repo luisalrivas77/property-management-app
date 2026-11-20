@@ -28,6 +28,7 @@ from hausbuch.schemas.health import (
 )
 from hausbuch.services import health as service
 from hausbuch.services.documents import LOCAL_TIME_ZONE
+from hausbuch.services.todo_texts import english
 
 from ..deps import Cmd, domain_router
 
@@ -42,7 +43,7 @@ def _today() -> date:
 
 @router.get("/health")
 def health_get(cmd: Cmd, scenario: UUID | None = None) -> Health:
-    return cmd.read(service.health, _today(), scenario)
+    return english(cmd.read(service.health, _today(), scenario))
 
 
 @router.get("/health/months")
@@ -51,7 +52,7 @@ def health_months(
     first: Annotated[str, Query(alias="from", pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$")],
     last: Annotated[str, Query(alias="to", pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$")],
 ) -> list[HealthMonthView]:
-    return cmd.read(service.health_months, first, last, _today())
+    return english(cmd.read(service.health_months, first, last, _today()))
 
 
 @router.get("/health/net-worth-series")

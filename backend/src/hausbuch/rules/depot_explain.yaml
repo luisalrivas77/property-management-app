@@ -36,6 +36,20 @@ kinds:
       Hausbuch schlägt im Vorschlag zu diesem Dokument eine Umbuchung der Anteile vor. Bitte
       die Werte prüfen und „Übernehmen“ klicken; dann zählen die Anteile zum Bestand dieses
       Depots. Es ist kein Kauf und keine Ausgabe.
+    en:
+      was: >-
+        Einbuchung von Wertpapieren (securities transferred in): fund units have
+        come into the depot without being bought, usually moved from another depot
+        or another investment strategy of the same customer. No money moves.
+      bedeutung:
+        - '{anteile} units of the fund {fonds} have come in.'
+        - 'Units of {positionen} funds have come in.'
+        - 'Day of the transfer: {datum}.'
+        - 'Depot: {konto}.'
+      aktion: >-
+        Hausbuch proposes moving the units in the suggestion for this document.
+        Please check the values and click “Apply”; the units then count towards this
+        depot's holdings. It is not a purchase and not an expense.
 
   - kind: ausbuchung
     titles: ['(?m)^[ \t]*Ausbuchung von Wertpapieren']
@@ -52,6 +66,20 @@ kinds:
       Hausbuch schlägt im Vorschlag zu diesem Dokument eine Umbuchung der Anteile vor. Bitte
       die Werte prüfen und „Übernehmen“ klicken; dann zählen die Anteile nicht mehr zum
       Bestand dieses Depots. Es ist kein Verkauf und keine Einnahme.
+    en:
+      was: >-
+        Ausbuchung von Wertpapieren (securities transferred out): fund units have
+        left the depot without being sold, usually moved to another depot or another
+        investment strategy of the same customer. No money moves.
+      bedeutung:
+        - '{anteile} units of the fund {fonds} have gone out.'
+        - 'Units of {positionen} funds have gone out.'
+        - 'Day of the transfer: {datum}.'
+        - 'Depot: {konto}.'
+      aktion: >-
+        Hausbuch proposes moving the units in the suggestion for this document.
+        Please check the values and click “Apply”; the units then no longer count
+        towards this depot's holdings. It is not a sale and not income.
 
   - kind: finanzreport
     titles: ['Finanzreport']
@@ -65,6 +93,18 @@ kinds:
       Nur zur Information, ändert nichts am Konto; wird abgelegt. Die Geldbewegungen bucht
       Hausbuch über die Kontoauszüge des Verrechnungskontos, die Bestände über das
       PM-Reporting.
+    en:
+      was: >-
+        Finanzreport (financial report): a summary as of a reporting date. It
+        contains the statement of the settlement account (the cash account through
+        which quirion pays purchases, sales and fees) and the depot statement (which
+        funds are in the depot and what they are worth).
+      bedeutung:
+        - 'Date: {datum}.'
+      aktion: >-
+        For information only, it changes nothing on the account; it is filed.
+        Hausbuch books the cash movements from the settlement account's statements
+        and the holdings from the PM-Reporting.
 
   - kind: jahressteuerbescheinigung
     titles: ['Jahressteuerbescheinigung']
@@ -78,6 +118,19 @@ kinds:
     aktion: >-
       Nur zur Information, ändert nichts am Konto; wird abgelegt. Sie ist der Beleg für die
       Anlage KAP der Steuererklärung; Hausbuch rechnet daraus noch nichts.
+    en:
+      was: >-
+        Jahressteuerbescheinigung (annual tax certificate): the bank's certificate
+        for the Finanzamt (tax office) covering one calendar year. It states the
+        depot's capital income (distributions, gains from sales, the Vorabpauschale)
+        and the taxes the bank has already withheld from it and paid to the
+        Finanzamt.
+      bedeutung:
+        - 'Date: {datum}.'
+      aktion: >-
+        For information only, it changes nothing on the account; it is filed. It is
+        the evidence for the Anlage KAP (the capital income form) of the tax return;
+        Hausbuch does not compute anything from it yet.
 
   - kind: pm_reporting
     titles: ['Wertpapierumsätze|Detailreport']
@@ -97,6 +150,24 @@ kinds:
       Bestände gespeichert und mit allen gebuchten Käufen und Verkäufen verglichen. Eine
       einzelne Abrechnung, die später kommt, bucht nichts doppelt. Passt etwas nicht
       zusammen, erscheint unter „Zu prüfen“ eine Karte, die sagt, welcher Fonds abweicht.
+    en:
+      was: >-
+        PM-Reporting: the report the asset manager must send regularly. It lists
+        which funds are in the depot on a reporting date and what they are worth on
+        that day, and the purchases and sales of the period.
+      bedeutung:
+        - 'Reporting date: {stichtag}.'
+        - 'According to the report, {positionen} funds are in the depot, worth {gesamtwert} together.'
+        - 'It lists {umsaetze} purchases and sales.'
+        - 'Depot: {konto}.'
+      aktion: >-
+        Hausbuch proposes, in the suggestion for this document, the report's
+        purchases and sales not yet booked, and the holdings; “Apply” first books
+        the purchases and sales with the units, amount and reference from the
+        report, then stores the holdings and compares them with every booked
+        purchase and sale. A single trade confirmation that arrives later books
+        nothing twice. If something does not match, a card under “To review” says
+        which fund differs.
 
   - kind: ertraegnisabrechnung
     titles: ['(?m)^[ \t]*Erträgnisabrechnung\b']
@@ -117,6 +188,24 @@ kinds:
       Hausbuch schlägt die Ausschüttung im Vorschlag zu diesem Dokument vor; mit
       „Übernehmen“ wird sie auf dem Depot gebucht. Die Zahl der Anteile ändert sich dadurch
       nicht.
+    en:
+      was: >-
+        Erträgnisabrechnung (distribution statement): the statement of a
+        distribution. A fund has paid part of its income (dividends, interest) to
+        its investors; the bank deducts the taxes and credits the rest to the
+        settlement account. The “Ausmachender Betrag” (final amount) is what is
+        credited.
+      bedeutung:
+        - 'The fund {fonds} has paid a distribution.'
+        - 'Payment date: {datum}.'
+        - 'For {anteile} units in the depot.'
+        - 'Before taxes: {brutto}.'
+        - 'Taxes deducted: {steuern}.'
+        - 'Credited (Ausmachender Betrag): {netto}.'
+        - 'Depot: {konto}.'
+      aktion: >-
+        Hausbuch proposes the distribution in the suggestion for this document;
+        “Apply” books it on the depot. The number of units does not change.
 
   - kind: wertpapierabrechnung_kauf
     titles: ['(?m)^[ \t]*Wertpapierabrechnung\b[^\n]*(?:\n[ \t]*)?\bKauf\b']
@@ -133,6 +222,22 @@ kinds:
     aktion: >-
       Hausbuch schlägt den Kauf im Vorschlag zu diesem Dokument vor. Bitte die Werte prüfen
       und „Übernehmen“ klicken; dann zählen die Anteile zum Bestand des Depots.
+    en:
+      was: >-
+        Wertpapierabrechnung (Kauf) (trade confirmation, purchase): the confirmation
+        that quirion has bought fund units for your depot. The “Ausmachender Betrag”
+        (final amount) is what the purchase cost in total: the price of the units
+        plus fees. It is debited from the settlement account.
+      bedeutung:
+        - '{anteile} units of the fund {fonds} were bought.'
+        - 'Trade date: {datum}.'
+        - 'Paid (Ausmachender Betrag): {betrag}.'
+        - 'Of which fees: {gebuehren}.'
+        - 'Depot: {konto}.'
+      aktion: >-
+        Hausbuch proposes the purchase in the suggestion for this document. Please
+        check the values and click “Apply”; the units then count towards the depot's
+        holdings.
 
   - kind: wertpapierabrechnung_verkauf
     titles: ['(?m)^[ \t]*Wertpapierabrechnung\b[^\n]*(?:\n[ \t]*)?\bVerkauf\b']
@@ -151,6 +256,23 @@ kinds:
       Hausbuch schlägt den Verkauf im Vorschlag zu diesem Dokument vor. Bitte die Werte
       prüfen und „Übernehmen“ klicken; dann zählen die Anteile nicht mehr zum Bestand des
       Depots.
+    en:
+      was: >-
+        Wertpapierabrechnung (Verkauf) (trade confirmation, sale): the confirmation
+        that quirion has sold fund units for your depot. The “Ausmachender Betrag”
+        (final amount) is what is left after fees and taxes. It is credited to the
+        settlement account.
+      bedeutung:
+        - '{anteile} units of the fund {fonds} were sold.'
+        - 'Trade date: {datum}.'
+        - 'Credited (Ausmachender Betrag): {betrag}.'
+        - 'Fees deducted: {gebuehren}.'
+        - 'Taxes deducted: {steuern}.'
+        - 'Depot: {konto}.'
+      aktion: >-
+        Hausbuch proposes the sale in the suggestion for this document. Please check
+        the values and click “Apply”; the units then no longer count towards the
+        depot's holdings.
 
   # A trade note whose heading names no side (code then takes the side from the reading).
   - kind: wertpapierabrechnung
@@ -166,6 +288,19 @@ kinds:
     aktion: >-
       Hausbuch schlägt die Buchung im Vorschlag zu diesem Dokument vor. Bitte die Werte
       prüfen und „Übernehmen“ klicken.
+    en:
+      was: >-
+        Wertpapierabrechnung (trade confirmation): the confirmation that quirion has
+        bought or sold fund units for your depot. The “Ausmachender Betrag” (final
+        amount) is the amount debited from or credited to the settlement account for
+        it.
+      bedeutung:
+        - 'Fund: {fonds}.'
+        - 'Trade date: {datum}.'
+        - 'Depot: {konto}.'
+      aktion: >-
+        Hausbuch proposes the booking in the suggestion for this document. Please
+        check the values and click “Apply”.
 
   - kind: ertragsuebersicht
     titles: ['Erträgnisaufstellung|Ertragsübersicht|Income [Ss]ummary']
@@ -180,6 +315,20 @@ kinds:
     aktion: >-
       Nur zur Information, ändert nichts am Konto; wird abgelegt. Jede Ausschüttung und jede
       abgezogene Steuer wird über ihre eigene Abrechnung oder den Kontoauszug gebucht.
+    en:
+      was: >-
+        Erträgnisaufstellung (income summary): an overview for one year of the
+        income the depot has earned (distributions, interest, gains from sales) and
+        the taxes deducted for it. The “Vorabpauschale” in it is a minimum return
+        set by law that a fund must pay tax on every year, even if it has
+        distributed nothing; the bank collects the tax on it from the settlement
+        account.
+      bedeutung:
+        - 'Date: {datum}.'
+      aktion: >-
+        For information only, it changes nothing on the account; it is filed. Every
+        distribution and every tax deducted is booked from its own statement or the
+        account statement.
 
   - kind: kosteninformation
     titles: ['Kosteninformation']
@@ -192,6 +341,17 @@ kinds:
     aktion: >-
       Nur zur Information, ändert nichts am Konto; wird abgelegt. Es ist eine Schätzung;
       abgebucht wird damit nichts.
+    en:
+      was: >-
+        Kosteninformation (ex ante, i.e. “in advance”): an estimate the bank must
+        send beforehand. It says what the asset management is expected to cost
+        (management fee, the funds' running costs) and how much that reduces the
+        return.
+      bedeutung:
+        - 'Date: {datum}.'
+      aktion: >-
+        For information only, it changes nothing on the account; it is filed. It is
+        an estimate; nothing is debited with it.
 
   - kind: kostenausweis
     titles: ['Kostenausweis|Kostenübersicht']
@@ -206,6 +366,18 @@ kinds:
       wurde schon vom Verrechnungskonto abgebucht und steht im Kontoauszug; die laufenden
       Kosten der Fonds zieht jeder Fonds direkt von seinem Wert ab, sie erscheinen auf
       keinem Konto.
+    en:
+      was: >-
+        Kostenausweis (ex post, i.e. “afterwards”): the list of the costs actually
+        incurred in the past year: the fee for the asset management, the funds' own
+        running costs and the costs of the purchases and sales.
+      bedeutung:
+        - 'Date: {datum}.'
+      aktion: >-
+        For information only, it changes nothing on the account; it is filed. The
+        management fee has already been debited from the settlement account and is
+        on its statement; each fund deducts its running costs directly from its
+        value, so they appear on no account.
 
   - kind: rechnungsabschluss
     titles: ['(?m)^[ \t]*Rechnungsabschluss']
@@ -218,6 +390,17 @@ kinds:
     aktion: >-
       Nur zur Information, ändert nichts am Konto; wird abgelegt. Die Zinsen und Entgelte
       stehen als eigene Zeilen im Kontoauszug und werden dort gebucht.
+    en:
+      was: >-
+        Rechnungsabschluss (account settlement): the settlement of the settlement
+        account for a period, usually a quarter. It shows the interest the bank paid
+        on the balance and the charges it made.
+      bedeutung:
+        - 'Date: {datum}.'
+      aktion: >-
+        For information only, it changes nothing on the account; it is filed. The
+        interest and charges are separate lines on the account statement and are
+        booked there.
 
   - kind: kontoauszug
     titles: ['(?m)^[ \t]*Kontoauszug']
@@ -233,6 +416,19 @@ kinds:
       „Importiert auf …“, unter „Vorschlag“ „Auf Konto importieren“ wählen: Hausbuch nimmt die
       schon gespeicherte Datei, ein zweites Hochladen ist nicht nötig. Jede Zeile wird dann ein
       Umsatz, den Hausbuch zuordnet.
+    en:
+      was: >-
+        Kontoauszug (statement) of the settlement account: the list of money
+        movements on the depot's cash account, through which quirion pays purchases,
+        sales, distributions, taxes and fees and receives your deposits.
+      bedeutung:
+        - 'Date: {datum}.'
+        - 'Account: {konto}.'
+      aktion: >-
+        Hausbuch reads it itself, without AI, onto the depot. If this page does not
+        yet say “Imported to …”, choose “Import to account” under “Suggestion”:
+        Hausbuch takes the file already stored, no second upload is needed. Every
+        line then becomes a transaction that Hausbuch categorises.
 
   - kind: depotauszug
     titles: ['Depotauszug']
@@ -244,6 +440,16 @@ kinds:
     aktion: >-
       Nur zur Information, ändert nichts am Konto; wird abgelegt. Die Bestände bucht
       Hausbuch über die Abrechnungen und vergleicht sie mit dem PM-Reporting.
+    en:
+      was: >-
+        Depotauszug (depot statement): the list of the funds in the depot on a
+        reporting date, with the number of units and their value on that day.
+      bedeutung:
+        - 'Date: {datum}.'
+      aktion: >-
+        For information only, it changes nothing on the account; it is filed.
+        Hausbuch books the holdings from the trade confirmations and compares them
+        with the PM-Reporting.
 
   - kind: quartalsbericht
     titles: ['Bericht für das \d\. Quartal']
@@ -254,6 +460,16 @@ kinds:
     bedeutung:
       - 'Datum: {datum}.'
     aktion: Nur zur Information, ändert nichts am Konto; wird abgelegt.
+    en:
+      was: >-
+        Quartalsbericht (quarterly report): a letter from quirion about the past
+        quarter: how the markets developed and what that means for the investment
+        strategy. Your depot's figures are not in it but in the PM-Reporting, which
+        comes separately.
+      bedeutung:
+        - 'Date: {datum}.'
+      aktion: >-
+        For information only, it changes nothing on the account; it is filed.
 
   - kind: rebalancing
     titles: ['Rebalancing']
@@ -266,6 +482,17 @@ kinds:
     aktion: >-
       Nur zur Information, ändert nichts am Konto; wird abgelegt. Jeder Kauf und Verkauf
       kommt mit seiner eigenen Wertpapierabrechnung, und erst die wird gebucht.
+    en:
+      was: >-
+        Rebalancing notice: quirion brings the funds in the depot back to the agreed
+        split between shares and bonds by selling some units and buying others.
+        Prices have shifted the split since the last time.
+      bedeutung:
+        - 'Date: {datum}.'
+      aktion: >-
+        For information only, it changes nothing on the account; it is filed. Each
+        purchase and sale comes with its own Wertpapierabrechnung (trade
+        confirmation), and only that is booked.
 
   - kind: zinsaenderung
     titles: ['Zinsänderung|Zinsanpassung']
@@ -277,3 +504,13 @@ kinds:
     aktion: >-
       Nur zur Information, ändert nichts am Konto; wird abgelegt. Die Zinsen selbst kommen
       mit dem Rechnungsabschluss und stehen im Kontoauszug.
+    en:
+      was: >-
+        Notice of an interest rate change: the bank changes the interest rate it
+        pays on the balance of the settlement account.
+      bedeutung:
+        - 'Date: {datum}.'
+      aktion: >-
+        For information only, it changes nothing on the account; it is filed. The
+        interest itself comes with the Rechnungsabschluss (account settlement) and
+        is on the account statement.

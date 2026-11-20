@@ -11,6 +11,7 @@ from db.db_support import TEST_IBAN_KEY
 from pydantic import SecretStr
 from sqlalchemy import select, text, update
 
+from hausbuch import i18n
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import app_secret as secret_table
 from hausbuch.db.tables import event as event_table
@@ -395,6 +396,17 @@ def test_the_card_names_each_group_and_what_stopped_never_a_value(
     assert "Solana-Adressen werden nicht gelesen." in card.reasoning
     assert "nicht den Wert aus der Server-Konfiguration" in card.reasoning
     assert card.question == "Unter Einstellungen › Zugangsschlüssel neu eintragen oder löschen."
+    with i18n.use("en"):  # phase 10 D284
+        (en,) = _card(read, a, rotated)
+        [state] = [s for s in read(a, secrets.secret_states, rotated) if s.name is N.HELIUS_KEY]
+    assert en.reasoning.startswith("Access keys stored in the app can no longer be read")
+    assert (
+        "Affected – AI: Anthropic API key (Claude); Blockchains & prices: Etherscan, "
+        "Solana RPC address, Helius." in en.reasoning
+    )
+    assert "Solana addresses are not read." in en.reasoning
+    assert en.question == "Enter again or delete under Settings › Access keys."
+    assert state.label == "Helius" and state.purpose.startswith("Short descriptions")
     dumped = card.model_dump_json()
     assert not any(s in dumped for s in SECRETS)
     assert "etherscan_key" not in dumped and "HAUSBUCH_" not in dumped

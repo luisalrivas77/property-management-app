@@ -28,6 +28,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, Select, exists, or_, select
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import ai_call as ai_call_table
 from hausbuch.db.tables import allocation as allocation_table
@@ -659,46 +660,96 @@ def _transaction(conn: Connection, transaction_id: UUID) -> Transaction:
 
 # --- GET /inbox ----------------------------------------------------------------------------
 
+# The card texts, German beside English (phase 10 D284); chosen when the queue is read.
+TEXTS = i18n.Texts(
+    "review",
+    {
+        "proposal.ready": (
+            "Die KI hat das Dokument gelesen und schlägt Werte vor.",
+            "The AI has read the document and suggests values.",
+        ),
+        "proposal.ready.question": (
+            "Stimmen die vorgeschlagenen Werte?",
+            "Are the suggested values right?",
+        ),
+        "proposal.failed": ("Konnte nicht gelesen werden.", "Could not be read."),
+        "proposal.failed.question": (
+            "Möchtest du es erneut lesen lassen oder die Werte selbst eintragen?",
+            "Would you like to have it read again or enter the values yourself?",
+        ),
+        "proposal.blocked": (
+            "Das Dokument enthält Mieterdaten; die KI darf es nicht lesen.",
+            "The document contains tenant data; the AI may not read it.",
+        ),
+        "proposal.blocked.question": (
+            "Möchtest du die Werte selbst eintragen?",
+            "Would you like to enter the values yourself?",
+        ),
+        # Phase 6 D176 (3), step 4: a card or depot statement uploaded through Dokumente is
+        # read by code on its account; the card offers „Auf Konto importieren“ instead of a
+        # new read.
+        "bank_file": (
+            "Ein Kontoauszug oder Umsatz-Export einer Bank, eine Kreditkartenabrechnung oder ein "
+            "Kontoauszug eines Depots: Hausbuch liest sie selbst, ohne KI, auf ihrem Konto ein.",
+            "A bank statement or transaction export, a credit card statement or a depot's "
+            "statement: Hausbuch reads it itself, without AI, onto its account.",
+        ),
+        "bank_file.question": (
+            "Auf welches Konto soll sie importiert werden?",
+            "Which account should it be imported to?",
+        ),
+        # Phase 6 D166, step 5a: an exchange export uploaded through Dokumente.
+        "exchange_export": (
+            "Ein Export einer Börse (BISON oder Binance): Hausbuch liest ihn selbst, ohne KI, auf "
+            "dem Konto der Börse ein, nicht unter Dokumente.",
+            "An exchange export (BISON or Binance): Hausbuch reads it itself, without AI, on the "
+            "exchange's account, not under Documents.",
+        ),
+        "exchange_export.question": (
+            "Unter Konten das Konto der Börse öffnen und den Export dort mit „Export der Börse "
+            "hochladen“ hochladen; gibt es noch keins, unter Konten ein Konto der Art „Börse "
+            "(Krypto)“ anlegen.",
+            "Open the exchange's account under Accounts and upload the export there with "
+            "“Upload exchange export”; if there is none yet, create an account of the kind "
+            "“Exchange (crypto)” under Accounts.",
+        ),
+        "unmatched": (
+            "Nicht zugeordnet: keine Regel, kein Abgleich und kein Beleg passen.",
+            "Not categorised: no rule, no match and no receipt fits.",
+        ),
+        "ai_failed": (
+            "Die KI konnte diese Zahlung nicht einordnen (Anfrage fehlgeschlagen).",
+            "The AI could not categorise this payment (the request failed).",
+        ),
+        # Phase 6 D168: a private line nothing explains, while the model may not see private
+        # lines.
+        "private_no_ai": (
+            "Privates Konto: keine Regel und kein Beleg passen. Die KI ordnet private Umsätze "
+            "erst zu, wenn beide unter Einstellungen „Private Konten mit KI zuordnen“ zugestimmt "
+            "haben.",
+            "Private account: no rule and no receipt fits. The AI categorises private "
+            "transactions only once both of you have agreed under Settings to “Categorise "
+            "private accounts with AI”.",
+        ),
+        "unmatched.question": ("Wofür war diese Buchung?", "What was this payment for?"),
+        # The frontend's bulk list hides this generic question (inbox.tsx
+        # GENERIC_PROPOSED_QUESTION).
+        "proposed.question": ("Stimmt diese Zuordnung?", "Is this categorisation right?"),
+        "questionnaire": (
+            "Die Jahresfragen {year} sind noch offen: {answered} von {total} beantwortet.",
+            "The yearly questions for {year} are still open: {answered} of {total} answered.",
+        ),
+        "questionnaire.question": (
+            "Möchtest du die Jahresfragen {year} jetzt beantworten?",
+            "Would you like to answer the yearly questions for {year} now?",
+        ),
+    },
+)
 _PROPOSAL_TEXTS = {
-    ProposalStatus.READY: (
-        InboxItemKind.PROPOSAL,
-        "Die KI hat das Dokument gelesen und schlägt Werte vor.",
-        "Stimmen die vorgeschlagenen Werte?",
-    ),
-    ProposalStatus.FAILED: (
-        InboxItemKind.READ_FAILED,
-        "Konnte nicht gelesen werden.",
-        "Möchtest du es erneut lesen lassen oder die Werte selbst eintragen?",
-    ),
-    ProposalStatus.BLOCKED_TENANT_DATA: (
-        InboxItemKind.BLOCKED_TENANT_DATA,
-        "Das Dokument enthält Mieterdaten; die KI darf es nicht lesen.",
-        "Möchtest du die Werte selbst eintragen?",
-    ),
+    ProposalStatus.READY: (InboxItemKind.PROPOSAL, "proposal.ready"),
+    ProposalStatus.FAILED: (InboxItemKind.READ_FAILED, "proposal.failed"),
+    ProposalStatus.BLOCKED_TENANT_DATA: (InboxItemKind.BLOCKED_TENANT_DATA, "proposal.blocked"),
 }
-# Phase 6 D176 (3), step 4: a card or depot statement uploaded through Dokumente is read by
-# code on its account; the card offers „Auf Konto importieren“ instead of a new read.
-_BANK_FILE_TEXTS = (
-    "Ein Kontoauszug oder Umsatz-Export einer Bank, eine Kreditkartenabrechnung oder ein "
-    "Kontoauszug eines Depots: Hausbuch liest sie selbst, ohne KI, auf ihrem Konto ein.",
-    "Auf welches Konto soll sie importiert werden?",
-)
-# Phase 6 D166, step 5a: an exchange export uploaded through Dokumente.
-_EXCHANGE_EXPORT_TEXTS = (
-    "Ein Export einer Börse (BISON oder Binance): Hausbuch liest ihn selbst, ohne KI, auf dem "
-    "Konto der Börse ein, nicht unter Dokumente.",
-    "Unter Konten das Konto der Börse öffnen und den Export dort mit „Export der Börse hochladen“ "
-    "hochladen; gibt es noch keins, unter Konten ein Konto der Art „Börse (Krypto)“ anlegen.",
-)
-_UNMATCHED_REASON = "Nicht zugeordnet: keine Regel, kein Abgleich und kein Beleg passen."
-_AI_FAILED_REASON = "Die KI konnte diese Zahlung nicht einordnen (Anfrage fehlgeschlagen)."
-# Phase 6 D168: a private line nothing explains, while the model may not see private lines.
-_PRIVATE_NO_AI_REASON = (
-    "Privates Konto: keine Regel und kein Beleg passen. Die KI ordnet private Umsätze erst zu, "
-    "wenn beide unter Einstellungen „Private Konten mit KI zuordnen“ zugestimmt haben."
-)
-_UNMATCHED_QUESTION = "Wofür war diese Buchung?"
-_PROPOSED_QUESTION = "Stimmt diese Zuordnung?"
 
 
 def inbox(
@@ -872,11 +923,10 @@ def _questionnaire_items(conn: Connection, today: date) -> list[InboxItem]:
         InboxItem(
             kind=InboxItemKind.QUESTIONNAIRE_OPEN,
             created_at=datetime(today.year, 1, 1, tzinfo=UTC),
-            reasoning=(
-                f"Die Jahresfragen {year} sind noch offen:"
-                f" {progress.answered} von {progress.total} beantwortet."
+            reasoning=TEXTS(
+                "questionnaire", year=year, answered=progress.answered, total=progress.total
             ),
-            question=f"Möchtest du die Jahresfragen {year} jetzt beantworten?",
+            question=TEXTS("questionnaire.question", year=year),
             tax_year=year,
         )
     ]
@@ -901,14 +951,15 @@ def _proposal_items(conn: Connection) -> list[InboxItem]:
     )
     items = []
     for row in rows:
-        kind, reasoning, question = _PROPOSAL_TEXTS[ProposalStatus(row.status)]
+        kind, key = _PROPOSAL_TEXTS[ProposalStatus(row.status)]
         if kind is InboxItemKind.READ_FAILED and row.error_code == PROPOSAL_BANK_FILE_NOT_READ:
-            reasoning, question = _BANK_FILE_TEXTS
+            key = "bank_file"
         if (
             kind is InboxItemKind.READ_FAILED
             and row.error_code == PROPOSAL_EXCHANGE_EXPORT_NOT_READ
         ):
-            reasoning, question = _EXCHANGE_EXPORT_TEXTS
+            key = "exchange_export"
+        reasoning, question = TEXTS(key), TEXTS(f"{key}.question")
         items.append(
             InboxItem(
                 kind=kind,
@@ -974,17 +1025,17 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
         private = line.purpose == AccountPurpose.PRIVATE.value
         if not rows:
             if line.id in failed:
-                reasoning = _AI_FAILED_REASON
+                reasoning = TEXTS("ai_failed")
             elif private and not private_ai:
-                reasoning = _PRIVATE_NO_AI_REASON  # routing.ai_disabled (D168)
+                reasoning = TEXTS("private_no_ai")  # routing.ai_disabled (D168)
             else:
-                reasoning = _UNMATCHED_REASON
+                reasoning = TEXTS("unmatched")
             items.append(
                 InboxItem(
                     kind=InboxItemKind.UNMATCHED,
                     created_at=line.created_at,
                     reasoning=reasoning,
-                    question=_UNMATCHED_QUESTION,
+                    question=TEXTS("unmatched.question"),
                     transaction_id=line.id,
                     account_id=line.account_id if private else None,
                 )
@@ -996,7 +1047,7 @@ def _allocation_items(conn: Connection) -> list[InboxItem]:
                     kind=InboxItemKind.ALLOCATION_PROPOSED,
                     created_at=rows[0].recorded_at,
                     reasoning=rows[0].reasoning,
-                    question=rows[0].question or _PROPOSED_QUESTION,
+                    question=rows[0].question or TEXTS("proposed.question"),
                     transaction_id=line.id,
                     account_id=line.account_id if private else None,
                     category=category,

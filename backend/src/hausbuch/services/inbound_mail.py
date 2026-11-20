@@ -37,6 +37,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, and_, func, or_, select
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import app_user as app_user_table
 from hausbuch.db.tables import document as document_table
@@ -334,23 +335,70 @@ def note_poll_outcome(ctx: CommandContext, code: InboxPollCode | None) -> bool:
     return True
 
 
+# The cards' texts, German beside English (phase 10 D284); chosen when Zu prüfen is read.
+TEXTS = i18n.Texts(
+    "inbound_mail",
+    {
+        "auth_rejected": (
+            "Der Posteingang per E-Mail kann sich nicht mehr bei Gmail anmelden ({code}): das"
+            " App-Passwort wurde widerrufen oder ist falsch.",
+            "Email-in can no longer sign in to Gmail ({code}): the app password was revoked or"
+            " is wrong.",
+        ),
+        "auth_rejected.question": (
+            "Ein neues App-Passwort erstellen und als Secret hinterlegen.",
+            "Create a new app password and store it as a secret.",
+        ),
+        "label_missing": (
+            "Der Posteingang per E-Mail findet sein Gmail-Label nicht ({code}); weitergeleitete"
+            " Mails werden nicht gelesen.",
+            "Email-in cannot find its Gmail label ({code}); forwarded mails are not read.",
+        ),
+        "label_missing.question": (
+            "Das Label in Gmail wieder anlegen oder seinen Namen im Secret korrigieren.",
+            "Create the label in Gmail again or correct its name in the secret.",
+        ),
+        "unreachable": (
+            "Der Posteingang per E-Mail erreicht Gmail seit mehreren Abrufen nicht ({code}).",
+            "Email-in has not reached Gmail for several polls ({code}).",
+        ),
+        "unreachable.question": (
+            "Meist vorübergehend. Hält es an, die Verbindung des Servers zu Gmail prüfen.",
+            "Usually temporary. If it persists, check the server's connection to Gmail.",
+        ),
+        "statement_unplaced": (
+            "Ein weitergeleiteter Kontoauszug passt zu keinem Konto und wurde nur als Dokument"
+            " abgelegt.",
+            "A forwarded statement fits no account and was only filed as a document.",
+        ),
+        "statement_unplaced.question": (
+            "Zu welchem Konto gehört er? Dort importieren.",
+            "Which account does it belong to? Import it there.",
+        ),
+        "imported": (
+            "Kontoauszug aus einer weitergeleiteten Mail importiert.",
+            "Statement imported from a forwarded mail.",
+        ),
+        "attached": (
+            "Anhang aus einer weitergeleiteten Mail übernommen.",
+            "Attachment taken from a forwarded mail.",
+        ),
+        "failed": (
+            "Eine weitergeleitete Mail konnte dreimal nicht verarbeitet werden ({code}).",
+            "A forwarded mail could not be processed three times ({code}).",
+        ),
+        "failed.question": (
+            "Bitte die Anhänge direkt hochladen.",
+            "Please upload the attachments directly.",
+        ),
+    },
+)
+
 # What the email_inbox_failed card says per code: what happened, and what to do (§5.5).
 _POLL_CARD = {
-    E.EMAIL_AUTH_REJECTED: (
-        "Der Posteingang per E-Mail kann sich nicht mehr bei Gmail anmelden"
-        f" ({E.EMAIL_AUTH_REJECTED}): das App-Passwort wurde widerrufen oder ist falsch.",
-        "Ein neues App-Passwort erstellen und als Secret hinterlegen.",
-    ),
-    E.EMAIL_LABEL_MISSING: (
-        "Der Posteingang per E-Mail findet sein Gmail-Label nicht"
-        f" ({E.EMAIL_LABEL_MISSING}); weitergeleitete Mails werden nicht gelesen.",
-        "Das Label in Gmail wieder anlegen oder seinen Namen im Secret korrigieren.",
-    ),
-    E.EMAIL_UNREACHABLE: (
-        "Der Posteingang per E-Mail erreicht Gmail seit mehreren Abrufen nicht"
-        f" ({E.EMAIL_UNREACHABLE}).",
-        "Meist vorübergehend. Hält es an, die Verbindung des Servers zu Gmail prüfen.",
-    ),
+    E.EMAIL_AUTH_REJECTED: "auth_rejected",
+    E.EMAIL_LABEL_MISSING: "label_missing",
+    E.EMAIL_UNREACHABLE: "unreachable",
 }
 
 
@@ -422,11 +470,8 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 InboxItem(
                     kind=InboxItemKind.EMAIL_RECEIVED,
                     created_at=link.recorded_at,
-                    reasoning=(
-                        "Ein weitergeleiteter Kontoauszug passt zu keinem Konto und wurde nur"
-                        " als Dokument abgelegt."
-                    ),
-                    question="Zu welchem Konto gehört er? Dort importieren.",
+                    reasoning=TEXTS("statement_unplaced"),
+                    question=TEXTS("statement_unplaced.question"),
                     document_id=link.document_id,
                 )
             )
@@ -436,11 +481,7 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 InboxItem(
                     kind=InboxItemKind.EMAIL_RECEIVED,
                     created_at=link.recorded_at,
-                    reasoning=(
-                        "Kontoauszug aus einer weitergeleiteten Mail importiert."
-                        if imported
-                        else "Anhang aus einer weitergeleiteten Mail übernommen."
-                    ),
+                    reasoning=TEXTS("imported" if imported else "attached"),
                     document_id=link.document_id,
                     import_id=link.import_id,
                 )
@@ -457,16 +498,14 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
             InboxItem(
                 kind=InboxItemKind.EMAIL_FAILED,
                 created_at=recorded_at,
-                reasoning=(
-                    "Eine weitergeleitete Mail konnte dreimal nicht verarbeitet werden"
-                    f" ({E.EMAIL_FAILED})."
-                ),
-                question="Bitte die Anhänge direkt hochladen.",
+                reasoning=TEXTS("failed", code=E.EMAIL_FAILED),
+                question=TEXTS("failed.question"),
             )
         )
     state = poll_state(conn)
     if state is not None and state.failing:
-        reasoning, question = _POLL_CARD[state.code]
+        key = _POLL_CARD[state.code]
+        reasoning, question = TEXTS(key, code=state.code), TEXTS(f"{key}.question")
         items.append(
             InboxItem(
                 kind=InboxItemKind.EMAIL_INBOX_FAILED,

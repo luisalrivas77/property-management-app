@@ -73,3 +73,54 @@ def test_every_entry_is_a_reason_and_a_next_step():
         assert len(code) == 4 and code.isdigit()
         assert code[0] == "9" or code == "3938"  # only codes deciding_code can return
         assert reason.strip() and step.strip()
+
+
+# --- English (phase 10 D284) -----------------------------------------------------------------
+
+
+def test_every_card_has_its_english_twin():
+    from hausbuch.services import bank_sync as S
+
+    assert set(S._FAILED_CARD_EN) == set(S._FAILED_CARD)
+    assert set(S._REFUSED_CARD_EN) == set(_REFUSED_CARD)
+    assert len(S._DKB_WORDING_EN) == len(S._DKB_WORDING)
+
+
+def test_an_english_request_gets_the_english_card_and_german_stays_the_default():
+    from hausbuch import i18n
+
+    german = failed_card_text(E.BANK_REFUSED, "9078")
+    with i18n.use("en"):
+        reasoning, question = failed_card_text(E.BANK_REFUSED, "9078")
+        default, _ = failed_card_text("bank.something_new", None)
+    assert reasoning.startswith("The bank refused the sync. The bank does not let Hausbuch in")
+    assert reasoning.endswith("(bank.refused, bank's code 9078)")
+    assert "HAUSBUCH_FINTS_PRODUCT_ID" in question
+    assert default == "The last bank sync failed. (bank.something_new)"
+    assert failed_card_text(E.BANK_REFUSED, "9078") == german
+    assert german[0].endswith("(bank.refused, Code der Bank 9078)")
+
+
+def test_an_english_dkb_card_names_the_dkb_app_and_a_slot_its_variable():
+    from hausbuch import i18n
+
+    with i18n.use("en"):
+        for error_code, response_code in [(c, None) for c in _FAILED_CARD_KEYS] + [
+            (E.BANK_REFUSED, code) for code in _REFUSED_CARD
+        ]:
+            reasoning, question = failed_card_text(error_code, response_code, bank_name="DKB AG")
+            assert "S-pushTAN" not in reasoning + question
+            assert "„" not in reasoning + question  # DKB's own button label may stay German
+        _, slot = failed_card_text(E.BANK_REFUSED, "9942", credential_slot="sparkasse_privat")
+        assert "(HAUSBUCH_FINTS_PIN_SPARKASSE_PRIVAT)" in slot
+        reasoning, question = failed_card_text(E.BANK_PIN_MISSING, None, credential_slot="dkb")
+        assert "HAUSBUCH_FINTS_PIN_DKB" in reasoning and "Scaleway console" in question
+
+
+def _failed_card_keys():
+    from hausbuch.services import bank_sync as S
+
+    return list(S._FAILED_CARD)
+
+
+_FAILED_CARD_KEYS = _failed_card_keys()

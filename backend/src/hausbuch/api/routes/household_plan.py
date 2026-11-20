@@ -59,6 +59,7 @@ from hausbuch.services import budget as budget_service
 from hausbuch.services import household_scenarios as scenarios
 from hausbuch.services import plan as plan_service
 from hausbuch.services.documents import LOCAL_TIME_ZONE
+from hausbuch.services.todo_texts import english
 
 from ..deps import Cmd, domain_router
 
@@ -86,12 +87,12 @@ def _today() -> date:
 
 @router.get("/household-plan")
 def household_plan_get(cmd: Cmd, scenario: UUID | None = None) -> HouseholdPlan:
-    return cmd.read(plan_service.household_plan, _today(), scenario)
+    return english(cmd.read(plan_service.household_plan, _today(), scenario))
 
 
 @router.post("/household-plan/preview")
 def household_plan_preview(body: HouseholdPlanPreview, cmd: Cmd) -> HouseholdPlan:
-    return cmd.read(plan_service.preview_plan, _today(), body.levers, body.scenario_id)
+    return english(cmd.read(plan_service.preview_plan, _today(), body.levers, body.scenario_id))
 
 
 @router.get("/household-plan/comparison")
@@ -113,4 +114,4 @@ def household_plan_explain(body: PlanExplanationRequest, cmd: Cmd) -> PlanExplan
 
 @router.get("/household-budget")
 def household_budget_get(cmd: Cmd, scenario_id: UUID | None = None) -> BudgetView:
-    return cmd.read(budget_service.household_budget, _today(), scenario_id)
+    return english(cmd.read(budget_service.household_budget, _today(), scenario_id))

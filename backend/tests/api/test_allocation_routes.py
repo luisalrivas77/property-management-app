@@ -91,6 +91,26 @@ def test_the_inbox_lists_every_unmatched_line_without_an_iban(client_a, lines):
     assert SAMPLE_IBAN not in text and "hmac" not in text
 
 
+def test_the_inbox_speaks_the_requests_language(client_a, lines):
+    """Phase 10 D284: the cards' texts follow Accept-Language, German without one; the shape
+    is the same either way."""
+    german = [i for i in ok(client_a.get("/api/inbox")) if i["kind"] == "unmatched"]
+    english = [
+        i
+        for i in ok(client_a.get("/api/inbox", headers={"Accept-Language": "en"}))
+        if i["kind"] == "unmatched"
+    ]
+    assert {i["question"] for i in german} == {"Wofür war diese Buchung?"}
+    assert {i["question"] for i in english} == {"What was this payment for?"}
+    assert {i["reasoning"] for i in english} == {
+        "Not categorised: no rule, no match and no receipt fits."
+    }
+    assert [sorted(i) for i in english] == [sorted(i) for i in german]
+    assert [i["transaction_id"] for i in english] == [i["transaction_id"] for i in german]
+    explicit = ok(client_a.get("/api/inbox", headers={"Accept-Language": "de"}))
+    assert [i for i in explicit if i["kind"] == "unmatched"] == german
+
+
 def test_an_answer_is_confirmed_and_leaves_the_inbox(client_a, lines):
     line = _debit(lines)
     view = ok(client_a.get(f"/api/transactions/{line['id']}/allocations"))

@@ -296,6 +296,17 @@ def test_a_depot_document_and_its_card_explain_it_in_plain_words(client_a, app_e
     [listed] = ok(client_a.get(f"/api/documents/{document_id}/proposals"))
     assert listed["explanation"] == explanation
 
+    # In English when the request asks for it (phase 10 D284), the figures in English formats.
+    en = {"Accept-Language": "en"}
+    english = ok(client_a.get(f"/api/documents/{document_id}", headers=en))["explanation"]
+    assert english["was"].startswith("Wertpapierabrechnung (Kauf) (trade confirmation, purchase)")
+    assert english["bedeutung"] == (
+        "4.8 units of the fund Beispiel Welt UCITS ETF were bought. Trade date: 14 May 2026. "
+        "Paid (Ausmachender Betrag): €1,234.56. Of which fees: €1.00."
+    )
+    assert "“Apply”" in english["aktion"]
+    assert ok(client_a.get(f"/api/proposals/{proposal_id}", headers=en))["explanation"] == english
+
     other = ok(upload(client_a, b"%PDF-1.7 Notarrechnung", ai="true"), 201)
     assert ok(client_a.get(f"/api/documents/{other['document']['id']}"))["explanation"] is None
     assert ok(client_a.get(f"/api/proposals/{other['proposal_id']}"))["explanation"] is None

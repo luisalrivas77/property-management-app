@@ -37,6 +37,7 @@ from sqlalchemy import Connection, Row, Select, exists, func, insert, select, up
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import document as document_table
@@ -1364,23 +1365,75 @@ def list_possible_duplicates(
     return [_to_duplicate(r) for r in rows]
 
 
-_IMPORT_REASONS = {
-    rules.BEFORE_ANCHOR: "Der Auszug beginnt vor dem Anfangssaldo des Kontos.",
-    rules.OPENING_MISMATCH: "Der Anfangssaldo der Datei passt nicht zu den gespeicherten Umsätzen.",
-    rules.UNRECONCILED: "Der Endsaldo passt nicht zu den gespeicherten Umsätzen.",
-    rules.REPORT_UNBALANCED: "Ein Tagesbericht der Datei geht in sich nicht auf.",
-    rules.CHAIN_BREAK: "Die Tagesberichte der Datei schließen nicht lückenlos aneinander an.",
-}
-_IMPORT_QUESTIONS = {
-    rules.BEFORE_ANCHOR: "Stimmt das Datum des Anfangssaldos des Kontos?",
-    rules.OPENING_MISMATCH: "Fehlt ein früherer Auszug oder ist ein Umsatz doppelt?",
-    rules.UNRECONCILED: "Fehlt ein Auszug oder ist ein Umsatz doppelt?",
-    rules.REPORT_UNBALANCED: "Kannst du die Datei erneut aus dem Online-Banking exportieren?",
-    rules.CHAIN_BREAK: "Kannst du die Datei erneut aus dem Online-Banking exportieren?",
-}
-
-_DEFAULT_REASON = _IMPORT_REASONS[rules.UNRECONCILED]
-_DEFAULT_QUESTION = _IMPORT_QUESTIONS[rules.UNRECONCILED]
+# The cards' texts, German beside English (phase 10 D284); chosen when Zu prüfen is read.
+TEXTS = i18n.Texts(
+    "statements",
+    {
+        rules.BEFORE_ANCHOR: (
+            "Der Auszug beginnt vor dem Anfangssaldo des Kontos.",
+            "The statement starts before the account's opening balance.",
+        ),
+        f"{rules.BEFORE_ANCHOR}.question": (
+            "Stimmt das Datum des Anfangssaldos des Kontos?",
+            "Is the date of the account's opening balance right?",
+        ),
+        rules.OPENING_MISMATCH: (
+            "Der Anfangssaldo der Datei passt nicht zu den gespeicherten Umsätzen.",
+            "The file's opening balance does not match the stored transactions.",
+        ),
+        f"{rules.OPENING_MISMATCH}.question": (
+            "Fehlt ein früherer Auszug oder ist ein Umsatz doppelt?",
+            "Is an earlier statement missing or is a transaction duplicated?",
+        ),
+        rules.UNRECONCILED: (
+            "Der Endsaldo passt nicht zu den gespeicherten Umsätzen.",
+            "The closing balance does not match the stored transactions.",
+        ),
+        f"{rules.UNRECONCILED}.question": (
+            "Fehlt ein Auszug oder ist ein Umsatz doppelt?",
+            "Is a statement missing or is a transaction duplicated?",
+        ),
+        rules.REPORT_UNBALANCED: (
+            "Ein Tagesbericht der Datei geht in sich nicht auf.",
+            "A daily report in the file does not add up.",
+        ),
+        f"{rules.REPORT_UNBALANCED}.question": (
+            "Kannst du die Datei erneut aus dem Online-Banking exportieren?",
+            "Can you export the file again from online banking?",
+        ),
+        rules.CHAIN_BREAK: (
+            "Die Tagesberichte der Datei schließen nicht lückenlos aneinander an.",
+            "The file's daily reports do not follow on from each other without a gap.",
+        ),
+        f"{rules.CHAIN_BREAK}.question": (
+            "Kannst du die Datei erneut aus dem Online-Banking exportieren?",
+            "Can you export the file again from online banking?",
+        ),
+        "stated": (
+            "Die Datei nennt den Kontostand vom {day}, aber keinen Saldo zu ihren Umsätzen."
+            " Hausbuch schlägt ihn als Endsaldo vor.",
+            "The file states the balance as of {day}, but no balance for its transactions."
+            " Hausbuch suggests it as the closing balance.",
+        ),
+        "stated.question": (
+            "Ist das der Saldo nach der letzten Buchung vom {day}?",
+            "Is this the balance after the last transaction of {day}?",
+        ),
+        "no_balance": (
+            "Die Datei enthält keinen Kontostand.",
+            "The file contains no balance.",
+        ),
+        "no_balance.question": (
+            "Wie lautet der Kontostand am {day} laut Online-Banking?",
+            "What is the balance on {day} according to online banking?",
+        ),
+        "duplicate": (
+            "Gleicher Tag, Betrag und Empfänger in zwei verschiedenen Dateiformaten.",
+            "Same day, amount and payee in two different file formats.",
+        ),
+        "duplicate.question": ("Ist das dieselbe Buchung?", "Is this the same transaction?"),
+    },
+)
 
 
 def import_inbox_items(conn: Connection) -> list[InboxItem]:
@@ -1399,12 +1452,13 @@ def import_inbox_items(conn: Connection) -> list[InboxItem]:
     )
     for row in rows:
         if row.status == ImportStatus.UNRECONCILED.value:
+            code = row.error_code if row.error_code in TEXTS.entries else rules.UNRECONCILED
             items.append(
                 InboxItem(
                     kind=InboxItemKind.IMPORT_UNRECONCILED,
                     created_at=row.updated_at,
-                    reasoning=_IMPORT_REASONS.get(row.error_code, _DEFAULT_REASON),
-                    question=_IMPORT_QUESTIONS.get(row.error_code, _DEFAULT_QUESTION),
+                    reasoning=TEXTS(code),
+                    question=TEXTS(f"{code}.question"),
                     document_id=row.document_id,
                     import_id=row.id,
                 )
@@ -1416,15 +1470,8 @@ def import_inbox_items(conn: Connection) -> list[InboxItem]:
                 InboxItem(
                     kind=InboxItemKind.IMPORT_PENDING_BALANCE,
                     created_at=row.created_at,
-                    reasoning=(
-                        f"Die Datei nennt den Kontostand vom {stated[row.id][1]:%d.%m.%Y}, "
-                        "aber keinen Saldo zu ihren Umsätzen. Hausbuch schlägt ihn als "
-                        "Endsaldo vor."
-                    ),
-                    question=(
-                        "Ist das der Saldo nach der letzten Buchung vom "
-                        f"{row.last_booking_on:%d.%m.%Y}?"
-                    ),
+                    reasoning=TEXTS("stated", day=i18n.day(stated[row.id][1])),
+                    question=TEXTS("stated.question", day=i18n.day(row.last_booking_on)),
                     document_id=row.document_id,
                     import_id=row.id,
                 )
@@ -1434,11 +1481,8 @@ def import_inbox_items(conn: Connection) -> list[InboxItem]:
                 InboxItem(
                     kind=InboxItemKind.IMPORT_PENDING_BALANCE,
                     created_at=row.created_at,
-                    reasoning="Die Datei enthält keinen Kontostand.",
-                    question=(
-                        "Wie lautet der Kontostand am "
-                        f"{row.last_booking_on:%d.%m.%Y} laut Online-Banking?"
-                    ),
+                    reasoning=TEXTS("no_balance"),
+                    question=TEXTS("no_balance.question", day=i18n.day(row.last_booking_on)),
                     document_id=row.document_id,
                     import_id=row.id,
                 )
@@ -1448,8 +1492,8 @@ def import_inbox_items(conn: Connection) -> list[InboxItem]:
             InboxItem(
                 kind=InboxItemKind.POSSIBLE_DUPLICATE,
                 created_at=pair.created_at,
-                reasoning="Gleicher Tag, Betrag und Empfänger in zwei verschiedenen Dateiformaten.",
-                question="Ist das dieselbe Buchung?",
+                reasoning=TEXTS("duplicate"),
+                question=TEXTS("duplicate.question"),
                 possible_duplicate_id=pair.id,
                 transaction_id=pair.other_transaction_id,
             )

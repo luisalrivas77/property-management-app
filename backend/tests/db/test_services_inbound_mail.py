@@ -23,6 +23,7 @@ from pypdf import PdfWriter
 from sqlalchemy import select, update
 from test_bank_parsers import CAMT, build
 
+from hausbuch import i18n
 from hausbuch.ai.fake import FakeModelClient, text_response
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import document as document_table
@@ -359,8 +360,12 @@ def test_a_statement_no_account_takes_stays_a_typed_document_with_a_card(
     assert _rows(app_engine, ws, proposal_table) == []
     with workspace_transaction(app_engine, ws) as conn:
         [item] = service.inbound_mail_items(conn, NOW + timedelta(days=3))  # past the 24 h
+        with i18n.use("en"):  # phase 10 D284
+            [en] = service.inbound_mail_items(conn, NOW + timedelta(days=3))
     assert (item.kind, item.document_id) == (InboxItemKind.EMAIL_RECEIVED, doc.id)
     assert "keinem Konto" in item.reasoning
+    assert "fits no account" in en.reasoning
+    assert en.question == "Which account does it belong to? Import it there."
 
 
 # --- The tenant gate ------------------------------------------------------------------------

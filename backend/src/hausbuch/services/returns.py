@@ -29,6 +29,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, exists, func, select
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.db.tables import statement_import as import_table
@@ -61,13 +62,28 @@ from .errors import ConflictError, NotFoundError, RuleViolationError
 _STEMS = r"r(ü|Ü|ue|u)ck|recall|retour"
 _TRANSFER_IN = frozenset({AllocationCategory.INTERNAL_TRANSFER_IN})
 
-REASONING = (
-    "Diese Gutschrift bringt eine frühere Abbuchung desselben Kontos zurück (Rücküberweisung): "
-    "Das Geld ging hinaus und kam wieder. Zusammen zählen die beiden Buchungen als nichts, "
-    "weder als Ausgabe noch als Einnahme noch als Überweisung."
+# The card's texts, German beside English (phase 10 D284); chosen when Zu prüfen is read.
+TEXTS = i18n.Texts(
+    "returns",
+    {
+        "reasoning": (
+            "Diese Gutschrift bringt eine frühere Abbuchung desselben Kontos zurück"
+            " (Rücküberweisung): Das Geld ging hinaus und kam wieder. Zusammen zählen die beiden"
+            " Buchungen als nichts, weder als Ausgabe noch als Einnahme noch als Überweisung.",
+            "This credit returns an earlier debit of the same account (a returned payment):"
+            " the money went out and came back. Together the two transactions count as"
+            " nothing, neither as spending nor as income nor as a transfer.",
+        ),
+        "question.one": (
+            "Als Rücküberweisung verbuchen?",
+            "Book as a returned payment?",
+        ),
+        "question.several": ("Welche Abbuchung kam zurück?", "Which debit came back?"),
+    },
 )
-QUESTION_ONE = "Als Rücküberweisung verbuchen?"
-QUESTION_SEVERAL = "Welche Abbuchung kam zurück?"
+REASONING = TEXTS.german("reasoning")
+QUESTION_ONE = TEXTS.german("question.one")
+QUESTION_SEVERAL = TEXTS.german("question.several")
 
 
 def _lines(conn: Connection, *where) -> list[ReturnLine]:  # noqa: ANN002
@@ -184,8 +200,8 @@ def return_inbox_items(conn: Connection) -> list[InboxItem]:
         InboxItem(
             kind=InboxItemKind.RETURNED_PAYMENT,
             created_at=datetime.combine(card.leg.booked_on, time(), tzinfo=UTC),
-            reasoning=REASONING,
-            question=QUESTION_ONE if len(card.candidates) == 1 else QUESTION_SEVERAL,
+            reasoning=TEXTS("reasoning"),
+            question=TEXTS("question.one" if len(card.candidates) == 1 else "question.several"),
             transaction_id=card.leg.id,
             account_id=card.leg.account_id,
             returned=card,

@@ -4,13 +4,17 @@ The texts are rule data (`depot_explain.yaml`, principle 5), written by people; 
 only picks the entry for a document's kind and fills in the document's own figures, which
 the caller formats from stored data with the helpers below (principle 1: the model reads,
 code explains). Nothing here is sent to the model or written into an event.
+
+Each entry's English (`en`, phase 10 D284) sits beside its German in the same file, sentence
+for sentence with the same placeholders; `explain` and the formatters follow the request's
+language (hausbuch.i18n), German outside a request.
 """
 
 import re
 import string
 from collections.abc import Mapping
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from functools import cache
 from importlib.resources import files
 from typing import Self
@@ -18,6 +22,7 @@ from typing import Self
 import yaml
 from pydantic import Field, model_validator
 
+from hausbuch import i18n
 from hausbuch.schemas.common import Schema
 from hausbuch.schemas.document import DocumentExplanation
 from hausbuch.schemas.enums import DepotDocumentKind
@@ -49,12 +54,21 @@ def _fields(sentence: str) -> set[str]:
     return {name for _text, name, _spec, _conv in _FORMATTER.parse(sentence) if name is not None}
 
 
+class Wording(Schema):
+    """An entry's three parts in English (phase 10 D284)."""
+
+    was: str = Field(min_length=1)
+    bedeutung: list[str] = Field(default_factory=list)
+    aktion: str = Field(min_length=1)
+
+
 class KindEntry(Schema):
     kind: DepotDocumentKind
     titles: list[str] = Field(min_length=1)
     was: str = Field(min_length=1)
     bedeutung: list[str] = Field(default_factory=list)
     aktion: str = Field(min_length=1)
+    en: Wording
 
     @model_validator(mode="after")
     def _valid(self) -> Self:
@@ -64,7 +78,20 @@ class KindEntry(Schema):
             unknown = _fields(sentence) - PLACEHOLDERS
             if unknown or "" in _fields(sentence):
                 raise ValueError(f"{self.kind}: unknown placeholder in {sentence!r}")
+        # The English says the same sentence for sentence, so a missing figure leaves out the
+        # same sentence in either language.
+        if len(self.en.bedeutung) != len(self.bedeutung) or any(
+            _fields(de) != _fields(en)
+            for de, en in zip(self.bedeutung, self.en.bedeutung, strict=True)
+        ):
+            raise ValueError(f"{self.kind}: the English sentences differ from the German ones")
         return self
+
+    def wording(self) -> Wording:
+        """The three parts in the request's language."""
+        if i18n.english():
+            return self.en
+        return Wording(was=self.was, bedeutung=self.bedeutung, aktion=self.aktion)
 
 
 class Catalogue(Schema):
@@ -121,38 +148,36 @@ def explain(kind: DepotDocumentKind, facts: Mapping[str, str | None]) -> Documen
     entry = catalogue().entry(kind)
     if entry is None:
         return None
+    wording = entry.wording()
     known = {name: value for name, value in facts.items() if value}
     sentences = [
         sentence.format_map(known)
-        for sentence in entry.bedeutung
+        for sentence in wording.bedeutung
         if _fields(sentence) <= set(known)
     ]
     return DocumentExplanation(
-        was=entry.was, bedeutung=" ".join(sentences) or None, aktion=entry.aktion
+        was=wording.was, bedeutung=" ".join(sentences) or None, aktion=wording.aktion
     )
 
 
-# --- German formatting -----------------------------------------------------------------
+# --- Formatting, in the request's language ------------------------------------------------
 
 
 def money(amount: Decimal) -> str:
-    """Decimal("-1234.5") → "1.234,50 €": the sentence says which way it went."""
-    cents = abs(amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    whole, fraction = f"{cents:,.2f}".split(".")
-    return f"{whole.replace(',', '.')},{fraction} €"
+    """Decimal("-1234.5") → "1.234,50 €" (en "€1,234.50"): the sentence says which way it
+    went."""
+    return i18n.money(abs(amount))
 
 
 def day(value: date) -> str:
-    return value.strftime("%d.%m.%Y")
+    """ "14.05.2026" (en "14 May 2026")."""
+    return i18n.day(value)
 
 
 def units(value: Decimal) -> str:
-    """Decimal("4.8000") → "4,8"; Decimal("1234.5") → "1.234,5": every decimal it has,
-    no trailing zeros."""
-    text = f"{abs(value).normalize():f}"
-    whole, _, fraction = text.partition(".")
-    whole = f"{int(whole):,}".replace(",", ".")
-    return f"{whole},{fraction}" if fraction else whole
+    """Decimal("4.8000") → "4,8"; Decimal("1234.5") → "1.234,5" (en "1,234.5"): every
+    decimal it has, no trailing zeros."""
+    return i18n.number(abs(value).normalize())
 
 
 def count(value: int) -> str:

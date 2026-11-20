@@ -46,6 +46,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import Connection, Row, Select, and_, func, insert, or_, select, update
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import asset_movement as movement_table
@@ -1964,59 +1965,94 @@ def lines_on_cards(conn: Connection, items: Iterable[InboxItem]) -> set[UUID]:
     return found
 
 
-_LINK_REASON = {
-    OpenTransferCode.AMBIGUOUS: (
-        "Für diese Überweisung zwischen zwei eigenen Konten passen mehrere Gegenbuchungen."
-    ),
-    OpenTransferCode.PROPOSED: (
-        "Diese Buchung passt genau zu einer Buchung auf einem anderen eigenen Konto."
-    ),
-}
-_DEPOSIT_REASON = (
-    "Diese Einzahlung auf ein eigenes Börsenkonto passt bis auf eine kleine Einzahlungsgebühr "
-    "zu einer Buchung auf einem anderen eigenen Konto."
-)
-_UNMATCHED_REASON = (
-    "Zu dieser Überweisung zwischen zwei eigenen Konten fehlt nach drei Bankarbeitstagen die "
-    "Gegenbuchung auf dem anderen Konto."
-)
+# The cards' texts, German beside English (phase 10 D284); chosen when Zu prüfen is read.
 # Phase 7 step 5 (D184): a coin leg's cards. A chain transfer arrives within hours, so its
-# window is 48 hours, not three banking days.
-_COIN_LINK_REASON = {
-    OpenTransferCode.AMBIGUOUS: (
-        "Für diese Krypto-Überweisung zwischen zwei eigenen Konten passen mehrere Gegenbuchungen."
-    ),
-    OpenTransferCode.PROPOSED: (
-        "Diese Krypto-Buchung passt nach Menge und Zeit zu einer Buchung auf einem anderen "
-        "eigenen Konto."
-    ),
-}
-_COIN_UNMATCHED_REASON = (
-    "Zu dieser Krypto-Überweisung zwischen zwei eigenen Konten fehlt nach 48 Stunden die "
-    "Gegenbuchung auf dem anderen Konto oder Wallet."
+# window is 48 hours, not three banking days. Review of PR #396 (D184 (1)(a)): when the
+# transaction's hash names an own leg of other units no link is offered; one candidate or
+# several, said plainly. The wallet's own answer for such a transaction is not built yet
+# (docs/phases/phase-7.md §15.1).
+TEXTS = i18n.Texts(
+    "transfers",
+    {
+        "link.ambiguous": (
+            "Für diese Überweisung zwischen zwei eigenen Konten passen mehrere Gegenbuchungen.",
+            "Several matching transactions fit this transfer between own accounts.",
+        ),
+        "link.proposed": (
+            "Diese Buchung passt genau zu einer Buchung auf einem anderen eigenen Konto.",
+            "This transaction matches exactly one transaction on another own account.",
+        ),
+        "deposit": (
+            "Diese Einzahlung auf ein eigenes Börsenkonto passt bis auf eine kleine"
+            " Einzahlungsgebühr zu einer Buchung auf einem anderen eigenen Konto.",
+            "This deposit to an own exchange account matches a transaction on another own"
+            " account, apart from a small deposit fee.",
+        ),
+        "unmatched": (
+            "Zu dieser Überweisung zwischen zwei eigenen Konten fehlt nach drei"
+            " Bankarbeitstagen die Gegenbuchung auf dem anderen Konto.",
+            "After three banking days, the matching transaction on the other account is still"
+            " missing for this transfer between own accounts.",
+        ),
+        "coin.ambiguous": (
+            "Für diese Krypto-Überweisung zwischen zwei eigenen Konten passen mehrere"
+            " Gegenbuchungen.",
+            "Several matching transactions fit this crypto transfer between own accounts.",
+        ),
+        "coin.proposed": (
+            "Diese Krypto-Buchung passt nach Menge und Zeit zu einer Buchung auf einem anderen"
+            " eigenen Konto.",
+            "This crypto transaction matches a transaction on another own account by amount"
+            " and time.",
+        ),
+        "coin.unmatched": (
+            "Zu dieser Krypto-Überweisung zwischen zwei eigenen Konten fehlt nach 48 Stunden"
+            " die Gegenbuchung auf dem anderen Konto oder Wallet.",
+            "After 48 hours, the matching transaction on the other account or wallet is still"
+            " missing for this crypto transfer between own accounts.",
+        ),
+        "coin.partial": (
+            "In derselben Transaktion kam auf dem anderen eigenen Konto eine andere Menge an,"
+            " als hier abging: ein Teil der Coins ging an eine andere Adresse. Ein Übertrag"
+            " verbindet nur gleich große Mengen, deshalb wird hier nichts verknüpft; die"
+            " Transaktion wird auf der Seite der Wallet beantwortet.",
+            "In the same transaction a different amount arrived on the other own account than"
+            " left here: part of the coins went to another address. A transfer links only"
+            " equal amounts, so nothing is linked here; the transaction is answered on the"
+            " wallet's page.",
+        ),
+        "coin.split": (
+            "Diese Sendung ging in einer Transaktion an mehrere eigene Empfänge (unten"
+            " aufgeführt). Ein Übertrag verbindet eine Sendung mit genau einem gleich großen"
+            " Empfang, deshalb ist keine Auswahl richtig; die Transaktion wird auf der Seite"
+            " der Wallet beantwortet.",
+            "This sending went to several own receipts in one transaction (listed below). A"
+            " transfer links one sending with exactly one receipt of the same size, so no"
+            " choice is right; the transaction is answered on the wallet's page.",
+        ),
+        "question.partial": (
+            "Wohin gingen die Coins dieser Transaktion?",
+            "Where did the coins of this transaction go?",
+        ),
+        "question.pick": (
+            "Welche Buchung ist die Gegenbuchung?",
+            "Which transaction is the matching transaction?",
+        ),
+        "question.import": (
+            "Ist das Konto der Gegenbuchung schon importiert?",
+            "Has the account of the matching transaction been imported yet?",
+        ),
+    },
 )
-# Review of PR #396 (D184 (1)(a)): the transaction's hash names an own leg of other units, so no
-# link is offered; one candidate or several, said plainly. The wallet's own answer for such a
-# transaction is not built yet (docs/phases/phase-7.md §15.1).
-_COIN_PARTIAL_REASON = (
-    "In derselben Transaktion kam auf dem anderen eigenen Konto eine andere Menge an, als hier "
-    "abging: ein Teil der Coins ging an eine andere Adresse. Ein Übertrag verbindet nur gleich "
-    "große Mengen, deshalb wird hier nichts verknüpft; die Transaktion wird auf der Seite der "
-    "Wallet beantwortet."
-)
-_COIN_SPLIT_REASON = (
-    "Diese Sendung ging in einer Transaktion an mehrere eigene Empfänge (unten aufgeführt). Ein "
-    "Übertrag verbindet eine Sendung mit genau einem gleich großen Empfang, deshalb ist keine "
-    "Auswahl richtig; die Transaktion wird auf der Seite der Wallet beantwortet."
-)
+_LINK_KEY = {OpenTransferCode.AMBIGUOUS: "ambiguous", OpenTransferCode.PROPOSED: "proposed"}
 
 
 def _coin_reason(item: OpenTransfer) -> str:
     if item.code is OpenTransferCode.UNMATCHED_LEG:
-        return _COIN_UNMATCHED_REASON
+        return TEXTS("coin.unmatched")
     if item.code is OpenTransferCode.PARTIAL:
-        return _COIN_SPLIT_REASON if len(item.candidates) > 1 else _COIN_PARTIAL_REASON
-    return _COIN_LINK_REASON[item.code]
+        return TEXTS("coin.split" if len(item.candidates) > 1 else "coin.partial")
+    return TEXTS(f"coin.{_LINK_KEY[item.code]}")
 
 
 def transfer_inbox_items(conn: Connection, today: date) -> list[InboxItem]:
@@ -2032,17 +2068,17 @@ def transfer_inbox_items(conn: Connection, today: date) -> list[InboxItem]:
                 created_at=datetime.combine(item.window_end, time(), tzinfo=UTC),
                 reasoning=_coin_reason(item)
                 if coin
-                else _UNMATCHED_REASON
+                else TEXTS("unmatched")
                 if unmatched
-                else _DEPOSIT_REASON
+                else TEXTS("deposit")
                 if any(c.deposit_fee is not None for c in item.candidates)
-                else _LINK_REASON[item.code],
-                question=(
-                    "Wohin gingen die Coins dieser Transaktion?"
+                else TEXTS(f"link.{_LINK_KEY[item.code]}"),
+                question=TEXTS(
+                    "question.partial"
                     if item.code is OpenTransferCode.PARTIAL
-                    else "Welche Buchung ist die Gegenbuchung?"
+                    else "question.pick"
                     if item.candidates
-                    else "Ist das Konto der Gegenbuchung schon importiert?"
+                    else "question.import"
                 ),
                 transaction_id=item.leg.id
                 if item.leg.source is TransferLegSource.TRANSACTION

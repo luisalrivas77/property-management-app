@@ -17,6 +17,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, func, select
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import movement_group as group_table
@@ -61,18 +62,230 @@ SOURCE_SETTING = {
     ChainSourceKind.BITCOIN_ESPLORA: "HAUSBUCH_ESPLORA_URL",
 }
 
-_CONSOLE = "In der Scaleway-Konsole beim API-Container (Einstellungen › Umgebungsvariablen)"
-# D260: the keys and URLs a person can type in the app instead of the console.
-_IN_APP = "In Hausbuch unter Einstellungen › Zugangsschlüssel"
+# The texts of the wallet cards and address states, German beside English (phase 10 D284);
+# chosen when the page or Zu prüfen is read. D260: a key or URL a person can type in the app
+# is named there first, else the console.
+TEXTS = i18n.Texts(
+    "wallet_cards",
+    {
+        "where.app.enter": (
+            "In Hausbuch unter Einstellungen › Zugangsschlüssel den Eintrag eintragen (oder in der"
+            " Scaleway-Konsole die Variable {var})",
+            "In Hausbuch under Settings › Access keys, enter the entry (or the variable {var} in"
+            " the Scaleway console)",
+        ),
+        "where.console.enter": (
+            "In der Scaleway-Konsole beim API-Container (Einstellungen › Umgebungsvariablen) die"
+            " Variable {var} eintragen",
+            "In the Scaleway console, on the API container (Settings › Environment variables),"
+            " enter the variable {var}",
+        ),
+        "where.app.check": (
+            "In Hausbuch unter Einstellungen › Zugangsschlüssel den Eintrag prüfen und korrigieren"
+            " (oder in der Scaleway-Konsole die Variable {var})",
+            "In Hausbuch under Settings › Access keys, check and correct the entry (or the"
+            " variable {var} in the Scaleway console)",
+        ),
+        "where.console.check": (
+            "In der Scaleway-Konsole beim API-Container (Einstellungen › Umgebungsvariablen) die"
+            " Variable {var} prüfen und korrigieren",
+            "In the Scaleway console, on the API container (Settings › Environment variables),"
+            " check and correct the variable {var}",
+        ),
+        "where.app.change": (
+            "In Hausbuch unter Einstellungen › Zugangsschlüssel den Eintrag auf einen anderen"
+            " Anbieter ändern (oder in der Scaleway-Konsole die Variable {var})",
+            "In Hausbuch under Settings › Access keys, change the entry to another provider (or"
+            " the variable {var} in the Scaleway console)",
+        ),
+        "where.console.change": (
+            "In der Scaleway-Konsole beim API-Container (Einstellungen › Umgebungsvariablen) die"
+            " Variable {var} auf einen anderen Anbieter ändern",
+            "In the Scaleway console, on the API container (Settings › Environment variables),"
+            " change the variable {var} to another provider",
+        ),
+        "retired": (
+            "Stillgelegt: diese Adresse wird nicht mehr abgerufen.",
+            "Retired: this address is no longer fetched.",
+        ),
+        "key_missing": (
+            "Nicht abgerufen: für {name} fehlt Hausbuch der Zugang zum Datenanbieter.",
+            "Not fetched: Hausbuch lacks access to the data provider for {name}.",
+        ),
+        "key_missing.todo": (
+            "{where}. Der nächste Abruf liest die Adresse dann; bis dahin bleibt sie gespeichert.",
+            "{where}. The next fetch then reads the address; until then it stays stored.",
+        ),
+        "key_unreadable": (
+            "Nicht abgerufen: der für {name} in Hausbuch gespeicherte Zugang kann nicht gelesen"
+            " werden, weil der Schlüssel des Servers gewechselt wurde.",
+            "Not fetched: the access stored in Hausbuch for {name} cannot be read because the"
+            " server's key was changed.",
+        ),
+        "key_unreadable.todo": (
+            "In Hausbuch unter Einstellungen › Zugangsschlüssel den Eintrag ändern und neu"
+            " eintragen; der nächste Abruf liest die Adresse dann.",
+            "In Hausbuch under Settings › Access keys, change the entry and enter it again; the"
+            " next fetch then reads the address.",
+        ),
+        "source_unavailable": (
+            "{name} liest Hausbuch noch nicht: die Adresse ist gespeichert und wird gelesen,"
+            " sobald es das kann.",
+            "Hausbuch cannot read {name} yet: the address is stored and will be read as soon as it"
+            " can.",
+        ),
+        "nothing": (
+            "Nichts zu tun.",
+            "Nothing to do.",
+        ),
+        "not_synced": (
+            "Noch nicht abgerufen.",
+            "Not fetched yet.",
+        ),
+        "not_synced.todo": (
+            "„Jetzt abrufen“ drücken oder den täglichen Abruf abwarten.",
+            "Press “Fetch now” or wait for the daily fetch.",
+        ),
+        "sync_error": (
+            "Abruf abgebrochen: ein Fehler in Hausbuch beim Einlesen. Nichts davon ist"
+            " gespeichert.",
+            "Fetch stopped: an error in Hausbuch while reading. None of it is stored.",
+        ),
+        "sync_error.todo": (
+            "Der nächste Abruf liest dieselben Transaktionen noch einmal. Bleibt der Fehler,"
+            " braucht es eine Korrektur in Hausbuch, keinen Klick hier.",
+            "The next fetch reads the same transactions again. If the error stays, Hausbuch needs"
+            " a fix, not a click here.",
+        ),
+        "failed": (
+            "Abruf fehlgeschlagen: der Datenanbieter hat nicht geantwortet oder eine unlesbare"
+            " Antwort geschickt.",
+            "Fetch failed: the data provider did not answer or sent an unreadable answer.",
+        ),
+        "failed.todo": (
+            "Der nächste Abruf versucht es erneut; „Jetzt abrufen“ versucht es sofort.",
+            "The next fetch tries again; “Fetch now” tries at once.",
+        ),
+        "throttled": (
+            "Der Datenanbieter hat zu viele Anfragen gemeldet und den Abruf gebremst.",
+            "The data provider reported too many requests and slowed the fetch down.",
+        ),
+        "throttled.todo": (
+            "Nichts zu tun: der Abruf setzt am nächsten Tag fort, wo er stand. Kommt das jeden Tag"
+            " vor, {where}.",
+            "Nothing to do: the fetch continues the next day where it stopped. If this happens"
+            " every day, {where}.",
+        ),
+        "refused": (
+            "Der Datenanbieter hat den Abruf abgelehnt: der Zugang ist ungültig oder gesperrt.",
+            "The data provider refused the fetch: the access is invalid or blocked.",
+        ),
+        "refused.todo": (
+            "{where}, dann „Jetzt abrufen“.",
+            "{where}, then “Fetch now”.",
+        ),
+        "deferred": (
+            "Die Geschichte dieser Adresse wird noch gelesen: der letzte Abruf hat sein"
+            " Tageskontingent aufgebraucht.",
+            "This address's history is still being read: the last fetch used up its daily quota.",
+        ),
+        "deferred.todo": (
+            "Nichts zu tun: der nächste Abruf liest weiter, wo er stand.",
+            "Nothing to do: the next fetch reads on where it stopped.",
+        ),
+        "reconciled.balance_only": (
+            "Saldo gelesen. Auf {name} liest Hausbuch nur den Saldo, keine Bewegungen; er ist"
+            " nicht kleiner als die verknüpften Einzahlungen.",
+            "Balance read. On {name} Hausbuch reads only the balance, no movements; it is not"
+            " smaller than the linked deposits.",
+        ),
+        "reconciled": (
+            "Stimmt: die gebuchten Bewegungen ergeben den Saldo auf der Blockchain.",
+            "Reconciled: the booked movements add up to the balance on the blockchain.",
+        ),
+        "waiting": (
+            "Wartet auf Antwort: eine offene Frage zu einer Transaktion erklärt den Unterschied"
+            " zum Saldo.",
+            "Waiting for an answer: an open question about a transaction explains the difference"
+            " from the balance.",
+        ),
+        "waiting.todo": (
+            "Die Fragen unten oder unter „Zu prüfen“ beantworten.",
+            "Answer the questions below or under “To review”.",
+        ),
+        "pending": (
+            "Der Saldo wird beim nächsten Abruf geprüft (zusammen mit den anderen Adressen dieser"
+            " Wallet, oder weil eine Antwort seit dem Abruf vorliegt).",
+            "The balance is checked at the next fetch (together with this wallet's other"
+            " addresses, or because an answer has arrived since the fetch).",
+        ),
+        "pending.todo": (
+            "„Jetzt abrufen“ prüft ihn sofort.",
+            "“Fetch now” checks it at once.",
+        ),
+        "unreconciled": (
+            "Weicht ab: die gebuchten Bewegungen ergeben nicht den Saldo auf der Blockchain."
+            " Hausbuch bucht keinen Ausgleich.",
+            "Does not reconcile: the booked movements do not add up to the balance on the"
+            " blockchain. Hausbuch books no balancing entry.",
+        ),
+        "unreconciled.todo": (
+            "Die offenen Bewegungen unten prüfen; fehlt eine Transaktion, „Jetzt abrufen“.",
+            "Check the open movements below; if a transaction is missing, “Fetch now”.",
+        ),
+        "coins_left": (
+            "Coins haben die Wallet auf {name} verlassen: der Saldo ist kleiner als die"
+            " verknüpften Einzahlungen. Bewegungen liest Hausbuch auf dieser Chain nicht.",
+            "Coins have left the wallet on {name}: the balance is smaller than the linked"
+            " deposits. Hausbuch does not read movements on this chain.",
+        ),
+        "coins_left.todo": (
+            "„Jetzt abrufen“ prüft den Saldo erneut. Wohin die Coins gingen, lässt sich hier noch"
+            " nicht beantworten.",
+            "“Fetch now” checks the balance again. Where the coins went cannot be answered here"
+            " yet.",
+        ),
+        "groups.one": (
+            "„{label}“: {n} Transaktion der Blockchain warten auf Bestätigung oder darauf, dass"
+            " Sie sagen, was sie waren.",
+            "“{label}”: {n} blockchain transaction is waiting for confirmation or for you to say"
+            " what it was.",
+        ),
+        "groups.many": (
+            "„{label}“: {n} Transaktionen der Blockchain warten auf Bestätigung oder darauf, dass"
+            " Sie sagen, was sie waren.",
+            "“{label}”: {n} blockchain transactions are waiting for confirmation or for you to say"
+            " what they were.",
+        ),
+        "groups.question": (
+            "Auf der Seite der Wallet bestätigen oder beantworten.",
+            "Confirm or answer on the wallet's page.",
+        ),
+        "change.question": (
+            "Für jede Adresse „Ja, eigene Adresse“ oder „Nein, Empfänger“ wählen.",
+            "For each address choose “Yes, own address” or “No, recipient”.",
+        ),
+        "group.question": (
+            "Auf der Seite der Wallet ansehen.",
+            "View on the wallet's page.",
+        ),
+        "labelled": (
+            "„{label}“: {text}",
+            "“{label}”: {text}",
+        ),
+        "labelled.addresses": (
+            "„{label}“ ({masked}): {text}",
+            "“{label}” ({masked}): {text}",
+        ),
+    },
+)
 _TYPED = {"HAUSBUCH_ETHERSCAN_KEY", "HAUSBUCH_SOLANA_RPC_URL", "HAUSBUCH_BSC_RPC_URL"}
 
 
 def _where(var: str, verb: str) -> str:
-    """Where to set, check or change a source's setting: the app first when it can be typed
-    there (D260), else the console."""
-    if var in _TYPED:
-        return f"{_IN_APP} den Eintrag {verb} (oder in der Scaleway-Konsole die Variable {var})"
-    return f"{_CONSOLE} die Variable {var} {verb}"
+    """Where to enter, check or change a source's setting (`verb`): the app first when it
+    can be typed there (D260), else the console."""
+    return TEXTS(f"where.{'app' if var in _TYPED else 'console'}.{verb}", var=var)
 
 
 def _lower_first(text: str) -> str:
@@ -113,117 +326,50 @@ def _setting(chain: Chain) -> str:
 
 
 def _texts(state: WalletAddressState, chain: Chain, error_code: str | None) -> tuple:
-    """(text, todo, setting) in plain German for an address's state (principle 7)."""
+    """(text, todo, setting) in plain words for an address's state (principle 7)."""
     name = CHAIN_NAMES[chain]
     var = _setting(chain)
     match state:
         case S.RETIRED:
-            return ("Stillgelegt: diese Adresse wird nicht mehr abgerufen.", None, None)
+            return (TEXTS("retired"), None, None)
         case S.KEY_MISSING:
             return (
-                f"Nicht abgerufen: für {name} fehlt Hausbuch der Zugang zum Datenanbieter.",
-                f"{_where(var, 'eintragen')}. Der nächste Abruf liest die Adresse dann; bis "
-                "dahin bleibt sie gespeichert.",
+                TEXTS("key_missing", name=name),
+                TEXTS("key_missing.todo", where=_where(var, "enter")),
                 var,
             )
         case S.KEY_UNREADABLE:
-            return (
-                f"Nicht abgerufen: der für {name} in Hausbuch gespeicherte Zugang kann nicht "
-                "gelesen werden, weil der Schlüssel des Servers gewechselt wurde.",
-                f"{_IN_APP} den Eintrag ändern und neu eintragen; der nächste Abruf liest "
-                "die Adresse dann.",
-                var,
-            )
+            return (TEXTS("key_unreadable", name=name), TEXTS("key_unreadable.todo"), var)
         case S.SOURCE_UNAVAILABLE:
-            return (
-                f"{name} liest Hausbuch noch nicht: die Adresse ist gespeichert und wird "
-                "gelesen, sobald es das kann.",
-                "Nichts zu tun.",
-                None,
-            )
+            return (TEXTS("source_unavailable", name=name), TEXTS("nothing"), None)
         case S.NOT_SYNCED:
-            return (
-                "Noch nicht abgerufen.",
-                "„Jetzt abrufen“ drücken oder den täglichen Abruf abwarten.",
-                None,
-            )
+            return (TEXTS("not_synced"), TEXTS("not_synced.todo"), None)
         case S.FAILED if error_code == WALLET_SYNC_ERROR:
-            return (
-                "Abruf abgebrochen: ein Fehler in Hausbuch beim Einlesen. Nichts davon ist "
-                "gespeichert.",
-                "Der nächste Abruf liest dieselben Transaktionen noch einmal. Bleibt der Fehler, "
-                "braucht es eine Korrektur in Hausbuch, keinen Klick hier.",
-                None,
-            )
+            return (TEXTS("sync_error"), TEXTS("sync_error.todo"), None)
         case S.FAILED:
-            return (
-                "Abruf fehlgeschlagen: der Datenanbieter hat nicht geantwortet oder eine "
-                "unlesbare Antwort geschickt.",
-                "Der nächste Abruf versucht es erneut; „Jetzt abrufen“ versucht es sofort.",
-                None,
-            )
+            return (TEXTS("failed"), TEXTS("failed.todo"), None)
         case S.THROTTLED:
             return (
-                "Der Datenanbieter hat zu viele Anfragen gemeldet und den Abruf gebremst.",
-                "Nichts zu tun: der Abruf setzt am nächsten Tag fort, wo er stand. Kommt das "
-                f"jeden Tag vor, {_lower_first(_where(var, 'auf einen anderen Anbieter ändern'))}.",
+                TEXTS("throttled"),
+                TEXTS("throttled.todo", where=_lower_first(_where(var, "change"))),
                 var,
             )
         case S.REFUSED:
-            return (
-                "Der Datenanbieter hat den Abruf abgelehnt: der Zugang ist ungültig oder gesperrt.",
-                f"{_where(var, 'prüfen und korrigieren')}, dann „Jetzt abrufen“.",
-                var,
-            )
+            return (TEXTS("refused"), TEXTS("refused.todo", where=_where(var, "check")), var)
         case S.DEFERRED:
-            return (
-                "Die Geschichte dieser Adresse wird noch gelesen: der letzte Abruf hat sein "
-                "Tageskontingent aufgebraucht.",
-                "Nichts zu tun: der nächste Abruf liest weiter, wo er stand.",
-                None,
-            )
+            return (TEXTS("deferred"), TEXTS("deferred.todo"), None)
         case S.RECONCILED if _balance_only(chain):
-            return (
-                f"Saldo gelesen. Auf {name} liest Hausbuch nur den Saldo, keine Bewegungen; "
-                "er ist nicht kleiner als die verknüpften Einzahlungen.",
-                None,
-                None,
-            )
+            return (TEXTS("reconciled.balance_only", name=name), None, None)
         case S.RECONCILED:
-            return (
-                "Stimmt: die gebuchten Bewegungen ergeben den Saldo auf der Blockchain.",
-                None,
-                None,
-            )
+            return (TEXTS("reconciled"), None, None)
         case S.WAITING:
-            return (
-                "Wartet auf Antwort: eine offene Frage zu einer Transaktion erklärt den "
-                "Unterschied zum Saldo.",
-                "Die Fragen unten oder unter „Zu prüfen“ beantworten.",
-                None,
-            )
+            return (TEXTS("waiting"), TEXTS("waiting.todo"), None)
         case S.PENDING:
-            return (
-                "Der Saldo wird beim nächsten Abruf geprüft (zusammen mit den anderen "
-                "Adressen dieser Wallet, oder weil eine Antwort seit dem Abruf vorliegt).",
-                "„Jetzt abrufen“ prüft ihn sofort.",
-                None,
-            )
+            return (TEXTS("pending"), TEXTS("pending.todo"), None)
         case S.UNRECONCILED:
-            return (
-                "Weicht ab: die gebuchten Bewegungen ergeben nicht den Saldo auf der "
-                "Blockchain. Hausbuch bucht keinen Ausgleich.",
-                "Die offenen Bewegungen unten prüfen; fehlt eine Transaktion, „Jetzt abrufen“.",
-                None,
-            )
+            return (TEXTS("unreconciled"), TEXTS("unreconciled.todo"), None)
         case S.COINS_LEFT:
-            return (
-                f"Coins haben die Wallet auf {name} verlassen: der Saldo ist kleiner als die "
-                "verknüpften Einzahlungen. Bewegungen liest Hausbuch auf dieser Chain nicht.",
-                "„Jetzt abrufen“ prüft den Saldo erneut. Wohin die Coins gingen, lässt sich "
-                "hier noch nicht beantworten.",
-                None,
-            )
+            return (TEXTS("coins_left", name=name), TEXTS("coins_left.todo"), None)
     raise AssertionError(state)
 
 
@@ -519,11 +665,8 @@ def wallet_inbox_items(conn: Connection, settings: Settings, now: datetime) -> l
             InboxItem(
                 kind=InboxItemKind.WALLET_GROUPS,
                 created_at=newest,
-                reasoning=(
-                    f"„{label}“: {n} Transaktion{'en' if n != 1 else ''} der Blockchain "
-                    "warten auf Bestätigung oder darauf, dass Sie sagen, was sie waren."
-                ),
-                question="Auf der Seite der Wallet bestätigen oder beantworten.",
+                reasoning=TEXTS("groups.one" if n == 1 else "groups.many", label=label, n=n),
+                question=TEXTS("groups.question"),
                 account_id=account_id,
             )
         )
@@ -535,12 +678,12 @@ def wallet_inbox_items(conn: Connection, settings: Settings, now: datetime) -> l
             InboxItem(
                 kind=InboxItemKind.WALLET_CHANGE if change else InboxItemKind.WALLET_QUESTION,
                 created_at=card.occurred_at,
-                reasoning=f"„{labels.get(card.account_id, 'Wallet')}“: {card.text}",
-                question=(
-                    "Für jede Adresse „Ja, eigene Adresse“ oder „Nein, Empfänger“ wählen."
-                    if change
-                    else (card.question or "Auf der Seite der Wallet ansehen.")
+                reasoning=TEXTS(
+                    "labelled", label=labels.get(card.account_id, "Wallet"), text=card.text
                 ),
+                question=TEXTS("change.question")
+                if change
+                else (card.question or TEXTS("group.question")),
                 account_id=card.account_id,
                 group_id=card.id,
             )
@@ -560,7 +703,9 @@ def wallet_inbox_items(conn: Connection, settings: Settings, now: datetime) -> l
                 InboxItem(
                     kind=_SYNC_CARDS[address_state],
                     created_at=max(s.finished_at or now for s in statuses),
-                    reasoning=f"„{label}“ ({masked}): {first.text}",
+                    reasoning=TEXTS(
+                        "labelled.addresses", label=label, masked=masked, text=first.text
+                    ),
                     question=first.todo,
                     account_id=account_id,
                     error_code=address_state.value,

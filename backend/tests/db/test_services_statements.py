@@ -15,6 +15,7 @@ from db.db_support import TEST_IBAN_KEY
 from sqlalchemy import func, insert, select, text
 from test_bank_parsers import CAMT, CSV, build
 
+from hausbuch import i18n
 from hausbuch.db.session import workspace_transaction
 from hausbuch.db.tables import document as document_table
 from hausbuch.db.tables import possible_duplicate as duplicate_table
@@ -228,6 +229,10 @@ def test_csv_waits_for_a_declared_balance_then_reconciles(
     [item] = read(ws, import_inbox_items)
     assert (item.kind, item.import_id) == (InboxItemKind.IMPORT_PENDING_BALANCE, imported.id)
     assert "06.11.2026" in item.question
+    with i18n.use("en"):  # phase 10 D284
+        [en] = read(ws, import_inbox_items)
+    assert en.reasoning == "The file contains no balance."
+    assert en.question == "What is the balance on 6 Nov 2026 according to online banking?"
 
     declared = run(ws, declare_balances, imported.id, DeclareBalanceBody(closing_balance=CLOSING))
     assert declared.status is ImportStatus.RECONCILED
@@ -242,6 +247,10 @@ def test_csv_waits_for_a_declared_balance_then_reconciles(
     assert (wrong.status, wrong.error_code) == (ImportStatus.UNRECONCILED, rules.UNRECONCILED)
     [item] = read(ws, import_inbox_items)
     assert item.kind is InboxItemKind.IMPORT_UNRECONCILED
+    assert item.question == "Fehlt ein Auszug oder ist ein Umsatz doppelt?"
+    with i18n.use("en"):
+        [en] = read(ws, import_inbox_items)
+    assert en.question == "Is a statement missing or is a transaction duplicated?"
     right = run(
         ws,
         declare_balances,
