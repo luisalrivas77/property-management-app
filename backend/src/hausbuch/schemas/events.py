@@ -1313,6 +1313,26 @@ class FundSourceNote(Schema):
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
 
 
+class SoldStretchNote(Schema):
+    """An asset no account holds today, asked in a daily run for one held stretch, its first
+    and last held day (D174 amended 20 Nov 2026, „When a sold asset is done“). `settled`: the
+    run read its sources successfully, stored nothing new for those days, cut nothing for
+    the row limit and skipped nothing for a missing rate; such a run ends the asking for
+    the stretch, and a stretch is asked at most fetch.MAX_SOLD_RUNS runs. Never a price or
+    an amount."""
+
+    asset_id: UUID
+    first_on: date
+    last_on: date
+    settled: bool = False
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        if self.last_on < self.first_on:
+            raise ValueError("last_on before first_on")
+        return self
+
+
 class PricesFetched(Schema):
     """workspace.prices_fetched: one per daily run (§11). Step 5b adds the failed assets' ids
     (never a price or an amount): D174's card counts an asset's failed days from these
@@ -1326,7 +1346,10 @@ class PricesFetched(Schema):
     stored currency that stopped answering while another answers); nothing was stored
     for them, and they are not failed fetches either. `exchange_disagreed` (D264 (5)) names
     the funds whose first Lang & Schwarz read differed from the depot report by more than 2 %
-    and stored nothing; not failed fetches."""
+    and stored nothing; not failed fetches. `sold_stretches` (D174 amended 20 Nov 2026) names
+    each asset no account holds today that the run asked, with its held stretch and whether
+    the run settled it; the plan reads them to stop asking (SoldStretchNote), and a source's
+    failure streak for the cards counts only the runs after the asset's latest sold one."""
 
     sources: list[PriceSourceKind] = Field(min_length=1)
     assets: int = Field(ge=0)
@@ -1337,6 +1360,7 @@ class PricesFetched(Schema):
     nav_disagreed: list[UUID] = Field(default_factory=list)
     nav_unresolved: list[UUID] = Field(default_factory=list)
     exchange_disagreed: list[UUID] = Field(default_factory=list)
+    sold_stretches: list[SoldStretchNote] = Field(default_factory=list)
 
 
 class ValuationSnapshotWritten(Schema):

@@ -138,11 +138,14 @@ def _setup(run, ws):
         )
         eur = _asset(ctx, kind="etf", isin=EUR_FUND.isin, name=EUR_FUND.name)
         usd = _asset(ctx, kind="etf", isin=USD_FUND.isin, name=USD_FUND.name)
-        sold = _asset(ctx, kind="crypto", symbol="BTC", name="Bitcoin")
+        # Bought and sold, with no price source of its own or the registry's: never asked.
+        # (A sold asset with a source is priced for the days it was held since D174 amended
+        # 20 Nov 2026; until then this was Bitcoin, „not held, not priced“.)
+        sold = _asset(ctx, kind="crypto", symbol="OLDINV", name="Old Invented Coin")
         for asset_id in (coin, eur, usd):
             _held(ctx, account.id, asset_id)
         _held(ctx, account.id, sold, "1")
-        _held(ctx, account.id, sold, "-1")  # bought and sold: not held, not priced
+        _held(ctx, account.id, sold, "-1")
         return {"coin": coin, "eur": eur, "usd": usd, "sold": sold}
 
     return run(ws, seed, now=FIRST)
