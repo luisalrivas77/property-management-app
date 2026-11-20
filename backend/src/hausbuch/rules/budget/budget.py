@@ -37,7 +37,9 @@ behind each month). Pure: no I/O, nothing stored.
   counted by lines, even when they net to 0.
 - **Marks** (D274): only against a target the household saved; green when met (at or below a
   maximum, at or above the saving minimum, an equal share meets it), amber when missed, never
-  red. The sentence names the points and the euros a month between the share and the target.
+  red; decided on the share as the sentence prints it (percent, one place, half-up), so a
+  share printed as the target meets it. The sentence names the points and the euros a month
+  between the share and the target.
 - Below three closed months (D231) no figure at all, the window's to-do instead.
 """
 
@@ -224,22 +226,26 @@ def mark(
     minimum: bool = False,
 ) -> BudgetMark | None:
     """D274: green when the target is met, amber when missed; None without a target or a
-    share. `minimum`: the saving target, met at or above it; the others at or below."""
+    share. `minimum`: the saving target, met at or above it; the others at or below. Decided
+    at the precision the sentence prints: the share in percent to one place, half-up, so
+    50,04 % against „höchstens 50,0 %“ reads 50,0 % and is met."""
     if target is None or share is None:
         return None
     limit = target / 100
-    met = share >= limit if minimum else share <= limit
-    gap_points = ((share - limit) * 100).quantize(TENTH, ROUND_HALF_UP)
+    shown = (share * 100).quantize(TENTH, ROUND_HALF_UP)
+    met = shown >= target if minimum else shown <= target
+    gap_points = (shown - target).quantize(TENTH)
+    gap_points = gap_points or abs(gap_points)  # never −0.0
     at_target = (limit * income_monthly).quantize(CENT, ROUND_HALF_UP)
     gap_monthly = monthly - at_target
     bound = "mindestens" if minimum else "höchstens"
     start = f"{label}: {format_percent(share)} eures Einkommens"
     goal = f"eurem Ziel von {bound} {_percent(target)}"
-    if share == limit:
+    if shown == target:
         text = f"{start}, genau auf {goal}."
     else:
         points = f"{format_multiple(abs(gap_points))} Prozentpunkte"
-        side = "über" if share > limit else "unter"
+        side = "über" if shown > target else "unter"
         money = format_money(abs(gap_monthly))
         if met:
             spare = "mehr" if minimum else "Luft"

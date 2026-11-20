@@ -295,3 +295,49 @@ def test_uncategorized_lines_netting_to_zero_over_the_window_keep_the_todo() -> 
     (todo,) = view.todos
     assert todo.code is HealthTodoCode.UNCATEGORIZED_LINES
     assert todo.action == "2 Zahlungen einordnen"
+
+
+# --- marks at the precision the sentence prints (review of PR #490) ----------------------
+
+
+@pytest.mark.parametrize(
+    ("share", "minimum"),
+    [
+        (Decimal("0.5004"), False),  # 50,0 % against höchstens 50,0 %
+        (Decimal("0.4996"), False),  # 50,0 % from below
+        (Decimal("0.1996"), True),  # 20,0 % against mindestens 20,0 %
+        (Decimal("0.2004"), True),
+    ],
+)
+def test_a_share_printed_as_the_target_meets_it(share: Decimal, minimum: bool) -> None:
+    target = Decimal("20.0") if minimum else Decimal("50.0")
+    m = B.mark("Linie", share, Decimal("1000.00"), Decimal("2000.00"), target, minimum=minimum)
+    assert m is not None
+    assert m.colour.value == "green"
+    assert m.gap_points == 0 and str(m.gap_points) == "0.0"  # never −0.0
+    assert ", genau auf eurem Ziel von" in m.text
+
+
+def test_a_share_printed_past_the_target_misses_it() -> None:
+    m = B.mark("Linie", Decimal("0.5005"), Decimal("1001.00"), Decimal("2000.00"), Decimal("50.0"))
+    assert m is not None and m.colour.value == "amber"
+    assert m.gap_points == Decimal("0.1")
+    assert "50,1 %" in m.text and "0,1 Prozentpunkte über" in m.text
+    m = B.mark(
+        "Sparen",
+        Decimal("0.1995"),
+        Decimal("399.00"),
+        Decimal("2000.00"),
+        Decimal("20.0"),
+        minimum=True,
+    )
+    assert m is not None and m.colour.value == "green"  # 19,95 % prints 20,0 %
+    m = B.mark(
+        "Sparen",
+        Decimal("0.1994"),
+        Decimal("398.80"),
+        Decimal("2000.00"),
+        Decimal("20.0"),
+        minimum=True,
+    )
+    assert m is not None and m.colour.value == "amber" and m.gap_points == Decimal("-0.1")
