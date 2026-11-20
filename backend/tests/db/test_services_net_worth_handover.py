@@ -17,10 +17,11 @@ from sqlalchemy import insert
 
 from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import transaction as transaction_table
+from hausbuch.rules.health import figures as F
 from hausbuch.schemas.allocation import AllocationMethod
 from hausbuch.schemas.bank import AccountCreate
 from hausbuch.schemas.common import Fraction as ShareFraction
-from hausbuch.schemas.health import EstimateSource
+from hausbuch.schemas.health import EstimateSource, HouseholdMonth
 from hausbuch.schemas.loan import LoanCreate
 from hausbuch.schemas.net_worth import NetWorthLineKind, NetWorthTodoCode, SnapshotOutcome
 from hausbuch.schemas.property import Address, OwnerCreate, OwnerShare, PropertyCreate
@@ -41,7 +42,7 @@ ANCHOR = date(2026, 12, 31)
 IBANS = {"joint_private": "DE02120300000000202051", "rental": "DE02500105170137075030"}
 
 
-def _ledger(run, ws, without=()):
+def _ledger(run, ws, without=(), extra=(), shares=True):
     owners = {
         name: run(ws, create_owner, OwnerCreate(full_name=f"Eigentümer {name}"), now=NOW).id
         for name in FIXTURE.owners
@@ -81,19 +82,20 @@ def _ledger(run, ws, without=()):
         ),
         now=NOW,
     ).id
-    run(
-        ws,
-        set_ownership,
-        prop,
-        [
-            OwnerShare(
-                owner_id=owners[name],
-                share=ShareFraction(numerator=s.numerator, denominator=s.denominator),
-            )
-            for name, s in f.shares.items()
-        ],
-        now=NOW,
-    )
+    if shares:
+        run(
+            ws,
+            set_ownership,
+            prop,
+            [
+                OwnerShare(
+                    owner_id=owners[name],
+                    share=ShareFraction(numerator=s.numerator, denominator=s.denominator),
+                )
+                for name, s in f.shares.items()
+            ],
+            now=NOW,
+        )
     terms = FIXTURE.loan
     loan = run(
         ws,
@@ -108,7 +110,7 @@ def _ledger(run, ws, without=()):
             name: _import(ctx, account, date(2026, 5, 1), date(2026, 9, 30))
             for name, account in accounts.items()
         }
-        for a in FIXTURE.allocations:
+        for a in [*FIXTURE.allocations, *extra]:
             if a.id in without:
                 continue
             tx = ctx.conn.execute(
@@ -246,3 +248,109 @@ def test_a_month_end_before_the_handover_is_stored_and_read_back(run, read, fres
     assert read(ws, health.estimate_sources, later) == {
         ids["property"]: EstimateSource.PURCHASE_PRICE
     }
+
+
+# A closed month with no flow, enough for phase 9's debt figures to read the net worth.
+ZERO_FIELDS = (
+    "private_income",
+    "private_spending",
+    "one_off_spending",
+    "regular_spending",
+    "rental_result",
+    "rental_cash",
+    "income",
+    "spending",
+    "saved",
+    "principal",
+    "invested_property",
+    "invested",
+    "free_cash",
+)
+
+
+def _month(month: str) -> HouseholdMonth:
+    zero = Decimal("0.00")
+    return HouseholdMonth(
+        month=month,
+        **dict.fromkeys(ZERO_FIELDS, zero),
+        savings_rate=None,
+    )
+
+
+def _debt(read, ws, figure):
+    sources = read(ws, health.estimate_sources, figure)
+    return F.debt(figure, [_month("2026-05")], interest=Decimal("0"), estimate_sources=sources)
+
+
+def test_a_paid_out_loan_counts_before_any_price_is_paid(run, read, fresh_workspaces):
+    """A payout booked while the purchase-price line still waits: the loan line alone, a debt
+    until the handover, stored and read back with its payout note; phase 9's debt counts it
+    with no loan-to-value (no property line to divide by)."""
+    ws, _ = fresh_workspaces
+    ids = _ledger(run, ws, without=("down_payment", "first_instalment"))
+    may = date(2026, 5, 31)
+    seen = read(ws, net_worth.net_worth, may)
+    assert [line.kind for line in seen.lines] == [L.LOAN]
+    loan = seen.lines[0]
+    assert (loan.value_eur, loan.estimate) == (Decimal("-150000.00"), False)
+    assert seen.property_net == Decimal("-150000.00") and seen.todos == []
+    captured = run(ws, net_worth.capture_month_end, may, now=NOW)
+    stored = read(ws, net_worth.month_end_figure, captured.run)
+    (back,) = stored.lines
+    assert (back.kind, back.loan_id, back.value_eur, back.estimate) == (
+        L.LOAN,
+        ids["loan"],
+        Decimal("-150000.00"),
+        False,
+    )
+    assert "Bisher ausgezahlt" in back.note and "Übergabe am 01.09.2026" in back.note
+    got = _debt(read, ws, stored)
+    assert got.properties == [] and got.liabilities == Decimal("150000.00")
+
+
+def test_the_advance_alone_has_no_loan_to_value(run, read, fresh_workspaces):
+    ws, _ = fresh_workspaces
+    ids = _ledger(run, ws)
+    got = _debt(read, ws, read(ws, net_worth.net_worth, date(2026, 5, 15)))
+    assert [(p.property_id, p.estimate_source, p.estimate, p.ltv) for p in got.properties] == [
+        (ids["property"], EstimateSource.ADVANCE, Decimal("15000.00"), None)
+    ]
+
+
+def test_a_refund_lowers_the_advance_and_the_price_caps_it(run, read, fresh_workspaces):
+    """D265 (1): a refund on the property's private line lowers the price paid; more paid than
+    the purchase price counts as the price."""
+    ws, _ = fresh_workspaces
+    extra = [
+        phase6.HandoverAllocation(
+            id="refund",
+            booked=date(2026, 5, 16),
+            account="joint_private",
+            category="hh_investment_property",
+            amount=Decimal("5000.00"),
+            property=True,
+        ),
+        phase6.HandoverAllocation(
+            id="more_than_the_price",
+            booked=date(2026, 6, 10),
+            account="rental",
+            category="purchase_price",
+            amount=Decimal("-60000.00"),
+            property=True,
+        ),
+    ]
+    _ledger(run, ws, extra=extra)
+    flat = {d: read(ws, net_worth.net_worth, d) for d in (date(2026, 5, 16), date(2026, 6, 30))}
+    advance = {d: next(x for x in f.lines if x.kind is L.PROPERTY) for d, f in flat.items()}
+    assert advance[date(2026, 5, 16)].value_eur == Decimal("10000.00")
+    assert advance[date(2026, 6, 30)].value_eur == Decimal("200000.00")  # 220000 paid
+
+
+def test_an_advance_without_shares_raises_the_shares_todo(run, read, fresh_workspaces):
+    ws, _ = fresh_workspaces
+    ids = _ledger(run, ws, shares=False)
+    seen = read(ws, net_worth.net_worth, date(2026, 5, 15))
+    assert [line.kind for line in seen.lines] == [L.PROPERTY]
+    assert [t.code for t in seen.todos] == [T.PROPERTY_SHARES_MISSING]
+    assert set(seen.by_owner.values()) == {Decimal("0.00")}
+    assert seen.unassigned == [ids["property"]]
