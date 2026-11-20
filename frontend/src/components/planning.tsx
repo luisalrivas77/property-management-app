@@ -192,14 +192,14 @@ function readParams(search: { get(name: string): string | null }): LeverParams {
 }
 
 function planningHref(propertyId: string | null, params: LeverParams): string {
-  const query = new URLSearchParams();
+  // Planung's Immobilie section (phase 10 D270): the section stays in the URL with the levers.
+  const query = new URLSearchParams({ section: "immobilie" });
   if (propertyId) query.set("immobilie", propertyId);
   if (params.scenario) query.set(PARAM.scenario, params.scenario);
   if (params.valueGrowth !== null) query.set(PARAM.valueGrowth, params.valueGrowth);
   if (params.rentGrowth !== null) query.set(PARAM.rentGrowth, params.rentGrowth);
   if (params.saleYear !== null) query.set(PARAM.saleYear, String(params.saleYear));
-  const text = query.toString();
-  return text ? `/planning?${text}` : "/planning";
+  return `/planning?${query.toString()}`;
 }
 
 const RATE_PLACES = 6;
@@ -304,8 +304,8 @@ export function PlanningScreen({ property, properties }: { property: Property; p
     <>
       <div className="page-head planning-head">
         <div>
-          <p className="eyebrow">Planung · {property.label}</p>
-          <h1>Rechnet sich die Immobilie?</h1>
+          <p className="eyebrow">{property.label}</p>
+          <h2>Rechnet sich die Immobilie?</h2>
           <span className="muted">{addressLine(property)}</span>
         </div>
         <span className="spacer" />
@@ -326,14 +326,6 @@ export function PlanningScreen({ property, properties }: { property: Property; p
           </label>
         ) : null}
       </div>
-      <nav aria-label="Bereiche" className="tabs">
-        <Link href={planningHref(multi ? property.id : null, NO_LEVERS)} aria-current="page" scroll={false}>
-          Immobilie
-        </Link>
-        <Link href="/planning?tab=haushalt" scroll={false}>
-          Haushalt
-        </Link>
-      </nav>
       <div className="stack planning">
         {flatRate.data !== undefined || flatRate.error != null ? (
           <Loading state={flatRate}>

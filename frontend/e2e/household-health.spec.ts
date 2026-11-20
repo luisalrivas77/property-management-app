@@ -284,7 +284,7 @@ test("the rate fields start empty, and the projection appears only after a rate 
     return plan(window, last ? `scenario-${posted.length}` : null, last?.levers?.value_change?.depot ?? null);
   });
 
-  await page.goto("/planning?tab=haushalt");
+  await page.goto("/planning?section=vermoegen");
   const card = page.getByRole("region", { name: "Vermögen in einigen Jahren: eure Annahme" });
   const depot = card.getByLabel("Fonds und Wertpapiere (% pro Jahr)");
   const crypto = card.getByLabel("Krypto (% pro Jahr)");
@@ -413,7 +413,7 @@ test("every figure opens what it is made of, and a month opens Haushalt with its
   }
 
   // Planung › Haushalt: each row of „So entsteht die Zahl“ that has months opens them.
-  await page.goto("/planning?tab=haushalt");
+  await page.goto("/planning?section=anlegen");
   const made = page.getByRole("region", { name: "So entsteht die Zahl" });
   const rows = made.locator("details");
   await expect(rows).toHaveCount(3); // mean income, mean regular spending, free cash; the buffer and the result have none

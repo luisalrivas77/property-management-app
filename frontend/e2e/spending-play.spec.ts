@@ -250,7 +250,7 @@ test("a typed amount moves the savings rate and „Anlegbar“ through the previ
   void signedIn;
   const { posted, previews } = await planWithScenarios(page);
 
-  await page.goto("/planning?tab=haushalt");
+  await page.goto("/planning?tab=haushalt#ausgaben-durchspielen");
   const section = page.getByRole("region", { name: "Ausgaben durchspielen" });
   const rate = section.getByTestId("effect-rate");
   const investable = section.getByTestId("effect-investable");
@@ -292,7 +292,7 @@ test("a change as a percent of the mean, for some months, is saved as a percent"
   void signedIn;
   const { posted } = await planWithScenarios(page);
 
-  await page.goto("/planning?tab=haushalt");
+  await page.goto("/planning?tab=haushalt#ausgaben-durchspielen");
   const section = page.getByRole("region", { name: "Ausgaben durchspielen" });
   await section.getByRole("button", { name: "Essen gehen & bestellen" }).click();
   await section.getByLabel("Geplant pro Monat: Restaurant").fill("-10");
@@ -357,4 +357,96 @@ test("Haushalt shows „Geplant“ and „Unterschied“ only for the codes the 
     "/planning?tab=haushalt#ausgaben-durchspielen",
   );
   await expect(table.getByRole("link", { name: "2 Umsätze warten in Zu prüfen" })).toHaveAttribute("href", "/inbox");
+});
+
+// --- Planung › Budget: the household's own targets (phase 10 D274) ------------------------------
+
+type BudgetView = components["schemas"]["BudgetView"];
+type BudgetTargets = components["schemas"]["BudgetTargets"];
+
+function budget(targets: BudgetTargets): BudgetView {
+  const code = (category: "hh_groceries" | "hh_restaurant", budgetClass: "need" | "want", monthly: string) => ({
+    category,
+    group: category === "hh_groceries" ? ("groceries" as const) : ("dining" as const),
+    budget_class: budgetClass,
+    default_class: budgetClass,
+    overridden: false,
+    monthly,
+    total: (Number(monthly) * 3).toFixed(2),
+  });
+  const wants = targets.wants_max ?? null;
+  return {
+    as_of: "2026-11-18",
+    scenario_id: null,
+    window: { months: WINDOW, enough: true },
+    months: [],
+    income: { monthly: "5200.00", total: "15600.00", rental_monthly: "0.00", private_monthly: "5200.00" },
+    lines: [
+      { key: "need", monthly: "2600.00", total: "7800.00", share: "0.5000", codes: [code("hh_groceries", "need", "2600.00")] },
+      {
+        key: "want",
+        monthly: "1300.00",
+        total: "3900.00",
+        share: "0.2500",
+        codes: [code("hh_restaurant", "want", "1300.00")],
+        target: wants,
+        mark: wants
+          ? {
+              colour: "green",
+              target: wants,
+              gap_points: "-5.0",
+              gap_monthly: "-260.00",
+              text: "Wünsche liegen 5 Prozentpunkte unter eurem Ziel, rund 260 € im Monat.",
+            }
+          : null,
+      },
+      { key: "one_off", monthly: "0.00", total: "0.00", share: "0.0000", codes: [] },
+      { key: "uncategorized", monthly: "0.00", total: "0.00", share: "0.0000", codes: [] },
+      { key: "saving", monthly: "1300.00", total: "3900.00", share: "0.2500" },
+    ],
+    housing: null,
+    targets,
+    references: [],
+    todos: [],
+  };
+}
+
+test("a budget target saved under Budget survives a later „Szenario speichern“ from Reserve, and an unsaved change stays out of it", async ({
+  page,
+  signedIn,
+}) => {
+  void signedIn;
+  const { posted } = await planWithScenarios(page);
+  await serve(page, "/api/household-budget", () => budget(posted[posted.length - 1]?.levers?.budget_targets ?? {}));
+
+  // An unsaved spending change in the scenario sheet first.
+  await page.goto("/planning?tab=haushalt#ausgaben-durchspielen");
+  const section = page.getByRole("region", { name: "Ausgaben durchspielen" });
+  await section.getByRole("button", { name: "Essen gehen & bestellen" }).click();
+  await section.getByLabel("Geplant pro Monat: Restaurant").fill("150");
+  await expect(page.getByText("1 Änderung, nicht gespeichert")).toBeVisible();
+
+  // „Eigene Ziele festlegen“ stores the target alone, on the saved levers.
+  await page.getByRole("link", { name: "Eigene Ziele festlegen" }).click();
+  await page.getByLabel("Wünsche höchstens").fill("30");
+  await page.getByRole("button", { name: "Ziele speichern" }).click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(posted[0]?.levers?.budget_targets?.wants_max).toBe("30");
+  expect(posted[0]?.levers?.spending_changes ?? []).toEqual([]);
+  await expect(page.getByText("Wünsche liegen 5 Prozentpunkte unter eurem Ziel, rund 260 € im Monat.")).toBeVisible();
+  await expect(page.getByText("Ziel höchstens 30 %")).toBeVisible();
+  // The spending change is still a draft.
+  await expect(page.getByText("1 Änderung, nicht gespeichert")).toBeVisible();
+
+  // A lever changed under Reserve and saved there keeps the target and the spending change.
+  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve" }).click();
+  await page.getByRole("button", { name: "Reserveziel erhöhen" }).click();
+  await expect(page.getByText("2 Änderungen, nicht gespeichert")).toBeVisible();
+  await page.getByRole("button", { name: "Szenario speichern" }).first().click();
+  await expect.poll(() => posted.length).toBe(2);
+  expect(posted[1]?.levers?.budget_targets?.wants_max).toBe("30");
+  expect(posted[1]?.levers?.reserve_target_months).toBe("6.5");
+  expect(posted[1]?.levers?.spending_changes?.map((change) => change.code)).toEqual(["hh_restaurant"]);
+  expect(posted[1]?.supersedes_id).toBe("00000000-0000-4000-8000-000000000a11");
+  await expect(page.getByText("gespeichert", { exact: true })).toBeVisible();
 });

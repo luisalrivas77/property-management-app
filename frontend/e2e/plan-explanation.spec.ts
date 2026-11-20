@@ -214,7 +214,7 @@ test("a template text shows „Standardtext“ and one sentence on why, a stale 
   });
   await explanationRoute(page, () => shown);
 
-  await page.goto("/planning?tab=haushalt");
+  await page.goto("/planning?section=anlegen");
   const panel = panelOf(page);
   await expect(panel.getByText("Standardtext", { exact: true })).toBeVisible();
   await expect(panel.getByText("Zahlen haben sich seitdem geändert", { exact: true })).toBeVisible();
@@ -255,7 +255,7 @@ test("with the AI off, „Neu erklären“ sends nothing and the panel links to 
     explanation({ id: null, status: "template", reason: "consent_off", created_at: null }),
   );
 
-  await page.goto("/planning?tab=haushalt");
+  await page.goto("/planning?section=anlegen");
   const panel = panelOf(page);
   const button = panel.getByRole("button", { name: "Neu erklären" });
   await expect(button).toBeDisabled();
@@ -281,7 +281,7 @@ test("a POST that queues nothing says the AI is off, never a spinner", async ({ 
   // The switch was turned off elsewhere after this page read it: the server queues nothing.
   const { posts } = await explanationRoute(page, () => explanation({ id: null, status: "template", reason: null, created_at: null }), false);
 
-  await page.goto("/planning?tab=haushalt");
+  await page.goto("/planning?section=anlegen");
   const panel = panelOf(page);
   await expect(panel.getByTestId("plan-ai-reason")).toHaveText("Die KI hat zu diesen Zahlen noch nichts geschrieben; „Neu erklären“ fragt sie.");
   await patchSettings(page, { ai_private_accounts: false });
@@ -297,7 +297,7 @@ test("a text written while the AI was off says „Neu erklären“ asks it, once
   await planReads(page);
   await explanationRoute(page, () => explanation({ status: "template", reason: "consent_off" }));
 
-  await page.goto("/planning?tab=haushalt");
+  await page.goto("/planning?section=anlegen");
   const panel = panelOf(page);
   await expect(panel.getByTestId("plan-ai-off")).toBeVisible();
   await expect(panel.getByTestId("plan-ai-reason")).toHaveCount(0);
@@ -320,7 +320,7 @@ test("„Neu erklären“ waits for the new text and shows it", async ({ page, s
       : explanation({ status: "template", reason: "error", paragraphs: [{ topic: "reserve", text: "Alter Text der App." }] }),
   );
 
-  await page.goto("/planning?tab=haushalt");
+  await page.goto("/planning?section=anlegen");
   const panel = panelOf(page);
   await expect(panel.getByText("Alter Text der App.")).toBeVisible();
   await panel.getByRole("button", { name: "Neu erklären" }).click();
@@ -346,18 +346,22 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
       : explanation({ paragraphs: [{ topic: "basis", text: "In Fondsdepot A fließen 300 € im Monat." }] }),
   );
 
-  await page.goto("/planning?tab=haushalt");
+  // Phase 10 D270: the explanation and „Schon angelegt“ under Anlegen, the paths under Reserve,
+  // „Weitere Annahmen“ in the scenario sheet.
+  await page.goto("/planning?section=anlegen");
   const panel = panelOf(page);
   const paths = page.getByRole("region", { name: "Wege zum Reserveziel" });
   await expect(panel.getByText("In Fondsdepot A fließen 300 € im Monat.")).toBeVisible();
   await expect(panel.getByText("(Modus: eigene Nutzung)")).toBeVisible();
-  await expect(paths.locator("tbody tr")).toHaveCount(4);
   // Eigene Nutzung names each plan by its account: the card, the paths and „Weitere Annahmen“.
   const invested = page.locator(".planning-kpi").filter({ hasText: "Schon angelegt pro Monat" });
   await expect(invested).toContainText("450 €");
   await expect(invested).toContainText("Fondsdepot A 300 € · Kryptobörse B 100 € · Fondsdepot C 50 €");
+  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve" }).click();
+  await expect(paths.locator("tbody tr")).toHaveCount(4);
   await expect(paths.getByText("Sparplan Fondsdepot A pausiert")).toBeVisible();
   await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile: Fondsdepot C.")).toBeVisible();
+  await page.getByRole("link", { name: /Annahmen ›/ }).click();
   const more = page.getByRole("region", { name: "Weitere Annahmen" });
   await expect(more.getByText("Kryptobörse B", { exact: true })).toBeVisible();
 
@@ -367,21 +371,24 @@ test("switching the Hinweis-Modus shows only that mode's explanation, and the pa
   expect((await saved).status()).toBe(200);
   await expect(page.getByTestId("advice-mode-saved")).toHaveText("Gespeichert: Allgemein");
 
-  await page.goto("/planning?tab=haushalt");
+  await page.goto("/planning?section=anlegen");
   await expect(panel.getByText("In Fonds und Wertpapiere fließen 300 € im Monat.")).toBeVisible();
   await expect(panel.getByText("In Fondsdepot A fließen 300 € im Monat.")).toHaveCount(0);
   await expect(panel.getByText("nennt keine Produkte und keine Konten. Keine Anlageberatung.")).toBeVisible();
   await expect(panel.getByText("(Modus: eigene Nutzung)")).toHaveCount(0);
+  // Allgemein: the plans are one total, and no plan's account is named in any section.
+  const labels = ["Fondsdepot A", "Kryptobörse B", "Fondsdepot C"];
+  await expect(invested).toContainText("450 €");
+  await expect(invested).toContainText("aus 3 Sparplänen zusammen");
+  for (const label of labels) await expect(page.getByText(label)).toHaveCount(0);
+  await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Reserve" }).click();
   await expect(paths.locator("tbody tr")).toHaveCount(2);
   await expect(paths.locator("tbody tr").nth(0)).toContainText("Reserve zuerst");
   await expect(paths.locator("tbody tr").nth(1)).toContainText("Alles weiter wie bisher");
-  // Allgemein: the plans are one total, and no plan's account is named anywhere on the page.
-  await expect(invested).toContainText("450 €");
-  await expect(invested).toContainText("aus 3 Sparplänen zusammen");
-  await expect(more.getByTestId("plans-total")).toHaveText("450 € im Monat, aus 3 Sparplänen zusammen");
   await expect(paths.getByText("Weitere Sparpläne ohne eigene Zeile")).toHaveCount(0);
-  for (const label of ["Fondsdepot A", "Kryptobörse B", "Fondsdepot C"]) {
-    await expect(page.getByText(label)).toHaveCount(0);
-  }
+  for (const label of labels) await expect(page.getByText(label)).toHaveCount(0);
+  await page.getByRole("link", { name: /Annahmen ›/ }).click();
+  await expect(more.getByTestId("plans-total")).toHaveText("450 € im Monat, aus 3 Sparplänen zusammen");
+  for (const label of labels) await expect(page.getByText(label)).toHaveCount(0);
   await expect(more.getByRole("button", { name: "Betrag ändern" })).toHaveCount(0);
 });

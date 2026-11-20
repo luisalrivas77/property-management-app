@@ -10,16 +10,19 @@
 // is the server's (means, planned amounts, the rate and „Anlegbar“ per stretch of months, the
 // reserve path, the net worth); this file only formats them. No colour, no mark: the app
 // proposes no amount and no target (D263 (e)), the mean is the starting value, never advice.
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
+import { useT } from "@/i18n";
+import { planning } from "@/i18n/planning";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { formatMoney, formatMonth } from "./format";
-import { formatRatio, type HouseholdLevers, type HouseholdPlan, longDate, monthRange, toSignedRate } from "./healthShared";
+import { type HouseholdLevers, type HouseholdPlan, monthRange, toSignedRate } from "./healthShared";
 import { decimalInput, percentInput, toMoneyString } from "./input";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "./labels";
+import { usePlanFormat } from "./planFormat";
 
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 type HouseholdGroup = components["schemas"]["HouseholdGroup"];
@@ -190,6 +193,8 @@ export function SpendingPlaySection({
   draft,
   setDraft,
   onValidity,
+  only,
+  extra,
 }: {
   saved: HouseholdPlan;
   /** The window's closed months the means come from (GET /health). */
@@ -199,6 +204,11 @@ export function SpendingPlaySection({
   setDraft: SetDraft;
   /** A field holding an entry it cannot take keeps the draft's old change; no save until fixed. */
   onValidity: (invalid: boolean) => void;
+  /** The Budget's class panel (phase 10 D277): only these codes, as one flat list without the
+   * section's heading, „Neue Ausgabe“ and the total. */
+  only?: ReadonlySet<string>;
+  /** Shown under a code's name in that list (the class panel's need/want switch). */
+  extra?: (code: string) => ReactNode;
 }) {
   const ids = useId();
   const savedPlay = saved.spending_play;
@@ -225,6 +235,8 @@ export function SpendingPlaySection({
   const [allGroups, setAllGroups] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [newCode, setNewCode] = useState("");
+  // A field left invalid when this list closes keeps the draft's old change, which is valid.
+  useEffect(() => () => onValidity(false), [onValidity]);
 
   function update(code: AllocationCategory, patch: Partial<Entry>) {
     const entry = { ...(entries[code] ?? entryOf(undefined, first)), ...patch };
@@ -370,6 +382,48 @@ export function SpendingPlaySection({
     );
   };
 
+  if (only) {
+    const rows = tableGroups.flatMap((group) => group.rows.filter((row) => only.has(row.code)).map((row) => ({ group, row })));
+    if (rows.length === 0) return null;
+    return (
+      <div className="table-wrap">
+        <table className="spending-play-table">
+          <thead>
+            <tr>
+              <th scope="col">Kategorie</th>
+              <th scope="col" className="num">
+                Ø pro Monat
+              </th>
+              <th scope="col">Geplant pro Monat</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ group, row }) => {
+              const rowLabel = categoryLabel(row.code);
+              const own = row.code === group.code;
+              return (
+                <tr key={row.code}>
+                  <th scope="row">
+                    {rowLabel}
+                    {extra?.(row.code)}
+                  </th>
+                  <td className="num">{formatMoney(row.mean)}</td>
+                  <td>
+                    {!row.playable && !own ? (
+                      <span className="muted">zählt mit, wird aber nicht geplant</span>
+                    ) : (
+                      field(row.code, rowLabel, row.mean, lockOf(row.code), hasSpending(row.mean))
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   const shownGroups = allGroups ? tableGroups : tableGroups.slice(0, GROUPS_SHOWN);
   const hidden = tableGroups.slice(GROUPS_SHOWN);
   const segments = play?.rates ?? [];
@@ -496,7 +550,6 @@ export function SpendingPlaySection({
             ) : null}
           </div>
 
-          <Effects saved={saved} preview={preview} />
         </>
       ) : null}
     </section>
@@ -573,7 +626,9 @@ function hint(played: PlayedChange, mean: string): string {
 
 // --- Was eure Änderungen bewirken ---------------------------------------------------------------
 
-function Effects({ saved, preview }: { saved: HouseholdPlan; preview: PlanPreview }) {
+export function Effects({ saved, preview }: { saved: HouseholdPlan; preview: PlanPreview }) {
+  const t = useT(planning);
+  const f = usePlanFormat();
   const now = preview.base;
   const next = preview.withChanges;
   const nowPlay = now?.spending_play;
@@ -585,7 +640,7 @@ function Effects({ saved, preview }: { saved: HouseholdPlan; preview: PlanPrevie
     if (!plan) return "…";
     const path = (plan.paths ?? []).find((p) => p.key === "as_is");
     if (!path) return "–";
-    return path.reached ? formatMonth(path.reached) : `nicht in ${plan.levers.horizon_months} Monaten`;
+    return path.reached ? f.month(path.reached) : t.effectsNotIn(plan.levers.horizon_months);
   };
   const lastPoint = (plan: HouseholdPlan | null) => {
     const points = plan?.projection?.points ?? [];
@@ -595,31 +650,46 @@ function Effects({ saved, preview }: { saved: HouseholdPlan; preview: PlanPrevie
   const nextPoint = lastPoint(next);
   const year = (nextPoint ?? nowPoint)?.on.slice(0, 4);
 
+  // Phase 10 D271, in the screen only: the months before the first change are one grey stretch
+  // „wie bisher“, the stretch where a change starts is the bold one, and a stretch already begun
+  // or over says so against the plan's day.
+  const firstChange = (next.levers.spending_changes ?? []).map((c) => c.from_month).sort()[0] ?? null;
+  const today = saved.as_of.slice(0, 7);
+  const boldIndex = Math.max(
+    0,
+    firstChange ? segments.findIndex((segment) => segment.to_month >= firstChange) : 0,
+  );
+  const state = (segment: RateSegment) =>
+    segment.to_month < today ? ` (${t.over})` : segment.from_month <= today ? ` (${t.running})` : "";
+  const range = (segment: RateSegment) =>
+    segment.to_month === last ? t.from(f.month(segment.from_month)) : f.monthRange([segment.from_month, segment.to_month]);
   const bySegment = (value: (segment: RateSegment) => string) =>
     segments.length === 0 ? (
       "–"
     ) : (
       <span className="spending-play-segments">
-        {segments.map((segment, index) =>
-          index === 0 ? (
-            <span key={segment.from_month}>
-              <strong>{value(segment)}</strong> <span className="muted">{stretch(segment, last)}</span>
+        {segments.map((segment, index) => {
+          const before = firstChange !== null && segment.to_month < firstChange;
+          const label = `${before ? `${t.asBefore}, ` : ""}${range(segment)}${state(segment)}`;
+          return index === boldIndex ? (
+            <span key={segment.from_month} data-stretch="change">
+              <strong>{value(segment)}</strong> <span className="muted">{label}</span>
             </span>
           ) : (
-            <span key={segment.from_month} className="muted">
-              {stretch(segment, last)}: {value(segment)}
+            <span key={segment.from_month} className="muted" data-stretch={before ? "before" : "after"}>
+              {label}: {value(segment)}
             </span>
-          ),
-        )}
+          );
+        })}
       </span>
     );
 
   return (
     <div className="spending-play-effects stack" aria-live="polite">
-      <h3>Was eure Änderungen bewirken</h3>
+      <h3>{t.effectsTitle}</h3>
       <p className="muted">
-        Die App rechnet bei jeder Eingabe neu. Beide Spalten aus denselben gemessenen Monaten; welche Änderung passt, entscheidet ihr.
-        {preview.pending ? " Rechnet …" : ""}
+        {t.effectsIntro}
+        {preview.pending ? t.effectsPending : ""}
       </p>
       {preview.error != null ? <ErrorNotice error={preview.error} /> : null}
       <div className="table-wrap">
@@ -627,46 +697,43 @@ function Effects({ saved, preview }: { saved: HouseholdPlan; preview: PlanPrevie
           <thead>
             <tr>
               <th scope="col">
-                <span className="visually-hidden">Kennzahl</span>
+                <span className="visually-hidden">{t.effectsFigure}</span>
               </th>
-              <th scope="col">heute (ohne Einmalausgaben)</th>
-              <th scope="col">mit euren Änderungen</th>
+              <th scope="col">{t.effectsToday}</th>
+              <th scope="col">{t.effectsWith}</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <th scope="row">Sparquote</th>
-              <td>{formatRatio(nowPlay?.rate_regular_now)}</td>
-              <td data-testid="effect-rate">{bySegment((segment) => formatRatio(segment.rate))}</td>
+              <th scope="row">{t.effectsRate}</th>
+              <td>{f.ratio(nowPlay?.rate_regular_now)}</td>
+              <td data-testid="effect-rate">{bySegment((segment) => f.ratio(segment.rate))}</td>
             </tr>
             <tr>
-              <th scope="row">Anlegbar pro Monat</th>
-              <td>{now ? formatMoney(nowPlay?.rates?.[0]?.investable) : "…"}</td>
-              <td data-testid="effect-investable">{bySegment((segment) => formatMoney(segment.investable))}</td>
+              <th scope="row">{t.kpiInvestable}</th>
+              <td>{now ? f.money(nowPlay?.rates?.[0]?.investable) : "…"}</td>
+              <td data-testid="effect-investable">{bySegment((segment) => f.money(segment.investable))}</td>
             </tr>
             <tr>
               <th scope="row">
-                Reserveziel erreicht
-                <span className="muted spending-play-sub">auf dem Weg „Alles weiter wie bisher“</span>
+                {t.effectsReached}
+                <span className="muted spending-play-sub">{t.effectsReachedSub}</span>
               </th>
               <td>{reached(now)}</td>
               <td>{reached(next)}</td>
             </tr>
             <tr>
               <th scope="row">
-                {year ? `Vermögen am ${longDate(`${year}-12-31`)}` : "Vermögen am Ende"}
-                <span className="muted spending-play-sub">nach eurer Annahme für Fonds und Krypto, siehe „Vermögen in einigen Jahren“</span>
+                {year ? t.effectsWorthOn(f.longDate(`${year}-12-31`)) : t.effectsWorthEnd}
+                <span className="muted spending-play-sub">{t.effectsWorthSub}</span>
               </th>
-              <td>{now ? (nowPoint ? formatMoney(nowPoint.total) : "–") : "…"}</td>
-              <td>{nextPoint ? formatMoney(nextPoint.total) : "–"}</td>
+              <td>{now ? (nowPoint ? f.money(nowPoint.total) : "–") : "…"}</td>
+              <td>{nextPoint ? f.money(nextPoint.total) : "–"}</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p className="muted">
-        Sparquote heute: ohne Einmalausgaben. Die Sparquote mit euren Änderungen zeigt jeden Monat, in dem sie sich ändert, nie einen
-        Durchschnitt der Monate.
-      </p>
+      <p className="muted">{t.effectsNote}</p>
     </div>
   );
 }
