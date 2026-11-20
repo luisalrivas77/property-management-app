@@ -109,9 +109,9 @@ computer“. This paragraph said until 20 Nov 2026 that no mockup covered a phon
 was already not quite true (06 is drawn at 390 px), and the drafts below now cover every
 screen they redraw at 390 px.
 
-## Layout overhaul (drafted 20 Nov 2026, not approved)
+## Layout overhaul (drafted 20 Nov 2026; menu and detail panels chosen, the rest open)
 
-**Nothing in this section is approved or built.** These are drafts for Luis to choose from:
+**Nothing in this section is built, and only the two choices under „Chosen so far“ are agreed.** These are drafts for Luis to choose from:
 three design directions, each drawing the same four screens at phone width (390 px) and
 computer width (1440 px). The app keeps its current layout until he picks a direction (or a
 mix), and the choice is recorded in the Decisions table of `docs/ARCHITECTURE.md`. The colours,
@@ -124,6 +124,24 @@ screen by screen; none is a household figure or a fixture.
 embedded: pick a direction and a screen, and the phone and the computer version show side by
 side (the computer one scaled down to fit, „Originalgröße“ to see it at full size). Open it
 from the file, no server needed.
+
+### Chosen so far (Luis, 20 Nov 2026)
+
+Luis mixes the directions screen by screen („I want to mix. Let's go one by one.“).
+
+1. **The menu is C „Mobil zuerst“ with one Immobilien entry** (`14-C2-immobilien-phone`, `-desktop`). The bottom bar
+   holds Übersicht, Zu prüfen, Haushalt, Anlagen and „Mehr“; „Mehr“ lists Konten, Immobilien, Steuern, Planung,
+   Dokumente and Einstellungen. Mieter and Eigentümer are no menu entries: Immobilien shows one card per property with
+   its tenancies and owners' shares. The owners' income for the tax (pay, church tax, the pay documents) and
+   „Kinder und Haushalt“ move to a Steuern tab „Einkommen & Haushalt“ („Let's move the tax stuff from the Immobilien
+   to the tax section“; „I like the mock up“).
+2. **Details open beside the list, everywhere in the app** („You can make this sliding from the side when clicking a
+   design choice for the whole app“). Tapping a row or a card (a bank line, a tenancy, an owner, a document, a
+   position, a to-do) never leaves the page: on the computer its details fill the side panel on the right; on the
+   phone they slide in from the right as a panel over the page, the page dimmed and still visible at the left edge,
+   closed with ✕, „Zurück“ or a swipe to the right, and the page underneath keeps its scroll position. The panel
+   shows what decides something and the buttons that act on it; a full page („… öffnen“) stays one tap further for
+   what does not fit. Drawn in 14-C2 (a tenancy and an owner); every later mockup follows it.
 
 ### The three directions
 
