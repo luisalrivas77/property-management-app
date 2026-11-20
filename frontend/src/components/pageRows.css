@@ -1,0 +1,24 @@
+/* Rows and cards of the property, loan, unit, tenancy and tenant pages (phase 10, mockup 25). */
+
+/* The amount at the end of a detail row. */
+.row-amount {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* A row's own buttons (in the panel), wrapping on a phone. */
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A card section with a heading and its rows. */
+.page-card {
+  display: grid;
+  gap: 12px;
+}
+
+.page-card > h2 {
+  margin: 0;
+}

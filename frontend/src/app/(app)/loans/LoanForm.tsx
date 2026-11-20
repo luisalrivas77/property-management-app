@@ -15,9 +15,10 @@ import { useId, useState, type FormEvent } from "react";
 import { api, ok } from "@/api/client";
 import type { Loan, LoanPatch } from "@/api/schemas";
 import { collector, Field, FieldDescription, FormBanner, InfoToggle, Submit, useFormErrors } from "@/components/form";
-import { formatDate, formatMoney } from "@/components/format";
 import { blankToNull, decimalInput, percentInput, toMoneyString, toRate } from "@/components/input";
 import { Facts } from "@/components/ui";
+import { useFormat, useT } from "@/i18n";
+import { loans } from "@/i18n/loans";
 
 const KEYS = [
   "lender",
@@ -40,8 +41,22 @@ const CODE_FIELDS = {
   "iban.": "account_iban",
 };
 
-export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan }) {
+export function LoanForm({
+  propertyId,
+  loan,
+  onDone,
+  onCancel,
+}: {
+  propertyId: string;
+  loan?: Loan;
+  /** In a sheet: called after a saved edit instead of going to the loan page. */
+  onDone?: () => void;
+  /** In a sheet: "Abbrechen" closes it instead of going back. */
+  onCancel?: () => void;
+}) {
   const router = useRouter();
+  const t = useT(loans);
+  const f = useFormat();
   const [lender, setLender] = useState(loan?.lender ?? "");
   const [contractNumber, setContractNumber] = useState(loan?.contract_number ?? "");
   const [principal, setPrincipal] = useState("");
@@ -66,7 +81,7 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
     const nominalRate = values.take("nominal_rate", toRate(rate));
     const monthlyPayment = values.take("monthly_payment", toMoneyString(payment));
     const followUp = values.optional("follow_up_rate", followUpRate, (raw) => toRate(raw));
-    if (!firstPaymentOn) values.messages.first_payment_on = ["Bitte das Datum der ersten Rate eingeben."];
+    if (!firstPaymentOn) values.messages.first_payment_on = [t.firstMissing];
     const common = {
       lender: lender.trim(),
       contract_number: blankToNull(contractNumber),
@@ -85,10 +100,11 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
         if (removeIban) body.account_iban = null;
         else if (iban.trim() !== "") body.account_iban = iban.trim();
         await ok(api.PATCH("/api/loans/{loan_id}", { params: { path: { loan_id: loan.id } }, body }));
-        router.push(`/loans/${loan.id}`);
+        if (onDone) onDone();
+        else router.push(`/loans/${loan.id}`);
       } else {
         const amount = values.take("principal", toMoneyString(principal));
-        if (!disbursedOn) values.messages.disbursed_on = ["Bitte das Datum der Auszahlung eingeben."];
+        if (!disbursedOn) values.messages.disbursed_on = [t.disbursedMissing];
         if (!values.ok || nominalRate === undefined || monthlyPayment === undefined || followUp === undefined || amount === undefined) {
           return form.invalid(values.messages);
         }
@@ -121,16 +137,16 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
       <div className="grid">
         <Field
           id="loan-lender"
-          label="Bank"
-          description="Der Darlehensgeber laut Darlehensvertrag. Steht dieser Name im Kontoauszug als Empfänger, erkennt Hausbuch daran auch die Raten."
+          label={t.lender}
+          description={t.lenderDescription}
           errors={form.of("lender")}
         >
           <input type="text" value={lender} onChange={(e) => setLender(e.target.value)} required autoComplete="off" />
         </Field>
         <Field
           id="loan-contract"
-          label="Vertragsnummer (optional)"
-          description="Die Darlehens- oder Vertragsnummer laut Darlehensvertrag; sie unterscheidet mehrere Darlehen derselben Bank."
+          label={t.contract}
+          description={t.contractDescription}
           errors={form.of("contract_number")}
         >
           <input type="text" value={contractNumber} onChange={(e) => setContractNumber(e.target.value)} autoComplete="off" />
@@ -138,8 +154,8 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
         {loan ? null : (
           <Field
             id="loan-principal"
-            label="Darlehenssumme (€)"
-            description="Der Darlehensbetrag laut Darlehensvertrag (Nennbetrag). Aus ihm, dem Zins und der Rate rechnet Hausbuch den Tilgungsplan."
+            label={t.principalField}
+            description={t.principalDescription}
             errors={form.of("principal")}
           >
             <input type="text" inputMode="decimal" value={principal} onChange={(e) => setPrincipal(e.target.value)} required autoComplete="off" />
@@ -147,18 +163,18 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
         )}
         <Field
           id="loan-rate"
-          label="Nominalzins (% p. a.)"
-          hint="z. B. 3,65"
-          description="Der gebundene Sollzins pro Jahr laut Darlehensvertrag, nicht der effektive Jahreszins. Mit ihm rechnet der Tilgungsplan den Zinsanteil jeder Rate."
+          label={t.rateField}
+          hint={t.rateHint}
+          description={t.rateDescription}
           errors={form.of("nominal_rate")}
         >
           <input type="text" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} required autoComplete="off" />
         </Field>
         <Field
           id="loan-payment"
-          label="Rate (€ / Monat)"
-          hint="Zins und Tilgung zusammen."
-          description="Die monatliche Rate laut Darlehensvertrag. Eine Abbuchung in dieser Höhe teilt Hausbuch nach dem Tilgungsplan in Zinsen und Tilgung auf."
+          label={t.paymentField}
+          hint={t.paymentHint}
+          description={t.paymentDescription}
           errors={form.of("monthly_payment")}
         >
           <input type="text" inputMode="decimal" value={payment} onChange={(e) => setPayment(e.target.value)} required autoComplete="off" />
@@ -166,8 +182,8 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
         {loan ? null : (
           <Field
             id="loan-disbursed"
-            label="Auszahlung am"
-            description="Der Tag, an dem die Bank das Darlehen ausgezahlt hat, laut Kontoauszug oder Auszahlungsbestätigung. Ab diesem Tag laufen im Tilgungsplan die Zinsen."
+            label={t.disbursedField}
+            description={t.disbursedDescription}
             errors={form.of("disbursed_on")}
           >
             <input type="date" value={disbursedOn} onChange={(e) => setDisbursedOn(e.target.value)} required />
@@ -175,34 +191,34 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
         )}
         <Field
           id="loan-first"
-          label="Erste Rate am"
-          description="Der Tag, an dem die erste Rate fällig ist, laut Darlehensvertrag. Die weiteren Raten folgen monatlich zum selben Tag."
+          label={t.firstField}
+          description={t.firstDescription}
           errors={form.of("first_payment_on")}
         >
           <input type="date" value={firstPaymentOn} onChange={(e) => setFirstPaymentOn(e.target.value)} required />
         </Field>
         <Field
           id="loan-fixed"
-          label="Zinsbindung bis (optional)"
-          description="Das Ende der Sollzinsbindung laut Darlehensvertrag. Danach rechnet der Tilgungsplan mit dem Anschlusszins."
+          label={t.fixedField}
+          description={t.fixedDescription}
           errors={form.of("fixed_until")}
         >
           <input type="date" value={fixedUntil} onChange={(e) => setFixedUntil(e.target.value)} />
         </Field>
         <Field
           id="loan-follow-up"
-          label="Anschlusszins (% p. a., optional)"
-          hint="Annahme für die Zeit nach der Zinsbindung; leer = Nominalzins."
-          description="Ihre Annahme für den Zins nach der Zinsbindung, solange keine Anschlussfinanzierung vereinbart ist. Ohne Angabe rechnet der Tilgungsplan mit dem Nominalzins weiter."
+          label={t.followUpField}
+          hint={t.followUpHint}
+          description={t.followUpDescription}
           errors={form.of("follow_up_rate")}
         >
           <input type="text" inputMode="decimal" value={followUpRate} onChange={(e) => setFollowUpRate(e.target.value)} autoComplete="off" />
         </Field>
         <Field
           id="loan-iban"
-          label={loan ? "Neue Konto-IBAN (optional)" : "Konto-IBAN (optional)"}
-          hint={loan ? `Gespeichert: ${loan.account_iban_masked ?? "keine"}. Leer lassen, um sie zu behalten.` : "Das Darlehenskonto, für die Zuordnung der Raten."}
-          description="Die IBAN des Darlehenskontos laut Darlehensvertrag. Gespeichert wird sie nur maskiert und als nicht umkehrbarer Prüfwert; daran erkennt Hausbuch die Raten im Kontoauszug."
+          label={loan ? t.ibanNew : t.iban}
+          hint={loan ? t.ibanStored(loan.account_iban_masked ?? null) : t.ibanHint}
+          description={t.ibanDescription}
           errors={form.of("account_iban")}
         >
           <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} autoComplete="off" spellCheck={false} disabled={removeIban} />
@@ -210,8 +226,8 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
         {loan ? null : (
           <Field
             id="loan-signed"
-            label="Vertragsdatum (optional)"
-            description="Der Tag, an dem der Darlehensvertrag unterschrieben wurde."
+            label={t.signedField}
+            description={t.signedDescription}
             errors={form.of("signed_on")}
           >
             <input type="date" value={signedOn} onChange={(e) => setSignedOn(e.target.value)} />
@@ -227,19 +243,17 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
               onChange={(e) => setInterestOnly(e.target.checked)}
               aria-describedby={interestOnlyInfo ? interestOnlyDescription : undefined}
             />
-            Vor der ersten Rate nur Zinsen
+            {t.interestOnlyField}
           </label>
           <InfoToggle
             open={interestOnlyInfo}
             onToggle={() => setInterestOnlyInfo((open) => !open)}
             controls={interestOnlyDescription}
-            label="Vor der ersten Rate nur Zinsen"
+            label={t.interestOnlyField}
           />
         </div>
         <FieldDescription id={interestOnlyDescription} open={interestOnlyInfo}>
-          Bei einer Auszahlung in Teilen berechnet die Bank bis zur ersten vollen Rate nur Zinsen auf den ausgezahlten Betrag; diese
-          Zahlungen werden ganz als Darlehenszinsen gebucht, wenn der Buchungstext die Zinsen in genau dieser Höhe nennt. Der
-          Tilgungsplan beginnt dann mit der ersten Rate, deren Zinsen nur für den Monat davor berechnet werden.
+          {t.interestOnlyDescription}
         </FieldDescription>
         {form.of("interest_only_before_first_payment").length > 0 ? (
           <ul className="field-errors">
@@ -252,21 +266,27 @@ export function LoanForm({ propertyId, loan }: { propertyId: string; loan?: Loan
       {loan?.account_iban_masked ? (
         <label className="inline">
           <input type="checkbox" checked={removeIban} onChange={(e) => setRemoveIban(e.target.checked)} />
-          Gespeicherte Konto-IBAN entfernen
+          {t.removeIban}
         </label>
       ) : null}
       {loan ? (
         <Facts
           rows={[
-            ["Darlehenssumme", formatMoney(loan.terms.principal)],
-            ["Auszahlung", formatDate(loan.terms.disbursed_on)],
+            [t.principal, f.money(loan.terms.principal)],
+            [t.payout, f.date(loan.terms.disbursed_on)],
           ]}
         />
       ) : null}
-      {loan ? <p className="muted">Darlehenssumme und Auszahlung ändern Sie auf der Darlehensseite mit „Auszahlung korrigieren“.</p> : null}
+      {loan ? <p className="muted">{t.milestonesNote}</p> : null}
       <div className="row">
-        <Submit busy={busy}>{loan ? "Speichern" : "Darlehen anlegen"}</Submit>
-        <Link href={loan ? `/loans/${loan.id}` : `/properties/${propertyId}?tab=darlehen`}>Abbrechen</Link>
+        <Submit busy={busy}>{loan ? t.save : t.create}</Submit>
+        {onCancel ? (
+          <button type="button" className="link" onClick={onCancel}>
+            {t.cancel}
+          </button>
+        ) : (
+          <Link href={loan ? `/loans/${loan.id}` : `/properties/${propertyId}?tab=darlehen`}>{t.cancel}</Link>
+        )}
       </div>
       <FormBanner errors={form.errors} />
     </form>
