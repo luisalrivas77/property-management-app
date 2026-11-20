@@ -1,0 +1,134 @@
+# Rule fixture: the net worth between the first payment of the purchase price and the handover
+# (services/net_worth over a fixture ledger; docs/phases/phase-6.md D265, amending D167 (5) and
+# D172).
+#
+# Recomputed on load (tests/fixture_models_phase6.py), independently of the service:
+# - Before the handover (`on` < purchase_date) the property's line is „Anzahlung Kaufpreis“
+#   (`kind: advance`, not an estimate): minus the sum of the confirmed allocations that name the
+#   property (`property: true`) of category purchase_price (any own account) or
+#   hh_investment_property (a private account only), booked on or before the day, capped at
+#   the purchase price; no line while that sum is 0 or less. hh_property_cost never counts; an
+#   hh_investment_property line without the property counts nowhere; a superseded allocation
+#   never counts.
+# - Before the handover each loan from its disbursed_on: minus the sum of its confirmed
+#   loan_disbursement allocations booked on or before the day, capped at its principal, not an
+#   estimate. With no such allocation booked on or before the day, the loan is not valued
+#   (`value_eur: null`, counted nowhere) and the to-do net_worth.loan_payout_missing is raised.
+# - From the handover day on, the estimate (`kind: estimate`; no scenario here, so the
+#   purchase price) and the loan by its repayment schedule: interest only before the first
+#   payment, so the whole principal until 2026-11-30.
+# - `property_net` is the property's line plus the loan's (an unvalued loan adds nothing);
+#   `by_owner` splits those two lines by the property's shares, exact to the cent.
+# - `invariant`: the property's net figure on `after` (the handover day) equals the one on
+#   `before` (the day before) plus the own money paid on `after`, which is minus the sum of
+#   that day's confirmed purchase_price and loan_disbursement allocations (35000 paid, 30000 of
+#   it from the loan's second payout: 5000 own money).
+#
+# The key "on" is quoted: YAML 1.1 reads a bare on as true.
+# Invented property, loan, accounts, owners A and B and amounts.
+#
+# Readings this fixture pins (D265's row does not spell them out):
+# - „Booked on or before the day“ is the bank line's booking_date.
+# - „No confirmed payout linked“ means none booked on or before the day: in the second case the
+#   handover-day payout of 2026-09-01 is still in the ledger, and 2026-05-31 still raises the
+#   to-do.
+# - The fixture states only the property's and the loan's lines. The accounts carry no balance
+#   here: the db test anchors them after the last day asked, so the figure holds the property's
+#   lines alone and its total equals `property_net`.
+# - One bank line per allocation; the superseded one is a line of its own whose only
+#   allocation is superseded.
+
+pending: "phase 6 D265 (the net worth before the handover)"
+
+owners: [A, B]
+
+property:
+  label: Wohnung Musterweg
+  purchase_price: "200000.00"
+  notarized_on: 2026-03-02
+  purchase_date: 2026-09-01  # the handover
+  shares: {A: "1/2", B: "1/2"}
+
+loan:
+  lender: Beispielbank
+  principal: "180000.00"
+  nominal_rate: "0.0350"
+  monthly_payment: "900.00"
+  disbursed_on: 2026-05-29
+  first_payment_on: 2026-11-30
+  interest_only_before_first_payment: true
+
+accounts:
+  - {id: joint_private, kind: bank_current, purpose: private}
+  - {id: rental, kind: bank_current, purpose: rental}
+
+allocations:
+  - {id: down_payment, booked: 2026-05-15, account: joint_private, category: hh_investment_property, amount: "-15000.00", property: true}
+  - {id: no_property, booked: 2026-05-20, account: joint_private, category: hh_investment_property, amount: "-2000.00"}
+  - {id: purchase_cost, booked: 2026-05-22, account: joint_private, category: hh_property_cost, amount: "-6000.00", property: true}
+  - {id: first_payout, booked: 2026-05-29, account: rental, category: loan_disbursement, amount: "150000.00", loan: true}
+  - {id: first_instalment, booked: 2026-05-29, account: rental, category: purchase_price, amount: "-150000.00", property: true}
+  - {id: superseded_payment, booked: 2026-05-29, account: rental, category: purchase_price, amount: "-1000.00", property: true, status: superseded}
+  - {id: second_payout, booked: 2026-09-01, account: rental, category: loan_disbursement, amount: "30000.00", loan: true}
+  - {id: second_instalment, booked: 2026-09-01, account: rental, category: purchase_price, amount: "-35000.00", property: true}
+
+cases:
+  - name: the day before the first payment
+    "on": 2026-05-14
+    expect:
+      property_line: null
+      loan_line: null
+      property_net: "0.00"
+      by_owner: {A: "0.00", B: "0.00"}
+      todos: []
+
+  - name: the day of the private down payment
+    "on": 2026-05-15
+    expect:
+      property_line: {kind: advance, value_eur: "15000.00"}
+      loan_line: null  # not paid out before 2026-05-29
+      property_net: "15000.00"
+      by_owner: {A: "7500.00", B: "7500.00"}
+      todos: []
+
+  - name: the month-end after the loan's first payout
+    "on": 2026-05-31
+    expect:
+      property_line: {kind: advance, value_eur: "165000.00"}
+      loan_line: {value_eur: "-150000.00", estimate: false}
+      property_net: "15000.00"
+      by_owner: {A: "7500.00", B: "7500.00"}
+      todos: []
+
+  - name: the day before the handover
+    "on": 2026-08-31
+    expect:
+      property_line: {kind: advance, value_eur: "165000.00"}
+      loan_line: {value_eur: "-150000.00", estimate: false}
+      property_net: "15000.00"
+      by_owner: {A: "7500.00", B: "7500.00"}
+      todos: []
+
+  - name: the handover day
+    "on": 2026-09-01
+    expect:
+      property_line: {kind: estimate, value_eur: "200000.00"}
+      loan_line: {value_eur: "-180000.00", estimate: true}  # by the schedule
+      property_net: "20000.00"
+      by_owner: {A: "10000.00", B: "10000.00"}
+      todos: []
+
+  - name: the loan's first payout is not booked
+    without: [first_payout]
+    "on": 2026-05-31
+    expect:
+      property_line: {kind: advance, value_eur: "165000.00"}
+      loan_line: {value_eur: null, estimate: false}
+      property_net: "165000.00"
+      by_owner: {A: "82500.00", B: "82500.00"}
+      todos: [net_worth.loan_payout_missing]
+
+invariant:
+  before: 2026-08-31
+  after: 2026-09-01
+  own_money: "5000.00"

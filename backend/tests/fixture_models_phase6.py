@@ -2536,6 +2536,207 @@ class NetWorthFixture(Schema):
         return self
 
 
+# --- net_worth_before_handover.yaml: the advance and the paid-out loan (D265) ----------------
+
+_ADVANCE_CATEGORIES = frozenset(
+    {AllocationCategory.PURCHASE_PRICE, AllocationCategory.HH_INVESTMENT_PROPERTY}
+)
+
+
+class HandoverProperty(Schema):
+    label: str
+    purchase_price: Money
+    notarized_on: date
+    purchase_date: date  # the handover
+    shares: dict[str, Fraction]
+
+    @model_validator(mode="after")
+    def _shape(self) -> Self:
+        if sum(self.shares.values()) != 1:
+            raise ValueError("the property's shares sum to 1")
+        if self.purchase_date < self.notarized_on:
+            raise ValueError("the handover is on or after the notarized day")
+        return self
+
+
+class HandoverLoan(Schema):
+    lender: str
+    principal: Money
+    nominal_rate: Decimal
+    monthly_payment: Money
+    disbursed_on: date
+    first_payment_on: date
+    interest_only_before_first_payment: bool
+
+
+class HandoverAccount(Schema):
+    id: str
+    kind: AccountKind
+    purpose: AccountPurpose
+
+
+class HandoverAllocation(Schema):
+    id: str
+    booked: date
+    account: str
+    category: AllocationCategory
+    amount: Money
+    property: bool = False  # names the fixture's property (property_id)
+    loan: bool = False  # names the fixture's loan (loan_id)
+    status: Literal["confirmed", "superseded"] = "confirmed"
+
+
+class PropertyLineExpect(Schema):
+    kind: Literal["advance", "estimate"]
+    value_eur: Money
+
+
+class LoanLineExpect(Schema):
+    value_eur: Money | None  # None: not valued, counted nowhere
+    estimate: bool
+
+
+class HandoverExpect(Schema):
+    property_line: PropertyLineExpect | None
+    loan_line: LoanLineExpect | None
+    property_net: Money
+    by_owner: dict[str, Money]
+    todos: list[str]  # NetWorthTodoCode values
+
+
+class HandoverCase(Schema):
+    name: str
+    on: date
+    without: list[str] = Field(default_factory=list)  # allocation ids left out of the ledger
+    expect: HandoverExpect
+
+
+class HandoverInvariant(Schema):
+    before: date
+    after: date
+    own_money: Money
+
+
+class NetWorthBeforeHandoverFixture(Schema):
+    pending: str | None = None
+    owners: list[str] = Field(min_length=1)
+    property: HandoverProperty
+    loan: HandoverLoan
+    accounts: list[HandoverAccount] = Field(min_length=1)
+    allocations: list[HandoverAllocation] = Field(min_length=1)
+    cases: list[HandoverCase] = Field(min_length=1)
+    invariant: HandoverInvariant
+
+    def _ledger(self, case: HandoverCase) -> list[HandoverAllocation]:
+        return [a for a in self.allocations if a.id not in case.without]
+
+    def recompute(self, case: HandoverCase) -> HandoverExpect:
+        purposes = {a.id: a.purpose for a in self.accounts}
+        prop, loan, on = self.property, self.loan, case.on
+        booked = [a for a in self._ledger(case) if a.status == "confirmed" and a.booked <= on]
+        todos: list[str] = []
+        if on >= prop.purchase_date:
+            if on >= loan.first_payment_on:
+                raise ValueError("the fixture stops before the loan's first payment")
+            property_line = PropertyLineExpect(kind="estimate", value_eur=prop.purchase_price)
+            loan_line = LoanLineExpect(value_eur=-loan.principal, estimate=True)
+        else:
+            paid = -sum(
+                (
+                    a.amount
+                    for a in booked
+                    if a.property
+                    and a.category in _ADVANCE_CATEGORIES
+                    and (
+                        a.category is AllocationCategory.PURCHASE_PRICE
+                        or purposes[a.account] is AccountPurpose.PRIVATE
+                    )
+                ),
+                Decimal("0.00"),
+            )
+            property_line = (
+                PropertyLineExpect(kind="advance", value_eur=min(paid, prop.purchase_price))
+                if paid > 0
+                else None
+            )
+            loan_line = None
+            if on >= loan.disbursed_on:
+                payouts = [
+                    a.amount
+                    for a in booked
+                    if a.loan and a.category is AllocationCategory.LOAN_DISBURSEMENT
+                ]
+                if payouts:
+                    owed = min(sum(payouts, Decimal("0.00")), loan.principal)
+                    loan_line = LoanLineExpect(value_eur=-owed, estimate=False)
+                else:
+                    loan_line = LoanLineExpect(value_eur=None, estimate=False)
+                    todos.append("net_worth.loan_payout_missing")
+        by_owner = dict.fromkeys(self.owners, Decimal("0.00"))
+        net = Decimal("0.00")
+        for value in (
+            None if property_line is None else property_line.value_eur,
+            None if loan_line is None else loan_line.value_eur,
+        ):
+            if value is None:
+                continue
+            net += value
+            for owner, part in _split(value, prop.shares).items():
+                by_owner[owner] += part
+        return HandoverExpect(
+            property_line=property_line,
+            loan_line=loan_line,
+            property_net=net,
+            by_owner=by_owner,
+            todos=todos,
+        )
+
+    @model_validator(mode="after")
+    def _recomputed(self) -> Self:
+        accounts = {a.id for a in self.accounts}
+        ids = {a.id for a in self.allocations}
+        if len(ids) != len(self.allocations):
+            raise ValueError("allocation ids are unique")
+        for a in self.allocations:
+            if a.account not in accounts:
+                raise ValueError(f"{a.id}: an account of the fixture")
+            if a.loan and a.category is not AllocationCategory.LOAN_DISBURSEMENT:
+                raise ValueError(f"{a.id}: only a payout names the loan here")
+        if set(self.property.shares) - set(self.owners):
+            raise ValueError("a share names an owner of the workspace")
+        by_day: dict[date, HandoverExpect] = {}
+        for case in self.cases:
+            if set(case.without) - ids:
+                raise ValueError(f"{case.name}: `without` names allocations of the fixture")
+            if case.expect != self.recompute(case):
+                raise ValueError(f"{case.name} recomputes to {self.recompute(case)}")
+            if sum(case.expect.by_owner.values()) != case.expect.property_net:
+                raise ValueError(f"{case.name}: the owners' parts sum to the property's net")
+            if not case.without:
+                by_day[case.on] = case.expect
+        inv = self.invariant
+        if inv.after != self.property.purchase_date or (inv.after - inv.before).days != 1:
+            raise ValueError("the invariant compares the handover day with the day before")
+        paid_that_day = -sum(
+            (
+                a.amount
+                for a in self.allocations
+                if a.status == "confirmed"
+                and a.booked == inv.after
+                and a.category
+                in (AllocationCategory.PURCHASE_PRICE, AllocationCategory.LOAN_DISBURSEMENT)
+            ),
+            Decimal("0.00"),
+        )
+        if paid_that_day != inv.own_money:
+            raise ValueError(f"the own money paid on {inv.after} is {paid_that_day}")
+        if inv.before not in by_day or inv.after not in by_day:
+            raise ValueError("the invariant's days are cases of the full ledger")
+        if by_day[inv.after].property_net != by_day[inv.before].property_net + inv.own_money:
+            raise ValueError("the handover day's net = the day before's + the own money paid")
+        return self
+
+
 MODELS: dict[str, type[Schema]] = {
     "ownership": OwnershipFixture,
     "household_categories": HouseholdCategoriesFixture,
@@ -2557,6 +2758,7 @@ MODELS: dict[str, type[Schema]] = {
     "issuer_nav": IssuerNavFixture,
     "exchange_price": ExchangePriceFixture,
     "net_worth": NetWorthFixture,
+    "net_worth_before_handover": NetWorthBeforeHandoverFixture,
 }
 
 
