@@ -62,6 +62,7 @@ import "./health.css";
 
 type Account = components["schemas"]["Account"];
 type SnapshotResult = components["schemas"]["SnapshotResult"];
+type EstimateSource = components["schemas"]["EstimateSource"];
 
 interface HealthData {
   health: Health;
@@ -369,7 +370,7 @@ const FIGURE_INTRO: Record<MarkedFigure, string> = {
   reserve: "",
   savings_rate:
     "Rot, wenn ihr mehr ausgegeben als eingenommen habt. Eine Grenze für Grün schlägt Hausbuch nicht vor; ihr könnt eine eintragen.",
-  ltv: "Wie viel die Kredite der Wohnung von ihrem geschätzten Wert ausmachen.",
+  ltv: "Wie viel die Kredite der Wohnung von ihrem Wert ausmachen.",
   debt_service_ratio: "Welcher Teil eures Einkommens für Zins und Tilgung an die Bank geht.",
   debt_ratio: "Hausbuch schlägt keine Grenze vor; ohne eure Zahl bleibt diese Kennzahl ohne Farbe.",
   debt_to_income: "Hausbuch schlägt keine Grenze vor; ohne eure Zahl bleibt diese Kennzahl ohne Farbe.",
@@ -694,7 +695,9 @@ function FiguresCard({
           </Figure>
           <Figure title="Beleihungsauslauf" value={ltvRow?.ltv != null ? formatRatio(ltvRow.ltv) : "–"} light={marks.ltv}>
             <p className="muted">
-              Die Kredite der Wohnung geteilt durch ihren geschätzten Wert
+              {ltvRow?.estimate_source === "advance"
+                ? "Die ausgezahlten Kredite der Wohnung geteilt durch den bisher bezahlten Kaufpreis (vor der Übergabe)"
+                : "Die Kredite der Wohnung geteilt durch ihren geschätzten Wert"}
               {ltvRow ? ` (${formatEuro(ltvRow.loan_balance)} von ${formatEuro(ltvRow.estimate)})` : ""}.
             </p>
             {gap("ltv") ? <p className="muted">{gap("ltv")}</p> : null}
@@ -708,7 +711,7 @@ function FiguresCard({
                     <span>
                       <Link href={`/properties/${row.property_id}`}>Immobilie</Link>{" "}
                       <span className="muted">
-                        Wert {row.estimate_source === "scenario" ? "aus ihrem Szenario" : "nach dem Kaufpreis"}{" "}
+                        {ESTIMATE_SOURCE_TEXT[row.estimate_source]}{" "}
                         {formatEuro(row.estimate)}, Darlehen {formatEuro(row.loan_balance)}
                       </span>
                     </span>
@@ -829,6 +832,15 @@ function Figure({
     </div>
   );
 }
+
+/** Where the loan-to-value's property value comes from (phase 9 D239 amended): the scenario's
+ * estimate, the purchase price, or before the handover the price paid so far, „Anzahlung,
+ * gebucht“ (phase 6 D265), a booked figure and no estimate. */
+const ESTIMATE_SOURCE_TEXT: Record<EstimateSource, string> = {
+  scenario: "Wert aus ihrem Szenario",
+  purchase_price: "Wert nach dem Kaufpreis",
+  advance: "Anzahlung, gebucht",
+};
 
 // --- Vermögen im Verlauf ------------------------------------------------------------------
 

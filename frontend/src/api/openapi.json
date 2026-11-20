@@ -18785,7 +18785,8 @@
         "type": "string",
         "enum": [
           "scenario",
-          "purchase_price"
+          "purchase_price",
+          "advance"
         ],
         "title": "EstimateSource"
       },
@@ -25151,7 +25152,7 @@
           "property_net"
         ],
         "title": "NetWorth",
-        "description": "GET /net-worth?on=: NetWorth(on) of D167 (4) on read, or a stored month-end (`run`\nset). `by_owner` covers what has shares: an account or a property without shares\ncounts in its class and the total, in no owner, and is listed in `unassigned`.\n`property_net` is the properties' estimate less their loans (mockup 07's „Immobilie\n(netto)“); the class `liabilities` holds the loans and a credit card's balance."
+        "description": "GET /net-worth?on=: NetWorth(on) of D167 (4) on read, or a stored month-end (`run`\nset). `by_owner` covers what has shares: an account or a property without shares\ncounts in its class and the total, in no owner, and is listed in `unassigned`.\n`property_net` is the properties' estimate less their loans (mockup 07's „Immobilie\n(netto)“); before a property's handover its part is the price paid so far less what its\nloans paid out (D265), and `property_estimate` holds that paid price. The class\n`liabilities` holds the loans and a credit card's balance."
       },
       "NetWorthClass": {
         "type": "string",
@@ -25357,7 +25358,7 @@
           "label"
         ],
         "title": "NetWorthLine",
-        "description": "One figure of the net worth, asset by asset (D172: the month-end is compared with the\nhousehold's spreadsheet line by line). `value_eur` None: not valued, counted nowhere,\n`not_valued_reason` says why. A balance's `as_of` is the last day a reconciled statement\ncovers (D167 (4)); a position's price has its own day. `estimate`: the property's value\nand a loan's balance, both labelled as estimates on the screen."
+        "description": "One figure of the net worth, asset by asset (D172: the month-end is compared with the\nhousehold's spreadsheet line by line). `value_eur` None: not valued, counted nowhere,\n`not_valued_reason` says why. A balance's `as_of` is the last day a reconciled statement\ncovers (D167 (4)); a position's price has its own day. `estimate`: the property's value\nand a loan's balance from the handover on, both labelled as estimates on the screen;\nbefore the handover the price paid so far and the loan's payouts are booked figures,\nnot estimates (D265)."
       },
       "NetWorthLineKind": {
         "type": "string",
@@ -25662,6 +25663,7 @@
           "net_worth.ownership_missing",
           "net_worth.property_shares_missing",
           "net_worth.loan_not_valued",
+          "net_worth.loan_payout_missing",
           "net_worth.wallet_waiting"
         ],
         "title": "NetWorthTodoCode"

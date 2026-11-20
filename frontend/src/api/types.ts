@@ -7197,7 +7197,7 @@ export interface components {
          * EstimateSource
          * @enum {string}
          */
-        EstimateSource: "scenario" | "purchase_price";
+        EstimateSource: "scenario" | "purchase_price" | "advance";
         /**
          * EtfOverview
          * @description GET /assets/etf: every depot account with its funds, and the depot's documents.
@@ -9726,7 +9726,9 @@ export interface components {
          *     set). `by_owner` covers what has shares: an account or a property without shares
          *     counts in its class and the total, in no owner, and is listed in `unassigned`.
          *     `property_net` is the properties' estimate less their loans (mockup 07's „Immobilie
-         *     (netto)“); the class `liabilities` holds the loans and a credit card's balance.
+         *     (netto)“); before a property's handover its part is the price paid so far less what its
+         *     loans paid out (D265), and `property_estimate` holds that paid price. The class
+         *     `liabilities` holds the loans and a credit card's balance.
          */
         NetWorth: {
             /**
@@ -9780,7 +9782,9 @@ export interface components {
          *     household's spreadsheet line by line). `value_eur` None: not valued, counted nowhere,
          *     `not_valued_reason` says why. A balance's `as_of` is the last day a reconciled statement
          *     covers (D167 (4)); a position's price has its own day. `estimate`: the property's value
-         *     and a loan's balance, both labelled as estimates on the screen.
+         *     and a loan's balance from the handover on, both labelled as estimates on the screen;
+         *     before the handover the price paid so far and the loan's payouts are booked figures,
+         *     not estimates (D265).
          */
         NetWorthLine: {
             kind: components["schemas"]["NetWorthLineKind"];
@@ -9934,7 +9938,7 @@ export interface components {
          * NetWorthTodoCode
          * @enum {string}
          */
-        NetWorthTodoCode: "net_worth.balance_unreconciled" | "net_worth.balance_outdated" | "net_worth.price_missing" | "net_worth.price_stale" | "net_worth.position_not_reconciled" | "net_worth.position_not_booked" | "net_worth.ownership_missing" | "net_worth.property_shares_missing" | "net_worth.loan_not_valued" | "net_worth.wallet_waiting";
+        NetWorthTodoCode: "net_worth.balance_unreconciled" | "net_worth.balance_outdated" | "net_worth.price_missing" | "net_worth.price_stale" | "net_worth.position_not_reconciled" | "net_worth.position_not_booked" | "net_worth.ownership_missing" | "net_worth.property_shares_missing" | "net_worth.loan_not_valued" | "net_worth.loan_payout_missing" | "net_worth.wallet_waiting";
         /**
          * NextTranche
          * @description „Nächste Tranche steuerfrei“: the earliest future `tax_free_from` over every open lot,

@@ -8,8 +8,9 @@ D167 (c) amended 15 Nov 2026, D162 amended (6) and (7) 15 Nov 2026, D178 amended
 Nov 2026).
 
 Also `hausbuch relink-chain` (phase 7 D184, step 5), `hausbuch survey-solana` (phase 7,
-17 Nov 2026), `hausbuch repair-solana-lamports` (phase 7 D186 (2) amended 18 Nov 2026) and
-`hausbuch health-check` (phase 9 D259 amended 17 Nov 2026), described below.
+17 Nov 2026), `hausbuch repair-solana-lamports` (phase 7 D186 (2) amended 18 Nov 2026),
+`hausbuch health-check` (phase 9 D259 amended 17 Nov 2026) and `hausbuch recapture-months`
+(phase 6 D265 (5), 20 Nov 2026), described below.
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -110,6 +111,18 @@ run is read again for its day and printed with its reason when it no longer agre
 when everything matches and 1 when anything differs or the months cannot be checked. The
 figures are printed on the operator's terminal only; the repository records only the date, the
 months and whether they matched (§15.3).
+
+`recapture-months` runs services.health.recapture_months once for a workspace, with the same
+owner URL (phase 6 D265 (5), after the deploy that counts the down payment before the
+handover): each month from --from to --to that already holds a stored month-end run is captured
+again through net_worth.capture_month_end (a new run only when the reading differs; the old run
+stays), and where the month holds a stored key-figures snapshot a new one is stored beside it
+through the path of „Kennzahlen festhalten“ (a new row only when the figures differ). It prints
+per month „unverändert“, „neu festgehalten“ or the refusal with its codes, never an amount; a
+month with no stored run is skipped and left to the daily task, and a month whose month-end has
+a gap (D172's to-dos, a loan's missing payout among them) is skipped with the gaps' codes and
+nothing stored (D265 amended). The key figures' lock is taken before the month-end's, as the
+button and the daily task do. Insert-only; --dry-run rolls everything back.
 
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
 14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
@@ -547,6 +560,70 @@ def health_check(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
         return EXIT_OK
     print(f"{months}: abweichend")
     return EXIT_ERROR
+
+
+# --- recapture-months -----------------------------------------------------------------
+
+
+_RUN_WORDS = {
+    "written": "neu festgehalten",
+    "recaptured": "neu festgehalten",
+    "unchanged": "unverändert",
+    "empty": "nichts zu bewerten, nicht festgehalten",
+}
+_SNAPSHOT_WORDS = {"stored": "neu festgehalten", "unchanged": "unverändert"}
+
+
+def recapture_months(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.health.recapture_months once for a workspace (phase 6 D265 (5)): per month
+    the month-end's and the key figures' outcome, or the refusal's codes; never an amount.
+    `--dry-run` rolls everything back."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.health import recapture_months as recapture
+
+    if args.to < args.first:
+        raise CliError("--to is before --from")
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:recapture-months")
+                ctx = new_command(conn, args.workspace, actor, now=datetime.now(UTC))
+                results = recapture(ctx, args.first, args.to)
+                if args.dry_run:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    for result in results:
+        if result.gaps:  # the codes only: a to-do's text can carry amounts
+            gaps = ", ".join(result.gaps)
+            print(f"{result.month}: übersprungen, Monatsabschluss mit Lücken ({gaps})")
+            continue
+        if result.run is None and not result.refused:
+            print(f"{result.month}: kein gespeicherter Monatsabschluss, übersprungen")
+            continue
+        if result.run is None:
+            print(f"{result.month}: Monatsabschluss abgelehnt ({', '.join(result.refused)})")
+            continue
+        parts = [f"Monatsabschluss {_RUN_WORDS[result.run.value]}"]
+        if result.snapshot is not None:
+            parts.append(f"Kennzahlen {_SNAPSHOT_WORDS[result.snapshot.value]}")
+        elif result.refused:
+            parts.append(f"Kennzahlen abgelehnt ({', '.join(result.refused)})")
+        print(f"{result.month}: {'; '.join(parts)}")
+    if args.dry_run:
+        print("Probelauf: nichts gespeichert")
+    return EXIT_OK
 
 
 def _month(value: str) -> str:
@@ -1287,6 +1364,20 @@ def _parser() -> argparse.ArgumentParser:
         "--to", type=_month, default=None, help="the last month, YYYY-MM (default: last ended)"
     )
     checked.set_defaults(command=health_check, command_name="health-check")
+
+    recaptured = commands.add_parser(
+        "recapture-months",
+        help="capture each month's stored month-end again and, where the month holds a stored "
+        "key-figures snapshot, store its key figures again beside it; prints „unverändert“, "
+        "„neu festgehalten“ or the refusal per month, no amount (phase 6 D265 (5))",
+    )
+    recaptured.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    recaptured.add_argument(
+        "--from", dest="first", type=_month, required=True, help="the first month, YYYY-MM"
+    )
+    recaptured.add_argument("--to", type=_month, required=True, help="the last month, YYYY-MM")
+    recaptured.add_argument("--dry-run", action="store_true", help="roll everything back")
+    recaptured.set_defaults(command=recapture_months, command_name="recapture-months")
 
     returned = commands.add_parser(
         "pair-returns",

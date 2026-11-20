@@ -107,6 +107,7 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
   }
 
   const estimates = today.lines.filter((line) => line.estimate && line.value_eur != null);
+  const paid = today.lines.filter(isPaidBeforeHandover);
   const older = today.lines.filter((line) => line.kind === "account" && line.as_of != null && line.as_of < today.on);
   const names = new Map(owners.map((owner) => [owner.id, owner.full_name]));
   const byOwner = Object.entries(today.by_owner);
@@ -143,6 +144,7 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
             </p>
           ) : null}
           {older.length > 0 ? <BalanceDates lines={older} /> : null}
+          {paid.length > 0 ? <PaidNote lines={paid} /> : null}
           {estimates.length > 0 ? <EstimateNote lines={estimates} /> : null}
         </>
       )}
@@ -187,6 +189,30 @@ function BalanceDates({ lines }: { lines: NetWorthLine[] }) {
         .map((line) => `„${line.label}“ ${formatMoney(line.value_eur)} · Stand vom ${formatDate(line.as_of)}`)
         .join("; ")}
     </p>
+  );
+}
+
+/** Phase 6 D265: before a property's handover its line („Anzahlung Kaufpreis – …“) and its
+ * loans' lines are booked figures, not estimates: the price paid so far and what each loan paid
+ * out. They are the only property and loan lines the server sends with `estimate` false. */
+function isPaidBeforeHandover(line: NetWorthLine): boolean {
+  return (line.kind === "property" || line.kind === "loan") && !line.estimate && line.value_eur != null;
+}
+
+/** The booked figures before the handover, each with the server's note (until when it counts). */
+function PaidNote({ lines }: { lines: NetWorthLine[] }) {
+  return (
+    <div className="notice notice-info">
+      <p>Vor der Übergabe der Wohnung:</p>
+      <ul>
+        {lines.map((line, index) => (
+          <li key={`${line.kind}-${line.property_id ?? ""}-${line.loan_id ?? ""}-${index}`}>
+            {line.kind === "loan" ? "Darlehen " : ""}„{line.label}“ {formatMoney(line.value_eur)}
+            {line.note ? ` · ${line.note}` : ""}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -258,7 +284,7 @@ export function slices(figure: NetWorth): Slice[] {
       key: "property",
       label: "Immobilie (netto)",
       value: figure.property_net,
-      detail: "Wert minus Darlehen, geschätzt",
+      detail: propertyDetail(figure.lines),
       href: properties.length === 1 ? `/properties/${properties[0]}` : "/planning",
     },
     { key: "depot", label: "Depot", value: cls("depot"), detail: accountNames(figure.lines, "depot"), href: "/assets" },
@@ -268,6 +294,24 @@ export function slices(figure: NetWorth): Slice[] {
   ];
   const hasProperty = figure.lines.some((line) => line.kind === "property" || line.kind === "loan");
   return all.filter((slice) => (slice.key === "property" ? hasProperty : toCents(slice.value) !== 0n));
+}
+
+/** The property slice's detail, saying only what its valued lines hold: an estimate from the
+ * handover on; before it (D265) the price paid so far and the loans' payouts, which are booked
+ * figures; „teils geschätzt“ when one property is before its handover and another after it. No
+ * „geschätzt“ while no line holds a value, and no payout named while no loan is valued (D265
+ * amended, the build's review). */
+function propertyDetail(lines: NetWorthLine[]): string {
+  const own = lines.filter((line) => (line.kind === "property" || line.kind === "loan") && line.value_eur != null);
+  const estimated = own.some((line) => line.estimate);
+  const advance = own.some((line) => line.kind === "property" && !line.estimate);
+  const payout = own.some((line) => line.kind === "loan" && !line.estimate);
+  if (advance || payout) {
+    if (estimated) return "Wert minus Darlehen, teils geschätzt";
+    if (advance && payout) return "Anzahlung minus ausgezahltes Darlehen";
+    return advance ? "Anzahlung Kaufpreis" : "ausgezahltes Darlehen";
+  }
+  return estimated ? "Wert minus Darlehen, geschätzt" : "Wert minus Darlehen";
 }
 
 /** A slice's share of the positive slices, in whole percent ("68"); null for a negative one. */

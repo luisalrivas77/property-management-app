@@ -32,6 +32,14 @@ NetWorth(on) = Σ balances + Σ positions × price + the properties' estimate �
   rules.health.figures.estimate_on); until 17 Nov 2026 every day read today's. **Its
   loans** from the payout, by the repayment schedule (the scenario's follow-up rate where it
   sets one, as the projection does), an estimate too.
+- **Before the handover (D265, 20 Nov 2026).** For a property whose handover is after `on`:
+  „Anzahlung Kaufpreis – <property>“, the price paid so far (minus the confirmed allocations
+  booked through `on` naming the property: `purchase_price` on any own account,
+  `hh_investment_property` on a private one; capped at the price, no line while nothing is
+  paid), and each loan from its disbursed_on by its confirmed payouts through `on` (capped at
+  its principal; with none, not valued and the to-do net_worth.loan_payout_missing). Both are
+  booked figures, not estimates, and the schedule is not read. Until 20 Nov 2026 neither
+  counted before the handover, so a down payment from own money vanished until then.
 - **Owners**: an account's figures by its account_ownership set in force on `on` (the newest
   recorded set whose effective_from is on or before `on`; before its first set, the earliest
   one), the property and its loans by the property's shares; split to the cent by
@@ -66,8 +74,9 @@ account shares follow the sets in force on `on` as recorded now.
 
 A stored month-end is read from its rows alone: every euro figure, the classes and the total
 are the stored values, never recomputed (a later „Wert heute“ or loan change leaves it as
-it was). Only what the rows do not hold is looked up: the labels, and the owner split by the
-account shares in force on the month-end and the property's shares.
+it was). Only what the rows do not hold is looked up: the labels (a run before a property's
+handover reads its property and loan rows as the advance and the payouts, D265 (4)), and the
+owner split by the account shares in force on the month-end and the property's shares.
 """
 
 from collections import defaultdict
@@ -82,6 +91,7 @@ from sqlalchemy import Connection, func, insert, select
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import account_ownership as ownership_table
+from hausbuch.db.tables import allocation as allocation_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import bank_connection as connection_table
 from hausbuch.db.tables import loan as loan_table
@@ -96,7 +106,14 @@ from hausbuch.rules import net_worth as rules
 from hausbuch.rules import valuation
 from hausbuch.rules.errors import RuleError
 from hausbuch.rules.loan_schedule import build_schedule
-from hausbuch.schemas.enums import BANK_ACCOUNT_KINDS, AccountKind, ImportStatus
+from hausbuch.schemas.allocation import AllocationCategory
+from hausbuch.schemas.enums import (
+    BANK_ACCOUNT_KINDS,
+    AccountKind,
+    AccountPurpose,
+    AllocationStatus,
+    ImportStatus,
+)
 from hausbuch.schemas.events import EventType, ValuationSnapshotWritten
 from hausbuch.schemas.household import AssetKind, NetWorthClass, PriceSourceKind
 from hausbuch.schemas.net_worth import (
@@ -513,40 +530,32 @@ def _properties(
 ) -> tuple[list[_Item], list[NetWorthTodo], dict[UUID, dict]]:
     p = property_table.c
     rows = conn.execute(
-        select(p.id, p.label, p.purchase_price, p.purchase_date, p.ownership_ended_on)
-        .where(p.purchase_date <= on)
-        .order_by(p.label, p.id)
+        select(p.id, p.label, p.purchase_price, p.purchase_date, p.ownership_ended_on).order_by(
+            p.label, p.id
+        )
     ).all()
     rows = [r for r in rows if r.ownership_ended_on is None or r.ownership_ended_on > on]
     shares = _property_shares(conn, [r.id for r in rows])
     items: list[_Item] = []
     todos: list[NetWorthTodo] = []
+    before = [r for r in rows if r.purchase_date > on]
+    loans_before = {r.id: list_loans(conn, r.id) for r in before}
+    advances, payouts = _paid_before_handover(
+        conn,
+        [r.id for r in before],
+        [loan.id for found in loans_before.values() for loan in found],
+        on,
+    )
     for prop in rows:
-        estimate, scenario = estimate_on_day(conn, prop.id, prop.purchase_price, on)
-        levers = scenario.levers if scenario is not None else None
-        if levers is not None and levers.today_value is not None:
-            note = f"Schätzwert: „Wert heute“ aus dem Szenario „{scenario.name}“ (Planung)"
+        first = len(todos)  # the shares to-do goes before the loans' (as before D265)
+        if prop.purchase_date > on:
+            lines = _before_handover(prop, loans_before[prop.id], advances, payouts, on, todos)
         else:
-            note = (
-                "Schätzwert: der Kaufpreis; einen aktuellen Wert unter Planung als "
-                "„Wert heute“ eintragen"
-            )
-        items.append(
-            _Item(
-                NetWorthLine(
-                    kind=L.PROPERTY,
-                    net_worth_class=C.PROPERTY,
-                    label=prop.label,
-                    property_id=prop.id,
-                    value_eur=estimate.value,
-                    estimate=True,
-                    note=note,
-                ),
-                prop.id,
-            )
-        )
-        if not shares.get(prop.id):
-            todos.append(
+            lines = _from_handover(conn, prop, on, todos)
+        items.extend(_Item(line, prop.id) for line in lines)
+        if lines and not shares.get(prop.id):
+            todos.insert(
+                first,
                 NetWorthTodo(
                     code=T.PROPERTY_SHARES_MISSING,
                     text=(
@@ -555,46 +564,192 @@ def _properties(
                     ),
                     action="Immobilie öffnen",
                     href=f"/properties/{prop.id}",
-                )
+                ),
             )
-        follow_up = {lv.loan_id: lv.follow_up_rate for lv in (levers.loans if levers else [])}
-        for loan in list_loans(conn, prop.id):
-            terms = loan.terms
-            rate = follow_up.get(loan.id)
-            if rate is not None:
-                terms = terms.model_copy(update={"follow_up_rate": rate})
-            line = NetWorthLine(
-                kind=L.LOAN,
-                net_worth_class=C.LIABILITIES,
-                label=loan.lender,
-                property_id=prop.id,
-                loan_id=loan.id,
-                estimate=True,
-                note="Restschuld laut Tilgungsplan",
-                value_eur=ZERO,
-            )
-            try:
-                entries = build_schedule(terms).entries
-            except RuleError as exc:
-                line = line.model_copy(update={"value_eur": None, "not_valued_reason": exc.code})
-                todos.append(
-                    NetWorthTodo(
-                        code=T.LOAN_NOT_VALUED,
-                        text=(
-                            f"Der Tilgungsplan des Darlehens „{loan.lender}“ lässt sich nicht "
-                            "berechnen; seine Restschuld fehlt im Nettovermögen."
-                        ),
-                        action="Darlehen öffnen",
-                        href=f"/loans/{loan.id}",
-                    )
-                )
-                items.append(_Item(line, prop.id))
-                continue
-            if on < terms.disbursed_on:
-                continue
-            owed = rules.loan_balance(entries, terms.principal, terms.disbursed_on, on)
-            items.append(_Item(line.model_copy(update={"value_eur": -owed}), prop.id))
     return items, todos, shares
+
+
+def _from_handover(conn: Connection, prop, on: date, todos: list[NetWorthTodo]) -> list:
+    """From the handover on: the estimate and each loan by its schedule (D86, D167 (5))."""
+    estimate, scenario = estimate_on_day(conn, prop.id, prop.purchase_price, on)
+    levers = scenario.levers if scenario is not None else None
+    if levers is not None and levers.today_value is not None:
+        note = f"Schätzwert: „Wert heute“ aus dem Szenario „{scenario.name}“ (Planung)"
+    else:
+        note = (
+            "Schätzwert: der Kaufpreis; einen aktuellen Wert unter Planung als "
+            "„Wert heute“ eintragen"
+        )
+    lines = [
+        NetWorthLine(
+            kind=L.PROPERTY,
+            net_worth_class=C.PROPERTY,
+            label=prop.label,
+            property_id=prop.id,
+            value_eur=estimate.value,
+            estimate=True,
+            note=note,
+        )
+    ]
+    follow_up = {lv.loan_id: lv.follow_up_rate for lv in (levers.loans if levers else [])}
+    for loan in list_loans(conn, prop.id):
+        terms = loan.terms
+        rate = follow_up.get(loan.id)
+        if rate is not None:
+            terms = terms.model_copy(update={"follow_up_rate": rate})
+        line = NetWorthLine(
+            kind=L.LOAN,
+            net_worth_class=C.LIABILITIES,
+            label=loan.lender,
+            property_id=prop.id,
+            loan_id=loan.id,
+            estimate=True,
+            note="Restschuld laut Tilgungsplan",
+            value_eur=ZERO,
+        )
+        try:
+            entries = build_schedule(terms).entries
+        except RuleError as exc:
+            todos.append(
+                NetWorthTodo(
+                    code=T.LOAN_NOT_VALUED,
+                    text=(
+                        f"Der Tilgungsplan des Darlehens „{loan.lender}“ lässt sich nicht "
+                        "berechnen; seine Restschuld fehlt im Nettovermögen."
+                    ),
+                    action="Darlehen öffnen",
+                    href=f"/loans/{loan.id}",
+                )
+            )
+            lines.append(line.model_copy(update={"value_eur": None, "not_valued_reason": exc.code}))
+            continue
+        if on < terms.disbursed_on:
+            continue
+        owed = rules.loan_balance(entries, terms.principal, terms.disbursed_on, on)
+        lines.append(line.model_copy(update={"value_eur": -owed}))
+    return lines
+
+
+def advance_label(property_label: str) -> str:
+    return f"Anzahlung Kaufpreis – {property_label}"
+
+
+def advance_note(handover: date) -> str:
+    return (
+        f"Bisher bezahlter Teil des Kaufpreises; zählt bis zur Übergabe am {_german(handover)}, "
+        "danach der Schätzwert"
+    )
+
+
+def payout_note(handover: date) -> str:
+    return (
+        f"Bisher ausgezahlt; bis zur Übergabe am {_german(handover)}, danach Restschuld laut "
+        "Tilgungsplan"
+    )
+
+
+def _paid_before_handover(
+    conn: Connection, property_ids: Sequence[UUID], loan_ids: Sequence[UUID], on: date
+) -> tuple[dict[UUID, Decimal], dict[UUID, Decimal]]:
+    """D265 (1), (2): per property, the confirmed allocations booked through `on` that pay its
+    price (`purchase_price` on any own account, `hh_investment_property` on a private one,
+    each naming the property); per loan, its confirmed payouts (`loan_disbursement` naming it)
+    through `on`. A loan with no such payout is absent from the second map."""
+    if not property_ids and not loan_ids:
+        return {}, {}
+    a, t, acc = allocation_table.c, transaction_table.c, account_table.c
+    paid = (a.category == AllocationCategory.PURCHASE_PRICE.value) | (
+        (a.category == AllocationCategory.HH_INVESTMENT_PROPERTY.value)
+        & (acc.purpose == AccountPurpose.PRIVATE.value)
+    )
+    base = (
+        select()
+        .select_from(allocation_table)
+        .join(transaction_table, t.id == a.transaction_id)
+        .join(account_table, acc.id == t.account_id)
+        .where(
+            a.status == AllocationStatus.CONFIRMED.value,
+            t.excluded_as_duplicate_of.is_(None),
+            t.booking_date <= on,
+        )
+    )
+    advances = {
+        r.property_id: r.total
+        for r in conn.execute(
+            base.add_columns(a.property_id, func.sum(a.amount).label("total"))
+            .where(a.property_id.in_(property_ids), paid)
+            .group_by(a.property_id)
+        )
+    }
+    payouts = {
+        r.loan_id: r.total
+        for r in conn.execute(
+            base.add_columns(a.loan_id, func.sum(a.amount).label("total"))
+            .where(
+                a.loan_id.in_(loan_ids),
+                a.category == AllocationCategory.LOAN_DISBURSEMENT.value,
+            )
+            .group_by(a.loan_id)
+        )
+    }
+    return advances, payouts
+
+
+def _before_handover(
+    prop,
+    loans: Sequence,
+    advances: dict[UUID, Decimal],
+    payouts: dict[UUID, Decimal],
+    on: date,
+    todos: list[NetWorthTodo],
+) -> list[NetWorthLine]:
+    """D265: before the handover, „Anzahlung Kaufpreis“ (the price paid so far, capped at the
+    price, no line while nothing is paid) and each loan from its payout day by what it paid
+    out (capped at its principal); not estimates. The schedule is not read."""
+    lines: list[NetWorthLine] = []
+    paid = -advances.get(prop.id, ZERO)
+    if paid > 0:
+        lines.append(
+            NetWorthLine(
+                kind=L.PROPERTY,
+                net_worth_class=C.PROPERTY,
+                label=advance_label(prop.label),
+                property_id=prop.id,
+                value_eur=min(paid, prop.purchase_price),
+                estimate=False,
+                note=advance_note(prop.purchase_date),
+            )
+        )
+    for loan in loans:
+        if on < loan.terms.disbursed_on:
+            continue
+        line = NetWorthLine(
+            kind=L.LOAN,
+            net_worth_class=C.LIABILITIES,
+            label=loan.lender,
+            property_id=prop.id,
+            loan_id=loan.id,
+            estimate=False,
+            note=payout_note(prop.purchase_date),
+            value_eur=ZERO,
+        )
+        if loan.id not in payouts:
+            todos.append(
+                NetWorthTodo(
+                    code=T.LOAN_PAYOUT_MISSING,
+                    text=(
+                        f"Keine Auszahlung ist mit dem Darlehen „{loan.lender}“ verknüpft; bis zur "
+                        "Übergabe fehlt seine Restschuld im Nettovermögen."
+                    ),
+                    action="Zu prüfen öffnen",
+                    href="/inbox",
+                )
+            )
+            lines.append(line.model_copy(update={"value_eur": None}))
+            continue
+        owed = min(payouts[loan.id], loan.terms.principal)
+        lines.append(line.model_copy(update={"value_eur": -owed}))
+    return lines
 
 
 # --- the figure -----------------------------------------------------------------------------
@@ -792,24 +947,34 @@ def month_end_figure(conn: Connection, run: NetWorthRun) -> NetWorth:
         loan.property_id for loan in loans.values()
     }
     properties = {
-        r.id: r.label for r in conn.execute(select(p.id, p.label).where(p.id.in_(property_ids)))
+        r.id: r
+        for r in conn.execute(select(p.id, p.label, p.purchase_date).where(p.id.in_(property_ids)))
     }
     items = []
     for r in rows:
         if r.property_id is not None:
+            prop = properties[r.property_id]
+            # D265 (4): a run before the handover holds the price paid so far, no estimate.
+            before = run.as_of < prop.purchase_date
             line = NetWorthLine(
                 kind=L.PROPERTY,
                 net_worth_class=C.PROPERTY,
-                label=properties[r.property_id],
+                label=advance_label(prop.label) if before else prop.label,
                 property_id=r.property_id,
                 value_eur=r.value_eur,
-                estimate=True,
-                note=STORED_PROPERTY_NOTE,
+                estimate=not before,
+                note=(
+                    f"{advance_note(prop.purchase_date)}; zum Monatsende gespeichert"
+                    if before
+                    else STORED_PROPERTY_NOTE
+                ),
             )
             items.append(_Item(line, r.property_id))
             continue
         if r.loan_id is not None:
             loan = loans[r.loan_id]
+            handover = properties[loan.property_id].purchase_date
+            before = run.as_of < handover
             line = NetWorthLine(
                 kind=L.LOAN,
                 net_worth_class=C.LIABILITIES,
@@ -817,8 +982,12 @@ def month_end_figure(conn: Connection, run: NetWorthRun) -> NetWorth:
                 property_id=loan.property_id,
                 loan_id=r.loan_id,
                 value_eur=r.value_eur,
-                estimate=True,
-                note=STORED_LOAN_NOTE,
+                estimate=not before,
+                note=(
+                    f"{payout_note(handover)}; zum Monatsende gespeichert"
+                    if before
+                    else STORED_LOAN_NOTE
+                ),
             )
             items.append(_Item(line, loan.property_id))
             continue

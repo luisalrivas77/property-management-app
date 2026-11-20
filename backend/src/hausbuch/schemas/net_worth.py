@@ -18,8 +18,11 @@ from .household import NetWorthClass, PriceEur, PriceSourceKind, Quantity
 class NetWorthLineKind(StrEnum):
     ACCOUNT = "account"  # a bank, depot-cash or credit-card balance
     POSITION = "position"  # units of an asset on a depot, exchange or wallet account
-    PROPERTY = "property"  # the property's estimate (D86)
-    LOAN = "loan"  # a property loan's balance by its schedule
+    # The property's estimate (D86); before its handover the price paid so far, „Anzahlung
+    # Kaufpreis“, not an estimate (D265).
+    PROPERTY = "property"
+    # A property loan's balance by its schedule; before the handover what it paid out (D265).
+    LOAN = "loan"
 
 
 class NetWorthLine(Schema):
@@ -27,7 +30,9 @@ class NetWorthLine(Schema):
     household's spreadsheet line by line). `value_eur` None: not valued, counted nowhere,
     `not_valued_reason` says why. A balance's `as_of` is the last day a reconciled statement
     covers (D167 (4)); a position's price has its own day. `estimate`: the property's value
-    and a loan's balance, both labelled as estimates on the screen."""
+    and a loan's balance from the handover on, both labelled as estimates on the screen;
+    before the handover the price paid so far and the loan's payouts are booked figures,
+    not estimates (D265)."""
 
     kind: NetWorthLineKind
     net_worth_class: NetWorthClass
@@ -62,6 +67,8 @@ class NetWorthTodoCode(StrEnum):
     OWNERSHIP_MISSING = "net_worth.ownership_missing"
     PROPERTY_SHARES_MISSING = "net_worth.property_shares_missing"
     LOAN_NOT_VALUED = "net_worth.loan_not_valued"
+    # A loan paid out before the handover with no payout booked yet (D265 (2)).
+    LOAN_PAYOUT_MISSING = "net_worth.loan_payout_missing"
     # A wallet's read movements that wait for a person (16 Nov 2026).
     WALLET_WAITING = "net_worth.wallet_waiting"
 
@@ -90,7 +97,9 @@ class NetWorth(Schema):
     set). `by_owner` covers what has shares: an account or a property without shares
     counts in its class and the total, in no owner, and is listed in `unassigned`.
     `property_net` is the properties' estimate less their loans (mockup 07's „Immobilie
-    (netto)“); the class `liabilities` holds the loans and a credit card's balance."""
+    (netto)“); before a property's handover its part is the price paid so far less what its
+    loans paid out (D265), and `property_estimate` holds that paid price. The class
+    `liabilities` holds the loans and a credit card's balance."""
 
     on: date
     total: Money
