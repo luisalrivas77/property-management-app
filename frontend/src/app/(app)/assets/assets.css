@@ -1,0 +1,246 @@
+/* Anlagen (phase 10 step 4b, mockup 20): the section chips and the position rows that open the
+   detail panel. Tokens from globals.css only. */
+
+.asset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 20px;
+}
+
+.asset-chips a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.asset-chips a:hover {
+  border-color: var(--accent);
+}
+
+.asset-chips a[aria-current="page"] {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--accent-text);
+}
+
+/* A list of positions: each row a link that opens the panel. The grid keeps the columns of a
+   table on the computer; on the phone only the name and the value stay in the row. */
+.asset-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.asset-row,
+.asset-rows-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  align-items: center;
+  padding: 10px 8px;
+}
+
+.asset-rows-head {
+  padding-top: 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.asset-row {
+  border-bottom: 1px solid var(--divider);
+  border-radius: var(--radius-tag);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.asset-rows li:last-child .asset-row {
+  border-bottom: none;
+}
+
+.asset-row:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.asset-row[aria-current="true"] {
+  background: var(--accent-tint);
+}
+
+.asset-row-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.asset-row-sub {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.asset-row .num,
+.asset-rows-head .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.asset-col {
+  display: none;
+}
+
+.asset-row .asset-value {
+  font-weight: 700;
+}
+
+.asset-good {
+  color: var(--accent-strong);
+}
+
+.asset-bad {
+  color: var(--danger);
+}
+
+@media (min-width: 720px) {
+  .asset-rows[data-cols="etf"] .asset-row,
+  .asset-rows[data-cols="etf"] .asset-rows-head {
+    grid-template-columns: minmax(0, 2.2fr) 0.7fr 1.2fr 1fr 1fr 1fr;
+  }
+  .asset-rows[data-cols="overview"] .asset-row,
+  .asset-rows[data-cols="overview"] .asset-rows-head {
+    grid-template-columns: minmax(0, 2fr) 1fr 1.3fr 1fr;
+  }
+  .asset-rows[data-cols="crypto"] .asset-row,
+  .asset-rows[data-cols="crypto"] .asset-rows-head {
+    grid-template-columns: minmax(0, 1.2fr) 1.4fr 1fr 1fr 1.1fr;
+  }
+  .asset-col {
+    display: block;
+  }
+  .asset-phone {
+    display: none;
+  }
+}
+
+/* The phone keeps one line under the name for what the hidden columns say. */
+.asset-row-sub.asset-phone {
+  display: block;
+}
+
+@media (min-width: 720px) {
+  .asset-row-sub.asset-phone {
+    display: none;
+  }
+}
+
+.asset-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+  gap: 16px;
+}
+
+.asset-section-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.asset-section-head h2 {
+  margin: 0;
+}
+
+.asset-section-head .spacer {
+  flex: 1;
+}
+
+/* The check against the depot report, in the position's panel. */
+.asset-check {
+  padding: 12px 14px;
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-card);
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
+.asset-check h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.asset-check p {
+  margin: 0;
+}
+
+.asset-lots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.asset-lots li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.asset-lots li:last-child {
+  border-bottom: none;
+}
+
+.asset-lot-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.asset-kind-bar {
+  display: flex;
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--mark-empty);
+}
+
+.asset-kind-bar span {
+  display: block;
+  height: 100%;
+}
+
+.asset-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.asset-kinds li {
+  display: grid;
+  font-size: 14px;
+}
+
+.asset-kinds .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 2px;
+}

@@ -1,23 +1,29 @@
 "use client";
 
-// Haushalt (phase 6 §13, docs/mockups/10-household-cashflow.png): where the household's money
-// went in one month, from the confirmed allocations of the private accounts only. Einnahmen,
-// Ausgaben and Sparquote with their 12-month average, the lines still without a category (a
-// link to Zu prüfen), the surplus per month over twelve months, the spending by taxonomy group,
-// the income rows, and „Gespart, nicht ausgegeben“: transfers to own savings, depot or
-// exchange accounts are saved, not spent (D162), listed from GET /transfers. No budget and no
-// target (household design §10, advice_mode own_use).
+// Haushalt (phase 6 §13; phase 10 mockup 19): where the household's money went in one month,
+// from the confirmed allocations of the private accounts only. Einnahmen, Ausgaben and
+// Sparquote with their average, the lines still without a category (a link to Zu prüfen), the
+// surplus per month over twelve months, the spending by taxonomy group, the income rows, and
+// „Gespart, nicht ausgegeben“: transfers to own savings, depot or exchange accounts are saved,
+// not spent (D162), listed from GET /transfers.
 //
 // Phase 9 (§14, D231, D232, D242): the month is ?monat=YYYY-MM, so Übersicht and Planung link to
 // it; the „Ø“ figures are the means over the window's closed months (GET /health), headed with
 // their real count, and stand back for a to-do below three; the flat's result R is an income row,
 // so the month's rate is visibly the household's; a month whose stored closing differs from the
-// month on read carries the chip „seit dem Abschluss geändert“ with both values.
+// month on read carries the chip „seit dem Abschluss geändert“, which opens both values in the
+// detail panel (`#d-abschluss-<month>`).
 //
-// Phase 9 D263 (§7.7, mockup 10b): for each code the default scenario in force on the month's
-// last day names, „Geplant“ and „Unterschied“ beside the month's spending, from GET
-// /household-plan/comparison; „bisher“ while the month is not closed, with the lines that still
-// wait in Zu prüfen. No colour, no mark: the words are the server's.
+// Phase 9 D263 (§7.7): for each code the default scenario in force on the month's last day names,
+// „Geplant“ and „Unterschied“ beside the month's spending, from GET /household-plan/comparison;
+// „bisher“ while the month is not closed, with the lines that still wait in Zu prüfen. No colour,
+// no mark: the words are the server's.
+//
+// Phase 10 (D267, mockup 19): a group's name opens the detail panel (`#d-gruppe-<group>`) with its
+// month, share and mean and its subcategories, each with its plan; the table still opens a group
+// in place on the computer. On the phone the table keeps the name, a share bar and the amount.
+import "./household.css";
+
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useId, useState } from "react";
@@ -31,19 +37,20 @@ import {
   lastFullMonth,
   loadCashflow,
   monthsUpTo,
-  openLinesText,
   rateOfSums,
-  signedMoney,
   spent,
   sumMoney,
   toCents,
 } from "@/components/cashflow";
-import { formatMoney, formatMonth, formatPercent, todayIso } from "@/components/format";
+import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
+import { todayIso } from "@/components/format";
 import { HealthTodoList } from "@/components/healthFigures";
-import { longDate, monthRange } from "@/components/healthShared";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useFormat, useT, type Formatter } from "@/i18n";
+import { common } from "@/i18n/common";
+import { household } from "@/i18n/household";
 
 type HouseholdGroup = components["schemas"]["HouseholdGroup"];
 type AllocationCategory = components["schemas"]["AllocationCategory"];
@@ -56,7 +63,7 @@ type SpendingComparisonRow = components["schemas"]["SpendingComparisonRow"];
 
 const MONTHS_SHOWN = 12;
 const MONTHS_OFFERED = 24;
-const SHORT_MONTH = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+const PLANNING_BUDGET = "/planning?section=budget";
 
 interface Year {
   /** The twelve months ending at the chosen one, oldest first; the chosen one is last. */
@@ -95,11 +102,6 @@ function chosenMonth(raw: string | null, current: string): string {
   return lastFullMonth();
 }
 
-/** „Ø 5 Monate“: a mean headed with its real basis, the window's closed months (phase 9 D231). */
-function meanLabel(count: number, short = false): string {
-  return `Ø ${count} ${short ? "Mon." : count === 1 ? "Monat" : "Monate"}`;
-}
-
 /** The Geldanlage group's fallback („Sonstige Geldanlage“), listed last when the group opens. */
 const INVESTMENT_FALLBACK: AllocationCategory = "hh_investment";
 
@@ -111,15 +113,48 @@ function categoryLabel(category: string): string {
   return ALLOCATION_CATEGORY[category as AllocationCategory] ?? category;
 }
 
+/** A signed amount: „+1.350,00 €“, „-200,00 €“. */
+function signed(f: Formatter, value: string): string {
+  return `${toCents(value) > 0n ? "+" : ""}${f.money(value)}`;
+}
+
+/** „18. November 2026“ / „18 November 2026“: the day a scenario was saved. */
+function longDay(f: Formatter, iso: string): string {
+  const day = Number(iso.slice(8, 10));
+  return f.locale === "de" ? `${day}. ${f.month(iso)}` : `${day} ${f.month(iso)}`;
+}
+
+/** „August 2026 – Oktober 2026“: the closed months the means run over. */
+function monthSpan(f: Formatter, months: string[]): string {
+  const first = months[0];
+  const last = months[months.length - 1];
+  if (!first || !last) return "";
+  return first === last ? f.month(first) : `${f.month(first)} – ${f.month(last)}`;
+}
+
+/** An amount's share of the month's spending as a fraction („0.073“), for display only. */
+function shareOf(amount: string, total: bigint): string {
+  const value = toCents(amount);
+  if (total <= 0n || value <= 0n) return "0";
+  return (Number((value * 1000n) / total) / 1000).toFixed(3);
+}
+
 export default function HouseholdPage() {
   return (
-    <Suspense fallback={<p className="muted">Lädt …</p>}>
+    <Suspense fallback={<Fallback />}>
       <Household />
     </Suspense>
   );
 }
 
+function Fallback() {
+  const c = useT(common);
+  return <p className="muted">{c.loading}</p>;
+}
+
 function Household() {
+  const t = useT(household);
+  const f = useFormat();
   const ids = useId();
   const search = useSearchParams();
   const router = useRouter();
@@ -132,19 +167,19 @@ function Household() {
     <section>
       <div className="page-head planning-head">
         <div>
-          <p className="eyebrow">Haushalt · {formatMonth(month)}</p>
-          <h1>Wohin das Geld geht</h1>
+          <h1>{t.title}</h1>
+          <p className="household-sub">{t.subtitle}</p>
         </div>
         <span className="spacer" />
         <label htmlFor={`${ids}-month`} className="inline">
-          Monat
+          {t.month}
           <select id={`${ids}-month`} value={month} onChange={(event) => setMonth(event.target.value)}>
             {monthsUpTo(current, MONTHS_OFFERED)
               .reverse()
               .map((m) => (
                 <option key={m} value={m}>
-                  {formatMonth(m)}
-                  {m === current ? " (läuft noch)" : ""}
+                  {f.month(m)}
+                  {m === current ? t.running : ""}
                 </option>
               ))}
           </select>
@@ -162,6 +197,10 @@ function HouseholdYear({ month }: { month: string }) {
 }
 
 function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void }) {
+  const t = useT(household);
+  const f = useFormat();
+  const groupDetail = useDetail("gruppe");
+  const closingDetail = useDetail("abschluss");
   const { months, transfers, health, overall, windowMonths, comparison } = year;
   const month = months[months.length - 1];
   if (!month) return null;
@@ -171,90 +210,109 @@ function HouseholdMonth({ year, onChanged }: { year: Year; onChanged: () => void
   const closed = overall.window.months ?? [];
   const enough = overall.window.enough;
   const means = enough ? windowMonths : [];
-  const mean = (values: string[]) => (enough ? formatMoney(averageMoney(values)) : "–");
+  const mean = (values: string[]) => (enough ? f.money(averageMoney(values)) : "–");
   // The window's rate as the household counts it (D235), the same Σ S ÷ Σ E as Übersicht.
   const windowViews = health.filter((h) => closed.includes(h.month)).map((h) => h.household);
-  const windowRate =
-    overall.savings_rate?.rate ?? (windowViews.length === closed.length ? rateOfSums(windowViews) : null);
+  const windowRate = overall.savings_rate?.rate ?? (windowViews.length === closed.length ? rateOfSums(windowViews) : null);
   const last = closed[closed.length - 1];
   // What holds the month after the window open (its own closing to-dos), when it is loaded.
   const after = health.find((h) => (last === undefined || h.month > last) && !h.closed.closed);
   const tooFew = (overall.todos ?? []).filter((todo) => todo.code === "too_few_months");
+
+  let panel = null;
+  if (view?.stored && closingDetail.id === month.month) {
+    panel = (
+      <DetailPanel title={t.changedTitle} backLabel={t.title} onClose={closingDetail.close}>
+        <ChangedSinceClosing month={month.month} now={view.household} stored={view.stored} />
+      </DetailPanel>
+    );
+  } else if (groupDetail.id) {
+    panel = (
+      <DetailPanel title={groupLabel(groupDetail.id)} backLabel={t.title} onClose={groupDetail.close}>
+        <GroupPanel group={groupDetail.id} month={month} windowMonths={means} comparison={comparison} />
+      </DetailPanel>
+    );
+  }
+
   return (
-    <div className="stack planning">
-      {view?.stored ? <ChangedSinceClosing month={month.month} now={view.household} stored={view.stored} /> : null}
-      <div className="planning-kpis">
-        <div className="planning-kpi" role="group" aria-label="Einnahmen">
-          <p className="planning-kpi-label">Einnahmen</p>
-          <p className="planning-kpi-value">{formatMoney(month.income)}</p>
-          <p className="planning-kpi-sub">
-            {meanLabel(closed.length)} {mean(windowMonths.map((m) => m.income))}
+    <DetailLayout panel={panel}>
+      <div className="stack planning">
+        {view?.stored ? (
+          <p>
+            <a {...closingDetail.linkProps(month.month)} className="household-changed">
+              <span className="badge badge-warn">{t.changed} ›</span>
+            </a>
           </p>
+        ) : null}
+        <div className="planning-kpis">
+          <div className="planning-kpi" role="group" aria-label={t.income}>
+            <p className="planning-kpi-label">{t.income}</p>
+            <p className="planning-kpi-value">{f.money(month.income)}</p>
+            <p className="planning-kpi-sub">
+              {t.mean(closed.length)} {mean(windowMonths.map((m) => m.income))}
+            </p>
+          </div>
+          <div className="planning-kpi" role="group" aria-label={t.spending}>
+            <p className="planning-kpi-label">{t.spending}</p>
+            <p className="planning-kpi-value">{f.money(spentNow)}</p>
+            <p className="planning-kpi-sub">
+              {t.mean(closed.length)} {mean(windowMonths.map(spent))}
+            </p>
+          </div>
+          <div className="planning-kpi" role="group" aria-label={t.savingsRate}>
+            <p className="planning-kpi-label">{t.savingsRate}</p>
+            <p className="planning-kpi-value">{householdNow?.savings_rate != null ? f.percent(householdNow.savings_rate) : "–"}</p>
+            <p className="planning-kpi-sub">
+              {t.mean(closed.length)} {enough && windowRate != null ? f.percent(windowRate) : "–"} · {t.savingsRateHow}
+            </p>
+          </div>
+          <div className={month.open_lines > 0 ? "planning-kpi household-open" : "planning-kpi"} role="group" aria-label={t.uncategorised}>
+            <p className="planning-kpi-label">{t.uncategorised}</p>
+            <p className="planning-kpi-value">{t.openLines(month.open_lines)}</p>
+            <p className="planning-kpi-sub">{month.open_lines > 0 ? <Link href="/inbox">{t.answerInInbox}</Link> : t.allAssigned}</p>
+          </div>
         </div>
-        <div className="planning-kpi" role="group" aria-label="Ausgaben">
-          <p className="planning-kpi-label">Ausgaben</p>
-          <p className="planning-kpi-value">{formatMoney(spentNow)}</p>
-          <p className="planning-kpi-sub">
-            {meanLabel(closed.length)} {mean(windowMonths.map(spent))}
-          </p>
-        </div>
-        <div className="planning-kpi" role="group" aria-label="Sparquote">
-          <p className="planning-kpi-label">Sparquote</p>
-          <p className="planning-kpi-value">
-            {householdNow?.savings_rate != null ? formatPercent(householdNow.savings_rate) : "–"}
-          </p>
-          <p className="planning-kpi-sub">
-            {meanLabel(closed.length)} {enough && windowRate != null ? formatPercent(windowRate) : "–"} · Gespart ÷ Einnahmen, mit
-            dem Ergebnis der Wohnung
-          </p>
-        </div>
-        <div className={month.open_lines > 0 ? "planning-kpi household-open" : "planning-kpi"} role="group" aria-label="Ohne Kategorie">
-          <p className="planning-kpi-label">Ohne Kategorie</p>
-          <p className="planning-kpi-value">{openLinesText(month.open_lines)}</p>
-          <p className="planning-kpi-sub">
-            {month.open_lines > 0 ? <Link href="/inbox">In Zu prüfen beantworten →</Link> : "Alles zugeordnet"}
-          </p>
-        </div>
-      </div>
-      {enough ? (
-        <p className="muted">
-          Basis der Durchschnitte: {closed.length} abgeschlossene Monate, {monthRange(closed)}.
-        </p>
-      ) : (
-        <section className="card stack" aria-labelledby="window-title">
-          <h2 id="window-title">Noch keine Durchschnitte</h2>
-          <p className="muted">
-            Die Durchschnitte erscheinen ab 3 abgeschlossenen Monaten in Folge; bisher {closed.length === 1 ? "ist es 1" : `sind es ${closed.length}`}.
-          </p>
-          <HealthTodoList todos={[...tooFew, ...(after?.closed.todos ?? [])]} onChanged={onChanged} />
-        </section>
-      )}
-      <SurplusBars months={months} windowMonths={means} />
-      <div className="planning-split">
-        <SpendingTable months={months} windowMonths={means} comparison={comparison} />
-        <div className="stack household-side">
+        {enough ? (
+          <p className="muted">{t.basis(closed.length, monthSpan(f, closed))}</p>
+        ) : (
+          <section className="card stack" aria-labelledby="window-title">
+            <h2 id="window-title">{t.noMeansTitle}</h2>
+            <p className="muted">{t.noMeansText(closed.length)}</p>
+            <HealthTodoList todos={[...tooFew, ...(after?.closed.todos ?? [])]} onChanged={onChanged} />
+          </section>
+        )}
+        <SurplusBars months={months} windowMonths={means} />
+        <SpendingTable
+          months={months}
+          windowMonths={means}
+          comparison={comparison}
+          groupLink={groupDetail.linkProps}
+          openGroup={groupDetail.id}
+        />
+        <div className="planning-split">
           <IncomeCard month={month} household={householdNow ?? null} />
           <SavedBox month={month} transfers={transfers} />
         </div>
       </div>
-    </div>
+    </DetailLayout>
   );
 }
 
 /** Überschuss je Monat: income less spending per month, the chosen month in the strong
  * colour. The heights are the returned figures relative to the largest, for display only. */
 function SurplusBars({ months, windowMonths }: { months: HouseholdCashflow[]; windowMonths: HouseholdCashflow[] }) {
+  const t = useT(household);
+  const f = useFormat();
+  const short = t.shortMonths.split(",");
   const largest = Math.max(0, ...months.map((m) => Math.abs(Number(m.surplus))));
   return (
     <section className="card" aria-labelledby="surplus-title">
       <div className="planning-card-head">
-        <h2 id="surplus-title">Überschuss je Monat</h2>
+        <h2 id="surplus-title">{t.surplusTitle}</h2>
         <span className="spacer" />
         <span className="muted">
-          Einnahmen minus Ausgaben
-          {windowMonths.length > 0
-            ? ` · ${meanLabel(windowMonths.length)} ${formatMoney(averageMoney(windowMonths.map((m) => m.surplus)))}`
-            : ""}
+          {t.surplusHow}
+          {windowMonths.length > 0 ? ` · ${t.mean(windowMonths.length)} ${f.money(averageMoney(windowMonths.map((m) => m.surplus)))}` : ""}
         </span>
       </div>
       <ul className="planning-bars">
@@ -264,15 +322,14 @@ function SurplusBars({ months, windowMonths }: { months: HouseholdCashflow[]; wi
           const classes = ["planning-bar"];
           if (index === months.length - 1) classes.push("planning-bar-sale");
           if (value < 0) classes.push("household-bar-negative");
-          const short = SHORT_MONTH[Number(m.month.slice(5, 7)) - 1] ?? m.month;
           return (
-            <li key={m.month} title={`${formatMonth(m.month)}: ${formatMoney(m.surplus)}`}>
+            <li key={m.month} title={`${f.month(m.month)}: ${f.money(m.surplus)}`}>
               <span className={classes.join(" ")} style={{ height: `${height}%` }} />
               <span className="planning-bar-year" aria-hidden="true">
-                {short}
+                {short[Number(m.month.slice(5, 7)) - 1] ?? m.month}
               </span>
               <span className="visually-hidden">
-                {formatMonth(m.month)}: {formatMoney(m.surplus)}
+                {f.month(m.month)}: {f.money(m.surplus)}
               </span>
             </li>
           );
@@ -282,50 +339,70 @@ function SurplusBars({ months, windowMonths }: { months: HouseholdCashflow[]; wi
   );
 }
 
+type LinkProps = ReturnType<ReturnType<typeof useDetail>["linkProps"]>;
+
+/** The codes of a group to list under it, the group's fallback last; planned codes included. */
+function orderedCodes(group: string, both: HouseholdCashflow[], planned: SpendingComparisonRow[], month: HouseholdCashflow): string[] {
+  const codes = [...new Set([...groupCodes(both, group), ...planned.filter((r) => r.group === group && !onGroupRow(r)).map((r) => r.code)])];
+  const codeNow = (code: string) => month.spending_by_category?.[group]?.[code] ?? "0.00";
+  const fallback = fallbackOf(group);
+  return codes.sort((a, b) => {
+    if (a === fallback || b === fallback) return a === fallback ? 1 : -1;
+    const diff = toCents(codeNow(b)) - toCents(codeNow(a));
+    return diff > 0n ? 1 : diff < 0n ? -1 : categoryLabel(a).localeCompare(categoryLabel(b));
+  });
+}
+
+function plannedFor(planned: SpendingComparisonRow[], group: string, code: string | null): SpendingComparisonRow | undefined {
+  return planned.find((row) => row.group === group && (code === null ? onGroupRow(row) : row.code === code && !onGroupRow(row)));
+}
+
 /** Ausgaben nach Kategorie: the chosen month's groups, largest first, with their share of the
- * month's spending and their 12-month average. A group booked under more than one code, or
- * under a subcategory (D159 amended 14 Nov 2026, migration 0032), opens to its codes, indented
- * under it, largest first and the group's fallback („Sonstige …“) last. */
+ * month's spending and their average. A group booked under more than one code, or under a
+ * subcategory (D159 amended 14 Nov 2026, migration 0032), opens to its codes, indented under it,
+ * largest first and the group's fallback („Sonstige …“) last; its name opens the panel. */
 function SpendingTable({
   months,
   windowMonths,
   comparison,
+  groupLink,
+  openGroup,
 }: {
   months: HouseholdCashflow[];
   windowMonths: HouseholdCashflow[];
   comparison: SpendingComparison;
+  groupLink: (group: string) => LinkProps;
+  openGroup: string | null;
 }) {
+  const t = useT(household);
+  const f = useFormat();
   const planned = comparison.rows ?? [];
   // A planned subcategory opens its group, as mockup 10b shows it.
-  const [open, setOpen] = useState<ReadonlySet<string>>(
-    () => new Set(planned.filter((row) => !onGroupRow(row)).map((row) => row.group)),
-  );
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(planned.filter((row) => !onGroupRow(row)).map((row) => row.group)));
   const month = months[months.length - 1];
   if (!month) return null;
   const total = toCents(spent(month));
   const both = [...months, ...windowMonths];
   const groups = [...new Set([...both.flatMap((m) => Object.keys(m.spending_by_group)), ...planned.map((row) => row.group)])];
   const withPlan = planned.length > 0;
-  const plannedFor = (group: string, code: string | null) =>
-    planned.find((row) => row.group === group && (code === null ? onGroupRow(row) : row.code === code && !onGroupRow(row)));
   const planCells = (row: SpendingComparisonRow | undefined) =>
     withPlan ? (
       <>
-        <td className="num muted">{row ? formatMoney(row.planned) : ""}</td>
-        <td>{row ? row.text : ""}</td>
+        <td className="num muted household-wide">{row ? f.money(row.planned) : ""}</td>
+        <td className="household-wide">{row ? row.text : ""}</td>
       </>
     ) : null;
-  const meanOf = (value: (m: HouseholdCashflow) => string) =>
-    windowMonths.length > 0 ? formatMoney(averageMoney(windowMonths.map(value))) : "–";
+  const meanOf = (value: (m: HouseholdCashflow) => string) => (windowMonths.length > 0 ? f.money(averageMoney(windowMonths.map(value))) : "–");
   const now = (group: string) => month.spending_by_group[group] ?? "0.00";
   groups.sort((a, b) => {
     const diff = toCents(now(b)) - toCents(now(a));
     return diff > 0n ? 1 : diff < 0n ? -1 : groupLabel(a).localeCompare(groupLabel(b));
   });
-  const share = (amount: string) => {
-    const value = toCents(amount);
-    return total > 0n && value > 0n ? Number((value * 1000n) / total) / 10 : 0;
-  };
+  const bar = (amount: string, phone = false) => (
+    <span className={phone ? "household-share household-bar-phone" : "household-share"} aria-hidden="true">
+      <span style={{ width: `${Number(shareOf(amount, total)) * 100}%` }} />
+    </span>
+  );
   const toggle = (group: string) =>
     setOpen((current) => {
       const next = new Set(current);
@@ -335,49 +412,52 @@ function SpendingTable({
     });
   return (
     <section className="card household-spending" aria-labelledby="spending-title">
-      <h2 id="spending-title">Ausgaben nach Kategorie</h2>
+      <h2 id="spending-title">{t.byCategory}</h2>
       {withPlan ? (
         <p className="muted">
-          „Geplant“ steht nur bei den Kategorien, für die ihr in eurem Szenario etwas geplant habt
-          {comparison.scenario_created_at ? `: gespeichert am ${longDate(comparison.scenario_created_at)}` : ""} unter{" "}
-          <Link href="/planning?tab=haushalt#ausgaben-durchspielen">Planung › Haushalt › Ausgaben durchspielen</Link>.
+          {t.plannedOnly(comparison.scenario_created_at ? t.savedOn(longDay(f, comparison.scenario_created_at)) : "")}
+          {t.under}
+          <Link href={PLANNING_BUDGET}>{t.planningBudget}</Link>.
         </p>
       ) : null}
       {groups.length === 0 ? (
-        <p className="muted">In diesem Monat ist keine Ausgabe bestätigt.</p>
+        <p className="muted">{t.noSpending}</p>
       ) : (
         <div className="table-wrap">
-          <table>
+          <table className="household-table">
             <thead>
               <tr>
-                <th scope="col">Kategorie</th>
-                <th scope="col">Anteil</th>
+                <th scope="col">{t.category}</th>
+                <th scope="col" className="household-wide">
+                  {t.share}
+                </th>
                 <th scope="col" className="num">
-                  {formatMonth(month.month)}
-                  {withPlan && !comparison.final ? " bisher" : ""}
+                  {f.month(month.month)}
+                  {withPlan && !comparison.final ? t.soFar : ""}
                 </th>
                 {withPlan ? (
                   <>
-                    <th scope="col" className="num">
-                      Geplant
+                    <th scope="col" className="num household-wide">
+                      {t.planned}
                     </th>
-                    <th scope="col">Unterschied</th>
+                    <th scope="col" className="household-wide">
+                      {t.difference}
+                    </th>
                   </>
                 ) : null}
-                <th scope="col" className="num">
-                  {windowMonths.length > 0 ? meanLabel(windowMonths.length, true) : "Ø"}
+                <th scope="col" className="num household-wide">
+                  {windowMonths.length > 0 ? t.meanShort(windowMonths.length) : "Ø"}
                 </th>
               </tr>
             </thead>
             <tbody>
               {groups.flatMap((group) => {
-                const codes = [
-                  ...new Set([...groupCodes(both, group), ...planned.filter((r) => r.group === group && !onGroupRow(r)).map((r) => r.code)]),
-                ];
+                const codes = orderedCodes(group, both, planned, month);
                 const expanded = open.has(group);
                 const rowId = `spending-${group}`;
+                const plans = planned.filter((row) => row.group === group).length;
                 const rows = [
-                  <tr key={group}>
+                  <tr key={group} aria-current={openGroup === group ? "true" : undefined}>
                     <th scope="row">
                       {codes.length > 0 ? (
                         <button
@@ -385,44 +465,37 @@ function SpendingTable({
                           className="household-toggle"
                           aria-expanded={expanded}
                           aria-controls={codes.map((code) => `${rowId}-${code}`).join(" ")}
+                          aria-label={t.openGroup(groupLabel(group))}
                           onClick={() => toggle(group)}
                         >
-                          <span aria-hidden="true">{expanded ? "▾" : "▸"}</span> {groupLabel(group)}
+                          <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
                         </button>
-                      ) : (
-                        groupLabel(group)
-                      )}
+                      ) : null}{" "}
+                      <a {...groupLink(group)} className="household-group">
+                        {groupLabel(group)}
+                      </a>
+                      {bar(now(group), true)}
+                      {plans > 0 ? <span className="badge badge-muted household-plan-chip">{t.plannedCount(plans)}</span> : null}
                     </th>
-                    <td>
-                      <span className="household-share" aria-hidden="true">
-                        <span style={{ width: `${share(now(group))}%` }} />
-                      </span>
-                    </td>
-                    <td className="num">{formatMoney(now(group))}</td>
-                    {planCells(plannedFor(group, null))}
-                    <td className="num muted">{meanOf((m) => m.spending_by_group[group] ?? "0.00")}</td>
+                    <td className="household-wide">{bar(now(group))}</td>
+                    <td className="num">{f.money(now(group))}</td>
+                    {planCells(plannedFor(planned, group, null))}
+                    <td className="num muted household-wide">{meanOf((m) => m.spending_by_group[group] ?? "0.00")}</td>
                   </tr>,
                 ];
                 if (!expanded) return rows;
                 const codeNow = (code: string) => month.spending_by_category?.[group]?.[code] ?? "0.00";
-                const fallback = fallbackOf(group);
-                const ordered = [...codes].sort((a, b) => {
-                  if (a === fallback || b === fallback) return a === fallback ? 1 : -1;
-                  const diff = toCents(codeNow(b)) - toCents(codeNow(a));
-                  return diff > 0n ? 1 : diff < 0n ? -1 : categoryLabel(a).localeCompare(categoryLabel(b));
-                });
-                for (const code of ordered) {
+                for (const code of codes) {
                   rows.push(
                     <tr key={`${group}-${code}`} id={`${rowId}-${code}`} className="household-subrow">
-                      <th scope="row">{categoryLabel(code)}</th>
-                      <td>
-                        <span className="household-share" aria-hidden="true">
-                          <span style={{ width: `${share(codeNow(code))}%` }} />
-                        </span>
-                      </td>
-                      <td className="num">{formatMoney(codeNow(code))}</td>
-                      {planCells(plannedFor(group, code))}
-                      <td className="num muted">{meanOf((m) => m.spending_by_category?.[group]?.[code] ?? "0.00")}</td>
+                      <th scope="row">
+                        {categoryLabel(code)}
+                        {bar(codeNow(code), true)}
+                      </th>
+                      <td className="household-wide">{bar(codeNow(code))}</td>
+                      <td className="num">{f.money(codeNow(code))}</td>
+                      {planCells(plannedFor(planned, group, code))}
+                      <td className="num muted household-wide">{meanOf((m) => m.spending_by_category?.[group]?.[code] ?? "0.00")}</td>
                     </tr>,
                   );
                 }
@@ -431,18 +504,18 @@ function SpendingTable({
             </tbody>
             <tfoot>
               <tr>
-                <th scope="row">{withPlan && !comparison.final ? "Summe bisher" : "Summe"}</th>
-                <td />
+                <th scope="row">{withPlan && !comparison.final ? t.sumSoFar : t.sum}</th>
+                <td className="household-wide" />
                 <td className="num">
-                  <strong>{formatMoney(spent(month))}</strong>
+                  <strong>{f.money(spent(month))}</strong>
                 </td>
                 {withPlan ? (
                   <>
-                    <td />
-                    <td />
+                    <td className="household-wide" />
+                    <td className="household-wide" />
                   </>
                 ) : null}
-                <td />
+                <td className="household-wide" />
               </tr>
             </tfoot>
           </table>
@@ -450,19 +523,99 @@ function SpendingTable({
       )}
       {withPlan && !comparison.final ? (
         <p className="muted">
-          Der Monat ist noch nicht abgeschlossen: „bisher“ zählt die bestätigten Umsätze bis heute. Der Vergleich mit „Geplant“ ist erst
-          nach dem Monatsabschluss endgültig.
+          {t.notFinal}
           {(comparison.open_lines ?? 0) > 0 ? (
             <>
               {" "}
-              <Link href="/inbox">
-                {openLinesText(comparison.open_lines ?? 0)} {comparison.open_lines === 1 ? "wartet" : "warten"} in Zu prüfen
-              </Link>
+              <Link href="/inbox">{t.waiting(t.openLines(comparison.open_lines ?? 0), comparison.open_lines ?? 0)}</Link>
             </>
           ) : null}
         </p>
       ) : null}
     </section>
+  );
+}
+
+/** A tapped group in the panel: its month, share and mean, and its subcategories with their plan
+ * (D263): each code's share, mean, „Geplant … · <the server's words>“ and amount. */
+function GroupPanel({
+  group,
+  month,
+  windowMonths,
+  comparison,
+}: {
+  group: string;
+  month: HouseholdCashflow;
+  windowMonths: HouseholdCashflow[];
+  comparison: SpendingComparison;
+}) {
+  const t = useT(household);
+  const f = useFormat();
+  const planned = comparison.rows ?? [];
+  const total = toCents(spent(month));
+  const amount = month.spending_by_group[group] ?? "0.00";
+  const both = windowMonths.length > 0 ? [month, ...windowMonths] : [month];
+  const codes = orderedCodes(group, both, planned, month);
+  const codeNow = (code: string) => month.spending_by_category?.[group]?.[code] ?? "0.00";
+  const meanOf = (value: (m: HouseholdCashflow) => string) => f.money(averageMoney(windowMonths.map(value)));
+  const groupPlan = plannedFor(planned, group, null);
+  const anyPlan = planned.some((row) => row.group === group);
+  return (
+    <div className="stack">
+      <p className="muted">{t.monthByCategory(f.month(month.month))}</p>
+      <dl className="facts">
+        <div>
+          <dt>{f.month(month.month)}</dt>
+          <dd>
+            <strong>{f.money(amount)}</strong>
+          </dd>
+        </div>
+        <div>
+          <dt>{t.shareOfSpending}</dt>
+          <dd>{f.percent(shareOf(amount, total))}</dd>
+        </div>
+        {windowMonths.length > 0 ? (
+          <div>
+            <dt>{t.meanOver(windowMonths.length, monthSpan(f, windowMonths.map((m) => m.month)))}</dt>
+            <dd>{meanOf((m) => m.spending_by_group[group] ?? "0.00")}</dd>
+          </div>
+        ) : null}
+        {groupPlan ? (
+          <div>
+            <dt>{t.planned}</dt>
+            <dd>{t.plannedLine(f.money(groupPlan.planned), groupPlan.text)}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {codes.length > 0 ? (
+        <>
+          <h3>{t.subcategories}</h3>
+          <ul className="detail-rows household-panel-rows">
+            {codes.map((code) => {
+              const plan = plannedFor(planned, group, code);
+              const sub = [f.percent(shareOf(codeNow(code), total))];
+              if (windowMonths.length > 0) sub.push(`Ø ${meanOf((m) => m.spending_by_category?.[group]?.[code] ?? "0.00")}`);
+              return (
+                <li key={code}>
+                  <div className="detail-row">
+                    <span className="detail-row-text">
+                      <span className="detail-row-title">{categoryLabel(code)}</span>
+                      <span className="detail-row-sub">{sub.join(" · ")}</span>
+                      {plan ? <span className="detail-row-sub">{t.plannedLine(f.money(plan.planned), plan.text)}</span> : null}
+                    </span>
+                    <strong>{f.money(codeNow(code))}</strong>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      ) : null}
+      <p className="muted hint">
+        {anyPlan && comparison.scenario_created_at ? t.planFooter(longDay(f, comparison.scenario_created_at)) : t.planFooterNone}
+        <Link href={PLANNING_BUDGET}>{t.planningBudget}</Link>.
+      </p>
+    </div>
   );
 }
 
@@ -490,85 +643,81 @@ function groupCodes(months: HouseholdCashflow[], group: string): string[] {
   return codes.length === 1 && fallback !== null && codes[0] !== fallback ? codes : [];
 }
 
-function IncomeCard({ month, household }: { month: HouseholdCashflow; household: HouseholdMonthFigures | null }) {
+function IncomeCard({ month, household: figures }: { month: HouseholdCashflow; household: HouseholdMonthFigures | null }) {
+  const t = useT(household);
+  const f = useFormat();
   const rows = Object.entries(month.income_by_category ?? {});
   // The flat's cash result before repayment (R, D233): part of the household's income, signed.
-  const flat = household && toCents(household.rental_result) !== 0n ? household.rental_result : null;
+  const flat = figures && toCents(figures.rental_result) !== 0n ? figures.rental_result : null;
   return (
-    <section className="card stack" aria-labelledby="income-title">
-      <h2 id="income-title">Einnahmen</h2>
+    <section className="card stack household-side" aria-labelledby="income-title">
+      <h2 id="income-title">{t.income}</h2>
       {rows.length === 0 && flat === null ? (
-        <p className="muted">In diesem Monat ist keine Einnahme bestätigt.</p>
+        <p className="muted">{t.noIncome}</p>
       ) : (
         <ul className="household-rows">
           {rows.map(([category, amount]) => (
             <li key={category}>
               <span>{categoryLabel(category)}</span>
-              <strong>{formatMoney(amount)}</strong>
+              <strong>{f.money(amount)}</strong>
             </li>
           ))}
           {flat !== null ? (
             <li>
-              <span>Wohnung (Ergebnis des Mietkontos)</span>
-              <strong>{signedMoney(flat)}</strong>
+              <span>{t.flatResult}</span>
+              <strong>{signed(f, flat)}</strong>
             </li>
           ) : null}
         </ul>
       )}
-      {flat !== null ? (
-        <p className="muted">Das Ergebnis der Wohnung vor Tilgung zählt zu den Einnahmen des Haushalts; die Sparquote rechnet damit.</p>
-      ) : null}
+      {flat !== null ? <p className="muted">{t.flatHint}</p> : null}
     </section>
   );
 }
 
-const CHANGED_ROWS: [keyof HouseholdMonthFigures, string][] = [
-  ["income", "Einnahmen mit der Wohnung"],
-  ["spending", "Ausgaben"],
-  ["saved", "Gespart"],
-];
-
 /** „seit dem Abschluss geändert“ (D242): the month's stored closing beside the month on read. */
 function ChangedSinceClosing({ month, now, stored }: { month: string; now: HouseholdMonthFigures; stored: HouseholdMonthFigures }) {
+  const t = useT(household);
+  const f = useFormat();
+  const rows: [keyof HouseholdMonthFigures, string][] = [
+    ["income", t.incomeWithFlat],
+    ["spending", t.spending],
+    ["saved", t.saved],
+  ];
   return (
-    <details className="health-sources">
-      <summary>
-        <span className="badge badge-warn">seit dem Abschluss geändert</span>
-      </summary>
-      <p className="muted">
-        Seit dem Abschluss von {formatMonth(month)} hat sich eine Buchung des Monats geändert. Die festgehaltenen Kennzahlen bleiben, wie
-        sie waren; diese Seite zeigt den Monat, wie er heute gebucht ist.
-      </p>
+    <div className="stack">
+      <p className="muted">{f.month(month)}</p>
+      <p>{t.changedText(f.month(month))}</p>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th scope="col">Zahl</th>
+              <th scope="col">{t.figure}</th>
               <th scope="col" className="num">
-                Beim Abschluss
+                {t.atClosing}
               </th>
               <th scope="col" className="num">
-                Heute
+                {t.today}
               </th>
             </tr>
           </thead>
           <tbody>
-            {CHANGED_ROWS.map(([key, label]) => (
+            {rows.map(([key, label]) => (
               <tr key={key}>
                 <th scope="row">{label}</th>
-                <td className="num">{formatMoney(stored[key] as string)}</td>
-                <td className="num">{formatMoney(now[key] as string)}</td>
+                <td className="num">{f.money(stored[key] as string)}</td>
+                <td className="num">{f.money(now[key] as string)}</td>
               </tr>
             ))}
             <tr>
-              <th scope="row">Sparquote</th>
-              <td className="num">{stored.savings_rate != null ? formatPercent(stored.savings_rate) : "–"}</td>
-              <td className="num">{now.savings_rate != null ? formatPercent(now.savings_rate) : "–"}</td>
+              <th scope="row">{t.savingsRate}</th>
+              <td className="num">{stored.savings_rate != null ? f.percent(stored.savings_rate) : "–"}</td>
+              <td className="num">{now.savings_rate != null ? f.percent(now.savings_rate) : "–"}</td>
             </tr>
           </tbody>
         </table>
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -580,6 +729,8 @@ function ChangedSinceClosing({ month, now, stored }: { month: string; now: House
  * Sparen & Tagesgeld, „Sonstige Geldanlage“ last), as a spending group opens in the table;
  * only codes with an amount this month are listed. */
 function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: TransferLinkView[] }) {
+  const t = useT(household);
+  const f = useFormat();
   const [open, setOpen] = useState(false);
   const stayed = fromCents(toCents(month.surplus) - toCents(month.saved));
   const invested = Object.entries(month.invested_by_category ?? {}).filter(([, amount]) => toCents(amount) !== 0n);
@@ -593,11 +744,11 @@ function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: T
   const opens = invested.length > 1 || (invested.length === 1 && invested[0]?.[0] !== INVESTMENT_FALLBACK);
   const rowId = "saved-investment";
   return (
-    <section className="card stack notice-info" aria-labelledby="saved-title">
-      <h2 id="saved-title">Gespart, nicht ausgegeben</h2>
+    <section className="card stack notice-info household-side" aria-labelledby="saved-title">
+      <h2 id="saved-title">{t.savedTitle}</h2>
       <p>
-        Überweisungen an eigene Konten zählen nicht als Ausgaben.
-        {toCents(month.saved) > 0n ? ` Auf Spar-, Depot- und Börsenkonten und in Geldanlagen gingen ${formatMoney(month.saved)}.` : ""}
+        {t.savedText}
+        {toCents(month.saved) > 0n ? t.savedAmount(f.money(month.saved)) : ""}
       </p>
       {invested.length > 0 || transfers.length > 0 ? (
         <ul className="household-rows">
@@ -616,14 +767,14 @@ function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: T
               ) : (
                 <span>{HOUSEHOLD_GROUP.investment}</span>
               )}
-              <span>{formatMoney(investedTotal)}</span>
+              <span>{f.money(investedTotal)}</span>
             </li>
           ) : null}
           {opens && open
             ? invested.map(([code, amount]) => (
                 <li key={code} id={`${rowId}-${code}`} className="household-subitem">
                   <span>{categoryLabel(code)}</span>
-                  <span>{formatMoney(amount)}</span>
+                  <span>{f.money(amount)}</span>
                 </li>
               ))
             : null}
@@ -632,7 +783,7 @@ function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: T
               <span>
                 {link.out_leg.account_label} → {link.in_leg.account_label}
               </span>
-              <span>{link.in_leg.amount != null ? formatMoney(link.in_leg.amount) : null}</span>
+              <span>{link.in_leg.amount != null ? f.money(link.in_leg.amount) : null}</span>
             </li>
           ))}
         </ul>
@@ -640,8 +791,8 @@ function SavedBox({ month, transfers }: { month: HouseholdCashflow; transfers: T
       {toCents(month.saved) > 0n ? (
         <p>
           {toCents(stayed) >= 0n
-            ? `Vom Überschuss (${signedMoney(month.surplus)}) sind ${formatMoney(stayed)} auf den Girokonten geblieben.`
-            : `Es wurde ${formatMoney(stayed.replace(/^-/, ""))} mehr angelegt, als in diesem Monat übrig blieb.`}
+            ? t.stayed(signed(f, month.surplus), f.money(stayed))
+            : t.overInvested(f.money(stayed.replace(/^-/, "")))}
         </p>
       ) : null}
     </section>

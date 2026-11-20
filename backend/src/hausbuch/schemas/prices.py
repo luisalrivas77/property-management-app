@@ -16,6 +16,8 @@ from .common import Money, Schema
 from .household import (
     AssetKind,
     CurrencyCode,
+    DepotDocumentStatus,
+    DepotPosition,
     NavPoint,
     PriceDraft,
     PriceEur,
@@ -28,6 +30,9 @@ __all__ = [
     "AssetPriceRow",
     "AssetRow",
     "AssetsOverview",
+    "EtfAccountToday",
+    "EtfPositionToday",
+    "EtfToday",
     "FxRate",
     "NavPoint",
     "NavRow",
@@ -111,6 +116,46 @@ class AssetsOverview(Schema):
     unvalued_positions: int = Field(default=0, ge=0)
     # Wallets whose read movements wait for a person: not in `accounts` yet (16 Nov 2026).
     waiting: list[WalletWaiting] = Field(default_factory=list)
+
+
+# --- The Anlagen ETF tab at the newest daily price (phase 10 D280) ----------------------
+
+
+class EtfPositionToday(DepotPosition):
+    """One fund on the ETF tab (phase 10 D280): the row shows `units` and `value_today_eur`,
+    both copied from the Übersicht's OverviewPosition of the same account, asset and day
+    (`rules.valuation`, D167), with the price's source and day in `price`; never a sum or a
+    product of its own. `from_report` with `price.on` is „Kurs aus dem Bericht vom …“
+    (D174 (4)); a fund past its last reconciled report has no value and `not_valued_reason`
+    valuation.not_valued (D165 (3), „siehe Zu prüfen“). `gain_today_eur` is
+    `value_today_eur` − `cost_eur` while both are shown. The inherited report figures
+    (`report_*`, `value_eur`, `gain_eur`, `reconciled`) are the panel's check only. A fund
+    the Übersicht does not hold on `on` (0 units then) has no value."""
+
+    price: PriceLabel | None = None
+    value_today_eur: Money | None = None
+    gain_today_eur: Money | None = None
+    stale: bool = False
+    not_valued_reason: str | None = None
+    from_report: bool = False
+
+
+class EtfAccountToday(Schema):
+    account_id: UUID
+    label: str
+    positions: list[EtfPositionToday] = Field(default_factory=list)
+    value_eur: Money  # Σ of the valued positions: the Übersicht's value of this account
+
+
+class EtfToday(Schema):
+    """GET /assets/etf?on=: every depot account with its funds valued on `on` (today by
+    default) as the Übersicht and the net worth value them (D280), and the depot's
+    documents. `total_eur` is Σ of the accounts' values."""
+
+    on: date
+    accounts: list[EtfAccountToday] = Field(default_factory=list)
+    total_eur: Money
+    documents: list[DepotDocumentStatus] = Field(default_factory=list)
 
 
 class AssetRow(Schema):

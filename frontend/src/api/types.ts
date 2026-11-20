@@ -1690,10 +1690,12 @@ export interface paths {
         };
         /**
          * Assets Etf
-         * @description The Anlagen ETF tab: per depot account its funds (units from the confirmed movements,
-         *     the latest report's figures while they hold, the plain cost while a fund was only
-         *     bought) and the depot's documents with the status of their reading. The mockup's two tax
-         *     cards are phase 8 (D170) and carry no figure.
+         * @description The Anlagen ETF tab: per depot account its funds at the newest stored daily price on
+         *     today (Berlin time), valued as the Übersicht and the net worth value
+         *     them (phase 10 D280: units, price with its source and day, value, „Kurs aus dem Bericht
+         *     vom …“ for a fund no daily source prices), with the latest report's figures kept as the
+         *     panel's check, and the depot's documents with the status of their reading. The mockup's
+         *     two tax cards are phase 8 (D170) and carry no figure.
          */
         get: operations["assets_etf_api_assets_etf_get"];
         put?: never;
@@ -6810,18 +6812,6 @@ export interface components {
             /** @description Eingang */
             received_on?: components["schemas"]["ExtractedValue"];
         };
-        /** DepotAccountPositions */
-        DepotAccountPositions: {
-            /**
-             * Account Id
-             * Format: uuid
-             */
-            account_id: string;
-            /** Label */
-            label: string;
-            /** Positions */
-            positions?: components["schemas"]["DepotPosition"][];
-        };
         /**
          * DepotDocumentStatus
          * @description One document of the depot's Postbox list: its subtype, title and date as typed, and
@@ -6861,52 +6851,6 @@ export interface components {
             import_id: string;
             /** Iban Masked */
             iban_masked: string;
-        };
-        /**
-         * DepotPosition
-         * @description One fund on one depot account. `units` are the confirmed movements to today; the
-         *     report figures are those of the latest report that lists it; a fund the account's latest
-         *     report does not list is 0 on that report (0 by omission), with no value and no price.
-         *     `value_eur` is that report's stated value, shown only while the report reconciles
-         *     against today's movements and nothing moved since (D165 (3): no valuation past the last
-         *     reconciled date; computed prices and NAVs come with steps 5 and 6). `cost_eur` is the
-         *     plain Σ of the purchases' amounts while the fund was only bought on this account (§13:
-         *     right for ETFs bought and never sold; lots are phase 7), and `gain_eur` value − cost when
-         *     both are shown.
-         */
-        DepotPosition: {
-            /**
-             * Asset Id
-             * Format: uuid
-             */
-            asset_id: string;
-            /** Isin */
-            isin?: string | null;
-            /** Name */
-            name: string;
-            /** Units */
-            units: string;
-            /** Report On */
-            report_on?: string | null;
-            /** Report Units */
-            report_units?: string | null;
-            /** Report Value Eur */
-            report_value_eur?: string | null;
-            /** Report Price Eur */
-            report_price_eur?: string | null;
-            /** Reconciled */
-            reconciled?: boolean | null;
-            /**
-             * Moved Since Report
-             * @default false
-             */
-            moved_since_report: boolean;
-            /** Value Eur */
-            value_eur?: string | null;
-            /** Cost Eur */
-            cost_eur?: string | null;
-            /** Gain Eur */
-            gain_eur?: string | null;
         };
         /**
          * DepotReportExtraction
@@ -7511,13 +7455,99 @@ export interface components {
          * @enum {string}
          */
         EstimateSource: "scenario" | "purchase_price" | "advance";
+        /** EtfAccountToday */
+        EtfAccountToday: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Label */
+            label: string;
+            /** Positions */
+            positions?: components["schemas"]["EtfPositionToday"][];
+            /** Value Eur */
+            value_eur: string;
+        };
         /**
-         * EtfOverview
-         * @description GET /assets/etf: every depot account with its funds, and the depot's documents.
+         * EtfPositionToday
+         * @description One fund on the ETF tab (phase 10 D280): the row shows `units` and `value_today_eur`,
+         *     both copied from the Übersicht's OverviewPosition of the same account, asset and day
+         *     (`rules.valuation`, D167), with the price's source and day in `price`; never a sum or a
+         *     product of its own. `from_report` with `price.on` is „Kurs aus dem Bericht vom …“
+         *     (D174 (4)); a fund past its last reconciled report has no value and `not_valued_reason`
+         *     valuation.not_valued (D165 (3), „siehe Zu prüfen“). `gain_today_eur` is
+         *     `value_today_eur` − `cost_eur` while both are shown. The inherited report figures
+         *     (`report_*`, `value_eur`, `gain_eur`, `reconciled`) are the panel's check only. A fund
+         *     the Übersicht does not hold on `on` (0 units then) has no value.
          */
-        EtfOverview: {
+        EtfPositionToday: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Isin */
+            isin?: string | null;
+            /** Name */
+            name: string;
+            /** Units */
+            units: string;
+            /** Report On */
+            report_on?: string | null;
+            /** Report Units */
+            report_units?: string | null;
+            /** Report Value Eur */
+            report_value_eur?: string | null;
+            /** Report Price Eur */
+            report_price_eur?: string | null;
+            /** Reconciled */
+            reconciled?: boolean | null;
+            /**
+             * Moved Since Report
+             * @default false
+             */
+            moved_since_report: boolean;
+            /** Value Eur */
+            value_eur?: string | null;
+            /** Cost Eur */
+            cost_eur?: string | null;
+            /** Gain Eur */
+            gain_eur?: string | null;
+            price?: components["schemas"]["PriceLabel"] | null;
+            /** Value Today Eur */
+            value_today_eur?: string | null;
+            /** Gain Today Eur */
+            gain_today_eur?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Not Valued Reason */
+            not_valued_reason?: string | null;
+            /**
+             * From Report
+             * @default false
+             */
+            from_report: boolean;
+        };
+        /**
+         * EtfToday
+         * @description GET /assets/etf?on=: every depot account with its funds valued on `on` (today by
+         *     default) as the Übersicht and the net worth value them (D280), and the depot's
+         *     documents. `total_eur` is Σ of the accounts' values.
+         */
+        EtfToday: {
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
             /** Accounts */
-            accounts?: components["schemas"]["DepotAccountPositions"][];
+            accounts?: components["schemas"]["EtfAccountToday"][];
+            /** Total Eur */
+            total_eur: string;
             /** Documents */
             documents?: components["schemas"]["DepotDocumentStatus"][];
         };
@@ -19143,7 +19173,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EtfOverview"];
+                    "application/json": components["schemas"]["EtfToday"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

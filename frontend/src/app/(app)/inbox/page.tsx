@@ -6,35 +6,55 @@
 // lives in the URL (?umsatz=…), so Konten › Umsätze can link to a line that is not in the
 // queue (one already confirmed) and correct it in the same panel. Each fresh load of the
 // queue tells the sidebar its count (lib/inboxCount.ts).
+//
+// Phase 10 (D267, mockup 18): a chosen line opens in the detail panel (`#d-umsatz-<id>`),
+// beside the list on the computer and sliding in from the right on the phone, with its
+// reasoning, question and every answer of the allocation panel. A link from another screen
+// (?umsatz=…) still opens it. Every other card keeps its own buttons in the list.
+import "./inbox.css";
+
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 
 import { AllocationPanel, type TransactionAllocations } from "@/components/allocations";
+import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { documentLabel, UploadControl, type Uploaded } from "@/components/documents";
 import { api, ok } from "@/api/client";
-import { inboxSummary, InboxList, isLineItem, loadInbox, type InboxItem } from "@/components/inbox";
+import { InboxList, isLineItem, loadInbox, type InboxItem } from "@/components/inbox";
 import { ALLOCATION_CATEGORY } from "@/components/labels";
 import { Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT, type Translation } from "@/i18n";
+import { common } from "@/i18n/common";
+import { inbox as messages } from "@/i18n/inbox";
 import { notifyInboxChanged } from "@/lib/inboxCount";
+
+type T = Translation<(typeof messages)["de"]>;
 
 export default function InboxPage() {
   return (
-    <Suspense fallback={<p className="muted">Lädt …</p>}>
+    <Suspense fallback={<Fallback />}>
       <Inbox />
     </Suspense>
   );
 }
 
+function Fallback() {
+  const c = useT(common);
+  return <p className="muted">{c.loading}</p>;
+}
+
 function Inbox() {
+  const t = useT(messages);
   const router = useRouter();
   const search = useSearchParams();
-  const selected = search.get("umsatz");
+  const detail = useDetail("umsatz");
+  const linked = search.get("umsatz");
+  const selected = detail.id ?? linked;
   const inbox = useLoad(loadInbox);
   const [saved, setSaved] = useState<TransactionAllocations | null>(null);
   const [uploads, setUploads] = useState<Uploaded[]>([]);
-  const panel = useRef<HTMLElement>(null);
 
   // The sidebar's count follows what this page lists, after every load and reload.
   const items = inbox.data?.items;
@@ -42,15 +62,19 @@ function Inbox() {
     if (items) notifyInboxChanged(items.length);
   }, [items]);
 
-  // Stacked layout (a phone): bring the panel into view when a line is chosen.
-  useEffect(() => {
-    if (!selected || !panel.current) return;
-    if (window.matchMedia("(max-width: 959px)").matches) panel.current.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, [selected]);
-
   function select(transactionId: string) {
     setSaved(null);
-    router.replace(`/inbox?umsatz=${transactionId}`, { scroll: false });
+    detail.open(transactionId);
+  }
+
+  /**
+   * Closes the panel. A page another screen opened with ?umsatz= is replaced by /inbox, which
+   * drops the hash too; closeDetail's history.back() would race the replace and bring the
+   * linked line back.
+   */
+  function close() {
+    if (linked) router.replace("/inbox", { scroll: false });
+    else detail.close();
   }
 
   // A learned rule re-checks the waiting lines it names in the background (rematch_waiting):
@@ -102,25 +126,31 @@ function Inbox() {
 
   function onSaved(result: TransactionAllocations) {
     setSaved(result);
-    router.replace("/inbox", { scroll: false });
+    close();
     inbox.reload();
   }
 
   const item = inbox.data?.items.find((entry) => isLineItem(entry) && entry.transaction_id === selected);
 
+  const panel = selected ? (
+    <DetailPanel title={t.selectedPayment} backLabel={t.title} onClose={close}>
+      <AllocationPanel key={selected} transactionId={selected} reasoning={item?.reasoning} question={item?.question} onSaved={onSaved} />
+    </DetailPanel>
+  ) : null;
+
   return (
     <section>
-      <p className="eyebrow">Zu prüfen</p>
+      <p className="eyebrow">{t.title}</p>
       <div className="page-head">
-        <h1>Hochladen, bestätigen, fertig</h1>
+        <h1>{t.heading}</h1>
         <Link className="button-link" href="/capture">
-          Beleg fotografieren
+          {t.photo}
         </Link>
       </div>
 
       <div className="stack">
         <UploadControl
-          label="Rechnungen, Bescheide und Briefe hochladen"
+          label={t.upload}
           prefill
           onUploaded={(result) => {
             setUploads((current) => [result, ...current].slice(0, 5));
@@ -128,58 +158,44 @@ function Inbox() {
           }}
         />
         <p className="muted">
-          Kontoauszüge werden beim jeweiligen Konto importiert: <Link href="/accounts">Konten</Link>.
+          {t.statementsAt}
+          <Link href="/accounts">{t.accounts}</Link>.
         </p>
         {uploads.map(({ document, existed, proposalId, aiUnavailable }) => (
           <Notice key={`${document.id}-${existed}-${proposalId ?? ""}`}>
-            {existed ? "Bereits vorhanden: " : "Hochgeladen: "}
+            {existed ? t.existed : t.uploaded}
             <Link href={`/documents/${document.id}`}>{documentLabel(document)}</Link>
-            {proposalId ? " – wird automatisch ausgelesen; der Vorschlag erscheint hier, sobald er fertig ist." : null}
-            {aiUnavailable ? " Automatisches Auslesen ist auf dem Server nicht eingeschaltet." : null}
+            {proposalId ? t.reading : null}
+            {aiUnavailable ? t.aiOff : null}
           </Notice>
         ))}
         {saved ? (
           <Notice>
-            Zuordnung bestätigt.
-            {saved.rebooked > 0 ? ` ${rebookedText(saved)}` : null}
-            {saved.rule
-              ? " Regel gespeichert: künftige Buchungen dieser Art werden automatisch so zugeordnet. Wartende Zahlungen, auf die sie passt, werden jetzt im Hintergrund neu geprüft; die Liste aktualisiert sich in den nächsten zwei Minuten von selbst."
-              : null}
+            {t.confirmed}
+            {saved.rebooked > 0 ? ` ${rebookedText(t, saved)}` : null}
+            {saved.rule ? t.ruleSaved : null}
           </Notice>
         ) : null}
       </div>
 
-      <div className="inbox-layout">
-        <section className="card inbox-queue" aria-labelledby="inbox-queue-title">
-          <div className="inbox-queue-head">
-            <h2 id="inbox-queue-title">Zu erledigen</h2>
-            {inbox.data && inbox.data.items.length > 0 ? <span className="muted">{inboxSummary(inbox.data.items)}</span> : null}
-          </div>
-          <Loading state={inbox}>
-            {(data) =>
-              data.items.length === 0 ? (
-                <p className="muted inbox-empty">
-                  Nichts zu prüfen. Neue Buchungen und gelesene Dokumente erscheinen hier, sobald etwas zu entscheiden ist.
-                </p>
-              ) : (
-                <InboxList data={data} selected={selected} onSelect={select} onChanged={inbox.reload} />
-              )
-            }
-          </Loading>
-        </section>
-        <aside ref={panel} className="card inbox-panel" aria-label="Zuordnung">
-          {selected ? (
-            <AllocationPanel
-              key={selected}
-              transactionId={selected}
-              reasoning={item?.reasoning}
-              question={item?.question}
-              onSaved={onSaved}
-            />
-          ) : (
-            <p className="muted">Eine Buchung aus der Liste wählen, um sie zuzuordnen.</p>
-          )}
-        </aside>
+      <div className="inbox-page-list">
+        <DetailLayout panel={panel}>
+          <section className="card inbox-queue" aria-labelledby="inbox-queue-title">
+            <div className="inbox-queue-head">
+              <h2 id="inbox-queue-title">{t.todo}</h2>
+              {inbox.data && inbox.data.items.length > 0 ? <span className="muted">{t.summary(inbox.data.items.length)}</span> : null}
+            </div>
+            <Loading state={inbox}>
+              {(data) =>
+                data.items.length === 0 ? (
+                  <p className="muted inbox-empty">{t.empty}</p>
+                ) : (
+                  <InboxList data={data} selected={selected} onSelect={select} onChanged={inbox.reload} />
+                )
+              }
+            </Loading>
+          </section>
+        </DetailLayout>
       </div>
     </section>
   );
@@ -195,9 +211,7 @@ function listKey(items: InboxItem[]): string {
     .join("|");
 }
 
-function rebookedText(saved: TransactionAllocations): string {
+function rebookedText(t: T, saved: TransactionAllocations): string {
   const category = saved.rule?.category ?? saved.allocations[0]?.category;
-  const label = category ? ALLOCATION_CATEGORY[category] : "dieselbe Kategorie";
-  const count = saved.rebooked === 1 ? "1 frühere Zahlung" : `${saved.rebooked} frühere Zahlungen`;
-  return `${count} auf ${label} umgebucht.`;
+  return t.rebooked(saved.rebooked, category ? ALLOCATION_CATEGORY[category] : t.sameCategory);
 }

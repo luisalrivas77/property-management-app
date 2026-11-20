@@ -4678,7 +4678,7 @@
     "/api/assets/etf": {
       "get": {
         "summary": "Assets Etf",
-        "description": "The Anlagen ETF tab: per depot account its funds (units from the confirmed movements,\nthe latest report's figures while they hold, the plain cost while a fund was only\nbought) and the depot's documents with the status of their reading. The mockup's two tax\ncards are phase 8 (D170) and carry no figure.",
+        "description": "The Anlagen ETF tab: per depot account its funds at the newest stored daily price on\ntoday (Berlin time), valued as the Übersicht and the net worth value\nthem (phase 10 D280: units, price with its source and day, value, „Kurs aus dem Bericht\nvom …“ for a fund no daily source prices), with the latest report's figures kept as the\npanel's check, and the depot's documents with the status of their reading. The mockup's\ntwo tax cards are phase 8 (D170) and carry no figure.",
         "operationId": "assets_etf_api_assets_etf_get",
         "responses": {
           "200": {
@@ -4686,7 +4686,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EtfOverview"
+                  "$ref": "#/components/schemas/EtfToday"
                 }
               }
             }
@@ -17664,33 +17664,6 @@
         "title": "DepositRecordExtraction",
         "description": "Kautionsnachweis (letter / deposit_record). Step 2."
       },
-      "DepotAccountPositions": {
-        "properties": {
-          "account_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Account Id"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "positions": {
-            "items": {
-              "$ref": "#/components/schemas/DepotPosition"
-            },
-            "type": "array",
-            "title": "Positions"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "account_id",
-          "label"
-        ],
-        "title": "DepotAccountPositions"
-      },
       "DepotDocumentStatus": {
         "properties": {
           "document_id": {
@@ -17779,144 +17752,6 @@
         ],
         "title": "DepotIbanProposal",
         "description": "The IBAN a depot's cash statement prints (phase 6 step 4, D156 amended), masked; POST\n/accounts/{id}/iban with its import_id confirms it (the D176 (4) pattern)."
-      },
-      "DepotPosition": {
-        "properties": {
-          "asset_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Asset Id"
-          },
-          "isin": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Isin"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "units": {
-            "type": "string",
-            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
-            "title": "Units"
-          },
-          "report_on": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Report On"
-          },
-          "report_units": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^[0-9]+(\\.[0-9]{1,18})?$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Report Units"
-          },
-          "report_value_eur": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Report Value Eur"
-          },
-          "report_price_eur": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^[0-9]+(\\.[0-9]{1,8})?$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Report Price Eur"
-          },
-          "reconciled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reconciled"
-          },
-          "moved_since_report": {
-            "type": "boolean",
-            "title": "Moved Since Report",
-            "default": false
-          },
-          "value_eur": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Value Eur"
-          },
-          "cost_eur": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Eur"
-          },
-          "gain_eur": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gain Eur"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "asset_id",
-          "name",
-          "units"
-        ],
-        "title": "DepotPosition",
-        "description": "One fund on one depot account. `units` are the confirmed movements to today; the\nreport figures are those of the latest report that lists it; a fund the account's latest\nreport does not list is 0 on that report (0 by omission), with no value and no price.\n`value_eur` is that report's stated value, shown only while the report reconciles\nagainst today's movements and nothing moved since (D165 (3): no valuation past the last\nreconciled date; computed prices and NAVs come with steps 5 and 6). `cost_eur` is the\nplain Σ of the purchases' amounts while the fund was only bought on this account (§13:\nright for ETFs bought and never sold; lots are phase 7), and `gain_eur` value − cost when\nboth are shown."
       },
       "DepotReportExtraction": {
         "properties": {
@@ -19622,14 +19457,250 @@
         ],
         "title": "EstimateSource"
       },
-      "EtfOverview": {
+      "EtfAccountToday": {
         "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/EtfPositionToday"
+            },
+            "type": "array",
+            "title": "Positions"
+          },
+          "value_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Value Eur"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account_id",
+          "label",
+          "value_eur"
+        ],
+        "title": "EtfAccountToday"
+      },
+      "EtfPositionToday": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "isin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isin"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "units": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,18})?$",
+            "title": "Units"
+          },
+          "report_on": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report On"
+          },
+          "report_units": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,18})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Units"
+          },
+          "report_value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Value Eur"
+          },
+          "report_price_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,8})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Price Eur"
+          },
+          "reconciled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconciled"
+          },
+          "moved_since_report": {
+            "type": "boolean",
+            "title": "Moved Since Report",
+            "default": false
+          },
+          "value_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Eur"
+          },
+          "cost_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Eur"
+          },
+          "gain_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gain Eur"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PriceLabel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "value_today_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Today Eur"
+          },
+          "gain_today_eur": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gain Today Eur"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": false
+          },
+          "not_valued_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Not Valued Reason"
+          },
+          "from_report": {
+            "type": "boolean",
+            "title": "From Report",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id",
+          "name",
+          "units"
+        ],
+        "title": "EtfPositionToday",
+        "description": "One fund on the ETF tab (phase 10 D280): the row shows `units` and `value_today_eur`,\nboth copied from the Übersicht's OverviewPosition of the same account, asset and day\n(`rules.valuation`, D167), with the price's source and day in `price`; never a sum or a\nproduct of its own. `from_report` with `price.on` is „Kurs aus dem Bericht vom …“\n(D174 (4)); a fund past its last reconciled report has no value and `not_valued_reason`\nvaluation.not_valued (D165 (3), „siehe Zu prüfen“). `gain_today_eur` is\n`value_today_eur` − `cost_eur` while both are shown. The inherited report figures\n(`report_*`, `value_eur`, `gain_eur`, `reconciled`) are the panel's check only. A fund\nthe Übersicht does not hold on `on` (0 units then) has no value."
+      },
+      "EtfToday": {
+        "properties": {
+          "on": {
+            "type": "string",
+            "format": "date",
+            "title": "On"
+          },
           "accounts": {
             "items": {
-              "$ref": "#/components/schemas/DepotAccountPositions"
+              "$ref": "#/components/schemas/EtfAccountToday"
             },
             "type": "array",
             "title": "Accounts"
+          },
+          "total_eur": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total Eur"
           },
           "documents": {
             "items": {
@@ -19641,8 +19712,12 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "title": "EtfOverview",
-        "description": "GET /assets/etf: every depot account with its funds, and the depot's documents."
+        "required": [
+          "on",
+          "total_eur"
+        ],
+        "title": "EtfToday",
+        "description": "GET /assets/etf?on=: every depot account with its funds valued on `on` (today by\ndefault) as the Übersicht and the net worth value them (D280), and the depot's\ndocuments. `total_eur` is Σ of the accounts' values."
       },
       "Event": {
         "properties": {

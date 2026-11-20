@@ -433,8 +433,9 @@ test("every figure opens what it is made of, and a month opens Haushalt with its
   await expect(page.getByRole("region", { name: "Noch keine Durchschnitte" })).toHaveCount(0);
   const income = page.getByRole("region", { name: "Einnahmen" });
   await expect(income.getByRole("listitem").filter({ hasText: "Wohnung (Ergebnis des Mietkontos)" })).toContainText("250");
-  const chip = page.locator("details").filter({ hasText: "seit dem Abschluss geändert" });
-  await chip.locator("summary").click();
+  // The chip opens both values in the detail panel (mockup 19).
+  await page.getByRole("link", { name: /seit dem Abschluss geändert/ }).click();
+  const chip = page.getByRole("complementary", { name: "Seit dem Abschluss geändert" });
   await expect(chip.getByRole("row", { name: /Einnahmen mit der Wohnung/ })).toContainText("5.000");
   await expect(chip.getByRole("row", { name: /Einnahmen mit der Wohnung/ })).toContainText("5.200");
 });

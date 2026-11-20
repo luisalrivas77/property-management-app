@@ -90,10 +90,11 @@ test("an unmatched line is split by hand into two rows; Bestätigen waits until 
   await expect(line).toContainText("+740,18 €");
   await line.click();
   await expect(line).toHaveAttribute("aria-pressed", "true");
-  await expect(page).toHaveURL(/\/inbox\?umsatz=/);
-  const transactionId = new URL(page.url()).searchParams.get("umsatz") ?? "";
+  // The line opens in the detail panel (phase 10 D267), its id in the hash.
+  await expect(page).toHaveURL(/\/inbox#d-umsatz-/);
+  const transactionId = new URL(page.url()).hash.replace("#d-umsatz-", "");
 
-  const panel = page.getByRole("complementary", { name: "Zuordnung" });
+  const panel = page.getByRole("complementary", { name: "Ausgewählte Zahlung" });
   await expect(panel.getByRole("heading", { name: /Partei D/ })).toBeVisible();
   await expect(panel.getByText("Wofür war diese Buchung?")).toBeVisible();
   const confirm = panel.getByRole("button", { name: "Bestätigen" });
@@ -174,7 +175,7 @@ test("a line without an IBAN offers no rule box, only a purpose pattern", async 
   await expect(line).toContainText("ABSCHLUSS");
   await line.click();
 
-  const panel = page.getByRole("complementary", { name: "Zuordnung" });
+  const panel = page.getByRole("complementary", { name: "Ausgewählte Zahlung" });
   await expect(panel.getByRole("heading", { name: /ABSCHLUSS/ })).toBeVisible();
   await expect(panel.getByLabel("Künftig immer so zuordnen")).toHaveCount(0);
   const pattern = panel.getByLabel("Muster im Verwendungszweck (optional)");
@@ -202,7 +203,7 @@ test("the rule box follows the category until it is touched: on for bank fees, o
 
   // Partei H has an IBAN and no matcher owns it (no tenant, loan or owner account here).
   await page.getByRole("list", { name: "Zahlungen zuordnen" }).getByRole("button").filter({ hasText: "Partei H" }).click();
-  const panel = page.getByRole("complementary", { name: "Zuordnung" });
+  const panel = page.getByRole("complementary", { name: "Ausgewählte Zahlung" });
   await expect(panel.getByRole("heading", { name: /Partei H/ })).toBeVisible();
   const learn = panel.getByLabel("Künftig immer so zuordnen");
   const category = panel.getByRole("group", { name: "Zeile 1" }).getByLabel("Kategorie");
@@ -229,9 +230,9 @@ test("a payer with other waiting amounts is asked whether the rule covers them (
   // Partei C debits four times from one IBAN: 1.073,89 € twice, 862,15 € and 573,79 €.
   const queue = page.getByRole("list", { name: "Zahlungen zuordnen" });
   await queue.getByRole("button").filter({ hasText: "Partei C" }).filter({ hasText: "573,79" }).click();
-  const panel = page.getByRole("complementary", { name: "Zuordnung" });
+  const panel = page.getByRole("complementary", { name: "Ausgewählte Zahlung" });
   await expect(panel.getByRole("heading", { name: /Partei C/ })).toBeVisible();
-  const transactionId = new URL(page.url()).searchParams.get("umsatz") ?? "";
+  const transactionId = new URL(page.url()).hash.replace("#d-umsatz-", "");
   const confirm = panel.getByRole("button", { name: "Bestätigen" });
   const learn = panel.getByLabel("Künftig immer so zuordnen");
 
