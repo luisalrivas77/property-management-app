@@ -111,7 +111,7 @@ screen they redraw at 390 px.
 
 ## Layout overhaul (drafted 20 Nov 2026; menu and detail panels chosen, the rest open)
 
-**Nothing in this section is built, and only the two choices under „Chosen so far“ are agreed.** These are drafts for Luis to choose from:
+**Nothing in this section is built, and only the three choices under „Chosen so far“ are agreed.** These are drafts for Luis to choose from:
 three design directions, each drawing the same four screens at phone width (390 px) and
 computer width (1440 px). The app keeps its current layout until he picks a direction (or a
 mix), and the choice is recorded in the Decisions table of `docs/ARCHITECTURE.md`. The colours,
@@ -142,6 +142,11 @@ Luis mixes the directions screen by screen („I want to mix. Let's go one by on
    closed with ✕, „Zurück“ or a swipe to the right, and the page underneath keeps its scroll position. The panel
    shows what decides something and the buttons that act on it; a full page („… öffnen“) stays one tap further for
    what does not fit. Drawn in 14-C2 (a tenancy and an owner); every later mockup follows it.
+3. **Übersicht is B's tiles with the cash flow under the net worth** (`15-B2-overview-phone`, `-desktop`; „B but
+   with the cashflow under the netto vermögen“; „In general looks good“). A tapped tile slides in its summary from
+   the right with one button into its section. A key figure's mark is a dot before its name, never a colour word
+   (an empty dot while no limit is set); the kinds of assets carry their colour as a stripe at the tile's edge, so
+   a dot always means a mark („You can go with the dots“).
 
 ### The three directions
 
@@ -186,7 +191,7 @@ longest of the three) and unused width on a large computer screen.
 | `14-C-nav.png` / `.html` | The phone menu: a large bottom bar (Übersicht, Zu prüfen, Haushalt, Anlagen, „Mehr“); „Mehr“ opens quick actions (Hochladen, Foto aufnehmen, Suchen) and the rest as large rows with a one-line description |
 | `14-C2-immobilien-phone.png` / `.html` | Luis's pick for the menu (20 Nov 2026, not yet approved as drawn): C's bottom bar and „Mehr“, but „Mehr“ lists one Immobilien row instead of Immobilien, Mieter and Eigentümer; Immobilien is one card per property with its tenancies, its owners and the rows Darlehen, Kauf & Nebenkosten, Unterlagen, Dokumente, Verlauf; a tapped tenancy or owner slides in from the right as a panel over the card (the phone's version of the computer's side panel), an owner showing only the share; the owners' income for the tax (pay, church tax, the pay documents) and „Kinder und Haushalt“ move to Steuern › „Einkommen & Haushalt“ (Luis, 20 Nov 2026: „Let's move the tax stuff from the Immobilien to the tax section“) |
 | `14-C2-immobilien-desktop.png` / `.html` | The same on the computer: „Mehr“ as a drop-down with one Immobilien row, and the Immobilien page as one card (tenants and owners on the left, the rows about the flat on the right) with the selected tenancy in the side panel |
-| `15-B2-overview-phone.png` / `.html` | Übersicht drawn for Luis (20 Nov 2026, „B but with the cashflow under the netto vermögen“), not yet approved: direction B's tiles inside the chosen menu C, the month's cash flow directly under the net worth, then the four kinds of investment, the three key figures, Zu prüfen and the coming dates; a tapped tile slides in a summary from the right with a button into its section („Zu Anlagen › ETF-Depot“, „Zu Haushalt › Oktober“, „Zu Planung › Kennzahlen“), drawn for the ETF depot, the cash flow and the savings rate; revised the same day at Luis's word: no colour words, a key figure's mark is a dot before its name (an empty dot when no limit is set), and the kinds of assets carry their colour as a stripe at the tile's edge, so a dot always means a mark |
+| `15-B2-overview-phone.png` / `.html` | Übersicht drawn for Luis (20 Nov 2026, „B but with the cashflow under the netto vermögen“), chosen the same day: direction B's tiles inside the chosen menu C, the month's cash flow directly under the net worth, then the four kinds of investment, the three key figures, Zu prüfen and the coming dates; a tapped tile slides in a summary from the right with a button into its section („Zu Anlagen › ETF-Depot“, „Zu Haushalt › Oktober“, „Zu Planung › Kennzahlen“), drawn for the ETF depot, the cash flow and the savings rate; revised the same day at Luis's word: no colour words, a key figure's mark is a dot before its name (an empty dot when no limit is set), and the kinds of assets carry their colour as a stripe at the tile's edge, so a dot always means a mark |
 | `15-B2-overview-desktop.png` / `.html` | The same on the computer: a six-column grid with the cash flow under the net worth, the month-ends as bars and the coming dates; a clicked tile's summary slides in from the right over the page with the same button into its section |
 | `15-C-overview-phone.png` / `.html` | Übersicht on the phone: a green net-worth card, the kinds of investment as cards swiped sideways with dots, Zu prüfen with a full-width button, the coming dates, the key figures and the cash flow folded |
 | `15-C-overview-desktop.png` / `.html` | Übersicht on the computer: tabs in the header, one centred column, and a side panel with the selected kind (the ETF depot) and the key figures |
