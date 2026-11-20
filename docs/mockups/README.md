@@ -111,7 +111,7 @@ screen they redraw at 390 px.
 
 ## Layout overhaul (drafted 20 Nov 2026; menu and detail panels chosen, the rest open)
 
-**Nothing in this section is built, and only the three choices under „Chosen so far“ are agreed.** These are drafts for Luis to choose from:
+**Nothing in this section is built, and only the four choices under „Chosen so far“ are agreed.** These are drafts for Luis to choose from:
 three design directions, each drawing the same four screens at phone width (390 px) and
 computer width (1440 px). The app keeps its current layout until he picks a direction (or a
 mix), and the choice is recorded in the Decisions table of `docs/ARCHITECTURE.md`. The colours,
@@ -149,6 +149,11 @@ Luis mixes the directions screen by screen („I want to mix. Let's go one by on
    a dot always means a mark („You can go with the dots“). The kinds' colours are never green, yellow or red
    (muted slate blue, soft blue, lavender and light grey), so they cannot be read as a mark („Otherwise it's still
    confusing“; „another color combination that look better together and not bright“).
+4. **Konten › Umsätze is C's list under B's account card** (`16-C2-table-phone`, `-desktop`; „Mix of mobil zuerst
+   for the bank lines and dashboard kompact for the account summary“; „Looks good“). The card shows the balance and
+   the month's money in and out, spending without the transfers between own accounts (named under the figures, a
+   tile of their own on the computer); the lines are grouped under weekday headings, each with an initial, payee,
+   category, amount and its status as „✓ Gebucht“ or a pill, never a dot; a tapped line opens beside the list.
 
 ### The three directions
 
@@ -195,7 +200,7 @@ longest of the three) and unused width on a large computer screen.
 | `14-C2-immobilien-desktop.png` / `.html` | The same on the computer: „Mehr“ as a drop-down with one Immobilien row, and the Immobilien page as one card (tenants and owners on the left, the rows about the flat on the right) with the selected tenancy in the side panel |
 | `15-B2-overview-phone.png` / `.html` | Übersicht drawn for Luis (20 Nov 2026, „B but with the cashflow under the netto vermögen“), chosen the same day: direction B's tiles inside the chosen menu C, the month's cash flow directly under the net worth, then the four kinds of investment, the three key figures, Zu prüfen and the coming dates; a tapped tile slides in a summary from the right with a button into its section („Zu Anlagen › ETF-Depot“, „Zu Haushalt › Oktober“, „Zu Planung › Kennzahlen“), drawn for the ETF depot, the cash flow and the savings rate; revised the same day at Luis's word: no colour words, a key figure's mark is a dot before its name (an empty dot when no limit is set), and the kinds of assets carry their colour as a stripe at the tile's edge, so a dot always means a mark, and in colours that are never green, yellow or red (muted slate blue, soft blue, lavender and light grey; Luis: „Otherwise it's still confusing“, then „not bright“) |
 | `15-B2-overview-desktop.png` / `.html` | The same on the computer: a six-column grid with the cash flow under the net worth, the month-ends as bars and the coming dates; a clicked tile's summary slides in from the right over the page with the same button into its section |
-| `16-C2-table-phone.png` / `.html` | Konten › Umsätze drawn for Luis (20 Nov 2026, „Mix of mobil zuerst for the bank lines and dashboard kompact for the account summary“), awaiting his approval: direction B's account card on top (Kontostand, Eingänge and Ausgänge of the month, „Konto wechseln“; Ausgänge without the transfers between own accounts, named under the figures), then direction C's list grouped under weekday headings, each line with an initial, payee, category, amount and its status as „✓ Gebucht“ or an „Offen“ or „Vorschlag prüfen“ pill, never a coloured dot (a dot is a mark); a tapped line slides in from the right: a proposal with „Bestätigen“, „Andere Kategorie“ and „Künftig immer so zuordnen“, an open line with category choices and „Beleg hochladen“, and „Konto wechseln“ as a list of accounts |
+| `16-C2-table-phone.png` / `.html` | Konten › Umsätze drawn for Luis (20 Nov 2026, „Mix of mobil zuerst for the bank lines and dashboard kompact for the account summary“), chosen the same day („Looks good“): direction B's account card on top (Kontostand, Eingänge and Ausgänge of the month, „Konto wechseln“; Ausgänge without the transfers between own accounts, named under the figures), then direction C's list grouped under weekday headings, each line with an initial, payee, category, amount and its status as „✓ Gebucht“ or an „Offen“ or „Vorschlag prüfen“ pill, never a coloured dot (a dot is a mark); a tapped line slides in from the right: a proposal with „Bestätigen“, „Andere Kategorie“ and „Künftig immer so zuordnen“, an open line with category choices and „Beleg hochladen“, and „Konto wechseln“ as a list of accounts |
 | `16-C2-table-desktop.png` / `.html` | The same on the computer: four figure tiles from B (with the month's transfers as their own tile), C's day-grouped list as rows with the purpose under the payee, and the clicked line in the side panel on the right |
 | `15-C-overview-phone.png` / `.html` | Übersicht on the phone: a green net-worth card, the kinds of investment as cards swiped sideways with dots, Zu prüfen with a full-width button, the coming dates, the key figures and the cash flow folded |
 | `15-C-overview-desktop.png` / `.html` | Übersicht on the computer: tabs in the header, one centred column, and a side panel with the selected kind (the ETF depot) and the key figures |
