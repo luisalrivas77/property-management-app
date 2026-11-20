@@ -218,3 +218,22 @@ def test_levers_round_trip_the_budget_fields() -> None:
     assert again == levers
     assert again.budget_targets.needs_max == Decimal("50.0")
     assert again.budget_class_overrides == {C.HH_RESTAURANT: BudgetClass.NEED}
+
+
+def test_an_override_carried_unaltered_is_not_refused(monkeypatch) -> None:
+    """D272 (2), as phase 9's carried spending change: a save refuses an override new or
+    altered against the row it supersedes, never one carried as stored, so a code that stops
+    being movable (here: pretended) cannot block saving the other levers."""
+    from hausbuch.services import household_scenarios as HS
+    from hausbuch.services.errors import RuleViolationError
+
+    def pretend(overrides):  # HH_RESTAURANT can no longer move
+        return [c for c in overrides if c is C.HH_RESTAURANT]
+
+    monkeypatch.setattr(HS, "refused_overrides", pretend)
+    stored = {C.HH_RESTAURANT: BudgetClass.NEED}
+    levers = HouseholdLevers(budget_class_overrides=stored)
+    HS._check_budget_classes(levers, stored)  # carried unaltered
+    for previous in ({}, {C.HH_RESTAURANT: BudgetClass.WANT}):  # new, altered
+        with pytest.raises(RuleViolationError):
+            HS._check_budget_classes(levers, previous)

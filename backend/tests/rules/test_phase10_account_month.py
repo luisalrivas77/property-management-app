@@ -11,7 +11,7 @@ def line(amount: str, status: S = S.CONFIRMED, *categories: C) -> AccountLine:
     return AccountLine(Decimal(amount), status, categories)
 
 
-def test_the_transfer_codes_are_d269s_list() -> None:
+def test_the_transfer_codes_are_d269s_list_plus_the_owner_transfers() -> None:
     assert {
         C.INTERNAL_TRANSFER_IN,
         C.INTERNAL_TRANSFER_OUT,

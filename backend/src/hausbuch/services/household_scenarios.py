@@ -49,7 +49,7 @@ Writes of one workspace are serialised by a transaction-scoped advisory lock, so
 default" check cannot race; `supersedes_id` is UNIQUE in the table as well.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -76,6 +76,7 @@ from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.enums import AccountKind, EntityType
 from hausbuch.schemas.events import EventType, HouseholdScenarioRecorded
 from hausbuch.schemas.health import month_of
+from hausbuch.schemas.household import BudgetClass
 from hausbuch.schemas.plan import (
     HouseholdLevers,
     HouseholdScenario,
@@ -157,7 +158,13 @@ def create_scenario(ctx: CommandContext, data: HouseholdScenarioCreate) -> House
     if not data.withdrawn:
         today = ctx.now.astimezone(LOCAL_TIME_ZONE).date()
         previous = [] if old is None else old.levers.spending_changes
-        means = check_levers(ctx.conn, data.levers, today, previous=previous)
+        means = check_levers(
+            ctx.conn,
+            data.levers,
+            today,
+            previous=previous,
+            previous_overrides={} if old is None else old.levers.budget_class_overrides,
+        )
         if data.is_default:
             _check_one_default(ctx.conn, data)
         if data.levers.spending_changes:
@@ -174,6 +181,7 @@ def check_levers(
     reads: dict[str, MonthRead] | None = None,
     *,
     previous: Sequence[SpendingChange] = (),
+    previous_overrides: Mapping[AllocationCategory, BudgetClass] | None = None,
 ) -> dict[AllocationCategory, Decimal]:
     """The checks of a scenario's levers beyond HouseholdLevers' own (the module doc), for a
     new row and for the preview; returns the codes' means over today's window (§7.6 (2)).
@@ -181,9 +189,10 @@ def check_levers(
     reads its plan uses); read here once, and only for one-offs or spending changes.
     `previous`: the spending changes of the row a save supersedes (for the preview the default
     in force); only a change new or altered against them is refused as a percent of
-    nothing (§7.6 (1) amended)."""
+    nothing (§7.6 (1) amended). `previous_overrides`: that row's budget class overrides; one
+    carried unaltered is not refused (phase 10 D272 (2), as a carried spending change)."""
     _check_accounts(conn, levers)
-    _check_budget_classes(levers)
+    _check_budget_classes(levers, previous_overrides or {})
     if not levers.one_offs and not levers.spending_changes:
         return {}
     if reads is None:
@@ -202,11 +211,20 @@ def check_levers(
     return means
 
 
-def _check_budget_classes(levers: HouseholdLevers) -> None:
+def _check_budget_classes(
+    levers: HouseholdLevers, previous: Mapping[AllocationCategory, BudgetClass]
+) -> None:
     """Phase 10 D272 (2): a code moved to the other class must be movable: it has a class and
     is not one-off (rules.budget.budget.movable). rules/budget ignores such an override on
-    read, so a stored row still reads; a save carrying one is refused."""
-    refused = refused_overrides(levers.budget_class_overrides)
+    read, so a stored row still reads; a save carrying one new or altered against `previous`
+    (the row it supersedes) is refused, one carried unaltered is not, so a code that stops
+    being movable never blocks saving the other levers."""
+    added = {
+        code: cls
+        for code, cls in levers.budget_class_overrides.items()
+        if previous.get(code) is not cls
+    }
+    refused = refused_overrides(added)
     if refused:
         raise RuleViolationError(
             [HOUSEHOLD_SCENARIO_BUDGET_CLASS_INVALID],

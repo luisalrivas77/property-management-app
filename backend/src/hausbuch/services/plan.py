@@ -502,7 +502,14 @@ def preview_plan(conn: Connection, today: date, levers: HouseholdLevers) -> Hous
     reads = read_months(conn, ended_months(today), today)
     row = default_scenario(conn)
     previous = [] if row is None else row.levers.spending_changes
-    check_levers(conn, levers, today, reads, previous=previous)
+    check_levers(
+        conn,
+        levers,
+        today,
+        reads,
+        previous=previous,
+        previous_overrides=None if row is None else row.levers.budget_class_overrides,
+    )
     if row is not None:
         row = row.model_copy(update={"levers": levers})
     return _plan(conn, today, row, levers, reads)
