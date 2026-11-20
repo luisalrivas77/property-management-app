@@ -16,7 +16,6 @@ from sqlalchemy import Connection
 
 from hausbuch.rules.budget.budget import budget
 from hausbuch.rules.budget.references import references
-from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.budget import BudgetView
 from hausbuch.schemas.plan import HouseholdLevers
 
@@ -31,19 +30,12 @@ def household_budget(conn: Connection, today: date, scenario_id: UUID | None = N
     reads = read_months(conn, ended_months(today), today)
     win = _window(reads)
     window_reads = [reads[m] for m in win.months]
-    uncategorized = sum(
-        1
-        for r in window_reads
-        for line in r.private.lines
-        if line.category is AllocationCategory.UNCATEGORIZED
-    )
     return budget(
         [r.household for r in window_reads],
-        [r.private.cashflow for r in window_reads],
+        [r.private.lines for r in window_reads],
         levers.budget_class_overrides,
         levers.budget_targets,
         as_of=today,
         scenario_id=None if row is None else row.id,
         references=references()[1],
-        uncategorized_lines=uncategorized,
     )

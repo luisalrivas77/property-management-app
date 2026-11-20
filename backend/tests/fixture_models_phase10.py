@@ -11,9 +11,10 @@ rules/budget on the same inputs.
 The input of a budget case is what phase 9 reads, one month at a time: the private accounts'
 confirmed allocations signed as on the account (`private`), the transfer links' saved amount
 (`saved_links`), and the rental account's confirmed allocations (`rental`). `household(case)`
-turns them into phase 9's HouseholdMonth and phase 6's HouseholdCashflow through the
-production functions (rules.household.cashflow.month_cashflow, rules.health.month), so the
-fixtures exercise exactly the month phase 9's key figures are computed from.
+turns them into phase 9's HouseholdMonth (over phase 6's HouseholdCashflow) and the private
+lines the Budget reads, through the production functions
+(rules.household.cashflow.month_cashflow, rules.health.month), so the fixtures exercise
+exactly the month phase 9's key figures are computed from.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ from hausbuch.schemas.budget import (
 )
 from hausbuch.schemas.common import _STRING_ONLY, Money, Schema
 from hausbuch.schemas.health import HealthTodoCode, HouseholdMonth, MonthLine, YearMonth
-from hausbuch.schemas.household import BudgetClass, HouseholdCashflow
+from hausbuch.schemas.household import BudgetClass
 
 FIXTURES = Path(__file__).parent / "fixtures" / "phase10"
 ZERO = Decimal("0.00")
@@ -67,9 +68,9 @@ class MonthInput(Schema):
     rental: list[Booking] = Field(default_factory=list)
 
 
-def household(month: MonthInput, case_id: str) -> tuple[HouseholdMonth, HouseholdCashflow, int]:
-    """Phase 9's household month and phase 6's cashflow of one input month, and how many of
-    its private lines are booked as uncategorized."""
+def household(month: MonthInput, case_id: str) -> tuple[HouseholdMonth, list[MonthLine]]:
+    """Phase 9's household month of one input month (over phase 6's cashflow of its private
+    lines, as services.health reads it) and those private lines."""
 
     def lines(rows: list[Booking], side: str) -> list[MonthLine]:
         return [
@@ -86,8 +87,7 @@ def household(month: MonthInput, case_id: str) -> tuple[HouseholdMonth, Househol
     blocks = (
         [rental_month(month.month, PROPERTY, lines(month.rental, "rental"))] if month.rental else []
     )
-    uncategorized = sum(1 for r in month.private if r.category is AllocationCategory.UNCATEGORIZED)
-    return household_month(cashflow, blocks, lines=private), cashflow, uncategorized
+    return household_month(cashflow, blocks, lines=private), private
 
 
 # --- Expectations ------------------------------------------------------------------------

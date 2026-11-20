@@ -2,9 +2,16 @@
 §4). Fixtures: tests/fixtures/phase10/budget_partition.yaml, budget_overrides.yaml,
 budget_marks.yaml.
 
-`budget(months, cashflows, overrides, targets)`: `months` are phase 9's `HouseholdMonth` of the
-window (rules/health/month), `cashflows` the same months' `HouseholdCashflow` (phase 6's
-spending per group and code). Pure: no I/O, nothing stored.
+`budget(months, lines, overrides, targets)`: `months` are phase 9's `HouseholdMonth` of the
+window (rules/health/month), `lines` the same months' private lines (`MonthLine`, the ones
+behind each month). Pure: no I/O, nothing stored.
+
+- **Spending per code** comes from the lines through rules.health.month's `cashflow_rows`
+  (D234's recode) and the same split month_cashflow makes (a code outside the taxonomy, or a
+  spending or tax code, is spending; the Geldanlage group, income and transfers are not), so
+  a code whose month nets to 0 is still a code. phase 6's `spending_by_category` is not used:
+  it drops a group whose month totals 0, and its codes with it, while the other lines of the
+  month still count (a −5 € fee and a +5 € credit in Sonstiges would leave the fee out).
 
 - **Lines** (D272). Every spending code goes to exactly one line: a one-off code
   (`hh_car_purchase`) to „Einmalige Ausgaben“, `uncategorized` to „Ohne Einordnung“, every
@@ -26,6 +33,8 @@ spending per group and code). Pure: no I/O, nothing stored.
   spending instead).
 - **Shares** of ΣE, four places half-up; with ΣE ≤ 0 none, and no mark, and `no_shares` says
   why. The housing share (D276): the Wohnen group's codes ÷ ΣE, whatever class they are in.
+- **To-do** „Ohne Einordnung“: whenever a line of the window is booked uncategorized,
+  counted by lines, even when they net to 0.
 - **Marks** (D274): only against a target the household saved; green when met (at or below a
   maximum, at or above the saving minimum, an equal share meets it), amber when missed, never
   red. The sentence names the points and the euros a month between the share and the target.
@@ -39,6 +48,7 @@ from fractions import Fraction
 from uuid import UUID
 
 from hausbuch.rules.health.bands import format_money, format_multiple, format_percent
+from hausbuch.rules.health.month import cashflow_rows
 from hausbuch.rules.health.window import MIN_MONTHS, window_todos
 from hausbuch.rules.household.taxonomy import ONE_OFF, TAXONOMY
 from hausbuch.schemas.allocation import AllocationCategory as C
@@ -55,8 +65,15 @@ from hausbuch.schemas.budget import (
     BudgetTargets,
     BudgetView,
 )
-from hausbuch.schemas.health import HealthTodo, HealthTodoCode, HouseholdMonth, Window, ratio
-from hausbuch.schemas.household import BudgetClass, HouseholdCashflow, HouseholdGroup
+from hausbuch.schemas.health import (
+    HealthTodo,
+    HealthTodoCode,
+    HouseholdMonth,
+    MonthLine,
+    Window,
+    ratio,
+)
+from hausbuch.schemas.household import BudgetClass, HouseholdGroup, Relevance
 
 L = BudgetLineKey
 ZERO = Decimal("0.00")
@@ -167,14 +184,24 @@ def _mean(total: Decimal, n: int) -> Decimal:
 # --- Spending per code ---------------------------------------------------------------------
 
 
-def month_codes(month: HouseholdMonth, cashflow: HouseholdCashflow) -> dict[C, Decimal]:
-    """The month's spending per code (positive, a refund negative), checked against A."""
-    if cashflow.month != month.month:
-        raise ValueError(f"the cashflow of {cashflow.month} beside the month {month.month}")
+def is_spending(code: C) -> bool:
+    """Whether month_cashflow counts a private row of `code` as spending: a code outside the
+    taxonomy (bank_fees, uncategorized) or a spending or tax code outside Geldanlage."""
+    row = TAXONOMY.get(code)
+    if row is None:
+        return True
+    if row.group is HouseholdGroup.INVESTMENT:
+        return False
+    return row.relevance in (Relevance.SPENDING, Relevance.TAX)
+
+
+def month_codes(month: HouseholdMonth, lines: Sequence[MonthLine]) -> dict[C, Decimal]:
+    """The month's spending per code (positive, a refund negative) from its private lines,
+    a code that nets to 0 kept; checked against A."""
     codes: dict[C, Decimal] = {}
-    for by_code in cashflow.spending_by_category.values():
-        for code, amount in by_code.items():
-            codes[code] = codes.get(code, ZERO) + amount
+    for code, amount in cashflow_rows(lines):
+        if is_spending(code):
+            codes[code] = codes.get(code, ZERO) - amount
     if sum(codes.values(), ZERO) != month.spending:
         raise ValueError(f"{month.month}: the codes do not add up to the month's spending")
     return codes
@@ -247,18 +274,16 @@ def _uncategorized_todo(count: int, total: Decimal) -> HealthTodo:
 
 def budget(
     months: Sequence[HouseholdMonth],
-    cashflows: Sequence[HouseholdCashflow],
+    lines: Sequence[Sequence[MonthLine]],
     overrides: Mapping[C, BudgetClass],
     targets: BudgetTargets,
     *,
     as_of: date,
     scenario_id: UUID | None = None,
     references: Sequence[BudgetReference] = (),
-    uncategorized_lines: int = 0,
 ) -> BudgetView:
     """The Budget over the window `months` (consecutive, oldest first; the closed months
-    phase 9's key figures use, D231). `uncategorized_lines`: how many lines of the window
-    are booked as uncategorized, for the to-do."""
+    phase 9's key figures use, D231), `lines` each month's private lines."""
     win = Window(months=[m.month for m in months], enough=len(months) >= MIN_MONTHS)
     base = {
         "as_of": as_of,
@@ -267,9 +292,12 @@ def budget(
         "targets": targets,
         "references": list(references),
     }
-    if len(cashflows) != len(months):
-        raise ValueError("one cashflow per month")
-    per_month = [month_codes(m, c) for m, c in zip(months, cashflows, strict=True)]
+    if len(lines) != len(months):
+        raise ValueError("one list of lines per month")
+    per_month = [month_codes(m, rows) for m, rows in zip(months, lines, strict=True)]
+    uncategorized_lines = sum(
+        1 for rows in lines for code, _ in cashflow_rows(rows) if code is C.UNCATEGORIZED
+    )
     if not win.enough:
         return BudgetView(**base, todos=window_todos(win))
     n = len(months)
@@ -383,8 +411,8 @@ def budget(
         ),
     )
     todos = []
-    if line_totals[L.UNCATEGORIZED] != 0:
-        todos.append(_uncategorized_todo(max(uncategorized_lines, 1), line_totals[L.UNCATEGORIZED]))
+    if uncategorized_lines:
+        todos.append(_uncategorized_todo(uncategorized_lines, line_totals[L.UNCATEGORIZED]))
     return BudgetView(
         **base,
         months=month_rows,
@@ -402,6 +430,7 @@ __all__ = [
     "budget",
     "class_of",
     "default_class",
+    "is_spending",
     "line_of",
     "mark",
     "month_codes",

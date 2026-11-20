@@ -15,6 +15,7 @@ from hausbuch.rules.household.taxonomy import ONE_OFF, TAXONOMY
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.budget import BudgetLineKey as L
 from hausbuch.schemas.budget import BudgetTargets
+from hausbuch.schemas.health import HealthTodoCode
 from hausbuch.schemas.household import BudgetClass
 from hausbuch.schemas.plan import HouseholdLevers
 from hausbuch.services.health import rule_version
@@ -36,7 +37,6 @@ def _view(case: phase10.BudgetCase):
         case.overrides,
         case.targets,
         as_of=AS_OF,
-        uncategorized_lines=sum(b[2] for b in built),
     ), [b[0] for b in built]
 
 
@@ -121,15 +121,15 @@ def test_identity_per_month_matches_phase9(case: phase10.BudgetCase) -> None:
         view = B.budget(
             [b[0] for b in built], [b[1] for b in built], overrides, BudgetTargets(), as_of=AS_OF
         )
-        for row, (month, _, _) in zip(view.months, built, strict=True):
+        for row, (month, _) in zip(view.months, built, strict=True):
             assert row.need + row.want + row.one_off + row.uncategorized == month.spending
             assert row.saving == month.saved == month.income - month.spending
 
 
-def test_too_few_months_still_checks_the_cashflows() -> None:
+def test_too_few_months_still_checks_the_lines() -> None:
     case = phase10.load("budget_partition").cases[0]
     built = [phase10.household(m, case.id) for m in case.months]
-    with pytest.raises(ValueError, match="one cashflow per month"):
+    with pytest.raises(ValueError, match="one list of lines per month"):
         B.budget([b[0] for b in built], [built[0][1]], {}, BudgetTargets(), as_of=AS_OF)
 
 
@@ -237,3 +237,61 @@ def test_an_override_carried_unaltered_is_not_refused(monkeypatch) -> None:
     for previous in ({}, {C.HH_RESTAURANT: BudgetClass.WANT}):  # new, altered
         with pytest.raises(RuleViolationError):
             HS._check_budget_classes(levers, previous)
+
+
+# --- a group that nets to 0 in a month keeps its codes (review of PR #490) ---------------
+
+
+def _three_months(extra: dict[int, list[tuple[C, str]]]):
+    """Three months of salary 3,000 and rent 1,000, `extra` bookings (signed as on the
+    account) added to the month of that index."""
+    months = []
+    for i, month in enumerate(("2027-01", "2027-02", "2027-03")):
+        private = [
+            phase10.Booking(category=C.HH_SALARY, amount=Decimal("3000.00")),
+            phase10.Booking(category=C.HH_RENT, amount=Decimal("-1000.00")),
+        ]
+        private += [phase10.Booking(category=c, amount=Decimal(a)) for c, a in extra.get(i, [])]
+        months.append(phase10.MonthInput(month=month, private=private))
+    built = [phase10.household(m, "netting") for m in months]
+    return B.budget([b[0] for b in built], [b[1] for b in built], {}, BudgetTargets(), as_of=AS_OF)
+
+
+def _totals(view) -> dict:
+    return {li.key: li.total for li in view.lines}
+
+
+def test_a_fee_and_a_credit_netting_to_zero_in_sonstiges() -> None:
+    view = _three_months({1: [(C.BANK_FEES, "-5.00"), (C.HH_OTHER, "5.00")]})
+    totals = _totals(view)
+    assert totals[L.NEED] == Decimal("3005.00")
+    assert totals[L.WANT] == Decimal("-5.00")
+    assert totals[L.SAVING] == Decimal("6000.00")
+    assert sum(totals.values()) == view.income.total == Decimal("9000.00")
+    assert view.months[1].need == Decimal("1005.00") and view.months[1].want == Decimal("-5.00")
+    assert not view.todos
+
+
+def test_an_uncategorized_line_netting_to_zero_in_sonstiges() -> None:
+    view = _three_months({1: [(C.UNCATEGORIZED, "-10.00"), (C.HH_OTHER, "10.00")]})
+    totals = _totals(view)
+    assert totals[L.UNCATEGORIZED] == Decimal("10.00")
+    assert totals[L.WANT] == Decimal("-10.00")
+    assert totals[L.NEED] == Decimal("3000.00")
+    assert [t.code for t in view.todos] == [HealthTodoCode.UNCATEGORIZED_LINES]
+
+
+def test_a_need_and_a_want_netting_to_zero_in_mobilitaet() -> None:
+    view = _three_months({1: [(C.HH_TAXI, "-30.00"), (C.HH_FUEL, "30.00")]})
+    totals = _totals(view)
+    assert totals[L.NEED] == Decimal("2970.00")
+    assert totals[L.WANT] == Decimal("30.00")
+    assert sum(totals.values()) == view.income.total
+
+
+def test_uncategorized_lines_netting_to_zero_over_the_window_keep_the_todo() -> None:
+    view = _three_months({0: [(C.UNCATEGORIZED, "-10.00")], 2: [(C.UNCATEGORIZED, "10.00")]})
+    assert L.UNCATEGORIZED not in _totals(view)
+    (todo,) = view.todos
+    assert todo.code is HealthTodoCode.UNCATEGORIZED_LINES
+    assert todo.action == "2 Zahlungen einordnen"
