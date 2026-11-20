@@ -1,0 +1,115 @@
+/* Dokumente by section with a search (phase 10 D282, mockup 23). */
+
+.doc-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 640px;
+}
+
+.doc-search input {
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.doc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.doc-chip .doc-chip-n {
+  font-weight: 800;
+  opacity: 0.75;
+}
+
+.doc-chip[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.doc-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.doc-section-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--radius-tag);
+  background: var(--tag-bg);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.doc-table td:first-child a {
+  font-weight: 700;
+}
+
+.doc-row-sub {
+  display: none;
+}
+
+.doc-panel-meta {
+  margin: -6px 0 8px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+/* On the phone the table is a list: title, then the section and the kind on one line. */
+@media (max-width: 799px) {
+  .doc-table thead,
+  .doc-table .doc-col-wide {
+    display: none;
+  }
+
+  .doc-table,
+  .doc-table tbody,
+  .doc-table tr,
+  .doc-table td {
+    display: block;
+  }
+
+  .doc-table tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .doc-table td {
+    padding: 0;
+    border: none;
+  }
+
+  .doc-row-sub {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+}
