@@ -34,6 +34,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import DBAPIError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from hausbuch import i18n
 from hausbuch.rules.errors import RuleError
 from hausbuch.schemas.api import ErrorKind, ErrorResponse, FieldError
 from hausbuch.services.documents import DocumentInUseError, DuplicateLinkError, LinkNotFoundError
@@ -102,12 +103,50 @@ def render(exc: BaseException, request_id: UUID | None) -> Rendered:
     ValueError or LookupError, and pydantic's ValidationError is a ValueError too."""
     rendered = _classify(exc)
     rendered.body = rendered.body.model_copy(update={"request_id": request_id})
+    if rendered.body.message is not None and i18n.english():
+        # The few messages a service writes in German for the screen (the others are codes
+        # the frontend words itself) in the request's language; the log keeps the kind only.
+        message = MESSAGES.translate(rendered.body.message)
+        rendered.body = rendered.body.model_copy(update={"message": message})
     rendered.log = {"error": rendered.body.error.value} | rendered.log
     if rendered.body.error is ErrorKind.INTERNAL:
         rendered.log |= describe_failure(exc)
     elif rendered.body.codes:
         rendered.log["codes"] = rendered.body.codes
     return rendered
+
+
+# The German messages services raise for the screen, with their English (phase 10 D284);
+# the raise sites, the logs and the events stay German.
+MESSAGES = i18n.Patterns(
+    "errors",
+    [
+        (
+            "Diese Adresse ist schon als Einzahlungsadresse einer anderen Börse gemerkt.",
+            "This address is already remembered as the deposit address of another exchange.",
+        ),
+        ("Diese Verknüpfung besteht nicht mehr.", "This link no longer exists."),
+        (
+            "Diese Verknüpfung beruht auf derselben Transaktion (gleicher Hash); sie lässt sich"
+            " nicht lösen.",
+            "This link rests on the same transaction (the same hash); it cannot be undone.",
+        ),
+        (
+            "Nur eine Verknüpfung, die die App über eine gemerkte Adresse gesetzt hat, lässt"
+            " sich hier lösen.",
+            "Only a link the app set through a remembered address can be undone here.",
+        ),
+        (
+            "Eine Seite wird gerade bearbeitet. Bitte noch einmal versuchen.",
+            "One side is being changed right now. Please try again.",
+        ),
+        ("Diese Abhebung ist schon verknüpft.", "This withdrawal is already linked."),
+        (
+            "Diese Abhebung wurde inzwischen beantwortet.",
+            "This withdrawal has been answered in the meantime.",
+        ),
+    ],
+)
 
 
 def _classify(exc: BaseException) -> Rendered:

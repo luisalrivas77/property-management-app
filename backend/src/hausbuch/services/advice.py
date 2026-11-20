@@ -43,6 +43,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, func, insert, select
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
@@ -67,6 +68,7 @@ from hausbuch.schemas.advice import (
 from hausbuch.schemas.enums import AccountKind, EntityType
 from hausbuch.schemas.events import EventType, PlanExplanationStored
 from hausbuch.schemas.household import AssetKind, MovementStatus, NetWorthClass
+from hausbuch.services import advice_texts
 
 from .allocations import user_id
 from .context import CommandContext
@@ -271,6 +273,17 @@ def explanation(conn: Connection, today: date, scenario_id: UUID | None) -> Plan
     """GET /household-plan/explanation?scenario= (§8.6)."""
     resolved = resolve_scenario(conn, scenario_id)
     mode = advice_mode(conn)
+    if i18n.english():
+        # Phase 10 Q-O178: the validator and its evals are German, so in English the screen
+        # shows the app's template text in English, rendered on read from today's facts like
+        # a text with no row; a stored model text is never shown translated.
+        return PlanExplanation(
+            scenario_id=resolved,
+            mode=mode,
+            status=ExplanationStatus.TEMPLATE,
+            reason=None if private_ai_allowed(conn) else ExplanationReason.CONSENT_OFF,
+            paragraphs=advice_texts.template(explanation_facts(conn, today, resolved), mode),
+        )
     e = explanation_table.c
     row = conn.execute(
         select(explanation_table)
