@@ -75,6 +75,19 @@ test("a camt ZIP imports reconciled, a second upload adds nothing, Umsätze by m
   // A future month is never shown; typed into the address it falls back to the newest month.
   await page.goto(`${linesPath}?tab=umsaetze&monat=2099-01`);
   await expect(page.getByRole("button", { name: "Alle 5" })).toBeVisible();
+
+  // Konten (phase 10 D279) lists one kind of account at a time: the one bank account under
+  // „Bankkonten“, its stored closing balance, and a tap opens it in the detail panel.
+  await page.goto("/accounts");
+  const kinds = page.getByRole("navigation", { name: "Kontoarten" });
+  await expect(kinds.getByRole("link", { name: "Bankkonten 1" })).toHaveAttribute("aria-current", "page");
+  await expect(kinds.getByRole("link")).toHaveCount(1); // no other kind is held
+  const account = page.getByRole("link").filter({ hasText: "Mietkonto" });
+  await expect(account).toContainText("-3.028,51 €");
+  await account.click();
+  const accountPanel = page.getByRole("complementary", { name: "Mietkonto" });
+  await expect(accountPanel.getByRole("link", { name: /^Umsätze/ })).toHaveAttribute("href", `${linesPath}?tab=umsaetze`);
+  await expect(accountPanel.getByRole("heading", { name: "Eigentümer" })).toBeVisible();
 });
 
 test("a CSV labelled as Excel (Windows) imports, waits for its balance, then reconciles", async ({ page, signedIn }) => {

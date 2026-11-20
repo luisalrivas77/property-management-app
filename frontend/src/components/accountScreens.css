@@ -335,3 +335,127 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* Konten (D279, mockup 21): chips per kind, the kind's total, one row per account. On the
+   computer the cells sit in columns; on the phone each row stacks, labels beside values. */
+.account-kinds {
+  margin-bottom: 0.75rem;
+}
+
+.kind-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.kind-total strong {
+  font-size: 1.25rem;
+}
+
+.account-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.account-list > li + li {
+  border-top: 1px solid var(--divider);
+}
+
+.account-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 1.3fr) minmax(0, 1.2fr);
+  gap: 0.5rem 1rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.account-row-loan {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1.3fr);
+}
+
+.account-row:hover,
+.account-row[aria-current="true"] {
+  background: var(--accent-tint);
+  color: var(--text);
+}
+
+.account-main,
+.account-stand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.account-name {
+  font-weight: 700;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.account-sub {
+  font-size: 0.85rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.account-cell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.account-cell-label {
+  display: none;
+}
+
+.account-panel-balance {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+@media (max-width: 799px) {
+  .account-row,
+  .account-row-loan {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+
+  .account-cell {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+  }
+
+  .account-cell-label {
+    display: inline;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .account-cell .account-stand {
+    align-items: flex-end;
+    text-align: right;
+  }
+}
