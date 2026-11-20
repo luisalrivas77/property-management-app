@@ -364,7 +364,8 @@ function PlanBody({
   // a value the field does not show (PR #434 review C): no save until it is fixed.
   const [projectionInvalid, setInvalid] = useState(false);
   const [spendingInvalid, setSpendingInvalid] = useState(false);
-  // A discard remounts the fields, so none keeps a text the draft no longer holds.
+  // A discard or a save remounts the fields, so none keeps a text the draft no longer holds: after
+  // a save each field reads the stored value back, from whichever section it was saved.
   const [epoch, setEpoch] = useState(0);
   const invalid = projectionInvalid || spendingInvalid;
   const dirty = changes.length > 0;
@@ -393,6 +394,9 @@ function PlanBody({
       const posted = { ...draft, bands: current?.levers?.bands ?? draft.bands ?? [] };
       const row = await saveDefaultScenario(posted, current);
       onSaved(posted, row);
+      setInvalid(false);
+      setSpendingInvalid(false);
+      setEpoch((value) => value + 1);
     } catch (caught) {
       setError(caught);
     } finally {
