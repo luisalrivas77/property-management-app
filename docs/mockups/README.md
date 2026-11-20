@@ -159,6 +159,8 @@ Luis mixes the directions screen by screen („I want to mix. Let's go one by on
    the month's income into Notwendiges, Wünsche and Sparen with the housing share beside them, each line's dot empty
    until the household sets its own target, the published splits shown only „Zum Vergleich“ with their sources.
 
+The five choices are specced as phase 10 (`docs/phases/phase-10.md`, 20 Nov 2026, not built).
+
 ### The three directions
 
 **A · Ruhig & klassisch.** Today's app, tidied: the sidebar stays on the computer but slimmer,
