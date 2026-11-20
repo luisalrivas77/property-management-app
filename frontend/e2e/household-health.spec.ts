@@ -223,10 +223,11 @@ async function serve(page: Page, path: string, body: (url: URL) => unknown): Pro
   );
 }
 
-/** The scenario history and its writes: each POST becomes the default in force. */
-async function scenarios(page: Page): Promise<HouseholdScenarioCreate[]> {
+/** The scenario history and its writes: each POST becomes the default in force; `initial` is the
+ * history before the test. */
+async function scenarios(page: Page, initial: HouseholdScenario[] = []): Promise<HouseholdScenarioCreate[]> {
   const posted: HouseholdScenarioCreate[] = [];
-  const rows: HouseholdScenario[] = [];
+  const rows: HouseholdScenario[] = [...initial];
   await page.route(
     (url) => url.pathname === "/api/household-scenarios",
     async (route: Route) => {
@@ -271,6 +272,36 @@ test("no key figure has a colour before „Übernehmen“, and the confirmed lim
 
   await expect(figure.locator(".health-mark")).toHaveText("Grün");
   await expect(page.getByText("Eure Ampel-Grenzen sind übernommen.")).toBeVisible();
+});
+
+test("„Übernehmen“ on Übersicht keeps the default's budget targets and class moves", async ({ page, signedIn }) => {
+  void signedIn;
+  const window = [monthsBack(4), monthsBack(3), monthsBack(2)];
+  const saved = scenario("00000000-0000-4000-8000-000000000900", {
+    name: "Standard",
+    is_default: true,
+    withdrawn: false,
+    supersedes_id: null,
+    levers: {
+      reserve_target_months: "6",
+      buffer_percent: "10",
+      horizon_months: 60,
+      net_worth_years: 10,
+      value_change: { depot: null, crypto: null },
+      budget_targets: { needs_max: "0.50", wants_max: "0.30", saving_min: "0.20", housing_max: null },
+      budget_class_overrides: { hh_groceries: "want" },
+    },
+  });
+  const posted = await scenarios(page, [saved]);
+  await serve(page, "/api/health", () => health(window, { coloured: posted.length > 0 }));
+  await serve(page, "/api/health/net-worth-series", () => []);
+
+  await page.goto("/");
+  await page.getByRole("region", { name: "Ampel-Grenzen festlegen" }).getByRole("button", { name: "Übernehmen" }).click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(posted[0]?.supersedes_id).toBe(saved.id);
+  expect(posted[0]?.levers?.budget_targets).toEqual({ needs_max: "0.50", wants_max: "0.30", saving_min: "0.20", housing_max: null });
+  expect(posted[0]?.levers?.budget_class_overrides).toEqual({ hh_groceries: "want" });
 });
 
 test("the rate fields start empty, and the projection appears only after a rate is saved", async ({ page, signedIn }) => {

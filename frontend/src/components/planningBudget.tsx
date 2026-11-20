@@ -273,7 +273,9 @@ export function BudgetClassPanel({
   const classSwitch = (category: string) => {
     const code = codes.find((c) => c.category === category);
     if (!code || !switchable || !code.default_class) return null;
-    const current = (overrides[category] as BudgetClass | undefined) ?? code.budget_class ?? code.default_class;
+    // The draft decides: an override it holds, else the code's default. The served class already
+    // carries the saved override, so it is only what „verschoben“ compares against.
+    const current = (overrides[category] as BudgetClass | undefined) ?? code.default_class;
     const moved = current !== (code.budget_class ?? code.default_class);
     return (
       <span className="budget-class-switch">

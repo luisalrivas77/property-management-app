@@ -42,6 +42,8 @@ import { ALLOCATION_CATEGORY } from "./labels";
 import { PlanExplanationPanel } from "./planExplanation";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { BudgetClassPanel, BudgetSection, type BudgetView, GoalsPanel, PlanError } from "./planningBudget";
+
+type BudgetClass = components["schemas"]["BudgetClass"];
 import { Effects, type PlanPreview, SpendingPlaySection, usePlanPreview } from "./spendingPlay";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
@@ -112,7 +114,14 @@ function resolveDraft(state: DraftState | null, plan: HouseholdPlan | undefined)
 type T = PlanningText;
 
 /** One line per changed lever area, for the scenario row's count and the sheet's list. */
-function draftChanges(saved: HouseholdLevers, draft: HouseholdLevers, t: T, short: (v: string) => string, percent: (v: string) => string): string[] {
+function draftChanges(
+  saved: HouseholdLevers,
+  draft: HouseholdLevers,
+  t: T,
+  short: (v: string) => string,
+  percent: (v: string) => string,
+  defaults: Map<string, BudgetClass>,
+): string[] {
   const out: string[] = [];
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   if (saved.reserve_target_months !== draft.reserve_target_months) out.push(t.changeReserveTarget(short(draft.reserve_target_months)));
@@ -137,10 +146,21 @@ function draftChanges(saved: HouseholdLevers, draft: HouseholdLevers, t: T, shor
   for (const code of moved) {
     const now = draft.budget_class_overrides?.[code];
     if (saved.budget_class_overrides?.[code] !== now) {
-      out.push(t.changeClassMove(categoryName(code), now ? lineLabel(t, now) : "–"));
+      // A removed override moves the code back to its default class.
+      const cls = (now as BudgetClass | undefined) ?? defaults.get(code);
+      out.push(t.changeClassMove(categoryName(code), cls ? lineLabel(t, cls) : "–"));
     }
   }
   if (!same(saved.budget_targets, draft.budget_targets)) out.push(t.changeTargets);
+  return out;
+}
+
+/** Each budget code's class without an override, from GET /household-budget. */
+function defaultClasses(budget: BudgetView): Map<string, BudgetClass> {
+  const out = new Map<string, BudgetClass>();
+  for (const line of budget.lines ?? []) {
+    for (const code of line.codes ?? []) if (code.default_class) out.set(code.category, code.default_class);
+  }
   return out;
 }
 
@@ -158,7 +178,7 @@ export function HouseholdPlanScreen({ section, property }: { section: PlanSectio
   const data = state.data;
   const draft = resolveDraft(draftState, data?.plan);
   const savedLevers = fillLevers(data?.plan.levers);
-  const changes = data ? draftChanges(savedLevers, draft, t, f.short, f.percentValue) : [];
+  const changes = data ? draftChanges(savedLevers, draft, t, f.short, f.percentValue, defaultClasses(data.budget)) : [];
   const sheet = useDetail("scenario");
   const current = data ? currentDefault(data.scenarios) : null;
 
@@ -1383,6 +1403,9 @@ function ProjectionCard({
     years: String(draft.net_worth_years),
   });
   const [errors, setErrors] = useState<Partial<Record<"depot" | "crypto" | "years", string>>>({});
+  // A field left invalid when the section changes keeps the draft's old value, which is valid,
+  // so it must not keep blocking „Szenario speichern“ where no red field shows.
+  useEffect(() => () => onValidity(false), [onValidity]);
 
   function setError(key: "depot" | "crypto" | "years", message: string | undefined) {
     const next = { ...errors, [key]: message };
