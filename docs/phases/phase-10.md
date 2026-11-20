@@ -4,17 +4,21 @@ Spec drafted 20 Nov 2026 from the four mockups Luis chose that day (`docs/mockup
 17-C2) and his decision on budgets („the household's own targets“, 20 Nov 2026). Not built. Q-O176 (the default sorting
 of the spending codes into needs and wants, §9) answered by Luis the same day. On the same day Luis asked for
 mockups of every screen not yet drawn, so the build covers the whole app at once (D278 amended); the screens' steps
-wait for them, steps 0 and 1 (the Budget's rules and reads, no screen) are being built meanwhile.
+wait for them, steps 0 and 1 (the Budget's rules and reads, no screen) are being built meanwhile. Luis chose the
+remaining screens the same day with five changes and two additions (D279–D284: account kinds as tabs, Anlagen at
+the newest price, one Steuern tab „Eure Angaben“ for every input, Dokumente by section with a search, a light and
+dark choice, and English), so every screen is drawn and the build covers the whole app.
 
 | Step | What | State |
 | --- | --- | --- |
 | Spec | This file, the edits of §8 | drafted 20 Nov 2026 |
 | 0 | Taxonomy field `budget_class`, `rules/budget/references.yaml`, schemas, fixtures; no migration | being built 20 Nov 2026 (Q-O176 answered the same day) |
 | 1 | `rules/budget/`, `services/budget.py`, `GET /household-budget`, `GET /accounts/{id}/month` | being built 20 Nov 2026 |
-| 2 | The shell: the menu, the detail panel, the route map, Steuern › „Einkommen & Haushalt“ | not started |
+| 2 | The shell: the menu, the detail panel, the route map, the message catalogue (D284), „Darstellung“ (D283) | not started |
 | 3 | Übersicht (15-B2) and Konten › Umsätze (16-C2) | not started |
 | 4 | Planung in five sections with the Budget (17-C2) | not started |
-| 4b | The remaining screens as drawn in `docs/mockups/` 18–25 (D278 amended), each once Luis chooses it | mockups drawn 20 Nov 2026, not yet chosen |
+| 4b | The remaining screens as drawn in `docs/mockups/` 18–25 (D278 amended) with D279–D282 | chosen 20 Nov 2026 with Luis's changes (20–24 redrawn the same day) |
+| 4c | English (D284) | not started |
 | 5 | Closing (§7.1) | not started |
 
 ## 1. Scope
@@ -26,15 +30,15 @@ needs-and-wants Budget on Planung, against targets the household sets itself.
   the menu; the owners' income for the tax moves to Steuern.
 - The detail panel, app-wide in rule, built in this phase for the lists §5.2 names.
 - Übersicht (15-B2), Konten › Umsätze (16-C2), Planung (17-C2) as drawn, and every other screen as drawn in
-  `docs/mockups/` 18–25 once Luis chooses it (D278 amended): content re-arranged into the shell and the panel,
-  nothing added that no endpoint serves.
+  `docs/mockups/` 18–25 once Luis chooses it (D278 amended), chosen 20 Nov 2026 with D279–D282: content re-arranged into the shell and the panel,
+  nothing added that no endpoint serves except what D280 and D282 name.
+- A choice of light or dark (D283) and the app in English (D284), both per device.
 - The Budget: the month's income split into Notwendiges, Wünsche and Sparen, the housing share beside them,
   the household's own targets, the published splits as reference points.
 - The two noted defects of „Was eure Änderungen bewirken“ (ARCHITECTURE.md, „Input for a later phase: the
   layout“).
 
-**Out.** No screen gets content its mockup does not draw (§5.3); until a screen's mockup (18–25) is chosen it
-gets the shell only, and its wide tables keep their sideways scroll. No budget reminder, email, to-do or AI sentence. No new ledger
+**Out.** No screen gets content its mockup does not draw (§5.3). No budget reminder, email, to-do or AI sentence. No new ledger
 data, no migration. The finer household-purchase reader, the net-worth goal and the other parked ideas stay
 parked.
 
@@ -55,6 +59,12 @@ parked.
 | D276 | **The housing share** is the window's spending in the Wohnen group (`hh_housing`, `hh_rent`, `hh_energy`, `hh_broadcast_fee`, `hh_flat_search`, and any code moved there later) ÷ E. It is the household's own home only: the rental flat's costs are inside its result, and a code the household overrides to „want“ still counts in housing. The screen says that the IWU figure is a tenant's gross cold rent of the household's net income and Destatis's all housing costs of disposable income, so neither is the same figure as the app's. | Two published thresholds with two different denominators (§3); the screen must not imply either is the app's figure. |
 | D277 | **Spending in play is reached from the Budget.** A tapped class opens its codes in the panel with their window means and the „geplant“ field of D263; the panel shows the class's amount and share with the plan, from `POST /household-plan/preview`. A code's class switch sits on its row there and becomes an override when saved. The explanation of the plan (D252, D253) gets no target, class or mark among its facts. | D263 is the one place amounts are typed; the explanation's validator was tested without budget facts and stays so. |
 | D278 | **What undrawn screens get in this build:** the new shell, the panel where §5.2 names it, and nothing else; their content, tables and forms are unchanged. A screen gets its own mockup before its content changes. | Luis drew four screens; „one build“ needs an edge. **Amended 20 Nov 2026 (Luis: „let's do mock ups for the rest of the cards so it's all some [done] at once“):** every screen not yet drawn gets its own mockup before the build (`docs/mockups/` 18 onwards), and the build carries out each one Luis chooses; until a screen's mockup is chosen this decision stands for it. |
+| D279 | **Konten shows one kind of account at a time.** Chips at the top, one per kind the household holds, each with its count: Bankkonten, Kreditkarten, Depots, Börsen, Wallets, Darlehen; Bankkonten first and the default; the kind is in the URL (`/accounts?art=…`); the page lists only that kind with its total. An account's panel is unchanged (mockup 21). | Luis, 20 Nov 2026: „each type of konten should have a tab on the top to keep the page leaner and scroll less“. |
+| D280 | **Anlagen shows the newest value everywhere.** Übersicht, ETF and Krypto value every position by the same function as the net worth (`/assets/overview`'s valuation, D167): the newest stored price with its source and day (an issuer's daily NAV, Lang & Schwarz's close, a coin's daily close), refreshed by the daily price runs, so "up to date" means the last daily price, never a live quote. The ETF tab's rows show units and that value; the report's price and value move into the position's panel as a check, with whether the report agrees with the booked trades. Unchanged: a fund whose latest report disagrees with the booked trades is not valued and says „siehe Zu prüfen“ (D165 (3)), and a fund no daily source prices shows its report price marked „Kurs aus dem Bericht vom …“ (D174 (4)). No new sum: the ETF tab's figures equal Übersicht's and the net worth's for the same day. Reviewed (money figures). | Luis, 20 Nov 2026: „The anlagen should show the up to date values at all time“; the ETF tab showed the last quarterly report's value while Übersicht showed the daily one. |
+| D281 | **Steuern has one tab for every input: „Eure Angaben“.** The form chips are „Eure Angaben“, Anlage V, Anlage N (and KAP, SO when phase 8 is built). „Eure Angaben“ holds every fact the household types or uploads that more than one form reads: per owner the pay (the expected gross pay, payslips, the Lohnsteuerbescheinigung, „Kein Arbeitslohn in <Jahr>“), church tax and Bundesland, the itemised Werbungskosten, the wage-replacement benefits; „Kinder und Haushalt“; and the Jahresfragen as a card into the one-question flow (`/tax/<year>/fragen` kept). Anlage N becomes the form only, like Anlage V: its lines per owner with Zeile and „So gerechnet“, each line's panel linking to its input under „Eure Angaben“. Pay is typed in one place; the two stores behind it stay (`income_input`, the estimate; `return_input`, the certificate and payslip figures, which replace the estimate once confirmed), so no migration. The property's own tax inputs (ortsübliche Miete, Nutzungsdauer, Einbauküche, §82b) stay on Anlage V, which alone reads them. Amends D266 and §5.1, where the tab was named „Einkommen & Haushalt“. | Luis, 20 Nov 2026: „there are two places where the income is asked in the anlage N and the Einkommen und Haushalt. We should combine and put them in one place … You can suggest another name“. |
+| D282 | **Dokumente by section, with a search.** Every document gets one section, computed by code on read, never stored: Immobilie (the catalogue's property and purchase, WEG, loan, tenancy and running-cost groups, and every Nebenkosten bill and payment proof), Steuern (the income-tax group, the Einkommensteuerbescheid), Konten (bank and card statements), Anlagen (depot documents, exchange exports), Haushalt & Sonstiges (the rest). A document two sections could claim takes the first in that order, so a Grunderwerbsteuerbescheid is Immobilie; the search finds it from either. `GET /documents` gains `section` and `q` (case- and umlaut-insensitive over title, type label, file name, issuer, date and amount), filtered in the server, and `Document` gains `section`; the page shows the section chips with their counts and the search box (mockup 23). No migration. | Luis, 20 Nov 2026: „it would be nice if they could be categorized by to which section the document applies. And maybe a search bar“. |
+| D283 | **Light or dark, chosen per device.** Einstellungen › „Darstellung & Sprache“ offers „Wie das Gerät“ (the default, today's behaviour), „Hell“ and „Dunkel“, stored on the device (`localStorage`), applied before the first paint by setting `data-theme` on the root element; `globals.css` keeps its dark palette under the media query guarded by `:root:not([data-theme="light"])` and repeats it under `[data-theme="dark"]`. Every colour phase 10 adds (the asset stripes, the panel, the dots, the Budget bar) is a token with a dark value. | Luis, 20 Nov 2026: „add to the plan and light mode“; today the app follows the device only. |
+| D284 | **The app in English, chosen per device.** „Sprache“ beside „Darstellung“: Deutsch (the default) or English, stored on the device. From step 2 every label of the rebuilt screens goes through one message catalogue (`frontend/src/i18n/`), German its source, and each screen's English is written by the coder who builds it, beside the German, from one glossary written in step 2 (Luis, 20 Nov 2026: English in the same pass), so there is no second rewrite. Texts the server writes (to-do titles and sentences, card texts, error messages, the depot explanations of D177) get an English template keyed by the same code in step 4c, in parallel with the screens, chosen by the request's language; none of them is placed under `rules/health/` or `rules/plan/`, whose files feed `rule_version()` (a change there would make `health-check` differ on the closed months), so the key figures' and plan's sentences are translated from their codes outside those folders. **Stays German:** the names of official forms and lines (Anlage V, Werbungskosten, Zeile 33), shown with an English gloss, because they are what ELSTER shows; every paper for a third party (the letter to a tenant, the ELSTER field sheet, the yearly archive, the payment proofs); the reminder email (a member's language would need a migration); text read from a document; and the AI explanation of the plan, whose validator and evals are German: in English the screen shows the app's own template text in English, marked as such, until an English validator and its evals exist (Q-O178). Amends `CLAUDE.md`'s „labels stay German“ and the Decisions row „UI style“: German stays the source and the default. | Luis, 20 Nov 2026: „and the english Translation“. |
 
 ## 3. Sources (read 20 Nov 2026)
 
@@ -74,7 +84,8 @@ The wording on screen and in `references.yaml` keeps each source's own denominat
 ## 4. Budget rules (`rules/budget/budget.py`, `rules/budget/references.yaml`), fixtures `tests/fixtures/phase10/`
 
 `budget(months, cashflows, overrides, targets) → BudgetView`, pure. `months`: phase 9's `HouseholdMonth` per
-closed month of the window; `cashflows`: the same months' `HouseholdCashflow` (spending per code). It checks
+closed month of the window; `cashflows`: the same months' private lines by code (built from the lines, not from
+`HouseholdCashflow.spending_by_category`, which drops a group whose month nets to 0; review of step 1, 20 Nov 2026). It checks
 that each month's codes add up to that month's A (ValueError otherwise), sums per class and line, means them
 (§D273), sets the shares, the housing share, the marks and the sentences.
 
@@ -88,7 +99,7 @@ Fixtures, computed by script for invented owners A and B, never from the mockups
 - `budget_marks.yaml`: targets met, missed, empty; E ≤ 0; a window shorter than 3 months.
 - `budget_references.yaml`: the one-tap fill writes the reference's numbers and leaves housing empty.
 
-## 5. Screens (labels German)
+## 5. Screens (labels German, English from step 4c, D284)
 
 ### 5.1 Routes
 
@@ -96,24 +107,25 @@ Fixtures, computed by script for invented owners A and B, never from the mockups
 | --- | --- |
 | menu entries Übersicht … Einstellungen (eleven) | bottom bar / tabs + „Mehr“ (D266) |
 | `/owners`, `/tenants` in the menu | reached from Immobilien's card; routes kept |
-| Eigentümer: income, church tax, pay documents, Kinder und Haushalt | Steuern › „Einkommen & Haushalt“ |
+| Eigentümer: income, church tax, pay documents, Kinder und Haushalt; Anlage N's inputs; Jahresfragen | Steuern › „Eure Angaben“ (D281; „Einkommen & Haushalt“ until then) |
+| `/accounts` | `/accounts?art=…`, one kind at a time (D279) |
+| `/documents` | `/documents?bereich=…&q=…` (D282) |
 | `/planning`, `/planning?tab=haushalt` | `/planning?section=…` (D270); the old link maps to `budget` |
 | Immobilien not in the menu | „Mehr“ › Immobilien, one card per property (14-C2) |
 
 ### 5.2 The panel in this build
 
 Bank lines (Konten › Umsätze), Übersicht's tiles, the Budget's classes, a tenancy and an owner on
-Immobilien's card; and, once their mockups (18–25) are chosen, Zu prüfen cards, documents, positions, accounts,
+Immobilien's card; and, as mockups 18–25 draw them (chosen 20 Nov 2026), Zu prüfen cards, documents, positions, accounts,
 settings, the tax lines and to-do lists, as each mockup draws them.
 
 ### 5.3 Undrawn screens
 
 Zu prüfen (18), Haushalt (19), Anlagen (20), Konten and an account's settings (21), Steuern (22), Dokumente
 (23), Einstellungen (24) and the property, unit, tenancy, tenant and loan pages with their forms (25) were drawn
-on 20 Nov 2026 at Luis's word (D278 amended), not yet chosen. Each re-arranges today's content: every card,
+on 20 Nov 2026 at Luis's word (D278 amended) and chosen the same day with D279–D282 (20–24 redrawn for them). Each re-arranges today's content: every card,
 button and figure of the screen kept, on the page or in the panel; a wide table's row keeps its label and
-amount on the phone, its other columns in the panel, never a sideways scroll. Until one is chosen, that screen
-gets the new shell and unchanged content.
+amount on the phone, its other columns in the panel, never a sideways scroll.
 
 ## 6. API and schemas
 
@@ -124,6 +136,9 @@ gets the new shell and unchanged content.
 - `HouseholdLevers.budget_targets`, `HouseholdLevers.budget_class_overrides` (D274), with empty defaults;
   `PATCH` nothing new: a scenario is saved through `/household-scenarios` as today.
 - `HouseholdCode.budget_class` (D272).
+- `GET /documents?section=&q=`, `Document.section` (D282).
+- The ETF tab's values from the net worth's valuation (D280); the endpoint it reads is the coder's choice, its figures equal `/assets/overview`'s.
+- In step 4c, the request's language (`Accept-Language`) chooses the server's English templates (D284).
 
 ## 7. Steps
 
@@ -131,15 +146,20 @@ gets the new shell and unchanged content.
    none (schemas and data; CI proves them), unless Q-O176's answer changes D272.
 1. `rules/budget/`, `services/budget.py`, both endpoints. **Reviewed** (money figures, a new partition of the
    ledger's month): FOCUS the identity of D273 and the levers' validation of stored rows.
-2. The shell, the panel, the route map, Steuern › „Einkommen & Haushalt“.
+2. The shell, the panel, the route map, the message catalogue (every new label through it, one file per screen), the
+   English glossary of the app's own terms, „Darstellung“ and „Sprache“ (D283, D284). Steps 3, 4 and 4b then run
+   in parallel, one coder per screen group in its own worktree, each writing its screens' German and English.
 3. Übersicht and Konten › Umsätze.
 4. Planung's sections, the Budget, the goals sheet, the scenario sheet with D271's fix. Reviewed with step 1
    if built together, else on its own for D274's saving path.
+4b. The remaining screens (18–25) with D279–D282; D280 reviewed (money figures), D281 with its links back from Anlage N.
+4c. The server's English templates (D284), in parallel with 3–4b: to-dos, cards, errors, depot explanations,
+   chosen by `Accept-Language`, none under `rules/health/` or `rules/plan/`.
 5. Closing.
 
 ### 7.1 Done when
 
-Luis uses the new menu and every screen on his phone and computer and finds no page that starts with a
+Luis uses the new menu and every screen on his phone and computer, in German and in English, light and dark, and finds no page that starts with a
 scroll past the menu; on the live data the Budget's Sparen ÷ E equals the Sparquote `hausbuch health-check`
 recomputes for the same window, to four places; Luis finds the split into needs and wants plausible; and
 nothing is coloured before he saves a target.
@@ -171,6 +191,14 @@ a group's „Sonstige …“ code follows its group:
   whose contents the app cannot see, under Wünsche; Erstattungen lower Wünsche.
 
 ## 10. Open for the orchestrator
+
+- **Q-O178 (open, not blocking): the plan's AI explanation in English.** Until an English validator, lexicon and
+  evals exist (D255, D258), English shows the app's template text in English (D284). Building them is a later step
+  once Luis uses the app in English.
+- **Rollback limit (from step 1's review):** once a household scenario is saved by the step 1 image, its row carries
+  `budget_targets` and `budget_class_overrides`, which an older image refuses (`extra="forbid"`), so that image
+  cannot be rolled back after the first save. The frontend's `fillLevers()` must carry both fields from step 4 on,
+  or a save from Planung drops the household's targets.
 
 - Q-O177 (settled 20 Nov 2026): `/household-budget` serves the window only. The Haushalt mockup (19) draws
   no Budget, so no screen asks for one month; a month view can be added later without a schema change.

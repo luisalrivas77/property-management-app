@@ -133,7 +133,7 @@ Luis mixes the directions screen by screen („I want to mix. Let's go one by on
    holds Übersicht, Zu prüfen, Haushalt, Anlagen and „Mehr“; „Mehr“ lists Konten, Immobilien, Steuern, Planung,
    Dokumente and Einstellungen. Mieter and Eigentümer are no menu entries: Immobilien shows one card per property with
    its tenancies and owners' shares. The owners' income for the tax (pay, church tax, the pay documents) and
-   „Kinder und Haushalt“ move to a Steuern tab „Einkommen & Haushalt“ („Let's move the tax stuff from the Immobilien
+   „Kinder und Haushalt“ move to a Steuern tab „Einkommen & Haushalt“ (renamed „Eure Angaben“ and widened to every input on 20 Nov 2026, phase 10 D281) („Let's move the tax stuff from the Immobilien
    to the tax section“; „I like the mock up“).
 2. **Details open beside the list, everywhere in the app** („You can make this sliding from the side when clicking a
    design choice for the whole app“). Tapping a row or a card (a bank line, a tenancy, an owner, a document, a
@@ -161,7 +161,7 @@ Luis mixes the directions screen by screen („I want to mix. Let's go one by on
 
 The five choices are specced as phase 10 (`docs/phases/phase-10.md`, 20 Nov 2026, not built).
 
-### The remaining screens (drawn 20 Nov 2026, not approved)
+### The remaining screens (drawn and chosen 20 Nov 2026)
 
 At Luis's word („let's do mock ups for the rest of the cards so it's all some [done] at once“), every screen
 not drawn above got a mockup in the chosen shell (phase 10 D278 amended): 18 Zu prüfen, 19 Haushalt, 20 Anlagen,
@@ -172,6 +172,21 @@ a document's page count in 23 and the Nebenkosten total in 25 are not served tod
 server adds them). On the phone a wide table's row keeps its label and amount, its other columns in the panel,
 and no frame scrolls sideways (checked at 390 px). 17-C2's Immobilie section was corrected the same day: the
 sale is tax-free from 26 June 2036, ten years after the notary date, as 14-C2 says (it said October 2036).
+
+Luis chose them the same day with five changes and two additions, written into phase 10 as D279–D284 and drawn
+into 20–24 the same day (this section said „not approved“ until then):
+
+- **Konten** (21): one chip per kind of account at the top (Bankkonten, Kreditkarten, Depots, Börsen, Wallets, Darlehen),
+  the page showing one kind at a time („to keep the page leaner and scroll less“, D279); the panel as drawn.
+- **Anlagen** (20): every value at the newest daily price with its source and day, the same valuation as the net
+  worth; the ETF tab's report value only as a check in the position's panel („up to date values at all time“, D280).
+- **Steuern** (22): one tab „Eure Angaben“ for everything typed or uploaded that the forms read (pay, church tax,
+  Werbungskosten, wage-replacement benefits, Kinder und Haushalt, the Jahresfragen card); Anlage N shows the form
+  only, like Anlage V. It replaces „Einkommen & Haushalt“, where pay was asked a second time (D281).
+- **Dokumente** (23): section chips (Immobilie, Steuern, Konten, Anlagen, Haushalt & Sonstiges) and a search box (D282).
+- **Einstellungen** (24): „Darstellung & Sprache“ with light, dark or as the device (D283) and Deutsch or English
+  (D284); papers for the Finanzamt and the tenants stay German.
+- 18 Zu prüfen, 19 Haushalt and 25 the property pages are chosen as drawn.
 
 ### The three directions
 
@@ -224,19 +239,19 @@ longest of the three) and unused width on a large computer screen.
 | `17-C2-planning-desktop.png` / `.html` | The same on the computer: the five sections as chips under the title, the scenario row on the right, Budget with its targets, and the clicked group (Wünsche) with its categories in the side panel |
 | `18-inbox-phone.png` / `.html` | Zu prüfen in the new shell (20 Nov 2026, not approved): the sections fold from their headings with counts; a row keeps payee, amount, its one question and at most „Bestätigen“; a tapped payment opens the panel with the full allocation form, „Künftig immer so zuordnen“, „Diese auch auf … umbuchen“, „Alle N prüfen und bestätigen“ as a tick list, and a transfer's „Gegenbuchung wählen“ |
 | `18-inbox-desktop.png` / `.html` | The same on the computer, every section open, the tapped payment in the side panel |
-| `19-household-phone.png` / `.html` | Haushalt (not approved): the month's tiles, the surplus per month, spending by category with a share bar and amount per row, a tapped group's subcategories with the saved plan beside the real month in the panel (Anteil, Ø, Geplant and Unterschied moved there), income and „Gespart, nicht ausgegeben“; no Budget (that is Planung) |
+| `19-household-phone.png` / `.html` | Haushalt (chosen 20 Nov 2026): the month's tiles, the surplus per month, spending by category with a share bar and amount per row, a tapped group's subcategories with the saved plan beside the real month in the panel (Anteil, Ø, Geplant and Unterschied moved there), income and „Gespart, nicht ausgegeben“; no Budget (that is Planung) |
 | `19-household-desktop.png` / `.html` | The same on the computer with the full category table and a group open in the side panel |
-| `20-assets-phone.png` / `.html` | Anlagen (not approved): Übersicht, ETF and Krypto as chips; positions as rows with value; a tapped coin's open lots with „steuerfrei ab“ in the panel; price-source and typed-price forms in the panel; the 31 Dec holdings statement |
+| `20-assets-phone.png` / `.html` | Anlagen (chosen 20 Nov 2026): Übersicht, ETF and Krypto as chips; positions as rows with value; a tapped coin's open lots with „steuerfrei ab“ in the panel; price-source and typed-price forms in the panel; the 31 Dec holdings statement Redrawn 20 Nov 2026 (D280): every value at the newest daily price with source and day, the ETF rows as units and today's value, the depot report only as a check in the position's panel, a fund with no daily price marked „Kurs aus dem Bericht vom …“. |
 | `20-assets-desktop.png` / `.html` | The same on the computer, a position in the side panel |
-| `21-accounts-phone.png` / `.html` | Konten (not approved): the accounts by kind with amount and a status word; an account's sheet with Umsätze (16-C2), Kontoauszüge, Bankabruf (PIN only as „gespeichert“), owners and account data; a wallet by chain with no address shown; an exchange's typed balances |
+| `21-accounts-phone.png` / `.html` | Konten (chosen 20 Nov 2026): the accounts by kind with amount and a status word; an account's sheet with Umsätze (16-C2), Kontoauszüge, Bankabruf (PIN only as „gespeichert“), owners and account data; a wallet by chain with no address shown; an exchange's typed balances Redrawn 20 Nov 2026 (D279): chips per kind (Bankkonten, Kreditkarten, Depots, Börsen, Wallets, Darlehen) with counts, one kind at a time with its total. |
 | `21-accounts-desktop.png` / `.html` | The same on the computer, the list with all columns and an account in the side panel |
-| `22-tax-phone.png` / `.html` | Steuern (not approved): year and form chips (Anlage V, Einkommen & Haushalt, Anlage N, Jahresfragen; no KAP or SO); the estimate, the draft card, „Was noch fehlt“; an Anlage V line keeps label, amount and a small Zeile, its Kennzahl, calculation and Belege in the panel; the tax inputs, exports, the owners' income from Eigentümer and Jahresfragen one question at a time |
+| `22-tax-phone.png` / `.html` | Steuern (chosen 20 Nov 2026): year and form chips (Anlage V, Einkommen & Haushalt, Anlage N, Jahresfragen; no KAP or SO); the estimate, the draft card, „Was noch fehlt“; an Anlage V line keeps label, amount and a small Zeile, its Kennzahl, calculation and Belege in the panel; the tax inputs, exports, the owners' income from Eigentümer and Jahresfragen one question at a time Redrawn 20 Nov 2026 (D281): chips „Eure Angaben“ · Anlage V · Anlage N; „Eure Angaben“ holds pay, church tax, Werbungskosten, Lohnersatzleistungen, Kinder und Haushalt and the Jahresfragen card; Anlage N shows the form only, a tapped line „So gerechnet“ and „Ändern in Eure Angaben“ (the tab list before it named „Einkommen & Haushalt“). |
 | `22-tax-desktop.png` / `.html` | The same on the computer, the AfA line in the side panel |
-| `23-documents-phone.png` / `.html` | Dokumente (not approved): the archive as rows (type, Steuerjahr, date under the title), upload and capture; a tapped document's one pre-filled suggestion with page and quote and „Übernehmen“ in the panel, the hand-typed fields folded, „Dokument löschen“ with its reason when blocked |
+| `23-documents-phone.png` / `.html` | Dokumente (chosen 20 Nov 2026): the archive as rows (type, Steuerjahr, date under the title), upload and capture; a tapped document's one pre-filled suggestion with page and quote and „Übernehmen“ in the panel, the hand-typed fields folded, „Dokument löschen“ with its reason when blocked Redrawn 20 Nov 2026 (D282): a search box and section chips with counts, a section label on each row, a search for „grund“ with its hits highlighted. |
 | `23-documents-desktop.png` / `.html` | The same on the computer, a document with its suggestion in the side panel |
-| `24-settings-phone.png` / `.html` | Einstellungen (not approved): grouped rows, each opening its panel: KI switches and Hinweis-Modus, „Private Konten mit KI zuordnen“ with its text and consent, Zugangsschlüssel (never a value, „gespeichert“), passkeys and members, sign-out |
+| `24-settings-phone.png` / `.html` | Einstellungen (chosen 20 Nov 2026): grouped rows, each opening its panel: KI switches and Hinweis-Modus, „Private Konten mit KI zuordnen“ with its text and consent, Zugangsschlüssel (never a value, „gespeichert“), passkeys and members, sign-out Redrawn 20 Nov 2026 (D283, D284): „Darstellung & Sprache“ with Wie das Gerät / Hell / Dunkel and Deutsch / English, and the page in the dark palette. |
 | `24-settings-desktop.png` / `.html` | The same on the computer, Zugangsschlüssel in the side panel |
-| `25-property-pages-phone.png` / `.html` | The pages Immobilien's card opens (not approved): Kauf & Nebenkosten, the price split and AfA basis, the loan with its schedule (a row keeps date and payment, interest, Tilgung and balance in the panel), the tenancy, the tenant, Unterlagen, Dokumente, Verlauf, and the edit-form pattern sliding in from the right |
+| `25-property-pages-phone.png` / `.html` | The pages Immobilien's card opens (chosen 20 Nov 2026): Kauf & Nebenkosten, the price split and AfA basis, the loan with its schedule (a row keeps date and payment, interest, Tilgung and balance in the panel), the tenancy, the tenant, Unterlagen, Dokumente, Verlauf, and the edit-form pattern sliding in from the right |
 | `25-property-pages-desktop.png` / `.html` | The flat's page on the computer with a unit in the side panel |
 | `15-C-overview-phone.png` / `.html` | Übersicht on the phone: a green net-worth card, the kinds of investment as cards swiped sideways with dots, Zu prüfen with a full-width button, the coming dates, the key figures and the cash flow folded |
 | `15-C-overview-desktop.png` / `.html` | Übersicht on the computer: tabs in the header, one centred column, and a side panel with the selected kind (the ETF depot) and the key figures |
