@@ -6,8 +6,13 @@ current movements on at least one of the workspace's accounts; the first of thos
 every source (no price before it). Since D174 amended 20 Nov 2026 an asset held earlier and
 sold or moved out since is planned too, for the days it was held only (`planned_assets`,
 `Held.last_on`, its last movement): every source, the first-read check and „no guess“ as for
-a held asset, nothing stored after its last held day, until its days are priced (`_done`);
-it raises no card and no `asset.price_source_failed` event, since no account holds it today.
+a held asset, nothing stored after its last held day. It leaves the plan once a run
+settled its held stretch (read every source it asked, stored nothing new, cut nothing for
+MAX_ROWS, skipped nothing for a missing rate) or MAX_SOLD_RUNS runs asked it, both read from
+the runs' events (`sold_stretches`), never from its stored rows or the sale's date; a coin
+with every reachable held day priced has nothing to ask (`_nothing_to_ask`). It raises no
+card and no `asset.price_source_failed` event, since no account holds it today, and a
+fund's failure streak counts only the runs after its latest sold one.
 The cards keep reading `held_subquery` („held today“). Three phases, so no network call runs
 inside a database transaction:
 
@@ -86,7 +91,13 @@ from hausbuch.db.tables import asset_movement as movement_table
 from hausbuch.db.tables import event as event_table
 from hausbuch.db.tables import price as price_table
 from hausbuch.rules import valuation
-from hausbuch.schemas.events import EventType, FundSourceNote, PricesFetched, PriceSourceFailed
+from hausbuch.schemas.events import (
+    EventType,
+    FundSourceNote,
+    PricesFetched,
+    PriceSourceFailed,
+    SoldStretchNote,
+)
 from hausbuch.schemas.household import AssetKind, MovementStatus
 from hausbuch.schemas.prices import FxRate, NavPoint, PriceSourceKind
 from hausbuch.services.context import Actor, CommandContext, new_command
@@ -113,6 +124,7 @@ MAX_COIN_DAYS = 31  # D167 (3): CoinGecko calls per asset and run
 MAX_ROWS = 400  # D174 (3): rows per asset and run from one file
 KRAKEN_DAYS = 720  # kraken.daily: the 720 most recent daily candles
 COINGECKO_DAYS = HISTORY_DAYS  # the Demo tier's reach
+MAX_SOLD_RUNS = 10  # D174 amended 20 Nov 2026: runs a sold asset's held stretch is asked
 PLACES = Decimal("0.00000001")
 STREAK_WINDOW_DAYS = 31  # the prices_fetched events read for a failure streak
 
@@ -178,6 +190,10 @@ class Collected:
     exchange_disagreed: list[UUID] = field(default_factory=list)  # D264 (5)
     # D264 (6): the source a failed asset was asked from, when not its issuer's NAV
     failed_sources: dict[UUID, PriceSourceKind] = field(default_factory=dict)
+    # D174 amended 20 Nov 2026: per asset no account holds today, whether this run settled
+    # its held stretch (every source it asked read, nothing new stored, nothing cut for the
+    # row limit, nothing skipped for a missing rate); absent means not settled
+    settled: dict[UUID, bool] = field(default_factory=dict)
 
 
 @dataclass
@@ -581,20 +597,18 @@ def planned_assets(conn: Connection) -> list[Held]:
     return sorted(planned, key=lambda h: h.last_on is not None)  # stable: by name within
 
 
-def _done(held: Held, stored: dict[tuple[UUID, str], set[date]], today: date | None = None) -> bool:
-    """Whether an asset no account holds today needs no more asking (D174 amended 20 Nov
-    2026), so a sold asset is not asked every day for good. An asset `collect` never asks
-    (a coin without ids, a fund with neither a source nor an ISIN, a stock) is done at
-    once, so a workspace that holds nothing today stays a run that asks nothing. A coin:
-    every day it was held that its sources still reach (Kraken's 720 days with a pair,
-    else CoinGecko's 365, counted back from `today`; every day without `today`) has a
-    CoinGecko or Kraken price (coins trade every day), so a coin sold years ago is not
-    asked for days no source serves any more. A fund: a daily-source price
-    (its issuer's NAV or the exchange's, D264) lies within STALE_AFTER_DAYS of both ends of
-    the days it was held. Both ends, since a file's 400-row cut (newest first) and a NAV
-    waiting for an older ECB rate leave the oldest days for a later run; the files are
-    full histories, so the days between are stored by the same read. A source with no
-    history for those days is asked again every run, like a held fund's (never a guess)."""
+def _nothing_to_ask(
+    held: Held, stored: dict[tuple[UUID, str], set[date]], today: date | None = None
+) -> bool:
+    """Whether `collect` has nothing to ask for an asset no account holds today, so it never
+    enters the plan (and a workspace that holds nothing today stays a run that asks
+    nothing): an asset collect never prices (a stock, a coin without ids), and a coin every
+    day of whose held days its sources still reach (Kraken's 720 days with a pair, else
+    CoinGecko's 365, counted back from `today`; every held day without `today`) has a
+    CoinGecko or Kraken price. Coins trade every day, so that is the exact set of days a
+    read could add, never a nearness to stored rows; a fund's days are never judged from
+    its rows (D174 amended 20 Nov 2026, „When a sold asset is done“: its weekends and
+    holidays make no such set): it leaves the plan by its runs only (`sold_stretches`)."""
     if held.last_on is None:
         return False
     if held.kind is AssetKind.CRYPTO:
@@ -608,19 +622,48 @@ def _done(held: Held, stored: dict[tuple[UUID, str], set[date]], today: date | N
             reach = KRAKEN_DAYS if held.ids.kraken_pair is not None else COINGECKO_DAYS
             start = max(start, today - timedelta(days=reach - 1))
         return all(d in days for d in _days(start, held.last_on))
-    if held.kind is not AssetKind.ETF or (held.fund is None and not held.isin):
-        return True  # never asked (collect prices coins and funds only)
-    days = stored.get((held.id, S.ISSUER_NAV.value), set()) | stored.get(
-        (held.id, S.EXCHANGE_CLOSE.value), set()
-    )
-    near = timedelta(days=valuation.STALE_AFTER_DAYS)
-    first = any(held.first_on <= d <= held.first_on + near for d in days)
-    last = any(held.last_on - near <= d <= held.last_on for d in days)
-    return first and last
+    return held.kind is not AssetKind.ETF  # collect prices coins and funds only
+
+
+StretchKey = tuple[UUID, date, date]
+
+
+def sold_stretches(conn: Connection) -> dict[StretchKey, tuple[int, bool]]:
+    """Per (asset, first held day, last held day) of an asset no account holds today: how
+    many daily runs asked it and whether one of them settled it, from every
+    workspace.prices_fetched event's `sold_stretches` (D174 amended 20 Nov 2026). A
+    stretch whose first or last day changed is another key, asked afresh."""
+    e = event_table.c
+    found: dict[StretchKey, tuple[int, bool]] = {}
+    for (listed,) in conn.execute(
+        select(e.payload["sold_stretches"]).where(
+            e.type == EventType.WORKSPACE_PRICES_FETCHED.value,
+            e.payload.has_key("sold_stretches"),
+        )
+    ):
+        for note in listed or []:
+            key = (
+                UUID(note["asset_id"]),
+                date.fromisoformat(note["first_on"]),
+                date.fromisoformat(note["last_on"]),
+            )
+            runs, settled = found.get(key, (0, False))
+            found[key] = (runs + 1, settled or bool(note.get("settled")))
+    return found
+
+
+def _asked_out(held: Held, stretches: dict[StretchKey, tuple[int, bool]]) -> bool:
+    """A sold asset's stretch that a run settled, or that MAX_SOLD_RUNS runs asked whatever
+    happened (a lookup miss, a refused first read, a currency the ECB lacks, a file that
+    keeps failing): it leaves the plan, the month-end keeping its to-do."""
+    if held.last_on is None:
+        return False
+    runs, settled = stretches.get((held.id, held.first_on, held.last_on), (0, False))
+    return settled or runs >= MAX_SOLD_RUNS
 
 
 def plan(conn: Connection, today: date | None = None) -> Plan:
-    """`today` bounds how far back a sold coin's sources still reach (`_done`)."""
+    """`today` bounds how far back a sold coin's sources still reach (`_nothing_to_ask`)."""
     p = price_table.c
     stored: dict[tuple[UUID, str], set[date]] = defaultdict(set)
     ecb_days: set[date] = set()
@@ -630,7 +673,12 @@ def plan(conn: Connection, today: date | None = None) -> Plan:
         stored[(row.asset_id, row.source)].add(row.on)
         if row.source == S.ECB_FX.value:
             ecb_days.add(row.on)
-    held = [h for h in planned_assets(conn) if not _done(h, stored, today)]
+    stretches = sold_stretches(conn)
+    held = [
+        h
+        for h in planned_assets(conn)
+        if not _nothing_to_ask(h, stored, today) and not _asked_out(h, stretches)
+    ]
     return Plan(
         held=held,
         stored=dict(stored),
@@ -840,24 +888,29 @@ def _history(plan: Plan, sources: Sources, fx: Fx) -> None:
             fx.add(code, [trimmed])
 
 
-def _coin(held: Held, plan: Plan, sources: Sources, today: date, out: Collected) -> None:
+def _coin(held: Held, plan: Plan, sources: Sources, today: date, out: Collected) -> bool:
+    """Whether the run settled the coin's days (D174 amended 20 Nov 2026; read for a coin
+    no account holds today only): a source read, no error, nothing new, nothing cut."""
     stored = plan.stored.get((held.id, S.COINGECKO_DAILY.value), set()) | plan.stored.get(
         (held.id, S.KRAKEN_DAILY.value), set()
     )
     missing = [d for d in _days(held.first_on, held.end(today)) if d not in stored]
     if not missing:
-        return
+        return True
     out.assets += 1
-    left, added, errors = missing, 0, False
+    left, added, errors, read, cut = missing, 0, False, False, False
     if sources.coingecko is not None and held.ids.coingecko_id is not None:
         out.sources.add(S.COINGECKO_DAILY)
         reach = sources.coingecko.oldest_day(today)
-        asked = [d for d in missing if d >= reach][:MAX_COIN_DAYS]
+        reachable = [d for d in missing if d >= reach]
+        asked = reachable[:MAX_COIN_DAYS]
+        cut = len(reachable) > MAX_COIN_DAYS
         prices, error = sources.coingecko_days(held.ids.coingecko_id, asked)
         for on, price in prices.items():
             out.drafts.append(Draft(held.id, on, price, S.COINGECKO_DAILY, {"eur": str(price)}))
         added += len(prices)
         if error is None:
+            read = True
             # Kraken: the days CoinGecko had no price for, and those beyond its 365 days;
             # the rest of the backlog is CoinGecko's on the next runs.
             left = [d for d in asked if d not in prices] + [d for d in missing if d < reach]
@@ -870,13 +923,17 @@ def _coin(held: Held, plan: Plan, sources: Sources, today: date, out: Collected)
         if isinstance(answer, SourceError):
             errors = True
         else:
-            for on in [d for d in left if d in answer][:MAX_ROWS]:
+            read = True
+            found = [d for d in left if d in answer]
+            cut = cut or len(found) > MAX_ROWS
+            for on in found[:MAX_ROWS]:
                 out.drafts.append(
                     Draft(held.id, on, answer[on], S.KRAKEN_DAILY, {"close": str(answer[on])})
                 )
                 added += 1
     if errors and not added:
         out.failed.append(held.id)
+    return read and not errors and not added and not cut
 
 
 def _moved(error: SourceError) -> bool:
@@ -922,7 +979,11 @@ def _note(held: Held, fund: FundSource, currency: str | None = None) -> FundSour
 
 def _etf(
     held: Held, fund: FundSource, plan: Plan, sources: Sources, fx: Fx, out: Collected
-) -> None:
+) -> bool:
+    """Whether the run settled the fund's held days from its issuer (D174 amended 20 Nov
+    2026; read for a fund no account holds today only): the file read and converted, the
+    first read not refused, no new row (so nothing cut for MAX_ROWS either) and no held day
+    skipped for a missing ECB rate."""
     out.assets += 1
     out.sources.add(S.ISSUER_NAV)
     answer, fund = _read(held, fund, sources, out)
@@ -934,16 +995,16 @@ def _etf(
         # D174 amended (h): another currency answers; the stored reference is kept and
         # nothing is stored, no failed fetch
         out.nav_unresolved.append(held.id)
-        return
+        return False
     if isinstance(answer, SourceError):
         out.failed.append(held.id)
         out.notes.append(_note(held, fund))
-        return
+        return False
     if fx.cover(answer.currency) is False:
         # Never a price in another currency: the card names the fund and the currency.
         out.unconverted[held.id] = answer.currency
         out.notes.append(_note(held, fund, answer.currency))
-        return
+        return False
     stored = plan.stored.get((held.id, S.ISSUER_NAV.value), set())
     if not stored:
         # The first read of this fund from its issuer (D174 amended 19 Nov 2026 (g)): the
@@ -953,7 +1014,7 @@ def _etf(
         )
         if check is not None and check.refused:
             out.nav_disagreed.append(held.id)
-            return
+            return False
     # D174 amended 20 Nov 2026: a sold fund's rows end with its last held day; the check
     # above reads the whole file.
     held_points = [n for n in answer.points if held.within(n.on)]
@@ -967,6 +1028,9 @@ def _etf(
         if isinstance(fund, NavSource):  # kept for the next runs and the screens
             raw |= {"issuer": fund.issuer, "fund_ref": fund.fund_ref}
         out.drafts.append(Draft(held.id, row.on, row.price_eur, S.ISSUER_NAV, raw))
+    # Settled only when no held day the file prices is still missing: a new row (stored or
+    # cut for MAX_ROWS) or a day nav_rows left out for want of an ECB rate keeps it asked.
+    return not any(n.on >= held.first_on and n.on not in stored for n in held_points)
 
 
 def _exchange_failed(held: Held, instrument_id: int | None, out: Collected) -> None:
@@ -983,10 +1047,12 @@ def _exchange_failed(held: Held, instrument_id: int | None, out: Collected) -> N
 
 def _exchange(
     held: Held, plan: Plan, sources: Sources, today: date, out: Collected, *, once: bool
-) -> None:
+) -> bool:
     """D264: the fund's Lang & Schwarz prices. `once`: the one-off history of a fund whose
     issuer gives its latest NAV only; it stores every missing day and its failure is only
-    counted in the log line. Otherwise the fund's daily source, at most MAX_ROWS a run."""
+    counted in the log line. Otherwise the fund's daily source, at most MAX_ROWS a run.
+    Whether the run settled its held days (D174 amended 20 Nov 2026): the history read, the
+    first read not refused, no new row."""
     assert held.isin is not None
     out.sources.add(S.EXCHANGE_CLOSE)
     if not once:
@@ -999,7 +1065,7 @@ def _exchange(
     if isinstance(instrument_id, SourceError):
         if instrument_id.kind != "not_listed" and not once:
             _exchange_failed(held, None, out)
-        return
+        return False
     answer = sources.exchange_history(instrument_id, held.isin, today)
     if isinstance(answer, SourceError) and not searched and _moved(answer):
         # A stored id gone or naming another ISIN: the venue renumbered it (as follow-up A).
@@ -1010,12 +1076,12 @@ def _exchange(
     if isinstance(answer, SourceError):
         if not once:
             _exchange_failed(held, instrument_id, out)
-        return
+        return False
     if not stored:
         check = valuation.nav_check(answer, [], plan.reports.get(held.id, {}))
         if check is not None and check.refused:
             out.exchange_disagreed.append(held.id)
-            return
+            return False
     held_points = [n for n in answer if held.within(n.on)]  # D174 amended 20 Nov 2026
     rows = valuation.nav_rows(held_points, held.first_on, [], stored_days=stored)
     newest = sorted(rows, key=lambda r: r.on, reverse=True)
@@ -1028,6 +1094,7 @@ def _exchange(
             "quote": "mid",
         }
         out.drafts.append(Draft(held.id, row.on, row.price_eur, S.EXCHANGE_CLOSE, raw))
+    return not rows
 
 
 def _latest_only(fund: FundSource) -> bool:
@@ -1044,10 +1111,11 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
     _history(plan, sources, fx)
     for held in plan.held:
         if held.kind is AssetKind.CRYPTO and held.ids.any:
-            _coin(held, plan, sources, today, out)
+            _settle(out, held, _coin(held, plan, sources, today, out))
     for held in plan.held:
         if held.kind is not AssetKind.ETF:
             continue
+        settled = False  # a fund no source was asked for (a lookup that found none)
         fund = held.fund
         if fund is None and held.isin:
             fund = sources.discover(held.isin, held.name, held.first_on)
@@ -1056,16 +1124,24 @@ def collect(plan: Plan, sources: Sources, today: date, rates: dict[str, list[FxR
             elif sources.is_unresolved(None, held.isin):
                 out.nav_unresolved.append(held.id)  # D174 amended (h)
         if fund is not None:
-            _etf(held, fund, plan, sources, fx, out)
+            settled = _etf(held, fund, plan, sources, fx, out)
             if (
                 held.isin
                 and _latest_only(fund)
                 and not plan.stored.get((held.id, S.EXCHANGE_CLOSE.value))
             ):
-                _exchange(held, plan, sources, today, out, once=True)  # D264 (1)
+                once = _exchange(held, plan, sources, today, out, once=True)  # D264 (1)
+                settled = settled and once
         elif held.isin and lang_schwarz.wants_exchange(held.name):
-            _exchange(held, plan, sources, today, out, once=False)  # D264 (1)
+            settled = _exchange(held, plan, sources, today, out, once=False)  # D264 (1)
+        _settle(out, held, settled)
     return out
+
+
+def _settle(out: Collected, held: Held, settled: bool) -> None:
+    """Record a sold asset's outcome for the run's event (D174 amended 20 Nov 2026)."""
+    if held.last_on is not None:
+        out.settled[held.id] = settled
 
 
 # --- 3. write -----------------------------------------------------------------------------
@@ -1097,7 +1173,10 @@ def _insert(ctx: CommandContext, rows: list[dict[str, Any]]) -> int:
 
 def failure_runs(conn: Connection, asset_id: UUID, since: datetime) -> list[tuple[date, bool]]:
     """(day, failed) per prices_fetched run since `since`: the asset failed in a run when the
-    run's event lists it (rules.valuation.failed_days counts the days in a row)."""
+    run's event lists it (rules.valuation.failed_days counts the days in a row). Only the
+    runs after the latest one that asked it as held by no account (`sold_stretches`), so a
+    fund bought again counts its failures from its current held stretch (D174 amended 20
+    Nov 2026)."""
     e = event_table.c
     rows = conn.execute(
         select(e.recorded_at, e.payload).where(
@@ -1105,10 +1184,17 @@ def failure_runs(conn: Connection, asset_id: UUID, since: datetime) -> list[tupl
         )
     ).all()
     wanted = str(asset_id)
+    after = max((r.recorded_at for r in rows if wanted in _sold_in(r.payload)), default=None)
     return [
         (r.recorded_at.astimezone(UTC).date(), wanted in (r.payload.get("failed_asset_ids") or []))
         for r in rows
+        if after is None or r.recorded_at > after
     ]
+
+
+def _sold_in(payload: dict[str, Any]) -> set[str]:
+    """The ids a run's event asked as held by no account (D174 amended 20 Nov 2026)."""
+    return {n["asset_id"] for n in payload.get("sold_stretches") or []}
 
 
 @dataclass(frozen=True)
@@ -1124,7 +1210,9 @@ class RunNote:
 
 
 def fund_notes(conn: Connection, since: datetime) -> dict[UUID, RunNote]:
-    """Per fund the notes of the prices_fetched runs since `since` (follow-ups B and C)."""
+    """Per fund the notes of the prices_fetched runs since `since` (follow-ups B and C), each
+    fund's only from the runs after the latest one that asked it as held by no account
+    (D174 amended 20 Nov 2026), as `failure_runs` counts them."""
     e = event_table.c
     rows = conn.execute(
         select(e.recorded_at, e.payload)
@@ -1133,9 +1221,16 @@ def fund_notes(conn: Connection, since: datetime) -> dict[UUID, RunNote]:
     ).all()
     found: dict[UUID, RunNote] = {}
     open_streak: set[UUID] = set()
+    sold: set[UUID] = set()  # asked as sold in this run or a later one: older notes ignored
     for i, row in enumerate(rows):
         day = row.recorded_at.astimezone(UTC).date()
-        notes = {UUID(n["asset_id"]): n for n in row.payload.get("fund_sources") or []}
+        sold |= {UUID(a) for a in _sold_in(row.payload)}
+        open_streak -= sold
+        notes = {
+            UUID(n["asset_id"]): n
+            for n in row.payload.get("fund_sources") or []
+            if UUID(n["asset_id"]) not in sold
+        }
         for asset_id, n in notes.items():
             if asset_id in found:
                 continue
@@ -1215,6 +1310,16 @@ def write(ctx: CommandContext, plan: Plan, out: Collected) -> int:
             nav_disagreed=out.nav_disagreed,
             nav_unresolved=out.nav_unresolved,
             exchange_disagreed=out.exchange_disagreed,
+            sold_stretches=[
+                SoldStretchNote(
+                    asset_id=h.id,
+                    first_on=h.first_on,
+                    last_on=h.last_on,
+                    settled=out.settled.get(h.id, False),
+                )
+                for h in plan.held
+                if h.last_on is not None
+            ],
         ),
     )
     since = ctx.now - timedelta(days=STREAK_WINDOW_DAYS)
@@ -1263,6 +1368,7 @@ __all__ = [
     "DAILY_SOURCES",
     "MAX_COIN_DAYS",
     "MAX_ROWS",
+    "MAX_SOLD_RUNS",
     "Collected",
     "Held",
     "Fx",
@@ -1279,6 +1385,7 @@ __all__ = [
     "plan",
     "planned_assets",
     "run_workspace",
+    "sold_stretches",
     "stored_rates",
     "write",
 ]
