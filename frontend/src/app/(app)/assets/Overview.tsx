@@ -274,7 +274,7 @@ function PositionPanel({ account, position, onSaved }: { account: OverviewAccoun
   const f = useFormat();
   const todo = positionTodo(t, position);
   return (
-    <div className="stack detail-body">
+    <div className="stack">
       <p className="muted">{[account.label, accountKindLabel(t, account.kind)].join(" · ")}</p>
       <dl className="facts">
         <div>
