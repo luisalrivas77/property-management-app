@@ -4,10 +4,12 @@
 // every position by its daily price; `?kurs=<asset id>` opens its price card there.
 //
 // Anlagen › ETF (phase 6 step 4, §13, docs/mockups/09b-holdings-etf.png): every depot account
-// with its funds, from GET /assets/etf. Anteile are the confirmed trades to today; Kurs and Wert
-// are the latest depot report's, shown only while that report agrees with the booked trades and
-// nothing was traded after it (D165 (3)); Einstand is the plain sum of the purchases while a
-// fund was only bought (lots are phase 7). The Sparer-Pauschbetrag and Vorabpauschale cards are
+// with its funds, from GET /assets/etf. Since phase 10 D280 Anteile, Kurs and Wert are the
+// Übersicht's (the net worth's valuation, D167): the newest stored daily price with its source
+// and day; a fund whose report disagrees with the booked trades has no value (D165 (3)), and a
+// fund no daily source prices shows „Kurs aus dem Bericht vom …“ (D174 (4)). The report's own
+// price and value are a check only. Einstand is the plain sum of the purchases while a fund was
+// only bought (lots are phase 7). The Sparer-Pauschbetrag and Vorabpauschale cards are
 // phase 8 (D170) and carry no figure.
 //
 // Anlagen › Krypto (phase 7 step 6, ./Crypto.tsx, mockup 09c): lots and the holding period;
@@ -20,16 +22,17 @@ import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { signedMoney } from "@/components/cashflow";
 import { formatDate, formatDecimal, formatMoney } from "@/components/format";
-import { DOCUMENT_SUBTYPE, PROPOSAL_STATUS } from "@/components/labels";
+import { DOCUMENT_SUBTYPE, PRICE_SOURCE, PROPOSAL_STATUS } from "@/components/labels";
 import { Loading, TabBar, type Tab } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
 import { CryptoTab } from "./Crypto";
 import { OverviewTab } from "./Overview";
 
-type EtfOverview = components["schemas"]["EtfOverview"];
-type DepotAccountPositions = components["schemas"]["DepotAccountPositions"];
-type DepotPosition = components["schemas"]["DepotPosition"];
+type EtfOverview = components["schemas"]["EtfToday"];
+type DepotAccountPositions = components["schemas"]["EtfAccountToday"];
+type DepotPosition = components["schemas"]["EtfPositionToday"];
+type PriceLabel = components["schemas"]["PriceLabel"];
 type DepotDocumentStatus = components["schemas"]["DepotDocumentStatus"];
 type DocumentSubtype = components["schemas"]["DocumentSubtype"];
 type ProposalStatus = components["schemas"]["ProposalStatus"];
@@ -150,13 +153,13 @@ function Positions({ account }: { account: DepotAccountPositions }) {
           </tbody>
         </table>
       </div>
-      <p className="muted hint">Kurs und Wert laut dem letzten Depotbericht.</p>
+      <p className="muted hint">Werte von heute, wie im Nettovermögen auf der Übersicht.</p>
     </section>
   );
 }
 
 function PositionRow({ position }: { position: DepotPosition }) {
-  const gain = position.gain_eur;
+  const gain = position.gain_today_eur;
   return (
     <tr>
       <td>
@@ -165,11 +168,17 @@ function PositionRow({ position }: { position: DepotPosition }) {
       </td>
       <td className="num">{formatDecimal(position.units)}</td>
       <td className="num">
-        {position.report_price_eur != null ? formatMoney(position.report_price_eur) : "–"}
-        {position.report_on ? <span className="inbox-detail">Bericht vom {formatDate(position.report_on)}</span> : null}
+        {position.price ? (
+          <>
+            {formatMoney(position.price.price_eur)}
+            <span className="inbox-detail">{priceSource(position.price, position.from_report ?? false)}</span>
+          </>
+        ) : (
+          "–"
+        )}
       </td>
       <td className="num">
-        <strong>{position.value_eur != null ? formatMoney(position.value_eur) : "–"}</strong>
+        <strong>{position.value_today_eur != null ? formatMoney(position.value_today_eur) : "–"}</strong>
       </td>
       <td className="num" title={position.cost_eur == null ? "Nach einem Verkauf oder einer Umbuchung: kommt mit Phase 7" : undefined}>
         {position.cost_eur != null ? formatMoney(position.cost_eur) : "–"}
@@ -181,16 +190,22 @@ function PositionRow({ position }: { position: DepotPosition }) {
   );
 }
 
+/** "NAV der Fondsgesellschaft vom 26.06.2026", or „Kurs aus dem Bericht vom …“ (D174 (4)). */
+function priceSource(price: PriceLabel, fromReport: boolean): string {
+  const day = `vom ${formatDate(price.on)}`;
+  if (fromReport) return `Kurs aus dem Bericht ${day}`;
+  return `${PRICE_SOURCE[price.source] ?? price.source} ${day}`;
+}
+
 /** Why a fund shows no value, as a plain to-do (principle 7); "" when it has one. */
 function valueNote(position: DepotPosition): string {
-  if (position.value_eur != null) return "";
-  if (position.report_on == null) return "Noch in keinem Depotbericht: der Wert kommt mit dem nächsten Bericht";
-  if (position.reconciled === false) {
-    return `Der Bericht vom ${formatDate(position.report_on)} passt nicht zu den gebuchten Abrechnungen: siehe Zu prüfen`;
+  if (position.value_today_eur != null) return "";
+  if (position.not_valued_reason === "valuation.not_valued") {
+    return position.report_on
+      ? `Der Bericht vom ${formatDate(position.report_on)} passt nicht zu den gebuchten Abrechnungen: siehe Zu prüfen`
+      : "Der Depotbericht passt nicht zu den gebuchten Abrechnungen: siehe Zu prüfen";
   }
-  if (position.moved_since_report) {
-    return `Nach dem Bericht vom ${formatDate(position.report_on)} gehandelt: der Wert kommt mit dem nächsten Bericht`;
-  }
+  if (position.price == null) return "Noch kein Kurs: unter Übersicht einen Kurs eintragen";
   return "";
 }
 

@@ -4,7 +4,8 @@ The IBAN appears only in the create body; every read shape carries iban_masked, 
 body or log line quotes an IBAN, a name or a purpose text.
 
 Phase 6 step 4 adds GET /assets/etf here, the Anlagen screen's ETF tab (§13, mockup 09b): every
-depot account with its funds and the depot's documents; read only.
+depot account with its funds and the depot's documents; read only. Since phase 10 D280 its
+funds are valued by the Übersicht's valuation (services.prices.overview.etf_today).
 """
 
 from datetime import date, datetime
@@ -26,7 +27,8 @@ from hausbuch.schemas.bank import (
 )
 from hausbuch.schemas.budget import AccountMonth
 from hausbuch.schemas.enums import EntityType
-from hausbuch.schemas.household import AccountOwnership, EtfOverview, SetOwnershipBody
+from hausbuch.schemas.household import AccountOwnership, SetOwnershipBody
+from hausbuch.schemas.prices import EtfToday
 from hausbuch.services import depot
 from hausbuch.services.account_month import account_month
 from hausbuch.services.accounts import (
@@ -41,6 +43,7 @@ from hausbuch.services.accounts import (
 )
 from hausbuch.services.context import CommandContext
 from hausbuch.services.documents import LOCAL_TIME_ZONE
+from hausbuch.services.prices.overview import etf_today
 from hausbuch.services.statements import import_statement, list_imports, list_transactions
 from hausbuch.storage import BlobStore
 
@@ -125,12 +128,14 @@ def account_iban_confirm(
 
 
 @router.get("/assets/etf")
-def assets_etf(cmd: Cmd) -> EtfOverview:
-    """The Anlagen ETF tab: per depot account its funds (units from the confirmed movements,
-    the latest report's figures while they hold, the plain cost while a fund was only
-    bought) and the depot's documents with the status of their reading. The mockup's two tax
-    cards are phase 8 (D170) and carry no figure."""
-    return cmd.read(depot.etf_overview)
+def assets_etf(cmd: Cmd, on: date | None = None) -> EtfToday:
+    """The Anlagen ETF tab: per depot account its funds at the newest stored daily price on
+    `on` (today, Berlin time, by default), valued as the Übersicht and the net worth value
+    them (phase 10 D280: units, price with its source and day, value, „Kurs aus dem Bericht
+    vom …“ for a fund no daily source prices), with the latest report's figures kept as the
+    panel's check, and the depot's documents with the status of their reading. The mockup's
+    two tax cards are phase 8 (D170) and carry no figure."""
+    return cmd.read(etf_today, on or datetime.now(LOCAL_TIME_ZONE).date())
 
 
 def _book_report_trades(ctx: CommandContext, account_id: UUID) -> depot.ReportTradesBooked:

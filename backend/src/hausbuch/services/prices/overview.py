@@ -76,6 +76,9 @@ from hausbuch.schemas.prices import (
     AssetPriceRow,
     AssetRow,
     AssetsOverview,
+    EtfAccountToday,
+    EtfPositionToday,
+    EtfToday,
     OverviewAccount,
     OverviewPosition,
     PriceLabel,
@@ -85,7 +88,7 @@ from hausbuch.schemas.prices import (
 )
 from hausbuch.services.context import CommandContext
 from hausbuch.services.depot import _movements as depot_movements
-from hausbuch.services.depot import latest_report_agreement
+from hausbuch.services.depot import etf_overview, latest_report_agreement
 from hausbuch.services.events import append_event, diff_changes
 from hausbuch.services.lookup import require_row
 from hausbuch.services.wallet_groups import waiting
@@ -357,6 +360,63 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
         stale_positions=stale,
         unvalued_positions=unvalued,
         waiting=pending,
+    )
+
+
+def etf_today(conn: Connection, on: date) -> EtfToday:
+    """The Anlagen ETF tab at the newest daily price (phase 10 D280): `depot.etf_overview`'s
+    funds and documents, each fund joined by account and asset to the Übersicht's position
+    on `on` (`assets_overview`, the net worth's valuation, D167), whose units, price, value,
+    stale marker, reason and report marker it copies; nothing is valued here. A fund the
+    Übersicht does not hold on `on` keeps its row with no value. An account's value is Σ of
+    its valued rows, which is the Übersicht's value of that account, since every position
+    the Übersicht holds on a depot is a row here (the ETF tab lists every asset with a
+    confirmed movement)."""
+    seen = assets_overview(conn, on)
+    today = {(acc.account_id, p.asset_id): p for acc in seen.accounts for p in acc.positions}
+    tab = etf_overview(conn)
+    accounts = []
+    for account in tab.accounts:
+        rows = []
+        for position in account.positions:
+            match = today.get((account.account_id, position.asset_id))
+            fields = position.model_dump()
+            if match is None:
+                rows.append(EtfPositionToday(**fields))
+                continue
+            fields["units"] = match.units
+            value = match.value_eur
+            rows.append(
+                EtfPositionToday(
+                    **fields,
+                    price=match.price,
+                    value_today_eur=value,
+                    gain_today_eur=(
+                        None
+                        if value is None or position.cost_eur is None
+                        else value - position.cost_eur
+                    ),
+                    stale=match.stale,
+                    not_valued_reason=match.not_valued_reason,
+                    from_report=match.from_report,
+                )
+            )
+        accounts.append(
+            EtfAccountToday(
+                account_id=account.account_id,
+                label=account.label,
+                positions=rows,
+                value_eur=sum(
+                    (r.value_today_eur for r in rows if r.value_today_eur is not None),
+                    Decimal("0.00"),
+                ),
+            )
+        )
+    return EtfToday(
+        on=on,
+        accounts=accounts,
+        total_eur=sum((a.value_eur for a in accounts), Decimal("0.00")),
+        documents=tab.documents,
     )
 
 
@@ -796,6 +856,7 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
 
 __all__ = [
     "assets_overview",
+    "etf_today",
     "list_assets",
     "price_inbox_items",
     "record_price",

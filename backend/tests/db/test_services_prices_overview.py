@@ -467,3 +467,88 @@ def test_an_exchanges_euro_takes_its_trades_euro_legs(run, read, fresh_workspace
     seen = read(ws, overview.assets_overview, date(2026, 6, 27))
     positions = next(a for a in seen.accounts if a.account_id == exchange.id).positions
     assert euro not in {p.asset_id for p in positions}  # 0 € is no position
+
+
+def test_the_etf_tab_values_each_fund_as_the_overview_does(
+    run, read, app_engine, fresh_workspaces, funds
+):
+    """Phase 10 D280: the ETF tab shows every fund at the Übersicht's value on the same day
+    (the newest stored daily price, its source and day), the report's figures only as the
+    panel's check. A fund whose report disagrees stays unvalued (D165 (3)); a fund no daily
+    source prices shows the report's price, marked from_report (D174 (4)); the tab's total
+    is the Übersicht's depot total."""
+    ws, _ = fresh_workspaces
+    ids = _setup(run, ws)
+    run_workspace(app_engine, ws, ACTOR, Sources(fetch=Fake(), coingecko=None), NOW)
+    account = _account_id(read, ws)
+    report_day = date(2026, 6, 25)
+
+    def more(ctx):
+        euro = _asset(ctx, kind="cash", symbol="EUR", name="Euro", currency="EUR")
+        _held(ctx, account, euro, "150.505")
+        stock = _asset(ctx, kind="etf", isin="IE000INVENT9", name="Fonds ohne Adapter")
+        _held(ctx, account, stock, "10")
+        _price(ctx, stock, date(2026, 6, 1), "50.00", S.STATEMENT)
+        # The report agrees on the EUR fund (with a value the NAV no longer gives), the coin,
+        # the cash and the fund without an adapter, and names 3 units of the USD fund where 2
+        # are booked.
+        for asset_id, units, value in (
+            (ids["eur"], "2", "150.00"),
+            (ids["usd"], "3", None),
+            (ids["coin"], "2", None),
+            (euro, "150.505", None),
+            (stock, "10", "480.00"),
+        ):
+            ctx.conn.execute(
+                insert(holding_table).values(
+                    workspace_id=ctx.workspace_id,
+                    account_id=account,
+                    asset_id=asset_id,
+                    as_of=report_day,
+                    declared_units=Decimal(units),
+                    declared_value_eur=None if value is None else Decimal(value),
+                    source="report",
+                    created_at=ctx.now,
+                )
+            )
+        return {"euro": euro, "stock": stock}
+
+    more_ids = run(ws, more, now=NOW)
+    on = date(2026, 6, 27)
+    seen = read(ws, overview.assets_overview, on)
+    tab = read(ws, overview.etf_today, on)
+
+    depots = [a for a in seen.accounts if a.kind == "depot"]
+    assert [a.account_id for a in tab.accounts] == [a.account_id for a in depots]
+    for acc, row_acc in zip(depots, tab.accounts, strict=True):
+        rows = {p.asset_id: p for p in row_acc.positions}
+        for p in acc.positions:
+            row = rows[p.asset_id]  # every Übersicht position is a row of the tab
+            assert (row.units, row.price, row.value_today_eur) == (p.units, p.price, p.value_eur)
+            assert (row.not_valued_reason, row.from_report, row.stale) == (
+                p.not_valued_reason,
+                p.from_report,
+                p.stale,
+            )
+        assert {a for a, r in rows.items() if r.value_today_eur is not None} == {
+            p.asset_id for p in acc.positions if p.value_eur is not None
+        }
+        assert row_acc.value_eur == acc.value_eur
+    assert tab.on == on
+    assert tab.total_eur == sum((a.value_eur for a in depots), Decimal(0))
+    assert tab.total_eur == seen.total_eur  # the one depot is every asset account here
+
+    rows = {p.asset_id: p for p in tab.accounts[0].positions}
+    eur = rows[ids["eur"]]
+    assert (eur.price.source, eur.price.on) == (S.ISSUER_NAV, date(2026, 6, 26))
+    assert eur.value_today_eur == Decimal("163.40")  # 2 x 81.70, the newest NAV
+    assert (eur.value_eur, eur.report_on, eur.reconciled) == (Decimal("150.00"), report_day, True)
+    usd = rows[ids["usd"]]
+    assert usd.value_today_eur is None and usd.reconciled is False
+    assert usd.not_valued_reason == E.VALUATION_NOT_VALUED
+    stock = rows[more_ids["stock"]]
+    assert stock.from_report and stock.price.on == date(2026, 6, 1)
+    assert stock.value_today_eur == Decimal("500.00") and stock.value_eur == Decimal("480.00")
+    assert rows[more_ids["euro"]].value_today_eur == Decimal("150.51")
+    # Bought without an amount: no cost, so no gain.
+    assert eur.cost_eur is None and eur.gain_today_eur is None
