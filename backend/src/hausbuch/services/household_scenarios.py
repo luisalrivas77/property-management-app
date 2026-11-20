@@ -36,6 +36,9 @@ beyond HouseholdScenarioCreate's own validator (HouseholdLevers checks the range
   „Szenario prüfen“ to-do instead. The other refusals are HouseholdLevers' own. A change
   carried unaltered keeps its stored `mean_at_save`; a new or altered one gets the code's
   mean over today's window (0 without three closed months), whatever the request carried.
+- budget class overrides (phase 10 D272 (2)): a code that cannot move between Notwendiges and
+  Wünsche (a one-off code, `uncategorized`, a code without a class;
+  `household_scenario.budget_class_invalid`). rules/budget ignores such a stored override.
 
 A withdrawal is not re-checked against the accounts, the horizon or the spending: it only
 ends a row, and it repeats the withdrawn row's levers with their `mean_at_save` as stored.
@@ -57,9 +60,11 @@ from sqlalchemy.exc import IntegrityError
 
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import household_scenario as scenario_table
+from hausbuch.rules.budget.budget import refused_overrides
 from hausbuch.rules.categories import CATEGORY_LABEL
 from hausbuch.rules.errors import (
     HOUSEHOLD_SCENARIO_ACCOUNT_INVALID,
+    HOUSEHOLD_SCENARIO_BUDGET_CLASS_INVALID,
     HOUSEHOLD_SCENARIO_NOT_CURRENT,
     HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE,
     HOUSEHOLD_SCENARIO_SPENDING_INVALID,
@@ -178,6 +183,7 @@ def check_levers(
     in force); only a change new or altered against them is refused as a percent of
     nothing (§7.6 (1) amended)."""
     _check_accounts(conn, levers)
+    _check_budget_classes(levers)
     if not levers.one_offs and not levers.spending_changes:
         return {}
     if reads is None:
@@ -194,6 +200,20 @@ def check_levers(
             "measured spending in the window",
         )
     return means
+
+
+def _check_budget_classes(levers: HouseholdLevers) -> None:
+    """Phase 10 D272 (2): a code moved to the other class must be movable: it has a class and
+    is not one-off (rules.budget.budget.movable). rules/budget ignores such an override on
+    read, so a stored row still reads; a save carrying one is refused."""
+    refused = refused_overrides(levers.budget_class_overrides)
+    if refused:
+        raise RuleViolationError(
+            [HOUSEHOLD_SCENARIO_BUDGET_CLASS_INVALID],
+            "a budget class for "
+            + ", ".join(f"{c.value} ({CATEGORY_LABEL[c]})" for c in refused)
+            + ", which cannot be moved between Notwendiges and Wünsche",
+        )
 
 
 def window_means(reads: dict[str, MonthRead]) -> dict[AllocationCategory, Decimal]:

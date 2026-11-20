@@ -169,6 +169,8 @@ TAX_INPUT_GRUNDSTEUER_SCHEDULE_INVALID = "tax_input.grundsteuer_schedule_invalid
 # Step 0 names them; the steps that build each rule raise them.
 
 ACCOUNT_KIND_NOT_AVAILABLE = "account.kind_not_available"  # wallet until phase 7 (D156)
+# Phase 10 D269: GET /accounts/{id}/month for a month after the running one
+ACCOUNT_MONTH_IN_FUTURE = "account.month_in_future"
 OWNERSHIP_SUM_NOT_ONE = "ownership.sum_not_one"  # an account's shares do not sum to 1 (D157)
 OWNERSHIP_OWNER_MISSING = "ownership.owner_missing"  # a share names no owner of the workspace
 ALLOCATION_CATEGORY_NOT_FOR_ACCOUNT = "allocation.category_not_for_account"  # D159
@@ -240,6 +242,9 @@ HOUSEHOLD_SCENARIO_ONE_OFF_OUTSIDE = "household_scenario.one_off_outside"
 HOUSEHOLD_SCENARIO_WITHDRAWAL_INVALID = "household_scenario.withdrawal_invalid"
 # D263, §7.6 (1): a percent change of a code with no measured spending in today's window
 HOUSEHOLD_SCENARIO_SPENDING_INVALID = "household_scenario.spending_invalid"
+# Phase 10 D272 (2): a budget class override of a code that may not move (one-off,
+# uncategorized, a code without a class)
+HOUSEHOLD_SCENARIO_BUDGET_CLASS_INVALID = "household_scenario.budget_class_invalid"
 # Phase 6 step 5b (PATCH /assets/{id}, POST /assets/{id}/prices)
 ASSET_NOT_CRYPTO = "asset.not_crypto"  # a CoinGecko id or Kraken pair on a fund or cash
 ASSET_IS_EURO = "asset.is_euro"  # a typed price for the euro, which is 1.0

@@ -7,11 +7,11 @@ Phase 6 step 4 adds GET /assets/etf here, the Anlagen screen's ETF tab (§13, mo
 depot account with its funds and the depot's documents; read only.
 """
 
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import File, Response, UploadFile
+from fastapi import File, Query, Response, UploadFile
 from sqlalchemy import Connection
 from starlette.concurrency import run_in_threadpool
 
@@ -24,9 +24,11 @@ from hausbuch.schemas.bank import (
     StatementImport,
     Transaction,
 )
+from hausbuch.schemas.budget import AccountMonth
 from hausbuch.schemas.enums import EntityType
 from hausbuch.schemas.household import AccountOwnership, EtfOverview, SetOwnershipBody
 from hausbuch.services import depot
+from hausbuch.services.account_month import account_month
 from hausbuch.services.accounts import (
     confirm_depot_iban,
     confirm_payment_iban,
@@ -38,6 +40,7 @@ from hausbuch.services.accounts import (
     update_account,
 )
 from hausbuch.services.context import CommandContext
+from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.statements import import_statement, list_imports, list_transactions
 from hausbuch.storage import BlobStore
 
@@ -204,6 +207,20 @@ def _imports(conn: Connection, account_id: UUID) -> list[StatementImport]:
 def account_imports(account_id: UUID, cmd: Cmd) -> list[StatementImport]:
     """Newest first."""
     return cmd.read(_imports, account_id)
+
+
+@router.get("/accounts/{account_id}/month")
+def account_month_get(
+    account_id: UUID,
+    cmd: Cmd,
+    month: Annotated[str, Query(pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$")],
+) -> AccountMonth:
+    """Phase 10 D269: the month's balances, Eingänge and Ausgänge without the transfers
+    between own accounts, the transfers, and how many lines are not yet booked; the running
+    month to today (Berlin). 404 for another workspace's account; 422
+    account.month_in_future for a month after the running one."""
+    today = datetime.now(LOCAL_TIME_ZONE).date()
+    return cmd.read(account_month, account_id, month, today)
 
 
 def _transactions(conn: Connection, account_id: UUID, **filters: Any) -> list[Transaction]:
