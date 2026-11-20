@@ -1091,6 +1091,64 @@ def store_missing_snapshots(ctx: CommandContext) -> list[HealthSnapshotResult]:
     return out
 
 
+# --- hausbuch recapture-months (phase 6 D265 (5)) -------------------------------------------
+
+
+@dataclass(frozen=True)
+class MonthRecapture:
+    """One month of `recapture_months`. `run`: the capture's outcome, None when the month had
+    no stored run (left to the daily task) or the capture was refused. `snapshot`: the key
+    figures' outcome, None when the month had no stored snapshot or it was refused.
+    `refused`: the refusal's codes (the run's or the snapshot's) and, for an incomplete
+    month-end, its gaps' to-do codes; never a text, since a to-do's text can carry amounts."""
+
+    month: str
+    run: SnapshotOutcome | None
+    snapshot: HealthSnapshotOutcome | None = None
+    refused: tuple[str, ...] = ()
+
+
+def recapture_months(ctx: CommandContext, first: str, last: str) -> list[MonthRecapture]:
+    """Phase 6 D265 (5), `hausbuch recapture-months`: for each month from `first` to `last`
+    (YYYY-MM, oldest first) that already holds a stored month-end run, capture it again
+    through net_worth.capture_month_end (a new run only when the reading differs, the old
+    run kept); where the month holds a stored key-figures snapshot, store one beside the new
+    run through store_snapshot, the path of POST /health/snapshots („Kennzahlen
+    festhalten“; a new row only when the figures differ). A refusal is returned with its
+    codes and never forced: the snapshot's runs in a savepoint, so it writes nothing. A
+    month without a stored run is skipped. Insert-only, like both paths it calls."""
+    months = months_between(first, last)
+    held = _newest_snapshots(ctx.conn, months)
+    out: list[MonthRecapture] = []
+    for month in months:
+        end = month_bounds(month)[1]
+        if latest_run(ctx.conn, end) is None:
+            out.append(MonthRecapture(month=month, run=None))
+            continue
+        try:
+            captured = capture_month_end(ctx, end)
+        except RuleViolationError as exc:
+            out.append(MonthRecapture(month=month, run=None, refused=exc.codes))
+            continue
+        if month not in held:
+            out.append(MonthRecapture(month=month, run=captured.outcome))
+            continue
+        savepoint = ctx.conn.begin_nested()
+        try:
+            stored = store_snapshot(ctx, month)
+        except RuleViolationError as exc:
+            savepoint.rollback()
+            codes = exc.codes
+            if HEALTH_MONTH_END_INCOMPLETE in codes:
+                gaps = _incomplete(net_worth(ctx.conn, end))
+                codes = (*codes, *(gap.code.value for gap in gaps))
+            out.append(MonthRecapture(month=month, run=captured.outcome, refused=codes))
+            continue
+        savepoint.commit()
+        out.append(MonthRecapture(month=month, run=captured.outcome, snapshot=stored.outcome))
+    return out
+
+
 # --- hausbuch health-check (D259 amended 17 Nov 2026, §16.1) --------------------------------
 
 EURO = Decimal("1")
