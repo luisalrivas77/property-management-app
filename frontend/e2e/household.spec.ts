@@ -1,4 +1,5 @@
-// Eigentümer › Einkommen, phase 4b (docs/phases/phase-4b.md §10): the gross pay's source chip
+// Steuern › Eure Angaben (Eigentümer › Einkommen until phase 10 D281), phase 4b
+// (docs/phases/phase-4b.md §10): the gross pay's source chip
 // (a typed estimate, and a payslip's projection naming its month), a child added on the Kinder
 // block shown by its birth month only, a §35a cost and a donation added on the Haushalt block,
 // and the links to the Anlage N tab and the Jahresfragen. Synthetic data only (owners A and B).
@@ -47,8 +48,7 @@ test("the Einkommen section shows the pay source and adds a child and household 
     withdrawn: false,
   });
 
-  await page.goto("/owners");
-  await page.getByLabel("Steuerjahr").selectOption(String(YEAR));
+  await page.goto(`/tax/${YEAR}?tab=angaben`);
   const income = page.getByRole("table").filter({ hasText: `Erwartetes Bruttogehalt ${YEAR}` });
   const rowA = income.getByRole("row").filter({ hasText: /^A/ });
   await expect(rowA).toContainText("Schätzung");
@@ -109,7 +109,6 @@ test("the Einkommen section shows the pay source and adds a child and household 
     withdrawn: false,
   });
   await page.reload();
-  await page.getByLabel("Steuerjahr").selectOption(String(YEAR));
   const withReceipt = page.getByRole("listitem").filter({ hasText: "Verein Y" });
   await expect(withReceipt.getByRole("link", { name: "Beleg" })).toHaveAttribute("href", `/documents/${document.id}`);
   await expect(page.getByRole("listitem").filter({ hasText: "Handwerkerleistung" }).getByRole("link", { name: "Beleg" })).toHaveCount(0);

@@ -78,7 +78,8 @@ export function linkFor(ref: TaxSourceRef, propertyId?: string): Action | null {
     case "acquisition_cost":
       return property ? { href: `/properties/${property}?tab=nebenkosten`, label: "Nebenkosten" } : null;
     case "income_input":
-      return { href: "/owners", label: "Einkommen ansehen" };
+      // The household's pay inputs, on Steuern › Eure Angaben since phase 10 D281.
+      return { href: "/tax?tab=angaben", label: "Einkommen ansehen" };
     default:
       return null;
   }

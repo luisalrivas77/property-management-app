@@ -158,23 +158,28 @@ function marketRent(label: string) {
   };
 }
 
-/** A section of the Anlage N tab (the screen's owner when it has one). */
+/** A section of the Anlage N tab (the screen's owner when it has one); an input (`eingabe-…`,
+ * the inputs' heading) is on Steuern › Eure Angaben since phase 10 D281. */
 function anlageN(anchor: string, label: string) {
+  const form = anchor.startsWith("eingabe-") || anchor === "tax-inputs-title" ? "angaben" : "n";
   return (_: DraftWarning, ctx: GuideContext): GuideAction =>
-    link(`${taxFormHref("n", { year: ctx.year, propertyId: null, ownerId: ctx.ownerId ?? null })}#${anchor}`, label);
+    link(`${taxFormHref(form, { year: ctx.year, propertyId: null, ownerId: ctx.ownerId ?? null })}#${anchor}`, label);
 }
 
-const owners = (anchor: string, label: string) => () => link(`/owners#${anchor}`, label);
+/** The Kinder and Haushalt blocks, on Steuern › Eure Angaben since phase 10 D281 (on
+ * Eigentümer until then). */
+const owners = (anchor: string, label: string) => (_: DraftWarning, ctx: GuideContext) =>
+  link(`${taxFormHref("angaben", { year: ctx.year, propertyId: null, ownerId: null })}#${anchor}`, label);
 
 /** return.benefit_booked (phase 6 D159 amended (8)): the Lohnersatzleistungen form of the
- * Anlage N tab, pre-filled with the difference and the benefit kind the payments name. The
+ * Eure Angaben tab (on Anlage N until phase 10 D281), pre-filled with the difference and the benefit kind the payments name. The
  * owner is the warning's suggestion (the one whose own account's lines are not covered; the
  * spouses are assessed jointly, so the person may save it on the other); a joint account's
  * to-do names none, so the tab asks the person to pick the owner before the form opens. */
 function benefitBooked(warning: DraftWarning, ctx: GuideContext): GuideAction {
   const params = warning.params ?? {};
   const ownerId = params.owner_id ?? null;
-  const href = taxFormHref("n", { year: ctx.year, propertyId: null, ownerId });
+  const href = taxFormHref("angaben", { year: ctx.year, propertyId: null, ownerId });
   const prefill = params.difference ? { amount: params.difference, benefit: params.benefit ?? null } : null;
   return link(`${withBenefitPrefill(href, prefill)}#eingabe-replacement_income`, "Lohnersatzleistung eintragen");
 }

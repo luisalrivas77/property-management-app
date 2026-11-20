@@ -212,9 +212,12 @@ function yearChoices(current: number): number[] {
  * current value and a way to enter, change or remove it. The default deductions come from
  * /api/tax-rate (owner_estimates), computed by the backend.
  */
-export function IncomeSection({ owners }: { owners: Owner[] }) {
+/** The household's income inputs of one year; with `fixedYear` (Steuern › Eure Angaben, phase 10
+ * D281, whose page picks the year) no year picker of its own. */
+export function IncomeSection({ owners, fixedYear }: { owners: Owner[]; fixedYear?: number }) {
   const thisYear = Number(todayIso().slice(0, 4));
-  const [year, setYear] = useState(thisYear);
+  const [pickedYear, setYear] = useState(thisYear);
+  const year = fixedYear ?? pickedYear;
   const ids = useId();
   const loadRows = useCallback(
     () =>
@@ -245,22 +248,24 @@ export function IncomeSection({ owners }: { owners: Owner[] }) {
 
   return (
     <div className="stack">
-      <div className="row">
-        <label htmlFor={`${ids}-year`} className="inline">
-          Steuerjahr
-          <select
-            id={`${ids}-year`}
-            value={year}
-            onChange={(event) => setYear(Number(event.target.value))}
-          >
-            {yearChoices(thisYear).map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {fixedYear === undefined ? (
+        <div className="row">
+          <label htmlFor={`${ids}-year`} className="inline">
+            Steuerjahr
+            <select
+              id={`${ids}-year`}
+              value={year}
+              onChange={(event) => setYear(Number(event.target.value))}
+            >
+              {yearChoices(thisYear).map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
       <p className="muted">
         Aus dem erwarteten Bruttogehalt schätzt die App das zu versteuernde
         Einkommen (zvE) und damit, wie sich das Ergebnis der Vermietung auf die

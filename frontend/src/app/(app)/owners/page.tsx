@@ -2,17 +2,19 @@
 
 // Eigentümer (§9.1): list with inline create and edit (Name, Steuer-ID-Referenz,
 // Kirchensteuer, Bundesland). The typed Grenzsteuersatz is gone (phase 4 D90, migration 0016):
-// the rate is derived per year from income inputs (phase-4.md §9): the Einkommen section, per
-// owner the expected gross pay and the deductions, for the household a Bescheid's zvE and a
-// typed tax rate (components/income.tsx).
+// the rate is derived per year from income inputs (phase-4.md §9). Since phase 10 D281 the
+// income inputs, Kinder und Haushalt are typed under Steuern › Eure Angaben; the section
+// „Einkommen“ here (#einkommen, #kinder, #haushalt kept for old links) points there.
 import { useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Owner, StateCode } from "@/api/schemas";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
-import { IncomeSection } from "@/components/income";
+import Link from "next/link";
+
 import { blankToNull } from "@/components/input";
 import { options, STATE_CODE } from "@/components/labels";
+import { taxFormHref } from "@/components/taxYear";
 import { Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -92,19 +94,16 @@ export default function OwnersPage() {
         }
       </Loading>
       <h2 id="einkommen">Einkommen</h2>
-      <div className="card">
-        <Loading state={owners}>
-          {(list) =>
-            list.length === 0 ? (
-              <p className="muted">
-                Zuerst unten die <a href="#eigentuemer-anlegen">Eigentümer anlegen</a>, dann hier ihr Einkommen
-                eintragen.
-              </p>
-            ) : (
-              <IncomeSection owners={list} />
-            )
-          }
-        </Loading>
+      <div className="card stack">
+        <p id="kinder" className="muted">
+          Das erwartete Bruttogehalt, Lohnsteuerbescheinigungen und Gehaltsabrechnungen, ein Bescheid, Kinder und
+          Haushalt stehen unter Steuern › Eure Angaben, zusammen mit allem anderen, was die Anlagen lesen.
+        </p>
+        <p id="haushalt">
+          <Link className="button-link" href={taxFormHref("angaben", { year: new Date().getFullYear(), propertyId: null, ownerId: null })}>
+            Eure Angaben öffnen ›
+          </Link>
+        </p>
       </div>
       <h2 id="eigentuemer-anlegen">Eigentümer anlegen</h2>
       <div className="card">

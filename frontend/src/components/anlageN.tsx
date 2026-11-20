@@ -1,13 +1,14 @@
 "use client";
 
 // Steuern › one tax year › Anlage N (phase-4b.md §10, D99): one owner's employment draft as
-// GET /api/owners/{id}/anlage-n computes it on every read, the owner's Eingaben (append-only
-// return_input rows), and in the right column the open points, the documents and the
-// hand-over. The owner is ?eigentuemer=… (the first one when absent). Every euro figure is
+// GET /api/owners/{id}/anlage-n computes it on every read, and in the right column the open
+// points, the documents and the hand-over. Since phase 10 D281 it shows the form only: the
+// owner's Eingaben (append-only return_input rows) are typed under Steuern › Eure Angaben, and a
+// tapped line opens in the detail panel with „So gerechnet“ and „Ändern in Eure Angaben“. The owner is ?eigentuemer=… (the first one when absent). Every euro figure is
 // the backend's (principle 1): this screen picks, names and formats, it adds nothing up.
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useId } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useId } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
@@ -16,11 +17,11 @@ import type { components } from "@/api/types";
 
 import { ReadUpload } from "./documents";
 import { formatDate, formatDecimal, formatMoney } from "./format";
-import { ANLAGE_N_STATUS, REPLACEMENT_BENEFIT, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
+import { ANLAGE_N_STATUS, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
 import { BlockRows, hasBlocks } from "./anlageNBlocks";
 import { NO_PAY_HINT, NoPayButton, WithdrawNoPayButton } from "./noPay";
 import { EvidenceFold } from "./returnInputEvidence";
-import { InputsPanel, type BenefitForm, type ReturnInput } from "./returnInputs";
+import { type ReturnInput } from "./returnInputs";
 import {
   ReturnEstimateCard,
   useReturnEstimate,
@@ -28,17 +29,12 @@ import {
 } from "./returnEstimate";
 import { ExportCard, SourcesButton, type ExportButton } from "./tax";
 import { WarningActionView, WhatToDo, resolveAction } from "./todos";
-import {
-  benefitPrefill,
-  benefitPrefillBacked,
-  questionnaireHref,
-  TaxTabs,
-  taxFormHref,
-  type TaxYearState,
-  withBenefitPrefill,
-} from "./taxYear";
+import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
+import { questionnaireHref, TaxTabs, taxFormHref, type TaxYearState } from "./taxYear";
 import { Loading } from "./ui";
 import { useLoad, type Loaded } from "./useLoad";
+import { useT } from "@/i18n";
+import { tax as messages } from "@/i18n/tax";
 
 type AnlageNDraft = components["schemas"]["AnlageNDraft"];
 type DraftLine = components["schemas"]["DraftLine"];
@@ -129,31 +125,6 @@ function OwnerScreen({
   const router = useRouter();
   const ids = useId();
   const estimate = useReturnEstimate(year);
-  // The Lohnersatzleistungen pre-fill of the to-do return.benefit_booked (phase 6 D159 amended
-  // (8)): kept on the owner switch, and opened as a form only for the owner the URL names (or
-  // the only owner), so a joint account's amount is never saved on an owner picked by default.
-  // It counts only while a current to-do of the loaded estimate offers its amount: a stale
-  // entry (Back after the save) is dropped from the URL, and nothing opens before the estimate
-  // first loads (a reload keeps the previous estimate, so an open form stays open).
-  const search = useSearchParams();
-  const urlPrefill = benefitPrefill((key) => search.get(key), Object.keys(REPLACEMENT_BENEFIT));
-  const backed =
-    urlPrefill && estimate.data !== undefined
-      ? benefitPrefillBacked(urlPrefill, estimate.data?.warnings ?? [])
-      : null;
-  const prefill = backed ? urlPrefill : null;
-  const ownerNamed = search.get("eigentuemer") === owner.id;
-  const clearPrefill = useCallback(
-    () => router.replace(taxFormHref("n", state), { scroll: false }),
-    [router, state],
-  );
-  const stale = backed === false;
-  useEffect(() => {
-    if (stale) clearPrefill();
-  }, [stale, clearPrefill]);
-  const benefitForm: BenefitForm | null = prefill
-    ? { prefill, open: ownerNamed || owners.length === 1, clear: clearPrefill }
-    : null;
   const loadDraft = useCallback(async (): Promise<DraftState> => {
     try {
       const draft = await ok(
@@ -237,10 +208,7 @@ function OwnerScreen({
           {owners.map((o) => (
             <Link
               key={o.id}
-              href={withBenefitPrefill(
-                taxFormHref("n", { ...state, ownerId: o.id }),
-                stale ? null : urlPrefill,
-              )}
+              href={taxFormHref("n", { ...state, ownerId: o.id })}
               aria-current={o.id === owner.id ? "page" : undefined}
               scroll={false}
             >
@@ -258,7 +226,6 @@ function OwnerScreen({
             rows={rows}
             estimate={estimate.data ?? null}
             onChanged={changed}
-            benefitForm={benefitForm}
           />
         )}
       </Loading>
@@ -274,7 +241,6 @@ function DraftView({
   rows,
   estimate,
   onChanged,
-  benefitForm,
 }: {
   result: DraftState;
   owner: Owner;
@@ -282,8 +248,9 @@ function DraftView({
   rows: Loaded<ReturnInput[]>;
   estimate: ReturnEstimate | null;
   onChanged: () => void;
-  benefitForm: BenefitForm | null;
 }) {
+  const t = useT(messages);
+  const lineDetail = useDetail("nline");
   const draft = "draft" in result ? result.draft : null;
   const list = rows.data ?? [];
   if ("missing" in result && result.missing === "no_rule_set") {
@@ -293,6 +260,7 @@ function DraftView({
       </p>
     );
   }
+  const selectedLine = (draft?.lines ?? []).find((line) => line.key === lineDetail.id) ?? null;
   const warnings = (draft?.warnings ?? []).filter(
     (w) => w.code !== "anlage_n.form_provisional",
   );
@@ -309,6 +277,15 @@ function DraftView({
           </p>
         </div>
       ) : null}
+      <DetailLayout
+        panel={
+          selectedLine ? (
+            <DetailPanel title={routeLabel(selectedLine)} backLabel={t.lineBack} onClose={lineDetail.close}>
+              <LinePanel line={selectedLine} ownerId={owner.id} year={year} />
+            </DetailPanel>
+          ) : null
+        }
+      >
       <div className="tax-layout">
         <div className="stack tax-main">
           {draft && declared ? (
@@ -316,8 +293,8 @@ function DraftView({
               <p>
                 Für {owner.full_name} ist für {year} „Kein Arbeitslohn“
                 angegeben: es gibt keine Anlage N. Elterngeld und andere
-                Lohnersatzleistungen zählen trotzdem; sie stehen unten unter
-                Eingaben.
+                Lohnersatzleistungen zählen trotzdem; sie stehen unter{" "}
+                <Link href={`${angabenHref(owner.id, year)}#eingabe-replacement_income`}>{t.inputsTab}</Link>.
               </p>
               <div className="row todo-actions">
                 <WithdrawNoPayButton
@@ -340,15 +317,15 @@ function DraftView({
                 Für {owner.full_name} ist für {year} noch kein Arbeitslohn
                 erfasst. Die Lohnsteuerbescheinigung oder eine Gehaltsabrechnung
                 rechts unter Unterlagen hochladen (sie wird automatisch
-                ausgelesen), oder den erwarteten Bruttolohn auf der Seite{" "}
-                <Link href="/owners">Eigentümer</Link> eintragen.
+                ausgelesen), oder den erwarteten Bruttolohn unter{" "}
+                <Link href={`${angabenHref(owner.id, year)}#arbeitslohn`}>{t.inputsTab}</Link> eintragen.
               </p>
               <div className="row todo-actions">
                 <ReadUpload
                   label="Lohnsteuerbescheinigung hochladen"
                   onUploaded={onChanged}
                 />
-                <Link href="/owners#einkommen">
+                <Link href={`${angabenHref(owner.id, year)}#arbeitslohn`}>
                   Erwarteten Bruttolohn eintragen
                 </Link>
                 <NoPayButton ownerId={owner.id} year={year} onDone={onChanged} />
@@ -360,15 +337,11 @@ function DraftView({
             <p className="notice notice-error">
               Die Eingaben konnten nicht geladen werden.
             </p>
-          ) : (
-            <InputsPanel
-              ownerId={owner.id}
-              year={year}
-              rows={list}
-              onChanged={onChanged}
-              benefitForm={benefitForm}
-            />
-          )}
+          ) : null}
+          <p className="muted">
+            {t.lineChangeHint}{" "}
+            <Link href={`${angabenHref(owner.id, year)}#tax-inputs-title`}>{t.lineChange} ›</Link>
+          </p>
         </div>
         <aside
           className="stack tax-side"
@@ -390,6 +363,74 @@ function DraftView({
           />
         </aside>
       </div>
+      </DetailLayout>
+    </div>
+  );
+}
+
+/** Steuern › Eure Angaben of this owner and year (D281). */
+function angabenHref(ownerId: string, year: number): string {
+  return taxFormHref("angaben", { year, propertyId: null, ownerId });
+}
+
+/** Where a line's figure is typed under Eure Angaben: the input block of its kind, the pay
+ * inputs for the pay lines, else the owner's inputs. */
+function lineAnchor(key: string): string {
+  if (key === "pay.replacement_benefits") return "eingabe-replacement_income";
+  const prefix = key.split(".")[0] ?? "";
+  const kinds: Record<string, string> = {
+    pay: "arbeitslohn",
+    commute: "eingabe-commute",
+    home_office: "eingabe-home_office",
+    work_room: "eingabe-work_room",
+    equipment: "eingabe-work_equipment",
+    training: "eingabe-training",
+    other: "eingabe-other_expense",
+  };
+  return kinds[prefix] ?? "tax-inputs-title";
+}
+
+/** The panel of one line: its amount and form line, „So gerechnet“ (the draft's own notes and
+ * single items, and its sources), and „Ändern in Eure Angaben“. */
+function LinePanel({ line, ownerId, year }: { line: DraftLine; ownerId: string; year: number }) {
+  const t = useT(messages);
+  const count = COUNT_LINE.test(line.key);
+  const ref = formRef(line);
+  const notes = [...(line.notes ?? []), ...(line.einzelangaben ?? [])];
+  return (
+    <div className="stack">
+      <dl className="facts">
+        <div>
+          <dt>{t.lineAmount}</dt>
+          <dd className="num">{line.amount == null ? "–" : count ? formatDecimal(line.amount) : formatMoney(line.amount)}</dd>
+        </div>
+        {ref ? (
+          <div>
+            <dt>{t.lineForm}</dt>
+            <dd>{ref}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {line.provisional ? <p className="muted">{t.lineProvisional}</p> : null}
+      <section className="tax-line-calc" aria-label={t.lineCalculated}>
+        <h3>{t.lineCalculated}</h3>
+        {notes.length > 0 ? (
+          <ul>
+            {notes.map((note, index) => (
+              <li key={index}>{note}</li>
+            ))}
+          </ul>
+        ) : null}
+        {(line.sources ?? []).length > 0 ? (
+          <SourcesButton refs={line.sources ?? []} title={line.label} />
+        ) : (
+          <p className="muted">{t.lineNoSources}</p>
+        )}
+      </section>
+      <p className="muted">{t.lineChangeHint}</p>
+      <Link className="button-link" href={`${angabenHref(ownerId, year)}#${lineAnchor(line.key)}`}>
+        {t.lineChange} ›
+      </Link>
     </div>
   );
 }
@@ -472,11 +513,14 @@ const COUNT_LINE =
 
 function LineItem({ line, label }: { line: DraftLine; label?: string }) {
   const count = COUNT_LINE.test(line.key);
+  const detail = useDetail("nline");
   return (
     <li className="tax-line">
       <div className="tax-line-main">
         <p className="tax-line-label">
-          {label ?? line.label}
+          <a {...detail.linkProps(line.key)} className="tax-line-open">
+            {label ?? line.label}
+          </a>
           {line.provisional ? (
             <span className="badge badge-warn">vorläufig</span>
           ) : null}

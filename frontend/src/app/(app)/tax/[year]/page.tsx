@@ -2,8 +2,9 @@
 
 // Steuern › one tax year (phase-3.md §11, phase-4b.md §10, docs/mockups/04-tax-year.png): the
 // Gesamt card of the whole return above the tabs, then Anlage V (?immobilie=…, the first one
-// when absent; its selector is hidden with one property) or Anlage N (?tab=anlage-n,
-// ?eigentuemer=…). KAP and SO are tabs of phase 8 and stay disabled.
+// when absent; its selector is hidden with one property), Anlage N (?tab=anlage-n,
+// ?eigentuemer=…) or Eure Angaben (?tab=angaben, ?eigentuemer=…; phase 10 D281). KAP and SO
+// are tabs of phase 8 and stay disabled.
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
@@ -12,7 +13,8 @@ import { api, ok } from "@/api/client";
 import { AnlageNScreen } from "@/components/anlageN";
 import { ReturnEstimateSummary } from "@/components/returnEstimate";
 import { AnlageVScreen } from "@/components/tax";
-import { ANLAGE_N_PARAM, TaxTabs } from "@/components/taxYear";
+import { TaxInputsScreen } from "@/components/taxAngaben";
+import { ANGABEN_PARAM, ANLAGE_N_PARAM, TaxTabs } from "@/components/taxYear";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 
@@ -31,7 +33,8 @@ function TaxYear() {
   const search = useSearchParams();
   const requested = search.get("immobilie");
   const owner = search.get("eigentuemer");
-  const form = search.get("tab") === ANLAGE_N_PARAM ? "n" : "v";
+  const tab = search.get("tab");
+  const form = tab === ANLAGE_N_PARAM ? "n" : tab === ANGABEN_PARAM ? "angaben" : "v";
   const year = /^\d{4}$/.test(yearParam) ? Number(yearParam) : null;
 
   return (
@@ -40,6 +43,8 @@ function TaxYear() {
         <p className="muted">
           Kein gültiges Steuerjahr. <Link href="/tax">Zum aktuellen Jahr</Link>
         </p>
+      ) : form === "angaben" ? (
+        <TaxInputsScreen year={year} ownerParam={owner} propertyParam={requested} />
       ) : form === "n" ? (
         <AnlageNScreen year={year} ownerParam={owner} propertyParam={requested} />
       ) : (
