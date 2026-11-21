@@ -125,7 +125,9 @@ def route_template(scope: Scope) -> str | None:
     template = getattr(context, "path_format", None)
     if isinstance(template, str) and template:
         return template
-    return getattr(scope.get("route"), "path", None)
+    # A kept answer (phase 10 §7.4) is sent without running the route: the kept-answers
+    # middleware names the template it matched (api/kept_answers.py KEPT_ROUTES).
+    return getattr(scope.get("route"), "path", None) or scope.get("hausbuch.kept_route")
 
 
 def _log_request(scope: Scope, state: dict, status: int | None, started: float) -> None:
@@ -139,6 +141,8 @@ def _log_request(scope: Scope, state: dict, status: int | None, started: float) 
         "user_id": None if auth is None else str(auth.user_id),
         "workspace_id": None if auth is None else str(auth.workspace_id),
     }
+    if "kept_answer" in state:  # phase 10 §7.4: hit, stored, discarded, miss or bypass
+        fields["kept"] = state["kept_answer"]
     error = state.get("error_log")
     if error:
         fields |= error

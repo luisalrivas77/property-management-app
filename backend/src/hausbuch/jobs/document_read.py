@@ -145,6 +145,9 @@ class JobDeps:
     # Phase 6 D260: the production worker resolves each workspace's Anthropic key when a job
     # runs (with_client / for_workspace); a client handed in (tests, evals) wins and is kept.
     model_clients: WorkspaceModelClients | None = None
+    # Phase 10 §7.4: the API's store of kept answers (api.kept_answers.KeptAnswers) for the
+    # warm step and the daily check; None in a process that serves no requests.
+    kept_answers: Any = None
 
     def with_client(self, conn: Connection) -> "JobDeps":
         """These deps with the model client of `conn`'s workspace (None: no key, or a typed

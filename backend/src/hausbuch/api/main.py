@@ -35,6 +35,7 @@ from hausbuch.settings import Settings, load_settings
 from hausbuch.storage import BlobStore, LocalBlobStore
 
 from .app import create_app
+from .kept_answers import KeptAnswers
 
 # Ownership through membership counts (pg_has_role MEMBER): SET ROLE would make it effective.
 _OWNER_CHECK = """
@@ -84,8 +85,12 @@ def build_app(
     resolver = SessionResolverImpl(engine, settings)
     # Phase 2: the job worker runs in this process (§3.7, §5.1); HAUSBUCH_RUN_WORKER=false
     # builds none (a second instance that only serves requests, or a local API run).
-    worker = build_worker(settings, engine, store) if settings.run_worker else None
-    return create_app(settings, engine, store, resolver, worker=worker)
+    # Phase 10 §7.4: one store of kept answers, shared by the requests and the warm step.
+    kept = KeptAnswers()
+    worker = (
+        build_worker(settings, engine, store, kept_answers=kept) if settings.run_worker else None
+    )
+    return create_app(settings, engine, store, resolver, worker=worker, kept_answers=kept)
 
 
 def create_api_engine(settings: Settings) -> Engine:

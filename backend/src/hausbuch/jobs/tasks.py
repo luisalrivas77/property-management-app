@@ -52,6 +52,16 @@ from .health_daily import (
     run_health_daily,
 )
 from .inbound_mail import POLL_CRON, POLL_LOCK, POLL_TASK, run_poll_inbox
+from .kept_answers import (
+    CHECK_CRON,
+    CHECK_LOCK,
+    CHECK_TASK,
+    WARM_CRON,
+    WARM_LOCK,
+    WARM_TASK,
+    run_check,
+    run_warm,
+)
 from .lamports_repair import run_repair_solana_lamports
 from .matching import (
     run_match_import,
@@ -271,6 +281,19 @@ def health_daily(context: JobContext, *, timestamp: int) -> None:
     run_health_daily(deps)
 
 
+async def warm_kept_answers(context: JobContext, *, timestamp: int) -> None:
+    """Phase 10 §7.4, daily at 09:00: the kept routes of Übersicht and Zu prüfen asked once
+    per enrolled member, on the API's event loop."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    await run_warm(deps)
+
+
+async def check_kept_answers(context: JobContext, *, timestamp: int) -> None:
+    """Phase 10 §7.4, daily at 15:00: one kept answer recomputed and compared."""
+    deps: JobDeps = context.additional_context[DEPS_KEY]
+    await run_check(deps)
+
+
 def sync_wallets(context: JobContext, *, timestamp: int) -> None:
     """Phase 7 D182 (1), daily at 06:45: every active wallet address, oldest sync first."""
     deps: JobDeps = context.additional_context[DEPS_KEY]
@@ -341,6 +364,10 @@ def register_tasks(app: procrastinate.App) -> procrastinate.App:
         health_daily
     )
     app.periodic(cron=HEALTH_DAILY_CRON, periodic_id=HEALTH_DAILY_TASK)(figures)
+    warm = app.task(name=WARM_TASK, pass_context=True, lock=WARM_LOCK)(warm_kept_answers)
+    app.periodic(cron=WARM_CRON, periodic_id=WARM_TASK)(warm)
+    check = app.task(name=CHECK_TASK, pass_context=True, lock=CHECK_LOCK)(check_kept_answers)
+    app.periodic(cron=CHECK_CRON, periodic_id=CHECK_TASK)(check)
     # No retry: a failed address is read again the next day from the same cursor. One lock
     # for the daily run and „Jetzt abrufen“, so no address is read twice at once.
     wallets = app.task(name=SYNC_WALLETS_TASK, pass_context=True, lock=SYNC_WALLETS_LOCK)(
