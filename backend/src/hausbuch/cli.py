@@ -9,8 +9,8 @@ Nov 2026).
 
 Also `hausbuch relink-chain` (phase 7 D184, step 5), `hausbuch survey-solana` (phase 7,
 17 Nov 2026), `hausbuch repair-solana-lamports` (phase 7 D186 (2) amended 18 Nov 2026),
-`hausbuch health-check` (phase 9 D259 amended 17 Nov 2026) and `hausbuch recapture-months`
-(phase 6 D265 (5), 20 Nov 2026), described below.
+`hausbuch health-check` (phase 9 D259 amended 17 Nov 2026), `hausbuch recapture-months`
+(phase 6 D265 (5), 20 Nov 2026) and `hausbuch perf-overview` (21 Nov 2026), described below.
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -124,6 +124,19 @@ a gap (D172's to-dos, a loan's missing payout among them) is skipped with the ga
 nothing stored (D265 amended). The key figures' lock is taken before the month-end's, as the
 button and the daily task do. Insert-only; --dry-run rolls everything back.
 
+`perf-overview` times every API read the Übersicht page makes (hausbuch.perf_probe), with the
+same owner URL on a pooled engine whose every connection is read-only (a write fails with
+SQLSTATE 25006 and its path is printed as WRITE-REFUSED). It drives the real app in process as
+the workspace's member whose session was seen last, without its lifespan (no worker), and
+prints per request the route (ids as p1, u1, o1), status, ms, SQL statements, ms in SQL,
+commits/rollbacks and the body's size in bytes, never a response's content; then per pass the
+total and the five slowest, and the number of requests the page fires. --repeat N passes
+(default 2: the first warms the process, the rest are warm). --profile SUBSTRING (repeatable)
+runs each request of the last pass whose route contains it under cProfile and prints the top
+functions by cumulative and own time (module:function:line, calls, times, never a value).
+--digest adds to the last pass the first 16 hex characters of the SHA-256 of each body (JSON
+canonicalised: sorted keys, no spaces), to check a speed-up returns the same bodies.
+
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
 14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
 holds its IBAN or number, and every ready depot suggestion is rebuilt with the depot it prints
@@ -164,7 +177,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from sqlalchemy import Engine, create_engine, pool
-from sqlalchemy.exc import DBAPIError, SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, OperationalError, SQLAlchemyError
 
 from hausbuch.db.session import UnsafeDatabaseRoleError, create_app_engine
 from hausbuch.settings import SettingsError, load_admin_database_url
@@ -560,6 +573,46 @@ def health_check(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
         return EXIT_OK
     print(f"{months}: abweichend")
     return EXIT_ERROR
+
+
+# --- perf-overview --------------------------------------------------------------------
+
+
+def perf_overview(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """hausbuch.perf_probe once for a workspace: every read of Übersicht timed, read-only."""
+    from hausbuch.perf_probe import ProbeError, read_only_engine, run_probe
+
+    if args.repeat < 1:
+        raise CliError("--repeat must be at least 1")
+    if args.profile and args.repeat < 2:
+        raise CliError("--profile needs --repeat 2 or more: it profiles the warm pass")
+    try:
+        url = load_admin_database_url(environ)
+    except SettingsError as exc:
+        raise CliError(str(exc)) from None
+    try:
+        engine = read_only_engine(url)
+    except Exception:  # as owner_engine: no driver message may reach stderr
+        raise CliError("HAUSBUCH_ADMIN_DATABASE_URL is not a valid database URL") from None
+    try:
+        run_probe(
+            engine,
+            args.workspace,
+            repeat=args.repeat,
+            profile=args.profile,
+            digest=args.digest,
+        )
+    except ProbeError as exc:
+        raise CliError(str(exc)) from None
+    except OperationalError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    return EXIT_OK
 
 
 # --- recapture-months -----------------------------------------------------------------
@@ -1364,6 +1417,31 @@ def _parser() -> argparse.ArgumentParser:
         "--to", type=_month, default=None, help="the last month, YYYY-MM (default: last ended)"
     )
     checked.set_defaults(command=health_check, command_name="health-check")
+
+    perf = commands.add_parser(
+        "perf-overview",
+        help="time every API read the Übersicht page makes, read-only, and print per request "
+        "its status, ms and SQL statements, never a response's content",
+    )
+    perf.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    perf.add_argument(
+        "--repeat", type=int, default=2, help="passes over the page (default 2: first, warm)"
+    )
+    perf.add_argument(
+        "--profile",
+        action="append",
+        default=[],
+        metavar="PATH_SUBSTRING",
+        help="profile the last pass's requests whose route contains this (repeatable), e.g. "
+        "/api/health; prints code locations and times only",
+    )
+    perf.add_argument(
+        "--digest",
+        action="store_true",
+        help="print on the last pass the first 16 hex characters of the SHA-256 of each "
+        "response body (JSON with sorted keys), never the body",
+    )
+    perf.set_defaults(command=perf_overview, command_name="perf-overview")
 
     recaptured = commands.add_parser(
         "recapture-months",
