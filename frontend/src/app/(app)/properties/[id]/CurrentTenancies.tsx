@@ -50,23 +50,20 @@ export function CurrentTenancies({ propertyId }: { propertyId: string }) {
   const today = todayIso();
   const load = useCallback(() => loadCurrentTenancies(propertyId, today), [propertyId, today]);
   const state = useLoad(load);
+  // Phase 10 (mockup 25): this sits on Übersicht right under the Einheiten card, which already
+  // says „Noch keine Einheiten“ with „Einheit anlegen“; without a unit there is nothing to add.
+  if (state.data && state.data.units.length === 0) return null;
   return (
     <section className="stack" aria-labelledby="current-tenancy">
       <h2 id="current-tenancy">{t.currentTitle}</h2>
       <Loading state={state}>
-        {({ units, tenants }) =>
-          units.length === 0 ? (
-            <p className="muted">
-              {t.noUnit} <Link href={`/properties/${propertyId}/units/new`}>{t.addUnit}</Link>
-            </p>
-          ) : (
-            <div className="cards">
-              {units.map((entry) => (
-                <UnitTenancyCard key={entry.unit.id} entry={entry} tenants={tenants} />
-              ))}
-            </div>
-          )
-        }
+        {({ units, tenants }) => (
+          <div className="cards">
+            {units.map((entry) => (
+              <UnitTenancyCard key={entry.unit.id} entry={entry} tenants={tenants} />
+            ))}
+          </div>
+        )}
       </Loading>
     </section>
   );

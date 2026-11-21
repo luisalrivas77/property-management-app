@@ -74,11 +74,11 @@ export function linkFor(ref: TaxSourceRef, propertyId?: string): Action | null {
     case "loan":
       return ref.id ? { href: `/loans/${ref.id}`, label: t.openLoan } : null;
     case "property":
-      return property ? { href: `/properties/${property}?tab=stammdaten`, label: t.masterData } : null;
+      return property ? { href: `/properties/${property}?tab=uebersicht`, label: t.masterData } : null;
     case "price_split":
-      return property ? { href: `/properties/${property}?tab=aufteilung`, label: t.priceSplit } : null;
+      return property ? { href: `/properties/${property}?tab=kauf#card-aufteilung`, label: t.priceSplit } : null;
     case "acquisition_cost":
-      return property ? { href: `/properties/${property}?tab=nebenkosten`, label: t.acquisitionCosts } : null;
+      return property ? { href: `/properties/${property}?tab=kauf`, label: t.acquisitionCosts } : null;
     case "income_input":
       // The household's pay inputs, on Steuern › Eure Angaben since phase 10 D281.
       return { href: "/tax?tab=angaben", label: t.seeIncome };

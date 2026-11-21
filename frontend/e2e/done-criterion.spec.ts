@@ -39,7 +39,8 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
       { label: "TG-Stellplatz 12", area: "12,50", rooms: "", mea: "" },
     ]) {
       await page.goto(`${propertyUrl}?tab=einheiten`);
-      await page.getByRole("link", { name: "Einheit anlegen" }).click();
+      // Phase 10 (mockup 25): the old ?tab=einheiten opens Übersicht at its Einheiten card.
+      await page.locator("#card-einheiten").getByRole("link", { name: "Einheit anlegen" }).click();
       await expect(page.getByRole("heading", { name: "Einheit anlegen" })).toBeVisible();
       await page.getByLabel("Bezeichnung").fill(unit.label);
       await page.getByLabel("Fläche (m²)").fill(unit.area);
@@ -86,6 +87,8 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
     // Phase 10 (mockup 25): the unit's row opens its panel, which links to the unit's page.
     await page.getByRole("list", { name: "Einheiten" }).getByRole("link").filter({ hasText: "WE 3" }).click();
     await page.getByRole("complementary", { name: "WE 3" }).getByRole("link", { name: "Einheit öffnen" }).click();
+    // Übersicht also shows „Mietverhältnis anlegen“ per vacant unit: wait for the unit's page.
+    await expect(page).toHaveURL(/\/units\/[0-9a-f-]{36}$/);
     await page.getByRole("link", { name: "Mietverhältnis anlegen" }).click();
     await expect(page.getByRole("heading", { name: "Mietverhältnis anlegen" })).toBeVisible();
 
@@ -160,7 +163,8 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
     const parking = page.getByRole("article", { name: "Mietverhältnis TG-Stellplatz 12" });
     await expect(parking.getByRole("link", { name: "Mietverhältnis anlegen" })).toHaveAttribute("href", /^\/tenancies\/new\?unit=/);
 
-    await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Einheiten" }).click();
+    // Phase 10 (mockup 25): the units are a card on Übersicht, beside the current tenancies.
+    await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Übersicht" }).click();
     // Phase 10 (mockup 25): each unit is a row naming who rents it; its panel links the tenancy.
     const rows = page.getByRole("list", { name: "Einheiten" }).getByRole("link");
     await expect(rows.filter({ hasText: "TG-Stellplatz 12" })).toContainText("leer");

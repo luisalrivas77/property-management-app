@@ -102,7 +102,7 @@ export function PropertyForm({
           }),
         );
         // Ownership is its own command (§4.2, Q12): continue on the Eigentümer tab.
-        router.push(`/properties/${created.id}?tab=eigentuemer&neu=1`);
+        router.push(`/properties/${created.id}?tab=uebersicht&neu=1#card-eigentuemer`);
       }
     } catch (error) {
       form.fail(error);

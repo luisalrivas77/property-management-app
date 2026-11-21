@@ -1,4 +1,4 @@
-// The property page with its tabs, and the property form (phase 10 step 4b, mockup 25).
+// The property page with its sections, and the property form (phase 10 step 4b, mockup 25).
 // The list of properties (/properties) has its own catalogue, `properties`.
 import { PROPERTY_KIND } from "@/components/labels";
 
@@ -25,6 +25,13 @@ export const propertyPage = defineMessages({
     tabDocuments: "Dokumente",
     tabHistory: "Verlauf",
     tabAudit: "Protokoll",
+    // Phase 10 (mockup 25): the six sections; the former tabs' labels above are the cards' headings.
+    sectionOverview: "Übersicht",
+    sectionPurchase: "Kauf & Nebenkosten",
+    sectionLoans: "Darlehen",
+    sectionPaperwork: "Unterlagen",
+    sectionDocuments: "Dokumente",
+    sectionHistory: "Verlauf",
     kind: (key: string) => KIND_DE[key] ?? key,
     edit: "Bearbeiten",
     editTitle: "Immobilie bearbeiten",
@@ -53,7 +60,6 @@ export const propertyPage = defineMessages({
 
     // Aktuelles Mietverhältnis
     currentTitle: "Aktuelles Mietverhältnis",
-    noUnit: "Noch keine Einheit.",
     addUnit: "Einheit anlegen",
     cardLabel: (unit: string) => `Mietverhältnis ${unit}`,
     vacant: "leer",
@@ -233,6 +239,12 @@ export const propertyPage = defineMessages({
     tabDocuments: "Documents",
     tabHistory: "History",
     tabAudit: "Audit log",
+    sectionOverview: "Overview",
+    sectionPurchase: "Purchase & costs",
+    sectionLoans: "Loans",
+    sectionPaperwork: "Paperwork",
+    sectionDocuments: "Documents",
+    sectionHistory: "History",
     kind: (key: string) => KIND_EN[key] ?? key,
     edit: "Edit",
     editTitle: "Edit property",
@@ -259,7 +271,6 @@ export const propertyPage = defineMessages({
     milestoneNoteEnd: ".",
 
     currentTitle: "Current tenancy",
-    noUnit: "No unit yet.",
     addUnit: "Add unit",
     cardLabel: (unit: string) => `Tenancy ${unit}`,
     vacant: "vacant",

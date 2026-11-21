@@ -56,7 +56,7 @@ export function UnitForm({
       } else {
         await ok(api.POST("/api/units", { body: { property_id: propertyId, ...fields } }));
         if (onDone) onDone();
-        else router.push(`/properties/${propertyId}?tab=einheiten`);
+        else router.push(`/properties/${propertyId}?tab=uebersicht#card-einheiten`);
       }
     } catch (error) {
       form.fail(error);
@@ -111,7 +111,7 @@ export function UnitForm({
             {t.cancel}
           </button>
         ) : (
-          <Link href={unit ? `/units/${unit.id}` : `/properties/${propertyId}?tab=einheiten`}>{t.cancel}</Link>
+          <Link href={unit ? `/units/${unit.id}` : `/properties/${propertyId}?tab=uebersicht#card-einheiten`}>{t.cancel}</Link>
         )}
       </div>
       <FormBanner errors={form.errors} />
