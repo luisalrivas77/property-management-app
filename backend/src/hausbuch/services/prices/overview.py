@@ -88,8 +88,7 @@ from hausbuch.schemas.prices import (
     TypedPriceBody,
 )
 from hausbuch.services.context import CommandContext
-from hausbuch.services.depot import _movements as depot_movements
-from hausbuch.services.depot import etf_overview, latest_report_agreement
+from hausbuch.services.depot import MovementReads, etf_overview, latest_report_agreement
 from hausbuch.services.events import append_event, diff_changes
 from hausbuch.services.lookup import require_row
 from hausbuch.services.wallet_groups import waiting
@@ -97,7 +96,14 @@ from hausbuch.services.wallet_groups import waiting
 from . import lang_schwarz
 from . import texts as price_texts
 from .assets import FundSource, NavSource, fund_source, nav_source, price_ids, stored_nav_sources
-from .fetch import STREAK_WINDOW_DAYS, exchange_ids, failure_runs, fund_notes, held_subquery
+from .fetch import (
+    STREAK_WINDOW_DAYS,
+    exchange_ids,
+    failure_runs_from,
+    fetched_runs,
+    fund_notes_from,
+    held_subquery,
+)
 from .issuer_nav import issuer_name
 from .texts import TEXTS as T
 
@@ -183,7 +189,9 @@ def _is_euro(row: Any) -> bool:
 NEVER_RECONCILED = date.min
 
 
-def _depot_bounds(conn: Connection, account_id: UUID, on: date) -> dict[UUID, date]:
+def _depot_bounds(
+    conn: Connection, account_id: UUID, on: date, depot_movements: MovementReads
+) -> dict[UUID, date]:
     """The depot's funds that its latest current report on or before `on` contradicts, each
     with the newest earlier report date at which it agreed (else NEVER_RECONCILED). Re-run
     on read against today's movements, as the holdings card does (services.depot)."""
@@ -202,7 +210,7 @@ def _depot_bounds(conn: Connection, account_id: UUID, on: date) -> dict[UUID, da
     for r in rows:
         declared[r.as_of][r.asset_id] = r.declared_units
     days = sorted(declared, reverse=True)
-    movements = depot_movements(conn, account_id)
+    movements = depot_movements(account_id)
     agreed: dict[date, dict[UUID, bool]] = {}
 
     def agrees(day: date) -> dict[UUID, bool]:
@@ -219,6 +227,11 @@ def _depot_bounds(conn: Connection, account_id: UUID, on: date) -> dict[UUID, da
 
 
 def assets_overview(conn: Connection, on: date) -> AssetsOverview:
+    return assets_overview_with(conn, on, MovementReads(conn))
+
+
+def assets_overview_with(conn: Connection, on: date, movements: MovementReads) -> AssetsOverview:
+    """`assets_overview` reading each depot's movements through `movements`."""
     a, m, acc = asset_table.c, movement_table.c, account_table.c
     accounts = conn.execute(
         select(acc.id, acc.label, acc.kind)
@@ -287,7 +300,9 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
     stale = unvalued = 0
     for account in accounts:
         bounds = (
-            _depot_bounds(conn, account.id, on) if account.kind == AccountKind.DEPOT.value else {}
+            _depot_bounds(conn, account.id, on, movements)
+            if account.kind == AccountKind.DEPOT.value
+            else {}
         )
         positions = []
         for u in sorted(
@@ -570,41 +585,61 @@ def _held(conn: Connection) -> list[Any]:
     ).all()
 
 
-def _priced_by_hand_since(conn: Connection, asset_id: UUID, since: datetime) -> bool:
-    p = price_table.c
-    return (
-        conn.execute(
-            select(p.id)
-            .where(
-                p.asset_id == asset_id,
-                p.source.in_([s.value for s in _HAND_SOURCES]),
-                p.fetched_at >= since,
+class _PriceFacts:
+    """What the price cards ask of the price and report tables about the held assets, each
+    read once for all of them and only when a card first asks (within one call; nothing is
+    kept between calls)."""
+
+    def __init__(self, conn: Connection, asset_ids: list[UUID]) -> None:
+        self._conn = conn
+        self._ids = asset_ids
+        self._hand: dict[UUID, datetime] | None = None
+        self._priced: set[UUID] | None = None
+        self._reported: set[UUID] | None = None
+
+    def priced_by_hand_since(self, asset_id: UUID, since: datetime) -> bool:
+        """A price typed, traded or read from a statement, fetched at or after `since`."""
+        if self._hand is None:
+            p = price_table.c
+            self._hand = {
+                r.asset_id: r.fetched_at
+                for r in self._conn.execute(
+                    select(p.asset_id, func.max(p.fetched_at).label("fetched_at"))
+                    .where(
+                        p.asset_id.in_(self._ids),
+                        p.source.in_([s.value for s in _HAND_SOURCES]),
+                    )
+                    .group_by(p.asset_id)
+                )
+            }
+        latest = self._hand.get(asset_id)
+        return latest is not None and latest >= since
+
+    def any_price(self, asset_id: UUID) -> bool:
+        if self._priced is None:
+            p = price_table.c
+            self._priced = set(
+                self._conn.execute(
+                    select(p.asset_id).where(p.asset_id.in_(self._ids)).distinct()
+                ).scalars()
             )
-            .limit(1)
-        ).first()
-        is not None
-    )
+        return asset_id in self._priced
 
-
-def _any_price(conn: Connection, asset_id: UUID) -> bool:
-    p = price_table.c
-    return conn.execute(select(p.id).where(p.asset_id == asset_id).limit(1)).first() is not None
-
-
-def _in_any_report(conn: Connection, asset_id: UUID) -> bool:
-    h = holding_table.c
-    return (
-        conn.execute(
-            select(h.id)
-            .where(
-                h.asset_id == asset_id,
-                h.source == HoldingSource.REPORT.value,
-                h.superseded_by.is_(None),
+    def in_any_report(self, asset_id: UUID) -> bool:
+        if self._reported is None:
+            h = holding_table.c
+            self._reported = set(
+                self._conn.execute(
+                    select(h.asset_id)
+                    .where(
+                        h.asset_id.in_(self._ids),
+                        h.source == HoldingSource.REPORT.value,
+                        h.superseded_by.is_(None),
+                    )
+                    .distinct()
+                ).scalars()
             )
-            .limit(1)
-        ).first()
-        is not None
-    )
+        return asset_id in self._reported
 
 
 def _last_run_at(conn: Connection) -> datetime | None:
@@ -702,13 +737,16 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
     held = _held(conn)
     if not held:
         return items
-    last_run = _last_run_at(conn)
     since = now - timedelta(days=STREAK_WINDOW_DAYS)
+    fetched = fetched_runs(conn, since)  # the newest first; every fund's streak reads them
+    # The newest run of all is in the window when the window holds any.
+    last_run = fetched[0].recorded_at if fetched else _last_run_at(conn)
     # D167 amended (c): a fund a depot's latest report lists while that report disagrees
     # gets no card of its own; the holdings card names the fix, which also prices the fund.
     in_reports = latest_report_agreement(conn)
     stored = stored_nav_sources(conn, [r.id for r in held])
-    notes = fund_notes(conn, since)  # the sources the recent runs asked (follow-ups B, C)
+    notes = fund_notes_from(fetched)  # the sources the recent runs asked (follow-ups B, C)
+    facts = _PriceFacts(conn, [r.id for r in held])
     for row in held:
         kind = AssetKind(row.kind)
         if kind is AssetKind.CRYPTO:
@@ -735,13 +773,13 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
             issuer = issuer_name(note.issuer)  # a catalogue reference no row stored yet (B)
         days = 0
         if kind is AssetKind.ETF:
-            days = valuation.failed_days(failure_runs(conn, row.id, since))
+            days = valuation.failed_days(failure_runs_from(fetched, row.id))
         if note is not None and note.currency and note.unconverted_since is not None:
             # Follow-up C: the file was read, but no ECB rate converts its currency.
             start = datetime.combine(note.unconverted_since, datetime.min.time(), UTC)
-            if _priced_by_hand_since(conn, row.id, start):
+            if facts.priced_by_hand_since(row.id, start):
                 continue
-            priced = _any_price(conn, row.id)
+            priced = facts.any_price(row.id)
             items.append(
                 InboxItem(
                     kind=InboxItemKind.PRICE_SOURCE_FAILED,
@@ -764,13 +802,13 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
             # Kurs“. An older note only names the issuer (review of PR #391).
             issuer = issuer or T("issuer.unknown")
         elif fund is None:
-            if _any_price(conn, row.id):
+            if facts.any_price(row.id):
                 continue  # „Kurs aus dem letzten Bericht“, no card (D174 (4))
             if in_reports.get(row.id) is False:
                 continue  # the holdings card („Depotbericht stimmt nicht“) covers it
             if row.id in in_reports:
                 report = T("report.silent")
-            elif _in_any_report(conn, row.id):
+            elif facts.in_any_report(row.id):
                 report = T("report.stale")
             else:
                 report = T("report.none")
@@ -793,9 +831,9 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
         if days < valuation.SOURCE_FAILED_AFTER_DAYS:
             continue
         first = now.astimezone(UTC).date() - timedelta(days=days - 1)
-        if _priced_by_hand_since(conn, row.id, datetime.combine(first, datetime.min.time(), UTC)):
+        if facts.priced_by_hand_since(row.id, datetime.combine(first, datetime.min.time(), UTC)):
             continue
-        value = T("value.older" if _any_price(conn, row.id) else "value.missing")
+        value = T("value.older" if facts.any_price(row.id) else "value.missing")
         items.append(
             InboxItem(
                 kind=InboxItemKind.PRICE_SOURCE_FAILED,
@@ -817,6 +855,7 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
 
 
 __all__ = [
+    "assets_overview_with",
     "assets_overview",
     "etf_today",
     "list_assets",

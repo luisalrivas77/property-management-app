@@ -76,6 +76,7 @@ a lookup miss, never a failure.
 """
 
 from collections import Counter, defaultdict
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -1183,6 +1184,23 @@ def failure_runs(conn: Connection, asset_id: UUID, since: datetime) -> list[tupl
             e.type == EventType.WORKSPACE_PRICES_FETCHED.value, e.recorded_at >= since
         )
     ).all()
+    return failure_runs_from(rows, asset_id)
+
+
+def fetched_runs(conn: Connection, since: datetime) -> list:
+    """The prices_fetched events since `since` (recorded_at, payload), the newest first: read
+    once for every asset's `failure_runs_from` and for `fund_notes_from`."""
+    e = event_table.c
+    return conn.execute(
+        select(e.recorded_at, e.payload)
+        .where(e.type == EventType.WORKSPACE_PRICES_FETCHED.value, e.recorded_at >= since)
+        .order_by(e.recorded_at.desc())
+    ).all()
+
+
+def failure_runs_from(rows: Iterable[Any], asset_id: UUID) -> list[tuple[date, bool]]:
+    """`failure_runs` over the events already read (`fetched_runs`), in the rows' order."""
+    rows = list(rows)
     wanted = str(asset_id)
     after = max((r.recorded_at for r in rows if wanted in _sold_in(r.payload)), default=None)
     return [
@@ -1213,12 +1231,11 @@ def fund_notes(conn: Connection, since: datetime) -> dict[UUID, RunNote]:
     """Per fund the notes of the prices_fetched runs since `since` (follow-ups B and C), each
     fund's only from the runs after the latest one that asked it as held by no account
     (D174 amended 20 Nov 2026), as `failure_runs` counts them."""
-    e = event_table.c
-    rows = conn.execute(
-        select(e.recorded_at, e.payload)
-        .where(e.type == EventType.WORKSPACE_PRICES_FETCHED.value, e.recorded_at >= since)
-        .order_by(e.recorded_at.desc())
-    ).all()
+    return fund_notes_from(fetched_runs(conn, since))
+
+
+def fund_notes_from(rows: Sequence[Any]) -> dict[UUID, RunNote]:
+    """`fund_notes` over the events `fetched_runs` read (the newest first)."""
     found: dict[UUID, RunNote] = {}
     open_streak: set[UUID] = set()
     sold: set[UUID] = set()  # asked as sold in this run or a later one: older notes ignored
@@ -1324,13 +1341,15 @@ def write(ctx: CommandContext, plan: Plan, out: Collected) -> int:
     )
     since = ctx.now - timedelta(days=STREAK_WINDOW_DAYS)
     held = {h.id: h for h in plan.held}
+    fetched: list | None = None  # the runs' events, read once for every failed fund
     for asset_id in out.failed:
         if held[asset_id].kind is not AssetKind.ETF:
             continue  # a coin's failure never raises a card (D167 (3))
         if held[asset_id].last_on is not None:
             continue  # held by no account today: no card (D174 amended 20 Nov 2026)
-        runs = failure_runs(ctx.conn, asset_id, since)
-        days = valuation.failed_days(runs)
+        if fetched is None:
+            fetched = fetched_runs(ctx.conn, since)
+        days = valuation.failed_days(failure_runs_from(fetched, asset_id))
         if days < valuation.SOURCE_FAILED_AFTER_DAYS:
             continue
         first = ctx.now.astimezone(UTC).date() - timedelta(days=days - 1)
@@ -1378,7 +1397,10 @@ __all__ = [
     "collect",
     "exchange_ids",
     "failure_runs",
+    "failure_runs_from",
+    "fetched_runs",
     "fund_notes",
+    "fund_notes_from",
     "held_assets",
     "held_ever_subquery",
     "held_subquery",
