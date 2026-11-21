@@ -383,7 +383,7 @@ function AfaFigures({ summary, property }: { summary: PurchaseSummary; property:
   const from = property.purchase_date ? f.month(property.purchase_date) : null;
   return (
     <div className="stack">
-      <dl className="page-figs" aria-label={t.afaFigures}>
+      <dl className="page-figs">
         <dt>{t.afaBasisAmount}</dt>
         <dd>{f.money(afa.basis)}</dd>
         {afa.method === "useful_life" && afa.useful_life_years ? (

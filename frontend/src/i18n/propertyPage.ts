@@ -130,7 +130,6 @@ export const propertyPage = defineMessages({
       "Das Dokument, aus dem der Anteil stammt: der Kaufvertrag, die ausgefüllte BMF-Arbeitshilfe oder das Gutachten.",
     sNoteDesc: "Freier Text für Sie, z. B. wie der Wert zustande kam.",
     // Phase 10 (mockup 25): the AfA line of the Anlage V draft, served with the Summe.
-    afaFigures: "AfA",
     afaBasisAmount: "AfA-Basis",
     afaRate: "Satz",
     afaRateFrom: (rate: string, month: string | null) => (month ? `${rate} ab ${month}` : rate),
@@ -331,7 +330,6 @@ export const propertyPage = defineMessages({
     sEvidence: "Evidence (purchase contract, calculation aid, appraisal)",
     sEvidenceDesc: "The document the share comes from: the purchase contract, the completed BMF calculation aid or the appraisal.",
     sNoteDesc: "Free text for you, e.g. how the figure came about.",
-    afaFigures: "Depreciation",
     afaBasisAmount: "Depreciation basis",
     afaRate: "Rate",
     afaRateFrom: (rate: string, month: string | null) => (month ? `${rate} from ${month}` : rate),
