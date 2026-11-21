@@ -1,12 +1,11 @@
 // The property page with its tabs, and the property form (phase 10 step 4b, mockup 25).
 // The list of properties (/properties) has its own catalogue, `properties`.
+import { PROPERTY_KIND } from "@/components/labels";
+
 import { defineMessages } from "./core";
 
-const KIND_DE: Record<string, string> = {
-  etw: "Eigentumswohnung (ETW)",
-  efh: "Einfamilienhaus (EFH)",
-  mfh: "Mehrfamilienhaus (MFH)",
-};
+// The German is the shared label itself, so the two cannot drift.
+const KIND_DE: Record<string, string> = PROPERTY_KIND;
 const KIND_EN: Record<string, string> = {
   etw: "Condominium flat (ETW)",
   efh: "Single-family house (EFH)",
@@ -207,6 +206,8 @@ export const propertyPage = defineMessages({
     pfMilestones: "Diese Angaben sind Meilensteine und werden nicht überschrieben: Änderungen über „Datum korrigieren“ in den",
     pfMilestonesEnd: ", damit der Verlauf die Korrektur zeigt.",
     pfCreate: "Immobilie anlegen",
+    loading: "Lädt …",
+    overviewCrumb: "Übersicht",
   },
   en: {
     crumb: "Properties",
@@ -390,5 +391,7 @@ export const propertyPage = defineMessages({
     pfMilestones: "These are milestones and are never overwritten: change them with “Correct date” in the",
     pfMilestonesEnd: ", so that the history shows the correction.",
     pfCreate: "Create property",
+    loading: "Loading …",
+    overviewCrumb: "Overview",
   },
 });

@@ -3,7 +3,7 @@
 // Einheiten and Darlehen of a property. Each unit shows who rents it now (the tenancy in force
 // today, else the next to start), or "leer". Each loan shows its year totals from the
 // Tilgungsplan (GET /loans/{id}/schedule); the loan page has every payment.
-// Phase 10 (mockup 25): a unit is a row (its label, area, rooms and MEA, who rents it now) that
+// Phase 10 (mockup 25): a unit is a row (its label; area, rooms and MEA; who rents it now) that
 // opens the rest in the detail panel: its figures, its tenancies and the link to its page.
 import Link from "next/link";
 import { useCallback } from "react";
@@ -62,18 +62,20 @@ export function UnitsTab({ propertyId }: { propertyId: string }) {
                         <span className="detail-row-text">
                           <span className="detail-row-title">{unit.label}</span>
                           <span className="detail-row-sub">{unitFigures(unit)}</span>
-                        </span>
-                        <span className="row-amount">
+                          {/* Who rents it on its own line, so long names wrap instead of widening the row. */}
                           {current ? (
-                            current.upcoming ? (
-                              t.tenantFrom(partyNames(current.tenancy, tenants), f.date(current.tenancy.start_date))
-                            ) : (
-                              partyNames(current.tenancy, tenants)
-                            )
-                          ) : (
-                            <span className="tag">{t.vacant}</span>
-                          )}
+                            <span className="detail-row-sub">
+                              {current.upcoming
+                                ? t.tenantFrom(partyNames(current.tenancy, tenants), f.date(current.tenancy.start_date))
+                                : partyNames(current.tenancy, tenants)}
+                            </span>
+                          ) : null}
                         </span>
+                        {current ? null : (
+                          <span className="row-amount">
+                            <span className="tag">{t.vacant}</span>
+                          </span>
+                        )}
                         <Icon name="chevronRight" size={18} />
                       </a>
                     </li>

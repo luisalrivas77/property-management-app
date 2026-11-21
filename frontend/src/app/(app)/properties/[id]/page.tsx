@@ -54,8 +54,9 @@ function isTab(value: string | null): value is TabKey {
 }
 
 export default function PropertyPage() {
+  const t = useT(propertyPage);
   return (
-    <Suspense fallback={<p className="muted">Lädt …</p>}>
+    <Suspense fallback={<p className="muted">{t.loading}</p>}>
       <PropertyDetail />
     </Suspense>
   );

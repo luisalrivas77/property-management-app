@@ -18,6 +18,8 @@ import { DEPOSIT_FORM, options, RENT_MODEL, TENANCY_ROLE } from "@/components/la
 import { RentTermsFields, toDueDay, type OperatingCostsTerms } from "@/components/taxInputs";
 import { ActionDialog, Breadcrumbs, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { tenancyNew } from "@/i18n/tenancyNew";
 
 const KEYS = [
   "unit_id",
@@ -54,14 +56,16 @@ interface Party {
 }
 
 export default function NewTenancyPage() {
+  const t = useT(tenancyNew);
   return (
-    <Suspense fallback={<p className="muted">Lädt …</p>}>
+    <Suspense fallback={<p className="muted">{t.loading}</p>}>
       <NewTenancy />
     </Suspense>
   );
 }
 
 function NewTenancy() {
+  const t = useT(tenancyNew);
   const unitId = useSearchParams().get("unit");
   const load = useCallback(async () => {
     if (!unitId) return null;
@@ -77,8 +81,8 @@ function NewTenancy() {
         {(found) =>
           found === null ? (
             <p>
-              Ein Mietverhältnis wird von einer Einheit aus angelegt: <Link href="/">Übersicht</Link> › Immobilie › Einheit ›
-              „Mietverhältnis anlegen“.
+              {t.noUnitBefore} <Link href="/">{t.overview}</Link>
+              {t.noUnitAfter}
             </p>
           ) : (
             <>
@@ -86,10 +90,10 @@ function NewTenancy() {
                 items={[
                   { href: `/properties/${found.property.id}`, label: found.property.label },
                   { href: `/units/${found.unit.id}`, label: found.unit.label },
-                  { label: "Mietverhältnis anlegen" },
+                  { label: t.title },
                 ]}
               />
-              <h1>Mietverhältnis anlegen</h1>
+              <h1>{t.title}</h1>
               <TenancyForm unit={found.unit} property={found.property} />
             </>
           )
@@ -102,6 +106,7 @@ function NewTenancy() {
 const loadTenants = () => ok(api.GET("/api/tenants"));
 
 function TenancyForm({ unit }: { unit: Unit; property: Property }) {
+  const t = useT(tenancyNew);
   const router = useRouter();
   const tenants = useLoad(loadTenants);
   // Tenants created inline here: selectable at once, before the list has reloaded.
@@ -144,8 +149,8 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
     event.preventDefault();
     const values = collector();
     const chosen = parties.filter((party) => party.tenantId !== "");
-    if (chosen.length === 0) values.messages.parties = ["Bitte mindestens einen Mieter wählen oder anlegen."];
-    if (!startDate) values.messages.start_date = ["Bitte das Einzugsdatum eingeben."];
+    if (chosen.length === 0) values.messages.parties = [t.partyMissing];
+    if (!startDate) values.messages.start_date = [t.startMissing];
     const deposit = depositAmount.trim() === "" ? "0.00" : values.take("deposit_amount", toMoneyString(depositAmount));
     const rentDueDay = values.take("rent_due_day", toDueDay(dueDay));
     let initialRent: InitialRent | null = null;
@@ -194,7 +199,7 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
     <div className="stack">
       <form className="stack" onSubmit={submit} noValidate>
         <fieldset className="stack">
-          <legend>Parteien</legend>
+          <legend>{t.parties}</legend>
           <Loading state={tenants}>
             {(list) => (
               <div className="stack">
@@ -202,12 +207,12 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
                   <div key={index} className="grid">
                     <Field
                       id={`party-${index}-tenant`}
-                      label={`Mieter ${index + 1}`}
-                      description="Wer den Mietvertrag als Mieter unterschrieben hat. Fehlt jemand in der Liste, legen Sie ihn mit „Mieter anlegen“ an."
+                      label={t.tenantN(index + 1)}
+                      description={t.tenantDescription}
                     >
                       <select value={party.tenantId} onChange={(e) => setParty(index, { tenantId: e.target.value })}>
-                        <option value="">– wählen –</option>
-                        {[...list, ...created.filter((tenant) => !list.some((t) => t.id === tenant.id))]
+                        <option value="">{t.choose}</option>
+                        {[...list, ...created.filter((tenant) => !list.some((other) => other.id === tenant.id))]
                           .filter((tenant) => !tenant.erased_at)
                           .map((tenant) => (
                             <option key={tenant.id} value={tenant.id}>
@@ -218,8 +223,8 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
                     </Field>
                     <Field
                       id={`party-${index}-role`}
-                      label="Rolle"
-                      description="Hauptmieter ist die zuerst genannte Vertragspartei; weitere Personen, die den Mietvertrag mit unterschrieben haben, sind Mitmieter."
+                      label={t.role}
+                      description={t.roleDescription}
                     >
                       <select value={party.role} onChange={(e) => setParty(index, { role: e.target.value as TenancyRole })}>
                         {options(TENANCY_ROLE).map(([value, text]) => (
@@ -232,7 +237,7 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
                     {parties.length > 1 ? (
                       <div className="wide">
                         <button type="button" className="link" onClick={() => setParties((current) => current.filter((_, i) => i !== index))}>
-                          Mieter {index + 1} entfernen
+                          {t.removeTenant(index + 1)}
                         </button>
                       </div>
                     ) : null}
@@ -254,9 +259,9 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
               className="secondary"
               onClick={() => setParties((current) => [...current, { tenantId: "", role: "co_tenant" }])}
             >
-              Weiteren Mieter hinzufügen
+              {t.addParty}
             </button>
-            <ActionDialog label="Mieter anlegen" title="Mieter anlegen">
+            <ActionDialog label={t.createTenant} title={t.createTenant}>
               {(close) => (
                 <TenantForm
                   idPrefix="inline-tenant"
@@ -271,37 +276,37 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
         </fieldset>
 
         <fieldset className="stack">
-          <legend>Vertrag</legend>
+          <legend>{t.contract}</legend>
           <div className="grid">
             <Field
               id="tenancy-signed"
-              label="Vertragsdatum (unterschrieben, optional)"
-              description="Der Tag, an dem der Mietvertrag unterschrieben wurde, meist neben den Unterschriften."
+              label={t.signed}
+              description={t.signedDescription}
               errors={form.of("signed_on")}
             >
               <input type="date" value={signedOn} onChange={(e) => setSignedOn(e.target.value)} />
             </Field>
             <Field
               id="tenancy-start"
-              label="Einzug"
-              description="Der Tag, ab dem das Mietverhältnis läuft (Mietbeginn laut Mietvertrag)."
+              label={t.start}
+              description={t.startDescription}
               errors={form.of("start_date")}
             >
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
             </Field>
             <Field
               id="tenancy-fixed"
-              label="Befristet bis (optional)"
-              hint="Leer = unbefristet."
-              description="Nur bei einem Zeitmietvertrag: das vereinbarte Ende laut Mietvertrag."
+              label={t.fixed}
+              hint={t.fixedHint}
+              description={t.fixedDescription}
               errors={form.of("fixed_term_until")}
             >
               <input type="date" value={fixedTermUntil} onChange={(e) => setFixedTermUntil(e.target.value)} />
             </Field>
             <Field
               id="tenancy-model"
-              label="Mietmodell"
-              description="Festmiete, Staffelmiete (die Erhöhungen stehen schon im Vertrag) oder Indexmiete (an den Verbraucherpreisindex gekoppelt), laut Mietvertrag."
+              label={t.model}
+              description={t.modelDescription}
               errors={form.of("rent_model")}
             >
               <select value={rentModel} onChange={(e) => setRentModel(e.target.value as RentModel)}>
@@ -314,9 +319,9 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
             </Field>
             <Field
               id="tenancy-end"
-              label="Auszug (nur bei einem schon beendeten Mietverhältnis)"
-              hint="Sonst leer lassen und später „Auszug“ erfassen."
-              description="Der Tag, an dem das Mietverhältnis endete. Danach richtet sich, wie lange Mietunterlagen und Mieterdaten aufbewahrt werden: bis Ende des vierten Jahres danach."
+              label={t.end}
+              hint={t.endHint}
+              description={t.endDescription}
               errors={form.of("end_date")}
             >
               <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
@@ -333,12 +338,12 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
         </fieldset>
 
         <fieldset className="stack">
-          <legend>Kaution</legend>
+          <legend>{t.deposit}</legend>
           <div className="grid">
             <Field
               id="deposit-form"
-              label="Art"
-              description="Wie die Kaution geleistet wird, laut Mietvertrag. Ist eine vereinbart, fragt die Unterlagen-Checkliste nach einem Kautionsnachweis."
+              label={t.depositForm}
+              description={t.depositFormDescription}
               errors={form.of("deposit_form")}
             >
               <select value={depositForm} onChange={(e) => setDepositForm(e.target.value as DepositForm)}>
@@ -351,24 +356,24 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
             </Field>
             <Field
               id="deposit-amount"
-              label="Betrag (€)"
-              description="Die vereinbarte Kaution laut Mietvertrag."
+              label={t.depositAmount}
+              description={t.depositAmountDescription}
               errors={form.of("deposit_amount")}
             >
               <input type="text" inputMode="decimal" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} autoComplete="off" />
             </Field>
             <Field
               id="deposit-bank"
-              label="Bank des Kautionskontos (optional)"
-              description="Die Bank, bei der die Kaution angelegt ist, z. B. laut Kontoeröffnung oder Sparbuch."
+              label={t.depositBank}
+              description={t.depositBankDescription}
               errors={form.of("deposit_bank")}
             >
               <input type="text" value={depositBank} onChange={(e) => setDepositBank(e.target.value)} autoComplete="off" />
             </Field>
             <Field
               id="deposit-iban"
-              label="IBAN des Kautionskontos (optional)"
-              description="Die IBAN des Kautionskontos. Gespeichert wird sie nur maskiert."
+              label={t.depositIban}
+              description={t.depositIbanDescription}
               errors={form.of("deposit_iban")}
             >
               <input type="text" value={depositIban} onChange={(e) => setDepositIban(e.target.value)} autoComplete="off" spellCheck={false} />
@@ -377,42 +382,42 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
         </fieldset>
 
         <fieldset className="stack">
-          <legend>Anfangsmiete</legend>
+          <legend>{t.initialRent}</legend>
           <label className="inline">
             <input type="checkbox" checked={withRent} onChange={(e) => setWithRent(e.target.checked)} />
-            Anfangsmiete mit erfassen
+            {t.withRent}
           </label>
           {withRent ? (
             <div className="grid">
               <Field
                 id="rent-cold"
-                label="Kaltmiete (€ / Monat)"
-                description="Die monatliche Miete ohne Nebenkosten laut Mietvertrag. Mit ihr und der NK-Vorauszahlung erkennt Hausbuch eingehende Mietzahlungen und teilt sie auf."
+                label={t.cold}
+                description={t.coldDescription}
                 errors={form.of("initial_rent.cold_rent")}
               >
                 <input type="text" inputMode="decimal" value={coldRent} onChange={(e) => setColdRent(e.target.value)} required autoComplete="off" />
               </Field>
               <Field
                 id="rent-prepayment"
-                label="NK-Vorauszahlung (€ / Monat)"
-                description="Die monatliche Vorauszahlung auf Betriebs- und Heizkosten laut Mietvertrag, beide zusammen. Leer, wenn keine vereinbart ist."
+                label={t.prepayment}
+                description={t.prepaymentDescription}
                 errors={form.of("initial_rent.operating_costs_prepayment")}
               >
                 <input type="text" inputMode="decimal" value={prepayment} onChange={(e) => setPrepayment(e.target.value)} autoComplete="off" />
               </Field>
               <Field
                 id="rent-from"
-                label="Gültig ab (optional)"
-                hint="Leer = ab Einzug."
-                description="Der erste Tag, für den diese Miete gilt, laut Mietvertrag."
+                label={t.rentFrom}
+                hint={t.rentFromHint}
+                description={t.rentFromDescription}
                 errors={form.of("initial_rent.effective_from")}
               >
                 <input type="date" value={rentFrom} onChange={(e) => setRentFrom(e.target.value)} />
               </Field>
               <Field
                 id="rent-document"
-                label="Beleg (z. B. Mietvertrag, optional)"
-                description="Das Dokument, in dem die Miete vereinbart ist, meist der Mietvertrag."
+                label={t.rentDocument}
+                description={t.rentDocumentDescription}
                 errors={form.of("initial_rent.document_id")}
               >
                 <DocumentPicker value={rentDocument} onChange={setRentDocument} />
@@ -429,8 +434,8 @@ function TenancyForm({ unit }: { unit: Unit; property: Property }) {
         </fieldset>
 
         <div className="row">
-          <Submit busy={busy}>Mietverhältnis anlegen</Submit>
-          <Link href={`/units/${unit.id}`}>Abbrechen</Link>
+          <Submit busy={busy}>{t.title}</Submit>
+          <Link href={`/units/${unit.id}`}>{t.cancel}</Link>
         </div>
         <FormBanner errors={form.errors} />
       </form>
