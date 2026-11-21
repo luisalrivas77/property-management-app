@@ -91,7 +91,7 @@ import { api, ok } from "@/api/client";
 import { ruleCodeText } from "@/api/errors";
 import type { Account, Document, ExchangeMovementRow, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
 import type { components } from "@/api/types";
-import { translate, useT } from "@/i18n";
+import { formatter, translate, useT } from "@/i18n";
 import { inbox } from "@/i18n/inbox";
 import { todosText } from "@/i18n/todos";
 import { ErrorNotice } from "@/lib/ErrorNotice";
@@ -100,12 +100,16 @@ import { notifyInboxChanged } from "@/lib/inboxCount";
 import { BalanceForm, DuplicateCard, OpeningFromClosing } from "./accounts";
 import { documentLabel, ImportStoredStatement, UploadControl } from "./documents";
 import { ConfirmWithdrawals, ExchangeUnreconciledActions, formatUnits, MovementAnswers } from "./exchange";
-import { formatDate, formatDateTime, formatMoney } from "./format";
 import { ALLOCATION_CATEGORY, APP_SECRETS_ANCHOR, CHAIN, INBOX_ITEM_KIND } from "./labels";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
 import { reminderTodo } from "./todos";
 import { ActionDialog, Notice } from "./ui";
 import { ChangeAnswers } from "./wallet-cards";
+
+// Shown amounts and dates follow the chosen language (German unchanged); read at call time.
+const formatDate = (value: string | null | undefined) => formatter().date(value);
+const formatDateTime = (value: string | null | undefined) => formatter().dateTime(value);
+const formatMoney = (value: string | null | undefined) => formatter().money(value);
 
 // Step 4's schemas have no alias in schemas.ts yet.
 export type InboxItem = components["schemas"]["InboxItem"];

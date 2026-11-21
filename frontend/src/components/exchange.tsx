@@ -19,18 +19,23 @@ import type {
   MovementImportBody,
   MovementKind,
 } from "@/api/schemas";
-import { translate, useT } from "@/i18n";
+import { formatter, translate, useT } from "@/i18n";
 import { exchange as messages } from "@/i18n/exchange";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { statementMediaType } from "./accounts";
 import { storeAsDocument, StoredAsDocument, UPLOAD_ACCEPT, type Uploaded as StoredUpload } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
-import { formatDate, formatDateTime, formatDecimal, formatMoney } from "./format";
+import { formatDecimal } from "./format";
 import { toDecimalString } from "./input";
 import { CHAIN, IMPORT_STATUS, MOVEMENT_KIND } from "./labels";
 import { ActionDialog, Loading } from "./ui";
 import { useLoad } from "./useLoad";
+
+// Shown amounts and dates follow the chosen language (German unchanged); read at call time.
+const formatDate = (value: string | null | undefined) => formatter().date(value);
+const formatDateTime = (value: string | null | undefined) => formatter().dateTime(value);
+const formatMoney = (value: string | null | undefined) => formatter().money(value);
 
 /** BISON's export is a CSV; Binance's comes as a ZIP holding the CSV, or the CSV itself. */
 export const EXCHANGE_EXPORT_ACCEPT = ".csv,.zip,text/csv,application/zip,application/x-zip-compressed";
