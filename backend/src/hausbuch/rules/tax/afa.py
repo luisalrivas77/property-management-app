@@ -21,11 +21,13 @@ the D79 book value and the 15 % test's building cost (anschaffungsnah.limit_stat
 has its own line (movable.py, wk.afa_movable). Without one, every figure is unchanged.
 """
 
+from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 
 from hausbuch.schemas.allocation import AllocationCategory
 from hausbuch.schemas.tax import (
+    AfaCostRow,
     AfaFacts,
     AfaLine,
     DraftWarning,
@@ -40,11 +42,17 @@ from .movable import asset_basis, current_assets
 from .rounding import cents, money_str
 
 
+def cost_rows_total(rows: Iterable[AfaCostRow]) -> Decimal:
+    """Σ the acquisition cost rows (the Nebenkosten), the sum the basis adds to the price; the
+    property page's „Summe“ reads it here so the two cannot drift."""
+    return cents(sum((r.amount for r in rows), ZERO))
+
+
 def building_share(facts: AfaFacts) -> Decimal | None:
     """(price + Σ cost rows) × building share, to the cent; None without a split."""
     if facts.split is None:
         return None
-    total = facts.purchase_price + sum((r.amount for r in facts.cost_rows), ZERO)
+    total = facts.purchase_price + cost_rows_total(facts.cost_rows)
     return cents(total * facts.split.building_share)
 
 

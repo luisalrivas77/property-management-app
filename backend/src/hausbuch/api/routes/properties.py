@@ -34,6 +34,7 @@ from hausbuch.schemas.property import (
     PropertyOwnership,
     Unit,
 )
+from hausbuch.schemas.tax import PurchaseSummary
 from hausbuch.services.checklist import document_checklist
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.loans import list_loans
@@ -54,6 +55,7 @@ from hausbuch.services.properties import (
     update_acquisition_cost,
     update_property,
 )
+from hausbuch.services.tax import purchase_summary
 from hausbuch.services.units import list_units
 
 from ..deps import Cmd, domain_router, found, require
@@ -160,6 +162,15 @@ def price_split_record(body: PriceSplitCreate, cmd: Cmd) -> PriceSplit:
 @router.post("/properties/{property_id}/price-splits/{split_id}/select")
 def price_split_select(property_id: UUID, split_id: UUID, cmd: Cmd) -> Property:
     return cmd.run(select_price_split, property_id, split_id)
+
+
+@router.get("/properties/{property_id}/purchase-summary")
+def property_purchase_summary(property_id: UUID, cmd: Cmd) -> PurchaseSummary:
+    """The Nebenkosten's Summe (with the row count) and the AfA line of the selected split
+    (phase 10, mockup 25), both from the facts the Anlage V draft reads (services.tax.
+    purchase_summary); afa.basis is null without a selected split."""
+    today = datetime.now(LOCAL_TIME_ZONE).date()
+    return cmd.read(purchase_summary, property_id, today=today)
 
 
 # --- Units and loans of the property ---------------------------------------------------

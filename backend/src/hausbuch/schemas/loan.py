@@ -90,3 +90,15 @@ class YearTotals(Schema):
 class LoanSchedule(Schema):
     entries: list[ScheduleEntry]
     years: list[YearTotals]
+
+
+class LoanSummary(Schema):
+    """GET /loans/{id}/summary (phase 10, mockup 25): the loan page's two figures the stored
+    terms do not state. balance_today: what is owed on balance_on (today, Berlin time) by the
+    schedule of the stored terms, rules.net_worth.loan_balance as the net worth reads it; None
+    before the payout (balance_on < disbursed_on). initial_repayment_rate: the anfängliche
+    Tilgung, rules.loan_schedule.initial_repayment_rate; None outside a Rate's range."""
+
+    balance_today: Money | None
+    balance_on: date
+    initial_repayment_rate: Rate | None

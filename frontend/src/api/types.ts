@@ -460,6 +460,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/{property_id}/purchase-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Property Purchase Summary
+         * @description The Nebenkosten's Summe (with the row count) and the AfA line of the selected split
+         *     (phase 10, mockup 25), both from the facts the Anlage V draft reads (services.tax.
+         *     purchase_summary); afa.basis is null without a selected split.
+         */
+        get: operations["property_purchase_summary_api_properties__property_id__purchase_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}/units": {
         parameters: {
             query?: never;
@@ -1100,6 +1122,27 @@ export interface paths {
         };
         /** Loan Schedule Get */
         get: operations["loan_schedule_get_api_loans__loan_id__schedule_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loans/{loan_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Loan Summary Get
+         * @description Restschuld heute (today in Berlin; null before the payout) and the anfängliche Tilgung
+         *     (phase 10, mockup 25). 409 like .../schedule for stored terms that never amortise.
+         */
+        get: operations["loan_summary_get_api_loans__loan_id__summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9609,6 +9652,25 @@ export interface components {
             years: components["schemas"]["YearTotals"][];
         };
         /**
+         * LoanSummary
+         * @description GET /loans/{id}/summary (phase 10, mockup 25): the loan page's two figures the stored
+         *     terms do not state. balance_today: what is owed on balance_on (today, Berlin time) by the
+         *     schedule of the stored terms, rules.net_worth.loan_balance as the net worth reads it; None
+         *     before the payout (balance_on < disbursed_on). initial_repayment_rate: the anfängliche
+         *     Tilgung, rules.loan_schedule.initial_repayment_rate; None outside a Rate's range.
+         */
+        LoanSummary: {
+            /** Balance Today */
+            balance_today: string | null;
+            /**
+             * Balance On
+             * Format: date
+             */
+            balance_on: string;
+            /** Initial Repayment Rate */
+            initial_repayment_rate: string | null;
+        };
+        /**
          * LoanTerms
          * @description Everything the schedule is computed from. Input to rules.loan_schedule.
          */
@@ -11834,6 +11896,24 @@ export interface components {
             buyers?: components["schemas"]["ExtractedValue"];
             /** @description e.g. je zur Hälfte */
             ownership_clause?: components["schemas"]["ExtractedValue"];
+        };
+        /**
+         * PurchaseSummary
+         * @description GET /properties/{id}/purchase-summary (phase 10, mockup 25): the Nebenkosten's Summe and
+         *     the AfA line of the selected split, both from the facts the Anlage V draft reads, so they
+         *     cannot drift from it. acquisition_costs_total is Σ the cost rows the basis adds to the
+         *     price (rules.tax.afa.cost_rows_total), served with or without a split. afa is the draft's
+         *     wk.afa line for afa.tax_year: the property's last available year (today's, the purchase
+         *     year if later, the year ownership ended if earlier) or, without a rule set for it, the
+         *     latest earlier one that has one; None when no such year has a rule set. afa.basis None:
+         *     no split selected.
+         */
+        PurchaseSummary: {
+            /** Acquisition Costs Total */
+            acquisition_costs_total: string;
+            /** Acquisition Cost Count */
+            acquisition_cost_count: number;
+            afa?: components["schemas"]["AfaLine"] | null;
         };
         /** Question */
         Question: {
@@ -16829,6 +16909,37 @@ export interface operations {
             };
         };
     };
+    property_purchase_summary_api_properties__property_id__purchase_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                property_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseSummary"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     property_units_api_properties__property_id__units_get: {
         parameters: {
             query?: never;
@@ -18111,6 +18222,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoanSchedule"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    loan_summary_get_api_loans__loan_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoanSummary"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

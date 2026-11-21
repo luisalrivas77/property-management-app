@@ -99,6 +99,8 @@ export const propertyPage = defineMessages({
     fPaidDesc: "Der Tag der Zahlung, laut Kontoauszug.",
     fReceiptDesc:
       "Die Rechnung oder der Bescheid zu dieser Position, aus den Dokumenten oder neu hochgeladen. Mit Beleg gilt die Position in der Unterlagen-Checkliste als belegt.",
+    // Phase 10 (mockup 25): the Summe is served by GET /properties/{id}/purchase-summary.
+    costsTotal: "Summe",
     fNote: "Notiz (optional)",
     fCostNoteDesc: "Freier Text für Sie, z. B. eine Rechnungsnummer.",
 
@@ -127,6 +129,16 @@ export const propertyPage = defineMessages({
     sEvidenceDesc:
       "Das Dokument, aus dem der Anteil stammt: der Kaufvertrag, die ausgefüllte BMF-Arbeitshilfe oder das Gutachten.",
     sNoteDesc: "Freier Text für Sie, z. B. wie der Wert zustande kam.",
+    // Phase 10 (mockup 25): the AfA line of the Anlage V draft, served with the Summe.
+    afaBasisAmount: "AfA-Basis",
+    afaRate: "Satz",
+    afaRateFrom: (rate: string, month: string | null) => (month ? `${rate} ab ${month}` : rate),
+    afaUsefulLife: "Nutzungsdauer laut Gutachten",
+    afaYears: (years: number) => `${years} Jahre`,
+    afaKitchen: (amount: string) =>
+      `Ohne die Einbauküche: ihr Anteil von ${amount} wird separat über ihre eigene Nutzungsdauer abgeschrieben.`,
+    afaNoSplit: (add: string, choose: string) =>
+      `Noch keine AfA-Basis. Erfassen Sie mit „${add}“ eine Aufteilung, oder öffnen Sie eine vorhandene und wählen Sie „${choose}“.`,
 
     // Einheiten
     noUnits: "Noch keine Einheiten. Eine ETW hat meist eine Wohnung, oft dazu einen Stellplatz.",
@@ -291,6 +303,7 @@ export const propertyPage = defineMessages({
     fPaidDesc: "The day of payment, per the bank statement.",
     fReceiptDesc:
       "The invoice or notice for this item, from the documents or newly uploaded. With a receipt the item counts as proven in the paperwork checklist.",
+    costsTotal: "Total",
     fNote: "Note (optional)",
     fCostNoteDesc: "Free text for you, e.g. an invoice number.",
 
@@ -317,6 +330,15 @@ export const propertyPage = defineMessages({
     sEvidence: "Evidence (purchase contract, calculation aid, appraisal)",
     sEvidenceDesc: "The document the share comes from: the purchase contract, the completed BMF calculation aid or the appraisal.",
     sNoteDesc: "Free text for you, e.g. how the figure came about.",
+    afaBasisAmount: "Depreciation basis",
+    afaRate: "Rate",
+    afaRateFrom: (rate: string, month: string | null) => (month ? `${rate} from ${month}` : rate),
+    afaUsefulLife: "Useful life per appraisal",
+    afaYears: (years: number) => `${years} years`,
+    afaKitchen: (amount: string) =>
+      `Without the fitted kitchen: its share of ${amount} is depreciated separately over its own useful life.`,
+    afaNoSplit: (add: string, choose: string) =>
+      `No depreciation basis yet. Record a split with “${add}”, or open an existing one and pick “${choose}”.`,
 
     noUnits: "No units yet. A flat (ETW) usually has one dwelling, often with a parking space.",
     area: "Floor area",

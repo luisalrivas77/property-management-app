@@ -27,6 +27,11 @@ Conventions:
   interest = opening_balance * (nominal * (interest_days - follow_up_days)
              + follow_up * follow_up_days) / 360, rounded half-up (principle 2).
 - Year totals are per calendar year of due_on.
+
+`initial_repayment_rate(terms)` (phase 10, the loan page's „Anfängliche Tilgung“): the yearly
+payment over the principal less the nominal rate, monthly_payment × 12 ÷ principal −
+nominal_rate, from the stored terms, to 6 places half-up like every Rate; None when it falls
+outside a Rate's range (0 ≤ x < 1). Display only: the schedule never reads it.
 """
 
 import calendar
@@ -44,6 +49,7 @@ TERM_TOO_LONG = "loan.term_too_long"
 MAX_PAYMENTS = 1200  # 100 years of monthly payments
 
 CENT = Decimal("0.01")
+RATE_PLACES = Decimal("0.000001")  # Rate: numeric(7,6)
 ZERO = Decimal("0.00")
 # Exact for any numeric(14,2) balance times a numeric(7,6) rate; independent of the caller's
 # decimal context, so the schedule is reproducible everywhere.
@@ -54,6 +60,13 @@ def build_schedule(terms: LoanTerms) -> LoanSchedule:
     with localcontext(_CONTEXT):
         entries = list(_entries(terms))
         return LoanSchedule(entries=entries, years=_year_totals(entries))
+
+
+def initial_repayment_rate(terms: LoanTerms) -> Decimal | None:
+    with localcontext(_CONTEXT):
+        rate = terms.monthly_payment * 12 / terms.principal - terms.nominal_rate
+        rate = rate.quantize(RATE_PLACES, rounding=ROUND_HALF_UP)
+    return rate if 0 <= rate < 1 else None
 
 
 def _entries(terms: LoanTerms) -> Iterator[ScheduleEntry]:

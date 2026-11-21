@@ -17,10 +17,11 @@ from sqlalchemy import Connection, Row, insert, select, update
 from hausbuch.db.tables import loan as loan_table
 from hausbuch.db.tables import property_ as property_table
 from hausbuch.jobs import enqueue
-from hausbuch.rules.loan_schedule import build_schedule
+from hausbuch.rules.loan_schedule import build_schedule, initial_repayment_rate
+from hausbuch.rules.net_worth import loan_balance
 from hausbuch.schemas.enums import EntityType
 from hausbuch.schemas.events import EventType, LoanCreated, LoanDisbursed, Updated
-from hausbuch.schemas.loan import Loan, LoanCreate, LoanSchedule, LoanTerms
+from hausbuch.schemas.loan import Loan, LoanCreate, LoanSchedule, LoanSummary, LoanTerms
 
 from .context import CommandContext
 from .errors import NotFoundError
@@ -235,6 +236,29 @@ def loan_schedule(conn: Connection, loan_id: UUID) -> LoanSchedule:
     if loan is None:
         raise NotFoundError(EntityType.LOAN, loan_id)
     return build_schedule(loan.terms)
+
+
+def loan_summary(conn: Connection, loan_id: UUID, *, on: date) -> LoanSummary:
+    """The loan page's Restschuld on `on` and its anfängliche Tilgung (phase 10, mockup 25).
+    The balance is rules.net_worth.loan_balance over the schedule of the stored terms, as the
+    net worth computes a loan's line (services/net_worth._from_handover), and None before the
+    payout. The stored terms, not a scenario's follow-up rate: the page shows this schedule.
+    Raises RuleError like loan_schedule for terms that never amortise."""
+    loan = get_loan(conn, loan_id)
+    if loan is None:
+        raise NotFoundError(EntityType.LOAN, loan_id)
+    terms = loan.terms
+    entries = build_schedule(terms).entries
+    balance = (
+        None
+        if on < terms.disbursed_on
+        else loan_balance(entries, terms.principal, terms.disbursed_on, on)
+    )
+    return LoanSummary(
+        balance_today=balance,
+        balance_on=on,
+        initial_repayment_rate=initial_repayment_rate(terms),
+    )
 
 
 def _flat(loan: Loan) -> dict[str, Any]:

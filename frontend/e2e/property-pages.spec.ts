@@ -139,3 +139,58 @@ test("the tenant page reads in English: contact facts, the tenancy as a row and 
   await expect(sheet.getByLabel("Email (optional)")).toHaveValue("b@example.org");
   await expect(sheet.getByRole("button", { name: "Save" })).toBeVisible();
 });
+
+// Mockup 25's four figures, each served by the server (GET /properties/{id}/purchase-summary,
+// GET /loans/{id}/summary): the Nebenkosten's Summe, the AfA line of the selected split (or a
+// to-do naming the buttons, never 0 €), Restschuld heute and the anfängliche Tilgung.
+test("the property pages show the Summe, the AfA line, Restschuld heute and the anfängliche Tilgung", async ({ page, signedIn }) => {
+  void signedIn;
+  const { property, loan } = await propertyWithLoan(page);
+  await apiCall(page, "POST", "/api/acquisition-costs", { property_id: property.id, kind: "real_estate_transfer_tax", amount: "17500.00" });
+  await apiCall(page, "POST", "/api/acquisition-costs", { property_id: property.id, kind: "notary", amount: "3500.00" });
+
+  await page.goto(`/properties/${property.id}?tab=nebenkosten`);
+  const total = page.locator(".page-total");
+  await expect(total).toContainText("Summe");
+  await expect(total).toContainText("21.000,00 €");
+
+  // No split yet: a to-do with the buttons' own names, no amount.
+  await page.goto(`/properties/${property.id}?tab=aufteilung`);
+  await expect(page.getByText(/^Noch keine AfA-Basis\..*„Aufteilung hinzufügen“.*„als AfA-Basis wählen“/)).toBeVisible();
+  await expect(page.locator(".page-figs")).toHaveCount(0);
+
+  // A recorded split becomes the basis (D133): (300.000 + 21.000) × 75 % = 240.750 €, 2 % from the handover.
+  await apiCall(page, "POST", "/api/price-splits", { property_id: property.id, source: "purchase_contract", building_share: "0.75" });
+  await page.reload();
+  const figures = page.locator(".page-figs");
+  await expect(figures).toContainText("AfA-Basis");
+  await expect(figures).toContainText("240.750,00 €");
+  await expect(figures).toContainText("2 % ab Mai 2026");
+
+  // The Darlehen tab's card and the loan page: Restschuld heute; the page also the anfängliche Tilgung.
+  await page.goto(`/properties/${property.id}?tab=darlehen`);
+  const card = page.locator("article").filter({ hasText: "Sparkasse Musterstadt" });
+  await expect(card.getByText("Restschuld heute", { exact: true })).toBeVisible();
+  await expect(card.locator(".page-big")).toHaveText(/^[\d.]+,\d\d €$/);
+
+  await page.goto(`/loans/${loan.id}`);
+  const facts = page.locator("dl.facts");
+  await expect(facts.locator("div").filter({ hasText: /^Restschuld heute/ }).locator("dd")).toHaveText(/^[\d.]+,\d\d €$/);
+  // 1.130 € × 12 ÷ 240.000 € − 3,65 % = 2 %
+  await expect(facts.locator("div").filter({ hasText: /^Anfängliche Tilgung/ }).locator("dd")).toHaveText("2 %");
+
+  // A loan not yet paid out has no Restschuld.
+  const payout = new Date(Date.now() + 60 * 86_400_000);
+  const firstPayment = new Date(Date.now() + 100 * 86_400_000);
+  const later = await apiCall<{ id: string }>(page, "POST", "/api/loans", {
+    property_id: property.id,
+    lender: "Bank Später",
+    principal: "50000.00",
+    nominal_rate: "0.03",
+    monthly_payment: "300.00",
+    disbursed_on: payout.toISOString().slice(0, 10),
+    first_payment_on: firstPayment.toISOString().slice(0, 10),
+  });
+  await page.goto(`/loans/${later.id}`);
+  await expect(page.locator("dl.facts div").filter({ hasText: /^Restschuld heute/ }).locator("dd")).toHaveText("noch nicht ausgezahlt");
+});
