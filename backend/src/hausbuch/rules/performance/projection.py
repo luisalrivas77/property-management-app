@@ -40,10 +40,13 @@ from hausbuch.schemas.performance import (
     MarginalRateOverride,
     OwnerTaxProfile,
     Projection,
+    SaleResult,
     Tariff,
     TariffStamp,
+    TaxEffect,
     YearFigures,
     YearKind,
+    ZveEstimate,
 )
 from hausbuch.schemas.tax import (
     AnlageVDraft,
@@ -329,56 +332,23 @@ def project(
                 params={"year": str(sale_year), "from": str(sale_tariff.reused_from)},
             )
         )
-    free_from = None
-    if prop.notarized_on is not None:
-        free_from = tax_free_from(prop.notarized_on, sale_rule_set)
-    else:
-        assumptions.append(Assumption(code="sale.no_contract_date"))
     base, effect = zve_bases[sale_year]
-    override = None
-    if effect is not None and effect.source == "override" and effect.breakdown_with is None:
-        override = _override_rate(inputs, sale_year)
-    if effect is None:
-        assumptions.append(Assumption(code="sale.tax_without_income"))
-
-    cash_flows = [
-        DatedFlow(
-            on=date(y.year, 12, 31),
-            amount=y.net_cash,
-            kind="cash_flow",
-            sources=[SourceRef(kind="property", id=prop.id)],
-        )
-        for y in [*actual, *years]
-    ]
-    owned = [*actual, *years]
-    afa_building = sum((y.afa or ZERO for y in owned), ZERO)
-    afa_movable = sum((y.afa_movable or ZERO for y in owned), ZERO)  # D94: the kitchen's too
-    sale_afa = year_drafts[sale_year].afa
-    additions = sale_afa.additions if sale_afa is not None else ZERO
     result = sale(
-        SaleFacts(
-            sale_year=sale_year,
-            purchase_date=prop.purchase_date,
-            tax_free_from=free_from,
-            purchase_price=prop.purchase_price,
-            cost_rows=sum((c.amount for c in facts.cost_rows), ZERO),
-            loan_principal=sum((t.principal for t in loans.values()), ZERO),
+        _sale_facts(
+            facts,
+            owners,
+            inputs,
+            loans,
+            owned=[*actual, *years],
+            sale_draft=year_drafts[sale_year],
+            base=base,
+            effect=effect,
             value=last.value or ZERO,
-            selling_costs_rate=levers.selling_costs_rate,
-            afa_claimed_building=afa_building,
-            afa_claimed_movable=afa_movable,
             loan_balance=last.loan_balance or ZERO,
-            zve_base=base.amount if base is not None else None,
-            result_sale_year=last.taxable_result or ZERO,
-            shares=_shares(facts, owners),
-            profiles=owners,
-            cash_flows=cash_flows,
-            freigrenze=sale_rule_set.speculation_freigrenze,
-            basis_additions=additions,
-            override_rate=override,
-            value_sources=[*scenario_refs, SourceRef(kind="property", id=prop.id)],
-            balance_sources=[SourceRef(kind="loan", id=loan_id) for loan_id in loans],
-            tax_sources=[*(effect.sources if effect is not None else [])],
+            selling_costs_rate=levers.selling_costs_rate,
+            rule_set=sale_rule_set,
+            scenario_refs=scenario_refs,
+            assumptions=assumptions,
         ),
         sale_tariff,
     )
@@ -397,6 +367,142 @@ def project(
         sale=result,
         assumptions=assumptions,
     )
+
+
+def _sale_facts(
+    facts: DraftFacts,
+    owners: Sequence[OwnerTaxProfile],
+    inputs: Sequence[IncomeInputFact],
+    loans: Mapping[UUID, LoanTerms],
+    *,
+    owned: Sequence[YearFigures],
+    sale_draft: AnlageVDraft,
+    base: ZveEstimate | None,
+    effect: TaxEffect | None,
+    value: Decimal,
+    loan_balance: Decimal,
+    selling_costs_rate: Decimal,
+    rule_set: RuleSet,
+    scenario_refs: Sequence[SourceRef],
+    assumptions: list[Assumption],
+) -> SaleFacts:
+    """The sale's facts for a sale in the last of the `owned` years (every year owned, oldest
+    first, its last one the sale year), as project() and sale_today() hand them to sale();
+    appends the sale.no_contract_date and sale.tax_without_income assumptions it makes."""
+    prop = facts.property
+    last = owned[-1]
+    sale_year = last.year
+    free_from = None
+    if prop.notarized_on is not None:
+        free_from = tax_free_from(prop.notarized_on, rule_set)
+    else:
+        assumptions.append(Assumption(code="sale.no_contract_date"))
+    override = None
+    if effect is not None and effect.source == "override" and effect.breakdown_with is None:
+        override = _override_rate(inputs, sale_year)
+    if effect is None:
+        assumptions.append(Assumption(code="sale.tax_without_income"))
+
+    cash_flows = [
+        DatedFlow(
+            on=date(y.year, 12, 31),
+            amount=y.net_cash,
+            kind="cash_flow",
+            sources=[SourceRef(kind="property", id=prop.id)],
+        )
+        for y in owned
+    ]
+    afa_building = sum((y.afa or ZERO for y in owned), ZERO)
+    afa_movable = sum((y.afa_movable or ZERO for y in owned), ZERO)  # D94: the kitchen's too
+    sale_afa = sale_draft.afa
+    additions = sale_afa.additions if sale_afa is not None else ZERO
+    return SaleFacts(
+        sale_year=sale_year,
+        purchase_date=prop.purchase_date,
+        tax_free_from=free_from,
+        purchase_price=prop.purchase_price,
+        cost_rows=sum((c.amount for c in facts.cost_rows), ZERO),
+        loan_principal=sum((t.principal for t in loans.values()), ZERO),
+        value=value,
+        selling_costs_rate=selling_costs_rate,
+        afa_claimed_building=afa_building,
+        afa_claimed_movable=afa_movable,
+        loan_balance=loan_balance,
+        zve_base=base.amount if base is not None else None,
+        result_sale_year=last.taxable_result or ZERO,
+        shares=_shares(facts, owners),
+        profiles=owners,
+        cash_flows=cash_flows,
+        freigrenze=rule_set.speculation_freigrenze,
+        basis_additions=additions,
+        override_rate=override,
+        value_sources=[*scenario_refs, SourceRef(kind="property", id=prop.id)],
+        balance_sources=[SourceRef(kind="loan", id=loan_id) for loan_id in loans],
+        tax_sources=[*(effect.sources if effect is not None else [])],
+    )
+
+
+def sale_today(
+    facts: DraftFacts,
+    owners: Sequence[OwnerTaxProfile],
+    inputs: Sequence[IncomeInputFact],
+    today: date,
+    loans: Mapping[UUID, LoanTerms],
+    *,
+    value: Decimal,
+    loan_balance: Decimal,
+    selling_costs_rate: Decimal,
+    rule_sets: RuleSets = registry.rule_set_or_latest,
+    tariffs: Tariffs = registry.tariff,
+    contexts: Contexts | None = None,
+) -> tuple[SaleResult, list[YearFigures]]:
+    """A sale in today's year at today's `value` and `loan_balance` (Übersicht's „Gewinn bei
+    Verkauf heute“, Luis 21 Nov 2026), through the same sale() and the same facts project()
+    builds for its sale year, and the actual years it read (actual_years' list: purchase year
+    … today's year).
+
+    sale() puts the sale on 31 December of its sale year (D88), so the §23 test is made for 31
+    Dec of today's year, not for today: the two differ only when the ten-year period ends
+    between today and 31 Dec. The AfA added back is every owned year's, today's year's in
+    full; the sale tax is computed on today's year's base and the property's result booked so
+    far, as the actual year's tax effect is."""
+    year = today.year
+    drafts = _Drafts(facts, rule_sets)
+    actual = actual_years(
+        facts, today, owners, inputs, rule_sets=rule_sets, tariffs=tariffs, contexts=contexts
+    )
+    year_draft = drafts(year)
+    employment, household = _contexts(contexts, year, year_draft.totals.result)
+    base, effect = year_tax_effect(
+        year,
+        year_draft.totals.result,
+        inputs,
+        owners,
+        tariffs(year),
+        assessed_result=drafts.result,
+        employment=employment,
+        household=household,
+    )
+    result = sale(
+        _sale_facts(
+            facts,
+            owners,
+            inputs,
+            loans,
+            owned=actual,
+            sale_draft=year_draft,
+            base=base,
+            effect=effect,
+            value=value,
+            loan_balance=loan_balance,
+            selling_costs_rate=selling_costs_rate,
+            rule_set=rule_sets(year),
+            scenario_refs=[],
+            assumptions=[],
+        ),
+        tariffs(year),
+    )
+    return result, actual
 
 
 def _override_rate(inputs: Sequence[IncomeInputFact], year: int) -> Decimal | None:

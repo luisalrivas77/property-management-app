@@ -161,3 +161,40 @@ def test_another_workspace_sees_nothing(client_a, client_b):
     _bought_2026(client_a)
     assert _equity(client_b) == {"properties": [], "total_paid_in": "0.00"}
     assert len(_equity(client_a)["properties"]) == 1
+
+
+def test_payback_is_served_per_property_with_totals(client_a, client_b):
+    """GET /properties/payback (registered before /properties/{id}): nothing booked yet, so
+    the cash back is 0.00 of the 325,000.00 − 300,000.00 = 25,000.00 put in, 0.0 %; the value
+    today is the price, so a sale now loses its selling costs (3.57 % = 11,602.50) and pays
+    no tax. Another workspace sees nothing."""
+    pid = _bought_2026(client_a)
+    _loan(client_a, pid, "300000.00")
+    body = ok(client_a.get("/api/properties/payback"))
+    (row,) = body["properties"]
+    assert (row["property_id"], row["paid_in"], row["cash_back"], row["percent"]) == (
+        pid,
+        "25000.00",
+        "0.00",
+        "0.0",
+    )
+    assert row["reason"] is None and row["sale_year"] == 2036
+    sold = row["sale_today"]
+    assert (sold["value"], sold["selling_costs"], sold["sale_tax"], sold["taxable"]) == (
+        "325000.00",
+        "11602.50",
+        "0.00",
+        True,
+    )
+    assert body["paid_in"] == "25000.00" and body["profit_today"] == sold["profit"]
+    assert ok(client_b.get("/api/properties/payback")) == {
+        "properties": [],
+        "paid_in": "0.00",
+        "cash_back": "0.00",
+        "percent": None,
+        "profit_today": "0.00",
+        "break_even_year": None,
+        "sale_year": None,
+        "tax_estimated_years": [],
+        "income_missing_years": [],
+    }

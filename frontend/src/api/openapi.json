@@ -824,6 +824,35 @@
         }
       }
     },
+    "/api/properties/payback": {
+      "get": {
+        "summary": "Properties Payback Route",
+        "description": "Übersicht's „Zurück bisher“ and „Gewinn bei Verkauf heute“ (Luis, 21 Nov 2026): per\nproperty the cash back so far (Σ phase 4's actual years' net cash after tax) against the\nown money put in, its percent, the break-even year on the default scenario's projection\nand a sale today through phase 4's sale(); and the totals over the properties that have\none (rules.performance.payback). A property it cannot compute carries a reason.",
+        "operationId": "properties_payback_route_api_properties_payback_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PropertiesPayback"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}": {
       "get": {
         "summary": "Property Get",
@@ -28083,6 +28112,39 @@
         "title": "PathLater",
         "description": "One path's amount to the reserve per month from `FlatChange.month` on."
       },
+      "PaybackYear": {
+        "properties": {
+          "year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "title": "Year"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/YearKind"
+          },
+          "net_cash": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Net Cash"
+          },
+          "cumulative": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cumulative"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "year",
+          "kind",
+          "net_cash",
+          "cumulative"
+        ],
+        "title": "PaybackYear",
+        "description": "One year of the payback series: phase 4's net cash after tax of an actual year (the\ncurrent one so far) or a projected year of the default scenario, and the running sum from\nthe purchase year."
+      },
       "PaymentIbanConfirmed": {
         "properties": {
           "account": {
@@ -29417,6 +29479,98 @@
         "title": "PropertiesPaidIn",
         "description": "GET /properties/equity: every property of the workspace (by label) and total_paid_in,\nΣ paid_in over the properties that have one (0.00 without any)."
       },
+      "PropertiesPayback": {
+        "properties": {
+          "properties": {
+            "items": {
+              "$ref": "#/components/schemas/PropertyPayback"
+            },
+            "type": "array",
+            "title": "Properties"
+          },
+          "paid_in": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Paid In"
+          },
+          "cash_back": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Cash Back"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "profit_today": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Profit Today"
+          },
+          "break_even_year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 2000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Break Even Year"
+          },
+          "sale_year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 2000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Year"
+          },
+          "tax_estimated_years": {
+            "items": {
+              "type": "integer",
+              "maximum": 2100.0,
+              "minimum": 2000.0
+            },
+            "type": "array",
+            "title": "Tax Estimated Years"
+          },
+          "income_missing_years": {
+            "items": {
+              "type": "integer",
+              "maximum": 2100.0,
+              "minimum": 2000.0
+            },
+            "type": "array",
+            "title": "Income Missing Years"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "properties",
+          "paid_in",
+          "cash_back",
+          "profit_today"
+        ],
+        "title": "PropertiesPayback",
+        "description": "GET /properties/payback: every property of the workspace (by label), and the totals over\nthose with a payback (reason None): paid_in, cash_back, percent (None when paid_in ≤ 0 or\nnone counts), profit_today, and break_even_year, the first year whose running sum over\nthose properties (each held at its last year after it) reaches their paid_in, None when\nnot by sale_year, the latest of their sale years. The years lists are the union."
+      },
       "Property": {
         "properties": {
           "id": {
@@ -29809,6 +29963,154 @@
         "type": "object",
         "title": "PropertyPatch",
         "description": "Non-milestone fields only: the purchase dates and price change through corrections."
+      },
+      "PropertyPayback": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "paid_in": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid In"
+          },
+          "cash_back": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cash Back"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,1})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/PaybackYear"
+            },
+            "type": "array",
+            "title": "Years"
+          },
+          "break_even_year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 2000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Break Even Year"
+          },
+          "sale_year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 2000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Year"
+          },
+          "tax_estimated_years": {
+            "items": {
+              "type": "integer",
+              "maximum": 2100.0,
+              "minimum": 2000.0
+            },
+            "type": "array",
+            "title": "Tax Estimated Years"
+          },
+          "income_missing_years": {
+            "items": {
+              "type": "integer",
+              "maximum": 2100.0,
+              "minimum": 2000.0
+            },
+            "type": "array",
+            "title": "Income Missing Years"
+          },
+          "sale_today": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SaleToday"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "no_purchase_price",
+                  "ownership_ended",
+                  "before_handover",
+                  "loan_not_valued",
+                  "not_computable"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "label",
+          "paid_in"
+        ],
+        "title": "PropertyPayback",
+        "description": "One property's way back to its own money put in. cash_back: Σ phase 4's actual years'\nnet cash after tax (rent in + other income + Umlagen in − cash paid out, the loan's\nTilgung included − the tax effect), purchase year through today's. percent = cash_back ÷\npaid_in, None when paid_in ≤ 0. break_even_year: the first year whose running sum of the\nactual and then the default scenario's projected net cash reaches paid_in; None when not\nby `sale_year`, the projection's last year. tax_estimated_years: actual years whose tax\neffect is an estimate (no Bescheid yet); income_missing_years: actual years without any\nincome input, whose tax effect is not counted. Everything after paid_in is None with a\n`reason` when it cannot be computed."
       },
       "Proposal": {
         "properties": {
@@ -33216,6 +33518,87 @@
         ],
         "title": "SaleResult",
         "description": "D88, D89. gain is None when the sale is outside §23 (taxable False); a negative gain is\na loss that is not offset (\"nicht verrechenbar\", sale_tax 0.00)."
+      },
+      "SaleToday": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Value"
+          },
+          "selling_costs_rate": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,6})?$",
+            "title": "Selling Costs Rate"
+          },
+          "selling_costs": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Selling Costs"
+          },
+          "taxable": {
+            "type": "boolean",
+            "title": "Taxable"
+          },
+          "tax_free_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Free From"
+          },
+          "gain": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gain"
+          },
+          "sale_tax": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Sale Tax"
+          },
+          "loan_balance": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Loan Balance"
+          },
+          "net_proceeds": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Net Proceeds"
+          },
+          "profit": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Profit"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "selling_costs_rate",
+          "selling_costs",
+          "taxable",
+          "sale_tax",
+          "loan_balance",
+          "net_proceeds",
+          "profit"
+        ],
+        "title": "SaleToday",
+        "description": "„Gewinn bei Verkauf heute (Schätzung)“: rules.performance.sale.sale() for a sale in\ntoday's year at today's value and loan balance (rules.performance.projection.sale_today;\nsale() dates the sale 31 Dec of that year, so `taxable` is decided for that day).\nnet_proceeds = value − selling_costs − sale_tax − loan_balance; profit = net_proceeds +\nthe cash back so far − the own money put in."
       },
       "SavingsPlan": {
         "properties": {

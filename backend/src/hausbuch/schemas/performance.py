@@ -29,6 +29,7 @@ from pydantic import Field, model_validator
 
 from .allocation import AllocationCategory
 from .common import (
+    _STRING_ONLY,
     Fraction,
     Money,
     NonNegativeMoney,
@@ -41,6 +42,7 @@ from .common import (
     TaxRate,
     TaxYear,
     VacancyMonths,
+    _string_schema,
 )
 from .enums import IncomeInputKind, StateCode
 from .tax import RuleSetStamp, SourceRef
@@ -908,3 +910,97 @@ class FlatRateLetterRequest(Schema):
     sent_on: date
     sender_name: LetterLine
     sender_address: list[LetterLine] = Field(default_factory=list, max_length=4)
+
+
+# --- Payback (Übersicht's property tile, Luis 21 Nov 2026: „Both“) ------------------------
+
+# The cash back as a share of the own money put in, one decimal: signed, since the early
+# years usually pay out more than they bring in.
+SignedPercent = Annotated[
+    Decimal,
+    Field(max_digits=9, decimal_places=1),
+    _STRING_ONLY,
+    _string_schema(1, signed=True),
+]
+
+PaybackReason = Literal[
+    "no_purchase_price",  # the property has no price: no own money put in to compare with
+    "ownership_ended",  # sold: the net worth leaves it out too
+    "before_handover",  # not handed over yet: phase 4 has no actual year and no estimate
+    "loan_not_valued",  # a loan's schedule cannot be computed (the net worth's to-do too)
+    "not_computable",  # the projection or the sale raised a rule error; `error_code` names it
+]
+
+
+class PaybackYear(Schema):
+    """One year of the payback series: phase 4's net cash after tax of an actual year (the
+    current one so far) or a projected year of the default scenario, and the running sum from
+    the purchase year."""
+
+    year: TaxYear
+    kind: YearKind
+    net_cash: Money
+    cumulative: Money
+
+
+class SaleToday(Schema):
+    """„Gewinn bei Verkauf heute (Schätzung)“: rules.performance.sale.sale() for a sale in
+    today's year at today's value and loan balance (rules.performance.projection.sale_today;
+    sale() dates the sale 31 Dec of that year, so `taxable` is decided for that day).
+    net_proceeds = value − selling_costs − sale_tax − loan_balance; profit = net_proceeds +
+    the cash back so far − the own money put in."""
+
+    value: Money
+    selling_costs_rate: Rate
+    selling_costs: Money
+    taxable: bool
+    tax_free_from: date | None = None
+    gain: Money | None = None
+    sale_tax: Money
+    loan_balance: Money
+    net_proceeds: Money
+    profit: Money
+
+
+class PropertyPayback(Schema):
+    """One property's way back to its own money put in. cash_back: Σ phase 4's actual years'
+    net cash after tax (rent in + other income + Umlagen in − cash paid out, the loan's
+    Tilgung included − the tax effect), purchase year through today's. percent = cash_back ÷
+    paid_in, None when paid_in ≤ 0. break_even_year: the first year whose running sum of the
+    actual and then the default scenario's projected net cash reaches paid_in; None when not
+    by `sale_year`, the projection's last year. tax_estimated_years: actual years whose tax
+    effect is an estimate (no Bescheid yet); income_missing_years: actual years without any
+    income input, whose tax effect is not counted. Everything after paid_in is None with a
+    `reason` when it cannot be computed."""
+
+    property_id: UUID
+    label: str
+    paid_in: Money | None
+    cash_back: Money | None = None
+    percent: SignedPercent | None = None
+    years: list[PaybackYear] = Field(default_factory=list)
+    break_even_year: TaxYear | None = None
+    sale_year: TaxYear | None = None
+    tax_estimated_years: list[TaxYear] = Field(default_factory=list)
+    income_missing_years: list[TaxYear] = Field(default_factory=list)
+    sale_today: SaleToday | None = None
+    reason: PaybackReason | None = None
+    error_code: str | None = None
+
+
+class PropertiesPayback(Schema):
+    """GET /properties/payback: every property of the workspace (by label), and the totals over
+    those with a payback (reason None): paid_in, cash_back, percent (None when paid_in ≤ 0 or
+    none counts), profit_today, and break_even_year, the first year whose running sum over
+    those properties (each held at its last year after it) reaches their paid_in, None when
+    not by sale_year, the latest of their sale years. The years lists are the union."""
+
+    properties: list[PropertyPayback]
+    paid_in: Money
+    cash_back: Money
+    percent: SignedPercent | None = None
+    profit_today: Money
+    break_even_year: TaxYear | None = None
+    sale_year: TaxYear | None = None
+    tax_estimated_years: list[TaxYear] = Field(default_factory=list)
+    income_missing_years: list[TaxYear] = Field(default_factory=list)

@@ -24,6 +24,7 @@ from hausbuch.schemas.api import (
 from hausbuch.schemas.checklist import DocumentChecklist
 from hausbuch.schemas.enums import EntityType, LinkTarget
 from hausbuch.schemas.loan import Loan
+from hausbuch.schemas.performance import PropertiesPayback
 from hausbuch.schemas.property import (
     AcquisitionCost,
     AcquisitionCostCreate,
@@ -39,6 +40,7 @@ from hausbuch.schemas.tax import PurchaseSummary
 from hausbuch.services.checklist import document_checklist
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.loans import list_loans
+from hausbuch.services.payback import properties_payback
 from hausbuch.services.properties import (
     add_acquisition_cost,
     correct_notarized_on,
@@ -86,6 +88,17 @@ def properties_equity(cmd: Cmd) -> PropertiesPaidIn:
     (rules.property_equity). The net worth's „Wert minus Darlehen“ is unchanged."""
     today = datetime.now(LOCAL_TIME_ZONE).date()
     return cmd.read(properties_paid_in, today=today)
+
+
+@router.get("/properties/payback")
+def properties_payback_route(cmd: Cmd) -> PropertiesPayback:
+    """Übersicht's „Zurück bisher“ and „Gewinn bei Verkauf heute“ (Luis, 21 Nov 2026): per
+    property the cash back so far (Σ phase 4's actual years' net cash after tax) against the
+    own money put in, its percent, the break-even year on the default scenario's projection
+    and a sale today through phase 4's sale(); and the totals over the properties that have
+    one (rules.performance.payback). A property it cannot compute carries a reason."""
+    today = datetime.now(LOCAL_TIME_ZONE).date()
+    return cmd.read(properties_payback, today=today)
 
 
 @router.get("/properties/{property_id}")
