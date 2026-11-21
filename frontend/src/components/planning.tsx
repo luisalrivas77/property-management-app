@@ -43,9 +43,10 @@ import type {
 } from "@/api/schemas";
 import { formatter, getLocale, useT } from "@/i18n";
 import { common } from "@/i18n/common";
+import { flatRateText } from "@/i18n/flatRate";
 import { propertyPlanning } from "@/i18n/propertyPlanning";
 
-import { FLAT_RATE_CARD_ID, FLAT_RATE_NOT_ADVICE, FlatRateActions } from "./flatRate";
+import { FLAT_RATE_CARD_ID, FlatRateActions } from "./flatRate";
 
 import { Field, FormBanner, Submit, useFormErrors } from "./form";
 import { shiftDecimal, todayIso } from "./format";
@@ -579,6 +580,7 @@ function FlatRateCard({
   propertyId: string;
 }) {
   const t = useT(propertyPlanning);
+  const flatRate = useT(flatRateText);
   const tenancies = check.tenancies ?? [];
   if (tenancies.length === 0) return null;
   const levels = check.levels ?? [];
@@ -721,7 +723,7 @@ function FlatRateCard({
         </ul>
       ) : null}
       <p className="muted planning-subline">
-        {t.notLegalAdvice} {FLAT_RATE_NOT_ADVICE}
+        {t.notLegalAdvice} {flatRate.notAdvice}
       </p>
     </section>
   );

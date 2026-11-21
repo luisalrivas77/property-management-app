@@ -33,10 +33,6 @@ export const FLAT_RATE_CARD_ID = "nebenkostenpauschalen";
 export const RENT_CHANGE_PARAM = "mietaenderung";
 export const RENT_CHANGE_PAUSCHALE = "pauschale";
 
-/** The one sentence that says this is information, not advice (D155 (6)). */
-// The German text, for a screen that reads it as a constant; this file reads the catalogue's.
-export const FLAT_RATE_NOT_ADVICE = flatRateText.de.notAdvice;
-
 const ZERO = /^-?0*(\.0*)?$/;
 
 function isZero(value: string): boolean {
