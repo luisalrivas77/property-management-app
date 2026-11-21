@@ -31,6 +31,21 @@ test.describe("validation surfaces", () => {
       }
     });
 
+    await test.step("in English the same rule code reads in English (phase 10 D284)", async () => {
+      // The tenant form itself stays German until its screen is moved; the rule code's sentence
+      // comes from src/i18n/errors.ts. The language is a per-device setting in localStorage.
+      await page.evaluate(() => window.localStorage.setItem("hausbuch.locale", "en"));
+      await page.goto("/tenants/new");
+      await page.getByLabel("Name").fill("Erika Beispiel");
+      await page.getByLabel("IBAN (optional)").fill("DE89 3704 0044 0532 0130 01");
+      const refused = page.waitForResponse((r) => r.url().endsWith("/api/tenants") && r.request().method() === "POST");
+      await page.getByRole("button", { name: "Mieter anlegen" }).click();
+      expect((await refused).status()).toBe(422);
+      await expect(page.getByLabel("IBAN (optional)")).toHaveAccessibleDescription(/The IBAN's check digits do not match\./);
+      await page.evaluate(() => window.localStorage.removeItem("hausbuch.locale"));
+      await page.reload();
+    });
+
     await test.step("a bad PLZ: Pydantic's message under the PLZ field", async () => {
       const badPostalCode = "98x76";
       await page.goto("/properties/new");
