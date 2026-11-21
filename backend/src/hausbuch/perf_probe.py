@@ -638,8 +638,12 @@ def _calls(primitive: int, total: int) -> str:
 
 
 def _watched(key: tuple[str, int, str]) -> bool:
-    module = _module(key[0])
-    return module in WATCHED_MODULES or (module, key[2]) in WATCHED_FUNCTIONS
+    """A named function of a watched module (not a generator expression or lambda inside it,
+    which the two top lists still show)."""
+    module, name = _module(key[0]), key[2]
+    if name.startswith("<"):
+        return False
+    return module in WATCHED_MODULES or (module, name) in WATCHED_FUNCTIONS
 
 
 def _profile_report(label: str, stats: pstats.Stats, out: Callable[[str], None]) -> None:
