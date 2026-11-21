@@ -229,7 +229,7 @@ function OwnerScreen({
           />
         )}
       </Loading>
-      <p className="muted tax-footer">{n.footer}</p>
+      <p className="muted tax-footer">{t.footer}</p>
     </>
   );
 }

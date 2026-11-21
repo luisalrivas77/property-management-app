@@ -9,7 +9,6 @@ export const anlageN = defineMessages({
     noOwner: "Noch kein Eigentümer.",
     createOwner: "Eigentümer anlegen",
     noOwnerRest: ", dann entsteht hier der Entwurf der Anlage N.",
-    footer: "Ein Entwurf zum Prüfen, keine Steuerberatung.",
     noRuleSet: (year: number) => `Für ${year} gibt es noch kein Regelwerk der Anlage N.`,
     provisional: (year: number, formYear: number, version: string) =>
       `Formular ${year} noch nicht veröffentlicht; Zeilen nach dem Formular ${formYear} (Regelwerk ${version}). Die Beträge rechnet der Entwurf trotzdem nach den Regeln des Jahres.`,
@@ -73,7 +72,6 @@ export const anlageN = defineMessages({
     noOwner: "No owner yet.",
     createOwner: "Add owners",
     noOwnerRest: ", then the draft of the Anlage N (employment income form) is made here.",
-    footer: "A draft to check, not tax advice.",
     noRuleSet: (year: number) => `There is no Anlage N rule set for ${year} yet.`,
     provisional: (year: number, formYear: number, version: string) =>
       `The ${year} form is not published yet; lines follow the ${formYear} form (rule set ${version}). The draft still computes the amounts by that year's rules.`,
