@@ -15,14 +15,28 @@ import { useCallback, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
-import type { AnlageVDraft, DocumentChecklistItem, DraftWarning, FlatRateCheck, Owner, Property } from "@/api/schemas";
+import type {
+  AnlageVDraft,
+  DocumentChecklistItem,
+  DraftWarning,
+  FlatRateCheck,
+  Owner,
+  Property,
+} from "@/api/schemas";
 import type { components } from "@/api/types";
+import { translate, useT } from "@/i18n";
+import { todosText } from "@/i18n/todos";
 
 import { ReadUpload } from "./documents";
 import { flatRateTodos } from "./flatRate";
 import { todayIso } from "./format";
-import { NO_PAY_HINT, NoPayButton } from "./noPay";
-import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
+import { NoPayButton, noPayHint } from "./noPay";
+import {
+  ReminderDone,
+  reminderLabel,
+  reminderLink,
+  type Reminder,
+} from "./reminders";
 import { payInputsHref, questionnaireHref, taxFormHref } from "./taxYear";
 import {
   REMINDER_GUIDE,
@@ -68,32 +82,63 @@ async function loadTodos(): Promise<OverviewTodosData> {
   const [properties, owners, estimate] = await Promise.all([
     ok(api.GET("/api/properties")),
     orNull(ok(api.GET("/api/owners"))),
-    orNull(ok(api.GET("/api/tax/return-estimate", { params: { query: { tax_year: year } } }))),
+    orNull(
+      ok(
+        api.GET("/api/tax/return-estimate", {
+          params: { query: { tax_year: year } },
+        }),
+      ),
+    ),
   ]);
   const perProperty = await Promise.all(
     properties.map(async (property): Promise<PropertyTodos> => {
       const path = { property_id: property.id };
-      const flatRatePromise = orNull(ok(api.GET("/api/properties/{property_id}/flat-rate-check", { params: { path } })));
-      const checklist = await orNull(ok(api.GET("/api/properties/{property_id}/checklist", { params: { path } })));
+      const flatRatePromise = orNull(
+        ok(
+          api.GET("/api/properties/{property_id}/flat-rate-check", {
+            params: { path },
+          }),
+        ),
+      );
+      const checklist = await orNull(
+        ok(
+          api.GET("/api/properties/{property_id}/checklist", {
+            params: { path },
+          }),
+        ),
+      );
       const draft = checklist
         ? await orNull(
-            ok(api.GET("/api/properties/{property_id}/anlage-v", { params: { path, query: { tax_year: checklist.tax_year } } })),
+            ok(
+              api.GET("/api/properties/{property_id}/anlage-v", {
+                params: { path, query: { tax_year: checklist.tax_year } },
+              }),
+            ),
           )
         : null;
       const flatRate = await flatRatePromise;
-      return { property, year: checklist?.tax_year ?? null, items: checklist?.items ?? [], draft, flatRate };
+      return {
+        property,
+        year: checklist?.tax_year ?? null,
+        items: checklist?.items ?? [],
+        draft,
+        flatRate,
+      };
     }),
   );
   const perOwner = await Promise.all(
     (owners ?? []).map(async (owner) => {
       try {
         const draft = await ok(
-          api.GET("/api/owners/{owner_id}/anlage-n", { params: { path: { owner_id: owner.id }, query: { tax_year: year } } }),
+          api.GET("/api/owners/{owner_id}/anlage-n", {
+            params: { path: { owner_id: owner.id }, query: { tax_year: year } },
+          }),
         );
         return { owner, draft, noPay: false };
       } catch (error) {
         // No pay at all is a to-do of its own (below); any other failure adds nothing.
-        const codes = error instanceof ApiError && error.body ? ruleCodes(error.body) : [];
+        const codes =
+          error instanceof ApiError && error.body ? ruleCodes(error.body) : [];
         return { owner, draft: null, noPay: codes.includes("anlage_n.no_pay") };
       }
     }),
@@ -102,7 +147,10 @@ async function loadTodos(): Promise<OverviewTodosData> {
 }
 
 // The open Jahresfragen are one entry of their own; these say the same.
-const QUESTION_CODES = new Set(["return.questionnaire_open", "tax_export.questions_open"]);
+const QUESTION_CODES = new Set([
+  "return.questionnaire_open",
+  "tax_export.questions_open",
+]);
 
 /** A to-do warning with its action; where the action needs what only the Steuern screen loads
  * (the payments a warning cites), a link to that screen instead. */
@@ -116,11 +164,17 @@ function entryWithFallback(
 ): TodoEntry | null {
   const entry = warningEntry(warning, ctx, key, onChanged, context);
   if (!entry) return null;
-  if (resolveAction(warning, ctx) === null) entry.action = <Link href={fallback}>Auf Steuern ansehen</Link>;
+  if (resolveAction(warning, ctx) === null)
+    entry.action = <Link href={fallback}>{translate(todosText).seeOnTax}</Link>;
   return entry;
 }
 
-function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged: () => void): TodoEntry[] {
+function buildEntries(
+  data: OverviewTodosData,
+  reminders: Reminder[],
+  onChanged: () => void,
+): TodoEntry[] {
+  const t = translate(todosText);
   const entries: TodoEntry[] = [];
   const seen = new Set<string>();
   const once = (warning: DraftWarning, scope: string) => {
@@ -132,19 +186,45 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
 
   for (const { property, year, items, draft, flatRate } of data.properties) {
     // The rise test needs no tax year, so it is listed even when the checklist is unreadable.
-    entries.push(...flatRateTodos(flatRate, { propertyId: property.id, context: property.label }));
+    entries.push(
+      ...flatRateTodos(flatRate, {
+        propertyId: property.id,
+        context: property.label,
+      }),
+    );
     if (year === null) continue;
-    const ctx: GuideContext = { year, propertyId: property.id, draft: draft ?? undefined };
-    const tax = taxFormHref("v", { year, propertyId: property.id, ownerId: null });
+    const ctx: GuideContext = {
+      year,
+      propertyId: property.id,
+      draft: draft ?? undefined,
+    };
+    const tax = taxFormHref("v", {
+      year,
+      propertyId: property.id,
+      ownerId: null,
+    });
     const warnings = draft?.warnings ?? [];
     warnings.forEach((warning, index) => {
-      if (QUESTION_CODES.has(warning.code) || !once(warning, property.id)) return;
-      const entry = entryWithFallback(warning, ctx, `${property.id}-w-${index}`, tax, onChanged, property.label);
+      if (QUESTION_CODES.has(warning.code) || !once(warning, property.id))
+        return;
+      const entry = entryWithFallback(
+        warning,
+        ctx,
+        `${property.id}-w-${index}`,
+        tax,
+        onChanged,
+        property.label,
+      );
       if (entry) entries.push(entry);
     });
     for (const item of items) {
       if (coveredByWarning(item, warnings)) continue;
-      const entry = checklistEntry(item, year, { propertyId: property.id, items, onChanged }, property.label);
+      const entry = checklistEntry(
+        item,
+        year,
+        { propertyId: property.id, items, onChanged },
+        property.label,
+      );
       if (entry) entries.push(entry);
     }
   }
@@ -158,27 +238,42 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
     if (noPay) {
       entries.push({
         key: `${owner.id}-no-pay`,
-        title: `Arbeitslohn ${data.year} fehlt`,
-        text:
-          "Die letzte Gehaltsabrechnung hochladen: Sie zeigt die Summen des Jahres bis dahin, die App liest sie aus und rechnet damit. " +
-          "Wer keine hochladen möchte, trägt unter Steuern › Eure Angaben das erwartete Bruttogehalt ein; beides erledigt diesen Punkt. " +
-          NO_PAY_HINT,
+        title: t.noPayTitle(data.year),
+        text: t.noPayText + noPayHint(),
         action: (
           <>
-            <ReadUpload label="Gehaltsabrechnung hochladen" onUploaded={onChanged} />
-            <Link href={payInputsHref(data.year, owner.id)}>Bruttogehalt eintragen</Link>
-            <NoPayButton ownerId={owner.id} year={data.year} onDone={onChanged} />
+            <ReadUpload label={t.uploadPayslip} onUploaded={onChanged} />
+            <Link href={payInputsHref(data.year, owner.id)}>
+              {t.typeGrossPay}
+            </Link>
+            <NoPayButton
+              ownerId={owner.id}
+              year={data.year}
+              onDone={onChanged}
+            />
           </>
         ),
         context: owner.full_name,
       });
     }
     const ctx: GuideContext = { year: data.year, ownerId: owner.id };
-    const tax = taxFormHref("n", { year: data.year, propertyId: null, ownerId: owner.id });
+    const tax = taxFormHref("n", {
+      year: data.year,
+      propertyId: null,
+      ownerId: owner.id,
+    });
     (draft?.warnings ?? []).forEach((warning, index) => {
       if (QUESTION_CODES.has(warning.code) || !once(warning, owner.id)) return;
-      if (warning.code === "anlage_n.certificate_missing") certificateMissing = true;
-      const entry = entryWithFallback(warning, ctx, `${owner.id}-n-${index}`, tax, onChanged, owner.full_name);
+      if (warning.code === "anlage_n.certificate_missing")
+        certificateMissing = true;
+      const entry = entryWithFallback(
+        warning,
+        ctx,
+        `${owner.id}-n-${index}`,
+        tax,
+        onChanged,
+        owner.full_name,
+      );
       if (entry) entries.push(entry);
     });
   }
@@ -186,19 +281,33 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
   const estimate = data.estimate;
   if (estimate) {
     const ctx: GuideContext = { year: data.year };
-    const tax = taxFormHref("v", { year: data.year, propertyId: null, ownerId: null });
+    const tax = taxFormHref("v", {
+      year: data.year,
+      propertyId: null,
+      ownerId: null,
+    });
     (estimate.warnings ?? []).forEach((warning, index) => {
-      if (QUESTION_CODES.has(warning.code) || !once(warning, "household")) return;
-      const entry = entryWithFallback(warning, ctx, `household-${index}`, tax, onChanged, "Haushalt");
+      if (QUESTION_CODES.has(warning.code) || !once(warning, "household"))
+        return;
+      const entry = entryWithFallback(
+        warning,
+        ctx,
+        `household-${index}`,
+        tax,
+        onChanged,
+        t.household,
+      );
       if (entry) entries.push(entry);
     });
     const open = estimate.questionnaire.open?.length ?? 0;
     if (open > 0) {
       entries.push({
         key: "questions",
-        title: `${open} ${open === 1 ? "Jahresfrage" : "Jahresfragen"} ${data.year} offen`,
-        text: "Die Jahresfragen beantworten; sie dauern meist nur ein paar Minuten, und die App rechnet die Antworten ein.",
-        action: <Link href={questionnaireHref(data.year)}>Jahresfragen beantworten</Link>,
+        title: t.questionsTitle(open, data.year),
+        text: t.questionsText,
+        action: (
+          <Link href={questionnaireHref(data.year)}>{t.answerQuestions}</Link>
+        ),
       });
     }
   }
@@ -212,7 +321,8 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
     const guide = REMINDER_GUIDE[reminder.kind];
     if (!guide?.todo || reminder.kind === "tax.questionnaire_open") continue;
     if (reminder.visible_from > today) continue;
-    if (reminder.kind === "tax.wage_certificate_missing" && certificateMissing) continue;
+    if (reminder.kind === "tax.wage_certificate_missing" && certificateMissing)
+      continue;
     const link = reminderLink(reminder);
     entries.push({
       key: `reminder-${reminder.id}`,
@@ -221,7 +331,9 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
       action: (
         <>
           {link ? <Link href={link.href}>{link.label}</Link> : null}
-          {reminder.severity === "action" ? <ReminderDone reminder={reminder} onDone={onChanged} /> : null}
+          {reminder.severity === "action" ? (
+            <ReminderDone reminder={reminder} onDone={onChanged} />
+          ) : null}
         </>
       ),
     });
@@ -230,10 +342,17 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
 }
 
 /** `reminders` and `onRemindersChanged` are the page's (the Nächste Termine card shares them). */
-export function OverviewTodos({ reminders, onRemindersChanged }: { reminders: Reminder[]; onRemindersChanged: () => void }) {
+export function OverviewTodos({
+  reminders,
+  onRemindersChanged,
+}: {
+  reminders: Reminder[];
+  onRemindersChanged: () => void;
+}) {
   const [refresh, setRefresh] = useState(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh forces a reload
   const load = useCallback(() => loadTodos(), [refresh]);
+  const t = useT(todosText);
   const data = useLoad(load);
   const changed = useCallback(() => {
     setRefresh((n) => n + 1);
@@ -247,8 +366,8 @@ export function OverviewTodos({ reminders, onRemindersChanged }: { reminders: Re
       loading={data.data === undefined && data.error == null}
       empty={
         data.data === undefined && data.error != null
-          ? "Die offenen Punkte konnten gerade nicht geladen werden."
-          : "Nichts offen: alle Unterlagen, Angaben und Fragen sind erledigt."
+          ? t.loadFailed
+          : t.nothingOpen
       }
     />
   );
