@@ -389,7 +389,7 @@ function AfaFigures({ summary, property }: { summary: PurchaseSummary; property:
         {afa.method === "useful_life" && afa.useful_life_years ? (
           <>
             <dt>{t.afaUsefulLife}</dt>
-            <dd>{t.afaYears(afa.useful_life_years, from)}</dd>
+            <dd>{t.afaYears(afa.useful_life_years)}</dd>
           </>
         ) : afa.rate !== null ? (
           <>

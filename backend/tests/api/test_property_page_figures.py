@@ -26,6 +26,7 @@ from db.db_support import _admin
 
 from hausbuch.api.commands import Commands
 from hausbuch.rules.loan_schedule import initial_repayment_rate
+from hausbuch.rules.tax import registry
 from hausbuch.schemas.loan import LoanCreate, LoanTerms
 from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.loans import create_loan
@@ -94,7 +95,8 @@ def test_the_summe_and_the_afa_basis_are_the_drafts_own(client_a):
     assert summary["acquisition_costs_total"] == "21000.00"
 
     year = summary["afa"]["tax_year"]
-    assert year == _this_year()  # the purchase year is earlier
+    # the last owned year with a rule set (the purchase year is earlier)
+    assert year == max(y for y in registry.available_years() if y <= _this_year())
     assert summary["afa"] == _draft_afa(client_a, pid, year)
     assert (summary["afa"]["basis"], summary["afa"]["rate"]) == ("232500.00", "0.02")
     assert summary["afa"]["method"] == "statutory"
@@ -171,6 +173,22 @@ def test_a_fitted_kitchen_reduces_the_basis_as_the_draft_does(client_a):
     assert afa["movable_deducted"] == "10100.00"
     # (289,000.00 + 2,890.00) × 0.75 = 218,917.50, less the kitchen
     assert afa["basis"] == "208817.50"
+    assert afa == _draft_afa(client_a, pid, afa["tax_year"])
+
+
+def test_a_property_without_units_is_summed_and_depreciated(client_a):
+    """The e2e's data: a bare property (no unit yet) bought 1 May 2026 for 300,000.00 with
+    21,000.00 Nebenkosten; (300,000.00 + 21,000.00) × 0.75 = 240,750.00 at 2 %."""
+    pid = new_property(
+        client_a, notarized_on="2026-03-15", purchase_date="2026-05-01", purchase_price="300000.00"
+    )["id"]
+    _cost(client_a, pid, "real_estate_transfer_tax", "17500.00")
+    _cost(client_a, pid, "notary", "3500.00")
+    summary = _summary(client_a, pid)
+    assert (summary["acquisition_costs_total"], summary["afa"]["basis"]) == ("21000.00", None)
+    _select_split(client_a, pid, "0.75")
+    afa = _summary(client_a, pid)["afa"]
+    assert (afa["basis"], afa["rate"]) == ("240750.00", "0.02")
     assert afa == _draft_afa(client_a, pid, afa["tax_year"])
 
 

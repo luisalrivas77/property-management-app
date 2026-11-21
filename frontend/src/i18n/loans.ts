@@ -108,7 +108,7 @@ export const loans = defineMessages({
     correctPayoutHint: "Pre-filled with the stored loan amount; change it only if it is wrong.",
     principal: "Loan amount",
     nominalRate: "Nominal rate",
-    balanceToday: "Balance owed today",
+    balanceToday: "Balance today",
     notPaidOut: "not paid out yet",
     initialRepayment: "Initial repayment rate",
     payment: "Instalment",

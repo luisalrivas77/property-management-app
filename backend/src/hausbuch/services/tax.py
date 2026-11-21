@@ -158,8 +158,8 @@ def purchase_summary(conn: Connection, property_id: UUID, *, today: date) -> Pur
     of draft facts: the Summe is Σ the cost rows the AfA basis adds to the price, and the AfA
     line is the Anlage V draft's own (draft(...).afa) for the property's last available year
     that has a rule set, so both equal what GET /anlage-v serves for that year. NotFoundError
-    for an unknown property; afa None when no available year has a rule set (the Summe is
-    still served)."""
+    for an unknown property; afa None when no available year has a rule set or the draft raises
+    a RuleError (GET /anlage-v answers that with its 422; the Summe is still served here)."""
     checklist, documents = checklist_facts(conn, property_id)  # 404 for an unknown one
     years = checklist_rule.available_years(checklist, today)
     with_rules = [y for y in years if y in registry.available_years()]
@@ -173,7 +173,12 @@ def purchase_summary(conn: Connection, property_id: UUID, *, today: date) -> Pur
         documents=documents,
         private_proofs=True,
     )
-    afa = draft(facts, tax_year, registry.rule_set(tax_year)).afa if with_rules else None
+    afa = None
+    if with_rules:
+        try:
+            afa = draft(facts, tax_year, registry.rule_set(tax_year)).afa
+        except RuleError:  # the Anlage V tab shows why; the Summe does not depend on the draft
+            afa = None
     return PurchaseSummary(
         acquisition_costs_total=cost_rows_total(facts.cost_rows),
         acquisition_cost_count=len(facts.cost_rows),

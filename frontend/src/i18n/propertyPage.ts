@@ -134,7 +134,7 @@ export const propertyPage = defineMessages({
     afaRate: "Satz",
     afaRateFrom: (rate: string, month: string | null) => (month ? `${rate} ab ${month}` : rate),
     afaUsefulLife: "Nutzungsdauer laut Gutachten",
-    afaYears: (years: number, month: string | null) => (month ? `${years} Jahre ab ${month}` : `${years} Jahre`),
+    afaYears: (years: number) => `${years} Jahre`,
     afaKitchen: (amount: string) =>
       `Ohne die Einbauküche: ihr Anteil von ${amount} wird separat über ihre eigene Nutzungsdauer abgeschrieben.`,
     afaNoSplit: (add: string, choose: string) =>
@@ -334,7 +334,7 @@ export const propertyPage = defineMessages({
     afaRate: "Rate",
     afaRateFrom: (rate: string, month: string | null) => (month ? `${rate} from ${month}` : rate),
     afaUsefulLife: "Useful life per appraisal",
-    afaYears: (years: number, month: string | null) => (month ? `${years} years from ${month}` : `${years} years`),
+    afaYears: (years: number) => `${years} years`,
     afaKitchen: (amount: string) =>
       `Without the fitted kitchen: its share of ${amount} is depreciated separately over its own useful life.`,
     afaNoSplit: (add: string, choose: string) =>
