@@ -31,6 +31,9 @@ import { decimalInput, toSignedMoneyString } from "@/components/input";
 import { ACCOUNT_KIND, ACCOUNT_PURPOSE } from "@/components/labels";
 import { Facts } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { accountForms } from "@/i18n/accountForms";
+import { common as commonText } from "@/i18n/common";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 const KEYS = ["label", "bank", "iban", "opening_balance", "opening_balance_on", "kind", "purpose", "provider", "owners", "reason"] as const;
@@ -64,6 +67,8 @@ function walletShares(choice: string, owners: Owner[], reason: string | null): O
  * offer is ignored. */
 export function AccountForm({ account, initialKind }: { account?: Account; initialKind?: string | null }) {
   const router = useRouter();
+  const t = useT(accountForms);
+  const c = useT(commonText);
   const [label, setLabel] = useState(account?.label ?? "");
   const [bank, setBank] = useState(account?.bank ?? "");
   const [iban, setIban] = useState("");
@@ -96,14 +101,14 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
   const conflictText = (error: unknown) =>
     error instanceof ApiError && error.status === 409 && !account
       ? card
-        ? "Eine Karte mit dieser Kundennummer gibt es in diesem Haushalt schon."
+        ? t.conflictCard
         : depot
-          ? "Ein Depot mit dieser IBAN gibt es in diesem Haushalt schon."
+          ? t.conflictDepot
           : exchange
-            ? "Dieses Börsenkonto gibt es in diesem Haushalt schon."
+            ? t.conflictExchange
           : wallet
-            ? "Diese Wallet gibt es in diesem Haushalt schon."
-          : "Ein Konto mit dieser IBAN gibt es in diesem Haushalt schon."
+            ? t.conflictWallet
+          : t.conflictBank
       : null;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -115,11 +120,11 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
     const noAnchor = exchange || wallet;
     const openingBalance = noAnchor ? (account?.opening_balance ?? "0.00") : values.take("opening_balance", toSignedMoneyString(opening));
     const openingDay = noAnchor ? (account?.opening_balance_on ?? todayIso()) : openingOn;
-    if (!openingDay) values.messages.opening_balance_on = ["Bitte das Datum des Anfangssaldos eingeben."];
-    if (exchange && !account && !provider) values.messages.provider = ["Bitte die Börse wählen."];
-    if (wallet && provider.trim() === "") values.messages.provider = ["Bitte den Anbieter der Wallet eingeben, z. B. Tangem."];
-    if (wallet && !account && ownerList.length > 0 && ownerChoice === null) values.messages.owners = ["Bitte wählen, wem die Wallet gehört."];
-    if (!account && !card && !depot && !noAnchor && iban.trim() === "") values.messages.iban = ["Bitte die IBAN des Kontos eingeben."];
+    if (!openingDay) values.messages.opening_balance_on = [t.openingDateRequired];
+    if (exchange && !account && !provider) values.messages.provider = [t.exchangeRequired];
+    if (wallet && provider.trim() === "") values.messages.provider = [t.walletProviderRequired];
+    if (wallet && !account && ownerList.length > 0 && ownerChoice === null) values.messages.owners = [t.walletOwnersRequired];
+    if (!account && !card && !depot && !noAnchor && iban.trim() === "") values.messages.iban = [t.ibanRequired];
     if (!values.ok || openingBalance === undefined) return form.invalid(values.messages);
     const common = {
       label: label.trim(),
@@ -183,8 +188,8 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
       <div className="grid">
         <Field
           id="account-kind"
-          label="Kontoart"
-          description="Girokonto, Sparkonto (auch Tagesgeld), Kreditkarte, Depot, Börse oder Wallet. Eine Kreditkarte wird aus ihren monatlichen Abrechnungen (PDF) gefüllt, ein Depot aus den Dokumenten seiner Bank (Kontoauszüge, Abrechnungen, Berichte), eine Krypto-Börse (BISON, Binance) aus ihren Exporten, eine Wallet (z. B. Tangem, Phantom) aus ihren öffentlichen Adressen."
+          label={t.kind}
+          description={t.kindDescription}
           errors={form.of("kind")}
         >
           <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)} disabled={kinds.length === 1}>
@@ -198,8 +203,8 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         {card || depot || exchange || wallet ? null : (
           <Field
             id="account-purpose"
-            label="Wofür"
-            description="Das Mietkonto ist das Konto, über das die Wohnung läuft: seine Umsätze gehen in die Anlage V. Ein Privatkonto bekommt Haushaltskategorien und zählt nie in die Anlage V; Überweisungen zwischen dem Mietkonto und einem Privatkonto sind Privateinlagen und -entnahmen."
+            label={t.purpose}
+            description={t.purposeDescription}
             errors={form.of("purpose")}
           >
             <select value={purpose} onChange={(e) => setPurpose(e.target.value as AccountPurpose)}>
@@ -215,11 +220,11 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
       <div className="grid">
         <Field
           id="account-label"
-          label="Bezeichnung"
+          label={t.label}
           hint={
-            card ? "z. B. Kreditkarte" : depot ? "z. B. Depot" : exchange ? "z. B. BISON" : wallet ? "z. B. Tangem" : "z. B. Mietkonto Musterstraße"
+            card ? t.labelHintCard : depot ? t.labelHintDepot : exchange ? t.labelHintExchange : wallet ? t.labelHintWallet : t.labelHintBank
           }
-          description="Ein frei wählbarer Name, unter dem Sie das Konto in Hausbuch wiederfinden."
+          description={t.labelDescription}
           errors={form.of("label")}
         >
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={100} autoComplete="off" />
@@ -227,12 +232,12 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         {exchange ? (
           <Field
             id="account-provider"
-            label="Börse"
-            description="Die Börse, deren Exporte Sie hochladen. Hausbuch liest die Exporte von BISON und Binance; eine andere Börse kommt erst, wenn ihr Export bekannt ist."
+            label={t.exchange}
+            description={t.exchangeDescription}
             errors={form.of("provider")}
           >
             <select value={provider} onChange={(e) => setProvider(e.target.value)} disabled={account != null} required>
-              <option value="">Bitte wählen</option>
+              <option value="">{t.pleaseChoose}</option>
               {EXCHANGES.map((name) => (
                 <option key={name} value={name}>
                   {name}
@@ -243,9 +248,9 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         ) : wallet ? (
           <Field
             id="account-provider"
-            label="Anbieter"
-            hint="z. B. Tangem, Phantom, Ledger"
-            description="Die Wallet-App oder das Gerät, in dem die Coins liegen. Hausbuch liest nur die öffentlichen Adressen, die Sie auf der Seite der Wallet eintragen."
+            label={t.provider}
+            hint={t.walletProviderHint}
+            description={t.walletProviderDescription}
             errors={form.of("provider")}
           >
             <input type="text" value={provider} onChange={(e) => setProvider(e.target.value)} required maxLength={100} autoComplete="off" />
@@ -253,13 +258,13 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         ) : (
           <Field
             id="account-bank"
-            label="Bank"
+            label={t.bank}
             description={
               card
-                ? "Die Bank, die die Karte herausgibt, wie auf der Abrechnung."
+                ? t.bankDescriptionCard
                 : depot
-                  ? "Die Bank, bei der das Depot geführt wird, wie auf seinem Kontoauszug."
-                  : "Die Bank, bei der das Konto geführt wird, wie auf dem Kontoauszug."
+                  ? t.bankDescriptionDepot
+                  : t.bankDescriptionBank
             }
             errors={form.of("bank")}
           >
@@ -269,9 +274,9 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         {card ? (
           <Field
             id="account-provider"
-            label="Anbieter"
-            hint="Optional, z. B. der Markenname der Karte."
-            description="Der Name, unter dem die Karte auftritt, wenn er von der Bank abweicht. Die Karte hat keine eigene IBAN: Hausbuch erkennt ihre Abrechnungen an der Kundennummer, die die erste Abrechnung mitbringt."
+            label={t.provider}
+            hint={t.cardProviderHint}
+            description={t.cardProviderDescription}
             errors={form.of("provider")}
           >
             <input type="text" value={provider} onChange={(e) => setProvider(e.target.value)} maxLength={100} autoComplete="off" />
@@ -280,12 +285,12 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         {account || card || exchange || wallet ? null : (
           <Field
             id="account-iban"
-            label="IBAN"
-            hint={depot ? "Optional; wird nur maskiert angezeigt." : "Wird nur maskiert angezeigt."}
+            label={t.iban}
+            hint={depot ? t.ibanHintDepot : t.ibanHint}
             description={
               depot
-                ? "Die IBAN des Verrechnungskontos, falls Sie sie zur Hand haben. Sonst leer lassen: der erste Kontoauszug bringt sie mit, und Sie bestätigen sie auf der Seite des Depots."
-                : "Die IBAN des Kontos laut Kontoauszug. Hausbuch zeigt sie nur maskiert und prüft damit, dass ein hochgeladener Kontoauszug zu diesem Konto gehört."
+                ? t.ibanDescriptionDepot
+                : t.ibanDescription
             }
             errors={form.of("iban")}
           >
@@ -296,30 +301,30 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
           <>
             <Field
               id="account-opening"
-              label="Anfangssaldo (€)"
+              label={t.opening}
               hint={
                 card
-                  ? "Der „Alte Saldo“ der ersten Abrechnung, die Sie hochladen; ein offener Betrag mit Minus."
+                  ? t.openingHintCard
                   : depot
-                    ? "Der „alte Saldo“ des ersten Kontoauszugs, den Sie hochladen. Unbekannt? 0,00 lassen und nach dem Hochladen „Anfangssaldo daraus übernehmen“ wählen."
-                    : "Der Kontostand am Ende des Tages unten, laut Bank. Bei einem neuen Konto 0,00; negativ mit Minus."
+                    ? t.openingHintDepot
+                    : t.openingHintBank
               }
-              description="Der Kontostand laut Bank am Ende des Tages, den Sie darunter angeben. Von ihm aus prüft Hausbuch, ob jeder importierte Kontoauszug aufgeht: Anfangssaldo plus Umsätze gleich Endsaldo."
+              description={t.openingDescription}
               errors={form.of("opening_balance")}
             >
               <input type="text" inputMode="decimal" value={opening} onChange={(e) => setOpening(e.target.value)} required autoComplete="off" />
             </Field>
             <Field
               id="account-opening-on"
-              label="Anfangssaldo am"
+              label={t.openingOn}
               hint={
                 card
-                  ? "Ein Tag vor der ersten Buchung dieser Abrechnung, z. B. der letzte Tag des Vormonats."
+                  ? t.openingOnHintCard
                   : depot
-                    ? "Ein Tag vor der ersten Buchung des ersten Kontoauszugs, z. B. der letzte Tag des Vormonats."
-                  : "Ein Tag vor dem ersten Umsatz, der importiert wird: Umsätze an oder vor diesem Tag passen nicht zum Anfangssaldo."
+                    ? t.openingOnHintDepot
+                  : t.openingOnHintBank
               }
-              description="Der Tag, an dem dieser Kontostand galt, laut Kontoauszug oder Online-Banking."
+              description={t.openingOnDescription}
               errors={form.of("opening_balance_on")}
             >
               <input type="date" value={openingOn} onChange={(e) => setOpeningOn(e.target.value)} required />
@@ -328,30 +333,19 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
         )}
       </div>
       {card ? (
-        <p className="muted">
-          Eine Kreditkarte ist immer ein Privatkonto: ihre Umsätze bekommen Haushaltskategorien, Zinsen und Gebühren der Karte
-          ordnet Hausbuch selbst zu. Wem die Karte gehört, legen Sie nach dem Anlegen auf ihrer Seite fest.
-        </p>
+        <p className="muted">{t.cardNote}</p>
       ) : null}
       {depot && !account ? (
-        <p className="muted">
-          Ein Depot ist immer ein Privatkonto. Legen Sie eins je Konto Ihrer Depotbank an, das auf deren Kontoauszügen erscheint
-          (bei quirion das Verrechnungskonto und jedes Vermögensverwaltungskonto). Die Kontonummer bringt der erste Kontoauszug
-          mit; wem das Depot gehört, legen Sie nach dem Anlegen auf seiner Seite fest.
-        </p>
+        <p className="muted">{t.depotNote}</p>
       ) : null}
       {exchange && !account ? (
-        <p className="muted">
-          Ein Börsenkonto ist immer ein Privatkonto und hat keine IBAN und keinen Anfangssaldo: nach dem Anlegen laden Sie auf
-          seiner Seite den Export der Börse hoch, und Hausbuch zeigt je Coin, was er ergibt. Wem das Konto gehört (bei BISON die
-          Person, auf deren Namen es läuft), legen Sie nach dem Anlegen auf seiner Seite fest.
-        </p>
+        <p className="muted">{t.exchangeNote}</p>
       ) : null}
       {wallet && !account ? (
         <>
           {ownerList.length > 0 ? (
             <fieldset className={form.of("owners").length > 0 ? "field field-invalid" : "field"}>
-              <legend>Wem gehört die Wallet?</legend>
+              <legend>{t.walletOwnersLegend}</legend>
               <div className="stack" role="radiogroup">
                 {ownerList.length === 2 ? (
                   <label className="inline" htmlFor="wallet-owner-joint">
@@ -365,7 +359,7 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
                         setOwnerReason(JOINT_REASON);
                       }}
                     />{" "}
-                    Gemeinsam, je 1/2 (50/50)
+                    {t.walletJoint}
                   </label>
                 ) : null}
                 {ownerList.map((owner) => (
@@ -380,7 +374,7 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
                         if (ownerReason === JOINT_REASON) setOwnerReason("");
                       }}
                     />{" "}
-                    {owner.full_name} allein (100 %)
+                    {t.walletAlone(owner.full_name)}
                   </label>
                 ))}
               </div>
@@ -396,33 +390,29 @@ export function AccountForm({ account, initialKind }: { account?: Account; initi
           {ownerList.length > 0 ? (
             <Field
               id="wallet-owner-reason"
-              label="Begründung (optional)"
-              hint={ownerChoice === JOINT ? "Vorgeschlagen, weil die Coins meist vom gemeinsamen Konto bezahlt wurden." : undefined}
-              description="Warum die Wallet diesen Personen zu diesen Anteilen gehört, z. B. von welchem Konto die Coins bezahlt wurden. Hausbuch speichert es mit den Anteilen, damit es später nachvollziehbar bleibt."
+              label={t.reasonOptional}
+              hint={ownerChoice === JOINT ? t.walletReasonHint : undefined}
+              description={t.walletReasonDescription}
               errors={form.of("reason")}
             >
               <input type="text" value={ownerReason} onChange={(e) => setOwnerReason(e.target.value)} maxLength={500} autoComplete="off" />
             </Field>
           ) : null}
           <p className="muted">
-            Eine Wallet ist immer ein Privatkonto und hat keine IBAN und keinen Anfangssaldo. Nach dem Anlegen tragen Sie auf
-            ihrer Seite die öffentlichen Adressen ein (nie die Seed-Phrase oder einen privaten Schlüssel).
-            {ownerList.length === 0 ? " Wem sie gehört, legen Sie nach dem Anlegen auf ihrer Seite fest." : null}
+            {t.walletNote}
+            {ownerList.length === 0 ? t.walletNoteOwners : null}
           </p>
         </>
       ) : null}
       {account && !card && !depot && !exchange && !wallet ? (
         <>
-          <Facts rows={[["IBAN", account.iban_masked ?? "–"]]} />
-          <p className="muted">
-            Die IBAN lässt sich nicht ändern: eine andere IBAN ist ein anderes Konto. Wird der Anfangssaldo geändert, prüft
-            Hausbuch alle Kontoauszüge dieses Kontos neu.
-          </p>
+          <Facts rows={[[t.iban, account.iban_masked ?? "–"]]} />
+          <p className="muted">{t.ibanFixedNote}</p>
         </>
       ) : null}
       <div className="row">
-        <Submit busy={busy}>{account ? "Speichern" : "Konto anlegen"}</Submit>
-        <Link href={account ? `/accounts/${account.id}` : "/accounts"}>Abbrechen</Link>
+        <Submit busy={busy}>{account ? c.save : t.createAccount}</Submit>
+        <Link href={account ? `/accounts/${account.id}` : "/accounts"}>{c.cancel}</Link>
       </div>
       {form.errors.banner != null ? <ErrorNotice error={form.errors.banner} text={conflictText} /> : <FormBanner errors={form.errors} />}
     </form>
