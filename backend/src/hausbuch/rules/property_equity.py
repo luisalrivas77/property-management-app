@@ -1,8 +1,9 @@
 """Own money put into a property (Übersicht's property tile, Luis 21 Nov 2026: „Both figures“).
 Pure, Decimal.
 
-The tile's main figure stays the net worth's value less the loans (property_net); this is the
-second line, „Eigenkapital eingesetzt“:
+The tile's headline is now „Zurück bisher“ (rules.performance.payback: the cash back so far,
+measured against this figure, „von … eingesetzt“), with the net worth's value less the loans
+(property_net) beside it; the panel lists this figure's parts under „Eigenkapital eingesetzt“:
 
     purchase price
     + Σ the acquisition cost rows (the Nebenkosten; rules.tax.afa.cost_rows_total, the sum the

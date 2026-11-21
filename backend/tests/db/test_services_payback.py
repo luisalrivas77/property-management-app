@@ -302,3 +302,75 @@ def test_cash_before_the_handover_in_the_handover_year_counts(world):
     actual = world.query(performance_actuals, pid, today=TODAY)
     assert row.cash_back == Decimal("-110.00")
     assert row.cash_back == sum((y.net_cash for y in actual.years), Decimal("0"))
+
+
+def test_a_taxable_gain_without_income_says_its_tax_is_not_computed(world):
+    """The taxable sale of test_a_sale_today_with_a_taxable_gain (gain 47,148.00 inside the ten
+    years), but no income input at all: phase 4 states sale.tax_without_income and books no
+    tax, so the 0.00 is flagged as not computed rather than shown as a tax of nothing.
+    net = 360,000.00 − 12,852.00 − 237,630.99 = 109,517.01; profit = 109,517.01 − 150.00 −
+    60,000.00 = 49,367.01, too high by the uncomputed tax."""
+    pid, loan = _flat(world, principal="240000.00")
+    _year_2026(world, pid, loan, "1500.00")
+    world.cmd(
+        create_scenario,
+        pid,
+        ScenarioCreate.model_validate(
+            {
+                "property_id": pid,
+                "name": "Basis",
+                "is_default": True,
+                "levers": {"sale_year": 2036, "today_value": "360000.00"},
+            }
+        ),
+    )
+    row, _ = _payback(world, pid)
+    sold = row.sale_today
+    assert (sold.taxable, sold.gain, sold.sale_tax) == (True, Decimal("47148.00"), Decimal("0.00"))
+    assert sold.tax_not_computed
+    assert (sold.net_proceeds, sold.profit) == (Decimal("109517.01"), Decimal("49367.01"))
+
+
+def test_a_loss_without_income_is_not_flagged(world):
+    """No income either, but a loss owes no tax whatever the income: no flag."""
+    pid, loan = _flat(world, principal="240000.00")
+    _year_2026(world, pid, loan, "1500.00")
+    row, _ = _payback(world, pid)
+    assert row.sale_today.gain < 0 and not row.sale_today.tax_not_computed
+
+
+def test_a_stale_default_scenario_costs_only_the_projection(world):
+    """A default scenario saved in 2026 with sale year 2027, read on 1 Feb 2027: its sale year
+    is no longer after today's, so Planung's projection refuses it
+    (scenario.sale_year_before_today). The payback keeps what does not need it: the cash back
+    (2026's −150.00, nothing booked in 2027), its percent and the sale today at the scenario's
+    own selling-cost rate of 5 %; only the projected years, the sale year and the break-even
+    year are missing, and the property still counts in the totals."""
+    pid, loan = _flat(world, principal="240000.00")
+    _year_2026(world, pid, loan, "1500.00")
+    world.cmd(
+        create_scenario,
+        pid,
+        ScenarioCreate.model_validate(
+            {
+                "property_id": pid,
+                "name": "Basis",
+                "is_default": True,
+                "levers": {"sale_year": 2027, "selling_costs_rate": "0.0500"},
+            }
+        ),
+    )
+    result = world.query(properties_payback, today=date(2027, 2, 1))
+    (row,) = [p for p in result.properties if p.property_id == pid]
+    assert (row.reason, row.projection_error_code) == (None, "scenario.sale_year_before_today")
+    assert (row.cash_back, row.percent) == (Decimal("-150.00"), Decimal("-0.3"))
+    assert [y.year for y in row.years] == [2026, 2027]
+    assert (row.break_even_year, row.sale_year) == (None, None)
+    sold = row.sale_today
+    assert sold is not None and sold.selling_costs_rate == Decimal("0.0500")
+    assert sold.selling_costs == sold.value * Decimal("0.0500")
+    assert (result.cash_back, result.break_even_year, result.sale_year) == (
+        Decimal("-150.00"),
+        None,
+        None,
+    )

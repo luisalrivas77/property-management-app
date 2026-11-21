@@ -9,7 +9,7 @@ from decimal import Decimal
 from hausbuch.rules.performance import payback as rules
 from hausbuch.rules.performance.sale import SaleFacts, sale
 from hausbuch.rules.tax import registry
-from hausbuch.schemas.performance import YearFigures, YearFlag, YearKind
+from hausbuch.schemas.performance import Assumption, YearFigures, YearFlag, YearKind
 from hausbuch.schemas.property import PropertyPaidIn
 
 D = Decimal
@@ -117,12 +117,61 @@ def test_not_back_by_the_sale_year():
     assert got.percent == D("-2.5")  # −500 ÷ 20,000
 
 
-def test_nothing_put_in_has_no_percent():
-    """A loan above price and costs: paid_in −1,000.00. No percent; the break-even year is
-    still the first whose running sum is not below paid_in: −800.00 ≥ −1,000.00 in 2025."""
+def test_nothing_put_in_has_no_percent_and_no_break_even():
+    """A loan above price and costs: paid_in −1,000.00. Nothing was put in to earn back, so
+    there is no percent and no break-even year (not 2025, whose running sum −800.00 is merely
+    not below −1,000.00), and the totals over it have none either."""
     got = rules.payback(_paid("-1000.00"), ACTUAL, [], 2027, _sold("300000.00", "0.00"), D("0"))
     assert got.percent is None
-    assert got.break_even_year == 2025
+    assert got.break_even_year is None
+    assert rules.total([got]).break_even_year is None
+
+
+def test_a_failed_projection_keeps_the_cash_back_and_the_sale():
+    """The projection raised (a stale default scenario): no projected years, no sale year and
+    no break-even year; the cash back (−500.00 of 1,000.00, −50.0 %) and the sale today stay.
+    The totals state no break-even year although the other property is back in 2026: without
+    the first one's projected years the sum cannot say when both are."""
+    got = rules.payback(
+        _paid("1000.00"),
+        ACTUAL,
+        [],
+        None,
+        _sold("300000.00", "250000.00"),
+        D("0.0357"),
+        projection_error_code="scenario.sale_year_before_today",
+    )
+    assert (got.cash_back, got.percent) == (D("-500.00"), D("-50.0"))
+    assert [y.year for y in got.years] == [2025, 2026]
+    assert (got.break_even_year, got.sale_year) == (None, None)
+    assert got.sale_today is not None and got.reason is None
+    assert got.projection_error_code == "scenario.sale_year_before_today"
+    other = rules.payback(
+        _paid("2000.00", "Wohnung B"),
+        [_year(2026, "3000.00", YearKind.ACTUAL_PARTIAL)],
+        [],
+        2030,
+        _sold("200000.00", "190000.00"),
+        D("0.0357"),
+    )
+    assert other.break_even_year == 2026
+    total = rules.total([got, other])
+    assert (total.cash_back, total.break_even_year, total.sale_year) == (D("2500.00"), None, 2030)
+
+
+def test_the_sale_tax_is_flagged_only_when_a_taxable_gain_had_no_income():
+    without = [Assumption(code="sale.tax_without_income")]
+    sold = _sold("300000.00", "0.00")
+    gain = sold.model_copy(update={"taxable": True, "gain": D("1000.00")})
+    loss = sold.model_copy(update={"taxable": True, "gain": D("-1000.00")})
+    assert rules.tax_not_computed(gain, without)
+    assert not rules.tax_not_computed(gain, [])
+    assert not rules.tax_not_computed(loss, without)
+    assert not rules.tax_not_computed(sold, without)  # outside §23: no tax whatever the income
+    got = rules.payback(
+        _paid("1000.00"), ACTUAL, [], 2027, gain, D("0.0357"), sale_assumptions=without
+    )
+    assert got.sale_today.tax_not_computed
 
 
 def test_totals_over_two_properties_and_one_left_out():

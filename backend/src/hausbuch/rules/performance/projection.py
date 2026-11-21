@@ -455,11 +455,13 @@ def sale_today(
     rule_sets: RuleSets = registry.rule_set_or_latest,
     tariffs: Tariffs = registry.tariff,
     contexts: Contexts | None = None,
-) -> tuple[SaleResult, list[YearFigures]]:
+) -> tuple[SaleResult, list[YearFigures], list[Assumption]]:
     """A sale in today's year at today's `value` and `loan_balance` (Übersicht's „Gewinn bei
     Verkauf heute“, Luis 21 Nov 2026), through the same sale() and the same facts project()
-    builds for its sale year, and the actual years it read (actual_years' list: purchase year
-    … today's year).
+    builds for its sale year, the actual years it read (actual_years' list: purchase year
+    … today's year), and the assumptions the sale made, as project() states them
+    (sale.no_contract_date, sale.tax_without_income: no income input, so the sale tax is not
+    computed and reads 0).
 
     sale() puts the sale on 31 December of its sale year (D88), so the §23 test is made for 31
     Dec of today's year, not for today: the two differ only when the ten-year period ends
@@ -472,6 +474,7 @@ def sale_today(
         facts, today, owners, inputs, rule_sets=rule_sets, tariffs=tariffs, contexts=contexts
     )
     year_draft = drafts(year)
+    assumptions: list[Assumption] = []
     employment, household = _contexts(contexts, year, year_draft.totals.result)
     base, effect = year_tax_effect(
         year,
@@ -498,11 +501,11 @@ def sale_today(
             selling_costs_rate=selling_costs_rate,
             rule_set=rule_sets(year),
             scenario_refs=[],
-            assumptions=[],
+            assumptions=assumptions,
         ),
         tariffs(year),
     )
-    return result, actual
+    return result, actual, assumptions
 
 
 def _override_rate(inputs: Sequence[IncomeInputFact], year: int) -> Decimal | None:

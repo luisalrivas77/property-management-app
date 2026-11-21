@@ -29569,7 +29569,7 @@
           "profit_today"
         ],
         "title": "PropertiesPayback",
-        "description": "GET /properties/payback: every property of the workspace (by label), and the totals over\nthose with a payback (reason None): paid_in, cash_back, percent (None when paid_in ≤ 0 or\nnone counts), profit_today, and break_even_year, the first year whose running sum over\nthose properties (each held at its last year after it) reaches their paid_in, None when\nnot by sale_year, the latest of their sale years. The years lists are the union."
+        "description": "GET /properties/payback: every property of the workspace (by label), and the totals over\nthose with a payback (reason None): paid_in, cash_back, percent (None when paid_in ≤ 0 or\nnone counts), profit_today, and break_even_year, the first year whose running sum over\nthose properties (each held at its last year after it) reaches their paid_in, None when\nnot by sale_year, the latest of their sale years, and None as well when one of them has\nno projection (projection_error_code). The years lists are the union."
       },
       "Property": {
         "properties": {
@@ -30100,6 +30100,17 @@
               }
             ],
             "title": "Error Code"
+          },
+          "projection_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projection Error Code"
           }
         },
         "additionalProperties": false,
@@ -30110,7 +30121,7 @@
           "paid_in"
         ],
         "title": "PropertyPayback",
-        "description": "One property's way back to its own money put in. cash_back: Σ phase 4's actual years'\nnet cash after tax (rent in + other income + Umlagen in − cash paid out, the loan's\nTilgung included − the tax effect), purchase year through today's. percent = cash_back ÷\npaid_in, None when paid_in ≤ 0. break_even_year: the first year whose running sum of the\nactual and then the default scenario's projected net cash reaches paid_in; None when not\nby `sale_year`, the projection's last year. tax_estimated_years: actual years whose tax\neffect is an estimate (no Bescheid yet); income_missing_years: actual years without any\nincome input, whose tax effect is not counted. Everything after paid_in is None with a\n`reason` when it cannot be computed."
+        "description": "One property's way back to its own money put in. cash_back: Σ phase 4's actual years'\nnet cash after tax (rent in + other income + Umlagen in − cash paid out, the loan's\nTilgung included − the tax effect), purchase year through today's. percent = cash_back ÷\npaid_in, None when paid_in ≤ 0. break_even_year: the first year whose running sum of the\nactual and then the default scenario's projected net cash reaches paid_in; None when not\nby `sale_year`, the projection's last year. tax_estimated_years: actual years whose tax\neffect is an estimate (no Bescheid yet); income_missing_years: actual years without any\nincome input, whose tax effect is not counted. Everything after paid_in is None with a\n`reason` when it cannot be computed. projection_error_code: the default scenario's\nprojection raised a rule error (scenario.sale_year_before_today when its sale year is not\nafter today's, or no rule set or tariff): only the projected years, break_even_year and\nsale_year are then missing; the cash back, its percent and the sale today stay."
       },
       "Proposal": {
         "properties": {
@@ -33569,6 +33580,11 @@
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
             "title": "Sale Tax"
           },
+          "tax_not_computed": {
+            "type": "boolean",
+            "title": "Tax Not Computed",
+            "default": false
+          },
           "loan_balance": {
             "type": "string",
             "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
@@ -33598,7 +33614,7 @@
           "profit"
         ],
         "title": "SaleToday",
-        "description": "„Gewinn bei Verkauf heute (Schätzung)“: rules.performance.sale.sale() for a sale in\ntoday's year at today's value and loan balance (rules.performance.projection.sale_today;\nsale() dates the sale 31 Dec of that year, so `taxable` is decided for that day).\nnet_proceeds = value − selling_costs − sale_tax − loan_balance; profit = net_proceeds +\nthe cash back so far − the own money put in."
+        "description": "„Gewinn bei Verkauf heute (Schätzung)“: rules.performance.sale.sale() for a sale in\ntoday's year at today's value and loan balance (rules.performance.projection.sale_today;\nsale() dates the sale 31 Dec of that year, so `taxable` is decided for that day).\nnet_proceeds = value − selling_costs − sale_tax − loan_balance; profit = net_proceeds +\nthe cash back so far − the own money put in. tax_not_computed: the sale is taxable with a\ngain but no income input exists, so phase 4 cannot compute the §23 tax (its assumption\nsale.tax_without_income) and sale_tax reads 0.00: net_proceeds and profit are then too\nhigh by that tax, and the screen says so instead of showing 0,00 €."
       },
       "SavingsPlan": {
         "properties": {

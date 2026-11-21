@@ -20,12 +20,16 @@ Definitions:
     break_even_year = the first year y, from the purchase year to the projection's sale year,
                       with paid_in ≤ Σ net_cash of the years up to y: the actual years first,
                       then the default scenario's projected years (next January on). It may
-                      be an actual year already. None when not by the sale year; with
-                      paid_in ≤ 0 it is the first year whose running sum is not below it.
+                      be an actual year already. None when not by the sale year, when
+                      paid_in ≤ 0 (nothing to earn back) and when the projection failed
+                      (projection_error_code: the actual years alone cannot say it is not
+                      reached).
     profit_today    = sale().net_proceeds (value − selling costs − §23 tax − loan balance,
                       for a sale in today's year at today's value and balance) + cash_back
                       − paid_in. sale().profit is not used: its E₀ lacks the loan costs paid
-                      privately, which paid_in holds.
+                      privately, which paid_in holds. tax_not_computed when the sale is
+                      taxable with a gain and phase 4 stated sale.tax_without_income (no
+                      income input): its sale_tax 0.00 is not a computed tax.
 """
 
 from collections.abc import Sequence
@@ -33,6 +37,7 @@ from decimal import Decimal
 
 from hausbuch.rules.tax.rounding import cents, one_decimal
 from hausbuch.schemas.performance import (
+    Assumption,
     PaybackReason,
     PaybackYear,
     PropertiesPayback,
@@ -66,20 +71,39 @@ def series(actual: Sequence[YearFigures], projected: Sequence[YearFigures]) -> l
 
 
 def break_even(years: Sequence[PaybackYear], paid_in: Decimal) -> int | None:
-    """The first year whose running sum reaches paid_in, None when none does."""
+    """The first year whose running sum reaches paid_in, None when none does or when paid_in
+    ≤ 0 (no own money put in: there is nothing to earn back)."""
+    if paid_in <= 0:
+        return None
     return next((y.year for y in years if y.cumulative >= paid_in), None)
+
+
+def tax_not_computed(sold: SaleResult, assumptions: Sequence[Assumption]) -> bool:
+    """The sale is taxable with a gain, but phase 4 had no income to tax it with
+    (sale.tax_without_income), so its sale_tax 0.00 is not a computed tax. A loss or a sale
+    outside §23 owes no tax whatever the income, so it is never flagged."""
+    return (
+        sold.taxable
+        and sold.gain is not None
+        and sold.gain > 0
+        and any(a.code == "sale.tax_without_income" for a in assumptions)
+    )
 
 
 def payback(
     paid: PropertyPaidIn,
     actual: Sequence[YearFigures],
     projected: Sequence[YearFigures],
-    sale_year: int,
+    sale_year: int | None,
     sold_today: SaleResult,
     selling_costs_rate: Decimal,
+    sale_assumptions: Sequence[Assumption] = (),
+    projection_error_code: str | None = None,
 ) -> PropertyPayback:
     """One property's payback from phase 4's actual and projected years and the sale today.
-    `paid` must have a paid_in (the service gives a property without one its reason)."""
+    `paid` must have a paid_in (the service gives a property without one its reason). With a
+    projection_error_code there are no projected years and no sale year, and no break-even
+    year is stated."""
     if paid.paid_in is None:
         raise ValueError("payback needs the property's paid_in")
     paid_in = paid.paid_in
@@ -92,8 +116,8 @@ def payback(
         cash_back=cash_back,
         percent=percent(cash_back, paid_in),
         years=years,
-        break_even_year=break_even(years, paid_in),
-        sale_year=sale_year,
+        break_even_year=None if projection_error_code else break_even(years, paid_in),
+        sale_year=None if projection_error_code else sale_year,
         tax_estimated_years=[y.year for y in actual if YearFlag.TAX_ESTIMATED in y.flags],
         income_missing_years=[y.year for y in actual if YearFlag.INCOME_MISSING in y.flags],
         sale_today=SaleToday(
@@ -104,10 +128,12 @@ def payback(
             tax_free_from=sold_today.tax_free_from,
             gain=sold_today.gain,
             sale_tax=sold_today.sale_tax,
+            tax_not_computed=tax_not_computed(sold_today, sale_assumptions),
             loan_balance=sold_today.loan_balance,
             net_proceeds=sold_today.net_proceeds,
             profit=cents(sold_today.net_proceeds + cash_back - paid_in),
         ),
+        projection_error_code=projection_error_code,
     )
 
 
@@ -127,13 +153,16 @@ def left_out(
 def total(properties: Sequence[PropertyPayback]) -> PropertiesPayback:
     """The totals over the properties with a payback (reason None). The break-even year runs
     over the union of their years: each property's running sum at its newest year up to y (0
-    before its first, held after its sale year), summed, against Σ paid_in."""
+    before its first, held after its sale year), summed, against Σ paid_in; None when Σ
+    paid_in ≤ 0 or when one of them has no projection."""
     counted = [p for p in properties if p.reason is None and p.paid_in is not None]
     paid_in = cents(sum((p.paid_in for p in counted if p.paid_in is not None), ZERO))
     cash_back = cents(sum((p.cash_back or ZERO for p in counted), ZERO))
     profit = cents(sum((p.sale_today.profit for p in counted if p.sale_today is not None), ZERO))
     year_set = sorted({y.year for p in counted for y in p.years})
     reached = None
+    if paid_in <= 0 or any(p.projection_error_code for p in counted):
+        year_set = []
     for year in year_set:
         running = ZERO
         for p in counted:
