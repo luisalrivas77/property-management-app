@@ -14,8 +14,12 @@ import { useCallback, useState, type FormEvent } from "react";
 import { api, ok } from "@/api/client";
 import type { FlatRateCheck, FlatRateLetterFigures, RentChangeReason, TenancyFlatRate } from "@/api/schemas";
 
+import { useFormat, useT, translate } from "@/i18n";
+import { flatRateText } from "@/i18n/flatRate";
+import { formatter } from "@/i18n/format";
+
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
-import { formatDate, formatDecimal, formatMoney, todayIso } from "./format";
+import { todayIso } from "./format";
 import { decimalInput } from "./input";
 import { ALLOCATION_CATEGORY } from "./labels";
 import type { TodoEntry } from "./todos";
@@ -30,8 +34,8 @@ export const RENT_CHANGE_PARAM = "mietaenderung";
 export const RENT_CHANGE_PAUSCHALE = "pauschale";
 
 /** The one sentence that says this is information, not advice (D155 (6)). */
-export const FLAT_RATE_NOT_ADVICE =
-  "Ob und ab wann eine Pauschale steigt oder sinkt, entscheidet § 560 BGB; die erste Erhöhung lohnt eine Prüfung beim Vermieterverein.";
+// The German text, for a screen that reads it as a constant; this file reads the catalogue's.
+export const FLAT_RATE_NOT_ADVICE = flatRateText.de.notAdvice;
 
 const ZERO = /^-?0*(\.0*)?$/;
 
@@ -41,13 +45,14 @@ function isZero(value: string): boolean {
 
 /** "+12,34 €", "-12,34 €", "0,00 €": the sign of a backend figure, formatted. */
 function signed(value: string): string {
-  if (isZero(value)) return formatMoney(value.replace(/^-/, ""));
-  return value.startsWith("-") ? formatMoney(value) : `+${formatMoney(value)}`;
+  const f = formatter();
+  if (isZero(value)) return f.money(value.replace(/^-/, ""));
+  return value.startsWith("-") ? f.money(value) : `+${f.money(value)}`;
 }
 
 /** A fall as the amount it falls by ("-12.34" → "12,34 €"), formatting only. */
 function unsigned(value: string): string {
-  return formatMoney(value.replace(/^-/, ""));
+  return formatter().money(value.replace(/^-/, ""));
 }
 
 export function flatRateCardHref(propertyId: string): string {
@@ -74,25 +79,21 @@ export function flatRateTodos(
   { propertyId, context, onlyTenancyId }: { propertyId: string; context?: string; onlyTenancyId?: string },
 ): TodoEntry[] {
   if (!check) return [];
+  const t = translate(flatRateText);
+  const f = formatter();
   const entries: TodoEntry[] = [];
   for (const tenancy of check.tenancies ?? []) {
     if (tenancy.verdict === "none") continue;
     if (onlyTenancyId && tenancy.tenancy_id !== onlyTenancyId) continue;
     const reasons = reasonText(tenancy);
-    const since = `seit die Pauschale am ${formatDate(tenancy.set_on)} festgelegt wurde`;
+    const since = t.since(f.date(tenancy.set_on));
     const text =
       tenancy.verdict === "raise"
-        ? `Die umlagefähigen Kosten der Wohnung sind gestiegen, ${since}${reasons ? ` (${reasons})` : ""}. ` +
-          `Auf dieses Zimmer entfallen ${signed(tenancy.rise)} pro Monat; frühester Beginn ist der ` +
-          `${formatDate(tenancy.earliest_start)}, wenn das Schreiben diesen Monat zugeht. ` +
-          `„Schreiben erstellen“ macht den Brief an den Mieter, „Mietänderung“ trägt die neue Pauschale ein. ${FLAT_RATE_NOT_ADVICE}`
-        : `Die umlagefähigen Kosten der Wohnung sind gesunken, ${since}${reasons ? ` (${reasons})` : ""}. ` +
-          `Die Pauschale dieses Zimmers sinkt um ${unsigned(tenancy.rise)} pro Monat, ab dem ${formatDate(tenancy.fell_on)}, ` +
-          `und der Mieter ist unverzüglich zu informieren (§ 560 Abs. 3 BGB). ` +
-          `„Schreiben erstellen“ macht den Brief, „Mietänderung“ trägt die neue Pauschale ein. ${FLAT_RATE_NOT_ADVICE}`;
+        ? t.raiseText(since, reasons, signed(tenancy.rise), f.date(tenancy.earliest_start), t.notAdvice)
+        : t.lowerText(since, reasons, unsigned(tenancy.rise), f.date(tenancy.fell_on), t.notAdvice);
     entries.push({
       key: `flat-rate-${tenancy.tenancy_id}`,
-      title: `Nebenkostenpauschale ${tenancy.unit_label} ${tenancy.verdict === "raise" ? "kann steigen" : "senken"}`,
+      title: t.todoTitle(tenancy.unit_label, tenancy.verdict === "raise"),
       text,
       action: <FlatRateActions tenancyId={tenancy.tenancy_id} propertyId={propertyId} />,
       context,
@@ -103,11 +104,12 @@ export function flatRateTodos(
 
 /** The to-do's buttons: the pre-filled „Mietänderung“, the letter and the card with sources. */
 export function FlatRateActions({ tenancyId, propertyId, withCard = true }: { tenancyId: string; propertyId: string; withCard?: boolean }) {
+  const t = useT(flatRateText);
   return (
     <>
-      <Link href={rentChangeHref(tenancyId)}>Mietänderung</Link>
+      <Link href={rentChangeHref(tenancyId)}>{t.rentChange}</Link>
       <FlatRateLetterButton tenancyId={tenancyId} />
-      {withCard ? <Link href={flatRateCardHref(propertyId)}>Kosten und Quellen ansehen</Link> : null}
+      {withCard ? <Link href={flatRateCardHref(propertyId)}>{t.costsAndSources}</Link> : null}
     </>
   );
 }
@@ -182,8 +184,9 @@ function download(blob: Blob, name: string): void {
 }
 
 export function FlatRateLetterButton({ tenancyId }: { tenancyId: string }) {
+  const t = useT(flatRateText);
   return (
-    <ActionDialog label="Schreiben erstellen" title="Schreiben an den Mieter" buttonClass="secondary">
+    <ActionDialog label={t.writeLetter} title={t.letterTitle} buttonClass="secondary">
       {() => <LetterForm tenancyId={tenancyId} />}
     </ActionDialog>
   );
@@ -194,6 +197,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const loadOwners = () => ok(api.GET("/api/owners"));
 
 function LetterForm({ tenancyId }: { tenancyId: string }) {
+  const t = useT(flatRateText);
   const [sentOn, setSentOn] = useState(todayIso());
   const [typedName, setTypedName] = useState<string | null>(null);
   const [address, setAddress] = useState(rememberedAddress);
@@ -226,11 +230,11 @@ function LetterForm({ tenancyId }: { tenancyId: string }) {
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean);
-    if (!DATE.test(sentOn)) values.messages.sent_on = ["Bitte das Datum eingeben."];
-    if (!name.trim()) values.messages.sender_name = ["Bitte den Namen des Absenders eingeben."];
-    else if (name.trim().length > MAX_LINE) values.messages.sender_name = [`Höchstens ${MAX_LINE} Zeichen.`];
-    if (lines.length > MAX_ADDRESS_LINES) values.messages.sender_address = [`Höchstens ${MAX_ADDRESS_LINES} Zeilen.`];
-    else if (lines.some((line) => line.length > MAX_LINE)) values.messages.sender_address = [`Höchstens ${MAX_LINE} Zeichen je Zeile.`];
+    if (!DATE.test(sentOn)) values.messages.sent_on = [t.dateRequired];
+    if (!name.trim()) values.messages.sender_name = [t.senderRequired];
+    else if (name.trim().length > MAX_LINE) values.messages.sender_name = [t.maxChars(MAX_LINE)];
+    if (lines.length > MAX_ADDRESS_LINES) values.messages.sender_address = [t.maxLines(MAX_ADDRESS_LINES)];
+    else if (lines.some((line) => line.length > MAX_LINE)) values.messages.sender_address = [t.maxCharsPerLine(MAX_LINE)];
     if (Object.keys(values.messages).length > 0) return form.invalid(values.messages);
     setBusy(true);
     setDone(null);
@@ -257,37 +261,36 @@ function LetterForm({ tenancyId }: { tenancyId: string }) {
       <Loading state={figures}>{(data) => (data ? <LetterPreview figures={data} /> : null)}</Loading>
       <Field
         id="flat-rate-letter-sent-on"
-        label="Datum des Schreibens"
-        description="Der Tag, an dem das Schreiben dem Mieter zugeht. Eine Erhöhung gilt ab dem übernächsten Monatsersten danach (§ 560 Abs. 2 BGB)."
+        label={t.sentOn}
+        description={t.sentOnDescription}
         errors={form.of("sent_on")}
       >
         <input type="date" value={sentOn} onChange={(e) => setSentOn(e.target.value)} required />
       </Field>
       <Field
         id="flat-rate-letter-name"
-        label="Absender"
-        description="Der oder die Vermieter, wie im Mietvertrag. Vorbelegt mit den Eigentümern."
+        label={t.sender}
+        description={t.senderDescription}
         errors={form.of("sender_name")}
       >
         <input type="text" value={name} onChange={(e) => setTypedName(e.target.value)} maxLength={MAX_LINE} autoComplete="name" />
       </Field>
       <Field
         id="flat-rate-letter-address"
-        label="Anschrift des Absenders"
-        hint="Bis zu vier Zeilen, z. B. Straße und Hausnummer, Postleitzahl und Ort."
-        description="Wird nur auf das Schreiben gedruckt und nicht in Hausbuch gespeichert."
+        label={t.senderAddress}
+        hint={t.senderAddressHint}
+        description={t.senderAddressDescription}
         errors={form.of("sender_address")}
       >
         <textarea rows={3} value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" />
       </Field>
       <label className="inline">
-        <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Anschrift in diesem Browser
-        merken
+        <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> {t.rememberAddress}
       </label>
-      <Submit busy={busy} busyLabel="Erstellt …">
-        PDF erstellen
+      <Submit busy={busy} busyLabel={t.creating}>
+        {t.createPdf}
       </Submit>
-      {done ? <p className="muted">„{done}“ heruntergeladen; Hausbuch speichert das Schreiben nicht.</p> : null}
+      {done ? <p className="muted">{t.downloaded(done)}</p> : null}
       <FormBanner errors={form.errors} />
     </form>
   );
@@ -295,22 +298,25 @@ function LetterForm({ tenancyId }: { tenancyId: string }) {
 
 /** What the letter will say, before the PDF is made: the new Pauschale, the start, the reasons. */
 function LetterPreview({ figures }: { figures: FlatRateLetterFigures }) {
+  const t = useT(flatRateText);
+  const f = useFormat();
   const raise = figures.kind === "raise";
   return (
     <div className="stack">
       <p>
         <strong>
-          {raise ? "Erhöhung" : "Herabsetzung"} der Nebenkostenpauschale {figures.unit_label}: {formatMoney(figures.pauschale)} →{" "}
-          {formatMoney(figures.new_pauschale)} pro Monat, ab dem {formatDate(figures.starts_on)}.
+          {t.previewHeading(raise, figures.unit_label, f.money(figures.pauschale), f.money(figures.new_pauschale), f.date(figures.starts_on))}
         </strong>
       </p>
       <p className="muted">
-        Neue Gesamtmiete {formatMoney(figures.new_total)} (Kaltmiete {formatMoney(figures.cold_rent)} und Pauschale). Begründung im
-        Schreiben:{" "}
-        {figures.reasons.map((reason) => `${ALLOCATION_CATEGORY[reason.category]} ${signed(reason.change)}`).join(", ")} pro Monat
-        für die Wohnung, davon {formatDecimal(figures.share_percent, 1)} % für dieses Zimmer.
+        {t.previewText(
+          f.money(figures.new_total),
+          f.money(figures.cold_rent),
+          figures.reasons.map((reason) => `${ALLOCATION_CATEGORY[reason.category]} ${signed(reason.change)}`).join(", "),
+          f.decimal(figures.share_percent, 1),
+        )}
       </p>
-      <p className="muted">{FLAT_RATE_NOT_ADVICE}</p>
+      <p className="muted">{t.notAdvice}</p>
     </div>
   );
 }
