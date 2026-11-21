@@ -1,7 +1,13 @@
 // The API's error envelope (docs/phases/phase-1-step-3.md §3.5) as a thrown error, and the
-// German text the UI shows for it. Rule: show the API's `error`, `message` and field `msg`s,
+// German text the UI shows for it (English when chosen, src/i18n/errors.ts). Rule: show the API's `error`, `message` and field `msg`s,
 // never anything the user typed (the API never echoes input either, §3.6).
+import { AI_ERROR_TEXT_EN, ERROR_TEXT_EN, KIND_TEXT_EN, RULE_CODE_TEXT_EN } from "@/i18n/errors";
+import { getLocale } from "@/i18n/locale";
+
 import type { ErrorKind, ErrorResponse, FieldError } from "./schemas";
+
+/** English is chosen on this device (phase 10 D284); the German below stays the source. */
+const english = () => getLocale() === "en";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -51,7 +57,7 @@ const KIND_TEXT: Record<ErrorKind, string> = {
 };
 
 /** German text for the stable rule codes (phase-1.md, §9.5). */
-export const RULE_CODE_TEXT: Record<string, string> = {
+const RULE_CODE_TEXT_DE: Record<string, string> = {
   "ownership.shares_must_sum_to_one": "Die Anteile müssen zusammen genau 1 ergeben.",
   "tenancy.exactly_one_primary": "Ein Mietverhältnis braucht genau einen Hauptmieter.",
   "tenancy.no_tenant": "Ein Mietverhältnis braucht mindestens einen Mieter.",
@@ -371,6 +377,11 @@ export const RULE_CODE_TEXT: Record<string, string> = {
   "document.delete_blocked.ai_call": "Eine KI-Auswertung dieses Dokuments ist an anderer Stelle als Quelle genannt.",
 };
 
+/** The rule codes' text in the chosen language; a code with no English yet reads German. */
+export const RULE_CODE_TEXT: Record<string, string> = new Proxy(RULE_CODE_TEXT_DE, {
+  get: (target, key) => (english() ? (Reflect.get(RULE_CODE_TEXT_EN, key) ?? Reflect.get(target, key)) : Reflect.get(target, key)),
+});
+
 /** German text for a proposal's `error_code`: why reading the document failed or was
  * stopped (phase-2.md §5.5, §12; the job's extra codes in backend rules/errors.py). */
 export const AI_ERROR_TEXT: Record<string, string> = {
@@ -401,6 +412,7 @@ export const AI_ERROR_TEXT: Record<string, string> = {
 
 /** The German sentence for a proposal's error code; unknown codes get a generic one. */
 export function aiErrorText(code: string | null): string {
+  if (english()) return (code && (AI_ERROR_TEXT_EN[code] ?? AI_ERROR_TEXT[code])) || ERROR_TEXT_EN.documentUnreadable;
   return (code && AI_ERROR_TEXT[code]) || "Das Dokument konnte nicht gelesen werden.";
 }
 
@@ -408,7 +420,8 @@ export function aiErrorText(code: string | null): string {
 export function ruleCodeText(code: string, atNumber?: number | null): string | null {
   const text = RULE_CODE_TEXT[code];
   if (!text) return null;
-  return atNumber != null && code.startsWith("loan.") ? `${text} (ab Rate Nr. ${atNumber})` : text;
+  if (atNumber == null || !code.startsWith("loan.")) return text;
+  return english() ? `${text}${ERROR_TEXT_EN.fromPayment(atNumber)}` : `${text} (ab Rate Nr. ${atNumber})`;
 }
 
 /** Every rule code of an error body, without repeats (`code` is also `codes[0]`). */
@@ -435,10 +448,15 @@ function fieldErrorLine(error: FieldError): string {
 export function describeApiError(error: ApiError): ErrorDescription {
   const body = error.body;
   if (!body) {
+    const en = english();
     const text =
       error.status >= 500
-        ? "Der Server ist nicht erreichbar oder hat einen Fehler gemeldet."
-        : `Unerwartete Antwort des Servers (HTTP ${error.status}).`;
+        ? en
+          ? ERROR_TEXT_EN.noBody500
+          : "Der Server ist nicht erreichbar oder hat einen Fehler gemeldet."
+        : en
+          ? ERROR_TEXT_EN.unexpected(error.status)
+          : `Unerwartete Antwort des Servers (HTTP ${error.status}).`;
     return { text, code: null, details: [], requestId: error.requestId };
   }
   const details: string[] = [];
@@ -453,5 +471,6 @@ export function describeApiError(error: ApiError): ErrorDescription {
   // a loan schedule message names the submitted payment). Unknown codes show the message.
   if (body.message && !allCodesKnown) details.push(body.message);
   for (const fieldError of body.detail ?? []) details.push(fieldErrorLine(fieldError));
-  return { text: KIND_TEXT[body.error] ?? "Fehler.", code: body.error, details, requestId: error.requestId };
+  const text = english() ? (KIND_TEXT_EN[body.error] ?? ERROR_TEXT_EN.generic) : (KIND_TEXT[body.error] ?? "Fehler.");
+  return { text, code: body.error, details, requestId: error.requestId };
 }
