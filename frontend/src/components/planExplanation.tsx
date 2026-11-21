@@ -19,6 +19,9 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
+import { useFormat, useT } from "@/i18n";
+import { common } from "@/i18n/common";
+import { planExplanation } from "@/i18n/planExplanation";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { longDate } from "./healthShared";
@@ -34,40 +37,44 @@ const POLL_LIMIT_MS = 60_000;
 
 const berlinDate = new Intl.DateTimeFormat("de-DE", { dateStyle: "long", timeZone: "Europe/Berlin" });
 
+type Texts = (typeof planExplanation)["de"];
+
 /** Why the template text is shown, in one sentence (null: nothing to say). */
-function reasonText(reason: ExplanationReason | null | undefined, aiOn: boolean, stored: boolean): string | null {
+function reasonText(t: Texts, reason: ExplanationReason | null | undefined, aiOn: boolean, stored: boolean): string | null {
   switch (reason) {
     case "consent_off":
       // Review finding 9 of step 4b: the newest row was written while the AI was off, and it is
       // on now.
-      return aiOn ? "Beim letzten Mal war die KI ausgeschaltet. „Neu erklären“ fragt sie jetzt." : null;
+      return aiOn ? t.reasonConsentOff : null;
     case "rejected":
-      return "Der Text der KI hat die Prüfung der App nicht bestanden, deshalb steht hier der Text der App.";
+      return t.reasonRejected;
     case "refused":
-      return "Die KI hat keinen Text geliefert, deshalb steht hier der Text der App.";
+      return t.reasonRefused;
     case "limit":
-      return "Das KI-Limit dieses Monats ist aufgebraucht, deshalb steht hier der Text der App. „Neu erklären“ hilft erst wieder, wenn das Limit im neuen Monat frei ist oder erhöht wurde.";
+      return t.reasonLimit;
     case "error":
-      return "Beim Fragen der KI ist ein Fehler aufgetreten, deshalb steht hier der Text der App. „Neu erklären“ versucht es noch einmal.";
+      return t.reasonError;
     default:
-      return !stored && aiOn ? "Die KI hat zu diesen Zahlen noch nichts geschrieben; „Neu erklären“ fragt sie." : null;
+      return !stored && aiOn ? t.reasonNotYet : null;
   }
 }
 
-const FOOTER: Record<AdviceMode, string> = {
-  own_use:
-    "Alle Beträge rechnet die App aus euren Umsätzen; die KI formuliert nur. Sie nennt Beträge, Anlageklassen und eure bestehenden " +
-    "Konten, nie ein neues Produkt (Modus: eigene Nutzung). Keine Anlageberatung.",
-  generic:
-    "Alle Beträge rechnet die App aus euren Umsätzen; die KI formuliert nur. Sie nennt Beträge und Anlageklassen, nennt keine " +
-    "Produkte und keine Konten. Keine Anlageberatung.",
-};
+function footerText(t: Texts, mode: AdviceMode): string {
+  return mode === "generic" ? t.footerGeneric : t.footerOwnUse;
+}
+
+/** An explanation's day in English, long: „19 November 2026“ (German keeps berlinDate and
+ * longDate). */
+const berlinDateEn = new Intl.DateTimeFormat("en-GB", { dateStyle: "long", timeZone: "Europe/Berlin" });
 
 type Phase = "idle" | "waiting" | "timeout" | "off";
 
 /** `scenarioId`: the scenario the page shows (the default in force), null for the defaults.
  * `asOf`: the plan's day, the date of a text rendered on read from today's facts. */
 export function PlanExplanationPanel({ scenarioId, asOf }: { scenarioId: string | null; asOf: string }) {
+  const t = useT(planExplanation);
+  const c = useT(common);
+  const english = useFormat().locale === "en";
   const load = useCallback(
     () =>
       Promise.all([
@@ -117,7 +124,7 @@ export function PlanExplanationPanel({ scenarioId, asOf }: { scenarioId: string 
     return (
       <aside className="plan-ai" aria-labelledby="plan-ai-title">
         <PanelHead />
-        {state.error != null ? <ErrorNotice error={state.error} /> : <p className="muted">Lädt …</p>}
+        {state.error != null ? <ErrorNotice error={state.error} /> : <p className="muted">{c.loading}</p>}
       </aside>
     );
   }
@@ -127,8 +134,12 @@ export function PlanExplanationPanel({ scenarioId, asOf }: { scenarioId: string 
   const stored = shown.id != null;
   const template = shown.status === "template";
   const showOff = phase === "off" || !aiOn;
-  const why = template ? reasonText(shown.reason, aiOn, stored) : null;
-  const day = shown.created_at ? berlinDate.format(new Date(shown.created_at)) : longDate(asOf);
+  const why = template ? reasonText(t, shown.reason, aiOn, stored) : null;
+  const day = english
+    ? berlinDateEn.format(new Date(shown.created_at ?? `${asOf.slice(0, 10)}T12:00:00Z`))
+    : shown.created_at
+      ? berlinDate.format(new Date(shown.created_at))
+      : longDate(asOf);
 
   async function explainAgain() {
     setError(null);
@@ -155,14 +166,11 @@ export function PlanExplanationPanel({ scenarioId, asOf }: { scenarioId: string 
   return (
     <aside className="plan-ai" aria-labelledby="plan-ai-title">
       <PanelHead>
-        {template ? <span className="badge badge-muted">Standardtext</span> : null}
-        {shown.stale ? <span className="badge badge-warn">Zahlen haben sich seitdem geändert</span> : null}
+        {template ? <span className="badge badge-muted">{t.templateBadge}</span> : null}
+        {shown.stale ? <span className="badge badge-warn">{t.staleBadge}</span> : null}
       </PanelHead>
       <p className="plan-ai-meta">
-        Erklärung vom {day} ·{" "}
-        {template
-          ? "Diesen Text hat die App selbst aus euren Zahlen geschrieben."
-          : "Diesen Text hat die KI formuliert; jede Zahl und jeden Namen hat die App eingesetzt und den Text geprüft."}
+        {t.explainedOn(day)} {template ? t.writtenByApp : t.writtenByAi}
       </p>
       {why ? (
         <p className="plan-ai-meta" data-testid="plan-ai-reason">
@@ -170,9 +178,7 @@ export function PlanExplanationPanel({ scenarioId, asOf }: { scenarioId: string 
         </p>
       ) : null}
       {shown.stale ? (
-        <p className="plan-ai-meta">
-          Die Zahlen dieser Seite sind seit dieser Erklärung anders; „Neu erklären“ schreibt sie mit den Zahlen von heute.
-        </p>
+        <p className="plan-ai-meta">{t.staleNote}</p>
       ) : null}
       <div className="plan-ai-text">
         {(shown.paragraphs ?? []).map((paragraph, index) => (
@@ -181,8 +187,7 @@ export function PlanExplanationPanel({ scenarioId, asOf }: { scenarioId: string 
       </div>
       {showOff ? (
         <p className="notice notice-warn" id="plan-ai-off" data-testid="plan-ai-off">
-          Die KI ist ausgeschaltet, deshalb fragt „Neu erklären“ sie nicht. Einschalten unter{" "}
-          <Link href={`/settings#${AI_SETTINGS_ANCHOR}`}>Einstellungen › „Private Konten mit KI zuordnen“</Link>.
+          {t.offNote} <Link href={`/settings#${AI_SETTINGS_ANCHOR}`}>{t.offLink}</Link>.
         </p>
       ) : null}
       <div>
@@ -193,30 +198,31 @@ export function PlanExplanationPanel({ scenarioId, asOf }: { scenarioId: string 
           aria-describedby={showOff ? "plan-ai-off" : undefined}
           onClick={() => void explainAgain()}
         >
-          Neu erklären
+          {t.explainAgain}
         </button>
       </div>
       {phase === "waiting" ? (
         <p className="plan-ai-meta" role="status">
-          Die KI schreibt die Erklärung; sie erscheint hier, sobald die App sie geprüft hat.
+          {t.waiting}
         </p>
       ) : null}
       {phase === "timeout" ? (
         <p className="plan-ai-meta" role="status">
-          Die Erklärung wird noch geschrieben. Schaut in ein paar Minuten noch einmal hier vorbei.
+          {t.timeout}
         </p>
       ) : null}
       <ErrorNotice error={error} />
-      <p className="plan-ai-footer">{FOOTER[shown.mode]}</p>
+      <p className="plan-ai-footer">{footerText(t, shown.mode)}</p>
     </aside>
   );
 }
 
 function PanelHead({ children }: { children?: ReactNode }) {
+  const t = useT(planExplanation);
   return (
     <div className="plan-ai-head">
-      <span className="ai-badge">KI</span>
-      <h2 id="plan-ai-title">Erklärung zu euren Zahlen</h2>
+      <span className="ai-badge">{t.aiBadge}</span>
+      <h2 id="plan-ai-title">{t.title}</h2>
       {children}
     </div>
   );
