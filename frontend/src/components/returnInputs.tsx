@@ -15,10 +15,12 @@ import { useId, useMemo, useState, type FormEvent } from "react";
 import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
 import type { components } from "@/api/types";
+import { formatter, translate, useFormat, useT } from "@/i18n";
+import { kindText, returnInputs, workRoomChoice } from "@/i18n/returnInputs";
 
 import { DocumentPicker } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
-import { formatArea, formatDate, formatFraction, formatMoney, formatShare } from "./format";
+import { formatFraction, formatShare } from "./format";
 import { decimalInput, toDecimalString, toFraction, toMoneyString, type Parsed } from "./input";
 import { BelegLink } from "./returnInputEvidence";
 import type { BenefitPrefill } from "./taxYear";
@@ -40,24 +42,22 @@ type Value = ReturnInputCreate["value"];
 
 type FieldType = "money" | "money_optional" | "int" | "text" | "date" | "date_optional" | "select" | "bool" | "fraction" | "area";
 
+/** A field's label, hint and description are in the catalogue (kindText), by its name. */
 interface FieldSpec {
   name: string;
-  label: string;
   type: FieldType;
   /** The text a new form starts with ("{year}" is the tax year). */
   initial?: string;
-  options?: [string, string][];
-  hint?: string;
-  description?: string;
+  /** The choices of a select, read in the chosen language when the form is drawn. */
+  options?: () => [string, string][];
 }
 
 interface KindSpec {
   kind: ReturnInputKind;
   /** One current row per owner and year (the API refuses a second; a save supersedes). */
   single: boolean;
-  /** An optional Beleg (receipt, contract, benefit letter) to link. */
-  document?: string;
-  help: string;
+  /** An optional Beleg (receipt, contract, benefit letter) to link; its label is kindText's. */
+  document?: boolean;
   fields: FieldSpec[];
   /** The stored facts in one line, as typed. */
   summary: (value: Record<string, unknown>) => string;
@@ -66,122 +66,79 @@ interface KindSpec {
 }
 
 const str = (value: unknown): string => (value == null ? "" : String(value));
-const money = (value: unknown): string => formatMoney(value == null ? null : String(value));
+const money = (value: unknown): string => formatter().money(value == null ? null : String(value));
+const date = (value: unknown): string => formatter().date(str(value));
+const area = (value: unknown): string => formatter().area(str(value));
+const msg = () => translate(returnInputs);
 
 const KINDS: KindSpec[] = [
   {
     kind: "commute",
     single: false,
-    help: "Ein Weg zur Arbeit für einen Zeitraum. Ein Wechsel der Arbeitsstätte im Jahr ist ein zweiter Eintrag.",
     fields: [
-      { name: "kind", label: "Art der Arbeitsstätte", type: "select", options: options(COMMUTE_KIND), initial: "first_workplace" },
-      { name: "workplace_label", label: "Arbeitsstätte (Ort, Straße)", type: "text" },
-      { name: "period_from", label: "Von", type: "date", initial: "{year}-01-01" },
-      { name: "period_to", label: "Bis", type: "date", initial: "{year}-12-31" },
-      { name: "days_per_week", label: "Arbeitstage je Woche", type: "int", initial: "5" },
-      {
-        name: "absent_days",
-        label: "Urlaubs-, Krankheits-, Homeoffice- und Dienstreisetage",
-        type: "int",
-        initial: "0",
-      },
-      { name: "days", label: "Tage an der Arbeitsstätte", type: "int", description: "An wie vielen Tagen Sie tatsächlich hingefahren sind." },
-      { name: "km", label: "Einfache Entfernung (volle km)", type: "int", description: "Die kürzeste Straßenverbindung, eine Strecke." },
-      { name: "km_car", label: "davon mit dem Auto (km)", type: "int", initial: "0" },
-      { name: "km_collective", label: "davon mit Sammelbeförderung des Arbeitgebers (km)", type: "int", initial: "0" },
-      {
-        name: "km_other",
-        label: "davon mit Bus, Bahn, Rad oder zu Fuß (km)",
-        type: "int",
-        initial: "0",
-        hint: "Die drei Teilstrecken ergeben zusammen die Entfernung.",
-      },
-      { name: "public_transport_costs", label: "Kosten für Bus und Bahn im Zeitraum (optional)", type: "money_optional" },
+      { name: "kind", type: "select", options: () => options(COMMUTE_KIND), initial: "first_workplace" },
+      { name: "workplace_label", type: "text" },
+      { name: "period_from", type: "date", initial: "{year}-01-01" },
+      { name: "period_to", type: "date", initial: "{year}-12-31" },
+      { name: "days_per_week", type: "int", initial: "5" },
+      { name: "absent_days", type: "int", initial: "0" },
+      { name: "days", type: "int" },
+      { name: "km", type: "int" },
+      { name: "km_car", type: "int", initial: "0" },
+      { name: "km_collective", type: "int", initial: "0" },
+      { name: "km_other", type: "int", initial: "0" },
+      { name: "public_transport_costs", type: "money_optional" },
     ],
     summary: (v) =>
-      `${str(v.workplace_label)} · ${formatDate(str(v.period_from))} bis ${formatDate(str(v.period_to))} · ${str(v.days)} Tage, ${str(v.km)} km`,
+      msg().commuteSummary(str(v.workplace_label), date(v.period_from), date(v.period_to), str(v.days), str(v.km)),
   },
   {
     kind: "home_office",
     single: true,
-    help: "Die Homeoffice-Tagespauschale: Tage, an denen Sie überwiegend zu Hause gearbeitet haben.",
     fields: [
-      {
-        name: "days_other_workplace",
-        label: "Tage zu Hause, obwohl ein Arbeitsplatz beim Arbeitgeber da war",
-        type: "int",
-        initial: "0",
-      },
-      {
-        name: "days_no_other_workplace",
-        label: "Tage zu Hause ohne anderen Arbeitsplatz (z. B. Lehrkräfte)",
-        type: "int",
-        initial: "0",
-      },
+      { name: "days_other_workplace", type: "int", initial: "0" },
+      { name: "days_no_other_workplace", type: "int", initial: "0" },
     ],
-    summary: (v) => `${str(v.days_other_workplace)} Tage mit Arbeitsplatz beim Arbeitgeber, ${str(v.days_no_other_workplace)} Tage ohne`,
+    summary: (v) => msg().homeOfficeSummary(str(v.days_other_workplace), str(v.days_no_other_workplace)),
   },
   {
     kind: "work_room",
     single: true,
-    document: "Mietvertrag oder Grundriss (optional)",
-    help: "Ein häusliches Arbeitszimmer, das Mittelpunkt der gesamten beruflichen Tätigkeit ist. Der Entwurf vergleicht die Jahrespauschale mit den anteiligen tatsächlichen Kosten.",
+    document: true,
     fields: [
-      { name: "months", label: "Monate genutzt", type: "int", initial: "12" },
-      { name: "room_m2", label: "Zimmer (m²)", type: "area" },
-      { name: "home_m2", label: "Wohnung (m²)", type: "area" },
-      { name: "rent_year", label: "Jahresmiete (oder Kosten des Eigentums)", type: "money" },
-      { name: "running_costs_year", label: "Nebenkosten im Jahr", type: "money", initial: "0" },
-      { name: "room_only_costs_year", label: "Kosten nur fürs Zimmer (z. B. Renovierung)", type: "money", initial: "0" },
-      {
-        name: "prefer",
-        label: "Wahl",
-        type: "select",
-        initial: "",
-        options: [
-          ["", "das Günstigere (empfohlen)"],
-          ["flat", "Jahrespauschale"],
-          ["actual", "tatsächliche Kosten"],
-        ],
-      },
+      { name: "months", type: "int", initial: "12" },
+      { name: "room_m2", type: "area" },
+      { name: "home_m2", type: "area" },
+      { name: "rent_year", type: "money" },
+      { name: "running_costs_year", type: "money", initial: "0" },
+      { name: "room_only_costs_year", type: "money", initial: "0" },
+      { name: "prefer", type: "select", initial: "", options: () => options(workRoomChoice) },
     ],
     summary: (v) =>
-      `${str(v.months)} Monate · ${formatArea(str(v.room_m2))} von ${formatArea(str(v.home_m2))} · Miete ${money(v.rent_year)}`,
+      msg().workRoomSummary(str(v.months), area(v.room_m2), area(v.home_m2), money(v.rent_year)),
   },
   {
     kind: "work_equipment",
     single: false,
-    document: "Rechnung (optional)",
-    help: "Ein Arbeitsmittel oder Abo, auch aus Vorjahren: teure Geräte werden über ihre Nutzungsdauer abgeschrieben, der Entwurf rechnet den Anteil dieses Jahres.",
+    document: true,
     fields: [
-      { name: "label", label: "Bezeichnung", type: "text" },
-      { name: "item_class", label: "Art", type: "select", options: options(EQUIPMENT_CLASS), initial: "computer" },
-      { name: "gross", label: "Preis brutto", type: "money" },
-      { name: "net", label: "Preis netto laut Rechnung (optional)", type: "money_optional" },
+      { name: "label", type: "text" },
+      { name: "item_class", type: "select", options: () => options(EQUIPMENT_CLASS), initial: "computer" },
+      { name: "gross", type: "money" },
+      { name: "net", type: "money_optional" },
       {
         name: "bought_on",
-        label: "Kaufdatum (auch Vorjahre)",
         type: "date",
         // a change keeps the row's year (the year it counts from), so a new purchase year is a new row
-        hint: "Ein anderes Kaufjahr: den Eintrag entfernen und neu anlegen.",
       },
-      {
-        name: "professional_share",
-        label: "Beruflicher Anteil",
-        type: "fraction",
-        initial: "100 %",
-        hint: "Als Prozent oder Bruch, z. B. 50 % oder 1/2.",
-      },
-      {
-        name: "useful_life_months",
-        label: "Nutzungsdauer in Monaten (nur bei Sonstiges nötig)",
-        type: "int",
-        initial: "",
-      },
-      { name: "disposed_on", label: "Nicht mehr genutzt seit (optional)", type: "date_optional" },
+      // "100 %" is parsed by toFraction, which reads the German form
+      { name: "professional_share", type: "fraction", initial: "100 %" },
+      { name: "useful_life_months", type: "int", initial: "" },
+      { name: "disposed_on", type: "date_optional" },
     ],
     summary: (v) =>
-      `${str(v.label)} · ${money(v.gross)} · gekauft ${formatDate(str(v.bought_on))} · beruflich ${formatShare(v.professional_share as never)}${v.disposed_on ? ` · nicht mehr genutzt seit ${formatDate(str(v.disposed_on))}` : ""}`,
+      msg().equipmentSummary(str(v.label), money(v.gross), date(v.bought_on), formatShare(v.professional_share as never)) +
+      (v.disposed_on ? msg().disposedSince(date(v.disposed_on)) : ""),
     taxYear: (v, year) => {
       const bought = /^(\d{4})-/.exec(str(v.bought_on));
       return bought ? Number(bought[1]) : year;
@@ -190,85 +147,75 @@ const KINDS: KindSpec[] = [
   {
     kind: "telecom",
     single: true,
-    help: "Telefon- und Internetkosten: ohne Einzelnachweis zählt ein Anteil der Rechnungen bis zu einer Obergrenze.",
     fields: [
-      { name: "bills_year", label: "Rechnungen im Jahr", type: "money" },
-      { name: "months", label: "Monate", type: "int", initial: "12" },
-      { name: "employer_reimbursed", label: "Vom Arbeitgeber erstattet", type: "money", initial: "0" },
+      { name: "bills_year", type: "money" },
+      { name: "months", type: "int", initial: "12" },
+      { name: "employer_reimbursed", type: "money", initial: "0" },
     ],
-    summary: (v) => `${money(v.bills_year)} in ${str(v.months)} Monaten · erstattet ${money(v.employer_reimbursed)}`,
+    summary: (v) => msg().telecomSummary(money(v.bills_year), str(v.months), money(v.employer_reimbursed)),
   },
   {
     kind: "professional_association",
     single: false,
-    document: "Beitragsbescheinigung (optional)",
-    help: "Beiträge zu Gewerkschaften und Berufsverbänden. Gewerkschaftsbeiträge zählen ab 2026 zusätzlich zum Pauschbetrag.",
+    document: true,
     fields: [
-      { name: "name", label: "Verband", type: "text" },
-      { name: "amount", label: "Beiträge im Jahr", type: "money" },
-      { name: "is_union", label: "Gewerkschaft", type: "bool", initial: "false" },
+      { name: "name", type: "text" },
+      { name: "amount", type: "money" },
+      { name: "is_union", type: "bool", initial: "false" },
     ],
-    summary: (v) => `${str(v.name)} · ${money(v.amount)}${v.is_union ? " · Gewerkschaft" : ""}`,
+    summary: (v) => `${str(v.name)} · ${money(v.amount)}${v.is_union ? msg().unionSuffix : ""}`,
   },
   {
     kind: "training",
     single: false,
-    document: "Rechnung (optional)",
-    help: "Kurse, Fachbücher, Prüfungsgebühren, soweit der Arbeitgeber sie nicht erstattet.",
+    document: true,
     fields: [
-      { name: "label", label: "Bezeichnung", type: "text" },
-      { name: "amount", label: "Betrag", type: "money" },
+      { name: "label", type: "text" },
+      { name: "amount", type: "money" },
     ],
     summary: (v) => `${str(v.label)} · ${money(v.amount)}`,
   },
   {
     kind: "other_expense",
     single: false,
-    document: "Beleg (optional)",
-    help: "Weitere Werbungskosten, z. B. die Kontoführungspauschale oder Bewerbungskosten.",
+    document: true,
     fields: [
-      { name: "expense_class", label: "Art", type: "select", options: options(OTHER_EXPENSE_CLASS), initial: "account_fee" },
-      { name: "label", label: "Bezeichnung", type: "text", initial: "Kontoführung" },
-      {
-        name: "amount",
-        label: "Betrag (bei der Kontoführungspauschale leer lassen)",
-        type: "money_optional",
-      },
+      { name: "expense_class", type: "select", options: () => options(OTHER_EXPENSE_CLASS), initial: "account_fee" },
+      // stays German in English too: it is the value saved as typed, like any label a person types
+      { name: "label", type: "text", initial: "Kontoführung" },
+      { name: "amount", type: "money_optional" },
     ],
-    summary: (v) => `${str(v.label)}${v.amount != null ? ` · ${money(v.amount)}` : " · Pauschale"}`,
+    summary: (v) => `${str(v.label)}${v.amount != null ? ` · ${money(v.amount)}` : msg().flatSuffix}`,
   },
   {
     kind: "replacement_income",
     single: false,
-    document: "Bescheid (optional)",
-    help: "Elterngeld, Mutterschaftsgeld der Krankenkasse, Krankengeld oder Arbeitslosengeld: steuerfrei, erhöht aber den Steuersatz (Progressionsvorbehalt). Den Zuschuss des Arbeitgebers zum Mutterschaftsgeld nicht hier eintragen: er steht auf der Lohnsteuerbescheinigung. Maßgeblich ist der Betrag im Leistungsnachweis oder Bescheid der zahlenden Stelle: weicht er von den gebuchten Zahlungen ab, gilt der Bescheid. Ein vorgeschlagener Betrag ist das, was auf dem Konto eingegangen ist. Beim Krankengeld zeigt die Bescheinigung der Krankenkasse einen höheren Betrag (vor Abzug der Beiträge zur Sozialversicherung): diesen Betrag eintragen.",
+    document: true,
     fields: [
-      { name: "benefit", label: "Leistung", type: "select", options: options(REPLACEMENT_BENEFIT), initial: "elterngeld" },
-      { name: "amount", label: "Betrag im Jahr", type: "money" },
-      { name: "period_from", label: "Von (optional)", type: "date_optional" },
-      { name: "period_to", label: "Bis (optional)", type: "date_optional" },
+      { name: "benefit", type: "select", options: () => options(REPLACEMENT_BENEFIT), initial: "elterngeld" },
+      { name: "amount", type: "money" },
+      { name: "period_from", type: "date_optional" },
+      { name: "period_to", type: "date_optional" },
     ],
     summary: (v) =>
-      `${REPLACEMENT_BENEFIT[str(v.benefit) as keyof typeof REPLACEMENT_BENEFIT] ?? str(v.benefit)} · ${money(v.amount)}${v.period_from ? ` · ${formatDate(str(v.period_from))} bis ${formatDate(str(v.period_to))}` : ""}`,
+      `${REPLACEMENT_BENEFIT[str(v.benefit) as keyof typeof REPLACEMENT_BENEFIT] ?? str(v.benefit)} · ${money(v.amount)}${v.period_from ? msg().periodSuffix(date(v.period_from), date(v.period_to)) : ""}`,
   },
   {
     kind: "other_insurance",
     single: true,
-    help: "Beiträge zu Haftpflicht-, Unfall- und Berufsunfähigkeitsversicherungen im Jahr.",
-    fields: [{ name: "amount", label: "Beiträge im Jahr", type: "money" }],
+    fields: [{ name: "amount", type: "money" }],
     summary: (v) => money(v.amount),
   },
   {
     kind: "vorsorge_override",
     single: true,
-    help: "Ersetzt die Vorsorgeaufwendungen aus Bescheinigung oder Schätzung ganz, z. B. bei privater Krankenversicherung.",
     fields: [
-      { name: "pension", label: "Rentenversicherung (Arbeitnehmeranteil)", type: "money" },
-      { name: "health_care_basis", label: "Kranken- und Pflegeversicherung (Basis)", type: "money" },
-      { name: "other", label: "Weitere Vorsorge", type: "money", initial: "0" },
-      { name: "krankengeld_entitlement", label: "Anspruch auf Krankengeld", type: "bool", initial: "true" },
+      { name: "pension", type: "money" },
+      { name: "health_care_basis", type: "money" },
+      { name: "other", type: "money", initial: "0" },
+      { name: "krankengeld_entitlement", type: "bool", initial: "true" },
     ],
-    summary: (v) => `Rente ${money(v.pension)} · Kranken/Pflege ${money(v.health_care_basis)} · weitere ${money(v.other)}`,
+    summary: (v) => msg().vorsorgeSummary(money(v.pension), money(v.health_care_basis), money(v.other)),
   },
 ];
 
@@ -282,12 +229,9 @@ export function rowSummary(row: ReturnInput): string {
 
 // --- parsing --------------------------------------------------------------------------------
 
-const NOT_A_WHOLE_NUMBER = "Bitte eine ganze Zahl eingeben, z. B. 220.";
-const NOT_A_DATE = "Bitte ein Datum wählen.";
-const REQUIRED = "Bitte ausfüllen.";
-
 function parseField(field: FieldSpec, raw: string): Parsed<unknown> {
   const text = raw.trim();
+  const t = msg();
   switch (field.type) {
     case "money":
       return toMoneyString(text);
@@ -295,19 +239,19 @@ function parseField(field: FieldSpec, raw: string): Parsed<unknown> {
       return text === "" ? { ok: true, value: null } : toMoneyString(text);
     case "int":
       if (text === "" && field.initial === "") return { ok: true, value: null };
-      return /^\d{1,6}$/.test(text) ? { ok: true, value: Number(text) } : { ok: false, message: NOT_A_WHOLE_NUMBER };
+      return /^\d{1,6}$/.test(text) ? { ok: true, value: Number(text) } : { ok: false, message: t.notWholeNumber };
     case "text":
-      return text === "" ? { ok: false, message: REQUIRED } : { ok: true, value: text };
+      return text === "" ? { ok: false, message: t.required } : { ok: true, value: text };
     case "date":
-      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? { ok: true, value: text } : { ok: false, message: NOT_A_DATE };
+      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? { ok: true, value: text } : { ok: false, message: t.notADate };
     case "date_optional":
       if (text === "") return { ok: true, value: null };
-      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? { ok: true, value: text } : { ok: false, message: NOT_A_DATE };
+      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? { ok: true, value: text } : { ok: false, message: t.notADate };
     case "select":
       // "" is a choice only where the field offers it; otherwise nothing is picked yet (a
       // pre-filled form whose benefit kind the payments did not name).
-      if (text === "" && !(field.options ?? []).some(([code]) => code === "")) {
-        return { ok: false, message: "Bitte auswählen." };
+      if (text === "" && !(field.options?.() ?? []).some(([code]) => code === "")) {
+        return { ok: false, message: t.pleaseSelect };
       }
       return { ok: true, value: text === "" ? null : text };
     case "bool":
@@ -377,13 +321,11 @@ export function InputsPanel({
   onChanged: () => void;
   benefitForm?: BenefitForm | null;
 }) {
+  const t = useT(returnInputs);
   return (
     <section className="card stack tax-inputs" aria-labelledby="tax-inputs-title">
-      <h2 id="tax-inputs-title">Eingaben</h2>
-      <p className="muted">
-        Jede Angabe wird mit Datum gespeichert; eine Änderung ersetzt sie, die bisherige bleibt im Verlauf.
-        Lohnsteuerbescheinigung und Gehaltsabrechnungen kommen aus ihren Dokumenten (Dokumente › Auslesen).
-      </p>
+      <h2 id="tax-inputs-title">{t.inputs}</h2>
+      <p className="muted">{t.inputsIntro}</p>
       {KINDS.map((kind) => (
         <KindBlock
           // A new or newly opened pre-fill remounts its block, so the form opens with it even
@@ -431,6 +373,8 @@ function KindBlock({
   const [banner, setBanner] = useState<string | null>(null);
   const title = RETURN_INPUT_KIND[kind.kind];
   const headingId = useId();
+  const t = useT(returnInputs);
+  const f = useFormat();
 
   async function withdraw(row: ReturnInput) {
     setBusy(true);
@@ -448,8 +392,8 @@ function KindBlock({
     } catch (error) {
       setBanner(
         codesOf(error).includes("return_input.not_current")
-          ? "Die Angabe wurde inzwischen geändert; die Anzeige ist neu geladen."
-          : "Das Entfernen hat nicht geklappt. Bitte erneut versuchen.",
+          ? t.notCurrent
+          : t.removeFailed,
       );
     } finally {
       setBusy(false);
@@ -485,15 +429,15 @@ function KindBlock({
               <li key={row.id}>
                 <span>
                   {rowSummary(row)}
-                  {row.tax_year !== year ? <span className="muted"> (aus {row.tax_year})</span> : null}
+                  {row.tax_year !== year ? <span className="muted">{t.fromYear(row.tax_year)}</span> : null}
                 </span>
                 <span className="row tax-input-actions">
                   <BelegLink documentId={row.document_id} />
                   <button type="button" className="link" onClick={() => setEditing(row.id)} disabled={busy || editing !== null}>
-                    ändern
+                    {t.change}
                   </button>
                   <button type="button" className="link" onClick={() => void withdraw(row)} disabled={busy || editing !== null}>
-                    Entfernen
+                    {t.remove}
                   </button>
                 </span>
               </li>
@@ -503,8 +447,7 @@ function KindBlock({
       ) : null}
       {benefitForm && !benefitForm.open ? (
         <p className="notice notice-info" role="status">
-          Auf einem gemeinsamen Konto sind {formatMoney(benefitForm.prefill.amount)} als Lohnersatzleistung gebucht. Bitte oben die Person
-          wählen, die die Leistung bekommen hat; dann öffnet sich hier das Formular mit dem Betrag.
+          {t.benefitAsk(f.money(benefitForm.prefill.amount))}
         </p>
       ) : null}
       {editing === "new" ? (
@@ -519,7 +462,7 @@ function KindBlock({
         />
       ) : canAdd ? (
         <button type="button" className="secondary" onClick={() => setEditing("new")} disabled={busy || editing !== null}>
-          {kind.single ? `${title} eintragen` : `${title} hinzufügen`}
+          {kind.single ? t.addSingle(title) : t.addMany(title)}
         </button>
       ) : null}
       {banner ? <p className="notice notice-error">{banner}</p> : null}
@@ -563,6 +506,8 @@ function InputForm({
   const keys = useMemo(() => [...kind.fields.map((field) => `value.${field.name}`), "document_id"], [kind]);
   const form = useFormErrors(keys, CODE_FIELDS);
   const base = useId();
+  const t = useT(returnInputs);
+  const kindTexts = kindText[kind.kind];
   const set = (name: string, text: string) => setTexts((current) => ({ ...current, [name]: text }));
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -594,8 +539,8 @@ function InputForm({
       if (codesOf(error).includes("return_input.not_current")) {
         setBanner(
           replaces === null
-            ? "Für dieses Jahr ist schon ein Eintrag erfasst. Bitte abbrechen; die Anzeige zeigt ihn nach dem Neuladen."
-            : "Die Angabe wurde inzwischen geändert. Bitte abbrechen und erneut ändern.",
+            ? t.alreadyRecorded
+            : t.changedMeanwhile,
         );
       } else {
         form.fail(error);
@@ -606,12 +551,11 @@ function InputForm({
   }
 
   return (
-    <form className="stack tax-input-form" onSubmit={submit} noValidate aria-label={`${RETURN_INPUT_KIND[kind.kind]} ${replaces ? "ändern" : "eintragen"}`}>
-      <p className="muted hint">{kind.help}</p>
+    <form className="stack tax-input-form" onSubmit={submit} noValidate aria-label={replaces ? t.formChange(RETURN_INPUT_KIND[kind.kind]) : t.formEnter(RETURN_INPUT_KIND[kind.kind])}>
+      <p className="muted hint">{kindTexts?.help}</p>
       {prefill ? (
         <p className="notice notice-info" role="status">
-          Vorgeschlagen aus den Zahlungen, die auf dem Konto als Lohnersatzleistung gebucht sind. Bitte Betrag und Leistung prüfen; erst
-          „Speichern“ trägt sie ein.
+          {t.prefilled}
         </p>
       ) : null}
       <div className="grid">
@@ -619,17 +563,17 @@ function InputForm({
           <Field
             key={field.name}
             id={`${base}-${field.name}`}
-            label={field.label}
-            hint={field.hint}
-            description={field.description}
+            label={kindTexts?.labels[field.name] ?? field.name}
+            hint={kindTexts?.hints?.[field.name]}
+            description={kindTexts?.descriptions?.[field.name]}
             errors={form.of(`value.${field.name}`)}
           >
             {field.type === "select" ? (
               <select value={texts[field.name] ?? ""} onChange={(e) => set(field.name, e.target.value)}>
-                {texts[field.name] === "" && !(field.options ?? []).some(([code]) => code === "") ? (
-                  <option value="">Bitte wählen</option>
+                {texts[field.name] === "" && !(field.options?.() ?? []).some(([code]) => code === "") ? (
+                  <option value="">{t.pleaseChoose}</option>
                 ) : null}
-                {(field.options ?? []).map(([code, label]) => (
+                {(field.options?.() ?? []).map(([code, label]) => (
                   <option key={code} value={code}>
                     {label}
                   </option>
@@ -637,8 +581,8 @@ function InputForm({
               </select>
             ) : field.type === "bool" ? (
               <select value={texts[field.name] ?? "false"} onChange={(e) => set(field.name, e.target.value)}>
-                <option value="true">ja</option>
-                <option value="false">nein</option>
+                <option value="true">{t.yes}</option>
+                <option value="false">{t.no}</option>
               </select>
             ) : (
               <input
@@ -653,16 +597,16 @@ function InputForm({
           </Field>
         ))}
         {kind.document ? (
-          <Field id={`${base}-document`} label={kind.document} errors={form.of("document_id")}>
+          <Field id={`${base}-document`} label={kindTexts?.document ?? ""} errors={form.of("document_id")}>
             <DocumentPicker value={documentId} onChange={setDocumentId} />
           </Field>
         ) : null}
       </div>
-      {replaces !== null ? <p className="muted hint">Die bisherige Angabe bleibt im Verlauf.</p> : null}
+      {replaces !== null ? <p className="muted hint">{t.kept}</p> : null}
       <div className="row">
-        <Submit busy={busy}>Speichern</Submit>
+        <Submit busy={busy}>{t.save}</Submit>
         <button type="button" className="link" onClick={onCancel}>
-          Abbrechen
+          {t.cancel}
         </button>
       </div>
       {banner ? <p className="notice notice-error">{banner}</p> : null}
