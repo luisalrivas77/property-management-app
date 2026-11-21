@@ -77,8 +77,14 @@ function points(f: Formatter, value: string): string {
   return f.locale === "de" ? `${f.decimal(value)} %` : `${f.decimal(value)}%`;
 }
 
-/** The break-even line: the year, or the sale year it is not reached by; null when neither. */
-function breakEvenText(t: T, back: { break_even_year?: number | null; sale_year?: number | null }): string | null {
+/** The break-even line: the year, or the sale year it is not reached by; null when neither, and
+ * null when the server sends no percent (paid_in ≤ 0: nothing put in, nothing to earn back, so
+ * „nicht zurück“ would be false). */
+function breakEvenText(
+  t: T,
+  back: { break_even_year?: number | null; sale_year?: number | null; percent?: string | null },
+): string | null {
+  if (back.percent == null) return null;
   if (back.break_even_year != null) return t.breakEven(back.break_even_year);
   if (back.sale_year != null) return t.breakEvenNot(back.sale_year);
   return null;

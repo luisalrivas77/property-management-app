@@ -11624,8 +11624,8 @@ export interface components {
          *     those with a payback (reason None): paid_in, cash_back, percent (None when paid_in ≤ 0 or
          *     none counts), profit_today, and break_even_year, the first year whose running sum over
          *     those properties (each held at its last year after it) reaches their paid_in, None when
-         *     not by sale_year, the latest of their sale years, and None as well when one of them has
-         *     no projection (projection_error_code). The years lists are the union.
+         *     not by sale_year, the latest of their sale years; both None when one of them has no
+         *     projection (projection_error_code). The years lists are the union.
          */
         PropertiesPayback: {
             /** Properties */
