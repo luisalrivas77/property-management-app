@@ -585,7 +585,7 @@ function DeleteDocument({ detail }: { detail: DocumentDetail }) {
   if (!detail.deletable) {
     return reasons.length === 1 ? (
       <p className="muted" role="note">
-        {t.cannotDelete(reasons[0])}
+        {t.cannotDelete(reasons[0] ?? "")}
       </p>
     ) : (
       <div className="stack" role="note">
