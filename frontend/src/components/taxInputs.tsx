@@ -38,6 +38,7 @@ import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
 import { api, ok } from "@/api/client";
 import { ApiError, RULE_CODE_TEXT, ruleCodes } from "@/api/errors";
 import type { components } from "@/api/types";
+import { localized } from "@/i18n/locale";
 
 import { DocumentPicker } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
@@ -87,14 +88,34 @@ const MARKET_RENT_SOURCE: Record<MarketRentSource, string> = {
 const SPREAD_YEARS = [2, 3, 4, 5] as const;
 
 /** Codes the server answers with, by the field they belong to (else the banner). */
-const CODE_MESSAGES: Record<string, string> = {
-  "tax_input.not_current":
-    "Diese Angabe wurde inzwischen geändert (z. B. in einem anderen Fenster). Bitte die Seite neu laden und erneut prüfen.",
-  "tax_input.allocation_not_confirmed": "Steuerliche Angaben gibt es nur für eine bestätigte Zuordnung.",
-  "tax_input.scope_invalid": "Diese Angabe passt nicht zu dieser Zuordnung oder Einheit.",
-  "tax_input.extension_needs_herstellung": RULE_CODE_TEXT["tax_input.extension_needs_herstellung"] ?? "",
-  "tax_input.useful_life_not_shorter": RULE_CODE_TEXT["tax_input.useful_life_not_shorter"] ?? "",
-};
+// The two rule-code texts are getters, so they are read in the language chosen when shown,
+// not the one of the moment this module loaded (phase 10 D284).
+const CODE_MESSAGES: Record<string, string> = localized(
+  {
+    "tax_input.not_current":
+      "Diese Angabe wurde inzwischen geändert (z. B. in einem anderen Fenster). Bitte die Seite neu laden und erneut prüfen.",
+    "tax_input.allocation_not_confirmed": "Steuerliche Angaben gibt es nur für eine bestätigte Zuordnung.",
+    "tax_input.scope_invalid": "Diese Angabe passt nicht zu dieser Zuordnung oder Einheit.",
+    get "tax_input.extension_needs_herstellung"() {
+      return RULE_CODE_TEXT["tax_input.extension_needs_herstellung"] ?? "";
+    },
+    get "tax_input.useful_life_not_shorter"() {
+      return RULE_CODE_TEXT["tax_input.useful_life_not_shorter"] ?? "";
+    },
+  },
+  {
+    "tax_input.not_current":
+      "This detail has been changed in the meantime (e.g. in another window). Please reload the page and check again.",
+    "tax_input.allocation_not_confirmed": "Tax details exist only for a confirmed categorisation.",
+    "tax_input.scope_invalid": "This detail does not fit this categorisation or unit.",
+    get "tax_input.extension_needs_herstellung"() {
+      return RULE_CODE_TEXT["tax_input.extension_needs_herstellung"] ?? "";
+    },
+    get "tax_input.useful_life_not_shorter"() {
+      return RULE_CODE_TEXT["tax_input.useful_life_not_shorter"] ?? "";
+    },
+  },
+);
 
 const EXTENSION_HINT =
   "Eine Erweiterung (Anbau, Aufstockung) ist immer Herstellungskosten: die Zahlung als Renovierung buchen und „Herstellungskosten“ wählen.";
