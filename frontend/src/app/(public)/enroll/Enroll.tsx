@@ -9,6 +9,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import { defaultPasskeyLabel, enrollWithInvite } from "@/auth/passkeys";
+import { useT } from "@/i18n";
+import { auth } from "@/i18n/auth";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 // EnrollmentToken in schemas/auth.py: 32 random bytes, base64url without padding.
@@ -59,6 +61,7 @@ function tokenState(token: string | null | undefined): TokenState {
 }
 
 export function Enroll() {
+  const t = useT(auth);
   const token = useSyncExternalStore(subscribeToFragment, readFragmentToken, () => undefined);
   const state = tokenState(token);
 
@@ -66,16 +69,17 @@ export function Enroll() {
 
   return (
     <section className="card stack">
-      <h1>Passkey einrichten</h1>
-      {state.status === "reading" ? <p className="muted">Lädt …</p> : null}
+      <h1>{t.enrollTitle}</h1>
+      {state.status === "reading" ? <p className="muted">{t.loading}</p> : null}
       {state.status === "missing" ? (
         <p>
-          Diese Seite braucht einen Einladungslink. Bitte den vollständigen Link aus der Einladung öffnen
-          (er enthält <code>#token=</code>).
+          {t.linkMissingBefore}
+          <code>#token=</code>
+          {t.linkMissingAfter}
         </p>
       ) : null}
       {state.status === "malformed" ? (
-        <p>Der Einladungslink ist unvollständig. Bitte den ganzen Link kopieren und erneut öffnen.</p>
+        <p>{t.linkMalformed}</p>
       ) : null}
       {state.status === "ok" ? <EnrollForm token={state.token} /> : null}
     </section>
@@ -83,6 +87,7 @@ export function Enroll() {
 }
 
 function EnrollForm({ token }: { token: string }) {
+  const t = useT(auth);
   const router = useRouter();
   // Mounted only on the client (after the fragment was read), so navigator is available.
   const [label, setLabel] = useState(() => defaultPasskeyLabel().slice(0, MAX_LABEL_LENGTH));
@@ -105,12 +110,9 @@ function EnrollForm({ token }: { token: string }) {
 
   return (
     <form className="stack" onSubmit={submit}>
-      <p className="muted">
-        Der Passkey ersetzt das Passwort. Er bleibt auf diesem Gerät (oder in iCloud / Google) und wird mit
-        PIN, Fingerabdruck oder Gesicht freigegeben.
-      </p>
+      <p className="muted">{t.enrollIntro}</p>
       <div>
-        <label htmlFor="passkey-label">Name des Passkeys</label>
+        <label htmlFor="passkey-label">{t.passkeyName}</label>
         <input
           id="passkey-label"
           type="text"
@@ -120,10 +122,10 @@ function EnrollForm({ token }: { token: string }) {
           maxLength={MAX_LABEL_LENGTH}
           autoComplete="off"
         />
-        <p className="muted">Zum Wiedererkennen in den Einstellungen, z. B. „iPhone von Luis“.</p>
+        <p className="muted">{t.passkeyNameHint}</p>
       </div>
       <button type="submit" disabled={busy || label.trim() === ""}>
-        {busy ? "Warte auf Passkey …" : "Passkey einrichten"}
+        {busy ? t.waitingForPasskey : t.enrollSubmit}
       </button>
       <ErrorNotice error={error} />
     </form>

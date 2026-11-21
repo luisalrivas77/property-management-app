@@ -15,6 +15,8 @@ import {
 import { api, ok } from "@/api/client";
 import type { ErrorDescription } from "@/api/errors";
 import type { Me, Passkey } from "@/api/schemas";
+import { translate } from "@/i18n";
+import { auth } from "@/i18n/auth";
 
 type Json = Record<string, unknown>;
 
@@ -54,27 +56,26 @@ export async function addPasskey(label: string): Promise<Passkey> {
 export function describeCeremonyError(error: unknown): ErrorDescription | null {
   if (!(error instanceof WebAuthnError)) return null;
   const causeName = error.cause instanceof Error ? error.cause.name : null;
+  const t = translate(auth);
   let text: string;
   switch (error.code) {
     case "ERROR_CEREMONY_ABORTED":
-      text = "Der Vorgang wurde abgebrochen.";
+      text = t.ceremonyAborted;
       break;
     case "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED":
-      text = "Auf diesem Gerät gibt es schon einen Passkey für Hausbuch.";
+      text = t.ceremonyAlreadyRegistered;
       break;
     case "ERROR_INVALID_DOMAIN":
     case "ERROR_INVALID_RP_ID":
-      text = "Passkeys funktionieren nur über HTTPS oder auf localhost unter der eingestellten Adresse.";
+      text = t.ceremonyInvalidDomain;
       break;
     case "ERROR_AUTHENTICATOR_MISSING_DISCOVERABLE_CREDENTIAL_SUPPORT":
     case "ERROR_AUTHENTICATOR_MISSING_USER_VERIFICATION_SUPPORT":
-      text = "Dieses Gerät unterstützt die nötige Passkey-Art nicht (mit PIN oder Biometrie).";
+      text = t.ceremonyUnsupported;
       break;
     default:
       text =
-        causeName === "NotAllowedError"
-          ? "Der Vorgang wurde abgebrochen oder ist abgelaufen."
-          : "Der Passkey-Vorgang im Browser ist fehlgeschlagen.";
+        causeName === "NotAllowedError" ? t.ceremonyNotAllowed : t.ceremonyFailed;
   }
   return { text, code: error.code, details: [], requestId: null };
 }
