@@ -7,6 +7,8 @@ import { Suspense, useCallback } from "react";
 import { api, ok } from "@/api/client";
 import { Breadcrumbs, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { loans } from "@/i18n/loans";
 
 import { LoanForm } from "../LoanForm";
 
@@ -25,6 +27,7 @@ function NewLoan() {
     [propertyId],
   );
   const property = useLoad(load);
+  const t = useT(loans);
   return (
     <section>
       <Loading state={property}>
@@ -35,8 +38,8 @@ function NewLoan() {
             </p>
           ) : (
             <>
-              <Breadcrumbs items={[{ href: `/properties/${found.id}?tab=darlehen`, label: found.label }, { label: "Darlehen anlegen" }]} />
-              <h1>Darlehen anlegen</h1>
+              <Breadcrumbs items={[{ href: `/properties/${found.id}?tab=darlehen`, label: found.label }, { label: t.newTitle }]} />
+              <h1>{t.newTitle}</h1>
               <div className="card">
                 <LoanForm propertyId={found.id} />
               </div>

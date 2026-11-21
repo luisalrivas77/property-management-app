@@ -9,6 +9,8 @@ import { api, ok } from "@/api/client";
 import type { Tenant, TenantPatch } from "@/api/schemas";
 import { Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { blankToNull } from "@/components/input";
+import { useT } from "@/i18n";
+import { tenants } from "@/i18n/tenants";
 
 const KEYS = ["full_name", "email", "phone", "iban"] as const;
 const CODE_FIELDS = { "iban.": "iban" };
@@ -24,6 +26,7 @@ export function TenantForm({
   onSaved: (tenant: Tenant) => void;
   submitLabel?: string;
 }) {
+  const t = useT(tenants);
   const [fullName, setFullName] = useState(tenant?.full_name ?? "");
   const [email, setEmail] = useState(tenant?.email ?? "");
   const [phone, setPhone] = useState(tenant?.phone ?? "");
@@ -64,37 +67,33 @@ export function TenantForm({
       <div className="grid">
         <Field
           id={`${idPrefix}-name`}
-          label="Name"
-          description="Der Name der Mieterin oder des Mieters, wie im Mietvertrag."
+          label={t.name}
+          description={t.nameDescription}
           errors={form.of("full_name")}
         >
           <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required autoComplete="off" />
         </Field>
         <Field
           id={`${idPrefix}-email`}
-          label="E-Mail (optional)"
-          description="Eine Kontaktangabe, z. B. aus dem Mietvertrag."
+          label={t.emailField}
+          description={t.contactDescription}
           errors={form.of("email")}
         >
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
         </Field>
         <Field
           id={`${idPrefix}-phone`}
-          label="Telefon (optional)"
-          description="Eine Kontaktangabe, z. B. aus dem Mietvertrag."
+          label={t.phoneField}
+          description={t.contactDescription}
           errors={form.of("phone")}
         >
           <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="off" />
         </Field>
         <Field
           id={`${idPrefix}-iban`}
-          label={tenant ? "Neue IBAN (optional)" : "IBAN (optional)"}
-          hint={
-            tenant
-              ? `Gespeichert: ${tenant.iban_masked ?? "keine"}. Leer lassen, um sie zu behalten.`
-              : "Zum Zuordnen der Mietzahlungen; angezeigt wird danach nur noch eine Maske."
-          }
-          description="Die IBAN des Kontos, von dem die Miete kommt, z. B. aus einem Kontoauszug mit einer Mietzahlung. Gespeichert wird sie nur maskiert und als nicht umkehrbarer Prüfwert; daran erkennt Hausbuch die Mietzahlungen."
+          label={tenant ? t.ibanNew : t.ibanField}
+          hint={tenant ? t.ibanStored(tenant.iban_masked ?? null) : t.ibanHint}
+          description={t.ibanDescription}
           errors={form.of("iban")}
         >
           <input
@@ -110,10 +109,10 @@ export function TenantForm({
       {tenant?.iban_masked ? (
         <label className="inline">
           <input type="checkbox" checked={removeIban} onChange={(e) => setRemoveIban(e.target.checked)} />
-          Gespeicherte IBAN entfernen
+          {t.removeIban}
         </label>
       ) : null}
-      <Submit busy={busy}>{submitLabel ?? (tenant ? "Speichern" : "Mieter anlegen")}</Submit>
+      <Submit busy={busy}>{submitLabel ?? (tenant ? t.save : t.create)}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );

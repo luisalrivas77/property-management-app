@@ -12,11 +12,13 @@ import { useCallback } from "react";
 import { api, ok } from "@/api/client";
 import type { RentScheduleEntry, Tenancy, Tenant, Unit } from "@/api/schemas";
 import { currentTenancy, tenantName } from "@/components/entities";
-import { formatDate, formatMoney, todayIso } from "@/components/format";
+import { todayIso } from "@/components/format";
 import { DEPOSIT_FORM, TENANCY_ROLE } from "@/components/labels";
 import { loadPropertyContext } from "@/components/propertyContext";
 import { Facts, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { formatter, translate, useFormat, useT } from "@/i18n";
+import { propertyPage } from "@/i18n/propertyPage";
 
 interface UnitTenancy {
   unit: Unit;
@@ -44,17 +46,18 @@ async function loadCurrentTenancies(propertyId: string, today: string): Promise<
 }
 
 export function CurrentTenancies({ propertyId }: { propertyId: string }) {
+  const t = useT(propertyPage);
   const today = todayIso();
   const load = useCallback(() => loadCurrentTenancies(propertyId, today), [propertyId, today]);
   const state = useLoad(load);
   return (
     <section className="stack" aria-labelledby="current-tenancy">
-      <h2 id="current-tenancy">Aktuelles Mietverhältnis</h2>
+      <h2 id="current-tenancy">{t.currentTitle}</h2>
       <Loading state={state}>
         {({ units, tenants }) =>
           units.length === 0 ? (
             <p className="muted">
-              Noch keine Einheit. <Link href={`/properties/${propertyId}/units/new`}>Einheit anlegen</Link>
+              {t.noUnit} <Link href={`/properties/${propertyId}/units/new`}>{t.addUnit}</Link>
             </p>
           ) : (
             <div className="cards">
@@ -70,22 +73,24 @@ export function CurrentTenancies({ propertyId }: { propertyId: string }) {
 }
 
 function UnitTenancyCard({ entry: { unit, current }, tenants }: { entry: UnitTenancy; tenants: Tenant[] }) {
+  const t = useT(propertyPage);
+  const f = useFormat();
   const byId = new Map(tenants.map((tenant) => [tenant.id, tenant]));
   return (
-    <article className="card stack" aria-label={`Mietverhältnis ${unit.label}`}>
+    <article className="card stack" aria-label={t.cardLabel(unit.label)}>
       <div className="row card-head">
         <h3>
           <Link href={`/units/${unit.id}`}>{unit.label}</Link>
         </h3>
         <span className="spacer" />
-        {current ? <span className="badge">{statusBadge(current.tenancy, current.upcoming)}</span> : <span className="tag">leer</span>}
+        {current ? <span className="badge">{statusBadge(current.tenancy, current.upcoming)}</span> : <span className="tag">{t.vacant}</span>}
       </div>
       {current ? (
         <>
           <Facts
             rows={[
               [
-                "Mieter",
+                t.tenants,
                 <>
                   {current.tenancy.parties.map((party, index) => (
                     <span key={party.tenant_id}>
@@ -96,27 +101,27 @@ function UnitTenancyCard({ entry: { unit, current }, tenants }: { entry: UnitTen
                   ))}
                 </>,
               ],
-              ["Beginn", formatDate(current.tenancy.start_date)],
-              ["Kaltmiete", current.rent ? formatMoney(current.rent.cold_rent) : "–"],
-              ["NK-Vorauszahlung", current.rent ? formatMoney(current.rent.operating_costs_prepayment) : "–"],
+              [t.start, f.date(current.tenancy.start_date)],
+              [t.coldRent, current.rent ? f.money(current.rent.cold_rent) : "–"],
+              [t.prepayment, current.rent ? f.money(current.rent.operating_costs_prepayment) : "–"],
               [
-                "Kaution",
+                t.deposit,
                 current.tenancy.deposit_form === "none"
                   ? DEPOSIT_FORM.none
-                  : `${formatMoney(current.tenancy.deposit_amount)}, ${DEPOSIT_FORM[current.tenancy.deposit_form]}`,
+                  : `${f.money(current.tenancy.deposit_amount)}, ${DEPOSIT_FORM[current.tenancy.deposit_form]}`,
               ],
             ]}
           />
           <p>
-            <Link href={`/tenancies/${current.tenancy.id}`}>Zum Mietverhältnis</Link>
+            <Link href={`/tenancies/${current.tenancy.id}`}>{t.toTenancy}</Link>
           </p>
         </>
       ) : (
         <>
-          <p className="muted">Kein laufendes Mietverhältnis.</p>
+          <p className="muted">{t.noRunning}</p>
           <div>
             <Link href={`/tenancies/new?unit=${unit.id}`} className="button-link">
-              Mietverhältnis anlegen
+              {t.addTenancy}
             </Link>
           </div>
         </>
@@ -128,11 +133,13 @@ function UnitTenancyCard({ entry: { unit, current }, tenants }: { entry: UnitTen
 /** "läuft · unbefristet", "läuft · befristet bis …", "ab … · unbefristet"; a recorded move-out
  * date shows as "endet am …". */
 function statusBadge(tenancy: Tenancy, upcoming: boolean): string {
+  const t = translate(propertyPage);
+  const f = formatter();
   const status = upcoming
-    ? `ab ${formatDate(tenancy.start_date)}`
+    ? t.statusFrom(f.date(tenancy.start_date))
     : tenancy.end_date
-      ? `endet am ${formatDate(tenancy.end_date)}`
-      : "läuft";
-  const term = tenancy.fixed_term_until ? `befristet bis ${formatDate(tenancy.fixed_term_until)}` : "unbefristet";
+      ? t.statusEnds(f.date(tenancy.end_date))
+      : t.running;
+  const term = tenancy.fixed_term_until ? t.fixedUntil(f.date(tenancy.fixed_term_until)) : t.unlimited;
   return `${status} · ${term}`;
 }

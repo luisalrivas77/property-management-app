@@ -3,91 +3,166 @@
 // The Tilgungsplan (§4.6, §9.1): GET /loans/{id}/schedule, rendered as the API computes it
 // (rules.loan_schedule). Year totals and every payment, with interest days (principle 2:
 // traceable). Nothing is summed or recomputed here.
+//
+// Phase 10 (mockup 25): a year and a payment are rows that keep their label and amount; the
+// other columns (interest, repayment, balances, rate and interest days) open in the detail panel,
+// so no table scrolls sideways on a phone.
 import { useCallback } from "react";
 
 import { api, ok } from "@/api/client";
 import type { LoanSchedule } from "@/api/schemas";
+import { useFormat, useT } from "@/i18n";
+import { loans } from "@/i18n/loans";
+import { Icon } from "@/lib/icons";
 
-import { formatDate, formatMoney, formatPercent } from "./format";
-import { Loading } from "./ui";
+import { DetailPanel, type Detail } from "./DetailPanel";
+import { Facts, Loading } from "./ui";
 import { useLoad } from "./useLoad";
+
+import "./pageRows.css";
 
 export function useLoanSchedule(loanId: string) {
   const load = useCallback(() => ok(api.GET("/api/loans/{loan_id}/schedule", { params: { path: { loan_id: loanId } } })), [loanId]);
   return useLoad(load);
 }
 
-export function YearTotalsTable({ schedule }: { schedule: LoanSchedule }) {
+/** The year totals as rows: the year, its interest and repayment, and the instalments paid.
+ * `yearHref` makes each row a link (to the panel on this page, or to the loan page's panel). */
+export function YearRows({
+  schedule,
+  yearHref,
+  detail,
+}: {
+  schedule: LoanSchedule;
+  yearHref?: (year: number) => string;
+  detail?: Detail;
+}) {
+  const t = useT(loans);
+  const f = useFormat();
   return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Jahr</th>
-            <th className="num">Zinsen</th>
-            <th className="num">Tilgung</th>
-            <th className="num">Raten</th>
-            <th className="num">Restschuld Jahresende</th>
-          </tr>
-        </thead>
-        <tbody>
-          {schedule.years.map((year) => (
-            <tr key={year.year}>
-              <td>{year.year}</td>
-              <td className="num">{formatMoney(year.interest)}</td>
-              <td className="num">{formatMoney(year.principal)}</td>
-              <td className="num">{formatMoney(year.payment)}</td>
-              <td className="num">{formatMoney(year.closing_balance)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ul className="detail-rows" aria-label={t.years}>
+      {schedule.years.map((year) => {
+        const content = (
+          <>
+            <span className="detail-row-text">
+              <span className="detail-row-title">{year.year}</span>
+              <span className="detail-row-sub">{t.yearSub(f.money(year.interest), f.money(year.principal))}</span>
+            </span>
+            <span className="num row-amount">{f.money(year.payment)}</span>
+          </>
+        );
+        return (
+          <li key={year.year}>
+            {detail ? (
+              <a {...detail.linkProps(String(year.year))} className="detail-row">
+                {content}
+                <Icon name="chevronRight" size={18} />
+              </a>
+            ) : yearHref ? (
+              <a href={yearHref(year.year)} className="detail-row">
+                {content}
+                <Icon name="chevronRight" size={18} />
+              </a>
+            ) : (
+              <div className="detail-row">{content}</div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
-export function EntriesTable({ schedule }: { schedule: LoanSchedule }) {
+/** Every instalment as a row: its due date and payment; the rest in the panel. */
+export function EntryRows({ schedule, detail }: { schedule: LoanSchedule; detail: Detail }) {
+  const t = useT(loans);
+  const f = useFormat();
   return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th className="num">Nr.</th>
-            <th>Fällig</th>
-            <th className="num">Zinssatz</th>
-            <th className="num">Zinstage</th>
-            <th className="num">Restschuld vorher</th>
-            <th className="num">Zinsen</th>
-            <th className="num">Tilgung</th>
-            <th className="num">Rate</th>
-            <th className="num">Restschuld nachher</th>
-          </tr>
-        </thead>
-        <tbody>
-          {schedule.entries.map((entry) => (
-            <tr key={entry.number}>
-              <td className="num">{entry.number}</td>
-              <td>{formatDate(entry.due_on)}</td>
-              <td className="num">{formatPercent(entry.rate)}</td>
-              <td className="num">
-                {entry.interest_days}
-                {entry.follow_up_days > 0 ? ` (${entry.follow_up_days} Anschluss)` : ""}
-              </td>
-              <td className="num">{formatMoney(entry.opening_balance)}</td>
-              <td className="num">{formatMoney(entry.interest)}</td>
-              <td className="num">{formatMoney(entry.principal)}</td>
-              <td className="num">{formatMoney(entry.payment)}</td>
-              <td className="num">{formatMoney(entry.closing_balance)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ul className="detail-rows" aria-label={t.schedule}>
+      {schedule.entries.map((entry) => (
+        <li key={entry.number}>
+          <a {...detail.linkProps(String(entry.number))} className="detail-row">
+            <span className="detail-row-text">
+              <span className="detail-row-title">{t.rateTitle(f.date(entry.due_on))}</span>
+              <span className="detail-row-sub">{t.rateSub(entry.number)}</span>
+            </span>
+            <span className="num row-amount">{f.money(entry.payment)}</span>
+            <Icon name="chevronRight" size={18} />
+          </a>
+        </li>
+      ))}
+    </ul>
   );
 }
 
-/** Year totals of one loan, loaded on its own (Darlehen tab of a property). */
+/** The panel of the open instalment or year, or null. */
+/** Whether the URL names an instalment or a year this schedule has, i.e. whether SchedulePanel
+ * renders anything. The page passes a panel to DetailLayout only then: a panel element that
+ * renders nothing still opened the layout's second column, which on a phone squeezed the page
+ * itself to no width. */
+export function scheduleRowOpen(schedule: LoanSchedule, rates: Detail, years: Detail): boolean {
+  return (
+    (rates.id !== null && schedule.entries.some((e) => String(e.number) === rates.id)) ||
+    (years.id !== null && schedule.years.some((y) => String(y.year) === years.id))
+  );
+}
+
+export function SchedulePanel({
+  schedule,
+  rates,
+  years,
+  backLabel,
+}: {
+  schedule: LoanSchedule;
+  rates: Detail;
+  years: Detail;
+  backLabel: string;
+}) {
+  const t = useT(loans);
+  const f = useFormat();
+  const entry = rates.id ? schedule.entries.find((e) => String(e.number) === rates.id) : undefined;
+  if (entry) {
+    return (
+      <DetailPanel title={t.ratePanel(entry.number, schedule.entries.length)} backLabel={backLabel} onClose={rates.close}>
+        <Facts
+          rows={[
+            [t.due, f.date(entry.due_on)],
+            [t.rate, f.money(entry.payment)],
+            [t.interest, f.money(entry.interest)],
+            [t.principalPart, f.money(entry.principal)],
+            [t.openingBalance, f.money(entry.opening_balance)],
+            [t.closingBalance, f.money(entry.closing_balance)],
+            [t.rateAndDays, `${f.percent(entry.rate)} · ${t.days(entry.interest_days, entry.follow_up_days)}`],
+          ]}
+        />
+      </DetailPanel>
+    );
+  }
+  const year = years.id ? schedule.years.find((y) => String(y.year) === years.id) : undefined;
+  if (year) {
+    return (
+      <DetailPanel title={t.yearPanel(year.year)} backLabel={backLabel} onClose={years.close}>
+        <Facts
+          rows={[
+            [t.interest, f.money(year.interest)],
+            [t.principalPart, f.money(year.principal)],
+            [t.payments, f.money(year.payment)],
+            [t.closingYear, f.money(year.closing_balance)],
+          ]}
+        />
+      </DetailPanel>
+    );
+  }
+  return null;
+}
+
+/** Year totals of one loan, loaded on its own (Darlehen tab of a property); a year opens the
+ * loan page with that year in its panel. */
 export function LoanYearTotals({ loanId }: { loanId: string }) {
   const schedule = useLoanSchedule(loanId);
-  return <Loading state={schedule}>{(data) => <YearTotalsTable schedule={data} />}</Loading>;
+  return (
+    <Loading state={schedule}>
+      {(data) => <YearRows schedule={data} yearHref={(year) => `/loans/${loanId}#d-loanyear-${year}`} />}
+    </Loading>
+  );
 }

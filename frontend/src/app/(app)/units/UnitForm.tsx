@@ -1,6 +1,7 @@
 "use client";
 
 // Einheit form (§9.1): Bezeichnung, Wohnfläche, Zimmer, MEA (Miteigentumsanteil as n/d).
+// With `onDone` (the unit page's sheet, phase 10) it calls back instead of navigating.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -10,10 +11,25 @@ import type { Unit } from "@/api/schemas";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { formatFraction } from "@/components/format";
 import { decimalInput, toDecimalString, toFraction } from "@/components/input";
+import { useT } from "@/i18n";
+import { units } from "@/i18n/units";
 
 const KEYS = ["label", "floor_area_m2", "rooms", "mea"] as const;
 
-export function UnitForm({ propertyId, unit }: { propertyId: string; unit?: Unit }) {
+export function UnitForm({
+  propertyId,
+  unit,
+  onDone,
+  onCancel,
+}: {
+  propertyId: string;
+  unit?: Unit;
+  /** Called after a save instead of navigating (the form sits in a sheet). */
+  onDone?: () => void;
+  /** Shown as „Abbrechen“ instead of the link back (the form sits in a sheet). */
+  onCancel?: () => void;
+}) {
+  const t = useT(units);
   const router = useRouter();
   const [label, setLabel] = useState(unit?.label ?? "");
   const [area, setArea] = useState(decimalInput(unit?.floor_area_m2));
@@ -35,10 +51,12 @@ export function UnitForm({ propertyId, unit }: { propertyId: string; unit?: Unit
     try {
       if (unit) {
         await ok(api.PATCH("/api/units/{unit_id}", { params: { path: { unit_id: unit.id } }, body: fields }));
-        router.push(`/units/${unit.id}`);
+        if (onDone) onDone();
+        else router.push(`/units/${unit.id}`);
       } else {
         await ok(api.POST("/api/units", { body: { property_id: propertyId, ...fields } }));
-        router.push(`/properties/${propertyId}?tab=einheiten`);
+        if (onDone) onDone();
+        else router.push(`/properties/${propertyId}?tab=einheiten`);
       }
     } catch (error) {
       form.fail(error);
@@ -52,43 +70,49 @@ export function UnitForm({ propertyId, unit }: { propertyId: string; unit?: Unit
       <div className="grid">
         <Field
           id="unit-label"
-          label="Bezeichnung"
-          hint="z. B. „WE 3“ oder „TG-Stellplatz 12“"
-          description="Wie die Einheit in Teilungserklärung oder Kaufvertrag heißt, z. B. „WE 3“ für Wohnung Nr. 3 oder ein Tiefgaragenstellplatz."
+          label={t.label}
+          hint={t.labelHint}
+          description={t.labelDescription}
           errors={form.of("label")}
         >
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} required autoComplete="off" />
         </Field>
         <Field
           id="unit-area"
-          label="Fläche (m²)"
-          description="Die Wohnfläche in Quadratmetern laut Mietvertrag, Kaufvertrag oder Wohnflächenberechnung. Hausbuch rechnet noch nicht damit; gebraucht wird sie später z. B. für die Betriebskostenabrechnung."
+          label={t.areaField}
+          description={t.areaDescription}
           errors={form.of("floor_area_m2")}
         >
           <input type="text" inputMode="decimal" value={area} onChange={(e) => setArea(e.target.value)} required autoComplete="off" />
         </Field>
         <Field
           id="unit-rooms"
-          label="Zimmer (optional)"
-          hint="z. B. 2,5"
-          description="Die Zahl der Zimmer laut Mietvertrag oder Exposé; ein halbes Zimmer als ,5."
+          label={t.roomsField}
+          hint={t.roomsHint}
+          description={t.roomsDescription}
           errors={form.of("rooms")}
         >
           <input type="text" inputMode="decimal" value={rooms} onChange={(e) => setRooms(e.target.value)} autoComplete="off" />
         </Field>
         <Field
           id="unit-mea"
-          label="MEA (optional)"
-          hint="Miteigentumsanteil laut Teilungserklärung, z. B. 85/1000"
-          description="Ihr Anteil am gemeinschaftlichen Eigentum der WEG (Grundstück, Dach, Treppenhaus …), laut Teilungserklärung oder Kaufvertrag, z. B. 56,18/1.000. Nach ihm verteilt die WEG meist die gemeinsamen Kosten (Hausgeld). Bei einzeln vermieteten Zimmern einer Wohnung leer lassen."
+          label={t.meaField}
+          hint={t.meaHint}
+          description={t.meaDescription}
           errors={form.of("mea")}
         >
           <input type="text" value={mea} onChange={(e) => setMea(e.target.value)} autoComplete="off" />
         </Field>
       </div>
       <div className="row">
-        <Submit busy={busy}>{unit ? "Speichern" : "Einheit anlegen"}</Submit>
-        <Link href={unit ? `/units/${unit.id}` : `/properties/${propertyId}?tab=einheiten`}>Abbrechen</Link>
+        <Submit busy={busy}>{unit ? t.save : t.create}</Submit>
+        {onCancel ? (
+          <button type="button" className="link" onClick={onCancel}>
+            {t.cancel}
+          </button>
+        ) : (
+          <Link href={unit ? `/units/${unit.id}` : `/properties/${propertyId}?tab=einheiten`}>{t.cancel}</Link>
+        )}
       </div>
       <FormBanner errors={form.errors} />
     </form>

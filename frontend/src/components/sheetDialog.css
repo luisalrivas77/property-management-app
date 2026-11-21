@@ -1,0 +1,49 @@
+/* An edit form sliding in from the right (SheetDialog.tsx, phase 10 mockup 25): the full height
+   on the right, up to 480 px wide, the page dimmed beside it. */
+
+.dialog.sheet-dialog {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(100vw, 480px);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
+  overscroll-behavior: contain;
+}
+
+.dialog.sheet-dialog::backdrop {
+  background: var(--scrim);
+}
+
+.sheet-dialog-inner {
+  height: 100%;
+  overflow-y: auto;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) 16px;
+}
+
+/* A form's grid is one column in the sheet. */
+.sheet-dialog .grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dialog.sheet-dialog[open] {
+    animation: sheet-slide-in 0.22s ease-out;
+  }
+}
+
+@keyframes sheet-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}

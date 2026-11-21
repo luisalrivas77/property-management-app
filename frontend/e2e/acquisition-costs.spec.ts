@@ -30,10 +30,13 @@ test("a Nebenkosten row is edited to attach its Beleg, then removed", async ({ p
   expect(typed.status()).toBe(200);
 
   await page.goto(`/properties/${property.id}?tab=nebenkosten`);
-  const row = page.getByRole("row").filter({ hasText: "Notar" });
+  // Phase 10 (mockup 25): the costs are rows; a row opens every field and its buttons in the panel.
+  const row = page.getByRole("list", { name: "Nebenkosten" }).getByRole("link").filter({ hasText: "Notar" });
   await expect(row).toContainText("2.100,00 €");
+  await row.click();
+  const panel = page.getByRole("complementary", { name: "Notar" });
 
-  await row.getByRole("button", { name: "Bearbeiten" }).click();
+  await panel.getByRole("button", { name: "Bearbeiten", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Nebenkosten bearbeiten" });
   await expect(dialog.getByLabel("Betrag (€)")).toHaveValue("2100,00");
   await dialog.getByLabel("Betrag (€)").fill("2100,50");
@@ -41,7 +44,8 @@ test("a Nebenkosten row is edited to attach its Beleg, then removed", async ({ p
   await dialog.getByRole("button", { name: "Speichern" }).click();
   await expect(dialog).toBeHidden();
   await expect(row).toContainText("2.100,50 €");
-  await expect(row.getByRole("link", { name: "Notarrechnung" })).toHaveAttribute("href", `/documents/${document.id}`);
+  await expect(row).toContainText("mit Beleg");
+  await expect(panel.getByRole("link", { name: "Notarrechnung" })).toHaveAttribute("href", `/documents/${document.id}`);
 
   // The Unterlagen checklist reads the row's Beleg.
   await page.goto(`/properties/${property.id}?tab=unterlagen`);
@@ -52,7 +56,8 @@ test("a Nebenkosten row is edited to attach its Beleg, then removed", async ({ p
   // Removing the row (after a confirm) drops it, and its checklist item with it.
   await page.goto(`/properties/${property.id}?tab=nebenkosten`);
   acceptNextConfirm(page);
-  await page.getByRole("row").filter({ hasText: "Notar" }).getByRole("button", { name: "Entfernen" }).click();
+  await page.getByRole("list", { name: "Nebenkosten" }).getByRole("link").filter({ hasText: "Notar" }).click();
+  await page.getByRole("complementary", { name: "Notar" }).getByRole("button", { name: "Entfernen" }).click();
   await expect(page.getByText("Noch keine Nebenkosten erfasst.")).toBeVisible();
   await page.goto(`/properties/${property.id}?tab=unterlagen`);
   await expect(page.getByRole("heading", { name: "Unterlagen für die Steuererklärung" })).toBeVisible();

@@ -5,25 +5,34 @@
 // A Nebenkosten row can be edited (PATCH, e.g. to attach its Beleg later) or removed when it
 // was entered by mistake; each change is an event in the Protokoll. Split candidates stay
 // append-only (D8): a wrong split is replaced by a new candidate that is then selected.
+// Phase 10 (mockup 25): both tables became rows (what it is, a short line, the amount or share)
+// that open every field and the row's buttons in the detail panel; the edit form slides in.
 import Link from "next/link";
 import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { AcquisitionCost, AcquisitionCostKind, Document, PriceSplitSource, Property } from "@/api/schemas";
+import type { AcquisitionCost, AcquisitionCostKind, Document, PriceSplit, PriceSplitSource, Property } from "@/api/schemas";
+import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { DocumentPicker, documentLabel } from "@/components/documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
-import { formatDate, formatDateTime, formatMoney, formatPercent } from "@/components/format";
 import { blankToNull, decimalInput, toMoneyString, toRate } from "@/components/input";
 import { ACQUISITION_COST_KIND, options, PRICE_SPLIT_SOURCE } from "@/components/labels";
-import { ActionDialog, Loading } from "@/components/ui";
+import { SheetDialog } from "@/components/SheetDialog";
+import { ActionDialog, Facts, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useFormat, useT } from "@/i18n";
+import { propertyPage } from "@/i18n/propertyPage";
+import { Icon } from "@/lib/icons";
+
+import "@/components/pageRows.css";
 
 const loadDocuments = () => ok(api.GET("/api/documents"));
 
 function DocumentRef({ id, documents }: { id: string | null | undefined; documents: Document[] | undefined }) {
+  const t = useT(propertyPage);
   if (!id) return <>–</>;
   const document = documents?.find((d) => d.id === id);
-  return <Link href={`/documents/${id}`}>{document ? documentLabel(document) : "Dokument"}</Link>;
+  return <Link href={`/documents/${id}`}>{document ? documentLabel(document) : t.document}</Link>;
 }
 
 // --- Nebenkosten ------------------------------------------------------------------------
@@ -31,12 +40,15 @@ function DocumentRef({ id, documents }: { id: string | null | undefined; documen
 const COST_KEYS = ["kind", "amount", "paid_on", "document_id", "note"] as const;
 
 export function CostsTab({ propertyId }: { propertyId: string }) {
+  const t = useT(propertyPage);
+  const f = useFormat();
   const load = useCallback(
     () => ok(api.GET("/api/properties/{property_id}/acquisition-costs", { params: { path: { property_id: propertyId } } })),
     [propertyId],
   );
   const costs = useLoad(load);
   const documents = useLoad(loadDocuments);
+  const detail = useDetail("cost");
   const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
 
@@ -46,12 +58,13 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
   }
 
   async function remove(cost: AcquisitionCost) {
-    const what = `${ACQUISITION_COST_KIND[cost.kind]} über ${formatMoney(cost.amount)}`;
-    if (!window.confirm(`Position „${what}“ entfernen? Der Beleg bleibt im Archiv; das Protokoll behält die Position.`)) return;
+    const what = t.costWhat(ACQUISITION_COST_KIND[cost.kind], f.money(cost.amount));
+    if (!window.confirm(t.removeConfirm(what))) return;
     setRemoving(cost.id);
     setError(null);
     try {
       await ok(api.DELETE("/api/acquisition-costs/{cost_id}", { params: { path: { cost_id: cost.id } } }));
+      detail.close();
       changed();
     } catch (caught) {
       setError(caught);
@@ -60,82 +73,91 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
     }
   }
 
-  return (
-    <div className="stack">
-      <p className="muted">Grunderwerbsteuer, Notar, Grundbuch, Makler: jede Position einzeln, mit Beleg.</p>
-      <Loading state={costs}>
-        {(list) =>
-          list.length === 0 ? (
-            <p className="muted">Noch keine Nebenkosten erfasst.</p>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Art</th>
-                    <th className="num">Betrag</th>
-                    <th>Bezahlt am</th>
-                    <th>Beleg</th>
-                    <th>Notiz</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((cost) => (
-                    <tr key={cost.id}>
-                      <td>{ACQUISITION_COST_KIND[cost.kind]}</td>
-                      <td className="num">{formatMoney(cost.amount)}</td>
-                      <td>{formatDate(cost.paid_on)}</td>
-                      <td>
-                        <DocumentRef id={cost.document_id} documents={documents.data} />
-                      </td>
-                      <td>{cost.note ?? ""}</td>
-                      <td>
-                        <div className="row">
-                          <ActionDialog label="Bearbeiten" title="Nebenkosten bearbeiten">
-                            {(close) => (
-                              <CostForm
-                                propertyId={propertyId}
-                                cost={cost}
-                                onDone={() => {
-                                  close();
-                                  changed();
-                                }}
-                              />
-                            )}
-                          </ActionDialog>
-                          <button type="button" className="link" onClick={() => void remove(cost)} disabled={removing !== null}>
-                            {removing === cost.id ? "Entfernt …" : "Entfernen"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        }
-      </Loading>
+  const open = detail.id ? costs.data?.find((cost) => cost.id === detail.id) : undefined;
+  const panel = open ? (
+    <DetailPanel title={ACQUISITION_COST_KIND[open.kind]} backLabel={t.tabCosts} onClose={detail.close}>
+      <Facts
+        rows={[
+          [t.costKind, ACQUISITION_COST_KIND[open.kind]],
+          [t.amount, f.money(open.amount)],
+          [t.paidOn, f.date(open.paid_on)],
+          [t.receipt, <DocumentRef key="receipt" id={open.document_id} documents={documents.data} />],
+          [t.note, open.note ?? ""],
+        ]}
+      />
       {error ? <FormBanner errors={{ fields: {}, banner: error }} /> : null}
-      <ActionDialog label="Position hinzufügen" title="Nebenkosten hinzufügen" buttonClass="">
-        {(close) => (
-          <CostForm
-            propertyId={propertyId}
-            onDone={() => {
-              close();
-              changed();
-            }}
-          />
-        )}
-      </ActionDialog>
-    </div>
+      <div className="row">
+        <SheetDialog label={t.edit} title={t.editCostTitle}>
+          {(close) => (
+            <CostForm
+              key={open.id}
+              propertyId={propertyId}
+              cost={open}
+              onDone={() => {
+                close();
+                changed();
+              }}
+            />
+          )}
+        </SheetDialog>
+        <button type="button" className="link" onClick={() => void remove(open)} disabled={removing !== null}>
+          {removing === open.id ? t.removing : t.remove}
+        </button>
+      </div>
+    </DetailPanel>
+  ) : null;
+
+  return (
+    <DetailLayout panel={panel}>
+      <div className="stack">
+        <p className="muted">{t.costsIntro}</p>
+        <Loading state={costs}>
+          {(list) =>
+            list.length === 0 ? (
+              <p className="muted">{t.noCosts}</p>
+            ) : (
+              <ul className="detail-rows" aria-label={t.tabCosts}>
+                {list.map((cost) => (
+                  <li key={cost.id}>
+                    <a {...detail.linkProps(cost.id)} className="detail-row">
+                      <span className="detail-row-text">
+                        <span className="detail-row-title">{ACQUISITION_COST_KIND[cost.kind]}</span>
+                        <span className="detail-row-sub">
+                          {[cost.paid_on ? t.rowPaid(f.date(cost.paid_on)) : null, cost.document_id ? t.rowWithReceipt : t.rowWithoutReceipt]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </span>
+                      <span className="row-amount">{f.money(cost.amount)}</span>
+                      <Icon name="chevronRight" size={18} />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )
+          }
+        </Loading>
+        {error && !open ? <FormBanner errors={{ fields: {}, banner: error }} /> : null}
+        <ActionDialog label={t.addCost} title={t.addCostTitle} buttonClass="">
+          {(close) => (
+            <CostForm
+              propertyId={propertyId}
+              onDone={() => {
+                close();
+                changed();
+              }}
+            />
+          )}
+        </ActionDialog>
+      </div>
+    </DetailLayout>
   );
 }
 
 /** Add a row, or with `cost` edit it (every field, including the Beleg: pick, swap or
  * "– kein Dokument –" to clear it). */
 function CostForm({ propertyId, cost, onDone }: { propertyId: string; cost?: AcquisitionCost; onDone: () => void }) {
+  const t = useT(propertyPage);
   const [kind, setKind] = useState<AcquisitionCostKind>(cost?.kind ?? "real_estate_transfer_tax");
   const [amount, setAmount] = useState(decimalInput(cost?.amount));
   const [paidOn, setPaidOn] = useState(cost?.paid_on ?? "");
@@ -170,8 +192,8 @@ function CostForm({ propertyId, cost, onDone }: { propertyId: string; cost?: Acq
     <form className="stack" onSubmit={submit} noValidate>
       <Field
         id="cost-kind"
-        label="Art"
-        description="Welche Erwerbsnebenkosten das sind: Grunderwerbsteuer (Bescheid des Finanzamts), Notar, Grundbuchamt, Makler oder Sonstige."
+        label={t.costKind}
+        description={t.fKindDesc}
         errors={form.of("kind")}
       >
         <select value={kind} onChange={(e) => setKind(e.target.value as AcquisitionCostKind)}>
@@ -184,37 +206,37 @@ function CostForm({ propertyId, cost, onDone }: { propertyId: string; cost?: Acq
       </Field>
       <Field
         id="cost-amount"
-        label="Betrag (€)"
-        description="Der Betrag laut Rechnung oder Bescheid. Erwerbsnebenkosten zählen zu den Anschaffungskosten; ihr Gebäudeanteil gehört zur AfA-Grundlage."
+        label={t.fAmount}
+        description={t.fAmountDesc}
         errors={form.of("amount")}
       >
         <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required autoComplete="off" />
       </Field>
       <Field
         id="cost-paid"
-        label="Bezahlt am (optional)"
-        description="Der Tag der Zahlung, laut Kontoauszug."
+        label={t.fPaid}
+        description={t.fPaidDesc}
         errors={form.of("paid_on")}
       >
         <input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
       </Field>
       <Field
         id="cost-document"
-        label="Beleg"
-        description="Die Rechnung oder der Bescheid zu dieser Position, aus den Dokumenten oder neu hochgeladen. Mit Beleg gilt die Position in der Unterlagen-Checkliste als belegt."
+        label={t.receipt}
+        description={t.fReceiptDesc}
         errors={form.of("document_id")}
       >
         <DocumentPicker value={documentId} onChange={setDocumentId} />
       </Field>
       <Field
         id="cost-note"
-        label="Notiz (optional)"
-        description="Freier Text für Sie, z. B. eine Rechnungsnummer."
+        label={t.fNote}
+        description={t.fCostNoteDesc}
         errors={form.of("note")}
       >
         <input type="text" value={note} onChange={(e) => setNote(e.target.value)} autoComplete="off" />
       </Field>
-      <Submit busy={busy}>{cost ? "Speichern" : "Hinzufügen"}</Submit>
+      <Submit busy={busy}>{cost ? t.save : t.add}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );
@@ -225,12 +247,15 @@ function CostForm({ propertyId, cost, onDone }: { propertyId: string; cost?: Acq
 const SPLIT_KEYS = ["source", "building_share", "evidence_document_id", "note", "inputs"] as const;
 
 export function SplitsTab({ property, onSelected }: { property: Property; onSelected: () => void }) {
+  const t = useT(propertyPage);
+  const f = useFormat();
   const load = useCallback(
     () => ok(api.GET("/api/properties/{property_id}/price-splits", { params: { path: { property_id: property.id } } })),
     [property.id],
   );
   const splits = useLoad(load);
   const documents = useLoad(loadDocuments);
+  const detail = useDetail("split");
   const [selecting, setSelecting] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
 
@@ -251,75 +276,82 @@ export function SplitsTab({ property, onSelected }: { property: Property; onSele
     }
   }
 
-  return (
-    <div className="stack">
-      <p className="muted">
-        Der Gebäudeanteil am Kaufpreis bestimmt die AfA. Quellen: Kaufvertrag, BMF-Arbeitshilfe oder Gutachten. Mehrere
-        Kandidaten sind möglich; der erste wird von selbst die AfA-Basis, ein anderer kann danach gewählt werden.
-      </p>
-      <Loading state={splits}>
-        {(list) =>
-          list.length === 0 ? (
-            <p className="muted">Noch keine Aufteilung erfasst.</p>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Quelle</th>
-                    <th className="num">Gebäudeanteil</th>
-                    <th>Nachweis</th>
-                    <th>Notiz</th>
-                    <th>Erfasst</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((split) => (
-                    <tr key={split.id}>
-                      <td>{PRICE_SPLIT_SOURCE[split.source]}</td>
-                      <td className="num">{formatPercent(split.building_share)}</td>
-                      <td>
-                        <DocumentRef id={split.evidence_document_id} documents={documents.data} />
-                      </td>
-                      <td>{split.note ?? ""}</td>
-                      <td>{formatDateTime(split.recorded_at)}</td>
-                      <td>
-                        {property.selected_price_split_id === split.id ? (
-                          <span className="badge">AfA-Basis</span>
-                        ) : (
-                          <button type="button" className="secondary" onClick={() => void select(split.id)} disabled={selecting !== null}>
-                            {selecting === split.id ? "Wählt …" : "als AfA-Basis wählen"}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        }
-      </Loading>
+  function chooser(split: PriceSplit) {
+    return property.selected_price_split_id === split.id ? (
+      <span className="badge">{t.afaBadge}</span>
+    ) : (
+      <button type="button" className="secondary" onClick={() => void select(split.id)} disabled={selecting !== null}>
+        {selecting === split.id ? t.choosing : t.choose}
+      </button>
+    );
+  }
+
+  const open = detail.id ? splits.data?.find((split) => split.id === detail.id) : undefined;
+  const panel = open ? (
+    <DetailPanel title={PRICE_SPLIT_SOURCE[open.source]} backLabel={t.tabSplit} onClose={detail.close}>
+      <Facts
+        rows={[
+          [t.source, PRICE_SPLIT_SOURCE[open.source]],
+          [t.buildingShare, f.percent(open.building_share)],
+          [t.evidence, <DocumentRef key="evidence" id={open.evidence_document_id} documents={documents.data} />],
+          [t.note, open.note ?? ""],
+          [t.recorded, f.dateTime(open.recorded_at)],
+        ]}
+      />
       {error ? <FormBanner errors={{ fields: {}, banner: error }} /> : null}
-      <ActionDialog label="Aufteilung hinzufügen" title="Kaufpreisaufteilung hinzufügen" buttonClass="">
-        {(close) => (
-          <SplitForm
-            propertyId={property.id}
-            onDone={() => {
-              close();
-              splits.reload();
-              documents.reload();
-              onSelected(); // D133: the first split becomes the AfA basis on its own
-            }}
-          />
-        )}
-      </ActionDialog>
-    </div>
+      <div>{chooser(open)}</div>
+    </DetailPanel>
+  ) : null;
+
+  return (
+    <DetailLayout panel={panel}>
+      <div className="stack">
+        <p className="muted">{t.splitsIntro}</p>
+        <Loading state={splits}>
+          {(list) =>
+            list.length === 0 ? (
+              <p className="muted">{t.noSplit}</p>
+            ) : (
+              <ul className="detail-rows" aria-label={t.splitsList}>
+                {list.map((split) => (
+                  <li key={split.id}>
+                    <a {...detail.linkProps(split.id)} className="detail-row">
+                      <span className="detail-row-text">
+                        <span className="detail-row-title">{PRICE_SPLIT_SOURCE[split.source]}</span>
+                        <span className="detail-row-sub">
+                          {property.selected_price_split_id === split.id ? t.afaBadge : t.rowRecorded(f.dateTime(split.recorded_at))}
+                        </span>
+                      </span>
+                      <span className="row-amount">{f.percent(split.building_share)}</span>
+                      <Icon name="chevronRight" size={18} />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )
+          }
+        </Loading>
+        {error && !open ? <FormBanner errors={{ fields: {}, banner: error }} /> : null}
+        <ActionDialog label={t.addSplit} title={t.addSplitTitle} buttonClass="">
+          {(close) => (
+            <SplitForm
+              propertyId={property.id}
+              onDone={() => {
+                close();
+                splits.reload();
+                documents.reload();
+                onSelected(); // D133: the first split becomes the AfA basis on its own
+              }}
+            />
+          )}
+        </ActionDialog>
+      </div>
+    </DetailLayout>
   );
 }
 
 function SplitForm({ propertyId, onDone }: { propertyId: string; onDone: () => void }) {
+  const t = useT(propertyPage);
   const [source, setSource] = useState<PriceSplitSource>("purchase_contract");
   const [share, setShare] = useState("");
   const [documentId, setDocumentId] = useState<string | null>(null);
@@ -352,8 +384,8 @@ function SplitForm({ propertyId, onDone }: { propertyId: string; onDone: () => v
     <form className="stack" onSubmit={submit} noValidate>
       <Field
         id="split-source"
-        label="Quelle"
-        description="Woher die Aufteilung stammt: aus dem Kaufvertrag, aus der Arbeitshilfe des Bundesfinanzministeriums (BMF) oder aus einem Gutachten."
+        label={t.source}
+        description={t.sSourceDesc}
         errors={form.of("source")}
       >
         <select value={source} onChange={(e) => setSource(e.target.value as PriceSplitSource)}>
@@ -366,30 +398,30 @@ function SplitForm({ propertyId, onDone }: { propertyId: string; onDone: () => v
       </Field>
       <Field
         id="split-share"
-        label="Gebäudeanteil (%)"
-        hint="z. B. 78,5"
-        description="Der Anteil des Kaufpreises, der auf das Gebäude entfällt; der Rest ist Grund und Boden, der nicht abgeschrieben wird. Der Gebäudeanteil ist die Grundlage der AfA."
+        label={t.sShare}
+        hint={t.sShareHint}
+        description={t.sShareDesc}
         errors={form.of("building_share")}
       >
         <input type="text" inputMode="decimal" value={share} onChange={(e) => setShare(e.target.value)} required autoComplete="off" />
       </Field>
       <Field
         id="split-document"
-        label="Nachweis (Kaufvertrag, Arbeitshilfe, Gutachten)"
-        description="Das Dokument, aus dem der Anteil stammt: der Kaufvertrag, die ausgefüllte BMF-Arbeitshilfe oder das Gutachten."
+        label={t.sEvidence}
+        description={t.sEvidenceDesc}
         errors={form.of("evidence_document_id")}
       >
         <DocumentPicker value={documentId} onChange={setDocumentId} />
       </Field>
       <Field
         id="split-note"
-        label="Notiz (optional)"
-        description="Freier Text für Sie, z. B. wie der Wert zustande kam."
+        label={t.fNote}
+        description={t.sNoteDesc}
         errors={form.of("note")}
       >
         <input type="text" value={note} onChange={(e) => setNote(e.target.value)} autoComplete="off" />
       </Field>
-      <Submit busy={busy}>Hinzufügen</Submit>
+      <Submit busy={busy}>{t.add}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );

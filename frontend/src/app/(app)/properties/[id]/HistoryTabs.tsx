@@ -8,8 +8,11 @@ import { AuditTrail, HistoryTimeline } from "@/components/history";
 import { historySubject, loadPropertyContext } from "@/components/propertyContext";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { propertyPage } from "@/i18n/propertyPage";
 
 export function HistoryTab({ propertyId }: { propertyId: string }) {
+  const t = useT(propertyPage);
   const [unitId, setUnitId] = useState("");
   const loadHistory = useCallback(
     () =>
@@ -26,12 +29,12 @@ export function HistoryTab({ propertyId }: { propertyId: string }) {
 
   return (
     <div className="stack">
-      <p className="muted">Die Meilensteine in zeitlicher Reihenfolge. Korrigierte Daten stehen an ihrem richtigen Platz.</p>
+      <p className="muted">{t.historyIntro}</p>
       {context.data && context.data.units.length > 1 ? (
         <div>
-          <label htmlFor="history-unit">Einheit</label>
+          <label htmlFor="history-unit">{t.historyUnit}</label>
           <select id="history-unit" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
-            <option value="">Alle Einheiten</option>
+            <option value="">{t.allUnits}</option>
             {context.data.units.map((unit) => (
               <option key={unit.id} value={unit.id}>
                 {unit.label}
@@ -46,6 +49,7 @@ export function HistoryTab({ propertyId }: { propertyId: string }) {
 }
 
 export function AuditTab({ propertyId }: { propertyId: string }) {
+  const t = useT(propertyPage);
   const load = useCallback(
     () => ok(api.GET("/api/properties/{property_id}/events", { params: { path: { property_id: propertyId } } })),
     [propertyId],
@@ -53,7 +57,7 @@ export function AuditTab({ propertyId }: { propertyId: string }) {
   const events = useLoad(load);
   return (
     <div className="stack">
-      <p className="muted">Jeder Eintrag des Protokolls, in der Reihenfolge der Erfassung, gruppiert nach Anfrage.</p>
+      <p className="muted">{t.auditIntro}</p>
       <Loading state={events}>{(list) => <AuditTrail events={list} />}</Loading>
     </div>
   );
