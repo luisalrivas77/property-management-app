@@ -16,7 +16,7 @@ import { DateCorrectionForm } from "@/components/corrections";
 import { DetailLayout, useDetail } from "@/components/DetailPanel";
 import { LinkedDocuments } from "@/components/documents";
 import { correctedFrom, findMilestone } from "@/components/history";
-import { EntryRows, SchedulePanel, useLoanSchedule, YearRows } from "@/components/loans";
+import { EntryRows, scheduleRowOpen, SchedulePanel, useLoanSchedule, YearRows } from "@/components/loans";
 import { SheetDialog } from "@/components/SheetDialog";
 import { ActionDialog, Breadcrumbs, CorrectedNote, Facts, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -49,7 +49,7 @@ export default function LoanPage() {
   }
 
   const panel =
-    schedule.data ? <SchedulePanel schedule={schedule.data} rates={rates} years={years} backLabel={t.schedule} /> : null;
+    schedule.data && scheduleRowOpen(schedule.data, rates, years) ? <SchedulePanel schedule={schedule.data} rates={rates} years={years} backLabel={t.schedule} /> : null;
 
   return (
     <section>

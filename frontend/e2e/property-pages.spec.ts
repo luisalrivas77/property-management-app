@@ -70,10 +70,18 @@ test("„Bearbeiten“ slides the loan form in and saves the same PATCH body as 
   await sheet.getByLabel("Nominalzins (% p. a.)").fill("3,65");
   await sheet.getByLabel("Rate (€ / Monat)").fill("1.200");
 
-  const patch = page.waitForRequest((request) => request.method() === "PATCH" && request.url().endsWith(`/api/loans/${loan.id}`));
+  // The body is read where the request is intercepted: on the request event Chromium had no
+  // postData for this PATCH (openapi-fetch sends a Request object), so waitForRequest matched it
+  // with a null body.
+  const bodies: string[] = [];
+  await page.route(`**/api/loans/${loan.id}`, async (route) => {
+    if (route.request().method() === "PATCH") bodies.push(route.request().postDataBuffer()?.toString("utf8") ?? "");
+    await route.continue();
+  });
   await sheet.getByRole("button", { name: "Speichern" }).click();
+  await expect(sheet).toHaveCount(0);
   // LoanForm's edit body, in its own key order, unchanged by phase 10.
-  expect((await patch).postData()).toBe(
+  expect(bodies).toEqual([
     JSON.stringify({
       lender: "Sparkasse Musterstadt",
       contract_number: null,
@@ -84,8 +92,7 @@ test("„Bearbeiten“ slides the loan form in and saves the same PATCH body as 
       monthly_payment: "1200.00",
       follow_up_rate: null,
     }),
-  );
-  await expect(sheet).toHaveCount(0);
+  ]);
   // The page reloads the loan: the new instalment shows without leaving it.
   await expect(page).toHaveURL(new RegExp(`/loans/${loan.id}$`));
   await expect(page.getByText("1.200,00 € / Monat")).toBeVisible();

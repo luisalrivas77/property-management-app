@@ -96,6 +96,17 @@ export function EntryRows({ schedule, detail }: { schedule: LoanSchedule; detail
 }
 
 /** The panel of the open instalment or year, or null. */
+/** Whether the URL names an instalment or a year this schedule has, i.e. whether SchedulePanel
+ * renders anything. The page passes a panel to DetailLayout only then: a panel element that
+ * renders nothing still opened the layout's second column, which on a phone squeezed the page
+ * itself to no width. */
+export function scheduleRowOpen(schedule: LoanSchedule, rates: Detail, years: Detail): boolean {
+  return (
+    (rates.id !== null && schedule.entries.some((e) => String(e.number) === rates.id)) ||
+    (years.id !== null && schedule.years.some((y) => String(y.year) === years.id))
+  );
+}
+
 export function SchedulePanel({
   schedule,
   rates,
