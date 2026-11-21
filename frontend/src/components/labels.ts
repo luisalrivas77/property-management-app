@@ -41,15 +41,7 @@ import type { components } from "@/api/types";
 
 import { DOCUMENT_SUBTYPE_EN, DOCUMENT_TYPE_EN } from "@/i18n/documents";
 import { formatter } from "@/i18n/format";
-import { getLocale } from "@/i18n/locale";
-
-/** A label map in the chosen language (phase 10 D284): German is the source and the default;
- * under English a read returns the English entry. Object.keys, Object.entries and spread read
- * through `get`, so a picker built from a map shows English too. The value sent to the API is
- * always the enum key, never a label, so nothing English is stored. */
-function localized<K extends string, V = string>(de: Record<K, V>, en: Record<K, V>): Record<K, V> {
-  return new Proxy(de, { get: (target, key) => Reflect.get(getLocale() === "en" ? en : target, key) });
-}
+import { getLocale, localized } from "@/i18n/locale";
 
 const english = () => getLocale() === "en";
 
