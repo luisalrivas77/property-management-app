@@ -279,3 +279,26 @@ def test_a_property_it_cannot_compute_carries_its_reason_and_stays_out_of_the_to
     )
     assert result.profit_today == new.sale_today.profit
     assert (result.break_even_year, result.sale_year) == (None, 2036)
+
+
+def test_cash_before_the_handover_in_the_handover_year_counts(world):
+    """Forwarded rent of 400.00 on 20 Jun and the bank's interest-only debit of 360.00 on
+    30 Jun, both before the 1 Jul handover: −150.00 + 400.00 − 360.00 = −110.00."""
+    pid, loan = _flat(world, principal="240000.00")
+    _year_2026(world, pid, loan, "1500.00")
+    _book(
+        world,
+        date(2026, 6, 20),
+        AllocationDraft(amount=Decimal("400.00"), category=C.OTHER_INCOME, property_id=pid),
+    )
+    _book(
+        world,
+        date(2026, 6, 30),
+        AllocationDraft(
+            amount=Decimal("-360.00"), category=C.LOAN_INTEREST, property_id=pid, loan_id=loan
+        ),
+    )
+    row, _ = _payback(world, pid)
+    actual = world.query(performance_actuals, pid, today=TODAY)
+    assert row.cash_back == Decimal("-110.00")
+    assert row.cash_back == sum((y.net_cash for y in actual.years), Decimal("0"))
