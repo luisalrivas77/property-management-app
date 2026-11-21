@@ -12,7 +12,7 @@
 // „Monatsabschluss festhalten“ itself.
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { type FormEvent, type ReactNode, Suspense, useId, useState } from "react";
+import { type FormEvent, type ReactNode, Suspense, useCallback, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
@@ -55,7 +55,7 @@ import { percentInput } from "./input";
 import { snapshotOutcomeText } from "./netWorth";
 import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { Loading } from "./ui";
-import { useLoad } from "./useLoad";
+import { type Loaded, useLoad } from "./useLoad";
 
 import "./health.css";
 
@@ -85,33 +85,66 @@ interface HealthData {
   accounts: Map<string, Account>;
 }
 
-async function loadHealth(): Promise<HealthData> {
-  const [health, series, scenarios, names, accounts] = await Promise.all([
-    ok(api.GET("/api/health")),
+type HealthRest = Omit<HealthData, "health">;
+
+const loadHealthAlone = (): Promise<Health> => ok(api.GET("/api/health"));
+
+/** Everything the block shows besides GET /health. */
+async function loadHealthRest(): Promise<HealthRest> {
+  const [series, scenarios, names, accounts] = await Promise.all([
     ok(api.GET("/api/health/net-worth-series")),
     loadScenarioHistory(),
     loadMemberNames(),
     ok(api.GET("/api/accounts")),
   ]);
-  return { health, series, scenarios, names, accounts: new Map(accounts.map((account) => [account.id, account])) };
+  return { series, scenarios, names, accounts: new Map(accounts.map((account) => [account.id, account])) };
 }
 
-/** The Übersicht's phase 9 block; one request set for all of it. `onChanged` lets a page that
- * shows the same figures elsewhere (Übersicht's tiles, phase 10 D268) reload them when this
- * block saves something. */
-export function HealthSection({ onChanged }: { onChanged?: () => void } = {}) {
+interface HealthSectionProps {
+  /** Called after the block saved something, besides reloading its own figures. */
+  onChanged?: () => void;
+  /** GET /health as the page already loads it (Übersicht's tiles, phase 10 D268), so the block
+   * neither asks for it a second time nor shows other figures than the tiles; it reloads it
+   * after a save. Without it the block loads its own. */
+  health?: Loaded<Health>;
+  /** The block's other reads (the net worth series, the scenarios, the members, the accounts)
+   * start once this settles: Übersicht lets its tiles' reads go first on the small container
+   * (21 Nov 2026). Without it they start at once. */
+  after?: Promise<unknown>;
+}
+
+/** The Übersicht's phase 9 block. */
+export function HealthSection({ onChanged, health, after }: HealthSectionProps = {}) {
   return (
     <Suspense fallback={null}>
-      <HealthBlock onChanged={onChanged} />
+      {health ? <HealthBlock health={health} after={after} onChanged={onChanged} /> : <OwnHealthBlock after={after} onChanged={onChanged} />}
     </Suspense>
   );
 }
 
-function HealthBlock({ onChanged }: { onChanged?: () => void }) {
-  const state = useLoad(loadHealth);
+function OwnHealthBlock({ after, onChanged }: Omit<HealthSectionProps, "health">) {
+  const health = useLoad(loadHealthAlone);
+  return <HealthBlock health={health} after={after} onChanged={onChanged} />;
+}
+
+const NOW: Promise<unknown> = Promise.resolve();
+
+function HealthBlock({ health, after = NOW, onChanged }: Omit<HealthSectionProps, "health"> & { health: Loaded<Health> }) {
+  const loadRest = useCallback(() => after.then(loadHealthRest), [after]);
+  const rest = useLoad(loadRest);
   const requested = useSearchParams().get("month_end");
+  const state: Loaded<HealthData> = {
+    data: health.data !== undefined && rest.data !== undefined ? { health: health.data, ...rest.data } : undefined,
+    error: health.error ?? rest.error,
+    loading: health.loading || rest.loading,
+    reload: () => {
+      if (health.error != null) health.reload();
+      if (rest.error != null) rest.reload();
+    },
+  };
   const changed = () => {
-    state.reload();
+    health.reload();
+    rest.reload();
     onChanged?.();
   };
   return (
