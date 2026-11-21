@@ -8424,6 +8424,7 @@ export interface components {
             proposals?: components["schemas"]["BandProposal"][];
             /** Todos */
             todos?: components["schemas"]["HealthTodo"][];
+            last_ended?: components["schemas"]["HouseholdMonth"] | null;
         };
         /**
          * HealthMonthView

@@ -5,8 +5,9 @@
 // stripe, the three key figures with their mark as a dot before the name (an empty dot while no
 // limit is confirmed; never a colour word), and Zu prüfen. A tapped tile opens its summary in the
 // detail panel with one button into its section. Every euro figure and every share is the
-// server's (/net-worth/overview, /health, /household/cashflow, /health/months, /inbox, /properties/equity,
-// /properties/payback); the browser only counts rows and formats.
+// server's (/net-worth/overview, /health, /household/cashflow, /inbox, /properties/equity,
+// /properties/payback; /health/months only when /health's last ended month is not the tile's);
+// the browser only counts rows and formats.
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -47,11 +48,20 @@ export interface MonthCashflow {
  * Cashflow card reads them (phase 9 D235). */
 export async function loadMonthCashflow(): Promise<MonthCashflow> {
   const month = lastFullMonth();
-  const [cashflow, months] = await Promise.all([
-    loadCashflow(month),
-    ok(api.GET("/api/health/months", { params: { query: { from: month, to: month } } })),
-  ]);
-  return { month, cashflow, householdRate: months[0]?.household.savings_rate ?? null };
+  const [cashflow, householdRate] = await Promise.all([loadCashflow(month), householdRateOf(month)]);
+  return { month, cashflow, householdRate };
+}
+
+/** The household's savings rate of `month` from GET /health's `last_ended` (the key figures'
+ * tile's own read, one request for both, fetchShared; phase 10 §7.3) when that is the month;
+ * else, or when GET /health failed, from GET /health/months for the month, as before. Both are
+ * the server's same household month. */
+async function householdRateOf(month: string): Promise<string | null> {
+  const health = await loadHealthOnly().catch(() => null);
+  const last = health?.last_ended;
+  if (last != null && last.month === month) return last.savings_rate ?? null;
+  const months = await ok(api.GET("/api/health/months", { params: { query: { from: month, to: month } } }));
+  return months[0]?.household.savings_rate ?? null;
 }
 
 export const loadNetWorthToday = async (): Promise<NetWorth> => (await ok(api.GET("/api/net-worth/overview"))).today;

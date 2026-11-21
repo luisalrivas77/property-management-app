@@ -21830,6 +21830,16 @@
             },
             "type": "array",
             "title": "Todos"
+          },
+          "last_ended": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HouseholdMonth"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,

@@ -466,3 +466,23 @@ def test_the_cli_prints_gleich_or_the_difference(world, dbname, monkeypatch, cap
     assert cli.main(missing, environ) == cli.EXIT_ERROR
     assert "health.month_end_missing" in capsys.readouterr().err
     assert (_snapshots(world), _events(world)) == (3, 3)
+
+
+def test_health_carries_the_last_ended_month_as_the_months_read_returns_it(world):
+    """Phase 10 §7.3 (2): GET /health's `last_ended` is the last ended month's household
+    month exactly as GET /health/months returns it for that month alone, closed or not (a
+    line waiting in March keeps it open), so Übersicht's cash flow tile can read its savings
+    rate from GET /health; before the first ended month there is none."""
+    _closed_history(world)
+    got = world.query(health.health, TODAY)
+    [march] = world.query(health.health_months, "2027-03", "2027-03", TODAY)
+    assert got.last_ended == march.household and got.last_ended.month == "2027-03"
+    assert got.last_ended.model_dump_json() == march.household.model_dump_json()
+
+    _booked(world, date(2027, 3, 25), "-45.00", C.REPAIRS, confirm=False)  # waiting
+    got = world.query(health.health, TODAY)
+    [march] = world.query(health.health_months, "2027-03", "2027-03", TODAY)
+    assert not march.closed.closed
+    assert got.last_ended.model_dump_json() == march.household.model_dump_json()
+
+    assert world.query(health.health, date(2026, 1, 15)).last_ended is None
