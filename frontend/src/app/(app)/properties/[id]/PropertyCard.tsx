@@ -11,7 +11,9 @@ import "@/components/pageRows.css";
 export function PropertyCard({ card, title, children }: { card: Card; title: string; children: ReactNode }) {
   const id = propertyCardId(card);
   return (
-    <section id={id} className="card page-card property-anchor" aria-labelledby={`${id}-title`}>
+    // `card stack` (block flow), not the grid of `.page-card`: a wide table inside keeps its
+    // own sideways scroll instead of widening the card past a phone's width.
+    <section id={id} className="card stack property-anchor" aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`}>{title}</h2>
       {children}
     </section>

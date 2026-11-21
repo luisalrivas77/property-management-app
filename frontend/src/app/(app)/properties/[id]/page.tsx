@@ -44,10 +44,15 @@ export default function PropertyPage() {
   );
 }
 
+/** How long the cards above the target may still grow (their own lists load after the page). */
+const SETTLE_MS = 1500;
+
 /**
  * Scrolls the card an old ?tab= key or a #card-… hash names into view, once the page has
  * loaded and once per link: never on a plain section click, and never when a row's panel
- * opens (that changes the hash only, which this does not watch).
+ * opens (that changes the hash only, which this does not watch). The cards above it load their
+ * lists after the page, which pushes it down, so the scroll is repeated while the page grows,
+ * for at most SETTLE_MS and only until the person scrolls, taps or types themselves.
  */
 function useScrollToCard(requested: string | null, loaded: boolean) {
   const done = useRef<string | null>(null);
@@ -59,10 +64,22 @@ function useScrollToCard(requested: string | null, loaded: boolean) {
     if (done.current === key) return;
     done.current = key;
     if (!card || isFirstCard(card)) return;
-    const frame = window.requestAnimationFrame(() => {
-      document.getElementById(propertyCardId(card))?.scrollIntoView({ block: "start" });
-    });
-    return () => window.cancelAnimationFrame(frame);
+    const scroll = () => document.getElementById(propertyCardId(card))?.scrollIntoView({ block: "start" });
+    const frame = window.requestAnimationFrame(scroll);
+    const observer = new ResizeObserver(() => scroll());
+    observer.observe(document.body);
+    const inputs = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+    const stop = () => {
+      observer.disconnect();
+      for (const input of inputs) window.removeEventListener(input, stop);
+    };
+    for (const input of inputs) window.addEventListener(input, stop, { passive: true });
+    const timer = window.setTimeout(stop, SETTLE_MS);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      stop();
+    };
   }, [requested, loaded]);
 }
 

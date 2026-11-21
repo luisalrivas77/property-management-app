@@ -87,6 +87,8 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
     // Phase 10 (mockup 25): the unit's row opens its panel, which links to the unit's page.
     await page.getByRole("list", { name: "Einheiten" }).getByRole("link").filter({ hasText: "WE 3" }).click();
     await page.getByRole("complementary", { name: "WE 3" }).getByRole("link", { name: "Einheit öffnen" }).click();
+    // Übersicht also shows „Mietverhältnis anlegen“ per vacant unit: wait for the unit's page.
+    await expect(page).toHaveURL(/\/units\/[0-9a-f-]{36}$/);
     await page.getByRole("link", { name: "Mietverhältnis anlegen" }).click();
     await expect(page.getByRole("heading", { name: "Mietverhältnis anlegen" })).toBeVisible();
 
