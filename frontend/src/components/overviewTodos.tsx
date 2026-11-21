@@ -17,17 +17,20 @@ import { api, ok } from "@/api/client";
 import { ApiError, ruleCodes } from "@/api/errors";
 import type { AnlageVDraft, DocumentChecklistItem, DraftWarning, FlatRateCheck, Owner, Property } from "@/api/schemas";
 import type { components } from "@/api/types";
+import { translate, useT } from "@/i18n";
+import { todosText } from "@/i18n/todos";
 
 import { ReadUpload } from "./documents";
 import { flatRateTodos } from "./flatRate";
 import { todayIso } from "./format";
-import { NO_PAY_HINT, NoPayButton } from "./noPay";
+import { NoPayButton, noPayHint } from "./noPay";
 import { ReminderDone, reminderLabel, reminderLink, type Reminder } from "./reminders";
 import { payInputsHref, questionnaireHref, taxFormHref } from "./taxYear";
 import {
   REMINDER_GUIDE,
   TodoList,
   checklistEntry,
+  reminderTodo,
   coveredByWarning,
   resolveAction,
   warningEntry,
@@ -116,11 +119,12 @@ function entryWithFallback(
 ): TodoEntry | null {
   const entry = warningEntry(warning, ctx, key, onChanged, context);
   if (!entry) return null;
-  if (resolveAction(warning, ctx) === null) entry.action = <Link href={fallback}>Auf Steuern ansehen</Link>;
+  if (resolveAction(warning, ctx) === null) entry.action = <Link href={fallback}>{translate(todosText).seeOnTax}</Link>;
   return entry;
 }
 
 function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged: () => void): TodoEntry[] {
+  const t = translate(todosText);
   const entries: TodoEntry[] = [];
   const seen = new Set<string>();
   const once = (warning: DraftWarning, scope: string) => {
@@ -158,15 +162,12 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
     if (noPay) {
       entries.push({
         key: `${owner.id}-no-pay`,
-        title: `Arbeitslohn ${data.year} fehlt`,
-        text:
-          "Die letzte Gehaltsabrechnung hochladen: Sie zeigt die Summen des Jahres bis dahin, die App liest sie aus und rechnet damit. " +
-          "Wer keine hochladen möchte, trägt unter Steuern › Eure Angaben das erwartete Bruttogehalt ein; beides erledigt diesen Punkt. " +
-          NO_PAY_HINT,
+        title: t.noPayTitle(data.year),
+        text: t.noPayText + noPayHint(),
         action: (
           <>
-            <ReadUpload label="Gehaltsabrechnung hochladen" onUploaded={onChanged} />
-            <Link href={payInputsHref(data.year, owner.id)}>Bruttogehalt eintragen</Link>
+            <ReadUpload label={t.uploadPayslip} onUploaded={onChanged} />
+            <Link href={payInputsHref(data.year, owner.id)}>{t.typeGrossPay}</Link>
             <NoPayButton ownerId={owner.id} year={data.year} onDone={onChanged} />
           </>
         ),
@@ -189,16 +190,16 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
     const tax = taxFormHref("v", { year: data.year, propertyId: null, ownerId: null });
     (estimate.warnings ?? []).forEach((warning, index) => {
       if (QUESTION_CODES.has(warning.code) || !once(warning, "household")) return;
-      const entry = entryWithFallback(warning, ctx, `household-${index}`, tax, onChanged, "Haushalt");
+      const entry = entryWithFallback(warning, ctx, `household-${index}`, tax, onChanged, t.household);
       if (entry) entries.push(entry);
     });
     const open = estimate.questionnaire.open?.length ?? 0;
     if (open > 0) {
       entries.push({
         key: "questions",
-        title: `${open} ${open === 1 ? "Jahresfrage" : "Jahresfragen"} ${data.year} offen`,
-        text: "Die Jahresfragen beantworten; sie dauern meist nur ein paar Minuten, und die App rechnet die Antworten ein.",
-        action: <Link href={questionnaireHref(data.year)}>Jahresfragen beantworten</Link>,
+        title: t.questionsTitle(open, data.year),
+        text: t.questionsText,
+        action: <Link href={questionnaireHref(data.year)}>{t.answerQuestions}</Link>,
       });
     }
   }
@@ -217,7 +218,7 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
     entries.push({
       key: `reminder-${reminder.id}`,
       title: reminderLabel(reminder),
-      text: guide.text(reminder),
+      text: reminderTodo(reminder),
       action: (
         <>
           {link ? <Link href={link.href}>{link.label}</Link> : null}
@@ -231,6 +232,7 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
 
 /** `reminders` and `onRemindersChanged` are the page's (the Nächste Termine card shares them). */
 export function OverviewTodos({ reminders, onRemindersChanged }: { reminders: Reminder[]; onRemindersChanged: () => void }) {
+  const t = useT(todosText);
   const [refresh, setRefresh] = useState(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh forces a reload
   const load = useCallback(() => loadTodos(), [refresh]);
@@ -247,8 +249,8 @@ export function OverviewTodos({ reminders, onRemindersChanged }: { reminders: Re
       loading={data.data === undefined && data.error == null}
       empty={
         data.data === undefined && data.error != null
-          ? "Die offenen Punkte konnten gerade nicht geladen werden."
-          : "Nichts offen: alle Unterlagen, Angaben und Fragen sind erledigt."
+          ? t.loadFailed
+          : t.nothingOpen
       }
     />
   );

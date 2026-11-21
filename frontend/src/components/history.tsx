@@ -10,8 +10,10 @@
 // actor and the payload collapsed.
 import type { Event, JsonValue, TimelineEntry } from "@/api/schemas";
 import { useAuth } from "@/auth/AuthGate";
+import { formatter, translate, useFormat, useT } from "@/i18n";
+import { shared } from "@/i18n/shared";
 
-import { formatDate, formatDateTime, formatMoney, formatPercent, shortId } from "./format";
+import { shortId } from "./format";
 import { ACQUISITION_COST_KIND, EVENT_TYPE, NOTICE_GIVEN_BY, RENT_CHANGE_REASON, RENT_MODEL } from "./labels";
 import { CorrectedNote } from "./ui";
 
@@ -28,45 +30,47 @@ function inMap<K extends string>(labels: Record<K, string>, value: string | null
 
 /** The payload summary of a milestone: price, rent, amount (§9.4). Values are stored data. */
 export function payloadSummary(type: TimelineEntry["type"], payload: Payload): string | null {
+  const t = translate(shared);
+  const { money: formatMoney, date: formatDate, percent: formatPercent } = formatter();
   switch (type) {
     case "property.purchase_notarized":
-      return `Kaufpreis ${formatMoney(text(payload, "purchase_price"))}`;
+      return t.purchasePrice(formatMoney(text(payload, "purchase_price")));
     case "property.possession_transferred":
-      return "Beginn der AfA";
+      return t.afaStart;
     case "property.ownership_set": {
       const shares = payload.shares;
-      return Array.isArray(shares) ? `${shares.length} Eigentümer` : null;
+      return Array.isArray(shares) ? t.owners(shares.length) : null;
     }
     case "property.acquisition_cost_recorded":
     case "property.acquisition_cost_removed":
-      return `${inMap(ACQUISITION_COST_KIND, text(payload, "kind")) ?? "Nebenkosten"}: ${formatMoney(text(payload, "amount"))}`;
+      return `${inMap(ACQUISITION_COST_KIND, text(payload, "kind")) ?? t.acquisitionCost}: ${formatMoney(text(payload, "amount"))}`;
     case "tenancy.created": {
       const model = inMap(RENT_MODEL, text(payload, "rent_model"));
       const term = text(payload, "fixed_term_until");
-      const parts = [model, `Kaution ${formatMoney(text(payload, "deposit_amount"))}`];
-      if (term) parts.push(`befristet bis ${formatDate(term)}`);
+      const parts = [model, t.deposit(formatMoney(text(payload, "deposit_amount")))];
+      if (term) parts.push(t.fixedTermUntil(formatDate(term)));
       return parts.filter(Boolean).join(", ");
     }
     case "tenancy.rent_scheduled": {
       const reason = inMap(RENT_CHANGE_REASON, text(payload, "reason"));
-      const rent = `${formatMoney(text(payload, "cold_rent"))} kalt + ${formatMoney(text(payload, "operating_costs_prepayment"))} NK-Vorauszahlung`;
+      const rent = t.rent(formatMoney(text(payload, "cold_rent")), formatMoney(text(payload, "operating_costs_prepayment")));
       return reason ? `${reason}: ${rent}` : rent;
     }
     case "tenancy.parties_set": {
       const parties = payload.parties;
-      return Array.isArray(parties) ? `jetzt ${parties.length} Mieter` : null;
+      return Array.isArray(parties) ? t.nowTenants(parties.length) : null;
     }
     case "tenancy.deposit_received":
       return formatMoney(text(payload, "amount"));
     case "tenancy.notice_given": {
       const by = inMap(NOTICE_GIVEN_BY, text(payload, "given_by"));
-      return `${by ? `durch ${by}, ` : ""}zum ${formatDate(text(payload, "ends_on"))}`;
+      return `${by ? t.noticeBy(by) : ""}${t.noticeOn(formatDate(text(payload, "ends_on")))}`;
     }
     case "loan.created": {
       const parts = [
         text(payload, "lender"),
         formatMoney(text(payload, "principal")),
-        `${formatPercent(text(payload, "nominal_rate"))} Sollzins`,
+        t.nominalRate(formatPercent(text(payload, "nominal_rate"))),
       ];
       return parts.filter(Boolean).join(", ");
     }
@@ -85,9 +89,11 @@ export function HistoryTimeline({
   entries: TimelineEntry[];
   subject?: (entry: TimelineEntry) => string | null;
 }) {
-  if (entries.length === 0) return <p className="muted">Noch keine Meilensteine.</p>;
+  const t = useT(shared);
+  const { date: formatDate } = useFormat();
+  if (entries.length === 0) return <p className="muted">{t.noMilestones}</p>;
   return (
-    <ol className="timeline" aria-label="Verlauf">
+    <ol className="timeline" aria-label={t.timeline}>
       {entries.map((entry) => {
         const about = subject?.(entry);
         const summary = payloadSummary(entry.type, entry.payload);
@@ -133,12 +139,14 @@ function groupByCorrelation(events: Event[]): Event[][] {
 /** The audit trail (Protokoll): every event, grouped per request. */
 export function AuditTrail({ events }: { events: Event[] }) {
   const { me } = useAuth();
-  if (events.length === 0) return <p className="muted">Keine Einträge.</p>;
+  const t = useT(shared);
+  const { date: formatDate, dateTime: formatDateTime } = useFormat();
+  if (events.length === 0) return <p className="muted">{t.noEntries}</p>;
   function actor(event: Event): string {
     if (event.actor_type === "user") {
-      return event.actor_id === `user:${me.user.id}` ? "du" : `Haushaltsmitglied ${shortId(event.actor_id.replace(/^user:/, ""))}`;
+      return event.actor_id === `user:${me.user.id}` ? t.you : t.householdMember(shortId(event.actor_id.replace(/^user:/, "")));
     }
-    return event.actor_type === "ai" ? `KI (${event.actor_id})` : `System (${event.actor_id})`;
+    return event.actor_type === "ai" ? t.ai(event.actor_id) : t.system(event.actor_id);
   }
   return (
     <div>
@@ -148,14 +156,14 @@ export function AuditTrail({ events }: { events: Event[] }) {
         return (
           <section key={`${first.correlation_id}-${first.seq}`} className="audit-group">
             <p className="muted">
-              {formatDateTime(first.recorded_at)} · {actor(first)} · Anfrage <code>{shortId(first.correlation_id)}</code>
+              {formatDateTime(first.recorded_at)} · {actor(first)} · {t.request} <code>{shortId(first.correlation_id)}</code>
             </p>
             <ul>
               {group.map((event) => (
                 <li key={event.id}>
                   <span className="when">#{event.seq}</span> {EVENT_TYPE[event.type]}
                   {event.effective_date ? <span> · {formatDate(event.effective_date)}</span> : null}
-                  {event.corrects_event_id ? <span className="corrected">Korrektur</span> : null}
+                  {event.corrects_event_id ? <span className="corrected">{t.correction}</span> : null}
                   <details>
                     <summary className="muted">
                       <code>{event.type}</code> · {event.entity_type} {shortId(event.entity_id)}

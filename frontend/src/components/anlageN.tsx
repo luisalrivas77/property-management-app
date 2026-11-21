@@ -19,7 +19,7 @@ import { ReadUpload } from "./documents";
 import { formatDate, formatDecimal, formatMoney } from "./format";
 import { ANLAGE_N_STATUS, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
 import { BlockRows, hasBlocks } from "./anlageNBlocks";
-import { NO_PAY_HINT, NoPayButton, WithdrawNoPayButton } from "./noPay";
+import { NoPayButton, WithdrawNoPayButton, noPayHint } from "./noPay";
 import { EvidenceFold } from "./returnInputEvidence";
 import { type ReturnInput } from "./returnInputs";
 import {
@@ -330,7 +330,7 @@ function DraftView({
                 </Link>
                 <NoPayButton ownerId={owner.id} year={year} onDone={onChanged} />
               </div>
-              <p className="muted">{NO_PAY_HINT}</p>
+              <p className="muted">{noPayHint()}</p>
             </div>
           )}
           {rows.error != null && rows.data === undefined ? (

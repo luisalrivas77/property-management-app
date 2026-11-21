@@ -18,15 +18,16 @@ import { useCallback, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
+import { translate, useT } from "@/i18n";
+import { todosText } from "@/i18n/todos";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { useLoad } from "./useLoad";
 
 type ReturnInput = components["schemas"]["ReturnInput"];
 
-/** The one sentence beside the button. */
-export const NO_PAY_HINT =
-  "Wer im Jahr kein Gehalt hatte (etwa in Elternzeit), klickt hier; Elterngeld und andere Lohnersatzleistungen zählen trotzdem.";
+/** The one sentence beside the button, in the language chosen when it is shown. */
+export const noPayHint = (): string => translate(todosText).noPayHint;
 
 /** The owner's current marker for the year, or null. */
 async function currentNoPay(ownerId: string, year: number): Promise<ReturnInput | null> {
@@ -74,6 +75,7 @@ export function NoPayButton({
   onDone?: () => void;
   className?: string;
 }) {
+  const t = useT(todosText);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   async function click() {
@@ -90,8 +92,8 @@ export function NoPayButton({
   }
   return (
     <>
-      <button type="button" className={className} disabled={busy} onClick={() => void click()} title={NO_PAY_HINT}>
-        {busy ? "Speichert …" : `Kein Arbeitslohn in ${year}`}
+      <button type="button" className={className} disabled={busy} onClick={() => void click()} title={t.noPayHint}>
+        {busy ? t.saving : t.noPayButton(year)}
       </button>
       <ErrorNotice error={error} />
     </>
@@ -104,7 +106,7 @@ export function WithdrawNoPayButton({
   ownerId,
   year,
   returnInputId,
-  label = "Aufheben",
+  label,
   onDone,
   className = "link",
 }: {
@@ -115,6 +117,7 @@ export function WithdrawNoPayButton({
   onDone?: () => void;
   className?: string;
 }) {
+  const t = useT(todosText);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   async function click() {
@@ -133,7 +136,7 @@ export function WithdrawNoPayButton({
   return (
     <>
       <button type="button" className={className} disabled={busy} onClick={() => void click()}>
-        {busy ? "Speichert …" : label}
+        {busy ? t.saving : (label ?? t.withdraw)}
       </button>
       <ErrorNotice error={error} />
     </>
@@ -149,6 +152,7 @@ async function markerOfYear(ownerId: string, year: number): Promise<ReturnInput 
 /** The Eigentümer page's cell: the marker in force („Kein Arbeitslohn angegeben“ with
  * „Aufheben“), or the button that sets it. `onChanged` reloads the page's estimates. */
 export function NoPayMarker({ ownerId, year, onChanged }: { ownerId: string; year: number; onChanged?: () => void }) {
+  const t = useT(todosText);
   const load = useCallback(() => markerOfYear(ownerId, year), [ownerId, year]);
   const marker = useLoad(load);
   const reload = marker.reload;
@@ -160,7 +164,7 @@ export function NoPayMarker({ ownerId, year, onChanged }: { ownerId: string; yea
   if (marker.data) {
     return (
       <span className="row">
-        <span className="badge">Kein Arbeitslohn angegeben</span>
+        <span className="badge">{t.noPayRecorded}</span>
         <WithdrawNoPayButton ownerId={ownerId} year={year} returnInputId={marker.data.id} onDone={changed} />
       </span>
     );

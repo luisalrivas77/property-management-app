@@ -91,8 +91,9 @@ import { api, ok } from "@/api/client";
 import { ruleCodeText } from "@/api/errors";
 import type { Account, Document, ExchangeMovementRow, PossibleDuplicate, StatementImport, Transaction } from "@/api/schemas";
 import type { components } from "@/api/types";
-import { useT } from "@/i18n";
+import { translate, useT } from "@/i18n";
 import { inbox } from "@/i18n/inbox";
+import { todosText } from "@/i18n/todos";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { notifyInboxChanged } from "@/lib/inboxCount";
 
@@ -536,8 +537,9 @@ function AiSuggestions({ onChanged }: { onChanged: () => void }) {
 
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 /** The API's fallback question for a proposal without a model question (review.py's
- * _PROPOSED_QUESTION); the bulk list shows a line's question only when it is the model's own. */
-const GENERIC_PROPOSED_QUESTION = "Stimmt diese Zuordnung?";
+ * "proposed.question", German or English by the request's language); the bulk list shows a
+ * line's question only when it is the model's own. */
+const GENERIC_PROPOSED_QUESTIONS: ReadonlySet<string> = new Set(["Stimmt diese Zuordnung?", "Is this categorisation right?"]);
 type ConfirmCategoryResult = components["schemas"]["ConfirmCategoryResult"];
 
 /** „Alle bestätigen“ (phase 6 D159 amended 13 Nov 2026): the private lines' plain proposals
@@ -738,7 +740,7 @@ function BulkConfirmList({
               const id = item.transaction_id;
               if (!id) return null;
               const line = data.transactions.get(id);
-              const question = item.question && item.question !== GENERIC_PROPOSED_QUESTION ? item.question : null;
+              const question = item.question && !GENERIC_PROPOSED_QUESTIONS.has(item.question) ? item.question : null;
               const payee = line?.counterparty_name ?? line?.booking_text ?? "Ohne Gegenseite";
               const amount = line ? signedMoney(line.amount) : "–";
               const account = line ? data.accounts.get(line.account_id) : undefined;
@@ -908,7 +910,7 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
       <>
         <strong>{reminderLabel(reminder)}</strong>
         <span className="inbox-detail">fällig am {formatDate(reminder.due_on)}</span>
-        {reminderTodo(reminder) ? <span className="inbox-detail todo-text">Was tun: {reminderTodo(reminder)}</span> : null}
+        {reminderTodo(reminder) ? <span className="inbox-detail todo-text">{translate(todosText).whatToDo} {reminderTodo(reminder)}</span> : null}
       </>
     ) : (
       <strong>Termin</strong>

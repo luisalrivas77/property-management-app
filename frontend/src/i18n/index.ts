@@ -22,7 +22,7 @@ import { getLocale, useLocale } from "./locale";
 
 export { defineMessages, LOCALE_TAG, LOCALES, type Catalogue, type Locale, type Messages, type Translation } from "./core";
 export { formatter, useFormat, type Formatter } from "./format";
-export { getLocale, setLocale, useLocale } from "./locale";
+export { getLocale, localized, setLocale, useLocale } from "./locale";
 
 /** The catalogue's dictionary in the chosen language. */
 export function useT<D extends Messages>(catalogue: Catalogue<D>): Translation<D> {

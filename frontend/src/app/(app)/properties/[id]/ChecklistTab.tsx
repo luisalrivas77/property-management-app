@@ -17,18 +17,23 @@ import type {
   ChecklistStatus,
   DocumentChecklistItem,
 } from "@/api/schemas";
-import { formatDate, formatMoney } from "@/components/format";
 import { DOCUMENT_SUBTYPE, DOCUMENT_TYPE } from "@/components/labels";
-import { REQUIREMENT_GUIDE, checklistAction, requirementTodo } from "@/components/todos";
+import { checklistAction, requirementGuide, requirementTodo } from "@/components/todos";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { formatter, translate, useT } from "@/i18n";
+import { todosText } from "@/i18n/todos";
 
-const STATUS_LABEL: Record<ChecklistStatus, string> = {
-  present: "vorhanden",
-  missing: "fehlt",
-  expected: "noch nicht fällig",
-  incomplete: "Steuerjahr fehlt",
-};
+function statusLabel(status: ChecklistStatus): string {
+  const t = translate(todosText);
+  const labels: Record<ChecklistStatus, string> = {
+    present: t.statusPresent,
+    missing: t.missing,
+    expected: t.statusExpected,
+    incomplete: t.taxYearMissing,
+  };
+  return labels[status];
+}
 
 const STATUS_GLYPH: Record<ChecklistStatus, string> = {
   present: "✓",
@@ -39,25 +44,29 @@ const STATUS_GLYPH: Record<ChecklistStatus, string> = {
 
 /** "Kaufvertrag · 15.03.2024": by type and date, never by title (titles can name a tenant). */
 function refLabel(ref: ChecklistDocumentRef): string {
-  const kind = ref.subtype ? DOCUMENT_SUBTYPE[ref.subtype] : ref.type ? DOCUMENT_TYPE[ref.type] : "Dokument";
-  const date = ref.document_date ? formatDate(ref.document_date) : `eingegangen ${formatDate(ref.received_at)}`;
+  const t = translate(todosText);
+  const { date: formatDate } = formatter();
+  const kind = ref.subtype ? DOCUMENT_SUBTYPE[ref.subtype] : ref.type ? DOCUMENT_TYPE[ref.type] : t.document;
+  const date = ref.document_date ? formatDate(ref.document_date) : t.received(formatDate(ref.received_at));
   return `${kind} · ${date}`;
 }
 
 /** "Bankumsatz vom 04.05.2026 · 1.000,00 €": a deposit paid into the account (D142). */
 function bankLineLabel(line: ChecklistBankLine): string {
-  return `Bankumsatz vom ${formatDate(line.booking_date)} · ${formatMoney(line.amount)}`;
+  const { date, money } = formatter();
+  return translate(todosText).bankLine(date(line.booking_date), money(line.amount));
 }
 
 function hintFor(item: DocumentChecklistItem): string {
-  const base = REQUIREMENT_GUIDE[item.code].hint;
-  if (item.status === "incomplete") return "Steuerjahr am Dokument eintragen";
-  if (item.status === "expected" && item.due_on) return `${base} · erwartet bis ${formatDate(item.due_on)}`;
+  const t = translate(todosText);
+  const base = requirementGuide(item.code).hint;
+  if (item.status === "incomplete") return t.enterTaxYear;
+  if (item.status === "expected" && item.due_on) return t.expectedBy(base, formatter().date(item.due_on));
   if (item.code === "price_split" && item.status === "present" && item.documents.length === 0) {
-    return "Ergebnis der BMF-Arbeitshilfe gespeichert";
+    return t.bmfStored;
   }
   if (item.code === "deposit_record" && item.status === "present" && item.documents.length === 0) {
-    return "Nachgewiesen durch die Zahlung auf dem Konto";
+    return t.provenByPayment;
   }
   return base;
 }
@@ -103,15 +112,16 @@ export function ChecklistTab({
   );
   const checklist = useLoad(load);
   const shownYear = year ?? defaultYear;
+  const t = useT(todosText);
 
   return (
     <section className="card checklist" aria-labelledby={`${selectId}-title`}>
       <div className="row checklist-head">
-        <h2 id={`${selectId}-title`}>Unterlagen für die Steuererklärung</h2>
+        <h2 id={`${selectId}-title`}>{t.checklistTitle}</h2>
         <span className="spacer" />
         {fixedYear === undefined && years.length > 0 && shownYear !== null ? (
           <label htmlFor={selectId} className="inline">
-            Steuerjahr
+            {t.taxYear}
             <select id={selectId} value={shownYear} onChange={(event) => setYear(Number(event.target.value))}>
               {years.map((y) => (
                 <option key={y} value={y}>
@@ -125,7 +135,7 @@ export function ChecklistTab({
       <Loading state={checklist}>
         {(data) =>
           data.items.length === 0 ? (
-            <p className="muted">Für {data.tax_year} sind keine Unterlagen nötig.</p>
+            <p className="muted">{t.noDocumentsNeeded(data.tax_year)}</p>
           ) : (
             <ul className="checklist-items">
               {data.items.map((item) => (
@@ -143,7 +153,7 @@ export function ChecklistTab({
           )
         }
       </Loading>
-      <p className="muted checklist-foot">Planungshilfe, keine Steuerberatung.</p>
+      <p className="muted checklist-foot">{t.planningAid}</p>
     </section>
   );
 }
@@ -163,7 +173,8 @@ function ChecklistRow({
   items: readonly DocumentChecklistItem[];
   onChanged: () => void;
 }) {
-  const guide = REQUIREMENT_GUIDE[item.code];
+  const t = useT(todosText);
+  const guide = requirementGuide(item.code);
   const action = checklistAction(item, { propertyId, payments, items, onChanged });
   const bankLines = item.bank_lines ?? [];
   const todo = requirementTodo(item);
@@ -175,12 +186,12 @@ function ChecklistRow({
       <div>
         <p className="checklist-title">
           {guide.title(item, year)}
-          <span className="visually-hidden">: {STATUS_LABEL[item.status]}</span>
+          <span className="visually-hidden">: {statusLabel(item.status)}</span>
         </p>
         <p className="checklist-hint">{hintFor(item)}</p>
         {todo ? (
           <p className="checklist-hint todo-text">
-            <strong>Was tun:</strong> {todo}
+            <strong>{t.whatToDo}</strong> {todo}
           </p>
         ) : null}
         {item.documents.length > 0 || bankLines.length > 0 || action ? (

@@ -21,6 +21,13 @@ export function useLocale(): Locale {
   return useDeviceSetting(localeSetting);
 }
 
+/** A German record read in the chosen language on every access (a Proxy, so Object.keys,
+ * entries and spreads follow too): the shape of the existing label maps stays, and only the
+ * keys ever reach the API. */
+export function localized<K extends string, V = string>(de: Record<K, V>, en: Record<K, V>): Record<K, V> {
+  return new Proxy(de, { get: (target, key) => Reflect.get(getLocale() === "en" ? en : target, key) });
+}
+
 if (typeof window !== "undefined") {
   // <html lang> follows the choice, here and in another tab of this device (the root layout's
   // script sets it before the first paint).

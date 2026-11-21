@@ -47,6 +47,7 @@ confirmed legs stay as they are.
   API only; it hides the token, held or not, until „Kein Spam“.
 """
 
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
@@ -55,6 +56,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, func, insert, or_, select, update
 
+from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
@@ -67,6 +69,7 @@ from hausbuch.rules import valuation
 from hausbuch.rules.chain.dust import dust_rule, is_dust
 from hausbuch.rules.chain.solana import (
     QUESTION_PROGRAM,
+    QUESTION_UNKNOWN,
     QUESTION_UNREADABLE,
     is_program_question,
 )
@@ -248,21 +251,138 @@ def confirmable(question: str | None, kinds: Sequence[MovementKind], *, dust: bo
 
 
 def _euro(value: Decimal) -> str:
-    return f"{_amount(value)} €"
+    return f"€{_amount(value)}" if i18n.english() else f"{_amount(value)} €"
+
+
+# The cards' sentences (phase 10 D284): built on read for the wallet page and Zu prüfen only,
+# never stored, so each sits here with its English.
+TEXTS = i18n.Texts(
+    "wallet_groups",
+    {
+        "dust": (
+            "{leg}: ein Kleinstbetrag von einer fremden Adresse, weniger als {below} wert. Das"
+            " ist vermutlich Adress-Spam („Address Poisoning“): Jemand schickt einen winzigen"
+            " Betrag von einer Adresse, die einer echten zum Verwechseln ähnlich sieht, und"
+            " hofft, dass sie später aus dem Verlauf kopiert und Geld dorthin geschickt wird."
+            " Kopieren Sie nie eine Adresse aus dem Verlauf. Vorschlag von Hausbuch: als"
+            " Kleinstbetrag (Spam) buchen; er zählt im Bestand mit 0 € Kaufpreis und ist kein"
+            " Einkommen. Stimmt das, „Bestätigen“.",
+            "{leg}: a tiny amount from a stranger's address, worth less than {below}. This is"
+            " probably address spam (“address poisoning”): someone sends a tiny amount from an"
+            " address that looks almost exactly like a real one, hoping it is later copied from"
+            " the history and money is sent there. Never copy an address from the history."
+            " Hausbuch's suggestion: book it as a tiny amount (spam); it counts in the holding at"
+            " a purchase price of €0 and is not income. If that is right, “Confirm”.",
+        ),
+        "change": (
+            "Bei dieser Bitcoin-Zahlung ging Geld an Adressen, die Hausbuch nicht kennt. Eine"
+            " davon kann Ihr Wechselgeld sein (eine neue eigene Adresse der Wallet). Für jede"
+            " Adresse bitte sagen, ob sie Ihnen gehört.",
+            "This Bitcoin payment sent money to addresses Hausbuch does not know. One of them"
+            " may be your change (a new address of your own wallet). Please say for each"
+            " address whether it is yours.",
+        ),
+        "unreadable": (
+            "Hausbuch kann diese Transaktion nicht vollständig lesen: welche Token sie bewegt"
+            " hat, steht nicht lesbar in den Daten der Blockchain. Bis sie gelesen ist, weicht"
+            " der Saldo dieser Wallet ab. Eine Antwort lässt sich hier noch nicht geben.",
+            "Hausbuch cannot read this transaction in full: which tokens it moved is not"
+            " readable in the blockchain's data. Until it is read, this wallet's balance"
+            " differs. No answer can be given here yet.",
+        ),
+        "unstorable": (
+            "Hausbuch konnte diese Transaktion nicht speichern: ein Betrag ist größer oder"
+            " feiner, als Hausbuch ihn speichern kann, oder sie ist nicht lesbar aufgeteilt."
+            " Die übrigen Transaktionen der Adresse sind eingelesen; der Saldo weicht um diese"
+            " Transaktion ab, bis Hausbuch sie lesen kann. Hier ist nichts zu tun.",
+            "Hausbuch could not store this transaction: an amount is larger or finer than"
+            " Hausbuch can store, or it is not split readably. The address's other"
+            " transactions are read; the balance differs by this transaction until Hausbuch"
+            " can read it. There is nothing to do here.",
+        ),
+        "question": (
+            "Diese Transaktion berührt eine eigene Adresse, Hausbuch kann aber nicht sagen,"
+            " was sie für die Wallet bedeutet.",
+            "This transaction touches an address of your own, but Hausbuch cannot say what it"
+            " means for the wallet.",
+        ),
+        "program": (
+            "Vorschlag von Hausbuch: {words}. Das Programm {program} kennt Hausbuch nicht,"
+            " liest die Transaktion an ihren Beträgen aber als {what}. Stimmt das,"
+            " „Bestätigen“.",
+            "Hausbuch's suggestion: {words}. Hausbuch does not know the program {program}, but"
+            " reads the transaction by its amounts as {what}. If that is right, “Confirm”.",
+        ),
+        "what.swap": ("einen Tausch", "a swap"),
+        "what.moves": ("diese Bewegungen", "these movements"),
+        "proposal": (
+            "Vorschlag von Hausbuch: {words}. Stimmt das, „Bestätigen“.",
+            "Hausbuch's suggestion: {words}. If that is right, “Confirm”.",
+        ),
+        "asked": ("{words}. {question}", "{words}. {question}"),
+        "what": ("{words}. Was war das?", "{words}. What was it?"),
+        "fee": ("Gebühr {amount} {symbol}", "Fee {amount} {symbol}"),
+        "received": ("{amount} {symbol} erhalten{where}", "{amount} {symbol} received{where}"),
+        "sent": ("{amount} {symbol} gesendet{where}", "{amount} {symbol} sent{where}"),
+    },
+)
 
 
 def _dust_text(legs: list[WalletLeg]) -> str:
     """D262: the receipt, what it likely is and what never to do (principle 7)."""
     (leg,) = [leg for leg in legs if not _fee(leg)]
-    return (
-        f"{_leg_words(leg)}: ein Kleinstbetrag von einer fremden Adresse, weniger als "
-        f"{_euro(dust_rule().below_eur)} wert. Das ist vermutlich Adress-Spam („Address "
-        "Poisoning“): Jemand schickt einen winzigen Betrag von einer Adresse, die einer echten "
-        "zum Verwechseln ähnlich sieht, und hofft, dass sie später aus dem Verlauf kopiert und "
-        "Geld dorthin geschickt wird. Kopieren Sie nie eine Adresse aus dem Verlauf. Vorschlag "
-        "von Hausbuch: als Kleinstbetrag (Spam) buchen; er zählt im Bestand mit 0 € Kaufpreis "
-        "und ist kein Einkommen. Stimmt das, „Bestätigen“."
-    )
+    return TEXTS("dust", leg=_leg_words(leg), below=_euro(dust_rule().below_eur))
+
+
+def _btc_amounts(text: str) -> str:
+    """„0,0299 BTC“ in a list of change candidates → "0.0299 BTC"; „und“ → "and"."""
+    return re.sub(r"(\d),(\d+) BTC", r"\1.\2 BTC", text)
+
+
+# The groups' stored questions (rules/chain writes them in a sync and the group stores them,
+# so they are German): their English for a card read under `en`. A question no entry matches
+# stays German; the raw question still decides `card_kind` and `confirmable`.
+QUESTIONS = i18n.Patterns(
+    "wallet_questions",
+    [
+        (QUESTION_UNKNOWN, "What is this transaction?"),
+        (f"{QUESTION_PROGRAM}{{program}}?", "What was this transaction through {program}?"),
+        (
+            QUESTION_UNREADABLE,
+            "Hausbuch cannot read this transaction in full. Which tokens did it move?",
+        ),
+        ("Ist {account} Ihr eigenes Stake-Konto?", "Is {account} your own stake account?"),
+        (
+            FOREIGN_INPUTS_QUESTION,
+            "This Bitcoin transaction also has inputs from other addresses (such as a CoinJoin"
+            " or a jointly signed payment). What happened here?",
+        ),
+        (
+            NO_MOVEMENT_QUESTION,
+            "This Bitcoin transaction touches an address of your own but moves no balance."
+            " What happened here?",
+        ),
+        (
+            "Ist eine dieser Adressen Ihr Wechselgeld? {n:count} Adressen",
+            "Is one of these addresses your change? {n} addresses",
+        ),
+        (
+            "Ist eine dieser Adressen Ihr Wechselgeld? {named:btc} und {n:count} weitere",
+            "Is one of these addresses your change? {named} and {n} more",
+        ),
+        (
+            "Ist eine dieser Adressen Ihr Wechselgeld? {named:btc}",
+            "Is one of these addresses your change? {named}",
+        ),
+        ("Ist diese Adresse Ihr Wechselgeld? {named:btc}", "Is this address your change? {named}"),
+    ],
+    converters={"btc": _btc_amounts},
+)
+
+
+def shown_question(question: str | None) -> str | None:
+    """A group's stored question as the card shows it: German, or English under `en`."""
+    return None if question is None else QUESTIONS.translate(question)
 
 
 def card_text(
@@ -273,50 +393,30 @@ def card_text(
     question: str | None = None,
     dust: bool = False,
 ) -> str:
-    """The card's sentence in plain German: what happened (principle 7). It asks for
-    „Bestätigen“ exactly when `confirmable` holds, otherwise it asks the group's question."""
+    """The card's sentence in plain words, in the request's language: what happened
+    (principle 7). It asks for „Bestätigen“ exactly when `confirmable` holds, otherwise it asks
+    the group's question (stored German, shown through `QUESTIONS`)."""
     match card:
         case WalletCardKind.CHANGE:
-            return (
-                "Bei dieser Bitcoin-Zahlung ging Geld an Adressen, die Hausbuch nicht kennt. "
-                "Eine davon kann Ihr Wechselgeld sein (eine neue eigene Adresse der Wallet). "
-                "Für jede Adresse bitte sagen, ob sie Ihnen gehört."
-            )
+            return TEXTS("change")
         case WalletCardKind.UNREADABLE:
-            return (
-                "Hausbuch kann diese Transaktion nicht vollständig lesen: welche Token sie "
-                "bewegt hat, steht nicht lesbar in den Daten der Blockchain. Bis sie gelesen "
-                "ist, weicht der Saldo dieser Wallet ab. Eine Antwort lässt sich hier noch "
-                "nicht geben."
-            )
+            return TEXTS("unreadable")
         case WalletCardKind.UNSTORABLE:
-            return (
-                "Hausbuch konnte diese Transaktion nicht speichern: ein Betrag ist größer oder "
-                "feiner, als Hausbuch ihn speichern kann, oder sie ist nicht lesbar aufgeteilt. "
-                "Die übrigen Transaktionen der Adresse sind eingelesen; der Saldo weicht um "
-                "diese Transaktion ab, bis Hausbuch sie lesen kann. Hier ist nichts zu tun."
-            )
+            return TEXTS("unstorable")
         case WalletCardKind.QUESTION:
-            return (
-                "Diese Transaktion berührt eine eigene Adresse, Hausbuch kann aber nicht sagen, "
-                "was sie für die Wallet bedeutet."
-            )
+            return TEXTS("question")
     if dust:
         return _dust_text(legs)
     words = _words(legs)
     if confirmable(question, [leg.kind for leg in legs]):
         if is_program_question(question):
             program = question[len(QUESTION_PROGRAM) :].rstrip("?")  # type: ignore[index]
-            what = "einen Tausch" if kind is GroupKind.SWAP else "diese Bewegungen"
-            return (
-                f"Vorschlag von Hausbuch: {words}. Das Programm {program} kennt Hausbuch "
-                f"nicht, liest die Transaktion an ihren Beträgen aber als {what}. Stimmt das, "
-                "„Bestätigen“."
-            )
-        return f"Vorschlag von Hausbuch: {words}. Stimmt das, „Bestätigen“."
+            what = TEXTS("what.swap" if kind is GroupKind.SWAP else "what.moves")
+            return TEXTS("program", words=words, program=program, what=what)
+        return TEXTS("proposal", words=words)
     if question is not None and all(leg.kind is not MovementKind.UNCATEGORIZED for leg in legs):
-        return f"{words}. {question}"
-    return f"{words}. Was war das?"
+        return TEXTS("asked", words=words, question=shown_question(question))
+    return TEXTS("what", words=words)
 
 
 def _words(legs: list[WalletLeg]) -> str:
@@ -325,15 +425,15 @@ def _words(legs: list[WalletLeg]) -> str:
 
 def _amount(quantity: Decimal) -> str:
     text = format(abs(quantity).normalize(), "f")
-    return text.replace(".", ",")
+    return text if i18n.english() else text.replace(".", ",")
 
 
 def _leg_words(leg: WalletLeg) -> str:
     where = f" ({leg.address_masked})" if leg.address_masked else ""
     if leg.kind is MovementKind.FEE:
-        return f"Gebühr {_amount(leg.quantity)} {leg.symbol}"
-    verb = "erhalten" if leg.quantity > 0 else "gesendet"
-    return f"{_amount(leg.quantity)} {leg.symbol} {verb}{where}"
+        return TEXTS("fee", amount=_amount(leg.quantity), symbol=leg.symbol)
+    verb = "received" if leg.quantity > 0 else "sent"
+    return TEXTS(verb, amount=_amount(leg.quantity), symbol=leg.symbol, where=where)
 
 
 def _legs(conn: Connection, group_ids: list[UUID]) -> dict[UUID, list[WalletLeg]]:
@@ -530,7 +630,7 @@ def _to_card(row, legs: list[WalletLeg], unfit: set[UUID], dust: bool = False) -
         status=GroupStatus(row.status),
         occurred_at=row.occurred_at,
         card=card,
-        question=None if card is WalletCardKind.CHANGE else row.question,
+        question=None if card is WalletCardKind.CHANGE else shown_question(row.question),
         text=card_text(card, kind, pending, question=row.question, dust=dust),
         legs=legs,
         confirmable=confirmable(row.question, [leg.kind for leg in pending], dust=dust),

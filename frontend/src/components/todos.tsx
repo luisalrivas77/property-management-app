@@ -29,6 +29,10 @@ import type {
   WarningCode,
 } from "@/api/schemas";
 import type { components } from "@/api/types";
+import { translate, useT } from "@/i18n";
+import { common } from "@/i18n/common";
+import { getLocale } from "@/i18n/locale";
+import { todosText } from "@/i18n/todos";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { centsToString, toCents } from "./allocations";
@@ -37,6 +41,7 @@ import { formatDate, formatMoney, formatPercent } from "./format";
 import { toDecimalString } from "./input";
 import { ACQUISITION_COST_KIND, ALLOCATION_CATEGORY, PRICE_SPLIT_SOURCE, proofBill } from "./labels";
 import { WithdrawNoPayButton } from "./noPay";
+import { LABEL_EN, REMINDER_EN, REQUIREMENT_EN, WARNING_EN } from "./todosEn";
 import { ActionDialog } from "./ui";
 import { useLoad } from "./useLoad";
 import { questionnaireHref, taxFormHref, withBenefitPrefill } from "./taxYear";
@@ -586,8 +591,19 @@ export const WARNING_GUIDE: Partial<Record<WarningCode, Guide>> = {
   },
 };
 
+const inEnglish = () => getLocale() === "en";
+
+/** A link or button label of these guides in the chosen language (todosEn.ts, LABEL_EN). */
+export function todoLabel(label: string): string {
+  return inEnglish() ? (LABEL_EN[label] ?? label) : label;
+}
+
+/** The guide of a code; in English its title and text from todosEn.ts, the action unchanged. */
 export function guideFor(code: WarningCode): Guide | undefined {
-  return WARNING_GUIDE[code];
+  const guide = WARNING_GUIDE[code];
+  const en = guide && inEnglish() ? WARNING_EN[code] : undefined;
+  if (!guide || !en) return guide;
+  return guide.todo ? { ...guide, title: en.title ?? guide.title, text: en.text } : { ...guide, text: en.text };
 }
 
 export function isTodo(warning: DraftWarning): boolean {
@@ -607,10 +623,11 @@ export function resolveAction(warning: DraftWarning, ctx: GuideContext): GuideAc
 /** "Was tun: …" under a warning's text. Nothing for a code the map does not know. */
 export function WhatToDo({ warning }: { warning: DraftWarning }) {
   const guide = guideFor(warning.code);
+  const t = useT(todosText);
   if (!guide) return null;
   return (
     <p className="todo-text">
-      <strong>Was tun:</strong> {guide.text(warning.params ?? {}, warning)}
+      <strong>{t.whatToDo}</strong> {guide.text(warning.params ?? {}, warning)}
     </p>
   );
 }
@@ -630,14 +647,14 @@ export function WarningActionView({
   if (!action) return null;
   switch (action.kind) {
     case "link":
-      return <Link href={action.href}>{action.label}</Link>;
+      return <Link href={action.href}>{todoLabel(action.label)}</Link>;
     case "upload":
       return (
         <>
           {action.proofOffer && action.proofFor ? (
             <AttachProofAction proof={action.proofOffer} billId={action.proofFor} onChanged={onChanged} />
           ) : null}
-          <ReadUpload label={action.label} proofFor={action.proofFor} onUploaded={onChanged} />
+          <ReadUpload label={todoLabel(action.label)} proofFor={action.proofFor} onUploaded={onChanged} />
         </>
       );
     case "split":
@@ -645,7 +662,7 @@ export function WarningActionView({
     case "rebook_rent":
       return (
         <>
-          <Link href={action.href}>Zahlung öffnen</Link>
+          <Link href={action.href}>{todoLabel("Zahlung öffnen")}</Link>
           <RebookAsRentAction fact={action.fact} countedAsRent={action.countedAsRent} onChanged={onChanged} />
         </>
       );
@@ -661,7 +678,7 @@ export function WarningActionView({
           ownerId={ctx.ownerId}
           year={ctx.year}
           returnInputId={action.returnInputId}
-          label="Angabe „Kein Arbeitslohn“ aufheben"
+          label={todoLabel("Angabe „Kein Arbeitslohn“ aufheben")}
           className=""
           onDone={onChanged}
         />
@@ -1023,7 +1040,7 @@ function DepositSplitAction({
 export function checklistAction(item: DocumentChecklistItem, ctx: ChecklistContext): ReactNode {
   const fix = requirementFix(item, ctx);
   const split = item.status === "missing" && item.code === "deposit_record" ? depositSplit(item) : null;
-  const link = fix ? <Link href={fix.href}>{fix.label}</Link> : null;
+  const link = fix ? <Link href={fix.href}>{todoLabel(fix.label)}</Link> : null;
   if (!split) return link;
   return (
     <>
@@ -1443,13 +1460,21 @@ export function isChecklistTodo(item: DocumentChecklistItem): boolean {
   return item.status === "missing" || item.status === "incomplete";
 }
 
+/** The words of a checklist row (title, hint, Was tun) in the chosen language; the fix stays. */
+export function requirementGuide(code: RequirementCode): RequirementGuide {
+  const guide = REQUIREMENT_GUIDE[code];
+  const en = inEnglish() ? REQUIREMENT_EN[code] : undefined;
+  return en ? { ...guide, ...en } : guide;
+}
+
 /** Was tun for a checklist row; null when the document is there. */
 export function requirementTodo(item: DocumentChecklistItem): string | null {
-  const guide = REQUIREMENT_GUIDE[item.code];
+  const guide = requirementGuide(item.code);
+  const t = translate(todosText);
   const status: ChecklistStatus = item.status;
   if (status === "missing") return guide.missing;
-  if (status === "expected") return guide.expected ?? `Noch nicht fällig. ${guide.missing}`;
-  if (status === "incomplete") return "Das Dokument öffnen und eintragen, für welches Steuerjahr es gilt.";
+  if (status === "expected") return guide.expected ?? t.notDueYet(guide.missing);
+  if (status === "incomplete") return t.incompleteTodo;
   return null;
 }
 
@@ -1544,7 +1569,8 @@ export const REMINDER_GUIDE: Record<ReminderKind, ReminderGuide> = {
 
 /** Was tun for a reminder; null for a kind the map does not know yet. */
 export function reminderTodo(reminder: Reminder): string | null {
-  return REMINDER_GUIDE[reminder.kind]?.text(reminder) ?? null;
+  const en = inEnglish() ? REMINDER_EN[reminder.kind] : undefined;
+  return (en ?? REMINDER_GUIDE[reminder.kind])?.text(reminder) ?? null;
 }
 
 // --- the "Was noch fehlt" list ------------------------------------------------------------------
@@ -1570,18 +1596,20 @@ export function TodoList({
   loading?: boolean;
   titleId: string;
 }) {
+  const t = useT(todosText);
+  const c = useT(common);
   return (
     <section className="card todo-card" aria-labelledby={titleId}>
       <div className="row todo-head">
-        <h2 id={titleId}>Was noch fehlt</h2>
+        <h2 id={titleId}>{t.stillMissing}</h2>
         {entries.length > 0 ? (
-          <span className="badge badge-warn" aria-label={`${entries.length} offen`}>
+          <span className="badge badge-warn" aria-label={t.openCount(entries.length)}>
             {entries.length}
           </span>
         ) : null}
       </div>
       {entries.length === 0 ? (
-        <p className="muted">{loading ? "Lädt …" : empty}</p>
+        <p className="muted">{loading ? c.loading : empty}</p>
       ) : (
         <ol className="todo-list">
           {entries.map((entry) => (
@@ -1612,7 +1640,7 @@ export function warningEntry(
   if (!guide?.todo) return null;
   return {
     key,
-    title: guide.title?.(warning.params ?? {}) ?? "Offener Punkt",
+    title: guide.title?.(warning.params ?? {}) ?? translate(todosText).openItem,
     text: guide.text(warning.params ?? {}, warning),
     action: <WarningActionView warning={warning} ctx={ctx} onChanged={onChanged} />,
     context,
@@ -1640,9 +1668,10 @@ export function checklistEntry(
   context?: string,
 ): TodoEntry | null {
   if (!isChecklistTodo(item)) return null;
+  const t = translate(todosText);
   return {
     key: `checklist-${ctx.propertyId}-${item.code}-${item.scope.id}`,
-    title: `${REQUIREMENT_GUIDE[item.code].title(item, year)}: ${item.status === "incomplete" ? "Steuerjahr fehlt" : "fehlt"}`,
+    title: `${requirementGuide(item.code).title(item, year)}: ${item.status === "incomplete" ? t.taxYearMissing : t.missing}`,
     text: requirementTodo(item),
     action: checklistAction(item, ctx),
     context,
@@ -1653,10 +1682,11 @@ type OpenQuestion = components["schemas"]["OpenQuestion"];
 
 /** An open Jahresfrage as a to-do entry, with its own question text when known. */
 export function questionEntry(question: OpenQuestion, year: number, text: string | undefined, context?: string): TodoEntry {
+  const t = translate(todosText);
   return {
     key: `frage-${question.key}-${question.owner_id ?? ""}-${question.property_id ?? ""}`,
-    title: text ?? "Jahresfrage offen",
-    text: "Die Frage beantworten; die App rechnet die Antwort ein.",
+    title: text ?? t.questionOpen,
+    text: t.answerQuestion,
     action: (
       <Link
         href={questionnaireHref(year, {
@@ -1665,7 +1695,7 @@ export function questionEntry(question: OpenQuestion, year: number, text: string
           propertyId: question.property_id,
         })}
       >
-        Beantworten
+        {t.answer}
       </Link>
     ),
     context,
@@ -1734,7 +1764,7 @@ export function AnlageVTodos({
       titleId="tax-todos"
       entries={entries}
       loading={checklist.loading || questionnaire.loading}
-      empty="Für diesen Entwurf ist nichts offen."
+      empty={translate(todosText).nothingOpenDraft}
     />
   );
 }
