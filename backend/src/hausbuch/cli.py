@@ -586,6 +586,8 @@ def perf_overview(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
         raise CliError("--repeat must be at least 1")
     if args.profile and args.repeat < 2:
         raise CliError("--profile needs --repeat 2 or more: it profiles the warm pass")
+    if args.check_kept and args.repeat < 2:
+        raise CliError("--check-kept needs --repeat 2 or more: a later pass reads the kept")
     try:
         url = load_admin_database_url(environ)
     except SettingsError as exc:
@@ -601,6 +603,7 @@ def perf_overview(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
             repeat=args.repeat,
             profile=args.profile,
             digest=args.digest,
+            check_kept=args.check_kept,
         )
     except ProbeError as exc:
         raise CliError(str(exc)) from None
@@ -1440,6 +1443,13 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print on the last pass the first 16 hex characters of the SHA-256 of each "
         "response body (JSON with sorted keys), never the body",
+    )
+    perf.add_argument(
+        "--check-kept",
+        action="store_true",
+        help="switch the kept answers on (phase 10 §7.4), mark the requests of the later "
+        "passes served from them, then compare every kept answer with a recomputation and fail "
+        "on any difference",
     )
     perf.set_defaults(command=perf_overview, command_name="perf-overview")
 
