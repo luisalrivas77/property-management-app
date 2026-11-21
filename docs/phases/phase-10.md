@@ -216,12 +216,16 @@ live load time“ until then). Next step in §7.3.
 ### 7.3 Next speed step (scoped 21 Nov 2026, not built)
 
 Luis asked for diagnostics and a scope only, no build yet; he chose code over a bigger container („No cost, code
-only“). Measured on the live data, read-only, CPU time without database waits (cProfile on `time.process_time`, dev
-box, profiled so about a third above plain runs): Übersicht's reads cost **12.3 s of CPU**, and on 0.25 vCPU the page
-takes about their sum. The largest single costs: `/properties/payback` 2.7 s, `/health` 2.1 s, `/inbox` 1.5 s,
-`/health/net-worth-series` 1.3 s, `/health/months` 0.9 s, `/net-worth/overview` 0.9 s. Most of it is the same work
-repeated: `services.health.read_months` (every ended month's household month) runs in three routes (3.2 s together),
-`services.transfers.open_transfers` in four (2.4 s), `services.tax.draft_facts` twice inside payback.
+only“). Measured on the live data, read-only, CPU time without database waits (`time.process_time`, dev box, no
+profiler): one Übersicht load's reads cost **about 7.7 s of CPU**, and on 0.25 vCPU the page takes about their sum
+(about 10 s live). The largest: `/properties/payback` about 1.0 s, `/health` 0.9 s, `/inbox` 0.8–1.0 s,
+`/tax/return-estimate` 0.6 s, `/health/net-worth-series` 0.56 s, `/health/months` 0.53 s, `/net-worth/overview`
+0.54 s. A cProfile run (`cProfile.Profile(time.process_time)`) found where the work repeats:
+`services.health.read_months` (every ended month's household month) in three routes, `services.transfers.
+open_transfers` in four, `services.tax.draft_facts` twice inside payback. Its milliseconds are not savings: the
+profiler about doubles a route (payback 2.7 s profiled, 1.0 s plain) and inflates work made of many tiny calls far
+more (this section first sized the savings from the profiled figures, so they were too large, corrected the same
+day).
 
 Zu prüfen (about 4–5 s live): `loadInbox` (`frontend/src/components/inbox.tsx`) fetches the imports and every line of
 all nine accounts that hold lines, 18 requests, 1,219 lines, about 1.2 MB and 1.6 s of CPU, to look up the few lines
@@ -229,20 +233,20 @@ the cards name; on 21 Nov 2026 the three open cards named none.
 
 The scope, each change proven to leave every answer unchanged:
 
-1. **Vermögen im Verlauf from `/health`** (frontend only, about −1.3 s). `/health`'s `series` is computed exactly as
+1. **Vermögen im Verlauf from `/health`** (frontend only, about −0.56 s). `/health`'s `series` is computed exactly as
    `/health/net-worth-series` (`series(_totals(_newest_run_figures(conn)), closed households of ended_months)`), and
    the two were equal on the live data; `healthFigures.tsx` takes the page's `/health.series` on Übersicht and stops
    asking the series route (the Planung and Haushalt pages unchanged).
-2. **The Cashflow tile's month from `/health`** (about −0.9 s). `/health` already reads every ended month; it gains a
+2. **The Cashflow tile's month from `/health`** (about −0.53 s). `/health` already reads every ended month; it gains a
    field with the last ended month's household month (`last_ended`), which the tile reads instead of
    `/health/months?from=<month>&to=<month>`. A month read inside the whole range equals the same month read alone
    (checked for September on the live data: `/health.newest` equal to `/health/months`' household); the gate
    compares the two for the last ended month.
-3. **Payback once per request** (about −1.3 s). `draft_facts` and `checklist_facts` read once per request and
+3. **Payback once per request** (about −0.3 to −0.4 s; `draft_facts` 173 ms and `checklist_facts` 83 ms plain). `draft_facts` and `checklist_facts` read once per request and
    passed down; the §11 tax year computed once per allocation per draft (or per `project()` run) instead of per
-   `of_year` lookup, which removes the remaining 550,000 lookups (`with_year_numbers` about 1.0 s). Rules stay pure,
+   `of_year` lookup, which removes the remaining 193,000 per-allocation lookups (under 0.2 s plain). Rules stay pure,
    no fixture changes, the 163 fixture drafts and projections byte-identical.
-4. **`open_transfers` once per call** (about −0.3 to −0.5 s). `_line_legs`, `_current_links` and `_linked_ids` run
+4. **`open_transfers` once per call** (about −0.1 s; the whole call is 174 ms plain). `_line_legs`, `_current_links` and `_linked_ids` run
    two or three times inside one call (in `/health`, `/health/months`, `/inbox`); computed once and passed down.
 5. **Zu prüfen reads only the lines its cards name** (about −1.6 s CPU and 1.2 MB on the phone). A new read,
    `GET /inbox/lines`, returns the lines and imports the cards can look up, computed by the server from the same
@@ -256,10 +260,17 @@ The scope, each change proven to leave every answer unchanged:
 
 Not proposed: keeping a figure between requests (a stale money figure after a change would be silent), and taking a
 closed month's household figures from its stored `health_snapshot` instead of recomputing ten months on every read
-(it would change D242's compute-on-read and is Luis's decision; `/health` alone would still cost about 2 s).
+(it would change D242's compute-on-read). Luis proposed it the same day (compare once, then serve the stored month
+until its old data changes); measured plain, `read_months` costs 384 ms over the ten ended months and 242 ms for the
+newest alone, since most of its cost is the open-transfer check over the whole history and the month still open, so
+it would save about 0.14 s per `/health` (at most the whole 0.38 s), about 0.2 s of a 10 s load once items 1 and 2
+stop the other two routes recomputing the months; against a change detector that fails silently when it misses an
+input, so not recommended.
 
-Expected: Übersicht about 12.3 → 7.5 s of profiled CPU, so about 6–7 s live instead of 10; Zu prüfen about 2 s
-instead of 4–5. Gate: `perf-overview --digest` old against new (every body equal; `/health` compared without its new
+Expected (plain CPU): Übersicht about 7.7 → 6.2 s, so **about 8 s live instead of 10** (this said 6–7 s, from the
+profiled figures); Zu prüfen 3.4 → 1.8 s, so about 2–2.5 s instead of 4–5 (measured plain, unchanged). Beyond this,
+Übersicht's remaining cost is a dozen separate calculations of 0.4–1 s each with no single large repeat left, so a
+further large step needs more CPU (Luis declined a bigger container on 21 Nov 2026) or showing less at load. Gate: `perf-overview --digest` old against new (every body equal; `/health` compared without its new
 field), a read-only check on the live data that every id a card can look up is in `GET /inbox/lines` and each object
 equals the per-account route's, `health-check --from 2026-03` „alles gleich“, and one review (a new read path under
 row-level security, and the blank-card risk).
