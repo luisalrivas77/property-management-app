@@ -169,7 +169,7 @@ not drawn above got a mockup in the chosen shell (phase 10 D278 amended): 18 Zu 
 Each was drawn from an inventory of what the screen shows today: every card, button and figure kept, on the
 page or in the detail panel, nothing added that no endpoint serves (two exceptions to check before the build:
 a document's page count in 23 and the Nebenkosten total in 25 are not served today and are dropped unless the
-server adds them). On the phone a wide table's row keeps its label and amount, its other columns in the panel,
+server adds them; the Nebenkosten total and 25's other figures are served since phase 10 D285, 21 Nov 2026). On the phone a wide table's row keeps its label and amount, its other columns in the panel,
 and no frame scrolls sideways (checked at 390 px). 17-C2's Immobilie section was corrected the same day: the
 sale is tax-free from 26 June 2036, ten years after the notary date, as 14-C2 says (it said October 2036).
 
