@@ -213,7 +213,7 @@ PR #522 (request log, 21 Nov 2026 17:47 UTC, Luis: „It is faster. But still mo
 answered between 0.9 and 6.9 s and the rest by about 10 s, against about 16 s before (this said „Still open: the
 live load time“ until then). Next step in §7.3.
 
-### 7.3 Next speed step (scoped 21 Nov 2026, not built)
+### 7.3 Next speed step (scoped 21 Nov 2026, being built)
 
 Luis asked for diagnostics and a scope only, no build yet; he chose code over a bigger container („No cost, code
 only“). Measured on the live data, read-only, CPU time without database waits (`time.process_time`, dev box, no
@@ -278,7 +278,12 @@ field), a read-only check on the live data that every id a card can look up is i
 equals the per-account route's, `health-check --from 2026-03` „alles gleich“, and one review (a new read path under
 row-level security, and the blank-card risk).
 
-### 7.4 Reuse the answers while nothing changed (scoped 21 Nov 2026, not built)
+### 7.4 Reuse the answers while nothing changed (scoped 21 Nov 2026, being built)
+
+Luis chose §7.3 and §7.4 over a full processor the same evening (about 2.5–3 s for every load, at about €22–27 more a
+month): „No it's not worth the money. Your proposed fix would reduce it the same amount. And you can calculate the
+data after a prefetch. I can live with the 8 second penalty after making a change.“ Both are being built in
+parallel (this said „not built“ until then).
 
 Luis, 21 Nov 2026 („Yes please add it“), after the assistant answered that §7.3 is not the farthest code can go.
 Most loads of Übersicht and Zu prüfen come when nothing in the household's data has changed since the last one, yet
