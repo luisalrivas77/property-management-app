@@ -104,3 +104,120 @@ export const todosText = defineMessages({
     planningAid: "A planning aid, not tax advice.",
   },
 });
+
+// The direct actions of the to-dos in components/todos.tsx (the dialogs and inline forms beside
+// a guide). The English button names are the ones components/todosEn.ts quotes in its guides.
+export const todoActions = defineMessages({
+  de: {
+    saving: "Speichert …",
+    changeSaved: "Die Änderung wird mit Datum gespeichert und lässt sich bei der Zahlung wieder ändern.",
+    paymentGone: "Diese Zahlung wurde inzwischen anders zugeordnet. Bitte die Zahlung öffnen und dort prüfen.",
+    // AttachProofAction
+    attachProof: "Vorhandenen Nachweis zuordnen",
+    attachProofTitle: "Vorhandenen Zahlungsnachweis zuordnen",
+    attachProofText: (amount: string | null) =>
+      `Der schon hochgeladene Zahlungsnachweis${amount ? ` über ${amount}` : ""} wird dieser Rechnung zugeordnet und gilt dann als Beleg, dass sie bezahlt wurde. Wurde sie laut Nachweis in einem anderen Jahr bezahlt, öffnet sich danach der Nachweis mit dem Vorschlag, sie in diesem Jahr zu zählen. `,
+    viewProof: "Nachweis ansehen",
+    yesAssign: "Ja, zuordnen",
+    // SplitAction
+    openSplit: "Kaufpreisaufteilung öffnen",
+    uploadContract: "Kaufvertrag hochladen",
+    enterSplit: "Aufteilung selbst eintragen",
+    chooseSplit: (n: number) => `Eine der ${n} Aufteilungen wählen`,
+    applying: "Wird übernommen …",
+    applySplitFromContract: (share: string) => `Gebäudeanteil ${share} aus dem Kaufvertrag übernehmen`,
+    applySplitFromSource: (share: string, source: string) => `Gebäudeanteil ${share} aus der Quelle „${source}“ übernehmen`,
+    // DepositSplitAction
+    tenancy: "Mietverhältnis",
+    unit: "Einheit",
+    tenancyFrom: (unit: string, date: string) => `${unit}, ab ${date}`,
+    depositPayment: (date: string, category: string, amount: string) => `Zahlung vom ${date} (${category}, ${amount})`,
+    splitMany: (payment: string, n: number, each: string | null) =>
+      `Die ${payment} auf ${n} Mietverhältnisse aufteilen${each ? `: je ${each}` : ""}?`,
+    splitPart: (payment: string, part: string, rest: string) =>
+      `Von der ${payment} ${part} diesem Mietverhältnis zuordnen? Der Rest von ${rest} bleibt als Kaution ohne Mietverhältnis stehen.`,
+    splitOne: (payment: string) => `Die ${payment} diesem Mietverhältnis zuordnen?`,
+    assignDeposit: "Kaution aus Bankumsatz zuordnen",
+    assignDepositTitle: "Kaution zuordnen",
+    depositProofNote:
+      "Die Zahlung gilt dann als Nachweis der Kaution. Die Änderung wird mit Datum gespeichert und lässt sich bei der Zahlung wieder ändern.",
+    // RebookAsRentAction
+    bookAsRent: "Als Miete buchen",
+    bookAsRentTitle: "Einnahme als Miete buchen",
+    alreadyRent: (date: string, amount: string) =>
+      `Die Zahlung vom ${date} über ${amount} zählt in der Steuer schon als Miete und wird jetzt auch als Kaltmiete gebucht. Die Steuerzahlen ändern sich dadurch nicht.`,
+    becomesRent: (date: string, amount: string) =>
+      `Die Zahlung vom ${date} über ${amount} wird als Kaltmiete gebucht und zählt dann in der Zeile der Miete statt bei den sonstigen Einnahmen.`,
+    yesBookAsRent: "Ja, als Miete buchen",
+    // PreHandoverAction
+    countAsRent: "Als Miete zählen",
+    countAsRentTitle: "Einnahmen vor der Übergabe",
+    preHandoverText:
+      "Diese Einnahmen kamen, bevor die Wohnung Ihnen übergeben wurde. Wenn Sie in diesen Monaten schon als Vermieter im Mietvertrag standen, sind sie Ihre Mieteinnahmen und kommen in die Zeile der Miete. Die Entscheidung wird mit Datum gespeichert und lässt sich später ändern.",
+    concernsPayments: "Das betrifft diese Zahlungen:",
+    fromIban: (iban: string) => ` · von ${iban}`,
+    willBeRent: " · wird als Kaltmiete gebucht",
+    bookedAs: (category: string) => ` · gebucht als ${category}`,
+    notRentHint: "Ist eine davon keine Miete, zum Beispiel eine Gutschrift der Bank, erst bei der Zahlung richtig zuordnen.",
+    notBooked: (n: number) =>
+      `Die Entscheidung ist gespeichert. ${n === 1 ? "Eine Zahlung konnte" : `${n} Zahlungen konnten`} nicht als Kaltmiete gebucht werden; sie stehen unter „Was noch fehlt“ mit „Als Miete buchen“.`,
+    yesCountAsRent: "Ja, als Miete zählen",
+    // LivingAreaAction
+    uploadAreaCalculation: "Wohnflächenberechnung hochladen",
+    livingArea: "Wohnfläche (m²)",
+    saveLivingArea: "Wohnfläche speichern",
+  },
+  en: {
+    saving: "Saving …",
+    changeSaved: "The change is saved with its date and can be changed again at the payment.",
+    paymentGone: "This payment has been assigned differently in the meantime. Please open the payment and check it there.",
+    attachProof: "Link existing proof",
+    attachProofTitle: "Link an existing proof of payment",
+    attachProofText: (amount: string | null) =>
+      `The proof of payment already uploaded${amount ? ` for ${amount}` : ""} is linked to this invoice and then counts as the receipt showing it was paid. If the proof shows it was paid in another year, the proof opens next with the suggestion to count it in that year. `,
+    viewProof: "View proof",
+    yesAssign: "Yes, link it",
+    openSplit: "Open the purchase price split",
+    uploadContract: "Upload purchase contract (Kaufvertrag)",
+    enterSplit: "Enter the split yourself",
+    chooseSplit: (n: number) => `Choose one of the ${n} splits`,
+    applying: "Applying …",
+    applySplitFromContract: (share: string) => `Apply building share ${share} from the purchase contract`,
+    applySplitFromSource: (share: string, source: string) => `Apply building share ${share} from the source “${source}”`,
+    tenancy: "Tenancy",
+    unit: "Unit",
+    tenancyFrom: (unit: string, date: string) => `${unit}, from ${date}`,
+    depositPayment: (date: string, category: string, amount: string) => `payment of ${date} (${category}, ${amount})`,
+    splitMany: (payment: string, n: number, each: string | null) =>
+      `Split the ${payment} across ${n} tenancies${each ? `: ${each} each` : ""}?`,
+    splitPart: (payment: string, part: string, rest: string) =>
+      `Assign ${part} of the ${payment} to this tenancy? The rest of ${rest} stays as a deposit without a tenancy.`,
+    splitOne: (payment: string) => `Assign the ${payment} to this tenancy?`,
+    assignDeposit: "Assign deposit from bank line",
+    assignDepositTitle: "Assign deposit",
+    depositProofNote:
+      "The payment then counts as proof of the deposit (Kaution). The change is saved with its date and can be changed again at the payment.",
+    bookAsRent: "Book as rent",
+    bookAsRentTitle: "Book income as rent",
+    alreadyRent: (date: string, amount: string) =>
+      `The payment of ${date} for ${amount} already counts as rent for tax and is now booked as base rent too. The tax figures do not change.`,
+    becomesRent: (date: string, amount: string) =>
+      `The payment of ${date} for ${amount} is booked as base rent and then counts on the rent line instead of under other income.`,
+    yesBookAsRent: "Yes, book as rent",
+    countAsRent: "Count as rent",
+    countAsRentTitle: "Income before the handover",
+    preHandoverText:
+      "This income arrived before the flat was handed over to you. If you were already named as landlord in the lease in those months, it is your rental income and goes on the rent line. The decision is saved with its date and can be changed later.",
+    concernsPayments: "This concerns these payments:",
+    fromIban: (iban: string) => ` · from ${iban}`,
+    willBeRent: " · will be booked as base rent",
+    bookedAs: (category: string) => ` · booked as ${category}`,
+    notRentHint: "If one of them is not rent, for example a credit from the bank, first assign it correctly at the payment.",
+    notBooked: (n: number) =>
+      `The decision is saved. ${n === 1 ? "One payment" : `${n} payments`} could not be booked as base rent; ${n === 1 ? "it is" : "they are"} listed under “Still missing” with “Book as rent”.`,
+    yesCountAsRent: "Yes, count as rent",
+    uploadAreaCalculation: "Upload the living-area calculation (Wohnflächenberechnung)",
+    livingArea: "Living area (m²)",
+    saveLivingArea: "Save living area",
+  },
+});
