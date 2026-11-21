@@ -313,3 +313,13 @@ def test_shape_is_kept():
     with i18n.use(i18n.EN):
         swapped = todo_texts.english({"gaps": [gap], "id": uuid4()})
     assert set(swapped) == {"gaps", "id"} and swapped["gaps"][0].figure is DebtFigure.LTV
+
+
+def test_frontend_names_the_categories_alike():
+    """components/labels.ts carries the same English, so a screen and a to-do agree."""
+    path = Path(__file__).parents[2] / "frontend/src/components/labels.ts"
+    source = path.read_text("utf-8")
+    start = source.index("const ALLOCATION_CATEGORY_EN")
+    block = source[start : source.index("};", start)]
+    frontend = dict(re.findall(r'^\s+(\w+): "([^"]*)",', block, re.M))
+    assert frontend == {c.value: CATEGORY_LABEL_EN[c] for c in C}
