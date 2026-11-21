@@ -34,6 +34,7 @@ Definitions:
 
 from collections.abc import Sequence
 from decimal import Decimal
+from uuid import UUID
 
 from hausbuch.rules.tax.rounding import cents, one_decimal
 from hausbuch.schemas.performance import (
@@ -138,15 +139,20 @@ def payback(
 
 
 def left_out(
-    paid: PropertyPaidIn, reason: PaybackReason, error_code: str | None = None
+    paid: PropertyPaidIn,
+    reason: PaybackReason,
+    error_code: str | None = None,
+    loan_id: UUID | None = None,
 ) -> PropertyPayback:
-    """A property without a payback: its paid_in as computed, and why."""
+    """A property without a payback: its paid_in as computed, and why (with loan_not_valued,
+    the loan whose schedule fails, so the screen can link to it)."""
     return PropertyPayback(
         property_id=paid.property_id,
         label=paid.label,
         paid_in=paid.paid_in,
         reason=reason,
         error_code=error_code,
+        loan_id=loan_id,
     )
 
 

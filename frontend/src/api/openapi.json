@@ -30101,6 +30101,18 @@
             ],
             "title": "Error Code"
           },
+          "loan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loan Id"
+          },
           "projection_error_code": {
             "anyOf": [
               {

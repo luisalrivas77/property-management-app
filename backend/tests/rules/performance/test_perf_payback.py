@@ -209,3 +209,10 @@ def test_totals_without_any_property():
         None,
         None,
     )
+
+
+def test_a_loan_without_a_value_names_its_loan():
+    loan = uuid.uuid4()
+    got = rules.left_out(_paid("1000.00"), "loan_not_valued", loan_id=loan)
+    assert (got.reason, got.loan_id, got.cash_back) == ("loan_not_valued", loan, None)
+    assert rules.total([got]).paid_in == ZERO  # left out of the totals

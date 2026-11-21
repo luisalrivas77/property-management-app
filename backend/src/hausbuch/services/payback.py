@@ -78,8 +78,9 @@ def properties_payback(conn: Connection, *, today: date) -> PropertiesPayback:
             out.append(rules.left_out(row, "before_handover"))
             continue
         lines = net_worth_lines(conn, prop, today, [])
-        if any(line.kind is L.LOAN and line.value_eur is None for line in lines):
-            out.append(rules.left_out(row, "loan_not_valued"))
+        failing = [line for line in lines if line.kind is L.LOAN and line.value_eur is None]
+        if failing:
+            out.append(rules.left_out(row, "loan_not_valued", loan_id=failing[0].loan_id))
             continue
         value = sum((line.value_eur for line in lines if line.kind is L.PROPERTY), rules.ZERO)
         balance = -sum((line.value_eur for line in lines if line.kind is L.LOAN), rules.ZERO)

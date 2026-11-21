@@ -993,6 +993,7 @@ class PropertyPayback(Schema):
     sale_today: SaleToday | None = None
     reason: PaybackReason | None = None
     error_code: str | None = None
+    loan_id: UUID | None = None  # reason loan_not_valued: the loan whose schedule fails
     projection_error_code: str | None = None
 
 
