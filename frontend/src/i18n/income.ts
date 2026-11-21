@@ -3,6 +3,166 @@
 // English beside it (glossary.md).
 import { defineMessages } from "./core";
 
+const SOURCE_DE: Record<string, string> = { estimate: "Schätzung", bescheid: "Bescheid", override: "manuell" };
+const SOURCE_EN: Record<string, string> = { estimate: "Estimate", bescheid: "Tax assessment", override: "by hand" };
+
+const KIND_DE: Record<string, string> = {
+  expected_gross_pay: "Erwartetes Bruttogehalt",
+  deductions_override: "Abzüge",
+  bescheid_zve: "zvE laut Bescheid",
+  marginal_rate_override: "Steuersatz manuell",
+};
+const KIND_EN: Record<string, string> = {
+  expected_gross_pay: "Expected gross pay",
+  deductions_override: "Deductions",
+  bescheid_zve: "Taxable income (zvE) per tax assessment",
+  marginal_rate_override: "Tax rate by hand",
+};
+
+const HELP_DE: Record<string, string> = {
+  expected_gross_pay:
+    "Der erwartete Bruttoarbeitslohn des ganzen Jahres, wie er später auf der Lohnsteuerbescheinigung steht. Eine Schätzung genügt.",
+  deductions_override:
+    "Ersetzt die geschätzten Abzüge ganz: Werbungskosten, Sozialversicherung und Sonderausgaben zusammen, so wie sie vom Bruttogehalt bis zum zvE abgehen.",
+  bescheid_zve:
+    "Das zu versteuernde Einkommen laut Einkommensteuerbescheid (gemeinsame Veranlagung). Es ersetzt die Schätzung für dieses Jahr; das Ergebnis der Vermietung, das darin steckt, rechnet die App heraus.",
+  marginal_rate_override:
+    "Ein fester Steuersatz einschließlich Solidaritätszuschlag und Kirchensteuer. Er ersetzt für dieses Jahr die Berechnung aus dem Einkommen.",
+};
+const HELP_EN: Record<string, string> = {
+  expected_gross_pay:
+    "The expected gross pay for the whole year, as it will later appear on the Lohnsteuerbescheinigung (annual wage tax certificate). An estimate is enough.",
+  deductions_override:
+    "Replaces the estimated deductions entirely: Werbungskosten (deductible expenses), social insurance and Sonderausgaben (special expenses) together, as they come off the gross pay down to the zvE (taxable income).",
+  bescheid_zve:
+    "The taxable income per the Einkommensteuerbescheid (income tax assessment, joint assessment). It replaces the estimate for this year; the app takes out the rental result it contains.",
+  marginal_rate_override:
+    "A fixed tax rate including the solidarity surcharge and church tax. It replaces the calculation from the income for this year.",
+};
+
+export const income = defineMessages({
+  de: {
+    rateSource: (source: string) => SOURCE_DE[source] ?? source,
+    kindLabel: (kind: string) => KIND_DE[kind] ?? kind,
+    fieldHelp: (kind: string) => HELP_DE[kind] ?? "",
+    effectFailed: "Steuerwirkung: konnte nicht berechnet werden.",
+    effectNoTariff: (year: number) => `Steuerwirkung: für ${year} ist kein Einkommensteuertarif hinterlegt.`,
+    effect: "Steuerwirkung",
+    enterIncome: "Einkommen eintragen",
+    effectEffective: (rate: string) => `${rate} effektiv`,
+    effectSlope: (rate: string) => `Grenzsteuersatz ${rate}`,
+    tariff: (year: number) => `Tarif ${year}`,
+    effectWithSource: (source: string) => `Steuerwirkung (${source})`,
+    estimated: "geschätzt",
+    lessTax: " weniger Steuer",
+    moreTax: " mehr Steuer",
+    effectLinkTitle: "Einkommen und Steuersatz unter Steuern › Eure Angaben",
+    carriedSuffix: " (fortgeschrieben)",
+    taxYear: "Steuerjahr",
+    intro:
+      "Aus dem erwarteten Bruttogehalt schätzt die App das zu versteuernde Einkommen (zvE) und damit, wie sich das Ergebnis der Vermietung auf die Steuer auswirkt. Angaben gelten auch für die Folgejahre, bis ein späteres Jahr eigene Angaben hat; ein Jahr mit eigenen Angaben nutzt nur diese.",
+    owner: "Eigentümer",
+    grossHeader: (year: number) => `Erwartetes Bruttogehalt ${year}`,
+    deductionsHeader: (year: number) => `Abzüge ${year}`,
+    fromAnlageN: (amount: string) => `aus Anlage N und Vorsorge: ${amount}`,
+    estimatedAmount: (amount: string) => `geschätzt: ${amount}`,
+    estimatedOnceGross: "geschätzt, sobald ein Bruttogehalt eingetragen ist",
+    uploadPay: "Lohnsteuerbescheinigung oder Gehaltsabrechnung hochladen",
+    confirmedReplace:
+      "Bestätigte Zahlen einer Lohnsteuerbescheinigung oder Gehaltsabrechnung ersetzen das erwartete Bruttogehalt dieses Jahres; der Steuersatz wird dann daraus berechnet.",
+    household: "Haushalt (gemeinsame Veranlagung)",
+    zveBescheidTerm: (year: number) => `zvE laut Bescheid (${year}, Beleg)`,
+    noBescheid: "kein Bescheid erfasst",
+    uploadBescheid: "Bescheid hochladen und auslesen",
+    rateTerm: (year: number) => `Steuersatz manuell (${year})`,
+    rateNotSet: "nicht gesetzt: der Satz wird aus dem Einkommen berechnet",
+    zveNoTariff: (year: number) =>
+      `Für ${year} ist kein Einkommensteuertarif hinterlegt; die Angaben werden trotzdem gespeichert.`,
+    zveFailed: "Das zvE konnte gerade nicht berechnet werden.",
+    noIncome: (year: number) => `Für ${year} sind noch keine Einkommensangaben erfasst.`,
+    zveBescheid: "zvE laut Bescheid",
+    zve: "zvE",
+    carried: (year: number) => `· aus den Angaben für ${year} fortgeschrieben`,
+    notCurrent: "Die Angabe wurde inzwischen geändert; die Anzeige ist neu geladen.",
+    removeFailed: "Das Entfernen hat nicht geklappt. Bitte erneut versuchen.",
+    manual: " (manuell)",
+    change: "ändern",
+    enter: "Eintragen",
+    useEstimate: "Schätzung verwenden",
+    remove: "Entfernen",
+    pickBescheid: "Bitte den Einkommensteuerbescheid als Beleg auswählen.",
+    alreadyRecorded:
+      "Für dieses Jahr ist schon ein Wert erfasst. Bitte abbrechen; die Anzeige zeigt ihn nach dem Neuladen.",
+    changedMeanwhile: "Der Wert wurde inzwischen geändert. Bitte abbrechen und erneut ändern.",
+    bescheid: "Einkommensteuerbescheid",
+    bescheidDescription: "Der Bescheid, auf dem das zvE steht; er wird als Beleg verknüpft.",
+    note: "Notiz (optional)",
+    noteDescription: "Zum Beispiel woher der Wert stammt.",
+    kept: "Die bisherige Angabe bleibt im Verlauf.",
+    save: "Speichern",
+    cancel: "Abbrechen",
+  },
+  en: {
+    rateSource: (source: string) => SOURCE_EN[source] ?? source,
+    kindLabel: (kind: string) => KIND_EN[kind] ?? kind,
+    fieldHelp: (kind: string) => HELP_EN[kind] ?? "",
+    effectFailed: "Tax effect: could not be calculated.",
+    effectNoTariff: (year: number) => `Tax effect: no income tax tariff is on file for ${year}.`,
+    effect: "Tax effect",
+    enterIncome: "Enter income",
+    effectEffective: (rate: string) => `${rate} effective`,
+    effectSlope: (rate: string) => `Marginal tax rate ${rate}`,
+    tariff: (year: number) => `Tariff ${year}`,
+    effectWithSource: (source: string) => `Tax effect (${source})`,
+    estimated: "estimated",
+    lessTax: " less tax",
+    moreTax: " more tax",
+    effectLinkTitle: "Income and tax rate under Taxes › Your details",
+    carriedSuffix: " (carried forward)",
+    taxYear: "Tax year",
+    intro:
+      "From the expected gross pay the app estimates the taxable income (zvE) and so how the rental result affects the tax. Entries also apply to the following years until a later year has entries of its own; a year with its own entries uses only those.",
+    owner: "Owner",
+    grossHeader: (year: number) => `Expected gross pay ${year}`,
+    deductionsHeader: (year: number) => `Deductions ${year}`,
+    fromAnlageN: (amount: string) => `from the Anlage N (employment income form) and provident contributions: ${amount}`,
+    estimatedAmount: (amount: string) => `estimated: ${amount}`,
+    estimatedOnceGross: "estimated once a gross pay is entered",
+    uploadPay: "Upload Lohnsteuerbescheinigung (annual wage tax certificate) or Gehaltsabrechnung (payslip)",
+    confirmedReplace:
+      "Confirmed figures from a Lohnsteuerbescheinigung or Gehaltsabrechnung replace this year's expected gross pay; the tax rate is then calculated from them.",
+    household: "Household (joint assessment)",
+    zveBescheidTerm: (year: number) => `zvE per tax assessment (${year}, receipt)`,
+    noBescheid: "no tax assessment recorded",
+    uploadBescheid: "Upload and read the tax assessment",
+    rateTerm: (year: number) => `Tax rate by hand (${year})`,
+    rateNotSet: "not set: the rate is calculated from the income",
+    zveNoTariff: (year: number) => `No income tax tariff is on file for ${year}; the entries are saved anyway.`,
+    zveFailed: "The zvE could not be calculated just now.",
+    noIncome: (year: number) => `No income details are recorded for ${year} yet.`,
+    zveBescheid: "zvE per tax assessment",
+    zve: "zvE",
+    carried: (year: number) => `· carried forward from the entries for ${year}`,
+    notCurrent: "The entry has changed in the meantime; the view has been reloaded.",
+    removeFailed: "Removing did not work. Please try again.",
+    manual: " (by hand)",
+    change: "change",
+    enter: "Enter",
+    useEstimate: "Use the estimate",
+    remove: "Remove",
+    pickBescheid: "Please choose the Einkommensteuerbescheid (income tax assessment) as the receipt.",
+    alreadyRecorded: "A value is already recorded for this year. Please cancel; the view shows it after reloading.",
+    changedMeanwhile: "The value has changed in the meantime. Please cancel and change it again.",
+    bescheid: "Einkommensteuerbescheid (income tax assessment)",
+    bescheidDescription: "The assessment that shows the zvE; it is linked as the receipt.",
+    note: "Note (optional)",
+    noteDescription: "For example where the value comes from.",
+    kept: "The previous entry stays in the history.",
+    save: "Save",
+    cancel: "Cancel",
+  },
+});
+
 export const householdReturn = defineMessages({
   de: {
     used: "Verwendet:",

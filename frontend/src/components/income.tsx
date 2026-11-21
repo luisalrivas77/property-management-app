@@ -30,10 +30,12 @@ import type {
   TaxRateResult,
   ZveEstimate,
 } from "@/api/schemas";
+import { useFormat, useT, type Formatter, type Translation } from "@/i18n";
+import { income } from "@/i18n/income";
 
 import { DocumentPicker, ReadUpload } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
-import { formatDecimal, formatMoney, formatPercent, todayIso } from "./format";
+import { todayIso } from "./format";
 import { GrossSourceChip, HouseholdReturnBlocks } from "./householdReturn";
 import {
   decimalInput,
@@ -48,34 +50,21 @@ import { Loading } from "./ui";
 import { payInputsHref } from "./taxYear";
 import { useLoad } from "./useLoad";
 
-type RateSource = ZveEstimate["source"];
-
-const SOURCE_LABEL: Record<RateSource, string> = {
-  estimate: "Schätzung",
-  bescheid: "Bescheid",
-  override: "manuell",
-};
-
-const KIND_LABEL: Record<IncomeInputKind, string> = {
-  expected_gross_pay: "Erwartetes Bruttogehalt",
-  deductions_override: "Abzüge",
-  bescheid_zve: "zvE laut Bescheid",
-  marginal_rate_override: "Steuersatz manuell",
-};
+type T = Translation<(typeof income)["de"]>;
 
 function codesOf(error: unknown): string[] {
   return error instanceof ApiError && error.body ? ruleCodes(error.body) : [];
 }
 
 /** "33.8" (a percent from the API, already rounded) → "33,8 %". */
-function percentText(value: string): string {
-  return `${formatDecimal(value)} %`;
+function percentText(value: string, f: Formatter): string {
+  return `${f.decimal(value)}${f.locale === "de" ? " %" : "%"}`;
 }
 
 /** The source chip: "Schätzung 2026 · 81.993,00 € zvE", "Bescheid 2025 · …", "manuell 2026". */
-function sourceText(zve: ZveEstimate): string {
-  const head = `${SOURCE_LABEL[zve.source]} ${zve.tax_year}`;
-  return zve.amount != null ? `${head} · ${formatMoney(zve.amount)} zvE` : head;
+function sourceText(zve: ZveEstimate, t: T, f: Formatter): string {
+  const head = `${t.rateSource(zve.source)} ${zve.tax_year}`;
+  return zve.amount != null ? `${head} · ${f.money(zve.amount)} zvE` : head;
 }
 
 // --- the API ---------------------------------------------------------------------------------
@@ -138,10 +127,12 @@ export function TaxEffectLine({
     [taxYear, result, propertyId],
   );
   const state = useLoad(load);
+  const t = useT(income);
+  const f = useFormat();
   if (state.error != null && state.data === undefined) {
     return (
       <p className="muted tax-subline">
-        Steuerwirkung: konnte nicht berechnet werden.
+        {t.effectFailed}
       </p>
     );
   }
@@ -150,7 +141,7 @@ export function TaxEffectLine({
   if (rate === null) {
     return (
       <p className="muted tax-subline">
-        Steuerwirkung: für {taxYear} ist kein Einkommensteuertarif hinterlegt.
+        {t.effectNoTariff(taxYear)}
       </p>
     );
   }
@@ -158,42 +149,40 @@ export function TaxEffectLine({
   if (rate.missing || !effect || !rate.zve) {
     return (
       <p className="tax-subline tax-effect">
-        <span>Steuerwirkung</span> <strong>—</strong> ·{" "}
-        <Link href={payInputsHref(taxYear)}>Einkommen eintragen</Link>
+        <span>{t.effect}</span> <strong>—</strong> ·{" "}
+        <Link href={payInputsHref(taxYear)}>{t.enterIncome}</Link>
       </p>
     );
   }
   const negative = effect.effect.startsWith("-");
   const zero = /^-?0+(\.0+)?$/.test(effect.effect);
   const rateText = effect.effective_rate
-    ? `${percentText(effect.effective_rate)} effektiv`
+    ? t.effectEffective(percentText(effect.effective_rate, f))
     : effect.slope
-      ? `Grenzsteuersatz ${percentText(effect.slope)}`
+      ? t.effectSlope(percentText(effect.slope, f))
       : null;
   const tariffNote =
-    rate.tariff.reused_from != null ? `Tarif ${rate.tariff.reused_from}` : null;
+    rate.tariff.reused_from != null ? t.tariff(rate.tariff.reused_from) : null;
   return (
     <p className="tax-subline tax-effect">
       <span>
-        Steuerwirkung (
-        {effect.source === "estimate"
-          ? "geschätzt"
-          : SOURCE_LABEL[effect.source]}
-        )
+        {t.effectWithSource(
+          effect.source === "estimate" ? t.estimated : t.rateSource(effect.source),
+        )}
       </span>{" "}
-      <strong>{formatMoney(effect.effect)}</strong>
+      <strong>{f.money(effect.effect)}</strong>
       {zero ? null : (
-        <span className="muted"> {negative ? "weniger" : "mehr"} Steuer</span>
+        <span className="muted">{negative ? t.lessTax : t.moreTax}</span>
       )}
       {rateText ? <span className="muted"> · {rateText}</span> : null}
       {" · "}
       <Link
         href={payInputsHref(taxYear)}
         className="badge"
-        title="Einkommen und Steuersatz unter Steuern › Eure Angaben"
+        title={t.effectLinkTitle}
       >
-        {sourceText(rate.zve)}
-        {rate.zve.carried_forward ? " (fortgeschrieben)" : null}
+        {sourceText(rate.zve, t, f)}
+        {rate.zve.carried_forward ? t.carriedSuffix : null}
       </Link>
       {tariffNote ? <span className="muted"> · {tariffNote}</span> : null}
     </p>
@@ -241,6 +230,8 @@ export function IncomeSection({ owners, fixedYear }: { owners: Owner[]; fixedYea
     [year],
   );
   const rate = useLoad(loadYearRate);
+  const t = useT(income);
+  const f = useFormat();
 
   function changed() {
     rows.reload();
@@ -252,7 +243,7 @@ export function IncomeSection({ owners, fixedYear }: { owners: Owner[]; fixedYea
       {fixedYear === undefined ? (
         <div className="row">
           <label htmlFor={`${ids}-year`} className="inline">
-            Steuerjahr
+            {t.taxYear}
             <select
               id={`${ids}-year`}
               value={year}
@@ -267,13 +258,7 @@ export function IncomeSection({ owners, fixedYear }: { owners: Owner[]; fixedYea
           </label>
         </div>
       ) : null}
-      <p className="muted">
-        Aus dem erwarteten Bruttogehalt schätzt die App das zu versteuernde
-        Einkommen (zvE) und damit, wie sich das Ergebnis der Vermietung auf die
-        Steuer auswirkt. Angaben gelten auch für die Folgejahre, bis ein
-        späteres Jahr eigene Angaben hat; ein Jahr mit eigenen Angaben nutzt nur
-        diese.
-      </p>
+      <p className="muted">{t.intro}</p>
       <Loading state={rows}>
         {(list) => (
           <>
@@ -282,9 +267,9 @@ export function IncomeSection({ owners, fixedYear }: { owners: Owner[]; fixedYea
               <table>
                 <thead>
                   <tr>
-                    <th>Eigentümer</th>
-                    <th>Erwartetes Bruttogehalt {year}</th>
-                    <th>Abzüge {year}</th>
+                    <th>{t.owner}</th>
+                    <th>{t.grossHeader(year)}</th>
+                    <th>{t.deductionsHeader(year)}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -323,9 +308,9 @@ export function IncomeSection({ owners, fixedYear }: { owners: Owner[]; fixedYea
                             defaultText={
                               estimate
                                 ? estimate.deductions_source === "employment"
-                                  ? `aus Anlage N und Vorsorge: ${formatMoney(estimate.deductions)}`
-                                  : `geschätzt: ${formatMoney(estimate.deductions)}`
-                                : "geschätzt, sobald ein Bruttogehalt eingetragen ist"
+                                  ? t.fromAnlageN(f.money(estimate.deductions))
+                                  : t.estimatedAmount(f.money(estimate.deductions))
+                                : t.estimatedOnceGross
                             }
                             onChanged={changed}
                           />
@@ -336,37 +321,33 @@ export function IncomeSection({ owners, fixedYear }: { owners: Owner[]; fixedYea
                 </tbody>
               </table>
             </div>
-            <ReadUpload label="Lohnsteuerbescheinigung oder Gehaltsabrechnung hochladen" />
-            <p className="muted">
-              Bestätigte Zahlen einer Lohnsteuerbescheinigung oder
-              Gehaltsabrechnung ersetzen das erwartete Bruttogehalt dieses
-              Jahres; der Steuersatz wird dann daraus berechnet.
-            </p>
-            <h3>Haushalt (gemeinsame Veranlagung)</h3>
+            <ReadUpload label={t.uploadPay} />
+            <p className="muted">{t.confirmedReplace}</p>
+            <h3>{t.household}</h3>
             <dl className="stack">
               <div>
-                <dt>zvE laut Bescheid ({year}, Beleg)</dt>
+                <dt>{t.zveBescheidTerm(year)}</dt>
                 <dd>
                   <InputCell
                     kind="bescheid_zve"
                     year={year}
                     ownerId={null}
                     current={current(list, "bescheid_zve", null)}
-                    defaultText="kein Bescheid erfasst"
+                    defaultText={t.noBescheid}
                     onChanged={changed}
                   />
-                  <ReadUpload label="Bescheid hochladen und auslesen" />
+                  <ReadUpload label={t.uploadBescheid} />
                 </dd>
               </div>
               <div>
-                <dt>Steuersatz manuell ({year})</dt>
+                <dt>{t.rateTerm(year)}</dt>
                 <dd>
                   <InputCell
                     kind="marginal_rate_override"
                     year={year}
                     ownerId={null}
                     current={current(list, "marginal_rate_override", null)}
-                    defaultText="nicht gesetzt: der Satz wird aus dem Einkommen berechnet"
+                    defaultText={t.rateNotSet}
                     onChanged={changed}
                   />
                 </dd>
@@ -400,18 +381,20 @@ function ZveSummary({
   error: unknown;
   year: number;
 }) {
+  const t = useT(income);
+  const f = useFormat();
   if (rate === undefined) {
     if (error == null) return null;
     const codes = codesOf(error);
     const text = codes.includes("tariff.no_file")
-      ? `Für ${year} ist kein Einkommensteuertarif hinterlegt; die Angaben werden trotzdem gespeichert.`
-      : "Das zvE konnte gerade nicht berechnet werden.";
+      ? t.zveNoTariff(year)
+      : t.zveFailed;
     return <p className="muted">{text}</p>;
   }
   if (rate.missing || !rate.zve) {
     return (
       <p className="muted">
-        Für {year} sind noch keine Einkommensangaben erfasst.
+        {t.noIncome(year)}
       </p>
     );
   }
@@ -419,25 +402,25 @@ function ZveSummary({
   return (
     <p>
       {zve.source === "bescheid" && !zve.carried_forward
-        ? "zvE laut Bescheid"
-        : "zvE"}{" "}
+        ? t.zveBescheid
+        : t.zve}{" "}
       {year}:{" "}
-      <strong>{zve.amount != null ? formatMoney(zve.amount) : "—"}</strong>{" "}
-      <span className="badge">{SOURCE_LABEL[zve.source]}</span>
+      <strong>{zve.amount != null ? f.money(zve.amount) : "—"}</strong>{" "}
+      <span className="badge">{t.rateSource(zve.source)}</span>
       {zve.carried_forward ? (
         <span className="muted">
           {" "}
-          · aus den Angaben für {zve.tax_year} fortgeschrieben
+          {t.carried(zve.tax_year)}
         </span>
       ) : null}
     </p>
   );
 }
 
-function valueText(row: IncomeInput): string {
+function valueText(row: IncomeInput, f: Formatter): string {
   const value = row.value as { amount?: string; rate?: string };
-  if (row.kind === "marginal_rate_override") return formatPercent(value.rate);
-  return formatMoney(value.amount);
+  if (row.kind === "marginal_rate_override") return f.percent(value.rate);
+  return f.money(value.amount);
 }
 
 /** One input's current value with "Eintragen" / "ändern" / "Entfernen", or its inline form. */
@@ -459,6 +442,8 @@ function InputCell({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const t = useT(income);
+  const f = useFormat();
 
   async function withdraw(row: IncomeInput) {
     setBusy(true);
@@ -476,8 +461,8 @@ function InputCell({
     } catch (error) {
       setBanner(
         codesOf(error).includes("income_input.not_current")
-          ? "Die Angabe wurde inzwischen geändert; die Anzeige ist neu geladen."
-          : "Das Entfernen hat nicht geklappt. Bitte erneut versuchen.",
+          ? t.notCurrent
+          : t.removeFailed,
       );
     } finally {
       setBusy(false);
@@ -505,9 +490,9 @@ function InputCell({
       <div className="row">
         {current ? (
           <span>
-            {valueText(current)}
+            {valueText(current, f)}
             {kind === "deductions_override" ? (
-              <span className="muted"> (manuell)</span>
+              <span className="muted">{t.manual}</span>
             ) : null}
           </span>
         ) : (
@@ -519,7 +504,7 @@ function InputCell({
           onClick={() => setEditing(true)}
           disabled={busy}
         >
-          {current || kind === "deductions_override" ? "ändern" : "Eintragen"}
+          {current || kind === "deductions_override" ? t.change : t.enter}
         </button>
         {current ? (
           <button
@@ -529,8 +514,8 @@ function InputCell({
             disabled={busy}
           >
             {kind === "deductions_override"
-              ? "Schätzung verwenden"
-              : "Entfernen"}
+              ? t.useEstimate
+              : t.remove}
           </button>
         ) : null}
       </div>
@@ -540,17 +525,6 @@ function InputCell({
 }
 
 const FORM_KEYS = ["value.amount", "value.rate", "document_id"] as const;
-
-const FIELD_HELP: Record<IncomeInputKind, string> = {
-  expected_gross_pay:
-    "Der erwartete Bruttoarbeitslohn des ganzen Jahres, wie er später auf der Lohnsteuerbescheinigung steht. Eine Schätzung genügt.",
-  deductions_override:
-    "Ersetzt die geschätzten Abzüge ganz: Werbungskosten, Sozialversicherung und Sonderausgaben zusammen, so wie sie vom Bruttogehalt bis zum zvE abgehen.",
-  bescheid_zve:
-    "Das zu versteuernde Einkommen laut Einkommensteuerbescheid (gemeinsame Veranlagung). Es ersetzt die Schätzung für dieses Jahr; das Ergebnis der Vermietung, das darin steckt, rechnet die App heraus.",
-  marginal_rate_override:
-    "Ein fester Steuersatz einschließlich Solidaritätszuschlag und Kirchensteuer. Er ersetzt für dieses Jahr die Berechnung aus dem Einkommen.",
-};
 
 function parseValue(
   kind: IncomeInputKind,
@@ -594,6 +568,7 @@ function InputForm({
   const [banner, setBanner] = useState<string | null>(null);
   const form = useFormErrors(useMemo(() => [...FORM_KEYS], []));
   const base = useId();
+  const t = useT(income);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -601,9 +576,7 @@ function InputForm({
     const values = collector();
     const value = values.take(valueKey, parseValue(kind, raw));
     if (kind === "bescheid_zve" && documentId === null) {
-      values.messages["document_id"] = [
-        "Bitte den Einkommensteuerbescheid als Beleg auswählen.",
-      ];
+      values.messages["document_id"] = [t.pickBescheid];
     }
     if (!values.ok || value === undefined) return form.invalid(values.messages);
     setBusy(true);
@@ -625,8 +598,8 @@ function InputForm({
       if (codesOf(error).includes("income_input.not_current")) {
         setBanner(
           replaces === null
-            ? "Für dieses Jahr ist schon ein Wert erfasst. Bitte abbrechen; die Anzeige zeigt ihn nach dem Neuladen."
-            : "Der Wert wurde inzwischen geändert. Bitte abbrechen und erneut ändern.",
+            ? t.alreadyRecorded
+            : t.changedMeanwhile,
         );
       } else {
         form.fail(error);
@@ -641,8 +614,8 @@ function InputForm({
       <div className="grid">
         <Field
           id={`${base}-value`}
-          label={`${KIND_LABEL[kind]} ${year}${isRate ? " (%)" : " (€)"}`}
-          description={FIELD_HELP[kind]}
+          label={`${t.kindLabel(kind)} ${year}${isRate ? " (%)" : " (€)"}`}
+          description={t.fieldHelp(kind)}
           errors={form.of(valueKey)}
         >
           <input
@@ -656,8 +629,8 @@ function InputForm({
         {kind === "bescheid_zve" ? (
           <Field
             id={`${base}-document`}
-            label="Einkommensteuerbescheid"
-            description="Der Bescheid, auf dem das zvE steht; er wird als Beleg verknüpft."
+            label={t.bescheid}
+            description={t.bescheidDescription}
             errors={form.of("document_id")}
           >
             <DocumentPicker value={documentId} onChange={setDocumentId} />
@@ -665,8 +638,8 @@ function InputForm({
         ) : null}
         <Field
           id={`${base}-note`}
-          label="Notiz (optional)"
-          description="Zum Beispiel woher der Wert stammt."
+          label={t.note}
+          description={t.noteDescription}
         >
           <input
             type="text"
@@ -678,14 +651,14 @@ function InputForm({
         </Field>
       </div>
       {replaces !== null ? (
-        <p className="muted hint">Die bisherige Angabe bleibt im Verlauf.</p>
+        <p className="muted hint">{t.kept}</p>
       ) : null}
       <div className="row">
         <Submit busy={busy}>
-          {replaces === null ? "Eintragen" : "Speichern"}
+          {replaces === null ? t.enter : t.save}
         </Submit>
         <button type="button" className="link" onClick={onCancel}>
-          Abbrechen
+          {t.cancel}
         </button>
       </div>
       {banner ? <p className="notice notice-error">{banner}</p> : null}
