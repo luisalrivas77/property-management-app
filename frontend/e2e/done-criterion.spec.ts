@@ -54,11 +54,14 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
       }
       await page.getByLabel("MEA (optional)").fill(unit.mea);
       await page.getByRole("button", { name: "Einheit anlegen" }).click();
-      await expect(page.getByRole("link", { name: unit.label, exact: true })).toBeVisible();
+      // Phase 10 (mockup 25): the units are rows, not a table; a row opens its details beside the list.
+      await expect(page.getByRole("list", { name: "Einheiten" }).getByRole("link").filter({ hasText: unit.label })).toBeVisible();
     }
-    await expect(page.getByRole("table").getByRole("row")).toHaveCount(3);
+    await expect(page.getByRole("list", { name: "Einheiten" }).getByRole("listitem")).toHaveCount(2);
     // A share is shown with its percentage.
-    await expect(page.getByRole("row").filter({ hasText: "WE 3" })).toContainText("85/1000 (8,5 %)");
+    await expect(page.getByRole("list", { name: "Einheiten" }).getByRole("link").filter({ hasText: "WE 3" })).toContainText(
+      "85/1000 (8,5 %)",
+    );
   });
 
   await test.step("the loan", async () => {
@@ -80,7 +83,9 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
   let tenancyUrl = "";
   await test.step("a tenant and the tenancy of the flat, with its initial rent", async () => {
     await page.goto(`${propertyUrl}?tab=einheiten`);
-    await page.getByRole("link", { name: "WE 3", exact: true }).click();
+    // Phase 10 (mockup 25): the unit's row opens its panel, which links to the unit's page.
+    await page.getByRole("list", { name: "Einheiten" }).getByRole("link").filter({ hasText: "WE 3" }).click();
+    await page.getByRole("complementary", { name: "WE 3" }).getByRole("link", { name: "Einheit öffnen" }).click();
     await page.getByRole("link", { name: "Mietverhältnis anlegen" }).click();
     await expect(page.getByRole("heading", { name: "Mietverhältnis anlegen" })).toBeVisible();
 
@@ -156,9 +161,13 @@ test("the done criterion: ETW, loan, tenancy, lease, corrected move-in, History 
     await expect(parking.getByRole("link", { name: "Mietverhältnis anlegen" })).toHaveAttribute("href", /^\/tenancies\/new\?unit=/);
 
     await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: "Einheiten" }).click();
-    const rows = page.getByRole("table").getByRole("row");
-    await expect(rows.filter({ hasText: "WE 3" }).getByRole("link", { name: "Max Muster" })).toHaveAttribute("href", tenancyUrl);
+    // Phase 10 (mockup 25): each unit is a row naming who rents it; its panel links the tenancy.
+    const rows = page.getByRole("list", { name: "Einheiten" }).getByRole("link");
     await expect(rows.filter({ hasText: "TG-Stellplatz 12" })).toContainText("leer");
+    await rows.filter({ hasText: "WE 3" }).click();
+    await expect(
+      page.getByRole("complementary", { name: "WE 3" }).getByRole("link", { name: "Max Muster" }).first(),
+    ).toHaveAttribute("href", tenancyUrl);
 
     // Mieter left the menu (phase 10 D266): Immobilien leads to it.
     await navigateTo(page, "Immobilien");

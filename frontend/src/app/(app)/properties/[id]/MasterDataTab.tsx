@@ -3,21 +3,27 @@
 // Stammdaten: the property's fields, with the two milestone dates and their correction
 // dialogs. A corrected date says so, with the original date from History (§9.4). Below them,
 // the current tenancy per unit (CurrentTenancies).
+// Phase 10 (mockup 25): „Bearbeiten“ slides the property form in from the right (its PATCH body
+// unchanged); the edit route stays.
 import Link from "next/link";
 import { useCallback } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Property } from "@/api/schemas";
 import { DateCorrectionForm } from "@/components/corrections";
-import { formatDate, formatMoney } from "@/components/format";
 import { correctedFrom, findMilestone } from "@/components/history";
-import { PROPERTY_KIND } from "@/components/labels";
+import { SheetDialog } from "@/components/SheetDialog";
 import { ActionDialog, CorrectedNote, Facts } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useFormat, useT } from "@/i18n";
+import { propertyPage } from "@/i18n/propertyPage";
 
+import { PropertyForm } from "../PropertyForm";
 import { CurrentTenancies } from "./CurrentTenancies";
 
 export function MasterDataTab({ property, onChanged }: { property: Property; onChanged: () => void }) {
+  const t = useT(propertyPage);
+  const f = useFormat();
   const loadHistory = useCallback(
     () => ok(api.GET("/api/properties/{property_id}/history", { params: { path: { property_id: property.id } } })),
     [property.id],
@@ -39,48 +45,56 @@ export function MasterDataTab({ property, onChanged }: { property: Property; onC
     <div className="stack">
       <Facts
         rows={[
-          ["Bezeichnung", property.label],
-          ["Art", PROPERTY_KIND[property.kind]],
+          [t.label, property.label],
+          [t.kindLabel, t.kind(property.kind)],
           [
-            "Adresse",
+            t.address,
             `${property.address.street} ${property.address.house_number}, ${property.address.postal_code} ${property.address.city}`,
           ],
-          ["Baujahr", String(property.build_year)],
+          [t.buildYear, String(property.build_year)],
           [
-            "Notartermin",
+            t.notarized,
             <>
-              {formatDate(property.notarized_on)}
-              {notarizedFrom ? <CorrectedNote original={formatDate(notarizedFrom)} /> : null}
+              {f.date(property.notarized_on)}
+              {notarizedFrom ? <CorrectedNote original={f.date(notarizedFrom)} /> : null}
             </>,
           ],
           [
-            "Übergang (Besitz, Nutzen, Lasten)",
+            t.possession,
             <>
-              {formatDate(property.purchase_date)}
-              {possessionFrom ? <CorrectedNote original={formatDate(possessionFrom)} /> : null}
+              {f.date(property.purchase_date)}
+              {possessionFrom ? <CorrectedNote original={f.date(possessionFrom)} /> : null}
             </>,
           ],
-          ["Kaufpreis", formatMoney(property.purchase_price)],
+          [t.price, f.money(property.purchase_price)],
           [
-            "AfA-Basis (Aufteilung)",
-            property.selected_price_split_id ? (
-              <Link href={`/properties/${property.id}?tab=aufteilung`}>ausgewählt</Link>
-            ) : (
-              <Link href={`/properties/${property.id}?tab=aufteilung`}>noch nicht gewählt</Link>
-            ),
+            t.afaBasis,
+            <Link key="afa" href={`/properties/${property.id}?tab=aufteilung`}>
+              {property.selected_price_split_id ? t.selected : t.notSelected}
+            </Link>,
           ],
-          ["Eigentum beendet", formatDate(property.ownership_ended_on)],
+          [t.ownershipEnded, f.date(property.ownership_ended_on)],
         ]}
       />
       <div className="row">
-        <Link href={`/properties/${property.id}/edit`} className="button-link secondary">
-          Bearbeiten
-        </Link>
-        <ActionDialog label="Notartermin korrigieren" title="Notartermin korrigieren">
+        <SheetDialog label={t.edit} title={t.editTitle} buttonClass="secondary">
+          {(close) => (
+            <PropertyForm
+              key={property.updated_at}
+              property={property}
+              onCancel={close}
+              onDone={() => {
+                close();
+                changed();
+              }}
+            />
+          )}
+        </SheetDialog>
+        <ActionDialog label={t.correctNotarized} title={t.correctNotarized}>
           {(close) => (
             <DateCorrectionForm
               idPrefix="notarized"
-              label="Richtiger Notartermin"
+              label={t.rightNotarized}
               current={property.notarized_on}
               currentPrice={property.purchase_price}
               onSubmit={(values) => ok(api.POST("/api/properties/{property_id}/corrections/notarized-on", { ...path, body: values }))}
@@ -91,11 +105,11 @@ export function MasterDataTab({ property, onChanged }: { property: Property; onC
             />
           )}
         </ActionDialog>
-        <ActionDialog label="Übergang korrigieren" title="Übergang korrigieren">
+        <ActionDialog label={t.correctPossession} title={t.correctPossession}>
           {(close) => (
             <DateCorrectionForm
               idPrefix="possession"
-              label="Richtiges Datum des Übergangs"
+              label={t.rightPossession}
               current={property.purchase_date}
               onSubmit={(values) =>
                 ok(api.POST("/api/properties/{property_id}/corrections/purchase-date", { ...path, body: { new_date: values.new_date } }))
@@ -109,8 +123,8 @@ export function MasterDataTab({ property, onChanged }: { property: Property; onC
         </ActionDialog>
       </div>
       <p className="muted">
-        Notartermin und Übergang werden nie überschrieben: eine Korrektur ist ein eigener Eintrag im{" "}
-        <Link href={`/properties/${property.id}?tab=protokoll`}>Protokoll</Link>.
+        {t.milestoneNote} <Link href={`/properties/${property.id}?tab=protokoll`}>{t.tabAudit}</Link>
+        {t.milestoneNoteEnd}
       </p>
       <CurrentTenancies propertyId={property.id} />
     </div>

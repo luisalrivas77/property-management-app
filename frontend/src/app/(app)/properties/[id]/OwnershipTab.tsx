@@ -14,6 +14,8 @@ import { formatFraction, formatShare } from "@/components/format";
 import { toFraction } from "@/components/input";
 import { Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { propertyPage } from "@/i18n/propertyPage";
 
 interface OwnershipData {
   owners: Owner[];
@@ -24,6 +26,7 @@ const KEYS = ["shares", "effective_date"] as const;
 const CODE_FIELDS = { "ownership.shares_must_sum_to_one": "shares" };
 
 export function OwnershipTab({ propertyId, justCreated }: { propertyId: string; justCreated: boolean }) {
+  const t = useT(propertyPage);
   const load = useCallback(async (): Promise<OwnershipData> => {
     const owners = await ok(api.GET("/api/owners"));
     let ownership: PropertyOwnership | null = null;
@@ -39,13 +42,14 @@ export function OwnershipTab({ propertyId, justCreated }: { propertyId: string; 
 
   return (
     <div className="stack">
-      {justCreated && !saved ? <Notice>Immobilie angelegt. Als Nächstes die Eigentumsanteile festlegen.</Notice> : null}
-      {saved ? <Notice>Eigentumsanteile gespeichert.</Notice> : null}
+      {justCreated && !saved ? <Notice>{t.created}</Notice> : null}
+      {saved ? <Notice>{t.sharesSaved}</Notice> : null}
       <Loading state={data}>
         {({ owners, ownership }) =>
           owners.length === 0 ? (
             <p>
-              Noch keine Eigentümer erfasst. Zuerst unter <Link href="/owners">Eigentümer</Link> anlegen.
+              {t.noOwnersBefore} <Link href="/owners">{t.tabOwners}</Link>
+              {t.noOwnersAfter}
             </p>
           ) : (
             <OwnershipForm
@@ -76,6 +80,7 @@ function OwnershipForm({
   ownership: PropertyOwnership | null;
   onSaved: () => void;
 }) {
+  const t = useT(propertyPage);
   const [shares, setShares] = useState<Record<string, string>>(() =>
     Object.fromEntries(owners.map((owner) => [owner.id, shareInput(ownership, owner.id)])),
   );
@@ -93,7 +98,7 @@ function OwnershipForm({
       const share = values.take(`share-${owner.id}`, toFraction(raw));
       if (share) body.push({ owner_id: owner.id, share });
     }
-    if (body.length === 0) values.messages.shares = ["Mindestens einen Anteil eingeben."];
+    if (body.length === 0) values.messages.shares = [t.minShare];
     if (!values.ok) return form.invalid(values.messages);
     setBusy(true);
     form.clear();
@@ -117,23 +122,23 @@ function OwnershipForm({
     <form className="stack" onSubmit={submit} noValidate>
       {ownership ? (
         <p>
-          Aktuell:{" "}
+          {t.currentShares}{" "}
           {ownership.shares
             .map((share) => `${owners.find((o) => o.id === share.owner_id)?.full_name ?? "?"} ${formatShare(share.share)}`)
             .join(", ")}
         </p>
       ) : (
-        <p className="muted">Noch keine Anteile festgelegt.</p>
+        <p className="muted">{t.noShares}</p>
       )}
       <fieldset className="stack" aria-describedby={sharesErrors.length > 0 ? "shares-error" : undefined}>
-        <legend>Anteile (als Bruch oder Prozent, z. B. 1/2 oder 50 %; leer = kein Anteil)</legend>
+        <legend>{t.sharesLegend}</legend>
         <div className="grid">
           {owners.map((owner) => (
             <Field
               key={owner.id}
               id={`share-${owner.id}`}
               label={owner.full_name}
-              description="Der Anteil dieser Person an der Immobilie laut Kaufvertrag oder Grundbuch, z. B. 1/2 bei „je zur Hälfte“. Alle Anteile zusammen müssen genau 1 (100 %) ergeben."
+              description={t.shareDesc}
               errors={form.of(`share-${owner.id}`)}
             >
               <input
@@ -156,14 +161,14 @@ function OwnershipForm({
       </fieldset>
       <Field
         id="ownership-effective"
-        label="Gültig ab (optional)"
-        hint="Leer lassen beim Kauf; ein Datum, wenn sich die Anteile später ändern."
-        description="Ab wann diese Anteile gelten. Beim Kauf leer lassen; bei einer späteren Änderung, z. B. einer Übertragung, das Datum aus dem Vertrag."
+        label={t.effective}
+        hint={t.effectiveHint}
+        description={t.effectiveDesc}
         errors={form.of("effective_date")}
       >
         <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
       </Field>
-      <Submit busy={busy}>Anteile speichern</Submit>
+      <Submit busy={busy}>{t.saveShares}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );
