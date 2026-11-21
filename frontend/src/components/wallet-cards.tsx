@@ -15,17 +15,19 @@ import { useCallback, useEffect, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { WalletAddressState, WalletAnswer, WalletAnsweredGroup, WalletGroup, WalletHolding, WalletState } from "@/api/schemas";
-import { localized, useT } from "@/i18n";
+import { formatter, localized, useT } from "@/i18n";
 import { wallet } from "@/i18n/wallet";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { notifyInboxChanged } from "@/lib/inboxCount";
 
 import { formatUnits } from "./exchange";
-import { formatDateTime } from "./format";
 import { toMoneyString } from "./input";
 import { CHAIN, MOVEMENT_KIND } from "./labels";
 import { Loading, Notice } from "./ui";
 import { useLoad } from "./useLoad";
+
+// Shown dates and amounts follow the chosen language, read at call time (phase 10 D284).
+const formatDateTime = (v: string | null | undefined) => formatter().dateTime(v);
 
 type Badge = { label: string; className: string };
 

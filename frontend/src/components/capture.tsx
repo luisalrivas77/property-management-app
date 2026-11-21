@@ -35,14 +35,18 @@ import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } fro
 import { api, ok } from "@/api/client";
 import { aiErrorText } from "@/api/errors";
 import type { Document, DocumentUploadResult, Property, Proposal, ProposalRecord, ProposalStatus, UploadBody } from "@/api/schemas";
-import { useT } from "@/i18n";
+import { formatter, useT } from "@/i18n";
 import { capture as captureText } from "@/i18n/documentPage";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { documentLabel } from "./documents";
-import { formatDate, formatDateTime, formatMoney } from "./format";
 import { ACQUISITION_COST_KIND, DOCUMENT_TYPE, EXTRACTION_KIND } from "./labels";
 import { useLoad } from "./useLoad";
+
+// Shown dates and amounts follow the chosen language, read at call time (phase 10 D284).
+const formatDate = (v: string | null | undefined) => formatter().date(v);
+const formatDateTime = (v: string | null | undefined) => formatter().dateTime(v);
+const formatMoney = (v: string | null | undefined) => formatter().money(v);
 
 /** Photos only (§9): what Claude reads of the camera's output. HEIC is not offered (D30). */
 export const CAPTURE_ACCEPT = "image/jpeg,image/png";

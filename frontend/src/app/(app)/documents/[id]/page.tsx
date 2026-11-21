@@ -18,15 +18,19 @@ import type { DocumentDetail, DocumentSubtype, DocumentType, HandFields, LinkTar
 import { DocumentExplanationBox, documentLabel, NO_TAX_YEAR, StatementImportsNotice } from "@/components/documents";
 import { loadDirectory, targets, type Target } from "@/components/entities";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
-import { formatDate, formatDateTime, shortId } from "@/components/format";
+import { shortId } from "@/components/format";
 import { blankToNull, decimalInput, toSignedMoneyString, toYear } from "@/components/input";
 import { DOCUMENT_SUBTYPE, DOCUMENT_TYPE, LINK_TARGET, options, RETENTION_CLASS, RETENTION_HOLD } from "@/components/labels";
 import { ProposalSection } from "@/components/proposals";
 import { Breadcrumbs, Facts, Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
-import { useT } from "@/i18n";
+import { formatter, useT } from "@/i18n";
 import { documentPage } from "@/i18n/documentPage";
 import { ErrorNotice } from "@/lib/ErrorNotice";
+
+// Shown dates and amounts follow the chosen language, read at call time (phase 10 D284).
+const formatDate = (v: string | null | undefined) => formatter().date(v);
+const formatDateTime = (v: string | null | undefined) => formatter().dateTime(v);
 
 export default function DocumentPage() {
   const t = useT(documentPage);
