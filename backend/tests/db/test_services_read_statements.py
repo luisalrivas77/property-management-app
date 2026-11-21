@@ -1,7 +1,9 @@
 """How many SQL statements the Übersicht's reads send (21 Nov 2026: the page sent about 1,550
-per load on a 0.25 vCPU container). Each test counts the statements of one read on a small
-and on a larger ledger and asserts that the count does not grow with the number of stored
-month-ends, held assets or depots; the answers themselves are the other test files'."""
+per load on a 0.25 vCPU container). The tests assert that the month-end series does not grow
+with the number of stored month-ends, that the price cards do not grow with the number of
+held funds, and that the net worth card reads each depot's movements once however many days
+and checks read them (one query per depot remains, unchanged); the answers themselves are
+the other test files'."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
