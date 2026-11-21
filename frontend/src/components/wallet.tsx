@@ -13,6 +13,9 @@ import { useCallback, useId, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Chain, WalletAddress, WalletAddressStatus } from "@/api/schemas";
+import { translate, useT } from "@/i18n";
+import { common } from "@/i18n/common";
+import { wallet } from "@/i18n/wallet";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
@@ -25,21 +28,25 @@ import { AnsweredGroups, GroupCards, HiddenTokens, STATE_BADGE, SyncPanel, useWa
 const EVM_EXTRA: Chain[] = ["arbitrum", "bsc"];
 
 /** What an address of each chain looks like, as rules/chain/address.EXPECTED_SHAPE says it. */
-const SHAPE: Record<Chain, string> = {
-  bitcoin: "Beginnt mit bc1 (SegWit, Taproot), 1 oder 3.",
-  ethereum: "0x und 40 Hex-Zeichen (0–9, a–f), wie die Wallet sie anzeigt.",
-  arbitrum: "0x und 40 Hex-Zeichen (0–9, a–f), wie die Wallet sie anzeigt.",
-  bsc: "0x und 40 Hex-Zeichen (0–9, a–f), wie die Wallet sie anzeigt.",
-  solana: "32 bis 44 Zeichen in Base58 (ohne 0, O, I und l).",
-};
+function shapeOf(chain: Chain, t: typeof wallet.de): string {
+  const shapes: Record<Chain, string> = {
+    bitcoin: t.shapeBitcoin,
+    ethereum: t.shapeEvm,
+    arbitrum: t.shapeEvm,
+    bsc: t.shapeEvm,
+    solana: t.shapeSolana,
+  };
+  return shapes[chain];
+}
 
 /** „4 Chains · 5 Adressen“ over the active addresses (Konten, mockup 08); retired ones are
  * not read and not counted. */
 export function walletSummary(addresses: WalletAddress[]): string {
+  const t = translate(wallet);
   const active = addresses.filter((address) => address.active);
-  if (active.length === 0) return "noch keine Adresse";
+  if (active.length === 0) return t.noAddressYet;
   const chains = new Set(active.map((address) => address.chain)).size;
-  return `${chains === 1 ? "1 Chain" : `${chains} Chains`} · ${active.length === 1 ? "1 Adresse" : `${active.length} Adressen`}`;
+  return `${t.chainCount(chains)} · ${t.addressCount(active.length)}`;
 }
 
 /** The active chains in registry order, for the pills on Konten. */
@@ -50,6 +57,7 @@ export function walletChains(addresses: WalletAddress[]): Chain[] {
 }
 
 export function WalletSection({ accountId }: { accountId: string }) {
+  const t = useT(wallet);
   const load = useCallback(() => ok(api.GET("/api/wallets/{account_id}", { params: { path: { account_id: accountId } } })), [accountId]);
   const page = useLoad(load);
   const state = useWalletState(accountId);
@@ -69,25 +77,17 @@ export function WalletSection({ accountId }: { accountId: string }) {
         const bitcoinUnsynced = data.addresses.some((address) => address.active && address.chain === "bitcoin" && !address.last_sync);
         return (
           <div className="stack">
-            <p className="muted">
-              Wallet: Hausbuch kennt nur ihre öffentlichen Adressen, nie eine Seed-Phrase oder einen privaten Schlüssel, und
-              kann nichts von ihr senden. Die Adressen werden nur gekürzt angezeigt; „kopieren“ legt die volle Adresse in die
-              Zwischenablage, damit Sie sie mit der Wallet vergleichen können.
-            </p>
+            <p className="muted">{t.intro}</p>
             <div className="card stack">
-              <h2>Adressen</h2>
+              <h2>{t.addresses}</h2>
               {data.addresses.length === 0 ? (
-                <p className="muted">Noch keine Adresse. Fügen Sie unten die erste hinzu.</p>
+                <p className="muted">{t.noAddressAddBelow}</p>
               ) : (
                 <AddressTable accountId={accountId} addresses={data.addresses} statuses={statuses} onChanged={changed} />
               )}
               {bitcoinUnsynced ? (
                 <div className="notice notice-info">
-                  <p>
-                    Eine Bitcoin-Wallet schickt das Wechselgeld einer Zahlung meist an eine neue Adresse. Tragen Sie hier die
-                    Adressen ein, die Sie kennen; findet Hausbuch beim Abruf eine Zahlung an eine Adresse, die Ihr Wechselgeld
-                    sein könnte, fragt es nach, statt sie als Ausgabe zu zählen.
-                  </p>
+                  <p>{t.bitcoinChange}</p>
                 </div>
               ) : null}
               <ErrorNotice error={state.error} />
@@ -115,16 +115,17 @@ function AddressTable({
   statuses: Map<string, WalletAddressStatus>;
   onChanged: () => void;
 }) {
+  const t = useT(wallet);
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Chain</th>
-            <th>Adresse</th>
-            <th>Art</th>
-            <th>Stand</th>
-            <th aria-label="Aktionen" />
+            <th>{t.colChain}</th>
+            <th>{t.colAddress}</th>
+            <th>{t.colKind}</th>
+            <th>{t.colStatus}</th>
+            <th aria-label={t.colActions} />
           </tr>
         </thead>
         <tbody>
@@ -148,6 +149,7 @@ function AddressRow({
   status: WalletAddressStatus | undefined;
   onChanged: () => void;
 }) {
+  const t = useT(wallet);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -204,7 +206,7 @@ function AddressRow({
         {address.active ? null : (
           <>
             {" "}
-            <span className="tag">stillgelegt</span>
+            <span className="tag">{t.retiredTag}</span>
           </>
         )}
         {editing ? (
@@ -220,33 +222,33 @@ function AddressRow({
         ) : address.label ? (
           <p className="cell-detail">{address.label}</p>
         ) : null}
-        {copied === "ok" ? <p className="cell-detail">Volle Adresse in die Zwischenablage kopiert.</p> : null}
+        {copied === "ok" ? <p className="cell-detail">{t.copiedToClipboard}</p> : null}
         {copied === "blocked" ? (
-          <p className="cell-detail">Der Browser erlaubt hier keinen Zugriff auf die Zwischenablage; bitte erneut versuchen.</p>
+          <p className="cell-detail">{t.clipboardBlocked}</p>
         ) : null}
         <ErrorNotice error={error} />
       </td>
       <td>{ADDRESS_KIND[address.kind]}</td>
       <td>
-        {status ? <AddressStatusCell status={status} /> : <span className="muted">{address.active ? "…" : "wird nicht abgerufen"}</span>}
+        {status ? <AddressStatusCell status={status} /> : <span className="muted">{address.active ? "…" : t.notRead}</span>}
       </td>
       <td>
         <div className="row">
           <button type="button" className="secondary" onClick={() => void copy()} disabled={busy}>
-            kopieren
+            {t.copy}
           </button>
           {editing ? null : (
             <button type="button" className="secondary" onClick={() => setEditing(true)} disabled={busy}>
-              Bezeichnung ändern
+              {t.changeLabel}
             </button>
           )}
           {address.active ? (
             <button type="button" className="secondary" onClick={() => void setActive(false)} disabled={busy}>
-              Adresse stilllegen
+              {t.retireAddress}
             </button>
           ) : (
             <button type="button" className="secondary" onClick={() => void setActive(true)} disabled={busy}>
-              Wieder aktivieren
+              {t.reactivate}
             </button>
           )}
         </div>
@@ -259,15 +261,16 @@ function AddressRow({
  * key (typed under Einstellungen › Zugangsschlüssel, phase 6 D260, or a Scaleway container
  * variable), the variable's name (never its value). */
 function AddressStatusCell({ status }: { status: WalletAddressStatus }) {
+  const t = useT(wallet);
   const badge = STATE_BADGE[status.state];
   return (
     <>
       <span className={badge.className}>{badge.label}</span>
       <p className="cell-detail">{status.text}</p>
-      {status.todo ? <p className="cell-detail todo-text">Was tun: {status.todo}</p> : null}
+      {status.todo ? <p className="cell-detail todo-text">{t.whatToDo(status.todo)}</p> : null}
       {status.setting ? (
         <p className="cell-detail">
-          Unter Einstellungen › Zugangsschlüssel eintragen, oder als Variable im Scaleway-Container:{" "}
+          {t.keySetting}{" "}
           <code>{status.setting}</code>
         </p>
       ) : null}
@@ -286,6 +289,8 @@ function LabelForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const t = useT(wallet);
+  const c = useT(common);
   const id = useId();
   const [label, setLabel] = useState(address.label ?? "");
   const [busy, setBusy] = useState(false);
@@ -312,13 +317,13 @@ function LabelForm({
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <Field id={`${id}-label`} label="Bezeichnung" hint="Leer lassen: keine Bezeichnung." errors={form.of("label")}>
+      <Field id={`${id}-label`} label={t.label} hint={t.labelEmptyHint} errors={form.of("label")}>
         <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={100} autoComplete="off" />
       </Field>
       <div className="row">
-        <Submit busy={busy}>Speichern</Submit>
+        <Submit busy={busy}>{c.save}</Submit>
         <button type="button" className="secondary" onClick={onCancel}>
-          Abbrechen
+          {c.cancel}
         </button>
       </div>
       <FormBanner errors={form.errors} />
@@ -327,6 +332,7 @@ function LabelForm({
 }
 
 function AddAddress({ accountId, onAdded }: { accountId: string; onAdded: () => void }) {
+  const t = useT(wallet);
   const [chain, setChain] = useState<Chain>("ethereum");
   const [address, setAddress] = useState("");
   const [label, setLabel] = useState("");
@@ -338,7 +344,7 @@ function AddAddress({ accountId, onAdded }: { accountId: string; onAdded: () => 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = collector();
-    if (address.trim() === "") values.messages.address = ["Bitte die öffentliche Adresse aus der Wallet einfügen."];
+    if (address.trim() === "") values.messages.address = [t.pasteAddress];
     if (!values.ok) return form.invalid(values.messages);
     setBusy(true);
     setAdded(null);
@@ -363,12 +369,12 @@ function AddAddress({ accountId, onAdded }: { accountId: string; onAdded: () => 
 
   return (
     <form className="card stack" onSubmit={submit} noValidate>
-      <h2>Adresse hinzufügen</h2>
+      <h2>{t.addAddress}</h2>
       <div className="grid">
         <Field
           id="wallet-chain"
-          label="Chain"
-          description="Die Blockchain, auf der die Adresse liegt. Eine 0x-Adresse einer Hardware-Wallet ist auf Ethereum, Arbitrum und BNB Smart Chain dieselbe; Hausbuch liest sie auf jeder Chain, die Sie eintragen."
+          label={t.colChain}
+          description={t.chainDescription}
           errors={form.of("chain")}
         >
           <select value={chain} onChange={(e) => setChain(e.target.value as Chain)}>
@@ -381,9 +387,9 @@ function AddAddress({ accountId, onAdded }: { accountId: string; onAdded: () => 
         </Field>
         <Field
           id="wallet-address"
-          label="Öffentliche Adresse"
-          hint={SHAPE[chain]}
-          description="Die Empfangsadresse, wie die Wallet sie anzeigt. Nie die Seed-Phrase (12 oder 24 Wörter) oder einen privaten Schlüssel eingeben: Hausbuch braucht sie nicht und nimmt sie nicht an."
+          label={t.publicAddress}
+          hint={shapeOf(chain, t)}
+          description={t.publicAddressDescription}
           errors={form.of("address")}
         >
           <input
@@ -397,9 +403,9 @@ function AddAddress({ accountId, onAdded }: { accountId: string; onAdded: () => 
         </Field>
         <Field
           id="wallet-label"
-          label="Bezeichnung (optional)"
-          hint="z. B. „Tangem Karte 1“"
-          description="Ein Name, unter dem Sie die Adresse wiedererkennen."
+          label={t.labelOptional}
+          hint={t.labelExample}
+          description={t.labelDescription}
           errors={form.of("label")}
         >
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={100} autoComplete="off" />
@@ -408,19 +414,16 @@ function AddAddress({ accountId, onAdded }: { accountId: string; onAdded: () => 
       {chain === "ethereum" ? (
         <div className="field">
           <label className="inline" htmlFor="wallet-also-evm">
-            <input id="wallet-also-evm" type="checkbox" checked={alsoEvm} onChange={(e) => setAlsoEvm(e.target.checked)} /> Auch auf
-            Arbitrum und BNB Smart Chain lesen
+            <input id="wallet-also-evm" type="checkbox" checked={alsoEvm} onChange={(e) => setAlsoEvm(e.target.checked)} />{" "}
+            {t.alsoEvm}
           </label>
-          <p className="muted hint">
-            Legt dieselbe Adresse zusätzlich für Arbitrum und BNB Smart Chain an; jede wird für sich abgerufen. Eine Chain, auf
-            der diese Wallet die Adresse schon hat, wird übersprungen.
-          </p>
+          <p className="muted hint">{t.alsoEvmHint}</p>
         </div>
       ) : null}
       <div className="row">
-        <Submit busy={busy}>Adresse hinzufügen</Submit>
+        <Submit busy={busy}>{t.addAddress}</Submit>
       </div>
-      {added !== null ? <Notice>Hinzugefügt für {added.map((value) => CHAIN[value]).join(", ")}.</Notice> : null}
+      {added !== null ? <Notice>{t.addedFor(added.map((value) => CHAIN[value]).join(", "))}</Notice> : null}
       <FormBanner errors={form.errors} />
     </form>
   );
