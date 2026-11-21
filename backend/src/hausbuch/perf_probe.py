@@ -380,6 +380,20 @@ def round_trip_ms(engine: Engine, n: int = ROUND_TRIPS) -> float:
     return statistics.median(samples)
 
 
+def empty_transaction_ms(engine: Engine, workspace_id: UUID, n: int = ROUND_TRIPS) -> float:
+    """Median of `n` empty workspace transactions, as every request opens them: the pool's
+    checkout (with its pre-ping), BEGIN, the workspace SET and the COMMIT. The SET and the
+    COMMIT are seen by the counter; the pre-ping and BEGIN are not, so this is what a
+    transaction costs beyond its counted trips."""
+    samples = []
+    for _ in range(n + 1):
+        started = time.perf_counter()
+        with workspace_transaction(engine, workspace_id):
+            pass
+        samples.append((time.perf_counter() - started) * 1000)
+    return statistics.median(samples[1:])
+
+
 def open_pool(engine: Engine) -> float:
     """Open the pool's connections before the first timed request; their connect time (TLS,
     login, the RLS and read-only checks) is printed apart, as production pays it once."""
@@ -438,12 +452,13 @@ def run_probe(
     counter = SqlCounter(engine)
     connect_ms = open_pool(engine)
     rtt = round_trip_ms(engine)
+    empty_tx = empty_transaction_ms(engine, workspace_id)
     member = pick_member(engine, workspace_id)
     with tempfile.TemporaryDirectory(prefix="hausbuch-probe-") as blobs, _quiet_logging():
         app = build_app(engine, member, Path(blobs) / "blobs")
         counter.reset()
         passes = asyncio.run(_passes(app, counter, repeat))
-    report(passes, rtt=rtt, connect_ms=connect_ms, member=member, out=out)
+    report(passes, rtt=rtt, empty_tx=empty_tx, connect_ms=connect_ms, member=member, out=out)
     return passes
 
 
@@ -462,11 +477,17 @@ def report(
     passes: Sequence[Pass],
     *,
     rtt: float,
+    empty_tx: float,
     connect_ms: float,
     member: Member,
     out: Callable[[str], None] = print,
 ) -> None:
     out(f"db round-trip (median of {ROUND_TRIPS} x SELECT 1): {rtt:.1f} ms")
+    out(
+        f"empty workspace transaction (median of {ROUND_TRIPS}: checkout with pre-ping, BEGIN, "
+        f"SET, COMMIT): {empty_tx:.1f} ms, so {_hidden(rtt, empty_tx):.1f} ms per transaction "
+        "beyond its counted SET and COMMIT"
+    )
     out(f"opening {POOL_SIZE} pooled connections (paid once in production): {connect_ms:.0f} ms")
     out(
         "session: the real per-request lookup is timed in every line; the last_seen_at write "
@@ -486,7 +507,7 @@ def report(
         out(header)
         for timing in one.timings:
             out(_line(timing, width))
-        _summary(one, rtt, out)
+        _summary(one, rtt, empty_tx, out)
     if passes:
         timings = passes[-1].timings
         out("")
@@ -495,16 +516,24 @@ def report(
         out(f"write-refused paths: {', '.join(refused) if refused else 'none'}")
 
 
-def _summary(one: Pass, rtt: float, out: Callable[[str], None]) -> None:
+def _hidden(rtt: float, empty_tx: float) -> float:
+    """A transaction's trips the counter does not see (pre-ping, BEGIN): an empty one less
+    its SET and COMMIT."""
+    return max(0.0, empty_tx - 2 * rtt)
+
+
+def _summary(one: Pass, rtt: float, empty_tx: float, out: Callable[[str], None]) -> None:
     total = sum(t.ms for t in one.timings)
     sql_ms = sum(t.sql_ms for t in one.timings)
     statements = sum(t.statements for t in one.timings)
     transactions = sum(t.transactions for t in one.timings)
     trips = statements + transactions
+    hidden = transactions * _hidden(rtt, empty_tx)
     out(
         f"total: {total:.0f} ms over {len(one.timings)} requests, {statements} statements "
-        f"({sql_ms:.0f} ms in SQL), {transactions} commits/rollbacks; "
-        f"about {trips * rtt:.0f} ms of it is round-trip latency ({trips} x {rtt:.1f} ms)"
+        f"({sql_ms:.0f} ms in SQL), {transactions} commits/rollbacks; about "
+        f"{trips * rtt + hidden:.0f} ms of it is network latency ({trips} x {rtt:.1f} ms "
+        f"counted trips + {transactions} x {_hidden(rtt, empty_tx):.1f} ms per transaction)"
     )
     out(f"slowest {SLOWEST}:")
     for timing in sorted(one.timings, key=lambda t: t.ms, reverse=True)[:SLOWEST]:
