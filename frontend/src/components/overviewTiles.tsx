@@ -27,6 +27,8 @@ import "./overviewTiles.css";
 type NetWorth = components["schemas"]["NetWorth"];
 type NetWorthLine = components["schemas"]["NetWorthLine"];
 type InboxItem = components["schemas"]["InboxItem"];
+type PropertiesPaidIn = components["schemas"]["PropertiesPaidIn"];
+type PropertyPaidIn = components["schemas"]["PropertyPaidIn"];
 type T = (typeof catalogue)["de"];
 
 export type TileId = "nettovermoegen" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "sparquote" | "reserve" | "verschuldung" | "pruefen";
@@ -51,12 +53,15 @@ export async function loadMonthCashflow(): Promise<MonthCashflow> {
 export const loadNetWorthToday = async (): Promise<NetWorth> => (await ok(api.GET("/api/net-worth/overview"))).today;
 export const loadHealthOnly = (): Promise<Health> => ok(api.GET("/api/health"));
 export const loadInbox = (): Promise<InboxItem[]> => ok(api.GET("/api/inbox"));
+/** The own money put into each property and its total, summed by the server (Luis, 21 Nov 2026). */
+export const loadPaidIn = (): Promise<PropertiesPaidIn> => ok(api.GET("/api/properties/equity"));
 
 export interface TileData {
   netWorth: Loaded<NetWorth>;
   health: Loaded<Health>;
   cashflow: Loaded<MonthCashflow>;
   inbox: Loaded<InboxItem[]>;
+  paidIn: Loaded<PropertiesPaidIn>;
 }
 
 /** "1200.00" → "-1200.00", "-5" → "5": a sign flip on the string, for the loan shown as a debt. */
@@ -162,7 +167,7 @@ function SplitBar({ split, t, f }: { split: Record<string, string>; t: T; f: For
 export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail }) {
   const t = useT(catalogue);
   const f = useFormat();
-  const { netWorth, health, cashflow, inbox } = data;
+  const { netWorth, health, cashflow, inbox, paidIn } = data;
   const lines = netWorth.data?.lines ?? [];
   const cards = cardLines(lines);
   const marks = health.data?.marks ?? {};
@@ -223,6 +228,12 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
                   <div>
                     <dt>{t.propertyLoan}</dt>
                     <dd>{f.money(negated(today.loan_balances))}</dd>
+                  </div>
+                  <div>
+                    <dt>{t.paidIn}</dt>
+                    <dd>
+                      <Wait state={paidIn}>{(equity) => f.money(equity.total_paid_in)}</Wait>
+                    </dd>
                   </div>
                 </dl>
               </>
@@ -376,6 +387,33 @@ function Rows({ rows }: { rows: [ReactNode, ReactNode][] }) {
   );
 }
 
+/** „Eigenkapital eingesetzt“ traced to its parts, per property as the server computed it; with
+ * several properties each gets its own block and the server's total follows. */
+function PaidInRows({ state, t, f }: { state: Loaded<PropertiesPaidIn>; t: T; f: Formatter }) {
+  if (state.data === undefined) return <p className="muted">{state.error ? "–" : "…"}</p>;
+  const { properties, total_paid_in } = state.data;
+  if (properties.length === 0) return null;
+  const several = properties.length > 1;
+  const block = (p: PropertyPaidIn) => {
+    const rows: [ReactNode, ReactNode][] = [];
+    if (p.purchase_price != null) rows.push([t.paidInPrice, f.money(p.purchase_price)]);
+    rows.push([t.paidInCosts, f.money(p.acquisition_costs)], [t.paidInLoanCosts, f.money(p.own_loan_costs)], [t.paidInLoans, f.money(negated(p.loan_principal))]);
+    rows.push([t.paidInTotal, p.paid_in != null ? f.money(p.paid_in) : p.reason === "ownership_ended" ? t.paidInEnded : t.paidInNoPrice]);
+    return (
+      <div key={p.property_id}>
+        {several ? <p className="tile-panel-kicker">{p.label}</p> : null}
+        <Rows rows={rows} />
+      </div>
+    );
+  };
+  return (
+    <>
+      {properties.map(block)}
+      {several ? <Rows rows={[[t.paidInAll, f.money(total_paid_in)]]} /> : null}
+    </>
+  );
+}
+
 function Go({ href, children }: { href: string; children: ReactNode }) {
   // A section of this page: a plain anchor, so the browser's hashchange closes the panel (its
   // state is the hash) and scrolls to the section.
@@ -436,7 +474,7 @@ export function TilePanel({
 }) {
   const t = useT(catalogue);
   const f = useFormat();
-  const { netWorth, health, cashflow, inbox } = data;
+  const { netWorth, health, cashflow, inbox, paidIn } = data;
   const marks = health.data?.marks ?? {};
   const title = id === "cashflow" ? t.cashflow(f.month(cashflow.data?.month ?? lastFullMonth())) : TITLES[id](t);
   const single = properties.length === 1 ? properties[0] : undefined;
@@ -466,6 +504,7 @@ export function TilePanel({
         <Loading state={netWorth}>
           {(today) => (
             <>
+              <PaidInRows state={paidIn} t={t} f={f} />
               <Rows
                 rows={[
                   [t.propertyNet, f.money(today.property_net)],
