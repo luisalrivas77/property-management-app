@@ -32,6 +32,7 @@ def properties_paid_in(conn: Connection, *, today: date) -> PropertiesPaidIn:
                 purchase_price=prop.purchase_price,
                 cost_rows=facts.cost_rows,
                 tax_inputs=facts.tax_inputs,
+                allocations=facts.allocations,
                 loan_principals=[loan.terms.principal for loan in list_loans(conn, prop.id)],
                 ownership_ended_on=prop.ownership_ended_on,
                 today=today,

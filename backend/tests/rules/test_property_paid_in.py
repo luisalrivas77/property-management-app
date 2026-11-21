@@ -51,6 +51,7 @@ def _paid_in(**kw):
         "purchase_price": Decimal("325000.00"),
         "cost_rows": [_row("11374.00"), _row("347.50")],
         "tax_inputs": [_private("1530.97"), _private("635.00")],
+        "allocations": [],
         "loan_principals": [Decimal("308700.00")],
         "ownership_ended_on": None,
         "today": TODAY,
