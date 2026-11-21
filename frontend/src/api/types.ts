@@ -11624,7 +11624,8 @@ export interface components {
          *     those with a payback (reason None): paid_in, cash_back, percent (None when paid_in ≤ 0 or
          *     none counts), profit_today, and break_even_year, the first year whose running sum over
          *     those properties (each held at its last year after it) reaches their paid_in, None when
-         *     not by sale_year, the latest of their sale years. The years lists are the union.
+         *     not by sale_year, the latest of their sale years, and None as well when one of them has
+         *     no projection (projection_error_code). The years lists are the union.
          */
         PropertiesPayback: {
             /** Properties */
@@ -11816,7 +11817,10 @@ export interface components {
          *     by `sale_year`, the projection's last year. tax_estimated_years: actual years whose tax
          *     effect is an estimate (no Bescheid yet); income_missing_years: actual years without any
          *     income input, whose tax effect is not counted. Everything after paid_in is None with a
-         *     `reason` when it cannot be computed.
+         *     `reason` when it cannot be computed. projection_error_code: the default scenario's
+         *     projection raised a rule error (scenario.sale_year_before_today when its sale year is not
+         *     after today's, or no rule set or tariff): only the projected years, break_even_year and
+         *     sale_year are then missing; the cash back, its percent and the sale today stay.
          */
         PropertyPayback: {
             /**
@@ -11847,6 +11851,10 @@ export interface components {
             reason?: ("no_purchase_price" | "ownership_ended" | "before_handover" | "loan_not_valued" | "not_computable") | null;
             /** Error Code */
             error_code?: string | null;
+            /** Loan Id */
+            loan_id?: string | null;
+            /** Projection Error Code */
+            projection_error_code?: string | null;
         };
         /**
          * Proposal
@@ -13099,7 +13107,10 @@ export interface components {
          *     today's year at today's value and loan balance (rules.performance.projection.sale_today;
          *     sale() dates the sale 31 Dec of that year, so `taxable` is decided for that day).
          *     net_proceeds = value − selling_costs − sale_tax − loan_balance; profit = net_proceeds +
-         *     the cash back so far − the own money put in.
+         *     the cash back so far − the own money put in. tax_not_computed: the sale is taxable with a
+         *     gain but no income input exists, so phase 4 cannot compute the §23 tax (its assumption
+         *     sale.tax_without_income) and sale_tax reads 0.00: net_proceeds and profit are then too
+         *     high by that tax, and the screen says so instead of showing 0,00 €.
          */
         SaleToday: {
             /** Value */
@@ -13116,6 +13127,11 @@ export interface components {
             gain?: string | null;
             /** Sale Tax */
             sale_tax: string;
+            /**
+             * Tax Not Computed
+             * @default false
+             */
+            tax_not_computed: boolean;
             /** Loan Balance */
             loan_balance: string;
             /** Net Proceeds */

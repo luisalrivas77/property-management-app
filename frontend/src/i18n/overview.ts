@@ -54,7 +54,29 @@ export const overview = defineMessages({
     saleBack: "+ Zurück bisher",
     salePaidIn: "− Eigenkapital eingesetzt",
     saleProfit: "= Gewinn bei Verkauf heute",
-    saleNote: "Eine Schätzung: der Wert ist eure Schätzung von heute, die Steuer nach den Zahlen dieses Jahres.",
+    saleNote:
+      "Eine Schätzung: der Wert ist eure Schätzung von heute, die Steuer nach den Zahlen dieses Jahres. Ob der Gewinn nach § 23 steuerpflichtig ist und wie viel AfA dabei hinzugerechnet wird, gilt für einen Verkauf am 31.12. dieses Jahres.",
+    saleTaxNotComputed: "− Steuer auf den Gewinn: nicht berechnet, kein Einkommen eingetragen",
+    profitNoTax: "ohne die Steuer auf den Gewinn",
+    taxNotComputedWhy:
+      "Die Steuer auf den Gewinn ist nicht berechnet, weil kein Einkommen eingetragen ist: der Gewinn bei Verkauf heute ist um diese Steuer zu hoch.",
+    enterIncome: "Einkommen eintragen",
+    openLoan: "Darlehen öffnen",
+    enterPrice: "Kaufpreis eintragen",
+    toPropertyPlanning: "Planung der Immobilie öffnen",
+    fixPlanning: "Verkaufsjahr in der Planung ändern",
+    projectionMissing: (code: string | null | undefined): string =>
+      code === "scenario.sale_year_before_today"
+        ? "Das Verkaufsjahr eurer Planung ist nicht mehr nach diesem Jahr, daher kein Jahr für „Eigenkapital zurück“."
+        : "Die Planung lässt sich nicht berechnen, daher kein Jahr für „Eigenkapital zurück“.",
+    breakEvenCheckPlan: "Eigenkapital zurück: Planung prüfen",
+    leftOutTile: (count: number) => (count === 1 ? "1 Immobilie nicht mitgezählt" : `${count} Immobilien nicht mitgezählt`),
+    yearsKicker: "Jahr für Jahr",
+    yearSoFar: (year: number) => `${year} (bis heute)`,
+    yearEstimated: (money: string) => `${money} · geschätzt`,
+    yearNoTax: (money: string) => `${money} · ohne Steuerwirkung`,
+    plannedYears: "Die Jahre laut Planung",
+    plannedYear: (net: string, running: string) => `${net} · zusammen ${running}`,
     taxEstimated: (years: string) => `Steuerwirkung ${years} geschätzt`,
     incomeMissing: (years: string) => `Steuerwirkung ${years} fehlt: kein Einkommen eingetragen`,
     backAll: "Alle Immobilien",
@@ -179,7 +201,29 @@ export const overview = defineMessages({
     saleBack: "+ Back so far",
     salePaidIn: "− Own money put in",
     saleProfit: "= Profit if sold today",
-    saleNote: "An estimate: the value is your estimate of today, the tax by this year's figures.",
+    saleNote:
+      "An estimate: the value is your estimate of today, the tax by this year's figures. Whether the gain is taxable under § 23 and how much depreciation is added back are decided for a sale on 31 Dec of this year.",
+    saleTaxNotComputed: "− Tax on the gain: not computed, no income entered",
+    profitNoTax: "before the tax on the gain",
+    taxNotComputedWhy:
+      "The tax on the gain is not computed because no income is entered: the profit if sold today is too high by that tax.",
+    enterIncome: "Enter income",
+    openLoan: "Open the loan",
+    enterPrice: "Enter the purchase price",
+    toPropertyPlanning: "Open the property's plan",
+    fixPlanning: "Change the sale year in the plan",
+    projectionMissing: (code: string | null | undefined): string =>
+      code === "scenario.sale_year_before_today"
+        ? "Your plan's sale year is no longer after this year, so there is no year for “Own money back”."
+        : "The plan cannot be computed, so there is no year for “Own money back”.",
+    breakEvenCheckPlan: "Own money back: check the plan",
+    leftOutTile: (count: number) => (count === 1 ? "1 property not counted" : `${count} properties not counted`),
+    yearsKicker: "Year by year",
+    yearSoFar: (year: number) => `${year} (so far)`,
+    yearEstimated: (money: string) => `${money} · estimated`,
+    yearNoTax: (money: string) => `${money} · without tax effect`,
+    plannedYears: "The years by your plan",
+    plannedYear: (net: string, running: string) => `${net} · together ${running}`,
     taxEstimated: (years: string) => `Tax effect ${years} estimated`,
     incomeMissing: (years: string) => `Tax effect ${years} missing: no income entered`,
     backAll: "All properties",
