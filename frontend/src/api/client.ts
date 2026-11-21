@@ -6,6 +6,7 @@
 //   that returns has succeeded; use `ok()` to get its data without the error branch.
 // - A 401 also calls the handler registered by the AuthGate, which routes to /login (§6.4).
 // - A 503 `shutting_down` (a deploy in progress, §3.7) is retried once after Retry-After.
+// - Two identical GETs in flight at once share one request (fetchShared).
 // - Every request carries Accept-Language, the language chosen on this device (de or en,
 //   phase 10 D284), so the server can answer in it once its English templates exist (step 4c).
 import createClient, { type Middleware } from "openapi-fetch";
@@ -69,10 +70,32 @@ const throwErrors: Middleware = {
   },
 };
 
+/** GETs in flight, by URL and language. A page whose parts ask for the same read at once
+ * (Übersicht's tiles and key figures both read /api/health; its Zu prüfen tile and the menu's
+ * counter both read /api/inbox) sends it once and each part gets its own copy of the answer.
+ * Only while the request runs: an answer is never kept, so a later read always asks the
+ * server again (21 Nov 2026: the duplicate reads were a third of Übersicht's server time). */
+const inFlight = new Map<string, Promise<Response>>();
+
+function fetchShared(request: Request): Promise<Response> {
+  if (request.method !== "GET") return fetchWithDeployRetry(request);
+  const key = `${request.headers.get("Accept-Language") ?? ""} ${request.url}`;
+  let shared = inFlight.get(key);
+  if (!shared) {
+    shared = fetchWithDeployRetry(request);
+    inFlight.set(key, shared);
+    const forget = () => {
+      if (inFlight.get(key) === shared) inFlight.delete(key);
+    };
+    shared.then(forget, forget);
+  }
+  return shared.then((response) => response.clone());
+}
+
 export const api = createClient<paths>({
   baseUrl: "", // same origin: /api/* is proxied by the Next server (next.config.ts)
   credentials: "same-origin",
-  fetch: fetchWithDeployRetry,
+  fetch: fetchShared,
 });
 api.use(requestId, throwErrors);
 
