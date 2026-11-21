@@ -77,8 +77,10 @@ export function useRentSchedule({
   );
   const prefill = useLoad(loadPrefill);
   // The pre-filled dialog mounts open once the change has loaded (or is known to be none, then
-  // unfilled); keyed so it replaces the closed one rather than reusing its state.
-  const prefillReady = prefillOn && prefill.data !== undefined;
+  // unfilled) and the schedule too, since the form takes the Kaltmiete from the latest row only
+  // when it mounts; keyed so it replaces the closed one rather than reusing its state. Opening
+  // before the schedule had loaded left the Kaltmiete empty and the save refused.
+  const prefillReady = prefillOn && prefill.data !== undefined && schedule.data !== undefined;
   const [note, setNote] = useState<string | null>(null);
   const rows = schedule.data?.rows ?? [];
   const latest = latestRow(rows);
