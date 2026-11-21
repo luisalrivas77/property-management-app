@@ -41,6 +41,7 @@ import { formatDate, formatMoney } from "./format";
 import { toDecimalString } from "./input";
 import { ACQUISITION_COST_KIND, ALLOCATION_CATEGORY, PRICE_SPLIT_SOURCE, proofBill } from "./labels";
 import { WithdrawNoPayButton } from "./noPay";
+import { type PropertyCard, propertyCardHref } from "./propertySections";
 import { LABEL_EN, REMINDER_EN, REQUIREMENT_EN, WARNING_EN } from "./todosEn";
 import { ActionDialog } from "./ui";
 import { useLoad } from "./useLoad";
@@ -100,10 +101,11 @@ type Guide =
 
 const link = (href: string, label: string): GuideAction => ({ kind: "link", href, label });
 
+/** A card of the property page: its section, and the card's anchor (phase 10, mockup 25). */
 const propertyTab =
-  (tab: string, label: string) =>
+  (card: PropertyCard, label: string) =>
   (_: DraftWarning, ctx: GuideContext): GuideAction | null =>
-    ctx.propertyId ? link(`/properties/${ctx.propertyId}?tab=${tab}`, label) : null;
+    ctx.propertyId ? link(propertyCardHref(ctx.propertyId, card), label) : null;
 
 /** A section of the Anlage V page itself. */
 const onPage = (anchor: string, label: string) => () => link(`#${anchor}`, label);
@@ -769,7 +771,7 @@ function SplitAction({ propertyId, onChanged }: { propertyId: string; onChanged?
   const f = useFormat();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const tab = `/properties/${propertyId}?tab=aufteilung`;
+  const tab = `/properties/${propertyId}?tab=kauf#card-aufteilung`;
   if (splits.data === undefined) return splits.error != null ? <Link href={tab}>{t.openSplit}</Link> : null;
 
   const list = splits.data;
@@ -1346,8 +1348,8 @@ function scopeSuffix(item: DocumentChecklistItem): string {
   return "";
 }
 
-const tabFix = (tab: string, label: string) => (_: DocumentChecklistItem, ctx: ChecklistContext) => ({
-  href: `/properties/${ctx.propertyId}?tab=${tab}`,
+const tabFix = (card: PropertyCard, label: string) => (_: DocumentChecklistItem, ctx: ChecklistContext) => ({
+  href: propertyCardHref(ctx.propertyId, card),
   label,
 });
 const documentsFix = tabFix("dokumente", "Unter Dokumente verknüpfen");

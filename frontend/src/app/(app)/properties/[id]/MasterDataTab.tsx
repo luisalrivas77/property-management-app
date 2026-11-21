@@ -2,7 +2,7 @@
 
 // Stammdaten: the property's fields, with the two milestone dates and their correction
 // dialogs. A corrected date says so, with the original date from History (§9.4). Below them,
-// the current tenancy per unit (CurrentTenancies).
+// the current tenancy per unit (CurrentTenancies; since phase 10 its own block on Übersicht).
 // Phase 10 (mockup 25): „Bearbeiten“ slides the property form in from the right (its PATCH body
 // unchanged); the edit route stays.
 import Link from "next/link";
@@ -12,6 +12,7 @@ import { api, ok } from "@/api/client";
 import type { Property } from "@/api/schemas";
 import { DateCorrectionForm } from "@/components/corrections";
 import { correctedFrom, findMilestone } from "@/components/history";
+import { propertyCardHref } from "@/components/propertySections";
 import { SheetDialog } from "@/components/SheetDialog";
 import { ActionDialog, CorrectedNote, Facts } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -19,7 +20,6 @@ import { useFormat, useT } from "@/i18n";
 import { propertyPage } from "@/i18n/propertyPage";
 
 import { PropertyForm } from "../PropertyForm";
-import { CurrentTenancies } from "./CurrentTenancies";
 
 export function MasterDataTab({ property, onChanged }: { property: Property; onChanged: () => void }) {
   const t = useT(propertyPage);
@@ -69,7 +69,7 @@ export function MasterDataTab({ property, onChanged }: { property: Property; onC
           [t.price, f.money(property.purchase_price)],
           [
             t.afaBasis,
-            <Link key="afa" href={`/properties/${property.id}?tab=aufteilung`}>
+            <Link key="afa" href={propertyCardHref(property.id, "aufteilung")}>
               {property.selected_price_split_id ? t.selected : t.notSelected}
             </Link>,
           ],
@@ -123,10 +123,9 @@ export function MasterDataTab({ property, onChanged }: { property: Property; onC
         </ActionDialog>
       </div>
       <p className="muted">
-        {t.milestoneNote} <Link href={`/properties/${property.id}?tab=protokoll`}>{t.tabAudit}</Link>
+        {t.milestoneNote} <Link href={propertyCardHref(property.id, "protokoll")}>{t.tabAudit}</Link>
         {t.milestoneNoteEnd}
       </p>
-      <CurrentTenancies propertyId={property.id} />
     </div>
   );
 }

@@ -933,7 +933,7 @@ function SaleBanner({ sale, propertyId }: { sale: SaleResult; propertyId: string
     return (
       <div className="notice notice-info" role="status">
         <p>
-          {t.noContractDate} <Link href={`/properties/${propertyId}?tab=stammdaten`}>{t.enterInMasterData}</Link>
+          {t.noContractDate} <Link href={`/properties/${propertyId}?tab=uebersicht`}>{t.enterInMasterData}</Link>
         </p>
       </div>
     );

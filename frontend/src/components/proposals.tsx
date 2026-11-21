@@ -864,7 +864,7 @@ function manualEntry(kind: ExtractionKind | null, directory: Directory | null): 
     case "invoice":
     case "bescheid":
       return only
-        ? { href: `/properties/${only.id}?tab=nebenkosten`, where: m.propertyCosts }
+        ? { href: `/properties/${only.id}?tab=kauf`, where: m.propertyCosts }
         : { href: "/", where: m.costsAtProperty };
     case "lease":
       return { href: "/tenancies/new", where: m.createTenancy };
@@ -1258,11 +1258,11 @@ function entityHref(entity: AppliedEntity, propertyId: string | null, zveYear: n
     case "deposit_received":
       return `/tenancies/${id}`;
     case "cost":
-      return propertyId ? `/properties/${propertyId}?tab=nebenkosten` : null;
+      return propertyId ? `/properties/${propertyId}?tab=kauf` : null;
     case "price_split":
-      return propertyId ? `/properties/${propertyId}?tab=aufteilung` : null;
+      return propertyId ? `/properties/${propertyId}?tab=kauf#card-aufteilung` : null;
     case "ownership":
-      return `/properties/${id}?tab=eigentuemer`;
+      return `/properties/${id}?tab=uebersicht#card-eigentuemer`;
     case "income_input":
       // „zvE laut Bescheid“ under Steuern › Eure Angaben › Arbeitslohn (phase 10 D281).
       return payInputsHref(zveYear ?? Number(todayIso().slice(0, 4)));

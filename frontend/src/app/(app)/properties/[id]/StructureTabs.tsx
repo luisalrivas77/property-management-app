@@ -23,6 +23,8 @@ import { Icon } from "@/lib/icons";
 
 import "@/components/pageRows.css";
 
+import { PropertyCard } from "./PropertyCard";
+
 export function UnitsTab({ propertyId }: { propertyId: string }) {
   const t = useT(propertyPage);
   const f = useFormat();
@@ -44,7 +46,7 @@ export function UnitsTab({ propertyId }: { propertyId: string }) {
 
   return (
     <DetailLayout panel={panel}>
-      <div className="stack">
+      <PropertyCard card="einheiten" title={t.tabUnits}>
         <Loading state={context}>
           {({ units: list, tenancies, tenants }) =>
             list.length === 0 ? (
@@ -90,7 +92,7 @@ export function UnitsTab({ propertyId }: { propertyId: string }) {
             {t.addUnit}
           </Link>
         </div>
-      </div>
+      </PropertyCard>
     </DetailLayout>
   );
 }

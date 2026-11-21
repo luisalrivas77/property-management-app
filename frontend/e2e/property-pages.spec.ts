@@ -149,13 +149,19 @@ test("the property pages show the Summe, the AfA line, Restschuld heute and the 
   await apiCall(page, "POST", "/api/acquisition-costs", { property_id: property.id, kind: "real_estate_transfer_tax", amount: "17500.00" });
   await apiCall(page, "POST", "/api/acquisition-costs", { property_id: property.id, kind: "notary", amount: "3500.00" });
 
+  // An old ?tab= key (a bookmark, a stored link; D266) opens its card's section of mockup 25.
   await page.goto(`/properties/${property.id}?tab=nebenkosten`);
+  const sections = page.getByRole("navigation", { name: "Bereiche" });
+  await expect(sections.getByRole("link", { name: "Kauf & Nebenkosten" })).toHaveAttribute("aria-current", "page");
+  await expect(page.locator("#card-nebenkosten").getByRole("heading", { level: 2, name: "Nebenkosten", exact: true })).toBeVisible();
+  await expect(page.locator("#card-aufteilung")).toBeVisible();
   const total = page.locator(".page-total");
   await expect(total).toContainText("Summe");
   await expect(total).toContainText("21.000,00 €");
 
-  // No split yet: a to-do with the buttons' own names, no amount.
-  await page.goto(`/properties/${property.id}?tab=aufteilung`);
+  // No split yet: a to-do with the buttons' own names, no amount. The split sits beside the
+  // Nebenkosten in the same section, so the old link lands on the same page.
+  await page.goto(`/properties/${property.id}?tab=kauf#card-aufteilung`);
   await expect(page.getByText(/^Noch keine AfA-Basis\..*„Aufteilung hinzufügen“.*„als AfA-Basis wählen“/)).toBeVisible();
   await expect(page.locator(".page-figs")).toHaveCount(0);
 
@@ -167,7 +173,7 @@ test("the property pages show the Summe, the AfA line, Restschuld heute and the 
   await expect(figures).toContainText("240.750,00 €");
   await expect(figures).toContainText("2 % ab Mai 2026");
 
-  // The Darlehen tab's card and the loan page: Restschuld heute; the page also the anfängliche Tilgung.
+  // The Darlehen section's card and the loan page: Restschuld heute; the page also the anfängliche Tilgung.
   await page.goto(`/properties/${property.id}?tab=darlehen`);
   const card = page.locator("article").filter({ hasText: "Sparkasse Musterstadt" });
   await expect(card.getByText("Restschuld heute", { exact: true })).toBeVisible();

@@ -31,7 +31,7 @@ test("a missing price split is a to-do with its button, and recording one closes
   await expect(split.getByRole("button", { name: "Kaufvertrag hochladen" })).toBeVisible();
   await expect(split.getByRole("link", { name: "Aufteilung selbst eintragen" })).toHaveAttribute(
     "href",
-    `/properties/${property.id}?tab=aufteilung`,
+    `/properties/${property.id}?tab=kauf#card-aufteilung`,
   );
   // One gap, one entry: once the checklist is in (the flat has no Grundsteuerbescheid), its
   // Kaufpreisaufteilung is not listed beside the draft's gap.

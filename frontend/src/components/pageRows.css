@@ -81,3 +81,9 @@ li.superseded .row-amount {
   letter-spacing: -0.02em;
   line-height: 1.1;
 }
+
+/* The property page's cards (phase 10, mockup 25): an old ?tab= link or a #card-… hash scrolls
+   one into view; it stops below the sticky top bar instead of under it. */
+.property-anchor {
+  scroll-margin-top: calc(var(--topbar-height) + 16px);
+}

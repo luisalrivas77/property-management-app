@@ -241,12 +241,12 @@ function PropertyCardView({ card, owners }: { card: PropertyCard; owners: Owner[
   const ownerName = new Map(owners.map((owner) => [owner.id, owner.full_name]));
   const rows: { href: string; icon: Parameters<typeof Icon>[0]["name"]; title: string; hint: string }[] = [
     { href: `${base}?tab=darlehen`, icon: "accounts", title: t.loans, hint: t.loansHint(card.loans.length) },
-    { href: `${base}?tab=nebenkosten`, icon: "tax", title: t.purchase, hint: t.purchaseHint },
-    { href: `${base}?tab=einheiten`, icon: "properties", title: t.units, hint: t.unitsHint(card.units.length) },
+    { href: `${base}?tab=kauf`, icon: "tax", title: t.purchase, hint: t.purchaseHint },
+    { href: `${base}?tab=uebersicht#card-einheiten`, icon: "properties", title: t.units, hint: t.unitsHint(card.units.length) },
     { href: `${base}?tab=unterlagen`, icon: "inbox", title: t.checklist, hint: t.checklistHint },
     { href: `${base}?tab=dokumente`, icon: "documents", title: t.documents, hint: t.documentsHint },
     { href: `${base}?tab=verlauf`, icon: "overview", title: t.history, hint: t.historyHint },
-    { href: `${base}?tab=stammdaten`, icon: "settings", title: t.masterData, hint: t.masterDataHint },
+    { href: `${base}?tab=uebersicht`, icon: "settings", title: t.masterData, hint: t.masterDataHint },
   ];
 
   return (
@@ -351,7 +351,7 @@ function PropertyCardView({ card, owners }: { card: PropertyCard; owners: Owner[
               </ul>
             ) : (
               <p className="muted">
-                {t.noShares} <Link href={`${base}?tab=eigentuemer`}>{t.setShares}</Link>
+                {t.noShares} <Link href={`${base}?tab=uebersicht#card-eigentuemer`}>{t.setShares}</Link>
               </p>
             )}
           </section>

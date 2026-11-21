@@ -20,7 +20,7 @@ export default function NewUnitPage() {
       <Loading state={property}>
         {(data) => (
           <>
-            <Breadcrumbs items={[{ href: `/properties/${data.id}?tab=einheiten`, label: data.label }, { label: t.create }]} />
+            <Breadcrumbs items={[{ href: `/properties/${data.id}?tab=uebersicht#card-einheiten`, label: data.label }, { label: t.create }]} />
             <h1>{t.create}</h1>
             <div className="card">
               <UnitForm propertyId={data.id} />

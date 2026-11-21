@@ -8,7 +8,7 @@
 // Phase 10 (mockup 25): both tables became rows (what it is, a short line, the amount or share)
 // that open every field and the row's buttons in the detail panel; the edit form slides in.
 import Link from "next/link";
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { AcquisitionCost, AcquisitionCostKind, Document, PriceSplit, PriceSplitSource, Property, PurchaseSummary } from "@/api/schemas";
@@ -25,6 +25,8 @@ import { propertyPage } from "@/i18n/propertyPage";
 import { Icon } from "@/lib/icons";
 
 import "@/components/pageRows.css";
+
+import { PropertyCard } from "./PropertyCard";
 
 const loadDocuments = () => ok(api.GET("/api/documents"));
 
@@ -49,7 +51,9 @@ function DocumentRef({ id, documents }: { id: string | null | undefined; documen
 
 const COST_KEYS = ["kind", "amount", "paid_on", "document_id", "note"] as const;
 
-export function CostsTab({ propertyId }: { propertyId: string }) {
+/** `onChanged` tells the page a row was added, edited or removed: the AfA basis beside it (in
+ * SplitsTab) includes the Nebenkosten, so it reloads too (phase 10: both cards on one section). */
+export function CostsTab({ propertyId, onChanged }: { propertyId: string; onChanged?: () => void }) {
   const t = useT(propertyPage);
   const f = useFormat();
   const load = useCallback(
@@ -67,6 +71,7 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
     costs.reload();
     documents.reload();
     summary.reload();
+    onChanged?.();
   }
 
   async function remove(cost: AcquisitionCost) {
@@ -121,7 +126,7 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
 
   return (
     <DetailLayout panel={panel}>
-      <div className="stack">
+      <PropertyCard card="nebenkosten" title={t.tabCosts}>
         <p className="muted">{t.costsIntro}</p>
         <Loading state={costs}>
           {(list) =>
@@ -167,7 +172,7 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
             />
           )}
         </ActionDialog>
-      </div>
+      </PropertyCard>
     </DetailLayout>
   );
 }
@@ -264,7 +269,8 @@ function CostForm({ propertyId, cost, onDone }: { propertyId: string; cost?: Acq
 
 const SPLIT_KEYS = ["source", "building_share", "evidence_document_id", "note", "inputs"] as const;
 
-export function SplitsTab({ property, onSelected }: { property: Property; onSelected: () => void }) {
+/** `refresh` changes when a Nebenkosten row changed (CostsTab's `onChanged`): the AfA line reloads. */
+export function SplitsTab({ property, onSelected, refresh = 0 }: { property: Property; onSelected: () => void; refresh?: number }) {
   const t = useT(propertyPage);
   const f = useFormat();
   const load = useCallback(
@@ -274,6 +280,10 @@ export function SplitsTab({ property, onSelected }: { property: Property; onSele
   const splits = useLoad(load);
   const documents = useLoad(loadDocuments);
   const summary = usePurchaseSummary(property.id);
+  const reloadSummary = summary.reload;
+  useEffect(() => {
+    if (refresh > 0) reloadSummary();
+  }, [refresh, reloadSummary]);
   const detail = useDetail("split");
   const [selecting, setSelecting] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -325,7 +335,7 @@ export function SplitsTab({ property, onSelected }: { property: Property; onSele
 
   return (
     <DetailLayout panel={panel}>
-      <div className="stack">
+      <PropertyCard card="aufteilung" title={t.tabSplit}>
         <p className="muted">{t.splitsIntro}</p>
         <Loading state={splits}>
           {(list) =>
@@ -367,7 +377,7 @@ export function SplitsTab({ property, onSelected }: { property: Property; onSele
             />
           )}
         </ActionDialog>
-      </div>
+      </PropertyCard>
     </DetailLayout>
   );
 }
