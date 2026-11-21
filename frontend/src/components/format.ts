@@ -2,6 +2,7 @@
 // ("1400.50", "0.036500") and are formatted by moving digits around, never through a JS
 // number, so nothing is rounded on the way to the screen.
 import type { Fraction } from "@/api/schemas";
+import { getLocale } from "@/i18n/locale";
 
 const DECIMAL = /^(-?)(\d+)(?:\.(\d+))?$/;
 
@@ -106,7 +107,8 @@ export function formatFraction(value: Fraction | null | undefined): string {
 
 /** A share as a percentage, exact from the integers: up to three decimals rounded half-up,
  * trailing zeros dropped, German comma (1/2 → "50 %", 5618/100000 → "5,618 %",
- * 1/3 → "33,333 %"). BigInt, so no floating-point digits appear. */
+ * 1/3 → "33,333 %"); in English "50%", "5.618%" (phase 10 D284). BigInt, so no
+ * floating-point digits appear. */
 export function formatSharePercent(value: Fraction): string {
   const numerator = BigInt(value.numerator);
   const denominator = BigInt(value.denominator);
@@ -114,6 +116,7 @@ export function formatSharePercent(value: Fraction): string {
   const scaled = (2n * numerator * 100000n + denominator) / (2n * denominator);
   const int = (scaled / 1000n).toString();
   const frac = (scaled % 1000n).toString().padStart(3, "0").replace(/0+$/, "");
+  if (getLocale() === "en") return `${int.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${frac ? `.${frac}` : ""}%`;
   return `${groupThousands(int)}${frac ? `,${frac}` : ""} %`;
 }
 
@@ -121,8 +124,14 @@ export function formatSharePercent(value: Fraction): string {
  * are prefilled with formatFraction instead. */
 export function formatShare(value: Fraction | null | undefined): string {
   if (!value) return "–";
-  if (value.denominator <= 0) return formatFraction(value);
-  return `${formatFraction(value)} (${formatSharePercent(value)})`;
+  // formatFraction stays German (it prefills inputs, which parse German); for reading in
+  // English its separators are swapped ("56,18/1.000" → "56.18/1,000").
+  const fraction =
+    getLocale() === "en"
+      ? formatFraction(value).replace(/[.,]/g, (mark) => (mark === "." ? "," : "."))
+      : formatFraction(value);
+  if (value.denominator <= 0) return fraction;
+  return `${fraction} (${formatSharePercent(value)})`;
 }
 
 /** Today's local date as "YYYY-MM-DD" (the API's date format). */
