@@ -10,6 +10,7 @@
 // Nettovermögen card with its split (phase 6 step 6, components/netWorth.tsx) in the net worth's
 // panel and the Cashflow card (phase 6 §13, components/cashflow.tsx) in the cash flow's panel.
 import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Loan, Property, Tenancy, Tenant, Unit } from "@/api/schemas";
@@ -48,7 +49,22 @@ interface Overview {
   tenants: Tenant[];
 }
 
-const loadReminders = () => ok(api.GET("/api/reminders"));
+/** Once every tile's read has settled, or after this long at the latest, the page's other reads
+ * start (below). */
+const TILES_FIRST_MAX_MS = 20_000;
+
+interface Gate {
+  promise: Promise<void>;
+  open: () => void;
+}
+
+function createGate(): Gate {
+  let open = () => {};
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { promise, open };
+}
 
 async function loadOverview(): Promise<Overview> {
   const [properties, tenants] = await Promise.all([ok(api.GET("/api/properties")), ok(api.GET("/api/tenants"))]);
@@ -75,14 +91,31 @@ export default function OverviewPage() {
   const { me } = useAuth();
   const t = useT(catalogue);
   const f = useFormat();
-  const overview = useLoad(loadOverview);
-  const reminders = useLoad(loadReminders);
   const netWorth = useLoad(loadNetWorthToday);
   const health = useLoad(loadHealthOnly);
   const cashflow = useLoad(loadMonthCashflow);
   const inbox = useLoad(loadInbox);
   const paidIn = useLoad(loadPaidIn);
   const payback = useLoad(loadPayback);
+  // Tiles first (21 Nov 2026): one load sent about 27 reads at once to a container with a quarter
+  // of a CPU, so the tiles waited behind the to-do list's drafts. The to-do list, the coming
+  // dates, the phase 9 block's other reads and the property cards start once every tile's read
+  // has settled, with or without an error, and after TILES_FIRST_MAX_MS at the latest, so none
+  // waits forever. The property cards and the to-do list then read /properties together, so it
+  // is sent once (fetchShared).
+  const [gate] = useState(createGate);
+  const tilesSettled = [netWorth, health, cashflow, inbox, paidIn, payback].every((state) => !state.loading);
+  useEffect(() => {
+    if (tilesSettled) gate.open();
+  }, [tilesSettled, gate]);
+  useEffect(() => {
+    const timer = window.setTimeout(gate.open, TILES_FIRST_MAX_MS);
+    return () => window.clearTimeout(timer);
+  }, [gate]);
+  const loadReminders = useCallback(() => gate.promise.then(() => ok(api.GET("/api/reminders"))), [gate]);
+  const reminders = useLoad(loadReminders);
+  const loadCards = useCallback(() => gate.promise.then(loadOverview), [gate]);
+  const overview = useLoad(loadCards);
   const detail = useDetail("kachel");
   const today = todayIso();
   const tiles = { netWorth, health, cashflow, inbox, paidIn, payback };
@@ -107,9 +140,9 @@ export default function OverviewPage() {
           </Link>
         </div>
         <OverviewTiles data={tiles} detail={detail} />
-        <OverviewTodos reminders={reminders.data ?? []} onRemindersChanged={reminders.reload} />
+        <OverviewTodos reminders={reminders.data ?? []} onRemindersChanged={reminders.reload} after={gate.promise} />
         <Loading state={reminders}>{(list) => <NextDates reminders={list} onChanged={reminders.reload} />}</Loading>
-        <HealthSection onChanged={health.reload} />
+        <HealthSection health={health} after={gate.promise} />
         <Loading state={overview}>
           {({ cards, tenants }) =>
             cards.length === 0 ? (

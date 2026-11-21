@@ -4,18 +4,19 @@
 // the old sidebar (Sidebar.tsx).
 import { useEffect, useRef, useState } from "react";
 
-import { api, ok } from "@/api/client";
-import { INBOX_CHANGED } from "@/lib/inboxCount";
+import { INBOX_CHANGED, INBOX_REUSE_MS, fetchInbox } from "@/lib/inboxCount";
 
 const COUNT_REFRESH_MS = 60_000;
-const ROUTE_REFRESH_MS = 30_000;
+const ROUTE_REFRESH_MS = INBOX_REUSE_MS;
 
 /** The number of items GET /inbox lists, which is what the review page shows: fetched when
  * the app opens, every minute while the tab is visible, when the tab becomes visible again,
  * and on a route change only when the count is older than ROUTE_REFRESH_MS; taken from the
  * page's INBOX_CHANGED event after it reloads its list. GET /inbox is the API's most
  * expensive read, and fetching it on every click slowed every other page on the small
- * container (14 Nov 2026). A failed fetch shows no number (null), without an error. */
+ * container (14 Nov 2026). A failed fetch shows no number (null), without an error. Each fetch
+ * keeps its list in lib/inboxCount.ts, where Übersicht's Zu prüfen tile reads it instead of
+ * asking the server again (21 Nov 2026). */
 export function useInboxCount(pathname: string): number | null {
   const [count, setCount] = useState<number | null>(null);
   const refreshRef = useRef<(() => void) | null>(null);
@@ -32,7 +33,7 @@ export function useInboxCount(pathname: string): number | null {
     function refresh() {
       const mine = ++latest;
       fetchedAt.current = Date.now();
-      ok(api.GET("/api/inbox")).then(
+      fetchInbox().then(
         (items) => {
           if (!cancelled && mine === latest) setCount(items.length);
         },

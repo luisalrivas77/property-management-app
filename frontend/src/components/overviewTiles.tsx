@@ -22,6 +22,7 @@ import type { Loaded } from "@/components/useLoad";
 import { useFormat, useT, type Formatter } from "@/i18n";
 import { overview as catalogue } from "@/i18n/overview";
 import { Icon } from "@/lib/icons";
+import { recentInbox } from "@/lib/inboxCount";
 
 import "./overviewTiles.css";
 
@@ -55,7 +56,9 @@ export async function loadMonthCashflow(): Promise<MonthCashflow> {
 
 export const loadNetWorthToday = async (): Promise<NetWorth> => (await ok(api.GET("/api/net-worth/overview"))).today;
 export const loadHealthOnly = (): Promise<Health> => ok(api.GET("/api/health"));
-export const loadInbox = (): Promise<InboxItem[]> => ok(api.GET("/api/inbox"));
+/** The list the menu's count last read (lib/inboxCount.ts), so one Übersicht load computes GET
+ * /inbox once; a kept list at most TILE_REUSE_MS old (lib/inboxCount.ts). */
+export const loadInbox = (): Promise<InboxItem[]> => recentInbox();
 /** The own money put into each property and its total, summed by the server (Luis, 21 Nov 2026). */
 export const loadPaidIn = (): Promise<PropertiesPaidIn> => ok(api.GET("/api/properties/equity"));
 /** The cash back against the own money put in, the break-even year and a sale today, per property

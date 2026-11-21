@@ -231,11 +231,23 @@ function buildEntries(data: OverviewTodosData, reminders: Reminder[], onChanged:
 }
 
 /** `reminders` and `onRemindersChanged` are the page's (the Nächste Termine card shares them). */
-export function OverviewTodos({ reminders, onRemindersChanged }: { reminders: Reminder[]; onRemindersChanged: () => void }) {
+const NOW: Promise<unknown> = Promise.resolve();
+
+/** `after`: the list's reads start once it settles; Übersicht lets its tiles' reads go first on
+ * the small container (21 Nov 2026). Without it they start at once. */
+export function OverviewTodos({
+  reminders,
+  onRemindersChanged,
+  after = NOW,
+}: {
+  reminders: Reminder[];
+  onRemindersChanged: () => void;
+  after?: Promise<unknown>;
+}) {
   const t = useT(todosText);
   const [refresh, setRefresh] = useState(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh forces a reload
-  const load = useCallback(() => loadTodos(), [refresh]);
+  const load = useCallback(() => after.then(loadTodos), [refresh, after]);
   const data = useLoad(load);
   const changed = useCallback(() => {
     setRefresh((n) => n + 1);

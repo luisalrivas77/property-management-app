@@ -37,7 +37,7 @@ from ._common import (
     input_sources,
     sources_of,
     warning,
-    with_years,
+    with_year_numbers,
 )
 from .rounding import cents, money_str
 
@@ -62,10 +62,10 @@ def _costs(
     The costs the 15 % limit moved into the basis are left out."""
     moved = _moved_by_limit(limit)
     treatments = by_allocation(facts.tax_inputs, TaxInputKind.RENOVATION_TREATMENT)
-    for a, year in with_years(facts.allocations, rule_set):
+    for a, year in with_year_numbers(facts.allocations, rule_set):
         if a.category in CATEGORIES and a.allocation_id not in moved:
             treatment = treatments.get(a.allocation_id) if a.category is C.RENOVATION else None
-            yield a, year.year, treatment
+            yield a, year, treatment
 
 
 def herstellung_additions(facts: DraftFacts, rule_set: RuleSet) -> list[BasisAddition]:

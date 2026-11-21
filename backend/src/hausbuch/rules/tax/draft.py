@@ -76,7 +76,8 @@ from ._common import (
     sources_of,
     unique,
     warning,
-    with_years,
+    with_year_numbers,
+    year_of,
 )
 from .afa import afa
 from .anschaffungsnah import limit_status
@@ -194,8 +195,8 @@ def _merge_rows(rows: list[UnitRow]) -> list[UnitRow]:
 
 def _generic(facts: DraftFacts, tax_year: int, rule_set: RuleSet, book: LineBook) -> None:
     mapping = rule_set.form.category_lines
-    for a, r in with_years(facts.allocations, rule_set):
-        if r.year != tax_year or a.category in RULE_CATEGORIES:
+    for a, year in with_year_numbers(facts.allocations, rule_set):
+        if year != tax_year or a.category in RULE_CATEGORIES:
             continue
         key = mapping.get(a.category)
         if key is None:
@@ -560,8 +561,8 @@ def _open(facts: DraftFacts, tax_year: int, rule_set: RuleSet, rules_open: OpenL
     open_cats = set(rule_set.form.open)
     rows = [
         a
-        for a, r in with_years(facts.allocations, rule_set)
-        if r.year == tax_year and a.category in open_cats
+        for a, year in with_year_numbers(facts.allocations, rule_set)
+        if year == tax_year and a.category in open_cats
     ]
     return OpenLines(
         count=len(rows) + rules_open.count + facts.pending.count,
@@ -571,8 +572,9 @@ def _open(facts: DraftFacts, tax_year: int, rule_set: RuleSet, rules_open: OpenL
 
 def _moved(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> list[MovedPayment]:
     out = []
-    for a, r in with_years(facts.allocations, rule_set):
-        if r.year != a.booking_date.year and tax_year in (r.year, a.booking_date.year):
+    for a, year in with_year_numbers(facts.allocations, rule_set):
+        if year != a.booking_date.year and tax_year in (year, a.booking_date.year):
+            r = tax_year_of(a, rule_set)
             out.append(
                 MovedPayment(
                     allocation_id=a.allocation_id,
@@ -614,7 +616,7 @@ def _missing_documents(facts: DraftFacts, rule_set: RuleSet, tax_year: int) -> l
             category=a.category,
             amount=a.amount,
             booking_date=a.booking_date,
-            tax_year=tax_year_of(a, rule_set).year,
+            tax_year=year_of(a, rule_set),
             document_id=a.document_id,
             tenancy_id=a.tenancy_id,
             transaction_id=a.transaction_id,
@@ -744,8 +746,8 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
     warnings += reduced.warnings
     _cut_line(reduced, book)
 
-    for a, r in with_years(facts.allocations, rule_set):
-        if r.year == tax_year and "year_end_straddle" in r.notes:
+    for a, year in with_year_numbers(facts.allocations, rule_set):
+        if year == tax_year and "year_end_straddle" in tax_year_of(a, rule_set).notes:
             warnings.append(
                 warning(
                     WarningCode.YEAR_END_STRADDLE,

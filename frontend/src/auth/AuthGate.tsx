@@ -13,6 +13,7 @@ import type { Me } from "@/api/schemas";
 import { LoadingLine } from "@/components/ui";
 import { useT } from "@/i18n";
 import { shared } from "@/i18n/shared";
+import { resetInbox } from "@/lib/inboxCount";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 interface AuthValue {
@@ -39,7 +40,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    setUnauthorizedHandler(() => router.replace("/login"));
+    setUnauthorizedHandler(() => {
+      resetInbox();
+      router.replace("/login");
+    });
     return () => setUnauthorizedHandler(null);
   }, [router]);
 
@@ -47,7 +51,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     let cancelled = false;
     ok(api.GET("/api/auth/me")).then(
       (me) => {
-        if (!cancelled) setState({ status: "ready", me });
+        if (cancelled) return;
+        resetInbox(); // a list kept for an earlier session is never shown in this one
+        setState({ status: "ready", me });
       },
       (error: unknown) => {
         if (cancelled) return;
@@ -63,6 +69,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const signOut = useCallback(
     async (everywhere = false) => {
       await ok(api.POST(everywhere ? "/api/auth/logout-all" : "/api/auth/logout"));
+      resetInbox();
       router.replace("/login");
     },
     [router],
