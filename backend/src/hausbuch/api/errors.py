@@ -145,6 +145,65 @@ MESSAGES = i18n.Patterns(
             "Diese Abhebung wurde inzwischen beantwortet.",
             "This withdrawal has been answered in the meantime.",
         ),
+        # services/wallet_groups: a person's answer to a wallet transaction.
+        (
+            "Diese Transaktion ist schon beantwortet oder bestätigt. Bitte die Seite neu laden.",
+            "This transaction is already answered or confirmed. Please reload the page.",
+        ),
+        (
+            "Diese Transaktion braucht eine Antwort, bevor sie gebucht werden kann: bitte unten"
+            " auswählen, was sie war.",
+            "This transaction needs an answer before it can be booked: please pick below what"
+            " it was.",
+        ),
+        (
+            "„Bezahlung“ passt nur zu einer Transaktion, bei der nur etwas abgeht.",
+            "“Payment” fits only a transaction where something only goes out.",
+        ),
+        (
+            "Diese Antwort passt nur zu einer Transaktion, bei der nur etwas eingeht.",
+            "This answer fits only a transaction where something only comes in.",
+        ),
+        (
+            "„Spam“ passt nur zu Token, nicht zur eigenen Währung der Blockchain (BTC, ETH, SOL,"
+            " BNB).",
+            "“Spam” fits only tokens, not the blockchain's own currency (BTC, ETH, SOL, BNB).",
+        ),
+        (
+            "„Spam“ passt nicht zu einem Token, den Hausbuch kennt oder den Sie schon gebucht"
+            " halten: das würde den ganzen Bestand verbergen. Bitte „Geschenk oder Zahlung"
+            " erhalten“ oder „Belohnung“ wählen.",
+            "“Spam” does not fit a token Hausbuch knows or one you already hold booked: that"
+            " would hide the whole holding. Please choose “Gift or payment received” or"
+            " “Reward”.",
+        ),
+        (
+            "Ein Kaufpreis lässt sich nur angeben, wenn genau ein Token eingegangen ist; bei"
+            " mehreren bitte ohne Betrag antworten.",
+            "A purchase price can only be given when exactly one token came in; with several,"
+            " please answer without an amount.",
+        ),
+        (
+            "Diese Transaktion ist mit einer Übertragung zwischen eigenen Konten verknüpft;"
+            " solange die Verknüpfung besteht, lässt sie sich hier nicht ändern.",
+            "This transaction is linked to a transfer between your own accounts; while the link"
+            " stands, it cannot be changed here.",
+        ),
+        (
+            "Diese Transaktion hat niemand beantwortet; es gibt keine Antwort zurückzunehmen.",
+            "Nobody has answered this transaction; there is no answer to undo.",
+        ),
+        (
+            "Ein als Spam verborgener Token wird unter „Als Spam verborgene Tokens“ mit „Kein"
+            " Spam“ wieder gezeigt.",
+            "A token hidden as spam is shown again under “Tokens hidden as spam” with “Not spam”.",
+        ),
+        ("Dieser Token ist nicht als Spam verborgen.", "This token is not hidden as spam."),
+        ("Dieser Token ist schon als Spam verborgen.", "This token is already hidden as spam."),
+        (
+            "Die eigene Währung einer Blockchain kann nicht als Spam verborgen werden.",
+            "A blockchain's own currency cannot be hidden as spam.",
+        ),
     ],
 )
 
