@@ -91,6 +91,15 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   await expect(page).toHaveURL(new RegExp(`/tax/${YEAR}\\?tab=angaben`));
   await expect(page.getByRole("heading", { level: 1, name: `Steuern ${YEAR}` })).toBeVisible();
 
+  // Eure Angaben in English (phase 10 D284): a block's button and its form's fields.
+  await page.evaluate(() => window.localStorage.setItem("hausbuch.locale", "en"));
+  await page.reload();
+  const entries = page.getByRole("region", { name: "Entries", exact: true });
+  await entries.getByRole("button", { name: "Add Commute", exact: true }).click();
+  await expect(entries.getByRole("form", { name: "Enter Commute" }).getByLabel("Workplace (town, street)", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.localStorage.removeItem("hausbuch.locale"));
+  await page.reload();
+
   // One input per block.
   await save(page, "Arbeitsweg hinzufügen", "Arbeitsweg eintragen", {
     "Arbeitsstätte (Ort, Straße)": "Werk Nord",
