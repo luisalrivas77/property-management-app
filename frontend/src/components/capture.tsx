@@ -35,6 +35,8 @@ import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent } fro
 import { api, ok } from "@/api/client";
 import { aiErrorText } from "@/api/errors";
 import type { Document, DocumentUploadResult, Property, Proposal, ProposalRecord, ProposalStatus, UploadBody } from "@/api/schemas";
+import { useT } from "@/i18n";
+import { capture as captureText } from "@/i18n/documentPage";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { documentLabel } from "./documents";
@@ -180,29 +182,30 @@ function costRecord(proposal: Proposal): ProposalRecord | undefined {
 }
 
 /** The status pill: its text and the .badge variant. */
-function statusPill(proposal: Proposal | null): { text: string; variant: string } {
-  if (proposal === null) return { text: "Nicht ausgelesen", variant: "badge-muted" };
+function statusPill(proposal: Proposal | null, t: typeof captureText.de): { text: string; variant: string } {
+  if (proposal === null) return { text: t.notRead, variant: "badge-muted" };
   switch (proposal.status) {
     case "queued":
-      return { text: "Wartet auf das Auslesen", variant: "badge-muted" };
+      return { text: t.queued, variant: "badge-muted" };
     case "running":
-      return { text: "Wird ausgelesen", variant: "badge-muted" };
+      return { text: t.running, variant: "badge-muted" };
     case "ready":
-      return { text: "Vorschlag bereit", variant: "" };
+      return { text: t.ready, variant: "" };
     case "applied":
-      return { text: "Übernommen", variant: "" };
+      return { text: t.applied, variant: "" };
     case "rejected":
-      return { text: "Verworfen", variant: "badge-muted" };
+      return { text: t.rejected, variant: "badge-muted" };
     case "superseded":
-      return { text: "Ersetzt", variant: "badge-muted" };
+      return { text: t.superseded, variant: "badge-muted" };
     case "blocked_tenant_data":
-      return { text: "Mieterdaten", variant: "badge-warn" };
+      return { text: t.tenantData, variant: "badge-warn" };
     case "failed":
-      return { text: "Nicht lesbar", variant: "badge-danger" };
+      return { text: t.failed, variant: "badge-danger" };
   }
 }
 
 function Recognized({ proposal, properties }: { proposal: Proposal; properties: Property[] | undefined }) {
+  const t = useT(captureText);
   const type = recognizedType(proposal);
   const typing = record(proposal, "typing");
   const title = stringValue(typing, "title");
@@ -218,15 +221,15 @@ function Recognized({ proposal, properties }: { proposal: Proposal; properties: 
     <div className="capture-recognized">
       {type ? (
         <p className="allocation-source">
-          <span className="ai-badge">KI</span>
-          Erkannt als {type}
+          <span className="ai-badge">{t.aiBadge}</span>
+          {t.recognizedAs(type)}
         </p>
       ) : null}
       {title || date || amount ? (
         <div className="capture-facts">
           <div>
             {title ? <p className="capture-title">{title}</p> : null}
-            {date ? <p className="muted capture-date">vom {formatDate(date)}</p> : null}
+            {date ? <p className="muted capture-date">{t.dated(formatDate(date))}</p> : null}
           </div>
           {amount ? <p className="capture-amount">{formatMoney(amount)}</p> : null}
         </div>
@@ -235,7 +238,7 @@ function Recognized({ proposal, properties }: { proposal: Proposal; properties: 
         <div className="capture-chips">
           {property ? <span className="capture-chip">{property.label}</span> : null}
           {costKind ? (
-            <span className="capture-chip">Nebenkosten: {ACQUISITION_COST_KIND[costKind as keyof typeof ACQUISITION_COST_KIND] ?? costKind}</span>
+            <span className="capture-chip">{t.costChip(ACQUISITION_COST_KIND[costKind as keyof typeof ACQUISITION_COST_KIND] ?? costKind)}</span>
           ) : null}
         </div>
       ) : null}
@@ -246,19 +249,20 @@ function Recognized({ proposal, properties }: { proposal: Proposal; properties: 
 /** One captured document: its name, when it came in, the proposal's status and what it found. */
 function CapturedRow({ entry, properties }: { entry: Captured; properties: Property[] | undefined }) {
   const { document, existed } = entry;
+  const t = useT(captureText);
   const { proposal, error, retry } = useNewestProposal(document.id);
-  const pill = proposal === undefined ? null : statusPill(proposal);
+  const pill = proposal === undefined ? null : statusPill(proposal, t);
   const href = `/documents/${document.id}`;
 
   let detail = null;
   if (proposal === null) {
-    detail = <p className="muted capture-note">{aiErrorText("ai.disabled")} Auf der Seite des Dokuments von Hand typisieren.</p>;
+    detail = <p className="muted capture-note">{aiErrorText("ai.disabled")} {t.typeByHand}</p>;
   } else if (proposal && IN_FLIGHT.includes(proposal.status)) {
-    detail = <p className="muted capture-note">Die Liste aktualisiert sich von selbst.</p>;
+    detail = <p className="muted capture-note">{t.refreshesItself}</p>;
   } else if (proposal?.status === "failed") {
-    detail = <p className="capture-note">Konnte nicht gelesen werden: {aiErrorText(proposal.error_code)}</p>;
+    detail = <p className="capture-note">{t.couldNotRead(aiErrorText(proposal.error_code))}</p>;
   } else if (proposal?.status === "blocked_tenant_data") {
-    detail = <p className="capture-note">{aiErrorText("ai.blocked_tenant_data")} Bitte von Hand eingeben.</p>;
+    detail = <p className="capture-note">{aiErrorText("ai.blocked_tenant_data")} {t.enterByHand}</p>;
   }
 
   return (
@@ -267,23 +271,24 @@ function CapturedRow({ entry, properties }: { entry: Captured; properties: Prope
         <div className="capture-name">
           <Link href={href}>{documentLabel(document)}</Link>
           <p className="muted capture-date">
-            {existed ? "Bereits vorhanden · " : null}Eingang {formatDateTime(document.received_at)}
+            {existed ? t.alreadyThere : null}
+            {t.received(formatDateTime(document.received_at))}
           </p>
         </div>
-        {pill ? <span className={`badge ${pill.variant}`.trim()}>{pill.text}</span> : <span className="muted">Lädt …</span>}
+        {pill ? <span className={`badge ${pill.variant}`.trim()}>{pill.text}</span> : <span className="muted">{t.loading}</span>}
       </div>
       {proposal ? <Recognized proposal={proposal} properties={properties} /> : null}
       {detail}
       {proposal?.status === "ready" ? (
         <Link className="button-link capture-review" href={href}>
-          Vorschlag prüfen
+          {t.reviewSuggestion}
         </Link>
       ) : null}
       {error != null ? (
         <div>
           <ErrorNotice error={error} />
           <button type="button" className="secondary" onClick={retry}>
-            Erneut versuchen
+            {t.retry}
           </button>
         </div>
       ) : null}
@@ -376,6 +381,7 @@ function captureName(): string {
 
 /** The page strip and the session's list. */
 export function CaptureScreen() {
+  const t = useT(captureText);
   const inputId = useId();
   const input = useRef<HTMLInputElement>(null);
   const [captured, setCaptured] = useState<Captured[]>([]);
@@ -415,9 +421,7 @@ export function CaptureScreen() {
     const taken = chosen.slice(0, Math.max(0, room));
     const messages: string[] = [];
     if (taken.length < chosen.length) {
-      messages.push(
-        `Ein Dokument hat höchstens ${MAX_PAGES} Seiten. ${chosen.length - taken.length === 1 ? "Ein Foto wurde" : `${chosen.length - taken.length} Fotos wurden`} nicht hinzugefügt; erst diese Seiten hochladen, dann ein neues Dokument beginnen.`,
-      );
+      messages.push(t.tooManyPages(MAX_PAGES, chosen.length - taken.length));
     }
     setPreparing(true);
     let unreadable = 0;
@@ -431,9 +435,7 @@ export function CaptureScreen() {
       }
     }
     if (unreadable > 0) {
-      messages.push(
-        `${unreadable === 1 ? "Ein Foto ließ" : `${unreadable} Fotos ließen`} sich nicht öffnen (z. B. HEIC); bitte als JPEG oder PNG aufnehmen.`,
-      );
+      messages.push(t.unreadable(unreadable));
     }
     setPreparing(false);
     if (messages.length > 0) setNotice(messages.join(" "));
@@ -462,7 +464,7 @@ export function CaptureScreen() {
       setPages((current) => current.map((entry) => (entry.key === key ? { ...entry, ...turned, url } : entry)));
       URL.revokeObjectURL(page.url);
     } catch {
-      setNotice("Die Seite ließ sich nicht drehen; bitte erneut versuchen.");
+      setNotice(t.rotateFailed);
     } finally {
       setRotating(false);
     }
@@ -515,7 +517,7 @@ export function CaptureScreen() {
   const busy = preparing || uploading || rotating;
   const full = pages.length >= MAX_PAGES;
   const empty = captured.length === 0 && pending.length === 0;
-  const buttonText = preparing ? "Bereitet vor …" : pages.length === 0 ? "Beleg fotografieren" : "Seite hinzufügen";
+  const buttonText = preparing ? t.preparing : pages.length === 0 ? t.takePhoto : t.addPage;
 
   return (
     <div className="capture">
@@ -542,9 +544,7 @@ export function CaptureScreen() {
           {buttonText}
         </label>
         <p className="muted hint">
-          {full
-            ? `${MAX_PAGES} Seiten erreicht: mehr passen nicht in ein Dokument.`
-            : "Ein Foto pro Seite (JPEG oder PNG). Alle Seiten werden zusammen ein Dokument."}
+          {full ? t.pagesReached(MAX_PAGES) : t.onePhotoPerPage}
         </p>
       </div>
 
@@ -557,20 +557,20 @@ export function CaptureScreen() {
       {pages.length > 0 ? (
         <section className="card capture-strip" aria-labelledby="capture-strip-title">
           <h2 id="capture-strip-title">
-            {pages.length === 1 ? "1 Seite" : `${pages.length} Seiten`}
-            <span className="muted"> (höchstens {MAX_PAGES})</span>
+            {t.pageCount(pages.length)}
+            <span className="muted">{t.atMost(MAX_PAGES)}</span>
           </h2>
-          <ol className="capture-pages" aria-label="Seiten">
+          <ol className="capture-pages" aria-label={t.pages}>
             {pages.map((page, index) => (
               <li key={page.key} className="capture-page">
                 {/* eslint-disable-next-line @next/next/no-img-element -- a local object URL, nothing for next/image to optimise */}
-                <img src={page.url} alt={`Seite ${index + 1}`} />
-                <span className="capture-page-number">Seite {index + 1}</span>
+                <img src={page.url} alt={t.page(index + 1)} />
+                <span className="capture-page-number">{t.page(index + 1)}</span>
                 <div className="capture-page-actions">
                   <button
                     type="button"
                     className="secondary"
-                    aria-label={`Seite ${index + 1} nach vorn`}
+                    aria-label={t.pageForward(index + 1)}
                     disabled={busy || index === 0}
                     onClick={() => move(index, -1)}
                   >
@@ -579,7 +579,7 @@ export function CaptureScreen() {
                   <button
                     type="button"
                     className="secondary"
-                    aria-label={`Seite ${index + 1} nach hinten`}
+                    aria-label={t.pageBack(index + 1)}
                     disabled={busy || index === pages.length - 1}
                     onClick={() => move(index, 1)}
                   >
@@ -588,7 +588,7 @@ export function CaptureScreen() {
                   <button
                     type="button"
                     className="secondary"
-                    aria-label={`Seite ${index + 1} drehen`}
+                    aria-label={t.pageRotate(index + 1)}
                     disabled={busy}
                     onClick={() => void rotate(page.key)}
                   >
@@ -597,7 +597,7 @@ export function CaptureScreen() {
                   <button
                     type="button"
                     className="secondary"
-                    aria-label={`Seite ${index + 1} entfernen`}
+                    aria-label={t.pageRemove(index + 1)}
                     disabled={busy}
                     onClick={() => remove(page.key)}
                   >
@@ -609,32 +609,32 @@ export function CaptureScreen() {
           </ol>
           <div className="capture-strip-actions">
             <button type="button" disabled={busy} onClick={() => void upload()}>
-              {uploading ? "Lädt hoch …" : "Als ein Dokument hochladen"}
+              {uploading ? t.uploading : t.uploadAsOne}
             </button>
             <button type="button" className="link" disabled={busy} onClick={clearStrip}>
-              Alle Seiten verwerfen
+              {t.discardAll}
             </button>
           </div>
         </section>
       ) : null}
 
       <section className="card capture-session" aria-labelledby="capture-session-title">
-        <h2 id="capture-session-title">In dieser Sitzung</h2>
+        <h2 id="capture-session-title">{t.thisSession}</h2>
         {empty ? (
-          <p className="muted">Noch keine Belege. Hochgeladene Belege erscheinen hier mit dem Stand des Auslesens.</p>
+          <p className="muted">{t.noneYet}</p>
         ) : (
-          <ul className="capture-list" aria-label="Hochgeladene Belege">
+          <ul className="capture-list" aria-label={t.uploadedReceipts}>
             {pending.map((entry) => (
               <li key={entry.key} className="capture-item">
                 <div className="capture-head">
                   <span className="capture-name">{entry.fileName}</span>
-                  {entry.error == null ? <span className="badge badge-muted">Lädt hoch</span> : <span className="badge badge-danger">Fehler</span>}
+                  {entry.error == null ? <span className="badge badge-muted">{t.uploadingPill}</span> : <span className="badge badge-danger">{t.error}</span>}
                 </div>
                 {entry.error != null ? (
                   <div>
                     <ErrorNotice error={entry.error} />
                     <button type="button" className="link" onClick={() => dismiss(entry.key)}>
-                      Ausblenden
+                      {t.dismiss}
                     </button>
                   </div>
                 ) : null}
