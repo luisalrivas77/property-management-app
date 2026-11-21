@@ -91,7 +91,6 @@ export default function OverviewPage() {
   const { me } = useAuth();
   const t = useT(catalogue);
   const f = useFormat();
-  const overview = useLoad(loadOverview);
   const netWorth = useLoad(loadNetWorthToday);
   const health = useLoad(loadHealthOnly);
   const cashflow = useLoad(loadMonthCashflow);
@@ -100,8 +99,10 @@ export default function OverviewPage() {
   const payback = useLoad(loadPayback);
   // Tiles first (21 Nov 2026): one load sent about 27 reads at once to a container with a quarter
   // of a CPU, so the tiles waited behind the to-do list's drafts. The to-do list, the coming
-  // dates and the phase 9 block's other reads start once every tile's read has settled, with or
-  // without an error, and after TILES_FIRST_MAX_MS at the latest, so none waits forever.
+  // dates, the phase 9 block's other reads and the property cards start once every tile's read
+  // has settled, with or without an error, and after TILES_FIRST_MAX_MS at the latest, so none
+  // waits forever. The property cards and the to-do list then read /properties together, so it
+  // is sent once (fetchShared).
   const [gate] = useState(createGate);
   const tilesSettled = [netWorth, health, cashflow, inbox, paidIn, payback].every((state) => !state.loading);
   useEffect(() => {
@@ -113,6 +114,8 @@ export default function OverviewPage() {
   }, [gate]);
   const loadReminders = useCallback(() => gate.promise.then(() => ok(api.GET("/api/reminders"))), [gate]);
   const reminders = useLoad(loadReminders);
+  const loadCards = useCallback(() => gate.promise.then(loadOverview), [gate]);
+  const overview = useLoad(loadCards);
   const detail = useDetail("kachel");
   const today = todayIso();
   const tiles = { netWorth, health, cashflow, inbox, paidIn, payback };
