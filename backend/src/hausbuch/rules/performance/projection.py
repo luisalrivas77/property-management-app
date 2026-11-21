@@ -24,7 +24,7 @@ from functools import cache
 from uuid import UUID
 
 from hausbuch.rules.tax import registry
-from hausbuch.rules.tax._common import of_year
+from hausbuch.rules.tax._common import RunYears, of_year
 from hausbuch.rules.tax.draft import draft
 from hausbuch.rules.tax.rounding import cents
 from hausbuch.rules.tax.spekulation import tax_free_from
@@ -92,10 +92,13 @@ class _Drafts:
     def __init__(self, facts: DraftFacts, rule_sets: RuleSets):
         self.facts = facts
         self.rule_sets = rule_sets
+        # Each allocation's §5.1 year once per run, not once per draft (phase 10 §7.3 (3)).
+        self.years = RunYears(facts.allocations)
         self._get = cache(self._draft)
 
     def _draft(self, year: int) -> AnlageVDraft:
-        return draft(self.facts, year, self.rule_sets(year))
+        rule_set = self.rule_sets(year)
+        return draft(self.facts, year, rule_set, years=self.years(rule_set))
 
     def __call__(self, year: int) -> AnlageVDraft:
         return self._get(year)
@@ -126,6 +129,7 @@ def actual_year(
     """§5.3 for one year of the real facts (D85); `contexts` the phase 4b inputs (D98)."""
     drafts = drafts or _Drafts(facts, rule_sets)
     year_draft = drafts(year)
+    rule_set = rule_sets(year)
     employment, household = _contexts(contexts, year, year_draft.totals.result)
     _, effect = year_tax_effect(
         year,
@@ -140,7 +144,7 @@ def actual_year(
     return year_figures(
         year,
         year_kind(year, today),
-        of_year(facts.allocations, year, rule_sets(year)),
+        of_year(facts.allocations, year, rule_set, drafts.years(rule_set)),
         year_draft,
         effect,
         tenancies=facts.tenancies,
@@ -258,6 +262,7 @@ def project(
         facts, levers, loans, today, scenario_id=scenario_id, rule_sets=rule_sets
     )
     projected_facts = _projected_facts(facts, synthesis.all_rows(), synthesis.tax_inputs)
+    projected_years = RunYears(projected_facts.allocations)
     scenario_refs = [SourceRef(kind="scenario", id=scenario_id)] if scenario_id else []
     assumptions: list[Assumption] = [
         Assumption(code="sale.on_31_december", params={"year": str(levers.sale_year)}),
@@ -277,7 +282,7 @@ def project(
     for year in range(today.year + 1, levers.sale_year + 1):
         n = year - today.year
         rule_set = rule_sets(year)
-        year_draft = draft(projected_facts, year, rule_set)
+        year_draft = draft(projected_facts, year, rule_set, years=projected_years(rule_set))
         year_drafts[year] = year_draft
         if any(w.code is WarningCode.DRAFT_FORM_PROVISIONAL for w in year_draft.warnings):
             provisional.append(year)
@@ -299,7 +304,7 @@ def project(
         figures = year_figures(
             year,
             YearKind.PROJECTED,
-            of_year(projected_facts.allocations, year, rule_set),
+            of_year(projected_facts.allocations, year, rule_set, projected_years(rule_set)),
             year_draft,
             effect,
             tenancies=facts.tenancies,

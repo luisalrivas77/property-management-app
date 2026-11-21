@@ -46,7 +46,7 @@ from uuid import UUID, uuid5
 
 from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.rules.tax import registry
-from hausbuch.rules.tax._common import of_year
+from hausbuch.rules.tax._common import RunYears, of_year
 from hausbuch.rules.tax.rounding import CENT, cents
 from hausbuch.schemas.allocation import AllocationCategory as C
 from hausbuch.schemas.allocation import ServicePeriod
@@ -412,10 +412,12 @@ def synthesize(
     real = facts.allocations
     covered_by_year = {y: _covered(real, y) for y in years}
     templates = cost_templates(real, today)
+    real_years = RunYears(real)
     for year in years:
         n = year - today.year
+        rule_set = rule_sets(year)
         _rents(b, year, n, today, covered_by_year[year])
-        _costs(b, year, n, templates, of_year(real, year, rule_sets(year)))
+        _costs(b, year, n, templates, of_year(real, year, rule_set, real_years(rule_set)))
         _upkeep(b, year, n)
     _loans(b, years, loans, covered_by_year)
     return b.out

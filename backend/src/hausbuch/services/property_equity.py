@@ -8,11 +8,13 @@ are not touched.
 """
 
 from datetime import date
+from uuid import UUID
 
 from sqlalchemy import Connection
 
 from hausbuch.rules import property_equity
 from hausbuch.schemas.property import PropertiesPaidIn
+from hausbuch.schemas.tax import DraftFacts
 
 from .loans import list_loans
 from .properties import list_properties
@@ -22,9 +24,19 @@ from .tax import draft_facts
 def properties_paid_in(conn: Connection, *, today: date) -> PropertiesPaidIn:
     """Every property of the workspace (by label) with its parts and paid_in, and the total
     over those that have one."""
+    return paid_in_with_facts(conn, today=today)[0]
+
+
+def paid_in_with_facts(
+    conn: Connection, *, today: date
+) -> tuple[PropertiesPaidIn, dict[UUID, DraftFacts]]:
+    """properties_paid_in and the draft facts it read per property, the same as
+    services.performance._facts(conn, id, today) reads them, so a caller in the same
+    transaction need not read them again (phase 10 §7.3 (3): GET /properties/payback)."""
     out = []
+    read: dict[UUID, DraftFacts] = {}
     for prop in list_properties(conn):
-        facts = draft_facts(conn, prop.id, tax_year=today.year, today=today)
+        facts = read[prop.id] = draft_facts(conn, prop.id, tax_year=today.year, today=today)
         out.append(
             property_equity.paid_in(
                 property_id=prop.id,
@@ -38,4 +50,4 @@ def properties_paid_in(conn: Connection, *, today: date) -> PropertiesPaidIn:
                 today=today,
             )
         )
-    return property_equity.total(out)
+    return property_equity.total(out), read

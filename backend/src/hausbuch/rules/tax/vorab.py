@@ -16,16 +16,27 @@ from hausbuch.schemas.tax import (
     WarningCode,
 )
 
-from ._common import INCOME_CATEGORIES, ZERO, in_force, input_sources, of_year, sources_of, warning
+from ._common import (
+    INCOME_CATEGORIES,
+    ZERO,
+    YearIndex,
+    in_force,
+    input_sources,
+    of_year,
+    sources_of,
+    warning,
+)
 from .einnahmen import flat_row
 from .rounding import money_str
 
 
-def split(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> RuleLines:
+def split(
+    facts: DraftFacts, tax_year: int, rule_set: RuleSet, *, years: YearIndex | None = None
+) -> RuleLines:
     handover = facts.property.purchase_date
     before = [
         a
-        for a in of_year(facts.allocations, tax_year, rule_set)
+        for a in of_year(facts.allocations, tax_year, rule_set, years)
         if a.category in INCOME_CATEGORIES and a.booking_date < handover
     ]
     if not before:

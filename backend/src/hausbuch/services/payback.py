@@ -44,9 +44,9 @@ from hausbuch.schemas.tax import DraftFacts
 from .income_inputs import income_facts, owner_profiles
 from .loans import list_loans
 from .net_worth import _from_handover as net_worth_lines
-from .performance import _facts, _levers, default_sale_year
+from .performance import _levers, default_sale_year
 from .properties import list_properties
-from .property_equity import properties_paid_in
+from .property_equity import paid_in_with_facts
 from .return_inputs import tax_contexts
 from .scenarios import default_scenario
 
@@ -63,7 +63,9 @@ def _selling_costs_rate(conn: Connection, facts: DraftFacts, today: date) -> Dec
 
 def properties_payback(conn: Connection, *, today: date) -> PropertiesPayback:
     """Every property of the workspace (by label) with its payback, and the totals."""
-    paid = properties_paid_in(conn, today=today)
+    # The draft facts read once per property for the request: properties_paid_in's read is
+    # performance._facts' (the same arguments), and nothing is written in between.
+    paid, read = paid_in_with_facts(conn, today=today)
     props = {p.id: p for p in list_properties(conn)}
     owners = owner_profiles(conn)
     inputs = income_facts(conn)
@@ -85,7 +87,7 @@ def properties_payback(conn: Connection, *, today: date) -> PropertiesPayback:
         value = sum((line.value_eur for line in lines if line.kind is L.PROPERTY), rules.ZERO)
         balance = -sum((line.value_eur for line in lines if line.kind is L.LOAN), rules.ZERO)
         try:
-            facts = _facts(conn, prop.id, today)
+            facts = read[prop.id]
             loans = {loan.id: loan.terms for loan in list_loans(conn, prop.id)}
             rate = _selling_costs_rate(conn, facts, today)
             sold, actual, assumptions = sale_today(
