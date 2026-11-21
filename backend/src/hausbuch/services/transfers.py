@@ -494,14 +494,29 @@ class _Window:
     unique key (booking date and id, occurred_at and id), so a date filter keeps that order,
     and a movement's booked_on is its occurred_at date as the database's func.date gives it
     (the driver returns timestamptz in the session's time zone). It also keeps own_account_
-    hmacs per account, which _context asks for once per leg."""
+    hmacs per account, which _context asks for once per leg, all taken from one read of the
+    accounts' IBANs (_account_ibans, 21 Nov 2026: one query per account before), and that
+    read's _own_accounts and _own_account_sets for the cards without a counterpart.
 
-    def __init__(self, conn: Connection, start: date, end: date) -> None:
-        legs = _legs_between(conn, start, end)
+    `moves`, when given, are every live transfer movement (_movement_legs with no filter):
+    the window keeps those booked between the dates, in their order, instead of reading them
+    again (the same booked_on equality as between())."""
+
+    def __init__(
+        self, conn: Connection, start: date, end: date, moves: Sequence[_Leg] | None = None
+    ) -> None:
+        if moves is None:
+            legs = _legs_between(conn, start, end)
+        else:
+            t = transaction_table.c
+            legs = _line_legs(conn, t.booking_date >= start, t.booking_date <= end) + [
+                leg for leg in moves if start <= leg.leg.booked_on <= end
+            ]
         self.lines = [leg for leg in legs if leg.leg.source is TransferLegSource.TRANSACTION]
         self.moves = [leg for leg in legs if leg.leg.source is not TransferLegSource.TRANSACTION]
         self.start, self.end = start, end
         self._hmacs: dict[UUID, list[str]] = {}
+        self._accounts: list[Row] | None = None
 
     def between(self, start: date, end: date) -> list[_Leg]:
         assert self.start <= start and end <= self.end, "window outside the read span"
@@ -509,9 +524,14 @@ class _Window:
             leg for leg in self.moves if start <= leg.leg.booked_on <= end
         ]
 
+    def accounts(self, conn: Connection) -> list[Row]:
+        if self._accounts is None:
+            self._accounts = _account_ibans(conn)
+        return self._accounts
+
     def hmacs(self, conn: Connection, account_id: UUID) -> list[str]:
         if account_id not in self._hmacs:
-            self._hmacs[account_id] = own_account_hmacs(conn, except_account=account_id)
+            self._hmacs[account_id] = _hmacs_of(self.accounts(conn), except_account=account_id)
         return self._hmacs[account_id]
 
 
@@ -533,6 +553,25 @@ def own_account_hmacs(conn: Connection, *, except_account: UUID | None = None) -
     if except_account is not None:
         query = query.where(acc.id != except_account)
     return sorted({bytes(h).hex() for h in conn.execute(query).scalars()})
+
+
+def _account_ibans(conn: Connection) -> list[Row]:
+    """Every account's id, IBAN and payment IBAN (HMACs), read once so own_account_hmacs per
+    account (_hmacs_of), _own_accounts and _own_account_sets need no read of their own."""
+    acc = account_table.c
+    return conn.execute(select(acc.id, acc.iban_hmac, acc.payment_iban_hmac)).all()
+
+
+def _hmacs_of(rows: Sequence[Row], *, except_account: UUID) -> list[str]:
+    """own_account_hmacs(conn, except_account=...) from _account_ibans' rows: each account's
+    IBAN, else its payment IBAN, hex, except `except_account`'s, without repeats, sorted."""
+    return sorted(
+        {
+            bytes(iban if iban is not None else payment).hex()
+            for account_id, iban, payment in rows
+            if account_id != except_account and (iban is not None or payment is not None)
+        }
+    )
 
 
 def _context(
@@ -824,6 +863,34 @@ def _held_answer(conn: Connection, transaction_id: UUID) -> frozenset[Allocation
         )
         .order_by(a.confirmed_at.desc())
     ).all()
+    return _held_of(rows)
+
+
+def _held_answers(
+    conn: Connection, ids: Sequence[UUID]
+) -> dict[UUID, frozenset[AllocationCategory] | None]:
+    """_held_answer for every line among `ids` in one read (21 Nov 2026: two reads per
+    candidate line in lines_on_cards); a line with no such row maps to None."""
+    a = allocation_table.c
+    rows: dict[UUID, list[Row]] = {i: [] for i in ids}
+    for r in conn.execute(
+        select(a.transaction_id, a.category, a.confirmed_at, a.status)
+        .where(
+            a.transaction_id.in_(ids),
+            a.confirmed_at.is_not(None),
+            or_(
+                a.confirmed_by.is_not(None),
+                a.method.in_([AllocationMethod.USER.value, AllocationMethod.RULE.value]),
+            ),
+        )
+        .order_by(a.transaction_id, a.confirmed_at.desc())
+    ):
+        rows[r.transaction_id].append(r)
+    return {i: _held_of(found) for i, found in rows.items()}
+
+
+def _held_of(rows: Sequence[Row]) -> frozenset[AllocationCategory] | None:
+    """_held_answer from its rows, newest confirmation first."""
     if not rows:
         return None
     current = [r for r in rows if r.status != AllocationStatus.SUPERSEDED.value]
@@ -838,11 +905,16 @@ def _free_for_matcher(conn: Connection, line_id: UUID, current: Sequence) -> boo
     review): it holds nothing or only the model's proposal (method llm; a rule's or a code
     matcher's proposal is not the model's), and no person or rule ever confirmed an answer on
     it (_held_answer)."""
-    if any(
-        r.status != AllocationStatus.PROPOSED or r.method != AllocationMethod.LLM for r in current
-    ):
+    if not _only_the_models(current):
         return False
     return _held_answer(conn, line_id) is None
+
+
+def _only_the_models(current: Sequence) -> bool:
+    """Whether every current row is the model's proposal (_free_for_matcher's first half)."""
+    return not any(
+        r.status != AllocationStatus.PROPOSED or r.method != AllocationMethod.LLM for r in current
+    )
 
 
 # The answers a bank line may hold for an untied deposit link by hand (review, 15 Nov 2026):
@@ -1570,7 +1642,26 @@ def list_links(conn: Connection, *, start: date, end: date) -> list[TransferLink
     between accounts, so the Haushalt's „Gespart, nicht ausgegeben“ (and saved_in) never lists
     it; Konten › Umsätze names each half's partner instead (services.returns)."""
     rows = _current_links(conn)
-    legs = {leg.leg.id: leg for leg in _legs_between(conn, start - _AROUND, end + _AROUND)}
+    # Only the links' own legs are read (21 Nov 2026: every line of the range and its rows
+    # were read to look up a few, 12 months of every private account for GET /health). A
+    # leg's reading does not depend on the other legs read with it (_line_legs, _one_category).
+    t, m = transaction_table.c, movement_table.c
+    first, last = start - _AROUND, end + _AROUND
+    tx_ids = sorted({i for r in rows for i in (r.out_transaction_id, r.in_transaction_id) if i})
+    mv_ids = sorted({i for r in rows for i in (r.out_movement_id, r.in_movement_id) if i})
+    found = (
+        _line_legs(conn, t.booking_date >= first, t.booking_date <= last, t.id.in_(tx_ids))
+        if tx_ids
+        else []
+    )
+    if mv_ids:
+        found += _movement_legs(
+            conn,
+            func.date(m.occurred_at) >= first,
+            func.date(m.occurred_at) <= last,
+            m.id.in_(mv_ids),
+        )
+    legs = {leg.leg.id: leg for leg in found}
     out = []
     for r in rows:
         a = legs.get(r.out_transaction_id or r.out_movement_id)
@@ -1605,20 +1696,22 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
 
 def _open_eur_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
     linked = _linked_ids(conn)
+    moves = _movement_legs(conn)
     waiting = [
         leg
-        for leg in _line_legs(conn, transaction_table.c.id.in_(_with_transfer_row()))
-        + _movement_legs(conn)
+        for leg in _line_legs(conn, transaction_table.c.id.in_(_with_transfer_row())) + moves
         if leg.booked is not None and leg.leg.id not in linked
     ]
     items = []
     if not waiting:
         return items
-    # One read for every card's window (±_BY_HAND, which covers _both_ways' ±2·_AROUND).
+    # One read for every card's window (±_BY_HAND, which covers _both_ways' ±2·_AROUND); its
+    # movements are those just read.
     window = _Window(
         conn,
         min(leg.leg.booked_on for leg in waiting) - _BY_HAND,
         max(leg.leg.booked_on for leg in waiting) + _BY_HAND,
+        moves,
     )
     # Read once, only when a leg has no counterpart: each account's first and last bank line,
     # and the account(s) each own IBAN belongs to.
@@ -1661,9 +1754,10 @@ def _open_eur_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
             ]
             if not same:
                 if firsts is None:
-                    firsts, own = _first_days(conn), _own_accounts(conn)
+                    accounts = window.accounts(conn)
+                    firsts, own = _first_days(conn), _own_accounts_of(accounts)
                     payers = _card_payers(conn)
-                    lasts, named_by = _last_days(conn), _own_account_sets(conn)
+                    lasts, named_by = _last_days(conn), _own_account_sets_of(accounts)
                 if _before_every_history(leg, firsts, own, payers):
                     continue
                 if _after_every_history(leg, lasts, named_by, payers):
@@ -1758,8 +1852,11 @@ def _last_days(conn: Connection) -> dict[UUID, date]:
 def _own_accounts(conn: Connection) -> dict[str, UUID]:
     """The account each own IBAN belongs to (hex HMAC → account id): an account's own IBAN, a
     credit card's payment IBAN, an exchange's learned deposit IBAN."""
-    acc = account_table.c
-    rows = conn.execute(select(acc.id, acc.iban_hmac, acc.payment_iban_hmac)).all()
+    return _own_accounts_of(_account_ibans(conn))
+
+
+def _own_accounts_of(rows: Sequence[Row]) -> dict[str, UUID]:
+    """_own_accounts from _account_ibans' rows (a later row wins an IBAN two accounts hold)."""
     found: dict[str, UUID] = {}
     for account_id, iban, payment in rows:
         for value in (iban, payment):
@@ -1772,8 +1869,11 @@ def _own_account_sets(conn: Connection) -> dict[str, set[UUID]]:
     """D162 amended (9): every account each own IBAN belongs to (hex HMAC → account ids), as
     _own_accounts reads them, but keeping all of them: two credit cards can share one payment
     IBAN, and a debit naming it may pay either."""
-    acc = account_table.c
-    rows = conn.execute(select(acc.id, acc.iban_hmac, acc.payment_iban_hmac)).all()
+    return _own_account_sets_of(_account_ibans(conn))
+
+
+def _own_account_sets_of(rows: Sequence[Row]) -> dict[str, set[UUID]]:
+    """_own_account_sets from _account_ibans' rows."""
     found: dict[str, set[UUID]] = {}
     for account_id, iban, payment in rows:
         for value in (iban, payment):
@@ -1942,10 +2042,11 @@ def lines_on_cards(conn: Connection, items: Iterable[InboxItem]) -> set[UUID]:
     unrelated debits were parked behind that card where „Empfänger suchen“ and the Haushalt's
     „N ohne Kategorie“ could not find them. An untied candidate of the same amount is not one
     either: a plain „Verknüpfen“ leaves the model's proposal on it, so it would come back
-    after the link. Reads two small queries per such candidate line, each line once."""
+    after the link. Reads two queries for all such candidate lines together (21 Nov 2026: two
+    per line before): their current rows and their held answers."""
     from . import allocations  # allocations imports services that import this module
 
-    found: set[UUID] = set()
+    ids: list[UUID] = []
     seen: set[UUID] = set()
     for item in items:
         if item.transfer is None:
@@ -1959,10 +2060,20 @@ def lines_on_cards(conn: Connection, items: Iterable[InboxItem]) -> set[UUID]:
             ):
                 continue
             seen.add(candidate.id)
-            current = allocations.current_allocations(conn, candidate.id)
-            if current and _free_for_matcher(conn, candidate.id, current):
-                found.add(candidate.id)
-    return found
+            ids.append(candidate.id)
+    if not ids:
+        return set()
+    a = allocation_table.c
+    current: dict[UUID, list] = {i: [] for i in ids}
+    # allocations.current_allocations for every line at once, in its order per line.
+    for row in conn.execute(
+        select(allocation_table)
+        .where(a.transaction_id.in_(ids), a.status != AllocationStatus.SUPERSEDED.value)
+        .order_by(a.transaction_id, a.recorded_at, a.id)
+    ):
+        current[row.transaction_id].append(allocations.to_allocation(row))
+    held = _held_answers(conn, ids)
+    return {i for i in ids if current[i] and _only_the_models(current[i]) and held[i] is None}
 
 
 # The cards' texts, German beside English (phase 10 D284); chosen when Zu prüfen is read.
@@ -2099,11 +2210,9 @@ def saving_links(conn: Connection, *, start: date, end: date) -> list[TransferLi
     for view in list_links(conn, start=start, end=end):
         if not start <= view.in_leg.booked_on <= end:
             continue
-        kinds = _kinds(conn, [view.out_leg.account_id, view.in_leg.account_id])
-        if (
-            kinds.get(view.in_leg.account_id) in _SAVING
-            and kinds.get(view.out_leg.account_id) not in _SAVING
-        ):
+        # Each leg's account kind is read with the leg (_line_legs, _movement_legs join the
+        # account), so no query per link (21 Nov 2026: 69 account reads per GET /health).
+        if view.in_leg.account_kind in _SAVING and view.out_leg.account_kind not in _SAVING:
             out.append(view)
     return out
 
@@ -2115,14 +2224,6 @@ def saved_in(conn: Connection, *, start: date, end: date) -> Decimal:
 
 
 _SAVING = (AccountKind.BANK_SAVINGS, AccountKind.DEPOT, AccountKind.EXCHANGE)
-
-
-def _kinds(conn: Connection, ids: Sequence[UUID]) -> dict[UUID, AccountKind]:
-    acc = account_table.c
-    return {
-        r.id: AccountKind(r.kind)
-        for r in conn.execute(select(acc.id, acc.kind).where(acc.id.in_(ids)))
-    }
 
 
 __all__ = [
