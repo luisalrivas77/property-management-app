@@ -10,6 +10,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { api, ok, setUnauthorizedHandler } from "@/api/client";
 import { ApiError } from "@/api/errors";
 import type { Me } from "@/api/schemas";
+import { LoadingLine } from "@/components/ui";
+import { useT } from "@/i18n";
+import { shared } from "@/i18n/shared";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 interface AuthValue {
@@ -31,6 +34,7 @@ type State = { status: "loading" } | { status: "ready"; me: Me } | { status: "fa
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const t = useT(shared);
   const [state, setState] = useState<State>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -80,7 +84,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
             setAttempt((n) => n + 1);
           }}
         >
-          Erneut versuchen
+          {t.retry}
         </button>
       </main>
     );
@@ -88,7 +92,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (!value) {
     return (
       <main className="content">
-        <p className="muted">Lädt …</p>
+        <LoadingLine />
       </main>
     );
   }

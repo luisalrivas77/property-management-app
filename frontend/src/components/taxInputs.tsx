@@ -38,11 +38,24 @@ import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
 import { api, ok } from "@/api/client";
 import { ApiError, RULE_CODE_TEXT, ruleCodes } from "@/api/errors";
 import type { components } from "@/api/types";
+import { translate, useFormat, useT } from "@/i18n";
+import { common } from "@/i18n/common";
 import { localized } from "@/i18n/locale";
+import {
+  EXCLUSION_REASON_DE,
+  EXCLUSION_REASON_EN,
+  MARKET_RENT_SOURCE_DE,
+  MARKET_RENT_SOURCE_EN,
+  OPERATING_COSTS_TERMS_DE,
+  OPERATING_COSTS_TERMS_EN,
+  RENOVATION_TREATMENT_DE,
+  RENOVATION_TREATMENT_EN,
+  taxInputsText,
+} from "@/i18n/taxInputs";
 
 import { DocumentPicker } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
-import { formatDate, formatMoney, todayIso } from "./format";
+import { todayIso } from "./format";
 import { decimalInput, toMoneyString } from "./input";
 import { GRUNDSTEUER_MODE, GRUNDSTEUER_RHYTHM } from "./labels";
 import { Loading } from "./ui";
@@ -61,29 +74,15 @@ type MarketRentSource = MarketRentValue["source"];
 
 // --- labels ------------------------------------------------------------------------------------
 
-export const OPERATING_COSTS_TERMS: Record<OperatingCostsTerms, string> = {
-  prepayment: "Vorauszahlung mit jährlicher Abrechnung",
-  flat_rate: "Pauschale (keine Abrechnung)",
-  included: "In der Miete enthalten (Warmmiete, nicht gesondert vereinbart)",
-};
+// The German and English records live in i18n/taxInputs.ts; localized() reads them in the
+// language chosen when shown (phase 10 D284).
+export const OPERATING_COSTS_TERMS: Record<OperatingCostsTerms, string> = localized(OPERATING_COSTS_TERMS_DE, OPERATING_COSTS_TERMS_EN);
 
-const RENOVATION_TREATMENT: Record<RenovationChoice, string> = {
-  erhaltung: "Erhaltungsaufwand",
-  herstellung: "Herstellungskosten",
-};
+const RENOVATION_TREATMENT: Record<RenovationChoice, string> = localized(RENOVATION_TREATMENT_DE, RENOVATION_TREATMENT_EN);
 
-const EXCLUSION_REASON: Record<ExclusionReason, string> = {
-  annual_maintenance: "Jährlich übliche Erhaltungsarbeit",
-  extension: "Erweiterung (z. B. Anbau, Aufstockung)",
-  damage_after_acquisition: "Schaden, der erst nach dem Kauf entstand",
-};
+const EXCLUSION_REASON: Record<ExclusionReason, string> = localized(EXCLUSION_REASON_DE, EXCLUSION_REASON_EN);
 
-const MARKET_RENT_SOURCE: Record<MarketRentSource, string> = {
-  mietspiegel: "Mietspiegel",
-  gutachten: "Gutachten",
-  portal: "Mietpreisportal",
-  other: "Andere Quelle",
-};
+const MARKET_RENT_SOURCE: Record<MarketRentSource, string> = localized(MARKET_RENT_SOURCE_DE, MARKET_RENT_SOURCE_EN);
 
 const SPREAD_YEARS = [2, 3, 4, 5] as const;
 
@@ -116,10 +115,6 @@ const CODE_MESSAGES: Record<string, string> = localized(
     },
   },
 );
-
-const EXTENSION_HINT =
-  "Eine Erweiterung (Anbau, Aufstockung) ist immer Herstellungskosten: die Zahlung als Renovierung buchen und „Herstellungskosten“ wählen.";
-const EXTENSION_LOCKS_TREATMENT = "Erst die Ausnahme „Erweiterung“ zurücknehmen.";
 
 function entries<K extends string>(labels: Record<K, string>): [K, string][] {
   return Object.entries(labels) as [K, string][];
@@ -182,11 +177,17 @@ export function AllocationTaxInputs({ allocations }: { allocations: AllocationLi
     (a) => a.status === "confirmed" && a.property_id && DECIDABLE.has(a.category) && !/^-?0+(\.0+)?$/.test(a.amount),
   );
   if (rows.length === 0) return null;
+  return <AllocationTaxInputsList rows={rows} />;
+}
+
+function AllocationTaxInputsList({ rows }: { rows: AllocationLike[] }) {
+  const t = useT(taxInputsText);
+  const f = useFormat();
   return (
     <section className="stack tax-inputs">
-      <h3>Steuerliche Angaben</h3>
+      <h3>{t.heading}</h3>
       {rows.map((row) => (
-        <AllocationQuestions key={row.id} allocation={row} label={rows.length > 1 ? formatMoney(row.amount) : null} />
+        <AllocationQuestions key={row.id} allocation={row} label={rows.length > 1 ? f.money(row.amount) : null} />
       ))}
     </section>
   );
@@ -228,6 +229,7 @@ function AllocationQuestionsForm({
   label: string | null;
   onSaved: () => void;
 }) {
+  const t = useT(taxInputsText);
   const of = (kind: TaxInputKind) => current.find((row) => row.kind === kind);
   const spreadRow = of("spread_82b");
   const treatmentRow = of("renovation_treatment");
@@ -297,18 +299,18 @@ function AllocationQuestionsForm({
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      {label ? <p className="cell-detail">Zeile über {label}</p> : null}
+      {label ? <p className="cell-detail">{t.rowOf(label)}</p> : null}
       <div className="grid">
         <Field
           id={`${base}-spread`}
-          label="Auf 2–5 Jahre verteilen (§ 82b EStDV)"
-          description="Größere Erhaltungsaufwendungen dürfen gleichmäßig auf zwei bis fünf Jahre verteilt werden, statt sie im Jahr der Zahlung ganz abzuziehen. Eine Wahl, keine Pflicht."
+          label={t.spreadLabel}
+          description={t.spreadDescription}
         >
           <select value={spread} onChange={(e) => setSpread(e.target.value)}>
-            <option value="">Nicht verteilen (im Jahr der Zahlung)</option>
+            <option value="">{t.noSpread}</option>
             {SPREAD_YEARS.map((years) => (
               <option key={years} value={String(years)}>
-                Auf {years} Jahre verteilen
+                {t.spreadYears(years)}
               </option>
             ))}
           </select>
@@ -316,13 +318,13 @@ function AllocationQuestionsForm({
         {renovation ? (
           <Field
             id={`${base}-treatment`}
-            label="Renovierung ist"
-            hint={extensionSaved ? EXTENSION_LOCKS_TREATMENT : undefined}
-            description="Erhaltungsaufwand erhält oder erneuert, was schon da ist, und ist sofort abziehbar. Herstellungskosten schaffen etwas Neues oder heben den Standard deutlich; sie gehen in die AfA ein."
+            label={t.treatmentLabel}
+            hint={extensionSaved ? t.extensionLocksTreatment : undefined}
+            description={t.treatmentDescription}
           >
             <select value={treatment} onChange={(e) => changeTreatment(e.target.value as RenovationChoice | "")}>
               <option value="" disabled={extensionSaved}>
-                Noch nicht eingeordnet
+                {t.notClassified}
               </option>
               {entries(RENOVATION_TREATMENT).map(([value, text]) => (
                 <option key={value} value={value} disabled={extensionSaved && value !== "herstellung"}>
@@ -334,12 +336,12 @@ function AllocationQuestionsForm({
         ) : null}
         <Field
           id={`${base}-exclusion`}
-          label="Zählt nicht zur 15 %-Grenze (Grund)"
-          hint={extensionAllowed ? undefined : EXTENSION_HINT}
-          description="In den ersten drei Jahren nach dem Kauf zählen Renovierungen zur 15 %-Grenze der anschaffungsnahen Herstellungskosten. Ausgenommen sind jährlich übliche Erhaltungsarbeiten, Erweiterungen (die ohnehin Herstellungskosten sind) und Schäden, die erst nach dem Kauf entstanden."
+          label={t.exclusionLabel}
+          hint={extensionAllowed ? undefined : t.extensionHint}
+          description={t.exclusionDescription}
         >
           <select value={exclusion} onChange={(e) => setExclusion(e.target.value as ExclusionReason | "")}>
-            <option value="">Zählt zur Grenze</option>
+            <option value="">{t.countsTowardLimit}</option>
             {exclusionReasons.map(([value, text]) => (
               <option key={value} value={value}>
                 {text}
@@ -349,8 +351,8 @@ function AllocationQuestionsForm({
         </Field>
       </div>
       <div className="row">
-        <Submit busy={busy}>Angaben speichern</Submit>
-        {saved ? <span className="muted">Gespeichert. Die bisherige Angabe bleibt im Verlauf.</span> : null}
+        <Submit busy={busy}>{t.saveAnswers}</Submit>
+        {saved ? <span className="muted">{t.savedNote}</span> : null}
       </div>
       {banner ? <p className="notice notice-error">{banner}</p> : null}
       <FormBanner errors={form.errors} />
@@ -368,6 +370,8 @@ const MARKET_KEYS = ["value.cold_rent_per_m2", "value.valid_from", "value.source
  * another date stands beside the old one, a correction or a withdrawal replaces it.
  */
 export function MarketRentSection({ propertyId, unitId, perUnit }: { propertyId: string; unitId: string; perUnit: boolean }) {
+  const t = useT(taxInputsText);
+  const f = useFormat();
   const scopeUnit = perUnit ? unitId : null;
   const load = useCallback(
     async () => (await loadInputs(propertyId, "market_rent")).filter((row) => (row.unit_id ?? null) === scopeUnit),
@@ -384,7 +388,7 @@ export function MarketRentSection({ propertyId, unitId, perUnit }: { propertyId:
     try {
       await answer(propertyId, { kind: "market_rent", unit_id: row.unit_id ?? null }, row, null);
     } catch (error) {
-      setBanner(messageOf(error) ?? "Das Zurückziehen hat nicht geklappt. Bitte erneut versuchen.");
+      setBanner(messageOf(error) ?? t.withdrawFailed);
     } finally {
       setBusy(false);
       state.reload();
@@ -394,7 +398,7 @@ export function MarketRentSection({ propertyId, unitId, perUnit }: { propertyId:
   return (
     <div className="stack">
       {perUnit ? null : (
-        <p className="muted">Gilt für die ganze Wohnung, auch wenn sie zimmerweise vermietet ist.</p>
+        <p className="muted">{t.wholeFlat}</p>
       )}
       <Loading state={state}>
         {(rows) => {
@@ -402,15 +406,15 @@ export function MarketRentSection({ propertyId, unitId, perUnit }: { propertyId:
             (b.value as MarketRentValue).valid_from.localeCompare((a.value as MarketRentValue).valid_from),
           );
           return sorted.length === 0 ? (
-            <p className="muted">Noch keine ortsübliche Miete erfasst. Sie wird für den Vergleich mit der vereinbarten Miete gebraucht (§ 21 Abs. 2 EStG).</p>
+            <p className="muted">{t.noMarketRent}</p>
           ) : (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Gültig ab</th>
-                    <th>Kaltmiete je m²</th>
-                    <th>Quelle</th>
+                    <th>{t.validFrom}</th>
+                    <th>{t.coldRentPerM2}</th>
+                    <th>{t.source}</th>
                     <th />
                   </tr>
                 </thead>
@@ -419,16 +423,16 @@ export function MarketRentSection({ propertyId, unitId, perUnit }: { propertyId:
                     const value = row.value as MarketRentValue;
                     return (
                       <tr key={row.id}>
-                        <td>{formatDate(value.valid_from)}</td>
-                        <td>{formatMoney(value.cold_rent_per_m2)}</td>
+                        <td>{f.date(value.valid_from)}</td>
+                        <td>{f.money(value.cold_rent_per_m2)}</td>
                         <td>{MARKET_RENT_SOURCE[value.source]}</td>
                         <td>
                           <div className="row">
                             <button type="button" className="link" onClick={() => setEditing(row)} disabled={busy}>
-                              Korrigieren
+                              {t.correct}
                             </button>
                             <button type="button" className="link" onClick={() => void withdraw(row)} disabled={busy}>
-                              Zurückziehen
+                              {t.withdraw}
                             </button>
                           </div>
                         </td>
@@ -445,7 +449,7 @@ export function MarketRentSection({ propertyId, unitId, perUnit }: { propertyId:
       {editing === null ? (
         <div>
           <button type="button" className="secondary" onClick={() => setEditing("new")}>
-            Ortsübliche Miete eintragen
+            {t.enterMarketRent}
           </button>
         </div>
       ) : (
@@ -478,6 +482,9 @@ function MarketRentForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const t = useT(taxInputsText);
+  const c = useT(common);
+  const f = useFormat();
   const old = replaces?.value as MarketRentValue | undefined;
   const [rent, setRent] = useState(old ? decimalInput(old.cold_rent_per_m2) : "");
   const [validFrom, setValidFrom] = useState(old?.valid_from ?? todayIso());
@@ -494,7 +501,7 @@ function MarketRentForm({
     event.stopPropagation();
     const values = collector();
     const perM2 = values.take("value.cold_rent_per_m2", toMoneyString(rent));
-    if (!validFrom) values.messages["value.valid_from"] = ["Bitte das Datum eingeben, ab dem der Wert gilt."];
+    if (!validFrom) values.messages["value.valid_from"] = [t.validFromRequired];
     if (!values.ok || perM2 === undefined) return form.invalid(values.messages);
     setBusy(true);
     setBanner(null);
@@ -513,7 +520,7 @@ function MarketRentForm({
       onDone();
     } catch (error) {
       if (codesOf(error).includes("tax_input.not_current") && replaces === null) {
-        setBanner("Für dieses Datum ist schon ein Wert erfasst. Bitte diesen korrigieren.");
+        setBanner(t.marketDateTaken);
       } else {
         const message = messageOf(error);
         if (message) setBanner(message);
@@ -529,21 +536,21 @@ function MarketRentForm({
       <div className="grid">
         <Field
           id={`${base}-rent`}
-          label="Ortsübliche Miete (kalt, €/m², netto laut Mietspiegel)"
-          description="Die ortsübliche Kaltmiete je Quadratmeter ohne Nebenkosten, z. B. der Mittelwert der passenden Spalte im Mietspiegel. Liegt die vereinbarte Miete unter 50 % bzw. 66 % davon, ist der Werbungskostenabzug gefährdet."
+          label={t.marketRentLabel}
+          description={t.marketRentDescription}
           errors={form.of("value.cold_rent_per_m2")}
         >
           <input type="text" inputMode="decimal" value={rent} onChange={(e) => setRent(e.target.value)} autoComplete="off" />
         </Field>
         <Field
           id={`${base}-from`}
-          label="Gültig ab"
-          description="Ab wann der Wert gilt, z. B. das Datum, ab dem der Mietspiegel gilt."
+          label={t.validFrom}
+          description={t.validFromDescription}
           errors={form.of("value.valid_from")}
         >
           <input type="date" value={validFrom} onChange={(e) => setValidFrom(e.target.value)} disabled={replaces !== null} />
         </Field>
-        <Field id={`${base}-source`} label="Quelle" description="Woher der Wert stammt." errors={form.of("value.source")}>
+        <Field id={`${base}-source`} label={t.source} description={t.sourceDescription} errors={form.of("value.source")}>
           <select value={source} onChange={(e) => setSource(e.target.value as MarketRentSource)}>
             {entries(MARKET_RENT_SOURCE).map(([value, text]) => (
               <option key={value} value={value}>
@@ -554,23 +561,23 @@ function MarketRentForm({
         </Field>
         <Field
           id={`${base}-document`}
-          label="Beleg (optional)"
-          description="Der Mietspiegel, das Gutachten oder ein Ausdruck des Portals, als Nachweis für das Finanzamt."
+          label={t.receiptOptional}
+          description={t.marketReceiptDescription}
           errors={form.of("document_id")}
         >
           <DocumentPicker value={documentId} onChange={setDocumentId} />
         </Field>
-        <Field id={`${base}-note`} label="Notiz (optional)" description="Zum Beispiel die Spalte oder das Feld im Mietspiegel.">
+        <Field id={`${base}-note`} label={t.noteOptional} description={t.marketNoteDescription}>
           <input type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" />
         </Field>
       </div>
       {replaces !== null ? (
-        <p className="muted hint">Eine Korrektur ersetzt den Wert ab {formatDate(old?.valid_from)}; der bisherige bleibt im Verlauf.</p>
+        <p className="muted hint">{t.marketCorrectionHint(f.date(old?.valid_from))}</p>
       ) : null}
       <div className="row">
-        <Submit busy={busy}>{replaces === null ? "Eintragen" : "Korrektur speichern"}</Submit>
+        <Submit busy={busy}>{replaces === null ? t.enter : t.saveCorrection}</Submit>
         <button type="button" className="link" onClick={onCancel}>
-          Abbrechen
+          {c.cancel}
         </button>
       </div>
       {banner ? <p className="notice notice-error">{banner}</p> : null}
@@ -585,7 +592,6 @@ type UsefulLifeValue = Schemas["UsefulLife"];
 
 const LIFE_KEYS = ["value.years", "tax_year", "document_id"] as const;
 const LIFE_CODE_FIELDS = { "tax_input.useful_life_not_shorter": "value.years" } as const;
-const LIFE_BEFORE_PURCHASE = "Die Nutzungsdauer kann frühestens ab dem Steuerjahr des Kaufs gelten.";
 
 /** A whole number from `min` up, or a message. */
 function wholeNumber(raw: string, min: number, message: string): { ok: true; value: number } | { ok: false; message: string } {
@@ -610,6 +616,7 @@ export function UsefulLifeSection({
   defaultYear: number;
   onChanged: () => void;
 }) {
+  const t = useT(taxInputsText);
   const load = useCallback(() => loadInputs(propertyId, "useful_life"), [propertyId]);
   const state = useLoad(load);
   const [editing, setEditing] = useState<TaxInput | "new" | null>(null);
@@ -635,7 +642,7 @@ export function UsefulLifeSection({
         withdrawn: true,
       });
     } catch (error) {
-      setBanner(messageOf(error) ?? "Das Zurückziehen hat nicht geklappt. Bitte erneut versuchen.");
+      setBanner(messageOf(error) ?? t.withdrawFailed);
     } finally {
       setBusy(false);
       changed();
@@ -648,23 +655,18 @@ export function UsefulLifeSection({
         {(rows) => {
           const sorted = [...rows].sort((a, b) => (a.tax_year ?? 0) - (b.tax_year ?? 0));
           return sorted.length === 0 ? (
-            <p className="muted">
-              Die AfA läuft mit dem gesetzlichen Satz. Belegt ein Gutachten eine kürzere tatsächliche Nutzungsdauer des
-              Gebäudes, wird der Restwert stattdessen über die restlichen Jahre verteilt.
-            </p>
+            <p className="muted">{t.statutoryAfa}</p>
           ) : (
             <ul className="stack">
               {sorted.map((row) => (
                 <li key={row.id} className="row">
-                  <span>
-                    {(row.value as UsefulLifeValue).years} Jahre ab {row.tax_year} (Gutachten)
-                  </span>
+                  <span>{t.lifeRow((row.value as UsefulLifeValue).years, row.tax_year)}</span>
                   <span className="spacer" />
                   <button type="button" className="link" onClick={() => setEditing(row)} disabled={busy}>
-                    Korrigieren
+                    {t.correct}
                   </button>
                   <button type="button" className="link" onClick={() => void withdraw(row)} disabled={busy}>
-                    Zurückziehen
+                    {t.withdraw}
                   </button>
                 </li>
               ))}
@@ -676,7 +678,7 @@ export function UsefulLifeSection({
       {editing === null ? (
         <div>
           <button type="button" className="secondary" onClick={() => setEditing("new")}>
-            Nutzungsdauer laut Gutachten eintragen
+            {t.enterLife}
           </button>
         </div>
       ) : (
@@ -709,6 +711,8 @@ function UsefulLifeForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const t = useT(taxInputsText);
+  const c = useT(common);
   const old = replaces?.value as UsefulLifeValue | undefined;
   const [years, setYears] = useState(old ? String(old.years) : "");
   const [fromYear, setFromYear] = useState(String(replaces?.tax_year ?? defaultYear));
@@ -723,9 +727,9 @@ function UsefulLifeForm({
     event.preventDefault();
     event.stopPropagation();
     const values = collector();
-    const life = values.take("value.years", wholeNumber(years, 1, "Bitte die Nutzungsdauer in ganzen Jahren eingeben."));
-    const year = values.take("tax_year", wholeNumber(fromYear, 2000, "Bitte ein Steuerjahr eingeben, z. B. 2026."));
-    if (documentId === null) values.messages["document_id"] = ["Bitte das Gutachten auswählen; ohne Nachweis erkennt das Finanzamt die kürzere Nutzungsdauer nicht an."];
+    const life = values.take("value.years", wholeNumber(years, 1, t.lifeYearsRequired));
+    const year = values.take("tax_year", wholeNumber(fromYear, 2000, t.taxYearRequired(2026)));
+    if (documentId === null) values.messages["document_id"] = [t.lifeDocumentRequired];
     if (!values.ok || life === undefined || year === undefined || documentId === null) return form.invalid(values.messages);
     setBusy(true);
     setBanner(null);
@@ -745,9 +749,9 @@ function UsefulLifeForm({
     } catch (error) {
       const codes = codesOf(error);
       if (codes.includes("tax_input.not_current") && replaces === null) {
-        setBanner("Für dieses Steuerjahr ist schon eine Nutzungsdauer erfasst. Bitte diese korrigieren.");
+        setBanner(t.lifeYearTaken);
       } else if (codes.includes("tax_input.scope_invalid")) {
-        setBanner(LIFE_BEFORE_PURCHASE);
+        setBanner(t.lifeBeforePurchase);
       } else if (codes.includes("tax_input.not_current")) {
         setBanner(CODE_MESSAGES["tax_input.not_current"] ?? null);
       } else {
@@ -763,16 +767,16 @@ function UsefulLifeForm({
       <div className="grid">
         <Field
           id={`${base}-years`}
-          label="Nutzungsdauer laut Gutachten (Jahre)"
-          description="Die Restnutzungsdauer des Gebäudes, die das Gutachten ab dem Kauf oder ab dem genannten Jahr feststellt. Sie muss kürzer sein als die gesetzliche (40 Jahre bei Baujahr vor 1925, sonst 50 Jahre, ab 2023 fertiggestellt 33⅓ Jahre)."
+          label={t.lifeLabel}
+          description={t.lifeDescription}
           errors={form.of("value.years")}
         >
           <input type="text" inputMode="numeric" value={years} onChange={(e) => setYears(e.target.value)} autoComplete="off" />
         </Field>
         <Field
           id={`${base}-from`}
-          label="Ab Steuerjahr"
-          description="Das erste Steuerjahr, für das die kürzere Nutzungsdauer gilt; meist das Jahr des Kaufs. Davor bleibt die gesetzliche AfA."
+          label={t.fromTaxYear}
+          description={t.lifeFromDescription}
           errors={form.of("tax_year")}
         >
           <input
@@ -786,23 +790,23 @@ function UsefulLifeForm({
         </Field>
         <Field
           id={`${base}-document`}
-          label="Gutachten"
-          description="Das Gutachten über die Restnutzungsdauer; das Finanzamt fragt danach."
+          label={t.appraisal}
+          description={t.appraisalDescription}
           errors={form.of("document_id")}
         >
           <DocumentPicker value={documentId} onChange={setDocumentId} />
         </Field>
-        <Field id={`${base}-note`} label="Notiz (optional)" description="Zum Beispiel wer das Gutachten erstellt hat.">
+        <Field id={`${base}-note`} label={t.noteOptional} description={t.lifeNoteDescription}>
           <input type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" />
         </Field>
       </div>
       {replaces !== null ? (
-        <p className="muted hint">Eine Korrektur ersetzt die Angabe ab {replaces.tax_year}; die bisherige bleibt im Verlauf.</p>
+        <p className="muted hint">{t.correctionFromYear(replaces.tax_year)}</p>
       ) : null}
       <div className="row">
-        <Submit busy={busy}>{replaces === null ? "Eintragen" : "Korrektur speichern"}</Submit>
+        <Submit busy={busy}>{replaces === null ? t.enter : t.saveCorrection}</Submit>
         <button type="button" className="link" onClick={onCancel}>
-          Abbrechen
+          {c.cancel}
         </button>
       </div>
       {banner ? <p className="notice notice-error">{banner}</p> : null}
@@ -820,8 +824,6 @@ const MOVABLE_CODE_FIELDS = {
   "tax_input.movable_asset_exceeds_building": "value.amount",
   "tax_input.movable_asset_year": "tax_year",
 } as const;
-const MOVABLE_ESTIMATE_HINT =
-  "Nennt der Kaufvertrag keinen Preis für die Küche, einen angemessenen Wert zum Zeitpunkt des Kaufs schätzen und die Grundlage der Schätzung (z. B. einen Ausdruck des Küchenplaners) als Beleg aufbewahren.";
 
 /**
  * The Einbauküche (D80; BFH IX R 14/15): a movable asset with its own AfA over its useful life
@@ -840,6 +842,8 @@ export function MovableAssetSection({
   purchaseYear: number;
   onChanged: () => void;
 }) {
+  const t = useT(taxInputsText);
+  const f = useFormat();
   const load = useCallback(() => loadInputs(propertyId, "movable_asset"), [propertyId]);
   const state = useLoad(load);
   const [editing, setEditing] = useState<TaxInput | "new" | null>(null);
@@ -865,7 +869,7 @@ export function MovableAssetSection({
         withdrawn: true,
       });
     } catch (error) {
-      setBanner(messageOf(error) ?? "Das Zurückziehen hat nicht geklappt. Bitte erneut versuchen.");
+      setBanner(messageOf(error) ?? t.withdrawFailed);
     } finally {
       setBusy(false);
       changed();
@@ -877,11 +881,7 @@ export function MovableAssetSection({
       <Loading state={state}>
         {(rows) =>
           rows.length === 0 ? (
-            <p className="muted">
-              Eine Einbauküche ist kein Teil des Gebäudes: sie wird über ihre eigene Nutzungsdauer (meist 10 Jahre)
-              abgeschrieben, in einer eigenen Zeile der Anlage V. War sie im Kaufpreis enthalten, kommt ihr Wert aus der
-              AfA des Gebäudes heraus.
-            </p>
+            <p className="muted">{t.movableIntro}</p>
           ) : (
             <ul className="stack">
               {rows.map((row) => {
@@ -889,16 +889,20 @@ export function MovableAssetSection({
                 return (
                   <li key={row.id} className="row">
                     <span>
-                      Einbauküche {formatMoney(value.amount)}, {value.useful_life_years} Jahre ab {row.tax_year}
-                      {value.in_purchase_price ? " (im Kaufpreis enthalten)" : " (gesondert gekauft)"}
-                      {row.document_id ? "" : ", ohne Beleg"}
+                      {t.movableRow(
+                        f.money(value.amount),
+                        value.useful_life_years,
+                        row.tax_year,
+                        Boolean(value.in_purchase_price),
+                        Boolean(row.document_id),
+                      )}
                     </span>
                     <span className="spacer" />
                     <button type="button" className="link" onClick={() => setEditing(row)} disabled={busy}>
-                      Korrigieren
+                      {t.correct}
                     </button>
                     <button type="button" className="link" onClick={() => void withdraw(row)} disabled={busy}>
-                      Zurückziehen
+                      {t.withdraw}
                     </button>
                   </li>
                 );
@@ -912,7 +916,7 @@ export function MovableAssetSection({
         state.data !== undefined && state.data.length === 0 ? (
           <div>
             <button type="button" className="secondary" onClick={() => setEditing("new")}>
-              Einbauküche eintragen
+              {t.enterKitchen}
             </button>
           </div>
         ) : null
@@ -946,6 +950,8 @@ function MovableAssetForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const t = useT(taxInputsText);
+  const c = useT(common);
   const old = replaces?.value as MovableAssetValue | undefined;
   const [amount, setAmount] = useState(old ? decimalInput(old.amount) : "");
   const [life, setLife] = useState(String(old?.useful_life_years ?? 10));
@@ -965,10 +971,10 @@ function MovableAssetForm({
     event.stopPropagation();
     const values = collector();
     const money = values.take("value.amount", toMoneyString(amount));
-    const years = values.take("value.useful_life_years", wholeNumber(life, 1, "Bitte die Nutzungsdauer in ganzen Jahren eingeben (1 bis 25)."));
-    if (years !== undefined && years > 25) values.messages["value.useful_life_years"] = ["Höchstens 25 Jahre."];
-    const year = values.take("tax_year", wholeNumber(shownYear, 2000, "Bitte ein Steuerjahr eingeben, z. B. 2026."));
-    if (money !== undefined && Number(money) <= 0) values.messages["value.amount"] = ["Bitte einen Betrag über 0 € eingeben."];
+    const years = values.take("value.useful_life_years", wholeNumber(life, 1, t.kitchenLifeRequired));
+    if (years !== undefined && years > 25) values.messages["value.useful_life_years"] = [t.max25Years];
+    const year = values.take("tax_year", wholeNumber(shownYear, 2000, t.taxYearRequired(2026)));
+    if (money !== undefined && Number(money) <= 0) values.messages["value.amount"] = [t.amountAboveZero];
     if (!values.ok || money === undefined || years === undefined || year === undefined) return form.invalid(values.messages);
     setBusy(true);
     setBanner(null);
@@ -988,11 +994,11 @@ function MovableAssetForm({
     } catch (error) {
       const codes = codesOf(error);
       if (codes.includes("tax_input.not_current") && replaces === null) {
-        setBanner("Eine Einbauküche ist schon erfasst. Bitte diese korrigieren.");
+        setBanner(t.kitchenTaken);
       } else if (codes.includes("tax_input.not_current")) {
         setBanner(CODE_MESSAGES["tax_input.not_current"] ?? null);
       } else if (codes.includes("tax_input.scope_invalid")) {
-        setBanner("Eine Korrektur behält das erste Jahr. Um es zu ändern, die Küche zurückziehen und neu eintragen.");
+        setBanner(t.kitchenKeepsYear);
       } else {
         form.fail(error);
       }
@@ -1003,20 +1009,20 @@ function MovableAssetForm({
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <p className="muted hint">{MOVABLE_ESTIMATE_HINT}</p>
+      <p className="muted hint">{t.movableEstimateHint}</p>
       <div className="grid">
         <Field
           id={`${base}-amount`}
-          label="Wert der Küche (€)"
-          description="Ihr Anteil am Kaufpreis (brutto)."
+          label={t.kitchenValue}
+          description={t.kitchenValueDescription}
           errors={form.of("value.amount")}
         >
           <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />
         </Field>
         <Field
           id={`${base}-life`}
-          label="Nutzungsdauer (Jahre)"
-          description="Für eine Einbauküche meist 10 Jahre."
+          label={t.lifeYears}
+          description={t.kitchenLifeDescription}
           errors={form.of("value.useful_life_years")}
         >
           <input type="text" inputMode="numeric" value={life} onChange={(e) => setLife(e.target.value)} autoComplete="off" />
@@ -1024,18 +1030,14 @@ function MovableAssetForm({
         <div className="field">
           <label className="inline" htmlFor={`${base}-in-price`}>
             <input id={`${base}-in-price`} type="checkbox" checked disabled readOnly />
-            Im Kaufpreis enthalten
+            {t.inPurchasePrice}
           </label>
-          <p className="muted hint">
-            Mit der Wohnung gekauft: ihr Wert und ihr Anteil an den Nebenkosten kommen aus der AfA des Gebäudes heraus;
-            die AfA beginnt mit dem Übergang. Eine gesondert gekaufte Küche wird noch nicht unterstützt; sie braucht ihr
-            Anschaffungsdatum.
-          </p>
+          <p className="muted hint">{t.inPurchasePriceHint}</p>
         </div>
         <Field
           id={`${base}-from`}
-          label="Ab Steuerjahr"
-          description="Das Jahr des Kaufs der Wohnung."
+          label={t.fromTaxYear}
+          description={t.kitchenFromDescription}
           errors={form.of("tax_year")}
         >
           <input
@@ -1049,23 +1051,23 @@ function MovableAssetForm({
         </Field>
         <Field
           id={`${base}-document`}
-          label="Beleg (optional)"
-          description="Kaufvertrag, Rechnung oder die Grundlage der Schätzung, z. B. ein Ausdruck des Küchenplaners."
+          label={t.receiptOptional}
+          description={t.kitchenReceiptDescription}
           errors={form.of("document_id")}
         >
           <DocumentPicker value={documentId} onChange={setDocumentId} />
         </Field>
-        <Field id={`${base}-note`} label="Notiz (optional)" description="Zum Beispiel wie der Wert geschätzt wurde.">
+        <Field id={`${base}-note`} label={t.noteOptional} description={t.kitchenNoteDescription}>
           <input type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoComplete="off" />
         </Field>
       </div>
       {replaces !== null ? (
-        <p className="muted hint">Eine Korrektur ersetzt die Angabe ab {replaces.tax_year}; die bisherige bleibt im Verlauf.</p>
+        <p className="muted hint">{t.correctionFromYear(replaces.tax_year)}</p>
       ) : null}
       <div className="row">
-        <Submit busy={busy}>{replaces === null ? "Eintragen" : "Korrektur speichern"}</Submit>
+        <Submit busy={busy}>{replaces === null ? t.enter : t.saveCorrection}</Submit>
         <button type="button" className="link" onClick={onCancel}>
-          Abbrechen
+          {c.cancel}
         </button>
       </div>
       {banner ? <p className="notice notice-error">{banner}</p> : null}
@@ -1091,6 +1093,8 @@ const GRUNDSTEUER_KEYS = ["tax_year", "value.annual_amount", "value.instalments"
  * the instalments fall in the first year, in order, and sum to the annual amount.
  */
 export function GrundsteuerSection({ propertyId, defaultYear }: { propertyId: string; defaultYear: number }) {
+  const t = useT(taxInputsText);
+  const f = useFormat();
   const load = useCallback(() => loadInputs(propertyId, "grundsteuer_schedule"), [propertyId]);
   const state = useLoad(load);
   const [editing, setEditing] = useState<TaxInput | "new" | null>(null);
@@ -1111,7 +1115,7 @@ export function GrundsteuerSection({ propertyId, defaultYear }: { propertyId: st
         withdrawn: true,
       });
     } catch (error) {
-      setBanner(messageOf(error) ?? "Das Zurückziehen hat nicht geklappt. Bitte erneut versuchen.");
+      setBanner(messageOf(error) ?? t.withdrawFailed);
     } finally {
       setBusy(false);
       state.reload();
@@ -1124,10 +1128,7 @@ export function GrundsteuerSection({ propertyId, defaultYear }: { propertyId: st
         {(rows) => {
           const sorted = [...rows].sort((a, b) => (a.tax_year ?? 0) - (b.tax_year ?? 0));
           return sorted.length === 0 ? (
-            <p className="muted">
-              Noch kein Grundsteuerbescheid erfasst. Ohne ihn erinnert die App an die gesetzlichen Termine (15. Februar, Mai,
-              August und November), sobald ein Bescheid verknüpft ist.
-            </p>
+            <p className="muted">{t.noGrundsteuer}</p>
           ) : (
             <ul className="stack">
               {sorted.map((row) => {
@@ -1136,26 +1137,29 @@ export function GrundsteuerSection({ propertyId, defaultYear }: { propertyId: st
                   <li key={row.id} className="stack">
                     <div className="row">
                       <strong>
-                        Ab {row.tax_year}: {formatMoney(value.annual_amount)} im Jahr
-                        {value.rhythm ? `, ${GRUNDSTEUER_RHYTHM[value.rhythm]}` : ""}
+                        {t.grundsteuerRow(
+                          row.tax_year,
+                          f.money(value.annual_amount),
+                          value.rhythm ? GRUNDSTEUER_RHYTHM[value.rhythm] : null,
+                        )}
                       </strong>
                       <span className="spacer" />
                       <button type="button" className="link" onClick={() => setEditing(row)} disabled={busy}>
-                        Korrigieren
+                        {t.correct}
                       </button>
                       <button type="button" className="link" onClick={() => void withdraw(row)} disabled={busy}>
-                        Zurückziehen
+                        {t.withdraw}
                       </button>
                     </div>
                     <span className="muted">
-                      {value.instalments.map((i) => `${formatDate(i.due_on)}: ${formatMoney(i.amount)}`).join(" · ")}
+                      {value.instalments.map((i) => `${f.date(i.due_on)}: ${f.money(i.amount)}`).join(" · ")}
                     </span>
                     <span className="muted">
-                      Zahlungsweise: {GRUNDSTEUER_MODE[value.payment_mode ?? "auto"]}
+                      {t.paymentModeIs(GRUNDSTEUER_MODE[value.payment_mode ?? "auto"])}
                       {row.document_id ? (
                         <>
                           {" · "}
-                          <Link href={`/documents/${row.document_id}`}>Bescheid öffnen</Link>
+                          <Link href={`/documents/${row.document_id}`}>{t.openBescheid}</Link>
                         </>
                       ) : null}
                     </span>
@@ -1170,7 +1174,7 @@ export function GrundsteuerSection({ propertyId, defaultYear }: { propertyId: st
       {editing === null ? (
         <div>
           <button type="button" className="secondary" onClick={() => setEditing("new")}>
-            Grundsteuerbescheid eintragen
+            {t.enterGrundsteuer}
           </button>
         </div>
       ) : (
@@ -1203,6 +1207,8 @@ function GrundsteuerForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const t = useT(taxInputsText);
+  const c = useT(common);
   const old = replaces?.value as GrundsteuerValue | undefined;
   const [fromYear, setFromYear] = useState(String(replaces?.tax_year ?? defaultYear));
   const [annual, setAnnual] = useState(old ? decimalInput(old.annual_amount) : "");
@@ -1228,22 +1234,22 @@ function GrundsteuerForm({
     event.preventDefault();
     event.stopPropagation();
     const values = collector();
-    const year = values.take("tax_year", wholeNumber(fromYear, 2000, "Bitte ein Steuerjahr eingeben, z. B. 2027."));
+    const year = values.take("tax_year", wholeNumber(fromYear, 2000, t.taxYearRequired(2027)));
     const money = values.take("value.annual_amount", toMoneyString(annual));
     const instalments: { due_on: string; amount: string }[] = [];
     for (const slot of slots) {
       if (!slot.dueOn && !slot.amount.trim()) continue;
       const amount = toMoneyString(slot.amount);
       if (!slot.dueOn || !amount.ok) {
-        values.messages["value.instalments"] = ["Jede Rate braucht ein Datum und einen Betrag."];
+        values.messages["value.instalments"] = [t.instalmentIncomplete];
         continue;
       }
       instalments.push({ due_on: slot.dueOn, amount: amount.value });
     }
     if (instalments.length === 0 && !values.messages["value.instalments"]) {
-      values.messages["value.instalments"] = ["Bitte mindestens eine Rate mit Datum und Betrag eintragen."];
+      values.messages["value.instalments"] = [t.instalmentRequired];
     }
-    if (documentId === null) values.messages["document_id"] = ["Bitte den Grundsteuerbescheid auswählen."];
+    if (documentId === null) values.messages["document_id"] = [t.bescheidRequired];
     if (!values.ok || year === undefined || money === undefined || documentId === null || values.messages["value.instalments"]) {
       return form.invalid(values.messages);
     }
@@ -1269,13 +1275,11 @@ function GrundsteuerForm({
     } catch (error) {
       const codes = codesOf(error);
       if (codes.includes("tax_input.not_current") && replaces === null) {
-        setBanner("Für dieses Jahr ist schon ein Bescheid erfasst. Bitte diesen korrigieren.");
+        setBanner(t.grundsteuerYearTaken);
       } else if (codes.includes("tax_input.not_current")) {
         setBanner(CODE_MESSAGES["tax_input.not_current"] ?? null);
       } else if (error instanceof ApiError && JSON.stringify(error.body ?? "").includes("tax_input.grundsteuer_schedule_invalid")) {
-        setBanner(
-          "Die Raten passen nicht: alle im ersten Jahr, nach Datum geordnet, und zusammen der Jahresbetrag (auf 4 Cent genau).",
-        );
+        setBanner(t.instalmentsInvalid);
       } else {
         form.fail(error);
       }
@@ -1289,8 +1293,8 @@ function GrundsteuerForm({
       <div className="grid">
         <Field
           id={`${base}-from`}
-          label="Ab Steuerjahr"
-          description="Das erste Jahr, für das der Bescheid gilt; die Raten liegen in diesem Jahr."
+          label={t.fromTaxYear}
+          description={t.grundsteuerFromDescription}
           errors={form.of("tax_year")}
         >
           <input
@@ -1302,20 +1306,20 @@ function GrundsteuerForm({
             autoComplete="off"
           />
         </Field>
-        <Field id={`${base}-annual`} label="Jahresbetrag (€)" description="Wie im Bescheid." errors={form.of("value.annual_amount")}>
+        <Field id={`${base}-annual`} label={t.annualAmount} description={t.asInBescheid} errors={form.of("value.annual_amount")}>
           <input type="text" inputMode="decimal" value={annual} onChange={(e) => setAnnual(e.target.value)} autoComplete="off" />
         </Field>
       </div>
       <fieldset className="stack">
-        <legend>Fälligkeiten laut Bescheid</legend>
+        <legend>{t.dueDates}</legend>
         {slots.map((slot, n) => (
           <div key={n} className="row">
             <label className="inline" htmlFor={`${base}-due-${n}`}>
-              Rate {n + 1} am
+              {t.instalmentOn(n + 1)}
               <input id={`${base}-due-${n}`} type="date" value={slot.dueOn} onChange={(e) => setSlot(n, { dueOn: e.target.value })} />
             </label>
             <label className="inline" htmlFor={`${base}-amount-${n}`}>
-              Betrag (€)
+              {t.amountEuro}
               <input
                 id={`${base}-amount-${n}`}
                 type="text"
@@ -1336,9 +1340,9 @@ function GrundsteuerForm({
         ) : null}
       </fieldset>
       <div className="grid">
-        <Field id={`${base}-rhythm`} label="Rhythmus (optional)" description="Die Zahlweise, wie der Bescheid sie nennt.">
+        <Field id={`${base}-rhythm`} label={t.rhythmOptional} description={t.rhythmDescription}>
           <select value={rhythm} onChange={(e) => setRhythm(e.target.value as GrundsteuerRhythm | "")}>
-            <option value="">keine Angabe</option>
+            <option value="">{t.noAnswer}</option>
             {entries(GRUNDSTEUER_RHYTHM).map(([key, label]) => (
               <option key={key} value={key}>
                 {label}
@@ -1348,8 +1352,8 @@ function GrundsteuerForm({
         </Field>
         <Field
           id={`${base}-mode`}
-          label="Zahlungsweise"
-          description="„Erinnern“: eine Woche vorher. „Lastschrift prüfen“: drei Tage danach, falls die Abbuchung fehlt. „automatisch“: Lastschrift, sobald eine Rate per Lastschrift abgebucht wurde, sonst Erinnern."
+          label={t.paymentMode}
+          description={t.paymentModeDescription}
         >
           <select value={mode} onChange={(e) => setMode(e.target.value as GrundsteuerMode | "auto")}>
             {entries(GRUNDSTEUER_MODE).map(([key, label]) => (
@@ -1359,17 +1363,17 @@ function GrundsteuerForm({
             ))}
           </select>
         </Field>
-        <Field id={`${base}-document`} label="Grundsteuerbescheid" errors={form.of("document_id")}>
+        <Field id={`${base}-document`} label={t.grundsteuerBescheid} errors={form.of("document_id")}>
           <DocumentPicker value={documentId} onChange={setDocumentId} />
         </Field>
       </div>
       {replaces !== null ? (
-        <p className="muted hint">Eine Korrektur ersetzt den Bescheid ab {replaces.tax_year}; der bisherige bleibt im Verlauf.</p>
+        <p className="muted hint">{t.bescheidCorrectionHint(replaces.tax_year)}</p>
       ) : null}
       <div className="row">
-        <Submit busy={busy}>{replaces === null ? "Eintragen" : "Korrektur speichern"}</Submit>
+        <Submit busy={busy}>{replaces === null ? t.enter : t.saveCorrection}</Submit>
         <button type="button" className="link" onClick={onCancel}>
-          Abbrechen
+          {c.cancel}
         </button>
       </div>
       {banner ? <p className="notice notice-error">{banner}</p> : null}
@@ -1385,7 +1389,7 @@ export function toDueDay(raw: string): { ok: true; value: number } | { ok: false
   const day = Number(raw.trim());
   return Number.isInteger(day) && day >= 1 && day <= 28
     ? { ok: true, value: day }
-    : { ok: false, message: "Bitte einen Tag von 1 bis 28 eingeben." };
+    : { ok: false, message: translate(taxInputsText).dueDayInvalid };
 }
 
 export function RentTermsFields({
@@ -1403,21 +1407,22 @@ export function RentTermsFields({
   onTerms: (value: OperatingCostsTerms) => void;
   errors: (key: "rent_due_day" | "operating_costs_terms") => string[];
 }) {
+  const t = useT(taxInputsText);
   return (
     <>
       <Field
         id={`${idPrefix}-due-day`}
-        label="Miete fällig am Tag"
-        hint="Meist der 3. (spätestens am dritten Werktag, § 556b BGB)."
-        description="Der Tag im Monat, an dem die Miete laut Mietvertrag fällig ist. Er entscheidet, ob eine Miete, die um den Jahreswechsel gezahlt wird, steuerlich ins alte oder ins neue Jahr gehört (Zehn-Tage-Regel, § 11 EStG)."
+        label={t.dueDay}
+        hint={t.dueDayHint}
+        description={t.dueDayDescription}
         errors={errors("rent_due_day")}
       >
         <input type="text" inputMode="numeric" value={dueDay} onChange={(e) => onDueDay(e.target.value)} autoComplete="off" />
       </Field>
       <Field
         id={`${idPrefix}-terms`}
-        label="Nebenkosten laut Mietvertrag"
-        description="Wie der Mietvertrag die Nebenkosten regelt: als Vorauszahlung mit jährlicher Abrechnung, als Pauschale ohne Abrechnung, oder gar nicht gesondert (eine Warmmiete, in der alles enthalten ist). Davon hängt ab, in welcher Zeile der Anlage V die Beträge stehen."
+        label={t.terms}
+        description={t.termsDescription}
         errors={errors("operating_costs_terms")}
       >
         <select value={terms} onChange={(e) => onTerms(e.target.value as OperatingCostsTerms)}>

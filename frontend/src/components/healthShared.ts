@@ -5,6 +5,7 @@
 // it works on decimal strings through BigInt, never a JS number.
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
+import { localized } from "@/i18n";
 
 import { formatDecimal } from "./format";
 import { type Parsed, toDecimalString, toRate } from "./input";
@@ -140,14 +141,24 @@ export function monthEnd(month: string): string {
   return `${month}-${String(last).padStart(2, "0")}`;
 }
 
-export const FIGURE_LABEL: Record<MarkedFigure, string> = {
-  reserve: "Liquiditätsreserve",
-  savings_rate: "Sparquote",
-  ltv: "Beleihungsauslauf",
-  debt_service_ratio: "Schuldendienstquote",
-  debt_ratio: "Verschuldungsgrad",
-  debt_to_income: "Schulden zu Jahreseinkommen",
-};
+export const FIGURE_LABEL: Record<MarkedFigure, string> = localized<MarkedFigure>(
+  {
+    reserve: "Liquiditätsreserve",
+    savings_rate: "Sparquote",
+    ltv: "Beleihungsauslauf",
+    debt_service_ratio: "Schuldendienstquote",
+    debt_ratio: "Verschuldungsgrad",
+    debt_to_income: "Schulden zu Jahreseinkommen",
+  },
+  {
+    reserve: "Cash reserve",
+    savings_rate: "Savings rate",
+    ltv: "Loan-to-value",
+    debt_service_ratio: "Debt service ratio",
+    debt_ratio: "Debt ratio",
+    debt_to_income: "Debt to annual income",
+  },
+);
 
 /** The order of the card „Ampel-Grenzen festlegen“ (mockup 13). */
 export const FIGURES: MarkedFigure[] = ["reserve", "savings_rate", "ltv", "debt_service_ratio", "debt_ratio", "debt_to_income"];
@@ -162,11 +173,18 @@ export const HIGHER_IS_BETTER: Record<MarkedFigure, boolean> = {
   debt_to_income: false,
 };
 
-export const COLOUR_LABEL: Record<components["schemas"]["LightColour"], string> = {
-  green: "Grün",
-  amber: "Gelb",
-  red: "Rot",
-};
+export const COLOUR_LABEL: Record<components["schemas"]["LightColour"], string> = localized<components["schemas"]["LightColour"]>(
+  {
+    green: "Grün",
+    amber: "Gelb",
+    red: "Rot",
+  },
+  {
+    green: "Green",
+    amber: "Amber",
+    red: "Red",
+  },
+);
 
 export const COLOUR_CLASS: Record<components["schemas"]["LightColour"], string> = {
   green: "badge health-mark",
@@ -184,7 +202,8 @@ export function limitText(figure: MarkedFigure, value: string | null | undefined
 /** The Bezugspunkte of mockup 13 in German, per figure: what each source says and what it does
  * not. bands.yaml holds them in English for the validator; these are their screen text, kept in
  * step with that file by hand. */
-export const REFERENCE_POINTS: Record<MarkedFigure, string[]> = {
+export const REFERENCE_POINTS: Record<MarkedFigure, string[]> = localized<MarkedFigure, string[]>(
+  {
   reserve: [
     "Keiner. Eine Grenze für die Reserve eines einzelnen Haushalts setzt keine Quelle, die Hausbuch gelesen hat; die Hälfte eures Ziels ist ein Vorschlag.",
   ],
@@ -200,7 +219,25 @@ export const REFERENCE_POINTS: Record<MarkedFigure, string[]> = {
   ],
   debt_ratio: ["Keiner gefunden."],
   debt_to_income: ["Keiner gefunden."],
-};
+  },
+  {
+    reserve: [
+      "None. No source Hausbuch has read sets a limit for a single household's reserve; half of your target is a suggestion.",
+    ],
+    savings_rate: [
+      "Statistisches Bundesamt (Federal Statistical Office), Sparquote der privaten Haushalte (household saving ratio): how much all households in Germany save on average. A comparison, not a limit for a single household; so no figure from it is shown here.",
+    ],
+    ltv: [
+      "§ 14 Pfandbriefgesetz (Covered Bond Act): a covered-bond bank may use loans up to 60% of the Beleihungswert (lending value) as cover. That is a rule for banks, not a limit for a household, and the Beleihungswert is not the estimate Hausbuch works with.",
+      "Bundesbank, Finanzstabilitätsbericht (financial stability review): the supervisors report how many loans exceed the property's value (above 100%). Not a limit for a single household.",
+    ],
+    debt_service_ratio: [
+      "Guides by the Verbraucherzentrale (consumer advice centre) and Stiftung Warentest: 30 to 40% of net income for the instalment of a loan for your own home. Meant for an owner-occupied home, not for a rented flat and not exactly for this figure.",
+    ],
+    debt_ratio: ["None found."],
+    debt_to_income: ["None found."],
+  },
+);
 
 /** Whether a to-do's link captures a month-end (the backend's `/?month_end=YYYY-MM-DD`), which
  * the screens turn into the button „Monatsabschluss festhalten“. */

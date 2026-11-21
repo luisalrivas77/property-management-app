@@ -16,6 +16,9 @@ import { collector, Field, FormBanner, Submit, useFormErrors } from "@/component
 import { collectShares, initialShares, OwnerShareInputs } from "@/components/ownershipShares";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { accountForms } from "@/i18n/accountForms";
+import { common } from "@/i18n/common";
 
 const KEYS = ["shares", "reason", "effective_from"] as const;
 const CODE_FIELDS = { "ownership.": "shares" };
@@ -24,6 +27,7 @@ const loadOwners = () => ok(api.GET("/api/owners"));
 
 export function AccountOwnership({ account, onSaved }: { account: Account; onSaved: () => void }) {
   const owners = useLoad(loadOwners);
+  const t = useT(accountForms);
   const [editing, setEditing] = useState(false);
   const done = useCallback(() => {
     setEditing(false);
@@ -32,20 +36,21 @@ export function AccountOwnership({ account, onSaved }: { account: Account; onSav
 
   return (
     <div className="card stack">
-      <h2>Eigentümer</h2>
+      <h2>{t.owners}</h2>
       <Loading state={owners}>
         {(list) =>
           list.length === 0 ? (
             <p>
-              Noch keine Eigentümer erfasst. Zuerst unter <Link href="/owners">Eigentümer</Link> anlegen.
+              {t.noOwnersBefore}
+              <Link href="/owners">{t.noOwnersLink}</Link>
+              {t.noOwnersAfter}
             </p>
           ) : editing || account.ownership_missing ? (
             <>
               {account.ownership_missing ? (
                 <div className="notice notice-warn">
                   <p>
-                    <strong>Eigentümer festlegen:</strong> Wem gehört dieses Konto, und zu welchem Anteil? Ein gemeinsames Konto
-                    gehört meist beiden je zur Hälfte (1/2), ein eigenes Konto einer Person ganz (1/1).
+                    <strong>{t.setOwnersLead}</strong> {t.setOwnersText}
                   </p>
                 </div>
               ) : null}
@@ -56,7 +61,7 @@ export function AccountOwnership({ account, onSaved }: { account: Account; onSav
               <span className="badge">{ownerChip(account.ownership ?? [], list)}</span>
               <span className="spacer" />
               <button type="button" className="secondary" onClick={() => setEditing(true)}>
-                Anteile ändern
+                {t.changeShares}
               </button>
             </div>
           )
@@ -82,6 +87,8 @@ function OwnershipForm({
   const [effectiveFrom, setEffectiveFrom] = useState("");
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(KEYS, CODE_FIELDS);
+  const t = useT(accountForms);
+  const c = useT(common);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -110,27 +117,27 @@ function OwnershipForm({
       <OwnerShareInputs owners={owners} shares={shares} onChange={setShares} form={form} errorId="account-shares-error" />
       <Field
         id="account-ownership-reason"
-        label="Begründung (optional)"
-        hint="z. B. „gemeinsames Konto“ oder „vom gemeinsamen Konto bezahlt“."
-        description="Warum das Konto diesen Personen zu diesen Anteilen gehört. Hausbuch speichert es mit den Anteilen, damit es später nachvollziehbar bleibt."
+        label={t.reasonOptional}
+        hint={t.reasonHint}
+        description={t.reasonDescription}
         errors={form.of("reason")}
       >
         <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} autoComplete="off" />
       </Field>
       <Field
         id="account-ownership-from"
-        label="Gültig ab (optional)"
-        hint="Leer lassen: ab heute."
-        description="Ab wann diese Anteile gelten. Die bisherigen Anteile bleiben im Protokoll erhalten."
+        label={t.validFromOptional}
+        hint={t.validFromHint}
+        description={t.validFromDescription}
         errors={form.of("effective_from")}
       >
         <input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
       </Field>
       <div className="row">
-        <Submit busy={busy}>Anteile speichern</Submit>
+        <Submit busy={busy}>{t.saveShares}</Submit>
         {onCancel ? (
           <button type="button" className="secondary" onClick={onCancel}>
-            Abbrechen
+            {c.cancel}
           </button>
         ) : null}
       </div>

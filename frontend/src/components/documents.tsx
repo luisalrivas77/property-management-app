@@ -27,10 +27,13 @@ import type {
   StatementRefusal,
   UploadBody,
 } from "@/api/schemas";
+import { formatter, translate, useFormat, useT } from "@/i18n";
+import { common } from "@/i18n/common";
+import { linkedDocumentsText } from "@/i18n/linkedDocuments";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
-import { formatDate, formatMoney, shortId } from "./format";
+import { shortId } from "./format";
 import { ACCOUNT_KIND, ACCOUNT_PURPOSE, DOCUMENT_TYPE, LINK_TARGET } from "./labels";
 import { collectShares, initialShares, OwnerShareInputs } from "./ownershipShares";
 import { Loading, Notice } from "./ui";
@@ -163,17 +166,14 @@ export function storeAsDocument(file: File): Promise<Uploaded> {
 
 /** The notice after storeAsDocument: where the document went and that the AI reads it. */
 export function StoredAsDocument({ result, what }: { result: Uploaded; what: string }) {
+  const t = useT(linkedDocumentsText);
   const name = result.document.original_filename ?? documentLabel(result.document);
   return (
     <div className="notice notice-info" role="status">
       <p>
         {name}: {what}{" "}
-        {result.existed
-          ? "Die Datei liegt schon unter Dokumente."
-          : result.aiUnavailable
-            ? "Sie ist unter Dokumente gespeichert."
-            : "Sie ist unter Dokumente gespeichert, und die KI liest sie gerade und schlägt dort vor, was daraus übernommen wird."}{" "}
-        <Link href={`/documents/${result.document.id}`}>Dokument öffnen</Link>
+        {result.existed ? t.storedExisted : result.aiUnavailable ? t.storedSaved : t.storedReading}{" "}
+        <Link href={`/documents/${result.document.id}`}>{t.openDocument}</Link>
       </p>
     </div>
   );
@@ -184,15 +184,15 @@ export function documentLabel(document: Document): string {
   return (
     document.typing?.title ||
     document.original_filename ||
-    `Dokument ${shortId(document.file_sha256, 12)}`
+    translate(linkedDocumentsText).documentFallback(shortId(document.file_sha256, 12))
   );
 }
 
 /** "Rechnung · 12.03.2024" or "nicht typisiert". */
 export function documentKind(document: Document): string {
-  if (!document.typing) return "nicht typisiert";
+  if (!document.typing) return translate(linkedDocumentsText).untyped;
   const date = document.typing.document_date
-    ? ` · ${formatDate(document.typing.document_date)}`
+    ? ` · ${formatter().date(document.typing.document_date)}`
     : "";
   return `${DOCUMENT_TYPE[document.typing.type]}${date}`;
 }
@@ -204,7 +204,7 @@ export function documentKind(document: Document): string {
  */
 export function UploadControl({
   onUploaded,
-  label = "Datei hochladen",
+  label,
   prefill = false,
   proofFor,
 }: {
@@ -214,6 +214,7 @@ export function UploadControl({
   /** Phase 3 D143: upload the payment proof of this bill (UploadOptions.proofFor). */
   proofFor?: string;
 }) {
+  const t = useT(linkedDocumentsText);
   const inputId = useId();
   const autoReadId = useId();
   const tenantDataId = useId();
@@ -260,7 +261,7 @@ export function UploadControl({
         void upload(event.dataTransfer.files);
       }}
     >
-      <label htmlFor={inputId}>{busy ? "Lädt hoch …" : label}</label>
+      <label htmlFor={inputId}>{busy ? t.uploading : (label ?? t.upload)}</label>
       <input
         ref={input}
         id={inputId}
@@ -272,9 +273,7 @@ export function UploadControl({
           void upload(event.target.files)
         }
       />
-      <p className="muted hint">
-        PDF, Foto, CSV, XML oder E-Mail; Datei hierher ziehen oder auswählen.
-      </p>
+      <p className="muted hint">{t.uploadHint}</p>
       {prefill ? (
         <div className="row upload-options">
           <label className="inline" htmlFor={autoReadId}>
@@ -285,7 +284,7 @@ export function UploadControl({
               disabled={busy}
               onChange={(e) => setAutoRead(e.target.checked)}
             />
-            Automatisch auslesen
+            {t.autoRead}
           </label>
           <label className="inline" htmlFor={tenantDataId}>
             <input
@@ -295,7 +294,7 @@ export function UploadControl({
               disabled={busy || !autoRead}
               onChange={(e) => setContainsTenantData(e.target.checked)}
             />
-            Enthält Mieterdaten
+            {t.tenantData}
           </label>
         </div>
       ) : null}
@@ -319,6 +318,7 @@ export function ReadUpload({
   /** Phase 3 D143: the upload is the payment proof of this bill (a document id). */
   proofFor?: string;
 }) {
+  const t = useT(linkedDocumentsText);
   const [open, setOpen] = useState(false);
   const [uploads, setUploads] = useState<Uploaded[]>([]);
   return (
@@ -330,7 +330,7 @@ export function ReadUpload({
           onClick={() => setOpen((current) => !current)}
           aria-expanded={open}
         >
-          {open ? "Hochladen schließen" : label}
+          {open ? t.closeUpload : label}
         </button>
       </div>
       {open ? (
@@ -346,20 +346,18 @@ export function ReadUpload({
       ) : null}
       {uploads.map(({ document, existed, proposalId, aiUnavailable }) => (
         <Notice key={`${document.id}-${existed}-${proposalId ?? ""}`}>
-          {existed ? "Bereits vorhanden: " : "Hochgeladen: "}
+          {existed ? t.existedPrefix : t.uploadedPrefix}
           <Link href={`/documents/${document.id}`}>
             {documentLabel(document)}
           </Link>
           {proposalId ? (
             <>
-              {" – wird automatisch ausgelesen. Der Vorschlag erscheint unter "}
-              <Link href="/inbox">Zu prüfen</Link>
-              {"; jeden Wert bestätigen, dann zählt er."}
+              {t.readingBefore}
+              <Link href="/inbox">{t.toReview}</Link>
+              {t.readingAfter}
             </>
           ) : null}
-          {aiUnavailable
-            ? " Automatisches Auslesen ist auf dem Server nicht eingeschaltet."
-            : null}
+          {aiUnavailable ? t.aiOff : null}
         </Notice>
       ))}
     </div>
@@ -384,6 +382,7 @@ export function DocumentPicker({
   "aria-invalid"?: boolean;
   "aria-describedby"?: string;
 }) {
+  const t = useT(linkedDocumentsText);
   const documents = useLoad(loadDocuments);
   const [uploading, setUploading] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -398,7 +397,7 @@ export function DocumentPicker({
             onChange={(event) => onChange(event.target.value || null)}
             {...aria}
           >
-            <option value="">– kein Dokument –</option>
+            <option value="">{t.noDocument}</option>
             {list.map((document) => (
               <option key={document.id} value={document.id}>
                 {documentLabel(document)} ({documentKind(document)})
@@ -414,7 +413,7 @@ export function DocumentPicker({
           onClick={() => setUploading((open) => !open)}
           aria-expanded={uploading}
         >
-          {uploading ? "Hochladen schließen" : "Neues Dokument hochladen"}
+          {uploading ? t.closeUpload : t.uploadNew}
         </button>
         {note ? <span className="muted">{note}</span> : null}
       </div>
@@ -423,11 +422,7 @@ export function DocumentPicker({
           onUploaded={({ document, existed }) => {
             documents.reload();
             onChange(document.id);
-            setNote(
-              existed
-                ? "Bereits vorhanden, ausgewählt."
-                : "Hochgeladen und ausgewählt.",
-            );
+            setNote(existed ? t.pickedExisting : t.pickedUploaded);
             setUploading(false);
           }}
         />
@@ -492,13 +487,19 @@ function ViaLinks({
   targetType: LinkTarget;
   targetId: string;
 }) {
+  const t = useT(linkedDocumentsText);
   return (
     <>
       {via.map((ref, index) => {
         const separator = index > 0 ? ", " : null;
         const key = `${ref.target_type}:${ref.target_id}`;
         if (isDirect(ref, targetType, targetId)) {
-          return <span key={key}>{separator}direkt</span>;
+          return (
+            <span key={key}>
+              {separator}
+              {t.direct}
+            </span>
+          );
         }
         const href = VIA_HREF[ref.target_type];
         return (
@@ -530,6 +531,9 @@ export function LinkedDocuments({
   targetType: LinkTarget;
   targetId: string;
 }) {
+  const t = useT(linkedDocumentsText);
+  const c = useT(common);
+  const f = useFormat();
   const load = useCallback(
     () => loadLinked(targetType, targetId),
     [targetType, targetId],
@@ -563,9 +567,7 @@ export function LinkedDocuments({
 
   async function unlink(document: Document) {
     if (
-      !window.confirm(
-        `Verknüpfung mit „${documentLabel(document)}“ entfernen? Das Dokument bleibt im Archiv.`,
-      )
+      !window.confirm(t.unlinkConfirm(documentLabel(document)))
     )
       return;
     setError(null);
@@ -595,16 +597,16 @@ export function LinkedDocuments({
       <Loading state={linked}>
         {(list) =>
           list.length === 0 ? (
-            <p className="muted">Noch keine Dokumente verknüpft.</p>
+            <p className="muted">{t.noneLinked}</p>
           ) : (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Dokument</th>
-                    <th>Art</th>
-                    <th>Eingang</th>
-                    {rollsUp ? <th>Verknüpft über</th> : null}
+                    <th>{t.colDocument}</th>
+                    <th>{t.colKind}</th>
+                    <th>{t.colReceived}</th>
+                    {rollsUp ? <th>{t.colVia}</th> : null}
                     <th />
                   </tr>
                 </thead>
@@ -619,7 +621,7 @@ export function LinkedDocuments({
                       <td>
                         <span className="tag">{documentKind(document)}</span>
                       </td>
-                      <td>{formatDate(document.received_at)}</td>
+                      <td>{f.date(document.received_at)}</td>
                       {rollsUp ? (
                         <td>
                           <ViaLinks
@@ -635,7 +637,7 @@ export function LinkedDocuments({
                           target="_blank"
                           rel="noopener"
                         >
-                          Öffnen
+                          {c.open}
                         </a>
                         {via.some((ref) =>
                           isDirect(ref, targetType, targetId),
@@ -647,7 +649,7 @@ export function LinkedDocuments({
                               className="link"
                               onClick={() => void unlink(document)}
                             >
-                              Verknüpfung entfernen
+                              {t.unlink}
                             </button>
                           </>
                         ) : null}
@@ -661,8 +663,8 @@ export function LinkedDocuments({
         }
       </Loading>
       <fieldset className="stack">
-        <legend>Dokument verknüpfen</legend>
-        <label htmlFor={pickerId}>Dokument</label>
+        <legend>{t.linkLegend}</legend>
+        <label htmlFor={pickerId}>{t.document}</label>
         <DocumentPicker id={pickerId} value={picked} onChange={setPicked} />
         <div>
           <button
@@ -670,7 +672,7 @@ export function LinkedDocuments({
             onClick={() => void link()}
             disabled={!picked || busy}
           >
-            {busy ? "Verknüpft …" : "Verknüpfen"}
+            {busy ? t.linking : t.link}
           </button>
         </div>
         <ErrorNotice error={error} />
@@ -683,19 +685,20 @@ export function LinkedDocuments({
 // account (filled by code from the document's own figures), and what the app does with it.
 // The same box on the document page and on its suggestion card, never both at once.
 export function DocumentExplanationBox({ explanation }: { explanation: DocumentExplanation | null | undefined }) {
+  const t = useT(linkedDocumentsText);
   if (!explanation) return null;
   return (
-    <aside className="notice notice-info explanation" aria-label="Was ist dieses Dokument?">
+    <aside className="notice notice-info explanation" aria-label={t.explanationAria}>
       <p>
-        <strong>Was ist das?</strong> {explanation.was}
+        <strong>{t.whatIsIt}</strong> {explanation.was}
       </p>
       {explanation.bedeutung ? (
         <p>
-          <strong>Was es für das Konto heißt:</strong> {explanation.bedeutung}
+          <strong>{t.forTheAccount}</strong> {explanation.bedeutung}
         </p>
       ) : null}
       <p>
-        <strong>Was die App damit tut:</strong> {explanation.aktion}
+        <strong>{t.whatTheAppDoes}</strong> {explanation.aktion}
       </p>
     </aside>
   );
@@ -711,6 +714,7 @@ export function StatementImportsNotice({
   imports: StatementFileImport[] | undefined;
   followed?: FollowedStatements;
 }) {
+  const t = useT(linkedDocumentsText);
   if (!imports?.length) return null;
   const others = followed?.imported ?? 0;
   const refused = followed?.refused ?? [];
@@ -718,29 +722,26 @@ export function StatementImportsNotice({
     <div className="notice notice-ok" role="status">
       {imports.map((imp) => (
         <p key={imp.import_id}>
-          Importiert auf <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>{imp.account_label}</Link>
-          {imp.status === "reconciled" ? "." : " – bitte dort den Kontoauszug prüfen."}
+          {t.importedOn}
+          <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>{imp.account_label}</Link>
+          {imp.status === "reconciled" ? t.importedReconciled : t.importedCheck}
         </p>
       ))}
       {others > 0 ? (
-        <p>
-          {others === 1
-            ? "Ein weiterer Kontoauszug dieses Kontos wurde eingelesen."
-            : `Weitere ${others} Kontoauszüge dieses Kontos wurden eingelesen.`}
-        </p>
+        <p>{t.othersImported(others)}</p>
       ) : null}
       {refused.length > 0 ? (
         <div>
           <p>
-            {refused.length === 1
-              ? "Ein weiterer Kontoauszug dieses Kontos ließ sich nicht einlesen"
-              : `${refused.length} weitere Kontoauszüge dieses Kontos ließen sich nicht einlesen`}
-            ; sie bleiben unter <Link href="/documents">Dokumente</Link> und lassen sich dort mit „Auf Konto importieren“ einlesen:
+            {t.othersRefused(refused.length)}
+            {t.refusedStay}
+            <Link href="/documents">{t.documents}</Link>
+            {t.refusedHow}
           </p>
           <ul>
             {refused.map((r) => (
               <li key={r.document_id}>
-                <Link href={`/documents/${r.document_id}`}>Kontoauszug öffnen</Link>: {ruleCodeText(r.code) ?? "Die Datei ließ sich nicht einlesen."}
+                <Link href={`/documents/${r.document_id}`}>{t.openStatement}</Link>: {ruleCodeText(r.code) ?? t.unreadable}
               </li>
             ))}
           </ul>
@@ -755,14 +756,10 @@ export function StatementImportsNotice({
 type FollowedStatements = { imported: number; refused: StatementRefusal[] };
 
 /** What the file is (with its article), the kind of account it goes to, and the name of the
- * number that tells its account apart. */
-const STATEMENT_KIND: Partial<Record<AccountKind, { file: string; account: string; number: string }>> = {
-  bank_current: { file: "ein Kontoauszug oder Umsatz-Export einer Bank", account: "Girokonto", number: "IBAN" },
-  bank_savings: { file: "ein Kontoauszug oder Umsatz-Export einer Bank", account: "Sparkonto oder Tagesgeld", number: "IBAN" },
-  credit_card: { file: "eine Kreditkartenabrechnung", account: "Kreditkarte", number: "Kundennummer" },
-  depot: { file: "ein Kontoauszug des Depot-Verrechnungskontos", account: "Depot", number: "Kontonummer" },
-};
-const STATEMENT_WORDS = { file: "ein Kontoauszug", account: "Konto", number: "Nummer" };
+ * number that tells its account apart, in the chosen language (i18n/linkedDocuments.ts). */
+function statementWords(t: typeof linkedDocumentsText.de, kind: AccountKind): { file: string; account: string; number: string } {
+  return { file: t.statementFile(kind), account: t.statementAccount(kind), number: t.statementNumber(kind) };
+}
 
 /** „Auf Konto importieren“ (phase 6 D176 (3), step 4): a bank's export (camt, CSV), a card
  * statement or a depot's cash statement uploaded through Dokumente is never read by the model;
@@ -790,6 +787,7 @@ export function ImportStoredStatement({
 }
 
 function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; onImported?: () => void }) {
+  const t = useT(linkedDocumentsText);
   const offer = detail.statement_offer ?? null;
   const candidates = offer?.candidates ?? [];
   const [accountId, setAccountId] = useState(offer?.suggested_account_id ?? "");
@@ -803,7 +801,7 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
   if (imported) return <StatementImportsNotice imports={[imported]} followed={followed} />;
   if (detail.statement_imports?.length) return <StatementImportsNotice imports={detail.statement_imports} />;
   if (!offer) return null;
-  const words = STATEMENT_KIND[offer.account_kind] ?? STATEMENT_WORDS;
+  const words = statementWords(t, offer.account_kind);
   const only = candidates.length === 1 ? candidates[0] : undefined;
   const created = (result: StatementFileImport, others?: FollowedStatements) => {
     setFollowed(others);
@@ -812,8 +810,9 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
   };
   const byHand = (
     <p className="muted">
-      Lieber alles selbst eintragen: <Link href={`/accounts/new?kind=${offer.account_kind}`}>Konto von Hand anlegen</Link> und danach hier „Auf
-      Konto importieren“ wählen.
+      {t.byHandBefore}
+      <Link href={`/accounts/new?kind=${offer.account_kind}`}>{t.byHandLink}</Link>
+      {t.thenImport}
     </p>
   );
 
@@ -821,10 +820,7 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
     if (offer.new_account) {
       return (
         <div className="stack">
-          <p>
-            Das ist {words.file}. Hausbuch liest die Datei selbst, ohne KI, auf ihrem Konto ein; dieses Konto gibt es in Hausbuch noch nicht.
-            Hausbuch legt es aus der Datei an und liest sie gleich ein.
-          </p>
+          <p>{t.newAccountIntro(words.file)}</p>
           <CreateStatementAccount documentId={detail.document.id} newAccount={offer.new_account} words={words} onCreated={created} />
           {byHand}
         </div>
@@ -832,12 +828,10 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
     }
     return (
       <div className="notice notice-info" role="status">
+        <p>{t.noAccountIntro(words.file, words.account)}</p>
         <p>
-          Das ist {words.file}. Hausbuch liest die Datei selbst, ohne KI, auf ihrem Konto ein; dafür gibt es noch kein passendes Konto der Art „
-          {words.account}“.
-        </p>
-        <p>
-          <Link href={`/accounts/new?kind=${offer.account_kind}`}>Konto anlegen</Link> und danach hier „Auf Konto importieren“ wählen.
+          <Link href={`/accounts/new?kind=${offer.account_kind}`}>{t.createAccount}</Link>
+          {t.thenImport}
         </p>
       </div>
     );
@@ -855,7 +849,7 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
         }),
       );
       const account = candidates.find((c) => c.account_id === accountId);
-      created({ import_id: result.id, account_id: result.account_id, account_label: account?.label ?? "Konto", status: result.status });
+      created({ import_id: result.id, account_id: result.account_id, account_label: account?.label ?? t.account, status: result.status });
     } catch (caught) {
       setError(caught);
     } finally {
@@ -865,20 +859,18 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
 
   return (
     <div className="stack">
-      <p>
-        Das ist {words.file}. Hausbuch liest die Datei selbst, ohne KI, und importiert sie direkt aus der gespeicherten Datei; ein zweites Hochladen
-        ist nicht nötig.
-      </p>
+      <p>{t.importIntro(words.file)}</p>
       <div className="row">
         {only ? (
           <span>
-            Konto: <strong>{only.label}</strong> ({only.bank})
+            {t.accountColon}
+            <strong>{only.label}</strong> ({only.bank})
           </span>
         ) : (
           <label htmlFor={selectId}>
-            Konto{" "}
+            {t.account}{" "}
             <select id={selectId} value={accountId} onChange={(e) => setAccountId(e.target.value)} disabled={busy}>
-              {offer.suggested_account_id ? null : <option value="">Konto wählen …</option>}
+              {offer.suggested_account_id ? null : <option value="">{t.chooseAccount}</option>}
               {candidates.map((c) => (
                 <option key={c.account_id} value={c.account_id}>
                   {c.label} ({c.bank}
@@ -889,23 +881,20 @@ function StatementImportForm({ detail, onImported }: { detail: DocumentDetail; o
           </label>
         )}
         <button type="button" onClick={() => void submit()} disabled={busy || !accountId}>
-          {busy ? "Importiert …" : "Auf Konto importieren"}
+          {busy ? t.importing : t.importToAccount}
         </button>
       </div>
       <ErrorNotice error={error} />
       {offer.new_account ? (
         creating ? (
           <div className="stack">
-            <p>
-              Gehört die Datei zu keinem dieser Konten (ihre {words.number} steht bei keinem), legt Hausbuch das Konto aus der Datei an und liest sie
-              gleich ein.
-            </p>
+            <p>{t.notOnTheseIntro(words.number)}</p>
             <CreateStatementAccount documentId={detail.document.id} newAccount={offer.new_account} words={words} onCreated={created} />
           </div>
         ) : (
           <p>
             <button type="button" className="secondary" onClick={() => setCreating(true)} disabled={busy}>
-              Stattdessen neues Konto anlegen
+              {t.newInstead}
             </button>
           </p>
         )
@@ -957,6 +946,8 @@ function CreateStatementAccountForm({
   owners: Owner[];
   onCreated: (result: StatementFileImport, followed: FollowedStatements) => void;
 }) {
+  const t = useT(linkedDocumentsText);
+  const f = useFormat();
   const [label, setLabel] = useState(newAccount.label);
   const [bank, setBank] = useState(newAccount.bank ?? "");
   const [provider, setProvider] = useState(newAccount.provider ?? "");
@@ -973,8 +964,8 @@ function CreateStatementAccountForm({
     event.preventDefault();
     const values = collector();
     const body = collectShares(values, owners, shares, { required: false });
-    if (!label.trim()) values.messages.label = ["Bitte eine Bezeichnung eingeben."];
-    if (!bank.trim()) values.messages.bank = ["Bitte die Bank eingeben."];
+    if (!label.trim()) values.messages.label = [t.labelRequired];
+    if (!bank.trim()) values.messages.bank = [t.bankRequired];
     if (!values.ok) return form.invalid(values.messages);
     setBusy(true);
     setTaken(false);
@@ -1013,53 +1004,44 @@ function CreateStatementAccountForm({
 
   return (
     <form className="stack card" onSubmit={submit} noValidate>
-      <h3>Konto anlegen und einlesen</h3>
+      <h3>{t.createAndImport}</h3>
       <p>
-        Kontoart: <strong>{ACCOUNT_KIND[newAccount.kind]}</strong>
+        {t.kindColon}
+        <strong>{ACCOUNT_KIND[newAccount.kind]}</strong>
         {number ? (
           <>
             {" "}
-            · {words.number}: <strong>{number}</strong> (aus der Datei)
+            · {words.number}: <strong>{number}</strong>
+            {t.fromFile}
           </>
         ) : null}{" "}
-        · Anfangssaldo: <strong>{formatMoney(newAccount.opening_balance)}</strong> am {formatDate(newAccount.opening_balance_on)}
-        {newAccount.opening_from_file ? " (aus der Datei)" : null}
+        · {t.openingBalance}: <strong>{f.money(newAccount.opening_balance)}</strong>
+        {t.onDate(f.date(newAccount.opening_balance_on))}
+        {newAccount.opening_from_file ? t.fromFile : null}
       </p>
-      {newAccount.other_statements > 0 ? (
-        <p>
-          {newAccount.other_statements === 1
-            ? `Unter Dokumente wartet noch ein weiterer Kontoauszug mit dieser ${words.number}; er wird gleich mit eingelesen.`
-            : `Unter Dokumente warten noch ${newAccount.other_statements} weitere Kontoauszüge mit dieser ${words.number}; sie werden gleich mit eingelesen, der Reihe nach.`}
-        </p>
-      ) : null}
-      {newAccount.opening_from_file ? null : (
-        <p className="muted">
-          Die Datei nennt keinen Anfangssaldo. 0,00 € ist deshalb nur ein Platzhalter: Nach dem Anlegen auf der Seite des Kontos unter
-          „Kontoauszüge“ mit „Endsaldo eingeben“ den Kontostand nach dem letzten Umsatz der Datei eintragen, wie ihn das Online-Banking zeigt.
-          „Anfangssaldo daraus übernehmen“ setzt dann den richtigen Anfangssaldo.
-        </p>
-      )}
+      {newAccount.other_statements > 0 ? <p>{t.otherStatements(newAccount.other_statements, words.number)}</p> : null}
+      {newAccount.opening_from_file ? null : <p className="muted">{t.placeholderOpening}</p>}
       <div className="grid">
         <Field
           id={`${id}-label`}
-          label="Bezeichnung"
-          description="Ein frei wählbarer Name, unter dem Sie das Konto in Hausbuch wiederfinden."
+          label={t.label}
+          description={t.labelDescription}
           errors={form.of("label")}
         >
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={100} autoComplete="off" />
         </Field>
         <Field
           id={`${id}-bank`}
-          label="Bank"
-          description="Die Bank, bei der das Konto geführt wird, wie auf dem Kontoauszug."
+          label={t.bank}
+          description={t.bankDescription}
           errors={form.of("bank")}
         >
           <input type="text" value={bank} onChange={(e) => setBank(e.target.value)} required autoComplete="off" />
         </Field>
         <Field
           id={`${id}-provider`}
-          label="Anbieter (optional)"
-          description="Der Name, unter dem das Konto auftritt, wenn er von der Bank abweicht, z. B. der Markenname einer Karte."
+          label={t.provider}
+          description={t.providerDescription}
           errors={form.of("provider")}
         >
           <input type="text" value={provider} onChange={(e) => setProvider(e.target.value)} maxLength={100} autoComplete="off" />
@@ -1067,8 +1049,8 @@ function CreateStatementAccountForm({
         {bankKind ? (
           <Field
             id={`${id}-purpose`}
-            label="Wofür"
-            description="Das Mietkonto ist das Konto, über das die Wohnung läuft: seine Umsätze gehen in die Anlage V. Ein Privatkonto bekommt Haushaltskategorien und zählt nie in die Anlage V."
+            label={t.purpose}
+            description={t.purposeDescription}
             errors={form.of("purpose")}
           >
             <select value={purpose} onChange={(e) => setPurpose(e.target.value as AccountPurpose)}>
@@ -1084,21 +1066,16 @@ function CreateStatementAccountForm({
       {owners.length > 0 ? (
         <OwnerShareInputs owners={owners} shares={shares} onChange={setShares} form={form} errorId={`${id}-shares-error`} idPrefix={`${id}-`} />
       ) : (
-        <p className="muted">
-          Noch keine Eigentümer erfasst. Wem das Konto gehört, lässt sich später auf seiner Seite festlegen („Eigentümer festlegen“).
-        </p>
+        <p className="muted">{t.noOwners}</p>
       )}
       {taken ? (
         <div className="notice notice-warn" role="alert">
-          <p>
-            Inzwischen gibt es schon ein Konto mit dieser {words.number}. Bitte die Seite neu laden und die Datei mit „Auf Konto importieren“ darauf
-            einlesen.
-          </p>
+          <p>{t.taken(words.number)}</p>
         </div>
       ) : null}
       <div className="row">
-        <Submit busy={busy} busyLabel="Legt an und liest ein …">
-          Konto anlegen und einlesen
+        <Submit busy={busy} busyLabel={t.creating}>
+          {t.createAndImport}
         </Submit>
       </div>
       <FormBanner errors={form.errors} />

@@ -15,6 +15,12 @@ import type { Loaded } from "./useLoad";
 
 import "./screens.css";
 
+/** The loading line alone, „Lädt …“, as a Suspense fallback or while a redirect runs. */
+export function LoadingLine() {
+  const c = useT(common);
+  return <p className="muted">{c.loading}</p>;
+}
+
 /** Renders `children(data)` once loaded; the loading line or the error (with retry) before. */
 export function Loading<T>({ state, children }: { state: Loaded<T>; children: (data: T) => ReactNode }) {
   const t = useT(shared);
@@ -72,8 +78,9 @@ export interface Tab<K extends string> {
 
 /** Tabs as links (?tab=…), so each tab has a URL, back works, and Tab/Enter reach them. */
 export function TabBar<K extends string>({ tabs, current, href }: { tabs: Tab<K>[]; current: K; href: (key: K) => string }) {
+  const t = useT(shared);
   return (
-    <nav aria-label="Bereiche" className="tabs">
+    <nav aria-label={t.sections} className="tabs">
       {tabs.map((tab) => (
         <Link key={tab.key} href={href(tab.key)} aria-current={tab.key === current ? "page" : undefined} scroll={false}>
           {tab.label}

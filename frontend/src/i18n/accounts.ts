@@ -260,3 +260,186 @@ export const accounts = defineMessages({
     panelLoanSub: "interest, repayment, schedule",
   },
 });
+
+// The statement import, the imports table, the transactions table and the possible duplicates
+// (components/accounts.tsx). Owned by the Konten screens.
+export const statements = defineMessages({
+  de: {
+    lineCounts: (added: number, skipped: number) =>
+      `${added === 1 ? "1 neuer Umsatz" : `${added} neue Umsätze`}${skipped > 0 ? `, ${skipped} schon vorhanden` : ""}`,
+    jointHalf: "Gemeinsam 50/50",
+    // --- upload ---
+    importing: "Importiert …",
+    uploadCard: "Kreditkartenabrechnung hochladen",
+    uploadStatement: "Kontoauszug hochladen",
+    hintCard:
+      "Die monatliche Abrechnung als PDF, so wie sie im Kundenportal der Karte steht. Hausbuch liest sie selbst, ohne KI, und prüft, dass Alter Saldo und Umsätze den Neuen Saldo ergeben. Jedes andere Dokument kommt unter Dokumente, und die KI liest es. Datei hierher ziehen oder auswählen.",
+    hintDepot:
+      "Der Kontoauszug des Depots als PDF, so wie er im Postfach der Bank steht. Hausbuch liest ihn selbst, ohne KI, und prüft, dass Anfangssaldo und Buchungen den Endsaldo ergeben. Jedes andere Dokument des Depots (Abrechnung, Bericht, Vertrag) kann auch hier hochgeladen werden: es kommt unter Dokumente, und die KI liest es. Datei hierher ziehen oder auswählen.",
+    hintBank:
+      "Sparkasse „Umsätze exportieren“: camt als ZIP (bevorzugt, mit Salden) oder CSV-CAMT; auch eine einzelne camt-XML. DKB: der CSV-Export der Umsätze aus dem Online-Banking. Jedes andere Dokument kommt unter Dokumente, und die KI liest es. Datei hierher ziehen oder auswählen.",
+    storedNotCard: "keine Kreditkartenabrechnung, als Dokument übernommen.",
+    storedNotStatement: "kein Kontoauszug, als Dokument übernommen.",
+    alreadyImported: (fileName: string) =>
+      `Bereits importiert: ${fileName}. Diese Datei wurde schon einmal hochgeladen; es wurde nichts hinzugefügt.`,
+    importedLine: (fileName: string, counts: string, status: string) => `Importiert: ${fileName} · ${counts} · ${status}`,
+    statedClosing: (date: string) =>
+      `Die Datei nennt den Kontostand vom ${date}: unten „Endsaldo eingeben“, der Betrag ist schon eingetragen – bitte mit dem Online-Banking vergleichen.`,
+    noClosingInFile:
+      "Die Datei enthält keinen Kontostand: unten „Endsaldo eingeben“ mit dem Saldo aus dem Online-Banking.",
+    // --- imports ---
+    error: "Fehler.",
+    openingMismatch: (declared: string, computed: string) => `Anfangssaldo laut Datei ${declared} · berechnet ${computed}`,
+    closingMismatch: (declared: string, computed: string) => `Endsaldo laut Bank ${declared} · berechnet ${computed}`,
+    missingStatement: (until: string, from: string) =>
+      `Zwischen dem Auszug bis ${until} und diesem ab ${from} fehlt vermutlich ein Kontoauszug. Bitte den fehlenden Auszug hochladen; dieser hier geht danach von selbst auf.`,
+    noImports: "Noch keine Kontoauszüge importiert.",
+    colPeriod: "Zeitraum",
+    colFile: "Datei",
+    colLines: "Umsätze",
+    colClosing: "Endsaldo",
+    colStatus: "Status",
+    importedAt: (when: string) => `importiert ${when}`,
+    file: "Datei",
+    viaBankSync: "Bankabruf · ",
+    showNewLines: (count: number) => (count === 1 ? "Den neuen Umsatz anzeigen" : `Die ${count} neuen Umsätze anzeigen`),
+    enterClosing: "Endsaldo eingeben",
+    correctClosing: "Endsaldo korrigieren",
+    closingTitle: "Endsaldo laut Online-Banking",
+    derivedOpening: (date: string, amount: string) => `Der Kontostand am ${date} war dann ${amount}.`,
+    taking: "Übernimmt …",
+    takeOpening: "Anfangssaldo daraus übernehmen",
+    closingLabel: "Endsaldo laut Online-Banking (€)",
+    closingHint: (date: string) =>
+      `Der Kontostand am Ende des ${date}, nach dem letzten Umsatz der Datei. Negativ mit Minus, z. B. -3.028,51.`,
+    closingDescription:
+      "Der Kontostand laut Online-Banking nach dem letzten Umsatz dieser Datei. Die CSV-Datei enthält keinen Saldo; mit diesem Wert prüft Hausbuch, ob der Import aufgeht.",
+    suggestedFromFile: (stated: string, last: string) =>
+      `Vorgeschlagen aus der Datei: Kontostand vom ${stated}. Bitte prüfen, ob das der Saldo nach der letzten Buchung vom ${last} ist, und dann abstimmen.`,
+    reconcile: "Abstimmen",
+    // --- transactions ---
+    filterAll: "Alle",
+    filterOpen: "Offen",
+    filterBooked: "Gebucht",
+    lineFallback: "Umsatz",
+    lineSubject: (name: string, date: string) => `${name} am ${date}`,
+    bookedReturnBack: (date: string) => `Gebucht: Rücküberweisung (zurück am ${date})`,
+    bookedReturnFrom: (date: string) => `Gebucht: Rücküberweisung (von der Abbuchung am ${date})`,
+    bookedAs: (categories: string) => `Gebucht: ${categories}`,
+    booked: "Gebucht",
+    reviewSuggestion: "Vorschlag prüfen",
+    possibleDuplicate: "Mögliche Doppelbuchung",
+    notReconciled: "Kontoauszug nicht abgestimmt",
+    open: "Offen",
+    noLines: "Keine Umsätze in diesem Zeitraum.",
+    filterLines: "Umsätze filtern",
+    noOpenLines: "Keine offenen Umsätze in diesem Zeitraum.",
+    noBookedLines: "Keine gebuchten Umsätze in diesem Zeitraum.",
+    colBookingDay: "Buchungstag",
+    colCounterparty: "Gegenseite",
+    colPurpose: "Verwendungszweck",
+    colAmount: "Betrag",
+    colAllocation: "Zuordnung",
+    valueDate: (date: string) => `Wert ${date}`,
+    duplicateNotCounted: "Doppelbuchung, zählt nicht",
+    // --- possible duplicates ---
+    importedVia: (format: string, when: string) => `${format}, importiert ${when}`,
+    colLine: "Umsatz",
+    firstImported: "Zuerst importiert",
+    laterImported: "Später importiert",
+    merge: "Zusammenführen",
+    keepBoth: "Beide behalten",
+    decidedOn: (when: string) => ` am ${when}`,
+    noOpenDuplicates: "Keine offenen möglichen Doppelbuchungen.",
+    duplicatesExplain:
+      "Dieselbe Zahlung zweimal importiert, etwa einmal als CSV und einmal als camt? „Zusammenführen“ nimmt den später importierten Umsatz aus allen Salden, und die Kontoauszüge werden neu abgestimmt. „Beide behalten“, wenn es zwei echte Zahlungen waren.",
+    alreadyDecided: (count: number) => `${count} bereits entschieden`,
+  },
+  en: {
+    lineCounts: (added: number, skipped: number) =>
+      `${added === 1 ? "1 new transaction" : `${added} new transactions`}${skipped > 0 ? `, ${skipped} already there` : ""}`,
+    jointHalf: "Joint 50/50",
+    importing: "Importing …",
+    uploadCard: "Upload credit card statement",
+    uploadStatement: "Upload statement",
+    hintCard:
+      "The monthly statement as a PDF, as it appears in the card's customer portal. Hausbuch reads it itself, without AI, and checks that the old balance (Alter Saldo) plus the transactions give the new balance (Neuer Saldo). Any other document goes to Documents, and the AI reads it. Drag the file here or choose it.",
+    hintDepot:
+      "The securities account's statement as a PDF, as it appears in the bank's mailbox. Hausbuch reads it itself, without AI, and checks that the opening balance plus the bookings give the closing balance. Any other document of the securities account (contract note, report, contract) can be uploaded here too: it goes to Documents, and the AI reads it. Drag the file here or choose it.",
+    hintBank:
+      "Sparkasse “Umsätze exportieren” (export transactions): camt as a ZIP (preferred, with balances) or CSV-CAMT; a single camt XML works too. DKB: the CSV export of the transactions from online banking. Any other document goes to Documents, and the AI reads it. Drag the file here or choose it.",
+    storedNotCard: "not a credit card statement, kept as a document.",
+    storedNotStatement: "not a statement, kept as a document.",
+    alreadyImported: (fileName: string) =>
+      `Already imported: ${fileName}. This file was uploaded before; nothing was added.`,
+    importedLine: (fileName: string, counts: string, status: string) => `Imported: ${fileName} · ${counts} · ${status}`,
+    statedClosing: (date: string) =>
+      `The file states the balance on ${date}: use “Enter closing balance” below, the amount is already filled in – please compare it with online banking.`,
+    noClosingInFile:
+      "The file contains no balance: use “Enter closing balance” below with the balance from online banking.",
+    error: "Error.",
+    openingMismatch: (declared: string, computed: string) => `Opening balance in the file ${declared} · computed ${computed}`,
+    closingMismatch: (declared: string, computed: string) => `Closing balance per bank ${declared} · computed ${computed}`,
+    missingStatement: (until: string, from: string) =>
+      `Between the statement up to ${until} and this one from ${from} a statement is probably missing. Please upload the missing statement; this one then reconciles by itself.`,
+    noImports: "No statements imported yet.",
+    colPeriod: "Period",
+    colFile: "File",
+    colLines: "Transactions",
+    colClosing: "Closing balance",
+    colStatus: "Status",
+    importedAt: (when: string) => `imported ${when}`,
+    file: "File",
+    viaBankSync: "Bank sync · ",
+    showNewLines: (count: number) => (count === 1 ? "Show the new transaction" : `Show the ${count} new transactions`),
+    enterClosing: "Enter closing balance",
+    correctClosing: "Correct closing balance",
+    closingTitle: "Closing balance per online banking",
+    derivedOpening: (date: string, amount: string) => `The balance on ${date} was then ${amount}.`,
+    taking: "Applying …",
+    takeOpening: "Use it as the opening balance",
+    closingLabel: "Closing balance per online banking (€)",
+    closingHint: (date: string) =>
+      `The balance at the end of ${date}, after the file's last transaction. Negative with a minus, in German format, e.g. -3.028,51.`,
+    closingDescription:
+      "The balance per online banking after this file's last transaction. The CSV file contains no balance; Hausbuch uses this value to check whether the import adds up.",
+    suggestedFromFile: (stated: string, last: string) =>
+      `Suggested from the file: balance on ${stated}. Please check that this is the balance after the last booking on ${last}, then reconcile.`,
+    reconcile: "Reconcile",
+    filterAll: "All",
+    filterOpen: "Open",
+    filterBooked: "Booked",
+    lineFallback: "Transaction",
+    lineSubject: (name: string, date: string) => `${name} on ${date}`,
+    bookedReturnBack: (date: string) => `Booked: returned payment (returned on ${date})`,
+    bookedReturnFrom: (date: string) => `Booked: returned payment (from the debit on ${date})`,
+    bookedAs: (categories: string) => `Booked: ${categories}`,
+    booked: "Booked",
+    reviewSuggestion: "Review suggestion",
+    possibleDuplicate: "Possible duplicate",
+    notReconciled: "Statement not reconciled",
+    open: "Open",
+    noLines: "No transactions in this period.",
+    filterLines: "Filter transactions",
+    noOpenLines: "No open transactions in this period.",
+    noBookedLines: "No booked transactions in this period.",
+    colBookingDay: "Booking date",
+    colCounterparty: "Counterparty",
+    colPurpose: "Payment reference",
+    colAmount: "Amount",
+    colAllocation: "Categorisation",
+    valueDate: (date: string) => `Value date ${date}`,
+    duplicateNotCounted: "Duplicate, does not count",
+    importedVia: (format: string, when: string) => `${format}, imported ${when}`,
+    colLine: "Transaction",
+    firstImported: "Imported first",
+    laterImported: "Imported later",
+    merge: "Merge",
+    keepBoth: "Keep both",
+    decidedOn: (when: string) => ` on ${when}`,
+    noOpenDuplicates: "No open possible duplicates.",
+    duplicatesExplain:
+      "The same payment imported twice, say once as CSV and once as camt? “Merge” takes the later imported transaction out of every balance, and the statements are reconciled again. “Keep both” if they were two real payments.",
+    alreadyDecided: (count: number) => `${count} already decided`,
+  },
+});

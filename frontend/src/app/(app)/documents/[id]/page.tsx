@@ -18,15 +18,22 @@ import type { DocumentDetail, DocumentSubtype, DocumentType, HandFields, LinkTar
 import { DocumentExplanationBox, documentLabel, NO_TAX_YEAR, StatementImportsNotice } from "@/components/documents";
 import { loadDirectory, targets, type Target } from "@/components/entities";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
-import { formatDate, formatDateTime, shortId } from "@/components/format";
+import { shortId } from "@/components/format";
 import { blankToNull, decimalInput, toSignedMoneyString, toYear } from "@/components/input";
 import { DOCUMENT_SUBTYPE, DOCUMENT_TYPE, LINK_TARGET, options, RETENTION_CLASS, RETENTION_HOLD } from "@/components/labels";
 import { ProposalSection } from "@/components/proposals";
 import { Breadcrumbs, Facts, Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { formatter, useT } from "@/i18n";
+import { documentPage } from "@/i18n/documentPage";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
+// Shown dates and amounts follow the chosen language, read at call time (phase 10 D284).
+const formatDate = (v: string | null | undefined) => formatter().date(v);
+const formatDateTime = (v: string | null | undefined) => formatter().dateTime(v);
+
 export default function DocumentPage() {
+  const t = useT(documentPage);
   const { id } = useParams<{ id: string }>();
   const load = useCallback(() => ok(api.GET("/api/documents/{document_id}", { params: { path: { document_id: id } } })), [id]);
   const detail = useLoad(load);
@@ -44,7 +51,7 @@ export default function DocumentPage() {
       <Loading state={detail}>
         {(data) => (
           <>
-            <Breadcrumbs items={[{ href: "/documents", label: "Dokumente" }, { label: documentLabel(data.document) }]} />
+            <Breadcrumbs items={[{ href: "/documents", label: t.documents }, { label: documentLabel(data.document) }]} />
             <h1>{documentLabel(data.document)}</h1>
             <Original detail={data} />
             {/* Phase 6 D176 (3), step 4: a statement's original names the account it went to. */}
@@ -58,14 +65,14 @@ export default function DocumentPage() {
               onPendingChange={setProposalPending}
               onPendingLinksChange={setLinksPending}
             />
-            <h2 id="typisierung">Typisierung</h2>
+            <h2 id="typisierung">{t.typing}</h2>
             {proposalPending ? (
               <p className="muted" role="note">
-                Prüfen Sie den Vorschlag oben; nach dem Übernehmen oder Verwerfen können Sie hier Werte ändern.
+                {t.reviewProposalFirst}
               </p>
             ) : proposalPending === false ? (
               <>
-                {typingSaved ? <Notice>Typisierung gespeichert.</Notice> : null}
+                {typingSaved ? <Notice>{t.typingSaved}</Notice> : null}
                 <TypingForm
                   key={`${data.document.updated_at}-${data.extraction?.version ?? 0}`}
                   detail={data}
@@ -77,9 +84,9 @@ export default function DocumentPage() {
                 />
               </>
             ) : (
-              <p className="muted">Lädt …</p>
+              <p className="muted">{t.loading}</p>
             )}
-            <h2>Verknüpfungen</h2>
+            <h2>{t.links}</h2>
             <Links
               detail={data}
               targets={directory.data ? targets(directory.data) : null}
@@ -88,9 +95,9 @@ export default function DocumentPage() {
               pointer={linksPending === true}
             />
             {directory.error ? <ErrorNotice error={directory.error} /> : null}
-            <h2>Aufbewahrung</h2>
+            <h2>{t.retention}</h2>
             <Retention detail={data} />
-            <h2>Löschen</h2>
+            <h2>{t.delete}</h2>
             <DeleteDocument detail={data} />
           </>
         )}
@@ -100,16 +107,17 @@ export default function DocumentPage() {
 }
 
 function Original({ detail }: { detail: DocumentDetail }) {
+  const t = useT(documentPage);
   const { document } = detail;
   const base = `/api/documents/${document.id}/original`;
   return (
     <div className="stack">
       <Facts
         rows={[
-          ["Datei", document.original_filename ?? "–"],
-          ["Dateityp", detail.media_type],
-          ["Eingang", formatDateTime(document.received_at)],
-          ["Prüfsumme (SHA-256)", <code key="sha">{shortId(document.file_sha256, 16)}…</code>],
+          [t.file, document.original_filename ?? "–"],
+          [t.fileType, detail.media_type],
+          [t.received, formatDateTime(document.received_at)],
+          [t.checksum, <code key="sha">{shortId(document.file_sha256, 16)}…</code>],
         ]}
       />
       <div className="row">
@@ -117,15 +125,15 @@ function Original({ detail }: { detail: DocumentDetail }) {
             so "öffnen" is offered only where it opens. */}
         {detail.opens_inline ? (
           <a href={`${base}?disposition=inline`} target="_blank" rel="noopener" className="button-link secondary">
-            Original öffnen
+            {t.openOriginal}
           </a>
         ) : null}
         <a href={`${base}?disposition=attachment`} className="button-link secondary">
-          Original herunterladen
+          {t.downloadOriginal}
         </a>
       </div>
-      {detail.opens_inline ? null : <p className="muted">Dieser Dateityp wird nicht im Browser angezeigt, nur heruntergeladen.</p>}
-      <p className="muted">Das Original bleibt unverändert; Typ, Felder und Verknüpfungen liegen als eigene Ebenen darüber.</p>
+      {detail.opens_inline ? null : <p className="muted">{t.downloadOnly}</p>}
+      <p className="muted">{t.originalUnchanged}</p>
     </div>
   );
 }
@@ -170,6 +178,7 @@ function handValues(
 }
 
 function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onSubmit: () => void; onSaved: () => void }) {
+  const t = useT(documentPage);
   const typing = detail.document.typing;
   // The hand fields as the API reads them from the current extraction (D37): a manual one's own
   // fields, or what an AI reading holds in the fields its kind has (only those are shown).
@@ -204,7 +213,7 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = collector();
-    if (type === "") values.messages["typing.type"] = ["Bitte einen Typ wählen."];
+    if (type === "") values.messages["typing.type"] = [t.chooseType];
     const year = values.optional("typing.tax_year", taxYear, toYear);
     const manual = handValues(values, { amount, periodStart, periodEnd, counterparty, reference, notes });
     if (!values.ok || type === "" || year === undefined || manual === undefined) return form.invalid(values.messages);
@@ -238,16 +247,16 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
   }
 
   return (
-    <form className="card stack" onSubmit={submit} noValidate aria-label="Typisierung bearbeiten">
+    <form className="card stack" onSubmit={submit} noValidate aria-label={t.editTyping}>
       <div className="grid">
         <Field
           id="doc-type"
-          label="Typ"
-          description="Welche Art Dokument das ist, z. B. Rechnung, Kontoauszug oder Bescheid. Danach richtet sich, welche Werte gelesen werden und wofür das Dokument in der Unterlagen-Checkliste zählt."
+          label={t.type}
+          description={t.typeDescription}
           errors={form.of("typing.type")}
         >
           <select value={type} onChange={(e) => setType(e.target.value as DocumentType | "")} required>
-            <option value="">– wählen –</option>
+            <option value="">{t.choose}</option>
             {options(DOCUMENT_TYPE).map(([value, text]) => (
               <option key={value} value={value}>
                 {text}
@@ -257,13 +266,13 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
         </Field>
         <Field
           id="doc-subtype"
-          label="Untertyp (optional)"
-          hint="Bestimmt die Aufbewahrung, z. B. Kaufvertrag."
-          description="Genauer als der Typ, z. B. Kaufvertrag, Mietvertrag oder Grundsteuerbescheid. Danach richten sich die Aufbewahrungsfrist und die Unterlagen-Checkliste."
+          label={t.subtype}
+          hint={t.subtypeHint}
+          description={t.subtypeDescription}
           errors={form.of("typing.subtype")}
         >
           <select value={subtype} onChange={(e) => setSubtype(e.target.value as DocumentSubtype | "")}>
-            <option value="">– keiner –</option>
+            <option value="">{t.noSubtype}</option>
             {options(DOCUMENT_SUBTYPE)
               .filter(([value]) => !CODE_WRITTEN_SUBTYPES.has(value) || value === subtype)
               .map(([value, text]) => (
@@ -275,16 +284,16 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
         </Field>
         <Field
           id="doc-title"
-          label="Titel (optional)"
-          description="Ein kurzer Name, unter dem Sie das Dokument wiederfinden."
+          label={t.title}
+          description={t.titleDescription}
           errors={form.of("typing.title")}
         >
           <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} autoComplete="off" />
         </Field>
         <Field
           id="doc-date"
-          label="Datum des Dokuments (optional)"
-          description="Das Datum, das auf dem Dokument steht, z. B. das Rechnungs- oder Bescheiddatum. Ohne Steuerjahr zählt die Aufbewahrungsfrist ab dem Jahr dieses Datums."
+          label={t.documentDate}
+          description={t.documentDateDescription}
           errors={form.of("typing.document_date")}
         >
           <input type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
@@ -292,8 +301,8 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
         {NO_TAX_YEAR.has(subtype) && taxYear === "" ? null : (
         <Field
           id="doc-tax-year"
-          label="Steuerjahr (optional)"
-          description="Das Jahr, für das das Dokument gilt, z. B. 2026 bei der Zinsbescheinigung 2026. Die Unterlagen-Checkliste ordnet Jahresunterlagen danach zu, und die Aufbewahrungsfrist zählt ab diesem Jahr."
+          label={t.taxYear}
+          description={t.taxYearDescription}
           errors={form.of("typing.tax_year")}
         >
           <input type="text" inputMode="numeric" value={taxYear} onChange={(e) => setTaxYear(e.target.value)} maxLength={4} />
@@ -301,29 +310,23 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
         )}
       </div>
       <fieldset className="stack">
-        <legend>Felder (von Hand)</legend>
+        <legend>{t.handFields}</legend>
         {extraction && aiReading ? (
           <p className="muted">
             {available.size > 0
-              ? `Die Werte stammen aus der KI-Auslesung${extraction.source === "ai" ? "" : ", von Hand geändert"} (Version ${extraction.version} vom ${formatDateTime(extraction.created_at)}). Eine Änderung legt eine neue Version an; die übrigen gelesenen Felder bleiben erhalten.`
-              : `Für diese Dokumentart gibt es keine Felder von Hand; die KI-Auslesung (Version ${extraction.version}) bleibt unverändert.`}
+              ? t.aiReadingValues(extraction.source !== "ai", extraction.version, formatDateTime(extraction.created_at))
+              : t.aiReadingNoHandFields(extraction.version)}
           </p>
         ) : extraction ? (
-          <p className="muted">
-            Version {extraction.version} vom {formatDateTime(extraction.created_at)}. Eine Änderung legt eine neue Version an.
-          </p>
+          <p className="muted">{t.manualVersion(extraction.version, formatDateTime(extraction.created_at))}</p>
         ) : null}
         {available.size > 0 ? (
           <div className="grid">
             {available.has("amount_total") ? (
               <Field
                 id="doc-amount"
-                label={isManagementContract ? "Vergütung pro Monat (€)" : "Betrag gesamt (€)"}
-                description={
-                  isManagementContract
-                    ? "Die Verwaltervergütung je Monat mit MwSt. Hausbuch rechnet sie aus dem Nettobetrag laut Vertrag; steht dort „zzgl. MwSt.“ ohne Satz, mit 19 %. Gebucht wird sie aus den Zahlungen im Kontoauszug, nicht aus dem Vertrag."
-                    : "Der Gesamtbetrag laut Dokument, bei einer Rechnung brutto. Bei Rechnungen und Bescheiden sucht Hausbuch damit die passende Zahlung im Kontoauszug."
-                }
+                label={isManagementContract ? t.monthlyFee : t.totalAmount}
+                description={isManagementContract ? t.monthlyFeeDescription : t.totalAmountDescription}
                 errors={form.of("fields.amount_total")}
               >
                 <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoComplete="off" />
@@ -332,8 +335,8 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
             {available.has("counterparty") ? (
               <Field
                 id="doc-counterparty"
-                label="Absender / Gegenpartei"
-                description="Wer das Dokument ausgestellt hat oder an wen gezahlt wird, z. B. Handwerker, Stadtkasse oder Hausverwaltung."
+                label={t.counterparty}
+                description={t.counterpartyDescription}
                 errors={form.of("fields.counterparty")}
               >
                 <input type="text" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} autoComplete="off" />
@@ -342,8 +345,8 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
             {available.has("period_start") ? (
               <Field
                 id="doc-period-start"
-                label="Zeitraum von"
-                description="Der Beginn des Zeitraums, für den das Dokument gilt, z. B. des Abrechnungsjahrs einer Hausgeldabrechnung."
+                label={t.periodStart}
+                description={t.periodStartDescription}
                 errors={form.of("fields.period_start")}
               >
                 <input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
@@ -352,8 +355,8 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
             {available.has("period_end") ? (
               <Field
                 id="doc-period-end"
-                label="Zeitraum bis"
-                description="Das Ende dieses Zeitraums."
+                label={t.periodEnd}
+                description={t.periodEndDescription}
                 errors={form.of("fields.period_end")}
               >
                 <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
@@ -362,8 +365,8 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
             {available.has("reference") ? (
               <Field
                 id="doc-reference"
-                label="Referenz (Rechnungs-/Aktenzeichen)"
-                description="Die Rechnungsnummer oder das Aktenzeichen laut Dokument. Steht sie im Verwendungszweck einer Überweisung, hilft das, die Zahlung diesem Beleg zuzuordnen."
+                label={t.reference}
+                description={t.referenceDescription}
                 errors={form.of("fields.reference")}
               >
                 <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} autoComplete="off" />
@@ -372,8 +375,8 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
             {available.has("notes") ? (
               <Field
                 id="doc-notes"
-                label="Notizen"
-                description="Freier Text für Sie."
+                label={t.notes}
+                description={t.notesDescription}
                 errors={form.of("fields.notes")}
               >
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -382,7 +385,7 @@ function TypingForm({ detail, onSubmit, onSaved }: { detail: DocumentDetail; onS
           </div>
         ) : null}
       </fieldset>
-      <Submit busy={busy}>Typisierung speichern</Submit>
+      <Submit busy={busy}>{t.saveTyping}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );
@@ -404,6 +407,7 @@ function Links({
   editable: boolean;
   pointer: boolean;
 }) {
+  const t = useT(documentPage);
   const [targetType, setTargetType] = useState<LinkTarget>("property");
   const [targetId, setTargetId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -436,7 +440,7 @@ function Links({
   }
 
   async function unlink(type: LinkTarget, id: string) {
-    if (!window.confirm("Verknüpfung entfernen? Das Dokument bleibt im Archiv.")) return;
+    if (!window.confirm(t.confirmUnlink)) return;
     setError(null);
     try {
       await ok(
@@ -455,7 +459,7 @@ function Links({
   return (
     <div className="stack">
       {detail.links.length === 0 ? (
-        <p className="muted">Noch nicht verknüpft. Ein Dokument belegt etwas: eine Immobilie, ein Mietverhältnis, ein Darlehen …</p>
+        <p className="muted">{t.notLinkedYet}</p>
       ) : (
         <ul>
           {detail.links.map((l) => {
@@ -466,16 +470,16 @@ function Links({
                 {target ? (
                   <Link href={target.href}>{target.label}</Link>
                 ) : l.target_type === "document" ? (
-                  <Link href={`/documents/${l.target_id}`}>Dokument öffnen</Link>
+                  <Link href={`/documents/${l.target_id}`}>{t.openDocument}</Link>
                 ) : (
                   <code>{shortId(l.target_id)}</code>
                 )}{" "}
-                <span className="muted">(seit {formatDate(l.created_at)})</span>
+                <span className="muted">{t.since(formatDate(l.created_at))}</span>
                 {editable ? (
                   <>
                     {" "}
                     <button type="button" className="link" onClick={() => void unlink(l.target_type, l.target_id)}>
-                      entfernen
+                      {t.unlink}
                     </button>
                   </>
                 ) : null}
@@ -486,16 +490,16 @@ function Links({
       )}
       {pointer ? (
         <p className="muted" role="note">
-          Die vorgeschlagene Verknüpfung prüfen Sie im Vorschlag oben; danach können Sie hier verknüpfen oder Verknüpfungen entfernen.
+          {t.linkPointer}
         </p>
       ) : null}
       {editable ? (
-        <form className="card stack" onSubmit={link} aria-label="Verknüpfung hinzufügen">
+        <form className="card stack" onSubmit={link} aria-label={t.addLink}>
           <div className="grid">
             <Field
               id="link-type"
-              label="Verknüpfen mit"
-              description="Worauf sich das Dokument bezieht, z. B. die Immobilie, ein Darlehen oder ein Mietverhältnis. Die Unterlagen-Checkliste zählt ein Dokument erst, wenn es mit dem passenden Eintrag verknüpft ist."
+              label={t.linkWith}
+              description={t.linkWithDescription}
             >
               <select
                 value={targetType}
@@ -517,10 +521,10 @@ function Links({
             <Field
               id="link-target"
               label={LINK_TARGET[targetType]}
-              description="Der Eintrag, mit dem das Dokument verknüpft wird."
+              description={t.linkTargetDescription}
             >
               <select value={targetId} onChange={(e) => setTargetId(e.target.value)} disabled={all === null}>
-                <option value="">{all === null ? "Lädt …" : choices.length === 0 ? "– nichts zur Auswahl –" : "– wählen –"}</option>
+                <option value="">{all === null ? t.loading : choices.length === 0 ? t.nothingToChoose : t.choose}</option>
                 {choices.map((target) => (
                   <option key={target.id} value={target.id}>
                     {target.label}
@@ -531,7 +535,7 @@ function Links({
           </div>
           <div>
             <button type="submit" disabled={!targetId || busy}>
-              {busy ? "Verknüpft …" : "Verknüpfen"}
+              {busy ? t.linking : t.link}
             </button>
           </div>
           <ErrorNotice error={error} />
@@ -542,15 +546,16 @@ function Links({
 }
 
 function Retention({ detail }: { detail: DocumentDetail }) {
+  const t = useT(documentPage);
   const { retention } = detail;
   return (
     <Facts
       rows={[
-        ["Klasse", retention.retention_class ? RETENTION_CLASS[retention.retention_class] : "– (erst nach der Typisierung)"],
+        [t.retentionClass, retention.retention_class ? RETENTION_CLASS[retention.retention_class] : t.afterTyping],
         [
-          "Aufbewahren",
+          t.retainFor,
           retention.retain_until
-            ? `bis ${formatDate(retention.retain_until)}`
+            ? t.until(formatDate(retention.retain_until))
             : retention.hold
               ? RETENTION_HOLD[retention.hold]
               : "–",
@@ -562,13 +567,14 @@ function Retention({ detail }: { detail: DocumentDetail }) {
 
 /** D193: delete a document nothing depends on; otherwise say what still depends on it. */
 function DeleteDocument({ detail }: { detail: DocumentDetail }) {
+  const t = useT(documentPage);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const reasons = detail.delete_blocked_by.map((code) => ruleCodeText(code) ?? code);
 
   async function remove() {
-    if (!window.confirm("Dokument endgültig löschen? Die Datei wird entfernt.")) return;
+    if (!window.confirm(t.confirmDelete)) return;
     setBusy(true);
     setError(null);
     try {
@@ -583,11 +589,11 @@ function DeleteDocument({ detail }: { detail: DocumentDetail }) {
   if (!detail.deletable) {
     return reasons.length === 1 ? (
       <p className="muted" role="note">
-        Kann nicht gelöscht werden: {reasons[0]}
+        {t.cannotDelete(reasons[0] ?? "")}
       </p>
     ) : (
       <div className="stack" role="note">
-        <p className="muted">Kann nicht gelöscht werden:</p>
+        <p className="muted">{t.cannotDeleteList}</p>
         <ul className="muted">
           {reasons.map((reason) => (
             <li key={reason}>{reason}</li>
@@ -598,10 +604,10 @@ function DeleteDocument({ detail }: { detail: DocumentDetail }) {
   }
   return (
     <div className="stack">
-      <p className="muted">Nichts hängt an diesem Dokument. Wurde es versehentlich hochgeladen, kann es gelöscht werden.</p>
+      <p className="muted">{t.deletable}</p>
       <div>
         <button type="button" className="danger" onClick={remove} disabled={busy}>
-          {busy ? "Löscht …" : "Dokument löschen"}
+          {busy ? t.deleting : t.deleteDocument}
         </button>
       </div>
       {error ? <ErrorNotice error={error} /> : null}

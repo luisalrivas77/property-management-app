@@ -27,7 +27,7 @@ import { DEPOSIT_FORM, RENT_MODEL, TENANCY_ROLE } from "@/components/labels";
 import { SheetDialog } from "@/components/SheetDialog";
 import { OPERATING_COSTS_TERMS } from "@/components/taxInputs";
 import { TodoList } from "@/components/todos";
-import { ActionDialog, Breadcrumbs, CorrectedNote, Facts, Loading } from "@/components/ui";
+import { ActionDialog, Breadcrumbs, CorrectedNote, Facts, Loading, LoadingLine } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { useFormat, useT } from "@/i18n";
 import { tenancies } from "@/i18n/tenancies";
@@ -47,7 +47,7 @@ interface TenancyData {
 
 export default function TenancyPage() {
   return (
-    <Suspense fallback={<p className="muted">Lädt …</p>}>
+    <Suspense fallback={<LoadingLine />}>
       <TenancyScreen />
     </Suspense>
   );

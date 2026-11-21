@@ -8,6 +8,8 @@ import { useState, useSyncExternalStore } from "react";
 
 import { ApiError } from "@/api/errors";
 import { signInWithPasskey } from "@/auth/passkeys";
+import { translate, useT } from "@/i18n";
+import { auth } from "@/i18n/auth";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 const subscribeNever = () => () => {};
@@ -15,11 +17,12 @@ const subscribeNever = () => () => {};
 // A 401 from login/verify means the passkey was not accepted, not that a session ran out.
 function loginErrorText(error: unknown): string | null {
   return error instanceof ApiError && error.status === 401
-    ? "Dieser Passkey wurde nicht erkannt. Gehört er zu diesem Hausbuch?"
+    ? translate(auth).loginNotRecognised
     : null;
 }
 
 export function LoginForm() {
+  const t = useT(auth);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -40,20 +43,22 @@ export function LoginForm() {
 
   return (
     <section className="card stack">
-      <h1>Anmelden</h1>
+      <h1>{t.loginTitle}</h1>
       {supported ? (
         <>
-          <p className="muted">Mit dem Passkey auf diesem Gerät oder einem verbundenen Telefon.</p>
+          <p className="muted">{t.loginHint}</p>
           <button type="button" onClick={signIn} disabled={busy}>
-            {busy ? "Warte auf Passkey …" : "Mit Passkey anmelden"}
+            {busy ? t.waitingForPasskey : t.signInWithPasskey}
           </button>
         </>
       ) : (
-        <p>Dieser Browser unterstützt keine Passkeys. Bitte einen aktuellen Browser verwenden.</p>
+        <p>{t.browserUnsupported}</p>
       )}
       <ErrorNotice error={error} text={loginErrorText} />
       <p className="muted">
-        Noch kein Passkey? Die Einladung kommt als Link, der mit <code>/enroll#token=</code> beginnt.
+        {t.noPasskeyYetBefore}
+        <code>/enroll#token=</code>
+        {t.noPasskeyYetAfter}
       </p>
     </section>
   );

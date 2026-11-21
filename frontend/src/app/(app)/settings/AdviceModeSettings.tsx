@@ -16,30 +16,20 @@ import type { WorkspaceSettings } from "@/api/schemas";
 import type { components } from "@/api/types";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { settingsForms } from "@/i18n/settingsForms";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 type AdviceMode = components["schemas"]["AdviceMode"];
 
 const loadSettings = () => ok(api.GET("/api/workspace/settings"));
 
-const MODES: { mode: AdviceMode; label: string; text: string }[] = [
-  {
-    mode: "own_use",
-    label: "Eigene Nutzung",
-    text:
-      "Die KI-Erklärung unter Planung › Haushalt nennt Beträge, Anlageklassen und eure bestehenden Konten, erkannten Sparpläne " +
-      "und Anlagen, nie ein neues Produkt. Die Wege zum Reserveziel zeigen auch Wege, in denen einzelne Sparpläne pausieren.",
-  },
-  {
-    mode: "generic",
-    label: "Allgemein",
-    text:
-      "Die KI-Erklärung nennt nur Beträge und Anlageklassen, keine Konten und keine Produkte. Die Wege zum Reserveziel zeigen nur " +
-      "„Reserve zuerst“ und „Alles weiter wie bisher“, und die Sparpläne stehen nur zusammen als eine Summe da.",
-  },
-];
-
 export function AdviceModeSettings() {
+  const t = useT(settingsForms);
+  const modes: { mode: AdviceMode; label: string; text: string }[] = [
+    { mode: "own_use", label: t.ownUse, text: t.ownUseText },
+    { mode: "generic", label: t.generic, text: t.genericText },
+  ];
   const loaded = useLoad(loadSettings);
   const [saved, setSaved] = useState<WorkspaceSettings | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,14 +51,14 @@ export function AdviceModeSettings() {
     <Loading state={loaded}>
       {(fetched) => {
         const current = (saved ?? fetched).advice_mode;
-        const label = MODES.find((m) => m.mode === current)?.label ?? current;
+        const label = modes.find((m) => m.mode === current)?.label ?? current;
         return (
           <fieldset className="card stack">
             <legend>
-              <strong>Hinweis-Modus</strong>
+              <strong>{t.adviceMode}</strong>
             </legend>
-            <div className="stack" role="radiogroup" aria-label="Hinweis-Modus">
-              {MODES.map(({ mode, label: name, text }) => (
+            <div className="stack" role="radiogroup" aria-label={t.adviceMode}>
+              {modes.map(({ mode, label: name, text }) => (
                 <div key={mode}>
                   <label className="inline" htmlFor={`advice-mode-${mode}`}>
                     <input
@@ -85,12 +75,9 @@ export function AdviceModeSettings() {
                 </div>
               ))}
             </div>
-            <p className="muted">
-              Die Kennzahlen, ihre Ampeln und die Rechnung zu eurem Vermögen sind in beiden Modi gleich. In keinem Modus ist es eine
-              Anlageberatung.
-            </p>
+            <p className="muted">{t.adviceSame}</p>
             <p className="muted" data-testid="advice-mode-saved">
-              Gespeichert: {label}
+              {t.savedAs(label)}
             </p>
             <ErrorNotice error={error} />
           </fieldset>

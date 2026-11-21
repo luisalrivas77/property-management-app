@@ -16,7 +16,6 @@ import type { Owner } from "@/api/schemas";
 import type { components } from "@/api/types";
 
 import { ReadUpload } from "./documents";
-import { formatDate, formatDecimal, formatMoney } from "./format";
 import { ANLAGE_N_STATUS, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
 import { BlockRows, hasBlocks } from "./anlageNBlocks";
 import { NoPayButton, WithdrawNoPayButton, noPayHint } from "./noPay";
@@ -33,7 +32,8 @@ import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
 import { questionnaireHref, TaxTabs, taxFormHref, type TaxYearState } from "./taxYear";
 import { Loading } from "./ui";
 import { useLoad, type Loaded } from "./useLoad";
-import { useT } from "@/i18n";
+import { formatter, translate, useFormat, useT } from "@/i18n";
+import { anlageN } from "@/i18n/anlageN";
 import { tax as messages } from "@/i18n/tax";
 
 type AnlageNDraft = components["schemas"]["AnlageNDraft"];
@@ -41,8 +41,6 @@ type DraftLine = components["schemas"]["DraftLine"];
 type DraftWarning = components["schemas"]["DraftWarning"];
 type Payslip = components["schemas"]["Payslip"];
 type WageCertificate = components["schemas"]["WageCertificate"];
-
-const FOOTER = "Ein Entwurf zum Prüfen, keine Steuerberatung.";
 
 const loadOwners = () => ok(api.GET("/api/owners"));
 // The years with an Anlage N rule set (a draft is made only under the year's own one).
@@ -70,6 +68,7 @@ export function AnlageNScreen({
   propertyParam: string | null;
 }) {
   const owners = useLoad(loadOwners);
+  const n = useT(anlageN);
   return (
     <Loading state={owners}>
       {(list) => {
@@ -85,16 +84,15 @@ export function AnlageNScreen({
               <div className="page-head tax-head">
                 <div>
                   <p className="eyebrow">
-                    Steuerjahr {year} · Anlage N (Entwurf)
+                    {n.eyebrow(year)}
                   </p>
                   <h1>Anlage N</h1>
                 </div>
               </div>
               <TaxTabs current="n" state={state} />
               <p className="muted">
-                Noch kein Eigentümer.{" "}
-                <Link href="/owners">Eigentümer anlegen</Link>, dann entsteht
-                hier der Entwurf der Anlage N.
+                {n.noOwner}{" "}
+                <Link href="/owners">{n.createOwner}</Link>{n.noOwnerRest}
               </p>
             </>
           );
@@ -124,6 +122,8 @@ function OwnerScreen({
   const year = state.year;
   const router = useRouter();
   const ids = useId();
+  const n = useT(anlageN);
+  const t = useT(messages);
   const estimate = useReturnEstimate(year);
   const loadDraft = useCallback(async (): Promise<DraftState> => {
     try {
@@ -173,13 +173,13 @@ function OwnerScreen({
     <>
       <div className="page-head tax-head">
         <div>
-          <p className="eyebrow">Steuerjahr {year} · Anlage N (Entwurf)</p>
+          <p className="eyebrow">{n.eyebrow(year)}</p>
           <h1>{owner.full_name}</h1>
         </div>
         <span className="spacer" />
         <div className="row tax-pickers">
           <label htmlFor={`${ids}-year`} className="inline">
-            Steuerjahr
+            {t.taxYear}
             <select
               id={`${ids}-year`}
               value={year}
@@ -204,7 +204,7 @@ function OwnerScreen({
       <ReturnEstimateCard year={year} state={estimate} />
       <TaxTabs current="n" state={state} />
       {owners.length > 1 ? (
-        <nav aria-label="Eigentümer" className="row tax-owner-switch">
+        <nav aria-label={t.owners} className="row tax-owner-switch">
           {owners.map((o) => (
             <Link
               key={o.id}
@@ -229,7 +229,7 @@ function OwnerScreen({
           />
         )}
       </Loading>
-      <p className="muted tax-footer">{FOOTER}</p>
+      <p className="muted tax-footer">{t.footer}</p>
     </>
   );
 }
@@ -250,13 +250,14 @@ function DraftView({
   onChanged: () => void;
 }) {
   const t = useT(messages);
+  const n = useT(anlageN);
   const lineDetail = useDetail("nline");
   const draft = "draft" in result ? result.draft : null;
   const list = rows.data ?? [];
   if ("missing" in result && result.missing === "no_rule_set") {
     return (
       <p className="muted">
-        Für {year} gibt es noch kein Regelwerk der Anlage N.
+        {n.noRuleSet(year)}
       </p>
     );
   }
@@ -271,9 +272,7 @@ function DraftView({
       {draft && draft.form.form_status === "provisional" ? (
         <div className="notice notice-info" role="status">
           <p>
-            Formular {year} noch nicht veröffentlicht; Zeilen nach dem Formular{" "}
-            {draft.form.form_year} (Regelwerk {draft.form.version}). Die Beträge
-            rechnet der Entwurf trotzdem nach den Regeln des Jahres.
+            {n.provisional(year, draft.form.form_year, draft.form.version)}
           </p>
         </div>
       ) : null}
@@ -291,16 +290,14 @@ function DraftView({
           {draft && declared ? (
             <div className="notice notice-info" role="status">
               <p>
-                Für {owner.full_name} ist für {year} „Kein Arbeitslohn“
-                angegeben: es gibt keine Anlage N. Elterngeld und andere
-                Lohnersatzleistungen zählen trotzdem; sie stehen unter{" "}
+                {n.declaredNone(owner.full_name, year)}
                 <Link href={`${angabenHref(owner.id, year)}#eingabe-replacement_income`}>{t.inputsTab}</Link>.
               </p>
               <div className="row todo-actions">
                 <WithdrawNoPayButton
                   ownerId={owner.id}
                   year={year}
-                  label="Angabe „Kein Arbeitslohn“ aufheben"
+                  label={n.withdrawNoPay}
                   className=""
                   onDone={onChanged}
                 />
@@ -314,19 +311,16 @@ function DraftView({
           ) : (
             <div className="notice notice-info" role="status">
               <p>
-                Für {owner.full_name} ist für {year} noch kein Arbeitslohn
-                erfasst. Die Lohnsteuerbescheinigung oder eine Gehaltsabrechnung
-                rechts unter Unterlagen hochladen (sie wird automatisch
-                ausgelesen), oder den erwarteten Bruttolohn unter{" "}
-                <Link href={`${angabenHref(owner.id, year)}#arbeitslohn`}>{t.inputsTab}</Link> eintragen.
+                {n.noPay(owner.full_name, year)}
+                <Link href={`${angabenHref(owner.id, year)}#arbeitslohn`}>{t.inputsTab}</Link>{n.noPayRest}
               </p>
               <div className="row todo-actions">
                 <ReadUpload
-                  label="Lohnsteuerbescheinigung hochladen"
+                  label={n.uploadCertificate}
                   onUploaded={onChanged}
                 />
                 <Link href={`${angabenHref(owner.id, year)}#arbeitslohn`}>
-                  Erwarteten Bruttolohn eintragen
+                  {n.enterExpectedPay}
                 </Link>
                 <NoPayButton ownerId={owner.id} year={year} onDone={onChanged} />
               </div>
@@ -335,7 +329,7 @@ function DraftView({
           )}
           {rows.error != null && rows.data === undefined ? (
             <p className="notice notice-error">
-              Die Eingaben konnten nicht geladen werden.
+              {n.rowsFailed}
             </p>
           ) : null}
           <p className="muted">
@@ -345,7 +339,7 @@ function DraftView({
         </div>
         <aside
           className="stack tax-side"
-          aria-label="Offene Punkte und Unterlagen"
+          aria-label={n.sideLabel}
         >
           <OpenPoints
             warnings={warnings}
@@ -394,6 +388,7 @@ function lineAnchor(key: string): string {
  * single items, and its sources), and „Ändern in Eure Angaben“. */
 function LinePanel({ line, ownerId, year }: { line: DraftLine; ownerId: string; year: number }) {
   const t = useT(messages);
+  const f = useFormat();
   const count = COUNT_LINE.test(line.key);
   const ref = formRef(line);
   const notes = [...(line.notes ?? []), ...(line.einzelangaben ?? [])];
@@ -402,7 +397,7 @@ function LinePanel({ line, ownerId, year }: { line: DraftLine; ownerId: string; 
       <dl className="facts">
         <div>
           <dt>{t.lineAmount}</dt>
-          <dd className="num">{line.amount == null ? "–" : count ? formatDecimal(line.amount) : formatMoney(line.amount)}</dd>
+          <dd className="num">{line.amount == null ? "–" : count ? f.decimal(line.amount) : f.money(line.amount)}</dd>
         </div>
         {ref ? (
           <div>
@@ -437,10 +432,6 @@ function LinePanel({ line, ownerId, year }: { line: DraftLine; ownerId: string; 
 
 // --- Übergabe: the owner's field sheet (phase 4b D104) ---------------------------------------
 
-const SHEET_BUTTONS: ExportButton[] = [
-  { kind: "anlage_n_sheet", label: "Feldblatt (PDF)" },
-];
-
 function AnlageNHandOver({
   ownerId,
   year,
@@ -453,6 +444,8 @@ function AnlageNHandOver({
   /** „Kein Arbeitslohn“ for the year (D195): no sheet, and the note says why. */
   declared: boolean;
 }) {
+  const n = useT(anlageN);
+  const sheetButtons: ExportButton[] = [{ kind: "anlage_n_sheet", label: n.sheet }];
   const loadHistory = useCallback(
     () =>
       ok(
@@ -479,14 +472,14 @@ function AnlageNHandOver({
       key={`${ownerId}-${year}`}
       titleId="tax-n-handover"
       taxYear={year}
-      buttons={SHEET_BUTTONS}
+      buttons={sheetButtons}
       disabled={!ready}
       note={
         ready
-          ? "Das Feldblatt sagt, was in welche Zeile der Anlage N in ELSTER gehört, und nennt am Ende, was von Hand einzutragen ist."
+          ? n.sheetReady
           : declared
-            ? "Für dieses Jahr ist „Kein Arbeitslohn“ angegeben: es gibt kein Feldblatt der Anlage N."
-            : "Das Feldblatt gibt es, sobald Arbeitslohn erfasst ist."
+            ? n.sheetDeclared
+            : n.sheetWaiting
       }
       loadHistory={loadHistory}
       queue={queue}
@@ -514,6 +507,8 @@ const COUNT_LINE =
 function LineItem({ line, label }: { line: DraftLine; label?: string }) {
   const count = COUNT_LINE.test(line.key);
   const detail = useDetail("nline");
+  const n = useT(anlageN);
+  const f = useFormat();
   return (
     <li className="tax-line">
       <div className="tax-line-main">
@@ -522,7 +517,7 @@ function LineItem({ line, label }: { line: DraftLine; label?: string }) {
             {label ?? line.label}
           </a>
           {line.provisional ? (
-            <span className="badge badge-warn">vorläufig</span>
+            <span className="badge badge-warn">{n.provisionalBadge}</span>
           ) : null}
         </p>
         {formRef(line) ? <p className="tax-line-ref">{formRef(line)}</p> : null}
@@ -532,8 +527,8 @@ function LineItem({ line, label }: { line: DraftLine; label?: string }) {
           {line.amount == null
             ? "–"
             : count
-              ? formatDecimal(line.amount)
-              : formatMoney(line.amount)}
+              ? f.decimal(line.amount)
+              : f.money(line.amount)}
         </span>
         <SourcesButton refs={line.sources ?? []} title={label ?? line.label} />
       </div>
@@ -541,34 +536,18 @@ function LineItem({ line, label }: { line: DraftLine; label?: string }) {
   );
 }
 
-const MONTHS = [
-  "Januar",
-  "Februar",
-  "März",
-  "April",
-  "Mai",
-  "Juni",
-  "Juli",
-  "August",
-  "September",
-  "Oktober",
-  "November",
-  "Dezember",
-];
-
+/** "2026-03" → „März 2026“ (English „March 2026“). */
 function monthLabel(iso: string): string {
-  const match = /^(\d{4})-(\d{2})/.exec(iso);
-  return match
-    ? `${MONTHS[Number(match[2]) - 1] ?? match[2]} ${match[1]}`
-    : iso;
+  return /^(\d{4})-(\d{2})/.test(iso) ? formatter().month(iso) : iso;
 }
 
 /** Where the gross pay comes from: the certificate, the latest payslip's projection, or the
  * expected pay typed on the Eigentümer page. */
 function grossSource(draft: AnlageNDraft, rows: ReturnInput[]): string {
+  const n = translate(anlageN);
   switch (draft.gross_source) {
     case "certificate":
-      return "aus der Lohnsteuerbescheinigung";
+      return n.fromCertificate;
     case "payslip": {
       const slips = rows
         .filter(
@@ -577,16 +556,15 @@ function grossSource(draft: AnlageNDraft, rows: ReturnInput[]): string {
         .map((row) => row.value as Payslip)
         .sort((a, b) => a.period_month.localeCompare(b.period_month));
       const latest = slips[slips.length - 1];
-      if (!latest) return "Hochrechnung aus Gehaltsabrechnung";
-      const left = latest.months_remaining_paid;
-      return `Hochrechnung aus Gehaltsabrechnung ${monthLabel(latest.period_month)} · noch ${left} ${left === 1 ? "Monat" : "Monate"}`;
+      if (!latest) return n.projection;
+      return n.projectionFrom(monthLabel(latest.period_month), latest.months_remaining_paid);
     }
     case "expected":
-      return "aus dem erwarteten Bruttolohn (Eigentümer)";
+      return n.fromExpected;
     case "declared_none":
-      return "kein Arbeitslohn angegeben";
+      return n.declaredNoneSource;
     default:
-      return "kein Arbeitslohn erfasst";
+      return n.noPaySource;
   }
 }
 
@@ -597,13 +575,15 @@ function PayCard({
   draft: AnlageNDraft;
   rows: ReturnInput[];
 }) {
+  const n = useT(anlageN);
+  const f = useFormat();
   const lines = (draft.lines ?? []).filter((line) =>
     line.key.startsWith("pay."),
   );
   return (
-    <section className="card tax-lines" aria-label="Arbeitslohn">
+    <section className="card tax-lines" aria-label={n.pay}>
       <div className="row">
-        <h2>Arbeitslohn</h2>
+        <h2>{n.pay}</h2>
         <span className="badge">{ANLAGE_N_STATUS[draft.status]}</span>
       </div>
       <p className="muted tax-subline">{grossSource(draft, rows)}</p>
@@ -614,9 +594,9 @@ function PayCard({
       </ul>
       <div className="tax-line tax-total">
         <p className="tax-line-label">
-          Einkünfte aus nichtselbständiger Arbeit
+          {n.employmentIncome}
         </p>
-        <span className="num">{formatMoney(draft.result)}</span>
+        <span className="num">{f.money(draft.result)}</span>
       </div>
     </section>
   );
@@ -627,21 +607,22 @@ const TOTAL_KEYS = new Set(["wk.itemised", "wk.allowance", "wk.applied"]);
 /** "Arbeitsweg 1: Tage" for the route lines (commute.route_1.days …). */
 function routeLabel(line: DraftLine): string {
   const match = /^commute\.route_(\d+)\./.exec(line.key);
-  return match ? `Arbeitsweg ${match[1]}: ${line.label}` : line.label;
+  return match ? translate(anlageN).route(match[1] ?? "", line.label) : line.label;
 }
 
 /** Which of the two the draft applied, by comparing the API's own figures (no arithmetic). */
 function comparison(draft: AnlageNDraft): string {
+  const n = translate(anlageN);
   const unionZero = /^-?0*(\.0*)?$/.test(draft.wk_union);
   if (!unionZero) {
-    return `Gewerkschaftsbeiträge (${formatMoney(draft.wk_union)}) zählen zusätzlich zum Arbeitnehmer-Pauschbetrag.`;
+    return n.union(formatter().money(draft.wk_union));
   }
   if (draft.wk_itemised === draft.wk_allowance)
-    return "Einzelnachweis und Pauschbetrag sind gleich hoch.";
+    return n.equal;
   if (draft.wk_applied === draft.wk_allowance) {
-    return "Der Pauschbetrag ist höher als der Einzelnachweis: angesetzt wird der Pauschbetrag.";
+    return n.allowanceHigher;
   }
-  return "Der Einzelnachweis ist höher als der Pauschbetrag: angesetzt wird der Einzelnachweis.";
+  return n.itemisedHigher;
 }
 
 function CostsCard({ draft }: { draft: AnlageNDraft }) {
@@ -653,15 +634,15 @@ function CostsCard({ draft }: { draft: AnlageNDraft }) {
     .map((key) => all.find((line) => line.key === key))
     .filter((line): line is DraftLine => line !== undefined);
   const blocks = draft.components;
+  const n = useT(anlageN);
   return (
-    <section className="card tax-lines" aria-label="Werbungskosten">
-      <h2>Werbungskosten</h2>
+    <section className="card tax-lines" aria-label={n.costs}>
+      <h2>{n.costs}</h2>
       {hasBlocks(blocks) ? (
         <BlockRows blocks={blocks} year={draft.tax_year} />
       ) : (
         <p className="muted">
-          Noch keine Werbungskosten eingetragen; es gilt der
-          Arbeitnehmer-Pauschbetrag.
+          {n.noCosts}
         </p>
       )}
       <ul className="tax-line-list">
@@ -672,16 +653,14 @@ function CostsCard({ draft }: { draft: AnlageNDraft }) {
       <p className="tax-subline">{comparison(draft)}</p>
       {items.length > 0 ? (
         <details className="tax-form-lines">
-          <summary>Formularzeilen</summary>
+          <summary>{n.formLines}</summary>
           <ul className="tax-line-list">
             {items.map((line) => (
               <LineItem key={line.key} line={line} label={routeLabel(line)} />
             ))}
           </ul>
           <p className="muted tax-subline">
-            Die Entfernungs- und die Homeoffice-Pauschale stehen nur als Tage
-            und Kilometer auf dem Formular; ihr Betrag ist im Einzelnachweis
-            enthalten.
+            {n.formLinesNote}
           </p>
         </details>
       ) : null}
@@ -705,6 +684,7 @@ function OpenPoints({
   onChanged: () => void;
 }) {
   const ctx = { year, ownerId };
+  const n = useT(anlageN);
   const sorted = [
     ...warnings.filter((w) => w.severity === "warning"),
     ...warnings.filter((w) => w.severity === "info"),
@@ -726,9 +706,9 @@ function OpenPoints({
   );
   return (
     <section className="card tax-open" aria-labelledby="tax-n-open">
-      <h2 id="tax-n-open">Offene Punkte</h2>
+      <h2 id="tax-n-open">{n.openPoints}</h2>
       {sorted.length === 0 && open.length === 0 ? (
-        <p className="muted">Keine offenen Punkte.</p>
+        <p className="muted">{n.noOpenPoints}</p>
       ) : (
         <ul className="tax-open-list">
           {open.map((q) => (
@@ -737,9 +717,9 @@ function OpenPoints({
               className="tax-open-item tax-open-info"
             >
               <span className="badge badge-info">
-                {q.owner_id == null ? "Frage Haushalt" : "Frage"}
+                {q.owner_id == null ? n.householdQuestion : n.question}
               </span>
-              <p>{text.get(q.key) ?? "Jahresfrage offen"}</p>
+              <p>{text.get(q.key) ?? n.questionOpen}</p>
               <p className="tax-open-actions">
                 <Link
                   href={questionnaireHref(year, {
@@ -747,7 +727,7 @@ function OpenPoints({
                     ownerId: q.owner_id,
                   })}
                 >
-                  Beantworten
+                  {n.answer}
                 </Link>
               </p>
             </li>
@@ -764,7 +744,7 @@ function OpenPoints({
                     : "badge badge-info"
                 }
               >
-                {warning.severity === "warning" ? "Prüfen" : "Hinweis"}
+                {warning.severity === "warning" ? n.check : n.hint}
               </span>
               <p>{WARNING_TEXT[warning.code](warning.params ?? {})}</p>
               <WhatToDo warning={warning} />
@@ -778,7 +758,7 @@ function OpenPoints({
                   {(warning.refs ?? []).length > 0 ? (
                     <SourcesButton
                       refs={warning.refs ?? []}
-                      title="Offener Punkt"
+                      title={n.openPoint}
                     />
                   ) : null}
                 </div>
@@ -826,6 +806,8 @@ function Documents({ rows, year }: { rows: ReturnInput[]; year: number }) {
     months.set(value.period_month.slice(0, 7), row);
     byEmployer.set(value.employer, months);
   }
+  const n = useT(anlageN);
+  const f = useFormat();
   const receipts = rows.filter(
     (row) =>
       row.document_id &&
@@ -838,13 +820,13 @@ function Documents({ rows, year }: { rows: ReturnInput[]; year: number }) {
       className="card stack tax-n-documents"
       aria-labelledby="tax-n-documents"
     >
-      <h2 id="tax-n-documents">Unterlagen</h2>
-      <ReadUpload label="Lohnsteuerbescheinigung oder Gehaltsabrechnung hochladen" />
+      <h2 id="tax-n-documents">{n.documents}</h2>
+      <ReadUpload label={n.uploadPayDocument} />
       <div>
-        <p className="tax-tracked-head">Lohnsteuerbescheinigung</p>
+        <p className="tax-tracked-head">{n.certificate}</p>
         {certificates.length === 0 ? (
           <p className="muted">
-            Noch keine für {year}; sie kommt meist bis Ende Februar {year + 1}.
+            {n.noCertificate(year)}
           </p>
         ) : (
           <ul className="tax-estimate-list">
@@ -852,13 +834,13 @@ function Documents({ rows, year }: { rows: ReturnInput[]; year: number }) {
               const value = row.value as WageCertificate;
               return (
                 <li key={row.id}>
-                  {value.employer} · {formatDate(value.period_from)} bis{" "}
-                  {formatDate(value.period_to)}
+                  {value.employer} · {f.date(value.period_from)} {n.until}{" "}
+                  {f.date(value.period_to)}
                   {row.document_id ? (
                     <>
                       {" · "}
                       <Link href={`/documents/${row.document_id}`}>
-                        Dokument öffnen
+                        {n.openDocument}
                       </Link>
                       <EvidenceFold returnInputId={row.id} />
                     </>
@@ -870,9 +852,9 @@ function Documents({ rows, year }: { rows: ReturnInput[]; year: number }) {
         )}
       </div>
       <div>
-        <p className="tax-tracked-head">Gehaltsabrechnungen</p>
+        <p className="tax-tracked-head">{n.payslips}</p>
         {byEmployer.size === 0 ? (
-          <p className="muted">Noch keine für {year}.</p>
+          <p className="muted">{n.noPayslips(year)}</p>
         ) : (
           [...byEmployer.entries()].map(([employer, months]) => {
             const keys = [...months.keys()].sort();
@@ -893,7 +875,7 @@ function Documents({ rows, year }: { rows: ReturnInput[]; year: number }) {
                           <>
                             {" · "}
                             <Link href={`/documents/${row.document_id}`}>
-                              Dokument öffnen
+                              {n.openDocument}
                             </Link>
                             <EvidenceFold returnInputId={row.id} />
                           </>
@@ -902,7 +884,7 @@ function Documents({ rows, year }: { rows: ReturnInput[]; year: number }) {
                     ) : (
                       <li key={month}>
                         {monthLabel(month)}{" "}
-                        <span className="badge badge-warn">fehlt</span>
+                        <span className="badge badge-warn">{n.missingBadge}</span>
                       </li>
                     );
                   })}
@@ -914,13 +896,13 @@ function Documents({ rows, year }: { rows: ReturnInput[]; year: number }) {
       </div>
       {receipts.length > 0 ? (
         <div>
-          <p className="tax-tracked-head">Belege zu den Eingaben</p>
+          <p className="tax-tracked-head">{n.receipts}</p>
           <ul className="tax-estimate-list">
             {receipts.map((row) => (
               <li key={row.id}>
                 {RETURN_INPUT_KIND[row.kind]} ·{" "}
                 <Link href={`/documents/${row.document_id}`}>
-                  Dokument öffnen
+                  {n.openDocument}
                 </Link>
               </li>
             ))}

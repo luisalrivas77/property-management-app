@@ -8,8 +8,10 @@ import Link from "next/link";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
+import { translate, useFormat, useT } from "@/i18n";
+import { cashflowText } from "@/i18n/netWorth";
 
-import { formatMoney, formatMonth, formatPercent, todayIso } from "./format";
+import { formatMoney, todayIso } from "./format";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -91,9 +93,10 @@ export function spent(month: HouseholdCashflow): string {
   return sumMoney(Object.values(month.spending_by_group));
 }
 
-/** "+1.470,00 €" for a surplus, "-80,00 €" for a deficit. */
-export function signedMoney(value: string): string {
-  return `${value.startsWith("-") || /^0+(\.0+)?$/.test(value) ? "" : "+"}${formatMoney(value)}`;
+/** "+1.470,00 €" for a surplus, "-80,00 €" for a deficit; `money` formats the amount (German
+ * unless a screen passes its useFormat().money). */
+export function signedMoney(value: string, money: (value: string) => string = formatMoney): string {
+  return `${value.startsWith("-") || /^0+(\.0+)?$/.test(value) ? "" : "+"}${money(value)}`;
 }
 
 /** Last month's private cashflow, with the household's savings rate of the same month (phase 9
@@ -112,35 +115,38 @@ async function loadLastMonth(): Promise<HouseholdCashflow & { household_rate: st
 export function CashflowCard() {
   const month = lastFullMonth();
   const state = useLoad(loadLastMonth);
+  const t = useT(cashflowText);
+  const f = useFormat();
   return (
     <section className="card stack" aria-labelledby="cashflow-card-title">
-      <h2 id="cashflow-card-title">Cashflow {formatMonth(month)}</h2>
+      <h2 id="cashflow-card-title">{t.title(f.month(month))}</h2>
       <Loading state={state}>
         {(cashflow) =>
           cashflow.income === "0.00" && Object.keys(cashflow.spending_by_group).length === 0 ? (
             <p className="muted">
-              Für diesen Monat ist noch keine private Buchung bestätigt. Die Privatkonten werden unter{" "}
-              <Link href="/accounts">Konten</Link> importiert.
+              {t.noBookingBefore}{" "}
+              <Link href="/accounts">{t.accounts}</Link>
+              {t.noBookingAfter}
               {cashflow.open_lines > 0 ? (
                 <>
                   {" "}
-                  <Link href="/inbox">{openLinesText(cashflow.open_lines)} in Zu prüfen</Link>
+                  <Link href="/inbox">{t.inReview(openLinesText(cashflow.open_lines))}</Link>
                 </>
               ) : null}
             </p>
           ) : (
             <>
-              <p className="cashflow-value">{signedMoney(cashflow.surplus)}</p>
+              <p className="cashflow-value">{signedMoney(cashflow.surplus, f.money)}</p>
               <p className="muted">
-                {formatMoney(cashflow.income)} rein · {formatMoney(spent(cashflow))} raus
-                {cashflow.household_rate != null ? ` · Sparquote ${formatPercent(cashflow.household_rate)}` : ""}
+                {t.inOut(f.money(cashflow.income), f.money(spent(cashflow)))}
+                {cashflow.household_rate != null ? t.savingsRate(f.percent(cashflow.household_rate)) : ""}
               </p>
               <p>
-                <Link href="/household">Zum Haushalt</Link>
+                <Link href="/household">{t.toHousehold}</Link>
                 {cashflow.open_lines > 0 ? (
                   <>
                     {" · "}
-                    <Link href="/inbox">{openLinesText(cashflow.open_lines)} ohne Kategorie</Link>
+                    <Link href="/inbox">{t.uncategorised(openLinesText(cashflow.open_lines))}</Link>
                   </>
                 ) : null}
               </p>
@@ -152,7 +158,7 @@ export function CashflowCard() {
   );
 }
 
-/** "1 Umsatz" / "2 Umsätze". */
+/** "1 Umsatz" / "2 Umsätze", in the chosen language. */
 export function openLinesText(count: number): string {
-  return count === 1 ? "1 Umsatz" : `${count} Umsätze`;
+  return translate(cashflowText).openLines(count);
 }

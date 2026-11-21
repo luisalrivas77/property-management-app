@@ -15,14 +15,16 @@ import { ReturnEstimateSummary } from "@/components/returnEstimate";
 import { AnlageVScreen } from "@/components/tax";
 import { TaxInputsScreen } from "@/components/taxAngaben";
 import { ANGABEN_PARAM, ANLAGE_N_PARAM, TaxTabs } from "@/components/taxYear";
-import { Loading } from "@/components/ui";
+import { Loading, LoadingLine } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { pages } from "@/i18n/pages";
 
 const loadProperties = () => ok(api.GET("/api/properties"));
 
 export default function TaxYearPage() {
   return (
-    <Suspense fallback={<p className="muted">Lädt …</p>}>
+    <Suspense fallback={<LoadingLine />}>
       <TaxYear />
     </Suspense>
   );
@@ -36,12 +38,13 @@ function TaxYear() {
   const tab = search.get("tab");
   const form = tab === ANLAGE_N_PARAM ? "n" : tab === ANGABEN_PARAM ? "angaben" : "v";
   const year = /^\d{4}$/.test(yearParam) ? Number(yearParam) : null;
+  const t = useT(pages);
 
   return (
     <section>
       {year === null ? (
         <p className="muted">
-          Kein gültiges Steuerjahr. <Link href="/tax">Zum aktuellen Jahr</Link>
+          {t.invalidYear} <Link href="/tax">{t.currentYear}</Link>
         </p>
       ) : form === "angaben" ? (
         <TaxInputsScreen year={year} ownerParam={owner} propertyParam={requested} />
@@ -56,6 +59,7 @@ function TaxYear() {
 
 function AnlageV({ year, requested, owner }: { year: number; requested: string | null; owner: string | null }) {
   const properties = useLoad(loadProperties);
+  const t = useT(pages);
   return (
     <Loading state={properties}>
       {(list) => {
@@ -67,15 +71,15 @@ function AnlageV({ year, requested, owner }: { year: number; requested: string |
             <>
               <div className="page-head tax-head">
                 <div>
-                  <p className="eyebrow">Steuerjahr {year} · Anlage V (Entwurf)</p>
+                  <p className="eyebrow">{t.anlageVEyebrow(year)}</p>
                   <h1>Anlage V</h1>
                 </div>
               </div>
               {summary}
               {tabs}
               <p className="muted">
-                Noch keine Immobilie. <Link href="/properties/new">Immobilie anlegen</Link>, dann entsteht hier der
-                Entwurf der Anlage V.
+                {t.noProperty} <Link href="/properties/new">{t.createProperty}</Link>
+                {t.anlageVRest}
               </p>
             </>
           );

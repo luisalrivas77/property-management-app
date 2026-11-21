@@ -12,10 +12,11 @@ import { useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
+import { translate, useFormat, useT } from "@/i18n";
+import { netWorthText } from "@/i18n/netWorth";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { fromCents, signedMoney, toCents } from "./cashflow";
-import { formatDate, formatMoney } from "./format";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -70,20 +71,28 @@ export function NetWorthSection() {
   );
 }
 
-const OUTCOME_TEXT: Record<SnapshotResult["outcome"], (asOf: string) => string> = {
-  written: (asOf) => `Monatsabschluss zum ${formatDate(asOf)} festgehalten.`,
-  recaptured: (asOf) => `Monatsabschluss zum ${formatDate(asOf)} neu festgehalten: die Zahlen hatten sich seitdem geändert.`,
-  unchanged: (asOf) => `Der Monatsabschluss zum ${formatDate(asOf)} ist schon mit genau diesen Zahlen festgehalten.`,
-  empty: () => "Nichts festzuhalten: noch kein Konto, keine Anlage und keine Immobilie mit einem Wert.",
-};
+type NetWorthText = (typeof netWorthText)["de"];
+
+/** The capture's outcome as a sentence, the date already formatted; healthFigures.tsx says the
+ * same after its own capture. */
+export function snapshotOutcomeText(t: NetWorthText, outcome: SnapshotResult["outcome"], date: string): string {
+  switch (outcome) {
+    case "written":
+      return t.snapshotWritten(date);
+    case "recaptured":
+      return t.snapshotRecaptured(date);
+    case "unchanged":
+      return t.snapshotUnchanged(date);
+    case "empty":
+      return t.snapshotEmpty;
+  }
+}
 
 /** The capture's sentence on what the stored figure leaves out: a position without a price, or a
  * fund the depot report lists with nothing booked (the to-dos below say what to do). */
-function unvaluedText(count: number | undefined): string {
+function unvaluedText(t: NetWorthText, count: number | undefined): string {
   if (!count) return "";
-  return count === 1
-    ? " 1 Position ohne Wert ist darin nicht enthalten (siehe offene Punkte)."
-    : ` ${count} Positionen ohne Wert sind darin nicht enthalten (siehe offene Punkte).`;
+  return t.unvalued(count);
 }
 
 function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverview; owners: Owner[]; onChanged: () => void }) {
@@ -91,6 +100,8 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<SnapshotResult | null>(null);
+  const t = useT(netWorthText);
+  const f = useFormat();
 
   async function capture() {
     setBusy(true);
@@ -113,34 +124,34 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
   const byOwner = Object.entries(today.by_owner);
   return (
     <section className="card stack" aria-labelledby="net-worth-card-title">
-      <h2 id="net-worth-card-title">Nettovermögen</h2>
+      <h2 id="net-worth-card-title">{t.title}</h2>
       {today.lines.length === 0 ? (
         <p className="muted">
-          Noch kein Konto, keine Anlage und keine Immobilie mit einem Wert. Konten werden unter <Link href="/accounts">Konten</Link>{" "}
-          angelegt und importiert.
+          {t.emptyBefore}
+          <Link href="/accounts">{t.accounts}</Link>
+          {t.emptyAfter}
         </p>
       ) : (
         <>
-          <p className="cashflow-value">{formatMoney(today.total)}</p>
+          <p className="cashflow-value">{f.money(today.total)}</p>
           <p className="muted">
-            Heute, {formatDate(today.on)}
+            {t.today(f.date(today.on))}
             {monthEnd ? (
               <>
                 {" · "}
                 <span className={toCents(today.total) >= toCents(monthEnd.total) ? "net-worth-change" : "net-worth-change-down"}>
-                  {signedMoney(fromCents(toCents(today.total) - toCents(monthEnd.total)))} gegenüber dem Monatsabschluss vom{" "}
-                  {formatDate(monthEnd.on)}
+                  {t.changeSince(signedMoney(fromCents(toCents(today.total) - toCents(monthEnd.total)), f.money), f.date(monthEnd.on))}
                 </span>{" "}
-                ({formatMoney(monthEnd.total)})
+                ({f.money(monthEnd.total)})
               </>
             ) : (
-              " · noch kein Monatsabschluss festgehalten"
+              t.noMonthEnd
             )}
           </p>
           {byOwner.length > 0 ? (
             <p className="muted">
-              {byOwner.map(([id, value]) => `${names.get(id) ?? "Eigentümer"} ${formatMoney(value)}`).join(" · ")}
-              {today.unassigned.length > 0 ? " · ohne Eigentümer: siehe unten" : ""}
+              {byOwner.map(([id, value]) => `${names.get(id) ?? t.owner} ${f.money(value)}`).join(" · ")}
+              {today.unassigned.length > 0 ? t.unassigned : ""}
             </p>
           ) : null}
           {older.length > 0 ? <BalanceDates lines={older} /> : null}
@@ -149,29 +160,22 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
         </>
       )}
       {due ? (
-        <p>
-          Der Monatsabschluss zum {formatDate(due)} ist noch nicht festgehalten. Hausbuch speichert ihn am Monatsersten automatisch,
-          nach dem morgendlichen Abruf der Kontoumsätze und Kurse.
-        </p>
+        <p>{t.due(f.date(due))}</p>
       ) : null}
       {monthEnd && drifted ? (
         <div className="notice notice-warn">
-          <p>
-            Das gespeicherte Monatsende weicht vom heutigen Stand ab: {formatMoney(monthEnd.total)} statt {formatMoney(drifted)}. Seit dem
-            Speichern ist für den {formatDate(monthEnd.on)} noch etwas dazugekommen (ein Kontoauszug, ein Kurs oder ein geänderter
-            Schätzwert).
-          </p>
+          <p>{t.drifted(f.money(monthEnd.total), f.money(drifted), f.date(monthEnd.on))}</p>
         </div>
       ) : null}
       <div className="row">
         <button type="button" className={due || drifted ? undefined : "secondary"} onClick={() => void capture()} disabled={busy}>
-          {busy ? "Hält fest …" : drifted ? "Monatsabschluss neu speichern" : "Monatsabschluss festhalten"}
+          {busy ? t.capturing : drifted ? t.recapture : t.captureMonthEnd}
         </button>
       </div>
       {result ? (
         <p className="muted">
-          {OUTCOME_TEXT[result.outcome](result.as_of)}
-          {unvaluedText(result.unvalued_positions)}
+          {snapshotOutcomeText(t, result.outcome, f.date(result.as_of))}
+          {unvaluedText(t, result.unvalued_positions)}
         </p>
       ) : null}
       <ErrorNotice error={error} />
@@ -183,10 +187,12 @@ function NetWorthCard({ overview, owners, onChanged }: { overview: NetWorthOverv
 /** The balances that count at an earlier day than the figure's: each with its „Stand vom …“ (the
  * last day a reconciled statement covers, D167 (4)). */
 function BalanceDates({ lines }: { lines: NetWorthLine[] }) {
+  const t = useT(netWorthText);
+  const f = useFormat();
   return (
     <p className="muted">
       {lines
-        .map((line) => `„${line.label}“ ${formatMoney(line.value_eur)} · Stand vom ${formatDate(line.as_of)}`)
+        .map((line) => t.balanceAsOf(line.label, f.money(line.value_eur), f.date(line.as_of)))
         .join("; ")}
     </p>
   );
@@ -201,13 +207,16 @@ function isPaidBeforeHandover(line: NetWorthLine): boolean {
 
 /** The booked figures before the handover, each with the server's note (until when it counts). */
 function PaidNote({ lines }: { lines: NetWorthLine[] }) {
+  const t = useT(netWorthText);
+  const f = useFormat();
   return (
     <div className="notice notice-info">
-      <p>Vor der Übergabe der Wohnung:</p>
+      <p>{t.beforeHandover}</p>
       <ul>
         {lines.map((line, index) => (
           <li key={`${line.kind}-${line.property_id ?? ""}-${line.loan_id ?? ""}-${index}`}>
-            {line.kind === "loan" ? "Darlehen " : ""}„{line.label}“ {formatMoney(line.value_eur)}
+            {line.kind === "loan" ? t.loan : ""}
+            {quoted(f.locale, line.label)} {f.money(line.value_eur)}
             {line.note ? ` · ${line.note}` : ""}
           </li>
         ))}
@@ -219,18 +228,21 @@ function PaidNote({ lines }: { lines: NetWorthLine[] }) {
 /** The estimates in the figure, each with where it comes from (the server's note) and, for a
  * property, the Planung page where „Wert heute“ is set. */
 function EstimateNote({ lines }: { lines: NetWorthLine[] }) {
+  const t = useT(netWorthText);
+  const f = useFormat();
   return (
     <div className="notice notice-info">
-      <p>Enthält Schätzwerte:</p>
+      <p>{t.estimates}</p>
       <ul>
         {lines.map((line, index) => (
           <li key={`${line.kind}-${line.property_id ?? ""}-${line.loan_id ?? ""}-${index}`}>
-            {line.kind === "loan" ? "Darlehen " : ""}„{line.label}“ {formatMoney(line.value_eur)}
+            {line.kind === "loan" ? t.loan : ""}
+            {quoted(f.locale, line.label)} {f.money(line.value_eur)}
             {line.note ? ` · ${line.note}` : ""}
             {line.kind === "property" && line.property_id ? (
               <>
                 {" · "}
-                <Link href={`/planning?immobilie=${line.property_id}`}>Wert in der Planung anpassen</Link>
+                <Link href={`/planning?immobilie=${line.property_id}`}>{t.adjustValue}</Link>
               </>
             ) : null}
           </li>
@@ -241,10 +253,11 @@ function EstimateNote({ lines }: { lines: NetWorthLine[] }) {
 }
 
 function NetWorthTodos({ todos }: { todos: NetWorthTodo[] }) {
+  const t = useT(netWorthText);
   return (
     <div className="notice notice-warn">
       <p>
-        <strong>{todos.length === 1 ? "1 offener Punkt" : `${todos.length} offene Punkte`} im Nettovermögen</strong>
+        <strong>{t.todos(todos.length)}</strong>
       </p>
       <ul>
         {todos.map((todo, index) => (
@@ -270,27 +283,28 @@ interface Slice {
 /** A class's lines as "Giro, Tagesgeld" (account labels, each once, at most three). */
 function accountNames(lines: NetWorthLine[], cls: string): string {
   const labels = [...new Set(lines.filter((l) => l.net_worth_class === cls && l.value_eur != null).map((l) => l.account_label ?? l.label))];
-  return labels.length > 3 ? `${labels.slice(0, 3).join(", ")} und ${labels.length - 3} weitere` : labels.join(", ");
+  return labels.length > 3 ? translate(netWorthText).andMore(labels.slice(0, 3).join(", "), labels.length - 3) : labels.join(", ");
 }
 
 /** The bar's slices, mockup 07: the property net of its loans, then the depot, the bank and
  * crypto; a credit card's debt (the class liabilities less the loans) as its own slice. */
 export function slices(figure: NetWorth): Slice[] {
+  const t = translate(netWorthText);
   const cls = (key: string) => figure.by_class[key] ?? "0.00";
   const cardDebt = fromCents(toCents(cls("liabilities")) + toCents(figure.loan_balances));
   const properties = [...new Set(figure.lines.map((line) => line.property_id).filter((id): id is string => id != null))];
   const all: Slice[] = [
     {
       key: "property",
-      label: "Immobilie (netto)",
+      label: t.sliceProperty,
       value: figure.property_net,
       detail: propertyDetail(figure.lines),
       href: properties.length === 1 ? `/properties/${properties[0]}` : "/planning",
     },
-    { key: "depot", label: "Depot", value: cls("depot"), detail: accountNames(figure.lines, "depot"), href: "/assets" },
-    { key: "bank", label: "Bank", value: cls("bank"), detail: accountNames(figure.lines, "bank"), href: "/accounts" },
-    { key: "crypto", label: "Krypto", value: cls("crypto"), detail: accountNames(figure.lines, "crypto"), href: "/assets" },
-    { key: "card", label: "Kreditkarten", value: cardDebt, detail: "offener Saldo", href: "/accounts" },
+    { key: "depot", label: t.sliceDepot, value: cls("depot"), detail: accountNames(figure.lines, "depot"), href: "/assets" },
+    { key: "bank", label: t.sliceBank, value: cls("bank"), detail: accountNames(figure.lines, "bank"), href: "/accounts" },
+    { key: "crypto", label: t.sliceCrypto, value: cls("crypto"), detail: accountNames(figure.lines, "crypto"), href: "/assets" },
+    { key: "card", label: t.sliceCards, value: cardDebt, detail: t.openBalance, href: "/accounts" },
   ];
   const hasProperty = figure.lines.some((line) => line.kind === "property" || line.kind === "loan");
   return all.filter((slice) => (slice.key === "property" ? hasProperty : toCents(slice.value) !== 0n));
@@ -302,16 +316,17 @@ export function slices(figure: NetWorth): Slice[] {
  * „geschätzt“ while no line holds a value, and no payout named while no loan is valued (D265
  * amended, the build's review). */
 function propertyDetail(lines: NetWorthLine[]): string {
+  const t = translate(netWorthText);
   const own = lines.filter((line) => (line.kind === "property" || line.kind === "loan") && line.value_eur != null);
   const estimated = own.some((line) => line.estimate);
   const advance = own.some((line) => line.kind === "property" && !line.estimate);
   const payout = own.some((line) => line.kind === "loan" && !line.estimate);
   if (advance || payout) {
-    if (estimated) return "Wert minus Darlehen, teils geschätzt";
-    if (advance && payout) return "Anzahlung minus ausgezahltes Darlehen";
-    return advance ? "Anzahlung Kaufpreis" : "ausgezahltes Darlehen";
+    if (estimated) return t.valueLessLoansPartly;
+    if (advance && payout) return t.advanceLessPayout;
+    return advance ? t.advance : t.payout;
   }
-  return estimated ? "Wert minus Darlehen, geschätzt" : "Wert minus Darlehen";
+  return estimated ? t.valueLessLoansEstimated : t.valueLessLoans;
 }
 
 /** A slice's share of the positive slices, in whole percent ("68"); null for a negative one. */
@@ -322,6 +337,8 @@ function percent(value: string, positive: bigint): string | null {
 }
 
 function AllocationBar({ figure }: { figure: NetWorth }) {
+  const t = useT(netWorthText);
+  const f = useFormat();
   const parts = slices(figure);
   if (parts.length === 0) return null;
   const positive = parts.reduce((sum, part) => (toCents(part.value) > 0n ? sum + toCents(part.value) : sum), 0n);
@@ -331,18 +348,18 @@ function AllocationBar({ figure }: { figure: NetWorth }) {
   return (
     <section className="card stack" aria-labelledby="allocation-title">
       <div className="net-worth-head">
-        <h2 id="allocation-title">Vermögensaufteilung</h2>
+        <h2 id="allocation-title">{t.allocation}</h2>
         <span className="muted">
-          Immobilie abzüglich Darlehen
-          {latest ? ` · Kurse vom ${formatDate(latest)}` : ""}
-          {figure.stale_positions > 0 ? ` · ${figure.stale_positions} Kurs${figure.stale_positions === 1 ? "" : "e"} veraltet` : ""}
+          {t.propertyNetOfLoans}
+          {latest ? t.pricesOf(f.date(latest)) : ""}
+          {figure.stale_positions > 0 ? t.stale(figure.stale_positions) : ""}
         </span>
       </div>
       {positive > 0n ? (
         <div
           className="net-worth-bar"
           role="img"
-          aria-label={shown.map((part) => `${part.label} ${percent(part.value, positive)} %`).join(", ")}
+          aria-label={shown.map((part) => `${part.label} ${t.share(percent(part.value, positive) ?? "")}`).join(", ")}
         >
           {shown.map((part) => (
             <div
@@ -361,8 +378,8 @@ function AllocationBar({ figure }: { figure: NetWorth }) {
               <span className={`net-worth-swatch net-worth-${part.key}`} aria-hidden="true" />
               <span>
                 <span className="net-worth-item-label">{part.label}</span>
-                <span className="net-worth-item-value">{formatMoney(part.value)}</span>
-                <span className="net-worth-item-detail">{[share !== null ? `${share} %` : null, part.detail || null].filter(Boolean).join(" · ")}</span>
+                <span className="net-worth-item-value">{f.money(part.value)}</span>
+                <span className="net-worth-item-detail">{[share !== null ? t.share(share) : null, part.detail || null].filter(Boolean).join(" · ")}</span>
               </span>
             </Link>
           );
@@ -370,4 +387,9 @@ function AllocationBar({ figure }: { figure: NetWorth }) {
       </div>
     </section>
   );
+}
+
+/** An account's or property's own name in the language's quotation marks: „…“ / “…”. */
+function quoted(locale: "de" | "en", label: string): string {
+  return locale === "de" ? `„${label}“` : `“${label}”`;
 }

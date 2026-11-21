@@ -20,11 +20,13 @@ import type {
   Transaction,
   TransactionAllocationStatus,
 } from "@/api/schemas";
+import { translate, useFormat, useT, type Formatter } from "@/i18n";
+import { statements } from "@/i18n/accounts";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { documentLabel, storeAsDocument, StoredAsDocument, UPLOAD_ACCEPT, type Uploaded } from "./documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "./form";
-import { formatDate, formatDateTime, formatMoney, formatSharePercent } from "./format";
+import { formatSharePercent } from "./format";
 import { decimalInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY, BALANCE_SOURCE, DUPLICATE_STATUS, IMPORT_STATUS, STATEMENT_FORMAT } from "./labels";
 import { ActionDialog } from "./ui";
@@ -76,8 +78,7 @@ export async function importStatement(accountId: string, file: File): Promise<Im
 
 /** "22 neue Umsätze, 3 schon vorhanden" for an import. */
 export function lineCounts(statementImport: StatementImport): string {
-  const added = statementImport.lines_new === 1 ? "1 neuer Umsatz" : `${statementImport.lines_new} neue Umsätze`;
-  return statementImport.lines_skipped > 0 ? `${added}, ${statementImport.lines_skipped} schon vorhanden` : added;
+  return translate(statements).lineCounts(statementImport.lines_new, statementImport.lines_skipped);
 }
 
 /** Drop zone and file input "Kontoauszug hochladen"; one notice per file afterwards. */
@@ -94,6 +95,7 @@ export function StatementUpload({
   /** A depot's cash account: the bank's PDF Kontoauszug, read by code (phase 6 step 4). */
   depot?: boolean;
 }) {
+  const t = useT(statements);
   const inputId = useId();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -145,7 +147,7 @@ export function StatementUpload({
         }}
       >
         <label htmlFor={inputId}>
-          {busy ? "Importiert …" : card ? "Kreditkartenabrechnung hochladen" : "Kontoauszug hochladen"}
+          {busy ? t.importing : card ? t.uploadCard : t.uploadStatement}
         </label>
         <input
           ref={input}
@@ -157,31 +159,18 @@ export function StatementUpload({
           onChange={(event: ChangeEvent<HTMLInputElement>) => void upload(event.target.files)}
         />
         {card ? (
-          <p className="muted hint">
-            Die monatliche Abrechnung als PDF, so wie sie im Kundenportal der Karte steht. Hausbuch liest sie selbst, ohne KI,
-            und prüft, dass Alter Saldo und Umsätze den Neuen Saldo ergeben. Jedes andere Dokument kommt unter Dokumente, und die KI
-            liest es. Datei hierher ziehen oder auswählen.
-          </p>
+          <p className="muted hint">{t.hintCard}</p>
         ) : depot ? (
-          <p className="muted hint">
-            Der Kontoauszug des Depots als PDF, so wie er im Postfach der Bank steht. Hausbuch liest ihn selbst, ohne KI, und
-            prüft, dass Anfangssaldo und Buchungen den Endsaldo ergeben. Jedes andere Dokument des Depots (Abrechnung, Bericht,
-            Vertrag) kann auch hier hochgeladen werden: es kommt unter Dokumente, und die KI liest es. Datei hierher ziehen oder
-            auswählen.
-          </p>
+          <p className="muted hint">{t.hintDepot}</p>
         ) : (
-          <p className="muted hint">
-            Sparkasse „Umsätze exportieren“: camt als ZIP (bevorzugt, mit Salden) oder CSV-CAMT; auch eine einzelne camt-XML.
-            DKB: der CSV-Export der Umsätze aus dem Online-Banking. Jedes andere Dokument kommt unter Dokumente, und die KI liest es.
-            Datei hierher ziehen oder auswählen.
-          </p>
+          <p className="muted hint">{t.hintBank}</p>
         )}
       </div>
       {results.map((result, index) => (
         <ImportResult key={index} result={result} />
       ))}
       {stored.map((result, index) => (
-        <StoredAsDocument key={index} result={result} what={card ? "keine Kreditkartenabrechnung, als Dokument übernommen." : "kein Kontoauszug, als Dokument übernommen."} />
+        <StoredAsDocument key={index} result={result} what={card ? t.storedNotCard : t.storedNotStatement} />
       ))}
       <ErrorNotice error={error} />
     </div>
@@ -195,28 +184,23 @@ function isUnknownFormat(error: unknown): boolean {
 
 function ImportResult({ result }: { result: Imported }) {
   const { statementImport: imp, existed, fileName } = result;
+  const t = useT(statements);
+  const f = useFormat();
   if (existed) {
     return (
       <div className="notice notice-info" role="status">
-        <p>
-          Bereits importiert: {fileName}. Diese Datei wurde schon einmal hochgeladen; es wurde nichts hinzugefügt.
-        </p>
+        <p>{t.alreadyImported(fileName)}</p>
       </div>
     );
   }
   const tone = imp.status === "reconciled" ? "notice-ok" : imp.status === "imported" ? "notice-warn" : "notice-error";
   return (
     <div className={`notice ${tone}`} role="status">
-      <p>
-        Importiert: {fileName} · {lineCounts(imp)} · {IMPORT_STATUS[imp.status]}
-      </p>
+      <p>{t.importedLine(fileName, t.lineCounts(imp.lines_new, imp.lines_skipped), IMPORT_STATUS[imp.status])}</p>
       {imp.status === "imported" && imp.stated_closing != null ? (
-        <p className="muted">
-          Die Datei nennt den Kontostand vom {formatDate(imp.stated_closing_on)}: unten „Endsaldo eingeben“, der Betrag ist schon
-          eingetragen – bitte mit dem Online-Banking vergleichen.
-        </p>
+        <p className="muted">{t.statedClosing(f.date(imp.stated_closing_on))}</p>
       ) : imp.status === "imported" ? (
-        <p className="muted">Die Datei enthält keinen Kontostand: unten „Endsaldo eingeben“ mit dem Saldo aus dem Online-Banking.</p>
+        <p className="muted">{t.noClosingInFile}</p>
       ) : null}
       {imp.error_code ? <p className="muted">{ruleCodeText(imp.error_code) ?? imp.error_code}</p> : null}
     </div>
@@ -231,7 +215,7 @@ function ImportResult({ result }: { result: Imported }) {
 export function ownerChip(shares: OwnershipShare[], owners: Owner[]): string {
   const name = (ownerId: string) => owners.find((owner) => owner.id === ownerId)?.full_name ?? "?";
   const half = (share: OwnershipShare) => share.share_numerator * 2 === share.share_denominator;
-  if (shares.length === 2 && shares.every(half)) return "Gemeinsam 50/50";
+  if (shares.length === 2 && shares.every(half)) return translate(statements).jointHalf;
   const [only] = shares;
   if (shares.length === 1 && only && only.share_numerator === only.share_denominator) return name(only.owner_id);
   return shares
@@ -257,6 +241,8 @@ export function ImportStatusPill({ statementImport }: { statementImport: Stateme
 
 /** Why an import is not reconciled, with the two balances the API compared. */
 function ImportReason({ statementImport: imp, imports }: { statementImport: StatementImport; imports: StatementImport[] }) {
+  const t = useT(statements);
+  const f = useFormat();
   if (imp.status === "reconciled" || imp.status === "imported") return null;
   const code = imp.error_code;
   const gapAfter = code === "statement.opening_mismatch" && imp.derived_opening_balance == null ? previousReconciled(imp, imports) : null;
@@ -264,24 +250,17 @@ function ImportReason({ statementImport: imp, imports }: { statementImport: Stat
     <>
       {code ? (
         <p className="cell-detail">
-          {ruleCodeText(code) ?? "Fehler."} <code className="error-code">{code}</code>
+          {ruleCodeText(code) ?? t.error} <code className="error-code">{code}</code>
         </p>
       ) : null}
       {code === "statement.opening_mismatch" ? (
-        <p className="cell-detail">
-          Anfangssaldo laut Datei {formatMoney(imp.declared_opening)} · berechnet {formatMoney(imp.computed_opening)}
-        </p>
+        <p className="cell-detail">{t.openingMismatch(f.money(imp.declared_opening), f.money(imp.computed_opening))}</p>
       ) : null}
       {code === "statement.unreconciled" || code === "statement.opening_mismatch" ? (
-        <p className="cell-detail">
-          Endsaldo laut Bank {formatMoney(imp.declared_closing)} · berechnet {formatMoney(imp.computed_closing)}
-        </p>
+        <p className="cell-detail">{t.closingMismatch(f.money(imp.declared_closing), f.money(imp.computed_closing))}</p>
       ) : null}
       {gapAfter?.last_booking_on && imp.first_booking_on ? (
-        <p className="cell-detail">
-          Zwischen dem Auszug bis {formatDate(gapAfter.last_booking_on)} und diesem ab {formatDate(imp.first_booking_on)} fehlt
-          vermutlich ein Kontoauszug. Bitte den fehlenden Auszug hochladen; dieser hier geht danach von selbst auf.
-        </p>
+        <p className="cell-detail">{t.missingStatement(f.date(gapAfter.last_booking_on), f.date(imp.first_booking_on))}</p>
       ) : null}
     </>
   );
@@ -310,11 +289,11 @@ function canDeclareBalance(imp: StatementImport): boolean {
   return imp.balance_source !== "file";
 }
 
-function period(imp: StatementImport): string {
+function period(imp: StatementImport, f: Formatter): string {
   if (!imp.first_booking_on) return "–";
   return imp.first_booking_on === imp.last_booking_on
-    ? formatDate(imp.first_booking_on)
-    : `${formatDate(imp.first_booking_on)} – ${formatDate(imp.last_booking_on)}`;
+    ? f.date(imp.first_booking_on)
+    : `${f.date(imp.first_booking_on)} – ${f.date(imp.last_booking_on)}`;
 }
 
 export function ImportsTable({
@@ -328,17 +307,19 @@ export function ImportsTable({
   documents: Map<string, Document>;
   onChanged: () => void;
 }) {
-  if (imports.length === 0) return <p className="muted">Noch keine Kontoauszüge importiert.</p>;
+  const t = useT(statements);
+  const f = useFormat();
+  if (imports.length === 0) return <p className="muted">{t.noImports}</p>;
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Zeitraum</th>
-            <th>Datei</th>
-            <th>Umsätze</th>
-            <th className="num">Endsaldo</th>
-            <th>Status</th>
+            <th>{t.colPeriod}</th>
+            <th>{t.colFile}</th>
+            <th>{t.colLines}</th>
+            <th className="num">{t.colClosing}</th>
+            <th>{t.colStatus}</th>
             <th />
           </tr>
         </thead>
@@ -348,29 +329,29 @@ export function ImportsTable({
             return (
               <tr key={imp.id}>
                 <td>
-                  {period(imp)}
-                  <p className="cell-detail">importiert {formatDateTime(imp.created_at)}</p>
+                  {period(imp, f)}
+                  <p className="cell-detail">{t.importedAt(f.dateTime(imp.created_at))}</p>
                 </td>
                 <td>
-                  <Link href={`/documents/${imp.document_id}`}>{document ? documentLabel(document) : "Datei"}</Link>
+                  <Link href={`/documents/${imp.document_id}`}>{document ? documentLabel(document) : t.file}</Link>
                   <p className="cell-detail">
-                    {document?.source === "bank_sync" ? "Bankabruf · " : ""}
+                    {document?.source === "bank_sync" ? t.viaBankSync : ""}
                     {STATEMENT_FORMAT[imp.format]}
                   </p>
                 </td>
                 <td>
-                  {lineCounts(imp)}
+                  {t.lineCounts(imp.lines_new, imp.lines_skipped)}
                   {imp.lines_new > 0 ? (
                     <p className="cell-detail">
                       {/* ?import= lists the lines this import stored, not the ones it skipped as known. */}
                       <Link href={`/accounts/${accountId}?tab=umsaetze&import=${imp.id}`}>
-                        {imp.lines_new === 1 ? "Den neuen Umsatz anzeigen" : `Die ${imp.lines_new} neuen Umsätze anzeigen`}
+                        {t.showNewLines(imp.lines_new)}
                       </Link>
                     </p>
                   ) : null}
                 </td>
                 <td className="num">
-                  {formatMoney(imp.declared_closing)}
+                  {f.money(imp.declared_closing)}
                   <p className="cell-detail">{BALANCE_SOURCE[imp.balance_source]}</p>
                 </td>
                 <td>
@@ -381,8 +362,8 @@ export function ImportsTable({
                   <OpeningFromClosing statementImport={imp} onDone={onChanged} />
                   {canDeclareBalance(imp) ? (
                     <ActionDialog
-                      label={imp.declared_closing == null ? "Endsaldo eingeben" : "Endsaldo korrigieren"}
-                      title="Endsaldo laut Online-Banking"
+                      label={imp.declared_closing == null ? t.enterClosing : t.correctClosing}
+                      title={t.closingTitle}
                       buttonClass={imp.declared_closing == null ? "" : "secondary"}
                     >
                       {(close) => (
@@ -413,6 +394,8 @@ export function ImportsTable({
  * one click takes it (POST /imports/{id}/opening-from-closing); the API
  * computes it and re-checks every import of the account. */
 export function OpeningFromClosing({ statementImport: imp, onDone }: { statementImport: StatementImport; onDone: () => void }) {
+  const t = useT(statements);
+  const f = useFormat();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   if (imp.derived_opening_balance == null) return null;
@@ -432,11 +415,9 @@ export function OpeningFromClosing({ statementImport: imp, onDone }: { statement
 
   return (
     <div className="stack">
-      <p className="cell-detail">
-        Der Kontostand am {formatDate(imp.derived_opening_balance_on)} war dann {formatMoney(imp.derived_opening_balance)}.
-      </p>
+      <p className="cell-detail">{t.derivedOpening(f.date(imp.derived_opening_balance_on), f.money(imp.derived_opening_balance))}</p>
       <button type="button" onClick={() => void take()} disabled={busy}>
-        {busy ? "Übernimmt …" : "Anfangssaldo daraus übernehmen"}
+        {busy ? t.taking : t.takeOpening}
       </button>
       <ErrorNotice error={error} />
     </div>
@@ -449,6 +430,8 @@ const BALANCE_KEYS = ["closing_balance"] as const;
 export function BalanceForm({ statementImport: imp, onDone }: { statementImport: StatementImport; onDone: () => void }) {
   // Phase 6 D173 (3): a DKB file states its „Kontostand vom“ beside its lines; it pre-fills the
   // closing for the person to confirm, never reconciled against on its own.
+  const t = useT(statements);
+  const f = useFormat();
   const stated = imp.declared_closing == null && imp.stated_closing != null ? imp.stated_closing : null;
   const [closing, setClosing] = useState(decimalInput(imp.declared_closing ?? stated));
   const [busy, setBusy] = useState(false);
@@ -481,21 +464,18 @@ export function BalanceForm({ statementImport: imp, onDone }: { statementImport:
     <form className="stack" onSubmit={submit} noValidate>
       <Field
         id={`balance-${imp.id}`}
-        label="Endsaldo laut Online-Banking (€)"
-        hint={`Der Kontostand am Ende des ${formatDate(imp.last_booking_on)}, nach dem letzten Umsatz der Datei. Negativ mit Minus, z. B. -3.028,51.`}
-        description="Der Kontostand laut Online-Banking nach dem letzten Umsatz dieser Datei. Die CSV-Datei enthält keinen Saldo; mit diesem Wert prüft Hausbuch, ob der Import aufgeht."
+        label={t.closingLabel}
+        hint={t.closingHint(f.date(imp.last_booking_on))}
+        description={t.closingDescription}
         errors={form.of("closing_balance")}
       >
         <input type="text" inputMode="decimal" value={closing} onChange={(e) => setClosing(e.target.value)} autoComplete="off" required />
       </Field>
       {stated != null ? (
-        <p className="muted">
-          Vorgeschlagen aus der Datei: Kontostand vom {formatDate(imp.stated_closing_on)}. Bitte prüfen, ob das der Saldo nach der
-          letzten Buchung vom {formatDate(imp.last_booking_on)} ist, und dann abstimmen.
-        </p>
+        <p className="muted">{t.suggestedFromFile(f.date(imp.stated_closing_on), f.date(imp.last_booking_on))}</p>
       ) : null}
       <div className="row">
-        <Submit busy={busy}>Abstimmen</Submit>
+        <Submit busy={busy}>{t.reconcile}</Submit>
       </div>
       <FormBanner errors={form.errors} />
     </form>
@@ -510,11 +490,7 @@ function isCredit(amount: string): boolean {
 
 type LineFilter = "all" | "open" | "booked";
 
-const LINE_FILTERS: { key: LineFilter; label: string }[] = [
-  { key: "all", label: "Alle" },
-  { key: "open", label: "Offen" },
-  { key: "booked", label: "Gebucht" },
-];
+const LINE_FILTERS: readonly LineFilter[] = ["all", "open", "booked"];
 
 /** Offen: everything still waiting for a decision (a merged duplicate is in Alle only). */
 const OPEN_STATUSES: readonly TransactionAllocationStatus[] = ["open", "proposed", "duplicate_open", "not_reconciled"];
@@ -531,7 +507,9 @@ function matchesFilter(line: Transaction, filter: LineFilter): boolean {
  * half of a returned payment (returned_with, D162 amended (7)) names the other half's date. A
  * merged duplicate has no link; its pill sits under the purpose. */
 function LineStatus({ line }: { line: Transaction }) {
-  const subject = `${line.counterparty_name ?? "Umsatz"} am ${formatDate(line.booking_date)}`;
+  const t = useT(statements);
+  const f = useFormat();
+  const subject = t.lineSubject(line.counterparty_name ?? t.lineFallback, f.date(line.booking_date));
   const panel = `/inbox?umsatz=${line.id}`;
   switch (line.allocation_status) {
     case "excluded":
@@ -542,10 +520,12 @@ function LineStatus({ line }: { line: Transaction }) {
       const partner = line.returned_with;
       const categories = line.allocation_categories.map((category) => ALLOCATION_CATEGORY[category]).join(" + ");
       const text = partner
-        ? `Gebucht: Rücküberweisung (${line.amount.startsWith("-") ? "zurück am" : "von der Abbuchung am"} ${formatDate(partner.booking_date)})`
+        ? line.amount.startsWith("-")
+          ? t.bookedReturnBack(f.date(partner.booking_date))
+          : t.bookedReturnFrom(f.date(partner.booking_date))
         : categories
-          ? `Gebucht: ${categories}`
-          : "Gebucht";
+          ? t.bookedAs(categories)
+          : t.booked;
       return (
         <Link href={panel} aria-label={`${text} – ${subject}`}>
           {text}
@@ -554,26 +534,26 @@ function LineStatus({ line }: { line: Transaction }) {
     }
     case "proposed":
       return (
-        <Link href={panel} className="badge badge-warn" aria-label={`Vorschlag prüfen – ${subject}`}>
-          Vorschlag prüfen
+        <Link href={panel} className="badge badge-warn" aria-label={`${t.reviewSuggestion} – ${subject}`}>
+          {t.reviewSuggestion}
         </Link>
       );
     case "duplicate_open":
       return (
-        <Link href={`/accounts/${line.account_id}?tab=doppelbuchungen`} className="badge badge-warn" aria-label={`Mögliche Doppelbuchung – ${subject}`}>
-          Mögliche Doppelbuchung
+        <Link href={`/accounts/${line.account_id}?tab=doppelbuchungen`} className="badge badge-warn" aria-label={`${t.possibleDuplicate} – ${subject}`}>
+          {t.possibleDuplicate}
         </Link>
       );
     case "not_reconciled":
       return (
-        <Link href={`/accounts/${line.account_id}?tab=kontoauszuege`} className="badge badge-muted" aria-label={`Kontoauszug nicht abgestimmt – ${subject}`}>
-          Kontoauszug nicht abgestimmt
+        <Link href={`/accounts/${line.account_id}?tab=kontoauszuege`} className="badge badge-muted" aria-label={`${t.notReconciled} – ${subject}`}>
+          {t.notReconciled}
         </Link>
       );
     default:
       return (
-        <Link href={panel} className="badge" aria-label={`Offen – ${subject}`}>
-          Offen
+        <Link href={panel} className="badge" aria-label={`${t.open} – ${subject}`}>
+          {t.open}
         </Link>
       );
   }
@@ -581,13 +561,15 @@ function LineStatus({ line }: { line: Transaction }) {
 
 /** Umsätze, with where each line stands and a filter Alle / Offen / Gebucht. */
 export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
+  const t = useT(statements);
   const [filter, setFilter] = useState<LineFilter>("all");
-  if (transactions.length === 0) return <p className="muted">Keine Umsätze in diesem Zeitraum.</p>;
+  if (transactions.length === 0) return <p className="muted">{t.noLines}</p>;
+  const filterLabel: Record<LineFilter, string> = { all: t.filterAll, open: t.filterOpen, booked: t.filterBooked };
   const shown = transactions.filter((line) => matchesFilter(line, filter));
   return (
     <div className="stack">
-      <div className="row" role="group" aria-label="Umsätze filtern">
-        {LINE_FILTERS.map(({ key, label }) => (
+      <div className="row" role="group" aria-label={t.filterLines}>
+        {LINE_FILTERS.map((key) => (
           <button
             key={key}
             type="button"
@@ -595,12 +577,12 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
             aria-pressed={key === filter}
             onClick={() => setFilter(key)}
           >
-            {label} ({transactions.filter((line) => matchesFilter(line, key)).length})
+            {filterLabel[key]} ({transactions.filter((line) => matchesFilter(line, key)).length})
           </button>
         ))}
       </div>
       {shown.length === 0 ? (
-        <p className="muted">{filter === "open" ? "Keine offenen Umsätze in diesem Zeitraum." : "Keine gebuchten Umsätze in diesem Zeitraum."}</p>
+        <p className="muted">{filter === "open" ? t.noOpenLines : t.noBookedLines}</p>
       ) : (
         <TransactionRows transactions={shown} />
       )}
@@ -609,25 +591,27 @@ export function TransactionsTable({ transactions }: { transactions: Transaction[
 }
 
 function TransactionRows({ transactions }: { transactions: Transaction[] }) {
+  const t = useT(statements);
+  const f = useFormat();
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Buchungstag</th>
-            <th>Gegenseite</th>
-            <th>Verwendungszweck</th>
-            <th className="num">Betrag</th>
-            <th>Zuordnung</th>
+            <th>{t.colBookingDay}</th>
+            <th>{t.colCounterparty}</th>
+            <th>{t.colPurpose}</th>
+            <th className="num">{t.colAmount}</th>
+            <th>{t.colAllocation}</th>
           </tr>
         </thead>
         <tbody>
           {transactions.map((line) => (
             <tr key={line.id} className={line.excluded_as_duplicate_of ? "excluded" : undefined}>
               <td>
-                {formatDate(line.booking_date)}
+                {f.date(line.booking_date)}
                 {line.value_date && line.value_date !== line.booking_date ? (
-                  <p className="cell-detail">Wert {formatDate(line.value_date)}</p>
+                  <p className="cell-detail">{t.valueDate(f.date(line.value_date))}</p>
                 ) : null}
               </td>
               <td>
@@ -639,13 +623,13 @@ function TransactionRows({ transactions }: { transactions: Transaction[] }) {
                 {line.booking_text ? <p className="cell-detail">{line.booking_text}</p> : null}
                 {line.excluded_as_duplicate_of ? (
                   <p className="cell-detail">
-                    <span className="badge badge-muted">Doppelbuchung, zählt nicht</span>
+                    <span className="badge badge-muted">{t.duplicateNotCounted}</span>
                   </p>
                 ) : null}
               </td>
               <td className={isCredit(line.amount) ? "num amount-in" : "num"}>
                 {isCredit(line.amount) ? "+" : ""}
-                {formatMoney(line.amount)}
+                {f.money(line.amount)}
               </td>
               <td className="actions">
                 <LineStatus line={line} />
@@ -661,19 +645,21 @@ function TransactionRows({ transactions }: { transactions: Transaction[] }) {
 // --- possible duplicates ------------------------------------------------------------------
 
 function DuplicateLine({ caption, line, imp }: { caption: string; line: Transaction; imp: StatementImport | undefined }) {
+  const t = useT(statements);
+  const f = useFormat();
   return (
     <tr className={line.excluded_as_duplicate_of ? "excluded" : undefined}>
       <td>
         {caption}
-        <p className="cell-detail">{imp ? `${STATEMENT_FORMAT[imp.format]}, importiert ${formatDateTime(imp.created_at)}` : "–"}</p>
+        <p className="cell-detail">{imp ? t.importedVia(STATEMENT_FORMAT[imp.format], f.dateTime(imp.created_at)) : "–"}</p>
       </td>
-      <td>{formatDate(line.booking_date)}</td>
+      <td>{f.date(line.booking_date)}</td>
       <td>
         {line.counterparty_name ?? "–"}
         {line.counterparty_iban_masked ? <p className="cell-detail">{line.counterparty_iban_masked}</p> : null}
       </td>
       <td>{line.purpose || "–"}</td>
-      <td className="num">{formatMoney(line.amount)}</td>
+      <td className="num">{f.money(line.amount)}</td>
     </tr>
   );
 }
@@ -691,6 +677,8 @@ export function DuplicateCard({
   imports: Map<string, StatementImport>;
   onDecided: () => void;
 }) {
+  const t = useT(statements);
+  const f = useFormat();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -718,32 +706,32 @@ export function DuplicateCard({
         <table>
           <thead>
             <tr>
-              <th>Umsatz</th>
-              <th>Buchungstag</th>
-              <th>Gegenseite</th>
-              <th>Verwendungszweck</th>
-              <th className="num">Betrag</th>
+              <th>{t.colLine}</th>
+              <th>{t.colBookingDay}</th>
+              <th>{t.colCounterparty}</th>
+              <th>{t.colPurpose}</th>
+              <th className="num">{t.colAmount}</th>
             </tr>
           </thead>
           <tbody>
-            <DuplicateLine caption="Zuerst importiert" line={first} imp={imports.get(first.import_id)} />
-            <DuplicateLine caption="Später importiert" line={later} imp={imports.get(later.import_id)} />
+            <DuplicateLine caption={t.firstImported} line={first} imp={imports.get(first.import_id)} />
+            <DuplicateLine caption={t.laterImported} line={later} imp={imports.get(later.import_id)} />
           </tbody>
         </table>
       </div>
       {pair.status === "open" ? (
         <div className="row">
           <button type="button" disabled={busy} onClick={() => void decide("merged")}>
-            Zusammenführen
+            {t.merge}
           </button>
           <button type="button" className="secondary" disabled={busy} onClick={() => void decide("kept_both")}>
-            Beide behalten
+            {t.keepBoth}
           </button>
         </div>
       ) : (
         <p>
           <span className="badge badge-muted">{DUPLICATE_STATUS[pair.status]}</span>
-          {pair.decided_at ? <span className="muted"> am {formatDateTime(pair.decided_at)}</span> : null}
+          {pair.decided_at ? <span className="muted">{t.decidedOn(f.dateTime(pair.decided_at))}</span> : null}
         </p>
       )}
       <ErrorNotice error={error} />
@@ -765,6 +753,7 @@ export function DuplicatesList({
   imports: Map<string, StatementImport>;
   onDecided: () => void;
 }) {
+  const t = useT(statements);
   const shown = duplicates.flatMap((pair) => {
     const first = transactions.get(pair.transaction_id);
     const later = transactions.get(pair.other_transaction_id);
@@ -778,20 +767,16 @@ export function DuplicatesList({
   return (
     <div className="stack">
       {open.length === 0 ? (
-        <p className="muted">Keine offenen möglichen Doppelbuchungen.</p>
+        <p className="muted">{t.noOpenDuplicates}</p>
       ) : (
         <>
-          <p className="muted">
-            Dieselbe Zahlung zweimal importiert, etwa einmal als CSV und einmal als camt? „Zusammenführen“ nimmt den später
-            importierten Umsatz aus allen Salden, und die Kontoauszüge werden neu abgestimmt. „Beide behalten“, wenn es zwei
-            echte Zahlungen waren.
-          </p>
+          <p className="muted">{t.duplicatesExplain}</p>
           {open.map(card)}
         </>
       )}
       {decided.length > 0 ? (
         <details>
-          <summary>{decided.length} bereits entschieden</summary>
+          <summary>{t.alreadyDecided(decided.length)}</summary>
           <div className="stack">{decided.map(card)}</div>
         </details>
       ) : null}

@@ -222,6 +222,20 @@ test("an Einnahme ohne Zuordnung is booked as rent from its to-do", async ({ pag
   const stored = await apiCall<{ allocations: { amount: string; category: string; status: string }[] }>(page, "GET", allocationsPath);
   expect(stored.allocations.map((a) => a.status)).toEqual(["confirmed", "confirmed"]);
   expect(stored.allocations.map((a) => a.category).sort()).toEqual(["other_income", "rent_cold"]);
+
+  // In English (phase 10 D284) the remaining to-do's dialog reads from i18n/todos.ts
+  // (todoActions), its date and amount in English format; cancelling changes nothing.
+  await page.evaluate(() => window.localStorage.setItem("hausbuch.locale", "en"));
+  await page.reload();
+  const missing = page.getByRole("region", { name: "Still missing" });
+  await missing.getByRole("button", { name: "Book as rent" }).click();
+  const english = page.getByRole("dialog", { name: "Book income as rent" });
+  await expect(english).toContainText("28 Sep 2026");
+  await expect(english).toContainText(/€(700\.00|40\.18)/);
+  await expect(english).toContainText("is booked as base rent");
+  await english.getByRole("button", { name: "Cancel" }).click();
+  await expect(english).toBeHidden();
+  await page.evaluate(() => window.localStorage.removeItem("hausbuch.locale"));
 });
 
 // D142: a deposit paid into the account proves it. The camt sample's "Partei D" credit (28 Sep

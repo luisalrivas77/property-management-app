@@ -89,11 +89,13 @@ import { useCallback, useId, useMemo, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
+import { type Formatter, localized, useFormat, useT } from "@/i18n";
+import { allocationsText } from "@/i18n/allocations";
+import { common } from "@/i18n/common";
 
 import { DocumentPicker } from "./documents";
 import { loadDirectory, partyNames, type Directory } from "./entities";
 import { collector, Field, FormBanner, useFormErrors, type FieldMessages } from "./form";
-import { formatDate, formatDateTime, formatMoney } from "./format";
 import { decimalInput, toSignedMoneyString } from "./input";
 import { ALLOCATION_CATEGORY, ALLOCATION_METHOD, categoryGroups } from "./labels";
 import { AllocationTaxInputs } from "./taxInputs";
@@ -110,10 +112,12 @@ export type TransactionAllocations = Schemas["TransactionAllocations"];
 export type ConfirmAllocationsBody = Schemas["ConfirmAllocationsBody"];
 type RebookBlocker = Schemas["RebookBlocker"];
 type RebookBlockReason = Schemas["RebookBlockReason"];
+type AllocationsText = (typeof allocationsText)["de"];
 
 /** Why an earlier payment cannot be re-booked by „Diese auch auf … umbuchen“, and what to do
  * first (phase 6 D160, rebook_blockers). */
-const REBOOK_BLOCK_TEXT: Record<RebookBlockReason, string> = {
+const REBOOK_BLOCK_TEXT: Record<RebookBlockReason, string> = localized<RebookBlockReason>(
+  {
   not_open:
     "ihr Kontoauszug ist nicht abgestimmt, oder sie wartet auf die Entscheidung über eine mögliche Doppelbuchung. Erst das unter Zu prüfen erledigen.",
   split: "sie ist auf mehrere Kategorien aufgeteilt. Sie bitte öffnen und von Hand zuordnen.",
@@ -122,7 +126,18 @@ const REBOOK_BLOCK_TEXT: Record<RebookBlockReason, string> = {
   category: "ihre Kategorie bucht Hausbuch nicht automatisch um. Sie bitte öffnen und von Hand ändern.",
   linked:
     "sie ist als Überweisung zwischen eigenen Konten oder als Depotbewegung verknüpft. Sie bitte öffnen und prüfen, ob sie wirklich zu diesem Empfänger gehört.",
-};
+  },
+  {
+    not_open:
+      "its statement is not reconciled, or it is waiting for a decision about a possible duplicate. Deal with that under To review first.",
+    split: "it is split across several categories. Please open it and categorise it by hand.",
+    scoped: "it is assigned to a property, a tenancy or a loan. Please open it and change it by hand.",
+    document: "a receipt is attached to it. Please open it and change it by hand.",
+    category: "Hausbuch does not re-book its category automatically. Please open it and change it by hand.",
+    linked:
+      "it is linked as a transfer between own accounts or as a depot movement. Please open it and check whether it really belongs to this payee.",
+  },
+);
 
 /** At most this many blocking payments are named one by one. */
 const REBOOK_BLOCKERS_SHOWN = 5;
@@ -368,6 +383,9 @@ function AllocationEditor({
   const onlyId = useId();
   const rebookId = useId();
   const ibanId = useId();
+  const t = useT(allocationsText);
+  const c = useT(common);
+  const f = useFormat();
 
   const keys = useMemo(
     () => [
@@ -443,7 +461,7 @@ function AllocationEditor({
     rows.every((row) => row.category === "internal_transfer_out" || row.category === "bank_fees");
   const showIbanBox = ibanOffer !== null && transferOut;
   const payeeLabel = view.payee_label ?? null;
-  const payee = payeeLabel || line.counterparty_name?.trim() || "dieser Gegenseite";
+  const payee = payeeLabel || line.counterparty_name?.trim() || t.thisPayee;
 
   function update(key: number, patch: Partial<Row>) {
     setRowsEdited(true);
@@ -471,7 +489,7 @@ function AllocationEditor({
     const drafts: AllocationDraft[] = [];
     rows.forEach((row, index) => {
       const amount = values.take(rowKey(index, "amount"), toSignedMoneyString(row.amount));
-      if (row.category === "") (messages[rowKey(index, "category")] ??= []).push("Bitte eine Kategorie wählen.");
+      if (row.category === "") (messages[rowKey(index, "category")] ??= []).push(t.categoryMissing);
       if (amount === undefined || row.category === "") return;
       drafts.push({
         amount,
@@ -496,9 +514,9 @@ function AllocationEditor({
           ? suggestion
           : `^${escapeRegExp(kept.replace(/^\^/, ""))}`;
     if (suggestion !== null && learn && kept.replace(/^\^/, "") === "") {
-      (messages.purpose_pattern ??= []).push("Bitte einen Anfang eintragen oder „Künftig immer so zuordnen“ abwählen.");
+      (messages.purpose_pattern ??= []).push(t.patternEmpty);
     } else if (suggested !== null && suggested.length > PATTERN_MAX_LENGTH) {
-      (messages.purpose_pattern ??= []).push("Der Anfang ist zu lang; bitte kürzen.");
+      (messages.purpose_pattern ??= []).push(t.patternTooLong);
     }
     if (!values.ok || Object.keys(messages).length > 0) return form.invalid({ ...values.messages, ...messages });
     const typed = pattern.trim();
@@ -542,25 +560,25 @@ function AllocationEditor({
     <form className="stack allocation-editor" onSubmit={submit} noValidate>
       {proposed ? (
         <p className="allocation-source">
-          <span className="ai-badge">{current[0]?.method === "llm" ? "KI" : "Auto"}</span>
-          Vorschlag: {ALLOCATION_METHOD[current[0]?.method ?? "user"]}
+          <span className="ai-badge">{current[0]?.method === "llm" ? t.badgeAi : t.badgeAuto}</span>
+          {t.suggestion(ALLOCATION_METHOD[current[0]?.method ?? "user"])}
         </p>
       ) : null}
       <div>
         <h2 className="allocation-title">
-          {line.counterparty_name ?? line.booking_text ?? "Ohne Gegenseite"} ·{" "}
+          {line.counterparty_name ?? line.booking_text ?? t.noCounterparty} ·{" "}
           <span className={isCredit(line.amount) ? "amount-in" : undefined}>
             {isCredit(line.amount) ? "+" : ""}
-            {formatMoney(line.amount)}
+            {f.money(line.amount)}
           </span>
         </h2>
         <p className="cell-detail">
-          Buchungstag {formatDate(line.booking_date)}
-          {line.value_date && line.value_date !== line.booking_date ? ` · Wert ${formatDate(line.value_date)}` : ""}
+          {t.bookingDay(f.date(line.booking_date))}
+          {line.value_date && line.value_date !== line.booking_date ? t.valueDay(f.date(line.value_date)) : ""}
           {line.counterparty_iban_masked ? ` · ${line.counterparty_iban_masked}` : ""}
         </p>
-        {payeeLabel ? <p className="cell-detail">Empfänger: {payeeLabel}</p> : null}
-        <p className="allocation-purpose">{line.purpose || "Kein Verwendungszweck"}</p>
+        {payeeLabel ? <p className="cell-detail">{t.payee(payeeLabel)}</p> : null}
+        <p className="allocation-purpose">{line.purpose || t.noPurpose}</p>
         {line.booking_text ? <p className="cell-detail">{line.booking_text}</p> : null}
       </div>
       {shownReasoning ? <p className="allocation-reasoning">{shownReasoning}</p> : null}
@@ -568,8 +586,10 @@ function AllocationEditor({
       {confirmed ? (
         <div className="notice notice-info">
           <p>
-            Bestätigt{current[0]?.confirmed_at ? ` am ${formatDateTime(current[0].confirmed_at)}` : ""} ({ALLOCATION_METHOD[current[0]?.method ?? "user"]}).
-            Eine Änderung ersetzt diese Zuordnung; die bisherige bleibt im Verlauf.
+            {t.confirmed(
+              current[0]?.confirmed_at ? f.dateTime(current[0].confirmed_at) : null,
+              ALLOCATION_METHOD[current[0]?.method ?? "user"],
+            )}
           </p>
         </div>
       ) : null}
@@ -591,17 +611,15 @@ function AllocationEditor({
       </div>
       <div className="row">
         <button type="button" className="secondary" onClick={addRow}>
-          Zeile hinzufügen
+          {t.addRow}
         </button>
         <span className="spacer" />
         <p className={balanced ? "allocation-rest" : "allocation-rest open"} role="status" aria-live="polite">
-          Rest: {rest === null ? "–" : formatMoney(centsToString(rest))}
+          {t.rest(rest === null ? "–" : f.money(centsToString(rest)))}
         </p>
       </div>
-      {rest === null ? <p className="muted">Bitte die Beträge prüfen: jede Zeile braucht einen Betrag, z. B. -180,00.</p> : null}
-      {rest !== null && !balanced ? (
-        <p className="muted">Die Zeilen müssen zusammen genau den Betrag der Buchung ergeben ({formatMoney(line.amount)}).</p>
-      ) : null}
+      {rest === null ? <p className="muted">{t.amountsInvalid}</p> : null}
+      {rest !== null && !balanced ? <p className="muted">{t.notBalanced(f.money(line.amount))}</p> : null}
 
       {noRule || blocked !== null ? (
         // D160 amended (5): no rule can be learned here, so no box and no pattern field; a
@@ -611,22 +629,18 @@ function AllocationEditor({
         <div className={form.of("learn_rule").length > 0 ? "field field-invalid" : "field"}>
           <label className="inline" htmlFor={learnId}>
             <input id={learnId} type="checkbox" checked={learn} onChange={(e) => setLearnChoice(e.target.checked)} />
-            Künftig immer so zuordnen
+            {t.learnRule}
           </label>
           <p className="muted hint">
-            {payeeLabel
-              ? `Weitere Zahlungen an ${payeeLabel} werden dann ohne Rückfrage so zugeordnet, andere Händler über denselben Zahlungsdienst nicht.`
-              : "Weitere Buchungen dieser Gegenseite werden dann ohne Rückfrage so zugeordnet."}
-            {asked === null && sameCount > 0 ? ` ${waitingText(sameCount, line.amount)}` : null}
+            {payeeLabel ? t.learnHintMerchant(payeeLabel) : t.learnHint}
+            {asked === null && sameCount > 0 ? ` ${waitingText(t, f, sameCount, line.amount)}` : null}
           </p>
           <FieldErrors messages={form.of("learn_rule")} />
           {earlier.length > 0 && askedCategory !== "" ? (
             <div className="allocation-rebook stack">
               {earlier.map((entry) => (
                 <p key={entry.category} className="muted">
-                  {entry.count === 1
-                    ? `1 frühere Zahlung von ${payee} ist als ${ALLOCATION_CATEGORY[entry.category]} bestätigt.`
-                    : `${entry.count} frühere Zahlungen von ${payee} sind als ${ALLOCATION_CATEGORY[entry.category]} bestätigt.`}
+                  {t.earlier(entry.count, payee, ALLOCATION_CATEGORY[entry.category])}
                 </p>
               ))}
               {blockers.length > 0 ? (
@@ -636,12 +650,9 @@ function AllocationEditor({
                 <>
                   <label className="inline" htmlFor={rebookId}>
                     <input id={rebookId} type="checkbox" checked={rebook} onChange={(e) => setRebook(e.target.checked)} />
-                    Diese auch auf {ALLOCATION_CATEGORY[askedCategory]} umbuchen
+                    {t.rebook(ALLOCATION_CATEGORY[askedCategory])}
                   </label>
-                  <p className="muted hint">
-                    Ohne Umbuchen lernt Hausbuch keine Regel, denn sie würde diesen früheren Zahlungen widersprechen. Jede
-                    umgebuchte Zahlung lässt sich danach einzeln ändern; die bisherige Zuordnung bleibt im Verlauf.
-                  </p>
+                  <p className="muted hint">{t.rebookHint}</p>
                 </>
               ) : null}
             </div>
@@ -649,11 +660,13 @@ function AllocationEditor({
           {asked !== null ? (
             <fieldset className="allocation-same-amount">
               <legend>
-                Von {payeeLabel || line.counterparty_name?.trim() || "dieser Bankverbindung"} warten noch{" "}
-                {otherCount === 1 ? "1 Zahlung mit einem anderen Betrag" : `${otherCount} Zahlungen mit anderen Beträgen`}
-                {otherCount > listed ? ", am häufigsten " : ": "}
-                {others.map((other) => `${formatMoney(unsigned(other.amount))} (${other.count}×)`).join(", ")}. Gehören die
-                auch zu {ALLOCATION_CATEGORY[asked]}?
+                {t.sameAmountQuestion(
+                  payeeLabel || line.counterparty_name?.trim() || t.thisBankAccount,
+                  otherCount,
+                  otherCount > listed,
+                  others.map((other) => `${f.money(unsigned(other.amount))} (${other.count}×)`).join(", "),
+                  ALLOCATION_CATEGORY[asked],
+                )}
               </legend>
               <div className="row" role="radiogroup">
                 <label className="inline" htmlFor={allId}>
@@ -664,7 +677,7 @@ function AllocationEditor({
                     checked={sameAmountOnly === false}
                     onChange={() => setSameAmount({ category: asked, only: false })}
                   />
-                  Ja, alle so zuordnen: die Regel gilt dann auch für {countText(otherCount + sameCount)}
+                  {t.yesAll(t.waitingCount(otherCount + sameCount))}
                 </label>
                 <label className="inline" htmlFor={onlyId}>
                   <input
@@ -674,8 +687,8 @@ function AllocationEditor({
                     checked={sameAmountOnly === true}
                     onChange={() => setSameAmount({ category: asked, only: true })}
                   />
-                  Nein, nur Zahlungen über {formatMoney(unsigned(line.amount))}
-                  {sameCount > 0 ? `: die Regel gilt dann auch für ${countText(sameCount)}` : null}
+                  {t.noOnly(f.money(unsigned(line.amount)))}
+                  {sameCount > 0 ? t.alsoFor(t.waitingCount(sameCount)) : null}
                 </label>
               </div>
             </fieldset>
@@ -685,14 +698,14 @@ function AllocationEditor({
         <div className={form.of("learn_rule").length > 0 ? "field field-invalid" : "field"}>
           <label className="inline" htmlFor={learnId}>
             <input id={learnId} type="checkbox" checked={learn} onChange={(e) => setLearnChoice(e.target.checked)} />
-            Künftig immer so zuordnen
+            {t.learnRule}
           </label>
           <FieldErrors messages={form.of("learn_rule")} />
           <Field
             id={patternId}
-            label="Erkannt am Anfang des Verwendungszwecks"
-            hint={suggestionHint(suggestedText, suggestion, view.suggested_pattern_waiting ?? 0)}
-            description="Diese Buchung hat keine Kontonummer der Gegenseite. Hausbuch erkennt diese Art Buchung am Anfang ihres Verwendungszwecks; der Text lässt sich ändern."
+            label={t.recognisedLabel}
+            hint={suggestionHint(t, suggestedText, suggestion, view.suggested_pattern_waiting ?? 0)}
+            description={t.recognisedDescription}
             errors={form.of("purpose_pattern")}
           >
             <input
@@ -708,9 +721,9 @@ function AllocationEditor({
       ) : (
         <Field
           id={patternId}
-          label="Muster im Verwendungszweck (optional)"
-          hint="Für diese Gegenseite lernt Hausbuch keine Regel allein aus der IBAN. Mit einem Muster (z. B. Abschluss) werden künftige Buchungen mit passendem Verwendungszweck so zugeordnet."
-          description="Ein Text aus dem Verwendungszweck, an dem sich diese Art Buchung erkennen lässt, z. B. „Abschluss“ bei der Kontoabrechnung der Bank."
+          label={t.patternLabel}
+          hint={t.patternHint}
+          description={t.patternDescription}
           errors={form.of("purpose_pattern")}
         >
           <input
@@ -727,7 +740,7 @@ function AllocationEditor({
         <div className="field">
           <label className="inline" htmlFor={ibanId}>
             <input id={ibanId} type="checkbox" checked={learnIban} onChange={(e) => setLearnIban(e.target.checked)} />
-            IBAN als Einzahlungskonto von {ibanOffer.exchange_label} merken
+            {t.learnIban(ibanOffer.exchange_label)}
           </label>
           <p className="muted hint">{ibanOffer.text}</p>
         </div>
@@ -735,19 +748,14 @@ function AllocationEditor({
 
       <div className="row">
         <button type="submit" disabled={busy || !balanced || unanswered}>
-          {busy ? "Bestätigt …" : "Bestätigen"}
+          {busy ? t.confirming : c.confirm}
         </button>
-        {!balanced ? <span className="muted">Erst wenn der Rest 0,00 € ist.</span> : null}
-        {balanced && unanswered ? <span className="muted">Erst die Frage zu den weiteren Zahlungen beantworten.</span> : null}
+        {!balanced ? <span className="muted">{t.restNotZero}</span> : null}
+        {balanced && unanswered ? <span className="muted">{t.answerFirst}</span> : null}
       </div>
       <FormBanner errors={form.errors} />
     </form>
   );
-}
-
-/** „17 wartende Zahlungen“: how many waiting lines the rule learned with this answer covers. */
-function countText(count: number): string {
-  return count === 1 ? "1 wartende Zahlung" : `${count} wartende Zahlungen`;
 }
 
 /** The longest pattern a rule may have (services.rules_learned.PATTERN_MAX_LENGTH). */
@@ -767,20 +775,18 @@ function readablePattern(pattern: string): string {
 
 /** The hint under the suggested pattern: which lines the rule books and, while the field still
  * shows the suggestion, how many of them wait. */
-function suggestionHint(text: string, suggestion: string, waiting: number): string {
+function suggestionHint(t: AllocationsText, text: string, suggestion: string, waiting: number): string {
   const kept = text.trim();
-  if (kept === "") return "Ohne einen Anfang lernt Hausbuch keine Regel.";
+  if (kept === "") return t.noStartNoRule;
   const start = kept.replace(/^\^/, "");
   const unchanged = kept === readablePattern(suggestion);
-  return `Die Regel gilt für Buchungen, deren Verwendungszweck mit „${start}“ beginnt${
-    unchanged && waiting > 0 ? ` – auch für ${countText(waiting)}` : ""
-  }.`;
+  return t.suggestionHint(start, unchanged && waiting > 0 ? t.waitingCount(waiting) : null);
 }
 
-/** The hint's addition when the rule covers waiting lines of this line's amount only. */
-function waitingText(count: number, amount: string): string {
-  const what = count === 1 ? "1 wartende Zahlung" : `${count} wartende Zahlungen`;
-  return `Die Regel gilt dann auch für ${what} über ${formatMoney(unsigned(amount))}.`;
+/** The hint's addition when the rule covers waiting lines of this line's amount only
+ * („17 wartende Zahlungen“: how many waiting lines the rule learned with this answer covers). */
+function waitingText(t: AllocationsText, f: Formatter, count: number, amount: string): string {
+  return t.waitingSame(t.waitingCount(count), f.money(unsigned(amount)));
 }
 
 function FieldErrors({ messages }: { messages: string[] }) {
@@ -816,6 +822,8 @@ function RowFields({
   onRemove: () => void;
 }) {
   const id = `allocation-${row.key}`;
+  const t = useT(allocationsText);
+  const f = useFormat();
   const units = directory.units.filter((unit) => unit.property_id === row.propertyId);
   const unitIds = new Set(units.map((unit) => unit.id));
   const tenancies = directory.tenancies.filter((tenancy) =>
@@ -839,12 +847,12 @@ function RowFields({
 
   return (
     <fieldset className="allocation-row">
-      <legend>Zeile {index + 1}</legend>
+      <legend>{t.row(index + 1)}</legend>
       <div className="allocation-fields">
         <Field
           id={`${id}-amount`}
-          label="Betrag (€)"
-          description="Der Teil der Buchung, der in diese Kategorie fällt; Ausgaben mit Minus. Alle Zeilen zusammen ergeben genau den Betrag der Buchung."
+          label={t.amount}
+          description={t.amountDescription}
           errors={errors("amount")}
         >
           <input
@@ -858,16 +866,12 @@ function RowFields({
         </Field>
         <Field
           id={`${id}-category`}
-          label="Kategorie"
-          description={
-            rental
-              ? "Wofür das Geld war, z. B. Kaltmiete, Darlehenszinsen oder Hausgeld. Nach ihr ordnet der Anlage-V-Entwurf den Betrag ein."
-              : "Wofür das Geld war, z. B. Lebensmittel, Gehalt oder Versicherung. Ein Privatkonto zählt nie in die Anlage V; „Kosten der Immobilie, privat bezahlt“ merkt eine Rechnung der Wohnung vor, die von hier bezahlt wurde."
-          }
+          label={t.category}
+          description={rental ? t.categoryRental : t.categoryPrivate}
           errors={errors("category")}
         >
           <select value={row.category} onChange={(e) => onChange({ category: e.target.value as AllocationCategory | "" })} required>
-            <option value="">– wählen –</option>
+            <option value="">{t.choose}</option>
             {groups.map((group) =>
               group.label === null ? (
                 group.categories.map(([value, label]) => (
@@ -889,12 +893,12 @@ function RowFields({
         </Field>
         <Field
           id={`${id}-property`}
-          label="Immobilie"
-          description="Zu welcher Immobilie der Betrag gehört."
+          label={t.property}
+          description={t.propertyDescription}
           errors={errors("property_id")}
         >
           <select value={row.propertyId} onChange={(e) => setProperty(e.target.value)}>
-            <option value="">– keine –</option>
+            <option value="">{t.noneFeminine}</option>
             {directory.properties.map((property) => (
               <option key={property.id} value={property.id}>
                 {property.label}
@@ -905,12 +909,12 @@ function RowFields({
         {(rental && units.length > 0) || row.unitId ? (
           <Field
             id={`${id}-unit`}
-            label="Einheit"
-            description="Zu welcher Einheit der Betrag gehört, z. B. die Wohnung, deren Miete das ist."
+            label={t.unit}
+            description={t.unitDescription}
             errors={errors("unit_id")}
           >
             <select value={row.unitId} onChange={(e) => onChange({ unitId: e.target.value, tenancyId: "" })}>
-              <option value="">– keine –</option>
+              <option value="">{t.noneFeminine}</option>
               {units.map((unit) => (
                 <option key={unit.id} value={unit.id}>
                   {unit.label}
@@ -922,15 +926,15 @@ function RowFields({
         {(rental && tenancies.length > 0) || row.tenancyId ? (
           <Field
             id={`${id}-tenancy`}
-            label="Mietverhältnis"
-            description="Bei Miete, Nebenkosten oder Kaution: das Mietverhältnis, zu dem die Zahlung gehört."
+            label={t.tenancy}
+            description={t.tenancyDescription}
             errors={errors("tenancy_id")}
           >
             <select value={row.tenancyId} onChange={(e) => setTenancy(e.target.value)}>
-              <option value="">– keines –</option>
+              <option value="">{t.noneNeuter}</option>
               {tenancies.map((tenancy) => (
                 <option key={tenancy.id} value={tenancy.id}>
-                  {unitLabel.get(tenancy.unit_id) ?? "?"}: {partyNames(tenancy, directory.tenants)} (ab {formatDate(tenancy.start_date)})
+                  {t.tenancyOption(unitLabel.get(tenancy.unit_id) ?? "?", partyNames(tenancy, directory.tenants), f.date(tenancy.start_date))}
                 </option>
               ))}
             </select>
@@ -939,12 +943,12 @@ function RowFields({
         {(rental && loans.length > 0) || row.loanId ? (
           <Field
             id={`${id}-loan`}
-            label="Darlehen"
-            description="Bei Zinsen, Tilgung oder Geldbeschaffungskosten: das Darlehen, zu dem die Zahlung gehört."
+            label={t.loan}
+            description={t.loanDescription}
             errors={errors("loan_id")}
           >
             <select value={row.loanId} onChange={(e) => onChange({ loanId: e.target.value })}>
-              <option value="">– keines –</option>
+              <option value="">{t.noneNeuter}</option>
               {loans.map((loan) => (
                 <option key={loan.id} value={loan.id}>
                   {loan.lender}
@@ -956,16 +960,16 @@ function RowFields({
         ) : null}
         <Field
           id={`${id}-from`}
-          label="Leistungszeitraum von"
-          description="Der Zeitraum, für den gezahlt wurde, z. B. 01.01. bis 31.01. für die Januarmiete. Er wird gespeichert, damit Zahlungen um den Jahreswechsel später dem richtigen Steuerjahr zugeordnet werden können."
+          label={t.periodFrom}
+          description={t.periodFromDescription}
           errors={errors("service_period_start")}
         >
           <input type="date" value={row.periodStart} onChange={(e) => onChange({ periodStart: e.target.value })} />
         </Field>
         <Field
           id={`${id}-to`}
-          label="bis"
-          description="Das Ende des Leistungszeitraums."
+          label={t.periodTo}
+          description={t.periodToDescription}
           errors={errors("service_period_end")}
         >
           <input type="date" value={row.periodEnd} onChange={(e) => onChange({ periodEnd: e.target.value })} />
@@ -978,24 +982,24 @@ function RowFields({
           checked={row.recurring}
           onChange={(e) => onChange({ recurring: e.target.checked })}
         />
-        Wiederkehrend (z. B. monatliche Miete oder Rate)
+        {t.recurring}
       </label>
       <Field
         id={`${id}-document`}
-        label="Beleg"
-        description="Die Rechnung oder das Schreiben zu dieser Zahlung, falls es eines gibt."
+        label={t.receipt}
+        description={t.receiptDescription}
         errors={errors("document_id")}
       >
         <DocumentPicker value={row.documentId} onChange={(documentId) => onChange({ documentId })} />
       </Field>
       {row.documentId ? (
         <p className="cell-detail">
-          <Link href={`/documents/${row.documentId}`}>Beleg öffnen</Link>
+          <Link href={`/documents/${row.documentId}`}>{t.openReceipt}</Link>
         </p>
       ) : null}
       <div className="row">
         <button type="button" className="link" onClick={onRemove} disabled={!canRemove}>
-          Zeile entfernen
+          {t.removeRow}
         </button>
       </div>
     </fieldset>
@@ -1007,23 +1011,20 @@ function RowFields({
 function RebookBlocked({ blockers, payee }: { blockers: RebookBlocker[]; payee: string }) {
   const shown = blockers.slice(0, REBOOK_BLOCKERS_SHOWN);
   const more = blockers.length - shown.length;
+  const t = useT(allocationsText);
+  const f = useFormat();
   return (
     <div className="stack">
-      <p>
-        {blockers.length === 1
-          ? `Eine frühere Zahlung von ${payee} lässt sich nicht automatisch umbuchen. Sie muss zuerst von Hand geändert werden; danach lassen sich die übrigen hier umbuchen und die Regel lernen.`
-          : `${blockers.length} frühere Zahlungen von ${payee} lassen sich nicht automatisch umbuchen. Sie müssen zuerst von Hand geändert werden; danach lassen sich die übrigen hier umbuchen und die Regel lernen.`}{" "}
-        Oder diese Zahlung ohne „Künftig immer so zuordnen“ bestätigen.
-      </p>
+      <p>{t.blocked(blockers.length, payee)}</p>
       <ul>
         {shown.map((blocker) => (
           <li key={blocker.transaction_id}>
-            Zahlung vom {formatDate(blocker.booking_date)} über {formatMoney(blocker.amount)}: {REBOOK_BLOCK_TEXT[blocker.reason]}{" "}
-            <Link href={`/inbox?umsatz=${blocker.transaction_id}`}>Zahlung öffnen</Link>
+            {t.blocker(f.date(blocker.booking_date), f.money(blocker.amount), REBOOK_BLOCK_TEXT[blocker.reason])}{" "}
+            <Link href={`/inbox?umsatz=${blocker.transaction_id}`}>{t.openPayment}</Link>
           </li>
         ))}
       </ul>
-      {more > 0 ? <p className="muted">{more === 1 ? "Und 1 weitere." : `Und ${more} weitere.`}</p> : null}
+      {more > 0 ? <p className="muted">{t.more(more)}</p> : null}
     </div>
   );
 }

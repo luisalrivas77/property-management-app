@@ -5,9 +5,11 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect } from "react";
 
+import { LoadingLine } from "@/components/ui";
+
 export default function TaxPage() {
   return (
-    <Suspense fallback={<p className="muted">Lädt …</p>}>
+    <Suspense fallback={<LoadingLine />}>
       <ToCurrentYear />
     </Suspense>
   );
@@ -27,5 +29,5 @@ function ToCurrentYear() {
     const year = new Date().getFullYear();
     router.replace(forwarded ? `/tax/${year}?${forwarded}` : `/tax/${year}`);
   }, [router, forwarded]);
-  return <p className="muted">Lädt …</p>;
+  return <LoadingLine />;
 }

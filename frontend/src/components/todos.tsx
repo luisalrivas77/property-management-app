@@ -29,15 +29,15 @@ import type {
   WarningCode,
 } from "@/api/schemas";
 import type { components } from "@/api/types";
-import { translate, useT } from "@/i18n";
+import { formatter, translate, useFormat, useT } from "@/i18n";
 import { common } from "@/i18n/common";
 import { getLocale } from "@/i18n/locale";
-import { todosText } from "@/i18n/todos";
+import { todoActions, todosText } from "@/i18n/todos";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { centsToString, toCents } from "./allocations";
 import { ReadUpload } from "./documents";
-import { formatDate, formatMoney, formatPercent } from "./format";
+import { formatDate, formatMoney } from "./format";
 import { toDecimalString } from "./input";
 import { ACQUISITION_COST_KIND, ALLOCATION_CATEGORY, PRICE_SPLIT_SOURCE, proofBill } from "./labels";
 import { WithdrawNoPayButton } from "./noPay";
@@ -702,6 +702,9 @@ function AttachProofAction({
   onChanged?: () => void;
 }) {
   const router = useRouter();
+  const t = useT(todoActions);
+  const c = useT(common);
+  const f = useFormat();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   async function confirm(close: () => void) {
@@ -729,21 +732,20 @@ function AttachProofAction({
     }
   }
   return (
-    <ActionDialog label="Vorhandenen Nachweis zuordnen" title="Vorhandenen Zahlungsnachweis zuordnen" buttonClass="">
+    <ActionDialog label={t.attachProof} title={t.attachProofTitle} buttonClass="">
       {(close) => (
         <>
           <p>
-            Der schon hochgeladene Zahlungsnachweis{proof.amount ? ` über ${formatMoney(proof.amount)}` : ""} wird dieser Rechnung zugeordnet und
-            gilt dann als Beleg, dass sie bezahlt wurde. Wurde sie laut Nachweis in einem anderen Jahr bezahlt, öffnet sich danach der
-            Nachweis mit dem Vorschlag, sie in diesem Jahr zu zählen. <Link href={`/documents/${proof.id}`}>Nachweis ansehen</Link>
+            {t.attachProofText(proof.amount ? f.money(proof.amount) : null)}
+            <Link href={`/documents/${proof.id}`}>{t.viewProof}</Link>
           </p>
           <ErrorNotice error={error} />
           <div className="row">
             <button type="button" disabled={busy} onClick={() => void confirm(close)}>
-              {busy ? "Speichert …" : "Ja, zuordnen"}
+              {busy ? t.saving : t.yesAssign}
             </button>
             <button type="button" className="secondary" onClick={close}>
-              Abbrechen
+              {c.cancel}
             </button>
           </div>
         </>
@@ -763,10 +765,12 @@ function SplitAction({ propertyId, onChanged }: { propertyId: string; onChanged?
     [propertyId],
   );
   const splits = useLoad(load);
+  const t = useT(todoActions);
+  const f = useFormat();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const tab = `/properties/${propertyId}?tab=aufteilung`;
-  if (splits.data === undefined) return splits.error != null ? <Link href={tab}>Kaufpreisaufteilung öffnen</Link> : null;
+  if (splits.data === undefined) return splits.error != null ? <Link href={tab}>{t.openSplit}</Link> : null;
 
   const list = splits.data;
   const contract = list.filter((split) => split.source === "purchase_contract");
@@ -792,18 +796,20 @@ function SplitAction({ propertyId, onChanged }: { propertyId: string; onChanged?
   if (list.length === 0) {
     return (
       <>
-        <ReadUpload label="Kaufvertrag hochladen" onUploaded={onChanged} />
-        <Link href={tab}>Aufteilung selbst eintragen</Link>
+        <ReadUpload label={t.uploadContract} onUploaded={onChanged} />
+        <Link href={tab}>{t.enterSplit}</Link>
       </>
     );
   }
-  if (!only) return <Link href={tab}>Eine der {list.length} Aufteilungen wählen</Link>;
+  if (!only) return <Link href={tab}>{t.chooseSplit(list.length)}</Link>;
   return (
     <>
       <button type="button" disabled={busy} onClick={() => void select(only.id)}>
         {busy
-          ? "Wird übernommen …"
-          : `Gebäudeanteil ${formatPercent(only.building_share)} aus ${only.source === "purchase_contract" ? "dem Kaufvertrag" : `der Quelle „${PRICE_SPLIT_SOURCE[only.source]}“`} übernehmen`}
+          ? t.applying
+          : only.source === "purchase_contract"
+            ? t.applySplitFromContract(f.percent(only.building_share))
+            : t.applySplitFromSource(f.percent(only.building_share), PRICE_SPLIT_SOURCE[only.source])}
       </button>
       <ErrorNotice error={error} />
     </>
@@ -952,9 +958,10 @@ function assignDeposit(split: DepositSplit): Promise<RebookResult> {
 /** "WE 1, ab 01.01.2023": a tenancy as the to-do titles name it (scopeSuffix), from its own
  * deposit item in the same checklist; never a tenant's name (D5). */
 function tenancyLabel(tenancyId: string, items: readonly DocumentChecklistItem[] | undefined): string {
+  const t = translate(todoActions);
   const item = items?.find((i) => i.code === "deposit_record" && i.scope.id === tenancyId);
-  if (!item) return "Mietverhältnis";
-  return `${item.scope.unit_label ?? "Einheit"}, ab ${formatDate(item.scope.tenancy_start)}`;
+  if (!item) return t.tenancy;
+  return t.tenancyFrom(item.scope.unit_label ?? t.unit, formatter().date(item.scope.tenancy_start));
 }
 
 /** deposit_record (D142): „Kaution aus Bankumsatz zuordnen“, a dialog naming the bank line and
@@ -971,16 +978,19 @@ function DepositSplitAction({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [gone, setGone] = useState(false);
+  const t = useT(todoActions);
+  const c = useT(common);
+  const f = useFormat();
   const { offer, parts, rest } = split;
-  const payment = `Zahlung vom ${formatDate(offer.booking_date)} (${ALLOCATION_CATEGORY.deposit_in}, ${formatMoney(offer.amount)})`;
+  const payment = t.depositPayment(f.date(offer.booking_date), ALLOCATION_CATEGORY.deposit_in, f.money(offer.amount));
   const first = parts[0]?.cents ?? 0n;
   const each = parts.every((part) => part.cents === first) ? centsToString(first) : null;
   const question =
     parts.length > 1
-      ? `Die ${payment} auf ${parts.length} Mietverhältnisse aufteilen${each ? `: je ${formatMoney(each)}` : ""}?`
+      ? t.splitMany(payment, parts.length, each ? f.money(each) : null)
       : rest > 0n
-        ? `Von der ${payment} ${formatMoney(centsToString(first))} diesem Mietverhältnis zuordnen? Der Rest von ${formatMoney(centsToString(rest))} bleibt als Kaution ohne Mietverhältnis stehen.`
-        : `Die ${payment} diesem Mietverhältnis zuordnen?`;
+        ? t.splitPart(payment, f.money(centsToString(first)), f.money(centsToString(rest)))
+        : t.splitOne(payment);
   async function confirm(close: () => void) {
     setBusy(true);
     setError(null);
@@ -999,33 +1009,30 @@ function DepositSplitAction({
     }
   }
   return (
-    <ActionDialog label="Kaution aus Bankumsatz zuordnen" title="Kaution zuordnen" buttonClass="">
+    <ActionDialog label={t.assignDeposit} title={t.assignDepositTitle} buttonClass="">
       {(close) => (
         <>
           <p>{question}</p>
           <ul>
             {parts.map(({ candidate, cents }) => (
               <li key={candidate.tenancy_id}>
-                {tenancyLabel(candidate.tenancy_id, items)} · {formatMoney(centsToString(cents))}
+                {tenancyLabel(candidate.tenancy_id, items)} · {f.money(centsToString(cents))}
               </li>
             ))}
           </ul>
-          <p>
-            Die Zahlung gilt dann als Nachweis der Kaution. Die Änderung wird mit Datum gespeichert und lässt sich bei der
-            Zahlung wieder ändern.
-          </p>
+          <p>{t.depositProofNote}</p>
           {gone ? (
             <p className="field-errors" role="alert">
-              Diese Zahlung wurde inzwischen anders zugeordnet. Bitte die Zahlung öffnen und dort prüfen.
+              {t.paymentGone}
             </p>
           ) : null}
           <ErrorNotice error={error} />
           <div className="row">
             <button type="button" disabled={busy || gone} onClick={() => void confirm(close)}>
-              {busy ? "Speichert …" : "Übernehmen"}
+              {busy ? t.saving : c.apply}
             </button>
             <button type="button" className="secondary" onClick={close}>
-              Abbrechen
+              {c.cancel}
             </button>
           </div>
         </>
@@ -1064,6 +1071,9 @@ function RebookAsRentAction({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [gone, setGone] = useState(false);
+  const t = useT(todoActions);
+  const c = useT(common);
+  const f = useFormat();
   const transactionId = fact.transaction_id;
   if (!transactionId) return null;
   async function confirm(close: () => void) {
@@ -1085,27 +1095,27 @@ function RebookAsRentAction({
     }
   }
   return (
-    <ActionDialog label="Als Miete buchen" title="Einnahme als Miete buchen" buttonClass="">
+    <ActionDialog label={t.bookAsRent} title={t.bookAsRentTitle} buttonClass="">
       {(close) => (
         <>
           <p>
             {countedAsRent
-              ? `Die Zahlung vom ${formatDate(fact.booking_date)} über ${formatMoney(fact.amount)} zählt in der Steuer schon als Miete und wird jetzt auch als Kaltmiete gebucht. Die Steuerzahlen ändern sich dadurch nicht.`
-              : `Die Zahlung vom ${formatDate(fact.booking_date)} über ${formatMoney(fact.amount)} wird als Kaltmiete gebucht und zählt dann in der Zeile der Miete statt bei den sonstigen Einnahmen.`}{" "}
-            Die Änderung wird mit Datum gespeichert und lässt sich bei der Zahlung wieder ändern.
+              ? t.alreadyRent(f.date(fact.booking_date), f.money(fact.amount))
+              : t.becomesRent(f.date(fact.booking_date), f.money(fact.amount))}{" "}
+            {t.changeSaved}
           </p>
           {gone ? (
             <p className="field-errors" role="alert">
-              Diese Zahlung wurde inzwischen anders zugeordnet. Bitte die Zahlung öffnen und dort prüfen.
+              {t.paymentGone}
             </p>
           ) : null}
           <ErrorNotice error={error} />
           <div className="row">
             <button type="button" disabled={busy || gone} onClick={() => void confirm(close)}>
-              {busy ? "Speichert …" : "Ja, als Miete buchen"}
+              {busy ? t.saving : t.yesBookAsRent}
             </button>
             <button type="button" className="secondary" onClick={close}>
-              Abbrechen
+              {c.cancel}
             </button>
           </div>
         </>
@@ -1132,6 +1142,9 @@ function PreHandoverAction({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [notBooked, setNotBooked] = useState<number | null>(null);
+  const t = useT(todoActions);
+  const c = useT(common);
+  const f = useFormat();
   const other = facts.filter((fact) => fact.category === "other_income" && fact.transaction_id);
   async function confirm(close: () => void) {
     setBusy(true);
@@ -1179,35 +1192,28 @@ function PreHandoverAction({
     onChanged?.();
   }
   return (
-    <ActionDialog label="Als Miete zählen" title="Einnahmen vor der Übergabe" buttonClass="">
+    <ActionDialog label={t.countAsRent} title={t.countAsRentTitle} buttonClass="">
       {(close) => (
         <>
-          <p>
-            Diese Einnahmen kamen, bevor die Wohnung Ihnen übergeben wurde. Wenn Sie in diesen Monaten schon als Vermieter
-            im Mietvertrag standen, sind sie Ihre Mieteinnahmen und kommen in die Zeile der Miete. Die Entscheidung wird mit
-            Datum gespeichert und lässt sich später ändern.
-          </p>
+          <p>{t.preHandoverText}</p>
           {facts.length > 0 ? (
             <>
-              <p>Das betrifft diese Zahlungen:</p>
+              <p>{t.concernsPayments}</p>
               <ul>
                 {facts.map((fact) => (
                   <li key={fact.allocation_id}>
-                    {formatDate(fact.booking_date)} · {formatMoney(fact.amount)}
-                    {fact.counterparty_iban_masked ? ` · von ${fact.counterparty_iban_masked}` : ""}
-                    {fact.category === "other_income"
-                      ? " · wird als Kaltmiete gebucht"
-                      : ` · gebucht als ${ALLOCATION_CATEGORY[fact.category]}`}
+                    {f.date(fact.booking_date)} · {f.money(fact.amount)}
+                    {fact.counterparty_iban_masked ? t.fromIban(fact.counterparty_iban_masked) : ""}
+                    {fact.category === "other_income" ? t.willBeRent : t.bookedAs(ALLOCATION_CATEGORY[fact.category])}
                   </li>
                 ))}
               </ul>
-              <p>Ist eine davon keine Miete, zum Beispiel eine Gutschrift der Bank, erst bei der Zahlung richtig zuordnen.</p>
+              <p>{t.notRentHint}</p>
             </>
           ) : null}
           {notBooked !== null ? (
             <p className="field-errors" role="alert">
-              Die Entscheidung ist gespeichert. {notBooked === 1 ? "Eine Zahlung konnte" : `${notBooked} Zahlungen konnten`}{" "}
-              nicht als Kaltmiete gebucht werden; sie stehen unter „Was noch fehlt“ mit „Als Miete buchen“.
+              {t.notBooked(notBooked)}
             </p>
           ) : null}
           <ErrorNotice error={error} />
@@ -1220,15 +1226,15 @@ function PreHandoverAction({
                   onChanged?.();
                 }}
               >
-                Schließen
+                {c.close}
               </button>
             ) : (
               <>
                 <button type="button" disabled={busy} onClick={() => void confirm(close)}>
-                  {busy ? "Speichert …" : "Ja, als Miete zählen"}
+                  {busy ? t.saving : t.yesCountAsRent}
                 </button>
                 <button type="button" className="secondary" onClick={close}>
-                  Abbrechen
+                  {c.cancel}
                 </button>
               </>
             )}
@@ -1243,6 +1249,7 @@ function PreHandoverAction({
  * the Wohnflächenberechnung uploaded and read, whose suggestion proposes it (D139). */
 function LivingAreaAction({ propertyId, onChanged }: { propertyId: string; onChanged?: () => void }) {
   const id = useId();
+  const t = useT(todoActions);
   const [raw, setRaw] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1273,7 +1280,7 @@ function LivingAreaAction({ propertyId, onChanged }: { propertyId: string; onCha
   }
   return (
     <>
-      <ReadUpload label="Wohnflächenberechnung hochladen" onUploaded={onChanged} />
+      <ReadUpload label={t.uploadAreaCalculation} onUploaded={onChanged} />
       <form
         className="row todo-inline-form"
         onSubmit={(event) => {
@@ -1282,7 +1289,7 @@ function LivingAreaAction({ propertyId, onChanged }: { propertyId: string; onCha
         }}
       >
         <label htmlFor={id} className="inline">
-          Wohnfläche (m²)
+          {t.livingArea}
           <input
             id={id}
             inputMode="decimal"
@@ -1292,7 +1299,7 @@ function LivingAreaAction({ propertyId, onChanged }: { propertyId: string; onCha
           />
         </label>
         <button type="submit" disabled={busy || raw.trim() === ""}>
-          {busy ? "Speichert …" : "Wohnfläche speichern"}
+          {busy ? t.saving : t.saveLivingArea}
         </button>
         {message ? (
           <span className="field-errors" role="alert">

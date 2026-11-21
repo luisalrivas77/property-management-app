@@ -76,11 +76,29 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   await expect(handOver.getByRole("button", { name: "Feldblatt (PDF)" })).toBeDisabled();
   await expect(handOver.getByRole("alert")).toHaveCount(0);
 
+  // The same tab in English (phase 10 D284): the words follow the language, the form's name stays.
+  await page.evaluate(() => window.localStorage.setItem("hausbuch.locale", "en"));
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Pay", exact: true })).toContainText("from the expected gross pay");
+  await expect(page.getByText("A draft to check, not tax advice.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Export", exact: true }).getByRole("button", { name: "Field sheet (PDF)" })).toBeVisible();
+  await page.evaluate(() => window.localStorage.removeItem("hausbuch.locale"));
+  await page.reload();
+
   // The inputs are typed under Eure Angaben (phase 10 D281); Anlage N shows the form only.
   await expect(page.getByRole("region", { name: "Eingaben", exact: true })).toHaveCount(0);
   await tabs.getByRole("link", { name: "Eure Angaben" }).click();
   await expect(page).toHaveURL(new RegExp(`/tax/${YEAR}\\?tab=angaben`));
   await expect(page.getByRole("heading", { level: 1, name: `Steuern ${YEAR}` })).toBeVisible();
+
+  // Eure Angaben in English (phase 10 D284): a block's button and its form's fields.
+  await page.evaluate(() => window.localStorage.setItem("hausbuch.locale", "en"));
+  await page.reload();
+  const entries = page.getByRole("region", { name: "Entries", exact: true });
+  await entries.getByRole("button", { name: "Add Commute", exact: true }).click();
+  await expect(entries.getByRole("form", { name: "Enter Commute" }).getByLabel("Workplace (town, street)", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.localStorage.removeItem("hausbuch.locale"));
+  await page.reload();
 
   // One input per block.
   await save(page, "Arbeitsweg hinzufügen", "Arbeitsweg eintragen", {

@@ -10,10 +10,13 @@ import { useState } from "react";
 import { api, ok } from "@/api/client";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { settingsForms } from "@/i18n/settingsForms";
 
 const loadAddress = () => ok(api.GET("/api/inbound-mail/address"));
 
 export function InboxAddress() {
+  const t = useT(settingsForms);
   const loaded = useLoad(loadAddress);
   return (
     <Loading state={loaded}>
@@ -22,11 +25,7 @@ export function InboxAddress() {
           <ConfiguredAddress address={inbox.address} label={inbox.label ?? "Hausbuch"} />
         ) : (
           <div className="card stack">
-            <p className="muted">
-              Der Posteingang per Mail ist noch nicht eingerichtet. Dafür unter „Zugangsschlüssel“ (unten, Bereich E-Mail) das
-              Gmail-Konto, sein App-Passwort, die Weiterleitungsadresse und das Label eintragen. Danach steht hier die Adresse, an die
-              Sie Rechnungen und Kontoauszüge weiterleiten.
-            </p>
+            <p className="muted">{t.inboxNotSet}</p>
           </div>
         )
       }
@@ -35,6 +34,7 @@ export function InboxAddress() {
 }
 
 function ConfiguredAddress({ address, label }: { address: string; label: string }) {
+  const t = useT(settingsForms);
   const [copied, setCopied] = useState<boolean | null>(null);
 
   async function copy() {
@@ -53,15 +53,12 @@ function ConfiguredAddress({ address, label }: { address: string; label: string 
       </p>
       <div className="row">
         <button type="button" onClick={() => void copy()}>
-          Adresse kopieren
+          {t.copyAddress}
         </button>
-        {copied === true ? <span>Kopiert.</span> : null}
-        {copied === false ? <span>Kopieren nicht möglich; bitte die Adresse markieren.</span> : null}
+        {copied === true ? <span>{t.copied}</span> : null}
+        {copied === false ? <span>{t.copyAddressFailed}</span> : null}
       </div>
-      <p className="muted">
-        Nur Anhänge werden übernommen; der Text der Mail wird nicht gespeichert. Die App liest nur das Label {label} und verändert
-        nichts im Postfach. Mieterunterlagen besser direkt hochladen, nicht weiterleiten.
-      </p>
+      <p className="muted">{t.inboxNote(label)}</p>
     </div>
   );
 }

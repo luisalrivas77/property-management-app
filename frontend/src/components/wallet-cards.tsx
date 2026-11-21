@@ -15,43 +15,57 @@ import { useCallback, useEffect, useId, useState } from "react";
 
 import { api, ok } from "@/api/client";
 import type { WalletAddressState, WalletAnswer, WalletAnsweredGroup, WalletGroup, WalletHolding, WalletState } from "@/api/schemas";
+import { formatter, localized, useT } from "@/i18n";
+import { wallet } from "@/i18n/wallet";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { notifyInboxChanged } from "@/lib/inboxCount";
 
 import { formatUnits } from "./exchange";
-import { formatDateTime } from "./format";
 import { toMoneyString } from "./input";
 import { CHAIN, MOVEMENT_KIND } from "./labels";
 import { Loading, Notice } from "./ui";
 import { useLoad } from "./useLoad";
 
-/** The badge of an address's or a holding's state. */
-export const STATE_BADGE: Record<WalletAddressState, { label: string; className: string }> = {
-  retired: { label: "stillgelegt", className: "badge" },
-  key_missing: { label: "Schlüssel fehlt", className: "badge badge-danger" },
-  key_unreadable: { label: "Schlüssel nicht lesbar", className: "badge badge-danger" },
-  source_unavailable: {
-    label: "noch nicht lesbar",
-    className: "badge badge-warn",
-  },
-  not_synced: { label: "noch nicht abgerufen", className: "badge badge-info" },
-  failed: { label: "Abruf fehlgeschlagen", className: "badge badge-danger" },
-  throttled: { label: "später erneut", className: "badge badge-warn" },
-  refused: { label: "Zugang abgelehnt", className: "badge badge-danger" },
-  deferred: { label: "wird noch gelesen", className: "badge badge-info" },
-  reconciled: { label: "stimmt", className: "badge" },
-  waiting: { label: "wartet auf Antwort", className: "badge badge-warn" },
-  pending: { label: "mit anderer Adresse", className: "badge badge-info" },
-  unreconciled: { label: "weicht ab", className: "badge badge-danger" },
-  coins_left: { label: "Coins abgegangen", className: "badge badge-danger" },
-};
+// Shown dates and amounts follow the chosen language, read at call time (phase 10 D284).
+const formatDateTime = (v: string | null | undefined) => formatter().dateTime(v);
 
-const ANSWER_LABEL: Record<WalletAnswer, string> = {
-  payment: "Bezahlung",
-  gift: "Geschenk oder Zahlung erhalten",
-  reward: "Belohnung",
-  spam: "Spam",
-};
+type Badge = { label: string; className: string };
+
+function stateBadges(t: typeof wallet.de): Record<WalletAddressState, Badge> {
+  return {
+    retired: { label: t.stateRetired, className: "badge" },
+    key_missing: { label: t.stateKeyMissing, className: "badge badge-danger" },
+    key_unreadable: { label: t.stateKeyUnreadable, className: "badge badge-danger" },
+    source_unavailable: {
+      label: t.stateSourceUnavailable,
+      className: "badge badge-warn",
+    },
+    not_synced: { label: t.stateNotSynced, className: "badge badge-info" },
+    failed: { label: t.stateFailed, className: "badge badge-danger" },
+    throttled: { label: t.stateThrottled, className: "badge badge-warn" },
+    refused: { label: t.stateRefused, className: "badge badge-danger" },
+    deferred: { label: t.stateDeferred, className: "badge badge-info" },
+    reconciled: { label: t.stateReconciled, className: "badge" },
+    waiting: { label: t.stateWaiting, className: "badge badge-warn" },
+    pending: { label: t.statePending, className: "badge badge-info" },
+    unreconciled: { label: t.stateUnreconciled, className: "badge badge-danger" },
+    coins_left: { label: t.stateCoinsLeft, className: "badge badge-danger" },
+  };
+}
+
+/** The badge of an address's or a holding's state, read in the chosen language. */
+export const STATE_BADGE: Record<WalletAddressState, Badge> = localized(stateBadges(wallet.de), stateBadges(wallet.en));
+
+function answerLabels(t: typeof wallet.de): Record<WalletAnswer, string> {
+  return {
+    payment: t.answerPayment,
+    gift: t.answerGift,
+    reward: t.answerReward,
+    spam: t.answerSpam,
+  };
+}
+
+const ANSWER_LABEL: Record<WalletAnswer, string> = localized(answerLabels(wallet.de), answerLabels(wallet.en));
 
 export function useWalletState(accountId: string) {
   const load = useCallback(
@@ -92,6 +106,7 @@ export function SyncPanel({
   onPoll: () => void;
   onSynced: () => void;
 }) {
+  const t = useT(wallet);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [queued, setQueued] = useState<number | null>(null);
@@ -144,30 +159,22 @@ export function SyncPanel({
 
   return (
     <div className="card stack">
-      <h2>Bestand laut Blockchain</h2>
-      <p className="muted">
-        Hausbuch liest jede Adresse täglich. Je Coin oder Token steht hier der Bestand, den die Blockchain beim letzten Abruf meldete, neben
-        dem, was Hausbuch aus den gebuchten Bewegungen zählt. Stimmen beide überein, ist die Adresse abgeglichen.
-      </p>
-      {(state.holdings ?? []).length === 0 ? <p className="muted">Noch kein Bestand gelesen.</p> : <HoldingsTable holdings={state.holdings ?? []} />}
+      <h2>{t.holdingsTitle}</h2>
+      <p className="muted">{t.holdingsIntro}</p>
+      {(state.holdings ?? []).length === 0 ? <p className="muted">{t.noHoldingsYet}</p> : <HoldingsTable holdings={state.holdings ?? []} />}
       <div className="row">
         <button type="button" onClick={() => void sync()} disabled={busy || running}>
-          {busy ? "Startet …" : running ? "Abruf läuft …" : "Jetzt abrufen"}
+          {busy ? t.starting : running ? t.syncRunning : t.syncNow}
         </button>
       </div>
-      {queued === 0 ? <Notice>Diese Wallet hat keine aktive Adresse; es gibt nichts abzurufen.</Notice> : null}
+      {queued === 0 ? <Notice>{t.nothingToSync}</Notice> : null}
       {queued !== null && queued > 0 && !late ? (
         <Notice>
-          {poll?.done
-            ? "Abruf fertig; Bestand und Transaktionen auf dieser Seite sind aktualisiert."
-            : `Abruf läuft für ${queued === 1 ? "1 Adresse" : `${queued} Adressen`}. Das Ergebnis erscheint hier von selbst, sobald er fertig ist.`}
+          {poll?.done ? t.syncDone : t.syncQueued(queued)}
         </Notice>
       ) : null}
       {late ? (
-        <Notice>
-          Der Abruf dauert länger als üblich, etwa weil eine Wallet viele Transaktionen hat. Er läuft weiter; das Ergebnis erscheint, wenn
-          Sie diese Seite später wieder öffnen.
-        </Notice>
+        <Notice>{t.syncLate}</Notice>
       ) : null}
       <ErrorNotice error={error} />
     </div>
@@ -175,30 +182,31 @@ export function SyncPanel({
 }
 
 function HoldingsTable({ holdings }: { holdings: WalletHolding[] }) {
+  const t = useT(wallet);
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Chain</th>
-            <th>Adresse</th>
-            <th>Coin / Token</th>
-            <th className="num">Laut Blockchain</th>
-            <th className="num">In Hausbuch gebucht</th>
-            <th>Abgleich</th>
+            <th>{t.colChain}</th>
+            <th>{t.colAddress}</th>
+            <th>{t.colCoinToken}</th>
+            <th className="num">{t.colPerChain}</th>
+            <th className="num">{t.colBooked}</th>
+            <th>{t.colReconciliation}</th>
           </tr>
         </thead>
         <tbody>
           {holdings.map((holding, index) => (
             <tr key={`${holding.chain}-${holding.address_id ?? "all"}-${holding.asset_id ?? holding.symbol}-${index}`}>
               <td>{CHAIN[holding.chain]}</td>
-              <td>{holding.address_masked ? <code>{holding.address_masked}</code> : <span className="muted">alle Adressen</span>}</td>
+              <td>{holding.address_masked ? <code>{holding.address_masked}</code> : <span className="muted">{t.allAddresses}</span>}</td>
               <td>{holding.symbol}</td>
               <td className="num">{formatUnits(holding.chain_units)}</td>
               <td className="num">{holding.booked_units == null ? "–" : formatUnits(holding.booked_units)}</td>
               <td>
                 <span className={STATE_BADGE[holding.state].className}>{STATE_BADGE[holding.state].label}</span>
-                {holding.read_at ? <p className="cell-detail">gelesen {formatDateTime(holding.read_at)}</p> : null}
+                {holding.read_at ? <p className="cell-detail">{t.readAt(formatDateTime(holding.read_at))}</p> : null}
               </td>
             </tr>
           ))}
@@ -222,16 +230,14 @@ export function GroupCards({ accountId, version, onChanged }: { accountId: strin
     [accountId, version],
   );
   const groups = useLoad(load);
+  const t = useT(wallet);
   return (
     <Loading state={groups}>
       {(list) =>
         list.length === 0 ? null : (
           <div className="card stack">
-            <h2>Transaktionen prüfen</h2>
-            <p className="muted">
-              Diese Transaktionen hat Hausbuch auf der Blockchain gefunden. „Bestätigen“ übernimmt den Vorschlag; stimmt er nicht, wählen
-              Sie, was die Transaktion war.
-            </p>
+            <h2>{t.reviewTransactions}</h2>
+            <p className="muted">{t.reviewIntro}</p>
             <ul className="checklist-items">
               {list.map((group) => (
                 <GroupCard
@@ -253,6 +259,7 @@ export function GroupCards({ accountId, version, onChanged }: { accountId: strin
 }
 
 function GroupCard({ group, onDone }: { group: WalletGroup; onDone: () => void }) {
+  const t = useT(wallet);
   const id = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -311,7 +318,7 @@ function GroupCard({ group, onDone }: { group: WalletGroup; onDone: () => void }
             {legs.map((leg) => (
               <li key={leg.movement_id}>
                 {formatUnits(leg.quantity)} {leg.symbol} · {MOVEMENT_KIND[leg.kind]}
-                {proposed.length > 0 && leg.status === "confirmed" ? " (bereits bestätigt)" : null}
+                {proposed.length > 0 && leg.status === "confirmed" ? t.alreadyConfirmed : null}
                 {leg.address_masked ? (
                   <>
                     {" "}
@@ -324,19 +331,16 @@ function GroupCard({ group, onDone }: { group: WalletGroup; onDone: () => void }
         ) : null}
         {group.card === "change" ? <ChangeAnswers groupId={group.id} onDone={onDone} /> : null}
         {group.card === "unreadable" ? (
-          <p className="muted">
-            Hausbuch kann die Beträge dieser Transaktion nicht lesen. Sie bleibt hier stehen, bis ein späterer Ausbauschritt sie lesen kann;
-            der Abgleich der Adresse zeigt solange, ob etwas fehlt.
-          </p>
+          <p className="muted">{t.unreadable}</p>
         ) : null}
         {group.card === "unstorable" ? (
-          <p className="muted">Diese Transaktion lässt sich nicht als Bewegung speichern; sie ist hier nur zur Kenntnis.</p>
+          <p className="muted">{t.unstorable}</p>
         ) : null}
         {group.confirmable || answers.length > 0 ? (
           <div className="row">
             {group.confirmable ? (
               <button type="button" onClick={() => void confirm()} disabled={busy}>
-                Bestätigen
+                {t.confirm}
               </button>
             ) : null}
             {answers.map((value) => (
@@ -347,14 +351,11 @@ function GroupCard({ group, onDone }: { group: WalletGroup; onDone: () => void }
           </div>
         ) : null}
         {transferHint ? (
-          <p className="muted hint">
-            Ging das an eine eigene Börse oder Wallet oder kam es von dort, lassen Sie die Transaktion vorerst offen: Hausbuch verknüpft
-            solche Überträge bald selbst, und eine Antwort hier würde sie als Kauf oder Ausgabe zählen.
-          </p>
+          <p className="muted hint">{t.transferHint}</p>
         ) : null}
         {answers.includes("gift") && moving.length === 1 ? (
           <div className="field">
-            <label htmlFor={`${id}-cost`}>Kaufpreis in Euro, falls bezahlt (optional)</label>
+            <label htmlFor={`${id}-cost`}>{t.costLabel}</label>
             <input
               id={`${id}-cost`}
               type="text"
@@ -364,10 +365,7 @@ function GroupCard({ group, onDone }: { group: WalletGroup; onDone: () => void }
               autoComplete="off"
               placeholder="0,00"
             />
-            <p className="muted hint">
-              Für „Geschenk oder Zahlung erhalten“: wurde für die Coins bezahlt (ein Kauf außerhalb einer Börse), hier den Betrag
-              eintragen; er wird ihr Kaufpreis. Sonst leer lassen.
-            </p>
+            <p className="muted hint">{t.costHint}</p>
             {costError ? (
               <ul className="field-errors">
                 <li>{costError}</li>
@@ -394,6 +392,7 @@ export function ChangeAnswers({ groupId, onDone }: { groupId: string; onDone: ()
     [groupId],
   );
   const card = useLoad(load);
+  const t = useT(wallet);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -420,22 +419,20 @@ export function ChangeAnswers({ groupId, onDone }: { groupId: string; onDone: ()
     <Loading state={card}>
       {(data) =>
         data.original_missing ? (
-          <p className="muted">
-            Die Daten zu dieser Zahlung wurden beim Abruf nicht gespeichert, deshalb lässt sich die Frage hier nicht beantworten.
-          </p>
+          <p className="muted">{t.changeOriginalMissing}</p>
         ) : (
           <div className="stack">
-            <p className="muted">Ging einer dieser Beträge an eine eigene Adresse dieser Wallet (Wechselgeld) oder an einen Empfänger?</p>
+            <p className="muted">{t.changeQuestion}</p>
             {(data.candidates ?? []).map((candidate) => (
               <div key={candidate.vout} className="row">
                 <span>
-                  {formatUnits(candidate.amount_btc)} BTC an <code>{candidate.address_masked}</code>
+                  {formatUnits(candidate.amount_btc)} BTC {t.btcTo} <code>{candidate.address_masked}</code>
                 </span>
                 <button type="button" onClick={() => void answer(candidate.vout, true)} disabled={busy}>
-                  Ja, eigene Adresse
+                  {t.changeOwn}
                 </button>
                 <button type="button" className="secondary" onClick={() => void answer(candidate.vout, false)} disabled={busy}>
-                  Nein, Empfänger
+                  {t.changePayee}
                 </button>
               </div>
             ))}
@@ -461,6 +458,7 @@ export function HiddenTokens({ accountId, version, onChanged }: { accountId: str
     [accountId, version],
   );
   const tokens = useLoad(load);
+  const t = useT(wallet);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -489,20 +487,17 @@ export function HiddenTokens({ accountId, version, onChanged }: { accountId: str
         list.length === 0 ? null : (
           <details className="card stack">
             <summary>
-              <strong>Als Spam verborgene Tokens ({list.length})</strong>
+              <strong>{t.hiddenTokens(list.length)}</strong>
             </summary>
-            <p className="muted">
-              Diese Tokens kamen ungefragt an diese Wallet. Hausbuch zählt sie nicht und bewertet sie nicht. Ist einer doch echt, „Kein
-              Spam“ wählen: seine Transaktionen erscheinen dann oben zum Bestätigen.
-            </p>
+            <p className="muted">{t.hiddenIntro}</p>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Chain</th>
-                    <th>Token</th>
-                    <th className="num">Menge</th>
-                    <th aria-label="Aktionen" />
+                    <th>{t.colChain}</th>
+                    <th>{t.colToken}</th>
+                    <th className="num">{t.colQuantity}</th>
+                    <th aria-label={t.colActions} />
                   </tr>
                 </thead>
                 <tbody>
@@ -513,7 +508,7 @@ export function HiddenTokens({ accountId, version, onChanged }: { accountId: str
                       <td className="num">{formatUnits(token.units)}</td>
                       <td>
                         <button type="button" className="secondary" onClick={() => void promote(token.asset_id)} disabled={busy}>
-                          Kein Spam
+                          {t.notSpam}
                         </button>
                       </td>
                     </tr>
@@ -544,6 +539,7 @@ export function AnsweredGroups({ accountId, version, onChanged }: { accountId: s
     [accountId, version],
   );
   const groups = useLoad(load);
+  const t = useT(wallet);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -572,12 +568,9 @@ export function AnsweredGroups({ accountId, version, onChanged }: { accountId: s
         list.length === 0 ? null : (
           <details className="card stack">
             <summary>
-              <strong>Beantwortete Transaktionen ({list.length})</strong>
+              <strong>{t.answeredTransactions(list.length)}</strong>
             </summary>
-            <p className="muted">
-              Hier stehen die Transaktionen, die Sie bestätigt oder beantwortet haben. War eine Antwort falsch, „Antwort zurücknehmen“
-              wählen: die Transaktion erscheint dann oben wieder zum Prüfen; Ihre frühere Antwort bleibt im Verlauf.
-            </p>
+            <p className="muted">{t.answeredIntro}</p>
             <ul className="checklist-items">
               {list.map((group) => (
                 <li key={group.id} className="checklist-item">
@@ -590,10 +583,10 @@ export function AnsweredGroups({ accountId, version, onChanged }: { accountId: s
                     </span>
                     {group.undoable ? (
                       <button type="button" className="secondary" onClick={() => void undo(group)} disabled={busy}>
-                        Antwort zurücknehmen
+                        {t.undoAnswer}
                       </button>
                     ) : (
-                      <span className="muted">mit einem Übertrag verknüpft, nicht zurücknehmbar</span>
+                      <span className="muted">{t.linkedNotUndoable}</span>
                     )}
                   </div>
                 </li>

@@ -26,11 +26,14 @@ import { DuplicatesList, ImportsTable, openDuplicateCount, StatementUpload } fro
 import { AccountLinesView } from "@/components/accountLines";
 import { BankSyncCard } from "@/components/bankSync";
 import { ExchangeSection } from "@/components/exchange";
-import { formatDate, formatMoney } from "@/components/format";
 import { ACCOUNT_KIND, ACCOUNT_PURPOSE } from "@/components/labels";
 import { Breadcrumbs, Facts, Loading, Notice, TabBar, type Tab } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { WalletSection } from "@/components/wallet";
+import { useFormat, useT } from "@/i18n";
+import { accountForms } from "@/i18n/accountForms";
+import { common } from "@/i18n/common";
+import { shared } from "@/i18n/shared";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { AccountOwnership } from "./AccountOwnership";
@@ -42,8 +45,9 @@ function isTab(value: string | null): value is TabKey {
 }
 
 export default function AccountPage() {
+  const c = useT(common);
   return (
-    <Suspense fallback={<p className="muted">Lädt …</p>}>
+    <Suspense fallback={<p className="muted">{c.loading}</p>}>
       <AccountDetail />
     </Suspense>
   );
@@ -71,6 +75,7 @@ async function loadStatements(accountId: string) {
 
 function AccountDetail() {
   const { id } = useParams<{ id: string }>();
+  const t = useT(accountForms);
   const search = useSearchParams();
   const requested = search.get("tab");
   const tab: TabKey = isTab(requested) ? requested : "kontoauszuege";
@@ -83,9 +88,9 @@ function AccountDetail() {
   const openCount = statements.data ? openDuplicateCount(statements.data.duplicates, statements.data.transactionById) : 0;
 
   const tabs: Tab<TabKey>[] = [
-    { key: "kontoauszuege", label: "Kontoauszüge" },
-    { key: "umsaetze", label: "Umsätze" },
-    { key: "doppelbuchungen", label: openCount > 0 ? `Mögliche Doppelbuchungen (${openCount})` : "Mögliche Doppelbuchungen" },
+    { key: "kontoauszuege", label: t.tabStatements },
+    { key: "umsaetze", label: t.tabLines },
+    { key: "doppelbuchungen", label: openCount > 0 ? t.tabDuplicatesCount(openCount) : t.tabDuplicates },
   ];
 
   return (
@@ -97,20 +102,17 @@ function AccountDetail() {
             <AccountLinesView account={data} tabs={<TabBar tabs={tabs} current={tab} href={(key) => `/accounts/${id}?tab=${key}`} />} />
           ) : (
           <>
-            <Breadcrumbs items={[{ href: "/accounts", label: "Konten" }, { label: data.label }]} />
+            <Breadcrumbs items={[{ href: "/accounts", label: t.breadcrumbAccounts }, { label: data.label }]} />
             <div className="page-head">
               <h1>{data.label}</h1>
               <span className="spacer" />
               <Link href={`/accounts/${data.id}/edit`} className="button-link secondary">
-                Bearbeiten
+                {t.edit}
               </Link>
             </div>
             <AccountFacts account={data} />
             {data.purpose === "private" && data.kind !== "exchange" && data.kind !== "wallet" ? (
-              <p className="muted">
-                Privatkonto: seine Umsätze bekommen Haushaltskategorien und zählen nie in die Anlage V. Überweisungen zwischen
-                diesem Konto und dem Mietkonto sind Privateinlagen und -entnahmen.
-              </p>
+              <p className="muted">{t.privateNote}</p>
             ) : null}
             {data.kind === "credit_card" ? (
               <PaymentIbanCard
@@ -132,20 +134,14 @@ function AccountDetail() {
             ) : null}
             {rulesDisabled > 0 ? (
               <Notice>
-                {rulesDisabled === 1 ? "1 gelernte Regel" : `${rulesDisabled} gelernte Regeln`} für diese Kontonummer abgeschaltet:
-                {data.kind === "depot"
-                  ? " Überweisungen auf das Depot sind jetzt Überträge."
-                  : " Zahlungen an die Karte sind jetzt Überträge."}
+                {t.rulesOff(rulesDisabled)}
+                {data.kind === "depot" ? t.rulesOffDepot : t.rulesOffCard}
               </Notice>
             ) : null}
             <AccountOwnership account={data} onSaved={account.reload} />
             {data.kind === "exchange" ? (
               <>
-                <p className="muted">
-                  Börsenkonto: Hausbuch liest die Exporte der Börse selbst, ohne KI, und zeigt je Coin, was sie ergeben. Ein Kauf,
-                  ein Verkauf und eine Gebühr sind damit gebucht; nur Auszahlungen und Eingänge, deren Ziel oder Herkunft der Export
-                  nicht nennt, fragt Hausbuch nach.
-                </p>
+                <p className="muted">{t.exchangePageNote}</p>
                 <ExchangeSection accountId={data.id} />
               </>
             ) : null}
@@ -171,13 +167,12 @@ function AccountDetail() {
                     {openCount > 0 ? (
                       <div className="notice notice-warn">
                         <p>
-                          {openCount === 1 ? "1 mögliche Doppelbuchung wartet" : `${openCount} mögliche Doppelbuchungen warten`} auf
-                          eine Entscheidung:{" "}
-                          <Link href={`/accounts/${id}?tab=doppelbuchungen`}>prüfen</Link>.
+                          {t.duplicatesWaiting(openCount)}
+                          <Link href={`/accounts/${id}?tab=doppelbuchungen`}>{t.duplicatesCheck}</Link>.
                         </p>
                       </div>
                     ) : null}
-                    <h2>Importierte Kontoauszüge</h2>
+                    <h2>{t.importedStatements}</h2>
                     <Loading state={statements}>
                       {(loaded) => (
                         <ImportsTable
@@ -213,12 +208,14 @@ function AccountDetail() {
 }
 
 function AccountFacts({ account }: { account: Account }) {
+  const t = useT(accountForms);
+  const f = useFormat();
   if (account.kind === "exchange") {
     return (
       <Facts
         rows={[
-          ["Börse", account.provider ?? account.bank],
-          ["Kontoart", ACCOUNT_KIND[account.kind]],
+          [t.factExchange, account.provider ?? account.bank],
+          [t.factKind, ACCOUNT_KIND[account.kind]],
         ]}
       />
     );
@@ -227,8 +224,8 @@ function AccountFacts({ account }: { account: Account }) {
     return (
       <Facts
         rows={[
-          ["Anbieter", account.provider ?? account.bank],
-          ["Kontoart", ACCOUNT_KIND[account.kind]],
+          [t.factProvider, account.provider ?? account.bank],
+          [t.factKind, ACCOUNT_KIND[account.kind]],
         ]}
       />
     );
@@ -237,12 +234,12 @@ function AccountFacts({ account }: { account: Account }) {
     return (
       <Facts
         rows={[
-          ["Bank", account.provider ?? account.bank],
-          ["Karte", account.card_last4 ? `endet auf ${account.card_last4}` : "kommt mit der ersten Abrechnung"],
-          ["Kundennummer", account.external_ref_masked ?? "kommt mit der ersten Abrechnung"],
-          ["Zahlungs-IBAN", account.payment_iban_masked ?? "–"],
-          ["Anfangssaldo", `${formatMoney(account.opening_balance)} am ${formatDate(account.opening_balance_on)}`],
-          ["Kontoart", ACCOUNT_KIND[account.kind]],
+          [t.factBank, account.provider ?? account.bank],
+          [t.factCard, account.card_last4 ? t.cardEndsIn(account.card_last4) : t.comesWithFirstStatement],
+          [t.factCustomerNumber, account.external_ref_masked ?? t.comesWithFirstStatement],
+          [t.factPaymentIban, account.payment_iban_masked ?? "–"],
+          [t.factOpening, t.openingOnDay(f.money(account.opening_balance), f.date(account.opening_balance_on))],
+          [t.factKind, ACCOUNT_KIND[account.kind]],
         ]}
       />
     );
@@ -250,11 +247,11 @@ function AccountFacts({ account }: { account: Account }) {
   return (
     <Facts
       rows={[
-        ["Bank", account.provider ?? account.bank],
-        ["IBAN", account.iban_masked ?? "–"],
-        ["Anfangssaldo", `${formatMoney(account.opening_balance)} am ${formatDate(account.opening_balance_on)}`],
-        ["Kontoart", ACCOUNT_KIND[account.kind]],
-        ["Wofür", ACCOUNT_PURPOSE[account.purpose]],
+        [t.factBank, account.provider ?? account.bank],
+        [t.factIban, account.iban_masked ?? "–"],
+        [t.factOpening, t.openingOnDay(f.money(account.opening_balance), f.date(account.opening_balance_on))],
+        [t.factKind, ACCOUNT_KIND[account.kind]],
+        [t.factPurpose, ACCOUNT_PURPOSE[account.purpose]],
       ]}
     />
   );
@@ -264,6 +261,8 @@ function AccountFacts({ account }: { account: Account }) {
  * until a person confirms it. Confirming reads it again from that statement (never from this
  * page); a transfer from an own bank account to that IBAN is then linked as a transfer (D162). */
 function DepotIbanCard({ account, onSaved }: { account: Account; onSaved: (rulesDisabled: number) => void }) {
+  const t = useT(accountForms);
+  const s = useT(shared);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const proposal = account.iban_proposal;
@@ -290,16 +289,16 @@ function DepotIbanCard({ account, onSaved }: { account: Account; onSaved: (rules
 
   return (
     <div className="card stack">
-      <h2>IBAN des Depots bestätigen</h2>
+      <h2>{t.depotIbanTitle}</h2>
       <p>
-        Der Kontoauszug nennt die IBAN <strong>{proposal.iban_masked}</strong> für dieses Depot.
-        {account.iban_masked
-          ? ` Bisher bestätigt ist ${account.iban_masked}.`
-          : " Stimmt sie, bestätigen Sie sie hier: Hausbuch bucht dann eine Überweisung von Ihrem Girokonto auf diese IBAN als Umbuchung zwischen eigenen Konten, nicht als Ausgabe, und verknüpft sie mit der Einlage auf dem Kontoauszug des Depots."}
+        {t.depotIbanBefore}
+        <strong>{proposal.iban_masked}</strong>
+        {t.depotIbanAfter}
+        {account.iban_masked ? t.confirmedSoFar(account.iban_masked) : t.depotIbanExplain}
       </p>
       <div className="row">
         <button type="button" onClick={() => void confirm()} disabled={busy}>
-          {busy ? "Speichert …" : "IBAN bestätigen"}
+          {busy ? s.saving : t.confirmIban}
         </button>
       </div>
       <ErrorNotice error={error} />
@@ -311,6 +310,8 @@ function DepotIbanCard({ account, onSaved }: { account: Account; onSaved: (rules
  * person confirms it. Confirming reads it again from that statement (never from this page) and
  * switches off the learned rules on that IBAN; onSaved gets how many. */
 function PaymentIbanCard({ account, onSaved }: { account: Account; onSaved: (rulesDisabled: number) => void }) {
+  const t = useT(accountForms);
+  const s = useT(shared);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const proposal = account.payment_iban_proposal;
@@ -337,17 +338,16 @@ function PaymentIbanCard({ account, onSaved }: { account: Account; onSaved: (rul
 
   return (
     <div className="card stack">
-      <h2>Zahlungs-IBAN bestätigen</h2>
+      <h2>{t.paymentIbanTitle}</h2>
       <p>
-        Die Abrechnung nennt unter „Angaben bei Einzahlungen“ die IBAN <strong>{proposal.payment_iban_masked}</strong>, auf die
-        Sie die Karte bezahlen.
-        {account.payment_iban_masked
-          ? ` Bisher bestätigt ist ${account.payment_iban_masked}.`
-          : " Stimmt sie, bestätigen Sie sie hier: Hausbuch bucht dann die Zahlung vom Girokonto an diese IBAN als Umbuchung zwischen eigenen Konten und verknüpft sie mit der „Bezahlung“ auf der Abrechnung."}
+        {t.paymentIbanBefore}
+        <strong>{proposal.payment_iban_masked}</strong>
+        {t.paymentIbanAfter}
+        {account.payment_iban_masked ? t.confirmedSoFar(account.payment_iban_masked) : t.paymentIbanExplain}
       </p>
       <div className="row">
         <button type="button" onClick={() => void confirm()} disabled={busy}>
-          {busy ? "Speichert …" : "Zahlungs-IBAN bestätigen"}
+          {busy ? s.saving : t.confirmPaymentIban}
         </button>
       </div>
       <ErrorNotice error={error} />
