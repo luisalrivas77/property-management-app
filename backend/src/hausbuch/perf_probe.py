@@ -34,10 +34,16 @@ cProfile and prints, per request, the top functions by cumulative and by own tim
 valuation, price and household-month functions ran. Only code locations and numbers are
 printed, never an argument or a value. Python 3.12's cProfile is interpreter-wide, so it also
 sees the worker thread FastAPI runs a sync endpoint in, and the probe's own client code.
+
+`--digest` adds a column to the last pass: the first 16 hex characters of the SHA-256 of each
+response body, its JSON canonicalised first (sorted keys, no spaces), so a speed-up can be
+checked to return the same bodies as before, path by path, without printing any body.
 """
 
 import asyncio
 import cProfile
+import hashlib
+import json
 import logging
 import pstats
 import re
@@ -272,6 +278,7 @@ class Timing:
     size: int
     error: str | None = None
     profiled: bool = False
+    digest: str | None = None  # --digest, the last pass only
 
 
 @dataclass
@@ -300,6 +307,17 @@ def last_full_month(today: date) -> str:
     return f"{year:04d}-{month:02d}"
 
 
+def body_digest(body: bytes) -> str:
+    """The first 16 hex characters of the SHA-256 of a response body; a JSON body is
+    canonicalised first (sorted keys, no spaces), so key order never changes it."""
+    try:
+        # Exactly json.dumps(sort_keys=True, separators=(",", ":")), so it can be reproduced.
+        canonical = json.dumps(json.loads(body), sort_keys=True, separators=(",", ":")).encode()
+    except ValueError:
+        canonical = body
+    return hashlib.sha256(canonical).hexdigest()[:16]
+
+
 class PageRun:
     """One pass over the page's requests, in the order the page fires them."""
 
@@ -310,8 +328,10 @@ class PageRun:
         today: date,
         labels: _Labels,
         profile: Sequence[str] = (),
+        digest: bool = False,
     ) -> None:
         self.client = client
+        self.digest = digest
         self.counter = counter
         self.today = today
         self.labels = labels
@@ -348,6 +368,7 @@ class PageRun:
             size=len(body),
             error=error,
             profiled=profiler is not None,
+            digest=body_digest(body) if self.digest else None,
         )
         self.result.timings.append(timing)
         if response.status_code != 200:
@@ -480,10 +501,14 @@ async def probe_client(app: Any) -> AsyncIterator[Any]:
 
 
 async def _passes(
-    app: Any, counter: SqlCounter, repeat: int, profile: Sequence[str] = ()
+    app: Any,
+    counter: SqlCounter,
+    repeat: int,
+    profile: Sequence[str] = (),
+    digest: bool = False,
 ) -> list[Pass]:
     """`repeat` passes; the last one (a warm one when repeat >= 2) profiles the requests
-    whose route contains one of `profile`."""
+    whose route contains one of `profile`, and digests every body when `digest`."""
     from hausbuch.services.documents import LOCAL_TIME_ZONE
 
     labels = _Labels()
@@ -491,8 +516,9 @@ async def _passes(
     async with probe_client(app) as client:
         for number in range(1, repeat + 1):
             today = datetime.now(LOCAL_TIME_ZONE).date()
-            chosen = profile if number == repeat else ()
-            passes.append(await PageRun(client, counter, today, labels, chosen).run())
+            last = number == repeat
+            run = PageRun(client, counter, today, labels, profile if last else (), digest and last)
+            passes.append(await run.run())
     return passes
 
 
@@ -502,11 +528,13 @@ def run_probe(
     *,
     repeat: int,
     profile: Sequence[str] = (),
+    digest: bool = False,
     out: Callable[[str], None] = print,
 ) -> list[Pass]:
     """Time the page `repeat` times on `engine` (read-only: read_only_engine or
     make_read_only, checked here) and print the report. `profile`: route substrings whose
     requests of the last pass run under cProfile (needs repeat >= 2 to be a warm pass).
+    `digest`: the last pass prints each body's digest (body_digest).
     The engine is the caller's to dispose."""
     if profile and repeat < 2:
         raise ProbeError("--profile needs --repeat 2 or more: it profiles the warm pass")
@@ -519,7 +547,7 @@ def run_probe(
     with tempfile.TemporaryDirectory(prefix="hausbuch-probe-") as blobs, _quiet_logging():
         app = build_app(engine, member, Path(blobs) / "blobs")
         counter.reset()
-        passes = asyncio.run(_passes(app, counter, repeat, profile))
+        passes = asyncio.run(_passes(app, counter, repeat, profile, digest))
     report(passes, rtt=rtt, empty_tx=empty_tx, connect_ms=connect_ms, member=member, out=out)
     return passes
 
@@ -531,7 +559,9 @@ def _line(t: Timing, width: int) -> str:
     status = f"{t.status}" + (f" ({t.error})" if t.error else "")
     return (
         f"{t.label:<{width}}  {status:<6}  {t.ms:9.1f}  {t.statements:5d}  {t.sql_ms:9.1f}"
-        f"  {t.transactions:3d}  {t.size:9d}" + ("  profiled" if t.profiled else "")
+        f"  {t.transactions:3d}  {t.size:9d}"
+        + (f"  {t.digest}" if t.digest else "")
+        + ("  profiled" if t.profiled else "")
     )
 
 
@@ -566,7 +596,8 @@ def report(
         kind = "first (in-process warm-up, not a container cold start)" if number == 1 else "warm"
         out("")
         out(f"pass {number} of {len(passes)}: {kind}")
-        out(header)
+        digested = any(t.digest for t in one.timings)
+        out(header + (f"  {'digest':<16}" if digested else ""))
         for timing in one.timings:
             out(_line(timing, width))
         _summary(one, rtt, empty_tx, out)

@@ -134,6 +134,8 @@ total and the five slowest, and the number of requests the page fires. --repeat 
 (default 2: the first warms the process, the rest are warm). --profile SUBSTRING (repeatable)
 runs each request of the last pass whose route contains it under cProfile and prints the top
 functions by cumulative and own time (module:function:line, calls, times, never a value).
+--digest adds to the last pass the first 16 hex characters of the SHA-256 of each body (JSON
+canonicalised: sorted keys, no spaces), to check a speed-up returns the same bodies.
 
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
 14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
@@ -593,7 +595,13 @@ def perf_overview(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     except Exception:  # as owner_engine: no driver message may reach stderr
         raise CliError("HAUSBUCH_ADMIN_DATABASE_URL is not a valid database URL") from None
     try:
-        run_probe(engine, args.workspace, repeat=args.repeat, profile=args.profile)
+        run_probe(
+            engine,
+            args.workspace,
+            repeat=args.repeat,
+            profile=args.profile,
+            digest=args.digest,
+        )
     except ProbeError as exc:
         raise CliError(str(exc)) from None
     except OperationalError as exc:
@@ -1426,6 +1434,12 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PATH_SUBSTRING",
         help="profile the last pass's requests whose route contains this (repeatable), e.g. "
         "/api/health; prints code locations and times only",
+    )
+    perf.add_argument(
+        "--digest",
+        action="store_true",
+        help="print on the last pass the first 16 hex characters of the SHA-256 of each "
+        "response body (JSON with sorted keys), never the body",
     )
     perf.set_defaults(command=perf_overview, command_name="perf-overview")
 

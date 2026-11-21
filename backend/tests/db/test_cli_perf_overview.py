@@ -4,6 +4,8 @@ response content is printed, and a write inside the probe's session is refused a
 as WRITE-REFUSED. Invented owners, tenants and amounts only (tests/db/matching_support.py)."""
 
 import asyncio
+import hashlib
+import json
 import re
 import uuid
 from datetime import datetime, timedelta
@@ -228,3 +230,48 @@ def test_profile_prints_code_locations_and_times_only(world, dbname, capsys):
     argv = [*argv, "--repeat", "1"]
     assert cli.main(argv, environ) == cli.EXIT_ERROR
     assert "--profile needs --repeat 2" in capsys.readouterr().err
+
+
+def test_body_digest_ignores_key_order_and_spacing():
+    a = perf_probe.body_digest(b'{"b": [1, {"y": 2, "x": "\xc3\xa4"}], "a": null}')
+    b = perf_probe.body_digest(b'{"a":null,"b":[1,{"x":"\xc3\xa4","y":2}]}')
+    assert a == b and re.fullmatch(r"[0-9a-f]{16}", a)
+    canonical = json.dumps(
+        {"a": None, "b": [1, {"x": "ä", "y": 2}]}, sort_keys=True, separators=(",", ":")
+    )
+    assert a == hashlib.sha256(canonical.encode()).hexdigest()[:16]
+    assert perf_probe.body_digest(b'{"a": 1}') != perf_probe.body_digest(b'{"a": 2}')
+    assert perf_probe.body_digest(b"not json") == hashlib.sha256(b"not json").hexdigest()[:16]
+
+
+def _digests(out: str) -> dict[str, list[str]]:
+    """Per route, the digests of the last pass, in the order fired."""
+    last = out.split("pass 2 of 2: warm", 1)[1].split("total:", 1)[0]
+    found: dict[str, list[str]] = {}
+    for line in last.splitlines()[2:]:
+        fields = line.split()
+        found.setdefault(fields[0], []).append(fields[-1])
+    return found
+
+
+def test_digest_column_on_the_last_pass_is_stable(world, dbname, capsys):
+    environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}
+    argv = ["perf-overview", "--workspace", str(world.ws), "--digest"]
+    assert cli.main(argv, environ) == cli.EXIT_OK
+    first = capsys.readouterr().out
+    first_pass = first.split("pass 1 of 2", 1)[1].split("total:", 1)[0]
+    assert "digest" not in first_pass  # the first pass prints none
+    header = first.split("pass 2 of 2: warm\n", 1)[1].splitlines()[0]
+    assert header.split()[-1] == "digest"
+
+    digests = _digests(first)
+    assert len(digests) == 22
+    for route, values in digests.items():
+        assert all(re.fullmatch(r"[0-9a-f]{16}", v) for v in values), route
+    # A route fired twice in one pass answers the same body.
+    assert len(set(digests["/api/inbox"])) == len(set(digests["/api/health"])) == 1
+
+    # Unchanged data, a second run: the same digest per path (the gate for a speed-up).
+    assert cli.main(argv, environ) == cli.EXIT_OK
+    assert _digests(capsys.readouterr().out) == digests
+    assert TENANT_NAME not in first
