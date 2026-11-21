@@ -26,6 +26,7 @@ import {
   loadHealthOnly,
   loadInbox,
   loadPaidIn,
+  loadPayback,
   loadMonthCashflow,
   loadNetWorthToday,
 } from "@/components/overviewTiles";
@@ -81,9 +82,10 @@ export default function OverviewPage() {
   const cashflow = useLoad(loadMonthCashflow);
   const inbox = useLoad(loadInbox);
   const paidIn = useLoad(loadPaidIn);
+  const payback = useLoad(loadPayback);
   const detail = useDetail("kachel");
   const today = todayIso();
-  const tiles = { netWorth, health, cashflow, inbox, paidIn };
+  const tiles = { netWorth, health, cashflow, inbox, paidIn, payback };
   const properties = (overview.data?.cards ?? []).map(({ property }) => ({ id: property.id, label: property.label }));
 
   const panel = isTileId(detail.id) ? <TilePanel id={detail.id} data={tiles} detail={detail} properties={properties} /> : null;
