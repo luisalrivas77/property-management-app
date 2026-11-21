@@ -5,8 +5,8 @@
 // stripe, the three key figures with their mark as a dot before the name (an empty dot while no
 // limit is confirmed; never a colour word), and Zu prüfen. A tapped tile opens its summary in the
 // detail panel with one button into its section. Every euro figure and every share is the
-// server's (/net-worth/overview, /health, /household/cashflow, /health/months, /inbox); the browser
-// only counts rows and formats.
+// server's (/net-worth/overview, /health, /household/cashflow, /health/months, /inbox, /properties/equity,
+// /properties/payback); the browser only counts rows and formats.
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -16,6 +16,7 @@ import { CashflowCard, lastFullMonth, loadCashflow, type HouseholdCashflow } fro
 import { DetailPanel, type Detail } from "@/components/DetailPanel";
 import type { Health, Light } from "@/components/healthShared";
 import { NetWorthSection } from "@/components/netWorth";
+import { payInputsHref } from "@/components/taxYear";
 import { Loading } from "@/components/ui";
 import type { Loaded } from "@/components/useLoad";
 import { useFormat, useT, type Formatter } from "@/i18n";
@@ -27,6 +28,10 @@ import "./overviewTiles.css";
 type NetWorth = components["schemas"]["NetWorth"];
 type NetWorthLine = components["schemas"]["NetWorthLine"];
 type InboxItem = components["schemas"]["InboxItem"];
+type PropertiesPaidIn = components["schemas"]["PropertiesPaidIn"];
+type PropertyPaidIn = components["schemas"]["PropertyPaidIn"];
+type PropertiesPayback = components["schemas"]["PropertiesPayback"];
+type PropertyPayback = components["schemas"]["PropertyPayback"];
 type T = (typeof catalogue)["de"];
 
 export type TileId = "nettovermoegen" | "cashflow" | "immobilie" | "depot" | "krypto" | "bank" | "sparquote" | "reserve" | "verschuldung" | "pruefen";
@@ -51,12 +56,49 @@ export async function loadMonthCashflow(): Promise<MonthCashflow> {
 export const loadNetWorthToday = async (): Promise<NetWorth> => (await ok(api.GET("/api/net-worth/overview"))).today;
 export const loadHealthOnly = (): Promise<Health> => ok(api.GET("/api/health"));
 export const loadInbox = (): Promise<InboxItem[]> => ok(api.GET("/api/inbox"));
+/** The own money put into each property and its total, summed by the server (Luis, 21 Nov 2026). */
+export const loadPaidIn = (): Promise<PropertiesPaidIn> => ok(api.GET("/api/properties/equity"));
+/** The cash back against the own money put in, the break-even year and a sale today, per property
+ * and in total, all computed by the server (Luis, 21 Nov 2026: „Both“). */
+export const loadPayback = (): Promise<PropertiesPayback> => ok(api.GET("/api/properties/payback"));
 
 export interface TileData {
   netWorth: Loaded<NetWorth>;
   health: Loaded<Health>;
   cashflow: Loaded<MonthCashflow>;
   inbox: Loaded<InboxItem[]>;
+  paidIn: Loaded<PropertiesPaidIn>;
+  payback: Loaded<PropertiesPayback>;
+}
+
+/** The server's percent points with one decimal ("-0.3") as de „-0,3 %“, en „-0.3%“; unlike
+ * f.percent, which takes a fraction. */
+function points(f: Formatter, value: string): string {
+  return f.locale === "de" ? `${f.decimal(value)} %` : `${f.decimal(value)}%`;
+}
+
+/** The break-even line: the year, or the sale year it is not reached by; null when neither, and
+ * null when the server sends no percent (paid_in ≤ 0: nothing put in, nothing to earn back, so
+ * „nicht zurück“ would be false). */
+function breakEvenText(
+  t: T,
+  back: { break_even_year?: number | null; sale_year?: number | null; percent?: string | null },
+): string | null {
+  if (back.percent == null) return null;
+  if (back.break_even_year != null) return t.breakEven(back.break_even_year);
+  if (back.sale_year != null) return t.breakEvenNot(back.sale_year);
+  return null;
+}
+
+/** How many properties the server left out of the totals (each with its reason in the panel). */
+function leftOut(back: PropertiesPayback): number {
+  return back.properties.filter((p) => p.reason != null).length;
+}
+
+/** The profit today misses a tax: a counted property's sale is taxable with a gain but no income
+ * is entered (the server's tax_not_computed). */
+function profitIncomplete(back: PropertiesPayback): boolean {
+  return back.properties.some((p) => p.reason == null && p.sale_today?.tax_not_computed);
 }
 
 /** "1200.00" → "-1200.00", "-5" → "5": a sign flip on the string, for the loan shown as a debt. */
@@ -162,7 +204,7 @@ function SplitBar({ split, t, f }: { split: Record<string, string>; t: T; f: For
 export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail }) {
   const t = useT(catalogue);
   const f = useFormat();
-  const { netWorth, health, cashflow, inbox } = data;
+  const { netWorth, health, cashflow, inbox, payback } = data;
   const lines = netWorth.data?.lines ?? [];
   const cards = cardLines(lines);
   const marks = health.data?.marks ?? {};
@@ -210,24 +252,55 @@ export function OverviewTiles({ data, detail }: { data: TileData; detail: Detail
 
       <div className="tiles-grid">
         <Tile id="immobilie" detail={detail} stripe="property" name={t.property}>
-          <Wait state={netWorth}>
-            {(today) => (
-              <>
-                <span className="tile-value">{f.money(today.property_net)}</span>
-                <span className="tile-sub">{t.propertyNet}</span>
-                <dl className="tile-pairs">
-                  <div>
-                    <dt>{t.propertyValue}</dt>
-                    <dd>{f.money(today.property_estimate)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t.propertyLoan}</dt>
-                    <dd>{f.money(negated(today.loan_balances))}</dd>
-                  </div>
-                </dl>
-              </>
-            )}
+          <Wait state={payback}>
+            {(back) =>
+              back.properties.some((p) => p.reason == null) ? (
+                <>
+                  <span className="tile-value">{f.money(back.cash_back)}</span>
+                  <span className="tile-sub">{t.backSoFar}</span>
+                  <span className="tile-sub">{t.backOf(f.money(back.paid_in), back.percent != null ? points(f, back.percent) : null)}</span>
+                  {breakEvenText(t, back) ? (
+                    <span className="tile-sub">{breakEvenText(t, back)}</span>
+                  ) : back.properties.some((p) => p.reason == null && p.projection_error_code) ? (
+                    <span className="tile-note">{t.breakEvenCheckPlan}</span>
+                  ) : null}
+                  {leftOut(back) > 0 ? <span className="tile-note">{t.leftOutTile(leftOut(back))}</span> : null}
+                </>
+              ) : (
+                <>
+                  <span className="tile-value">–</span>
+                  <span className="tile-sub">{t.backSoFar}</span>
+                  <span className="tile-sub">{t.backNone}</span>
+                  {leftOut(back) > 0 ? <span className="tile-note">{t.leftOutTile(leftOut(back))}</span> : null}
+                </>
+              )
+            }
           </Wait>
+          <dl className="tile-pairs">
+            <div>
+              <dt>{t.profitToday}</dt>
+              <dd>
+                <Wait state={payback}>
+                  {(back) =>
+                    back.properties.some((p) => p.reason == null) ? (
+                      <>
+                        {f.money(back.profit_today)}
+                        {profitIncomplete(back) ? <span className="tile-note"> ({t.profitNoTax})</span> : null}
+                      </>
+                    ) : (
+                      "–"
+                    )
+                  }
+                </Wait>
+              </dd>
+            </div>
+            <div>
+              <dt>{t.propertyNet}</dt>
+              <dd>
+                <Wait state={netWorth}>{(today) => f.money(today.property_net)}</Wait>
+              </dd>
+            </div>
+          </dl>
         </Tile>
         <Tile id="depot" detail={detail} stripe="funds" name={t.depot}>
           <Wait state={netWorth}>
@@ -376,6 +449,182 @@ function Rows({ rows }: { rows: [ReactNode, ReactNode][] }) {
   );
 }
 
+/** „Eigenkapital eingesetzt“ traced to its parts, per property as the server computed it; with
+ * several properties each gets its own block and the server's total follows. */
+function PaidInRows({ state, t, f }: { state: Loaded<PropertiesPaidIn>; t: T; f: Formatter }) {
+  if (state.data === undefined) return <p className="muted">{state.error ? "–" : "…"}</p>;
+  const { properties, total_paid_in } = state.data;
+  if (properties.length === 0) return null;
+  const several = properties.length > 1;
+  const block = (p: PropertyPaidIn) => {
+    const rows: [ReactNode, ReactNode][] = [];
+    if (p.purchase_price != null) rows.push([t.paidInPrice, f.money(p.purchase_price)]);
+    rows.push([t.paidInCosts, f.money(p.acquisition_costs)], [t.paidInLoanCosts, f.money(p.own_loan_costs)], [t.paidInLoans, f.money(negated(p.loan_principal))]);
+    rows.push([t.paidInTotal, p.paid_in != null ? f.money(p.paid_in) : p.reason === "ownership_ended" ? t.paidInEnded : t.paidInNoPrice]);
+    return (
+      <div key={p.property_id}>
+        {several ? <p className="tile-panel-kicker">{p.label}</p> : null}
+        <Rows rows={rows} />
+      </div>
+    );
+  };
+  return (
+    <>
+      {properties.map(block)}
+      {several ? <Rows rows={[[t.paidInAll, f.money(total_paid_in)]]} /> : null}
+    </>
+  );
+}
+
+/** Planung › Immobilie of one property, where its default scenario is changed. */
+const planningHref = (propertyId: string) => `/planning?section=immobilie&immobilie=${propertyId}`;
+
+/** A gap and the link that resolves it (principle 7): an inline line under the figure. */
+function Gap({ text, href, action }: { text: ReactNode; href?: string | null; action?: string }) {
+  return (
+    <p className="muted">
+      {text}
+      {href && action ? (
+        <>
+          {" "}
+          <Link href={href}>{action} ›</Link>
+        </>
+      ) : null}
+    </p>
+  );
+}
+
+/** Why a property is left out, with the page that fixes it where one exists. */
+function leftOutGap(p: PropertyPayback, t: T): { href: string | null; action?: string } {
+  switch (p.reason) {
+    case "no_purchase_price":
+      return { href: `/properties/${p.property_id}`, action: t.enterPrice };
+    case "loan_not_valued":
+      return { href: p.loan_id ? `/loans/${p.loan_id}` : `/properties/${p.property_id}`, action: t.openLoan };
+    case "not_computable":
+      return { href: planningHref(p.property_id), action: t.toPropertyPlanning };
+    default:
+      return { href: null };
+  }
+}
+
+/** The years behind „Zurück bisher“ (the actual ones, which sum to it) and behind the break-even
+ * year (the plan's), as the server sent them: no sum is made here. */
+function YearRows({ p, t, f }: { p: PropertyPayback; t: T; f: Formatter }) {
+  const years = p.years ?? [];
+  const estimated = new Set(p.tax_estimated_years ?? []);
+  const missing = new Set(p.income_missing_years ?? []);
+  const actual = years.filter((y) => y.kind !== "projected");
+  const planned = years.filter((y) => y.kind === "projected");
+  const value = (y: (typeof years)[number]) => {
+    const money = f.money(y.net_cash);
+    if (missing.has(y.year)) return t.yearNoTax(money);
+    if (estimated.has(y.year)) return t.yearEstimated(money);
+    return money;
+  };
+  return (
+    <>
+      {actual.length > 0 ? (
+        <>
+          <p className="tile-panel-kicker">{t.yearsKicker}</p>
+          <Rows rows={actual.map((y) => [y.kind === "actual_partial" ? t.yearSoFar(y.year) : String(y.year), value(y)] as [ReactNode, ReactNode])} />
+        </>
+      ) : null}
+      {planned.length > 0 ? (
+        <details>
+          <summary className="muted">{t.plannedYears}</summary>
+          <Rows rows={planned.map((y) => [String(y.year), t.plannedYear(f.money(y.net_cash), f.money(y.cumulative))] as [ReactNode, ReactNode])} />
+        </details>
+      ) : null}
+    </>
+  );
+}
+
+/** „Zurück bisher“ against „Eigenkapital eingesetzt“ and the sale today traced to its parts, per
+ * property as the server computed them; with several properties each gets its own block and the
+ * server's totals follow. A property the server left out says why, and every gap links to the
+ * page that resolves it (principle 7). */
+function PaybackRows({ state, t, f }: { state: Loaded<PropertiesPayback>; t: T; f: Formatter }) {
+  if (state.data === undefined) return <p className="muted">{state.error ? "–" : "…"}</p>;
+  const back = state.data;
+  if (back.properties.length === 0) return null;
+  const several = back.properties.length > 1;
+  const thisYear = new Date().getFullYear();
+  const block = (p: PropertyPayback) => {
+    const kicker = several ? <p className="tile-panel-kicker">{p.label}</p> : null;
+    if (p.reason != null || p.cash_back == null || p.paid_in == null || p.sale_today == null) {
+      const gap = leftOutGap(p, t);
+      return (
+        <div key={p.property_id}>
+          {kicker}
+          <Gap text={p.reason != null ? t.backLeftOut(p.reason) : t.backNone} href={gap.href} action={gap.action} />
+        </div>
+      );
+    }
+    const sold = p.sale_today;
+    const line = breakEvenText(t, p);
+    const rows: [ReactNode, ReactNode][] = [[t.backSoFar, f.money(p.cash_back)]];
+    if (p.percent != null) rows.push([t.backOf(f.money(p.paid_in), null), points(f, p.percent)]);
+    if (line) rows.push([line, ""]);
+    const tax: [ReactNode, ReactNode] = sold.tax_not_computed
+      ? [t.saleTaxNotComputed, "–"]
+      : [sold.taxable ? t.saleTax : t.saleTaxNone, f.money(negated(sold.sale_tax))];
+    const sale: [ReactNode, ReactNode][] = [
+      [t.saleValue, f.money(sold.value)],
+      [t.saleCosts(f.percent(sold.selling_costs_rate)), f.money(negated(sold.selling_costs))],
+      tax,
+      [t.saleLoan, f.money(negated(sold.loan_balance))],
+      [t.saleBack, f.money(p.cash_back)],
+      [t.salePaidIn, f.money(negated(p.paid_in))],
+      [sold.tax_not_computed ? `${t.saleProfit} (${t.profitNoTax})` : t.saleProfit, f.money(sold.profit)],
+    ];
+    return (
+      <div key={p.property_id}>
+        {kicker}
+        <Rows rows={rows} />
+        {p.projection_error_code ? (
+          <Gap
+            text={t.projectionMissing(p.projection_error_code)}
+            href={planningHref(p.property_id)}
+            action={p.projection_error_code === "scenario.sale_year_before_today" ? t.fixPlanning : t.toPropertyPlanning}
+          />
+        ) : null}
+        <YearRows p={p} t={t} f={f} />
+        <p className="tile-panel-kicker">{t.profitToday}</p>
+        <Rows rows={sale} />
+        {sold.tax_not_computed ? <Gap text={t.taxNotComputedWhy} href={payInputsHref(thisYear)} action={t.enterIncome} /> : null}
+        {sold.taxable && sold.tax_free_from ? <p className="muted">{t.saleTaxFree(f.date(sold.tax_free_from))}</p> : null}
+      </div>
+    );
+  };
+  const totalLine = breakEvenText(t, back);
+  const totals: [ReactNode, ReactNode][] = [
+    [t.backSoFar, f.money(back.cash_back)],
+    [t.backOf(f.money(back.paid_in), null), back.percent != null ? points(f, back.percent) : "–"],
+  ];
+  if (totalLine) totals.push([totalLine, ""]);
+  totals.push([profitIncomplete(back) ? `${t.profitToday} (${t.profitNoTax})` : t.profitToday, f.money(back.profit_today)]);
+  const years = (list: number[] | undefined) => (list ?? []).join(", ");
+  const missing = back.income_missing_years ?? [];
+  return (
+    <>
+      {back.properties.map(block)}
+      {several ? (
+        <>
+          <p className="tile-panel-kicker">{t.backAll}</p>
+          <Rows rows={totals} />
+        </>
+      ) : null}
+      {back.tax_estimated_years?.length ? <p className="muted">{t.taxEstimated(years(back.tax_estimated_years))}</p> : null}
+      {missing.length ? <Gap text={t.incomeMissing(years(missing))} href={payInputsHref(missing[0] ?? thisYear)} action={t.enterIncome} /> : null}
+      <p className="muted">{t.backYears}</p>
+      <p className="muted">{t.backTilgung}</p>
+      <p className="muted">{t.backBreakEven}</p>
+      <p className="muted">{t.saleNote}</p>
+    </>
+  );
+}
+
 function Go({ href, children }: { href: string; children: ReactNode }) {
   // A section of this page: a plain anchor, so the browser's hashchange closes the panel (its
   // state is the hash) and scrolls to the section.
@@ -436,7 +685,7 @@ export function TilePanel({
 }) {
   const t = useT(catalogue);
   const f = useFormat();
-  const { netWorth, health, cashflow, inbox } = data;
+  const { netWorth, health, cashflow, inbox, paidIn, payback } = data;
   const marks = health.data?.marks ?? {};
   const title = id === "cashflow" ? t.cashflow(f.month(cashflow.data?.month ?? lastFullMonth())) : TITLES[id](t);
   const single = properties.length === 1 ? properties[0] : undefined;
@@ -466,6 +715,9 @@ export function TilePanel({
         <Loading state={netWorth}>
           {(today) => (
             <>
+              <PaybackRows state={payback} t={t} f={f} />
+              <p className="tile-panel-kicker">{t.paidIn}</p>
+              <PaidInRows state={paidIn} t={t} f={f} />
               <Rows
                 rows={[
                   [t.propertyNet, f.money(today.property_net)],
@@ -474,6 +726,7 @@ export function TilePanel({
                 ]}
               />
               {single ? <Go href={`/properties/${single.id}`}>{t.toProperty}</Go> : <Go href="/properties">{t.toProperties}</Go>}
+              <Go href={single ? `/planning?section=immobilie&immobilie=${single.id}` : "/planning?section=immobilie"}>{t.toPlanning}</Go>
             </>
           )}
         </Loading>

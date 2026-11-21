@@ -278,6 +278,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/equity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Properties Equity
+         * @description Übersicht's „Eigenkapital eingesetzt“ (Luis, 21 Nov 2026): per property the purchase
+         *     price, + the Nebenkosten rows, + the loan costs paid privately (private_cost rows of class
+         *     financing), − the loans' principal, and the total over the properties that have one
+         *     (rules.property_equity). The net worth's „Wert minus Darlehen“ is unchanged.
+         */
+        get: operations["properties_equity_api_properties_equity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/properties/payback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Properties Payback Route
+         * @description Übersicht's „Zurück bisher“ and „Gewinn bei Verkauf heute“ (Luis, 21 Nov 2026): per
+         *     property the cash back so far (Σ phase 4's actual years' net cash after tax) against the
+         *     own money put in, its percent, the break-even year on the default scenario's projection
+         *     and a sale today through phase 4's sale(); and the totals over the properties that have
+         *     one (rules.performance.payback). A property it cannot compute carries a reason.
+         */
+        get: operations["properties_payback_route_api_properties_payback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}": {
         parameters: {
             query?: never;
@@ -10938,6 +10985,21 @@ export interface components {
             to_reserve: string;
         };
         /**
+         * PaybackYear
+         * @description One year of the payback series: phase 4's net cash after tax of an actual year (the
+         *     current one so far) or a projected year of the default scenario, and the running sum from
+         *     the purchase year.
+         */
+        PaybackYear: {
+            /** Year */
+            year: number;
+            kind: components["schemas"]["YearKind"];
+            /** Net Cash */
+            net_cash: string;
+            /** Cumulative */
+            cumulative: string;
+        };
+        /**
          * PaymentIbanConfirmed
          * @description POST /accounts/{id}/payment-iban (D176 (4)): the card account, and how many learned
          *     rules on the confirmed IBAN were switched off by it (a payment to the card is a transfer
@@ -11545,6 +11607,46 @@ export interface components {
             total: string;
             change?: components["schemas"]["ProjectionChange"] | null;
         };
+        /**
+         * PropertiesPaidIn
+         * @description GET /properties/equity: every property of the workspace (by label) and total_paid_in,
+         *     Σ paid_in over the properties that have one (0.00 without any).
+         */
+        PropertiesPaidIn: {
+            /** Properties */
+            properties: components["schemas"]["PropertyPaidIn"][];
+            /** Total Paid In */
+            total_paid_in: string;
+        };
+        /**
+         * PropertiesPayback
+         * @description GET /properties/payback: every property of the workspace (by label), and the totals over
+         *     those with a payback (reason None): paid_in, cash_back, percent (None when paid_in ≤ 0 or
+         *     none counts), profit_today, and break_even_year, the first year whose running sum over
+         *     those properties (each held at its last year after it) reaches their paid_in, None when
+         *     not by sale_year, the latest of their sale years; both None when one of them has no
+         *     projection (projection_error_code). The years lists are the union.
+         */
+        PropertiesPayback: {
+            /** Properties */
+            properties: components["schemas"]["PropertyPayback"][];
+            /** Paid In */
+            paid_in: string;
+            /** Cash Back */
+            cash_back: string;
+            /** Percent */
+            percent?: string | null;
+            /** Profit Today */
+            profit_today: string;
+            /** Break Even Year */
+            break_even_year?: number | null;
+            /** Sale Year */
+            sale_year?: number | null;
+            /** Tax Estimated Years */
+            tax_estimated_years?: number[];
+            /** Income Missing Years */
+            income_missing_years?: number[];
+        };
         /** Property */
         Property: {
             /**
@@ -11661,6 +11763,37 @@ export interface components {
             shares: components["schemas"]["OwnerShare"][];
         };
         /**
+         * PropertyPaidIn
+         * @description One property's own money put in (rules.property_equity.paid_in): purchase_price +
+         *     acquisition_costs (Σ the Nebenkosten rows, the sum the AfA basis adds) + own_loan_costs
+         *     (the private_cost rows of class financing in force, every tax year, amount × share)
+         *     − loan_principal (Σ the property's loans' principal). Signed: a loan above price and
+         *     costs gives a negative paid_in, served as it is. paid_in None, with `reason`, when the
+         *     property is left out of the total: no purchase price, or ownership ended by today (as
+         *     the net worth leaves a sold property out).
+         */
+        PropertyPaidIn: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Label */
+            label: string;
+            /** Purchase Price */
+            purchase_price: string | null;
+            /** Acquisition Costs */
+            acquisition_costs: string;
+            /** Own Loan Costs */
+            own_loan_costs: string;
+            /** Loan Principal */
+            loan_principal: string;
+            /** Paid In */
+            paid_in: string | null;
+            /** Reason */
+            reason?: ("no_purchase_price" | "ownership_ended") | null;
+        };
+        /**
          * PropertyPatch
          * @description Non-milestone fields only: the purchase dates and price change through corrections.
          */
@@ -11673,6 +11806,55 @@ export interface components {
             build_year?: number;
             /** Living Area M2 */
             living_area_m2?: string | null;
+        };
+        /**
+         * PropertyPayback
+         * @description One property's way back to its own money put in. cash_back: Σ phase 4's actual years'
+         *     net cash after tax (rent in + other income + Umlagen in − cash paid out, the loan's
+         *     Tilgung included − the tax effect), purchase year through today's. percent = cash_back ÷
+         *     paid_in, None when paid_in ≤ 0. break_even_year: the first year whose running sum of the
+         *     actual and then the default scenario's projected net cash reaches paid_in; None when not
+         *     by `sale_year`, the projection's last year. tax_estimated_years: actual years whose tax
+         *     effect is an estimate (no Bescheid yet); income_missing_years: actual years without any
+         *     income input, whose tax effect is not counted. Everything after paid_in is None with a
+         *     `reason` when it cannot be computed. projection_error_code: the default scenario's
+         *     projection raised a rule error (scenario.sale_year_before_today when its sale year is not
+         *     after today's, or no rule set or tariff): only the projected years, break_even_year and
+         *     sale_year are then missing; the cash back, its percent and the sale today stay.
+         */
+        PropertyPayback: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Label */
+            label: string;
+            /** Paid In */
+            paid_in: string | null;
+            /** Cash Back */
+            cash_back?: string | null;
+            /** Percent */
+            percent?: string | null;
+            /** Years */
+            years?: components["schemas"]["PaybackYear"][];
+            /** Break Even Year */
+            break_even_year?: number | null;
+            /** Sale Year */
+            sale_year?: number | null;
+            /** Tax Estimated Years */
+            tax_estimated_years?: number[];
+            /** Income Missing Years */
+            income_missing_years?: number[];
+            sale_today?: components["schemas"]["SaleToday"] | null;
+            /** Reason */
+            reason?: ("no_purchase_price" | "ownership_ended" | "before_handover" | "loan_not_valued" | "not_computable") | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Loan Id */
+            loan_id?: string | null;
+            /** Projection Error Code */
+            projection_error_code?: string | null;
         };
         /**
          * Proposal
@@ -12918,6 +13100,44 @@ export interface components {
             irr?: string | null;
             /** Flows */
             flows?: components["schemas"]["DatedFlow"][];
+        };
+        /**
+         * SaleToday
+         * @description „Gewinn bei Verkauf heute (Schätzung)“: rules.performance.sale.sale() for a sale in
+         *     today's year at today's value and loan balance (rules.performance.projection.sale_today;
+         *     sale() dates the sale 31 Dec of that year, so `taxable` is decided for that day).
+         *     net_proceeds = value − selling_costs − sale_tax − loan_balance; profit = net_proceeds +
+         *     the cash back so far − the own money put in. tax_not_computed: the sale is taxable with a
+         *     gain but no income input exists, so phase 4 cannot compute the §23 tax (its assumption
+         *     sale.tax_without_income) and sale_tax reads 0.00: net_proceeds and profit are then too
+         *     high by that tax, and the screen says so instead of showing 0,00 €.
+         */
+        SaleToday: {
+            /** Value */
+            value: string;
+            /** Selling Costs Rate */
+            selling_costs_rate: string;
+            /** Selling Costs */
+            selling_costs: string;
+            /** Taxable */
+            taxable: boolean;
+            /** Tax Free From */
+            tax_free_from?: string | null;
+            /** Gain */
+            gain?: string | null;
+            /** Sale Tax */
+            sale_tax: string;
+            /**
+             * Tax Not Computed
+             * @default false
+             */
+            tax_not_computed: boolean;
+            /** Loan Balance */
+            loan_balance: string;
+            /** Net Proceeds */
+            net_proceeds: string;
+            /** Profit */
+            profit: string;
         };
         /**
          * SavingsPlan
@@ -16470,6 +16690,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Property"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    properties_equity_api_properties_equity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PropertiesPaidIn"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    properties_payback_route_api_properties_payback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PropertiesPayback"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

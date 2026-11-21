@@ -2,7 +2,7 @@
 
 import re
 from datetime import date, datetime
-from typing import Self
+from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, JsonValue, field_validator, model_validator
@@ -12,7 +12,9 @@ from .common import (
     BuildingShare,
     Fraction,
     LivingArea,
+    Money,
     MutableRecord,
+    NonNegativeMoney,
     PositiveMoney,
     Rooms,
     Schema,
@@ -163,3 +165,35 @@ class UnitCreate(Schema):
 
 class Unit(UnitCreate, MutableRecord):
     pass
+
+
+# --- Own money put in (Übersicht, 21 Nov 2026) --------------------------------------------
+
+PaidInReason = Literal["no_purchase_price", "ownership_ended"]
+
+
+class PropertyPaidIn(Schema):
+    """One property's own money put in (rules.property_equity.paid_in): purchase_price +
+    acquisition_costs (Σ the Nebenkosten rows, the sum the AfA basis adds) + own_loan_costs
+    (the private_cost rows of class financing in force, every tax year, amount × share)
+    − loan_principal (Σ the property's loans' principal). Signed: a loan above price and
+    costs gives a negative paid_in, served as it is. paid_in None, with `reason`, when the
+    property is left out of the total: no purchase price, or ownership ended by today (as
+    the net worth leaves a sold property out)."""
+
+    property_id: UUID
+    label: str
+    purchase_price: PositiveMoney | None
+    acquisition_costs: NonNegativeMoney
+    own_loan_costs: NonNegativeMoney
+    loan_principal: NonNegativeMoney
+    paid_in: Money | None
+    reason: PaidInReason | None = None
+
+
+class PropertiesPaidIn(Schema):
+    """GET /properties/equity: every property of the workspace (by label) and total_paid_in,
+    Σ paid_in over the properties that have one (0.00 without any)."""
+
+    properties: list[PropertyPaidIn]
+    total_paid_in: Money
