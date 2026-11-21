@@ -5,6 +5,7 @@ imports), each object equal to what /accounts/{id}/transactions and /imports ret
 and workspace isolation. Invented IBANs and amounts only."""
 
 from datetime import date
+from uuid import UUID
 
 import pytest
 from api_support import create, ok
@@ -113,3 +114,41 @@ def test_a_returned_payment_reads_as_on_the_account(client_a, user_a, world):  #
     by_id = world.query(statements.transactions_by_id, [debit, credit, other])
     assert [t.model_dump(mode="json") for t in by_id] == on_account
     assert by_id[0].returned_with is not None
+
+
+def _dumped(items) -> list[dict]:
+    return [item.model_dump(mode="json") for item in items]
+
+
+def test_one_line_or_import_reads_as_on_its_account_alone(client_a, user_a, world):  # noqa: F811
+    """transactions_by_id and imports_by_id serialise an id the same whatever else is asked
+    for: one half of a booked returned payment alone, one of an account's two imports alone
+    (one unreconciled with a derived opening), and imports of three accounts at once."""
+    private = Private(world)
+    world.line(date(2026, 7, 1), "-12.00")
+    debit = private.line(date(2026, 7, 28), "-3200.00", iban=FRIEND_IBAN, purpose="Umbuchung Juli")
+    credit = private.line(date(2026, 7, 30), "3200.00", iban=FRIEND_IBAN, purpose=RECALL)
+    body = {"out_transaction_id": str(debit), "in_transaction_id": str(credit)}
+    ok(client_a.post("/api/returns", json=body), 201)
+    account = create(client_a, "/api/accounts", ACCOUNT)
+    from_csv = ok(_upload(client_a, account["id"], CSV_BYTES, "text/csv", "umsaetze.csv"), 201)
+    ok(
+        client_a.post(
+            f"/api/imports/{from_csv['id']}/balances", json={"closing_balance": "-3000.00"}
+        )
+    )
+    ok(_upload(client_a, account["id"]), 201)
+    lines, imports = _per_account(client_a)
+
+    for one in (debit, credit):
+        [line] = _dumped(world.query(statements.transactions_by_id, [one]))
+        assert line == lines[str(one)] and line["returned_with"] is not None
+    own = ok(client_a.get(f"/api/accounts/{account['id']}/imports"))
+    assert len(own) == 2
+    assert any(imp["derived_opening_balance"] is not None for imp in own)
+    for imp in own:
+        assert _dumped(world.query(statements.imports_by_id, [UUID(imp["id"])])) == [imp]
+    spanning = _dumped(world.query(statements.imports_by_id, [UUID(i) for i in imports]))
+    assert len(spanning) == len(imports)
+    assert len({imp["account_id"] for imp in spanning}) == 3
+    assert all(imp == imports[imp["id"]] for imp in spanning)
