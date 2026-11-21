@@ -71,6 +71,7 @@ export type LoanCreateRequest = Schemas["LoanCreateRequest"];
 export type LoanPatch = Schemas["LoanPatch"];
 export type DisbursementCorrection = Schemas["DisbursementCorrection"];
 export type LoanSchedule = Schemas["LoanSchedule"];
+export type LoanSummary = Schemas["LoanSummary"];
 export type ScheduleEntry = Schemas["ScheduleEntry"];
 export type YearTotals = Schemas["YearTotals"];
 
@@ -225,6 +226,7 @@ export type TrackedAmount = Schemas["TrackedAmount"];
 export type MovedPayment = Schemas["MovedPayment"];
 export type LimitStatus = Schemas["LimitStatus"];
 export type AfaLine = Schemas["AfaLine"];
+export type PurchaseSummary = Schemas["PurchaseSummary"];
 export type AllocationFact = Schemas["AllocationFact"];
 export type TaxExport = Schemas["TaxExport"];
 export type TaxExportKind = Schemas["TaxExportKind"];

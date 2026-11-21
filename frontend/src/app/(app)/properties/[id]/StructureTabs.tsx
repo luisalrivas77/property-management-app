@@ -13,7 +13,7 @@ import type { Tenancy, Tenant, Unit } from "@/api/schemas";
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { currentTenancy, partyNames } from "@/components/entities";
 import { formatShare, todayIso } from "@/components/format";
-import { LoanYearTotals } from "@/components/loans";
+import { LoanBalanceToday, LoanYearTotals } from "@/components/loans";
 import { loadPropertyContext } from "@/components/propertyContext";
 import { Facts, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -186,6 +186,7 @@ export function LoansTab({ propertyId }: { propertyId: string }) {
                     {loan.contract_number ? ` · ${loan.contract_number}` : ""}
                   </Link>
                 </h2>
+                <LoanBalanceToday loanId={loan.id} />
                 <p className="muted">
                   {t.loanTerms(
                     f.money(loan.terms.principal),

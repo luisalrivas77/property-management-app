@@ -7,7 +7,8 @@
 //
 // Phase 10 (mockup 25): a year or an instalment is a row with its label and amount, its other
 // figures in the detail panel; "Bearbeiten" slides the loan form in from the right (the PATCH
-// body is LoanForm's, unchanged; /loans/{id}/edit stays for a direct link).
+// body is LoanForm's, unchanged; /loans/{id}/edit stays for a direct link). Restschuld heute
+// and the anfängliche Tilgung come from GET /loans/{id}/summary, loaded on their own.
 import { useParams } from "next/navigation";
 import { useCallback } from "react";
 
@@ -16,7 +17,7 @@ import { DateCorrectionForm } from "@/components/corrections";
 import { DetailLayout, useDetail } from "@/components/DetailPanel";
 import { LinkedDocuments } from "@/components/documents";
 import { correctedFrom, findMilestone } from "@/components/history";
-import { EntryRows, scheduleRowOpen, SchedulePanel, useLoanSchedule, YearRows } from "@/components/loans";
+import { EntryRows, scheduleRowOpen, SchedulePanel, useBalanceText, useLoanSchedule, useLoanSummary, YearRows } from "@/components/loans";
 import { SheetDialog } from "@/components/SheetDialog";
 import { ActionDialog, Breadcrumbs, CorrectedNote, Facts, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
@@ -40,12 +41,15 @@ export default function LoanPage() {
   }, [id]);
   const data = useLoad(load);
   const schedule = useLoanSchedule(id);
+  const summary = useLoanSummary(id);
+  const balanceText = useBalanceText();
   const rates = useDetail("rate");
   const years = useDetail("loanyear");
 
   function corrected() {
     data.reload();
     schedule.reload();
+    summary.reload();
   }
 
   const panel =
@@ -108,7 +112,11 @@ export default function LoanPage() {
                 <Facts
                   rows={[
                     [t.principal, f.money(loan.terms.principal)],
+                    ...(summary.data ? [[t.balanceToday, balanceText(summary.data)] as [string, string]] : []),
                     [t.nominalRate, f.percent(loan.terms.nominal_rate)],
+                    ...(summary.data?.initial_repayment_rate
+                      ? [[t.initialRepayment, f.percent(summary.data.initial_repayment_rate)] as [string, string]]
+                      : []),
                     [t.payment, t.perMonth(f.money(loan.terms.monthly_payment))],
                     [
                       t.payout,

@@ -11,7 +11,7 @@ import Link from "next/link";
 import { useCallback, useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
-import type { AcquisitionCost, AcquisitionCostKind, Document, PriceSplit, PriceSplitSource, Property } from "@/api/schemas";
+import type { AcquisitionCost, AcquisitionCostKind, Document, PriceSplit, PriceSplitSource, Property, PurchaseSummary } from "@/api/schemas";
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { DocumentPicker, documentLabel } from "@/components/documents";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
@@ -27,6 +27,16 @@ import { Icon } from "@/lib/icons";
 import "@/components/pageRows.css";
 
 const loadDocuments = () => ok(api.GET("/api/documents"));
+
+/** The Nebenkosten's Summe and the AfA line of the selected split, as the server computes
+ * them from the Anlage V draft's own facts (phase 10, mockup 25); nothing is summed here. */
+function usePurchaseSummary(propertyId: string) {
+  const load = useCallback(
+    () => ok(api.GET("/api/properties/{property_id}/purchase-summary", { params: { path: { property_id: propertyId } } })),
+    [propertyId],
+  );
+  return useLoad(load);
+}
 
 function DocumentRef({ id, documents }: { id: string | null | undefined; documents: Document[] | undefined }) {
   const t = useT(propertyPage);
@@ -48,6 +58,7 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
   );
   const costs = useLoad(load);
   const documents = useLoad(loadDocuments);
+  const summary = usePurchaseSummary(propertyId);
   const detail = useDetail("cost");
   const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -55,6 +66,7 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
   function changed() {
     costs.reload();
     documents.reload();
+    summary.reload();
   }
 
   async function remove(cost: AcquisitionCost) {
@@ -137,6 +149,12 @@ export function CostsTab({ propertyId }: { propertyId: string }) {
             )
           }
         </Loading>
+        {summary.data && summary.data.acquisition_cost_count > 0 ? (
+          <div className="page-total">
+            <span>{t.costsTotal}</span>
+            <span>{f.money(summary.data.acquisition_costs_total)}</span>
+          </div>
+        ) : null}
         {error && !open ? <FormBanner errors={{ fields: {}, banner: error }} /> : null}
         <ActionDialog label={t.addCost} title={t.addCostTitle} buttonClass="">
           {(close) => (
@@ -255,6 +273,7 @@ export function SplitsTab({ property, onSelected }: { property: Property; onSele
   );
   const splits = useLoad(load);
   const documents = useLoad(loadDocuments);
+  const summary = usePurchaseSummary(property.id);
   const detail = useDetail("split");
   const [selecting, setSelecting] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -269,6 +288,7 @@ export function SplitsTab({ property, onSelected }: { property: Property; onSele
         }),
       );
       onSelected();
+      summary.reload();
     } catch (caught) {
       setError(caught);
     } finally {
@@ -331,6 +351,7 @@ export function SplitsTab({ property, onSelected }: { property: Property; onSele
             )
           }
         </Loading>
+        {summary.data ? <AfaFigures summary={summary.data} property={property} /> : null}
         {error && !open ? <FormBanner errors={{ fields: {}, banner: error }} /> : null}
         <ActionDialog label={t.addSplit} title={t.addSplitTitle} buttonClass="">
           {(close) => (
@@ -340,6 +361,7 @@ export function SplitsTab({ property, onSelected }: { property: Property; onSele
                 close();
                 splits.reload();
                 documents.reload();
+                summary.reload();
                 onSelected(); // D133: the first split becomes the AfA basis on its own
               }}
             />
@@ -347,6 +369,37 @@ export function SplitsTab({ property, onSelected }: { property: Property; onSele
         </ActionDialog>
       </div>
     </DetailLayout>
+  );
+}
+
+/** The AfA line under the splits: its basis and rate from the month of the handover, or the
+ * Gutachten's useful life; without a selected split a to-do naming the buttons, never 0 €. */
+function AfaFigures({ summary, property }: { summary: PurchaseSummary; property: Property }) {
+  const t = useT(propertyPage);
+  const f = useFormat();
+  const afa = summary.afa;
+  if (!afa) return null;
+  if (afa.basis === null) return <p className="muted">{t.afaNoSplit(t.addSplit, t.choose)}</p>;
+  const from = property.purchase_date ? f.month(property.purchase_date) : null;
+  return (
+    <div className="stack">
+      <dl className="page-figs" aria-label={t.afaFigures}>
+        <dt>{t.afaBasisAmount}</dt>
+        <dd>{f.money(afa.basis)}</dd>
+        {afa.method === "useful_life" && afa.useful_life_years ? (
+          <>
+            <dt>{t.afaUsefulLife}</dt>
+            <dd>{t.afaYears(afa.useful_life_years, from)}</dd>
+          </>
+        ) : afa.rate !== null ? (
+          <>
+            <dt>{t.afaRate}</dt>
+            <dd>{t.afaRateFrom(f.percent(afa.rate), from)}</dd>
+          </>
+        ) : null}
+      </dl>
+      {Number(afa.movable_deducted) !== 0 ? <p className="muted">{t.afaKitchen(f.money(afa.movable_deducted))}</p> : null}
+    </div>
   );
 }
 

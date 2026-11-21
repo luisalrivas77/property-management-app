@@ -10,7 +10,7 @@
 import { useCallback } from "react";
 
 import { api, ok } from "@/api/client";
-import type { LoanSchedule } from "@/api/schemas";
+import type { LoanSchedule, LoanSummary } from "@/api/schemas";
 import { useFormat, useT } from "@/i18n";
 import { loans } from "@/i18n/loans";
 import { Icon } from "@/lib/icons";
@@ -24,6 +24,35 @@ import "./pageRows.css";
 export function useLoanSchedule(loanId: string) {
   const load = useCallback(() => ok(api.GET("/api/loans/{loan_id}/schedule", { params: { path: { loan_id: loanId } } })), [loanId]);
   return useLoad(load);
+}
+
+/** Restschuld heute and the anfängliche Tilgung, as the server computes them (phase 10,
+ * mockup 25). Loaded on its own, so a stored loan the schedule refuses (409) leaves the
+ * rest of the page standing. */
+export function useLoanSummary(loanId: string) {
+  const load = useCallback(() => ok(api.GET("/api/loans/{loan_id}/summary", { params: { path: { loan_id: loanId } } })), [loanId]);
+  return useLoad(load);
+}
+
+/** The Restschuld text: the served balance, or „noch nicht ausgezahlt“ before the payout. */
+export function useBalanceText() {
+  const t = useT(loans);
+  const f = useFormat();
+  return (summary: LoanSummary) => (summary.balance_today === null ? t.notPaidOut : f.money(summary.balance_today));
+}
+
+/** A loan card's headline figure: Restschuld heute (nothing while loading or refused). */
+export function LoanBalanceToday({ loanId }: { loanId: string }) {
+  const t = useT(loans);
+  const summary = useLoanSummary(loanId);
+  const text = useBalanceText();
+  if (!summary.data) return null;
+  return (
+    <div>
+      <div className="page-big">{text(summary.data)}</div>
+      <div className="muted">{t.balanceToday}</div>
+    </div>
+  );
 }
 
 /** The year totals as rows: the year, its interest and repayment, and the instalments paid.

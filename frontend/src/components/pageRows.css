@@ -42,3 +42,42 @@ li.superseded .row-amount {
   font-weight: 700;
   color: var(--muted);
 }
+
+/* A list's served total under its rows („Summe“, mockup 25). */
+.page-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--divider);
+  font-weight: 700;
+}
+
+/* Label and figure pairs under a list or on a card (AfA-Basis, Restschuld; mockup 25's „figs“). */
+.page-figs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+  max-width: 440px;
+  margin: 0;
+}
+
+.page-figs dt {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.page-figs dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: right;
+}
+
+/* A card's headline figure (Restschuld heute). */
+.page-big {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
