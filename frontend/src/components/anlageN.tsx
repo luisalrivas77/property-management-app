@@ -19,7 +19,7 @@ import { ReadUpload } from "./documents";
 import { formatDate, formatDecimal, formatMoney } from "./format";
 import { ANLAGE_N_STATUS, RETURN_INPUT_KIND, WARNING_TEXT } from "./labels";
 import { BlockRows, hasBlocks } from "./anlageNBlocks";
-import { NO_PAY_HINT, NoPayButton, WithdrawNoPayButton } from "./noPay";
+import { NoPayButton, WithdrawNoPayButton, noPayHint } from "./noPay";
 import { EvidenceFold } from "./returnInputEvidence";
 import { type ReturnInput } from "./returnInputs";
 import {
@@ -30,7 +30,12 @@ import {
 import { ExportCard, SourcesButton, type ExportButton } from "./tax";
 import { WarningActionView, WhatToDo, resolveAction } from "./todos";
 import { DetailLayout, DetailPanel, useDetail } from "./DetailPanel";
-import { questionnaireHref, TaxTabs, taxFormHref, type TaxYearState } from "./taxYear";
+import {
+  questionnaireHref,
+  TaxTabs,
+  taxFormHref,
+  type TaxYearState,
+} from "./taxYear";
 import { Loading } from "./ui";
 import { useLoad, type Loaded } from "./useLoad";
 import { useT } from "@/i18n";
@@ -260,7 +265,8 @@ function DraftView({
       </p>
     );
   }
-  const selectedLine = (draft?.lines ?? []).find((line) => line.key === lineDetail.id) ?? null;
+  const selectedLine =
+    (draft?.lines ?? []).find((line) => line.key === lineDetail.id) ?? null;
   const warnings = (draft?.warnings ?? []).filter(
     (w) => w.code !== "anlage_n.form_provisional",
   );
@@ -280,89 +286,107 @@ function DraftView({
       <DetailLayout
         panel={
           selectedLine ? (
-            <DetailPanel title={routeLabel(selectedLine)} backLabel={t.lineBack} onClose={lineDetail.close}>
+            <DetailPanel
+              title={routeLabel(selectedLine)}
+              backLabel={t.lineBack}
+              onClose={lineDetail.close}
+            >
               <LinePanel line={selectedLine} ownerId={owner.id} year={year} />
             </DetailPanel>
           ) : null
         }
       >
-      <div className="tax-layout">
-        <div className="stack tax-main">
-          {draft && declared ? (
-            <div className="notice notice-info" role="status">
-              <p>
-                Für {owner.full_name} ist für {year} „Kein Arbeitslohn“
-                angegeben: es gibt keine Anlage N. Elterngeld und andere
-                Lohnersatzleistungen zählen trotzdem; sie stehen unter{" "}
-                <Link href={`${angabenHref(owner.id, year)}#eingabe-replacement_income`}>{t.inputsTab}</Link>.
-              </p>
-              <div className="row todo-actions">
-                <WithdrawNoPayButton
-                  ownerId={owner.id}
-                  year={year}
-                  label="Angabe „Kein Arbeitslohn“ aufheben"
-                  className=""
-                  onDone={onChanged}
-                />
+        <div className="tax-layout">
+          <div className="stack tax-main">
+            {draft && declared ? (
+              <div className="notice notice-info" role="status">
+                <p>
+                  Für {owner.full_name} ist für {year} „Kein Arbeitslohn“
+                  angegeben: es gibt keine Anlage N. Elterngeld und andere
+                  Lohnersatzleistungen zählen trotzdem; sie stehen unter{" "}
+                  <Link
+                    href={`${angabenHref(owner.id, year)}#eingabe-replacement_income`}
+                  >
+                    {t.inputsTab}
+                  </Link>
+                  .
+                </p>
+                <div className="row todo-actions">
+                  <WithdrawNoPayButton
+                    ownerId={owner.id}
+                    year={year}
+                    label="Angabe „Kein Arbeitslohn“ aufheben"
+                    className=""
+                    onDone={onChanged}
+                  />
+                </div>
               </div>
-            </div>
-          ) : draft ? (
-            <>
-              <PayCard draft={draft} rows={list} />
-              <CostsCard draft={draft} />
-            </>
-          ) : (
-            <div className="notice notice-info" role="status">
-              <p>
-                Für {owner.full_name} ist für {year} noch kein Arbeitslohn
-                erfasst. Die Lohnsteuerbescheinigung oder eine Gehaltsabrechnung
-                rechts unter Unterlagen hochladen (sie wird automatisch
-                ausgelesen), oder den erwarteten Bruttolohn unter{" "}
-                <Link href={`${angabenHref(owner.id, year)}#arbeitslohn`}>{t.inputsTab}</Link> eintragen.
-              </p>
-              <div className="row todo-actions">
-                <ReadUpload
-                  label="Lohnsteuerbescheinigung hochladen"
-                  onUploaded={onChanged}
-                />
-                <Link href={`${angabenHref(owner.id, year)}#arbeitslohn`}>
-                  Erwarteten Bruttolohn eintragen
-                </Link>
-                <NoPayButton ownerId={owner.id} year={year} onDone={onChanged} />
+            ) : draft ? (
+              <>
+                <PayCard draft={draft} rows={list} />
+                <CostsCard draft={draft} />
+              </>
+            ) : (
+              <div className="notice notice-info" role="status">
+                <p>
+                  Für {owner.full_name} ist für {year} noch kein Arbeitslohn
+                  erfasst. Die Lohnsteuerbescheinigung oder eine
+                  Gehaltsabrechnung rechts unter Unterlagen hochladen (sie wird
+                  automatisch ausgelesen), oder den erwarteten Bruttolohn unter{" "}
+                  <Link href={`${angabenHref(owner.id, year)}#arbeitslohn`}>
+                    {t.inputsTab}
+                  </Link>{" "}
+                  eintragen.
+                </p>
+                <div className="row todo-actions">
+                  <ReadUpload
+                    label="Lohnsteuerbescheinigung hochladen"
+                    onUploaded={onChanged}
+                  />
+                  <Link href={`${angabenHref(owner.id, year)}#arbeitslohn`}>
+                    Erwarteten Bruttolohn eintragen
+                  </Link>
+                  <NoPayButton
+                    ownerId={owner.id}
+                    year={year}
+                    onDone={onChanged}
+                  />
+                </div>
+                <p className="muted">{noPayHint()}</p>
               </div>
-              <p className="muted">{NO_PAY_HINT}</p>
-            </div>
-          )}
-          {rows.error != null && rows.data === undefined ? (
-            <p className="notice notice-error">
-              Die Eingaben konnten nicht geladen werden.
+            )}
+            {rows.error != null && rows.data === undefined ? (
+              <p className="notice notice-error">
+                Die Eingaben konnten nicht geladen werden.
+              </p>
+            ) : null}
+            <p className="muted">
+              {t.lineChangeHint}{" "}
+              <Link href={`${angabenHref(owner.id, year)}#tax-inputs-title`}>
+                {t.lineChange} ›
+              </Link>
             </p>
-          ) : null}
-          <p className="muted">
-            {t.lineChangeHint}{" "}
-            <Link href={`${angabenHref(owner.id, year)}#tax-inputs-title`}>{t.lineChange} ›</Link>
-          </p>
+          </div>
+          <aside
+            className="stack tax-side"
+            aria-label="Offene Punkte und Unterlagen"
+          >
+            <OpenPoints
+              warnings={warnings}
+              estimate={estimate}
+              ownerId={owner.id}
+              year={year}
+              onChanged={onChanged}
+            />
+            <Documents rows={list} year={year} />
+            <AnlageNHandOver
+              ownerId={owner.id}
+              year={year}
+              ready={draft !== null && !declared}
+              declared={declared}
+            />
+          </aside>
         </div>
-        <aside
-          className="stack tax-side"
-          aria-label="Offene Punkte und Unterlagen"
-        >
-          <OpenPoints
-            warnings={warnings}
-            estimate={estimate}
-            ownerId={owner.id}
-            year={year}
-            onChanged={onChanged}
-          />
-          <Documents rows={list} year={year} />
-          <AnlageNHandOver
-            ownerId={owner.id}
-            year={year}
-            ready={draft !== null && !declared}
-            declared={declared}
-          />
-        </aside>
-      </div>
       </DetailLayout>
     </div>
   );
@@ -392,7 +416,15 @@ function lineAnchor(key: string): string {
 
 /** The panel of one line: its amount and form line, „So gerechnet“ (the draft's own notes and
  * single items, and its sources), and „Ändern in Eure Angaben“. */
-function LinePanel({ line, ownerId, year }: { line: DraftLine; ownerId: string; year: number }) {
+function LinePanel({
+  line,
+  ownerId,
+  year,
+}: {
+  line: DraftLine;
+  ownerId: string;
+  year: number;
+}) {
   const t = useT(messages);
   const count = COUNT_LINE.test(line.key);
   const ref = formRef(line);
@@ -402,7 +434,13 @@ function LinePanel({ line, ownerId, year }: { line: DraftLine; ownerId: string; 
       <dl className="facts">
         <div>
           <dt>{t.lineAmount}</dt>
-          <dd className="num">{line.amount == null ? "–" : count ? formatDecimal(line.amount) : formatMoney(line.amount)}</dd>
+          <dd className="num">
+            {line.amount == null
+              ? "–"
+              : count
+                ? formatDecimal(line.amount)
+                : formatMoney(line.amount)}
+          </dd>
         </div>
         {ref ? (
           <div>
@@ -428,7 +466,10 @@ function LinePanel({ line, ownerId, year }: { line: DraftLine; ownerId: string; 
         )}
       </section>
       <p className="muted">{t.lineChangeHint}</p>
-      <Link className="button-link" href={`${angabenHref(ownerId, year)}#${lineAnchor(line.key)}`}>
+      <Link
+        className="button-link"
+        href={`${angabenHref(ownerId, year)}#${lineAnchor(line.key)}`}
+      >
         {t.lineChange} ›
       </Link>
     </div>
@@ -768,7 +809,8 @@ function OpenPoints({
               </span>
               <p>{WARNING_TEXT[warning.code](warning.params ?? {})}</p>
               <WhatToDo warning={warning} />
-              {resolveAction(warning, ctx) || (warning.refs ?? []).length > 0 ? (
+              {resolveAction(warning, ctx) ||
+              (warning.refs ?? []).length > 0 ? (
                 <div className="row tax-open-actions">
                   <WarningActionView
                     warning={warning}
