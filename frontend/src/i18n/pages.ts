@@ -14,6 +14,7 @@ export const pages = defineMessages({
     loanNeedsProperty: "Ein Darlehen gehört zu einer Immobilie: dort unter „Darlehen“ anlegen (",
     overview: "Übersicht",
     loanNeedsPropertyEnd: ").",
+    editAccount: "Konto bearbeiten",
   },
   en: {
     invalidYear: "Not a valid tax year.",
@@ -26,5 +27,6 @@ export const pages = defineMessages({
     loanNeedsProperty: "A loan belongs to a property: add it there under “Loans” (",
     overview: "Overview",
     loanNeedsPropertyEnd: ").",
+    editAccount: "Edit account",
   },
 });

@@ -78,8 +78,9 @@ export interface Tab<K extends string> {
 
 /** Tabs as links (?tab=…), so each tab has a URL, back works, and Tab/Enter reach them. */
 export function TabBar<K extends string>({ tabs, current, href }: { tabs: Tab<K>[]; current: K; href: (key: K) => string }) {
+  const t = useT(shared);
   return (
-    <nav aria-label="Bereiche" className="tabs">
+    <nav aria-label={t.sections} className="tabs">
       {tabs.map((tab) => (
         <Link key={tab.key} href={href(tab.key)} aria-current={tab.key === current ? "page" : undefined} scroll={false}>
           {tab.label}

@@ -9,6 +9,7 @@ export const shared = defineMessages({
     // ui.tsx
     retry: "Erneut versuchen",
     breadcrumbs: "Pfad",
+    sections: "Bereiche",
     corrected: (original: string) => `korrigiert, ursprünglich ${original}`,
     // form.tsx
     explanation: "Erklärung:",
@@ -46,6 +47,7 @@ export const shared = defineMessages({
   en: {
     retry: "Try again",
     breadcrumbs: "Path",
+    sections: "Sections",
     corrected: (original: string) => `corrected, originally ${original}`,
     explanation: "Explanation:",
     checkMarkedFields: "Please check the marked fields.",
