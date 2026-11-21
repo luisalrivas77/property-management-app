@@ -13,6 +13,8 @@ import type { Member, WorkspaceSettings } from "@/api/schemas";
 import { useAuth } from "@/auth/AuthGate";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { settingsForms } from "@/i18n/settingsForms";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 type Setting = "ai_tenant_documents" | "auto_accept_llm" | "ai_private_accounts"; // reminder_emails: ReminderSettings
@@ -23,36 +25,12 @@ const loadSettings = () =>
     members,
   }));
 
-const PRIVATE_TEXT =
-  "Ist dies eingeschaltet, schlägt die KI für Umsätze Ihrer privaten Konten eine Haushaltskategorie vor, wenn keine Regel und " +
-  "kein Abgleich sie erklärt. Gesendet werden nur Name der Gegenseite, Verwendungszweck, Betrag, Datum, die letzten vier Stellen " +
-  "der IBAN und die Kontoart, nie der Name des Kontos oder seiner Eigentümer; verarbeitet bei Anthropic (Claude API) in den USA wie " +
-  "die übrigen Dokumente. Umsätze können Gehalt, Einkäufe und Zahlungen an Kirche, Gewerkschaft, Apotheke oder " +
-  "Arzt. Wer es einschaltet, stimmt damit für den Haushalt zu; ein anderes Mitglied kann seine Zustimmung hier dazusetzen. " +
-  "Solange es ausgeschaltet ist, kommen solche Umsätze mit allen Haushaltskategorien zur Auswahl unter „Zu prüfen“.";
-
-const SWITCHES: { setting: Setting; label: string; text: string }[] = [
-  {
-    setting: "ai_tenant_documents",
-    label: "Mieterdokumente von der KI lesen lassen",
-    text:
-      "Mietverträge, Übergabeprotokolle, Kautionsnachweise und Briefe von Mietern enthalten personenbezogene Daten Ihrer Mieter. " +
-      "Ist dies eingeschaltet, werden diese Dokumente zum Auslesen an Anthropic (Claude API) gesendet und in den USA verarbeitet, " +
-      "auf Grundlage des Auftragsverarbeitungsvertrags mit EU-Standardvertragsklauseln. Anthropic verwendet sie nicht zum Training " +
-      "und löscht sie innerhalb von 30 Tagen. Schalten Sie es nur ein, wenn Ihre Datenschutzhinweise an die Mieter Anthropic als " +
-      "Auftragsverarbeiter nennen. Sie können es jederzeit wieder ausschalten; bereits gelesene Dokumente bleiben gelesen.",
-  },
-  {
-    setting: "auto_accept_llm",
-    label: "KI-Zuordnungen automatisch bestätigen",
-    text:
-      "Ist die KI sich sicher, wird ein Umsatz ohne Rückfrage gebucht. Miete, Nebenkosten-Vorauszahlung, Darlehensraten, Hausgeld, " +
-      "Überweisungen zwischen Ihren eigenen Konten und aufgeteilte Beträge legt die KI trotzdem immer zur Prüfung vor. " +
-      "Empfohlen erst ab dem zweiten importierten Monat.",
-  },
-];
-
 export function AiSettings() {
+  const t = useT(settingsForms);
+  const switches: { setting: Setting; label: string; text: string }[] = [
+    { setting: "ai_tenant_documents", label: t.tenantDocuments, text: t.tenantDocumentsText },
+    { setting: "auto_accept_llm", label: t.autoAccept, text: t.autoAcceptText },
+  ];
   const { me } = useAuth();
   const loaded = useLoad(loadSettings);
   const [saved, setSaved] = useState<WorkspaceSettings | null>(null);
@@ -89,7 +67,7 @@ export function AiSettings() {
         const settings = saved ?? fetched.settings;
         return (
           <div className="stack">
-            {SWITCHES.map(({ setting, label, text }) => (
+            {switches.map(({ setting, label, text }) => (
               <div key={setting} className="card stack">
                 <label className="inline">
                   <input
@@ -103,7 +81,7 @@ export function AiSettings() {
                   <strong>{label}</strong>
                 </label>
                 <p className="muted">{text}</p>
-                <p className="muted">{settings[setting] ? "Eingeschaltet" : "Ausgeschaltet"}</p>
+                <p className="muted">{settings[setting] ? t.on : t.off}</p>
               </div>
             ))}
             <PrivateAccountsCard
@@ -139,13 +117,10 @@ function PrivateAccountsCard({
   onSwitch: (value: boolean) => void;
   onConsent: () => void;
 }) {
+  const t = useT(settingsForms);
   const on = settings.ai_private_accounts;
   const consented = new Set(settings.ai_private_accounts_consented_by ?? []);
-  const status = !on
-    ? "Ausgeschaltet"
-    : settings.ai_private_accounts_active
-      ? "Eingeschaltet: die KI ordnet private Umsätze zu."
-      : "Eingeschaltet, aber noch ohne Zustimmung. Bitte einmal aus- und wieder einschalten.";
+  const status = !on ? t.off : settings.ai_private_accounts_active ? t.privateActive : t.privateNoConsent;
   return (
     <div className="card stack">
       <label className="inline">
@@ -157,16 +132,16 @@ function PrivateAccountsCard({
           disabled={busy}
           onChange={(event) => onSwitch(event.target.checked)}
         />{" "}
-        <strong>Private Konten mit KI zuordnen</strong>
+        <strong>{t.privateAccounts}</strong>
       </label>
-      <p className="muted">{PRIVATE_TEXT}</p>
+      <p className="muted">{t.privateAccountsText}</p>
       {on ? (
         <ul>
           {members.map((member) => (
             <li key={member.user.id}>
               {member.user.display_name}
-              {member.user.id === meId ? " (Sie)" : ""}:{" "}
-              {consented.has(member.user.id) ? "hat zugestimmt" : "Zustimmung fehlt"}
+              {member.user.id === meId ? t.youFormal : ""}:{" "}
+              {consented.has(member.user.id) ? t.consented : t.consentMissing}
             </li>
           ))}
         </ul>
@@ -174,7 +149,7 @@ function PrivateAccountsCard({
       {on && !consented.has(meId) ? (
         <div>
           <button type="button" disabled={busy} onClick={onConsent}>
-            Ich stimme zu
+            {t.iConsent}
           </button>
         </div>
       ) : null}

@@ -1,5 +1,5 @@
 // Einstellungen (mockup 24). Step 2 added „Darstellung & Sprache“ (D283, D284); step 4b the groups
-// as rows that open in the panel. The groups' own forms stay German for now.
+// as rows that open in the panel; the groups' own forms are in settingsForms.ts.
 import { defineMessages } from "./core";
 
 export const settings = defineMessages({

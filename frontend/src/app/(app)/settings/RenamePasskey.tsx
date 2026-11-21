@@ -5,11 +5,16 @@ import { useState, type FormEvent } from "react";
 
 import { api, ok } from "@/api/client";
 import type { Passkey } from "@/api/schemas";
+import { useT } from "@/i18n";
+import { common } from "@/i18n/common";
+import { settingsForms } from "@/i18n/settingsForms";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 const MAX_LABEL_LENGTH = 100; // auth_passkey.label CHECK
 
 export function RenamePasskey({ passkey, onDone }: { passkey: Passkey; onDone: (changed: boolean) => void | Promise<void> }) {
+  const t = useT(settingsForms);
+  const c = useT(common);
   const [label, setLabel] = useState(passkey.label);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -33,7 +38,7 @@ export function RenamePasskey({ passkey, onDone }: { passkey: Passkey; onDone: (
   return (
     <form className="stack" onSubmit={submit}>
       <label htmlFor={inputId} className="visually-hidden">
-        Neuer Name
+        {t.newName}
       </label>
       <input
         id={inputId}
@@ -50,10 +55,10 @@ export function RenamePasskey({ passkey, onDone }: { passkey: Passkey; onDone: (
       />
       <div className="row">
         <button type="submit" disabled={busy || label.trim() === ""}>
-          {busy ? "Speichert …" : "Speichern"}
+          {busy ? t.saving : c.save}
         </button>
         <button type="button" className="secondary" onClick={() => void onDone(false)}>
-          Abbrechen
+          {c.cancel}
         </button>
       </div>
       <ErrorNotice error={error} />

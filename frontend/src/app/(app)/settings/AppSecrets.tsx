@@ -13,26 +13,31 @@ import type { AppSecretGroup, AppSecretSource, AppSecretState } from "@/api/sche
 import { APP_SECRETS_ANCHOR } from "@/components/labels";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { localized, useFormat, useT } from "@/i18n";
+import { common } from "@/i18n/common";
+import { settingsForms } from "@/i18n/settingsForms";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 const loadSecrets = () => ok(api.GET("/api/app-secrets"));
 
-const GROUPS: Record<AppSecretGroup, string> = {
-  ai: "KI",
-  chains: "Blockchains & Kurse",
-  bank: "Bank",
-  mail: "E-Mail",
-  elster: "ELSTER",
-};
+const groupNames = (t: typeof settingsForms.de): Record<AppSecretGroup, string> => ({
+  ai: t.groupAi,
+  chains: t.groupChains,
+  bank: t.groupBank,
+  mail: t.groupMail,
+  elster: t.groupElster,
+});
 
-const SOURCE_TEXT: Record<AppSecretSource, string> = {
-  app: "In der App gespeichert",
-  container: "Aus der Server-Konfiguration",
-  none: "Nicht gesetzt",
-  unreadable: "Kann nicht gelesen werden",
-};
+const GROUPS = localized(groupNames(settingsForms.de), groupNames(settingsForms.en));
 
-const dateTime = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" });
+const sourceTexts = (t: typeof settingsForms.de): Record<AppSecretSource, string> => ({
+  app: t.sourceApp,
+  container: t.sourceContainer,
+  none: t.sourceNone,
+  unreadable: t.sourceUnreadable,
+});
+
+const SOURCE_TEXT = localized(sourceTexts(settingsForms.de), sourceTexts(settingsForms.en));
 
 export function AppSecrets() {
   const loaded = useLoad(loadSecrets);
@@ -40,6 +45,7 @@ export function AppSecrets() {
 }
 
 function SecretList({ initial }: { initial: AppSecretState[] }) {
+  const t = useT(settingsForms);
   const [rows, setRows] = useState(initial);
   const [error, setError] = useState<unknown>(null);
 
@@ -67,11 +73,7 @@ function SecretList({ initial }: { initial: AppSecretState[] }) {
 
   return (
     <div className="card stack">
-      <p className="muted">
-        Schlüssel und Zugangsdaten für die Dienste, die Hausbuch nutzt. Ein hier eingetragener Wert gilt vor dem Wert aus der
-        Server-Konfiguration und wird verschlüsselt gespeichert. Ein Schlüssel wird nach dem Speichern nie wieder angezeigt;
-        „Löschen“ nimmt wieder den Wert aus der Server-Konfiguration, falls dort einer steht.
-      </p>
+      <p className="muted">{t.secretsIntro}</p>
       {groups.map((group) => (
         <div key={group} className="stack">
           <h3>{GROUPS[group]}</h3>
@@ -96,6 +98,9 @@ function SecretRow({
   onChanged: (state: AppSecretState) => void;
   onDeleted: () => void;
 }) {
+  const t = useT(settingsForms);
+  const c = useT(common);
+  const f = useFormat();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -120,7 +125,7 @@ function SecretRow({
   }
 
   async function remove() {
-    const question = `„${state.label}“ aus der App löschen? Danach gilt der Wert aus der Server-Konfiguration, falls dort einer steht.`;
+    const question = t.deleteSecret(state.label);
     if (!window.confirm(question)) return;
     setBusy(true);
     setError(null);
@@ -143,10 +148,10 @@ function SecretRow({
       <p className="muted">{state.purpose}</p>
       {!state.secret && state.value ? <p>{state.value}</p> : null}
       {state.source === "unreadable" ? (
-        <p>Schlüssel kann nicht gelesen werden, bitte neu eintragen.</p>
+        <p>{t.unreadable}</p>
       ) : null}
       {state.source === "app" && state.updated_at ? (
-        <p className="muted">Eingetragen am {dateTime.format(new Date(state.updated_at))}</p>
+        <p className="muted">{t.typedOn(f.dateTime(state.updated_at))}</p>
       ) : null}
       {editing ? (
         <form className="stack" onSubmit={save}>
@@ -162,7 +167,7 @@ function SecretRow({
           />
           <div className="row">
             <button type="submit" disabled={busy || value.trim() === ""}>
-              {busy ? "Speichert …" : "Speichern"}
+              {busy ? t.saving : c.save}
             </button>
             <button
               type="button"
@@ -173,24 +178,24 @@ function SecretRow({
               }}
               disabled={busy}
             >
-              Abbrechen
+              {c.cancel}
             </button>
           </div>
         </form>
       ) : (
         <div className="row">
           <button type="button" className="secondary" onClick={() => setEditing(true)} disabled={busy}>
-            {typed ? "Ändern" : "Eintragen"}
+            {typed ? t.change : t.enter}
           </button>
           {typed ? (
             <button type="button" className="danger" onClick={() => void remove()} disabled={busy}>
-              Löschen
+              {t.delete}
             </button>
           ) : null}
         </div>
       )}
       {state.source === "none" ? (
-        <p className="muted">Alternativ als Variable {state.variable} in der Server-Konfiguration.</p>
+        <p className="muted">{t.orVariable(state.variable)}</p>
       ) : null}
       <ErrorNotice error={error} />
     </div>

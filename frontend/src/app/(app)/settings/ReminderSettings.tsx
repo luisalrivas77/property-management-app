@@ -12,11 +12,14 @@ import { api, ok } from "@/api/client";
 import type { WorkspaceSettings } from "@/api/schemas";
 import { Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { settingsForms } from "@/i18n/settingsForms";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 const loadSettings = () => ok(api.GET("/api/workspace/settings"));
 
 export function ReminderSettings() {
+  const t = useT(settingsForms);
   const loaded = useLoad(loadSettings);
   const [saved, setSaved] = useState<WorkspaceSettings | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,20 +52,13 @@ export function ReminderSettings() {
                 disabled={busy}
                 onChange={(event) => void change(event.target.checked)}
               />{" "}
-              <strong>Erinnerungen per E-Mail</strong>
+              <strong>{t.reminders}</strong>
             </label>
-            <p className="muted">
-              Steht ein Termin an, zum Beispiel eine Grundsteuer-Rate, eine fehlende Miete oder die Abgabe der Steuererklärung,
-              bekommt jedes Mitglied morgens eine E-Mail mit allen fälligen Terminen, höchstens eine am Tag. Sie nennt nur die Art
-              des Termins, das Datum und die Bezeichnung der Wohnung oder Einheit, nie einen Betrag oder den Namen eines Mieters;
-              die Einzelheiten stehen auf der Übersicht.
-            </p>
-            <p className="muted">{settings.reminder_emails ? "Eingeschaltet" : "Ausgeschaltet"}</p>
+            <p className="muted">{t.remindersText}</p>
+            <p className="muted">{settings.reminder_emails ? t.on : t.off}</p>
             {settings.reminder_emails_available ? null : (
               <p className="muted" data-testid="reminder-emails-unavailable">
-                Der E-Mail-Versand ist noch nicht eingerichtet: dafür unter „Zugangsschlüssel“ (unten, Bereich E-Mail) den Schlüssel,
-                das Projekt und die Absenderadresse von Scaleway Transactional Email eintragen. Bis dahin wird keine E-Mail verschickt;
-                die Erinnerungen stehen weiter auf der Übersicht und unter „Zu prüfen“.
+                {t.remindersUnavailable}
               </p>
             )}
             <ErrorNotice error={error} />

@@ -16,8 +16,10 @@ import { useAuth } from "@/auth/AuthGate";
 import { addPasskey, defaultPasskeyLabel } from "@/auth/passkeys";
 import { DetailLayout, DetailPanel, useDetail } from "@/components/DetailPanel";
 import { AI_SETTINGS_ANCHOR, APP_SECRETS_ANCHOR } from "@/components/labels";
-import { useLocale, useT } from "@/i18n";
+import { useFormat, useLocale, useT } from "@/i18n";
+import { common } from "@/i18n/common";
 import { settings as messages } from "@/i18n/settings";
+import { settingsForms } from "@/i18n/settingsForms";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 import { Icon, type IconName } from "@/lib/icons";
 import { useTheme } from "@/lib/theme";
@@ -33,11 +35,6 @@ import { RenamePasskey } from "./RenamePasskey";
 import "./settings.css";
 
 const MAX_LABEL_LENGTH = 100; // auth_passkey.label CHECK
-const dateTime = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" });
-
-function formatDateTime(value: string | null): string {
-  return value ? dateTime.format(new Date(value)) : "–";
-}
 
 type Group = "theme" | "language" | "passkeys" | "ai" | "advice" | "reminders" | "inbox" | "secrets";
 const GROUPS: readonly Group[] = ["theme", "language", "passkeys", "ai", "advice", "reminders", "inbox", "secrets"];
@@ -195,6 +192,9 @@ export default function SettingsPage() {
 }
 
 function PasskeysAndMembers() {
+  const t = useT(settingsForms);
+  const c = useT(common);
+  const f = useFormat();
   const { me } = useAuth();
   const [passkeys, setPasskeys] = useState<Passkey[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
@@ -218,9 +218,7 @@ function PasskeysAndMembers() {
 
   async function remove(passkey: Passkey) {
     const current = passkey.id === me.session.passkey_id;
-    const question = current
-      ? `Passkey „${passkey.label}“ entfernen? Damit endet auch diese Sitzung.`
-      : `Passkey „${passkey.label}“ entfernen? Sitzungen, die damit angemeldet wurden, enden.`;
+    const question = current ? t.removeCurrent(passkey.label) : t.removeOther(passkey.label);
     if (!window.confirm(question)) return;
     setRemoving(passkey.id);
     setRowError(null);
@@ -236,16 +234,16 @@ function PasskeysAndMembers() {
 
   return (
     <div className="stack">
-      <h3>Passkeys</h3>
+      <h3>{t.passkeys}</h3>
       <ErrorNotice error={listError} />
-      {passkeys === null && listError == null ? <p className="muted">Lädt …</p> : null}
+      {passkeys === null && listError == null ? <p className="muted">{c.loading}</p> : null}
       {passkeys !== null ? (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Zuletzt benutzt</th>
+                <th>{t.name}</th>
+                <th>{t.lastUsed}</th>
                 <th />
               </tr>
             </thead>
@@ -264,15 +262,16 @@ function PasskeysAndMembers() {
                     ) : (
                       <>
                         {passkey.label}
-                        {passkey.id === me.session.passkey_id ? <span className="muted"> (diese Sitzung)</span> : null}
+                        {passkey.id === me.session.passkey_id ? <span className="muted">{t.thisSession}</span> : null}
                         <span className="muted settings-passkey-meta">
-                          Angelegt {formatDateTime(passkey.created_at)} ·{" "}
-                          {passkey.backed_up ? "synchronisiert" : "nicht synchronisiert"}
+                          {t.created}
+                          {f.dateTime(passkey.created_at)} ·{" "}
+                          {passkey.backed_up ? t.synced : t.notSynced}
                         </span>
                       </>
                     )}
                   </td>
-                  <td>{formatDateTime(passkey.last_used_at)}</td>
+                  <td>{f.dateTime(passkey.last_used_at)}</td>
                   <td className="row">
                     <button
                       type="button"
@@ -280,16 +279,16 @@ function PasskeysAndMembers() {
                       onClick={() => setRenaming(passkey.id)}
                       disabled={renaming !== null || removing !== null}
                     >
-                      Umbenennen
+                      {t.rename}
                     </button>
                     <button
                       type="button"
                       className="danger"
                       onClick={() => remove(passkey)}
                       disabled={removing !== null || passkeys.length === 1}
-                      title={passkeys.length === 1 ? "Der letzte Passkey kann nicht entfernt werden." : undefined}
+                      title={passkeys.length === 1 ? t.lastPasskey : undefined}
                     >
-                      {removing === passkey.id ? "Entfernt …" : "Entfernen"}
+                      {removing === passkey.id ? t.removing : t.remove}
                     </button>
                   </td>
                 </tr>
@@ -299,21 +298,20 @@ function PasskeysAndMembers() {
         </div>
       ) : null}
       {passkeys?.length === 1 ? (
-        <p className="muted">
-          Der letzte Passkey kann nicht entfernt werden. Am besten einen zweiten auf einem anderen Gerät anlegen.
-        </p>
+        <p className="muted">{t.lastPasskeyHint}</p>
       ) : null}
       <ErrorNotice error={rowError} />
 
       <AddPasskey onAdded={reload} />
 
-      <h3>Mitglieder</h3>
+      <h3>{t.members}</h3>
       <Members />
     </div>
   );
 }
 
 function AddPasskey({ onAdded }: { onAdded: () => Promise<void> }) {
+  const t = useT(settingsForms);
   // Rendered only after the AuthGate resolved the session, i.e. on the client.
   const [label, setLabel] = useState(() => defaultPasskeyLabel().slice(0, MAX_LABEL_LENGTH));
   const [busy, setBusy] = useState(false);
@@ -336,7 +334,7 @@ function AddPasskey({ onAdded }: { onAdded: () => Promise<void> }) {
   return (
     <form className="stack" onSubmit={submit}>
       <div>
-        <label htmlFor="new-passkey-label">Passkey hinzufügen</label>
+        <label htmlFor="new-passkey-label">{t.addPasskey}</label>
         <input
           id="new-passkey-label"
           type="text"
@@ -346,10 +344,10 @@ function AddPasskey({ onAdded }: { onAdded: () => Promise<void> }) {
           maxLength={MAX_LABEL_LENGTH}
           autoComplete="off"
         />
-        <p className="muted">Zum Beispiel für den Laptop, nachdem der erste Passkey auf dem Telefon liegt.</p>
+        <p className="muted">{t.addPasskeyHint}</p>
       </div>
       <button type="submit" disabled={busy || label.trim() === ""}>
-        {busy ? "Warte auf Passkey …" : "Passkey hinzufügen"}
+        {busy ? t.waitingForPasskey : t.addPasskey}
       </button>
       <ErrorNotice error={error} />
     </form>
