@@ -41,11 +41,14 @@ import type {
   TenancyFlatRate,
   YearFigures,
 } from "@/api/schemas";
+import { formatter, getLocale, useT } from "@/i18n";
+import { common } from "@/i18n/common";
+import { propertyPlanning } from "@/i18n/propertyPlanning";
 
 import { FLAT_RATE_CARD_ID, FLAT_RATE_NOT_ADVICE, FlatRateActions } from "./flatRate";
 
 import { Field, FormBanner, Submit, useFormErrors } from "./form";
-import { formatDate, formatDateTime, formatDecimal, formatMoney, shiftDecimal, todayIso } from "./format";
+import { shiftDecimal, todayIso } from "./format";
 import { ALLOCATION_CATEGORY, TAX_SOURCE_KIND } from "./labels";
 import { linkFor } from "./tax";
 import { payInputsHref } from "./taxYear";
@@ -54,7 +57,19 @@ import { useLoad, type Loaded } from "./useLoad";
 
 import "./tax.css";
 
-const DISCLAIMER = "Eine Planungsschätzung, keine Steuer- oder Anlageberatung.";
+type Texts = (typeof propertyPlanning)["de"];
+
+// Read-only figures in the chosen language; no input on this screen is prefilled from them, and
+// German reads exactly as with ./format.
+const formatMoney = (value: string | null | undefined) => formatter().money(value);
+const formatDate = (value: string | null | undefined) => formatter().date(value);
+const formatDateTime = (value: string | null | undefined) => formatter().dateTime(value);
+const formatDecimal = (value: string | null | undefined, minFraction = 0) => formatter().decimal(value, minFraction);
+
+/** A percentage figure: de „2,0 %“, en „2.0%“. */
+function withPercent(text: string): string {
+  return getLocale() === "en" ? `${text}%` : `${text} %`;
+}
 
 // --- Decimal strings, formatted (never computed) ----------------------------------------------
 
@@ -85,7 +100,7 @@ function tone(value: string | null | undefined, lowerIsBetter = false): string |
 /** A rate as a fraction ("0.020000", "0.0357") as a percentage: "2,0 %" with minFraction 1. */
 function ratePercent(value: string, minFraction = 0): string {
   const percent = shiftDecimal(value, 2);
-  return percent === null ? value : `${formatDecimal(percent, minFraction)} %`;
+  return percent === null ? value : withPercent(formatDecimal(percent, minFraction));
 }
 
 /** A yearly return as a fraction ("0.032145") as a percentage rounded half-up to one place
@@ -99,12 +114,12 @@ function returnPercent(value: string | null | undefined): string {
   const tenths = BigInt(int + (frac.charAt(0) || "0")) + (Number(frac.charAt(1) || "0") >= 5 ? 1n : 0n);
   const digits = tenths.toString().padStart(2, "0");
   const text = formatDecimal(`${digits.slice(0, -1)}.${digits.slice(-1)}`, 1);
-  return `${sign && tenths !== 0n ? "-" : ""}${text} %`;
+  return withPercent(`${sign && tenths !== 0n ? "-" : ""}${text}`);
 }
 
 /** A percent the backend already rounded ("33.8") as "33,8 %". */
 function percentText(value: string): string {
-  return `${formatDecimal(value, 1)} %`;
+  return withPercent(formatDecimal(value, 1));
 }
 
 function addressLine(property: Property): string {
@@ -117,13 +132,6 @@ function addressLine(property: Property): string {
 type Refusal = "projection.no_rule_set" | "tariff.no_file";
 
 const REFUSALS: readonly Refusal[] = ["projection.no_rule_set", "tariff.no_file"];
-
-const REFUSAL_TEXT: Record<Refusal, string> = {
-  "projection.no_rule_set":
-    "Für das Kaufjahr dieser Immobilie gibt es noch kein Regelwerk. Ohne Regelwerk lassen sich weder die Ist-Zahlen noch eine Prognose berechnen.",
-  "tariff.no_file":
-    "Für das Kaufjahr dieser Immobilie ist kein Einkommensteuertarif hinterlegt. Ohne Tarif lassen sich weder die Ist-Zahlen noch eine Prognose berechnen.",
-};
 
 interface Refused {
   refused: Refusal;
@@ -148,9 +156,10 @@ async function orRefused<T>(call: Promise<T>): Promise<T | Refused> {
 }
 
 function RefusalNotice({ refusal }: { refusal: Refusal }) {
+  const t = useT(propertyPlanning);
   return (
     <div className="notice notice-info" role="status">
-      <p>{REFUSAL_TEXT[refusal]}</p>
+      <p>{refusal === "tariff.no_file" ? t.refusalNoTariff : t.refusalNoRuleSet}</p>
     </div>
   );
 }
@@ -257,6 +266,7 @@ export function PlanningScreen({ property, properties }: { property: Property; p
   const overridden = valueGrowth !== null || rentGrowth !== null || saleYear !== null;
   const multi = properties.length > 1;
   const [saved, setSaved] = useState<string | null>(null);
+  const t = useT(propertyPlanning);
 
   const go = useCallback(
     (next: LeverParams) => router.replace(planningHref(multi ? property.id : null, next), { scroll: false }),
@@ -306,13 +316,13 @@ export function PlanningScreen({ property, properties }: { property: Property; p
       <div className="page-head planning-head">
         <div>
           <p className="eyebrow">{property.label}</p>
-          <h2>Rechnet sich die Immobilie?</h2>
+          <h2>{t.heading}</h2>
           <span className="muted">{addressLine(property)}</span>
         </div>
         <span className="spacer" />
         {multi ? (
           <label htmlFor={`${ids}-property`} className="inline">
-            Immobilie
+            {t.property}
             <select
               id={`${ids}-property`}
               value={property.id}
@@ -364,7 +374,7 @@ export function PlanningScreen({ property, properties }: { property: Property; p
             {projection.data === undefined && projection.error != null && (overridden || scenarioId !== null) ? (
               <div className="row">
                 <button type="button" className="secondary" onClick={() => go(NO_LEVERS)}>
-                  Annahmen zurücksetzen
+                  {t.resetAssumptions}
                 </button>
               </div>
             ) : null}
@@ -388,7 +398,7 @@ export function PlanningScreen({ property, properties }: { property: Property; p
             ) : null}
           </>
         )}
-        <p className="muted planning-footer">{DISCLAIMER}</p>
+        <p className="muted planning-footer">{t.disclaimer}</p>
       </div>
     </>
   );
@@ -396,16 +406,14 @@ export function PlanningScreen({ property, properties }: { property: Property; p
 
 // --- Actuals card ---------------------------------------------------------------------------
 
-const SOURCE_LABEL: Record<TaxEffect["source"], string> = {
-  estimate: "Schätzung",
-  bescheid: "Bescheid",
-  override: "manuell",
-};
+function sourceLabel(t: Texts, source: TaxEffect["source"]): string {
+  return source === "bescheid" ? t.sourceBescheid : source === "override" ? t.sourceOverride : t.sourceEstimate;
+}
 
 /** "33,8 % effektiv", or the tariff's slope at a result of 0. */
-function rateText(effect: TaxEffect): string | null {
-  if (effect.effective_rate) return `${percentText(effect.effective_rate)} effektiv`;
-  if (effect.slope) return `Grenzsteuersatz ${percentText(effect.slope)}`;
+function rateText(t: Texts, effect: TaxEffect): string | null {
+  if (effect.effective_rate) return t.effectiveRate(percentText(effect.effective_rate));
+  if (effect.slope) return t.marginalRate(percentText(effect.slope));
   return null;
 }
 
@@ -425,57 +433,57 @@ function shownYear(years: YearFigures[]): YearFigures | undefined {
 }
 
 function ActualsCard({ years, propertyId, flatRateCard }: { years: YearFigures[]; propertyId: string; flatRateCard: boolean }) {
+  const t = useT(propertyPlanning);
   const year = shownYear(years);
   if (!year) {
     return (
       <section className="card">
-        <h2>Ist</h2>
-        <p className="muted">Noch keine Ist-Zahlen: die Immobilie ist noch nicht übergeben.</p>
+        <h2>{t.actual}</h2>
+        <p className="muted">{t.noActuals}</p>
       </section>
     );
   }
   const soFar = (year.flags ?? []).includes("so_far");
   const estimated = (year.flags ?? []).includes("tax_estimated");
   const effect = year.tax_effect;
-  const title = soFar ? `${year.year} bisher · Ist` : `${year.year} · Ist`;
+  const title = soFar ? t.yearSoFar(year.year) : t.yearActual(year.year);
   return (
     <section className="card planning-actuals" aria-label={title}>
       <div className="planning-card-head">
         <h2>{title}</h2>
-        <span className="muted">aus bestätigten Buchungen · Umlagen als durchlaufender Posten</span>
+        <span className="muted">{t.actualsSub}</span>
         <span className="spacer" />
         {(year.sources ?? []).length > 0 ? (
-          <SourcesDialog label="Quellen" title={title} refs={year.sources ?? []} propertyId={propertyId} />
+          <SourcesDialog label={t.sources} title={title} refs={year.sources ?? []} propertyId={propertyId} />
         ) : null}
       </div>
       <div className="planning-figures">
-        <Figure label="Kaltmiete" value={signedMoney(year.rent_in)} />
-        <Figure label="Ausgaben" value={formatMoney(year.cash_out)} sub="Zinsen, Tilgung, laufende Kosten und Umlagen" />
+        <Figure label={t.rent} value={signedMoney(year.rent_in)} />
+        <Figure label={t.spending} value={formatMoney(year.cash_out)} sub={t.spendingSub} />
         <Figure
-          label={estimated ? "Steuerwirkung (geschätzt)" : "Steuerwirkung"}
+          label={estimated ? t.taxEffectEstimated : t.taxEffect}
           value={effect ? signedMoney(effect.effect) : "—"}
           valueClass={effect ? tone(effect.effect, true) : undefined}
           sub={
             effect ? (
               [
-                isZero(effect.effect) ? null : isNegative(effect.effect) ? "weniger Steuer" : "mehr Steuer",
-                year.taxable_result != null ? `Ergebnis ${signedMoney(year.taxable_result)}` : null,
-                rateText(effect),
+                isZero(effect.effect) ? null : isNegative(effect.effect) ? t.lessTax : t.moreTax,
+                year.taxable_result != null ? t.result(signedMoney(year.taxable_result)) : null,
+                rateText(t, effect),
               ]
                 .filter(Boolean)
                 .join(" · ")
             ) : (
-              <Link href={payInputsHref(year.year)}>Einkommen eintragen</Link>
+              <Link href={payInputsHref(year.year)}>{t.enterIncome}</Link>
             )
           }
         />
-        <Figure label="Netto-Cash" value={signedMoney(year.net_cash)} valueClass={tone(year.net_cash)} />
-        <Figure label="Tilgung" value={signedMoney(year.principal_repaid)} sub="wird Eigenkapital" />
+        <Figure label={t.netCash} value={signedMoney(year.net_cash)} valueClass={tone(year.net_cash)} />
+        <Figure label={t.principal} value={signedMoney(year.principal_repaid)} sub={t.principalSub} />
       </div>
       <p className="muted planning-subline">
-        Umlagen: {formatMoney(year.umlagen_in)} erhalten, {formatMoney(year.umlagen_out)} bezahlt, Saldo{" "}
-        {signedMoney(year.umlagen_net)} (im Netto-Cash enthalten)
-        {isZero(year.other_income) ? null : <> · sonstige Einnahmen {formatMoney(year.other_income)}</>}
+        {t.umlagen(formatMoney(year.umlagen_in), formatMoney(year.umlagen_out), signedMoney(year.umlagen_net))}
+        {isZero(year.other_income) ? null : t.otherIncome(formatMoney(year.other_income))}
       </p>
       {year.flat_rate_gap_monthly != null && year.flat_rate_months != null ? (
         <FlatRateCoverage year={year} gap={year.flat_rate_gap_monthly} months={year.flat_rate_months} linked={flatRateCard} />
@@ -490,22 +498,16 @@ function ActualsCard({ years, propertyId, flatRateCard }: { years: YearFigures[]
  * the costs when each Pauschale was set with today and needs no second year; `linked` when that
  * card is on the screen. */
 function FlatRateCoverage({ year, gap, months, linked }: { year: YearFigures; gap: string; months: number; linked: boolean }) {
-  const verdict = isNegative(gap)
-    ? "Die Kosten liegen über den Pauschalen."
-    : isZero(gap)
-      ? "Die Pauschalen decken die Kosten genau."
-      : "Die Pauschalen decken die Kosten.";
+  const t = useT(propertyPlanning);
+  const verdict = isNegative(gap) ? t.coverageOver : isZero(gap) ? t.coverageExact : t.coverageCovered;
   return (
     <p className="planning-subline planning-flat-rate">
-      <strong>Pauschalen-Check:</strong> {formatMoney(year.flat_rate_in)} Nebenkostenpauschalen erhalten,{" "}
-      {formatMoney(year.umlagen_out)} umlagefähige Kosten bezahlt, Differenz{" "}
-      <span className={tone(gap)}>
-        {signedMoney(gap)} pro Monat, über {months === 1 ? "1 Monat" : `${months} Monate`}
-      </span>
+      <strong>{t.coverageLabel}</strong> {t.coverageText(formatMoney(year.flat_rate_in), formatMoney(year.umlagen_out))}{" "}
+      <span className={tone(gap)}>{t.coverageGap(signedMoney(gap), months)}</span>
       . {verdict}{" "}
       {linked ? (
         <span className="muted">
-          Ob eine Pauschale steigen kann oder sinken muss, zeigt <a href={`#${FLAT_RATE_CARD_ID}`}>Nebenkostenpauschalen</a>.
+          {t.coverageLinkBefore} <a href={`#${FLAT_RATE_CARD_ID}`}>{t.coverageLink}</a>.
         </span>
       ) : null}
     </p>
@@ -514,32 +516,37 @@ function FlatRateCoverage({ year, gap, months, linked }: { year: YearFigures; ga
 
 // --- Nebenkostenpauschalen card (D155) --------------------------------------------------------
 
-const RATE_BASIS: Record<CostRate["basis"], string> = {
-  monthly_payment: "Monatszahlung",
-  yearly_premium: "Jahresbeitrag ÷ 12",
-  schedule: "Grundsteuerbescheid ÷ 12",
-  twelve_months: "Zahlungen der letzten 12 Monate ÷ 12",
-  none: "nichts gebucht",
-};
-
-const ELECTRICITY_NOTE =
-  "Strom ist keine Betriebskostenart nach § 2 BetrKV; ob § 560 BGB eine Erhöhung für den mit der Pauschale abgegoltenen Strom erlaubt, ist nicht geklärt. Diese Zeile löst deshalb nichts aus.";
+function basisText(t: Texts, basis: CostRate["basis"]): string {
+  switch (basis) {
+    case "monthly_payment":
+      return t.basisMonthly;
+    case "yearly_premium":
+      return t.basisYearly;
+    case "schedule":
+      return t.basisSchedule;
+    case "twelve_months":
+      return t.basisTwelveMonths;
+    default:
+      return t.basisNone;
+  }
+}
 
 /** A rate with its sources and how it was found. */
 function RateCell({ rate, date, propertyId }: { rate: CostRate | undefined; date: string; propertyId: string }) {
+  const t = useT(propertyPlanning);
   if (!rate) return <td className="num">–</td>;
   const label = ALLOCATION_CATEGORY[rate.category];
   return (
     <td className="num">
       <SourcesDialog
         label={formatMoney(rate.monthly)}
-        title={`${label} am ${formatDate(date)}`}
+        title={t.rateOn(label, formatDate(date))}
         refs={rate.sources ?? []}
         propertyId={propertyId}
       />
       <span className="tax-line-sub">
-        {RATE_BASIS[rate.basis]}
-        {rate.from_later ? ", erste Zahlung danach" : ""}
+        {basisText(t, rate.basis)}
+        {rate.from_later ? t.firstPaymentAfter : ""}
       </span>
     </td>
   );
@@ -550,13 +557,13 @@ function rateOf(level: CostLevel | undefined, category: CostRate["category"]): C
 }
 
 /** „kann steigen, frühestens ab 01.04.2027“, „senken ab 01.01.2027“ or why not. */
-function verdictText(tenancy: TenancyFlatRate, raiseAbove: string): string {
+function verdictText(t: Texts, tenancy: TenancyFlatRate, raiseAbove: string): string {
   if (tenancy.recorded_from) {
-    return `Änderung ab ${formatDate(tenancy.recorded_from)} erfasst (${formatMoney(tenancy.recorded_pauschale)})`;
+    return t.verdictRecorded(formatDate(tenancy.recorded_from), formatMoney(tenancy.recorded_pauschale));
   }
-  if (tenancy.verdict === "raise") return `kann steigen, frühestens ab ${formatDate(tenancy.earliest_start)}`;
-  if (tenancy.verdict === "lower") return `senken ab ${formatDate(tenancy.fell_on)}`;
-  return isZero(tenancy.rise) ? "unverändert" : `Anstieg bis ${formatMoney(raiseAbove)} im Monat: keine Erhöhung`;
+  if (tenancy.verdict === "raise") return t.verdictRaise(formatDate(tenancy.earliest_start));
+  if (tenancy.verdict === "lower") return t.verdictLower(formatDate(tenancy.fell_on));
+  return isZero(tenancy.rise) ? t.verdictUnchanged : t.verdictBelow(formatMoney(raiseAbove));
 }
 
 /** Per date a Pauschale was set: the costs then and now per category; per tenancy its share
@@ -571,45 +578,46 @@ function FlatRateCard({
   actualYears: YearFigures[] | undefined;
   propertyId: string;
 }) {
+  const t = useT(propertyPlanning);
   const tenancies = check.tenancies ?? [];
   if (tenancies.length === 0) return null;
   const levels = check.levels ?? [];
   const levelOn = (date: string) => levels.find((level) => level.as_of === date);
   const now = levelOn(check.as_of);
-  const setDates = [...new Set(tenancies.map((t) => t.set_on))].sort();
+  const setDates = [...new Set(tenancies.map((tenancy) => tenancy.set_on))].sort();
   const year = actualYears ? shownYear(actualYears) : undefined;
   const gap = year?.flat_rate_gap_monthly ?? null;
   const settlements = check.settlements ?? [];
-  const title = "Nebenkostenpauschalen";
+  const title = t.flatRateTitle;
   return (
     <section className="card" id={FLAT_RATE_CARD_ID} aria-label={title}>
       <div className="planning-card-head">
         <h2>{title}</h2>
-        <span className="muted">Kosten bei Festlegung der Pauschale und heute ({formatDate(check.as_of)}), pro Monat</span>
+        <span className="muted">{t.flatRateSub(formatDate(check.as_of))}</span>
       </div>
       {setDates.map((setOn) => {
-        const group = tenancies.filter((t) => t.set_on === setOn);
+        const group = tenancies.filter((tenancy) => tenancy.set_on === setOn);
         const first = group[0];
         if (!first) return null;
         const then = levelOn(setOn);
         return (
           <div key={setOn} className="stack">
             <h3>
-              Festgelegt am {formatDate(setOn)}: {group.map((t) => t.unit_label).join(", ")}
+              {t.setOn(formatDate(setOn), group.map((tenancy) => tenancy.unit_label).join(", "))}
             </h3>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th scope="col">Kostenart (ganze Wohnung)</th>
+                    <th scope="col">{t.colCostType}</th>
                     <th scope="col" className="num">
-                      am {formatDate(setOn)}
+                      {t.colOn(formatDate(setOn))}
                     </th>
                     <th scope="col" className="num">
-                      heute
+                      {t.colToday}
                     </th>
                     <th scope="col" className="num">
-                      Änderung
+                      {t.colChange}
                     </th>
                   </tr>
                 </thead>
@@ -625,7 +633,7 @@ function FlatRateCard({
                       </tr>
                     ))}
                   <tr className="planning-actual-row">
-                    <th scope="row">Betriebskosten zusammen</th>
+                    <th scope="row">{t.operatingTotal}</th>
                     <td className="num">{then ? formatMoney(then.betrkv) : "–"}</td>
                     <td className="num">{now ? formatMoney(now.betrkv) : "–"}</td>
                     <td className="num">
@@ -638,7 +646,7 @@ function FlatRateCard({
                       <tr key={change.category}>
                         <th scope="row">
                           {ALLOCATION_CATEGORY[change.category]}
-                          <span className="tax-line-sub">{ELECTRICITY_NOTE}</span>
+                          <span className="tax-line-sub">{t.electricityNote}</span>
                         </th>
                         <RateCell rate={rateOf(then, change.category)} date={setOn} propertyId={propertyId} />
                         <RateCell rate={rateOf(now, change.category)} date={check.as_of} propertyId={propertyId} />
@@ -651,22 +659,22 @@ function FlatRateCard({
           </div>
         );
       })}
-      <h3>Je Zimmer</h3>
+      <h3>{t.perRoom}</h3>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th scope="col">Zimmer</th>
+              <th scope="col">{t.colRoom}</th>
               <th scope="col" className="num">
-                Pauschale
+                {t.colFlatRate}
               </th>
               <th scope="col" className="num">
-                Anteil
+                {t.colShare}
               </th>
               <th scope="col" className="num">
-                Anteil an der Änderung
+                {t.colShareOfChange}
               </th>
-              <th scope="col">Ergebnis</th>
+              <th scope="col">{t.colResult}</th>
             </tr>
           </thead>
           <tbody>
@@ -675,14 +683,14 @@ function FlatRateCard({
                 <th scope="row">
                   <Link href={`/tenancies/${tenancy.tenancy_id}`}>{tenancy.unit_label}</Link>
                   <span className="tax-line-sub">
-                    seit {formatDate(tenancy.set_on)} ({tenancy.set_by === "start" ? "Mietbeginn" : "Mietänderung"})
+                    {t.since(formatDate(tenancy.set_on), tenancy.set_by === "start")}
                   </span>
                 </th>
                 <td className="num">{formatMoney(tenancy.pauschale)}</td>
                 <td className="num">{tenancy.share_percent != null ? percentText(tenancy.share_percent) : "–"}</td>
                 <td className={["num", tone(tenancy.rise, true)].filter(Boolean).join(" ")}>{signedMoney(tenancy.rise)}</td>
                 <td>
-                  {verdictText(tenancy, check.raise_above)}
+                  {verdictText(t, tenancy, check.raise_above)}
                   {tenancy.verdict !== "none" ? (
                     <div className="row todo-actions">
                       <FlatRateActions tenancyId={tenancy.tenancy_id} propertyId={propertyId} withCard={false} />
@@ -694,29 +702,27 @@ function FlatRateCard({
           </tbody>
         </table>
       </div>
-      <p className="muted planning-subline">
-        Gezählt werden nur Betriebskosten nach § 2 BetrKV (umlagefähiges Hausgeld, Grundsteuer, Versicherung). Die Änderung der
-        Wohnung wird nach den Pauschalen verteilt; ein Zimmer kann steigen, wenn sein Anteil mehr als{" "}
-        {formatMoney(check.raise_above)} im Monat beträgt, und muss sinken, sobald die Kosten fallen.
-      </p>
+      <p className="muted planning-subline">{t.betrkvNote(formatMoney(check.raise_above))}</p>
       {gap != null && year ? (
-        <p className="planning-subline">
-          {year.year}: Die Pauschalen decken die Kosten{isNegative(gap) ? " nicht" : ""} ({signedMoney(gap)} pro Monat) — das
-          allein erlaubt keine Erhöhung.
-        </p>
+        <p className="planning-subline">{t.yearCoverage(year.year, isNegative(gap), signedMoney(gap))}</p>
       ) : null}
       {settlements.length > 0 ? (
         <ul className="planning-subline">
           {settlements.map((hint) => (
             <li key={hint.allocation_id}>
-              {formatDate(hint.booking_date)}, {ALLOCATION_CATEGORY[hint.category]}:{" "}
-              {isNegative(hint.amount) ? "Erstattung" : "Nachzahlung"} {formatMoney(hint.amount.replace(/^-/, ""))} aus einer
-              Abrechnung, keine Monatsrate; die nächste Rate kann sich ändern.
+              {t.settlementHint(
+                formatDate(hint.booking_date),
+                ALLOCATION_CATEGORY[hint.category],
+                isNegative(hint.amount),
+                formatMoney(hint.amount.replace(/^-/, "")),
+              )}
             </li>
           ))}
         </ul>
       ) : null}
-      <p className="muted planning-subline">Eine Information, keine Rechtsberatung: {FLAT_RATE_NOT_ADVICE}</p>
+      <p className="muted planning-subline">
+        {t.notLegalAdvice} {FLAT_RATE_NOT_ADVICE}
+      </p>
     </section>
   );
 }
@@ -740,6 +746,7 @@ function ProjectionCard({
   onLevers: (next: Partial<LeverParams>) => void;
   onReset: () => void;
 }) {
+  const t = useT(propertyPlanning);
   const levers = projection.scenario;
   const sale = projection.sale;
   const thisYear = Number(todayIso().slice(0, 4));
@@ -749,59 +756,59 @@ function ProjectionCard({
   return (
     <section className="card planning-projection" aria-labelledby="planning-projection-title">
       <div className="planning-card-head">
-        <h2 id="planning-projection-title">Prognose bis zum Verkauf</h2>
+        <h2 id="planning-projection-title">{t.projectionTitle}</h2>
         <span className="spacer" />
         <span className="muted" role="status">
-          {busy ? "Berechnet …" : "Annahmen ändern: alles darunter rechnet neu"}
+          {busy ? t.computing : t.leversHint}
         </span>
       </div>
       <div className="planning-levers">
         <RateLever
-          label="Wertsteigerung pro Jahr"
-          name="Wertsteigerung"
+          label={t.valueGrowthLabel}
+          name={t.valueGrowth}
           value={levers.value_growth}
           disabled={busy}
           onChange={(next) => onLevers({ valueGrowth: next })}
         />
         <RateLever
-          label="Mieterhöhung pro Jahr"
-          name="Mieterhöhung"
+          label={t.rentGrowthLabel}
+          name={t.rentGrowth}
           value={levers.rent_growth}
           disabled={busy}
           onChange={(next) => onLevers({ rentGrowth: next })}
         />
         <TaxLever year={first} propertyId={property.id} />
-        <div className="planning-lever" role="group" aria-label="Verkauf nach">
-          <p className="planning-lever-label">Verkauf nach</p>
+        <div className="planning-lever" role="group" aria-label={t.saleAfter}>
+          <p className="planning-lever-label">{t.saleAfter}</p>
           <div className="planning-lever-control">
             <button
               type="button"
-              aria-label="Früher verkaufen"
+              aria-label={t.sellEarlier}
               disabled={busy || levers.sale_year - 1 <= thisYear}
               onClick={() => onLevers({ saleYear: levers.sale_year - 1 })}
             >
               −
             </button>
             <span className="planning-lever-value">
-              {purchaseYear !== null ? `${levers.sale_year - purchaseYear} Jahren` : levers.sale_year}
+              {purchaseYear !== null ? t.years(levers.sale_year - purchaseYear) : levers.sale_year}
             </span>
             <button
               type="button"
-              aria-label="Später verkaufen"
+              aria-label={t.sellLater}
               disabled={busy || levers.sale_year + 1 > 2100}
               onClick={() => onLevers({ saleYear: levers.sale_year + 1 })}
             >
               +
             </button>
           </div>
-          <p className="planning-lever-sub">Verkauf am {formatDate(sale.sale_date)}</p>
+          <p className="planning-lever-sub">{t.saleOn(formatDate(sale.sale_date))}</p>
         </div>
       </div>
       {overridden ? (
         <p className="muted planning-subline">
-          Annahmen geändert, nicht gespeichert.{" "}
+          {t.changedUnsaved}{" "}
           <button type="button" className="link" onClick={onReset}>
-            Zurücksetzen
+            {t.reset}
           </button>
         </p>
       ) : null}
@@ -830,19 +837,20 @@ function RateLever({
   disabled: boolean;
   onChange: (next: string) => void;
 }) {
+  const t = useT(propertyPlanning);
   const lower = stepRate(value, -1);
   const higher = stepRate(value, 1);
   return (
     <div className="planning-lever" role="group" aria-label={label}>
       <p className="planning-lever-label">{label}</p>
       <div className="planning-lever-control">
-        <button type="button" aria-label={`${name} senken`} disabled={disabled || lower === null} onClick={() => lower && onChange(lower)}>
+        <button type="button" aria-label={t.lowerLever(name)} disabled={disabled || lower === null} onClick={() => lower && onChange(lower)}>
           −
         </button>
         <span className="planning-lever-value">{ratePercent(value, 1)}</span>
         <button
           type="button"
-          aria-label={`${name} erhöhen`}
+          aria-label={t.raiseLever(name)}
           disabled={disabled || higher === null}
           onClick={() => higher && onChange(higher)}
         >
@@ -860,6 +868,7 @@ function RateLever({
  * there. Not a ± lever: the rate follows from income (D82), a manual rate is an income input.
  */
 function TaxLever({ year, propertyId }: { year: YearFigures | undefined; propertyId: string }) {
+  const t = useT(propertyPlanning);
   const effect = year?.tax_effect ?? null;
   const taxYear = year?.year ?? null;
   const result = year?.taxable_result ?? null;
@@ -877,8 +886,8 @@ function TaxLever({ year, propertyId }: { year: YearFigures | undefined; propert
   const zve = rate.data?.zve ?? null;
   const chip = effect
     ? zve
-      ? `${SOURCE_LABEL[zve.source]} ${zve.tax_year}${zve.amount != null ? ` · ${formatMoney(zve.amount)} zvE` : ""}${zve.carried_forward ? " (fortgeschrieben)" : ""}`
-      : SOURCE_LABEL[effect.source]
+      ? `${sourceLabel(t, zve.source)} ${zve.tax_year}${zve.amount != null ? t.chipZve(formatMoney(zve.amount)) : ""}${zve.carried_forward ? t.carriedForward : ""}`
+      : sourceLabel(t, effect.source)
     : null;
   const value = effect
     ? effect.effective_rate
@@ -888,25 +897,26 @@ function TaxLever({ year, propertyId }: { year: YearFigures | undefined; propert
         : "—"
     : "—";
   return (
-    <div className="planning-lever" role="group" aria-label="Steuerwirkung">
+    <div className="planning-lever" role="group" aria-label={t.taxEffect}>
       <p className="planning-lever-label">
-        Steuerwirkung{taxYear !== null ? ` ${taxYear}` : ""}
-        {effect && !effect.effective_rate && effect.slope ? " (Grenzsteuersatz)" : effect ? " (effektiv)" : ""}
+        {t.taxEffect}
+        {taxYear !== null ? ` ${taxYear}` : ""}
+        {effect && !effect.effective_rate && effect.slope ? t.marginalSuffix : effect ? t.effectiveSuffix : ""}
       </p>
       <div className="planning-lever-control">
         <span className="planning-lever-value">{value}</span>
-        <Link href={payHref} className="planning-lever-edit" aria-label="Steuersatz manuell setzen" title="Steuersatz manuell setzen">
+        <Link href={payHref} className="planning-lever-edit" aria-label={t.setRateManually} title={t.setRateManually}>
           ✎
         </Link>
       </div>
       <p className="planning-lever-sub">
         {chip ? (
-          <Link href={payHref} className="badge" title="Einkommen und Steuersatz unter Steuern › Eure Angaben">
+          <Link href={payHref} className="badge" title={t.chipTitle}>
             {chip}
           </Link>
         ) : (
           <>
-            — · <Link href={payHref}>Einkommen eintragen</Link>
+            — · <Link href={payHref}>{t.enterIncome}</Link>
           </>
         )}
       </p>
@@ -916,12 +926,12 @@ function TaxLever({ year, propertyId }: { year: YearFigures | undefined; propert
 
 /** The §23 check: the sale date against the first tax-free day (D88). */
 function SaleBanner({ sale, propertyId }: { sale: SaleResult; propertyId: string }) {
+  const t = useT(propertyPlanning);
   if (sale.tax_free_from == null) {
     return (
       <div className="notice notice-info" role="status">
         <p>
-          Ohne das Datum des notariellen Kaufvertrags lässt sich die Zehnjahresfrist (§ 23 EStG) nicht prüfen.{" "}
-          <Link href={`/properties/${propertyId}?tab=stammdaten`}>In den Stammdaten eintragen</Link>
+          {t.noContractDate} <Link href={`/properties/${propertyId}?tab=stammdaten`}>{t.enterInMasterData}</Link>
         </p>
       </div>
     );
@@ -931,10 +941,7 @@ function SaleBanner({ sale, propertyId }: { sale: SaleResult; propertyId: string
   if (!sale.taxable) {
     return (
       <div className="notice notice-ok planning-banner" role="status">
-        <p>
-          Verkauf am {saleDate} liegt nach dem {freeFrom}: mehr als zehn Jahre seit dem notariellen Kauf, der Gewinn ist
-          steuerfrei (§ 23 EStG). Den Verkaufsvertrag nicht vor dem {freeFrom} unterschreiben.
-        </p>
+        <p>{t.taxFreeSale(saleDate, freeFrom)}</p>
       </div>
     );
   }
@@ -942,51 +949,52 @@ function SaleBanner({ sale, propertyId }: { sale: SaleResult; propertyId: string
   return (
     <div className="notice notice-warn planning-banner" role="status">
       <p>
-        Verkauf am {saleDate} liegt vor dem {freeFrom}: innerhalb von zehn Jahren seit dem notariellen Kauf, ein Gewinn ist
-        steuerpflichtig (§ 23 EStG). Die abgeschriebene AfA ({formatMoney(sale.afa_claimed)}
-        {isZero(sale.afa_claimed_movable) ? null : <>, davon Küche {formatMoney(sale.afa_claimed_movable)}</>}) wird dem
-        Gewinn hinzugerechnet.
+        {t.taxableSale(
+          saleDate,
+          freeFrom,
+          formatMoney(sale.afa_claimed),
+          isZero(sale.afa_claimed_movable) ? null : formatMoney(sale.afa_claimed_movable),
+        )}
       </p>
       <p>
         {sale.gain == null
           ? null
           : loss
-            ? `Verlust ${formatMoney(sale.gain)}: nicht verrechenbar. `
-            : `Gewinn ${formatMoney(sale.gain)}. `}
-        {sale.freigrenze_applied ? "Freigrenze von 1.000 € je Ehegatte berücksichtigt. " : null}
-        Steuer beim Verkauf: {formatMoney(sale.sale_tax)}. Ab dem {freeFrom} wäre der Verkauf steuerfrei.
+            ? t.saleLoss(formatMoney(sale.gain))
+            : t.saleGain(formatMoney(sale.gain))}
+        {sale.freigrenze_applied ? t.freigrenze : null}
+        {t.saleTax(formatMoney(sale.sale_tax), freeFrom)}
       </p>
     </div>
   );
 }
 
 function SaleKpis({ sale, property, saleYear }: { sale: SaleResult; property: Property; saleYear: number }) {
+  const t = useT(propertyPlanning);
   const cashFlow = (sale.bridge ?? []).find((row) => row.key === "cash_flow");
   return (
     <div className="planning-kpis">
-      <div className="planning-kpi" role="group" aria-label={`Verkaufspreis ${saleYear}`}>
-        <p className="planning-kpi-label">Verkaufspreis {saleYear}</p>
+      <div className="planning-kpi" role="group" aria-label={t.salePrice(saleYear)}>
+        <p className="planning-kpi-label">{t.salePrice(saleYear)}</p>
         <p className="planning-kpi-value">{formatMoney(sale.value)}</p>
-        <p className="planning-kpi-sub">Kaufpreis {formatMoney(property.purchase_price)}</p>
+        <p className="planning-kpi-sub">{t.purchasePrice(formatMoney(property.purchase_price))}</p>
       </div>
-      <div className="planning-kpi" role="group" aria-label="Cash nach Steuern">
-        <p className="planning-kpi-label">Cash nach Steuern</p>
+      <div className="planning-kpi" role="group" aria-label={t.cashAfterTax}>
+        <p className="planning-kpi-label">{t.cashAfterTax}</p>
         <p className={`planning-kpi-value ${tone(cashFlow?.amount) ?? ""}`}>{signedMoney(cashFlow?.amount)}</p>
-        <p className="planning-kpi-sub">alle Jahre, nach Steuern</p>
+        <p className="planning-kpi-sub">{t.allYears}</p>
       </div>
-      <div className="planning-kpi" role="group" aria-label="Erlös beim Verkauf">
-        <p className="planning-kpi-label">Erlös beim Verkauf</p>
+      <div className="planning-kpi" role="group" aria-label={t.proceeds}>
+        <p className="planning-kpi-label">{t.proceeds}</p>
         <p className="planning-kpi-value">{signedMoney(sale.net_proceeds)}</p>
-        <p className="planning-kpi-sub">
-          nach Verkaufskosten, Steuer ({formatMoney(sale.sale_tax)}) und Restschuld ({formatMoney(sale.loan_balance)})
-        </p>
+        <p className="planning-kpi-sub">{t.proceedsSub(formatMoney(sale.sale_tax), formatMoney(sale.loan_balance))}</p>
       </div>
-      <div className="planning-kpi planning-kpi-main" role="group" aria-label="Gewinn gesamt">
-        <p className="planning-kpi-label">Gewinn gesamt</p>
+      <div className="planning-kpi planning-kpi-main" role="group" aria-label={t.profitTotal}>
+        <p className="planning-kpi-label">{t.profitTotal}</p>
         <p className="planning-kpi-value">{signedMoney(sale.profit)}</p>
         <p className="planning-kpi-sub">
-          ≈ {returnPercent(sale.cagr)} pro Jahr auf {formatMoney(sale.initial_equity)} Eigenkapital
-          {sale.irr != null ? ` · interner Zinsfuß ${returnPercent(sale.irr)}` : ""}
+          {t.perYearOn(returnPercent(sale.cagr), formatMoney(sale.initial_equity))}
+          {sale.irr != null ? t.irr(returnPercent(sale.irr)) : ""}
         </p>
       </div>
     </div>
@@ -996,10 +1004,11 @@ function SaleKpis({ sale, property, saleYear }: { sale: SaleResult; property: Pr
 /** Equity (value − remaining loan, as returned) per projected year; the last bar is the sale
  * year. The heights are the returned figures relative to the largest, for display only. */
 function EquityBars({ years }: { years: YearFigures[] }) {
+  const t = useT(propertyPlanning);
   const largest = Math.max(0, ...years.map((y) => (y.equity == null ? 0 : Number(y.equity))));
   return (
     <figure className="planning-equity">
-      <p className="planning-section-title">Eigenkapital in der Immobilie, Jahr für Jahr</p>
+      <p className="planning-section-title">{t.equityTitle}</p>
       <ul className="planning-bars">
         {years.map((year, index) => {
           const equity = year.equity == null ? 0 : Number(year.equity);
@@ -1018,32 +1027,41 @@ function EquityBars({ years }: { years: YearFigures[] }) {
           );
         })}
       </ul>
-      <figcaption className="muted">Marktwert minus Restschuld. Der letzte Balken ist das Verkaufsjahr.</figcaption>
+      <figcaption className="muted">{t.equityCaption}</figcaption>
     </figure>
   );
 }
 
-const BRIDGE_LABEL: Record<BridgeRow["key"], string> = {
-  appreciation: "Wertsteigerung",
-  loan_paid_down: "Getilgtes Darlehen",
-  cash_flow: "Cashflow nach Steuern",
-  buying_costs: "Kaufnebenkosten",
-  selling_costs: "Verkaufskosten",
-  sale_tax: "Steuer beim Verkauf",
-};
+function bridgeLabel(t: Texts, key: BridgeRow["key"]): string {
+  switch (key) {
+    case "appreciation":
+      return t.bridgeAppreciation;
+    case "loan_paid_down":
+      return t.bridgeLoanPaidDown;
+    case "cash_flow":
+      return t.bridgeCashFlow;
+    case "buying_costs":
+      return t.bridgeBuyingCosts;
+    case "selling_costs":
+      return t.bridgeSellingCosts;
+    default:
+      return t.bridgeSaleTax;
+  }
+}
 
 /** Where the profit comes from (D89): the backend's bridge rows, which sum to the profit. */
 function Bridge({ sale, propertyId }: { sale: SaleResult; propertyId: string }) {
+  const t = useT(propertyPlanning);
   const rows = sale.bridge ?? [];
   return (
     <section className="planning-bridge" aria-labelledby="planning-bridge-title">
       <p id="planning-bridge-title" className="planning-section-title">
-        Woher der Gewinn kommt
+        {t.bridgeTitle}
       </p>
       <ul>
         {rows.map((row) => {
           const label =
-            row.key === "sale_tax" && !sale.taxable ? `${BRIDGE_LABEL[row.key]} (nach 10 Jahren steuerfrei)` : BRIDGE_LABEL[row.key];
+            row.key === "sale_tax" && !sale.taxable ? `${bridgeLabel(t, row.key)}${t.taxFreeAfterTen}` : bridgeLabel(t, row.key);
           return (
             <li key={row.key}>
               <span>{label}</span>
@@ -1054,7 +1072,7 @@ function Bridge({ sale, propertyId }: { sale: SaleResult; propertyId: string }) 
           );
         })}
         <li className="planning-bridge-total">
-          <span>Gewinn gesamt</span>
+          <span>{t.profitTotal}</span>
           <span className="num">{signedMoney(sale.profit)}</span>
         </li>
       </ul>
@@ -1067,46 +1085,55 @@ function Bridge({ sale, propertyId }: { sale: SaleResult; propertyId: string }) 
 interface TableRow {
   figures: YearFigures;
   badge: string | null;
+  sale: boolean;
 }
 
 function YearTable({ actualYears, projection, propertyId }: { actualYears: YearFigures[]; projection: Projection; propertyId: string }) {
+  const t = useT(propertyPlanning);
   const saleYear = projection.scenario.sale_year;
   const rows: TableRow[] = [
-    ...actualYears.map((figures) => ({ figures, badge: (figures.flags ?? []).includes("so_far") ? "bisher" : "Ist" })),
-    ...projection.years.map((figures) => ({ figures, badge: figures.year === saleYear ? "Verkauf" : null })),
+    ...actualYears.map((figures) => ({
+      figures,
+      badge: (figures.flags ?? []).includes("so_far") ? t.badgeSoFar : t.actual,
+      sale: false,
+    })),
+    ...projection.years.map((figures) => {
+      const sale = figures.year === saleYear;
+      return { figures, badge: sale ? t.badgeSale : null, sale };
+    }),
   ];
   return (
     <div className="table-wrap planning-table">
       <table>
-        <caption className="visually-hidden">Jahr für Jahr: Ist-Jahre und Prognose bis zum Verkauf</caption>
+        <caption className="visually-hidden">{t.tableCaption}</caption>
         <thead>
           <tr>
-            <th scope="col">Jahr</th>
+            <th scope="col">{t.colYear}</th>
             <th scope="col" className="num">
-              Kaltmiete
+              {t.rent}
             </th>
             <th scope="col" className="num">
-              Zinsen
+              {t.colInterest}
             </th>
             <th scope="col" className="num">
-              Steuerliches Ergebnis
+              {t.colTaxResult}
             </th>
             <th scope="col" className="num">
-              Steuerwirkung
+              {t.taxEffect}
             </th>
             <th scope="col" className="num">
-              Cash nach Steuern
+              {t.cashAfterTax}
             </th>
             <th scope="col" className="num">
-              Wert
+              {t.colValue}
             </th>
             <th scope="col" className="num">
-              Darlehen
+              {t.colLoan}
             </th>
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ figures: y, badge }) => {
+          {rows.map(({ figures: y, badge, sale }) => {
             const refs = y.sources ?? [];
             const cell = (column: string, text: string, className?: string, cellRefs: TaxSourceRef[] = refs) => (
               <td className={className ? `num ${className}` : "num"}>
@@ -1127,20 +1154,20 @@ function YearTable({ actualYears, projection, propertyId }: { actualYears: YearF
               <tr key={`${y.kind}-${y.year}`} className={y.kind === "projected" ? undefined : "planning-actual-row"}>
                 <td>
                   <strong>{y.year}</strong>
-                  {badge ? <span className={badge === "Verkauf" ? "badge" : "badge badge-muted"}>{badge}</span> : null}
+                  {badge ? <span className={sale ? "badge" : "badge badge-muted"}>{badge}</span> : null}
                 </td>
-                {cell("Kaltmiete", formatMoney(y.rent_in))}
-                {cell("Zinsen", formatMoney(y.interest))}
-                {cell("Steuerliches Ergebnis", signedMoney(y.taxable_result))}
+                {cell(t.rent, formatMoney(y.rent_in))}
+                {cell(t.colInterest, formatMoney(y.interest))}
+                {cell(t.colTaxResult, signedMoney(y.taxable_result))}
                 {cell(
-                  "Steuerwirkung",
+                  t.taxEffect,
                   y.tax_effect ? signedMoney(y.tax_effect.effect) : "—",
                   tone(y.tax_effect?.effect, true),
                   y.tax_effect?.sources ?? [],
                 )}
-                {cell("Cash nach Steuern", signedMoney(y.net_cash), `planning-strong ${tone(y.net_cash) ?? ""}`)}
-                {cell("Wert", y.value == null ? "–" : formatMoney(y.value))}
-                {cell("Darlehen", y.loan_balance == null ? "–" : formatMoney(y.loan_balance))}
+                {cell(t.cashAfterTax, signedMoney(y.net_cash), `planning-strong ${tone(y.net_cash) ?? ""}`)}
+                {cell(t.colValue, y.value == null ? "–" : formatMoney(y.value))}
+                {cell(t.colLoan, y.loan_balance == null ? "–" : formatMoney(y.loan_balance))}
               </tr>
             );
           })}
@@ -1152,49 +1179,55 @@ function YearTable({ actualYears, projection, propertyId }: { actualYears: YearF
 
 // --- Assumptions ------------------------------------------------------------------------------
 
-const ASSUMPTION_TEXT: Record<string, (params: Record<string, string>) => string> = {
-  "sale.on_31_december": (p) =>
-    `Verkauf, Übergabe und Zahlung des Kaufpreises am 31.12.${p.year ?? ""}; ein Kaufpreis, der erst im Januar fließt, zählt steuerlich im Folgejahr.`,
-  "tax.no_child_allowances": () => "Kinderfreibeträge und Progressionsvorbehalt nicht berücksichtigt.",
-  "draft.form_provisional": (p) =>
-    `Für ${(p.years ?? "").split(",").join(", ")} ist das Formular noch nicht veröffentlicht; Zeilen und Kennzahlen sind vorläufig.`,
-  "tariff.reused": (p) => `Für ${p.year ?? "?"} gibt es noch keinen Einkommensteuertarif; gerechnet wird mit dem Tarif ${p.from ?? "?"}.`,
-  "sale.no_contract_date": () => "Ohne Datum des Kaufvertrags ist die Zehnjahresfrist (§ 23 EStG) nicht geprüft.",
-  "sale.tax_without_income": () =>
-    "Ohne eingetragenes Einkommen ist die Steuer auf einen Verkaufsgewinn nicht berechnet (0 €).",
-};
-
-function assumptionText(assumption: Assumption): string {
-  return ASSUMPTION_TEXT[assumption.code]?.(assumption.params ?? {}) ?? assumption.code;
+function assumptionText(t: Texts, assumption: Assumption): string {
+  const p: Record<string, string> = assumption.params ?? {};
+  switch (assumption.code) {
+    case "sale.on_31_december":
+      return t.asmSaleOn31December(p.year ?? "");
+    case "tax.no_child_allowances":
+      return t.asmNoChildAllowances;
+    case "draft.form_provisional":
+      return t.asmFormProvisional((p.years ?? "").split(",").join(", "));
+    case "tariff.reused":
+      return t.asmTariffReused(p.year ?? "?", p.from ?? "?");
+    case "sale.no_contract_date":
+      return t.asmNoContractDate;
+    case "sale.tax_without_income":
+      return t.asmTaxWithoutIncome;
+    default:
+      return assumption.code;
+  }
 }
 
-function leverLines(levers: Levers): string[] {
+function leverLines(t: Texts, levers: Levers): string[] {
   const followUp = (levers.loans ?? []).filter((loan) => loan.follow_up_rate != null);
   return [
-    `Instandhaltung ${formatMoney(levers.upkeep_per_year)} pro Jahr, Kostensteigerung ${ratePercent(levers.cost_inflation, 1)} pro Jahr.`,
-    `Verkaufskosten ${ratePercent(levers.selling_costs_rate)} des Verkaufspreises.`,
-    `Leerstand ${formatDecimal(levers.vacancy_months)} Monate pro Jahr; Wert heute: ${
-      levers.today_value != null ? formatMoney(levers.today_value) : "der Kaufpreis"
-    }.`,
+    t.upkeep(formatMoney(levers.upkeep_per_year), ratePercent(levers.cost_inflation, 1)),
+    t.sellingCosts(ratePercent(levers.selling_costs_rate)),
+    t.vacancy(formatDecimal(levers.vacancy_months), levers.today_value != null ? formatMoney(levers.today_value) : t.thePurchasePrice),
     followUp.length > 0
-      ? `Anschlusszins nach der Zinsbindung: ${followUp.map((loan) => ratePercent(loan.follow_up_rate ?? "0", 1)).join(", ")}.`
-      : "Anschlusszins nach der Zinsbindung: wie im Darlehen hinterlegt, sonst der heutige Zins.",
+      ? t.followUp(followUp.map((loan) => ratePercent(loan.follow_up_rate ?? "0", 1)).join(", "))
+      : t.followUpDefault,
   ];
 }
 
 function AssumptionsFooter({ projection }: { projection: Projection }) {
-  const lines = [...leverLines(projection.scenario), ...(projection.assumptions ?? []).map(assumptionText)];
+  const t = useT(propertyPlanning);
+  const lines = [
+    ...leverLines(t, projection.scenario),
+    ...(projection.assumptions ?? []).map((assumption) => assumptionText(t, assumption)),
+  ];
   return (
-    <div className="planning-assumptions" aria-label="Annahmen">
-      <p className="planning-section-title">Annahmen</p>
+    <div className="planning-assumptions" aria-label={t.assumptions}>
+      <p className="planning-section-title">{t.assumptions}</p>
       <ul>
         {lines.map((line, index) => (
           <li key={index}>{line}</li>
         ))}
       </ul>
       <p className="muted">
-        Regelwerk {projection.rule_set.version} · Tarif {projection.tariff.version}
-        {projection.tariff.reused_from != null ? ` (von ${projection.tariff.reused_from})` : ""}
+        {t.ruleSet(projection.rule_set.version, projection.tariff.version)}
+        {projection.tariff.reused_from != null ? t.reusedFrom(String(projection.tariff.reused_from)) : ""}
       </p>
     </div>
   );
@@ -1219,13 +1252,14 @@ function ScenariosCard({
   onShow: (id: string) => void;
   onSaved: (created: Scenario) => void;
 }) {
+  const t = useT(propertyPlanning);
   const currentDefault = scenarios.data?.find((s) => s.is_default);
   return (
     <section className="card stack planning-scenarios" aria-labelledby="planning-scenarios-title">
       <div className="planning-card-head">
-        <h2 id="planning-scenarios-title">Szenarien</h2>
+        <h2 id="planning-scenarios-title">{t.scenarios}</h2>
         <span className="spacer" />
-        <ActionDialog label="Szenario speichern" title="Szenario speichern" buttonClass="">
+        <ActionDialog label={t.saveScenario} title={t.saveScenario} buttonClass="">
           {(close) => (
             <SaveScenarioForm
               propertyId={propertyId}
@@ -1239,32 +1273,29 @@ function ScenariosCard({
           )}
         </ActionDialog>
       </div>
-      {saved ? <Notice>Szenario „{saved}“ gespeichert.</Notice> : null}
+      {saved ? <Notice>{t.scenarioSaved(saved)}</Notice> : null}
       <Loading state={scenarios}>
         {(list) =>
           list.length === 0 ? (
-            <p className="muted">
-              Noch kein Szenario gespeichert. Ohne Szenario rechnet die Prognose mit den Standardannahmen und dem ersten Jahr
-              nach der Zehnjahresfrist als Verkaufsjahr.
-            </p>
+            <p className="muted">{t.noScenario}</p>
           ) : (
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th scope="col">Name</th>
+                    <th scope="col">{t.colName}</th>
                     <th scope="col" className="num">
-                      Wertsteigerung
+                      {t.valueGrowth}
                     </th>
                     <th scope="col" className="num">
-                      Mieterhöhung
+                      {t.rentGrowth}
                     </th>
                     <th scope="col" className="num">
-                      Verkauf
+                      {t.colSale}
                     </th>
-                    <th scope="col">Gespeichert</th>
+                    <th scope="col">{t.colSaved}</th>
                     <th scope="col">
-                      <span className="visually-hidden">Aktion</span>
+                      <span className="visually-hidden">{t.colAction}</span>
                     </th>
                   </tr>
                 </thead>
@@ -1275,9 +1306,9 @@ function ScenariosCard({
                       <tr key={scenario.id}>
                         <td>
                           {scenario.name}
-                          {scenario.is_default ? <span className="badge">Standard</span> : null}
+                          {scenario.is_default ? <span className="badge">{t.badgeDefault}</span> : null}
                           {shown ? (
-                            <span className="badge badge-muted">{overridden ? "angezeigt, geändert" : "angezeigt"}</span>
+                            <span className="badge badge-muted">{overridden ? t.shownChanged : t.shown}</span>
                           ) : null}
                         </td>
                         <td className="num">{ratePercent(scenario.levers.value_growth, 1)}</td>
@@ -1291,7 +1322,7 @@ function ScenariosCard({
                             onClick={() => onShow(scenario.id)}
                             disabled={shown && !overridden}
                           >
-                            Anzeigen
+                            {t.show}
                           </button>
                         </td>
                       </tr>
@@ -1323,6 +1354,8 @@ function SaveScenarioForm({
   currentDefault: Scenario | undefined;
   onSaved: (created: Scenario) => void;
 }) {
+  const t = useT(propertyPlanning);
+  const c = useT(common);
   const ids = useId();
   const [name, setName] = useState("");
   const [asDefault, setAsDefault] = useState(false);
@@ -1333,8 +1366,8 @@ function SaveScenarioForm({
     event.preventDefault();
     event.stopPropagation();
     const trimmed = name.trim();
-    if (trimmed === "") return form.invalid({ name: ["Bitte einen Namen eingeben."] });
-    if (trimmed.length > 100) return form.invalid({ name: ["Höchstens 100 Zeichen."] });
+    if (trimmed === "") return form.invalid({ name: [t.nameRequired] });
+    if (trimmed.length > 100) return form.invalid({ name: [t.nameTooLong] });
     setBusy(true);
     form.clear();
     try {
@@ -1362,25 +1395,24 @@ function SaveScenarioForm({
   return (
     <form className="stack" onSubmit={submit} noValidate>
       <p className="muted">
-        Gespeichert werden die Annahmen, wie sie gerade angezeigt sind: Wertsteigerung {ratePercent(levers.value_growth, 1)},
-        Mieterhöhung {ratePercent(levers.rent_growth, 1)}, Verkauf {levers.sale_year}.
+        {t.saveIntro(ratePercent(levers.value_growth, 1), ratePercent(levers.rent_growth, 1), levers.sale_year)}
       </p>
-      <Field id={`${ids}-name`} label="Name" errors={form.of("name")}>
+      <Field id={`${ids}-name`} label={t.colName} errors={form.of("name")}>
         <input type="text" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} autoComplete="off" required />
       </Field>
       <div className="field">
         <label className="inline" htmlFor={`${ids}-default`}>
           <input id={`${ids}-default`} type="checkbox" checked={asDefault} onChange={(e) => setAsDefault(e.target.checked)} />
-          Als Standard für diese Immobilie
+          {t.asDefault}
         </label>
         {currentDefault ? (
-          <p className="muted hint">Ersetzt das bisherige Standard-Szenario „{currentDefault.name}“; es erscheint dann nicht mehr in der Liste.</p>
+          <p className="muted hint">{t.replacesDefault(currentDefault.name)}</p>
         ) : (
-          <p className="muted hint">Das Standard-Szenario zeigt die Planung beim Öffnen.</p>
+          <p className="muted hint">{t.defaultHint}</p>
         )}
       </div>
       <div className="row">
-        <Submit busy={busy}>Speichern</Submit>
+        <Submit busy={busy}>{c.save}</Submit>
       </div>
       <FormBanner errors={form.errors} />
     </form>
@@ -1418,9 +1450,10 @@ function SourcesDialog({
   propertyId: string;
   buttonClass?: string;
 }) {
+  const t = useT(propertyPlanning);
   if (refs.length === 0) return <>{label}</>;
   return (
-    <ActionDialog label={label} title={`Quellen: ${title}`} buttonClass={buttonClass}>
+    <ActionDialog label={label} title={t.sourcesOf(title)} buttonClass={buttonClass}>
       {() => <SourceList refs={refs} propertyId={propertyId} />}
     </ActionDialog>
   );
@@ -1433,9 +1466,10 @@ function SourceList({ refs, propertyId }: { refs: TaxSourceRef[]; propertyId: st
     [hasPayments, propertyId],
   );
   const payments = useLoad(load);
+  const c = useT(common);
   return (
     <>
-      {hasPayments && payments.data === undefined ? <p className="muted">Lädt …</p> : null}
+      {hasPayments && payments.data === undefined ? <p className="muted">{c.loading}</p> : null}
       <ul className="tax-sources">
         {refs.map((source, index) => (
           <li key={`${source.kind}-${source.id ?? "file"}-${index}`}>
@@ -1454,6 +1488,7 @@ function SourceList({ refs, propertyId }: { refs: TaxSourceRef[]; propertyId: st
 /** A payment: date, category, amount, masked counterparty and period, with its bank line and
  * Beleg; no name or purpose text (D5). */
 function PaymentSource({ source, fact }: { source: TaxSourceRef; fact: AllocationFact | undefined }) {
+  const t = useT(propertyPlanning);
   if (!fact) {
     return (
       <>
@@ -1462,7 +1497,7 @@ function PaymentSource({ source, fact }: { source: TaxSourceRef; fact: Allocatio
       </>
     );
   }
-  const period = fact.service_period ? `Zeitraum ${formatDate(fact.service_period.start)} – ${formatDate(fact.service_period.end)}` : null;
+  const period = fact.service_period ? t.period(formatDate(fact.service_period.start), formatDate(fact.service_period.end)) : null;
   const details = [fact.counterparty_iban_masked, period].filter(Boolean).join(" · ");
   return (
     <div className="tax-payment">
@@ -1473,8 +1508,8 @@ function PaymentSource({ source, fact }: { source: TaxSourceRef; fact: Allocatio
       </p>
       {details ? <p className="tax-line-sub">{details}</p> : null}
       <p className="tax-payment-links">
-        {fact.transaction_id ? <Link href={`/inbox?umsatz=${fact.transaction_id}`}>Bankzeile öffnen</Link> : null}
-        {fact.document_id ? <Link href={`/documents/${fact.document_id}`}>Beleg öffnen</Link> : null}
+        {fact.transaction_id ? <Link href={`/inbox?umsatz=${fact.transaction_id}`}>{t.openBankLine}</Link> : null}
+        {fact.document_id ? <Link href={`/documents/${fact.document_id}`}>{t.openReceipt}</Link> : null}
       </p>
     </div>
   );
