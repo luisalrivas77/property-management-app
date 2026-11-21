@@ -258,7 +258,8 @@ The scope, each change proven to leave every answer unchanged:
    line is not in the answer fetches that account's lines rather than showing an empty payee or amount (the blank
    card of PR #252).
 
-Not proposed: keeping a figure between requests (a stale money figure after a change would be silent), and taking a
+Not proposed: keeping a figure between requests on a guessed lifetime (a stale money figure after a change would be
+silent; §7.4 keeps whole answers only under a version every write moves, at Luis's word), and taking a
 closed month's household figures from its stored `health_snapshot` instead of recomputing ten months on every read
 (it would change D242's compute-on-read). Luis proposed it the same day (compare once, then serve the stored month
 until its old data changes); measured plain, `read_months` costs 384 ms over the ten ended months and 242 ms for the
@@ -270,10 +271,59 @@ input, so not recommended.
 Expected (plain CPU): Übersicht about 7.7 → 6.2 s, so **about 8 s live instead of 10** (this said 6–7 s, from the
 profiled figures); Zu prüfen 3.4 → 1.8 s, so about 2–2.5 s instead of 4–5 (measured plain, unchanged). Beyond this,
 Übersicht's remaining cost is a dozen separate calculations of 0.4–1 s each with no single large repeat left, so a
-further large step needs more CPU (Luis declined a bigger container on 21 Nov 2026) or showing less at load. Gate: `perf-overview --digest` old against new (every body equal; `/health` compared without its new
+further large step needs more CPU (Luis declined a bigger container on 21 Nov 2026), showing less at load, or §7.4.
+
+Gate: `perf-overview --digest` old against new (every body equal; `/health` compared without its new
 field), a read-only check on the live data that every id a card can look up is in `GET /inbox/lines` and each object
 equals the per-account route's, `health-check --from 2026-03` „alles gleich“, and one review (a new read path under
 row-level security, and the blank-card risk).
+
+### 7.4 Reuse the answers while nothing changed (scoped 21 Nov 2026, not built)
+
+Luis, 21 Nov 2026 („Yes please add it“), after the assistant answered that §7.3 is not the farthest code can go.
+Most loads of Übersicht and Zu prüfen come when nothing in the household's data has changed since the last one, yet
+every read recomputes. A read on the list below keeps its finished answer and serves it again while the household's
+**data version** is unchanged; any write moves the version, and the next read recomputes. The version knows nothing
+about which figure depends on which row (the weakness of the stored-months idea in §7.3), so it cannot miss an input.
+
+1. **The data version, kept by the database** (one migration). A table `workspace_data_version (workspace_id,
+   version bigint)`. On every table that holds a `workspace_id` (all of them except `workspace` itself, the
+   Procrastinate tables and `alembic_version`; listed on the live database 21 Nov 2026, `price` included) a
+   row-level `AFTER INSERT OR UPDATE OR DELETE` **constraint trigger, deferred to commit**, adds 1 to the row's
+   workspace version once per transaction (a transaction-local setting marks it done). Taken at commit, the row lock
+   is the transaction's last, so writers cannot deadlock on it, and versions follow commit order. An update of
+   `workspace` (its switches, such as `advice_mode`) moves its own version the same way. Because the database does
+   it, no code path can forget it; a new table gets the trigger in its migration, and a test fails when a table with
+   `workspace_id` lacks it.
+2. **Writes that change no answer, excluded by name only.** `auth_session` (its idle deadline slides every 5 minutes
+   on use) and `auth_passkey` (the sign-in counter) would otherwise end every kept answer while Luis works; no kept
+   route reads either, which the gate checks. Every other table counts, `event` and `ai_call` included.
+3. **What is kept.** The GET routes Übersicht and Zu prüfen load (the §7.3 list after its changes), and no route that
+   reads the session or the member's own data beyond the member id (`/auth/me` stays live). The key is route and
+   query, the member, the version, the Berlin date (every kept route reads the clock only as `datetime.now(
+   LOCAL_TIME_ZONE).date()`, checked 21 Nov 2026; the build audits each kept route again), and the image's version
+   and `rule_version()`. Kept in the API process's memory (one instance, min- and max-scale 1, `deploy/scaleway.md`),
+   at most one answer per key, the oldest dropped first above a size limit; a restart or a deploy starts empty.
+4. **Never keep a mixed answer.** The route reads the version before and after computing and keeps the answer only
+   when both are equal; requests run at READ COMMITTED, so a commit during the computation could otherwise be half
+   seen and kept. A failed or non-200 answer is never kept.
+5. **Warm after the morning jobs.** The daily fetches (bank 06:30, wallets 06:45, prices, month-end 08:00, key
+   figures 08:30 UTC) move the version every morning, so the first load of the day would recompute. One step after
+   the last of them computes the kept routes for each member once, in the worker; nothing is warmed after a person's
+   own change (the next load after it takes the §7.3 time, about 8 s).
+6. **A check that it is right.** `hausbuch perf-overview --digest` gains a mode that reads each kept route twice, once
+   kept and once recomputed, and requires equal bodies; the daily step runs the same comparison for one route chosen
+   in turn and, on a difference, empties the store and writes a server-log error (no card: the user can do nothing).
+
+Measured 21 Nov 2026, plain CPU: a request that does almost nothing costs 30–50 ms (sign-in check, workspace, JSON),
+so a load of Übersicht whose answers are all kept costs about 1 s of CPU for its ~27 requests, **about 1–1.5 s live**
+instead of about 8; the first load after a change stays about 8 s, unless the warm step has run since. Zu prüfen the
+same, about 0.5 s. It changes compute-on-read (phase 9 D242 and this app's reads in general) for the routes listed:
+the answer shown may be one computed earlier, but only under the same data, date and code. Gate: the digest
+comparison above on the live data (kept equal to recomputed for every route), a test per excluded table that no kept
+route reads it, a test that a write in a second workspace does not move this one's version (row-level security on
+the new table, forced like every table), a concurrency test (a commit during a computation is not kept), and one
+review (persisted state, a silent-failure path, a migration).
 
 ### 7.1 Done when
 
