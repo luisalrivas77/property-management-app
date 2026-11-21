@@ -38,6 +38,13 @@ sees the worker thread FastAPI runs a sync endpoint in, and the probe's own clie
 `--digest` adds a column to the last pass: the first 16 hex characters of the SHA-256 of each
 response body, its JSON canonicalised first (sorted keys, no spaces), so a speed-up can be
 checked to return the same bodies as before, path by path, without printing any body.
+
+`--check-kept` (phase 10 §7.4) runs the passes with the API's kept answers switched on (off
+otherwise, so the timings stay those of a computed answer): the first pass computes and keeps,
+a later pass marks each request served from the store as `hit`; then every kept answer is
+computed again with the store bypassed and compared byte for byte. Any difference fails the
+command. An answer whose data version or day moved meanwhile (a write by the live app) is
+counted as moved, not compared.
 """
 
 import asyncio
@@ -254,14 +261,19 @@ def probe_settings(blob_root: Path) -> Settings:
     )
 
 
-def build_app(engine: Engine, member: Member, blob_root: Path):
-    """create_app with the probe's resolver and no worker; its lifespan is never run."""
+def build_app(engine: Engine, member: Member, blob_root: Path, *, kept: bool = False):
+    """create_app with the probe's resolver and no worker; its lifespan is never run. Its
+    kept answers (phase 10 §7.4) are off unless `kept`."""
     from hausbuch.api.app import create_app
+    from hausbuch.api.kept_answers import KeptAnswers
     from hausbuch.storage import LocalBlobStore
 
     settings = probe_settings(blob_root)
     resolver = ProbeResolver(engine, member.auth)
-    return create_app(settings, engine, LocalBlobStore(blob_root), resolver, worker=None)
+    store = KeptAnswers(enabled=kept)
+    return create_app(
+        settings, engine, LocalBlobStore(blob_root), resolver, worker=None, kept_answers=store
+    )
 
 
 # --- The page's requests --------------------------------------------------------------
@@ -279,6 +291,7 @@ class Timing:
     error: str | None = None
     profiled: bool = False
     digest: str | None = None  # --digest, the last pass only
+    hit: bool = False  # --check-kept: served from the kept answers
 
 
 @dataclass
@@ -329,8 +342,10 @@ class PageRun:
         labels: _Labels,
         profile: Sequence[str] = (),
         digest: bool = False,
+        kept: Any = None,
     ) -> None:
         self.client = client
+        self.kept = kept
         self.digest = digest
         self.counter = counter
         self.today = today
@@ -343,6 +358,7 @@ class PageRun:
         shown = label + (f"?{urlencode(query)}" if query else "")
         profiler = cProfile.Profile() if any(x in shown for x in self.profile) else None
         self.counter.reset()
+        hits = self.kept.counters.hits if self.kept is not None else 0
         started = time.perf_counter()
         if profiler is not None:
             profiler.enable()
@@ -369,6 +385,7 @@ class PageRun:
             error=error,
             profiled=profiler is not None,
             digest=body_digest(body) if self.digest else None,
+            hit=self.kept is not None and self.kept.counters.hits > hits,
         )
         self.result.timings.append(timing)
         if response.status_code != 200:
@@ -516,11 +533,15 @@ async def _passes(
 
     labels = _Labels()
     passes = []
+    store = app.state.kept_answers
+    kept = store if store.enabled else None
     async with probe_client(app) as client:
         for number in range(1, repeat + 1):
             today = datetime.now(LOCAL_TIME_ZONE).date()
             last = number == repeat
-            run = PageRun(client, counter, today, labels, profile if last else (), digest and last)
+            run = PageRun(
+                client, counter, today, labels, profile if last else (), digest and last, kept
+            )
             passes.append(await run.run())
     return passes
 
@@ -532,15 +553,20 @@ def run_probe(
     repeat: int,
     profile: Sequence[str] = (),
     digest: bool = False,
+    check_kept: bool = False,
     out: Callable[[str], None] = print,
 ) -> list[Pass]:
     """Time the page `repeat` times on `engine` (read-only: read_only_engine or
     make_read_only, checked here) and print the report. `profile`: route substrings whose
     requests of the last pass run under cProfile (needs repeat >= 2 to be a warm pass).
     `digest`: the last pass prints each body's digest (body_digest).
+    `check_kept`: kept answers on, then each compared with a recomputation (ProbeError on a
+    difference, after the report).
     The engine is the caller's to dispose."""
     if profile and repeat < 2:
         raise ProbeError("--profile needs --repeat 2 or more: it profiles the warm pass")
+    if check_kept and repeat < 2:
+        raise ProbeError("--check-kept needs --repeat 2 or more: a later pass reads the kept")
     assert_read_only(engine)
     counter = SqlCounter(engine)
     connect_ms = open_pool(engine)
@@ -548,11 +574,40 @@ def run_probe(
     empty_tx = empty_transaction_ms(engine, workspace_id)
     member = pick_member(engine, workspace_id)
     with tempfile.TemporaryDirectory(prefix="hausbuch-probe-") as blobs, _quiet_logging():
-        app = build_app(engine, member, Path(blobs) / "blobs")
+        app = build_app(engine, member, Path(blobs) / "blobs", kept=check_kept)
         counter.reset()
         passes = asyncio.run(_passes(app, counter, repeat, profile, digest))
+        outcomes = asyncio.run(app.state.kept_answers.compare_all()) if check_kept else None
     report(passes, rtt=rtt, empty_tx=empty_tx, connect_ms=connect_ms, member=member, out=out)
+    if outcomes is not None:
+        _kept_report(passes, outcomes, out)
     return passes
+
+
+def _kept_report(
+    passes: Sequence[Pass], outcomes: Sequence[Any], out: Callable[[str], None]
+) -> None:
+    """--check-kept: how many requests of the later passes were served from the store, and the
+    comparison of every kept answer with a recomputation; ProbeError on any difference."""
+    from hausbuch.api.kept_answers import kept_route
+
+    later = [t for one in passes[1:] for t in one.timings]
+    keepable = [t for t in later if t.status == 200 and kept_route(t.label.split("?")[0])]
+    counts = {r: sum(1 for o in outcomes if o.result == r) for r in ("same", "different", "moved")}
+    failed = sum(1 for o in outcomes if o.result == "failed")
+    out("")
+    out(
+        f"kept answers: {sum(t.hit for t in later)} of {len(keepable)} keepable requests of the "
+        "later passes served from the store"
+    )
+    out(
+        f"kept answers compared with a recomputation: {len(outcomes)}, the same: "
+        f"{counts['same']}, different: {counts['different']}, failed: {failed}, "
+        f"moved meanwhile (not compared): {counts['moved']}"
+    )
+    wrong = sorted({o.template for o in outcomes if o.result in ("different", "failed")})
+    if wrong:
+        raise ProbeError("kept answers differ from a recomputation: " + ", ".join(wrong))
 
 
 # --- The report -----------------------------------------------------------------------
@@ -563,6 +618,7 @@ def _line(t: Timing, width: int) -> str:
     return (
         f"{t.label:<{width}}  {status:<6}  {t.ms:9.1f}  {t.statements:5d}  {t.sql_ms:9.1f}"
         f"  {t.transactions:3d}  {t.size:9d}"
+        + ("  hit" if t.hit else "")
         + (f"  {t.digest}" if t.digest else "")
         + ("  profiled" if t.profiled else "")
     )

@@ -26,6 +26,7 @@ event loop serving requests is never blocked by a model call.
 import asyncio
 import logging
 from collections.abc import Callable
+from typing import Any
 
 import procrastinate
 from sqlalchemy import Engine
@@ -181,6 +182,7 @@ def build_worker(
     model_client: ModelClient | None = None,
     connector_kwargs: dict | None = None,
     clock: Callable | None = None,
+    kept_answers: Any = None,
 ) -> JobWorker:
     """The production worker. Each job resolves its workspace's model client when it runs
     (phase 6 D260: a key typed in the app wins over HAUSBUCH_ANTHROPIC_API_KEY); with the AI
@@ -200,6 +202,7 @@ def build_worker(
         blob_store=blob_store,
         model_client=model_client,
         model_clients=model_clients,
+        kept_answers=kept_answers,
         **({"clock": clock} if clock is not None else {}),
     )
     return JobWorker(

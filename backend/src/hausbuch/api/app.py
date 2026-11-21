@@ -28,6 +28,7 @@ from . import health
 from .auth_context import SessionResolver
 from .csrf import OriginCheckMiddleware
 from .errors import ERROR_RESPONSES, install_error_handlers
+from .kept_answers import KeptAnswers, KeptAnswersMiddleware
 from .lifespan import DrainMiddleware, lifespan
 from .limits import BodyLimitMiddleware
 from .logging import RequestMiddleware
@@ -145,9 +146,12 @@ def create_app(
     blob_store: BlobStore,
     session_resolver: SessionResolver,
     worker: Worker | None = None,
+    kept_answers: KeptAnswers | None = None,
 ) -> FastAPI:
     """The API. `engine` is the app-role engine (create_app_engine); requests and the worker
-    share it. No interactive docs are served; `hausbuch openapi` prints app.openapi()."""
+    share it. No interactive docs are served; `hausbuch openapi` prints app.openapi().
+    `kept_answers`: the store of phase 10 §7.4 (a new one when None), on app.state; the
+    worker's warm step must hold the same one (main.build_app)."""
     app = FastAPI(
         title="Hausbuch",
         version=version("hausbuch"),
@@ -163,8 +167,12 @@ def create_app(
     app.state.session_resolver = session_resolver
     app.state.worker = worker
     app.state.draining = False
+    kept = kept_answers if kept_answers is not None else KeptAnswers()
+    app.state.kept_answers = kept
     install_error_handlers(app)
-    # add_middleware wraps: the last one added is the outermost.
+    # add_middleware wraps: the last one added is the outermost. Kept answers are innermost:
+    # inside the request log (its language) and the origin check, around the routes.
+    app.add_middleware(KeptAnswersMiddleware, kept=kept)
     app.add_middleware(BodyLimitMiddleware)
     app.add_middleware(OriginCheckMiddleware)
     app.add_middleware(DrainMiddleware)
@@ -172,6 +180,7 @@ def create_app(
     app.include_router(health.router)
     for module in ROUTE_MODULES:
         app.include_router(module.router, prefix=API_PREFIX, responses=ERROR_RESPONSES)
+    kept.attach(app)
     return app
 
 

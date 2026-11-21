@@ -277,3 +277,50 @@ def test_digest_column_on_the_last_pass_is_stable(world, dbname, capsys):
     assert cli.main(argv, environ) == cli.EXIT_OK
     assert _digests(capsys.readouterr().out) == digests
     assert TENANT_NAME not in first
+
+
+def test_check_kept_serves_the_later_pass_from_the_store_and_finds_no_difference(world, dbname):
+    """Phase 10 §7.4: with the kept answers on, every keepable request of the second pass is
+    a hit, and every kept answer equals its recomputation."""
+    engine = perf_probe.read_only_engine(_owner_url(dbname))
+    lines: list[str] = []
+    try:
+        passes = perf_probe.run_probe(engine, world.ws, repeat=2, check_kept=True, out=lines.append)
+    finally:
+        engine.dispose()
+    second = passes[1].timings
+    hits = [t.label for t in second if t.hit]
+    assert "/api/properties" in hits and "/api/accounts" in hits
+    assert not any(t.hit for t in second if t.label in ("/api/inbox", "/api/auth/me"))
+    out = "\n".join(lines)
+    assert f"kept answers: {len(hits)} of {len(hits)} keepable requests" in out
+    assert ", different: 0, failed: 0, moved meanwhile (not compared): 0" in out
+    assert TENANT_NAME not in out
+
+
+def test_check_kept_fails_on_a_kept_answer_that_differs(world, dbname, monkeypatch):
+    from hausbuch.api import kept_answers
+
+    real = kept_answers.KeptAnswers.compare_all
+
+    async def tampered(self):
+        for _, entry in self.items():
+            entry.body = entry.body + b" "
+        return await real(self)
+
+    monkeypatch.setattr(kept_answers.KeptAnswers, "compare_all", tampered)
+    engine = perf_probe.read_only_engine(_owner_url(dbname))
+    try:
+        with pytest.raises(perf_probe.ProbeError, match="kept answers differ"):
+            perf_probe.run_probe(engine, world.ws, repeat=2, check_kept=True, out=lambda _: None)
+    finally:
+        engine.dispose()
+
+
+def test_the_probe_keeps_nothing_without_check_kept(world, dbname):
+    engine = perf_probe.read_only_engine(_owner_url(dbname))
+    try:
+        passes = perf_probe.run_probe(engine, world.ws, repeat=2, out=lambda _: None)
+    finally:
+        engine.dispose()
+    assert not any(t.hit for one in passes for t in one.timings)

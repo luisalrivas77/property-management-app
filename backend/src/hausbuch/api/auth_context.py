@@ -64,7 +64,15 @@ def session_cookie_name(settings: Settings) -> str:
 
 def current_auth(request: Request) -> AuthContext:
     """FastAPI dependency: the caller's AuthContext, or 401. Also kept on request.state.auth
-    for the request log line (user_id, workspace_id)."""
+    for the request log line (user_id, workspace_id).
+
+    When the kept-answers middleware (phase 10 §7.4) already resolved this request's session,
+    it hands it over in the ASGI scope under "hausbuch.auth" (a key only server code can set),
+    so the session is resolved once per request, not twice."""
+    handed: AuthContext | None = request.scope.get("hausbuch.auth")
+    if handed is not None:
+        request.state.auth = handed
+        return handed
     state = request.app.state
     token = request.cookies.get(session_cookie_name(state.settings))
     if not token or len(token) > MAX_TOKEN_LENGTH:
