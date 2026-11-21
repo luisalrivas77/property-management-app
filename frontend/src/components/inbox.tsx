@@ -484,6 +484,7 @@ const AI_RELOAD_MS = 30_000;
 
 /** "KI-Vorschläge holen": sends every unmatched line to the model again (D50). */
 function AiSuggestions({ onChanged }: { onChanged: () => void }) {
+  const t = useT(inbox);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [queued, setQueued] = useState<number | null>(null);
@@ -514,20 +515,20 @@ function AiSuggestions({ onChanged }: { onChanged: () => void }) {
     <div className="inbox-section-action stack">
       <div>
         <button type="button" className="secondary" disabled={busy} onClick={() => void request()}>
-          KI-Vorschläge holen
+          {t.aiFetch}
         </button>
       </div>
       {queued !== null ? (
         <Notice>
-          {queued === 1 ? "1 Zahlung" : `${queued} Zahlungen`} an die KI geschickt.
-          {queued > 0 ? " Die Vorschläge erscheinen in ein paar Minuten." : null}
+          {t.aiSent(queued)}
+          {queued > 0 ? t.aiSoon : null}
         </Notice>
       ) : null}
       {queued !== null && heldBack > 0 ? (
         <Notice>
-          {heldBack === 1 ? "1 Zahlung privater Konten wurde" : `${heldBack} Zahlungen privater Konten wurden`} nicht geschickt: die KI
-          für private Konten ist ausgeschaltet. Einschalten unter <Link href="/settings">Einstellungen</Link> › „Private Konten mit KI
-          zuordnen“, dann hier noch einmal „KI-Vorschläge holen“.
+          {t.aiHeldBack(heldBack)}
+          <Link href="/settings">{t.settings}</Link>
+          {t.aiHeldBackAfter}
         </Notice>
       ) : null}
       <ErrorNotice error={error} />
@@ -565,6 +566,7 @@ function BulkConfirm({
   onChanged: () => void;
   onSelect: (transactionId: string) => void;
 }) {
+  const t = useT(inbox);
   const [result, setResult] = useState<ConfirmCategoryResult | null>(null);
   const [shown, setShown] = useState<ReadonlySet<AllocationCategory>>(new Set());
   const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set());
@@ -602,8 +604,8 @@ function BulkConfirm({
     <div className="inbox-section-action stack">
       {listed.length > 0 ? (
         <>
-          <p className="muted">Vorschläge für private Konten, nach Kategorie: eine ganze Gruppe lässt sich auf einmal bestätigen.</p>
-          <ul className="inbox-bulk" aria-label="Vorschläge privater Konten nach Kategorie">
+          <p className="muted">{t.bulkIntro}</p>
+          <ul className="inbox-bulk" aria-label={t.bulkListLabel}>
             {listed.map(([category, group]) => {
               const open = shown.has(category);
               const listId = `inbox-bulk-${category}`;
@@ -630,11 +632,11 @@ function BulkConfirm({
                       aria-controls={listId}
                       onClick={() => toggleShown(category)}
                     >
-                      {open ? "Zahlungen ausblenden" : "Zahlungen ansehen"}
+                      {open ? t.hidePayments : t.showPayments}
                     </button>
                     <ActionDialog
-                      label={`Alle ${group.length} prüfen und bestätigen`}
-                      title={`${ALLOCATION_CATEGORY[category]}: Zahlungen auswählen und bestätigen`}
+                      label={t.reviewAll(group.length)}
+                      title={t.reviewAllTitle(ALLOCATION_CATEGORY[category])}
                     >
                       {(close) =>
                         list(
@@ -663,10 +665,8 @@ function BulkConfirm({
       ) : null}
       {result ? (
         <Notice>
-          {result.confirmed === 1 ? "1 Zahlung" : `${result.confirmed} Zahlungen`} bestätigt.
-          {result.skipped.length > 0
-            ? ` ${result.skipped.length === 1 ? "1 Zahlung wurde" : `${result.skipped.length} Zahlungen wurden`} übersprungen, weil sich ihr Vorschlag inzwischen geändert hat; sie stehen weiter in der Liste.`
-            : null}
+          {t.bulkConfirmed(result.confirmed)}
+          {result.skipped.length > 0 ? t.bulkSkipped(result.skipped.length) : null}
         </Notice>
       ) : null}
     </div>
@@ -692,6 +692,7 @@ function BulkConfirmList({
   /** Opens the line in the allocation panel, as a click on it in the queue does. */
   onOpen: (transactionId: string) => void;
 }) {
+  const t = useT(inbox);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const ids = items.flatMap((item) => (item.transaction_id ? [item.transaction_id] : []));
@@ -712,27 +713,23 @@ function BulkConfirmList({
 
   return (
     <>
-      <p>
-        Die angehakten Zahlungen werden als „{label}“ bestätigt, jede wie mit ihrem eigenen „Bestätigen“. Eine Zahlung ohne
-        Haken bleibt in der Liste. Steht unter einer Zahlung eine Frage, nimm den Haken weg, wenn die Antwort eine andere
-        Kategorie ergibt. Es wird keine Regel gelernt; jede Zahlung lässt sich danach einzeln ändern.
-      </p>
+      <p>{t.bulkExplain(label)}</p>
       <div className="table-wrap">
-        <table aria-label={`Zahlungen als „${label}“`}>
+        <table aria-label={t.paymentsAs(label)}>
           <thead>
             <tr>
               <th>
                 <input
                   type="checkbox"
-                  aria-label="Alle auswählen"
+                  aria-label={t.selectAll}
                   checked={ticked.length === ids.length}
                   onChange={(e) => onTick(ids, e.target.checked)}
                 />
               </th>
-              <th>Datum</th>
-              <th>Empfänger oder Zahler</th>
-              <th className="num">Betrag</th>
-              <th>Konto</th>
+              <th>{t.date}</th>
+              <th>{t.payee}</th>
+              <th className="num">{t.amount}</th>
+              <th>{t.account}</th>
             </tr>
           </thead>
           <tbody>
@@ -741,7 +738,7 @@ function BulkConfirmList({
               if (!id) return null;
               const line = data.transactions.get(id);
               const question = item.question && !GENERIC_PROPOSED_QUESTIONS.has(item.question) ? item.question : null;
-              const payee = line?.counterparty_name ?? line?.booking_text ?? "Ohne Gegenseite";
+              const payee = line?.counterparty_name ?? line?.booking_text ?? t.noCounterparty;
               const amount = line ? signedMoney(line.amount) : "–";
               const account = line ? data.accounts.get(line.account_id) : undefined;
               return (
@@ -749,7 +746,7 @@ function BulkConfirmList({
                   <td>
                     <input
                       type="checkbox"
-                      aria-label={`Auswählen: ${line ? formatDate(line.booking_date) : ""} ${payee} ${amount}`}
+                      aria-label={t.selectLine(line ? formatDate(line.booking_date) : "", payee, amount)}
                       checked={!unticked.has(id)}
                       onChange={(e) => onTick([id], e.target.checked)}
                     />
@@ -771,7 +768,7 @@ function BulkConfirmList({
       </div>
       <div className="row">
         <button type="button" disabled={busy || ticked.length === 0} onClick={() => void confirm()}>
-          Ausgewählte bestätigen ({ticked.length})
+          {t.confirmSelected(ticked.length)}
         </button>
       </div>
       <ErrorNotice error={error} />
@@ -853,25 +850,29 @@ function importPeriod(imp: StatementImport): string {
 }
 
 function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
+  const t = useT(inbox);
   const document = item.document_id ? data.documents.get(item.document_id) : undefined;
   if (item.kind === "questionnaire_open") {
-    return <strong>Jahresfragen {item.tax_year ?? ""}</strong>;
+    return <strong>{t.questionnaire(item.tax_year)}</strong>;
   }
   if (item.kind === "email_failed") {
-    return <strong>Weitergeleitete Mail</strong>;
+    return <strong>{t.forwardedMail}</strong>;
   }
   if (item.kind === "email_inbox_failed") {
-    return <strong>Posteingang per E-Mail</strong>;
+    return <strong>{t.emailInbox}</strong>;
   }
   if (item.kind === "app_secret_unreadable") {
-    return <strong>Gespeicherte Zugangsschlüssel lassen sich nicht mehr lesen</strong>;
+    return <strong>{t.secretsUnreadable}</strong>;
   }
   if (item.kind.startsWith("exchange_")) {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
     const movement = item.movement_id ? data.movements.get(item.movement_id) : undefined;
     return (
       <>
-        <strong>Börse{account ? ` · ${account.label}` : ""}</strong>
+        <strong>
+          {t.exchange}
+          {account ? ` · ${account.label}` : ""}
+        </strong>
         {movement ? (
           <span className="inbox-detail">
             {formatDateTime(movement.occurred_at)} · {formatUnits(movement.quantity)} {movement.symbol}
@@ -882,18 +883,28 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
   }
   if (item.kind.startsWith("wallet_")) {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
-    return <strong>Wallet{account ? ` · ${account.label}` : ""}</strong>;
+    return (
+      <strong>
+        {t.wallet}
+        {account ? ` · ${account.label}` : ""}
+      </strong>
+    );
   }
   if (item.kind === "holdings_mismatch") {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
-    return <strong>Depotbestand{account ? ` · ${account.label}` : ""}</strong>;
+    return (
+      <strong>
+        {t.depotHoldings}
+        {account ? ` · ${account.label}` : ""}
+      </strong>
+    );
   }
   if (
     item.kind === "price_source_failed" ||
     item.kind === "price_no_source" ||
     item.kind === "price_report_differs"
   ) {
-    return <strong>Kurs einer Anlage</strong>;
+    return <strong>{t.assetPrice}</strong>;
   }
   if (
     item.kind === "bank_sync_failed" ||
@@ -902,18 +913,23 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
     item.kind === "bank_statements_refused"
   ) {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
-    return <strong>Bankabruf{account ? ` · ${account.label}` : ""}</strong>;
+    return (
+      <strong>
+        {t.bankSync}
+        {account ? ` · ${account.label}` : ""}
+      </strong>
+    );
   }
   if (item.kind === "reminder") {
     const reminder = item.reminder_id ? data.reminders.get(item.reminder_id) : undefined;
     return reminder ? (
       <>
         <strong>{reminderLabel(reminder)}</strong>
-        <span className="inbox-detail">fällig am {formatDate(reminder.due_on)}</span>
+        <span className="inbox-detail">{t.dueOn(formatDate(reminder.due_on))}</span>
         {reminderTodo(reminder) ? <span className="inbox-detail todo-text">{translate(todosText).whatToDo} {reminderTodo(reminder)}</span> : null}
       </>
     ) : (
-      <strong>Termin</strong>
+      <strong>{t.deadline}</strong>
     );
   }
   if ((item.kind === "transfer_link" || item.kind === "transfer_unmatched") && item.transfer) {
@@ -947,7 +963,7 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
     const account = line ? data.accounts.get(line.account_id) : undefined;
     return (
       <>
-        <strong>{document ? documentLabel(document) : (line?.counterparty_name ?? "Privat bezahlte Rechnung")}</strong>
+        <strong>{document ? documentLabel(document) : (line?.counterparty_name ?? t.privateBill)}</strong>
         {line ? (
           <span className="inbox-detail">
             {[formatDate(line.booking_date), formatMoney(line.amount.replace(/^-/, "")), account?.label ?? ""].filter(Boolean).join(" · ")}
@@ -966,7 +982,10 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
     const account = imp ? data.accounts.get(imp.account_id) : undefined;
     return (
       <>
-        <strong>Kontoauszug{account ? ` · ${account.label}` : ""}</strong>
+        <strong>
+          {t.statement}
+          {account ? ` · ${account.label}` : ""}
+        </strong>
         <span className="inbox-detail">
           {[imp ? importPeriod(imp) : "", document ? documentLabel(document) : ""].filter(Boolean).join(" · ")}
         </span>
@@ -977,14 +996,14 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
     const line = item.transaction_id ? data.transactions.get(item.transaction_id) : undefined;
     return (
       <>
-        <strong>{line?.counterparty_name ?? "Umsatz"}</strong>
+        <strong>{line?.counterparty_name ?? t.transaction}</strong>
         <span className="inbox-detail">{line ? `${formatDate(line.booking_date)} · ${signedMoney(line.amount)}` : ""}</span>
       </>
     );
   }
   return (
     <>
-      <strong>{document ? documentLabel(document) : "Dokument"}</strong>
+      <strong>{document ? documentLabel(document) : t.document}</strong>
     </>
   );
 }
@@ -993,6 +1012,7 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
  * (POST /accounts/{id}/syncs restarts the waiting row) and opens the account's Bankabruf
  * card, which shows the five-minute wait for the approval in the S-pushTAN app. */
 function BankApprovalStart({ accountId }: { accountId: string }) {
+  const t = useT(inbox);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -1013,7 +1033,7 @@ function BankApprovalStart({ accountId }: { accountId: string }) {
   return (
     <>
       <button type="button" onClick={() => void start()} disabled={busy}>
-        {busy ? "Startet …" : "Jetzt abrufen"}
+        {busy ? t.starting : t.fetchNow}
       </button>
       <ErrorNotice error={error} />
     </>
@@ -1021,6 +1041,7 @@ function BankApprovalStart({ accountId }: { accountId: string }) {
 }
 
 function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxData; onChanged: () => void }) {
+  const t = useT(inbox);
   switch (item.kind) {
     case "read_failed":
       // Phase 6 D176 (3), step 4: a card or depot statement uploaded through Dokumente goes onto
@@ -1030,7 +1051,7 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
         return (
           <>
             <ImportStoredStatement documentId={item.document_id} onImported={() => notifyInboxChanged()} />
-            <Link href={`/documents/${item.document_id}`}>Dokument öffnen</Link>
+            <Link href={`/documents/${item.document_id}`}>{t.openDocument}</Link>
           </>
         );
       }
@@ -1038,22 +1059,22 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       if (item.error_code === "proposal.exchange_export_not_read") {
         return (
           <>
-            <Link href="/accounts">Konten öffnen</Link>
-            {item.document_id ? <Link href={`/documents/${item.document_id}`}>Dokument öffnen</Link> : null}
+            <Link href="/accounts">{t.openAccounts}</Link>
+            {item.document_id ? <Link href={`/documents/${item.document_id}`}>{t.openDocument}</Link> : null}
           </>
         );
       }
-      return item.document_id ? <Link href={`/documents/${item.document_id}`}>Dokument öffnen</Link> : null;
+      return item.document_id ? <Link href={`/documents/${item.document_id}`}>{t.openDocument}</Link> : null;
     case "proposal":
     case "blocked_tenant_data":
       return item.document_id ? (
-        <Link href={`/documents/${item.document_id}`}>{item.kind === "proposal" ? "Vorschlag prüfen" : "Dokument öffnen"}</Link>
+        <Link href={`/documents/${item.document_id}`}>{item.kind === "proposal" ? t.reviewProposal : t.openDocument}</Link>
       ) : null;
     case "import_pending_balance": {
       const imp = item.import_id ? data.imports.get(item.import_id) : undefined;
       if (!imp) return null;
       return (
-        <ActionDialog label="Endsaldo eingeben" title="Endsaldo laut Online-Banking" buttonClass="">
+        <ActionDialog label={t.enterClosing} title={t.closingTitle} buttonClass="">
           {(close) => (
             <BalanceForm
               statementImport={imp}
@@ -1072,7 +1093,7 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       return (
         <>
           <OpeningFromClosing statementImport={imp} onDone={onChanged} />
-          <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>Kontoauszug prüfen</Link>
+          <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>{t.checkStatement}</Link>
         </>
       );
     }
@@ -1086,17 +1107,17 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
     case "questionnaire_open":
       // phase 4b D110: the one card for last year's open Jahresfragen leads into the flow.
       return item.tax_year != null ? (
-        <Link href={`/tax/${item.tax_year}/fragen`}>Jahresfragen {item.tax_year} beantworten</Link>
+        <Link href={`/tax/${item.tax_year}/fragen`}>{t.answerQuestions(item.tax_year)}</Link>
       ) : null;
     case "email_received": {
       const imp = item.import_id ? data.imports.get(item.import_id) : undefined;
-      if (imp) return <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>Kontoauszug ansehen</Link>;
-      return item.document_id ? <Link href={`/documents/${item.document_id}`}>Dokument öffnen</Link> : null;
+      if (imp) return <Link href={`/accounts/${imp.account_id}?tab=kontoauszuege`}>{t.viewStatement}</Link>;
+      return item.document_id ? <Link href={`/documents/${item.document_id}`}>{t.openDocument}</Link> : null;
     }
     case "bank_sync_failed":
     case "bank_balance_drift":
     case "bank_statements_refused":
-      return item.account_id ? <Link href={`/accounts/${item.account_id}?tab=kontoauszuege`}>Zum Bankabruf</Link> : null;
+      return item.account_id ? <Link href={`/accounts/${item.account_id}?tab=kontoauszuege`}>{t.toBankSync}</Link> : null;
     case "bank_approval_needed":
       return item.account_id ? <BankApprovalStart accountId={item.account_id} /> : null;
     case "reminder": {
@@ -1123,7 +1144,7 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
             {open.candidates.map((candidate) => (
               <span key={candidate.id}>{legText(candidate)}</span>
             ))}
-            <Link href={`/accounts/${open.leg.account_id}`}>Konto öffnen</Link>
+            <Link href={`/accounts/${open.leg.account_id}`}>{t.openAccount}</Link>
           </span>
         );
       }
@@ -1137,7 +1158,7 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
             <span>{ruleCodeText(open.history_todo)}</span>
             {/* a history already checked against it cannot help again: the page says why */}
             <Link href={`/accounts/${open.leg.account_id}`}>
-              {open.history_todo === "exchange.withdrawal_history_no_match" ? "Konto öffnen" : "Auszahlungsverlauf hochladen"}
+              {open.history_todo === "exchange.withdrawal_history_no_match" ? t.openAccount : t.uploadWithdrawals}
             </Link>
           </span>
         );
@@ -1147,15 +1168,15 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
         // or the exchange's movement, answered on its account's page.
         return (
           <span className="inbox-links">
-            <Link href="/accounts">Wallet anlegen oder abrufen</Link>
-            <Link href={`/accounts/${open.leg.account_id}`}>Konto öffnen</Link>
+            <Link href="/accounts">{t.addOrFetchWallet}</Link>
+            <Link href={`/accounts/${open.leg.account_id}`}>{t.openAccount}</Link>
           </span>
         );
       }
       return (
         <span className="inbox-links">
-          <Link href="/accounts">Anderes Konto importieren</Link>
-          {open.leg.source === "transaction" ? <Link href={`/inbox?umsatz=${open.leg.id}`}>Buchung öffnen</Link> : null}
+          <Link href="/accounts">{t.importOtherAccount}</Link>
+          {open.leg.source === "transaction" ? <Link href={`/inbox?umsatz=${open.leg.id}`}>{t.openLine}</Link> : null}
         </span>
       );
     }
@@ -1172,9 +1193,9 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
         <YearPaidApply transactionId={item.transaction_id} year={item.tax_year} onApplied={onChanged} />
       ) : null;
     case "property_cost_document":
-      return item.document_id ? <Link href={`/documents/${item.document_id}`}>Beleg öffnen</Link> : null;
+      return item.document_id ? <Link href={`/documents/${item.document_id}`}>{t.openReceipt}</Link> : null;
     case "exchange_pending_balance":
-      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Bestand laut Börse eingeben</Link> : null;
+      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.enterHoldings}</Link> : null;
     case "exchange_unreconciled":
       return item.account_id ? (
         <ExchangeUnreconciledActions accountId={item.account_id} importId={item.import_id} onDone={onChanged} />
@@ -1183,52 +1204,52 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
       return item.import_id ? (
         <>
           <ConfirmWithdrawals importId={item.import_id} onDone={onChanged} />
-          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>Einzeln beantworten</Link> : null}
+          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.answerSingly}</Link> : null}
         </>
       ) : null;
     case "exchange_movement": {
       const movement = item.movement_id ? data.movements.get(item.movement_id) : undefined;
       if (movement) return <MovementAnswers movement={movement} onDone={onChanged} />;
-      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zum Börsenkonto</Link> : null;
+      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.toExchange}</Link> : null;
     }
     case "wallet_change":
       return (
         <>
           {item.group_id ? <ChangeAnswers groupId={item.group_id} onDone={onChanged} /> : null}
-          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zur Wallet</Link> : null}
+          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.toWallet}</Link> : null}
         </>
       );
     case "wallet_groups":
-      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Auf der Wallet beantworten</Link> : null;
+      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.answerOnWallet}</Link> : null;
     case "wallet_question":
     case "wallet_sync":
     case "wallet_unreconciled":
     case "wallet_coins_left":
-      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zur Wallet</Link> : null;
+      return item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.toWallet}</Link> : null;
     case "holdings_mismatch":
       return (
         <>
           {item.account_id ? (
             <ReportTradesButton accountId={item.account_id} count={item.report_trades ?? 0} onDone={onChanged} />
           ) : null}
-          <Link href="/documents">Abrechnung hochladen</Link>
-          {item.document_id ? <Link href={`/documents/${item.document_id}`}>Bericht öffnen</Link> : null}
-          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>Zum Depot</Link> : null}
+          <Link href="/documents">{t.uploadSettlement}</Link>
+          {item.document_id ? <Link href={`/documents/${item.document_id}`}>{t.openReport}</Link> : null}
+          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.toDepot}</Link> : null}
         </>
       );
     case "price_source_failed":
-      return item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>Kurs eintragen</Link> : null;
+      return item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>{t.enterPrice}</Link> : null;
     case "price_no_source":
-      return item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>Kursquelle wählen</Link> : null;
+      return item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>{t.choosePriceSource}</Link> : null;
     case "price_report_differs":
       return (
         <>
-          {item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>Kurs eintragen</Link> : null}
-          {item.document_id ? <Link href={`/documents/${item.document_id}`}>Bericht öffnen</Link> : null}
+          {item.asset_id ? <Link href={`/assets?kurs=${item.asset_id}`}>{t.enterPrice}</Link> : null}
+          {item.document_id ? <Link href={`/documents/${item.document_id}`}>{t.openReport}</Link> : null}
         </>
       );
     case "app_secret_unreadable":
-      return <Link href={`/settings#${APP_SECRETS_ANCHOR}`}>Zugangsschlüssel öffnen</Link>;
+      return <Link href={`/settings#${APP_SECRETS_ANCHOR}`}>{t.openSecrets}</Link>;
     default:
       return null;
   }
@@ -1240,6 +1261,7 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
  * stays mounted when nothing is left to book, so the sentence naming the funds it left out
  * (review of 15 Nov 2026: their holdings would not match the report) survives the reload. */
 function ReportTradesButton({ accountId, count, onDone }: { accountId: string; count: number; onDone: () => void }) {
+  const t = useT(inbox);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [leftOut, setLeftOut] = useState<string[]>([]);
@@ -1263,14 +1285,11 @@ function ReportTradesButton({ accountId, count, onDone }: { accountId: string; c
     <>
       {count > 0 ? (
         <button type="button" onClick={() => void book()} disabled={busy}>
-          {busy ? "Bucht …" : `Umsätze aus dem Bericht buchen (${count})`}
+          {busy ? t.bookingTrades : t.bookFromReport(count)}
         </button>
       ) : null}
       {leftOut.length > 0 ? (
-        <p className="muted">
-          Nicht aus dem Bericht gebucht: {joinNames(leftOut)} (Bestand würde nicht zum Bericht passen). Dafür bitte die
-          Wertpapierabrechnungen unter Dokumente hochladen.
-        </p>
+        <p className="muted">{t.notFromReport(joinNames(leftOut))}</p>
       ) : null}
       <ErrorNotice error={error} />
     </>
@@ -1280,7 +1299,7 @@ function ReportTradesButton({ accountId, count, onDone }: { accountId: string; c
 /** ["A"] -> "A"; ["A", "B", "C"] -> "A, B und C". */
 function joinNames(names: string[]): string {
   const last = names.at(-1) ?? "";
-  return names.length === 1 ? last : `${names.slice(0, -1).join(", ")} und ${last}`;
+  return names.length === 1 ? last : `${names.slice(0, -1).join(", ")} ${translate(inbox).and} ${last}`;
 }
 
 // --- Phase 6: transfers between own accounts (D162) and privately paid property costs (D161)
@@ -1345,13 +1364,27 @@ function learnBox(leg: TransferLegView, other: TransferLegView): { kind: "deposi
   if (out.account_kind === "wallet" && in_.account_kind === "exchange") {
     return {
       kind: "deposit",
-      text: `Die Adresse, an die ${out.account_label} am ${formatDate(out.booked_on)} ${legFigure(out)} gesendet hat, als Einzahlungsadresse von ${in_.account_label} merken (Einzahlung vom ${formatDate(in_.booked_on)}, ${legFigure(in_)}); weitere Einzahlungen dorthin verknüpft die App dann selbst`,
+      text: translate(inbox).learnDeposit(
+        out.account_label,
+        formatDate(out.booked_on),
+        legFigure(out),
+        in_.account_label,
+        formatDate(in_.booked_on),
+        legFigure(in_),
+      ),
     };
   }
   if (out.account_kind === "exchange" && in_.account_kind === "wallet") {
     return {
       kind: "withdrawal",
-      text: `Abhebungen von ${out.account_label} an diese Adresse von ${in_.account_label} künftig automatisch verknüpfen (Abhebung vom ${formatDate(out.booked_on)}, ${legFigure(out)}; Eingang vom ${formatDate(in_.booked_on)}, ${legFigure(in_)})`,
+      text: translate(inbox).learnWithdrawal(
+        out.account_label,
+        in_.account_label,
+        formatDate(out.booked_on),
+        legFigure(out),
+        formatDate(in_.booked_on),
+        legFigure(in_),
+      ),
     };
   }
   return null;
@@ -1364,17 +1397,12 @@ function legText(leg: TransferLegView): string {
 /** D176 (4), review of step 2b: why a candidate booked as something else (a card bill answered
  * „Kreditkarte“ before the card account existed) is booked as a transfer when it is linked. */
 function rebookText(candidate: TransferLegView, leg: TransferLegView): string {
-  const debit = legSends(candidate);
-  const what = debit ? "Die Abbuchung" : "Die Gutschrift";
-  const counted = debit ? "Ausgabe" : "Einnahme";
-  const booked = candidate.booked_category
-    ? `ist bisher als „${ALLOCATION_CATEGORY[candidate.booked_category]}“ gebucht und zählt damit als ${counted}`
-    : "ist noch nicht gebucht";
-  const why =
-    leg.account_kind === "credit_card" || candidate.account_kind === "credit_card"
-      ? "weil die Kartenumsätze selbst schon gezählt werden"
-      : "weil das Geld nur zwischen zwei eigenen Konten wechselt";
-  return `${what} vom ${formatDate(candidate.booked_on)} ${booked}; sie wird als Übertrag gebucht, ${why}.`;
+  return translate(inbox).rebook(
+    legSends(candidate),
+    formatDate(candidate.booked_on),
+    candidate.booked_category ? ALLOCATION_CATEGORY[candidate.booked_category] : null,
+    leg.account_kind === "credit_card" || candidate.account_kind === "credit_card",
+  );
 }
 
 /** The counterpart's picker of a transfer card: one candidate is pre-selected, several are
@@ -1391,6 +1419,7 @@ function rebookText(candidate: TransferLegView, leg: TransferLegView): string {
  * amended (5)); once a person answers it, it is no longer the model's proposal, and the card
  * offers it as PR #321 built (an untied short deposit not at all, a tied one with re-booking). */
 function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accounts: Map<string, Account>; onLinked: () => void }) {
+  const t = useT(inbox);
   const [choice, setChoice] = useState(open.candidates.length === 1 ? (open.candidates[0]?.id ?? "") : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -1416,7 +1445,7 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
 
   return (
     <fieldset className="stack">
-      <legend className="visually-hidden">Gegenbuchung</legend>
+      <legend className="visually-hidden">{t.counterpart}</legend>
       {open.candidates.map((candidate) => (
         <label key={candidate.id}>
           <input type="radio" name={name} value={candidate.id} checked={choice === candidate.id} onChange={() => setChoice(candidate.id)} />{" "}
@@ -1432,16 +1461,16 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
       ) : null}
       <button type="button" onClick={() => void link()} disabled={busy || choice === ""}>
         {busy
-          ? "Verknüpft …"
+          ? t.linking
           : chosen?.deposit_fee != null
-            ? "Als Einzahlung verknüpfen"
+            ? t.linkDeposit
             : rebook
-              ? "Als Übertrag buchen und verknüpfen"
-              : "Verknüpfen"}
+              ? t.linkRebook
+              : t.link}
       </button>
       {chosen?.source === "transaction" ? (
         <Link href={`/inbox?umsatz=${chosen.id}`} scroll={false}>
-          Keine Überweisung – Zahlung anders zuordnen
+          {t.notTransfer}
         </Link>
       ) : null}
       <ErrorNotice error={error} />
@@ -1456,6 +1485,7 @@ function TransferPick({ open, accounts, onLinked }: { open: OpenTransfer; accoun
  * default, lets the app link the exchange's next such withdrawals itself while the wallet's
  * read balance covers them. Only the wallet's name and its masked address are shown. */
 function OwnWalletPick({ open, onLinked }: { open: OpenTransfer; onLinked: () => void }) {
+  const t = useT(inbox);
   const wallets = open.own_wallets ?? [];
   const [choice, setChoice] = useState(wallets.length === 1 ? (wallets[0]?.address_id ?? "") : "");
   const [remember, setRemember] = useState(true);
@@ -1484,37 +1514,28 @@ function OwnWalletPick({ open, onLinked }: { open: OpenTransfer; onLinked: () =>
 
   return (
     <fieldset className="stack">
-      <legend className="visually-hidden">Eigene Wallet</legend>
+      <legend className="visually-hidden">{t.ownWallet}</legend>
       {paired ? (
-        <p className="muted">
-          Abhebungen von {open.leg.account_label} an {paired.account_label} verknüpft die App selbst, sobald der abgerufene Kontostand
-          der Wallet sie enthält. Diese wartet, weil der letzte Kontostand sie noch nicht enthält: Wallet abrufen, oder hier selbst
-          zuordnen.
-        </p>
+        <p className="muted">{t.pairedWaits(open.leg.account_label, paired.account_label)}</p>
       ) : null}
       {(open.paired_addresses ?? 0) > 1 ? (
-        <p className="muted">
-          Abhebungen von {open.leg.account_label} sind an {open.paired_addresses} eigene Adressen auf dieser Chain gelernt. Die App
-          kann nicht erkennen, an welche diese ging, und verknüpft sie deshalb nicht selbst: bitte hier zuordnen.
-        </p>
+        <p className="muted">{t.pairedMany(open.leg.account_label, open.paired_addresses ?? 0)}</p>
       ) : null}
       {wallets.map((wallet) => (
         <label key={wallet.address_id}>
           <input type="radio" name={name} value={wallet.address_id} checked={choice === wallet.address_id} onChange={() => setChoice(wallet.address_id)} />{" "}
-          An eigene Wallet: {wallet.account_label} ({chainName(wallet.chain)}) · {wallet.address_masked}
+          {t.toOwnWallet(wallet.account_label, chainName(wallet.chain), wallet.address_masked)}
         </label>
       ))}
-      <p className="muted">
-        Die App bucht die Einzahlung auf der Wallet selbst: die abgehobene Menge abzüglich der Gebühr der Börse, am Tag der Abhebung.
-      </p>
+      <p className="muted">{t.walletBooks}</p>
       <label>
-        <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> Abhebungen von{" "}
-        {open.leg.account_label} an diese Adresse künftig automatisch verknüpfen
+        <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />{" "}
+        {t.rememberPair(open.leg.account_label)}
       </label>
       <button type="button" onClick={() => void book()} disabled={busy || choice === ""}>
-        {busy ? "Wird gebucht …" : "Auf eigene Wallet buchen"}
+        {busy ? t.booking : t.bookToWallet}
       </button>
-      <Link href={`/accounts/${open.leg.account_id}`}>Konto öffnen</Link>
+      <Link href={`/accounts/${open.leg.account_id}`}>{t.openAccount}</Link>
       <ErrorNotice error={error} />
     </fieldset>
   );
@@ -1527,6 +1548,7 @@ function OwnWalletPick({ open, onLinked }: { open: OpenTransfer; onLinked: () =>
  * person already booked otherwise is re-booked with it. A credit that is no return is answered
  * in the allocation panel: „Keine Rücküberweisung – Zahlung anders zuordnen“ selects it. */
 function ReturnBook({ open, onBooked }: { open: OpenReturn; onBooked: () => void }) {
+  const t = useT(inbox);
   const [choice, setChoice] = useState(open.candidates.length === 1 ? (open.candidates[0]?.id ?? "") : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -1548,9 +1570,9 @@ function ReturnBook({ open, onBooked }: { open: OpenReturn; onBooked: () => void
 
   return (
     <fieldset className="stack">
-      <legend className="visually-hidden">Zurückgekommene Abbuchung</legend>
+      <legend className="visually-hidden">{t.returnedDebit}</legend>
       {open.candidates.length === 1 && chosen ? (
-        <p>Kam zurück: {legText(chosen)}</p>
+        <p>{t.cameBack(legText(chosen))}</p>
       ) : (
         open.candidates.map((candidate) => (
           <label key={candidate.id}>
@@ -1560,16 +1582,14 @@ function ReturnBook({ open, onBooked }: { open: OpenReturn; onBooked: () => void
         ))
       )}
       <p className="muted">
-        Abbuchung und Gutschrift heben sich auf: Zusammen zählen sie weder als Ausgabe noch als Einnahme noch als Überweisung.
-        {chosen?.booked_category && !chosen.booked_as_transfer
-          ? ` Die Abbuchung ist bisher als „${ALLOCATION_CATEGORY[chosen.booked_category]}“ gebucht und wird umgebucht.`
-          : ""}
+        {t.returnCancels}
+        {chosen?.booked_category && !chosen.booked_as_transfer ? t.returnRebooked(ALLOCATION_CATEGORY[chosen.booked_category]) : ""}
       </p>
       <button type="button" onClick={() => void book()} disabled={busy || !chosen}>
-        {busy ? "Wird gebucht …" : "Als Rücküberweisung verbuchen"}
+        {busy ? t.booking : t.bookReturn}
       </button>
       <Link href={`/inbox?umsatz=${open.leg.id}`} scroll={false}>
-        Keine Rücküberweisung – Zahlung anders zuordnen
+        {t.notReturn}
       </Link>
       <ErrorNotice error={error} />
     </fieldset>
@@ -1579,7 +1599,7 @@ function ReturnBook({ open, onBooked }: { open: OpenReturn; onBooked: () => void
 /** One proposed private_cost row as the card lists it: label and amount, before „Übernehmen“. */
 function privateCostText(row: TaxInputCreate): string {
   const value = row.value as PrivateCostValue;
-  const year = row.tax_year != null ? ` · Steuerjahr ${row.tax_year}` : "";
+  const year = row.tax_year != null ? translate(inbox).taxYear(row.tax_year) : "";
   return `${value.label}: ${formatMoney(value.amount)}${year}`;
 }
 
@@ -1587,6 +1607,7 @@ function privateCostText(row: TaxInputCreate): string {
  * the card proposed them by POST /transactions/{id}/private-costs in one step; a bill whose
  * rows exist already is left as it is (no cost counted twice). */
 function PrivateCostApply({ transactionId, onApplied }: { transactionId: string; onApplied: () => void }) {
+  const t = useT(inbox);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -1605,7 +1626,7 @@ function PrivateCostApply({ transactionId, onApplied }: { transactionId: string;
   return (
     <>
       <button type="button" onClick={() => void apply()} disabled={busy}>
-        {busy ? "Übernimmt …" : "Übernehmen"}
+        {busy ? t.applying : t.apply}
       </button>
       <ErrorNotice error={error} />
     </>
@@ -1616,6 +1637,7 @@ function PrivateCostApply({ transactionId, onApplied }: { transactionId: string;
  * line paid them; „In <Jahr> zählen“ moves them (POST /transactions/{id}/private-costs/year).
  * Until then they stay in their year. */
 function YearPaidApply({ transactionId, year, onApplied }: { transactionId: string; year: number; onApplied: () => void }) {
+  const t = useT(inbox);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -1634,9 +1656,9 @@ function YearPaidApply({ transactionId, year, onApplied }: { transactionId: stri
   return (
     <>
       <button type="button" onClick={() => void apply()} disabled={busy}>
-        {busy ? "Wird verschoben …" : `In ${year} zählen`}
+        {busy ? t.moving : t.countIn(year)}
       </button>
-      <p className="muted">Privat bezahlte Werbungskosten zählen im Jahr der Zahlung (§ 11 Abs. 2 EStG).</p>
+      <p className="muted">{t.yearPaid}</p>
       <ErrorNotice error={error} />
     </>
   );
@@ -1646,6 +1668,7 @@ function YearPaidApply({ transactionId, year, onApplied }: { transactionId: stri
  * any other; then the line's current rows are saved again with the bill on its property-cost
  * row(s), which brings it to path 1 or 2. */
 function BillUpload({ transactionId, onAttached }: { transactionId: string; onAttached: () => void }) {
+  const t = useT(inbox);
   const [error, setError] = useState<unknown>(null);
 
   async function attach(documentId: string) {
@@ -1686,7 +1709,7 @@ function BillUpload({ transactionId, onAttached }: { transactionId: string; onAt
 
   return (
     <>
-      <UploadControl label="Beleg hochladen" prefill onUploaded={(result) => void attach(result.document.id)} />
+      <UploadControl label={t.uploadReceipt} prefill onUploaded={(result) => void attach(result.document.id)} />
       <ErrorNotice error={error} />
     </>
   );
