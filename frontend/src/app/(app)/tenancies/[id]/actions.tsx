@@ -13,6 +13,8 @@ import { collector, Field, FormBanner, Submit, useFormErrors } from "@/component
 import { blankToNull, decimalInput, toMoneyString } from "@/components/input";
 import { DEPOSIT_FORM, NOTICE_GIVEN_BY, options, RENT_MODEL } from "@/components/labels";
 import { RentTermsFields, toDueDay, type OperatingCostsTerms } from "@/components/taxInputs";
+import { useT } from "@/i18n";
+import { tenancies } from "@/i18n/tenancies";
 
 const path = (tenancy: Tenancy) => ({ params: { path: { tenancy_id: tenancy.id } } });
 
@@ -42,6 +44,7 @@ export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone:
   const [iban, setIban] = useState("");
   const [removeIban, setRemoveIban] = useState(false);
   const [busy, setBusy] = useState(false);
+  const t = useT(tenancies);
   const form = useFormErrors(EDIT_KEYS, { "iban.": "deposit_iban" });
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -76,17 +79,17 @@ export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone:
     <form className="stack" onSubmit={submit} noValidate>
       <Field
         id="edit-fixed"
-        label="Befristet bis (optional)"
-        hint="Leer = unbefristet."
-        description="Nur bei einem Zeitmietvertrag: das vereinbarte Ende laut Mietvertrag."
+        label={t.fixedField}
+        hint={t.fixedHint}
+        description={t.fixedDescription}
         errors={form.of("fixed_term_until")}
       >
         <input type="date" value={fixedTermUntil} onChange={(e) => setFixedTermUntil(e.target.value)} />
       </Field>
       <Field
         id="edit-model"
-        label="Mietmodell"
-        description="Festmiete, Staffelmiete (die Erhöhungen stehen schon im Vertrag) oder Indexmiete (an den Verbraucherpreisindex gekoppelt), laut Mietvertrag."
+        label={t.rentModel}
+        description={t.rentModelDescription}
         errors={form.of("rent_model")}
       >
         <select value={rentModel} onChange={(e) => setRentModel(e.target.value as RentModel)}>
@@ -107,8 +110,8 @@ export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone:
       />
       <Field
         id="edit-deposit-form"
-        label="Kaution: Art"
-        description="Wie die Kaution geleistet wird, laut Mietvertrag. Ist eine vereinbart, fragt die Unterlagen-Checkliste nach einem Kautionsnachweis."
+        label={t.depositForm}
+        description={t.depositFormDescription}
         errors={form.of("deposit_form")}
       >
         <select value={depositForm} onChange={(e) => setDepositForm(e.target.value as DepositKind)}>
@@ -121,26 +124,26 @@ export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone:
       </Field>
       <Field
         id="edit-deposit-amount"
-        label="Kaution: Betrag (€)"
-        hint="Leer = keine Kaution."
-        description="Die vereinbarte Kaution laut Mietvertrag."
+        label={t.depositAmount}
+        hint={t.depositAmountHint}
+        description={t.depositAmountDescription}
         errors={form.of("deposit_amount")}
       >
         <input type="text" inputMode="decimal" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} autoComplete="off" />
       </Field>
       <Field
         id="edit-deposit-bank"
-        label="Bank des Kautionskontos (optional)"
-        description="Die Bank, bei der die Kaution angelegt ist, z. B. laut Kontoeröffnung oder Sparbuch."
+        label={t.depositBank}
+        description={t.depositBankDescription}
         errors={form.of("deposit_bank")}
       >
         <input type="text" value={depositBank} onChange={(e) => setDepositBank(e.target.value)} autoComplete="off" />
       </Field>
       <Field
         id="edit-deposit-iban"
-        label="Neue IBAN des Kautionskontos (optional)"
-        hint={`Gespeichert: ${tenancy.deposit_iban_masked ?? "keine"}. Leer lassen, um sie zu behalten.`}
-        description="Die IBAN des Kautionskontos. Gespeichert wird sie nur maskiert."
+        label={t.depositIban}
+        hint={t.depositIbanStored(tenancy.deposit_iban_masked ?? null)}
+        description={t.depositIbanDescription}
         errors={form.of("deposit_iban")}
       >
         <input type="text" value={iban} onChange={(e) => setIban(e.target.value)} autoComplete="off" spellCheck={false} disabled={removeIban} />
@@ -148,10 +151,10 @@ export function EditTenancyForm({ tenancy, onDone }: { tenancy: Tenancy; onDone:
       {tenancy.deposit_iban_masked ? (
         <label className="inline">
           <input type="checkbox" checked={removeIban} onChange={(e) => setRemoveIban(e.target.checked)} />
-          Gespeicherte IBAN des Kautionskontos entfernen
+          {t.depositIbanRemove}
         </label>
       ) : null}
-      <Submit busy={busy}>Speichern</Submit>
+      <Submit busy={busy}>{t.save}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );
@@ -164,13 +167,14 @@ export function DepositForm({ tenancy, receipt, onDone }: { tenancy: Tenancy; re
   );
   const [receivedOn, setReceivedOn] = useState(receipt?.received_on ?? "");
   const [busy, setBusy] = useState(false);
+  const t = useT(tenancies);
   const form = useFormErrors(["amount", "received_on"]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = collector();
     const money = values.take("amount", toMoneyString(amount));
-    if (!receivedOn) values.messages.received_on = ["Bitte das Datum eingeben."];
+    if (!receivedOn) values.messages.received_on = [t.dateMissing];
     if (!values.ok || money === undefined) return form.invalid(values.messages);
     setBusy(true);
     form.clear();
@@ -197,27 +201,25 @@ export function DepositForm({ tenancy, receipt, onDone }: { tenancy: Tenancy; re
   return (
     <form className="stack" onSubmit={submit} noValidate>
       <p className="muted">
-        {receipt
-          ? "Die Korrektur wird als eigener Eintrag protokolliert; der Verlauf zeigt danach Betrag und Datum der Korrektur."
-          : "Auch für eine Rate der Kaution; jede Zahlung ist ein eigener Eintrag."}
+        {receipt ? t.depositCorrectionIntro : t.depositIntro}
       </p>
       <Field
         id="deposit-received-amount"
-        label="Betrag (€)"
-        description="Der Betrag, der tatsächlich eingegangen ist, laut Kontoauszug oder Quittung."
+        label={t.amount}
+        description={t.amountDescription}
         errors={form.of("amount")}
       >
         <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required autoComplete="off" />
       </Field>
       <Field
         id="deposit-received-on"
-        label="Erhalten am"
-        description="Der Tag, an dem die Kaution einging, laut Kontoauszug oder Quittung."
+        label={t.receivedField}
+        description={t.receivedDescription}
         errors={form.of("received_on")}
       >
         <input type="date" value={receivedOn} onChange={(e) => setReceivedOn(e.target.value)} required />
       </Field>
-      <Submit busy={busy}>{receipt ? "Korrektur speichern" : "Speichern"}</Submit>
+      <Submit busy={busy}>{receipt ? t.saveCorrection : t.save}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );
@@ -235,13 +237,14 @@ export function NoticeForm({ tenancy, current, onDone }: { tenancy: Tenancy; cur
   const [givenOn, setGivenOn] = useState(current?.given_on ?? "");
   const [endsOn, setEndsOn] = useState(current?.ends_on ?? "");
   const [busy, setBusy] = useState(false);
+  const t = useT(tenancies);
   const form = useFormErrors(["given_by", "given_on", "ends_on"]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const messages: Record<string, string[]> = {};
-    if (!givenOn) messages.given_on = ["Bitte das Datum der Kündigung eingeben."];
-    if (!endsOn) messages.ends_on = ["Bitte das Ende des Mietverhältnisses eingeben."];
+    if (!givenOn) messages.given_on = [t.noticeDateMissing];
+    if (!endsOn) messages.ends_on = [t.noticeEndMissing];
     if (Object.keys(messages).length > 0) return form.invalid(messages);
     setBusy(true);
     form.clear();
@@ -261,8 +264,8 @@ export function NoticeForm({ tenancy, current, onDone }: { tenancy: Tenancy; cur
     <form className="stack" onSubmit={submit} noValidate>
       <Field
         id="notice-by"
-        label="Gekündigt durch"
-        description="Wer gekündigt hat, laut Kündigungsschreiben."
+        label={t.givenBy}
+        description={t.givenByDescription}
         errors={form.of("given_by")}
       >
         <select value={givenBy} onChange={(e) => setGivenBy(e.target.value as "tenant" | "landlord")}>
@@ -275,26 +278,26 @@ export function NoticeForm({ tenancy, current, onDone }: { tenancy: Tenancy; cur
       </Field>
       <Field
         id="notice-on"
-        label="Kündigung vom"
-        description="Das Datum des Kündigungsschreibens."
+        label={t.givenOn}
+        description={t.givenOnDescription}
         errors={form.of("given_on")}
       >
         <input type="date" value={givenOn} onChange={(e) => setGivenOn(e.target.value)} required />
       </Field>
       <Field
         id="notice-ends"
-        label="Zum (Ende des Mietverhältnisses)"
-        description="Der Tag, zu dem das Mietverhältnis laut Kündigung endet."
+        label={t.endsOn}
+        description={t.endsOnDescription}
         errors={form.of("ends_on")}
       >
         <input type="date" value={endsOn} onChange={(e) => setEndsOn(e.target.value)} required />
       </Field>
       <p className="muted">
         {current
-          ? "Die Korrektur wird als eigener Eintrag protokolliert; der Verlauf zeigt danach die korrigierte Kündigung."
-          : "Der Auszug selbst wird danach mit „Auszug“ erfasst."}
+          ? t.noticeCorrectionIntro
+          : t.noticeIntro}
       </p>
-      <Submit busy={busy}>{current ? "Korrektur speichern" : "Kündigung speichern"}</Submit>
+      <Submit busy={busy}>{current ? t.saveCorrection : t.noticeSave}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );
@@ -303,11 +306,12 @@ export function NoticeForm({ tenancy, current, onDone }: { tenancy: Tenancy; cur
 export function EndForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => void }) {
   const [endDate, setEndDate] = useState("");
   const [busy, setBusy] = useState(false);
+  const t = useT(tenancies);
   const form = useFormErrors(["end_date"]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!endDate) return form.invalid({ end_date: ["Bitte das Auszugsdatum eingeben."] });
+    if (!endDate) return form.invalid({ end_date: [t.moveOutMissing] });
     setBusy(true);
     form.clear();
     try {
@@ -322,16 +326,16 @@ export function EndForm({ tenancy, onDone }: { tenancy: Tenancy; onDone: () => v
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <p className="muted">Das Auszugsdatum ist ein Meilenstein: danach ändert es nur „Auszug korrigieren“, als eigener Eintrag im Verlauf.</p>
+      <p className="muted">{t.moveOutIntro}</p>
       <Field
         id="end-date"
-        label="Auszug am"
-        description="Der Tag, an dem das Mietverhältnis endete, z. B. laut Übergabeprotokoll. Danach richtet sich, wie lange Mietunterlagen und Mieterdaten aufbewahrt werden: bis Ende des vierten Jahres danach."
+        label={t.moveOutField}
+        description={t.moveOutDescription}
         errors={form.of("end_date")}
       >
         <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
       </Field>
-      <Submit busy={busy}>Auszug speichern</Submit>
+      <Submit busy={busy}>{t.moveOutSave}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );

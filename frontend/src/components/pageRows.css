@@ -22,3 +22,23 @@
 .page-card > h2 {
   margin: 0;
 }
+
+/* A replaced rent row: struck through, like the old table row. */
+li.superseded .detail-row-title,
+li.superseded .row-amount {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+/* A labelled group of page actions („Ändern“, „Korrigieren“). */
+.action-group {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.action-group-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+}

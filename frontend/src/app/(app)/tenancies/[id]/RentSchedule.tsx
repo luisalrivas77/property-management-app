@@ -5,19 +5,27 @@
 // API's answer (GET …/rent?at=today), not computed here. On a flat_rate tenancy the amount is
 // the Nebenkostenpauschale (D155 (5)); a to-do's link (?mietaenderung=pauschale) opens
 // „Mietänderung“ pre-filled with the new Pauschale and its start from the backend (D155 (4)).
+// Phase 10 (mockup 25): each row keeps its date and base rent; the rest and „korrigieren“ open
+// in the detail panel, so nothing scrolls sideways on a phone.
 import Link from "next/link";
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent, type ReactNode } from "react";
 
 import { api, ok } from "@/api/client";
 import type { RentChangeReason, RentRowCorrection, RentScheduleEntry, Tenancy } from "@/api/schemas";
 import { DocumentPicker } from "@/components/documents";
 import { loadPauschaleChange, type PauschaleChange } from "@/components/flatRate";
 import { collector, Field, FormBanner, Submit, useFormErrors } from "@/components/form";
-import { formatDate, formatDateTime, formatMoney, todayIso } from "@/components/format";
+import { DetailPanel, useDetail } from "@/components/DetailPanel";
+import { todayIso } from "@/components/format";
 import { decimalInput, toMoneyString } from "@/components/input";
 import { RENT_CHANGE_REASON } from "@/components/labels";
-import { ActionDialog, Loading, Notice } from "@/components/ui";
+import { ActionDialog, Facts, Loading, Notice } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useFormat, useT } from "@/i18n";
+import { tenancies } from "@/i18n/tenancies";
+import { Icon } from "@/lib/icons";
+
+import "@/components/pageRows.css";
 
 const KEYS = ["effective_from", "cold_rent", "operating_costs_prepayment", "reason", "document_id"] as const;
 const CODE_FIELDS = { "rent_schedule.outside_tenancy": "effective_from" };
@@ -28,7 +36,10 @@ const CHANGE_REASONS = (Object.keys(RENT_CHANGE_REASON) as RentChangeReason[]).f
   (reason) => reason !== "initial" && reason !== "correction",
 );
 
-export function RentSchedule({
+/** The Mietstaffel as rows (from-date with „gilt heute“, the reason, the base rent) and, for the
+ * row whose hash is open, its panel (the running costs, the receipt, when recorded, and
+ * „korrigieren“). A hook, so the page puts the panel into its own DetailLayout. */
+export function useRentSchedule({
   tenancy,
   onChanged,
   prefillPauschale = false,
@@ -40,17 +51,24 @@ export function RentSchedule({
   prefillPauschale?: boolean;
   /** Called once a pre-filled change was saved, so the page can drop the link's parameter. */
   onPrefillDone?: () => void;
-}) {
+}): { body: ReactNode; panel: ReactNode } {
+  const t = useT(tenancies);
+  const f = useFormat();
+  const detail = useDetail("rentrow");
   const today = todayIso();
   const flatRate = tenancy.operating_costs_terms === "flat_rate";
+  // The move-in is a dependency: correcting it also moves the first rent row (§10.8 item 6),
+  // so the schedule reloads.
+  const startDate = tenancy.start_date;
   const load = useCallback(async () => {
+    void startDate;
     const path = { params: { path: { tenancy_id: tenancy.id } } };
     const [rows, current] = await Promise.all([
       ok(api.GET("/api/tenancies/{tenancy_id}/rent-schedule", path)),
       ok(api.GET("/api/tenancies/{tenancy_id}/rent", { params: { path: { tenancy_id: tenancy.id }, query: { at: today } } })),
     ]);
     return { rows, current };
-  }, [tenancy.id, today]);
+  }, [tenancy.id, today, startDate]);
   const schedule = useLoad(load);
   const prefillOn = prefillPauschale && flatRate;
   const loadPrefill = useCallback(
@@ -62,7 +80,10 @@ export function RentSchedule({
   // unfilled); keyed so it replaces the closed one rather than reusing its state.
   const prefillReady = prefillOn && prefill.data !== undefined;
   const [note, setNote] = useState<string | null>(null);
-  const latest = latestRow(schedule.data?.rows ?? []);
+  const rows = schedule.data?.rows ?? [];
+  const latest = latestRow(rows);
+  const superseded = new Set(rows.map((row) => row.supersedes_id).filter(Boolean));
+  const costsLabel = flatRate ? t.flatRate : t.prepayment;
 
   function changed(message: string) {
     setNote(message);
@@ -70,74 +91,76 @@ export function RentSchedule({
     onChanged();
   }
 
-  return (
+  const open = detail.id ? rows.find((row) => row.id === detail.id) : undefined;
+  const panel = open ? (
+    <DetailPanel title={t.rowPanel(f.date(open.effective_from))} backLabel={t.schedule} onClose={detail.close}>
+      <Facts
+        rows={[
+          [t.from, f.date(open.effective_from)],
+          [t.coldRent, f.money(open.cold_rent)],
+          [costsLabel, f.money(open.operating_costs_prepayment)],
+          [t.reason, RENT_CHANGE_REASON[open.reason]],
+          [t.receipt, open.document_id ? <Link href={`/documents/${open.document_id}`}>{t.receipt}</Link> : "–"],
+          [t.recorded, f.dateTime(open.recorded_at)],
+        ]}
+      />
+      {superseded.has(open.id) ? (
+        <p className="muted">{t.replaced}</p>
+      ) : (
+        <div className="panel-actions">
+          <ActionDialog label={t.correct} title={t.correctTitle} buttonClass="secondary">
+            {(close) => (
+              <CorrectRowForm
+                row={open}
+                flatRate={flatRate}
+                onDone={(message) => {
+                  close();
+                  detail.close();
+                  changed(message);
+                }}
+              />
+            )}
+          </ActionDialog>
+        </div>
+      )}
+    </DetailPanel>
+  ) : null;
+
+  const body = (
     <div className="stack">
       {note ? <Notice>{note}</Notice> : null}
       <Loading state={schedule}>
-        {({ rows, current }) => {
-          const superseded = new Set(rows.map((row) => row.supersedes_id).filter(Boolean));
-          return rows.length === 0 ? (
-            <p className="muted">Noch keine Miete erfasst.</p>
+        {({ rows: list, current }) =>
+          list.length === 0 ? (
+            <p className="muted">{t.noRent}</p>
           ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Ab</th>
-                    <th className="num">Kaltmiete</th>
-                    <th className="num">{flatRate ? "Nebenkostenpauschale" : "NK-Vorauszahlung"}</th>
-                    <th>Grund</th>
-                    <th>Beleg</th>
-                    <th>Erfasst</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => {
-                    const isSuperseded = superseded.has(row.id);
-                    return (
-                      <tr key={row.id} className={isSuperseded ? "superseded" : undefined}>
-                        <td>
-                          {formatDate(row.effective_from)}
-                          {current?.id === row.id ? <span className="badge"> gilt heute</span> : null}
-                        </td>
-                        <td className="num">{formatMoney(row.cold_rent)}</td>
-                        <td className="num">{formatMoney(row.operating_costs_prepayment)}</td>
-                        <td>{RENT_CHANGE_REASON[row.reason]}</td>
-                        <td>{row.document_id ? <Link href={`/documents/${row.document_id}`}>Beleg</Link> : "–"}</td>
-                        <td>{formatDateTime(row.recorded_at)}</td>
-                        <td className="actions">
-                          {isSuperseded ? (
-                            <span className="muted">ersetzt</span>
-                          ) : (
-                            <ActionDialog label="korrigieren" title="Mietzeile korrigieren" buttonClass="link">
-                              {(close) => (
-                                <CorrectRowForm
-                                  row={row}
-                                  flatRate={flatRate}
-                                  onDone={(message) => {
-                                    close();
-                                    changed(message);
-                                  }}
-                                />
-                              )}
-                            </ActionDialog>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          );
-        }}
+            <ul className="detail-rows" aria-label={t.schedule}>
+              {list.map((row) => (
+                <li key={row.id} className={superseded.has(row.id) ? "superseded" : undefined}>
+                  <a {...detail.linkProps(row.id)} className="detail-row">
+                    <span className="detail-row-text">
+                      <span className="detail-row-title">
+                        {t.rowTitle(f.date(row.effective_from))}
+                        {current?.id === row.id ? <span className="badge">{t.currentBadge}</span> : null}
+                      </span>
+                      <span className="detail-row-sub">
+                        {superseded.has(row.id) ? t.replaced : RENT_CHANGE_REASON[row.reason]}
+                      </span>
+                    </span>
+                    <span className="num row-amount">{t.rowAmount(f.money(row.cold_rent), f.money(row.operating_costs_prepayment))}</span>
+                    <Icon name="chevronRight" size={18} />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )
+        }
       </Loading>
       <div>
         <ActionDialog
           key={prefillReady ? "prefill" : "plain"}
-          label="Mietänderung"
-          title="Mietänderung erfassen"
+          label={t.rentChange}
+          title={t.rentChangeTitle}
           buttonClass=""
           disabled={tenancy.end_date !== null && tenancy.end_date < today}
           initialOpen={prefillReady}
@@ -149,7 +172,7 @@ export function RentSchedule({
               initial={prefillReady ? (prefill.data ?? undefined) : undefined}
               onDone={() => {
                 close();
-                changed("Mietänderung gespeichert.");
+                changed(t.rentChangeSaved);
                 if (prefillReady) onPrefillDone?.();
               }}
             />
@@ -158,6 +181,7 @@ export function RentSchedule({
       </div>
     </div>
   );
+  return { body, panel };
 }
 
 /** The row in force last: the latest effective_from among the rows no correction replaced. */
@@ -182,6 +206,8 @@ function RentChangeForm({
   initial?: PauschaleChange;
   onDone: () => void;
 }) {
+  const t = useT(tenancies);
+  const f = useFormat();
   const flatRate = tenancy.operating_costs_terms === "flat_rate";
   const [effectiveFrom, setEffectiveFrom] = useState(initial?.effectiveFrom ?? "");
   const [cold, setCold] = useState(latest ? decimalInput(latest.cold_rent) : "");
@@ -198,7 +224,7 @@ function RentChangeForm({
     const values = collector();
     const coldRent = values.take("cold_rent", toMoneyString(cold));
     const prepaid = values.take("operating_costs_prepayment", toMoneyString(prepayment || "0"));
-    if (!effectiveFrom) values.messages.effective_from = ["Bitte das Datum eingeben."];
+    if (!effectiveFrom) values.messages.effective_from = [t.dateMissing];
     if (!values.ok || coldRent === undefined || prepaid === undefined) return form.invalid(values.messages);
     setBusy(true);
     form.clear();
@@ -226,47 +252,38 @@ function RentChangeForm({
   return (
     <form className="stack" onSubmit={submit} noValidate>
       {initial ? (
-        <p className="muted">
-          Vorbelegt mit der neuen Nebenkostenpauschale aus der Prüfung der Pauschalen und ihrem frühesten Beginn; die Kaltmiete
-          bleibt. Erst speichern, wenn das Schreiben an den Mieter verschickt ist, und das Datum anpassen, falls es später zugeht.
-        </p>
+        <p className="muted">{t.prefillPauschale}</p>
       ) : latest ? (
-        <p className="muted">
-          Vorbelegt mit der Miete ab {formatDate(latest.effective_from)}. Nur ändern, was sich ändert.
-        </p>
+        <p className="muted">{t.prefillLatest(f.date(latest.effective_from))}</p>
       ) : null}
       <Field
         id="rent-change-from"
-        label="Gültig ab"
-        description="Der erste Tag, für den die neue Miete gilt, laut Mieterhöhung, Staffel oder Vereinbarung."
+        label={t.validFrom}
+        description={t.validFromDescription}
         errors={form.of("effective_from")}
       >
         <input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} required />
       </Field>
       <Field
         id="rent-change-cold"
-        label="Kaltmiete (€ / Monat)"
-        description="Die neue monatliche Miete ohne Nebenkosten. Ab dem Gültigkeitstag erkennt Hausbuch Mietzahlungen an diesem Betrag."
+        label={t.coldField}
+        description={t.coldDescription}
         errors={form.of("cold_rent")}
       >
         <input type="text" inputMode="decimal" value={cold} onChange={(e) => setCold(e.target.value)} required autoComplete="off" />
       </Field>
       <Field
         id="rent-change-prepayment"
-        label={flatRate ? "Nebenkostenpauschale (€ / Monat)" : "NK-Vorauszahlung (€ / Monat)"}
-        description={
-          flatRate
-            ? "Die neue monatliche Nebenkostenpauschale laut Mietvertrag oder Erhöhungsschreiben; über eine Pauschale wird nicht abgerechnet."
-            : "Die neue monatliche Vorauszahlung auf Betriebs- und Heizkosten, beide zusammen. Leer, wenn keine vereinbart ist."
-        }
+        label={flatRate ? t.flatRateField : t.prepaymentField}
+        description={flatRate ? t.flatRateDescription : t.prepaymentDescription}
         errors={form.of("operating_costs_prepayment")}
       >
         <input type="text" inputMode="decimal" value={prepayment} onChange={(e) => setPrepayment(e.target.value)} autoComplete="off" />
       </Field>
       <Field
         id="rent-change-reason"
-        label="Grund"
-        description="Warum sich die Miete ändert: Staffelstufe, Indexanpassung, Mieterhöhung, Modernisierung oder eine Vereinbarung."
+        label={t.reason}
+        description={t.reasonDescription}
         errors={form.of("reason")}
       >
         <select value={reason} onChange={(e) => setReason(e.target.value as RentChangeReason)}>
@@ -279,13 +296,13 @@ function RentChangeForm({
       </Field>
       <Field
         id="rent-change-document"
-        label="Beleg (optional)"
-        description="Das Schreiben, das die Änderung belegt, z. B. Mieterhöhungsverlangen, Indexmitteilung oder der Mietvertrag mit der Staffel."
+        label={t.receiptField}
+        description={t.receiptDescription}
         errors={form.of("document_id")}
       >
         <DocumentPicker value={documentId} onChange={setDocumentId} />
       </Field>
-      <Submit busy={busy}>Speichern</Submit>
+      <Submit busy={busy}>{t.save}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );
@@ -294,6 +311,8 @@ function RentChangeForm({
 /** Supersede a wrong row. Only the fields that differ from the row are sent: an absent field
  * keeps the wrong row's value (RentRowCorrection). The API answers 200 when nothing changed. */
 function CorrectRowForm({ row, flatRate, onDone }: { row: RentScheduleEntry; flatRate: boolean; onDone: (message: string) => void }) {
+  const t = useT(tenancies);
+  const f = useFormat();
   const [effectiveFrom, setEffectiveFrom] = useState(row.effective_from);
   const [cold, setCold] = useState(decimalInput(row.cold_rent));
   const [prepayment, setPrepayment] = useState(decimalInput(row.operating_costs_prepayment));
@@ -306,19 +325,19 @@ function CorrectRowForm({ row, flatRate, onDone }: { row: RentScheduleEntry; fla
     const values = collector();
     const coldRent = values.take("cold_rent", toMoneyString(cold));
     const prepaid = values.take("operating_costs_prepayment", toMoneyString(prepayment || "0"));
-    if (!effectiveFrom) values.messages.effective_from = ["Bitte das Datum eingeben."];
+    if (!effectiveFrom) values.messages.effective_from = [t.dateMissing];
     if (!values.ok || coldRent === undefined || prepaid === undefined) return form.invalid(values.messages);
     const body: RentRowCorrection = {};
     if (effectiveFrom !== row.effective_from) body.effective_from = effectiveFrom;
     if (coldRent !== row.cold_rent) body.cold_rent = coldRent;
     if (prepaid !== row.operating_costs_prepayment) body.operating_costs_prepayment = prepaid;
     if (documentId !== (row.document_id ?? null)) body.document_id = documentId;
-    if (Object.keys(body).length === 0) return onDone("Keine Änderung.");
+    if (Object.keys(body).length === 0) return onDone(t.noChange);
     setBusy(true);
     form.clear();
     try {
       const { response } = await api.POST("/api/rent-schedule/{row_id}/corrections", { params: { path: { row_id: row.id } }, body });
-      onDone(response.status === 200 ? "Keine Änderung." : "Mietzeile korrigiert; die alte Zeile ist ersetzt.");
+      onDone(response.status === 200 ? t.noChange : t.rowCorrected);
     } catch (error) {
       form.fail(error);
     } finally {
@@ -328,46 +347,40 @@ function CorrectRowForm({ row, flatRate, onDone }: { row: RentScheduleEntry; fla
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <p className="muted">
-        Die Zeile ab {formatDate(row.effective_from)} wird durch eine Korrekturzeile ersetzt und bleibt durchgestrichen sichtbar.
-      </p>
+      <p className="muted">{t.correctIntro(f.date(row.effective_from))}</p>
       <Field
         id={`correct-${row.id}-from`}
-        label="Gültig ab"
-        description="Der richtige erste Tag, für den diese Miete gilt."
+        label={t.validFrom}
+        description={t.correctFromDescription}
         errors={form.of("effective_from")}
       >
         <input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} required />
       </Field>
       <Field
         id={`correct-${row.id}-cold`}
-        label="Kaltmiete (€ / Monat)"
-        description="Die richtige monatliche Miete ohne Nebenkosten."
+        label={t.coldField}
+        description={t.correctColdDescription}
         errors={form.of("cold_rent")}
       >
         <input type="text" inputMode="decimal" value={cold} onChange={(e) => setCold(e.target.value)} required autoComplete="off" />
       </Field>
       <Field
         id={`correct-${row.id}-prepayment`}
-        label={flatRate ? "Nebenkostenpauschale (€ / Monat)" : "NK-Vorauszahlung (€ / Monat)"}
-        description={
-          flatRate
-            ? "Die richtige monatliche Nebenkostenpauschale laut Mietvertrag."
-            : "Die richtige monatliche Vorauszahlung auf Betriebs- und Heizkosten. Leer, wenn keine vereinbart ist."
-        }
+        label={flatRate ? t.flatRateField : t.prepaymentField}
+        description={flatRate ? t.correctFlatRateDescription : t.correctPrepaymentDescription}
         errors={form.of("operating_costs_prepayment")}
       >
         <input type="text" inputMode="decimal" value={prepayment} onChange={(e) => setPrepayment(e.target.value)} autoComplete="off" />
       </Field>
       <Field
         id={`correct-${row.id}-document`}
-        label="Beleg (optional)"
-        description="Das Schreiben, das diese Miete belegt, z. B. der Mietvertrag."
+        label={t.receiptField}
+        description={t.correctReceiptDescription}
         errors={form.of("document_id")}
       >
         <DocumentPicker value={documentId} onChange={setDocumentId} />
       </Field>
-      <Submit busy={busy}>Korrektur speichern</Submit>
+      <Submit busy={busy}>{t.saveCorrection}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );

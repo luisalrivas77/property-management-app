@@ -12,6 +12,8 @@ import type { Tenancy, TenancyRole, Tenant } from "@/api/schemas";
 import { tenantName } from "@/components/entities";
 import { Field, FormBanner, Submit, useFormErrors } from "@/components/form";
 import { options, TENANCY_ROLE } from "@/components/labels";
+import { useT } from "@/i18n";
+import { tenancies } from "@/i18n/tenancies";
 
 interface Party {
   tenantId: string;
@@ -28,6 +30,7 @@ export function PartiesForm({ tenancy, tenants, onDone }: { tenancy: Tenancy; te
   const [parties, setParties] = useState<Party[]>(tenancy.parties.map((p) => ({ tenantId: p.tenant_id, role: p.role })));
   const [effectiveDate, setEffectiveDate] = useState("");
   const [busy, setBusy] = useState(false);
+  const t = useT(tenancies);
   const form = useFormErrors(KEYS, CODE_FIELDS);
   const current = new Set(tenancy.parties.map((p) => p.tenant_id));
   const choices = tenants.filter((tenant) => !tenant.erased_at || current.has(tenant.id));
@@ -40,9 +43,9 @@ export function PartiesForm({ tenancy, tenants, onDone }: { tenancy: Tenancy; te
     event.preventDefault();
     const chosen = parties.filter((party) => party.tenantId !== "");
     const messages: Record<string, string[]> = {};
-    if (chosen.length === 0) messages.parties = ["Bitte mindestens einen Mieter wählen."];
-    else if (chosen.filter((party) => party.role === "primary").length !== 1) messages.parties = ["Bitte genau einen Hauptmieter wählen."];
-    else if (new Set(chosen.map((party) => party.tenantId)).size !== chosen.length) messages.parties = ["Jeder Mieter nur einmal."];
+    if (chosen.length === 0) messages.parties = [t.partyMissing];
+    else if (chosen.filter((party) => party.role === "primary").length !== 1) messages.parties = [t.onePrimary];
+    else if (new Set(chosen.map((party) => party.tenantId)).size !== chosen.length) messages.parties = [t.partyTwice];
     if (Object.keys(messages).length > 0) return form.invalid(messages);
     setBusy(true);
     form.clear();
@@ -68,11 +71,11 @@ export function PartiesForm({ tenancy, tenants, onDone }: { tenancy: Tenancy; te
         <div key={index} className="grid">
           <Field
             id={`parties-${index}-tenant`}
-            label={`Mieter ${index + 1}`}
-            description="Wer Vertragspartei des Mietvertrags ist. Neue Mieter legen Sie unter „Mieter“ an."
+            label={t.party(index + 1)}
+            description={t.partyDescription}
           >
             <select value={party.tenantId} onChange={(e) => setParty(index, { tenantId: e.target.value })}>
-              <option value="">– wählen –</option>
+              <option value="">{t.choose}</option>
               {choices.map((tenant) => (
                 <option key={tenant.id} value={tenant.id}>
                   {tenantName(tenant)}
@@ -82,8 +85,8 @@ export function PartiesForm({ tenancy, tenants, onDone }: { tenancy: Tenancy; te
           </Field>
           <Field
             id={`parties-${index}-role`}
-            label="Rolle"
-            description="Hauptmieter ist die zuerst genannte Vertragspartei; weitere Personen, die den Mietvertrag mit unterschrieben haben, sind Mitmieter."
+            label={t.role}
+            description={t.roleDescription}
           >
             <select value={party.role} onChange={(e) => setParty(index, { role: e.target.value as TenancyRole })}>
               {options(TENANCY_ROLE).map(([value, text]) => (
@@ -96,7 +99,7 @@ export function PartiesForm({ tenancy, tenants, onDone }: { tenancy: Tenancy; te
           {parties.length > 1 ? (
             <div className="wide">
               <button type="button" className="link" onClick={() => setParties((list) => list.filter((_, i) => i !== index))}>
-                Mieter {index + 1} entfernen
+                {t.partyRemove(index + 1)}
               </button>
             </div>
           ) : null}
@@ -111,19 +114,19 @@ export function PartiesForm({ tenancy, tenants, onDone }: { tenancy: Tenancy; te
       ) : null}
       <div className="row">
         <button type="button" className="secondary" onClick={() => setParties((list) => [...list, { tenantId: "", role: "co_tenant" }])}>
-          Weiteren Mieter hinzufügen
+          {t.partyAdd}
         </button>
       </div>
       <Field
         id="parties-effective"
-        label="Gilt ab (optional)"
-        hint="Mit Datum erscheint die Änderung im Verlauf. Neue Mieter legen Sie unter „Mieter“ an."
-        description="Ab wann die neue Zusammensetzung gilt, z. B. der Tag, an dem ein Mitmieter laut Vereinbarung ausgeschieden ist."
+        label={t.partiesFrom}
+        hint={t.partiesFromHint}
+        description={t.partiesFromDescription}
         errors={form.of("effective_date")}
       >
         <input type="date" value={effectiveDate} onChange={(e) => setEffectiveDate(e.target.value)} />
       </Field>
-      <Submit busy={busy}>Speichern</Submit>
+      <Submit busy={busy}>{t.save}</Submit>
       <FormBanner errors={form.errors} />
     </form>
   );

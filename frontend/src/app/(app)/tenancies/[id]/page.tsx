@@ -8,6 +8,8 @@
 // Deposits received come from GET …/deposits. A notice or move-out cannot be withdrawn, only
 // corrected. A flat_rate tenancy whose Pauschale can rise or must fall shows that to-do
 // (phase-4.md D155 (4)); its link ?mietaenderung=pauschale opens „Mietänderung“ pre-filled.
+// Phase 10 (mockup 25): „Bearbeiten“ slides in from the right; the Mietstaffel is rows with a
+// detail panel; the other actions sit in two groups, „Ändern“ and „Korrigieren“.
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback } from "react";
@@ -15,20 +17,26 @@ import { Suspense, useCallback } from "react";
 import { api, ok } from "@/api/client";
 import type { FlatRateCheck, Property, Tenancy, Tenant, TimelineEntry, Unit } from "@/api/schemas";
 import { DateCorrectionForm } from "@/components/corrections";
+import { DetailLayout } from "@/components/DetailPanel";
 import { LinkedDocuments } from "@/components/documents";
 import { tenantName } from "@/components/entities";
 import { flatRateTodos, RENT_CHANGE_PARAM, RENT_CHANGE_PAUSCHALE } from "@/components/flatRate";
-import { formatDate, formatMoney, todayIso } from "@/components/format";
+import { todayIso } from "@/components/format";
 import { correctedFrom, findMilestone } from "@/components/history";
 import { DEPOSIT_FORM, RENT_MODEL, TENANCY_ROLE } from "@/components/labels";
+import { SheetDialog } from "@/components/SheetDialog";
 import { OPERATING_COSTS_TERMS } from "@/components/taxInputs";
 import { TodoList } from "@/components/todos";
 import { ActionDialog, Breadcrumbs, CorrectedNote, Facts, Loading } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useFormat, useT } from "@/i18n";
+import { tenancies } from "@/i18n/tenancies";
 
 import { DepositForm, EditTenancyForm, EndForm, NoticeForm, type NoticeValues } from "./actions";
 import { PartiesForm } from "./PartiesForm";
-import { RentSchedule } from "./RentSchedule";
+import { useRentSchedule } from "./RentSchedule";
+
+import "@/components/pageRows.css";
 
 interface TenancyData {
   tenancy: Tenancy;
@@ -86,6 +94,8 @@ function TenancyDetail({
   prefillPauschale,
   onPrefillDone,
 }: TenancyData & { onChanged: () => void; prefillPauschale: boolean; onPrefillDone: () => void }) {
+  const t = useT(tenancies);
+  const f = useFormat();
   const loadHistory = useCallback(
     () =>
       ok(
@@ -131,24 +141,48 @@ function TenancyDetail({
     flatRateCheck.reload();
   }
 
+  const schedule = useRentSchedule({
+    tenancy,
+    onChanged: () => {
+      history.reload();
+      flatRateCheck.reload();
+    },
+    prefillPauschale,
+    onPrefillDone,
+  });
+
   return (
-    <>
+    <DetailLayout panel={schedule.panel}>
       <Breadcrumbs
         items={[
           { href: `/properties/${property.id}`, label: property.label },
           { href: `/units/${unit.id}`, label: unit.label },
-          { label: "Mietverhältnis" },
+          { label: t.crumb },
         ]}
       />
-      <h1>
-        Mietverhältnis {unit.label}
-        {ended ? <span className="muted"> (beendet)</span> : null}
-      </h1>
+      <div className="page-head">
+        <h1>
+          {t.title(unit.label)}
+          {ended ? <span className="muted">{t.ended}</span> : null}
+        </h1>
+        <span className="spacer" />
+        <SheetDialog label={t.edit} title={t.editTitle}>
+          {(close) => (
+            <EditTenancyForm
+              tenancy={tenancy}
+              onDone={() => {
+                close();
+                changed();
+              }}
+            />
+          )}
+        </SheetDialog>
+      </div>
       {todos.length > 0 ? <TodoList titleId="tenancy-todos" entries={todos} empty="" /> : null}
       <Facts
         rows={[
           [
-            "Mieter",
+            t.tenants,
             <>
               {tenancy.parties.map((party, index) => (
                 <span key={party.tenant_id}>
@@ -159,40 +193,38 @@ function TenancyDetail({
             </>,
           ],
           [
-            "Vertragsdatum",
+            t.signedOn,
             <>
-              {formatDate(tenancy.signed_on)}
-              {signedFrom ? <CorrectedNote original={formatDate(signedFrom)} /> : null}
+              {f.date(tenancy.signed_on)}
+              {signedFrom ? <CorrectedNote original={f.date(signedFrom)} /> : null}
             </>,
           ],
           [
-            "Einzug",
+            t.moveIn,
             <>
-              {formatDate(tenancy.start_date)}
-              {moveInFrom ? <CorrectedNote original={formatDate(moveInFrom)} /> : null}
+              {f.date(tenancy.start_date)}
+              {moveInFrom ? <CorrectedNote original={f.date(moveInFrom)} /> : null}
             </>,
           ],
-          ["Befristet bis", tenancy.fixed_term_until ? formatDate(tenancy.fixed_term_until) : "unbefristet"],
-          ["Mietmodell", RENT_MODEL[tenancy.rent_model]],
-          ["Miete fällig am", `${tenancy.rent_due_day}. des Monats`],
-          ["Nebenkosten", OPERATING_COSTS_TERMS[tenancy.operating_costs_terms]],
-          ["Kündigung erhalten/ausgesprochen am", formatDate(tenancy.notice_given_on)],
+          [t.fixedUntil, tenancy.fixed_term_until ? f.date(tenancy.fixed_term_until) : t.unlimited],
+          [t.rentModel, RENT_MODEL[tenancy.rent_model]],
+          [t.dueDay, t.dueDayValue(tenancy.rent_due_day)],
+          [t.costs, OPERATING_COSTS_TERMS[tenancy.operating_costs_terms]],
+          [t.noticeOn, f.date(tenancy.notice_given_on)],
           [
-            "Auszug",
+            t.moveOut,
             <>
-              {formatDate(tenancy.end_date)}
-              {moveOutFrom ? <CorrectedNote original={formatDate(moveOutFrom)} /> : null}
+              {f.date(tenancy.end_date)}
+              {moveOutFrom ? <CorrectedNote original={f.date(moveOutFrom)} /> : null}
             </>,
           ],
           [
-            "Kaution",
-            tenancy.deposit_form === "none"
-              ? DEPOSIT_FORM.none
-              : `${formatMoney(tenancy.deposit_amount)}, ${DEPOSIT_FORM[tenancy.deposit_form]}`,
+            t.deposit,
+            tenancy.deposit_form === "none" ? DEPOSIT_FORM.none : `${f.money(tenancy.deposit_amount)}, ${DEPOSIT_FORM[tenancy.deposit_form]}`,
           ],
-          ["Kautionskonto", [tenancy.deposit_bank, tenancy.deposit_iban_masked].filter(Boolean).join(", ") || "–"],
+          [t.depositAccount, [tenancy.deposit_bank, tenancy.deposit_iban_masked].filter(Boolean).join(", ") || "–"],
           [
-            "Kaution erhalten",
+            t.depositReceived,
             deposits.length === 0 ? (
               "–"
             ) : (
@@ -200,8 +232,8 @@ function TenancyDetail({
                 {deposits.map((deposit, index) => (
                   <span key={deposit.event_id}>
                     {index > 0 ? "; " : ""}
-                    {formatMoney(deposit.amount)} am {formatDate(deposit.received_on)}{" "}
-                    <ActionDialog label="korrigieren" title="Kaution erhalten korrigieren" buttonClass="link">
+                    {t.receivedOn(f.money(deposit.amount), f.date(deposit.received_on))}{" "}
+                    <ActionDialog label={t.correct} title={t.depositCorrectTitle} buttonClass="link">
                       {(close) => (
                         <DepositForm
                           tenancy={tenancy}
@@ -220,88 +252,18 @@ function TenancyDetail({
           ],
         ]}
       />
-      <div className="row section">
-        <ActionDialog label="Bearbeiten" title="Mietverhältnis bearbeiten">
-          {(close) => (
-            <EditTenancyForm
-              tenancy={tenancy}
-              onDone={() => {
-                close();
-                changed();
-              }}
-            />
-          )}
-        </ActionDialog>
-        <ActionDialog label="Mieter ändern" title="Mieter ändern">
-          {(close) => (
-            <PartiesForm
-              tenancy={tenancy}
-              tenants={tenants}
-              onDone={() => {
-                close();
-                changed();
-              }}
-            />
-          )}
-        </ActionDialog>
-        <ActionDialog label="Einzug korrigieren" title="Einzugsdatum korrigieren">
-          {(close) => (
-            <DateCorrectionForm
-              idPrefix="move-in"
-              label="Richtiges Einzugsdatum"
-              current={tenancy.start_date}
-              onSubmit={(values) => ok(api.POST("/api/tenancies/{tenancy_id}/corrections/move-in", { ...path, body: { new_date: values.new_date } }))}
-              onDone={() => {
-                close();
-                changed();
-              }}
-            />
-          )}
-        </ActionDialog>
-        <ActionDialog label={tenancy.signed_on ? "Vertragsdatum korrigieren" : "Vertragsdatum nachtragen"} title="Vertragsdatum korrigieren">
-          {(close) => (
-            <DateCorrectionForm
-              idPrefix="signed-on"
-              label="Richtiges Vertragsdatum"
-              current={tenancy.signed_on ?? ""}
-              onSubmit={(values) =>
-                ok(api.POST("/api/tenancies/{tenancy_id}/corrections/signed-on", { ...path, body: { new_date: values.new_date } }))
-              }
-              onDone={() => {
-                close();
-                changed();
-              }}
-            />
-          )}
-        </ActionDialog>
-        <ActionDialog label="Kaution erhalten" title="Kaution erhalten">
-          {(close) => (
-            <DepositForm
-              tenancy={tenancy}
-              onDone={() => {
-                close();
-                changed();
-              }}
-            />
-          )}
-        </ActionDialog>
-        <ActionDialog label="Kündigung" title="Kündigung erfassen" disabled={tenancy.notice_given_on != null || tenancy.end_date != null}>
-          {(close) => (
-            <NoticeForm
-              tenancy={tenancy}
-              onDone={() => {
-                close();
-                changed();
-              }}
-            />
-          )}
-        </ActionDialog>
-        {notice ? (
-          <ActionDialog label="Kündigung korrigieren" title="Kündigung korrigieren">
+      <h2>{t.schedule}</h2>
+      {schedule.body}
+      <div className="action-group section" role="group" aria-labelledby="tenancy-change">
+        <span id="tenancy-change" className="action-group-label">
+          {t.groupChange}
+        </span>
+        <div className="row">
+          <ActionDialog label={t.changeParties} title={t.changeParties}>
             {(close) => (
-              <NoticeForm
+              <PartiesForm
                 tenancy={tenancy}
-                current={notice}
+                tenants={tenants}
                 onDone={() => {
                   close();
                   changed();
@@ -309,27 +271,68 @@ function TenancyDetail({
               />
             )}
           </ActionDialog>
-        ) : null}
-        <ActionDialog label="Auszug" title="Auszug erfassen" disabled={tenancy.end_date != null}>
-          {(close) => (
-            <EndForm
-              tenancy={tenancy}
-              onDone={() => {
-                close();
-                changed();
-              }}
-            />
-          )}
-        </ActionDialog>
-        {tenancy.end_date ? (
-          <ActionDialog label="Auszug korrigieren" title="Auszugsdatum korrigieren">
+          <ActionDialog label={t.depositReceived} title={t.depositReceived}>
+            {(close) => (
+              <DepositForm
+                tenancy={tenancy}
+                onDone={() => {
+                  close();
+                  changed();
+                }}
+              />
+            )}
+          </ActionDialog>
+          <ActionDialog label={t.notice} title={t.noticeTitle} disabled={tenancy.notice_given_on != null || tenancy.end_date != null}>
+            {(close) => (
+              <NoticeForm
+                tenancy={tenancy}
+                onDone={() => {
+                  close();
+                  changed();
+                }}
+              />
+            )}
+          </ActionDialog>
+          <ActionDialog label={t.moveOut} title={t.moveOutTitle} disabled={tenancy.end_date != null}>
+            {(close) => (
+              <EndForm
+                tenancy={tenancy}
+                onDone={() => {
+                  close();
+                  changed();
+                }}
+              />
+            )}
+          </ActionDialog>
+        </div>
+      </div>
+      <div className="action-group" role="group" aria-labelledby="tenancy-correct">
+        <span id="tenancy-correct" className="action-group-label">
+          {t.groupCorrect}
+        </span>
+        <div className="row">
+          <ActionDialog label={t.moveInCorrect} title={t.moveInCorrectTitle}>
             {(close) => (
               <DateCorrectionForm
-                idPrefix="move-out"
-                label="Richtiges Auszugsdatum"
-                current={tenancy.end_date ?? ""}
+                idPrefix="move-in"
+                label={t.moveInRight}
+                current={tenancy.start_date}
+                onSubmit={(values) => ok(api.POST("/api/tenancies/{tenancy_id}/corrections/move-in", { ...path, body: { new_date: values.new_date } }))}
+                onDone={() => {
+                  close();
+                  changed();
+                }}
+              />
+            )}
+          </ActionDialog>
+          <ActionDialog label={tenancy.signed_on ? t.signedCorrect : t.signedAdd} title={t.signedCorrect}>
+            {(close) => (
+              <DateCorrectionForm
+                idPrefix="signed-on"
+                label={t.signedRight}
+                current={tenancy.signed_on ?? ""}
                 onSubmit={(values) =>
-                  ok(api.POST("/api/tenancies/{tenancy_id}/corrections/move-out", { ...path, body: { new_date: values.new_date } }))
+                  ok(api.POST("/api/tenancies/{tenancy_id}/corrections/signed-on", { ...path, body: { new_date: values.new_date } }))
                 }
                 onDone={() => {
                   close();
@@ -338,24 +341,43 @@ function TenancyDetail({
               />
             )}
           </ActionDialog>
-        ) : null}
+          {notice ? (
+            <ActionDialog label={t.noticeCorrect} title={t.noticeCorrect}>
+              {(close) => (
+                <NoticeForm
+                  tenancy={tenancy}
+                  current={notice}
+                  onDone={() => {
+                    close();
+                    changed();
+                  }}
+                />
+              )}
+            </ActionDialog>
+          ) : null}
+          {tenancy.end_date ? (
+            <ActionDialog label={t.moveOutCorrect} title={t.moveOutCorrectTitle}>
+              {(close) => (
+                <DateCorrectionForm
+                  idPrefix="move-out"
+                  label={t.moveOutRight}
+                  current={tenancy.end_date ?? ""}
+                  onSubmit={(values) =>
+                    ok(api.POST("/api/tenancies/{tenancy_id}/corrections/move-out", { ...path, body: { new_date: values.new_date } }))
+                  }
+                  onDone={() => {
+                    close();
+                    changed();
+                  }}
+                />
+              )}
+            </ActionDialog>
+          ) : null}
+        </div>
       </div>
-      <h2>Mietstaffel</h2>
-      {/* Keyed on the move-in: correcting it also moves the first rent row (§10.8 item 6), so
-          the schedule reloads. */}
-      <RentSchedule
-        key={tenancy.start_date}
-        tenancy={tenancy}
-        onChanged={() => {
-          history.reload();
-          flatRateCheck.reload();
-        }}
-        prefillPauschale={prefillPauschale}
-        onPrefillDone={onPrefillDone}
-      />
-      <h2>Dokumente</h2>
+      <h2>{t.documents}</h2>
       <LinkedDocuments targetType="tenancy" targetId={tenancy.id} />
-    </>
+    </DetailLayout>
   );
 }
 
