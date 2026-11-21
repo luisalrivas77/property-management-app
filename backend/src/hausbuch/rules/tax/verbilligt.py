@@ -32,6 +32,7 @@ from hausbuch.schemas.tax import (
 
 from ._common import (
     ZERO,
+    YearIndex,
     flat_area,
     in_force,
     input_sources,
@@ -78,11 +79,15 @@ def market_rent(facts: DraftFacts, unit_id: UUID | None, tax_year: int) -> TaxIn
     return max(rows, key=lambda r: r.value.valid_from, default=None)
 
 
-def check(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> ReducedRentResult:
+def check(
+    facts: DraftFacts, tax_year: int, rule_set: RuleSet, *, years: YearIndex | None = None
+) -> ReducedRentResult:
     prop = facts.property
     months = owned_months(prop.purchase_date, prop.ownership_ended_on, tax_year)
     costs = [
-        a for a in of_year(facts.allocations, tax_year, rule_set) if a.category in UMLAGEFAEHIG
+        a
+        for a in of_year(facts.allocations, tax_year, rule_set, years)
+        if a.category in UMLAGEFAEHIG
     ]
     yearly = -sum((a.amount for a in costs), ZERO)
     cost_refs = [SourceRef(kind="allocation", id=a.allocation_id) for a in costs]

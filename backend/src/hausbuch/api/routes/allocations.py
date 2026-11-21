@@ -31,6 +31,7 @@ from hausbuch.schemas.api import (
     ConfirmCategoryBody,
     ConfirmCategoryResult,
     InboxItem,
+    InboxLines,
     TransactionAllocations,
 )
 from hausbuch.schemas.enums import EntityType
@@ -50,6 +51,16 @@ def inbox_list(cmd: Cmd, settings: SettingsDep) -> list[InboxItem]:
     cards (phase 5 §5.4), and the wallet cards (phase 7; `settings` sees a missing key)."""
     now = datetime.now(LOCAL_TIME_ZONE)
     return cmd.read(review.inbox, today=now.date(), now=now, settings=settings)
+
+
+@router.get("/inbox/lines")
+def inbox_lines_get(cmd: Cmd, settings: SettingsDep) -> InboxLines:
+    """Phase 10 §7.3 (5): the bank lines and statement imports the cards of GET /inbox look up
+    (each item's line and import, both lines of every possible duplicate and their imports),
+    serialised as /accounts/{id}/transactions and /imports serialise them, so Zu prüfen need
+    not load every account's lines."""
+    now = datetime.now(LOCAL_TIME_ZONE)
+    return cmd.read(review.inbox_lines, today=now.date(), now=now, settings=settings)
 
 
 @router.post("/inbox/ai-retry")

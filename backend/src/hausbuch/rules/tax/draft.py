@@ -64,6 +64,7 @@ from . import einnahmen, erhaltungsaufwand, hausgeld, schuldzinsen, vorab
 from ._common import (
     ZERO,
     LineBook,
+    YearIndex,
     afa_facts,
     flat_area,
     in_force,
@@ -126,11 +127,14 @@ RULE_CATEGORIES = frozenset(
 )
 
 
-def _additions(facts: DraftFacts, rule_set: RuleSet, limit) -> list[BasisAddition]:
+def _additions(
+    facts: DraftFacts, rule_set: RuleSet, limit, years: YearIndex
+) -> list[BasisAddition]:
     """Herstellung elections first, then the 15 % crossing; each allocation (and each private
     cost row, D137) once (D74)."""
     out: dict[tuple[str, UUID], BasisAddition] = {}
-    for b in erhaltungsaufwand.herstellung_additions(facts, rule_set) + list(limit.basis_additions):
+    herstellung = erhaltungsaufwand.herstellung_additions(facts, rule_set, years=years)
+    for b in herstellung + list(limit.basis_additions):
         out.setdefault(b.source_key, b)
     return list(out.values())
 
@@ -193,9 +197,11 @@ def _merge_rows(rows: list[UnitRow]) -> list[UnitRow]:
     return list(merged.values())
 
 
-def _generic(facts: DraftFacts, tax_year: int, rule_set: RuleSet, book: LineBook) -> None:
+def _generic(
+    facts: DraftFacts, tax_year: int, rule_set: RuleSet, book: LineBook, years: YearIndex
+) -> None:
     mapping = rule_set.form.category_lines
-    for a, year in with_year_numbers(facts.allocations, rule_set):
+    for a, year in with_year_numbers(facts.allocations, rule_set, years):
         if year != tax_year or a.category in RULE_CATEGORIES:
             continue
         key = mapping.get(a.category)
@@ -557,11 +563,17 @@ def _payment_proofs(facts: DraftFacts, tax_year: int) -> list[DraftWarning]:
     return out
 
 
-def _open(facts: DraftFacts, tax_year: int, rule_set: RuleSet, rules_open: OpenLines) -> OpenLines:
+def _open(
+    facts: DraftFacts,
+    tax_year: int,
+    rule_set: RuleSet,
+    rules_open: OpenLines,
+    years: YearIndex,
+) -> OpenLines:
     open_cats = set(rule_set.form.open)
     rows = [
         a
-        for a, year in with_year_numbers(facts.allocations, rule_set)
+        for a, year in with_year_numbers(facts.allocations, rule_set, years)
         if year == tax_year and a.category in open_cats
     ]
     return OpenLines(
@@ -570,9 +582,11 @@ def _open(facts: DraftFacts, tax_year: int, rule_set: RuleSet, rules_open: OpenL
     )
 
 
-def _moved(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> list[MovedPayment]:
+def _moved(
+    facts: DraftFacts, tax_year: int, rule_set: RuleSet, years: YearIndex
+) -> list[MovedPayment]:
     out = []
-    for a, year in with_year_numbers(facts.allocations, rule_set):
+    for a, year in with_year_numbers(facts.allocations, rule_set, years):
         if year != a.booking_date.year and tax_year in (year, a.booking_date.year):
             r = tax_year_of(a, rule_set)
             out.append(
@@ -664,14 +678,22 @@ def _cut_line(reduced, book: LineBook) -> None:
         book.add("reduced_rent.cut_percent", Decimal(worst.cut_percent), worst.sources)
 
 
-def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
+def draft(
+    facts: DraftFacts, tax_year: int, rule_set: RuleSet, *, years: YearIndex | None = None
+) -> AnlageVDraft:
+    """`years`: a run's YearIndex of facts.allocations (a projection drafts the same facts for
+    several years); without one, or one that does not serve these allocations, the draft
+    builds its own. Either way each allocation's §5.1 year is computed once per draft, not once
+    per rule (phase 10 §7.3 (3)); the draft is the same."""
     prop = facts.property
     form = rule_set.form
     warnings: list[DraftWarning] = []
+    given = years if years is not None and years.serves(facts.allocations, rule_set) else None
     # Phase 6 D161: every rule sums the rental account's rows; a private account's line that
     # paid a bill is that bill's proof and a source of its private_cost row, never a cost.
     full, private = facts, private_payments(facts.allocations)
     facts = rental_only(facts)
+    index = given.rental() if given is not None else YearIndex.of(facts.allocations, rule_set)
 
     # 1. The 15 % status and the AfA it changes.
     limit = limit_status(
@@ -682,8 +704,9 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
         ),
         tax_year,
         rule_set,
+        years=index,
     )
-    building = afa_facts(facts, _additions(facts, rule_set, limit))
+    building = afa_facts(facts, _additions(facts, rule_set, limit, index))
     afa_line = _with_bills(afa(building, tax_year, rule_set), facts, building.additions, tax_year)
     book = LineBook()
     if afa_line.amount:
@@ -702,11 +725,11 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
 
     # 2. The line rules.
     results: list[RuleLines] = [
-        einnahmen.lines(facts, tax_year, rule_set),
-        vorab.split(facts, tax_year, rule_set),
-        schuldzinsen.lines(facts, tax_year, rule_set),
-        erhaltungsaufwand.lines(facts, tax_year, rule_set, limit=limit),
-        hausgeld.lines(facts, tax_year, rule_set),
+        einnahmen.lines(facts, tax_year, rule_set, years=index),
+        vorab.split(facts, tax_year, rule_set, years=index),
+        schuldzinsen.lines(facts, tax_year, rule_set, years=index),
+        erhaltungsaufwand.lines(facts, tax_year, rule_set, limit=limit, years=index),
+        hausgeld.lines(facts, tax_year, rule_set, years=index),
     ]
     rows: list[UnitRow] = []
     tracked: list[TrackedAmount] = []
@@ -721,7 +744,7 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
             count=rules_open.count + r.excluded_open.count, sum=rules_open.sum + r.excluded_open.sum
         )
         warnings += r.warnings
-    _generic(facts, tax_year, rule_set, book)
+    _generic(facts, tax_year, rule_set, book, index)
     warnings += _private_costs(facts, tax_year, rule_set, book, limit, private)
     warnings += _payment_proofs(full, tax_year)  # D143, D161
 
@@ -742,11 +765,11 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
             )
         )
 
-    reduced = reduced_rent_check(facts, tax_year, rule_set)
+    reduced = reduced_rent_check(facts, tax_year, rule_set, years=index)
     warnings += reduced.warnings
     _cut_line(reduced, book)
 
-    for a, year in with_year_numbers(facts.allocations, rule_set):
+    for a, year in with_year_numbers(facts.allocations, rule_set, index):
         if year == tax_year and "year_end_straddle" in tax_year_of(a, rule_set).notes:
             warnings.append(
                 warning(
@@ -757,7 +780,7 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
                 )
             )
 
-    excluded = _open(facts, tax_year, rule_set, rules_open)
+    excluded = _open(facts, tax_year, rule_set, rules_open, index)
     if excluded.count > 0:
         warnings.append(
             warning(
@@ -859,7 +882,7 @@ def draft(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> AnlageVDraft:
         afa=afa_line,
         movable_assets=movable,
         tracked_not_deductible=tracked,
-        moved_to_other_year=_moved(facts, tax_year, rule_set),
+        moved_to_other_year=_moved(facts, tax_year, rule_set, index),
         pre_handover=pre_handover,
         excluded_open=excluded,
         warnings=warnings,

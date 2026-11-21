@@ -43,6 +43,7 @@ from hausbuch.schemas.tax import (
 
 from ._common import (
     ZERO,
+    YearIndex,
     add_years,
     by_allocation,
     in_force,
@@ -60,7 +61,9 @@ CATEGORIES = LIMIT_15_CATEGORIES
 PERFORMANCE_CHECK_DAYS = 90
 
 
-def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitStatus:
+def limit_status(
+    facts: LimitFacts, tax_year: int, rule_set: RuleSet, *, years: YearIndex | None = None
+) -> LimitStatus:
     start = facts.afa.purchase_date
     end = add_years(start, rule_set.anschaffungsnah_years)
     building = basis(facts.afa)
@@ -76,7 +79,7 @@ def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitSt
     costs = sorted(
         (
             (a, year)
-            for a, year in with_year_numbers(facts.allocations, rule_set)
+            for a, year in with_year_numbers(facts.allocations, rule_set, years)
             if a.category in CATEGORIES
         ),
         key=lambda x: (x[0].booking_date, str(x[0].allocation_id)),

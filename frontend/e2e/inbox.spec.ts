@@ -328,3 +328,31 @@ test("an unreadable typed key shows its card under Automatisch, linking to Zugan
   await expect(page).toHaveURL(/\/settings#zugangsschluessel$/);
   await expect(page.getByRole("heading", { name: "Zugangsschlüssel (API keys)" })).toBeInViewport();
 });
+
+// Phase 10 §7.3 (5): Zu prüfen reads its cards' lines and imports from GET /inbox/lines, not
+// every account's. When that answer lacks a card's line (the inbox changed between the two
+// reads), the page reads every account's lines once instead of showing a blank card (the blank
+// card of PR #252).
+test("the cards' lines come from /inbox/lines, and a card it lacks falls back to the accounts", async ({ page, signedIn }) => {
+  void signedIn;
+  await importSample(page);
+  // Leave the account page first, so none of its own reads is counted.
+  await page.goto("about:blank");
+  const perAccount: string[] = [];
+  page.on("request", (request) => {
+    if (/\/api\/accounts\/[^/]+\/transactions/.test(request.url())) perAccount.push(request.url());
+  });
+  await page.goto("/inbox");
+  await openSection(page, "Zahlungen zuordnen");
+  const queue = page.getByRole("list", { name: "Zahlungen zuordnen" });
+  const line = queue.getByRole("button").filter({ hasText: "Partei D" });
+  await expect(line).toContainText("+740,18 €");
+  expect(perAccount).toHaveLength(0);
+
+  await page.route("**/api/inbox/lines", (route) => route.fulfill({ json: { transactions: [], imports: [] } }));
+  await page.reload();
+  await openSection(page, "Zahlungen zuordnen");
+  await expect(queue.getByRole("button")).toHaveCount(22);
+  await expect(line).toContainText("+740,18 €");
+  expect(perAccount.length).toBeGreaterThan(0);
+});

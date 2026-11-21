@@ -442,11 +442,14 @@ class _World:
     wraps: list[tuple[Chain, WrapPair]]
 
     @classmethod
-    def read(cls, conn: Connection) -> "_World":
+    def read(cls, conn: Connection, linked: set[UUID] | None = None) -> "_World":
+        """`linked`: the current links' legs when the caller read them in this transaction
+        with nothing written since (services.transfers.open_transfers); read otherwise."""
         from ..transfers import _linked_ids  # transfers imports this module lazily
 
         bridges, wraps = _pairs(conn)
-        return cls(_read_legs(conn), _linked_ids(conn), bridges, wraps)
+        legs = _read_legs(conn)
+        return cls(legs, _linked_ids(conn) if linked is None else linked, bridges, wraps)
 
     def open(self) -> list[_Row]:
         return [r for r in self.legs if r.id not in self.linked]
@@ -1954,7 +1957,9 @@ def _pairable(conn: Connection, leg: _Row, unknown: frozenset[UUID] = frozenset(
     return conn.execute(select(w.id).where(and_(*where)).limit(1)).first() is not None
 
 
-def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
+def open_transfers(
+    conn: Connection, today: date, *, linked: set[UUID] | None = None
+) -> list[OpenTransfer]:
     """The coin legs that wait for a person, computed now: a fit the matcher did not write
     (transfer.proposed), several fits (transfer.ambiguous, every one listed), and a transfer
     leg past its 48 hours whose counterpart could be in the app (transfer.unmatched_leg, no
@@ -1964,7 +1969,7 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
     16 Nov 2026)."""
     from .sync import remembered_unknown
 
-    world = _World.read(conn)
+    world = _World.read(conn, linked)
     unknown = frozenset(
         remembered_unknown(
             conn,

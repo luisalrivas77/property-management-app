@@ -410,6 +410,22 @@ def _line_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
     ]
 
 
+def _window_lines(
+    conn: Connection, start: date, end: date, with_transfer_row: Sequence[_Leg]
+) -> list[_Leg]:
+    """What _line_legs(conn, booking_date between start and end) returns, when
+    `with_transfer_row` is already _line_legs(conn, id in _with_transfer_row()): those of the
+    span taken from it, the span's other lines read, merged in the read's order (booking date,
+    then id; Python orders a UUID by its 16 bytes as Postgres does). A leg's category reads its
+    own line's rows only (_one_category), so it is the same from either read (phase 10 §7.3 (4):
+    open_transfers read these lines twice)."""
+    t, a = transaction_table.c, allocation_table.c
+    known = [leg for leg in with_transfer_row if start <= leg.leg.booked_on <= end]
+    has_row = _with_transfer_row().where(a.transaction_id == t.id).exists()
+    rest = _line_legs(conn, t.booking_date >= start, t.booking_date <= end, ~has_row)
+    return sorted([*known, *rest], key=lambda leg: (leg.leg.booked_on, leg.leg.id))
+
+
 def _movement_legs(conn: Connection, *where) -> list[_Leg]:  # noqa: ANN002
     m, acc = movement_table.c, account_table.c
     rows = conn.execute(
@@ -500,18 +516,28 @@ class _Window:
 
     `moves`, when given, are every live transfer movement (_movement_legs with no filter):
     the window keeps those booked between the dates, in their order, instead of reading them
-    again (the same booked_on equality as between())."""
+    again (the same booked_on equality as between()). `lines`, when given with them, are every
+    line with a transfer row (_line_legs over _with_transfer_row), which the window takes from
+    memory and reads only the span's other lines (_window_lines, phase 10 §7.3 (4))."""
 
     def __init__(
-        self, conn: Connection, start: date, end: date, moves: Sequence[_Leg] | None = None
+        self,
+        conn: Connection,
+        start: date,
+        end: date,
+        moves: Sequence[_Leg] | None = None,
+        lines: Sequence[_Leg] | None = None,
     ) -> None:
         if moves is None:
             legs = _legs_between(conn, start, end)
         else:
             t = transaction_table.c
-            legs = _line_legs(conn, t.booking_date >= start, t.booking_date <= end) + [
-                leg for leg in moves if start <= leg.leg.booked_on <= end
-            ]
+            read = (
+                _line_legs(conn, t.booking_date >= start, t.booking_date <= end)
+                if lines is None
+                else _window_lines(conn, start, end, lines)
+            )
+            legs = read + [leg for leg in moves if start <= leg.leg.booked_on <= end]
         self.lines = [leg for leg in legs if leg.leg.source is TransferLegSource.TRANSACTION]
         self.moves = [leg for leg in legs if leg.leg.source is not TransferLegSource.TRANSACTION]
         self.start, self.end = start, end
@@ -1691,17 +1717,17 @@ def open_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
     EUR legs'."""
     from .chain import transfers as chain_transfers  # it imports this module
 
-    return _open_eur_transfers(conn, today) + chain_transfers.open_transfers(conn, today)
-
-
-def _open_eur_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
+    # Phase 10 §7.3 (4): the current links read once for both, nothing written in between.
     linked = _linked_ids(conn)
+    return _open_eur_transfers(conn, today, linked) + chain_transfers.open_transfers(
+        conn, today, linked=linked
+    )
+
+
+def _open_eur_transfers(conn: Connection, today: date, linked: set[UUID]) -> list[OpenTransfer]:
     moves = _movement_legs(conn)
-    waiting = [
-        leg
-        for leg in _line_legs(conn, transaction_table.c.id.in_(_with_transfer_row())) + moves
-        if leg.booked is not None and leg.leg.id not in linked
-    ]
+    lines = _line_legs(conn, transaction_table.c.id.in_(_with_transfer_row()))
+    waiting = [leg for leg in lines + moves if leg.booked is not None and leg.leg.id not in linked]
     items = []
     if not waiting:
         return items
@@ -1712,6 +1738,7 @@ def _open_eur_transfers(conn: Connection, today: date) -> list[OpenTransfer]:
         min(leg.leg.booked_on for leg in waiting) - _BY_HAND,
         max(leg.leg.booked_on for leg in waiting) + _BY_HAND,
         moves,
+        lines,
     )
     # Read once, only when a leg has no counterpart: each account's first and last bank line,
     # and the account(s) each own IBAN belongs to.

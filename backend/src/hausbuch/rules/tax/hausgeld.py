@@ -21,6 +21,7 @@ from hausbuch.schemas.tax import (
 
 from ._common import (
     LineBook,
+    YearIndex,
     in_force,
     input_sources,
     of_year,
@@ -36,8 +37,10 @@ ROUTES = {
 }
 
 
-def lines(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> RuleLines:
-    allocations = of_year(facts.allocations, tax_year, rule_set)
+def lines(
+    facts: DraftFacts, tax_year: int, rule_set: RuleSet, *, years: YearIndex | None = None
+) -> RuleLines:
+    allocations = of_year(facts.allocations, tax_year, rule_set, years)
     book = LineBook()
     for a in allocations:
         if a.category in ROUTES:

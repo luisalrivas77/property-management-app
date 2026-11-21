@@ -704,9 +704,12 @@ def health(conn: Connection, today: date, scenario_id: UUID | None = None) -> He
     balances; the debt figures from the window's newest month-end (its newest stored run,
     else that day on read); the split of today's net worth (D240); the series of the stored
     runs; the marks against the confirmed limits, the proposals while none is confirmed;
-    and the to-dos: too few months, what keeps the month after the window open, the limits."""
+    and the to-dos: too few months, what keeps the month after the window open, the limits;
+    and the last ended month's household month (`last_ended`, phase 10 §7.3), from the same
+    read of the months."""
     levers = household_levers(conn, scenario_id)
-    reads = read_months(conn, ended_months(today), today)
+    ended = ended_months(today)
+    reads = read_months(conn, ended, today)
     win = _window(reads)
     now = net_worth(conn, today)
     stored = _newest_run_figures(conn)  # the debt figure's month-end and the series
@@ -735,6 +738,7 @@ def health(conn: Connection, today: date, scenario_id: UUID | None = None) -> He
         series=series(_totals(stored), [r.household for r in reads.values() if r.closed.closed]),
         proposals=[] if levers.bands else list(proposals()[1].values()),
         todos=todos,
+        last_ended=reads[ended[-1]].household if ended else None,
     )
     return out.model_copy(update={"marks": with_texts(out, lights(out, levers.bands))})
 

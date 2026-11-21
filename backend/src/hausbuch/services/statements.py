@@ -25,7 +25,7 @@ kept_both queues `match_transaction` for the later line, which waited for the de
 
 import hmac
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
@@ -33,7 +33,7 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import JsonValue
-from sqlalchemy import Connection, Row, Select, exists, func, insert, select, update
+from sqlalchemy import ColumnElement, Connection, Row, Select, exists, func, insert, select, update
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -1143,9 +1143,24 @@ def get_import(conn: Connection, import_id: UUID) -> StatementImport | None:
 
 def list_imports(conn: Connection, account_id: UUID) -> list[StatementImport]:
     """The account's imports, newest first."""
+    return _imports_where(conn, import_table.c.account_id == account_id)
+
+
+def imports_by_id(conn: Connection, import_ids: Iterable[UUID]) -> list[StatementImport]:
+    """The imports among `import_ids` (an id of no statement import is left out), newest
+    first, each serialised as list_imports serialises it (phase 10 §7.3 (5): GET
+    /inbox/lines). Each import's stated and derived balances read its own rows and its
+    account's, so they do not depend on which other imports are asked for."""
+    wanted = sorted(set(import_ids))
+    if not wanted:
+        return []
+    return _imports_where(conn, import_table.c.id.in_(wanted))
+
+
+def _imports_where(conn: Connection, *where: ColumnElement[bool]) -> list[StatementImport]:
     rows = conn.execute(
         select(*_IMPORT_COLUMNS)
-        .where(import_table.c.account_id == account_id)
+        .where(*where)
         .order_by(import_table.c.created_at.desc(), import_table.c.id)
     )
     return _with_derived(conn, _with_stated(conn, [_to_import(r) for r in rows]))
@@ -1325,13 +1340,30 @@ def list_transactions(
     """The account's transactions, newest booking day first; optionally only one import's
     new lines, or a booking-date range (both ends inclusive). Excluded duplicates are
     included, flagged by excluded_as_duplicate_of."""
-    query = transaction_select().where(transaction_table.c.account_id == account_id)
+    t = transaction_table.c
+    where = [t.account_id == account_id]
     if import_id is not None:
-        query = query.where(transaction_table.c.import_id == import_id)
+        where.append(t.import_id == import_id)
     if booked_from is not None:
-        query = query.where(transaction_table.c.booking_date >= booked_from)
+        where.append(t.booking_date >= booked_from)
     if booked_to is not None:
-        query = query.where(transaction_table.c.booking_date <= booked_to)
+        where.append(t.booking_date <= booked_to)
+    return _transactions_where(conn, *where)
+
+
+def transactions_by_id(conn: Connection, transaction_ids: Iterable[UUID]) -> list[Transaction]:
+    """The lines among `transaction_ids`, excluded duplicates included, newest booking day
+    first, each serialised as list_transactions serialises it (phase 10 §7.3 (5): GET
+    /inbox/lines). A line's partner in a returned payment is read for that line, so it does
+    not depend on which other lines are asked for."""
+    wanted = sorted(set(transaction_ids))
+    if not wanted:
+        return []
+    return _transactions_where(conn, transaction_table.c.id.in_(wanted))
+
+
+def _transactions_where(conn: Connection, *where: ColumnElement[bool]) -> list[Transaction]:
+    query = transaction_select().where(*where)
     rows = conn.execute(
         query.order_by(
             transaction_table.c.booking_date.desc(),

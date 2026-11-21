@@ -1,9 +1,11 @@
 """Helpers the phase 3 tax rules share (docs/phases/phase-3.md §5). Pure, no I/O."""
 
 import calendar
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from operator import is_
 from uuid import UUID
 
 from hausbuch.schemas.allocation import AllocationCategory
@@ -54,20 +56,91 @@ def with_years(
         yield a, tax_year_of(a, rule_set)
 
 
+@dataclass(frozen=True, slots=True)
+class YearIndex:
+    """Phase 10 §7.3 (3): the §5.1 year of each non-zero allocation of one list, computed once
+    per draft (or per projection run) instead of once per rule that reads the list: a draft
+    asked it about eleven times per allocation, and a projection runs a draft per year.
+
+    It answers only for the very list it was built from (the same allocation objects in the
+    same order, which a list a pydantic model re-validated still holds) under a rule set with
+    the same short period, the one value of the rule set §5.1 reads; for any other list or
+    short period the year is computed as without it, so an index never gives another answer.
+    Built by `YearIndex.of`, kept by the caller for one run, never stored."""
+
+    allocations: tuple[AllocationFact, ...]
+    short_period_days: int
+    pairs: tuple[tuple[AllocationFact, int], ...]  # the non-zero ones, in order, with the year
+
+    @classmethod
+    def of(cls, allocations: Iterable[AllocationFact], rule_set: RuleSet) -> "YearIndex":
+        items = tuple(allocations)
+        return cls(
+            allocations=items,
+            short_period_days=rule_set.short_period_days,
+            pairs=tuple((a, year_number(a, rule_set)) for a in nonzero(items)),
+        )
+
+    def rental(self) -> "YearIndex":
+        """This index for rental_only's list: the same filter, the same order, each year as it
+        was (an allocation's year reads its own dates only)."""
+        if all(a.account_purpose is AccountPurpose.RENTAL for a in self.allocations):
+            return self
+        return YearIndex(
+            allocations=tuple(
+                a for a in self.allocations if a.account_purpose is AccountPurpose.RENTAL
+            ),
+            short_period_days=self.short_period_days,
+            pairs=tuple(
+                (a, year) for a, year in self.pairs if a.account_purpose is AccountPurpose.RENTAL
+            ),
+        )
+
+    def serves(self, allocations: Iterable[AllocationFact], rule_set: RuleSet) -> bool:
+        return (
+            rule_set.short_period_days == self.short_period_days
+            and isinstance(allocations, list | tuple)
+            and len(allocations) == len(self.allocations)
+            and all(map(is_, allocations, self.allocations))
+        )
+
+
+class RunYears:
+    """One list's YearIndex per short period, built on first use, for one projection run (its
+    years' rule sets may differ). Local to the run that makes it."""
+
+    def __init__(self, allocations: Sequence[AllocationFact]):
+        self._allocations = allocations
+        self._by: dict[int, YearIndex] = {}
+
+    def __call__(self, rule_set: RuleSet) -> YearIndex:
+        index = self._by.get(rule_set.short_period_days)
+        if index is None:
+            index = self._by[rule_set.short_period_days] = YearIndex.of(self._allocations, rule_set)
+        return index
+
+
 def with_year_numbers(
-    allocations: Iterable[AllocationFact], rule_set: RuleSet
+    allocations: Iterable[AllocationFact], rule_set: RuleSet, years: YearIndex | None = None
 ) -> Iterator[tuple[AllocationFact, int]]:
     """with_years for a rule that reads the year only: the same year, without building a
-    TaxYearResult per allocation (a draft asks this for every allocation once per rule)."""
+    TaxYearResult per allocation (a draft asks this for every allocation once per rule).
+    `years`: the run's index of these allocations, used only when it serves them (YearIndex)."""
+    if years is not None and years.serves(allocations, rule_set):
+        yield from years.pairs
+        return
     for a in nonzero(allocations):
         yield a, year_number(a, rule_set)
 
 
 def of_year(
-    allocations: Iterable[AllocationFact], tax_year: int, rule_set: RuleSet
+    allocations: Iterable[AllocationFact],
+    tax_year: int,
+    rule_set: RuleSet,
+    years: YearIndex | None = None,
 ) -> list[AllocationFact]:
     """The non-zero allocations §5.1 counts in `tax_year`."""
-    return [a for a, year in with_year_numbers(allocations, rule_set) if year == tax_year]
+    return [a for a, year in with_year_numbers(allocations, rule_set, years) if year == tax_year]
 
 
 def year_of(allocation: AllocationFact, rule_set: RuleSet) -> int:

@@ -658,6 +658,10 @@ class Health(Schema):
     marks: dict[MarkedFigure, Light] = Field(default_factory=dict)
     proposals: list[BandProposal] = Field(default_factory=list)  # not yet confirmed
     todos: list[HealthTodo] = Field(default_factory=list)
+    # Phase 10 §7.3 (2): the last ended month's household month, as GET /health/months returns
+    # it for that month, so Übersicht's cash flow tile reads its savings rate from this answer
+    # instead of a second read of the months; None before the first ended month.
+    last_ended: HouseholdMonth | None = None
 
 
 class HealthSnapshotFigures(Schema):

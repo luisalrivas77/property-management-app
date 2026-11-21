@@ -6139,6 +6139,35 @@
         }
       }
     },
+    "/api/inbox/lines": {
+      "get": {
+        "summary": "Inbox Lines Get",
+        "description": "Phase 10 §7.3 (5): the bank lines and statement imports the cards of GET /inbox look up\n(each item's line and import, both lines of every possible duplicate and their imports),\nserialised as /accounts/{id}/transactions and /imports serialise them, so Zu prüfen need\nnot load every account's lines.",
+        "operationId": "inbox_lines_get_api_inbox_lines_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxLines"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/inbox/ai-retry": {
       "post": {
         "summary": "Inbox Ai Retry",
@@ -21830,6 +21859,16 @@
             },
             "type": "array",
             "title": "Todos"
+          },
+          "last_ended": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HouseholdMonth"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -23656,6 +23695,32 @@
         ],
         "title": "InboxItemKind",
         "description": "GET /inbox (§8.3): one list, newest first."
+      },
+      "InboxLines": {
+        "properties": {
+          "transactions": {
+            "items": {
+              "$ref": "#/components/schemas/Transaction"
+            },
+            "type": "array",
+            "title": "Transactions"
+          },
+          "imports": {
+            "items": {
+              "$ref": "#/components/schemas/StatementImport"
+            },
+            "type": "array",
+            "title": "Imports"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "transactions",
+          "imports"
+        ],
+        "title": "InboxLines",
+        "description": "GET /inbox/lines (phase 10 §7.3 (5)): the bank lines and statement imports Zu prüfen's\ncards look up, instead of every account's lines and imports. `transactions`: each inbox\nitem's line and both lines of every possible duplicate; `imports`: each item's statement\nimport and those duplicate lines' imports. Each serialised exactly as\nGET /accounts/{id}/transactions and /imports serialise it."
       },
       "IncomeChange": {
         "properties": {

@@ -254,31 +254,27 @@ export interface InboxData {
   movements: Map<string, ExchangeMovementRow>;
 }
 
-/** GET /inbox plus what its items point at: every bank account's lines and imports (the rental
- * account and, since phase 6 D156, the private ones), the possible duplicates and the vault's
- * documents (one household holds few of each). */
+/** GET /inbox plus what its items point at: the bank lines and statement imports its cards look
+ * up (GET /inbox/lines, phase 10 §7.3 (5)), the possible duplicates and the vault's documents.
+ * A card whose line or import that answer lacks (the inbox changed between the two reads) gets
+ * them from every account's lines and imports, read once, rather than a blank card. */
 export async function loadInbox(): Promise<InboxData> {
-  const [items, accounts, duplicates, documents, reminders] = await Promise.all([
+  const [items, accounts, duplicates, documents, reminders, lines] = await Promise.all([
     ok(api.GET("/api/inbox")),
     ok(api.GET("/api/accounts")),
     ok(api.GET("/api/possible-duplicates")),
     ok(api.GET("/api/documents")),
     ok(api.GET("/api/reminders")),
+    ok(api.GET("/api/inbox/lines")),
   ]);
-  const perAccount = await Promise.all(
-    accounts
-      // Every account that holds bank lines: bank accounts, the credit card and the depot's
-      // cash (phase 6 D176, D165); an exchange or wallet holds movements, not lines.
-      .filter((account) => account.kind !== "exchange" && account.kind !== "wallet")
-      .map(async (account) => {
-        const path = { params: { path: { account_id: account.id } } };
-        const [imports, transactions] = await Promise.all([
-          ok(api.GET("/api/accounts/{account_id}/imports", path)),
-          ok(api.GET("/api/accounts/{account_id}/transactions", path)),
-        ]);
-        return { imports, transactions };
-      }),
-  );
+  let transactions = new Map(lines.transactions.map((line) => [line.id, line]));
+  let imports = new Map(lines.imports.map((imp) => [imp.id, imp]));
+  const pairs = new Map(duplicates.map((pair) => [pair.id, pair]));
+  if (lacksLines(items, pairs, transactions, imports)) {
+    const perAccount = await linesPerAccount(accounts);
+    transactions = new Map(perAccount.flatMap((entry) => entry.transactions).map((line) => [line.id, line]));
+    imports = new Map(perAccount.flatMap((entry) => entry.imports).map((imp) => [imp.id, imp]));
+  }
   // Only while a card names a movement: the exchange accounts' movements, for its answers.
   const exchangeIds = new Set(
     items.flatMap((item) => (item.kind === "exchange_movement" && item.account_id ? [item.account_id] : [])),
@@ -292,14 +288,62 @@ export async function loadInbox(): Promise<InboxData> {
   ).flat();
   return {
     items,
-    transactions: new Map(perAccount.flatMap((entry) => entry.transactions).map((line) => [line.id, line])),
-    imports: new Map(perAccount.flatMap((entry) => entry.imports).map((imp) => [imp.id, imp])),
+    transactions,
+    imports,
     accounts: new Map(accounts.map((account) => [account.id, account])),
-    duplicates: new Map(duplicates.map((pair) => [pair.id, pair])),
+    duplicates: pairs,
     documents: new Map(documents.map((document) => [document.id, document])),
     reminders: new Map(reminders.map((reminder) => [reminder.id, reminder])),
     movements: new Map(movements.map((movement) => [movement.id, movement])),
   };
+}
+
+
+/** Whether a card would miss a line or a statement import it looks up: an item's line, an
+ * import card's import, a duplicate card's two lines and their imports. An exchange card's
+ * import is a movement import that neither read holds, and a mail card without its import
+ * links its document, so neither is checked. */
+function lacksLines(
+  items: InboxItem[],
+  pairs: Map<string, PossibleDuplicate>,
+  transactions: Map<string, Transaction>,
+  imports: Map<string, StatementImport>,
+): boolean {
+  return items.some((item) => {
+    if (item.transaction_id && !transactions.has(item.transaction_id)) return true;
+    if (
+      (item.kind === "import_unreconciled" || item.kind === "import_pending_balance") &&
+      item.import_id &&
+      !imports.has(item.import_id)
+    )
+      return true;
+    const pair = item.possible_duplicate_id ? pairs.get(item.possible_duplicate_id) : undefined;
+    if (!pair) return false;
+    return [pair.transaction_id, pair.other_transaction_id].some((id) => {
+      const line = transactions.get(id);
+      return !line || !imports.has(line.import_id);
+    });
+  });
+}
+
+/** Every account's lines and imports, the way Zu prüfen read them before GET /inbox/lines:
+ * bank accounts, the credit card and the depot's cash (phase 6 D176, D165); an exchange or
+ * wallet holds movements, not lines. */
+async function linesPerAccount(
+  accounts: Account[],
+): Promise<{ imports: StatementImport[]; transactions: Transaction[] }[]> {
+  return Promise.all(
+    accounts
+      .filter((account) => account.kind !== "exchange" && account.kind !== "wallet")
+      .map(async (account) => {
+        const path = { params: { path: { account_id: account.id } } };
+        const [imports, transactions] = await Promise.all([
+          ok(api.GET("/api/accounts/{account_id}/imports", path)),
+          ok(api.GET("/api/accounts/{account_id}/transactions", path)),
+        ]);
+        return { imports, transactions };
+      }),
+  );
 }
 
 

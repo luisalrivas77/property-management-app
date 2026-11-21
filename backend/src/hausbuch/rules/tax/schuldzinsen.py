@@ -20,6 +20,7 @@ from hausbuch.schemas.tax import (
 from ._common import (
     ZERO,
     LineBook,
+    YearIndex,
     in_force,
     input_sources,
     of_year,
@@ -30,8 +31,10 @@ from ._common import (
 from .rounding import money_str
 
 
-def lines(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> RuleLines:
-    allocations = of_year(facts.allocations, tax_year, rule_set)
+def lines(
+    facts: DraftFacts, tax_year: int, rule_set: RuleSet, *, years: YearIndex | None = None
+) -> RuleLines:
+    allocations = of_year(facts.allocations, tax_year, rule_set, years)
     interest = [a for a in allocations if a.category is C.LOAN_INTEREST]
     fees = [a for a in allocations if a.category is C.LOAN_FEES]
     principal = [a for a in allocations if a.category is C.LOAN_PRINCIPAL]

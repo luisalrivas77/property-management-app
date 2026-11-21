@@ -40,6 +40,7 @@ from hausbuch.schemas.tax import (
 from ._common import (
     ZERO,
     LineBook,
+    YearIndex,
     flat_area,
     in_force,
     is_flat,
@@ -149,8 +150,10 @@ def _terms(facts: DraftFacts, tax_year: int, book: LineBook) -> list[DraftWarnin
     ]
 
 
-def lines(facts: DraftFacts, tax_year: int, rule_set: RuleSet) -> RuleLines:
-    year = of_year(facts.allocations, tax_year, rule_set)
+def lines(
+    facts: DraftFacts, tax_year: int, rule_set: RuleSet, *, years: YearIndex | None = None
+) -> RuleLines:
+    year = of_year(facts.allocations, tax_year, rule_set, years)
     handover = facts.property.purchase_date
     after = [a for a in year if a.booking_date >= handover]
     warnings: list[DraftWarning] = []

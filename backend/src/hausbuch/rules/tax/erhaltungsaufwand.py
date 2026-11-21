@@ -33,6 +33,7 @@ from hausbuch.schemas.tax import (
 from ._common import (
     ZERO,
     LineBook,
+    YearIndex,
     by_allocation,
     input_sources,
     sources_of,
@@ -55,24 +56,26 @@ def _moved_by_limit(limit: LimitStatus | None) -> set[UUID]:
 
 
 def _costs(
-    facts: DraftFacts, rule_set: RuleSet, limit: LimitStatus | None
+    facts: DraftFacts, rule_set: RuleSet, limit: LimitStatus | None, years: YearIndex | None
 ) -> Iterator[tuple[AllocationFact, int, TaxInputFact | None]]:
     """Every non-zero repairs/renovation allocation of any year this rule decides: with its
     tax year and its renovation_treatment input (None for repairs and undecided renovation).
     The costs the 15 % limit moved into the basis are left out."""
     moved = _moved_by_limit(limit)
     treatments = by_allocation(facts.tax_inputs, TaxInputKind.RENOVATION_TREATMENT)
-    for a, year in with_year_numbers(facts.allocations, rule_set):
+    for a, year in with_year_numbers(facts.allocations, rule_set, years):
         if a.category in CATEGORIES and a.allocation_id not in moved:
             treatment = treatments.get(a.allocation_id) if a.category is C.RENOVATION else None
             yield a, year, treatment
 
 
-def herstellung_additions(facts: DraftFacts, rule_set: RuleSet) -> list[BasisAddition]:
+def herstellung_additions(
+    facts: DraftFacts, rule_set: RuleSet, *, years: YearIndex | None = None
+) -> list[BasisAddition]:
     """The basis additions of every renovation elected `herstellung`, all years (§5.2 reads
     them back to their year). Never moved by the limit: they are additions already (D74)."""
     out = []
-    for a, year, treatment in _costs(facts, rule_set, None):
+    for a, year, treatment in _costs(facts, rule_set, None, years):
         if treatment is not None and treatment.value.treatment == "herstellung":
             out.append(
                 BasisAddition(
@@ -102,7 +105,12 @@ def _spread_parts(
 
 
 def lines(
-    facts: DraftFacts, tax_year: int, rule_set: RuleSet, *, limit: LimitStatus | None = None
+    facts: DraftFacts,
+    tax_year: int,
+    rule_set: RuleSet,
+    *,
+    limit: LimitStatus | None = None,
+    years: YearIndex | None = None,
 ) -> RuleLines:
     spreads = by_allocation(facts.tax_inputs, TaxInputKind.SPREAD_82B)
     ended = facts.property.ownership_ended_on
@@ -111,7 +119,7 @@ def lines(
     warnings = []
     open_count, open_sum = 0, ZERO
 
-    for a, year, treatment in _costs(facts, rule_set, limit):
+    for a, year, treatment in _costs(facts, rule_set, limit, years):
         refs: list[SourceRef] = sources_of(a)
         if a.category is C.RENOVATION:
             if treatment is None:
