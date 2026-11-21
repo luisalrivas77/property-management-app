@@ -1,0 +1,82 @@
+// The shared pieces under src/components that every screen uses (phase 10 D284, step 4c):
+// ui.tsx, form.tsx, history.tsx, entities.ts (corrections.tsx has its own, i18n/corrections.ts).
+// German first, English beside it (glossary.md). The words of common.ts (Lädt …, Schließen) are
+// reused from there.
+import { defineMessages } from "./core";
+
+export const shared = defineMessages({
+  de: {
+    // ui.tsx
+    retry: "Erneut versuchen",
+    breadcrumbs: "Pfad",
+    corrected: (original: string) => `korrigiert, ursprünglich ${original}`,
+    // form.tsx
+    explanation: "Erklärung:",
+    checkMarkedFields: "Bitte die markierten Felder prüfen.",
+    saving: "Speichert …",
+    // history.tsx
+    purchasePrice: (amount: string) => `Kaufpreis ${amount}`,
+    afaStart: "Beginn der AfA",
+    owners: (n: number) => `${n} Eigentümer`,
+    acquisitionCost: "Nebenkosten",
+    deposit: (amount: string) => `Kaution ${amount}`,
+    fixedTermUntil: (date: string) => `befristet bis ${date}`,
+    rent: (cold: string, prepayment: string) =>
+      `${cold} kalt + ${prepayment} NK-Vorauszahlung`,
+    nowTenants: (n: number) => `jetzt ${n} Mieter`,
+    noticeBy: (by: string) => `durch ${by}, `,
+    noticeOn: (date: string) => `zum ${date}`,
+    nominalRate: (rate: string) => `${rate} Sollzins`,
+    noMilestones: "Noch keine Meilensteine.",
+    timeline: "Verlauf",
+    noEntries: "Keine Einträge.",
+    you: "du",
+    householdMember: (id: string) => `Haushaltsmitglied ${id}`,
+    ai: (id: string) => `KI (${id})`,
+    system: (id: string) => `System (${id})`,
+    request: "Anfrage",
+    correction: "Korrektur",
+    // entities.ts
+    unknownTenant: "Unbekannter Mieter",
+    tenantErased: "Mieter (Daten gelöscht)",
+    startsOn: (date: string) => `beginnt am ${date}`,
+    running: "läuft",
+    ended: "beendet",
+    from: (date: string) => `ab ${date}`,
+  },
+  en: {
+    retry: "Try again",
+    breadcrumbs: "Path",
+    corrected: (original: string) => `corrected, originally ${original}`,
+    explanation: "Explanation:",
+    checkMarkedFields: "Please check the marked fields.",
+    saving: "Saving …",
+    purchasePrice: (amount: string) => `Purchase price ${amount}`,
+    afaStart: "Start of depreciation (AfA)",
+    owners: (n: number) => `${n} ${n === 1 ? "owner" : "owners"}`,
+    acquisitionCost: "Purchase costs (Nebenkosten)",
+    deposit: (amount: string) => `Deposit ${amount}`,
+    fixedTermUntil: (date: string) => `fixed term until ${date}`,
+    rent: (cold: string, prepayment: string) =>
+      `${cold} cold + ${prepayment} service-charge prepayment`,
+    nowTenants: (n: number) => `now ${n} ${n === 1 ? "tenant" : "tenants"}`,
+    noticeBy: (by: string) => `by ${by}, `,
+    noticeOn: (date: string) => `effective ${date}`,
+    nominalRate: (rate: string) => `${rate} nominal interest`,
+    noMilestones: "No milestones yet.",
+    timeline: "History",
+    noEntries: "No entries.",
+    you: "you",
+    householdMember: (id: string) => `Household member ${id}`,
+    ai: (id: string) => `AI (${id})`,
+    system: (id: string) => `System (${id})`,
+    request: "Request",
+    correction: "Correction",
+    unknownTenant: "Unknown tenant",
+    tenantErased: "Tenant (data erased)",
+    startsOn: (date: string) => `starts on ${date}`,
+    running: "running",
+    ended: "ended",
+    from: (date: string) => `from ${date}`,
+  },
+});

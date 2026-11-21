@@ -6,6 +6,9 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { useT } from "@/i18n";
+import { common } from "@/i18n/common";
+import { shared } from "@/i18n/shared";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import type { Loaded } from "./useLoad";
@@ -14,6 +17,8 @@ import "./screens.css";
 
 /** Renders `children(data)` once loaded; the loading line or the error (with retry) before. */
 export function Loading<T>({ state, children }: { state: Loaded<T>; children: (data: T) => ReactNode }) {
+  const t = useT(shared);
+  const c = useT(common);
   if (state.data !== undefined) {
     return (
       <>
@@ -27,12 +32,12 @@ export function Loading<T>({ state, children }: { state: Loaded<T>; children: (d
       <div>
         <ErrorNotice error={state.error} />
         <button type="button" className="secondary" onClick={state.reload}>
-          Erneut versuchen
+          {t.retry}
         </button>
       </div>
     );
   }
-  return <p className="muted">Lädt …</p>;
+  return <p className="muted">{c.loading}</p>;
 }
 
 export interface Crumb {
@@ -42,8 +47,9 @@ export interface Crumb {
 
 /** Immobilie › Einheit › Mietverhältnis (§9.2). The last crumb is the current page. */
 export function Breadcrumbs({ items }: { items: Crumb[] }) {
+  const t = useT(shared);
   return (
-    <nav aria-label="Pfad" className="breadcrumbs">
+    <nav aria-label={t.breadcrumbs} className="breadcrumbs">
       <ol>
         {items.map((item, index) => (
           <li key={index}>
@@ -98,6 +104,7 @@ export function ActionDialog({
   initialOpen?: boolean;
   children: (close: () => void) => ReactNode;
 }) {
+  const c = useT(common);
   const [open, setOpen] = useState(initialOpen);
   const ref = useRef<HTMLDialogElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -123,7 +130,7 @@ export function ActionDialog({
               <h2 id={titleId}>{title}</h2>
               <span className="spacer" />
               <button type="button" className="link" onClick={() => setOpen(false)}>
-                Schließen
+                {c.close}
               </button>
             </div>
             {children(() => setOpen(false))}
@@ -159,7 +166,8 @@ export function Facts({ rows }: { rows: [string, ReactNode][] }) {
 
 /** "korrigiert, ursprünglich 15.07.2024" next to a corrected milestone date (§9.4). */
 export function CorrectedNote({ original }: { original: string }) {
-  return <span className="corrected">korrigiert, ursprünglich {original}</span>;
+  const t = useT(shared);
+  return <span className="corrected">{t.corrected(original)}</span>;
 }
 
 /** A positive outcome line (e.g. "Gespeichert."). */

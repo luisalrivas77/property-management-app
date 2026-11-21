@@ -13,6 +13,8 @@ import { cloneElement, useCallback, useMemo, useState, type ReactElement, type R
 
 import { ApiError, ruleCodes, ruleCodeText } from "@/api/errors";
 import type { FieldError } from "@/api/schemas";
+import { translate, useT } from "@/i18n";
+import { shared } from "@/i18n/shared";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import type { Parsed } from "./input";
@@ -173,7 +175,9 @@ export function InfoToggle({
   return (
     <button type="button" className="info-toggle" aria-expanded={open} aria-controls={controls} onClick={onToggle}>
       <span aria-hidden="true">i</span>
-      <span className="visually-hidden">Erklärung: {label}</span>
+      <span className="visually-hidden">
+        {translate(shared).explanation} {label}
+      </span>
     </button>
   );
 }
@@ -253,7 +257,7 @@ export function FormBanner({ errors }: { errors: FormErrors }) {
   if (Object.keys(errors.fields).length > 0) {
     return (
       <div className="notice notice-error" role="alert">
-        <p>Bitte die markierten Felder prüfen.</p>
+        <p>{translate(shared).checkMarkedFields}</p>
       </div>
     );
   }
@@ -261,10 +265,11 @@ export function FormBanner({ errors }: { errors: FormErrors }) {
 }
 
 /** The submit button of a form, with its busy label. */
-export function Submit({ busy, children, busyLabel = "Speichert …" }: { busy: boolean; children: ReactNode; busyLabel?: string }) {
+export function Submit({ busy, children, busyLabel }: { busy: boolean; children: ReactNode; busyLabel?: string }) {
+  const t = useT(shared);
   return (
     <button type="submit" disabled={busy}>
-      {busy ? busyLabel : children}
+      {busy ? (busyLabel ?? t.saving) : children}
     </button>
   );
 }
