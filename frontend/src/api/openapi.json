@@ -795,6 +795,35 @@
         }
       }
     },
+    "/api/properties/equity": {
+      "get": {
+        "summary": "Properties Equity",
+        "description": "Übersicht's „Eigenkapital eingesetzt“ (Luis, 21 Nov 2026): per property the purchase\nprice, + the Nebenkosten rows, + the loan costs paid privately (private_cost rows of class\nfinancing), − the loans' principal, and the total over the properties that have one\n(rules.property_equity). The net worth's „Wert minus Darlehen“ is unchanged.",
+        "operationId": "properties_equity_api_properties_equity_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PropertiesPaidIn"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}": {
       "get": {
         "summary": "Property Get",
@@ -29364,6 +29393,30 @@
         "title": "ProjectionPoint",
         "description": "One 31 December (or the start): the classes, the liabilities, the total."
       },
+      "PropertiesPaidIn": {
+        "properties": {
+          "properties": {
+            "items": {
+              "$ref": "#/components/schemas/PropertyPaidIn"
+            },
+            "type": "array",
+            "title": "Properties"
+          },
+          "total_paid_in": {
+            "type": "string",
+            "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Total Paid In"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "properties",
+          "total_paid_in"
+        ],
+        "title": "PropertiesPaidIn",
+        "description": "GET /properties/equity: every property of the workspace (by label) and total_paid_in,\nΣ paid_in over the properties that have one (0.00 without any)."
+      },
       "Property": {
         "properties": {
           "id": {
@@ -29638,6 +29691,86 @@
         ],
         "title": "PropertyOwnership",
         "description": "Shares per property must sum to exactly 1 (service-layer rule, see fixtures)."
+      },
+      "PropertyPaidIn": {
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Property Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "purchase_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Price"
+          },
+          "acquisition_costs": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Acquisition Costs"
+          },
+          "own_loan_costs": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Own Loan Costs"
+          },
+          "loan_principal": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Loan Principal"
+          },
+          "paid_in": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid In"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "no_purchase_price",
+                  "ownership_ended"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "property_id",
+          "label",
+          "purchase_price",
+          "acquisition_costs",
+          "own_loan_costs",
+          "loan_principal",
+          "paid_in"
+        ],
+        "title": "PropertyPaidIn",
+        "description": "One property's own money put in (rules.property_equity.paid_in): purchase_price +\nacquisition_costs (Σ the Nebenkosten rows, the sum the AfA basis adds) + own_loan_costs\n(the private_cost rows of class financing in force, every tax year, amount × share)\n− loan_principal (Σ the property's loans' principal). Signed: a loan above price and\ncosts gives a negative paid_in, served as it is. paid_in None, with `reason`, when the\nproperty is left out of the total: no purchase price, or ownership ended by today (as\nthe net worth leaves a sold property out)."
       },
       "PropertyPatch": {
         "properties": {

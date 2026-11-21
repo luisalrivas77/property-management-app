@@ -29,6 +29,7 @@ from hausbuch.schemas.property import (
     AcquisitionCostCreate,
     PriceSplit,
     PriceSplitCreate,
+    PropertiesPaidIn,
     Property,
     PropertyCreate,
     PropertyOwnership,
@@ -55,6 +56,7 @@ from hausbuch.services.properties import (
     update_acquisition_cost,
     update_property,
 )
+from hausbuch.services.property_equity import properties_paid_in
 from hausbuch.services.tax import purchase_summary
 from hausbuch.services.units import list_units
 
@@ -73,6 +75,17 @@ def properties_list(cmd: Cmd) -> list[Property]:
 @router.post("/properties", status_code=201)
 def property_create(body: PropertyCreate, cmd: Cmd) -> Property:
     return cmd.run(create_property, body)
+
+
+# Before /properties/{property_id}, which would otherwise take "equity" as an id (422).
+@router.get("/properties/equity")
+def properties_equity(cmd: Cmd) -> PropertiesPaidIn:
+    """Übersicht's „Eigenkapital eingesetzt“ (Luis, 21 Nov 2026): per property the purchase
+    price, + the Nebenkosten rows, + the loan costs paid privately (private_cost rows of class
+    financing), − the loans' principal, and the total over the properties that have one
+    (rules.property_equity). The net worth's „Wert minus Darlehen“ is unchanged."""
+    today = datetime.now(LOCAL_TIME_ZONE).date()
+    return cmd.read(properties_paid_in, today=today)
 
 
 @router.get("/properties/{property_id}")

@@ -278,6 +278,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/properties/equity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Properties Equity
+         * @description Übersicht's „Eigenkapital eingesetzt“ (Luis, 21 Nov 2026): per property the purchase
+         *     price, + the Nebenkosten rows, + the loan costs paid privately (private_cost rows of class
+         *     financing), − the loans' principal, and the total over the properties that have one
+         *     (rules.property_equity). The net worth's „Wert minus Darlehen“ is unchanged.
+         */
+        get: operations["properties_equity_api_properties_equity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/properties/{property_id}": {
         parameters: {
             query?: never;
@@ -11545,6 +11568,17 @@ export interface components {
             total: string;
             change?: components["schemas"]["ProjectionChange"] | null;
         };
+        /**
+         * PropertiesPaidIn
+         * @description GET /properties/equity: every property of the workspace (by label) and total_paid_in,
+         *     Σ paid_in over the properties that have one (0.00 without any).
+         */
+        PropertiesPaidIn: {
+            /** Properties */
+            properties: components["schemas"]["PropertyPaidIn"][];
+            /** Total Paid In */
+            total_paid_in: string;
+        };
         /** Property */
         Property: {
             /**
@@ -11659,6 +11693,37 @@ export interface components {
             property_id: string;
             /** Shares */
             shares: components["schemas"]["OwnerShare"][];
+        };
+        /**
+         * PropertyPaidIn
+         * @description One property's own money put in (rules.property_equity.paid_in): purchase_price +
+         *     acquisition_costs (Σ the Nebenkosten rows, the sum the AfA basis adds) + own_loan_costs
+         *     (the private_cost rows of class financing in force, every tax year, amount × share)
+         *     − loan_principal (Σ the property's loans' principal). Signed: a loan above price and
+         *     costs gives a negative paid_in, served as it is. paid_in None, with `reason`, when the
+         *     property is left out of the total: no purchase price, or ownership ended by today (as
+         *     the net worth leaves a sold property out).
+         */
+        PropertyPaidIn: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Label */
+            label: string;
+            /** Purchase Price */
+            purchase_price: string | null;
+            /** Acquisition Costs */
+            acquisition_costs: string;
+            /** Own Loan Costs */
+            own_loan_costs: string;
+            /** Loan Principal */
+            loan_principal: string;
+            /** Paid In */
+            paid_in: string | null;
+            /** Reason */
+            reason?: ("no_purchase_price" | "ownership_ended") | null;
         };
         /**
          * PropertyPatch
@@ -16470,6 +16535,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Property"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    properties_equity_api_properties_equity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PropertiesPaidIn"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
