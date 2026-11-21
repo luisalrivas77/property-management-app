@@ -50,7 +50,7 @@ import type {
   SourceRef,
 } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
-import { getLocale, localized, translate, useT, type Locale } from "@/i18n";
+import { formatter, getLocale, localized, translate, useT, type Locale } from "@/i18n";
 import {
   DERIVED_INPUT_DE,
   DERIVED_INPUT_EN,
@@ -66,7 +66,15 @@ import { DocumentExplanationBox, ImportStoredStatement, NO_TAX_YEAR } from "./do
 import type { Directory } from "./entities";
 import { targets, tenantName } from "./entities";
 import { FieldDescription, FormBanner, InfoToggle, useFormErrors, type FieldMessages } from "./form";
-import { formatArea, formatDate, formatDateTime, formatFraction, formatMoney, formatPercent, formatShare, todayIso } from "./format";
+import { formatFraction, formatShare, todayIso } from "./format";
+
+// Shown values follow the chosen language, read at call time (the German is the legacy
+// formatters' own); the inputs keep their German form (toRaw, fromRaw).
+const formatMoney = (v: string | null | undefined) => formatter().money(v);
+const formatPercent = (v: string | null | undefined) => formatter().percent(v);
+const formatArea = (v: string | null | undefined) => formatter().area(v);
+const formatDate = (v: string | null | undefined) => formatter().date(v);
+const formatDateTime = (v: string | null | undefined) => formatter().dateTime(v);
 import {
   decimalInput,
   percentInput,
