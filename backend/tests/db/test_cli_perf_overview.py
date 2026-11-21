@@ -106,6 +106,8 @@ def test_probe_times_every_read_of_the_page_and_writes_nothing(world, dbname):
         "/api/household-scenarios?include_history=true",
         "/api/auth/members",
         "/api/accounts",
+        "/api/properties/equity",
+        "/api/properties/payback",
         "/api/properties/{p1}/units",
         "/api/properties/{p1}/loans",
         "/api/units/{u1}/tenancies",
@@ -265,7 +267,7 @@ def test_digest_column_on_the_last_pass_is_stable(world, dbname, capsys):
     assert header.split()[-1] == "digest"
 
     digests = _digests(first)
-    assert len(digests) == 22
+    assert len(digests) == 24
     for route, values in digests.items():
         assert all(re.fullmatch(r"[0-9a-f]{16}", v) for v in values), route
     # A route fired twice in one pass answers the same body.

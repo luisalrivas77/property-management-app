@@ -395,6 +395,9 @@ class PageRun:
         months = {"from": month, "to": month}
         await self.get("/api/health/months", "/api/health/months", months)
         await self.get("/api/inbox", "/api/inbox")
+        # The property tile (PR #513): page.tsx's useLoad(loadPaidIn), then loadPayback.
+        await self.get("/api/properties/equity", "/api/properties/equity")
+        await self.get("/api/properties/payback", "/api/properties/payback")
         await self.get("/api/properties", "/api/properties")
         owners = await self.get("/api/owners", "/api/owners") or []
         await self.get("/api/tax/return-estimate", "/api/tax/return-estimate", {"tax_year": year})
