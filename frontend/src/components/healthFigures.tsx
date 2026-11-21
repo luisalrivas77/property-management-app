@@ -89,10 +89,12 @@ type HealthRest = Omit<HealthData, "health">;
 
 const loadHealthAlone = (): Promise<Health> => ok(api.GET("/api/health"));
 
-/** Everything the block shows besides GET /health. */
-async function loadHealthRest(): Promise<HealthRest> {
+/** Everything the block shows besides GET /health. The net worth series is GET /health's own
+ * `series` when the page passed its GET /health (Übersicht, phase 10 §7.3: the same stored runs
+ * GET /health/net-worth-series reads), so it is not read twice; else its own read. */
+async function loadHealthRest(ownSeries: boolean): Promise<Omit<HealthRest, "series"> & { series?: NetWorthPoint[] }> {
   const [series, scenarios, names, accounts] = await Promise.all([
-    ok(api.GET("/api/health/net-worth-series")),
+    ownSeries ? ok(api.GET("/api/health/net-worth-series")) : undefined,
     loadScenarioHistory(),
     loadMemberNames(),
     ok(api.GET("/api/accounts")),
@@ -124,17 +126,25 @@ export function HealthSection({ onChanged, health, after }: HealthSectionProps =
 
 function OwnHealthBlock({ after, onChanged }: Omit<HealthSectionProps, "health">) {
   const health = useLoad(loadHealthAlone);
-  return <HealthBlock health={health} after={after} onChanged={onChanged} />;
+  return <HealthBlock health={health} after={after} onChanged={onChanged} ownSeries />;
 }
 
 const NOW: Promise<unknown> = Promise.resolve();
 
-function HealthBlock({ health, after = NOW, onChanged }: Omit<HealthSectionProps, "health"> & { health: Loaded<Health> }) {
-  const loadRest = useCallback(() => after.then(loadHealthRest), [after]);
+function HealthBlock({
+  health,
+  after = NOW,
+  onChanged,
+  ownSeries = false,
+}: Omit<HealthSectionProps, "health"> & { health: Loaded<Health>; ownSeries?: boolean }) {
+  const loadRest = useCallback(() => after.then(() => loadHealthRest(ownSeries)), [after, ownSeries]);
   const rest = useLoad(loadRest);
   const requested = useSearchParams().get("month_end");
   const state: Loaded<HealthData> = {
-    data: health.data !== undefined && rest.data !== undefined ? { health: health.data, ...rest.data } : undefined,
+    data:
+      health.data !== undefined && rest.data !== undefined
+        ? { health: health.data, ...rest.data, series: rest.data.series ?? health.data.series ?? [] }
+        : undefined,
     error: health.error ?? rest.error,
     loading: health.loading || rest.loading,
     reload: () => {
