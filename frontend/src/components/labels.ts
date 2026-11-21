@@ -1,5 +1,6 @@
-// German labels for the API's enums. Typed as Record<Enum, string>, so a value added to the
-// API (and to the generated types) fails the typecheck until it has a label here.
+// Labels for the API's enums, German with English beside it (phase 10 D284, read through
+// localized()). Typed as Record<Enum, string>, so a value added to the API (and to the generated
+// types) fails the typecheck until it has a label here, in both languages.
 import type {
   AccountKind,
   AccountPurpose,
@@ -38,7 +39,24 @@ import type {
 } from "@/api/schemas";
 import type { components } from "@/api/types";
 
-import { formatDate, formatMoney, formatMonth } from "./format";
+import { DOCUMENT_SUBTYPE_EN, DOCUMENT_TYPE_EN } from "@/i18n/documents";
+import { formatter } from "@/i18n/format";
+import { getLocale } from "@/i18n/locale";
+
+/** A label map in the chosen language (phase 10 D284): German is the source and the default;
+ * under English a read returns the English entry. Object.keys, Object.entries and spread read
+ * through `get`, so a picker built from a map shows English too. The value sent to the API is
+ * always the enum key, never a label, so nothing English is stored. */
+function localized<K extends string, V = string>(de: Record<K, V>, en: Record<K, V>): Record<K, V> {
+  return new Proxy(de, { get: (target, key) => Reflect.get(getLocale() === "en" ? en : target, key) });
+}
+
+const english = () => getLocale() === "en";
+
+/** Money, dates and months in the chosen language. */
+const formatMoney = (value: string | null | undefined) => formatter().money(value);
+const formatDate = (value: string | null | undefined) => formatter().date(value);
+const formatMonth = (value: string | null | undefined) => formatter().month(value);
 
 // Step 4's enums have no alias in schemas.ts yet.
 type AllocationCategory = components["schemas"]["AllocationCategory"];
@@ -63,14 +81,20 @@ type Confidence = ExtractedValue["confidence"];
 type Check = NonNullable<ExtractedValue["checks"]>[number];
 type RecordMode = ProposalRecord["mode"];
 
-export const PROPERTY_KIND: Record<PropertyKind, string> = {
+const PROPERTY_KIND_DE: Record<PropertyKind, string> = {
   etw: "Eigentumswohnung (ETW)",
   efh: "Einfamilienhaus (EFH)",
   mfh: "Mehrfamilienhaus (MFH)",
 };
+const PROPERTY_KIND_EN: Record<PropertyKind, string> = {
+  etw: "Flat (ETW)",
+  efh: "Detached house (EFH)",
+  mfh: "Apartment building (MFH)",
+};
+export const PROPERTY_KIND: Record<PropertyKind, string> = localized(PROPERTY_KIND_DE, PROPERTY_KIND_EN);
 
 /** Bundesland of an owner, for the church tax rate (phase 4 D90). */
-export const STATE_CODE: Record<StateCode, string> = {
+const STATE_CODE_DE: Record<StateCode, string> = {
   BW: "Baden-Württemberg",
   BY: "Bayern",
   BE: "Berlin",
@@ -88,40 +112,91 @@ export const STATE_CODE: Record<StateCode, string> = {
   SH: "Schleswig-Holstein",
   TH: "Thüringen",
 };
+const STATE_CODE_EN: Record<StateCode, string> = {
+  BW: "Baden-Württemberg",
+  BY: "Bavaria",
+  BE: "Berlin",
+  BB: "Brandenburg",
+  HB: "Bremen",
+  HH: "Hamburg",
+  HE: "Hesse",
+  MV: "Mecklenburg-Western Pomerania",
+  NI: "Lower Saxony",
+  NW: "North Rhine-Westphalia",
+  RP: "Rhineland-Palatinate",
+  SL: "Saarland",
+  SN: "Saxony",
+  ST: "Saxony-Anhalt",
+  SH: "Schleswig-Holstein",
+  TH: "Thuringia",
+};
+export const STATE_CODE: Record<StateCode, string> = localized(STATE_CODE_DE, STATE_CODE_EN);
 
-export const ACQUISITION_COST_KIND: Record<AcquisitionCostKind, string> = {
+const ACQUISITION_COST_KIND_DE: Record<AcquisitionCostKind, string> = {
   real_estate_transfer_tax: "Grunderwerbsteuer",
   notary: "Notar",
   land_registry: "Grundbuchamt",
   broker: "Makler",
   other: "Sonstige",
 };
+const ACQUISITION_COST_KIND_EN: Record<AcquisitionCostKind, string> = {
+  real_estate_transfer_tax: "Grunderwerbsteuer (property transfer tax)",
+  notary: "Notary",
+  land_registry: "Land registry (Grundbuchamt)",
+  broker: "Estate agent",
+  other: "Other",
+};
+export const ACQUISITION_COST_KIND: Record<AcquisitionCostKind, string> = localized(ACQUISITION_COST_KIND_DE, ACQUISITION_COST_KIND_EN);
 
-export const PRICE_SPLIT_SOURCE: Record<PriceSplitSource, string> = {
+const PRICE_SPLIT_SOURCE_DE: Record<PriceSplitSource, string> = {
   purchase_contract: "Kaufvertrag",
   bmf_tool: "BMF-Arbeitshilfe",
   appraisal: "Gutachten",
 };
+const PRICE_SPLIT_SOURCE_EN: Record<PriceSplitSource, string> = {
+  purchase_contract: "Purchase contract",
+  bmf_tool: "BMF calculation aid (BMF-Arbeitshilfe)",
+  appraisal: "Appraisal",
+};
+export const PRICE_SPLIT_SOURCE: Record<PriceSplitSource, string> = localized(PRICE_SPLIT_SOURCE_DE, PRICE_SPLIT_SOURCE_EN);
 
-export const RENT_MODEL: Record<RentModel, string> = {
+const RENT_MODEL_DE: Record<RentModel, string> = {
   fixed: "Festmiete",
   staffel: "Staffelmiete",
   index: "Indexmiete",
 };
+const RENT_MODEL_EN: Record<RentModel, string> = {
+  fixed: "Fixed rent",
+  staffel: "Stepped rent (Staffelmiete)",
+  index: "Index-linked rent (Indexmiete)",
+};
+export const RENT_MODEL: Record<RentModel, string> = localized(RENT_MODEL_DE, RENT_MODEL_EN);
 
-export const DEPOSIT_FORM: Record<DepositForm, string> = {
+const DEPOSIT_FORM_DE: Record<DepositForm, string> = {
   none: "Keine Kaution",
   cash_account: "Barkaution / Kautionskonto",
   bank_guarantee: "Bankbürgschaft",
   surety: "Bürgschaft",
 };
+const DEPOSIT_FORM_EN: Record<DepositForm, string> = {
+  none: "No deposit",
+  cash_account: "Cash deposit / deposit account",
+  bank_guarantee: "Bank guarantee",
+  surety: "Surety",
+};
+export const DEPOSIT_FORM: Record<DepositForm, string> = localized(DEPOSIT_FORM_DE, DEPOSIT_FORM_EN);
 
-export const TENANCY_ROLE: Record<TenancyRole, string> = {
+const TENANCY_ROLE_DE: Record<TenancyRole, string> = {
   primary: "Hauptmieter",
   co_tenant: "Mitmieter",
 };
+const TENANCY_ROLE_EN: Record<TenancyRole, string> = {
+  primary: "Main tenant",
+  co_tenant: "Co-tenant",
+};
+export const TENANCY_ROLE: Record<TenancyRole, string> = localized(TENANCY_ROLE_DE, TENANCY_ROLE_EN);
 
-export const RENT_CHANGE_REASON: Record<RentChangeReason, string> = {
+const RENT_CHANGE_REASON_DE: Record<RentChangeReason, string> = {
   initial: "Anfangsmiete",
   staffel_step: "Staffelstufe",
   index_adjustment: "Indexanpassung",
@@ -130,13 +205,28 @@ export const RENT_CHANGE_REASON: Record<RentChangeReason, string> = {
   agreement: "Vereinbarung",
   correction: "Korrektur",
 };
+const RENT_CHANGE_REASON_EN: Record<RentChangeReason, string> = {
+  initial: "Initial rent",
+  staffel_step: "Rent step",
+  index_adjustment: "Index adjustment",
+  rent_increase: "Rent increase",
+  modernisation: "Modernisation",
+  agreement: "Agreement",
+  correction: "Correction",
+};
+export const RENT_CHANGE_REASON: Record<RentChangeReason, string> = localized(RENT_CHANGE_REASON_DE, RENT_CHANGE_REASON_EN);
 
-export const NOTICE_GIVEN_BY: Record<"tenant" | "landlord", string> = {
+const NOTICE_GIVEN_BY_DE: Record<"tenant" | "landlord", string> = {
   tenant: "Mieter",
   landlord: "Vermieter",
 };
+const NOTICE_GIVEN_BY_EN: Record<"tenant" | "landlord", string> = {
+  tenant: "Tenant",
+  landlord: "Landlord",
+};
+export const NOTICE_GIVEN_BY: Record<"tenant" | "landlord", string> = localized(NOTICE_GIVEN_BY_DE, NOTICE_GIVEN_BY_EN);
 
-export const DOCUMENT_TYPE: Record<DocumentType, string> = {
+const DOCUMENT_TYPE_DE: Record<DocumentType, string> = {
   statement: "Kontoauszug",
   invoice: "Rechnung",
   letter: "Brief",
@@ -149,9 +239,10 @@ export const DOCUMENT_TYPE: Record<DocumentType, string> = {
   gehaltsabrechnung: "Gehaltsabrechnung",
   other: "Sonstiges",
 };
+export const DOCUMENT_TYPE: Record<DocumentType, string> = localized(DOCUMENT_TYPE_DE, DOCUMENT_TYPE_EN);
 
 // In the picker's order: by the groups of the document catalogue (phase-2.md §6.2.1, D131).
-export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = {
+const DOCUMENT_SUBTYPE_DE: Record<DocumentSubtype, string> = {
   // Immobilie und Kauf
   purchase_contract: "Kaufvertrag",
   price_split_evidence: "Nachweis Kaufpreisaufteilung",
@@ -219,8 +310,9 @@ export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = {
   // Phase 7 (D182 (3)): written by code only, never offered in the type picker
   chain_sync: "Wallet-Abruf (Rohdaten der Chain)",
 };
+export const DOCUMENT_SUBTYPE: Record<DocumentSubtype, string> = localized(DOCUMENT_SUBTYPE_DE, DOCUMENT_SUBTYPE_EN);
 
-export const LINK_TARGET: Record<LinkTarget, string> = {
+const LINK_TARGET_DE: Record<LinkTarget, string> = {
   owner: "Eigentümer",
   property: "Immobilie",
   unit: "Einheit",
@@ -230,25 +322,51 @@ export const LINK_TARGET: Record<LinkTarget, string> = {
   // A payment proof's bill (phase 3 D143)
   document: "Rechnung",
 };
+const LINK_TARGET_EN: Record<LinkTarget, string> = {
+  owner: "Owner",
+  property: "Property",
+  unit: "Unit",
+  tenant: "Tenant",
+  tenancy: "Tenancy",
+  loan: "Loan",
+  document: "Invoice",
+};
+export const LINK_TARGET: Record<LinkTarget, string> = localized(LINK_TARGET_DE, LINK_TARGET_EN);
 
-export const RETENTION_CLASS: Record<RetentionClass, string> = {
+const RETENTION_CLASS_DE: Record<RetentionClass, string> = {
   ownership_records: "Eigentumsunterlagen (Besitzdauer + 10 Jahre)",
   tax_records: "Steuerunterlagen (10 Jahre nach dem Steuerjahr)",
   tenancy_records: "Mietunterlagen (Mietende + 4 Jahre)",
   tenant_contact: "Kontaktdaten Mieter (Mietende + 4 Jahre)",
   holding_records: "Anlageunterlagen (solange gehalten + 10 Jahre)",
 };
+const RETENTION_CLASS_EN: Record<RetentionClass, string> = {
+  ownership_records: "Ownership records (while owned + 10 years)",
+  tax_records: "Tax records (10 years after the tax year)",
+  tenancy_records: "Tenancy records (end of tenancy + 4 years)",
+  tenant_contact: "Tenant contact data (end of tenancy + 4 years)",
+  holding_records: "Investment records (while held + 10 years)",
+};
+export const RETENTION_CLASS: Record<RetentionClass, string> = localized(RETENTION_CLASS_DE, RETENTION_CLASS_EN);
 
-export const RETENTION_HOLD: Record<RetentionHold, string> = {
+const RETENTION_HOLD_DE: Record<RetentionHold, string> = {
   while_owned: "solange die Immobilie im Eigentum ist",
   tenancy_active: "solange das Mietverhältnis läuft",
   untyped: "Dokument ist noch nicht typisiert",
   unlinked: "Dokument ist noch nicht verknüpft",
   while_held: "solange die Anlage gehalten wird",
 };
+const RETENTION_HOLD_EN: Record<RetentionHold, string> = {
+  while_owned: "while the property is owned",
+  tenancy_active: "while the tenancy runs",
+  untyped: "document has no type yet",
+  unlinked: "document is not linked yet",
+  while_held: "while the investment is held",
+};
+export const RETENTION_HOLD: Record<RetentionHold, string> = localized(RETENTION_HOLD_DE, RETENTION_HOLD_EN);
 
 /** History and audit labels per event type (§9.4). */
-export const EVENT_TYPE: Record<EventType, string> = {
+const EVENT_TYPE_DE: Record<EventType, string> = {
   "owner.created": "Eigentümer angelegt",
   "owner.updated": "Eigentümer geändert",
   "owner.income_input_recorded": "Einkommensangabe erfasst",
@@ -382,10 +500,145 @@ export const EVENT_TYPE: Record<EventType, string> = {
   "rule.created": "Regel angelegt",
   "rule.disabled": "Regel deaktiviert",
 };
+const EVENT_TYPE_EN: Record<EventType, string> = {
+  "owner.created": "Owner created",
+  "owner.updated": "Owner changed",
+  "owner.income_input_recorded": "Income details recorded",
+  "owner.return_input_recorded": "Tax return detail recorded",
+  "owner.anlage_n_exported": "Anlage N exported",
+  "property.created": "Property created",
+  "property.updated": "Property changed",
+  "property.purchase_notarized": "Purchase contract notarised",
+  "property.possession_transferred": "Handover of possession, benefits and burdens",
+  "property.ownership_set": "Ownership shares set",
+  "property.acquisition_cost_recorded": "Acquisition costs recorded",
+  "property.acquisition_cost_updated": "Acquisition costs changed",
+  "property.acquisition_cost_removed": "Acquisition costs removed",
+  "property.price_split_recorded": "Purchase price split recorded",
+  "property.price_split_selected": "Purchase price split chosen as AfA basis",
+  "property.tax_input_recorded": "Tax detail recorded",
+  "property.anlage_v_exported": "Anlage V exported",
+  "property.scenario_recorded": "Projection scenario recorded",
+  "unit.created": "Unit created",
+  "unit.updated": "Unit changed",
+  "tenant.created": "Tenant created",
+  "tenant.updated": "Tenant details changed",
+  "tenant.erased": "Tenant data deleted",
+  "tenancy.created": "Lease signed",
+  "tenancy.updated": "Tenancy changed",
+  "tenancy.parties_set": "Tenants changed",
+  "tenancy.started": "Move-in",
+  "tenancy.rent_scheduled": "Rent",
+  "tenancy.deposit_received": "Deposit received",
+  "tenancy.notice_given": "Notice given",
+  "tenancy.ended": "Move-out",
+  "loan.created": "Loan contract signed",
+  "loan.updated": "Loan changed",
+  "loan.disbursed": "Loan paid out",
+  "document.uploaded": "Document uploaded",
+  "document.typed": "Document typed",
+  "document.linked": "Document linked",
+  "document.unlinked": "Link removed",
+  "document.deleted": "Document deleted",
+  "document.classified": "Document classified",
+  "document.extracted": "Fields read",
+  "document.read_failed": "Document could not be read",
+  "document.received_by_email": "Received by forwarded email",
+  "workspace.settings_changed": "Settings changed",
+  "workspace.income_input_recorded": "Household income details recorded",
+  "workspace.return_input_recorded": "Household tax return detail recorded",
+  "workspace.questionnaire_answered": "Yearly question answered",
+  "workspace.reminder_acknowledged": "Reminder done, postponed or muted",
+  "workspace.notification_sent": "Reminder sent by email",
+  "workspace.app_secret_set": "Access key saved",
+  "workspace.app_secret_deleted": "Access key deleted",
+  "workspace.inbox_poll_failed": "Email inbox disrupted",
+  "workspace.inbox_poll_recovered": "Email inbox working again",
+  "workspace.ai_consent_recorded": "Consent to AI categorisation of private accounts recorded",
+  "workspace.prices_fetched": "Prices fetched",
+  "workspace.valuation_snapshot_written": "Month-end net worth stored",
+  "health.snapshot_stored": "Key figures of a closed month stored",
+  "household_scenario.created": "Household scenario saved",
+  "household_scenario.withdrawn": "Household scenario withdrawn",
+  "plan.explanation_stored": "Household plan explanation stored",
+  "workspace.advice_mode_changed": "Household plan mode changed",
+  "workspace.bank_pin_set": "Online banking PIN saved (encrypted)",
+  "workspace.bank_pin_deleted": "Online banking PIN deleted",
+  "proposal.created": "Suggestion created",
+  "proposal.superseded": "Suggestion replaced",
+  "proposal.rejected": "Suggestion rejected",
+  "proposal.applied": "Suggestion applied",
+  "user.signed_in": "Signed in",
+  "user.signed_out": "Signed out",
+  "user.sessions_revoked": "Sessions ended",
+  "user.passkey_enrolled": "Passkey added",
+  "user.passkey_renamed": "Passkey renamed",
+  "user.passkey_removed": "Passkey removed",
+  "user.invited": "Member invited",
+  "user.enrolled": "Member joined",
+  "account.created": "Account created",
+  "account.updated": "Account changed",
+  "account.connection_created": "Bank sync set up",
+  "account.connection_updated": "Bank sync changed",
+  "account.sync_started": "Bank sync started",
+  "account.sync_approval_needed": "Bank sync waiting for approval",
+  "account.sync_completed": "Bank sync finished",
+  "account.sync_failed": "Bank sync failed",
+  "account.statement_fetched": "Statement (PDF) fetched from the bank",
+  "account.statements_refused": "Bank does not allow fetching statements (PDF)",
+  "account.statements_answered": "Bank answers statement (PDF) requests again",
+  "account.bank_parameters_read": "Bank parameters (FinTS) read",
+  "account.kind_set": "Account type changed",
+  "account.ownership_set": "Account holders and shares set",
+  "account.movements_imported": "Exchange export imported",
+  "account.movements_reconciled": "Exchange export reconciled",
+  "account.withdrawal_history_checked": "Withdrawal history checked",
+  "account.balance_corrected": "Difference to the exchange balance booked as a correction",
+  "account.movement_times_corrected": "Times of a Binance export moved to UTC (time zone from the file name)",
+  "account.movements_unreconciled": "Exchange export not reconciled",
+  "account.holdings_confirmed": "Holdings confirmed",
+  "account.holdings_reconciled": "Holdings reconciled",
+  "account.holdings_mismatch": "Holdings differ",
+  "account.holding_corrected": "Holding corrected",
+  "account.holdings_exported": "Holdings statement created",
+  "account.deposit_address_learned": "Exchange deposit address remembered",
+  "account.deposit_address_forgotten": "Exchange deposit address forgotten",
+  "account.withdrawal_pair_learned": "Withdrawals to a wallet address remembered",
+  "account.withdrawal_pair_forgotten": "Withdrawals to a wallet address forgotten",
+  "wallet.address_added": "Wallet address added",
+  "wallet.address_updated": "Wallet address changed",
+  "wallet.address_revealed": "Full wallet address copied",
+  "asset.created": "Investment created",
+  "asset.updated": "Investment changed",
+  "asset.price_recorded": "Price recorded",
+  "asset.price_source_failed": "Price source disrupted",
+  "movement.proposed": "Movement suggested",
+  "movement.confirmed": "Movement confirmed",
+  "movement.superseded": "Movement corrected",
+  "wallet.sync_completed": "Wallet address synced",
+  "wallet.sync_failed": "Wallet sync failed",
+  "wallet.payee_answered": "Bitcoin output confirmed as payee",
+  "wallet.deposit_looked_up": "Exchange withdrawal looked up on the address, nothing credited",
+  "movement_group.proposed": "Chain transaction waiting for review",
+  "movement_group.confirmed": "Chain transaction confirmed",
+  "movement_group.trade_recorded": "Exchange trade grouped",
+  "transfer.linked": "Transfer linked",
+  "transfer.unlinked": "Transfer unlinked",
+  "statement.imported": "Statement imported",
+  "statement.reconciled": "Statement reconciled",
+  "statement.unreconciled": "Statement not reconciled",
+  "statement.duplicate_resolved": "Possible duplicate decided",
+  "transaction.allocated": "Transaction categorised",
+  "transaction.reallocated": "Categorisation corrected",
+  "transaction.resort_proposed": "Finer category suggested",
+  "rule.created": "Rule created",
+  "rule.disabled": "Rule disabled",
+};
+export const EVENT_TYPE: Record<EventType, string> = localized(EVENT_TYPE_DE, EVENT_TYPE_EN);
 
 // --- pre-fill proposals (Vorschläge, phase-2.md §6.4) ---
 
-export const PROPOSAL_STATUS: Record<ProposalStatus, string> = {
+const PROPOSAL_STATUS_DE: Record<ProposalStatus, string> = {
   queued: "wartet auf das Auslesen",
   running: "wird ausgelesen",
   ready: "bereit zur Prüfung",
@@ -395,8 +648,19 @@ export const PROPOSAL_STATUS: Record<ProposalStatus, string> = {
   failed: "konnte nicht gelesen werden",
   blocked_tenant_data: "enthält Mieterdaten, nicht ausgelesen",
 };
+const PROPOSAL_STATUS_EN: Record<ProposalStatus, string> = {
+  queued: "waiting to be read",
+  running: "being read",
+  ready: "ready to review",
+  applied: "applied",
+  rejected: "discarded",
+  superseded: "replaced",
+  failed: "could not be read",
+  blocked_tenant_data: "contains tenant data, not read",
+};
+export const PROPOSAL_STATUS: Record<ProposalStatus, string> = localized(PROPOSAL_STATUS_DE, PROPOSAL_STATUS_EN);
 
-export const EXTRACTION_KIND: Record<ExtractionKind, string> = {
+const EXTRACTION_KIND_DE: Record<ExtractionKind, string> = {
   manual: "von Hand",
   purchase_contract: "Kaufvertrag",
   loan_contract: "Darlehensvertrag",
@@ -421,41 +685,93 @@ export const EXTRACTION_KIND: Record<ExtractionKind, string> = {
   depot_report: "Depotbericht",
   securities_transfer: "Wertpapierübertrag",
 };
+const EXTRACTION_KIND_EN: Record<ExtractionKind, string> = {
+  manual: "by hand",
+  purchase_contract: "Purchase contract",
+  loan_contract: "Loan contract",
+  lease: "Lease",
+  handover_protocol: "Handover record",
+  deposit_record: "Deposit record",
+  invoice: "Invoice",
+  bescheid: "Notice (Bescheid)",
+  grundsteuerbescheid: "Grundsteuer notice",
+  wirtschaftsplan: "Wirtschaftsplan",
+  hausgeldabrechnung: "Hausgeldabrechnung",
+  zinsbescheinigung: "Interest certificate",
+  statement: "Statement",
+  lohnsteuerbescheinigung: "Lohnsteuerbescheinigung",
+  gehaltsabrechnung: "Gehaltsabrechnung",
+  einkommensteuerbescheid: "Einkommensteuerbescheid",
+  general: "Title and date",
+  management_contract: "Property management contract",
+  payment_proof: "Proof of payment",
+  trade_confirmation: "Trade confirmation",
+  distribution_note: "Distribution note",
+  depot_report: "Depot report",
+  securities_transfer: "Securities transfer",
+};
+export const EXTRACTION_KIND: Record<ExtractionKind, string> = localized(EXTRACTION_KIND_DE, EXTRACTION_KIND_EN);
 
 /** The confidence dot's text (computed by code from the checks, D15). */
-export const CONFIDENCE: Record<Confidence, string> = {
+const CONFIDENCE_DE: Record<Confidence, string> = {
   high: "hoch",
   medium: "mittel",
   low: "niedrig",
 };
+const CONFIDENCE_EN: Record<Confidence, string> = {
+  high: "high",
+  medium: "medium",
+  low: "low",
+};
+export const CONFIDENCE: Record<Confidence, string> = localized(CONFIDENCE_DE, CONFIDENCE_EN);
 
 /** What code verified about a value (ExtractedValue.checks). */
-export const CHECK: Record<Check, string> = {
+const CHECK_DE: Record<Check, string> = {
   cited: "Fundstelle im Dokument",
   value_in_quote: "Wert steht im Zitat",
   validates: "Format gültig",
   derived: "berechnet",
 };
+const CHECK_EN: Record<Check, string> = {
+  cited: "Found in the document",
+  value_in_quote: "Value is in the quote",
+  validates: "Valid format",
+  derived: "computed",
+};
+export const CHECK: Record<Check, string> = localized(CHECK_DE, CHECK_EN);
 
 /** The pill next to a record's title: what applying it does. */
-export const RECORD_MODE: Record<RecordMode, string> = {
+const RECORD_MODE_DE: Record<RecordMode, string> = {
   create: "neu",
   patch: "ändert Bestehendes",
   correction: "Korrektur",
   unchanged: "unverändert",
 };
+const RECORD_MODE_EN: Record<RecordMode, string> = {
+  create: "new",
+  patch: "changes existing",
+  correction: "Correction",
+  unchanged: "unchanged",
+};
+export const RECORD_MODE: Record<RecordMode, string> = localized(RECORD_MODE_DE, RECORD_MODE_EN);
 
 // --- bank accounts and statement imports (phase 2 step 3) ---
 
-export const ACCOUNT_SOURCE: Record<AccountSource, string> = {
+const ACCOUNT_SOURCE_DE: Record<AccountSource, string> = {
   upload: "Upload",
   fints: "FinTS",
   aggregator: "Kontoaggregator",
 };
+const ACCOUNT_SOURCE_EN: Record<AccountSource, string> = {
+  upload: "Upload",
+  fints: "FinTS",
+  aggregator: "Account aggregator",
+};
+export const ACCOUNT_SOURCE: Record<AccountSource, string> = localized(ACCOUNT_SOURCE_DE, ACCOUNT_SOURCE_EN);
 
 /** account.kind (phase 6 D156; the depot and the exchange since steps 4 and 5, the wallet since
  * phase 7 step 1). */
-export const ACCOUNT_KIND: Record<AccountKind, string> = {
+const ACCOUNT_KIND_DE: Record<AccountKind, string> = {
   bank_current: "Girokonto",
   bank_savings: "Sparkonto oder Tagesgeld",
   depot: "Depot",
@@ -463,26 +779,49 @@ export const ACCOUNT_KIND: Record<AccountKind, string> = {
   wallet: "Wallet",
   credit_card: "Kreditkarte",
 };
+const ACCOUNT_KIND_EN: Record<AccountKind, string> = {
+  bank_current: "Current account",
+  bank_savings: "Savings account",
+  depot: "Depot",
+  exchange: "Exchange (crypto)",
+  wallet: "Wallet",
+  credit_card: "Credit card",
+};
+export const ACCOUNT_KIND: Record<AccountKind, string> = localized(ACCOUNT_KIND_DE, ACCOUNT_KIND_EN);
 
 /** wallet_address.chain (phase 7, the registry's five chains). */
-export const CHAIN: Record<Chain, string> = {
+const CHAIN_DE: Record<Chain, string> = {
   bitcoin: "Bitcoin",
   ethereum: "Ethereum",
   arbitrum: "Arbitrum",
   bsc: "BNB Smart Chain",
   solana: "Solana",
 };
+const CHAIN_EN: Record<Chain, string> = {
+  bitcoin: "Bitcoin",
+  ethereum: "Ethereum",
+  arbitrum: "Arbitrum",
+  bsc: "BNB Smart Chain",
+  solana: "Solana",
+};
+export const CHAIN: Record<Chain, string> = localized(CHAIN_DE, CHAIN_EN);
 
 /** wallet_address.kind (phase 7 D185): an address added by hand is a receive address; a change
  * address and a stake account are registered from a card's answer (step 2 on). */
-export const ADDRESS_KIND: Record<AddressKind, string> = {
+const ADDRESS_KIND_DE: Record<AddressKind, string> = {
   receive: "Empfangsadresse",
   change: "Wechselgeld-Adresse",
   stake: "Stake-Konto",
 };
+const ADDRESS_KIND_EN: Record<AddressKind, string> = {
+  receive: "Receiving address",
+  change: "Change address",
+  stake: "Stake account",
+};
+export const ADDRESS_KIND: Record<AddressKind, string> = localized(ADDRESS_KIND_DE, ADDRESS_KIND_EN);
 
 /** price.source (D167, D174): where a stored price came from, shown beside every price. */
-export const PRICE_SOURCE: Record<PriceSourceKind, string> = {
+const PRICE_SOURCE_DE: Record<PriceSourceKind, string> = {
   trade: "Wertpapierabrechnung",
   statement: "Depotbericht",
   issuer_nav: "NAV der Fondsgesellschaft",
@@ -493,22 +832,45 @@ export const PRICE_SOURCE: Record<PriceSourceKind, string> = {
   ecb_fx: "EZB-Referenzkurs",
   user: "von Hand eingetragen",
 };
+const PRICE_SOURCE_EN: Record<PriceSourceKind, string> = {
+  trade: "Trade confirmation",
+  statement: "Depot report",
+  issuer_nav: "Fund company NAV",
+  exchange_close: "Lang & Schwarz exchange price",
+  coingecko_daily: "CoinGecko",
+  kraken_daily: "Kraken",
+  ecb_fx: "ECB reference rate",
+  user: "entered by hand",
+};
+export const PRICE_SOURCE: Record<PriceSourceKind, string> = localized(PRICE_SOURCE_DE, PRICE_SOURCE_EN);
 
 /** asset.kind (D166): the Übersicht's groups. */
-export const ASSET_KIND: Record<AssetKind, string> = {
+const ASSET_KIND_DE: Record<AssetKind, string> = {
   etf: "ETF",
   stock: "Aktien",
   crypto: "Krypto",
   cash: "Guthaben",
 };
+const ASSET_KIND_EN: Record<AssetKind, string> = {
+  etf: "ETF",
+  stock: "Shares",
+  crypto: "Crypto",
+  cash: "Cash",
+};
+export const ASSET_KIND: Record<AssetKind, string> = localized(ASSET_KIND_DE, ASSET_KIND_EN);
 
 /** account.purpose (D156): the rental account feeds the Anlage V, a private one never does. */
-export const ACCOUNT_PURPOSE: Record<AccountPurpose, string> = {
+const ACCOUNT_PURPOSE_DE: Record<AccountPurpose, string> = {
   rental: "Mietkonto (für die Immobilie)",
   private: "Privatkonto",
 };
+const ACCOUNT_PURPOSE_EN: Record<AccountPurpose, string> = {
+  rental: "Rental account (for the property)",
+  private: "Private account",
+};
+export const ACCOUNT_PURPOSE: Record<AccountPurpose, string> = localized(ACCOUNT_PURPOSE_DE, ACCOUNT_PURPOSE_EN);
 
-export const STATEMENT_FORMAT: Record<StatementFormat, string> = {
+const STATEMENT_FORMAT_DE: Record<StatementFormat, string> = {
   camt: "camt (XML)",
   csv_camt: "CSV-CAMT",
   pdf: "PDF-Kontoauszug",
@@ -516,25 +878,48 @@ export const STATEMENT_FORMAT: Record<StatementFormat, string> = {
   card_pdf: "Kreditkartenabrechnung (PDF)",
   depot_pdf: "Depot-Kontoauszug (PDF)",
 };
+const STATEMENT_FORMAT_EN: Record<StatementFormat, string> = {
+  camt: "camt (XML)",
+  csv_camt: "CSV-CAMT",
+  pdf: "PDF statement",
+  dkb_csv: "DKB CSV",
+  card_pdf: "Credit card statement (PDF)",
+  depot_pdf: "Depot cash statement (PDF)",
+};
+export const STATEMENT_FORMAT: Record<StatementFormat, string> = localized(STATEMENT_FORMAT_DE, STATEMENT_FORMAT_EN);
 
 /** The pill of an import. `imported` is an import whose closing balance is still missing
  * (the API's "pending balance": a CSV export, which states none). */
-export const IMPORT_STATUS: Record<ImportStatus, string> = {
+const IMPORT_STATUS_DE: Record<ImportStatus, string> = {
   imported: "Saldo fehlt",
   reconciled: "abgestimmt",
   unreconciled: "nicht abgestimmt",
   failed: "fehlgeschlagen",
 };
+const IMPORT_STATUS_EN: Record<ImportStatus, string> = {
+  imported: "Balance missing",
+  reconciled: "reconciled",
+  unreconciled: "not reconciled",
+  failed: "failed",
+};
+export const IMPORT_STATUS: Record<ImportStatus, string> = localized(IMPORT_STATUS_DE, IMPORT_STATUS_EN);
 
-export const BALANCE_SOURCE: Record<BalanceSource, string> = {
+const BALANCE_SOURCE_DE: Record<BalanceSource, string> = {
   file: "aus der Datei",
   user: "eingegeben (Online-Banking)",
   none: "noch keiner",
   bank: "vom Bankabruf (Kontostand der Bank)",
 };
+const BALANCE_SOURCE_EN: Record<BalanceSource, string> = {
+  file: "from the file",
+  user: "entered (online banking)",
+  none: "none yet",
+  bank: "from the bank sync (bank's balance)",
+};
+export const BALANCE_SOURCE: Record<BalanceSource, string> = localized(BALANCE_SOURCE_DE, BALANCE_SOURCE_EN);
 
 /** A FinTS sync's state (phase-5.md §4.2). */
-export const SYNC_STATUS: Record<SyncStatus, string> = {
+const SYNC_STATUS_DE: Record<SyncStatus, string> = {
   queued: "wartet",
   running: "läuft",
   needs_approval: "wartet auf Freigabe",
@@ -543,23 +928,44 @@ export const SYNC_STATUS: Record<SyncStatus, string> = {
   nothing_new: "nichts Neues",
   failed: "fehlgeschlagen",
 };
+const SYNC_STATUS_EN: Record<SyncStatus, string> = {
+  queued: "waiting",
+  running: "running",
+  needs_approval: "waiting for approval",
+  importing: "importing",
+  done: "imported",
+  nothing_new: "nothing new",
+  failed: "failed",
+};
+export const SYNC_STATUS: Record<SyncStatus, string> = localized(SYNC_STATUS_DE, SYNC_STATUS_EN);
 
-export const SYNC_TRIGGER: Record<SyncTrigger, string> = {
+const SYNC_TRIGGER_DE: Record<SyncTrigger, string> = {
   manual: "von Hand",
   scheduled: "täglich",
 };
+const SYNC_TRIGGER_EN: Record<SyncTrigger, string> = {
+  manual: "by hand",
+  scheduled: "daily",
+};
+export const SYNC_TRIGGER: Record<SyncTrigger, string> = localized(SYNC_TRIGGER_DE, SYNC_TRIGGER_EN);
 
-export const DUPLICATE_STATUS: Record<DuplicateStatus, string> = {
+const DUPLICATE_STATUS_DE: Record<DuplicateStatus, string> = {
   open: "offen",
   kept_both: "beide behalten",
   merged: "zusammengeführt",
 };
+const DUPLICATE_STATUS_EN: Record<DuplicateStatus, string> = {
+  open: "open",
+  kept_both: "both kept",
+  merged: "merged",
+};
+export const DUPLICATE_STATUS: Record<DuplicateStatus, string> = localized(DUPLICATE_STATUS_DE, DUPLICATE_STATUS_EN);
 
 // --- allocations and the review queue (phase 2 step 4, §8.2, §8.3) ---
 
 /** The fixed taxonomy (§8.2). The tax treatment and the Anlage V line come from the rule set,
  * never from this label, so renaming one changes no figure. */
-export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
+const ALLOCATION_CATEGORY_DE: Record<AllocationCategory, string> = {
   rent_cold: "Kaltmiete",
   operating_costs_prepayment: "Nebenkostenvorauszahlung",
   operating_costs_settlement: "Nebenkostenabrechnung (Nachzahlung oder Erstattung)",
@@ -692,6 +1098,131 @@ export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = {
   capital_income_tax: "Kapitalertragsteuer und Vorabpauschale",
   depot_fee: "Depot- und Verwaltergebühr",
 };
+const ALLOCATION_CATEGORY_EN: Record<AllocationCategory, string> = {
+  rent_cold: "Base rent",
+  operating_costs_prepayment: "Service charge prepayment",
+  operating_costs_settlement: "Service charge settlement (back-payment or refund)",
+  deposit_in: "Kaution received",
+  deposit_out: "Kaution repaid",
+  owner_transfer_in: "Contribution from an owner",
+  owner_transfer_out: "Withdrawal to an owner",
+  loan_interest: "Loan interest",
+  loan_principal: "Repayment",
+  loan_fees: "Loan costs (Geldbeschaffungskosten)",
+  loan_disbursement: "Loan payout",
+  hausgeld_umlagefaehig: "Hausgeld, rechargeable to tenants",
+  hausgeld_verwaltung: "Hausgeld, not rechargeable (administration)",
+  hausgeld_ruecklage: "Hausgeld, maintenance reserve",
+  property_management: "Rental management (Sondereigentumsverwaltung)",
+  grundsteuer: "Grundsteuer",
+  insurance: "Insurance",
+  electricity: "Electricity",
+  repairs: "Maintenance (repair)",
+  renovation: "Renovation or modernisation",
+  purchase_price: "Purchase price payment",
+  acquisition_cost: "Incidental purchase costs",
+  professional_fees: "Advice and legal costs",
+  bank_fees: "Account and bank fees",
+  other_income: "Other income",
+  other_expense: "Other expense",
+  uncategorized: "Still open (not categorised)",
+  hh_salary: "Salary",
+  hh_child_benefit: "Child benefit (Kindergeld)",
+  hh_wage_replacement: "Parental allowance & wage replacement",
+  hh_tax_refund: "Tax refund",
+  hh_capital_income: "Interest and dividends",
+  hh_other_income: "Other income (private)",
+  hh_housing: "Other housing",
+  hh_groceries: "Other food",
+  hh_family_child: "Other family and children",
+  hh_mobility: "Other mobility",
+  hh_insurance: "Other insurance",
+  hh_subscriptions: "Other subscriptions & contracts",
+  hh_leisure_travel: "Other leisure & hobbies",
+  hh_health: "Other health",
+  hh_other: "Other",
+  hh_donation: "Donation",
+  hh_household_services: "Household service or craftsman",
+  hh_childcare: "Childcare",
+  hh_property_cost: "Property cost, paid privately",
+  hh_tax_payment: "Income tax (prepayment or back-payment)",
+  internal_transfer_in: "Transfer from own account",
+  internal_transfer_out: "Transfer to own account",
+  hh_cash: "Cash withdrawal",
+  hh_credit_card: "Credit card settlement",
+  hh_interest_fees: "Interest and fees",
+  hh_personal_care: "Hairdresser & personal care",
+  hh_clothing: "Clothing & shoes",
+  hh_dining: "Other eating out",
+  hh_home: "Home & furnishing",
+  hh_electronics: "Electronics & tech",
+  hh_online_shopping: "Online shopping",
+  hh_fees: "Authorities & fees",
+  hh_gifts: "Gifts & celebrations",
+  hh_family_transfers: "Money to family / abroad",
+  hh_telecom: "Other phone & internet",
+  hh_work_education: "Work equipment & training",
+  hh_sport: "Sport & fitness",
+  hh_travel: "Other travel",
+  hh_investment: "Other investments",
+  hh_investment_property: "Property",
+  hh_investment_securities: "Securities & ETFs",
+  hh_investment_crypto: "Crypto",
+  hh_investment_savings: "Savings & instant access",
+  hh_refund: "Refund",
+  hh_fuel: "Fuel (car)",
+  hh_streaming: "Streaming (video)",
+  hh_pay_tv: "Cable & pay TV",
+  hh_music_audio: "Music & audiobooks",
+  hh_software: "Software & AI",
+  hh_cloud: "Cloud & servers",
+  hh_gaming: "Gaming",
+  hh_news: "Newspapers & magazines",
+  hh_memberships: "Memberships & clubs",
+  hh_public_transport: "Train, bus & public transport",
+  hh_taxi: "Taxi & ride services",
+  hh_parking: "Parking & tolls",
+  hh_car_service: "Car: garage & servicing",
+  hh_car_tax: "Car: vehicle tax & registration",
+  hh_car_purchase: "Car: purchase & financing",
+  hh_supermarket: "Supermarket",
+  hh_drugstore: "Drugstore & cosmetics",
+  hh_bakery: "Bakery, kiosk & market",
+  hh_restaurant: "Restaurant",
+  hh_cafe: "Café",
+  hh_bar: "Bar & pub",
+  hh_sweets: "Ice cream & sweets",
+  hh_fast_food: "Snacks & fast food",
+  hh_delivery: "Food delivery",
+  hh_rent: "Rent",
+  hh_energy: "Electricity, gas & heating",
+  hh_broadcast_fee: "Broadcasting fee (Rundfunkbeitrag)",
+  hh_flat_search: "Flat search & moving",
+  hh_ins_car: "Car insurance",
+  hh_ins_liability_contents: "Liability & contents",
+  hh_ins_health: "Health & care",
+  hh_ins_life: "Life, disability & pension",
+  hh_pharmacy: "Pharmacy",
+  hh_doctor: "Doctor & lab",
+  hh_dental_optical: "Dentist & glasses",
+  hh_outings: "Outings & culture",
+  hh_books_media: "Books & media",
+  hh_hobbies: "Hobbies",
+  hh_lodging: "Accommodation",
+  hh_flights: "Flights",
+  hh_kids_gear: "Baby & children's equipment",
+  hh_toys: "Toys",
+  hh_pregnancy_birth: "Pregnancy & birth",
+  hh_mobile_phone: "Mobile phone",
+  hh_internet: "Internet & landline",
+  hh_postage: "Postage & shipping",
+  security_purchase: "Securities purchase",
+  security_sale: "Securities sale",
+  distribution: "Distribution or dividend",
+  capital_income_tax: "Capital gains tax and Vorabpauschale",
+  depot_fee: "Depot and management fee",
+};
+export const ALLOCATION_CATEGORY: Record<AllocationCategory, string> = localized(ALLOCATION_CATEGORY_DE, ALLOCATION_CATEGORY_EN);
 
 /** The household, transfer and depot codes (phase 6 D159): for private accounts only. The
  * server refuses them on a rental line (allocation.category_not_for_account), where they would
@@ -721,7 +1252,7 @@ export const TAX_RELEVANT_CATEGORIES: ReadonlySet<AllocationCategory> = new Set<
 ]);
 
 /** The Haushalt screen's groups (phase 6 §13, mockup 10; rules/household/taxonomy.py). */
-export const HOUSEHOLD_GROUP: Record<HouseholdGroup, string> = {
+const HOUSEHOLD_GROUP_DE: Record<HouseholdGroup, string> = {
   income: "Einnahmen",
   housing: "Wohnen",
   groceries: "Lebensmittel und Drogerie",
@@ -752,6 +1283,37 @@ export const HOUSEHOLD_GROUP: Record<HouseholdGroup, string> = {
   investment: "Geldanlage",
   refund: "Erstattung",
 };
+const HOUSEHOLD_GROUP_EN: Record<HouseholdGroup, string> = {
+  income: "Income",
+  housing: "Housing",
+  groceries: "Groceries and drugstore",
+  family_child: "Family and children",
+  mobility: "Mobility",
+  insurance: "Insurance",
+  subscriptions: "Subscriptions and contracts",
+  leisure_travel: "Leisure & hobbies",
+  health: "Health",
+  other: "Other",
+  tax: "Tax-relevant",
+  movements: "Movements",
+  depot: "Depot",
+  personal_care: "Hairdresser & personal care",
+  clothing: "Clothing & shoes",
+  dining: "Eating out & delivery",
+  home: "Home & furnishings",
+  electronics: "Electronics & tech",
+  online_shopping: "Online shopping",
+  fees: "Authorities & fees",
+  gifts: "Gifts & celebrations",
+  family_transfers: "Money to family / abroad",
+  telecom: "Phone & internet",
+  work_education: "Work equipment & training",
+  sport: "Sport & fitness",
+  travel: "Travel",
+  investment: "Investments",
+  refund: "Refund",
+};
+export const HOUSEHOLD_GROUP: Record<HouseholdGroup, string> = localized(HOUSEHOLD_GROUP_DE, HOUSEHOLD_GROUP_EN);
 
 /** The household spending groups with subcategories (phase 6 D159 amended 14 Nov 2026,
  * migration 0032; rules/household/taxonomy.FALLBACK): each group's codes, the subcategories
@@ -802,17 +1364,17 @@ export const HOUSEHOLD_SPENDING_GROUPS: { group: HouseholdGroup; categories: All
  * block per group with subcategories (HOUSEHOLD_SPENDING_GROUPS), and the spending codes that
  * are a group of their own (0029's finer codes) share one block „Weitere Ausgaben“; „Sonstiges“
  * comes last among the spending blocks. */
-const HOUSEHOLD_GROUPS: { label: string; categories: AllocationCategory[] }[] = [
+const HOUSEHOLD_GROUPS: { label: () => string; categories: AllocationCategory[] }[] = [
   {
-    label: "Einnahmen",
+    label: () => HOUSEHOLD_GROUP.income,
     categories: ["hh_salary", "hh_child_benefit", "hh_wage_replacement", "hh_tax_refund", "hh_capital_income", "hh_other_income"],
   },
   ...HOUSEHOLD_SPENDING_GROUPS.filter((entry) => entry.group !== "other").map((entry) => ({
-    label: HOUSEHOLD_GROUP[entry.group],
+    label: () => HOUSEHOLD_GROUP[entry.group],
     categories: entry.categories,
   })),
   {
-    label: "Weitere Ausgaben",
+    label: () => (english() ? "Other spending" : "Weitere Ausgaben"),
     categories: [
       "hh_personal_care",
       "hh_clothing",
@@ -827,23 +1389,23 @@ const HOUSEHOLD_GROUPS: { label: string; categories: AllocationCategory[] }[] = 
       "hh_refund",
     ],
   },
-  { label: HOUSEHOLD_GROUP.other, categories: HOUSEHOLD_SPENDING_GROUPS.find((entry) => entry.group === "other")?.categories ?? [] },
+  { label: () => HOUSEHOLD_GROUP.other, categories: HOUSEHOLD_SPENDING_GROUPS.find((entry) => entry.group === "other")?.categories ?? [] },
   {
-    label: "Steuerlich relevant",
+    label: () => HOUSEHOLD_GROUP.tax,
     categories: ["hh_donation", "hh_household_services", "hh_childcare", "hh_property_cost", "hh_tax_payment"],
   },
   // D159 amended (6) 15 Nov 2026 (migration 0036): the Geldanlage group (saved, not spent), its
   // fallback „Sonstige Geldanlage“ last.
   {
-    label: HOUSEHOLD_GROUP.investment,
+    label: () => HOUSEHOLD_GROUP.investment,
     categories: ["hh_investment_property", "hh_investment_securities", "hh_investment_crypto", "hh_investment_savings", "hh_investment"],
   },
-  { label: "Bewegungen", categories: ["internal_transfer_in", "internal_transfer_out", "hh_cash", "hh_credit_card"] },
-  { label: "Konto", categories: ["bank_fees", "uncategorized"] },
+  { label: () => HOUSEHOLD_GROUP.movements, categories: ["internal_transfer_in", "internal_transfer_out", "hh_cash", "hh_credit_card"] },
+  { label: () => (english() ? "Account" : "Konto"), categories: ["bank_fees", "uncategorized"] },
 ];
 
-const DEPOT_GROUP: { label: string; categories: AllocationCategory[] } = {
-  label: "Depot",
+const DEPOT_GROUP: { label: () => string; categories: AllocationCategory[] } = {
+  label: () => HOUSEHOLD_GROUP.depot,
   categories: ["security_purchase", "security_sale", "distribution", "capital_income_tax", "depot_fee"],
 };
 
@@ -861,11 +1423,11 @@ export function categoryGroups(
     return [{ label: null, categories: options(ALLOCATION_CATEGORY).filter(([value]) => !PRIVATE_ONLY_CATEGORIES.has(value)) }];
   }
   const groups = kind === "depot" ? [...HOUSEHOLD_GROUPS, DEPOT_GROUP] : HOUSEHOLD_GROUPS;
-  return groups.map((group) => ({ label: group.label, categories: labelled(group.categories) }));
+  return groups.map((group) => ({ label: group.label(), categories: labelled(group.categories) }));
 }
 
 /** Who proposed an allocation set. */
-export const ALLOCATION_METHOD: Record<AllocationMethod, string> = {
+const ALLOCATION_METHOD_DE: Record<AllocationMethod, string> = {
   rule: "gelernte Regel",
   matcher_rent: "Mietabgleich",
   matcher_loan: "Tilgungsplan des Darlehens",
@@ -878,9 +1440,23 @@ export const ALLOCATION_METHOD: Record<AllocationMethod, string> = {
   llm: "KI",
   user: "von Hand",
 };
+const ALLOCATION_METHOD_EN: Record<AllocationMethod, string> = {
+  rule: "learned rule",
+  matcher_rent: "rent match",
+  matcher_loan: "loan repayment schedule",
+  matcher_owner: "transfer from an owner",
+  matcher_hausgeld: "Wirtschaftsplan",
+  matcher_transfer: "transfer between own accounts",
+  matcher_card: "credit card statement (interest and fees)",
+  matcher_depot: "depot cash statement (booking text)",
+  document_match: "matching receipt",
+  llm: "AI",
+  user: "by hand",
+};
+export const ALLOCATION_METHOD: Record<AllocationMethod, string> = localized(ALLOCATION_METHOD_DE, ALLOCATION_METHOD_EN);
 
 /** The pill of a review-queue item. */
-export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
+const INBOX_ITEM_KIND_DE: Record<InboxItemKind, string> = {
   proposal: "Vorschlag",
   read_failed: "Nicht gelesen",
   blocked_tenant_data: "Mieterdaten",
@@ -930,6 +1506,48 @@ export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = {
   // phase 6 D260 amended (9)
   app_secret_unreadable: "Schlüssel unlesbar",
 };
+const INBOX_ITEM_KIND_EN: Record<InboxItemKind, string> = {
+  proposal: "Suggestion",
+  read_failed: "Not read",
+  blocked_tenant_data: "Tenant data",
+  import_unreconciled: "Not reconciled",
+  import_pending_balance: "Balance missing",
+  possible_duplicate: "Possible duplicate",
+  allocation_proposed: "Check suggestion",
+  unmatched: "Not categorised",
+  questionnaire_open: "Yearly questions",
+  bank_approval_needed: "Approval needed",
+  bank_sync_failed: "Bank sync failed",
+  bank_balance_drift: "Balance differs",
+  bank_statements_refused: "Statements not enabled",
+  email_received: "Received by email",
+  email_failed: "Email not taken over",
+  email_inbox_failed: "Inbox disrupted",
+  reminder: "Due date",
+  transfer_link: "Choose matching transaction",
+  transfer_unmatched: "Transfer without counterpart",
+  property_cost_row: "Privately paid costs",
+  property_cost_bill: "Invoice missing",
+  property_cost_year: "Year of payment",
+  property_cost_document: "Check receipt",
+  holdings_mismatch: "Holding differs",
+  price_source_failed: "Price source disrupted",
+  price_no_source: "Price source missing",
+  price_report_differs: "Price differs from the depot report",
+  exchange_pending_balance: "Holding missing",
+  exchange_unreconciled: "Holding differs",
+  exchange_withdrawals: "Withdrawals",
+  exchange_movement: "Check receipt of funds",
+  returned_payment: "Returned payment found",
+  wallet_groups: "Check transactions",
+  wallet_change: "Change?",
+  wallet_question: "Check transaction",
+  wallet_sync: "Sync",
+  wallet_unreconciled: "Balance differs",
+  wallet_coins_left: "Coins left",
+  app_secret_unreadable: "Key unreadable",
+};
+export const INBOX_ITEM_KIND: Record<InboxItemKind, string> = localized(INBOX_ITEM_KIND_DE, INBOX_ITEM_KIND_EN);
 
 /** The id of the heading „Zugangsschlüssel (API keys)“ on Einstellungen (phase 6 D260), the
  * target of the links that send a person there. */
@@ -940,7 +1558,7 @@ export const APP_SECRETS_ANCHOR = "zugangsschluessel";
 export const AI_SETTINGS_ANCHOR = "ki";
 
 /** asset_movement.kind (phase 6 D165, D166): what a coin or fund movement was, in plain words. */
-export const MOVEMENT_KIND: Record<MovementKind, string> = {
+const MOVEMENT_KIND_DE: Record<MovementKind, string> = {
   acquisition: "Kauf",
   disposal: "Verkauf",
   internal_transfer_in: "Von eigener Wallet",
@@ -958,12 +1576,30 @@ export const MOVEMENT_KIND: Record<MovementKind, string> = {
   lp_deposit: "Einzahlung in Liquiditätspool",
   lp_withdrawal: "Auszahlung aus Liquiditätspool",
 };
+const MOVEMENT_KIND_EN: Record<MovementKind, string> = {
+  acquisition: "Purchase",
+  disposal: "Sale",
+  internal_transfer_in: "From own wallet",
+  internal_transfer_out: "To own wallet",
+  fee: "Fee",
+  staking_reward: "Staking reward",
+  cashback_reward: "Bonus or reward",
+  distribution: "Distribution",
+  capital_income_tax: "Capital gains tax",
+  uncategorized: "Unknown",
+  balance_correction: "Correction (by hand)",
+  airdrop: "Airdrop",
+  spam: "Spam token",
+  lp_deposit: "Deposit into liquidity pool",
+  lp_withdrawal: "Withdrawal from liquidity pool",
+};
+export const MOVEMENT_KIND: Record<MovementKind, string> = localized(MOVEMENT_KIND_DE, MOVEMENT_KIND_EN);
 
 
 // --- The income tax return's inputs (phase-4b.md §7, §10) --------------------------------
 
 /** What a return input row is (return_input.kind, D97). */
-export const RETURN_INPUT_KIND: Record<ReturnInputKind, string> = {
+const RETURN_INPUT_KIND_DE: Record<ReturnInputKind, string> = {
   wage_certificate: "Lohnsteuerbescheinigung",
   payslip: "Gehaltsabrechnung",
   commute: "Arbeitsweg",
@@ -983,6 +1619,27 @@ export const RETURN_INPUT_KIND: Record<ReturnInputKind, string> = {
   special_expense: "Spende",
   no_pay: "Kein Arbeitslohn",
 };
+const RETURN_INPUT_KIND_EN: Record<ReturnInputKind, string> = {
+  wage_certificate: "Lohnsteuerbescheinigung",
+  payslip: "Gehaltsabrechnung",
+  commute: "Commute",
+  home_office: "Home office days",
+  work_room: "Home study (Arbeitszimmer)",
+  work_equipment: "Work equipment",
+  telecom: "Telecommunications",
+  professional_association: "Professional association fees",
+  training: "Training",
+  other_expense: "Other Werbungskosten",
+  other_insurance: "Other insurance",
+  replacement_income: "Wage-replacement benefits",
+  vorsorge_override: "Provident contributions by hand",
+  child: "Child",
+  childcare_cost: "Childcare costs",
+  household_services: "Household services (§ 35a)",
+  special_expense: "Donation",
+  no_pay: "No pay",
+};
+export const RETURN_INPUT_KIND: Record<ReturnInputKind, string> = localized(RETURN_INPUT_KIND_DE, RETURN_INPUT_KIND_EN);
 
 /** A pre-filled pay document's field (the proposal's field name, backend rules/prefill.py
  * wage_certificate / payslip), as the evidence fold-out names it. The certificate's amounts by
@@ -1017,6 +1674,47 @@ const PAY_FIELD: Record<string, string> = {
   "value.care_employee": "Nr. 26 Pflegeversicherung",
   "value.unemployment_employee": "Nr. 27 Arbeitslosenversicherung",
 };
+const PAY_FIELD_EN: Record<string, string> = {
+  tax_year: "Tax year",
+  "value.period_from": "Period from",
+  "value.period_to": "Period to",
+  "value.period_month": "Pay month",
+  "value.employer": "Employer",
+  "value.tax_class": "Tax class",
+  "value.tax_class_factor": "Factor (tax class IV)",
+  "value.church_tax_marked": "Church tax marker",
+  "value.child_allowance_count": "Child allowances",
+  "value.months_remaining_paid": "Remaining months",
+  "value.gross": "No. 3 gross pay",
+  "value.income_tax": "No. 4 wage tax",
+  "value.soli": "No. 5 solidarity surcharge",
+  "value.church_tax": "No. 6 church tax",
+  "value.church_tax_spouse": "No. 7 spouse's church tax",
+  "value.replacement_benefits": "No. 15 wage-replacement benefits",
+  "value.short_time_allowance": "No. 15a short-time work allowance",
+  "value.employer_commute_tax_free": "No. 17 commuting allowance, tax-free",
+  "value.employer_commute_flat_taxed": "No. 18 commuting allowance, flat-rate taxed",
+  "value.pension_employer": "No. 22a pension insurance, employer",
+  "value.pension_employee": "No. 23a pension insurance, employee",
+  "value.pension_employee_professional": "No. 23b professional pension scheme",
+  "value.subsidy_health": "No. 24a health insurance subsidy",
+  "value.subsidy_private_health": "No. 24b private health insurance subsidy",
+  "value.subsidy_care": "No. 24c care insurance subsidy",
+  "value.health_employee": "No. 25 health insurance",
+  "value.care_employee": "No. 26 care insurance",
+  "value.unemployment_employee": "No. 27 unemployment insurance",
+};
+const PAYSLIP_FIGURE_EN: Record<string, string> = {
+  gross: "Taxable gross",
+  income_tax: "Wage tax",
+  soli: "Solidarity surcharge",
+  church_tax: "Church tax",
+  pension_employee: "Pension insurance",
+  health_employee: "Health insurance",
+  care_employee: "Care insurance",
+  unemployment_employee: "Unemployment insurance",
+  tax_free_benefits: "tax-free benefits",
+};
 const PAYSLIP_FIGURE: Record<string, string> = {
   gross: "Steuer-Brutto",
   income_tax: "Lohnsteuer",
@@ -1032,57 +1730,95 @@ const PAYSLIP_FIGURE: Record<string, string> = {
 export function payFieldLabel(field: string): string {
   const figure = /^value\.([a-z_]+)\.(month|ytd)$/.exec(field);
   if (figure?.[1] && figure[2]) {
+    if (english()) return `${PAYSLIP_FIGURE_EN[figure[1]] ?? figure[1]} (${figure[2] === "month" ? "month" : "year to date"})`;
     return `${PAYSLIP_FIGURE[figure[1]] ?? figure[1]} (${figure[2] === "month" ? "Monat" : "Jahr bisher"})`;
   }
-  return PAY_FIELD[field] ?? field;
+  return (english() ? PAY_FIELD_EN : PAY_FIELD)[field] ?? field;
 }
 
 /** Where an owner's gross pay comes from (OwnerZve.gross_source, D98); the screen adds the
  * year or the payslip month. */
-export const GROSS_SOURCE: Record<GrossSource, string> = {
+const GROSS_SOURCE_DE: Record<GrossSource, string> = {
   certificate: "laut Lohnsteuerbescheinigung",
   payslip: "Hochrechnung aus Gehaltsabrechnung",
   expected: "Schätzung",
   declared_none: "kein Arbeitslohn angegeben",
 };
+const GROSS_SOURCE_EN: Record<GrossSource, string> = {
+  certificate: "per Lohnsteuerbescheinigung",
+  payslip: "projected from payslip",
+  expected: "Estimate",
+  declared_none: "no pay stated",
+};
+export const GROSS_SOURCE: Record<GrossSource, string> = localized(GROSS_SOURCE_DE, GROSS_SOURCE_EN);
 
 /** A §35a cost's class (HouseholdServicesFact.service_class, D112). */
-export const HOUSEHOLD_SERVICE_CLASS: Record<HouseholdServiceClass, string> = {
+const HOUSEHOLD_SERVICE_CLASS_DE: Record<HouseholdServiceClass, string> = {
   handwerker: "Handwerkerleistung",
   haushaltsnah: "Haushaltsnahe Dienstleistung",
   minijob: "Minijob im Haushalt",
 };
+const HOUSEHOLD_SERVICE_CLASS_EN: Record<HouseholdServiceClass, string> = {
+  handwerker: "Tradesperson's work",
+  haushaltsnah: "Household service",
+  minijob: "Mini-job in the household",
+};
+export const HOUSEHOLD_SERVICE_CLASS: Record<HouseholdServiceClass, string> = localized(HOUSEHOLD_SERVICE_CLASS_DE, HOUSEHOLD_SERVICE_CLASS_EN);
 
 /** Where a §35a labour cost was read from (HouseholdServicesFact.source). */
-export const HOUSEHOLD_SERVICE_SOURCE: Record<HouseholdServiceSource, string> = {
+const HOUSEHOLD_SERVICE_SOURCE_DE: Record<HouseholdServiceSource, string> = {
   own_invoice: "eigene Rechnung",
   nebenkostenabrechnung: "Nebenkostenabrechnung der eigenen Wohnung",
 };
+const HOUSEHOLD_SERVICE_SOURCE_EN: Record<HouseholdServiceSource, string> = {
+  own_invoice: "own invoice",
+  nebenkostenabrechnung: "service charge statement of your own flat",
+};
+export const HOUSEHOLD_SERVICE_SOURCE: Record<HouseholdServiceSource, string> = localized(HOUSEHOLD_SERVICE_SOURCE_DE, HOUSEHOLD_SERVICE_SOURCE_EN);
 
 /** The section of a Jahresfrage (Question.section, D110). */
-export const QUESTION_SECTION: Record<QuestionSection, string> = {
+const QUESTION_SECTION_DE: Record<QuestionSection, string> = {
   einkommen: "Einkommen",
   werbungskosten: "Werbungskosten",
   haushalt: "Haushalt",
   kinder: "Kinder",
   immobilie: "Immobilie",
 };
+const QUESTION_SECTION_EN: Record<QuestionSection, string> = {
+  einkommen: "Income",
+  werbungskosten: "Werbungskosten",
+  haushalt: "Household",
+  kinder: "Children",
+  immobilie: "Property",
+};
+export const QUESTION_SECTION: Record<QuestionSection, string> = localized(QUESTION_SECTION_DE, QUESTION_SECTION_EN);
 
 /** A Jahresfrage's coded answer (questionnaire_answer.answer, D110). */
-export const QUESTIONNAIRE_ANSWER: Record<QuestionnaireAnswerValue, string> = {
+const QUESTIONNAIRE_ANSWER_DE: Record<QuestionnaireAnswerValue, string> = {
   yes: "Ja",
   no: "Nein",
   not_applicable: "Trifft nicht zu",
 };
+const QUESTIONNAIRE_ANSWER_EN: Record<QuestionnaireAnswerValue, string> = {
+  yes: "Yes",
+  no: "No",
+  not_applicable: "Not applicable",
+};
+export const QUESTIONNAIRE_ANSWER: Record<QuestionnaireAnswerValue, string> = localized(QUESTIONNAIRE_ANSWER_DE, QUESTIONNAIRE_ANSWER_EN);
 
 /** A commute route's kind (CommuteFact.kind). */
-export const COMMUTE_KIND: Record<CommuteKind, string> = {
+const COMMUTE_KIND_DE: Record<CommuteKind, string> = {
   first_workplace: "Erste Tätigkeitsstätte",
   collection_point: "Sammelpunkt oder weiträumiges Tätigkeitsgebiet",
 };
+const COMMUTE_KIND_EN: Record<CommuteKind, string> = {
+  first_workplace: "First place of work",
+  collection_point: "Collection point or wide work area",
+};
+export const COMMUTE_KIND: Record<CommuteKind, string> = localized(COMMUTE_KIND_DE, COMMUTE_KIND_EN);
 
 /** A work item's class (EquipmentFact.item_class, D108). */
-export const ITEM_CLASS: Record<ItemClass, string> = {
+const ITEM_CLASS_DE: Record<ItemClass, string> = {
   computer: "Computer",
   software: "Software",
   phone: "Telefon",
@@ -1091,23 +1827,45 @@ export const ITEM_CLASS: Record<ItemClass, string> = {
   subscription: "Abonnement",
   other: "Sonstiges",
 };
+const ITEM_CLASS_EN: Record<ItemClass, string> = {
+  computer: "Computer",
+  software: "Software",
+  phone: "Phone",
+  furniture: "Furniture",
+  tools: "Tools",
+  subscription: "Subscription",
+  other: "Other",
+};
+export const ITEM_CLASS: Record<ItemClass, string> = localized(ITEM_CLASS_DE, ITEM_CLASS_EN);
 
 /** An other Werbungskosten item's class (OtherExpenseFact.expense_class). */
-export const OTHER_EXPENSE_CLASS: Record<OtherExpenseClass, string> = {
+const OTHER_EXPENSE_CLASS_DE: Record<OtherExpenseClass, string> = {
   account_fee: "Kontoführungsgebühren",
   application: "Bewerbungskosten",
   ferry_flight: "Fähr- oder Flugkosten zur Arbeit",
   other: "Sonstiges",
 };
+const OTHER_EXPENSE_CLASS_EN: Record<OtherExpenseClass, string> = {
+  account_fee: "Account fees",
+  application: "Job application costs",
+  ferry_flight: "Ferry or flight costs to work",
+  other: "Other",
+};
+export const OTHER_EXPENSE_CLASS: Record<OtherExpenseClass, string> = localized(OTHER_EXPENSE_CLASS_DE, OTHER_EXPENSE_CLASS_EN);
 
 /** The Arbeitszimmer's choice between the flat amount and the actual costs (D106). */
-export const WORK_ROOM_PREFER: Record<WorkRoomPrefer, string> = {
+const WORK_ROOM_PREFER_DE: Record<WorkRoomPrefer, string> = {
   flat: "Jahrespauschale",
   actual: "Tatsächliche Kosten",
 };
+const WORK_ROOM_PREFER_EN: Record<WorkRoomPrefer, string> = {
+  flat: "Annual flat rate",
+  actual: "Actual costs",
+};
+export const WORK_ROOM_PREFER: Record<WorkRoomPrefer, string> = localized(WORK_ROOM_PREFER_DE, WORK_ROOM_PREFER_EN);
 
 /** A privately paid rental cost's class (PrivateCostValue.cost_class, D111; financing D134). */
-export const PRIVATE_COST_CLASS: Record<PrivateCostClass, string> = {
+const PRIVATE_COST_CLASS_DE: Record<PrivateCostClass, string> = {
   travel: "Fahrten zur Wohnung",
   postage: "Porto",
   advertising: "Anzeigen",
@@ -1117,6 +1875,17 @@ export const PRIVATE_COST_CLASS: Record<PrivateCostClass, string> = {
   financing: "Geldbeschaffungskosten (z. B. Notar und Grundbuch für die Grundschuld)",
   other: "Sonstiges",
 };
+const PRIVATE_COST_CLASS_EN: Record<PrivateCostClass, string> = {
+  travel: "Trips to the flat",
+  postage: "Postage",
+  advertising: "Adverts",
+  association: "Landlords' association",
+  legal_insurance: "Legal expenses insurance",
+  software: "Software",
+  financing: "Loan costs (Geldbeschaffungskosten, e.g. notary and Grundbuch for the Grundschuld)",
+  other: "Other",
+};
+export const PRIVATE_COST_CLASS: Record<PrivateCostClass, string> = localized(PRIVATE_COST_CLASS_DE, PRIVATE_COST_CLASS_EN);
 
 // --- The Anlage V draft (phase-3.md §11) ----------------------------------------------
 
@@ -1128,13 +1897,17 @@ const money = (params: Params, key = "amount") => formatMoney(params[key]);
 /** A payment_proof.missing bill (phase 3 D143): „die Rechnung Notar“ by the cost row's kind,
  * or „die Rechnung „Dachreparatur““ by the privately paid cost's label. */
 export function proofBill(params: Params): string {
+  if (english()) {
+    if (params.kind) return `the ${ACQUISITION_COST_KIND[params.kind as AcquisitionCostKind] ?? params.kind} invoice`;
+    return params.label ? `the invoice “${params.label}”` : "the invoice";
+  }
   if (params.kind) return `die Rechnung ${ACQUISITION_COST_KIND[params.kind as AcquisitionCostKind] ?? params.kind}`;
   return params.label ? `die Rechnung „${params.label}“` : "die Rechnung";
 }
 
 /** The German sentence of a draft warning, its params filled in (amounts as decimal strings,
  * dates ISO, phase-3.md §5). The rules send codes and params only; the text lives here. */
-export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
+const WARNING_TEXT_DE: Record<WarningCode, (params: Params) => string> = {
   year_end_straddle: (p) =>
     `Eine Zahlung${p.amount ? ` über ${money(p)}` : ""} ist im einen Jahr gebucht und im anderen wertgestellt; sie zählt im Jahr der Buchung.`,
   "afa.no_split": () => "Keine Kaufpreisaufteilung gewählt: ohne Gebäudeanteil bleibt die AfA leer.",
@@ -1253,8 +2026,126 @@ export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = {
     `${p.count ?? "Einige"} ${p.count === "1" ? "Jahresfrage" : "Jahresfragen"} offen: beim Export noch nicht beantwortet, die Angaben können sich noch ändern.`,
 };
 
+/** The same sentences in English (phase 10 D284); tax words stay German as glossary.md says. */
+const WARNING_TEXT_EN: Record<WarningCode, (params: Params) => string> = {
+  year_end_straddle: (p) =>
+    `A payment${p.amount ? ` of ${money(p)}` : ""} is booked in one year and valued in the other; it counts in the year it was booked.`,
+  "afa.no_split": () => "No purchase price split chosen: without a building share the AfA (depreciation) stays empty.",
+  "afa.cost_row_unpaid": (p) =>
+    `${p.kind ? (ACQUISITION_COST_KIND[p.kind as AcquisitionCostKind] ?? p.kind) : "Acquisition costs"} ${money(p)}: no payment from the rental account found (perhaps paid from another account). It still counts towards the AfA basis.`,
+  "afa.acquisition_cost_without_row": (p) =>
+    `A payment of acquisition costs of ${money(p)} has no matching entry under acquisition costs: it counts towards the AfA basis only once it is entered there.`,
+  "afa.purchase_price_mismatch": (p) =>
+    `The purchase price paid from the account, ${money(p, "paid")}, differs from the purchase price of ${money(p, "price")}.`,
+  "afa.useful_life_report": (p) =>
+    `AfA over a shorter actual useful life (${p.years ?? "?"} years from ${p.from_year ?? "?"}): state it in Zeile 33 „laut Erläuterung“; the Finanzamt usually asks for the appraisal.`,
+  "afa.movable_asset_no_evidence": (p) =>
+    `The value of the fitted kitchen (${money(p)}) is entered without a receipt. An estimate is allowed; please keep its basis (e.g. a printout of the kitchen planner) and add it as a receipt.`,
+  "afa.movable_asset_exceeds_building": (p) =>
+    `The fitted kitchen (${money(p, "deducted")} with acquisition costs) is not smaller than the building share (${money(p, "building")}): the building AfA falls to 0. Please check the kitchen's value or the purchase price split.`,
+  "limit.exceeded": (p) =>
+    `The 15% limit is exceeded${p.exceeded_in_year ? ` in ${p.exceeded_in_year}` : ""}: the renovation costs of the three-year window become construction costs and run through the AfA.`,
+  "limit.prior_year_amendment": (p) =>
+    `The 15% limit was exceeded ${p.exceeded_in_year ? `in ${p.exceeded_in_year}` : "later"}: ${money(p)} of this year become construction costs after the fact; the assessment for this year will be amended.`,
+  "limit.estimated_net": () =>
+    "The net amount is missing for at least one invoice; the 15% limit uses an estimated VAT there.",
+  "limit.private_cost_undated": (p) =>
+    `Repair “${p.label ?? ""}” (${money(p)}), paid from another account, without a date of the work: to be safe, the 15% limit counts it if it was paid in one of the three years after the purchase.`,
+  "limit.private_cost_after_window": (p) =>
+    `Repair “${p.label ?? ""}” (${money(p)}), paid from another account, dated ${formatDate(p.performed_on)}, shortly after the three-year window: when was the work done? Work within the window counts towards the 15% limit.`,
+  "anschaffungsnah.performance_date_check": (p) =>
+    `Costs of ${money(p)}, paid on ${formatDate(p.booking_date)}, shortly after the three-year window: when was the work done? A service period within the window counts towards the 15% limit.`,
+  "renovation.undecided": (p) =>
+    `Classify the renovation of ${money(p)}: maintenance (Erhaltungsaufwand) or construction costs (Herstellungskosten)? Not deducted until then.`,
+  "interest.certificate_mismatch": (p) =>
+    `Interest certificate ${money(p, "certified")}, booked ${money(p, "booked")}: difference ${money(p, "difference")}. Usually an instalment that the ten-day rule moves into the other year.`,
+  "hausgeld.abrechnung_pending": () =>
+    "The Hausgeldabrechnung is still missing: what the owners' association spent from the reserve is not included for now.",
+  "income.other_review": (p) =>
+    p.counted_as_rent === "1"
+      ? `Income of ${money(p)}${p.counterparty_iban ? ` from ${p.counterparty_iban}` : ""} before the handover: counts as rent but is booked as other income.`
+      : `Check other income of ${money(p)}${p.counterparty_iban ? ` from ${p.counterparty_iban}` : ""}.`,
+  "income.pre_handover": (p) =>
+    `${p.count ?? "Some"} ${p.count === "1" ? "payment" : "payments"} received before the handover (${money(p)}): how they count is not decided yet.`,
+  "income.living_area_missing": () =>
+    "The property's living area is missing; Zeile 13 takes the sum of the units' areas.",
+  "umlagen.mixed_terms": () =>
+    "Tenancies with service charges included and with prepayments are mixed: the cross in Zeile 24 stays empty.",
+  "reduced_rent.no_market_rent": () =>
+    "Enter the local comparable rent to check reduced-rent letting (the 66% limit).",
+  "reduced_rent.prognosis_needed": () =>
+    "The rent is between 50% and 66% of the local comparable rent: the Finanzamt may ask for a surplus forecast.",
+  "reduced_rent.partial": (p) =>
+    `The rent is below 50% of the local comparable rent: the Werbungskosten are only partly deductible${p.cut_percent ? ` (cut by ${p.cut_percent}%)` : ""}.`,
+  "draft.open_lines_excluded": (p) =>
+    `${p.count ?? "Some"} ${p.count === "1" ? "line" : "lines"} in To review (${money(p, "sum")}) ${p.count === "1" ? "is" : "are"} not yet in the draft.`,
+  "draft.form_provisional": () =>
+    "This year's form is not published yet; Zeilen and Kennzahlen are provisional.",
+  "draft.allocation_without_property": (p) =>
+    `A payment from the account${p.amount ? ` of ${money(p)}` : ""} is not assigned to a property.`,
+  "archive.finanzamt_copy_needed": () =>
+    "A document does not open in every program (Adobe form or annotations): print a copy for the Finanzamt.",
+  "tax.travel_frequency": () =>
+    "More than 50 trips to the property in the year: with almost daily presence only half the flat rate may apply. Please check.",
+  "tax.private_cost_paid_from_account": (p) =>
+    `${p.label ? `“${p.label}” is` : "An invoice is"} entered as paid from another account but was paid from the rental account: it counts only once, with the booking from the rental account. Please withdraw the entry.`,
+  "payment_proof.missing": (p) =>
+    p.proof_rest
+      ? `Proof of payment missing: ${proofBill(p)} of ${money(p)} counts. Part of it is proven; the proof of ${money(p, "proof_rest")} is still missing.`
+      : `Proof of payment missing: ${proofBill(p)} of ${money(p)} counts, but nothing shows it was paid${p.proof_amount ? ` (the uploaded proof is for ${money(p, "proof_amount")}, the amount does not match)` : ""}.`,
+  "anlage_n.certificate_missing": () =>
+    "No Lohnsteuerbescheinigung for this year: the figures rest on payslips or the estimate.",
+  "anlage_n.church_mismatch": () => "The certificate's church tax markers do not match the owner's details.",
+  "anlage_n.tax_class_6": () =>
+    "Tax class 6: a second employment. It is in its own column for tax class 6.",
+  "anlage_n.periods_overlap": () => "Two certificates from the same employer overlap in their period.",
+  "anlage_n.days_implausible": () =>
+    "The number of working days does not fit the days per week and the period.",
+  "anlage_n.home_office_capped": () => "The daily flat rate is capped at the yearly maximum.",
+  "anlage_n.too_many_routes": () =>
+    "More commutes than the form has lines: please enter the rest by hand.",
+  "anlage_n.receipt_missing": () => "No receipt is stored for an expense.",
+  "anlage_n.form_provisional": () =>
+    "This year's Anlage N is not published yet; Zeilen and Kennzahlen are provisional.",
+  "anlage_n.payslip_gap": (p) => payslipGapText(p),
+  "anlage_n.payslip_no_ytd": () =>
+    "The payslip has no year-to-date figures: the projection uses the monthly figure only.",
+  "anlage_n.work_room_records": () => "Please keep the floor plan and the costs of the home study.",
+  "anlage_n.work_room_centre": () =>
+    "A home study counts only if it is the centre of all work. Please check.",
+  "anlage_n.work_room_partial": (p) =>
+    `The home study counts for ${p.months ?? "some"} months: enter the daily flat rate only for days in the other months.`,
+  "anlage_n.first_workplace_check": () =>
+    "Please check whether this is the first place of work (as set by the employer).",
+  "anlage_n.no_pay_overruled": () =>
+    "“No pay” is stated for this year, but a Lohnsteuerbescheinigung or payslip exists: it counts. Please withdraw the statement.",
+  "return.progression_provisional": () =>
+    "Wage-replacement benefits are not certified yet: the tax rate is provisional.",
+  "return.benefit_possible_double": () =>
+    "A wage-replacement benefit is on the certificate and entered separately: please enter it only once.",
+  "return.benefit_booked": (p) =>
+    `Wage-replacement benefits ${p.tax_year ?? ""}: ${money(p, "difference")} booked on the account, not yet entered as a wage-replacement benefit.`,
+  "return.children_mismatch": () =>
+    "The certificate's number of child allowances does not match the children entered.",
+  "return.kindergeld_apply": () =>
+    "No child benefit (Kindergeld) is entered for a child yet: please apply at the Familienkasse.",
+  "return.child_over_18": () => "A child is of age: they count only while in training or studying.",
+  "return.childcare_until_14": () =>
+    "A child turns 14 this year: only childcare costs up to the 14th birthday count.",
+  "return.donation_over_cap": () => "The donations exceed the cap; the rest does not count this year.",
+  "return.filing_required": () => "A tax return must be filed for this year.",
+  "return.questionnaire_open": () => "Questions about the tax year are still open.",
+  "return.not_modelled": () => "Part of the return is not computed by the app; the estimate is incomplete.",
+  questionnaire_provisional: () =>
+    "This year's questions are not set yet; last year's apply.",
+  "tax_export.questions_open": (p) =>
+    `${p.count ?? "Some"} yearly ${p.count === "1" ? "question" : "questions"} open: not answered at export, the details may still change.`,
+};
+
+export const WARNING_TEXT: Record<WarningCode, (params: Params) => string> = localized(WARNING_TEXT_DE, WARNING_TEXT_EN);
+
 /** What a line's source is, in the sources drawer. */
-export const TAX_SOURCE_KIND: Record<TaxSourceKind, string> = {
+const TAX_SOURCE_KIND_DE: Record<TaxSourceKind, string> = {
   allocation: "Zahlung",
   transaction: "Kontoumsatz",
   document: "Dokument",
@@ -1272,15 +2163,38 @@ export const TAX_SOURCE_KIND: Record<TaxSourceKind, string> = {
   questionnaire_answer: "Antwort auf eine Jahresfrage",
   anlage_n_rule_set: "Regelwerk der Anlage N",
 };
+const TAX_SOURCE_KIND_EN: Record<TaxSourceKind, string> = {
+  allocation: "Payment",
+  transaction: "Bank line",
+  document: "Document",
+  property: "Purchase price of the property",
+  price_split: "Purchase price split",
+  acquisition_cost: "Acquisition costs",
+  loan: "Loan",
+  tax_input: "Tax detail",
+  rule: "Rules of the tax year",
+  scenario: "Projection scenario",
+  schedule_entry: "Repayment schedule",
+  income_input: "Income detail",
+  tariff: "Income tax tariff",
+  return_input: "Tax return detail",
+  questionnaire_answer: "Answer to a yearly question",
+  anlage_n_rule_set: "Anlage N rules",
+};
+export const TAX_SOURCE_KIND: Record<TaxSourceKind, string> = localized(TAX_SOURCE_KIND_DE, TAX_SOURCE_KIND_EN);
 
 /** A line note of the draft (the §5.1 notes); an unknown note is shown as sent. */
 const TAX_NOTE: Record<string, string> = {
   due_date_missing: "Fälligkeit unbekannt: zählt im Jahr der Zahlung",
   year_end_straddle: "Wertstellung im anderen Jahr",
 };
+const TAX_NOTE_EN: Record<string, string> = {
+  due_date_missing: "Due date unknown: counts in the year paid",
+  year_end_straddle: "Value date in the other year",
+};
 
 export function taxNote(note: string): string {
-  return TAX_NOTE[note] ?? note;
+  return (english() ? TAX_NOTE_EN : TAX_NOTE)[note] ?? note;
 }
 
 /** "29.12.2026 → 2027" for a payment the ten-day rule moved. */
@@ -1301,7 +2215,7 @@ type AnlageNStatus = components["schemas"]["AnlageNDraft"]["status"];
 type ReturnStatus = components["schemas"]["ReturnEstimate"]["status"];
 
 /** A work item's class (D108): it decides the useful life. */
-export const EQUIPMENT_CLASS: Record<EquipmentClass, string> = {
+const EQUIPMENT_CLASS_DE: Record<EquipmentClass, string> = {
   computer: "Computer, Laptop, Tablet",
   software: "Software",
   phone: "Smartphone, Telefon",
@@ -1310,9 +2224,19 @@ export const EQUIPMENT_CLASS: Record<EquipmentClass, string> = {
   subscription: "Abo (z. B. Software, Fachzeitschrift)",
   other: "Sonstiges",
 };
+const EQUIPMENT_CLASS_EN: Record<EquipmentClass, string> = {
+  computer: "Computer, laptop, tablet",
+  software: "Software",
+  phone: "Smartphone, phone",
+  furniture: "Office furniture",
+  tools: "Tools",
+  subscription: "Subscription (e.g. software, trade journal)",
+  other: "Other",
+};
+export const EQUIPMENT_CLASS: Record<EquipmentClass, string> = localized(EQUIPMENT_CLASS_DE, EQUIPMENT_CLASS_EN);
 
 /** A wage-replacement benefit paid by an authority (Progressionsvorbehalt, D102). */
-export const REPLACEMENT_BENEFIT: Record<ReplacementBenefit, string> = {
+const REPLACEMENT_BENEFIT_DE: Record<ReplacementBenefit, string> = {
   elterngeld: "Elterngeld",
   mutterschaftsgeld: "Mutterschaftsgeld der Krankenkasse",
   krankengeld: "Krankengeld",
@@ -1320,19 +2244,39 @@ export const REPLACEMENT_BENEFIT: Record<ReplacementBenefit, string> = {
   kurzarbeitergeld: "Kurzarbeitergeld",
   other: "Andere Lohnersatzleistung",
 };
+const REPLACEMENT_BENEFIT_EN: Record<ReplacementBenefit, string> = {
+  elterngeld: "Elterngeld (parental allowance)",
+  mutterschaftsgeld: "Maternity pay from the health insurer",
+  krankengeld: "Sickness benefit",
+  arbeitslosengeld: "Unemployment benefit",
+  kurzarbeitergeld: "Short-time work allowance",
+  other: "Other wage-replacement benefit",
+};
+export const REPLACEMENT_BENEFIT: Record<ReplacementBenefit, string> = localized(REPLACEMENT_BENEFIT_DE, REPLACEMENT_BENEFIT_EN);
 
 /** The Anlage N draft's status: where the pay comes from. */
-export const ANLAGE_N_STATUS: Record<AnlageNStatus, string> = {
+const ANLAGE_N_STATUS_DE: Record<AnlageNStatus, string> = {
   certified: "bescheinigt",
   estimate: "Schätzung",
   none: "kein Arbeitslohn",
 };
+const ANLAGE_N_STATUS_EN: Record<AnlageNStatus, string> = {
+  certified: "certified",
+  estimate: "Estimate",
+  none: "no pay",
+};
+export const ANLAGE_N_STATUS: Record<AnlageNStatus, string> = localized(ANLAGE_N_STATUS_DE, ANLAGE_N_STATUS_EN);
 
 /** The whole-return estimate's status (D101). */
-export const RETURN_STATUS: Record<ReturnStatus, string> = {
+const RETURN_STATUS_DE: Record<ReturnStatus, string> = {
   estimate: "Schätzung",
   certified: "laut Bescheinigungen",
 };
+const RETURN_STATUS_EN: Record<ReturnStatus, string> = {
+  estimate: "Estimate",
+  certified: "per certificates",
+};
+export const RETURN_STATUS: Record<ReturnStatus, string> = localized(RETURN_STATUS_DE, RETURN_STATUS_EN);
 
 /** What the estimate leaves out (backend services/return_inputs.py NOT_MODELLED, D95). */
 const NOT_MODELLED: Record<string, string> = {
@@ -1342,10 +2286,18 @@ const NOT_MODELLED: Record<string, string> = {
   prepayments: "Vorauszahlungen",
   capital_income: "Kapitalerträge (ab Phase 8)",
 };
+const NOT_MODELLED_EN: Record<string, string> = {
+  extraordinary_burden: "extraordinary expenses",
+  riester: "Riester",
+  maintenance: "maintenance payments",
+  prepayments: "tax prepayments",
+  capital_income: "capital income (from phase 8)",
+};
 
 /** anlage_n.payslip_gap with its months: `month` is the payslip whose year-to-date sum does not
  * follow from the one before (`previous`); `missing` lists the months between the two, if any. */
 function payslipGapText(p: Params): string {
+  if (english()) return payslipGapTextEn(p);
   if (!p.month) return "Zwischen den Gehaltsabrechnungen fehlt ein Monat.";
   const employer = p.employer ? ` (${p.employer})` : "";
   const missing = (p.missing ?? "").split(",").filter((m) => m !== "");
@@ -1356,23 +2308,47 @@ function payslipGapText(p: Params): string {
   return `Gehaltsabrechnung ${formatMonth(p.month)}${employer} passt nicht zur Vormonatssumme: bitte die Jahreswerte prüfen.`;
 }
 
+function payslipGapTextEn(p: Params): string {
+  if (!p.month) return "A month is missing between the payslips.";
+  const employer = p.employer ? ` (${p.employer})` : "";
+  const missing = (p.missing ?? "").split(",").filter((m) => m !== "");
+  if (missing.length > 0) {
+    const names = missing.map(formatMonth).join(", ");
+    return `Payslip ${names}${employer} ${missing.length === 1 ? "is" : "are"} missing: the year-to-date sum in ${formatMonth(p.month)} does not follow from the payslip before.`;
+  }
+  return `Payslip ${formatMonth(p.month)}${employer} does not follow from the previous month's sum: please check the year-to-date figures.`;
+}
+
 /** An unknown code is shown as sent. */
 export function notModelledLabel(code: string): string {
-  return NOT_MODELLED[code] ?? code;
+  return (english() ? NOT_MODELLED_EN : NOT_MODELLED)[code] ?? code;
 }
 
 /** The Grundsteuerbescheid's payment rhythm (phase-5.md D126). */
-export const GRUNDSTEUER_RHYTHM: Record<GrundsteuerRhythm, string> = {
+const GRUNDSTEUER_RHYTHM_DE: Record<GrundsteuerRhythm, string> = {
   quarterly: "vierteljährlich",
   half_yearly: "halbjährlich",
   yearly_august: "jährlich zum 15. August",
   yearly_july: "jährlich zum 1. Juli",
 };
+const GRUNDSTEUER_RHYTHM_EN: Record<GrundsteuerRhythm, string> = {
+  quarterly: "quarterly",
+  half_yearly: "half-yearly",
+  yearly_august: "yearly on 15 August",
+  yearly_july: "yearly on 1 July",
+};
+export const GRUNDSTEUER_RHYTHM: Record<GrundsteuerRhythm, string> = localized(GRUNDSTEUER_RHYTHM_DE, GRUNDSTEUER_RHYTHM_EN);
 
 /** The Grundsteuer reminder's mode (D126): the row's choice, or "automatisch" (inferred from a
  * direct-debit line, never from a transfer). */
-export const GRUNDSTEUER_MODE: Record<GrundsteuerMode | "auto", string> = {
+const GRUNDSTEUER_MODE_DE: Record<GrundsteuerMode | "auto", string> = {
   remind: "Erinnern",
   sepa_mandate: "Lastschrift prüfen",
   auto: "automatisch",
 };
+const GRUNDSTEUER_MODE_EN: Record<GrundsteuerMode | "auto", string> = {
+  remind: "Remind",
+  sepa_mandate: "Check direct debit",
+  auto: "automatic",
+};
+export const GRUNDSTEUER_MODE: Record<GrundsteuerMode | "auto", string> = localized(GRUNDSTEUER_MODE_DE, GRUNDSTEUER_MODE_EN);
