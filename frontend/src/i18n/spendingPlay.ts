@@ -1,6 +1,6 @@
 // „Ausgaben durchspielen“, the table of components/spendingPlay.tsx (phase 9 D263): its fields,
 // their hints and „Neue Ausgabe“. „Was eure Änderungen bewirken“ below it reads i18n/planning.ts.
-// Amounts and months keep the German format (formatMoney, formatMonth, monthRange).
+// Amounts and months come from components/planFormat.ts, which keeps the German format exactly.
 import { defineMessages } from "./core";
 
 export const spendingPlay = defineMessages({
@@ -78,7 +78,7 @@ export const spendingPlay = defineMessages({
     remove: "Remove",
     chooseCategory: "Choose a category …",
     addNewSpending: "+ Add new spending",
-    newSpendingHint: "for spending you have not had so far (Ø 0 €)",
+    newSpendingHint: "for spending you have not had so far (Ø €0)",
     // The hint under a planned field, from the server's planned amount and difference
     sameAsMean: "as much as the average",
     lessThanMean: (amount: string) => `${amount} less than the average`,

@@ -19,11 +19,10 @@ import { planning } from "@/i18n/planning";
 import { spendingPlay as spendingPlayText } from "@/i18n/spendingPlay";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-import { formatMoney, formatMonth } from "./format";
-import { type HouseholdLevers, type HouseholdPlan, monthRange, toSignedRate } from "./healthShared";
+import { type HouseholdLevers, type HouseholdPlan, toSignedRate } from "./healthShared";
 import { decimalInput, percentInput, toMoneyString } from "./input";
 import { ALLOCATION_CATEGORY, HOUSEHOLD_GROUP, HOUSEHOLD_SPENDING_GROUPS } from "./labels";
-import { usePlanFormat } from "./planFormat";
+import { type PlanFormat, usePlanFormat } from "./planFormat";
 
 type AllocationCategory = components["schemas"]["AllocationCategory"];
 type HouseholdGroup = components["schemas"]["HouseholdGroup"];
@@ -132,9 +131,9 @@ function hasSpending(value: string | null | undefined): boolean {
 
 /** The months of a stretch in words: „ab Juni 2027“ when it runs to the horizon, else „Juli bis
  * September 2027“ or one month. */
-function stretch(segment: RateSegment, last: string | undefined): string {
-  if (segment.to_month === last) return translate(spendingPlayText).from(formatMonth(segment.from_month));
-  return monthRange([segment.from_month, segment.to_month]);
+function stretch(segment: RateSegment, last: string | undefined, f: PlanFormat): string {
+  if (segment.to_month === last) return translate(spendingPlayText).from(f.month(segment.from_month));
+  return f.monthRange([segment.from_month, segment.to_month]);
 }
 
 interface Entry {
@@ -212,6 +211,7 @@ export function SpendingPlaySection({
   extra?: (code: string) => ReactNode;
 }) {
   const t = useT(spendingPlayText);
+  const f = usePlanFormat();
   const ids = useId();
   const savedPlay = saved.spending_play;
   const play = preview.withChanges.spending_play ?? savedPlay;
@@ -352,7 +352,7 @@ export function SpendingPlaySection({
                 <select aria-label={t.fromFor(label)} value={entry.from} onChange={(event) => update(code, { from: event.target.value })}>
                   {months.map((m) => (
                     <option key={m} value={m}>
-                      {formatMonth(m)}
+                      {f.month(m)}
                     </option>
                   ))}
                 </select>
@@ -363,7 +363,7 @@ export function SpendingPlaySection({
                   <option value="">{t.noEnd}</option>
                   {months.map((m) => (
                     <option key={m} value={m}>
-                      {formatMonth(m)}
+                      {f.month(m)}
                     </option>
                   ))}
                 </select>
@@ -377,7 +377,7 @@ export function SpendingPlaySection({
           </ul>
         ) : active && played ? (
           <p id={`${id}-hint`} className="muted">
-            {hint(played, mean)}
+            {hint(played, mean, f)}
           </p>
         ) : null}
       </div>
@@ -409,7 +409,7 @@ export function SpendingPlaySection({
                     {rowLabel}
                     {extra?.(row.code)}
                   </th>
-                  <td className="num">{formatMoney(row.mean)}</td>
+                  <td className="num">{f.money(row.mean)}</td>
                   <td>
                     {!row.playable && !own ? (
                       <span className="muted">{t.countsNotPlanned}</span>
@@ -442,7 +442,7 @@ export function SpendingPlaySection({
       </div>
       {expanded && savedPlay ? (
         <>
-          <p className="muted">{t.intro(monthRange(windowMonths))}</p>
+          <p className="muted">{t.intro(f.monthRange(windowMonths))}</p>
           <div className="table-wrap">
             <table className="spending-play-table">
               <thead>
@@ -472,7 +472,7 @@ export function SpendingPlaySection({
                 <tr>
                   <th scope="row">{t.regularSpending}</th>
                   <td className="num">
-                    <strong>{formatMoney(play?.mean_regular_spending)}</strong>
+                    <strong>{f.money(play?.mean_regular_spending)}</strong>
                   </td>
                   <td>
                     {changes.length > 0 && segments.length > 0 ? (
@@ -480,7 +480,7 @@ export function SpendingPlaySection({
                         <span>{t.withYourChanges}</span>
                         {segments.map((segment) => (
                           <span key={segment.from_month}>
-                            {stretch(segment, lastMonth)}: {formatMoney(segment.regular_spending)}
+                            {stretch(segment, lastMonth, f)}: {f.money(segment.regular_spending)}
                           </span>
                         ))}
                       </span>
@@ -502,7 +502,7 @@ export function SpendingPlaySection({
                         {categoryLabel(code)}
                         <span className="muted"> · {groupLabel(groupOfCode(code) ?? "other")}</span>
                       </th>
-                      <td className="num">{formatMoney("0.00")}</td>
+                      <td className="num">{f.money("0.00")}</td>
                       <td>
                         {field(code, categoryLabel(code), "0.00", lockOf(code), false)}
                         <button
@@ -577,7 +577,7 @@ export function SpendingPlaySection({
             label
           )}
         </th>
-        <td className="num">{formatMoney(group.mean)}</td>
+        <td className="num">{f.money(group.mean)}</td>
         <td>
           {own
             ? field(own, label, group.mean, lockOf(own), hasSpending(group.mean))
@@ -599,7 +599,7 @@ export function SpendingPlaySection({
       out.push(
         <tr key={`${group.group}-${row.code}`} id={`${rowId}-${row.code}`} className="household-subrow">
           <th scope="row">{rowLabel}</th>
-          <td className="num">{formatMoney(row.mean)}</td>
+          <td className="num">{f.money(row.mean)}</td>
           <td>{cell}</td>
         </tr>,
       );
@@ -609,20 +609,20 @@ export function SpendingPlaySection({
 }
 
 /** „= 682,50 € im Monat, 32,50 € mehr als der Durchschnitt“ from the server's planned and Δ. */
-function hint(played: PlayedChange, mean: string): string {
+function hint(played: PlayedChange, mean: string, f: PlanFormat): string {
   const t = translate(spendingPlayText);
   const delta = played.delta;
   const words = isZero(delta)
     ? t.sameAsMean
     : delta.startsWith("-")
-      ? t.lessThanMean(formatMoney(unsigned(delta)))
-      : t.moreThanMean(formatMoney(unsigned(delta)));
-  const amount = played.change.percent != null ? t.perMonth(formatMoney(played.planned), words) : words;
+      ? t.lessThanMean(f.money(unsigned(delta)))
+      : t.moreThanMean(f.money(unsigned(delta)));
+  const amount = played.change.percent != null ? t.perMonth(f.money(played.planned), words) : words;
   const change = played.change;
   if (change.to_month) {
-    return t.thenBack(amount, monthRange([change.from_month, change.to_month]), formatMoney(mean));
+    return t.thenBack(amount, f.monthRange([change.from_month, change.to_month]), f.money(mean));
   }
-  return t.fromMonth(amount, formatMonth(change.from_month));
+  return t.fromMonth(amount, f.month(change.from_month));
 }
 
 // --- Was eure Änderungen bewirken ---------------------------------------------------------------
