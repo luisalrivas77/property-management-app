@@ -21,8 +21,7 @@ export const shared = defineMessages({
     acquisitionCost: "Nebenkosten",
     deposit: (amount: string) => `Kaution ${amount}`,
     fixedTermUntil: (date: string) => `befristet bis ${date}`,
-    rent: (cold: string, prepayment: string) =>
-      `${cold} kalt + ${prepayment} NK-Vorauszahlung`,
+    rent: (cold: string, prepayment: string) => `${cold} kalt + ${prepayment} NK-Vorauszahlung`,
     nowTenants: (n: number) => `jetzt ${n} Mieter`,
     noticeBy: (by: string) => `durch ${by}, `,
     noticeOn: (date: string) => `zum ${date}`,
@@ -57,8 +56,7 @@ export const shared = defineMessages({
     acquisitionCost: "Purchase costs (Nebenkosten)",
     deposit: (amount: string) => `Deposit ${amount}`,
     fixedTermUntil: (date: string) => `fixed term until ${date}`,
-    rent: (cold: string, prepayment: string) =>
-      `${cold} cold + ${prepayment} service-charge prepayment`,
+    rent: (cold: string, prepayment: string) => `${cold} cold + ${prepayment} service-charge prepayment`,
     nowTenants: (n: number) => `now ${n} ${n === 1 ? "tenant" : "tenants"}`,
     noticeBy: (by: string) => `by ${by}, `,
     noticeOn: (date: string) => `effective ${date}`,

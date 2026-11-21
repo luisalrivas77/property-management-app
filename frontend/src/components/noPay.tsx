@@ -30,10 +30,7 @@ type ReturnInput = components["schemas"]["ReturnInput"];
 export const noPayHint = (): string => translate(todosText).noPayHint;
 
 /** The owner's current marker for the year, or null. */
-async function currentNoPay(
-  ownerId: string,
-  year: number,
-): Promise<ReturnInput | null> {
+async function currentNoPay(ownerId: string, year: number): Promise<ReturnInput | null> {
   const rows = await ok(
     api.GET("/api/return-inputs", {
       params: { query: { tax_year: year, kind: "no_pay", owner_id: ownerId } },
@@ -45,14 +42,7 @@ async function currentNoPay(
 function recordNoPay(ownerId: string, year: number): Promise<ReturnInput> {
   return ok(
     api.POST("/api/return-inputs", {
-      body: {
-        kind: "no_pay",
-        tax_year: year,
-        owner_id: ownerId,
-        document_id: null,
-        value: {},
-        withdrawn: false,
-      },
+      body: { kind: "no_pay", tax_year: year, owner_id: ownerId, document_id: null, value: {}, withdrawn: false },
     }),
   );
 }
@@ -102,13 +92,7 @@ export function NoPayButton({
   }
   return (
     <>
-      <button
-        type="button"
-        className={className}
-        disabled={busy}
-        onClick={() => void click()}
-        title={t.noPayHint}
-      >
+      <button type="button" className={className} disabled={busy} onClick={() => void click()} title={t.noPayHint}>
         {busy ? t.saving : t.noPayButton(year)}
       </button>
       <ErrorNotice error={error} />
@@ -141,8 +125,7 @@ export function WithdrawNoPayButton({
     setError(null);
     try {
       const row = await currentNoPay(ownerId, year);
-      if (row && (!returnInputId || row.id === returnInputId))
-        await withdrawNoPay(row);
+      if (row && (!returnInputId || row.id === returnInputId)) await withdrawNoPay(row);
       onDone?.();
     } catch (caught) {
       setError(caught);
@@ -152,12 +135,7 @@ export function WithdrawNoPayButton({
   }
   return (
     <>
-      <button
-        type="button"
-        className={className}
-        disabled={busy}
-        onClick={() => void click()}
-      >
+      <button type="button" className={className} disabled={busy} onClick={() => void click()}>
         {busy ? t.saving : (label ?? t.withdraw)}
       </button>
       <ErrorNotice error={error} />
@@ -166,27 +144,16 @@ export function WithdrawNoPayButton({
 }
 
 /** The owner's marker for the year, or "no_rules" when the year has no Anlage N rule set. */
-async function markerOfYear(
-  ownerId: string,
-  year: number,
-): Promise<ReturnInput | null | "no_rules"> {
+async function markerOfYear(ownerId: string, year: number): Promise<ReturnInput | null | "no_rules"> {
   const { years } = await ok(api.GET("/api/tax/anlage-n/years"));
   return years.includes(year) ? currentNoPay(ownerId, year) : "no_rules";
 }
 
 /** The Eigentümer page's cell: the marker in force („Kein Arbeitslohn angegeben“ with
  * „Aufheben“), or the button that sets it. `onChanged` reloads the page's estimates. */
-export function NoPayMarker({
-  ownerId,
-  year,
-  onChanged,
-}: {
-  ownerId: string;
-  year: number;
-  onChanged?: () => void;
-}) {
-  const load = useCallback(() => markerOfYear(ownerId, year), [ownerId, year]);
+export function NoPayMarker({ ownerId, year, onChanged }: { ownerId: string; year: number; onChanged?: () => void }) {
   const t = useT(todosText);
+  const load = useCallback(() => markerOfYear(ownerId, year), [ownerId, year]);
   const marker = useLoad(load);
   const reload = marker.reload;
   const changed = useCallback(() => {
@@ -198,21 +165,9 @@ export function NoPayMarker({
     return (
       <span className="row">
         <span className="badge">{t.noPayRecorded}</span>
-        <WithdrawNoPayButton
-          ownerId={ownerId}
-          year={year}
-          returnInputId={marker.data.id}
-          onDone={changed}
-        />
+        <WithdrawNoPayButton ownerId={ownerId} year={year} returnInputId={marker.data.id} onDone={changed} />
       </span>
     );
   }
-  return (
-    <NoPayButton
-      ownerId={ownerId}
-      year={year}
-      onDone={changed}
-      className="link"
-    />
-  );
+  return <NoPayButton ownerId={ownerId} year={year} onDone={changed} className="link" />;
 }
