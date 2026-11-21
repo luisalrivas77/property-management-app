@@ -271,7 +271,7 @@ TEXTS = i18n.Texts(
             " probably address spam (“address poisoning”): someone sends a tiny amount from an"
             " address that looks almost exactly like a real one, hoping it is later copied from"
             " the history and money is sent there. Never copy an address from the history."
-            " Hausbuch's proposal: book it as a tiny amount (spam); it counts in the holding at"
+            " Hausbuch's suggestion: book it as a tiny amount (spam); it counts in the holding at"
             " a purchase price of €0 and is not income. If that is right, “Confirm”.",
         ),
         "change": (
@@ -310,14 +310,14 @@ TEXTS = i18n.Texts(
             "Vorschlag von Hausbuch: {words}. Das Programm {program} kennt Hausbuch nicht,"
             " liest die Transaktion an ihren Beträgen aber als {what}. Stimmt das,"
             " „Bestätigen“.",
-            "Hausbuch's proposal: {words}. Hausbuch does not know the program {program}, but"
+            "Hausbuch's suggestion: {words}. Hausbuch does not know the program {program}, but"
             " reads the transaction by its amounts as {what}. If that is right, “Confirm”.",
         ),
         "what.swap": ("einen Tausch", "a swap"),
         "what.moves": ("diese Bewegungen", "these movements"),
         "proposal": (
             "Vorschlag von Hausbuch: {words}. Stimmt das, „Bestätigen“.",
-            "Hausbuch's proposal: {words}. If that is right, “Confirm”.",
+            "Hausbuch's suggestion: {words}. If that is right, “Confirm”.",
         ),
         "asked": ("{words}. {question}", "{words}. {question}"),
         "what": ("{words}. Was war das?", "{words}. What was it?"),
