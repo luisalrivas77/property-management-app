@@ -208,8 +208,61 @@ answer changed:
 Gate as before: `perf-overview --digest` old against new on the live data, every body equal except the two Anlage N
 error bodies; `health-check --from 2026-03` „alles gleich“; 163 fixture drafts and projections byte-identical. One
 review: the memo clean; the tile's kept list could have outlived a sign-out and shown a count from before an
-unannounced change for up to 30 s, fixed in the same PR (the 5 s limit and the resets above). Still open: the live load
-time after PR #522, to be read from the request log once Luis has opened Übersicht.
+unannounced change for up to 30 s, fixed in the same PR (the 5 s limit and the resets above). Measured live after
+PR #522 (request log, 21 Nov 2026 17:47 UTC, Luis: „It is faster. But still more than 10secs“): Übersicht's tiles
+answered between 0.9 and 6.9 s and the rest by about 10 s, against about 16 s before (this said „Still open: the
+live load time“ until then). Next step in §7.3.
+
+### 7.3 Next speed step (scoped 21 Nov 2026, not built)
+
+Luis asked for diagnostics and a scope only, no build yet; he chose code over a bigger container („No cost, code
+only“). Measured on the live data, read-only, CPU time without database waits (cProfile on `time.process_time`, dev
+box, profiled so about a third above plain runs): Übersicht's reads cost **12.3 s of CPU**, and on 0.25 vCPU the page
+takes about their sum. The largest single costs: `/properties/payback` 2.7 s, `/health` 2.1 s, `/inbox` 1.5 s,
+`/health/net-worth-series` 1.3 s, `/health/months` 0.9 s, `/net-worth/overview` 0.9 s. Most of it is the same work
+repeated: `services.health.read_months` (every ended month's household month) runs in three routes (3.2 s together),
+`services.transfers.open_transfers` in four (2.4 s), `services.tax.draft_facts` twice inside payback.
+
+Zu prüfen (about 4–5 s live): `loadInbox` (`frontend/src/components/inbox.tsx`) fetches the imports and every line of
+all nine accounts that hold lines, 18 requests, 1,219 lines, about 1.2 MB and 1.6 s of CPU, to look up the few lines
+the cards name; on 21 Nov 2026 the three open cards named none.
+
+The scope, each change proven to leave every answer unchanged:
+
+1. **Vermögen im Verlauf from `/health`** (frontend only, about −1.3 s). `/health`'s `series` is computed exactly as
+   `/health/net-worth-series` (`series(_totals(_newest_run_figures(conn)), closed households of ended_months)`), and
+   the two were equal on the live data; `healthFigures.tsx` takes the page's `/health.series` on Übersicht and stops
+   asking the series route (the Planung and Haushalt pages unchanged).
+2. **The Cashflow tile's month from `/health`** (about −0.9 s). `/health` already reads every ended month; it gains a
+   field with the last ended month's household month (`last_ended`), which the tile reads instead of
+   `/health/months?from=<month>&to=<month>`. A month read inside the whole range equals the same month read alone
+   (checked for September on the live data: `/health.newest` equal to `/health/months`' household); the gate
+   compares the two for the last ended month.
+3. **Payback once per request** (about −1.3 s). `draft_facts` and `checklist_facts` read once per request and
+   passed down; the §11 tax year computed once per allocation per draft (or per `project()` run) instead of per
+   `of_year` lookup, which removes the remaining 550,000 lookups (`with_year_numbers` about 1.0 s). Rules stay pure,
+   no fixture changes, the 163 fixture drafts and projections byte-identical.
+4. **`open_transfers` once per call** (about −0.3 to −0.5 s). `_line_legs`, `_current_links` and `_linked_ids` run
+   two or three times inside one call (in `/health`, `/health/months`, `/inbox`); computed once and passed down.
+5. **Zu prüfen reads only the lines its cards name** (about −1.6 s CPU and 1.2 MB on the phone). A new read,
+   `GET /inbox/lines`, returns the lines and imports the cards can look up, computed by the server from the same
+   inbox items: each item's `transaction_id` and `import_id`, both lines of every possible duplicate and their
+   imports; each object serialized exactly as `/accounts/{id}/transactions` and `/imports` serialize it, under the
+   workspace's row-level security. `loadInbox` uses it instead of the per-account loop. The readers audited on
+   21 Nov 2026: `inbox.tsx` (the search „Empfänger suchen“, the line cards, „Alle N bestätigen“, the import and
+   e-mail cards, the duplicate card) and `accounts.tsx`' `DuplicateCard` (the two lines' imports). A card whose
+   line is not in the answer fetches that account's lines rather than showing an empty payee or amount (the blank
+   card of PR #252).
+
+Not proposed: keeping a figure between requests (a stale money figure after a change would be silent), and taking a
+closed month's household figures from its stored `health_snapshot` instead of recomputing ten months on every read
+(it would change D242's compute-on-read and is Luis's decision; `/health` alone would still cost about 2 s).
+
+Expected: Übersicht about 12.3 → 7.5 s of profiled CPU, so about 6–7 s live instead of 10; Zu prüfen about 2 s
+instead of 4–5. Gate: `perf-overview --digest` old against new (every body equal; `/health` compared without its new
+field), a read-only check on the live data that every id a card can look up is in `GET /inbox/lines` and each object
+equals the per-account route's, `health-check --from 2026-03` „alles gleich“, and one review (a new read path under
+row-level security, and the blank-card risk).
 
 ### 7.1 Done when
 
