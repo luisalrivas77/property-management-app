@@ -5,6 +5,8 @@
 // that must sum to exactly 1, checked here exactly (whole numbers, no floats) before the API
 // checks it again (ownership.sum_not_one).
 import type { Owner, OwnershipShare } from "@/api/schemas";
+import { translate, useT } from "@/i18n";
+import { accountForms } from "@/i18n/accountForms";
 
 import { collector, Field, type FormState } from "./form";
 import { formatFraction } from "./format";
@@ -27,17 +29,18 @@ export function OwnerShareInputs({
   errorId: string;
   idPrefix?: string;
 }) {
+  const t = useT(accountForms);
   const sharesErrors = form.of("shares");
   return (
     <fieldset className="stack" aria-describedby={sharesErrors.length > 0 ? errorId : undefined}>
-      <legend>Anteile (als Bruch oder Prozent, z. B. 1/2 oder 50 %; leer = kein Anteil)</legend>
+      <legend>{t.sharesLegend}</legend>
       <div className="grid">
         {owners.map((owner) => (
           <Field
             key={owner.id}
             id={`${idPrefix}share-${owner.id}`}
             label={owner.full_name}
-            description="Der Anteil dieser Person am Konto, z. B. 1/2 bei einem gemeinsamen Konto, 1/1 bei einem eigenen. Alle Anteile zusammen müssen genau 1 (100 %) ergeben."
+            description={t.shareDescription}
             errors={form.of(`share-${owner.id}`)}
           >
             <input
@@ -94,9 +97,9 @@ export function collectShares(
     }
   }
   if (values.ok && body.length === 0) {
-    if (required) values.messages.shares = ["Mindestens einen Anteil eingeben."];
+    if (required) values.messages.shares = [translate(accountForms).shareRequired];
   } else if (values.ok && !sumsToOne(body)) {
-    values.messages.shares = ["Die Anteile müssen zusammen genau 1 (100 %) ergeben, z. B. 1/2 und 1/2."];
+    values.messages.shares = [translate(accountForms).sharesNotOne];
   }
   return body;
 }
