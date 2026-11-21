@@ -50,6 +50,17 @@ import type {
   SourceRef,
 } from "@/api/schemas";
 import { ErrorNotice } from "@/lib/ErrorNotice";
+import { getLocale, localized, translate, useT, type Locale } from "@/i18n";
+import {
+  DERIVED_INPUT_DE,
+  DERIVED_INPUT_EN,
+  MOVEMENT_KIND_DE,
+  MOVEMENT_KIND_EN,
+  proposalFields,
+  proposalsText,
+  TAX_INPUT_TITLE_DE,
+  TAX_INPUT_TITLE_EN,
+} from "@/i18n/proposals";
 
 import { DocumentExplanationBox, ImportStoredStatement, NO_TAX_YEAR } from "./documents";
 import type { Directory } from "./entities";
@@ -149,467 +160,233 @@ const choice = (label: string, choices: Readonly<Record<string, string>>, descri
 
 /** The categories a cost paid from another account may carry (PrivateCostValue.category,
  * phase 2 D135): the deductible ones, as backend schemas/tax.PRIVATE_COST_CATEGORIES. */
-const PRIVATE_COST_CATEGORY: Readonly<Record<string, string>> = Object.fromEntries(
-  (
-    [
-      "loan_interest",
-      "loan_fees",
-      "hausgeld_umlagefaehig",
-      "hausgeld_verwaltung",
-      "property_management",
-      "grundsteuer",
-      "insurance",
-      "electricity",
-      "repairs",
-      "professional_fees",
-      "bank_fees",
-    ] as const
-  ).map((c) => [c, ALLOCATION_CATEGORY[c]]),
-);
-
-/** A Gutachten's shorter useful life (tax_input:useful_life, D147): the years and the first year,
- * both computed by Hausbuch from the Gutachten's Restnutzungsdauer and Stichtag. */
-const USEFUL_LIFE_FIELDS: Readonly<Record<string, FieldSpec>> = {
-  "value.years": {
-    label: "Nutzungsdauer laut Gutachten (Jahre)",
-    kind: "count",
-    description:
-      "Die Restnutzungsdauer des Gebäudes laut Gutachten, umgerechnet auf den Beginn: die Übergabe, oder der 1. Januar des Stichtag-Jahres, wenn das Gutachten erst in einem späteren Jahr erstellt wurde. Liegt der Stichtag vor diesem Beginn, zieht Hausbuch die vollen Monate dazwischen ab; liegt er danach, rechnet es sie hinzu. Dann rundet es auf ganze Jahre auf (die längere Nutzungsdauer ist die vorsichtige Wahl). Mit „Übernehmen“ wird die AfA des Gebäudes über diese Jahre gerechnet statt über die gesetzliche Nutzungsdauer (§ 7 Abs. 4 Satz 2 EStG); sie muss kürzer sein als die gesetzliche.",
-  },
-  tax_year: {
-    label: "Gilt ab Steuerjahr",
-    kind: "year",
-    description:
-      "Das erste Jahr, für das die kürzere Nutzungsdauer gilt: das Jahr der Übergabe, oder das Jahr des Stichtags, wenn das Gutachten erst Jahre nach dem Kauf erstellt wurde. Davor bleibt es bei der gesetzlichen AfA.",
-  },
-};
-
-/** A cost paid from another account's amount (D135): one row per bill and category, so it
- * replaces only the same bill's earlier row, never another bill's. */
-const PRIVATE_COST_AMOUNT: FieldSpec = {
-  label: "Betrag (€)",
-  kind: "money",
-  description:
-    "Dieser Teil der Rechnung mit seinem Anteil an der Umsatzsteuer. Er wird erst mit „Übernehmen“ als privat bezahlte Kosten gespeichert; jede Rechnung ergibt eine eigene Zeile.",
-};
-
-const PROPERTY_FIELDS: Record<string, FieldSpec> = {
-  label: text(
-    "Bezeichnung",
-    "Ein frei wählbarer Name, unter dem Sie die Immobilie in Hausbuch wiederfinden. Leer gelassen heißt sie nach Straße und Hausnummer.",
-  ),
-  kind: choice(
-    "Art",
-    PROPERTY_KIND,
-    "Eigentumswohnung, Einfamilien- oder Mehrfamilienhaus, wie im Kaufvertrag beschrieben. Bei einer Eigentumswohnung fragt die Unterlagen-Checkliste zusätzlich nach Wirtschaftsplan und Hausgeldabrechnung.",
-  ),
-  "address.street": text("Straße", "Die Straße der Immobilie, wie sie im Kaufvertrag steht."),
-  "address.house_number": text("Hausnummer", "Die Hausnummer mit Zusatz, wie im Kaufvertrag, z. B. 12a oder 3-5, ohne die Wohnungsnummer (z. B. WE 03): die gehört in die Bezeichnung der Einheit. Mit Straße und Hausnummer findet Hausbuch die Immobilie in hochgeladenen Dokumenten wieder."),
-  "address.postal_code": text("PLZ", "Die fünfstellige Postleitzahl der Immobilie."),
-  "address.city": text("Ort", "Die Stadt oder Gemeinde, in der die Immobilie liegt."),
-  build_year: {
-    label: "Baujahr",
-    kind: "year",
-    description:
-      "Das Jahr, in dem das Gebäude fertiggestellt wurde, laut Kaufvertrag, Exposé oder Energieausweis. Danach richtet sich der AfA-Satz: vor 1925 2,5 %, von 1925 bis 2022 2 %, ab 2023 3 % im Jahr.",
-  },
-  notarized_on: date(
-    "Notartermin (Kaufvertrag beurkundet)",
-    "Der Tag, an dem der Kaufvertrag beim Notar beurkundet wurde: das Datum der Urkunde. Ab diesem Tag laufen die zehn Jahre der Spekulationsfrist, nach denen ein Verkauf steuerfrei ist.",
-  ),
-  purchase_date: date(
-    "Übergang Besitz, Nutzen und Lasten",
-    "Der Tag, an dem die Immobilie laut Kaufvertrag auf Sie überging, meist nach Zahlung des Kaufpreises. Ab diesem Monat läuft die AfA; ab diesem Jahr fragt die Unterlagen-Checkliste nach Unterlagen.",
-  ),
-  purchase_price: money(
-    "Kaufpreis (€)",
-    "Der Kaufpreis laut Kaufvertrag, ohne Nebenkosten wie Grunderwerbsteuer, Notar oder Makler; die stehen als eigene Einträge unter „Nebenkosten“.",
-  ),
-  living_area_m2: {
-    label: "Wohnfläche (m²)",
-    kind: "area",
-    description:
-      "Die Wohnfläche der ganzen Wohnung in Quadratmetern, laut Wohnflächenberechnung oder Kaufvertrag. Sie steht in der Anlage V (Zeile 13) und wird für den Vergleich Ihrer Miete mit dem Mietspiegel gebraucht.",
-  },
-};
+const PRIVATE_COST_CODES = [
+  "loan_interest",
+  "loan_fees",
+  "hausgeld_umlagefaehig",
+  "hausgeld_verwaltung",
+  "property_management",
+  "grundsteuer",
+  "insurance",
+  "electricity",
+  "repairs",
+  "professional_fees",
+  "bank_fees",
+] as const;
 
 /** A depot movement's kind (backend schemas/household.MovementKind, the ones a depot
  * document proposes). */
-const MOVEMENT_KIND: Readonly<Record<string, string>> = {
-  acquisition: "Kauf",
-  disposal: "Verkauf",
-  distribution: "Ausschüttung",
-  internal_transfer_in: "Einbuchung (aus eigenem Depot)",
-  internal_transfer_out: "Ausbuchung (in eigenes Depot)",
-};
+const MOVEMENT_KIND: Readonly<Record<string, string>> = localized(MOVEMENT_KIND_DE, MOVEMENT_KIND_EN);
 
-const DEPOT_ACCOUNT: FieldSpec = {
-  label: "Depot",
-  kind: "offered",
-  description:
-    "Das Depot unter Konten, auf dem dieser Vorgang gebucht wird. Hausbuch wählt das Depot vor, dessen Nummer auf dem Dokument steht, und das einzige, wenn das Dokument keine Nummer trägt. Ist keins gewählt, bitte das wählen, dessen Nummer auf dem Dokument steht.",
-};
-const ISIN: FieldSpec = text("ISIN", "Die zwölfstellige Kennung des Wertpapiers, wie auf dem Dokument.");
-const SECURITY_NAME: FieldSpec = text("Wertpapier", "Der Name des Fonds, wie auf dem Dokument; so heißt er unter Anlagen.");
+type FieldTexts = (typeof proposalFields)["de"];
 
-/** A depot reading's records (phase 6 step 4): movement:<n> and holding:<n>. */
-const MOVEMENT_FIELDS: Record<string, FieldSpec> = {
-  account_id: DEPOT_ACCOUNT,
-  isin: ISIN,
-  name: SECURITY_NAME,
-  kind: choice(
-    "Vorgang",
-    MOVEMENT_KIND,
-    "Kauf oder Verkauf laut Wertpapierabrechnung, Ausschüttung laut Erträgnisabrechnung, Ein- oder Ausbuchung, wenn Anteile zwischen zwei eigenen Depots umgezogen sind. Eine Umbuchung ist kein Verkauf: die Anteile behalten ihr Kaufdatum.",
-  ),
-  quantity: {
-    label: "Anteile",
-    kind: "units",
-    description:
-      "Die Stückzahl, die der Vorgang bewegt: positiv bei Kauf und Einbuchung, negativ bei Verkauf und Ausbuchung, 0 bei einer Ausschüttung.",
-  },
-  eur_amount: {
-    label: "Betrag (€)",
-    kind: "money",
-    signed: true,
-    description:
-      "Bei Kauf und Verkauf der Endbetrag (Ausmachender Betrag), beim Kauf negativ; bei einer Ausschüttung der Bruttobetrag in Euro. Mit ihm sucht Hausbuch die Buchung auf dem Kontoauszug des Depots.",
-  },
-  fee_eur: money("Gebühren (€)", "Provision, Courtage und Spesen dieses Vorgangs zusammen, laut Abrechnung."),
-  tax_withheld_eur: money(
-    "Einbehaltene Steuern (€)",
-    "Kapitalertragsteuer, Solidaritätszuschlag und Kirchensteuer, die die Bank einbehalten hat. Ausgewertet wird das mit der Anlage KAP (Phase 8).",
-  ),
-  occurred_on: date("Datum", "Der Handelstag, der Zahltag einer Ausschüttung oder der Tag der Umbuchung."),
-  external_ref: text(
-    "Referenz",
-    "Die Referenznummer der Bank. Mit ihr erkennt Hausbuch denselben Vorgang wieder und die beiden Seiten einer Umbuchung.",
-  ),
-};
+/** The field specs in one language (phase 10 D284): built on first use per language, so the
+ * labels and choices follow the device's language without freezing it at module load. */
+interface Specs {
+  FIELDS: Record<string, Record<string, FieldSpec>>;
+  USEFUL_LIFE_FIELDS: Readonly<Record<string, FieldSpec>>;
+  PRIVATE_COST_AMOUNT: FieldSpec;
+  MANAGEMENT_FEE: FieldSpec;
+}
 
-const HOLDING_FIELDS: Record<string, FieldSpec> = {
-  account_id: DEPOT_ACCOUNT,
-  isin: ISIN,
-  name: SECURITY_NAME,
-  as_of: date("Stichtag", "Der Tag, für den der Bericht den Bestand angibt."),
-  declared_units: {
-    label: "Anteile laut Bericht",
-    kind: "units",
-    description:
-      "Die Stückzahl laut Bericht. Hausbuch vergleicht sie mit den gebuchten Abrechnungen bis zum Stichtag; stimmen sie überein, übernimmt es den Kurs des Berichts.",
-  },
-  declared_value_eur: money("Wert laut Bericht (€)", "Der Kurswert der Position am Stichtag, laut Bericht."),
-};
+const specCache: Partial<Record<Locale, Specs>> = {};
 
-/** By record key prefix, then by the *Create / *Patch field name the backend uses. */
-const FIELDS: Record<string, Record<string, FieldSpec>> = {
-  movement: MOVEMENT_FIELDS,
-  holding: HOLDING_FIELDS,
-  typing: {
-    type: choice(
-      "Typ des Dokuments",
-      DOCUMENT_TYPE,
-      "Welche Art Dokument das ist, z. B. Rechnung, Kontoauszug oder Bescheid. Danach richtet sich, welche Werte gelesen werden und wofür das Dokument in der Unterlagen-Checkliste zählt.",
-    ),
-    subtype: choice(
-      "Untertyp",
-      DOCUMENT_SUBTYPE,
-      "Genauer als der Typ, z. B. Kaufvertrag, Mietvertrag oder Grundsteuerbescheid. Danach richten sich die Aufbewahrungsfrist und die Unterlagen-Checkliste.",
-    ),
-    title: text("Titel", "Ein kurzer Name, unter dem Sie das Dokument wiederfinden."),
-    document_date: date(
-      "Datum des Dokuments",
-      "Das Datum, das auf dem Dokument steht, z. B. das Rechnungs- oder Bescheiddatum. Ohne Steuerjahr zählt die Aufbewahrungsfrist ab dem Jahr dieses Datums.",
-    ),
-    tax_year: {
-      label: "Steuerjahr",
-      kind: "year",
-      description:
-        "Das Jahr, für das das Dokument gilt, z. B. 2026 bei der Zinsbescheinigung 2026. Die Unterlagen-Checkliste ordnet Jahresunterlagen danach zu, und die Aufbewahrungsfrist zählt ab diesem Jahr.",
+function specs(): Specs {
+  const locale = getLocale();
+  return (specCache[locale] ??= buildSpecs(proposalFields[locale]));
+}
+
+function buildSpecs(m: FieldTexts): Specs {
+  const PRIVATE_COST_CATEGORY: Readonly<Record<string, string>> = Object.fromEntries(
+    PRIVATE_COST_CODES.map((c) => [c, ALLOCATION_CATEGORY[c]]),
+  );
+
+  /** A Gutachten's shorter useful life (tax_input:useful_life, D147): the years and the first year,
+   * both computed by Hausbuch from the Gutachten's Restnutzungsdauer and Stichtag. */
+  const USEFUL_LIFE_FIELDS: Readonly<Record<string, FieldSpec>> = {
+    "value.years": { label: m.ulYearsL, kind: "count", description: m.ulYearsD },
+    tax_year: { label: m.ulFromL, kind: "year", description: m.ulFromD },
+  };
+
+  /** A cost paid from another account's amount (D135): one row per bill and category, so it
+   * replaces only the same bill's earlier row, never another bill's. */
+  const PRIVATE_COST_AMOUNT: FieldSpec = { label: m.amountL, kind: "money", description: m.privateCostAmountD };
+
+  const PROPERTY_FIELDS: Record<string, FieldSpec> = {
+    label: text(m.nameL, m.propLabelD),
+    kind: choice(m.kindL, PROPERTY_KIND, m.propKindD),
+    "address.street": text(m.streetL, m.streetD),
+    "address.house_number": text(m.houseNumberL, m.houseNumberD),
+    "address.postal_code": text(m.postalCodeL, m.postalCodeD),
+    "address.city": text(m.cityL, m.cityD),
+    build_year: { label: m.buildYearL, kind: "year", description: m.buildYearD },
+    notarized_on: date(m.notarizedL, m.notarizedD),
+    purchase_date: date(m.purchaseDateL, m.purchaseDateD),
+    purchase_price: money(m.purchasePriceL, m.purchasePriceD),
+    living_area_m2: { label: m.livingAreaL, kind: "area", description: m.livingAreaD },
+  };
+
+  const DEPOT_ACCOUNT: FieldSpec = { label: m.depotL, kind: "offered", description: m.depotD };
+  const ISIN: FieldSpec = text(m.isinL, m.isinD);
+  const SECURITY_NAME: FieldSpec = text(m.securityL, m.securityD);
+
+  /** A depot reading's records (phase 6 step 4): movement:<n> and holding:<n>. */
+  const MOVEMENT_FIELDS: Record<string, FieldSpec> = {
+    account_id: DEPOT_ACCOUNT,
+    isin: ISIN,
+    name: SECURITY_NAME,
+    kind: choice(m.movementKindL, MOVEMENT_KIND, m.movementKindD),
+    quantity: { label: m.unitsL, kind: "units", description: m.unitsD },
+    eur_amount: { label: m.amountL, kind: "money", signed: true, description: m.movementAmountD },
+    fee_eur: money(m.feesL, m.feesD),
+    tax_withheld_eur: money(m.taxWithheldL, m.taxWithheldD),
+    occurred_on: date(m.dateL, m.occurredD),
+    external_ref: text(m.referenceL, m.movementRefD),
+  };
+
+  const HOLDING_FIELDS: Record<string, FieldSpec> = {
+    account_id: DEPOT_ACCOUNT,
+    isin: ISIN,
+    name: SECURITY_NAME,
+    as_of: date(m.asOfL, m.asOfD),
+    declared_units: { label: m.declaredUnitsL, kind: "units", description: m.declaredUnitsD },
+    declared_value_eur: money(m.declaredValueL, m.declaredValueD),
+  };
+
+  /** By record key prefix, then by the *Create / *Patch field name the backend uses. */
+  const FIELDS: Record<string, Record<string, FieldSpec>> = {
+    movement: MOVEMENT_FIELDS,
+    holding: HOLDING_FIELDS,
+    typing: {
+      type: choice(m.docTypeL, DOCUMENT_TYPE, m.docTypeD),
+      subtype: choice(m.subtypeL, DOCUMENT_SUBTYPE, m.subtypeD),
+      title: text(m.titleL, m.titleD),
+      document_date: date(m.docDateL, m.docDateD),
+      tax_year: { label: m.taxYearL, kind: "year", description: m.typingTaxYearD },
+      // The document's hand-entry fields (D132), as the typing form on the page offers them.
+      amount_total: { label: m.amountTotalL, kind: "money", signed: true, description: m.amountTotalD },
+      counterparty: text(m.counterpartyL, m.counterpartyD),
+      period_start: date(m.periodStartL, m.periodStartD),
+      period_end: date(m.periodEndL, m.periodEndD),
+      reference: text(m.referenceL, m.typingRefD),
+      notes: text(m.noteL, m.freeTextD),
     },
-    // The document's hand-entry fields (D132), as the typing form on the page offers them.
-    amount_total: {
-      label: "Betrag gesamt (€)",
-      kind: "money",
-      signed: true,
-      description:
-        "Der Gesamtbetrag laut Dokument, bei einer Rechnung brutto. Bei Rechnungen und Bescheiden sucht Hausbuch damit die passende Zahlung im Kontoauszug.",
+    property: PROPERTY_FIELDS,
+    correction: PROPERTY_FIELDS,
+    unit: {
+      label: text(m.nameL, m.unitLabelD),
+      mea: { label: m.meaL, kind: "fraction", description: m.meaD },
+      floor_area_m2: { label: m.floorAreaL, kind: "area", description: m.floorAreaD },
+      rooms: { label: m.roomsL, kind: "area", decimals: 1, description: m.roomsD },
     },
-    counterparty: text(
-      "Gegenpartei",
-      "Wer das Dokument ausgestellt hat oder an wen gezahlt wird, z. B. Handwerker, Stadtkasse oder Hausverwaltung.",
-    ),
-    period_start: date(
-      "Zeitraum von",
-      "Der Beginn des Zeitraums, für den das Dokument gilt, z. B. des Abrechnungsjahrs einer Hausgeldabrechnung.",
-    ),
-    period_end: date("Zeitraum bis", "Das Ende dieses Zeitraums."),
-    reference: text(
-      "Referenz",
-      "Die Rechnungsnummer oder das Aktenzeichen laut Dokument. Steht sie im Verwendungszweck einer Überweisung, hilft das, die Zahlung diesem Beleg zuzuordnen.",
-    ),
-    notes: text("Notiz", "Freier Text für Sie."),
-  },
-  property: PROPERTY_FIELDS,
-  correction: PROPERTY_FIELDS,
-  unit: {
-    label: text("Bezeichnung", "Wie die Einheit in Teilungserklärung oder Kaufvertrag heißt, z. B. „WE 3“ für Wohnung Nr. 3 oder ein Stellplatz."),
-    mea: {
-      label: "MEA (Miteigentumsanteil)",
-      kind: "fraction",
-      description:
-        "Ihr Anteil am gemeinschaftlichen Eigentum der WEG (Grundstück, Dach, Treppenhaus …), laut Teilungserklärung oder Kaufvertrag, z. B. 56,18/1.000. Nach ihm verteilt die WEG meist die gemeinsamen Kosten (Hausgeld). Bei einzeln vermieteten Zimmern einer Wohnung leer lassen.",
+    price_split: {
+      building_share: { label: m.buildingShareL, kind: "rate", description: m.buildingShareD },
+      note: text(m.noteL, m.splitNoteD),
     },
-    floor_area_m2: {
-      label: "Fläche (m²)",
-      kind: "area",
-      description:
-        "Die Wohnfläche in Quadratmetern laut Mietvertrag, Kaufvertrag oder Wohnflächenberechnung. Hausbuch rechnet noch nicht damit; gebraucht wird sie später z. B. für die Betriebskostenabrechnung.",
+    ownership: {
+      shares: { label: m.sharesL, kind: "fixed", description: m.sharesD },
+      effective_date: date(m.validFromL, m.ownershipFromD),
     },
-    rooms: { label: "Zimmer", kind: "area", decimals: 1, description: "Die Zahl der Zimmer laut Mietvertrag oder Exposé; ein halbes Zimmer als ,5." },
-  },
-  price_split: {
-    building_share: {
-      label: "Gebäudeanteil (%)",
-      kind: "rate",
-      description:
-        "Der Anteil des Kaufpreises, der auf das Gebäude entfällt; der Rest ist Grund und Boden, der nicht abgeschrieben wird. Der Gebäudeanteil ist die Grundlage der AfA.",
+    cost: {
+      kind: choice(m.kindL, ACQUISITION_COST_KIND, m.costKindD),
+      amount: money(m.amountL, m.costAmountD),
+      paid_on: date(m.paidOnL, m.paidOnD),
+      note: text(m.noteL, m.costNoteD),
     },
-    note: text("Notiz", "Freier Text für Sie, z. B. wie der Wert zustande kam."),
-  },
-  ownership: {
-    shares: {
-      label: "Eigentumsanteile",
-      kind: "fixed",
-      description:
-        "Wem die Immobilie zu welchem Anteil gehört, laut Kaufvertrag (z. B. „je zur Hälfte“). Hausbuch hat die Käufer im Vertrag den angelegten Eigentümern über den Namen zugeordnet.",
+    loan: {
+      lender: text(m.lenderL, m.lenderD),
+      contract_number: text(m.contractNumberL, m.contractNumberD),
+      principal: money(m.principalL, m.principalD),
+      nominal_rate: { label: m.nominalRateL, kind: "rate", description: m.nominalRateD },
+      monthly_payment: money(m.monthlyPaymentL, m.monthlyPaymentD),
+      fixed_until: date(m.fixedUntilL, m.fixedUntilD),
+      follow_up_rate: { label: m.followUpL, kind: "rate", description: m.followUpD },
+      disbursed_on: date(m.disbursedL, m.disbursedD),
+      first_payment_on: date(m.firstPaymentL, m.firstPaymentD),
+      interest_only_before_first_payment: { label: m.interestOnlyL, kind: "bool", description: m.interestOnlyD },
+      account_iban: text(m.loanIbanL, m.loanIbanD),
+      signed_on: date(m.contractDateL, m.loanSignedD),
     },
-    effective_date: date("Gültig ab", "Ab wann diese Anteile gelten. Leer beim Kauf; ein Datum nur, wenn sich die Anteile später ändern."),
-  },
-  cost: {
-    kind: choice(
-      "Art",
-      ACQUISITION_COST_KIND,
-      "Welche Erwerbsnebenkosten das sind: Grunderwerbsteuer (Bescheid des Finanzamts), Notar, Grundbuchamt, Makler oder Sonstige.",
-    ),
-    amount: money(
-      "Betrag (€)",
-      "Der Betrag laut Rechnung oder Bescheid. Erwerbsnebenkosten zählen zu den Anschaffungskosten; ihr Gebäudeanteil gehört zur AfA-Grundlage.",
-    ),
-    paid_on: date("Bezahlt am", "Der Tag der Zahlung, laut Kontoauszug."),
-    note: text("Notiz", "Freier Text für Sie, z. B. eine Rechnungsnummer."),
-  },
-  loan: {
-    lender: text(
-      "Bank",
-      "Der Darlehensgeber laut Darlehensvertrag. Steht dieser Name im Kontoauszug als Empfänger, erkennt Hausbuch daran auch die Raten.",
-    ),
-    contract_number: text("Vertragsnummer", "Die Darlehens- oder Vertragsnummer laut Darlehensvertrag; sie unterscheidet mehrere Darlehen derselben Bank."),
-    principal: money(
-      "Darlehenssumme (€)",
-      "Der Darlehensbetrag laut Darlehensvertrag (Nennbetrag). Aus ihm, dem Zins und der Rate rechnet Hausbuch den Tilgungsplan.",
-    ),
-    nominal_rate: {
-      label: "Nominalzins (% p. a.)",
-      kind: "rate",
-      description:
-        "Der gebundene Sollzins pro Jahr laut Darlehensvertrag, nicht der effektive Jahreszins. Mit ihm rechnet der Tilgungsplan den Zinsanteil jeder Rate.",
+    tenant: {
+      full_name: text(m.tenantNameL, m.tenantNameD),
+      email: text(m.emailL, m.contactD),
+      phone: text(m.phoneL, m.contactD),
+      iban: text(m.ibanL, m.tenantIbanD),
     },
-    monthly_payment: money(
-      "Rate (€ / Monat)",
-      "Die monatliche Rate aus Zins und Tilgung laut Darlehensvertrag. Eine Abbuchung in dieser Höhe teilt Hausbuch nach dem Tilgungsplan in Zinsen und Tilgung auf.",
-    ),
-    fixed_until: date(
-      "Zinsbindung bis",
-      "Das Ende der Sollzinsbindung laut Darlehensvertrag. Danach rechnet der Tilgungsplan mit dem Anschlusszins.",
-    ),
-    follow_up_rate: {
-      label: "Anschlusszins (% p. a.)",
-      kind: "rate",
-      description:
-        "Ihre Annahme für den Zins nach der Zinsbindung, solange keine Anschlussfinanzierung vereinbart ist. Leer: der Tilgungsplan rechnet mit dem Nominalzins weiter.",
+    tenancy: {
+      unit_id: { label: m.unitL, kind: "unit", description: m.tenancyUnitD },
+      start_date: date(m.startL, m.startD),
+      signed_on: date(m.contractDateL, m.tenancySignedD),
+      fixed_term_until: date(m.fixedTermL, m.fixedTermD),
+      end_date: date(m.endL, m.endD),
+      rent_model: choice(m.rentModelL, RENT_MODEL, m.rentModelD),
+      deposit_amount: money(m.depositL, m.depositD),
+      deposit_form: choice(m.depositFormL, DEPOSIT_FORM, m.depositFormD),
+      deposit_bank: text(m.depositBankL, m.depositBankD),
+      deposit_iban: text(m.depositIbanL, m.depositIbanD),
+      // D152: both read from the lease's clauses and mapped by Hausbuch, never by the model.
+      operating_costs_terms: choice(m.opCostsL, OPERATING_COSTS_TERMS, m.opCostsD),
+      rent_due_day: { label: m.dueDayL, kind: "count", description: m.dueDayD },
     },
-    disbursed_on: date(
-      "Auszahlung am",
-      "Der Tag, an dem die Bank das Darlehen ausgezahlt hat, laut Kontoauszug oder Auszahlungsbestätigung. Ab diesem Tag laufen im Tilgungsplan die Zinsen.",
-    ),
-    first_payment_on: date(
-      "Erste Rate am",
-      "Der Tag, an dem die erste Rate fällig ist, laut Darlehensvertrag. Die weiteren Raten folgen monatlich zum selben Tag.",
-    ),
-    interest_only_before_first_payment: {
-      label: "Vor der ersten Rate nur Zinsen",
-      kind: "bool",
-      description:
-        "Bei einer Auszahlung in Teilen berechnet die Bank bis zur ersten vollen Rate nur Zinsen auf den ausgezahlten Betrag; diese Zahlungen werden ganz als Darlehenszinsen gebucht, wenn der Buchungstext die Zinsen in genau dieser Höhe nennt. Der Tilgungsplan beginnt dann mit der ersten Rate.",
+    rent: {
+      cold_rent: money(m.coldRentL, m.coldRentD),
+      operating_costs_prepayment: money(m.prepaymentL, m.prepaymentD),
+      effective_from: date(m.validFromL, m.rentFromD),
     },
-    account_iban: text(
-      "Darlehenskonto (IBAN)",
-      "Die IBAN des Darlehenskontos laut Darlehensvertrag. Gespeichert wird sie nur maskiert und als nicht umkehrbarer Prüfwert; daran erkennt Hausbuch die Raten im Kontoauszug.",
-    ),
-    signed_on: date("Vertragsdatum", "Der Tag, an dem der Darlehensvertrag unterschrieben wurde."),
-  },
-  tenant: {
-    full_name: text("Name", "Der Name der Mieterin oder des Mieters, wie im Mietvertrag."),
-    email: text("E-Mail", "Eine Kontaktangabe, z. B. aus dem Mietvertrag."),
-    phone: text("Telefon", "Eine Kontaktangabe, z. B. aus dem Mietvertrag."),
-    iban: text(
-      "IBAN",
-      "Die IBAN des Kontos, von dem die Miete kommt. Gespeichert wird sie nur maskiert und als nicht umkehrbarer Prüfwert; daran erkennt Hausbuch die Mietzahlungen im Kontoauszug.",
-    ),
-  },
-  tenancy: {
-    unit_id: {
-      label: "Einheit",
-      kind: "unit",
-      description:
-        "Die vermietete Wohnung oder das vermietete Zimmer. Hausbuch schlägt die Einheit vor, deren Bezeichnung zur Anschrift und zur Wohnungs- oder Zimmerangabe im Mietvertrag passt, oder die einzige Einheit der Immobilie; sonst wählen Sie sie hier.",
+    deposit_received: {
+      amount: money(m.amountL, m.depositReceivedD),
+      received_on: date(m.receivedOnL, m.receivedOnD),
+      tenancy_id: { label: m.tenancyL, kind: "tenancy", description: m.tenancyD },
     },
-    start_date: date("Mietbeginn", "Der Tag, ab dem das Mietverhältnis laut Mietvertrag läuft."),
-    signed_on: date("Vertragsdatum", "Der Tag, an dem der Mietvertrag unterschrieben wurde, meist neben den Unterschriften."),
-    fixed_term_until: date("Befristet bis", "Nur bei einem Zeitmietvertrag: das vereinbarte Ende. Leer, wenn der Vertrag unbefristet ist."),
-    end_date: date(
-      "Auszug",
-      "Nur bei einem schon beendeten Mietverhältnis: der Tag, an dem es endete; sonst leer lassen. Danach richtet sich, wie lange Mietunterlagen und Mieterdaten aufbewahrt werden.",
-    ),
-    rent_model: choice(
-      "Mietmodell",
-      RENT_MODEL,
-      "Festmiete, Staffelmiete (die Erhöhungen stehen schon im Vertrag) oder Indexmiete (an den Verbraucherpreisindex gekoppelt), laut Mietvertrag.",
-    ),
-    deposit_amount: money("Kaution (€)", "Die vereinbarte Kaution laut Mietvertrag."),
-    deposit_form: choice(
-      "Art der Kaution",
-      DEPOSIT_FORM,
-      "Wie die Kaution geleistet wird, laut Mietvertrag. Ist eine vereinbart, fragt die Unterlagen-Checkliste nach einem Kautionsnachweis.",
-    ),
-    deposit_bank: text("Bank des Kautionskontos", "Die Bank, bei der die Kaution angelegt ist, z. B. laut Kontoeröffnung oder Sparbuch."),
-    deposit_iban: text("IBAN des Kautionskontos", "Die IBAN des Kontos, auf dem die Kaution liegt. Gespeichert wird sie nur maskiert."),
-    // D152: both read from the lease's clauses and mapped by Hausbuch, never by the model.
-    operating_costs_terms: choice(
-      "Nebenkosten laut Mietvertrag",
-      OPERATING_COSTS_TERMS,
-      "Wie der Mietvertrag die Nebenkosten regelt: als Vorauszahlung mit jährlicher Abrechnung, als Pauschale ohne Abrechnung, oder gar nicht gesondert (eine Warmmiete, in der alles enthalten ist). Hausbuch liest es aus der Nebenkosten-Klausel des Mietvertrags. Davon hängt ab, in welcher Zeile der Anlage V die Beträge stehen und ob eine Nebenkostenabrechnung fällig wird. Leer gelassen: Vorauszahlung.",
-    ),
-    rent_due_day: {
-      label: "Miete fällig am Tag",
-      kind: "count",
-      description:
-        "Der Tag im Monat, an dem die Miete laut Mietvertrag fällig ist; „spätestens am dritten Werktag“ steht hier als 3. Er entscheidet, ob eine Miete, die um den Jahreswechsel gezahlt wird, steuerlich ins alte oder ins neue Jahr gehört (Zehn-Tage-Regel, § 11 EStG). Leer gelassen: der 3.",
+    // A certificate's figure for the tax year (phase 3 §9): the record's key names the kind
+    // (tax_input:interest_certified or tax_input:ruecklage_spent); both propose all their fields.
+    tax_input: {
+      tax_year: { label: m.taxYearL, kind: "year", description: m.certTaxYearD },
+      // A bill's part paid from another account (tax_input:private_cost:<category>, D135).
+      "value.cost_class": choice(m.kindL, { financing: PRIVATE_COST_CLASS.financing, other: PRIVATE_COST_CLASS.other }, m.costClassD),
+      "value.category": choice(m.categoryL, PRIVATE_COST_CATEGORY, m.categoryD),
+      "value.label": text(m.nameL, m.privateLabelD),
+      loan_id: { label: m.loanL, kind: "loan", description: m.loanD },
+      "value.amount": money(m.amountL, m.taxAmountD),
+      // A repair paid from another account (phase 3 D137): when the work was done and its net,
+      // for the 15 % limit on renovation in the first three years after the purchase.
+      "value.performed_on": date(m.performedOnL, m.performedOnD),
+      "value.amount_net": money(m.netL, m.netD),
+      // The Grundsteuerbescheid's schedule (tax_input:grundsteuer_schedule, phase 5 D126): one
+      // date and one amount per Fälligkeit; empty slots are left out when it is applied.
+      "value.annual_amount": money(m.annualL, m.annualD),
+      ...grundsteuerSlots(m),
+      "value.rhythm": choice(m.rhythmL, GRUNDSTEUER_RHYTHM, m.rhythmD),
+      "value.payment_mode": choice(
+        m.paymentModeL,
+        { remind: GRUNDSTEUER_MODE.remind, sepa_mandate: GRUNDSTEUER_MODE.sepa_mandate },
+        m.paymentModeD,
+      ),
     },
-  },
-  rent: {
-    cold_rent: money(
-      "Kaltmiete (€ / Monat)",
-      "Die monatliche Miete ohne Nebenkosten laut Mietvertrag. Mit ihr und der NK-Vorauszahlung erkennt Hausbuch eingehende Mietzahlungen und teilt sie auf.",
-    ),
-    operating_costs_prepayment: money(
-      "NK-Vorauszahlung (€ / Monat)",
-      "Die monatliche Vorauszahlung auf Betriebs- und Heizkosten laut Mietvertrag, beide zusammen.",
-    ),
-    effective_from: date("Gültig ab", "Der erste Tag, für den diese Miete gilt, meist der Mietbeginn."),
-  },
-  deposit_received: {
-    amount: money("Betrag (€)", "Der Kautionsbetrag, der laut Dokument eingegangen ist."),
-    received_on: date("Eingegangen am", "Der Tag, an dem die Kaution einging, laut Quittung oder Kontoauszug."),
-    tenancy_id: {
-      label: "Mietverhältnis",
-      kind: "tenancy",
-      description:
-        "Das Mietverhältnis, zu dem die Kaution gehört. Hausbuch schlägt das vor, dessen vereinbarte Kaution diesem Betrag entspricht, oder das einzige; sonst wählen Sie es hier.",
+    // A payment proof's year move (phase 3 D143): private_cost_year:<n> patches one privately paid
+    // cost to the year it was paid in; applied as withdraw + create.
+    private_cost_year: {
+      tax_year: { label: m.taxYearL, kind: "year", description: m.yearMoveD },
     },
-  },
-  // A certificate's figure for the tax year (phase 3 §9): the record's key names the kind
-  // (tax_input:interest_certified or tax_input:ruecklage_spent); both propose all their fields.
-  tax_input: {
-    tax_year: {
-      label: "Steuerjahr",
-      kind: "year",
-      description: "Das Jahr, für das die Bescheinigung oder Abrechnung den Betrag ausweist.",
+    // The Einkommensteuerbescheid's zvE (phase 4b D129): income_input:bescheid_zve, household-wide.
+    income_input: {
+      tax_year: { label: m.taxYearL, kind: "year", description: m.zveTaxYearD },
+      "value.amount": { label: m.zveL, kind: "money", signed: true, description: m.zveD },
     },
-    // A bill's part paid from another account (tax_input:private_cost:<category>, D135).
-    "value.cost_class": choice(
-      "Art",
-      { financing: PRIVATE_COST_CLASS.financing, other: PRIVATE_COST_CLASS.other },
-      "Folgt der Kategorie: Geldbeschaffungskosten bei der Kategorie Geldbeschaffungskosten, sonst „Sonstiges“. Beim Übernehmen setzt Hausbuch sie passend zur gewählten Kategorie.",
-    ),
-    "value.category": choice(
-      "Kategorie",
-      PRIVATE_COST_CATEGORY,
-      "Bestimmt die Zeile der Anlage V, so wie eine Buchung vom Mietkonto mit dieser Kategorie. Vorgeschlagen aus den Positionen der Rechnung; ändern Sie sie, wenn sie nicht passt.",
-    ),
-    "value.label": text("Bezeichnung", "Wofür die Kosten waren; erscheint in der Liste der privat bezahlten Kosten."),
-    loan_id: {
-      label: "Darlehen",
-      kind: "loan",
-      description:
-        "Das Darlehen, für das die Bank die Zinsen bescheinigt. Hausbuch schlägt das vor, dessen Bank und Vertragsnummer passen, oder das einzige; sonst wählen Sie es hier.",
-    },
-    "value.amount": money(
-      "Betrag (€)",
-      "Der Betrag laut Dokument. Er wird erst mit „Übernehmen“ als Steuerangabe gespeichert und ersetzt dann eine frühere Angabe derselben Art für dieses Jahr.",
-    ),
-    // A repair paid from another account (phase 3 D137): when the work was done and its net,
-    // for the 15 % limit on renovation in the first three years after the purchase.
-    "value.performed_on": date(
-      "Leistungsdatum",
-      "Wann die Arbeit gemacht wurde. Vorgeschlagen ist das Rechnungsdatum; steht auf der Rechnung ein Leistungsdatum oder -zeitraum, tragen Sie dessen letzten Tag ein. Hausbuch braucht es für die 15-%-Grenze in den ersten drei Jahren nach dem Kauf: Liegen die Arbeiten in diesen drei Jahren über 15 % des Gebäudewerts (netto), zählen sie zu den Anschaffungskosten statt zum Erhaltungsaufwand.",
-    ),
-    "value.amount_net": money(
-      "Netto (€)",
-      "Der Betrag ohne Umsatzsteuer, aus den Positionen der Rechnung. Die 15-%-Grenze rechnet netto; abgesetzt wird der Bruttobetrag.",
-    ),
-    // The Grundsteuerbescheid's schedule (tax_input:grundsteuer_schedule, phase 5 D126): one
-    // date and one amount per Fälligkeit; empty slots are left out when it is applied.
-    "value.annual_amount": money("Jahresbetrag (€)", "Die festgesetzte Grundsteuer für ein Jahr, laut Bescheid."),
-    ...grundsteuerSlots(),
-    "value.rhythm": choice(
-      "Rhythmus",
-      GRUNDSTEUER_RHYTHM,
-      "Die Zahlweise, wie der Bescheid sie nennt; nur zur Information, die Erinnerungen folgen den Daten.",
-    ),
-    "value.payment_mode": choice(
-      "Zahlungsweise",
-      { remind: GRUNDSTEUER_MODE.remind, sepa_mandate: GRUNDSTEUER_MODE.sepa_mandate },
-      "„Erinnern“: eine Woche vor jeder Rate. „Lastschrift prüfen“: drei Tage danach, falls die Abbuchung fehlt. Leer lassen: Hausbuch nimmt Lastschrift an, sobald eine Rate per Lastschrift abgebucht wurde.",
-    ),
-  },
-  // A payment proof's year move (phase 3 D143): private_cost_year:<n> patches one privately paid
-  // cost to the year it was paid in; applied as withdraw + create.
-  private_cost_year: {
-    tax_year: {
-      label: "Steuerjahr",
-      kind: "year",
-      description:
-        "Das Jahr, in dem die Rechnung laut Zahlungsnachweis bezahlt wurde. Kosten zählen im Jahr der Zahlung; mit „Übernehmen“ zählt die Rechnung in diesem Jahr statt im bisherigen.",
-    },
-  },
-  // The Einkommensteuerbescheid's zvE (phase 4b D129): income_input:bescheid_zve, household-wide.
-  income_input: {
-    tax_year: {
-      label: "Steuerjahr",
-      kind: "year",
-      description: "Das Jahr, über das der Bescheid die Einkommensteuer festsetzt („Bescheid für 20xx“).",
-    },
-    "value.amount": {
-      label: "zu versteuerndes Einkommen (€)",
-      kind: "money",
-      signed: true,
-      description:
-        "Die Zeile „zu versteuerndes Einkommen“ des Bescheids, nicht Summe der Einkünfte, Gesamtbetrag der Einkünfte oder Einkommen. Mit „Übernehmen“ wird sie zum zvE laut Bescheid für dieses Jahr (Steuern › Eure Angaben) und ersetzt einen früheren Bescheid desselben Jahres; die Steuerwirkung rechnet dann mit diesem Betrag statt mit der Schätzung.",
-    },
-  },
-};
+  };
+
+  /** A Verwaltervertrag's Betrag holds its monthly fee with MwSt., so it is named so (as on the page). */
+  const MANAGEMENT_FEE: FieldSpec = { label: m.feeL, kind: "money", signed: true, description: m.feeD };
+
+  return { FIELDS, USEFUL_LIFE_FIELDS, PRIVATE_COST_AMOUNT, MANAGEMENT_FEE };
+}
 
 /** Four instalment slots of the Grundsteuer schedule: a due day and an amount each. */
-function grundsteuerSlots(): Record<string, FieldSpec> {
+function grundsteuerSlots(m: FieldTexts): Record<string, FieldSpec> {
   const slots: Record<string, FieldSpec> = {};
   for (const n of [1, 2, 3, 4]) {
-    slots[`value.due_on_${n}`] = date(`Rate ${n}: fällig am`, "Die Fälligkeit im ersten Jahr des Bescheids.");
-    slots[`value.amount_${n}`] = money(
-      `Rate ${n}: Betrag (€)`,
-      "Der Betrag dieser Rate laut Bescheid; nennt er keinen, der Jahresbetrag geteilt durch die Zahl der Raten.",
-    );
+    slots[`value.due_on_${n}`] = date(m.slotDueL(n), m.slotDueD);
+    slots[`value.amount_${n}`] = money(m.slotAmountL(n), m.slotAmountD);
   }
   return slots;
 }
@@ -710,62 +487,15 @@ const CREATE_FIELDS: Readonly<Record<string, readonly string[]>> = {
  * shown only when the record carries them: a kind without hand fields gets no empty boxes. */
 const HAND_FIELDS: readonly string[] = ["amount_total", "counterparty", "period_start", "period_end", "reference", "notes"];
 
-/** A Verwaltervertrag's Betrag holds its monthly fee with MwSt., so it is named so (as on the page). */
-const MANAGEMENT_FEE: FieldSpec = {
-  label: "Vergütung pro Monat (€)",
-  kind: "money",
-  signed: true,
-  description:
-    "Die Verwaltervergütung je Monat mit MwSt. Hausbuch rechnet sie aus dem Nettobetrag laut Vertrag; steht dort „zzgl. MwSt.“ ohne Satz, mit 19 %. Gebucht wird sie aus den Zahlungen im Kontoauszug, nicht aus dem Vertrag.",
-};
-
 function isHandField(record: ProposalRecord, name: string): boolean {
   return prefixOf(record.key)[0] === "typing" && HAND_FIELDS.includes(name);
 }
 
 /** A tax_input record's title, by the kind its key names. */
-const TAX_INPUT_TITLE: Record<string, string> = {
-  interest_certified: "Zinsbescheinigung: gezahlte Zinsen",
-  ruecklage_spent: "Hausgeldabrechnung: Entnahme aus der Rücklage",
-  grundsteuer_schedule: "Grundsteuerbescheid: Jahresbetrag und Fälligkeiten",
-  useful_life: "Gutachten: kürzere Nutzungsdauer des Gebäudes",
-};
+const TAX_INPUT_TITLE: Record<string, string> = localized(TAX_INPUT_TITLE_DE, TAX_INPUT_TITLE_EN);
 
 /** The extraction fields a derived value names in `derived_from`. */
-const DERIVED_INPUT: Record<string, string> = {
-  purchase_price: "Kaufpreis",
-  land_value: "Bodenwert",
-  principal: "Darlehenssumme",
-  nominal_rate: "Sollzins",
-  initial_repayment_rate: "anfängliche Tilgung",
-  interest_only_clause: "Klausel „bis Tilgungsbeginn nur Zinsen“",
-  buyers: "Käufer",
-  ownership_clause: "Erwerbsverhältnis (z. B. „je zur Hälfte“)",
-  operating_costs_prepayment: "Betriebskosten-Vorauszahlung",
-  heating_costs_prepayment: "Heizkosten-Vorauszahlung",
-  street: "Straße",
-  house_number: "Hausnummer",
-  postal_code: "PLZ",
-  unit_label: "WE-Nummer",
-  rent_clause: "Mietklausel",
-  operating_costs_clause: "Nebenkosten-Klausel des Mietvertrags",
-  rent_due_clause: "Fälligkeitsklausel des Mietvertrags",
-  amount: "Kautionsbetrag",
-  fee_net: "Vergütung laut Vertrag (netto)",
-  monthly_fee: "Vergütungsklausel (z. B. „zzgl. MwSt.“)",
-  cost_lines: "Rechnungspositionen",
-  amount_total: "Gesamtbetrag",
-  remaining_useful_life: "Restnutzungsdauer laut Gutachten",
-  valuation_date: "Bewertungsstichtag des Gutachtens",
-  // Phase 6 step 4: a depot reading's fields
-  side: "Kauf oder Verkauf",
-  units: "Stückzahl",
-  net_amount: "Ausmachender Betrag",
-  gross_amount_eur: "Bruttobetrag in Euro",
-  net_amount_eur: "Auszahlung in Euro",
-  positions: "Positionen des Berichts",
-  direction: "Ein- oder Ausbuchung",
-};
+const DERIVED_INPUT: Record<string, string> = localized(DERIVED_INPUT_DE, DERIVED_INPUT_EN);
 
 function lookup(map: Readonly<Record<string, string>>, key: string): string {
   return map[key] ?? key;
@@ -801,7 +531,7 @@ function isYearMove(record: ProposalRecord): boolean {
 
 /** A depot record's security: its name, else its ISIN. */
 function securityOf(record: ProposalRecord): string {
-  return scalar(record.fields?.name?.value) || scalar(record.fields?.isin?.value) || "Wertpapier";
+  return scalar(record.fields?.name?.value) || scalar(record.fields?.isin?.value) || translate(proposalsText).security;
 }
 
 function prefixOf(key: string): [string, string] {
@@ -810,6 +540,7 @@ function prefixOf(key: string): [string, string] {
 }
 
 function specFor(record: ProposalRecord, name: string): FieldSpec {
+  const { FIELDS, USEFUL_LIFE_FIELDS, PRIVATE_COST_AMOUNT, MANAGEMENT_FEE } = specs();
   if (name === "amount_total" && isHandField(record, name) && record.fields?.subtype?.value === "management_contract") return MANAGEMENT_FEE;
   if (name === "value.amount" && record.key.startsWith("tax_input:private_cost:")) return PRIVATE_COST_AMOUNT;
   if (record.key === "tax_input:useful_life" && USEFUL_LIFE_FIELDS[name]) return USEFUL_LIFE_FIELDS[name];
@@ -859,54 +590,55 @@ function visibleRows(record: ProposalRecord, state: RecordState): Row[] {
 function costLabel(rest: string): string {
   const [kind, part] = prefixOf(rest);
   const label = lookup(ACQUISITION_COST_KIND, kind);
-  return part === "other_notice" ? `${label}, weiterer Bescheid` : label;
+  return part === "other_notice" ? translate(proposalsText).costOtherNotice(label) : label;
 }
 
 function recordTitle(record: ProposalRecord): string {
+  const m = translate(proposalsText);
   const [prefix, rest] = prefixOf(record.key);
   switch (prefix) {
     case "typing":
-      return "Typisierung";
+      return m.typing;
     case "property":
-      return "Immobilie";
+      return m.property;
     case "correction":
-      return `Korrektur: ${specFor(record, rest).label}`;
+      return m.correction(specFor(record, rest).label);
     case "unit": {
       const label = record.fields?.label?.value;
-      return typeof label === "string" && label ? `Einheit ${label}` : "Einheit";
+      return typeof label === "string" && label ? m.unitNamed(label) : m.unit;
     }
     case "price_split":
-      return "Kaufpreisaufteilung";
+      return m.priceSplit;
     case "ownership":
-      return "Eigentumsanteile";
+      return m.ownership;
     case "cost":
-      return `Nebenkosten: ${costLabel(rest)}`;
+      return m.cost(costLabel(rest));
     case "loan":
-      return "Darlehen";
+      return m.loan;
     case "tenant":
-      return `Mieter ${rest}`;
+      return m.tenant(rest);
     case "tenancy":
-      return "Mietverhältnis";
+      return m.tenancy;
     case "rent":
-      return "Anfangsmiete";
+      return m.rent;
     case "deposit_received":
       return EVENT_TYPE["tenancy.deposit_received"];
     case "link":
-      if (rest === "document") return "Welche Rechnung dieser Nachweis bezahlt";
-      return `Verknüpfung: ${lookup(LINK_TARGET, rest)}`;
+      if (rest === "document") return m.proofBill;
+      return m.linkTo(lookup(LINK_TARGET, rest));
     case "tax_input":
       if (rest.startsWith("private_cost:")) {
-        return `Von einem anderen Konto bezahlt: ${lookup(ALLOCATION_CATEGORY, rest.slice("private_cost:".length))}`;
+        return m.privateCost(lookup(ALLOCATION_CATEGORY, rest.slice("private_cost:".length)));
       }
       return lookup(TAX_INPUT_TITLE, rest);
     case "income_input":
-      return "Einkommensteuerbescheid: zvE laut Bescheid";
+      return m.zve;
     case "private_cost_year":
-      return "Von einem anderen Konto bezahlt: Jahr der Zahlung";
+      return m.yearMove;
     case "movement":
       return `${lookup(MOVEMENT_KIND, scalar(record.fields?.kind?.value))}: ${securityOf(record)}`;
     case "holding":
-      return `Bestand laut Bericht: ${securityOf(record)}`;
+      return m.holding(securityOf(record));
     default:
       return record.key;
   }
@@ -962,7 +694,7 @@ function toUnits(raw: string): Parsed<string> {
 /** A whole number of at least 1, e.g. a useful life in years (D147). */
 function toCount(raw: string): Parsed<number> {
   const text = raw.trim();
-  if (!/^\d+$/.test(text) || Number(text) < 1) return { ok: false, message: "Bitte eine ganze Zahl ab 1 eingeben." };
+  if (!/^\d+$/.test(text) || Number(text) < 1) return { ok: false, message: translate(proposalsText).countWholeNumber };
   return { ok: true, value: Number(text) };
 }
 
@@ -1010,7 +742,7 @@ function display(spec: FieldSpec, value: unknown, fixed: (value: unknown) => str
     case "enum":
       return lookup(spec.choices ?? {}, scalar(value));
     case "bool":
-      return value === true ? "Ja" : "Nein";
+      return value === true ? translate(proposalsText).yes : translate(proposalsText).no;
     case "fixed":
     case "unit":
     case "tenancy":
@@ -1024,15 +756,16 @@ function display(spec: FieldSpec, value: unknown, fixed: (value: unknown) => str
 /** Ids and structured values as text: ownership shares (matched by owner names, shown, not
  * edited) and the unit, tenancy or loan an id names (for a stored value, or one the list lacks). */
 function fixedText(directory: Directory | null): (value: unknown) => string {
+  const m = translate(proposalsText);
   return (value) => {
     if (typeof value === "string") {
       const unit = directory?.units.find((u) => u.id === value);
       if (unit) return unit.label;
       const tenancy = directory?.tenancies.find((t) => t.id === value);
-      if (tenancy) return `Mietverhältnis ab ${formatDate(tenancy.start_date)}`;
+      if (tenancy) return m.tenancyFrom(formatDate(tenancy.start_date));
       const loan = directory?.loans.find((l) => l.id === value);
       if (loan) return loanLabel(loan);
-      return "zugeordneter Eintrag";
+      return m.assignedEntry;
     }
     if (Array.isArray(value)) {
       return value
@@ -1040,7 +773,7 @@ function fixedText(directory: Directory | null): (value: unknown) => string {
           if (typeof entry !== "object" || entry === null || !("owner_id" in entry) || !("share" in entry)) return "?";
           const owner = directory?.owners.find((o) => o.id === entry.owner_id);
           const share = isFraction(entry.share) ? formatShare(entry.share) : "?";
-          return `${owner?.full_name ?? "Eigentümer"}: ${share}`;
+          return `${owner?.full_name ?? m.owner}: ${share}`;
         })
         .join(", ");
     }
@@ -1113,31 +846,33 @@ function useCurrentProposal(documentId: string, onRead: () => void) {
 
 /** Where the phase 1 forms take what this kind of document would have proposed. */
 function manualEntry(kind: ExtractionKind | null, directory: Directory | null): { href: string; where: string } {
+  const m = translate(proposalsText);
   const only = directory?.properties.length === 1 ? directory.properties[0] : undefined;
   switch (kind) {
     case "purchase_contract":
-      return { href: "/properties/new", where: "Immobilie anlegen" };
+      return { href: "/properties/new", where: m.createProperty };
     case "loan_contract":
-      return only ? { href: `/loans/new?property=${only.id}`, where: "Darlehen anlegen" } : { href: "/", where: "Darlehen bei der Immobilie anlegen" };
+      return only ? { href: `/loans/new?property=${only.id}`, where: m.createLoan } : { href: "/", where: m.createLoanAtProperty };
     case "invoice":
     case "bescheid":
       return only
-        ? { href: `/properties/${only.id}?tab=nebenkosten`, where: "Nebenkosten der Immobilie" }
-        : { href: "/", where: "Nebenkosten bei der Immobilie" };
+        ? { href: `/properties/${only.id}?tab=nebenkosten`, where: m.propertyCosts }
+        : { href: "/", where: m.costsAtProperty };
     case "lease":
-      return { href: "/tenancies/new", where: "Mietverhältnis anlegen" };
+      return { href: "/tenancies/new", where: m.createTenancy };
     default:
-      return { href: "#typisierung", where: "Typisierung unten" };
+      return { href: "#typisierung", where: m.typingBelow };
   }
 }
 
 function ManualEntry({ kind, directory, inCard = false }: { kind: ExtractionKind | null; directory: Directory | null; inCard?: boolean }) {
+  const t = useT(proposalsText);
   // inCard: the typing card below is the document's one form while the proposal is pending (D132).
-  const { href, where } = inCard && manualEntry(kind, directory).href === "#typisierung" ? { href: "#vorschlag", where: "Typisierung im Vorschlag" } : manualEntry(kind, directory);
+  const { href, where } = inCard && manualEntry(kind, directory).href === "#typisierung" ? { href: "#vorschlag", where: t.typingInSuggestion } : manualEntry(kind, directory);
   return (
     <p>
-      <Link href={href}>Von Hand eingeben</Link>{" "}
-      <span className="muted">({where}; {inCard ? "Typ und Felder im Vorschlag unten eintragen und übernehmen" : "das Dokument unten typisieren und verknüpfen"})</span>
+      <Link href={href}>{t.manualEntry}</Link>{" "}
+      <span className="muted">({where}; {inCard ? t.manualInCard : t.manualBelow})</span>
     </p>
   );
 }
@@ -1175,6 +910,7 @@ export function ProposalSection({
   onPendingChange?: (pending: boolean | undefined) => void;
   onPendingLinksChange?: (pending: boolean | undefined) => void;
 }) {
+  const t = useT(proposalsText);
   const documentId = detail.document.id;
   const { proposal, error, setProposal, reload } = useCurrentProposal(documentId, onApplied);
   // A failed load counts as none pending: the page's own form is then the way to type.
@@ -1235,38 +971,34 @@ export function ProposalSection({
 
   const rerunButton = (label: string, confirmText: string | null) => (
     <button type="button" className="secondary" disabled={busy} onClick={() => void rerun(confirmText)}>
-      {busy ? "Startet …" : label}
+      {busy ? t.starting : label}
     </button>
   );
 
   let body: ReactNode;
   if (proposal === undefined) {
-    body = error ? null : <p className="muted">Lädt …</p>;
+    body = error ? null : <p className="muted">{t.loading}</p>;
   } else if (proposal === null && detail.document.source === "bank_sync") {
     // Phase 5 D154: a file the bank sync fetched is never read (the API refuses it too).
     body = (
-      <p className="muted">
-        Diese Datei hat Hausbuch beim Bankabruf von der Bank geholt. Sie wird nicht automatisch ausgelesen: gebucht wird aus
-        den Umsatzdaten der Bank, ein Kontoauszug als PDF ist der Nachweis dazu.
-      </p>
+      <p className="muted">{t.bankSyncFile}</p>
     );
   } else if (proposal === null) {
     body = (
       <div className="stack">
-        <p className="muted">Dieses Dokument wurde noch nicht automatisch ausgelesen.</p>
+        <p className="muted">{t.notReadYet}</p>
         <label className="inline" htmlFor={tenantDataId}>
           <input id={tenantDataId} type="checkbox" checked={tenantData} onChange={(e) => setTenantData(e.target.checked)} />
-          Enthält Mieterdaten
+          {t.containsTenantData}
         </label>
-        <div className="row">{rerunButton("Automatisch auslesen", null)}</div>
+        <div className="row">{rerunButton(t.readAutomatically, null)}</div>
       </div>
     );
   } else if (IN_FLIGHT.includes(proposal.status)) {
     body = (
       <div className="notice notice-info" role="status">
         <p>
-          {proposal.status === "queued" ? "Wartet auf das Auslesen …" : "Wird ausgelesen …"} Lange Verträge brauchen bis zu einer Minute; die
-          Seite aktualisiert sich von selbst.
+          {proposal.status === "queued" ? t.waiting : t.reading} {t.readingTakes}
         </p>
       </div>
     );
@@ -1290,7 +1022,7 @@ export function ProposalSection({
             if (result.applied.some((a) => a.key === PROOF_LINK_KEY && !a.skipped)) reload();
           }
         }}
-        onRerun={() => void rerun("Das Dokument neu auslesen? Dieser Vorschlag wird ersetzt.")}
+        onRerun={() => void rerun(t.confirmRerunReplace)}
         busy={busy}
       />
       </>
@@ -1301,24 +1033,22 @@ export function ProposalSection({
       <div className="stack">
         <div className="notice notice-warn" role="status">
           {tenantDocumentsAllowed ? (
-            <p>
-              Dieses Dokument enthält Mieterdaten und wurde deshalb nicht an die KI geschickt. Inzwischen ist das für den Haushalt freigegeben; es
-              lässt sich jetzt neu auslesen.
-            </p>
+            <p>{t.blockedAllowed}</p>
           ) : (
             <p>
-              Dieses Dokument enthält Mieterdaten. Solche Dokumente werden erst an die KI geschickt, wenn das für den Haushalt freigegeben ist: unter{" "}
-              <Link href="/settings">Einstellungen</Link>, „Mieterdokumente von der KI lesen lassen“. Bis dahin bitte von Hand eingeben.
+              {t.blockedBefore}{" "}
+              <Link href="/settings">{t.settings}</Link>
+              {t.blockedAfter}
             </p>
           )}
         </div>
         {tenantDocumentsAllowed ? (
-          <div className="row">{rerunButton("Neu auslesen", hasTyping ? "Das Dokument neu auslesen? Dieser Vorschlag wird ersetzt." : null)}</div>
+          <div className="row">{rerunButton(t.readAgain, hasTyping ? t.confirmRerunReplace : null)}</div>
         ) : null}
         <ManualEntry kind={proposal.kind} directory={directory} inCard={hasTyping} />
         {hasTyping ? (
           <>
-            <p className="muted">Erkannt wurde nur die Art des Dokuments; diese Typisierung lässt sich übernehmen, die Felder von Hand ergänzt.</p>
+            <p className="muted">{t.typingOnly}</p>
             <ProposalReview
               key={proposal.id}
               proposal={proposal}
@@ -1369,7 +1099,7 @@ export function ProposalSection({
           <p>{aiErrorText(proposal.error_code)}</p>
         </div>
         <div className="row">
-          <Link href="/accounts">Konten öffnen</Link>
+          <Link href="/accounts">{t.openAccounts}</Link>
         </div>
       </div>
     );
@@ -1378,12 +1108,12 @@ export function ProposalSection({
       <div className="stack">
         <div className="notice notice-error" role="alert">
           <p>
-            Konnte nicht gelesen werden: {aiErrorText(proposal.error_code)}
+            {t.couldNotRead} {aiErrorText(proposal.error_code)}
             {proposal.error_code ? <code className="error-code">{proposal.error_code}</code> : null}
           </p>
         </div>
         <ManualEntry kind={proposal.kind} directory={directory} />
-        <div className="row">{rerunButton("Neu auslesen", null)}</div>
+        <div className="row">{rerunButton(t.readAgain, null)}</div>
       </div>
     );
   } else {
@@ -1393,12 +1123,9 @@ export function ProposalSection({
         {applied ? (
           <AppliedSummary result={applied} />
         ) : (
-          <p className="muted">
-            Vorschlag {proposal.status === "applied" ? "übernommen" : proposal.status === "rejected" ? "verworfen" : "ersetzt"}
-            {proposal.decided_at ? ` am ${formatDateTime(proposal.decided_at)}` : ""}.
-          </p>
+          <p className="muted">{t.decided(proposal.status, proposal.decided_at ? formatDateTime(proposal.decided_at) : null)}</p>
         )}
-        <div className="row">{rerunButton("Neu auslesen", "Das Dokument neu auslesen? Das legt einen neuen Vorschlag an.")}</div>
+        <div className="row">{rerunButton(t.readAgain, t.confirmRerunNew)}</div>
       </div>
     );
   }
@@ -1406,14 +1133,14 @@ export function ProposalSection({
   return (
     <section aria-labelledby="vorschlag" className="stack">
       <h2 id="vorschlag">
-        Vorschlag
+        {t.suggestion}
         {proposal?.kind ? <span className="tag proposal-kind">{EXTRACTION_KIND[proposal.kind]}</span> : null}
       </h2>
       {error ? (
         <div>
           <ErrorNotice error={error} />
           <button type="button" className="secondary" onClick={reload}>
-            Erneut versuchen
+            {t.retry}
           </button>
         </div>
       ) : null}
@@ -1425,6 +1152,7 @@ export function ProposalSection({
 
 /** What an apply created or changed, each linking to its page where it has one. */
 function AppliedSummary({ result }: { result: ProposalApplyResult }) {
+  const t = useT(proposalsText);
   const property =
     result.applied.find((a) => a.key === "property" && a.entity_id)?.entity_id ??
     result.applied.find((a) => a.key === "link:property" && a.entity_id)?.entity_id ??
@@ -1435,7 +1163,7 @@ function AppliedSummary({ result }: { result: ProposalApplyResult }) {
   const done = result.applied.filter((a) => !a.skipped);
   return (
     <Notice>
-      Übernommen.{" "}
+      {t.applied}{" "}
       {done.length > 0 ? (
         <>
           {done.map((entity, index) => {
@@ -1451,53 +1179,54 @@ function AppliedSummary({ result }: { result: ProposalApplyResult }) {
           .
         </>
       ) : (
-        "Nichts angelegt oder geändert."
+        t.nothingChanged
       )}
     </Notice>
   );
 }
 
 function appliedLabel(entity: AppliedEntity): string {
+  const m = translate(proposalsText);
   const [prefix, rest] = prefixOf(entity.key);
-  const verb = entity.mode === "create" ? "angelegt" : entity.mode === "correction" ? "korrigiert" : "geändert";
+  const verb = m.verb(entity.mode);
   switch (prefix) {
     case "typing":
-      return "Dokument typisiert";
+      return m.typed;
     case "link":
-      if (rest === "document") return "als Zahlungsnachweis der Rechnung zugeordnet";
-      return `verknüpft mit ${lookup(LINK_TARGET, rest)}`;
+      if (rest === "document") return m.proofLinked;
+      return m.linkedWith(lookup(LINK_TARGET, rest));
     case "property":
-      return `Immobilie ${verb}`;
+      return m.propertyDone(verb);
     case "correction":
-      return `${lookup({ notarized_on: "Notartermin", purchase_date: "Übergang" }, rest)} korrigiert`;
+      return m.corrected(lookup({ notarized_on: m.notarizedShort, purchase_date: m.handoverShort }, rest));
     case "unit":
-      return `Einheit ${verb}`;
+      return m.unitDone(verb);
     case "price_split":
-      return "Kaufpreisaufteilung erfasst";
+      return m.priceSplitDone;
     case "ownership":
-      return "Eigentumsanteile festgelegt";
+      return m.ownershipDone;
     case "cost":
-      return `Nebenkosten (${costLabel(rest)}) ${entity.mode === "create" ? "erfasst" : "mit Beleg verknüpft"}`;
+      return m.costDone(costLabel(rest), entity.mode === "create");
     case "loan":
-      return `Darlehen ${verb}`;
+      return m.loanDone(verb);
     case "tenant":
-      return `Mieter ${rest} ${verb}`;
+      return m.tenantDone(rest, verb);
     case "tenancy":
-      return `Mietverhältnis ${verb}`;
+      return m.tenancyDone(verb);
     case "rent":
-      return "Anfangsmiete erfasst";
+      return m.rentDone;
     case "deposit_received":
-      return "Kautionseingang erfasst";
+      return m.depositDone;
     case "tax_input":
-      return `${lookup(TAX_INPUT_TITLE, rest)} als Steuerangabe erfasst`;
+      return m.taxInputDone(lookup(TAX_INPUT_TITLE, rest));
     case "income_input":
-      return "zvE laut Bescheid erfasst";
+      return m.zveDone;
     case "private_cost_year":
-      return "Rechnung ins Jahr der Zahlung verschoben";
+      return m.yearMoveDone;
     case "movement":
-      return "Wertpapiervorgang auf dem Depot gebucht";
+      return m.movementDone;
     case "holding":
-      return "Bestand laut Bericht erfasst und mit den Abrechnungen abgeglichen";
+      return m.holdingDone;
     default:
       return entity.key;
   }
@@ -1631,6 +1360,7 @@ function ProposalReview({
   onRerun: (() => void) | null;
   busy: boolean;
 }) {
+  const t = useT(proposalsText);
   const records = useMemo(() => proposal.records ?? [], [proposal.records]);
   const [state, setState] = useState(() => initialState(records));
   const [busy, setBusy] = useState<"apply" | "reject" | null>(null);
@@ -1671,7 +1401,7 @@ function ProposalReview({
   }
 
   async function reject() {
-    if (!window.confirm("Den Vorschlag verwerfen? Es wird nichts angelegt oder geändert.")) return;
+    if (!window.confirm(t.confirmReject)) return;
     form.clear();
     setBusy("reject");
     try {
@@ -1685,12 +1415,9 @@ function ProposalReview({
   }
 
   return (
-    <form className="stack proposal" onSubmit={apply} noValidate aria-label="Vorschlag prüfen">
+    <form className="stack proposal" onSubmit={apply} noValidate aria-label={t.reviewForm}>
       <DocumentExplanationBox explanation={proposal.explanation} />
-      <p className="muted">
-        Bitte jeden Wert mit der Fundstelle vergleichen. Gespeichert wird erst mit „Übernehmen“; jeder Eintrag läuft dabei durch dieselben Prüfungen
-        wie beim Eingeben von Hand.
-      </p>
+      <p className="muted">{t.reviewIntro}</p>
       <div className="proposal-records">
         {records.map((record) => {
           const recordState = state[record.key];
@@ -1714,14 +1441,14 @@ function ProposalReview({
       <FormBanner errors={form.errors} />
       <div className="row proposal-foot">
         <button type="submit" disabled={busy !== null}>
-          {busy === "apply" ? "Übernimmt …" : "Übernehmen"}
+          {busy === "apply" ? t.applying : t.apply}
         </button>
         <button type="button" className="secondary" disabled={busy !== null} onClick={() => void reject()}>
-          {busy === "reject" ? "Verwirft …" : "Verwerfen"}
+          {busy === "reject" ? t.rejecting : t.reject}
         </button>
         {onRerun ? (
           <button type="button" className="secondary" disabled={busy !== null || rerunBusy} onClick={onRerun}>
-            Neu auslesen
+            {t.readAgain}
           </button>
         ) : null}
       </div>
@@ -1730,9 +1457,10 @@ function ProposalReview({
 }
 
 function skipLabel(record: ProposalRecord): string {
-  if (record.entity_type === "link") return "nicht verknüpfen";
-  if (record.mode === "create") return "nicht anlegen";
-  return "nicht ändern";
+  const m = translate(proposalsText);
+  if (record.entity_type === "link") return m.skipLink;
+  if (record.mode === "create") return m.skipCreate;
+  return m.skipChange;
 }
 
 function RecordCard({
@@ -1754,6 +1482,7 @@ function RecordCard({
   fixed: (value: unknown) => string;
   onChange: (change: (current: RecordState) => RecordState) => void;
 }) {
+  const t = useT(proposalsText);
   const headingId = useId();
   const skipId = useId();
   const title = recordTitle(record);
@@ -1804,10 +1533,10 @@ function RecordCard({
         <BillPicker record={record} state={state} onChange={onChange} />
       ) : record.entity_type === "link" ? (
         <p className="proposal-link">
-          Das Dokument wird verknüpft mit: <strong>{linkTarget(record, directory)}</strong>
+          {t.willLink}<strong>{linkTarget(record, directory)}</strong>
         </p>
       ) : null}
-      {unchanged ? <p className="muted">Stimmt mit dem Gespeicherten überein; beim Übernehmen ändert sich hier nichts.</p> : null}
+      {unchanged ? <p className="muted">{t.unchangedNote}</p> : null}
       {fields.length > 0 ? (
         <div className="proposal-rows">
           {fields.map(([name, value]) => (
@@ -1838,19 +1567,20 @@ function RecordCard({
 }
 
 function linkTarget(record: ProposalRecord, directory: Directory | null): string {
+  const m = translate(proposalsText);
   const [, target] = prefixOf(record.key);
   const id = record.target_id;
-  if (!id) return target === "property" ? "der neu angelegten Immobilie" : target === "loan" ? "dem neu angelegten Darlehen" : "dem neu angelegten Eintrag";
+  if (!id) return target === "property" ? m.newProperty : target === "loan" ? m.newLoan : m.newEntry;
   switch (target) {
     case "property":
-      return directory?.properties.find((p) => p.id === id)?.label ?? "Immobilie";
+      return directory?.properties.find((p) => p.id === id)?.label ?? m.property;
     case "loan": {
       const loan = directory?.loans.find((l) => l.id === id);
-      return loan ? `${loan.lender}${loan.contract_number ? ` ${loan.contract_number}` : ""}` : "Darlehen";
+      return loan ? `${loan.lender}${loan.contract_number ? ` ${loan.contract_number}` : ""}` : m.loan;
     }
     case "tenancy": {
       const tenancy = directory?.tenancies.find((t) => t.id === id);
-      return tenancy ? `Mietverhältnis ab ${formatDate(tenancy.start_date)}` : "Mietverhältnis";
+      return tenancy ? m.tenancyFrom(formatDate(tenancy.start_date)) : m.tenancy;
     }
     case "tenant":
       return tenantName(directory?.tenants.find((t) => t.id === id));
@@ -1872,6 +1602,7 @@ function BillPicker({
   state: RecordState;
   onChange: (change: (current: RecordState) => RecordState) => void;
 }) {
+  const t = useT(proposalsText);
   const name = useId();
   const picked = pickedBill(state);
   const offered = record.options?.target_id ?? [];
@@ -1883,8 +1614,8 @@ function BillPicker({
   }
   return (
     <>
-      <p className="proposal-link">Dieser Zahlungsnachweis bezahlt:</p>
-      <div className="proposal-options" role="radiogroup" aria-label="Welche Rechnung dieser Nachweis bezahlt">
+      <p className="proposal-link">{t.proofPays}</p>
+      <div className="proposal-options" role="radiogroup" aria-label={t.proofBill}>
         {offered.map((option) => (
           <span key={option.value} className="row">
             <label className="inline">
@@ -1892,13 +1623,13 @@ function BillPicker({
               {option.label}
             </label>
             <Link href={`/documents/${option.value}`} target="_blank" rel="noopener">
-              Rechnung ansehen
+              {t.viewBill}
             </Link>
           </span>
         ))}
         <label className="inline">
           <input type="radio" name={name} checked={picked === ""} onChange={() => pick("")} />
-          keine dieser Rechnungen
+          {t.noneOfThese}
         </label>
       </div>
     </>
@@ -1920,9 +1651,10 @@ function FieldOptions({
   disabled: boolean;
   onPick: (raw: string) => void;
 }) {
+  const t = useT(proposalsText);
   const name = useId();
   return (
-    <div className="proposal-options" role="radiogroup" aria-label={`${label}: Vorschläge aus dem Dokument`}>
+    <div className="proposal-options" role="radiogroup" aria-label={t.fieldOptions(label)}>
       {options.map((option, index) => (
         <label key={`${index}:${option.raw}`} className="inline">
           <input type="radio" name={name} checked={raw !== "" && raw === option.raw} disabled={disabled} onChange={() => onPick(option.raw)} />
@@ -1959,6 +1691,7 @@ function FieldRow({
   fixed: (value: unknown) => string;
   onChange: (next: Partial<FieldState>) => void;
 }) {
+  const t = useT(proposalsText);
   const id = useId();
   const quoteId = useId();
   const hintId = useId();
@@ -2005,7 +1738,7 @@ function FieldRow({
       const raw = state?.raw ?? "";
       input = (
         <select {...common} onChange={(e) => onChange({ raw: e.target.value })}>
-          <option value="">– wählen –</option>
+          <option value="">{t.choose}</option>
           {raw && !choices.some(([key]) => key === raw) ? <option value={raw}>{raw}</option> : null}
           {choices.map(([key, label]) => (
             <option key={key} value={key}>
@@ -2019,7 +1752,7 @@ function FieldRow({
       const choices = offered ?? [];
       input = (
         <select {...common} onChange={(e) => onChange({ raw: e.target.value })}>
-          <option value="">– wählen –</option>
+          <option value="">{t.choose}</option>
           {raw && !choices.some((option) => scalar(option.value) === raw) ? <option value={raw}>{raw}</option> : null}
           {choices.map((option) => (
             <option key={scalar(option.value)} value={scalar(option.value)}>
@@ -2033,7 +1766,7 @@ function FieldRow({
       const raw = state?.raw ?? "";
       input = (
         <select {...common} onChange={(e) => onChange({ raw: e.target.value })}>
-          <option value="">– wählen –</option>
+          <option value="">{t.choose}</option>
           {raw && !choices.some(([key]) => key === raw) ? <option value={raw}>{fixed(raw)}</option> : null}
           {choices.map(([key, label]) => (
             <option key={key} value={key}>
@@ -2081,11 +1814,11 @@ function FieldRow({
             className="source-badge"
             aria-expanded={quoteOpen}
             aria-controls={quoteId}
-            title={`„${source.quote}“`}
+            title={t.quoted(source.quote)}
             onClick={() => setQuoteOpen((open) => !open)}
           >
-            S. {source.page}
-            <span className="visually-hidden"> – Fundstelle anzeigen</span>
+            {t.sourcePage(source.page)}
+            <span className="visually-hidden">{t.showSource}</span>
           </button>
         ) : null}
       </div>
@@ -2120,7 +1853,7 @@ function FieldRow({
       </div>
       {source ? (
         <div id={quoteId} className="source-quote" hidden={!quoteOpen}>
-          <blockquote>„{source.quote}“</blockquote>
+          <blockquote>{t.quoted(source.quote)}</blockquote>
           <SourceLink source={source} originalUrl={originalUrl} />
         </div>
       ) : null}
@@ -2141,20 +1874,21 @@ function FieldRow({
 }
 
 function fieldHint(spec: FieldSpec, value: ExtractedValue | null, hasNotes: boolean, hand: boolean): string | null {
-  if (!value) return spec.kind === "bool" ? "Nicht im Vorschlag; bei Bedarf von Hand ankreuzen." : "Nicht im Vorschlag; bei Bedarf von Hand eintragen.";
+  const m = translate(proposalsText);
+  if (!value) return spec.kind === "bool" ? m.notProposedBool : m.notProposed;
   // A hand field (D132): never read, or read but not as a value it can hold; or already stored.
-  if (hand && value.value === null && !value.source) return "Nicht ausgelesen; bei Bedarf von Hand eintragen.";
-  if (hand && value.value !== null && !value.source && (value.derived_from ?? []).length === 0) return "Bisher beim Dokument gespeichert.";
+  if (hand && value.value === null && !value.source) return m.notRead;
+  if (hand && value.value !== null && !value.source && (value.derived_from ?? []).length === 0) return m.storedBefore;
   if (value.value === null) {
-    if (spec.kind === "unit") return "Keine Einheit passt eindeutig zum Mietvertrag; bitte wählen.";
-    if (spec.kind === "tenancy") return "Kein Mietverhältnis passt eindeutig; bitte wählen.";
-    if (spec.kind === "loan") return "Kein Darlehen passt eindeutig zur Bescheinigung; bitte wählen.";
-    if (spec.kind === "offered") return "Bitte das Depot wählen, dessen Nummer auf dem Dokument steht.";
-    return hasNotes ? "Im Dokument nicht als Wert gefunden; siehe Hinweis oben." : "Im Dokument nicht gefunden.";
+    if (spec.kind === "unit") return m.noUnitFits;
+    if (spec.kind === "tenancy") return m.noTenancyFits;
+    if (spec.kind === "loan") return m.noLoanFits;
+    if (spec.kind === "offered") return m.chooseDepot;
+    return hasNotes ? m.notFoundSeeNote : m.notFound;
   }
   const derived = value.derived_from ?? [];
-  if (derived.length > 0) return `Berechnet aus: ${derived.map((name) => lookup(DERIVED_INPUT, name)).join(", ")}.`;
-  if (!value.source) return "Ohne Fundstelle (vom Programm gesetzt).";
+  if (derived.length > 0) return m.computedFrom(derived.map((name) => lookup(DERIVED_INPUT, name)).join(", "));
+  if (!value.source) return m.noSource;
   return null;
 }
 
@@ -2180,49 +1914,56 @@ function pickable(kind: PickKind, directory: Directory): [string, string][] {
 
 /** Nothing to pick yet: where to create it first (nothing here is saved before then). */
 function NothingToPick({ kind, directory }: { kind: PickKind; directory: Directory }) {
+  const t = useT(proposalsText);
   if (kind === "loan") {
     const single = directory.properties.length === 1 ? directory.properties[0] : undefined;
     return (
       <>
-        Noch kein Darlehen angelegt. Bitte zuerst <Link href={single ? `/loans/new?property=${single.id}` : "/"}>das Darlehen anlegen</Link>;
-        danach steht es hier zur Wahl.
+        {t.noLoan}
+        <Link href={single ? `/loans/new?property=${single.id}` : "/"}>{t.noLoanLink}</Link>
+        {t.pickAfterIt}
       </>
     );
   }
   if (kind === "tenancy") {
     return (
       <>
-        Noch kein Mietverhältnis angelegt. Bitte zuerst <Link href="/tenancies/new">das Mietverhältnis anlegen</Link>; danach steht es hier zur
-        Wahl.
+        {t.noTenancy}
+        <Link href="/tenancies/new">{t.noTenancyLink}</Link>
+        {t.pickAfterIt}
       </>
     );
   }
   const only = directory.properties.length === 1 ? directory.properties[0] : undefined;
   return only ? (
     <>
-      Noch keine Einheit angelegt. Bitte zuerst bei der Immobilie <Link href={`/properties/${only.id}/units/new`}>die Einheit anlegen</Link>;
-      danach steht sie hier zur Wahl.
+      {t.noUnit}
+      <Link href={`/properties/${only.id}/units/new`}>{t.noUnitLink}</Link>
+      {t.pickAfterHer}
     </>
   ) : (
     <>
-      Noch keine Einheit angelegt. Bitte zuerst bei der Immobilie (<Link href="/">Übersicht</Link>) die Einheit anlegen; danach steht sie hier zur
-      Wahl.
+      {t.noUnitOpen}
+      <Link href="/">{t.overview}</Link>
+      {t.noUnitClose}
     </>
   );
 }
 
 function SourceLink({ source, originalUrl }: { source: SourceRef; originalUrl: string | null }) {
-  if (!originalUrl) return <span className="muted">Dieser Dateityp öffnet nicht im Browser.</span>;
+  const t = useT(proposalsText);
+  if (!originalUrl) return <span className="muted">{t.noBrowser}</span>;
   return (
     <a href={`${originalUrl}#page=${source.page}`} target="_blank" rel="noopener">
-      Original auf S. {source.page} öffnen
+      {t.openOriginal(source.page)}
     </a>
   );
 }
 
 function ConfidenceDot({ value }: { value: ExtractedValue }) {
+  const t = useT(proposalsText);
   const checks = (value.checks ?? []).map((check) => CHECK[check]).join(", ");
-  const label = `Sicherheit ${CONFIDENCE[value.confidence]}${checks ? ` (${checks})` : ""}`;
+  const label = t.confidence(CONFIDENCE[value.confidence], checks);
   return <span className={`confidence confidence-${value.confidence}`} role="img" aria-label={label} title={label} />;
 }
 
@@ -2241,21 +1982,22 @@ function CurrentValue({
   disabled: boolean;
   onChange: (take: boolean) => void;
 }) {
+  const t = useT(proposalsText);
   const takeId = useId();
   const keepId = useId();
   return (
     <div className="proposal-current">
       <p className="muted">
-        Gespeichert: <strong>{current}</strong>
+        {t.stored}<strong>{current}</strong>
       </p>
-      <div className="row" role="radiogroup" aria-label={`${label}: übernehmen oder behalten`}>
+      <div className="row" role="radiogroup" aria-label={t.takeOrKeep(label)}>
         <label className="inline" htmlFor={takeId}>
           <input id={takeId} type="radio" name={name} checked={take} disabled={disabled} onChange={() => onChange(true)} />
-          übernehmen
+          {t.take}
         </label>
         <label className="inline" htmlFor={keepId}>
           <input id={keepId} type="radio" name={name} checked={!take} disabled={disabled} onChange={() => onChange(false)} />
-          behalten
+          {t.keep}
         </label>
       </div>
     </div>
