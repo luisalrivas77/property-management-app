@@ -15,6 +15,12 @@ import type { Loaded } from "./useLoad";
 
 import "./screens.css";
 
+/** The loading line alone, „Lädt …“, as a Suspense fallback or while a redirect runs. */
+export function LoadingLine() {
+  const c = useT(common);
+  return <p className="muted">{c.loading}</p>;
+}
+
 /** Renders `children(data)` once loaded; the loading line or the error (with retry) before. */
 export function Loading<T>({ state, children }: { state: Loaded<T>; children: (data: T) => ReactNode }) {
   const t = useT(shared);

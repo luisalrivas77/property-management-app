@@ -5,16 +5,17 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback } from "react";
 
 import { api, ok } from "@/api/client";
-import { Breadcrumbs, Loading } from "@/components/ui";
+import { Breadcrumbs, Loading, LoadingLine } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
 import { useT } from "@/i18n";
 import { loans } from "@/i18n/loans";
+import { pages } from "@/i18n/pages";
 
 import { LoanForm } from "../LoanForm";
 
 export default function NewLoanPage() {
   return (
-    <Suspense fallback={<p className="muted">Lädt …</p>}>
+    <Suspense fallback={<LoadingLine />}>
       <NewLoan />
     </Suspense>
   );
@@ -28,13 +29,16 @@ function NewLoan() {
   );
   const property = useLoad(load);
   const t = useT(loans);
+  const p = useT(pages);
   return (
     <section>
       <Loading state={property}>
         {(found) =>
           found === null ? (
             <p>
-              Ein Darlehen gehört zu einer Immobilie: dort unter „Darlehen“ anlegen (<Link href="/">Übersicht</Link>).
+              {p.loanNeedsProperty}
+              <Link href="/">{p.overview}</Link>
+              {p.loanNeedsPropertyEnd}
             </p>
           ) : (
             <>

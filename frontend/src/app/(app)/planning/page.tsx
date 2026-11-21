@@ -11,14 +11,16 @@ import { Suspense } from "react";
 import { api, ok } from "@/api/client";
 import { HouseholdPlanScreen, PLAN_SECTIONS, type PlanSection } from "@/components/householdPlan";
 import { PlanningScreen } from "@/components/planning";
-import { Loading } from "@/components/ui";
+import { Loading, LoadingLine } from "@/components/ui";
 import { useLoad } from "@/components/useLoad";
+import { useT } from "@/i18n";
+import { pages } from "@/i18n/pages";
 
 const loadProperties = () => ok(api.GET("/api/properties"));
 
 export default function PlanningPage() {
   return (
-    <Suspense fallback={<p className="muted">Lädt …</p>}>
+    <Suspense fallback={<LoadingLine />}>
       <Planning />
     </Suspense>
   );
@@ -47,6 +49,7 @@ function Planning() {
 
 function PropertyPlanning({ requested }: { requested: string | null }) {
   const properties = useLoad(loadProperties);
+  const t = useT(pages);
 
   return (
     <Loading state={properties}>
@@ -54,8 +57,8 @@ function PropertyPlanning({ requested }: { requested: string | null }) {
         if (list.length === 0) {
           return (
             <p className="muted">
-              Noch keine Immobilie. <Link href="/properties/new">Immobilie anlegen</Link>, dann entsteht hier die Planung bis zum
-              Verkauf.
+              {t.noProperty} <Link href="/properties/new">{t.createProperty}</Link>
+              {t.planningRest}
             </p>
           );
         }
