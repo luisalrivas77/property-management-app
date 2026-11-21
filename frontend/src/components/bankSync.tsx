@@ -59,10 +59,13 @@ import type {
   StatementsRefusal,
   SyncStatus,
 } from "@/api/schemas";
+import { getLocale, LOCALE_TAG, translate, useFormat, useT } from "@/i18n";
+import { statements } from "@/i18n/accounts";
+import { bankSync } from "@/i18n/bankSync";
+import { common } from "@/i18n/common";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { Field, FormBanner, Submit, useFormErrors } from "./form";
-import { formatDate, formatDateTime } from "./format";
 import { BALANCE_SOURCE, SYNC_STATUS, SYNC_TRIGGER } from "./labels";
 import { ActionDialog, Facts } from "./ui";
 import { useLoad } from "./useLoad";
@@ -194,6 +197,8 @@ function newer(polled: BankSync | null, latest: BankSync | null): BankSync | nul
 }
 
 export function BankSyncCard({ account, onImported }: { account: Account; onImported: () => void }) {
+  const t = useT(bankSync);
+  const c = useT(common);
   const load = useCallback(() => loadBankSync(account.id), [account.id]);
   const state = useLoad(load);
   const [polled, setPolled] = useState<BankSync | null>(null);
@@ -258,14 +263,11 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
 
   return (
     <section className="card stack" aria-labelledby="bank-sync-title">
-      <h2 id="bank-sync-title">Bankabruf</h2>
-      <p className="muted">
-        Die PIN Ihres Online-Bankings speichert Hausbuch nur verschlüsselt und zeigt sie nie wieder an. Die Produkt-ID steht unter
-        Einstellungen › Zugangsschlüssel oder in der Serverkonfiguration.
-      </p>
+      <h2 id="bank-sync-title">{t.title}</h2>
+      <p className="muted">{t.intro}</p>
       {state.error ? <ErrorNotice error={state.error} /> : null}
       {state.data === undefined ? (
-        state.error ? null : <p className="muted">Lädt …</p>
+        state.error ? null : <p className="muted">{c.loading}</p>
       ) : state.data.connection === null ? (
         <>
           <ConnectionCreateForm account={account} slots={state.data.slots} onCreated={reload} />
@@ -285,16 +287,16 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
           <ConnectionSwitch
             connection={state.data.connection}
             field="auto_sync"
-            label="Täglich automatisch abrufen"
-            hint={AUTO_SYNC_HINT}
-            locked={state.data.connection.auto_sync_allowed ? null : AUTO_SYNC_WAITS}
+            label={t.autoSync}
+            hint={t.autoSyncHint}
+            locked={state.data.connection.auto_sync_allowed ? null : t.autoSyncWaits}
             onSaved={reload}
           />
           <ConnectionSwitch
             connection={state.data.connection}
             field="fetch_statements"
-            label="Kontoauszüge als PDF abrufen"
-            hint={FETCH_STATEMENTS_HINT}
+            label={t.fetchStatements}
+            hint={t.fetchStatementsHint}
             onSaved={reload}
           />
           {state.data.connection.statements_refusal ? (
@@ -305,9 +307,9 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
           ) : null}
           <div className="row">
             <button type="button" onClick={() => void start()} disabled={starting || busy}>
-              {starting ? "Startet …" : busy ? "Abruf läuft …" : expired ? "Erneut abrufen" : "Jetzt abrufen"}
+              {starting ? t.starting : busy ? t.running : expired ? t.syncAgain : t.syncNow}
             </button>
-            <ActionDialog label="Zugang ändern" title="Bankabruf: Zugang ändern">
+            <ActionDialog label={t.changeLogin} title={t.dialogTitle(t.changeLogin)}>
               {(close) => (
                 <ConnectionEditForm
                   connection={state.data!.connection!}
@@ -341,58 +343,54 @@ export function BankSyncCard({ account, onImported }: { account: Account; onImpo
   );
 }
 
-const localDay = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium" });
-
 /** The local calendar day of a timestamp plus `days` (an evening approval in Berlin is
  * already the next day in UTC). */
 function dayAfter(timestamp: string, days: number): string {
   const day = new Date(timestamp);
   day.setDate(day.getDate() + days);
-  return localDay.format(day);
+  return new Intl.DateTimeFormat(LOCALE_TAG[getLocale()], { dateStyle: "medium" }).format(day);
 }
 
 /** Where a slot's PIN comes from, in one sentence (names and dates only, never a PIN). */
 function pinSentence(slot: string, pin: PinInfo): ReactNode {
+  const t = translate(bankSync);
   if (pin.source === "app" && pin.readable && !pin.serverMatches) {
     return (
       <>
-        <strong>Bitte die PIN einmal neu eingeben</strong>: Hausbuch sendet eine gespeicherte PIN nur an die FinTS-Adresse,
-        für die sie eingegeben wurde. Eine PIN, die vor dem 16.11.2026 eingegeben wurde, nennt noch keine Adresse; sonst wurde
-        die FinTS-Adresse dieses Zugangs seither geändert. „PIN ändern“ wählen und die PIN für diese Adresse neu eingeben.
+        <strong>{t.pinRetypeLead}</strong>
+        {t.pinRetypeText}
       </>
     );
   }
   if (pin.source === "app") {
     return pin.readable ? (
-      <>PIN in der App gespeichert am {pin.setAt ? dayAfter(pin.setAt, 0) : "–"} (verschlüsselt).</>
+      <>{t.pinSavedInApp(pin.setAt ? dayAfter(pin.setAt, 0) : "–")}</>
     ) : (
       <>
-        <strong>Die gespeicherte PIN lässt sich nicht mehr lesen</strong>: der Schlüssel des Servers wurde gewechselt. Bitte
-        „PIN ändern“ wählen und die PIN neu eingeben.
+        <strong>{t.pinUnreadableLead}</strong>
+        {t.pinUnreadableText}
       </>
     );
   }
   if (pin.source === "server") {
     return (
       <>
-        PIN auf dem Server gesetzt (<code>{pinVariable(slot)}</code>).
+        {t.pinOnServerBefore}
+        <code>{pinVariable(slot)}</code>
+        {t.pinOnServerAfter}
       </>
     );
   }
-  return <strong>Noch keine PIN hinterlegt.</strong>;
+  return <strong>{t.noPinYet}</strong>;
 }
 
-const PIN_LABEL = "PIN (Online-Banking)";
-const PIN_HINT =
-  "Die PIN, mit der Sie sich im Online-Banking anmelden. Hausbuch speichert sie verschlüsselt und zeigt sie nie wieder an, auch Ihnen nicht.";
-const PIN_LENGTH = "Die PIN hat 5 bis 64 Zeichen.";
 const PIN_KEYS = ["pin"] as const;
 
 /** A PIN's length in characters, as the API counts them (code points, not UTF-16 units,
  * after trimming the surrounding blanks, D196). */
 function checkPin(pin: string): string | null {
   const length = [...pin.trim()].length;
-  return length >= 5 && length <= 64 ? null : PIN_LENGTH;
+  return length >= 5 && length <= 64 ? null : translate(bankSync).pinLength;
 }
 
 /** The password input of a PIN: never prefilled, no browser autofill of a saved password.
@@ -432,6 +430,7 @@ async function savePin(slot: string, pin: string, fintsUrl: string): Promise<voi
 }
 
 function PinForm({ slot, fintsUrl, onSaved }: { slot: string; fintsUrl: string; onSaved: () => void }) {
+  const t = useT(bankSync);
   const id = useId();
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
@@ -456,13 +455,13 @@ function PinForm({ slot, fintsUrl, onSaved }: { slot: string; fintsUrl: string; 
   }
 
   return (
-    <form className="stack" onSubmit={submit} noValidate aria-label="PIN speichern">
-      <Field id={`${id}-pin`} label={PIN_LABEL} hint={PIN_HINT} errors={form.of("pin")}>
+    <form className="stack" onSubmit={submit} noValidate aria-label={t.savePin}>
+      <Field id={`${id}-pin`} label={t.pinLabel} hint={t.pinHint} errors={form.of("pin")}>
         <PinInput value={pin} onChange={setPin} />
       </Field>
       <FormBanner errors={form.errors} />
       <div className="row">
-        <Submit busy={busy}>PIN speichern</Submit>
+        <Submit busy={busy}>{t.savePin}</Submit>
       </div>
     </form>
   );
@@ -483,14 +482,13 @@ function PinPanel({
   serverSet: boolean;
   onChanged: () => void;
 }) {
+  const t = useT(bankSync);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   async function remove() {
-    const after = serverSet
-      ? "Danach nutzt der Abruf wieder die PIN auf dem Server."
-      : "Danach endet jeder Abruf mit „PIN fehlt“, bis wieder eine PIN gespeichert ist.";
-    if (!window.confirm(`Die in Hausbuch gespeicherte PIN für den Zugang „${slot}“ löschen? ${after}`)) return;
+    const after = serverSet ? t.afterDeleteServer : t.afterDeleteNone;
+    if (!window.confirm(t.confirmDeletePin(slot, after))) return;
     setBusy(true);
     setError(null);
     try {
@@ -504,7 +502,7 @@ function PinPanel({
   }
 
   const change = (label: string) => (
-    <ActionDialog label={label} title={`Bankabruf: ${label}`}>
+    <ActionDialog label={label} title={t.dialogTitle(label)}>
       {(close) => (
         <PinForm
           slot={slot}
@@ -520,12 +518,12 @@ function PinPanel({
 
   return (
     <div className="stack">
-      <h3>PIN</h3>
+      <h3>{t.pin}</h3>
       {pin.source === "none" ? (
         <>
           <p>
-            {pinSentence(slot, pin)} Hausbuch speichert die PIN verschlüsselt und zeigt sie danach nie wieder an. Ohne PIN endet
-            jeder Abruf mit „PIN fehlt“.
+            {pinSentence(slot, pin)}
+            {t.pinNoneAfter}
           </p>
           <PinForm slot={slot} fintsUrl={fintsUrl} onSaved={onChanged} />
         </>
@@ -534,19 +532,19 @@ function PinPanel({
           <p className={pin.readable && pin.serverMatches ? undefined : "notice notice-warn"}>
             {pinSentence(slot, pin)}
             {pin.source === "app" && pin.readable && pin.serverMatches && serverSet
-              ? " Sie gilt vor der PIN auf dem Server."
+              ? t.pinBeforeServer
               : ""}
           </p>
           <div className="row">
             {pin.source === "app" ? (
               <>
-                {change("PIN ändern")}
+                {change(t.changePin)}
                 <button type="button" className="danger" onClick={() => void remove()} disabled={busy}>
-                  PIN löschen
+                  {t.deletePin}
                 </button>
               </>
             ) : (
-              change("PIN in der App speichern")
+              change(t.savePinInApp)
             )}
           </div>
           <ErrorNotice error={error} />
@@ -556,19 +554,18 @@ function PinPanel({
   );
 }
 
-const UNUSED_PINS = "Gespeicherte PINs ohne Bankzugang";
-
 /** The PINs typed into the app under a name no connection of the household uses (a setup the
  * bank form refused after the PIN was saved, a renamed connection; D196 review). They are
  * listed so they can be deleted; Hausbuch never deletes one by itself. */
 function UnusedPins({ slots, onChanged }: { slots: Slots; onChanged: () => void }) {
+  const t = useT(bankSync);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const unused = slots.app.filter((c) => !c.used);
   if (unused.length === 0) return null;
 
   async function remove(slot: string) {
-    if (!window.confirm(`Die in Hausbuch gespeicherte PIN für den Zugang „${slot}“ löschen? Kein Bankzugang nutzt sie.`)) {
+    if (!window.confirm(t.confirmDeletePin(slot, t.noConnectionUses))) {
       return;
     }
     setBusy(slot);
@@ -585,20 +582,17 @@ function UnusedPins({ slots, onChanged }: { slots: Slots; onChanged: () => void 
 
   return (
     <div className="stack">
-      <h3>{UNUSED_PINS}</h3>
-      <p className="muted">
-        Diese PINs sind in Hausbuch gespeichert, aber kein Bankzugang trägt ihren Namen, etwa nach einer abgelehnten Einrichtung
-        oder einem umbenannten Zugang. Hausbuch löscht sie nie von selbst; ein Zugang mit diesem Namen würde sie wieder nutzen.
-      </p>
-      <ul aria-label={UNUSED_PINS} className="stack">
+      <h3>{t.unusedPins}</h3>
+      <p className="muted">{t.unusedPinsExplain}</p>
+      <ul aria-label={t.unusedPins} className="stack">
         {unused.map((c) => (
           <li key={c.slot} className="row">
             <span>
-              Zugang „{c.slot}“, gespeichert am {dayAfter(c.set_at, 0)}
-              {c.readable ? "" : " (nicht mehr lesbar)"}
+              {t.unusedPin(c.slot, dayAfter(c.set_at, 0))}
+              {c.readable ? "" : t.unreadable}
             </span>
             <button type="button" className="danger" onClick={() => void remove(c.slot)} disabled={busy !== null}>
-              PIN löschen
+              {t.deletePin}
             </button>
           </li>
         ))}
@@ -609,86 +603,61 @@ function UnusedPins({ slots, onChanged }: { slots: Slots; onChanged: () => void 
 }
 
 function ConnectionFacts({ connection }: { connection: BankConnection }) {
+  const t = useT(bankSync);
+  const f = useFormat();
   return (
     <Facts
       rows={[
-        ["BLZ", connection.bank_code],
-        ...(connection.bank_name ? ([["Bank (laut FinTS)", connection.bank_name]] as [string, ReactNode][]) : []),
-        ["FinTS-Adresse", connection.fints_url],
+        [t.factBankCode, connection.bank_code],
+        ...(connection.bank_name ? ([[t.factBankName, connection.bank_name]] as [string, ReactNode][]) : []),
+        [t.factUrl, connection.fints_url],
         [
-          "Anmeldename",
+          t.factLogin,
           connection.name_readable ? (
             connection.login_masked
           ) : (
             <>
-              <strong>lässt sich nicht mehr lesen</strong>: der Schlüssel des Servers wurde gewechselt. „Zugang ändern“ wählen,
-              den Anmeldenamen neu eingeben.
+              <strong>{t.loginUnreadableLead}</strong>
+              {t.loginUnreadableText}
             </>
           ),
         ],
-        ["Zugang", `„${connection.credential_slot}“`],
+        [t.factSlot, t.quotedSlot(connection.credential_slot)],
         [
-          "Freigabe",
+          t.factApproval,
           connection.sca_confirmed_at
-            ? `zuletzt am ${dayAfter(connection.sca_confirmed_at, 0)}, gültig bis etwa ${dayAfter(connection.sca_confirmed_at, SCA_DAYS)} (geschätzt)`
-            : `noch keine: beim ersten Abruf fragt die Bank nach einer Freigabe („${connection.approval_text}“)`,
+            ? t.approvalLast(dayAfter(connection.sca_confirmed_at, 0), dayAfter(connection.sca_confirmed_at, SCA_DAYS))
+            : t.approvalNone(connection.approval_text),
         ],
         [
-          "Letzter Abruf",
+          t.factLastSync,
           connection.last_sync_at
-            ? `${formatDateTime(connection.last_sync_at)}${connection.last_booking_on ? `, Umsätze bis ${formatDate(connection.last_booking_on)}` : ""}`
-            : "noch keiner",
+            ? `${f.dateTime(connection.last_sync_at)}${connection.last_booking_on ? t.linesUntil(f.date(connection.last_booking_on)) : ""}`
+            : t.noSyncYet,
         ],
       ]}
     />
   );
 }
 
-const AUTO_SYNC_HINT = (
-  <>
-    Hausbuch fragt die Bank jeden Morgen gegen halb acht (im Sommer gegen halb neun) und holt nur die Umsätze seit dem
-    letzten Abruf, zur Sicherheit ab zwei Wochen davor; schon vorhandene erkennt Hausbuch und bucht sie nicht doppelt.
-    Verlangt die Bank dafür einmal eine Freigabe, erscheint unter „Zu prüfen“ eine Karte; bis dahin ruft Hausbuch dieses
-    Konto nicht automatisch ab, damit keine weiteren Anfragen aufs Handy kommen.
-  </>
-);
-
-const AUTO_SYNC_WAITS = (
-  <>
-    Noch nicht möglich: diese Bank (DKB) fragt womöglich bei jedem Abruf nach einer Freigabe in der DKB-App, und dann käme
-    jeden Morgen eine Anfrage aufs Handy. Der tägliche Abruf lässt sich einschalten, sobald zwei Abrufe von Hand
-    nacheinander ohne Freigabe durchgelaufen sind. Bis dahin „Jetzt abrufen“ von Hand nutzen oder den CSV-Export hochladen.
-  </>
-);
-
-const FETCH_STATEMENTS_HINT = (
-  <>
-    Bei jedem Abruf holt Hausbuch nach den Umsätzen auch die Kontoauszüge der Bank als PDF, die noch fehlen, nach ihrer
-    Nummer. Sie liegen dann unten in der Liste und im Jahresarchiv unter „kontoauszuege/“, als Nachweis, den das
-    Finanzamt kennt. Gebucht wird weiter nur aus den Umsätzen; ein Auszug ändert keine Buchung. Hausbuch fragt nur nach
-    Auszügen, die die Bank schon erstellt hat, und fordert nie einen neuen an.
-  </>
-);
-
 /** What a permission refusal code of the PDF statement fetch means (14 Nov 2026). */
-const STATEMENTS_REFUSAL_MEANING: Record<string, string> = {
-  "9370": "Signaturberechtigung reicht nicht aus",
-  "9380": "keine Auftragsberechtigung",
-};
+function refusalMeaning(code: string): string | undefined {
+  const t = translate(bankSync);
+  if (code === "9370") return t.refusal9370;
+  if (code === "9380") return t.refusal9380;
+  return undefined;
+}
 
 /** The bank refuses this access the PDF statements (14 Nov 2026: 9370 on HKEKP): what it
  * means and how to get it unlocked. Shown while the switch is on and no later run's request
  * was answered without that refusal. */
 function StatementsRefused({ refusal, bankName }: { refusal: StatementsRefusal; bankName: string | null }) {
-  const meaning = STATEMENTS_REFUSAL_MEANING[refusal.code];
-  const code = meaning ? `Code ${refusal.code}: ${meaning}` : `Code ${refusal.code}`;
-  const bank = bankName ?? "Bank";
+  const t = useT(bankSync);
+  const meaning = refusalMeaning(refusal.code);
+  const code = meaning ? t.refusalCodeMeaning(refusal.code, meaning) : t.refusalCode(refusal.code);
   return (
     <p className="notice notice-warn" role="status">
-      Die {bank} erlaubt diesem Online-Banking-Zugang den Abruf der Kontoauszüge als PDF nicht ({code}). Freischalten kann
-      das nur die {bank}: sie bitten, für diesen Zugang den Abruf elektronischer Kontoauszüge als PDF über FinTS/HBCI (HKEKP)
-      für dieses Konto freizuschalten. Das elektronische Postfach allein genügt nicht. Bis dahin diesen Schalter ausschalten;
-      die Zahlungsnachweise im Jahresarchiv erstellt Hausbuch ohnehin. Sobald der Abruf klappt, verschwindet dieser Hinweis.
+      {t.statementsRefused(bankName, code)}
     </p>
   );
 }
@@ -758,28 +727,24 @@ function ConnectionSwitch({
 /** The bank's PDF statements stored for the account (D154), newest first as the API lists
  * them, each opening its document; and how many the latest run brought. */
 function StatementList({ statements, latest }: { statements: BankStatement[]; latest: BankSync | null }) {
+  const t = useT(bankSync);
+  const f = useFormat();
   const fromLatest = latest ? statements.filter((s) => s.sync_id === latest.id).length : 0;
   return (
     <>
-      <h3>Kontoauszüge der Bank (PDF)</h3>
+      <h3>{t.bankStatements}</h3>
       {statements.length === 0 ? (
-        <p className="muted">
-          Noch keiner abgerufen. Beim nächsten Abruf fragt Hausbuch die Bank nach ihren Kontoauszügen als PDF.
-        </p>
+        <p className="muted">{t.noStatementsYet}</p>
       ) : (
         <>
           {fromLatest > 0 ? (
-            <p className="muted">
-              Beim letzten Abruf {fromLatest === 1 ? "1 Kontoauszug" : `${fromLatest} Kontoauszüge`} neu abgerufen.
-            </p>
+            <p className="muted">{t.fetchedLast(fromLatest)}</p>
           ) : null}
           <ul>
             {statements.map((s) => (
               <li key={s.id}>
-                <Link href={`/documents/${s.document_id}`}>
-                  Kontoauszug {s.number}/{s.year}
-                </Link>{" "}
-                <span className="muted">abgerufen {formatDateTime(s.fetched_at)}</span>
+                <Link href={`/documents/${s.document_id}`}>{t.statementNumber(s.number, s.year)}</Link>{" "}
+                <span className="muted">{t.fetchedAt(f.dateTime(s.fetched_at))}</span>
               </li>
             ))}
           </ul>
@@ -801,18 +766,20 @@ function useNow(on: boolean): number {
 }
 
 function ApprovalWait({ run, approvalText, now }: { run: BankSync; approvalText: string; now: number }) {
+  const t = useT(bankSync);
   const left = Math.max(0, new Date(run.updated_at).getTime() + APPROVAL_WINDOW_MS - now);
   const minutes = Math.floor(left / 60_000);
   const seconds = Math.floor((left % 60_000) / 1000);
   return (
     <div className="notice notice-warn" role="status">
       <p>
-        <strong>{approvalText}.</strong> Die Bank hat eine Freigabe für den Abruf an Ihr Handy geschickt.
+        <strong>{approvalText}.</strong>
+        {t.approvalSent}
       </p>
       <p>
         {left > 0
-          ? `Noch ${minutes}:${String(seconds).padStart(2, "0")} Minuten; danach bricht Hausbuch den Abruf ab.`
-          : "Die Freigabe wurde nicht innerhalb von fünf Minuten bestätigt. „Erneut abrufen“ drücken und die neue Anfrage in der App freigeben."}
+          ? t.timeLeft(`${minutes}:${String(seconds).padStart(2, "0")}`)
+          : t.approvalExpired}
       </p>
     </div>
   );
@@ -821,8 +788,7 @@ function ApprovalWait({ run, approvalText, now }: { run: BankSync; approvalText:
 function linesSentence(run: BankSync): string {
   const added = run.lines_new ?? 0;
   const known = (run.lines_total ?? 0) - added;
-  const first = added === 1 ? "1 neuer Umsatz" : `${added} neue Umsätze`;
-  return known > 0 ? `${first}, ${known} schon vorhanden` : first;
+  return translate(statements).lineCounts(added, known);
 }
 
 /** The current (or last) run in plain words; a daily run says so. */
@@ -839,14 +805,13 @@ function RunNow({
   now: number;
   stuck: boolean;
 }) {
-  const last = run.trigger === "scheduled" ? "Letzter automatischer Abruf" : "Letzter Abruf";
+  const t = useT(bankSync);
+  const f = useFormat();
+  const last = run.trigger === "scheduled" ? t.lastScheduled : t.lastManual;
   if (stuck) {
     return (
       <div className="notice notice-warn" role="status">
-        <p>
-          Der Abruf vom {formatDateTime(run.created_at)} kommt nicht voran, zum Beispiel nach einem Neustart des Servers.
-          „Erneut abrufen“ drücken, um ihn neu zu starten.
-        </p>
+        <p>{t.stuck(f.dateTime(run.created_at))}</p>
       </div>
     );
   }
@@ -855,30 +820,25 @@ function RunNow({
       return scheduledApproval(run) ? (
         <div className="notice notice-warn" role="status">
           <p>
-            <strong>
-              Der automatische Abruf braucht eine Freigabe: „Jetzt abrufen“ drücken. {approvalText}.
-            </strong>{" "}
-            Die Bank hat beim Abruf am {formatDateTime(run.updated_at)} nach einer Freigabe gefragt; Hausbuch hat ihn beendet,
-            weil niemand aufs Handy schaut. „Jetzt abrufen“ drücken und die neue Anfrage gleich in der App freigeben. Bis dahin
-            ruft Hausbuch dieses Konto nicht automatisch ab.
+            <strong>{t.scheduledNeedsApproval(approvalText)}</strong> {t.scheduledAsked(f.dateTime(run.updated_at))}
           </p>
         </div>
       ) : (
         <ApprovalWait run={run} approvalText={approvalText} now={now} />
       );
     case "queued":
-      return <p role="status">Der Abruf ist angestoßen und startet gleich …</p>;
+      return <p role="status">{t.queued}</p>;
     case "running":
-      return <p role="status">Hausbuch fragt die Bank nach den Umsätzen …</p>;
+      return <p role="status">{t.fetching}</p>;
     case "importing":
-      return <p role="status">Die Umsätze der Bank werden importiert …</p>;
+      return <p role="status">{t.importing}</p>;
     case "done":
       return (
         <div className="notice notice-ok" role="status">
           <p>
-            {last} {formatDateTime(run.finished_at)}: {linesSentence(run)} importiert.{" "}
+            {t.doneLine(last, f.dateTime(run.finished_at), linesSentence(run))}{" "}
             {run.import_id && (run.lines_new ?? 0) > 0 ? (
-              <Link href={`/accounts/${accountId}?tab=umsaetze&import=${run.import_id}`}>Die neuen Umsätze anzeigen</Link>
+              <Link href={`/accounts/${accountId}?tab=umsaetze&import=${run.import_id}`}>{t.showNewLines}</Link>
             ) : null}
           </p>
         </div>
@@ -887,12 +847,8 @@ function RunNow({
       return (
         <div className={run.error_code === "bank.balance_drift" ? "notice notice-warn" : "notice notice-info"} role="status">
           <p>
-            {last} {formatDateTime(run.finished_at)}: nichts Neues, alle Umsätze der Bank waren schon da.
-            {run.error_code === "bank.balance_drift"
-              ? " Der Kontostand der Bank weicht aber vom letzten abgeglichenen Saldo ab: fehlt ein Kontoauszug? Siehe „Zu prüfen“."
-              : run.balance_checked
-                ? " Der Kontostand der Bank passt zum letzten abgeglichenen Saldo."
-                : ""}
+            {t.nothingNew(last, f.dateTime(run.finished_at))}
+            {run.error_code === "bank.balance_drift" ? t.balanceDrift : run.balance_checked ? t.balanceMatches : ""}
           </p>
         </div>
       );
@@ -900,8 +856,8 @@ function RunNow({
       return (
         <div className="notice notice-error" role="status">
           <p>
-            {last} {formatDateTime(run.finished_at)} fehlgeschlagen:{" "}
-            {(run.error_code && ruleCodeText(run.error_code)) || "Der Abruf ist fehlgeschlagen. Erneut abrufen."}
+            {t.failedLine(last, f.dateTime(run.finished_at))}{" "}
+            {(run.error_code && ruleCodeText(run.error_code)) || t.failedFallback}
             {run.error_code ? <code className="error-code">{run.error_code}</code> : null}
           </p>
         </div>
@@ -910,39 +866,42 @@ function RunNow({
 }
 
 function runResult(run: BankSync): string {
+  const t = translate(bankSync);
   if (run.status === "done") return linesSentence(run);
-  if (run.status === "failed") return run.error_code ? `fehlgeschlagen (${run.error_code})` : "fehlgeschlagen";
-  if (run.status === "nothing_new" && run.error_code === "bank.balance_drift") return "nichts Neues, Kontostand weicht ab";
+  if (run.status === "failed") return run.error_code ? t.resultFailedCode(run.error_code) : t.resultFailed;
+  if (run.status === "nothing_new" && run.error_code === "bank.balance_drift") return t.resultDrift;
   return SYNC_STATUS[run.status];
 }
 
 function runBalance(run: BankSync): string {
   if (run.balance_source) return BALANCE_SOURCE[run.balance_source];
-  return run.balance_checked ? "mit dem Kontostand der Bank verglichen" : "–";
+  return run.balance_checked ? translate(bankSync).balanceCompared : "–";
 }
 
 function RunHistory({ runs }: { runs: BankSync[] }) {
+  const t = useT(bankSync);
+  const f = useFormat();
   return (
     <>
-      <h3>Letzte Abrufe</h3>
+      <h3>{t.recentRuns}</h3>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th scope="col">Gestartet</th>
-              <th scope="col">Zeitraum</th>
-              <th scope="col">Ergebnis</th>
-              <th scope="col">Saldo</th>
+              <th scope="col">{t.colStarted}</th>
+              <th scope="col">{t.colPeriod}</th>
+              <th scope="col">{t.colResult}</th>
+              <th scope="col">{t.colBalance}</th>
             </tr>
           </thead>
           <tbody>
             {runs.map((run) => (
               <tr key={run.id}>
                 <td>
-                  {formatDateTime(run.started_at ?? run.created_at)}
+                  {f.dateTime(run.started_at ?? run.created_at)}
                   <p className="cell-detail">{SYNC_TRIGGER[run.trigger]}</p>
                 </td>
-                <td>{run.requested_from ? `${formatDate(run.requested_from)} – ${formatDate(run.requested_to)}` : "–"}</td>
+                <td>{run.requested_from ? `${f.date(run.requested_from)} – ${f.date(run.requested_to)}` : "–"}</td>
                 <td>{runResult(run)}</td>
                 <td>{runBalance(run)}</td>
               </tr>
@@ -959,23 +918,14 @@ function RunHistory({ runs }: { runs: BankSync[] }) {
 const CREATE_KEYS = ["bank_code", "fints_url", "login_name", "credential_slot", "pin"] as const;
 const CODE_FIELDS = { "bank.url_not_https": "fints_url", "bank.pin_invalid": "pin" };
 
-const BLZ_HINT = "8 Ziffern: in Ihrer IBAN die Stellen 5 bis 12, nach „DE“ und den zwei Prüfziffern. Sie können auch die ganze IBAN einfügen.";
-const URL_HINT =
-  "Beginnt mit https://. Ihre Sparkasse nennt sie auf ihrer Website unter „FinTS“ oder „HBCI PIN/TAN“; sonst steht sie in der Bankenliste der Deutschen Kreditwirtschaft.";
-const LOGIN_HINT =
-  "Der Anmeldename oder die Legitimations-ID, mit dem Sie sich im Online-Banking anmelden. Hausbuch speichert ihn verschlüsselt und zeigt ihn nur gekürzt an.";
-const SLOT_HINT =
-  "Ein kurzer Name für diesen Online-Banking-Zugang, klein geschrieben, z. B. „dkb“ oder „sparkasse_b“; „primary“ ist der Zugang des Mietkontos. Konten unter demselben Zugang tragen denselben Namen und nutzen dieselbe PIN.";
-
 function checkSlot(slot: string): string | null {
-  return SLOT_PATTERN.test(slot.trim())
-    ? null
-    : "Kleinbuchstaben, Ziffern und _ , beginnend mit einem Buchstaben, höchstens 32 Zeichen (z. B. dkb).";
+  return SLOT_PATTERN.test(slot.trim()) ? null : translate(bankSync).slotInvalid;
 }
 
 function checkUrl(url: string): string | null {
-  if (!url.trim()) return "Bitte die FinTS-Adresse Ihrer Bank eingeben.";
-  return url.trim().startsWith("https://") ? null : "Die FinTS-Adresse muss mit https:// beginnen.";
+  const t = translate(bankSync);
+  if (!url.trim()) return t.urlRequired;
+  return url.trim().startsWith("https://") ? null : t.urlHttps;
 }
 
 /** A slot with no usable PIN yet: none from either place, a stored one that no longer
@@ -985,6 +935,7 @@ function pinNeeded(pin: PinInfo): boolean {
 }
 
 function ConnectionCreateForm({ account, slots, onCreated }: { account: Account; slots: Slots; onCreated: () => void }) {
+  const t = useT(bankSync);
   const ids = useId();
   const [bankCode, setBankCode] = useState("");
   const [url, setUrl] = useState("");
@@ -1009,10 +960,10 @@ function ConnectionCreateForm({ account, slots, onCreated }: { account: Account;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const messages: Record<string, string[]> = {};
-    if (!/^[0-9]{8}$/.test(bankCode.trim())) messages.bank_code = ["Die BLZ hat genau 8 Ziffern."];
+    if (!/^[0-9]{8}$/.test(bankCode.trim())) messages.bank_code = [t.bankCodeInvalid];
     const urlMessage = checkUrl(url);
     if (urlMessage) messages.fints_url = [urlMessage];
-    if (!login.trim()) messages.login_name = ["Bitte den Anmeldenamen eingeben."];
+    if (!login.trim()) messages.login_name = [t.loginRequired];
     const slotMessage = checkSlot(slot);
     if (slotMessage) messages.credential_slot = [slotMessage];
     // The PIN may also stay empty: it can be saved later on the card, or set on the server.
@@ -1052,26 +1003,23 @@ function ConnectionCreateForm({ account, slots, onCreated }: { account: Account;
   }
 
   return (
-    <form className="stack" onSubmit={submit} noValidate aria-label="Bankabruf einrichten">
-      <p>
-        Hausbuch kann die Umsätze dieses Kontos selbst bei der Bank abrufen (FinTS, nur lesen). Beim ersten Abruf geben Sie ihn in
-        der App Ihrer Bank frei (Sparkasse: S-pushTAN-App, DKB: DKB-App).
-      </p>
+    <form className="stack" onSubmit={submit} noValidate aria-label={t.setUp}>
+      <p>{t.setUpIntro}</p>
       <div className="grid">
-        <Field id={`${ids}-blz`} label="BLZ" hint={BLZ_HINT} errors={form.of("bank_code")}>
+        <Field id={`${ids}-blz`} label={t.factBankCode} hint={t.bankCodeHint} errors={form.of("bank_code")}>
           <input type="text" inputMode="numeric" value={bankCode} onChange={(e) => changeBankCode(e.target.value)} autoComplete="off" spellCheck={false} />
         </Field>
-        <Field id={`${ids}-url`} label="FinTS-Adresse" hint={URL_HINT} errors={form.of("fints_url")}>
+        <Field id={`${ids}-url`} label={t.factUrl} hint={t.urlHint} errors={form.of("fints_url")}>
           <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" spellCheck={false} placeholder="https://" />
         </Field>
-        <Field id={`${ids}-login`} label="Anmeldename" hint={LOGIN_HINT} errors={form.of("login_name")}>
+        <Field id={`${ids}-login`} label={t.factLogin} hint={t.loginHint} errors={form.of("login_name")}>
           <input type="text" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" spellCheck={false} />
         </Field>
-        <Field id={`${ids}-slot`} label="Name des Zugangs" hint={SLOT_HINT} errors={form.of("credential_slot")}>
+        <Field id={`${ids}-slot`} label={t.slotLabel} hint={t.slotHint} errors={form.of("credential_slot")}>
           <input type="text" value={slot} onChange={(e) => setSlot(e.target.value)} autoComplete="off" spellCheck={false} />
         </Field>
         {askPin ? (
-          <Field id={`${ids}-pin`} label={PIN_LABEL} hint={PIN_HINT} errors={form.of("pin")}>
+          <Field id={`${ids}-pin`} label={t.pinLabel} hint={t.pinHint} errors={form.of("pin")}>
             <PinInput value={pin} onChange={setPin} />
           </Field>
         ) : null}
@@ -1079,10 +1027,7 @@ function ConnectionCreateForm({ account, slots, onCreated }: { account: Account;
       {slotValid ? (
         <p className={current.readable ? "muted" : "notice notice-warn"}>
           {askPin && current.source === "none" ? (
-            <>
-              Die PIN wird verschlüsselt gespeichert und danach nie wieder angezeigt. Sie können das Feld auch leer lassen und die
-              PIN später speichern; ohne PIN endet jeder Abruf mit „PIN fehlt“.
-            </>
+            t.pinNoneNote
           ) : (
             pinSentence(slot.trim(), current)
           )}
@@ -1090,7 +1035,7 @@ function ConnectionCreateForm({ account, slots, onCreated }: { account: Account;
       ) : null}
       <FormBanner errors={form.errors} />
       <div className="row">
-        <Submit busy={busy}>Bankabruf einrichten</Submit>
+        <Submit busy={busy}>{t.setUp}</Submit>
       </div>
     </form>
   );
@@ -1111,6 +1056,8 @@ function ConnectionEditForm({
   slots: Slots;
   onSaved: () => void;
 }) {
+  const t = useT(bankSync);
+  const c = useT(common);
   const ids = useId();
   const [url, setUrl] = useState(connection.fints_url);
   const [login, setLogin] = useState("");
@@ -1124,7 +1071,7 @@ function ConnectionEditForm({
     const urlMessage = checkUrl(url);
     if (urlMessage) return form.invalid({ fints_url: [urlMessage] });
     if (!connection.name_readable && !login.trim()) {
-      return form.invalid({ login_name: ["Bitte den Anmeldenamen neu eingeben: der gespeicherte lässt sich nicht mehr lesen."] });
+      return form.invalid({ login_name: [t.loginRetype] });
     }
     const slotMessage = checkSlot(slot);
     if (slotMessage) return form.invalid({ credential_slot: [slotMessage] });
@@ -1151,34 +1098,26 @@ function ConnectionEditForm({
   }
 
   return (
-    <form className="stack" onSubmit={submit} noValidate aria-label="Zugang ändern">
-      <p className="muted">
-        Eine neue Adresse oder ein neuer Anmeldename verwirft die gespeicherte Verbindung: der nächste Abruf fragt wieder nach
-        einer Freigabe („{connection.approval_text}“). Ein neuer Name des Zugangs ändert nur, welche PIN der Abruf nutzt. Die PIN
-        selbst ändern Sie auf der Karte mit „PIN ändern“.
-      </p>
-      <Field id={`${ids}-url`} label="FinTS-Adresse" hint={URL_HINT} errors={form.of("fints_url")}>
+    <form className="stack" onSubmit={submit} noValidate aria-label={t.changeLogin}>
+      <p className="muted">{t.editNote(connection.approval_text)}</p>
+      <Field id={`${ids}-url`} label={t.factUrl} hint={t.urlHint} errors={form.of("fints_url")}>
         <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} autoComplete="off" spellCheck={false} />
       </Field>
       <Field
         id={`${ids}-login`}
-        label="Neuer Anmeldename"
-        hint={
-          connection.name_readable
-            ? `Leer lassen, um ${connection.login_masked} zu behalten.`
-            : "Der gespeicherte Anmeldename lässt sich nicht mehr lesen (der Schlüssel des Servers wurde gewechselt); bitte neu eingeben."
-        }
+        label={t.newLogin}
+        hint={connection.name_readable ? t.keepLogin(connection.login_masked) : t.loginUnreadableHint}
         errors={form.of("login_name")}
       >
         <input type="text" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" spellCheck={false} />
       </Field>
-      <Field id={`${ids}-slot`} label="Name des Zugangs" hint={SLOT_HINT} errors={form.of("credential_slot")}>
+      <Field id={`${ids}-slot`} label={t.slotLabel} hint={t.slotHint} errors={form.of("credential_slot")}>
         <input type="text" value={slot} onChange={(e) => setSlot(e.target.value)} autoComplete="off" spellCheck={false} />
       </Field>
       {checkSlot(slot) === null ? <p className="muted">{pinSentence(slot.trim(), slotPin(slot.trim(), slots))}</p> : null}
       <FormBanner errors={form.errors} />
       <div className="row">
-        <Submit busy={busy}>Speichern</Submit>
+        <Submit busy={busy}>{c.save}</Submit>
       </div>
     </form>
   );
