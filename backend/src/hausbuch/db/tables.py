@@ -1240,3 +1240,20 @@ plan_explanation = Table(
     _uuid("created_by", nullable=True),
     _created_at(),
 )
+
+# Phase 10 §7.4 (migration 0050): moved at the commit of every write to the workspace.
+workspace_data_version = Table(
+    "workspace_data_version",
+    metadata,
+    Column("workspace_id", UUID(as_uuid=True), primary_key=True),
+    Column("version", BigInteger, nullable=False),
+)
+
+# Phase 10 §7.4 (migration 0050): one row per transaction and workspace written, deleted by
+# the version bump at COMMIT; empty outside a transaction. Never read by the app.
+workspace_data_version_pending = Table(
+    "workspace_data_version_pending",
+    metadata,
+    _id(),
+    _workspace_id(),
+)
