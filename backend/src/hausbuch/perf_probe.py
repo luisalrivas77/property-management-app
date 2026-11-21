@@ -27,10 +27,20 @@ components/overviewTiles.tsx, overviewTodos.tsx, reminders.tsx and healthFigures
 request in the order the page fires it, duplicates included (the page fires /inbox,
 /properties and /health twice). The page fires them in parallel; the probe runs them one
 after another, so the sum is the server time, not the page's wall time.
+
+`--profile <path substring>` (repeatable) runs each matching request of the last pass under
+cProfile and prints, per request, the top functions by cumulative and by own time as
+`module:function:line` with their call counts and times, and how often the net-worth,
+valuation, price and household-month functions ran. Only code locations and numbers are
+printed, never an argument or a value. Python 3.12's cProfile is interpreter-wide, so it also
+sees the worker thread FastAPI runs a sync endpoint in, and the probe's own client code.
 """
 
 import asyncio
+import cProfile
 import logging
+import pstats
+import re
 import statistics
 import tempfile
 import time
@@ -57,6 +67,25 @@ PROBE_ORIGIN = "https://probe.invalid"
 POOL_SIZE = 5  # as the API's request pool (api/app.py REQUEST_POOL_SIZE)
 ROUND_TRIPS = 20
 SLOWEST = 5
+TOP_CUMULATIVE = 30
+TOP_OWN = 20
+WATCHED_SHOWN = 40
+# The functions whose call counts are printed per profiled request: the net worth and its
+# valuation, the price reads, the holdings, the household month and the health service.
+WATCHED_MODULES = (
+    "hausbuch.services.net_worth",
+    "hausbuch.rules.net_worth",
+    "hausbuch.rules.valuation",
+    "hausbuch.services.prices.overview",
+    "hausbuch.services.holdings",
+    "hausbuch.services.health",
+    "hausbuch.rules.health.month",
+    "hausbuch.rules.household.cashflow",
+)
+WATCHED_FUNCTIONS = (
+    ("hausbuch.services.scenarios", "estimate_on_day"),
+    ("hausbuch.services.depot", "latest_report_checks"),
+)
 
 
 class ProbeError(RuntimeError):
@@ -242,11 +271,13 @@ class Timing:
     transactions: int
     size: int
     error: str | None = None
+    profiled: bool = False
 
 
 @dataclass
 class Pass:
     timings: list[Timing] = field(default_factory=list)
+    profiles: list[tuple[str, pstats.Stats]] = field(default_factory=list)
 
 
 class _Labels:
@@ -272,21 +303,38 @@ def last_full_month(today: date) -> str:
 class PageRun:
     """One pass over the page's requests, in the order the page fires them."""
 
-    def __init__(self, client: Any, counter: SqlCounter, today: date, labels: _Labels) -> None:
+    def __init__(
+        self,
+        client: Any,
+        counter: SqlCounter,
+        today: date,
+        labels: _Labels,
+        profile: Sequence[str] = (),
+    ) -> None:
         self.client = client
         self.counter = counter
         self.today = today
         self.labels = labels
+        self.profile = tuple(profile)
         self.result = Pass()
 
     async def get(self, path: str, label: str, query: dict[str, Any] | None = None) -> Any:
         url = path + (f"?{urlencode(query)}" if query else "")
         shown = label + (f"?{urlencode(query)}" if query else "")
+        profiler = cProfile.Profile() if any(x in shown for x in self.profile) else None
         self.counter.reset()
         started = time.perf_counter()
-        response = await self.client.get(url)
-        body = response.content
+        if profiler is not None:
+            profiler.enable()
+        try:
+            response = await self.client.get(url)
+            body = response.content
+        finally:
+            if profiler is not None:
+                profiler.disable()
         ms = (time.perf_counter() - started) * 1000
+        if profiler is not None:
+            self.result.profiles.append((shown, pstats.Stats(profiler)))
         sql = self.counter.reset()
         status: int | str = WRITE_REFUSED if sql.write_refused else response.status_code
         error = sql.error if response.status_code >= 500 or sql.write_refused else None
@@ -299,6 +347,7 @@ class PageRun:
             transactions=sql.transactions,
             size=len(body),
             error=error,
+            profiled=profiler is not None,
         )
         self.result.timings.append(timing)
         if response.status_code != 200:
@@ -430,24 +479,37 @@ async def probe_client(app: Any) -> AsyncIterator[Any]:
         yield client
 
 
-async def _passes(app: Any, counter: SqlCounter, repeat: int) -> list[Pass]:
+async def _passes(
+    app: Any, counter: SqlCounter, repeat: int, profile: Sequence[str] = ()
+) -> list[Pass]:
+    """`repeat` passes; the last one (a warm one when repeat >= 2) profiles the requests
+    whose route contains one of `profile`."""
     from hausbuch.services.documents import LOCAL_TIME_ZONE
 
     labels = _Labels()
     passes = []
     async with probe_client(app) as client:
-        for _ in range(repeat):
+        for number in range(1, repeat + 1):
             today = datetime.now(LOCAL_TIME_ZONE).date()
-            passes.append(await PageRun(client, counter, today, labels).run())
+            chosen = profile if number == repeat else ()
+            passes.append(await PageRun(client, counter, today, labels, chosen).run())
     return passes
 
 
 def run_probe(
-    engine: Engine, workspace_id: UUID, *, repeat: int, out: Callable[[str], None] = print
+    engine: Engine,
+    workspace_id: UUID,
+    *,
+    repeat: int,
+    profile: Sequence[str] = (),
+    out: Callable[[str], None] = print,
 ) -> list[Pass]:
     """Time the page `repeat` times on `engine` (read-only: read_only_engine or
-    make_read_only, checked here) and print the report.
+    make_read_only, checked here) and print the report. `profile`: route substrings whose
+    requests of the last pass run under cProfile (needs repeat >= 2 to be a warm pass).
     The engine is the caller's to dispose."""
+    if profile and repeat < 2:
+        raise ProbeError("--profile needs --repeat 2 or more: it profiles the warm pass")
     assert_read_only(engine)
     counter = SqlCounter(engine)
     connect_ms = open_pool(engine)
@@ -457,7 +519,7 @@ def run_probe(
     with tempfile.TemporaryDirectory(prefix="hausbuch-probe-") as blobs, _quiet_logging():
         app = build_app(engine, member, Path(blobs) / "blobs")
         counter.reset()
-        passes = asyncio.run(_passes(app, counter, repeat))
+        passes = asyncio.run(_passes(app, counter, repeat, profile))
     report(passes, rtt=rtt, empty_tx=empty_tx, connect_ms=connect_ms, member=member, out=out)
     return passes
 
@@ -469,7 +531,7 @@ def _line(t: Timing, width: int) -> str:
     status = f"{t.status}" + (f" ({t.error})" if t.error else "")
     return (
         f"{t.label:<{width}}  {status:<6}  {t.ms:9.1f}  {t.statements:5d}  {t.sql_ms:9.1f}"
-        f"  {t.transactions:3d}  {t.size:9d}"
+        f"  {t.transactions:3d}  {t.size:9d}" + ("  profiled" if t.profiled else "")
     )
 
 
@@ -514,6 +576,9 @@ def report(
         out(f"requests the page fires: {len(timings)}, distinct: {len({t.label for t in timings})}")
         refused = sorted({t.label for p in passes for t in p.timings if t.status == WRITE_REFUSED})
         out(f"write-refused paths: {', '.join(refused) if refused else 'none'}")
+    for one in passes:
+        for label, stats in one.profiles:
+            _profile_report(label, stats, out)
 
 
 def _hidden(rtt: float, empty_tx: float) -> float:
@@ -538,3 +603,70 @@ def _summary(one: Pass, rtt: float, empty_tx: float, out: Callable[[str], None])
     out(f"slowest {SLOWEST}:")
     for timing in sorted(one.timings, key=lambda t: t.ms, reverse=True)[:SLOWEST]:
         out(f"  {timing.ms:9.1f} ms  {timing.statements:5d} stmts  {timing.label}")
+
+
+# --- The profile ----------------------------------------------------------------------
+
+_PYTHON_LIB = re.compile(r"/python3\.\d+/")
+
+
+def _module(filename: str) -> str:
+    """A code file as a dotted module name: hausbuch's from its package, a library's from
+    site-packages, the standard library's from its lib folder; `~` for a built-in."""
+    if filename == "~":
+        return "~"
+    path = filename.replace("\\", "/")
+    if "/hausbuch/" in path:
+        path = "hausbuch/" + path.rsplit("/hausbuch/", 1)[1]
+    elif "/site-packages/" in path:
+        path = path.rsplit("/site-packages/", 1)[1]
+    elif _PYTHON_LIB.search(path):
+        path = _PYTHON_LIB.split(path)[-1]
+    else:
+        path = path.rsplit("/", 1)[-1]
+    path = path.removesuffix(".py").removesuffix("/__init__")
+    return path.replace("/", ".")
+
+
+def _where(key: tuple[str, int, str]) -> str:
+    filename, line, name = key
+    return f"{_module(filename)}:{name}:{line}"
+
+
+def _calls(primitive: int, total: int) -> str:
+    return str(total) if primitive == total else f"{total}/{primitive}"
+
+
+def _watched(key: tuple[str, int, str]) -> bool:
+    module = _module(key[0])
+    return module in WATCHED_MODULES or (module, key[2]) in WATCHED_FUNCTIONS
+
+
+def _profile_report(label: str, stats: pstats.Stats, out: Callable[[str], None]) -> None:
+    """Per profiled request: code locations and numbers only, never an argument or value."""
+    rows = stats.stats  # type: ignore[attr-defined]  # {key: (cc, nc, tt, ct, callers)}
+    total = getattr(stats, "total_tt", 0.0) * 1000
+    out("")
+    out(f"profile of {label} (last pass; slower than its timing line would be unprofiled)")
+    out(f"profiled time {total:.0f} ms in {len(rows)} functions")
+    header = f"{'ncalls':>12}  {'tottime_ms':>10}  {'cumtime_ms':>10}  module:function:line"
+    for title, index, count in (
+        ("by cumulative time", 3, TOP_CUMULATIVE),
+        ("by own time", 2, TOP_OWN),
+    ):
+        out(f"top {count} {title}:")
+        out(header)
+        ranked = sorted(rows.items(), key=lambda item: item[1][index], reverse=True)
+        for key, (cc, nc, tt, ct, _callers) in ranked[:count]:
+            out(f"{_calls(cc, nc):>12}  {tt * 1000:10.1f}  {ct * 1000:10.1f}  {_where(key)}")
+    watched = [(key, row) for key, row in rows.items() if _watched(key)]
+    out("net worth, valuation, prices, holdings and household month: calls")
+    if not watched:
+        out("  none of them ran")
+        return
+    watched.sort(key=lambda item: (-item[1][1], _where(item[0])))
+    out(f"{'ncalls':>12}  {'cumtime_ms':>10}  module:function:line")
+    for key, (cc, nc, _tt, ct, _callers) in watched[:WATCHED_SHOWN]:
+        out(f"{_calls(cc, nc):>12}  {ct * 1000:10.1f}  {_where(key)}")
+    if len(watched) > WATCHED_SHOWN:
+        out(f"  … {len(watched) - WATCHED_SHOWN} more")

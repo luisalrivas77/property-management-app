@@ -192,3 +192,39 @@ def test_a_get_that_writes_is_reported_as_write_refused(world, dbname, tmp_path)
     assert timing.status == perf_probe.WRITE_REFUSED
     assert timing.error == "ReadOnlySqlTransaction"
     assert timing.statements > 0
+
+
+def test_profile_prints_code_locations_and_times_only(world, dbname, capsys):
+    environ = {"HAUSBUCH_ADMIN_DATABASE_URL": _owner_url(dbname)}
+    argv = ["perf-overview", "--workspace", str(world.ws), "--profile", "/api/health"]
+    assert cli.main(argv, environ) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    _, profiles = out.split("write-refused paths: none", 1)
+
+    # The last (warm) pass only: /api/health twice, /api/health/months and the series once.
+    headings = re.findall(r"^profile of (\S+) \(last pass", profiles, re.MULTILINE)
+    assert headings.count("/api/health") == 2
+    assert "/api/health/net-worth-series" in headings
+    assert any(h.startswith("/api/health/months?from=") for h in headings)
+    assert len(headings) == 4
+    assert out.count("  profiled") == 4  # the timing lines of pass 2 only
+
+    assert profiles.count("top 30 by cumulative time:") == 4
+    assert profiles.count("top 20 by own time:") == 4
+    assert "ncalls  tottime_ms  cumtime_ms  module:function:line" in profiles
+    assert re.search(r"hausbuch\.services\.health:health:\d+", profiles)
+    assert re.search(r"hausbuch\.rules\.health\.month:household_month:\d+", profiles)
+    assert "net worth, valuation, prices, holdings and household month: calls" in profiles
+
+    # Every profile row is a count, two times and a code location, nothing else.
+    row = re.compile(r"^\s+\d+(/\d+)?\s+\d+\.\d(\s+\d+\.\d)?\s+\S+:\S.*:\d+$")
+    for line in profiles.splitlines():
+        if line.startswith(" ") and "ncalls" not in line and not line.startswith("  …"):
+            assert row.match(line), line
+    for secret in (TENANT_NAME, "Lindenstraße", "Owner A", "Beispielbank", "DE89", "52000"):
+        assert secret not in out
+    assert str(world.ws) not in profiles and str(world.property_id) not in profiles
+
+    argv = [*argv, "--repeat", "1"]
+    assert cli.main(argv, environ) == cli.EXIT_ERROR
+    assert "--profile needs --repeat 2" in capsys.readouterr().err

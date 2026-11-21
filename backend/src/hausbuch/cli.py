@@ -131,7 +131,9 @@ the workspace's member whose session was seen last, without its lifespan (no wor
 prints per request the route (ids as p1, u1, o1), status, ms, SQL statements, ms in SQL,
 commits/rollbacks and the body's size in bytes, never a response's content; then per pass the
 total and the five slowest, and the number of requests the page fires. --repeat N passes
-(default 2: the first warms the process, the rest are warm).
+(default 2: the first warms the process, the rest are warm). --profile SUBSTRING (repeatable)
+runs each request of the last pass whose route contains it under cProfile and prints the top
+functions by cumulative and own time (module:function:line, calls, times, never a value).
 
 `follow-accounts` queues one worker job (jobs.follow_accounts) once after the deploy of
 14 Nov 2026: every statement waiting under Dokumente is imported onto the account that already
@@ -580,6 +582,8 @@ def perf_overview(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
 
     if args.repeat < 1:
         raise CliError("--repeat must be at least 1")
+    if args.profile and args.repeat < 2:
+        raise CliError("--profile needs --repeat 2 or more: it profiles the warm pass")
     try:
         url = load_admin_database_url(environ)
     except SettingsError as exc:
@@ -589,7 +593,7 @@ def perf_overview(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
     except Exception:  # as owner_engine: no driver message may reach stderr
         raise CliError("HAUSBUCH_ADMIN_DATABASE_URL is not a valid database URL") from None
     try:
-        run_probe(engine, args.workspace, repeat=args.repeat)
+        run_probe(engine, args.workspace, repeat=args.repeat, profile=args.profile)
     except ProbeError as exc:
         raise CliError(str(exc)) from None
     except OperationalError as exc:
@@ -1414,6 +1418,14 @@ def _parser() -> argparse.ArgumentParser:
     perf.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     perf.add_argument(
         "--repeat", type=int, default=2, help="passes over the page (default 2: first, warm)"
+    )
+    perf.add_argument(
+        "--profile",
+        action="append",
+        default=[],
+        metavar="PATH_SUBSTRING",
+        help="profile the last pass's requests whose route contains this (repeatable), e.g. "
+        "/api/health; prints code locations and times only",
     )
     perf.set_defaults(command=perf_overview, command_name="perf-overview")
 
