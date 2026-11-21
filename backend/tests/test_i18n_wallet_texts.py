@@ -141,7 +141,7 @@ def test_the_swap_card_reads_naturally_in_both_languages():
     with i18n.use(i18n.EN):
         english = card_text(WalletCardKind.PROPOSED, GroupKind.SWAP, SWAP, question=question)
     assert english == (
-        "Hausbuch's proposal: 10 TOK sent (So1x…xxxx), 0.003 TOK received (So1x…xxxx), "
+        "Hausbuch's suggestion: 10 TOK sent (So1x…xxxx), 0.003 TOK received (So1x…xxxx), "
         "Fee 0.000005 SOL. Hausbuch does not know the program Prog…Ab12, but reads the "
         "transaction by its amounts as a swap. If that is right, “Confirm”."
     )
