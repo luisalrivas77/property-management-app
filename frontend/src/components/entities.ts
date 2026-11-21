@@ -4,7 +4,8 @@
 import { api, ok } from "@/api/client";
 import type { LinkTarget, Loan, Owner, Property, Tenancy, Tenant, Unit } from "@/api/schemas";
 
-import { formatDate } from "./format";
+import { formatter, translate } from "@/i18n";
+import { shared } from "@/i18n/shared";
 
 export interface Directory {
   owners: Owner[];
@@ -42,8 +43,9 @@ export async function loadDirectory(): Promise<Directory> {
 }
 
 export function tenantName(tenant: Tenant | undefined): string {
-  if (!tenant) return "Unbekannter Mieter";
-  return tenant.full_name ?? "Mieter (Daten gelöscht)";
+  const t = translate(shared);
+  if (!tenant) return t.unknownTenant;
+  return tenant.full_name ?? t.tenantErased;
 }
 
 /** "Max Muster, Erika Muster" for a tenancy's parties, primary first. */
@@ -70,8 +72,9 @@ export function currentTenancy(tenancies: Tenancy[], today: string): { tenancy: 
 
 /** "läuft", "beendet" or "beginnt am 01.07.2024", from the dates. */
 export function tenancyStatus(tenancy: Tenancy, today: string): string {
-  if (tenancy.start_date > today) return `beginnt am ${formatDate(tenancy.start_date)}`;
-  return isRunning(tenancy, today) ? "läuft" : "beendet";
+  const t = translate(shared);
+  if (tenancy.start_date > today) return t.startsOn(formatter().date(tenancy.start_date));
+  return isRunning(tenancy, today) ? t.running : t.ended;
 }
 
 export interface Target {
@@ -101,7 +104,7 @@ export function targets(directory: Directory): Target[] {
   }
   for (const tenancy of directory.tenancies) {
     const unit = unitById.get(tenancy.unit_id);
-    const label = `${unit?.label ?? "?"}: ${partyNames(tenancy, directory.tenants)} (ab ${formatDate(tenancy.start_date)})`;
+    const label = `${unit?.label ?? "?"}: ${partyNames(tenancy, directory.tenants)} (${translate(shared).from(formatter().date(tenancy.start_date))})`;
     list.push({ type: "tenancy", id: tenancy.id, label, href: `/tenancies/${tenancy.id}` });
   }
   for (const loan of directory.loans) {
