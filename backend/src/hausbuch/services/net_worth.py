@@ -85,6 +85,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from fractions import Fraction
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import Connection, func, insert, select
@@ -171,11 +172,17 @@ def shares_on(
     within it): owner shares rarely change and the form dates a first set today, so an
     earlier month-end would otherwise count as unassigned with a false to-do (review of 15
     Nov 2026, finding 6). An account without any set is missing."""
+    return _shares_from(_ownership_rows(conn, account_ids), on)
+
+
+def _ownership_rows(conn: Connection, account_ids: Iterable[UUID]) -> list:
+    """Every ownership row of `account_ids`, for `_shares_from` (one query for any number of
+    days, so a batch of month-ends reads them once)."""
     ids = list(account_ids)
     if not ids:
-        return {}
+        return []
     o = ownership_table.c
-    rows = conn.execute(
+    return conn.execute(
         select(
             o.account_id,
             o.owner_id,
@@ -185,6 +192,10 @@ def shares_on(
             o.created_at,
         ).where(o.account_id.in_(ids))
     ).all()
+
+
+def _shares_from(rows: Iterable[Any], on: date) -> dict[UUID, dict[UUID, Fraction]]:
+    """`shares_on` over rows already read."""
     sets: dict[UUID, dict[tuple[datetime, date], dict[UUID, Fraction]]] = defaultdict(dict)
     for r in rows:
         sets[r.account_id].setdefault((r.created_at, r.effective_from), {})[r.owner_id] = Fraction(
@@ -765,16 +776,24 @@ def _figure(
     stale: int = 0,
     unvalued: int = 0,
     run: NetWorthRun | None = None,
+    ownership: list | None = None,
+    owners: list[UUID] | None = None,
 ) -> NetWorth:
+    """`ownership` and `owners`, when given, are the rows `_ownership_rows` and `_owner_ids`
+    read for a batch of figures (`month_end_figures`), so each figure reads neither again."""
     accounts = {i.shares_ref for i in items if i.line.kind in (L.ACCOUNT, L.POSITION)}
-    shares = shares_on(conn, accounts, on) | property_shares
+    if ownership is None:
+        account_shares = shares_on(conn, accounts, on)
+    else:
+        account_shares = _shares_from((r for r in ownership if r.account_id in accounts), on)
+    shares = account_shares | property_shares
     parts = [
         rules.Part(
             i.line.net_worth_class, i.line.value_eur, shares.get(i.shares_ref, {}), i.shares_ref
         )
         for i in items
     ]
-    result = rules.totals(parts, _owner_ids(conn))
+    result = rules.totals(parts, _owner_ids(conn) if owners is None else owners)
     labels = {i.shares_ref: i.line.account_label for i in items if i.line.account_label}
     for ref in result.unassigned:
         if ref in labels:
@@ -875,27 +894,51 @@ def latest_run(conn: Connection, as_of: date) -> NetWorthRun | None:
     return _latest_run(conn, as_of)
 
 
+def _stored_columns() -> list:
+    s = snapshot_table.c
+    return [
+        s.account_id,
+        s.asset_id,
+        s.property_id,
+        s.loan_id,
+        s.units,
+        s.price_eur,
+        s.price_source,
+        s.value_eur,
+    ]
+
+
+def _stored_order() -> list:
+    s = snapshot_table.c
+    return [
+        s.account_id.nulls_last(),
+        s.asset_id.nulls_first(),
+        s.property_id.nulls_last(),
+        s.loan_id.nulls_last(),
+    ]
+
+
 def _stored(conn: Connection, run_id: UUID) -> list:
     s = snapshot_table.c
     return conn.execute(
-        select(
-            s.account_id,
-            s.asset_id,
-            s.property_id,
-            s.loan_id,
-            s.units,
-            s.price_eur,
-            s.price_source,
-            s.value_eur,
-        )
-        .where(s.net_worth_run_id == run_id)
-        .order_by(
-            s.account_id.nulls_last(),
-            s.asset_id.nulls_first(),
-            s.property_id.nulls_last(),
-            s.loan_id.nulls_last(),
-        )
+        select(*_stored_columns()).where(s.net_worth_run_id == run_id).order_by(*_stored_order())
     ).all()
+
+
+def _stored_by_run(conn: Connection, run_ids: Sequence[UUID]) -> dict[UUID, list]:
+    """Each run's rows in one query, every run's rows in the order `_stored` reads them."""
+    if not run_ids:
+        return {}
+    s = snapshot_table.c
+    rows = conn.execute(
+        select(s.net_worth_run_id, *_stored_columns())
+        .where(s.net_worth_run_id.in_(run_ids))
+        .order_by(s.net_worth_run_id, *_stored_order())
+    ).all()
+    found: dict[UUID, list] = defaultdict(list)
+    for r in rows:
+        found[r.net_worth_run_id].append(r)
+    return dict(found)
 
 
 def _row_key(
@@ -926,29 +969,94 @@ STORED_LOAN_NOTE = "Restschuld laut Tilgungsplan, zum Monatsende gespeichert"
 
 def month_end_figure(conn: Connection, run: NetWorthRun) -> NetWorth:
     """A stored month-end, from its rows alone (see the module doc)."""
-    rows = _stored(conn, run.net_worth_run_id)
+    return month_end_figures(conn, [run])[0]
+
+
+def month_end_figures(conn: Connection, runs: Sequence[NetWorthRun]) -> list[NetWorth]:
+    """`month_end_figure` of each run, in the order given, with one read of the rows and the
+    records they name for all the runs (the Übersicht's series reads every month-end)."""
+    if not runs:
+        return []
+    by_run = _stored_by_run(conn, list(dict.fromkeys(r.net_worth_run_id for r in runs)))
+    every = [r for rows in by_run.values() for r in rows]
     acc, a, p, ln = account_table.c, asset_table.c, property_table.c, loan_table.c
-    account_ids = {r.account_id for r in rows if r.account_id is not None}
-    accounts = {
-        r.id: r
-        for r in conn.execute(select(acc.id, acc.label, acc.kind).where(acc.id.in_(account_ids)))
-    }
-    asset_ids = {r.asset_id for r in rows if r.asset_id is not None}
-    assets = {r.id: r.name for r in conn.execute(select(a.id, a.name).where(a.id.in_(asset_ids)))}
-    loans = {
-        r.id: r
-        for r in conn.execute(
-            select(ln.id, ln.lender, ln.property_id).where(
-                ln.id.in_({r.loan_id for r in rows if r.loan_id is not None})
+    account_ids = {r.account_id for r in every if r.account_id is not None}
+    accounts = (
+        {
+            r.id: r
+            for r in conn.execute(
+                select(acc.id, acc.label, acc.kind).where(acc.id.in_(account_ids))
             )
-        )
-    }
-    property_ids = {r.property_id for r in rows if r.property_id is not None} | {
+        }
+        if account_ids
+        else {}
+    )
+    asset_ids = {r.asset_id for r in every if r.asset_id is not None}
+    assets = (
+        {r.id: r.name for r in conn.execute(select(a.id, a.name).where(a.id.in_(asset_ids)))}
+        if asset_ids
+        else {}
+    )
+    loan_ids = {r.loan_id for r in every if r.loan_id is not None}
+    loans = (
+        {
+            r.id: r
+            for r in conn.execute(
+                select(ln.id, ln.lender, ln.property_id).where(ln.id.in_(loan_ids))
+            )
+        }
+        if loan_ids
+        else {}
+    )
+    all_property_ids = {r.property_id for r in every if r.property_id is not None} | {
         loan.property_id for loan in loans.values()
     }
-    properties = {
-        r.id: r
-        for r in conn.execute(select(p.id, p.label, p.purchase_date).where(p.id.in_(property_ids)))
+    properties = (
+        {
+            r.id: r
+            for r in conn.execute(
+                select(p.id, p.label, p.purchase_date).where(p.id.in_(all_property_ids))
+            )
+        }
+        if all_property_ids
+        else {}
+    )
+    property_shares = _property_shares(conn, sorted(all_property_ids))
+    ownership = _ownership_rows(conn, account_ids)
+    owners = _owner_ids(conn)
+    return [
+        _month_end(
+            conn,
+            run,
+            by_run.get(run.net_worth_run_id, []),
+            accounts,
+            assets,
+            loans,
+            properties,
+            property_shares,
+            ownership,
+            owners,
+        )
+        for run in runs
+    ]
+
+
+def _month_end(
+    conn: Connection,
+    run: NetWorthRun,
+    rows: list,
+    accounts: dict,
+    assets: dict,
+    loans: dict,
+    properties: dict,
+    all_property_shares: dict[UUID, dict],
+    ownership: list,
+    owners: list[UUID],
+) -> NetWorth:
+    """One run's figure from the records `month_end_figures` read."""
+    run_loans = {r.loan_id for r in rows if r.loan_id is not None}
+    property_ids = {r.property_id for r in rows if r.property_id is not None} | {
+        loans[loan_id].property_id for loan_id in run_loans if loan_id in loans
     }
     items = []
     for r in rows:
@@ -1013,8 +1121,16 @@ def month_end_figure(conn: Connection, run: NetWorthRun) -> NetWorth:
                 r.account_id,
             )
         )
+    property_shares = {k: v for k, v in all_property_shares.items() if k in property_ids}
     return _figure(
-        conn, run.as_of, items, [], _property_shares(conn, sorted(property_ids)), run=run
+        conn,
+        run.as_of,
+        items,
+        [],
+        property_shares,
+        run=run,
+        ownership=ownership,
+        owners=owners,
     )
 
 
@@ -1158,6 +1274,7 @@ __all__ = [
     "latest_run",
     "list_runs",
     "month_end_figure",
+    "month_end_figures",
     "net_worth",
     "overview",
     "shares_on",

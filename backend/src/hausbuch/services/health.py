@@ -136,6 +136,7 @@ from .net_worth import (
     latest_run,
     list_runs,
     month_end_figure,
+    month_end_figures,
     net_worth,
     shares_on,
     stored_run,
@@ -662,25 +663,36 @@ def _run_figure(conn: Connection, month_end: date) -> NetWorth | None:
     return None if run is None else month_end_figure(conn, run)
 
 
-def run_totals(conn: Connection) -> list[RunTotals]:
-    """The newest stored run of every month-end, summed as phase 6 sums it."""
+def _newest_run_figures(conn: Connection) -> dict[date, tuple[NetWorthRun, NetWorth]]:
+    """Per month-end its newest stored run and that run's figure (as `latest_run` and
+    `month_end_figure` give them), the newest month-end first, read in one batch."""
     newest: dict[date, NetWorthRun] = {}
     for run in list_runs(conn):  # the newest capture of a month-end first
         newest.setdefault(run.as_of, run)
-    out = []
-    for run in newest.values():
-        figure = month_end_figure(conn, run)
-        out.append(
-            RunTotals(
-                net_worth_run_id=run.net_worth_run_id,
-                month_end=run.as_of,
-                created_at=run.captured_at,
-                total=figure.total,
-                by_class=figure.by_class,
-                by_owner=figure.by_owner,
-            )
+    runs = list(newest.values())
+    return {
+        run.as_of: (run, figure)
+        for run, figure in zip(runs, month_end_figures(conn, runs), strict=True)
+    }
+
+
+def _totals(newest: dict[date, tuple[NetWorthRun, NetWorth]]) -> list[RunTotals]:
+    return [
+        RunTotals(
+            net_worth_run_id=run.net_worth_run_id,
+            month_end=run.as_of,
+            created_at=run.captured_at,
+            total=figure.total,
+            by_class=figure.by_class,
+            by_owner=figure.by_owner,
         )
-    return out
+        for run, figure in newest.values()
+    ]
+
+
+def run_totals(conn: Connection) -> list[RunTotals]:
+    """The newest stored run of every month-end, summed as phase 6 sums it."""
+    return _totals(_newest_run_figures(conn))
 
 
 # --- GET /health, GET /health/months, GET /health/net-worth-series (§13) --------------------
@@ -697,10 +709,11 @@ def health(conn: Connection, today: date, scenario_id: UUID | None = None) -> He
     reads = read_months(conn, ended_months(today), today)
     win = _window(reads)
     now = net_worth(conn, today)
+    stored = _newest_run_figures(conn)  # the debt figure's month-end and the series
     debt_figure = None
     if win.enough:
         end = month_bounds(win.months[-1])[1]
-        debt_figure = _run_figure(conn, end) or net_worth(conn, end)
+        debt_figure = stored[end][1] if end in stored else net_worth(conn, end)
     figures = key_figures(
         conn, reads, win, levers, balances=now, debt_figure=debt_figure, today=today
     )
@@ -719,7 +732,7 @@ def health(conn: Connection, today: date, scenario_id: UUID | None = None) -> He
         debt=figures.debt,
         split=split(now),
         free_cash=figures.free_cash,
-        series=series(run_totals(conn), [r.household for r in reads.values() if r.closed.closed]),
+        series=series(_totals(stored), [r.household for r in reads.values() if r.closed.closed]),
         proposals=[] if levers.bands else list(proposals()[1].values()),
         todos=todos,
     )
