@@ -548,6 +548,22 @@ def _movements(
     ]
 
 
+class MovementReads:
+    """Each depot account's movements as `_movements(conn, account_id)` reads them, read once
+    per account within one read call (the Anlagen overview's guard and the latest report
+    check both read them, and the net worth reads both for two days). Lives only as long as
+    the call that made it; nothing is kept between requests."""
+
+    def __init__(self, conn: Connection) -> None:
+        self._conn = conn
+        self._found: dict[UUID, list[rules.UnitsMovement]] = {}
+
+    def __call__(self, account_id: UUID) -> list[rules.UnitsMovement]:
+        if account_id not in self._found:
+            self._found[account_id] = _movements(self._conn, account_id)
+        return self._found[account_id]
+
+
 def _insert_holding(
     ctx: CommandContext,
     account_id: UUID,
@@ -1070,6 +1086,13 @@ def latest_report_checks(conn: Connection, on: date | None = None) -> list[Lates
     given) re-checked on read against today's confirmed movements, by account id. The one
     check behind the holdings card (holdings_inbox_items), the price cards
     (latest_report_agreement) and the net worth's unbooked funds (services.net_worth)."""
+    return report_checks_with(conn, on, MovementReads(conn))
+
+
+def report_checks_with(
+    conn: Connection, on: date | None, movements: MovementReads
+) -> list[LatestReportCheck]:
+    """`latest_report_checks` reading each account's movements through `movements`."""
     rows = _latest_report_rows(conn, on)
     out = []
     for account_id in sorted({r.account_id for r in rows}, key=str):
@@ -1077,7 +1100,7 @@ def latest_report_checks(conn: Connection, on: date | None = None) -> list[Lates
         checks = rules.reconcile_holdings(
             mine[0].as_of,
             {r.asset_id: r.declared_units for r in mine},
-            _movements(conn, account_id),
+            movements(account_id),
         )
         out.append(LatestReportCheck(account_id, mine[0].as_of, mine, checks))
     return out
@@ -1395,6 +1418,8 @@ def _positions(conn: Connection, account_id: UUID) -> list[DepotPosition]:
 
 
 __all__ = [
+    "MovementReads",
+    "report_checks_with",
     "CASH_LINK_DAYS",
     "DEPOT_ACCOUNT_REQUIRED",
     "DEPOT_HOLDINGS_MISMATCH",

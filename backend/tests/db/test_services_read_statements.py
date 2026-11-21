@@ -6,15 +6,20 @@ month-ends, held assets or depots; the answers themselves are the other test fil
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from fractions import Fraction
 
 import pytest
-from db.test_services_net_worth import NOW, _account, _asset, _held, _ledger
-from sqlalchemy import event
+from db.test_services_net_worth import NOW, _account, _asset, _held, _ledger, _own, _price
+from sqlalchemy import event, insert
 
+from hausbuch.db.tables import holding_statement as holding_table
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.events import EventType, FundSourceNote, PricesFetched
+from hausbuch.schemas.property import OwnerCreate
 from hausbuch.services import health, net_worth, reminders
 from hausbuch.services.events import append_event
+from hausbuch.services.owners import create_owner
 from hausbuch.services.prices import overview
 
 pytestmark = pytest.mark.db
@@ -32,6 +37,20 @@ def _counted(engine) -> Iterator[list[int]]:
         yield seen
     finally:
         event.remove(engine, "before_cursor_execute", count)
+
+
+@contextmanager
+def _texts(engine) -> Iterator[list[str]]:
+    seen: list[str] = []
+
+    def keep(conn, cursor, statement, *args, **kwargs):
+        seen.append(statement)
+
+    event.listen(engine, "before_cursor_execute", keep)
+    try:
+        yield seen
+    finally:
+        event.remove(engine, "before_cursor_execute", keep)
 
 
 def _statements(app_engine, read, ws, query, *args) -> int:
@@ -119,3 +138,58 @@ def test_the_price_cards_read_the_runs_and_prices_once_for_every_fund(
         for ws in (small, large)
     }
     assert counts[large] == counts[small]
+
+
+def _depots(run, ws, count: int) -> None:
+    """`count` depots, each holding one priced fund its 30 Sep report declares."""
+    owner = run(ws, create_owner, OwnerCreate(full_name="Eigentümer A"), now=NOW).id
+    for i in range(count):
+        depot = _account(run, ws, f"Depot {i}", AccountKind.DEPOT)
+        _own(run, ws, depot, {owner: Fraction(1)})
+
+        def stored(ctx, depot=depot, i=i):
+            fund = _asset(ctx, kind="etf", isin=f"IE00DPT{i:04d}9", name=f"Fonds {i}")
+            _held(ctx, depot, fund, "3")
+            _price(ctx, fund, date(2026, 9, 30), "100.00", "statement")
+            ctx.conn.execute(
+                insert(holding_table).values(
+                    workspace_id=ctx.workspace_id,
+                    account_id=depot,
+                    asset_id=fund,
+                    as_of=date(2026, 9, 30),
+                    declared_units=Decimal("3"),
+                    source="report",
+                    created_at=ctx.now,
+                )
+            )
+
+        run(ws, stored, now=NOW)
+
+
+def _movement_reads(statements: list[str]) -> int:
+    """The statements that read one depot's movements (services.depot._movements)."""
+    return sum(
+        1
+        for s in statements
+        if "FROM asset_movement" in s and "asset_movement.external_ref" in s and "sum(" not in s
+    )
+
+
+def test_the_net_worth_card_reads_each_depots_movements_once(
+    run, read, app_engine, fresh_workspaces
+):
+    """net_worth.overview (the Übersicht's net worth card) computes two days when the stored
+    month-end is the last one, today's and that month-end's, which are different figures and
+    so two computations; each depot's movements, which the Anlagen overview's report guard
+    and the report check both read on each day, are read once for the whole call."""
+    ws, _ = fresh_workspaces
+    _depots(run, ws, 3)
+    run(ws, net_worth.capture_month_end, date(2026, 10, 31), now=NOW)
+    today = date(2026, 11, 21)
+    with _texts(app_engine) as seen:
+        card = read(ws, net_worth.overview, today)
+    assert card.month_end is not None and card.month_end.on == date(2026, 10, 31)
+    assert _movement_reads(seen) == 3
+    with _texts(app_engine) as seen:
+        read(ws, net_worth.net_worth, today)
+    assert _movement_reads(seen) == 3

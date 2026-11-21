@@ -88,8 +88,7 @@ from hausbuch.schemas.prices import (
     TypedPriceBody,
 )
 from hausbuch.services.context import CommandContext
-from hausbuch.services.depot import _movements as depot_movements
-from hausbuch.services.depot import etf_overview, latest_report_agreement
+from hausbuch.services.depot import MovementReads, etf_overview, latest_report_agreement
 from hausbuch.services.events import append_event, diff_changes
 from hausbuch.services.lookup import require_row
 from hausbuch.services.wallet_groups import waiting
@@ -190,7 +189,9 @@ def _is_euro(row: Any) -> bool:
 NEVER_RECONCILED = date.min
 
 
-def _depot_bounds(conn: Connection, account_id: UUID, on: date) -> dict[UUID, date]:
+def _depot_bounds(
+    conn: Connection, account_id: UUID, on: date, depot_movements: MovementReads
+) -> dict[UUID, date]:
     """The depot's funds that its latest current report on or before `on` contradicts, each
     with the newest earlier report date at which it agreed (else NEVER_RECONCILED). Re-run
     on read against today's movements, as the holdings card does (services.depot)."""
@@ -209,7 +210,7 @@ def _depot_bounds(conn: Connection, account_id: UUID, on: date) -> dict[UUID, da
     for r in rows:
         declared[r.as_of][r.asset_id] = r.declared_units
     days = sorted(declared, reverse=True)
-    movements = depot_movements(conn, account_id)
+    movements = depot_movements(account_id)
     agreed: dict[date, dict[UUID, bool]] = {}
 
     def agrees(day: date) -> dict[UUID, bool]:
@@ -226,6 +227,11 @@ def _depot_bounds(conn: Connection, account_id: UUID, on: date) -> dict[UUID, da
 
 
 def assets_overview(conn: Connection, on: date) -> AssetsOverview:
+    return assets_overview_with(conn, on, MovementReads(conn))
+
+
+def assets_overview_with(conn: Connection, on: date, movements: MovementReads) -> AssetsOverview:
+    """`assets_overview` reading each depot's movements through `movements`."""
     a, m, acc = asset_table.c, movement_table.c, account_table.c
     accounts = conn.execute(
         select(acc.id, acc.label, acc.kind)
@@ -294,7 +300,9 @@ def assets_overview(conn: Connection, on: date) -> AssetsOverview:
     stale = unvalued = 0
     for account in accounts:
         bounds = (
-            _depot_bounds(conn, account.id, on) if account.kind == AccountKind.DEPOT.value else {}
+            _depot_bounds(conn, account.id, on, movements)
+            if account.kind == AccountKind.DEPOT.value
+            else {}
         )
         positions = []
         for u in sorted(
@@ -847,6 +855,7 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
 
 
 __all__ = [
+    "assets_overview_with",
     "assets_overview",
     "etf_today",
     "list_assets",

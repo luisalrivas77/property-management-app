@@ -130,12 +130,12 @@ from hausbuch.schemas.net_worth import (
 )
 
 from .context import CommandContext
+from .depot import MovementReads, report_checks_with
 from .depot import _german_units as german_units
-from .depot import latest_report_checks
 from .errors import require_valid
 from .events import append_event
 from .loans import list_loans
-from .prices.overview import assets_overview
+from .prices.overview import assets_overview_with
 from .reminders import idle_cards
 from .scenarios import estimate_on_day
 from .transfers import _last_days as history_ends  # D162 amended (9)'s history end
@@ -241,7 +241,29 @@ class _Item:
     shares_ref: UUID  # the account or property whose shares split it
 
 
-def _balances(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTodo]]:
+class _Reads:
+    """What a net worth reads that does not depend on its day, read once per call and shared
+    by the days one call computes (overview: the last month-end and today). Nothing is kept
+    between calls."""
+
+    def __init__(self, conn: Connection) -> None:
+        self.movements = MovementReads(conn)
+        self._conn = conn
+        self._idle: set[UUID] | None = None
+        self._history: Any = None
+
+    def idle(self) -> set[UUID]:
+        if self._idle is None:
+            self._idle = idle_cards(self._conn)
+        return self._idle
+
+    def history(self) -> Any:
+        if self._history is None:
+            self._history = history_ends(self._conn)
+        return self._history
+
+
+def _balances(conn: Connection, on: date, reads: _Reads) -> tuple[list[_Item], list[NetWorthTodo]]:
     acc, imp, t = account_table.c, import_table.c, transaction_table.c
     accounts = conn.execute(
         select(acc.id, acc.label, acc.kind, acc.opening_balance, acc.opening_balance_on)
@@ -272,7 +294,7 @@ def _balances(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTod
         )
     ):
         lines[r.account_id].append((r.booking_date, r.amount))
-    history = history_ends(conn)
+    history = reads.history()
     connected = set(
         conn.execute(
             select(connection_table.c.account_id).where(connection_table.c.account_id.in_(ids))
@@ -283,7 +305,7 @@ def _balances(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTod
     # later day; no to-do asks for a statement that will never come, and the month-end is not
     # held open by it (Luis, 18 Nov 2026: the Consors Finanz card unused since January).
     idle = (
-        idle_cards(conn)
+        reads.idle()
         if any(AccountKind(a.kind) is AccountKind.CREDIT_CARD for a in accounts)
         else set()
     )
@@ -372,8 +394,10 @@ def _outdated(
     )
 
 
-def _positions(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTodo], int, int]:
-    overview = assets_overview(conn, on)
+def _positions(
+    conn: Connection, on: date, reads: _Reads
+) -> tuple[list[_Item], list[NetWorthTodo], int, int]:
+    overview = assets_overview_with(conn, on, reads.movements)
     items: list[_Item] = []
     todos: list[NetWorthTodo] = []
     stale = unvalued = 0
@@ -460,12 +484,12 @@ def _positions(conn: Connection, on: date) -> tuple[list[_Item], list[NetWorthTo
             )
         )
     known = {(i.line.account_id, i.line.asset_id) for i in items}
-    unbooked, unbooked_todos = _unbooked_funds(conn, on, known)
+    unbooked, unbooked_todos = _unbooked_funds(conn, on, known, reads)
     return items + unbooked, todos + unbooked_todos, stale, unvalued + len(unbooked)
 
 
 def _unbooked_funds(
-    conn: Connection, on: date, known: set[tuple[UUID | None, UUID | None]]
+    conn: Connection, on: date, known: set[tuple[UUID | None, UUID | None]], reads: _Reads
 ) -> tuple[list[_Item], list[NetWorthTodo]]:
     """The funds a depot's latest report on or before `on` lists while no unit of them is
     booked: the Anlagen overview has no position for them (it lists booked units only), so
@@ -476,7 +500,7 @@ def _unbooked_funds(
     buchen“ books the report's trades."""
     missing = [
         (report, check)
-        for report in latest_report_checks(conn, on)
+        for report in report_checks_with(conn, on, reads.movements)
         for check in report.wrong
         if check.listed and (report.account_id, check.asset) not in known
     ]
@@ -835,8 +859,12 @@ def _figure(
 
 def net_worth(conn: Connection, on: date) -> NetWorth:
     """GET /net-worth?on=: NetWorth(on) on read."""
-    balances, balance_todos = _balances(conn, on)
-    positions, position_todos, stale, unvalued = _positions(conn, on)
+    return _net_worth(conn, on, _Reads(conn))
+
+
+def _net_worth(conn: Connection, on: date, reads: _Reads) -> NetWorth:
+    balances, balance_todos = _balances(conn, on, reads)
+    positions, position_todos, stale, unvalued = _positions(conn, on, reads)
     properties, property_todos, property_shares = _properties(conn, on)
     return _figure(
         conn,
@@ -1151,12 +1179,13 @@ def overview(conn: Connection, today: date) -> NetWorthOverview:
     (with that scenario's follow-up rate), so a change of those does show as a difference."""
     due = last_month_end(today)
     stored = latest_month_end(conn)
+    reads = _Reads(conn)  # both days read the movements, idle cards and history once
     now = None
     if stored is not None and stored.on == due:
-        current = net_worth(conn, due).total
+        current = _net_worth(conn, due, reads).total
         now = current if current != stored.total else None
     return NetWorthOverview(
-        today=net_worth(conn, today),
+        today=_net_worth(conn, today, reads),
         month_end=stored,
         month_end_due=None if _latest_run(conn, due) is not None else due,
         month_end_now=now,
