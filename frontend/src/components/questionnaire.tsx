@@ -32,8 +32,11 @@ import { ApiError, ruleCodes } from "@/api/errors";
 import type { Owner, Property } from "@/api/schemas";
 import type { components } from "@/api/types";
 
+import { formatter, translate, useFormat, useT } from "@/i18n";
+import { common } from "@/i18n/common";
+import { questionnaireFields, questionnaireText, type QuestionnaireField } from "@/i18n/questionnaire";
+
 import { Field, FormBanner, Submit, useFormErrors, type FieldMessages } from "./form";
-import { formatDate, formatMoney } from "./format";
 import { decimalInput, toDecimalString, toFraction, toMoneyString, type Parsed } from "./input";
 import {
   COMMUTE_KIND,
@@ -103,6 +106,7 @@ function sameSlot(a: Pick<Slot, "key" | "owner_id" | "property_id">, b: Pick<Slo
 
 /** The owners' slots per owner, then the household's, then each property's; file order inside. */
 function steps(data: FlowData): Step[] {
+  const t = translate(questionnaireText);
   const questions = new Map(data.view.questions.map((q) => [q.key, q]));
   const ownerName = new Map(data.owners.map((o) => [o.id, o.full_name]));
   const propertyName = new Map(data.properties.map((p) => [p.id, p.label]));
@@ -122,11 +126,11 @@ function steps(data: FlowData): Step[] {
     const question = questions.get(slot.key);
     if (!question) continue;
     if (slot.owner_id) {
-      owners.push({ slot, question, group: `Fragen für ${ownerName.get(slot.owner_id) ?? "Eigentümer"}` });
+      owners.push({ slot, question, group: t.groupOwner(ownerName.get(slot.owner_id) ?? t.owner) });
     } else if (slot.property_id) {
-      properties.push({ slot, question, group: `Fragen zur Immobilie ${propertyName.get(slot.property_id) ?? ""}`.trim() });
+      properties.push({ slot, question, group: t.groupProperty(propertyName.get(slot.property_id) ?? "").trim() });
     } else {
-      household.push({ slot, question, group: "Fragen für den Haushalt" });
+      household.push({ slot, question, group: t.groupHousehold });
     }
   }
   for (const step of owners) add(`o:${step.slot.owner_id}`, step);
@@ -145,11 +149,11 @@ type FieldType = "text" | "money" | "int" | "decimal" | "date" | "month" | "bool
 
 interface FieldSpec {
   name: string;
-  label: string;
+  label: QuestionnaireField;
   type: FieldType;
   optional?: boolean;
   options?: Record<string, string>;
-  hint?: string;
+  hint?: QuestionnaireField;
   /** The empty form's value, for the year asked. */
   initial?: (year: number) => string;
   /** Shown only for an item whose stored value passes (otherwise neither asked nor saved). */
@@ -172,117 +176,117 @@ const DISPOSABLE: ReadonlySet<string> = new Set(["work_equipment"]);
 
 const FORMS: Record<string, FieldSpec[]> = {
   commute: [
-    { name: "kind", label: "Art", type: "select", options: COMMUTE_KIND, initial: () => "first_workplace" },
-    { name: "workplace_label", label: "Arbeitsstätte", type: "text", hint: "Zum Beispiel „Büro Arbeitgeber“." },
-    { name: "period_from", label: "Von", type: "date", initial: (y) => `${y}-01-01` },
-    { name: "period_to", label: "Bis", type: "date", initial: (y) => `${y}-12-31` },
-    { name: "days_per_week", label: "Arbeitstage pro Woche", type: "int", initial: () => "5" },
-    { name: "days", label: "Tage an der Arbeitsstätte", type: "int" },
-    { name: "km", label: "Entfernung (km, einfache Strecke)", type: "int" },
+    { name: "kind", label: "type", type: "select", options: COMMUTE_KIND, initial: () => "first_workplace" },
+    { name: "workplace_label", label: "workplace", type: "text", hint: "workplaceHint" },
+    { name: "period_from", label: "from", type: "date", initial: (y) => `${y}-01-01` },
+    { name: "period_to", label: "to", type: "date", initial: (y) => `${y}-12-31` },
+    { name: "days_per_week", label: "daysPerWeek", type: "int", initial: () => "5" },
+    { name: "days", label: "daysAtWorkplace", type: "int" },
+    { name: "km", label: "distance", type: "int" },
     {
       name: "km_collective",
-      label: "davon mit Bus und Bahn (km)",
+      label: "kmCollective",
       type: "int",
       optional: true,
-      hint: "Leer lassen, wenn die ganze Strecke mit dem Auto gefahren wird.",
+      hint: "kmCollectiveHint",
     },
-    { name: "km_other", label: "davon anders, etwa zu Fuß oder Rad (km)", type: "int", optional: true },
-    { name: "absent_days", label: "Urlaubs-, Krankheits- und Heimarbeitstage", type: "int", optional: true },
-    { name: "public_transport_costs", label: "Kosten für Bus und Bahn (€)", type: "money", optional: true },
+    { name: "km_other", label: "kmOther", type: "int", optional: true },
+    { name: "absent_days", label: "absentDays", type: "int", optional: true },
+    { name: "public_transport_costs", label: "publicTransportCosts", type: "money", optional: true },
   ],
   home_office: [
     {
       name: "days_other_workplace",
-      label: "Homeoffice-Tage, an denen ein Arbeitsplatz im Betrieb bereitstand",
+      label: "homeOfficeWithDesk",
       type: "int",
       initial: () => "0",
     },
     {
       name: "days_no_other_workplace",
-      label: "Homeoffice-Tage ohne Arbeitsplatz im Betrieb",
+      label: "homeOfficeWithoutDesk",
       type: "int",
       initial: () => "0",
     },
   ],
   work_room: [
-    { name: "months", label: "Monate genutzt", type: "int", initial: () => "12" },
-    { name: "room_m2", label: "Zimmer (m²)", type: "decimal" },
-    { name: "home_m2", label: "Wohnung (m²)", type: "decimal" },
-    { name: "rent_year", label: "Jahresmiete (€)", type: "money" },
-    { name: "running_costs_year", label: "Nebenkosten im Jahr (€)", type: "money", optional: true },
-    { name: "room_only_costs_year", label: "Kosten nur für das Zimmer (€)", type: "money", optional: true },
-    { name: "prefer", label: "Wahl", type: "select", options: WORK_ROOM_PREFER, optional: true },
+    { name: "months", label: "monthsUsed", type: "int", initial: () => "12" },
+    { name: "room_m2", label: "roomArea", type: "decimal" },
+    { name: "home_m2", label: "homeArea", type: "decimal" },
+    { name: "rent_year", label: "yearlyRent", type: "money" },
+    { name: "running_costs_year", label: "runningCostsYear", type: "money", optional: true },
+    { name: "room_only_costs_year", label: "roomOnlyCosts", type: "money", optional: true },
+    { name: "prefer", label: "choice", type: "select", options: WORK_ROOM_PREFER, optional: true },
   ],
   work_equipment: [
-    { name: "label", label: "Bezeichnung", type: "text" },
-    { name: "item_class", label: "Art", type: "select", options: ITEM_CLASS, initial: () => "computer" },
-    { name: "gross", label: "Preis brutto (€)", type: "money" },
-    { name: "bought_on", label: "Kaufdatum (auch Vorjahre)", type: "date" },
-    { name: "professional_share", label: "Beruflicher Anteil", type: "fraction", initial: () => "1/1", hint: "Zum Beispiel 1/2 oder 50 %." },
-    { name: "useful_life_months", label: "Nutzungsdauer (Monate)", type: "int", optional: true },
-    { name: "disposed_on", label: "Nicht mehr genutzt seit", type: "date", optional: true },
+    { name: "label", label: "label", type: "text" },
+    { name: "item_class", label: "type", type: "select", options: ITEM_CLASS, initial: () => "computer" },
+    { name: "gross", label: "grossPrice", type: "money" },
+    { name: "bought_on", label: "boughtOn", type: "date" },
+    { name: "professional_share", label: "professionalShare", type: "fraction", initial: () => "1/1", hint: "shareHint" },
+    { name: "useful_life_months", label: "usefulLife", type: "int", optional: true },
+    { name: "disposed_on", label: "disposedOn", type: "date", optional: true },
   ],
   telecom: [
-    { name: "bills_year", label: "Rechnungen im Jahr (€)", type: "money" },
-    { name: "months", label: "Monate", type: "int", initial: () => "12" },
-    { name: "employer_reimbursed", label: "Vom Arbeitgeber erstattet (€)", type: "money", optional: true },
+    { name: "bills_year", label: "billsYear", type: "money" },
+    { name: "months", label: "months", type: "int", initial: () => "12" },
+    { name: "employer_reimbursed", label: "employerReimbursed", type: "money", optional: true },
   ],
   professional_association: [
-    { name: "name", label: "Verband", type: "text" },
-    { name: "amount", label: "Beiträge im Jahr (€)", type: "money" },
-    { name: "is_union", label: "Gewerkschaft", type: "bool", initial: () => "false" },
+    { name: "name", label: "association", type: "text" },
+    { name: "amount", label: "contributionsYear", type: "money" },
+    { name: "is_union", label: "union", type: "bool", initial: () => "false" },
   ],
   training: [
-    { name: "label", label: "Bezeichnung", type: "text" },
-    { name: "amount", label: "Kosten (€)", type: "money" },
+    { name: "label", label: "label", type: "text" },
+    { name: "amount", label: "costs", type: "money" },
   ],
   other_expense: [
-    { name: "expense_class", label: "Art", type: "select", options: OTHER_EXPENSE_CLASS, initial: () => "other" },
-    { name: "label", label: "Bezeichnung", type: "text" },
-    { name: "amount", label: "Betrag (€)", type: "money", optional: true },
+    { name: "expense_class", label: "type", type: "select", options: OTHER_EXPENSE_CLASS, initial: () => "other" },
+    { name: "label", label: "label", type: "text" },
+    { name: "amount", label: "amount", type: "money", optional: true },
   ],
-  other_insurance: [{ name: "amount", label: "Beiträge im Jahr (€)", type: "money" }],
+  other_insurance: [{ name: "amount", label: "contributionsYear", type: "money" }],
   child: [
-    { name: "born_on", label: "Geburtsdatum", type: "date", hint: "Angezeigt wird nur der Monat." },
-    { name: "kindergeld_from", label: "Kindergeld ab (optional)", type: "month", optional: true },
+    { name: "born_on", label: "bornOn", type: "date", hint: "bornOnHint" },
+    { name: "kindergeld_from", label: "kindergeldFrom", type: "month", optional: true },
   ],
   childcare_cost: [
-    { name: "child_id", label: "Kind", type: "child" },
-    { name: "amount", label: "Kosten im Jahr (€)", type: "money" },
-    { name: "paid_to_account", label: "Per Überweisung bezahlt", type: "bool", initial: () => "true" },
+    { name: "child_id", label: "child", type: "child" },
+    { name: "amount", label: "costsYear", type: "money" },
+    { name: "paid_to_account", label: "paidByTransfer", type: "bool", initial: () => "true" },
   ],
   household_services: [
-    { name: "service_class", label: "Art", type: "select", options: HOUSEHOLD_SERVICE_CLASS, initial: () => "handwerker" },
-    { name: "labour_cost", label: "Arbeitskosten (€)", type: "money" },
-    { name: "source", label: "Quelle", type: "select", options: HOUSEHOLD_SERVICE_SOURCE, initial: () => "own_invoice" },
-    { name: "paid_to_account", label: "Per Überweisung bezahlt", type: "bool", initial: () => "true" },
+    { name: "service_class", label: "type", type: "select", options: HOUSEHOLD_SERVICE_CLASS, initial: () => "handwerker" },
+    { name: "labour_cost", label: "labourCost", type: "money" },
+    { name: "source", label: "source", type: "select", options: HOUSEHOLD_SERVICE_SOURCE, initial: () => "own_invoice" },
+    { name: "paid_to_account", label: "paidByTransfer", type: "bool", initial: () => "true" },
   ],
   special_expense: [
-    { name: "recipient_label", label: "Empfänger", type: "text" },
-    { name: "amount", label: "Betrag (€)", type: "money" },
+    { name: "recipient_label", label: "recipient", type: "text" },
+    { name: "amount", label: "amount", type: "money" },
   ],
   private_cost: [
-    { name: "cost_class", label: "Art", type: "select", options: PRIVATE_COST_CLASS, initial: () => "postage" },
-    { name: "label", label: "Bezeichnung", type: "text" },
-    { name: "amount", label: "Betrag (€)", type: "money", optional: true },
-    { name: "trips", label: "Fahrten", type: "int", optional: true },
-    { name: "km_round_trip", label: "Kilometer je Fahrt (hin und zurück)", type: "int", optional: true },
-    { name: "share", label: "Anteil für die Vermietung", type: "fraction", initial: () => "1/1" },
+    { name: "cost_class", label: "type", type: "select", options: PRIVATE_COST_CLASS, initial: () => "postage" },
+    { name: "label", label: "label", type: "text" },
+    { name: "amount", label: "amount", type: "money", optional: true },
+    { name: "trips", label: "trips", type: "int", optional: true },
+    { name: "km_round_trip", label: "kmPerTrip", type: "int", optional: true },
+    { name: "share", label: "lettingShare", type: "fraction", initial: () => "1/1" },
     {
       name: "performed_on",
-      label: "Leistungsdatum",
+      label: "performedOn",
       type: "date",
       optional: true,
       when: COUNTS_FOR_15_PERCENT,
-      hint: "Wann die Reparatur gemacht wurde, laut Rechnung. Hausbuch braucht es für die 15-%-Grenze in den ersten drei Jahren nach dem Kauf; ohne Datum zählt die Rechnung vorsichtshalber mit.",
+      hint: "performedOnHint",
     },
     {
       name: "amount_net",
-      label: "Netto (€)",
+      label: "net",
       type: "money",
       optional: true,
       when: COUNTS_FOR_15_PERCENT,
-      hint: "Der Betrag ohne Umsatzsteuer, laut Rechnung. Die 15-%-Grenze rechnet netto; ohne Angabe schätzt Hausbuch Betrag ÷ 1,19.",
+      hint: "netHint",
     },
   ],
 };
@@ -316,9 +320,8 @@ function toRaw(type: FieldType, value: unknown): string {
   }
 }
 
-const REQUIRED = "Bitte ausfüllen.";
-
 function parseField(spec: FieldSpec, raw: string): Parsed<unknown> {
+  const t = translate(questionnaireText);
   const text = raw.trim();
   switch (spec.type) {
     case "money":
@@ -326,17 +329,17 @@ function parseField(spec: FieldSpec, raw: string): Parsed<unknown> {
     case "decimal":
       return toDecimalString(text, 2);
     case "int":
-      return /^\d+$/.test(text) ? { ok: true, value: Number(text) } : { ok: false, message: "Bitte eine ganze Zahl eingeben." };
+      return /^\d+$/.test(text) ? { ok: true, value: Number(text) } : { ok: false, message: t.wholeNumber };
     case "date":
-      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? { ok: true, value: text } : { ok: false, message: "Bitte ein Datum eingeben." };
+      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? { ok: true, value: text } : { ok: false, message: t.enterDate };
     case "month":
-      return /^\d{4}-\d{2}$/.test(text) ? { ok: true, value: `${text}-01` } : { ok: false, message: "Bitte einen Monat wählen." };
+      return /^\d{4}-\d{2}$/.test(text) ? { ok: true, value: `${text}-01` } : { ok: false, message: t.pickMonth };
     case "bool":
       return { ok: true, value: text === "true" };
     case "fraction":
       return toFraction(text);
     default:
-      return text === "" ? { ok: false, message: REQUIRED } : { ok: true, value: text };
+      return text === "" ? { ok: false, message: t.required } : { ok: true, value: text };
   }
 }
 
@@ -536,7 +539,7 @@ function buildValue(item: Item, prefix: string, messages: FieldMessages): Value 
     if (raw.trim() === "" && spec.type !== "bool") {
       delete value[spec.name];
       if (!spec.optional) {
-        messages[`${prefix}.${spec.name}`] = [REQUIRED];
+        messages[`${prefix}.${spec.name}`] = [translate(questionnaireText).required];
         fine = false;
       }
       continue;
@@ -563,21 +566,19 @@ function buildValue(item: Item, prefix: string, messages: FieldMessages): Value 
 function monthText(isoDate: string): string {
   const [year, month] = isoDate.split("-").map(Number);
   if (!year || !month) return isoDate;
-  return new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric", timeZone: "UTC" }).format(
-    new Date(Date.UTC(year, month - 1, 1)),
-  );
+  return formatter().month(isoDate);
 }
 
 function childLabel(row: ReturnInputFact, index: number): string {
   const v = row.value as { born_on: string };
-  return `Kind ${index + 1} (geboren ${monthText(v.born_on)})`;
+  return translate(questionnaireText).child(index + 1, monthText(v.born_on));
 }
 
 function describeRow(row: ReturnInputFact, index: number): string {
   if (row.kind === "child") return childLabel(row, index);
   if (row.kind === "work_equipment") {
     const v = row.value as { label: string; bought_on: string; item_class: keyof typeof ITEM_CLASS };
-    return `${v.label} (${ITEM_CLASS[v.item_class]}, gekauft ${formatDate(v.bought_on)})`;
+    return translate(questionnaireText).equipment(v.label, ITEM_CLASS[v.item_class], formatter().date(v.bought_on));
   }
   return RETURN_INPUT_KIND[row.kind];
 }
@@ -587,6 +588,7 @@ function describeRow(row: ReturnInputFact, index: number): string {
 /** `start` opens the flow at that slot (a link from the Anlage N tab); without it, or when the
  * year has no such slot, the flow opens at the first open question. */
 export function QuestionnaireFlow({ year, start }: { year: number; start?: QuestionTarget | null }) {
+  const t = useT(questionnaireText);
   const load = useCallback(() => loadFlow(year), [year]);
   const state = useLoad(load);
   const [index, setIndex] = useState<number | null>(null);
@@ -594,9 +596,9 @@ export function QuestionnaireFlow({ year, start }: { year: number; start?: Quest
   return (
     <section className="fragen">
       <p className="fragen-back">
-        <Link href={`/tax/${year}`}>← Steuerjahr {year}</Link>
+        <Link href={`/tax/${year}`}>{t.back(year)}</Link>
       </p>
-      <h1>Jahresfragen {year}</h1>
+      <h1>{t.title(year)}</h1>
       <Loading state={state}>
         {(data) => {
           const list = steps(data);
@@ -611,9 +613,7 @@ export function QuestionnaireFlow({ year, start }: { year: number; start?: Quest
           return (
             <>
               {data.view.reused_from != null ? (
-                <p className="notice notice-info">
-                  Die Fragen für {year} sind noch nicht festgelegt; es gelten die von {data.view.reused_from}.
-                </p>
+                <p className="notice notice-info">{t.reusedFrom(year, data.view.reused_from)}</p>
               ) : null}
               {current >= list.length ? (
                 <Summary year={year} data={data} steps={list} onJump={setIndex} />
@@ -648,17 +648,14 @@ export function QuestionnaireFlow({ year, start }: { year: number; start?: Quest
 }
 
 function ProgressBar({ position, total, answered }: { position: number; total: number; answered: number }) {
+  const t = useT(questionnaireText);
   return (
     <div className="fragen-progress">
       <div className="row fragen-progress-head">
-        <strong>
-          Frage {position} von {total}
-        </strong>
-        <span className="muted">
-          {answered} von {total} beantwortet
-        </span>
+        <strong>{t.questionOf(position, total)}</strong>
+        <span className="muted">{t.answeredOf(answered, total)}</span>
       </div>
-      <progress max={total} value={position} aria-label={`Frage ${position} von ${total}`} />
+      <progress max={total} value={position} aria-label={t.questionOf(position, total)} />
     </div>
   );
 }
@@ -682,6 +679,8 @@ function StepScreen({
   onNext: () => void;
   onAnswered: (changed: boolean) => void;
 }) {
+  const t = useT(questionnaireText);
+  const words = useT(common);
   const { slot, question } = step;
   const open = isOpen(data.view, slot);
   const targets = question.targets ?? [];
@@ -793,7 +792,7 @@ function StepScreen({
       const since = disposed[row.id] ?? null;
       if (since === (storedDisposal[row.id] ?? null)) continue;
       if (since !== null && !/^\d{4}-\d{2}-\d{2}$/.test(since)) {
-        messages[`dispose.${row.id}`] = ["Bitte das Datum eingeben, seit dem es nicht mehr genutzt wird."];
+        messages[`dispose.${row.id}`] = [t.disposalDate];
         continue;
       }
       returnInputs.push({
@@ -830,7 +829,7 @@ function StepScreen({
       onAnswered(changing);
     } catch (error) {
       if (codesOf(error).includes("questionnaire.not_current")) {
-        form.invalid({ answer: ["Diese Frage wurde inzwischen anders beantwortet. Die Seite neu laden."] });
+        form.invalid({ answer: [t.answeredElsewhere] });
       } else {
         form.fail(error);
       }
@@ -845,7 +844,7 @@ function StepScreen({
       const missing = reconfirm.filter((r) => DISPOSABLE.has(r.kind) && !disposed[r.id]);
       if (missing.length > 0) {
         setDisposed((d) => ({ ...d, ...Object.fromEntries(missing.map((r) => [r.id, d[r.id] ?? ""])) }));
-        form.invalid(Object.fromEntries(missing.map((r) => [`dispose.${r.id}`, ["Seit wann nicht mehr genutzt?"]])));
+        form.invalid(Object.fromEntries(missing.map((r) => [`dispose.${r.id}`, [t.sinceWhen]])));
         return;
       }
     }
@@ -879,9 +878,9 @@ function StepScreen({
 
   const prior = slot.prior_answer;
   const suggestion = slot.proposed_answer
-    ? `${prior ? "Vorjahr" : "Vorschlag"}: ${QUESTIONNAIRE_ANSWER[slot.proposed_answer]}`
+    ? t.suggestion(prior ? t.priorYear : t.proposal, QUESTIONNAIRE_ANSWER[slot.proposed_answer])
     : prior?.choice
-      ? `Vorjahr: ${question.choices?.find((c) => c.code === prior.choice)?.label_de ?? prior.choice}`
+      ? t.suggestion(t.priorYear, question.choices?.find((c) => c.code === prior.choice)?.label_de ?? prior.choice)
       : null;
 
   return (
@@ -892,18 +891,19 @@ function StepScreen({
       </p>
       <h2 className="fragen-question">{question.question_de}</h2>
       <p className="fragen-why">
-        <strong>Warum:</strong> {question.why_de}
+        <strong>{t.why}</strong> {question.why_de}
       </p>
       {question.key === EXTRAORDINARY_KEY ? <ZumutbareBelastung year={year} /> : null}
-      {reminders.map((t) => (
-        <p key={t.reminder_de} className="notice notice-info">
-          Bei „Ja“ steht auf der Übersicht: {t.reminder_de}
+      {reminders.map((target) => (
+        <p key={target.reminder_de} className="notice notice-info">
+          {t.reminderOnOverview(target.reminder_de ?? "")}
         </p>
       ))}
       {documentsOnly ? (
         <p className="muted">
-          Bescheinigung und Gehaltsabrechnungen unter <Link href="/documents">Dokumente</Link> hochladen; die App liest sie
-          aus und Sie bestätigen jeden Wert.
+          {t.documentsBefore}
+          <Link href="/documents">{t.documentsLink}</Link>
+          {t.documentsAfter}
         </p>
       ) : null}
 
@@ -912,16 +912,17 @@ function StepScreen({
           <p className="notice notice-ok">
             {current ? (
               <>
-                Ihre Antwort: <strong>{answerText(question, current.answer, current.choice ?? null)}</strong>
+                {t.yourAnswer}
+                <strong>{answerText(question, current.answer, current.choice ?? null)}</strong>
               </>
             ) : (
-              "Diese Frage ist schon beantwortet."
+              t.alreadyAnswered
             )}
           </p>
           {current ? (
             <div className="row">
               <button type="button" className="secondary" disabled={loadingRows} onClick={() => void startChange()}>
-                {loadingRows ? "Lädt …" : "Antwort ändern"}
+                {loadingRows ? words.loading : t.changeAnswer}
               </button>
             </div>
           ) : null}
@@ -930,16 +931,12 @@ function StepScreen({
       ) : (
         <>
           {changing && current ? (
-            <p className="muted">Bisher: {answerText(question, current.answer, current.choice ?? null)}</p>
+            <p className="muted">{t.before(answerText(question, current.answer, current.choice ?? null))}</p>
           ) : suggestion ? (
             <p className="muted">{suggestion}</p>
           ) : null}
           {changing && existing.length > 0 && !expanded ? (
-            <p className="muted">
-              Bei „Nein“ oder „Trifft nicht zu“{" "}
-              {existing.length === 1 ? "wird die Angabe" : `werden die ${existing.length} Angaben`} zu dieser Frage
-              zurückgezogen.
-            </p>
+            <p className="muted">{t.withdrawNote(existing.length)}</p>
           ) : null}
           {reconfirm.length > 0 ? (
             <Reconfirm
@@ -950,7 +947,7 @@ function StepScreen({
             />
           ) : null}
           {question.answer_type === "choice" ? (
-            <div className="fragen-answers" role="group" aria-label="Antwort">
+            <div className="fragen-answers" role="group" aria-label={t.answer}>
               {(question.choices ?? []).map((c) => (
                 <button
                   key={c.code}
@@ -967,9 +964,9 @@ function StepScreen({
               </button>
             </div>
           ) : expanded && facts ? (
-            <form className="stack" onSubmit={onSubmitFacts} noValidate aria-label="Angaben">
+            <form className="stack" onSubmit={onSubmitFacts} noValidate aria-label={t.facts}>
               {carriedAny ? (
-                <p className="notice notice-info">Vorjahr übernommen — prüfen und bestätigen</p>
+                <p className="notice notice-info">{t.carried}</p>
               ) : null}
               {items.map((item, at) => (
                 <ItemForm
@@ -990,18 +987,18 @@ function StepScreen({
                   className="secondary"
                   onClick={() => setItems((list) => [...list, blankItem(formTargets[0]!, year)])}
                 >
-                  {items.length === 0 ? "Eintrag hinzufügen" : "Weiteren Eintrag hinzufügen"}
+                  {items.length === 0 ? t.addItem : t.addAnother}
                 </button>
               </div>
               <div className="fragen-answers">
-                <Submit busy={busy}>Speichern und weiter</Submit>
+                <Submit busy={busy}>{t.saveNext}</Submit>
                 <button type="button" className="secondary" onClick={() => setExpanded(false)}>
-                  Abbrechen
+                  {words.cancel}
                 </button>
               </div>
             </form>
           ) : (
-            <div className="fragen-answers" role="group" aria-label="Antwort">
+            <div className="fragen-answers" role="group" aria-label={t.answer}>
               <button
                 type="button"
                 className={slot.proposed_answer === "yes" ? "" : "secondary"}
@@ -1037,7 +1034,7 @@ function StepScreen({
                   form.clear();
                 }}
               >
-                Nicht ändern
+                {t.keep}
               </button>
             </div>
           ) : null}
@@ -1046,15 +1043,15 @@ function StepScreen({
 
       <div className="row fragen-nav">
         <button type="button" className="link" onClick={onBack} disabled={position === 0}>
-          Zurück
+          {words.back}
         </button>
         {open ? (
           <button type="button" className="link" onClick={onNext}>
-            Später beantworten
+            {t.later}
           </button>
         ) : (
           <button type="button" className="link" onClick={onNext}>
-            Weiter
+            {t.next}
           </button>
         )}
       </div>
@@ -1116,13 +1113,15 @@ function ItemForm({
   onChange: (raw: Record<string, string>) => void;
   onRemove: () => void;
 }) {
+  const t = useT(questionnaireText);
+  const fields = useT(questionnaireFields);
   const fixed = item.target.value_match ?? {};
   const set = (name: string, value: string) => onChange({ ...item.raw, [name]: value });
   const id = (name: string) => `item-${item.key}-${name}`;
   return (
     <fieldset className="fragen-item">
       <legend>
-        {item.kind === "private_cost" ? "Von einem anderen Konto bezahlt" : RETURN_INPUT_KIND[item.kind as keyof typeof RETURN_INPUT_KIND]}{" "}
+        {item.kind === "private_cost" ? t.paidElsewhere : RETURN_INPUT_KIND[item.kind as keyof typeof RETURN_INPUT_KIND]}{" "}
         {index + 1}
       </legend>
       <div className="grid">
@@ -1131,14 +1130,14 @@ function ItemForm({
           const carried = item.carried !== null && raw !== "" && raw === item.carried[spec.name];
           const label = (
             <>
-              {spec.label}
-              {carried ? <span className="badge fragen-carried">Vorjahr</span> : null}
+              {fields[spec.label]}
+              {carried ? <span className="badge fragen-carried">{t.priorYear}</span> : null}
             </>
           );
           if (fixed[spec.name] !== undefined) {
             return (
               <p key={spec.name} className="field">
-                <span className="muted">{spec.label}: </span>
+                <span className="muted">{fields[spec.label]}: </span>
                 {spec.options?.[fixed[spec.name]!] ?? fixed[spec.name]}
               </p>
             );
@@ -1152,7 +1151,7 @@ function ItemForm({
             );
           }
           return (
-            <Field key={spec.name} id={id(spec.name)} label={label} hint={spec.hint} errors={errors(`${prefix}.${spec.name}`)}>
+            <Field key={spec.name} id={id(spec.name)} label={label} hint={spec.hint ? fields[spec.hint] : undefined} errors={errors(`${prefix}.${spec.name}`)}>
               {spec.type === "select" ? (
                 <select value={raw} onChange={(e) => set(spec.name, e.target.value)}>
                   {spec.optional ? <option value="">–</option> : null}
@@ -1187,7 +1186,7 @@ function ItemForm({
         })}
       </div>
       <button type="button" className="link" onClick={onRemove}>
-        Eintrag entfernen
+        {t.removeItem}
       </button>
     </fieldset>
   );
@@ -1204,10 +1203,11 @@ function Reconfirm({
   onChange: (next: Record<string, string | null>) => void;
   errors: (id: string) => string[];
 }) {
+  const t = useT(questionnaireText);
   let childIndex = 0;
   return (
     <div className="stack">
-      <p className="muted">Aus den Vorjahren erfasst:</p>
+      <p className="muted">{t.standing}</p>
       <ul className="fragen-standing">
         {rows.map((row) => {
           const text = describeRow(row, row.kind === "child" ? childIndex++ : 0);
@@ -1221,15 +1221,15 @@ function Reconfirm({
               <div role="radiogroup" aria-label={text} className="stack">
                 <label className="inline">
                   <input type="radio" name={name} checked={!ended} onChange={() => onChange({ ...disposed, [row.id]: null })} />
-                  weiter genutzt
+                  {t.stillUsed}
                 </label>
                 <label className="inline">
                   <input type="radio" name={name} checked={ended} onChange={() => onChange({ ...disposed, [row.id]: since ?? "" })} />
-                  nicht mehr genutzt seit …
+                  {t.noLongerUsed}
                 </label>
               </div>
               {ended ? (
-                <Field id={`${name}-since`} label="Nicht mehr genutzt seit" errors={errors(row.id)}>
+                <Field id={`${name}-since`} label={t.noLongerUsedSince} errors={errors(row.id)}>
                   <input type="date" value={since} onChange={(e) => onChange({ ...disposed, [row.id]: e.target.value })} />
                 </Field>
               ) : null}
@@ -1253,14 +1253,17 @@ const EXTRAORDINARY_KEY = "household.extraordinary";
 /** The household's zumutbare Belastung as the estimate computes it (a reminder figure: the
  * receipts count only above it; nothing is subtracted). Nothing while it loads or fails. */
 function ZumutbareBelastung({ year }: { year: number }) {
+  const t = useT(questionnaireText);
+  const f = useFormat();
   const load = useCallback(() => loadEstimate(year), [year]);
   const estimate = useLoad(load);
   const threshold = estimate.data?.extraordinary_threshold;
   if (threshold == null) return null;
   return (
     <p className="notice notice-info fragen-threshold">
-      Ihre zumutbare Belastung {year}: <strong>{formatMoney(threshold)}</strong>. Nur Kosten darüber zählen; nach der
-      Gesamtschätzung (Einkünfte und Kinder des Jahres).
+      {t.thresholdBefore(year)}
+      <strong>{f.money(threshold)}</strong>
+      {t.thresholdAfter}
     </p>
   );
 }
@@ -1276,6 +1279,8 @@ function Summary({
   steps: Step[];
   onJump: (index: number) => void;
 }) {
+  const t = useT(questionnaireText);
+  const f = useFormat();
   const load = useCallback(() => loadEstimate(year), [year]);
   const estimate = useLoad(load);
   const { progress, reminders } = data.view;
@@ -1284,23 +1289,21 @@ function Summary({
   return (
     <div className="fragen-card stack">
       <div className="fragen-progress">
-        <progress max={progress.total} value={progress.answered} aria-label={`${progress.answered} von ${progress.total} beantwortet`} />
+        <progress max={progress.total} value={progress.answered} aria-label={t.answeredOf(progress.answered, progress.total)} />
       </div>
       <h2 className="fragen-question">
-        {open.length === 0 ? "Alle Fragen beantwortet" : `${open.length} ${open.length === 1 ? "Frage" : "Fragen"} noch offen`}
+        {open.length === 0 ? t.allAnswered : t.stillOpen(open.length)}
       </h2>
-      <p>
-        {progress.answered} von {progress.total} beantwortet.
-      </p>
+      <p>{t.answeredSentence(progress.answered, progress.total)}</p>
       {result ? (
         <p>
           {/^-?0+(\.0+)?$/.test(result)
-            ? "Voraussichtlich weder Erstattung noch Nachzahlung"
+            ? t.neither
             : result.startsWith("-")
-              ? "Voraussichtliche Erstattung"
-              : "Voraussichtliche Nachzahlung"}{" "}
-          <strong>{formatMoney(result.replace(/^-/, ""))}</strong>{" "}
-          <span className="badge">{estimate.data?.status === "certified" ? "laut Bescheinigungen" : "Schätzung"}</span>
+              ? t.refund
+              : t.backPayment}{" "}
+          <strong>{f.money(result.replace(/^-/, ""))}</strong>{" "}
+          <span className="badge">{estimate.data?.status === "certified" ? t.certified : t.estimate}</span>
         </p>
       ) : null}
       {open.length > 0 ? (
@@ -1316,7 +1319,7 @@ function Summary({
       ) : null}
       {reminders.length > 0 ? (
         <>
-          <h3>Von Hand in ELSTER</h3>
+          <h3>{t.byHand}</h3>
           <ul>
             {reminders.map((text) => (
               <li key={text}>{text}</li>
@@ -1326,11 +1329,11 @@ function Summary({
       ) : null}
       <div className="fragen-answers">
         <Link className="button-link" href={`/tax/${year}`}>
-          Zum Steuerjahr {year}
+          {t.toTaxYear(year)}
         </Link>
         {list.length > 0 ? (
           <button type="button" className="secondary" onClick={() => onJump(0)}>
-            Zur ersten Frage
+            {t.toFirst}
           </button>
         ) : null}
       </div>
