@@ -69,3 +69,27 @@ def test_every_todo_link_label_has_english():
     english = set(re.findall(r'^\s+"([^"]+)":', block, re.M))
     assert labels
     assert labels <= english, sorted(labels - english)
+
+
+_TOP_KEY = re.compile(r'^  "?(\w+)"?: ', re.M)
+
+
+def _top_keys(path: str, name: str) -> set[str]:
+    """The record's own keys (two spaces in), not the keys of the objects inside it."""
+    source = (FRONTEND / path).read_text("utf-8")
+    start = source.index(f"const {name}")
+    return set(_TOP_KEY.findall(source[start : source.index("\n};", start)]))
+
+
+def test_german_and_english_record_pairs_have_the_same_keys():
+    """A record pair behind localized() missing a key in English shows nothing there."""
+    pairs = [
+        ("i18n/returnInputs.ts", "KIND_TEXT"),
+        ("i18n/proposals.ts", "MOVEMENT_KIND"),
+        ("i18n/proposals.ts", "TAX_INPUT_TITLE"),
+        ("i18n/proposals.ts", "DERIVED_INPUT"),
+    ]
+    for path, name in pairs:
+        german = _top_keys(path, f"{name}_DE")
+        assert german, name
+        assert german == _top_keys(path, f"{name}_EN"), name
