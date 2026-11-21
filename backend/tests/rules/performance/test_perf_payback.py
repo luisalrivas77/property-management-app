@@ -120,7 +120,8 @@ def test_not_back_by_the_sale_year():
 def test_nothing_put_in_has_no_percent_and_no_break_even():
     """A loan above price and costs: paid_in −1,000.00. Nothing was put in to earn back, so
     there is no percent and no break-even year (not 2025, whose running sum −800.00 is merely
-    not below −1,000.00), and the totals over it have none either."""
+    not below −1,000.00), and the totals over it have none either. The screen reads the missing
+    percent as „no break-even line“, so its sale year never shows as „nicht zurück“."""
     got = rules.payback(_paid("-1000.00"), ACTUAL, [], 2027, _sold("300000.00", "0.00"), D("0"))
     assert got.percent is None
     assert got.break_even_year is None
@@ -130,8 +131,9 @@ def test_nothing_put_in_has_no_percent_and_no_break_even():
 def test_a_failed_projection_keeps_the_cash_back_and_the_sale():
     """The projection raised (a stale default scenario): no projected years, no sale year and
     no break-even year; the cash back (−500.00 of 1,000.00, −50.0 %) and the sale today stay.
-    The totals state no break-even year although the other property is back in 2026: without
-    the first one's projected years the sum cannot say when both are."""
+    The totals state no break-even year and no sale year although the other property is back
+    in 2026: without the first one's projected years the sum cannot say when both are back,
+    nor that they are not back by a year."""
     got = rules.payback(
         _paid("1000.00"),
         ACTUAL,
@@ -156,7 +158,7 @@ def test_a_failed_projection_keeps_the_cash_back_and_the_sale():
     )
     assert other.break_even_year == 2026
     total = rules.total([got, other])
-    assert (total.cash_back, total.break_even_year, total.sale_year) == (D("2500.00"), None, 2030)
+    assert (total.cash_back, total.break_even_year, total.sale_year) == (D("2500.00"), None, None)
 
 
 def test_the_sale_tax_is_flagged_only_when_a_taxable_gain_had_no_income():

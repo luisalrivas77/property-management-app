@@ -29569,7 +29569,7 @@
           "profit_today"
         ],
         "title": "PropertiesPayback",
-        "description": "GET /properties/payback: every property of the workspace (by label), and the totals over\nthose with a payback (reason None): paid_in, cash_back, percent (None when paid_in ≤ 0 or\nnone counts), profit_today, and break_even_year, the first year whose running sum over\nthose properties (each held at its last year after it) reaches their paid_in, None when\nnot by sale_year, the latest of their sale years, and None as well when one of them has\nno projection (projection_error_code). The years lists are the union."
+        "description": "GET /properties/payback: every property of the workspace (by label), and the totals over\nthose with a payback (reason None): paid_in, cash_back, percent (None when paid_in ≤ 0 or\nnone counts), profit_today, and break_even_year, the first year whose running sum over\nthose properties (each held at its last year after it) reaches their paid_in, None when\nnot by sale_year, the latest of their sale years; both None when one of them has no\nprojection (projection_error_code). The years lists are the union."
       },
       "Property": {
         "properties": {

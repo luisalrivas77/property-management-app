@@ -160,7 +160,7 @@ def total(properties: Sequence[PropertyPayback]) -> PropertiesPayback:
     """The totals over the properties with a payback (reason None). The break-even year runs
     over the union of their years: each property's running sum at its newest year up to y (0
     before its first, held after its sale year), summed, against Σ paid_in; None when Σ
-    paid_in ≤ 0 or when one of them has no projection."""
+    paid_in ≤ 0 or when one of them has no projection, and then no sale year either."""
     counted = [p for p in properties if p.reason is None and p.paid_in is not None]
     paid_in = cents(sum((p.paid_in for p in counted if p.paid_in is not None), ZERO))
     cash_back = cents(sum((p.cash_back or ZERO for p in counted), ZERO))
@@ -177,7 +177,9 @@ def total(properties: Sequence[PropertyPayback]) -> PropertiesPayback:
         if running >= paid_in:
             reached = year
             break
-    sale_years = [p.sale_year for p in counted if p.sale_year is not None]
+    # Without one property's projection the sum cannot say „not back by“ any year either.
+    complete = not any(p.projection_error_code for p in counted)
+    sale_years = [p.sale_year for p in counted if p.sale_year is not None and complete]
     return PropertiesPayback(
         properties=list(properties),
         paid_in=paid_in,
