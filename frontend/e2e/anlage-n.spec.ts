@@ -81,7 +81,7 @@ test("the Anlage N tab saves every kind of input, switches owner and shows the e
   await page.reload();
   await expect(page.getByRole("region", { name: "Pay", exact: true })).toContainText("from the expected gross pay");
   await expect(page.getByText("A draft to check, not tax advice.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Field sheet (PDF)" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Export", exact: true }).getByRole("button", { name: "Field sheet (PDF)" })).toBeVisible();
   await page.evaluate(() => window.localStorage.removeItem("hausbuch.locale"));
   await page.reload();
 
