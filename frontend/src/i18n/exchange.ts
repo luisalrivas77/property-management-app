@@ -20,7 +20,7 @@ const de = {
   notAnExport: "kein Export der Börse, als Dokument übernommen.",
   historyDone: (fileName: string, done: number) =>
     `Auszahlungsverlauf ${fileName}: ${done === 1 ? "1 Auszahlung ergänzt" : `${done} Auszahlungen ergänzt`} (Netzwerk und Transaktions-Hash).`,
-  historyOpen: (open: number, reason: string) =>
+  historyOpen: (open: number, reason: string | null) =>
     ` ${open === 1 ? "1 Auszahlung passt" : `${open} Auszahlungen passen`} zu keinem Eintrag: ${reason}`,
   alreadyRead: (fileName: string) =>
     `Bereits eingelesen: ${fileName}. Diese Datei wurde schon einmal hochgeladen; es wurde nichts hinzugefügt.`,
