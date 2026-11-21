@@ -28,7 +28,7 @@ import { useLoad } from "@/components/useLoad";
 import { useT, type Translation } from "@/i18n";
 import { common } from "@/i18n/common";
 import { inbox as messages } from "@/i18n/inbox";
-import { notifyInboxChanged } from "@/lib/inboxCount";
+import { notifyInboxChanged, resetInbox } from "@/lib/inboxCount";
 
 type T = Translation<(typeof messages)["de"]>;
 
@@ -127,6 +127,9 @@ function Inbox() {
   function onSaved(result: TransactionAllocations) {
     setSaved(result);
     close();
+    // Forget the menu's kept list at once: the page announces its new count only when its reload
+    // lands, which never happens if the person leaves first.
+    resetInbox();
     inbox.reload();
   }
 

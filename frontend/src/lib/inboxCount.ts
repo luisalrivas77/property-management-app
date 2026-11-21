@@ -6,10 +6,12 @@
 // The menu's count and Übersicht's Zu prüfen tile read the same list (21 Nov 2026): GET /inbox
 // is the API's most expensive read, and the tile's own fetch started only after the menu's had
 // finished, so fetchShared could not share them and one Übersicht load computed the list twice.
-// The menu's fetch now keeps its answer here; the tile takes it while it is younger than
-// INBOX_REUSE_MS (the age the menu itself refetches after on a route change), shares the menu's
-// fetch while it runs, and fetches on its own when neither exists or the menu's fetch failed.
-// Any INBOX_CHANGED forgets the kept list, so a changed inbox is always asked again.
+// The menu's fetch now keeps its answer here; the tile shares the menu's fetch while it runs,
+// else takes its answer while it is younger than TILE_REUSE_MS (the few seconds one page load
+// takes, so a list kept from before a change the app does not announce is not shown later), and
+// fetches on its own otherwise or when the menu's fetch failed. Any INBOX_CHANGED forgets the
+// kept list, and so does a new sign-in or a sign-out (resetInbox), so one session's list never
+// reaches the next.
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 
@@ -21,9 +23,13 @@ export const INBOX_CHANGED = "hausbuch:inbox-changed";
  * the menu refetches its count on a route change. */
 export const INBOX_REUSE_MS = 30_000;
 
+/** How old the menu's list may be for Übersicht's tile: long enough for one page load. */
+export const TILE_REUSE_MS = 5_000;
+
 let kept: { items: InboxItem[]; at: number } | null = null;
 let running: Promise<InboxItem[]> | null = null;
-let generation = 0; // bumped by every change; an answer from before a change is never kept
+let generation = 0; // bumped by every change; a request sent after it keeps its answer (a GET
+// shared in flight by fetchShared may still be the one sent before)
 
 /** GET /inbox, its answer kept for recentInbox. A slower, older request never replaces the
  * answer of a newer one. */
@@ -45,21 +51,23 @@ export function fetchInbox(): Promise<InboxItem[]> {
   return request;
 }
 
-/** The inbox list as the menu last read it when that is younger than maxAgeMs, else the menu's
- * running request (falling back to an own request when it fails), else a new request. */
-export function recentInbox(maxAgeMs: number = INBOX_REUSE_MS): Promise<InboxItem[]> {
-  if (kept && Date.now() - kept.at < maxAgeMs) return Promise.resolve(kept.items);
+/** The menu's running request (falling back to an own request when it fails), else the list as
+ * the menu last read it when that is younger than maxAgeMs, else a new request. */
+export function recentInbox(maxAgeMs: number = TILE_REUSE_MS): Promise<InboxItem[]> {
   if (running) return running.catch(() => fetchInbox());
+  if (kept && Date.now() - kept.at < maxAgeMs) return Promise.resolve(kept.items);
   return fetchInbox();
 }
 
-function forgetInbox(): void {
+/** Forgets the kept list and any running request without announcing a change: at a sign-in and
+ * a sign-out, so a list read for one session is never shown in the next. */
+export function resetInbox(): void {
   generation += 1;
   kept = null;
   running = null;
 }
 
 export function notifyInboxChanged(count?: number): void {
-  forgetInbox();
+  resetInbox();
   window.dispatchEvent(new CustomEvent(INBOX_CHANGED, { detail: count }));
 }

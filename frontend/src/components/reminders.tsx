@@ -17,6 +17,7 @@ import type { components } from "@/api/types";
 import { formatter, localized, translate, useFormat, useT } from "@/i18n";
 import { remindersText } from "@/i18n/reminders";
 import { ErrorNotice } from "@/lib/ErrorNotice";
+import { notifyInboxChanged } from "@/lib/inboxCount";
 
 import { todayIso } from "./format";
 import { reminderTodo } from "./todos";
@@ -148,6 +149,7 @@ export function ReminderDone({ reminder, onDone }: { reminder: Reminder; onDone:
           body: { action: "done" },
         }),
       );
+      notifyInboxChanged(); // a reminder is a Zu prüfen item too: the menu's count asks again
       onDone();
     } catch (caught) {
       setError(caught);

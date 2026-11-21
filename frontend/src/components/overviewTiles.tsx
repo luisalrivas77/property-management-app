@@ -57,7 +57,7 @@ export async function loadMonthCashflow(): Promise<MonthCashflow> {
 export const loadNetWorthToday = async (): Promise<NetWorth> => (await ok(api.GET("/api/net-worth/overview"))).today;
 export const loadHealthOnly = (): Promise<Health> => ok(api.GET("/api/health"));
 /** The list the menu's count last read (lib/inboxCount.ts), so one Übersicht load computes GET
- * /inbox once; at most INBOX_REUSE_MS old, the age the menu itself refetches after. */
+ * /inbox once; a kept list at most TILE_REUSE_MS old (lib/inboxCount.ts). */
 export const loadInbox = (): Promise<InboxItem[]> => recentInbox();
 /** The own money put into each property and its total, summed by the server (Luis, 21 Nov 2026). */
 export const loadPaidIn = (): Promise<PropertiesPaidIn> => ok(api.GET("/api/properties/equity"));
