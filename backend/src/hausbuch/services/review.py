@@ -72,6 +72,7 @@ from hausbuch.schemas.api import (
     DepositIbanOffer,
     InboxItem,
     InboxItemKind,
+    InboxLines,
     NameCategoryCount,
     RebookBlocker,
     RebookBlockReason,
@@ -92,7 +93,14 @@ from . import allocations, matching, rules_learned, transfers, workspace_setting
 from .context import CommandContext
 from .errors import NotFoundError, RuleViolationError
 from .proposals import PROPOSAL_BANK_FILE_NOT_READ, PROPOSAL_EXCHANGE_EXPORT_NOT_READ
-from .statements import _to_transaction, import_inbox_items, transaction_select
+from .statements import (
+    _to_transaction,
+    import_inbox_items,
+    imports_by_id,
+    list_possible_duplicates,
+    transaction_select,
+    transactions_by_id,
+)
 
 TRANSACTION_MISMATCH = "allocation.transaction_mismatch"
 IMPORT_NOT_RECONCILED = "allocation.import_not_reconciled"
@@ -847,6 +855,29 @@ def inbox(
         },
     )
     return result
+
+
+def inbox_lines(
+    conn: Connection,
+    today: date | None = None,
+    now: datetime | None = None,
+    settings: Settings | None = None,
+) -> InboxLines:
+    """Phase 10 §7.3 (5), GET /inbox/lines: the lines and statement imports Zu prüfen's cards
+    look up, from the same items GET /inbox lists (called with its arguments) and every
+    possible duplicate GET /possible-duplicates lists: each item's line and import, both lines
+    of each duplicate, and those lines' imports. An item's import that is no statement import
+    (an exchange's) is left out, as the accounts' imports never held it."""
+    items = inbox(conn, today=today, now=now, settings=settings)
+    pairs = list_possible_duplicates(conn)
+    pair_ids = {i for p in pairs for i in (p.transaction_id, p.other_transaction_id)}
+    lines = transactions_by_id(
+        conn, {item.transaction_id for item in items if item.transaction_id} | pair_ids
+    )
+    import_ids = {item.import_id for item in items if item.import_id} | {
+        line.import_id for line in lines if line.id in pair_ids
+    }
+    return InboxLines(transactions=lines, imports=imports_by_id(conn, import_ids))
 
 
 _TRANSFER_KINDS = (InboxItemKind.TRANSFER_LINK, InboxItemKind.TRANSFER_UNMATCHED)

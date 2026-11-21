@@ -20,7 +20,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .advice import AdviceMode
 from .allocation import Allocation, AllocationCategory, AllocationSet, MatchingRule
-from .bank import StatementFileImport, StatementFileOffer, Transaction
+from .bank import StatementFileImport, StatementFileOffer, StatementImport, Transaction
 from .common import (
     Area,
     Fraction,
@@ -758,6 +758,17 @@ class InboxItem(Schema):
     report_trades: int | None = None
     # the phase 7 wallet cards: wallet_change and wallet_question's movement group
     group_id: UUID | None = None
+
+
+class InboxLines(Schema):
+    """GET /inbox/lines (phase 10 §7.3 (5)): the bank lines and statement imports Zu prüfen's
+    cards look up, instead of every account's lines and imports. `transactions`: each inbox
+    item's line and both lines of every possible duplicate; `imports`: each item's statement
+    import and those duplicate lines' imports. Each serialised exactly as
+    GET /accounts/{id}/transactions and /imports serialise it."""
+
+    transactions: list[Transaction]
+    imports: list[StatementImport]
 
 
 class AiRetryResult(Schema):

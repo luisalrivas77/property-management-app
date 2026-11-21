@@ -2250,6 +2250,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inbox Lines Get
+         * @description Phase 10 §7.3 (5): the bank lines and statement imports the cards of GET /inbox look up
+         *     (each item's line and import, both lines of every possible duplicate and their imports),
+         *     serialised as /accounts/{id}/transactions and /imports serialise them, so Zu prüfen need
+         *     not load every account's lines.
+         */
+        get: operations["inbox_lines_get_api_inbox_lines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inbox/ai-retry": {
         parameters: {
             query?: never;
@@ -9117,6 +9140,20 @@ export interface components {
          * @enum {string}
          */
         InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "price_report_differs" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment" | "wallet_groups" | "wallet_change" | "wallet_question" | "wallet_sync" | "wallet_unreconciled" | "wallet_coins_left" | "app_secret_unreadable";
+        /**
+         * InboxLines
+         * @description GET /inbox/lines (phase 10 §7.3 (5)): the bank lines and statement imports Zu prüfen's
+         *     cards look up, instead of every account's lines and imports. `transactions`: each inbox
+         *     item's line and both lines of every possible duplicate; `imports`: each item's statement
+         *     import and those duplicate lines' imports. Each serialised exactly as
+         *     GET /accounts/{id}/transactions and /imports serialise it.
+         */
+        InboxLines: {
+            /** Transactions */
+            transactions: components["schemas"]["Transaction"][];
+            /** Imports */
+            imports: components["schemas"]["StatementImport"][];
+        };
         /** IncomeChange */
         IncomeChange: {
             /** Monthly Net */
@@ -20554,6 +20591,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InboxItem"][];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    inbox_lines_get_api_inbox_lines_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxLines"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
