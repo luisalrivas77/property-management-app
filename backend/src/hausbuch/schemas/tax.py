@@ -1323,6 +1323,21 @@ class Coverage(Schema):
     covered_through: date | None = None  # the earliest across the accounts
 
 
+class PurchaseSummary(Schema):
+    """GET /properties/{id}/purchase-summary (phase 10, mockup 25): the Nebenkosten's Summe and
+    the AfA line of the selected split, both from the facts the Anlage V draft reads, so they
+    cannot drift from it. acquisition_costs_total is Σ the cost rows the basis adds to the
+    price (rules.tax.afa.cost_rows_total), served with or without a split. afa is the draft's
+    wk.afa line for afa.tax_year: the property's last available year (today's, the purchase
+    year if later, the year ownership ended if earlier) or, without a rule set for it, the
+    latest earlier one that has one; None when no such year has a rule set. afa.basis None:
+    no split selected."""
+
+    acquisition_costs_total: NonNegativeMoney
+    acquisition_cost_count: int = Field(ge=0)
+    afa: AfaLine | None = None
+
+
 class AnlageVDraft(Schema):
     property_id: UUID
     tax_year: TaxYear

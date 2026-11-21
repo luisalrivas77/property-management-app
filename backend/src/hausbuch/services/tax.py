@@ -58,6 +58,7 @@ from hausbuch.rules.hand_fields import HAND_FIELD_MAP, hand_values
 from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.rules.matching import LOAN_WINDOW_DAYS
 from hausbuch.rules.tax import registry
+from hausbuch.rules.tax.afa import cost_rows_total
 from hausbuch.rules.tax.draft import draft
 from hausbuch.rules.tax.rounding import cents
 from hausbuch.schemas.allocation import AllocationCategory, ServicePeriod
@@ -81,6 +82,7 @@ from hausbuch.schemas.tax import (
     DraftFacts,
     OpenLines,
     PaymentProofFact,
+    PurchaseSummary,
     RuleSet,
     TaxInputFact,
     TaxLoan,
@@ -149,6 +151,34 @@ def anlage_v_sources(
         due_day={t.id: t.rent_due_day for t in tenancies},
         loans={lo.id: lo for lo in loans},
     ) + _private_proofs(conn, property_id)
+
+
+def purchase_summary(conn: Connection, property_id: UUID, *, today: date) -> PurchaseSummary:
+    """The property page's Nebenkosten Summe and AfA line (phase 10, mockup 25), from one set
+    of draft facts: the Summe is Σ the cost rows the AfA basis adds to the price, and the AfA
+    line is the Anlage V draft's own (draft(...).afa) for the property's last available year
+    that has a rule set, so both equal what GET /anlage-v serves for that year. NotFoundError
+    for an unknown property; afa None when no available year has a rule set (the Summe is
+    still served)."""
+    checklist, documents = checklist_facts(conn, property_id)  # 404 for an unknown one
+    years = checklist_rule.available_years(checklist, today)
+    with_rules = [y for y in years if y in registry.available_years()]
+    tax_year = with_rules[-1] if with_rules else years[-1]
+    facts = draft_facts(
+        conn,
+        property_id,
+        tax_year=tax_year,
+        today=today,
+        checklist=checklist,
+        documents=documents,
+        private_proofs=True,
+    )
+    afa = draft(facts, tax_year, registry.rule_set(tax_year)).afa if with_rules else None
+    return PurchaseSummary(
+        acquisition_costs_total=cost_rows_total(facts.cost_rows),
+        acquisition_cost_count=len(facts.cost_rows),
+        afa=afa,
+    )
 
 
 def _year_checked(

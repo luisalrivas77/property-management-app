@@ -1369,6 +1369,47 @@
         }
       }
     },
+    "/api/properties/{property_id}/purchase-summary": {
+      "get": {
+        "summary": "Property Purchase Summary",
+        "description": "The Nebenkosten's Summe (with the row count) and the AfA line of the selected split\n(phase 10, mockup 25), both from the facts the Anlage V draft reads (services.tax.\npurchase_summary); afa.basis is null without a selected split.",
+        "operationId": "property_purchase_summary_api_properties__property_id__purchase_summary_get",
+        "parameters": [
+          {
+            "name": "property_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Property Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseSummary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/properties/{property_id}/units": {
       "get": {
         "summary": "Property Units",
@@ -3158,6 +3199,47 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LoanSchedule"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/loans/{loan_id}/summary": {
+      "get": {
+        "summary": "Loan Summary Get",
+        "description": "Restschuld heute (today in Berlin; null before the payout) and the anfängliche Tilgung\n(phase 10, mockup 25). 409 like .../schedule for stored terms that never amortise.",
+        "operationId": "loan_summary_get_api_loans__loan_id__summary_get",
+        "parameters": [
+          {
+            "name": "loan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Loan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanSummary"
                 }
               }
             }
@@ -24973,6 +25055,48 @@
         ],
         "title": "LoanSchedule"
       },
+      "LoanSummary": {
+        "properties": {
+          "balance_today": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?[0-9]+(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance Today"
+          },
+          "balance_on": {
+            "type": "string",
+            "format": "date",
+            "title": "Balance On"
+          },
+          "initial_repayment_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]{1,6})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Repayment Rate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "balance_today",
+          "balance_on",
+          "initial_repayment_rate"
+        ],
+        "title": "LoanSummary",
+        "description": "GET /loans/{id}/summary (phase 10, mockup 25): the loan page's two figures the stored\nterms do not state. balance_today: what is owed on balance_on (today, Berlin time) by the\nschedule of the stored terms, rules.net_worth.loan_balance as the net worth reads it; None\nbefore the payout (balance_on < disbursed_on). initial_repayment_rate: the anfängliche\nTilgung, rules.loan_schedule.initial_repayment_rate; None outside a Rate's range."
+      },
       "LoanTerms": {
         "properties": {
           "principal": {
@@ -30085,6 +30209,38 @@
         "type": "object",
         "title": "PurchaseContractExtraction",
         "description": "Kaufvertrag (contract / purchase_contract)."
+      },
+      "PurchaseSummary": {
+        "properties": {
+          "acquisition_costs_total": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+            "title": "Acquisition Costs Total"
+          },
+          "acquisition_cost_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Acquisition Cost Count"
+          },
+          "afa": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AfaLine"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "acquisition_costs_total",
+          "acquisition_cost_count"
+        ],
+        "title": "PurchaseSummary",
+        "description": "GET /properties/{id}/purchase-summary (phase 10, mockup 25): the Nebenkosten's Summe and\nthe AfA line of the selected split, both from the facts the Anlage V draft reads, so they\ncannot drift from it. acquisition_costs_total is Σ the cost rows the basis adds to the\nprice (rules.tax.afa.cost_rows_total), served with or without a split. afa is the draft's\nwk.afa line for afa.tax_year: the property's last available year (today's, the purchase\nyear if later, the year ownership ended if earlier) or, without a rule set for it, the\nlatest earlier one that has one; None when no such year has a rule set. afa.basis None:\nno split selected."
       },
       "Question": {
         "properties": {

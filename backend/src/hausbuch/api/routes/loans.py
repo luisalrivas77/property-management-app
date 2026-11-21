@@ -1,13 +1,15 @@
 """Loans and their schedule.
 
-Endpoints: docs/phases/phase-1-step-3.md §4.6. A loan whose payment never amortises is
-refused when it is written (422 loan.payment_does_not_cover_interest with at_number), not
-first noticed on GET .../schedule: POST checks the submitted terms before the command, PATCH
-and the disbursement correction check the updated terms inside the command's transaction, so
-a refusal writes nothing. A stored loan that still fails (data from before the check) answers
-409 on GET .../schedule.
+Endpoints: docs/phases/phase-1-step-3.md §4.6 (GET .../summary: phase 10, mockup 25). A loan
+whose payment never amortises is refused when it is written (422
+loan.payment_does_not_cover_interest with at_number), not first noticed on GET .../schedule:
+POST checks the submitted terms before the command, PATCH and the disbursement correction
+check the updated terms inside the command's transaction, so a refusal writes nothing. A
+stored loan that still fails (data from before the check) answers 409 on GET .../schedule and
+GET .../summary.
 """
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -16,13 +18,15 @@ from hausbuch.rules.loan_schedule import build_schedule
 from hausbuch.schemas.api import DisbursementCorrection, ErrorKind, LoanCreateRequest, LoanPatch
 from hausbuch.schemas.document import Document
 from hausbuch.schemas.enums import EntityType, LinkTarget
-from hausbuch.schemas.loan import Loan, LoanSchedule, LoanTerms
+from hausbuch.schemas.loan import Loan, LoanSchedule, LoanSummary, LoanTerms
 from hausbuch.services.context import CommandContext
+from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.services.loans import (
     correct_disbursement,
     create_loan,
     get_loan,
     loan_schedule,
+    loan_summary,
     update_loan,
 )
 
@@ -72,19 +76,35 @@ def loan_correct_disbursement(loan_id: UUID, body: DisbursementCorrection, cmd: 
     return cmd.run(_correct_amortising, loan_id, new_date=body.new_date, principal=body.principal)
 
 
+def _schedule_conflict(exc: RuleError) -> ApiError:
+    """Stored terms that never amortise: a conflict with stored data (409)."""
+    return ApiError(
+        409,
+        ErrorKind.RULE_VIOLATION,
+        str(exc),
+        codes=[exc.code],
+        code=exc.code,
+        at_number=exc.at_number,
+    )
+
+
 @router.get("/loans/{loan_id}/schedule")
 def loan_schedule_get(loan_id: UUID, cmd: Cmd) -> LoanSchedule:
     try:
         return cmd.read(loan_schedule, loan_id)
-    except RuleError as exc:  # stored terms that never amortise: a conflict with stored data
-        raise ApiError(
-            409,
-            ErrorKind.RULE_VIOLATION,
-            str(exc),
-            codes=[exc.code],
-            code=exc.code,
-            at_number=exc.at_number,
-        ) from exc
+    except RuleError as exc:
+        raise _schedule_conflict(exc) from exc
+
+
+@router.get("/loans/{loan_id}/summary")
+def loan_summary_get(loan_id: UUID, cmd: Cmd) -> LoanSummary:
+    """Restschuld heute (today in Berlin; null before the payout) and the anfängliche Tilgung
+    (phase 10, mockup 25). 409 like .../schedule for stored terms that never amortise."""
+    today = datetime.now(LOCAL_TIME_ZONE).date()
+    try:
+        return cmd.read(loan_summary, loan_id, on=today)
+    except RuleError as exc:
+        raise _schedule_conflict(exc) from exc
 
 
 @router.get("/loans/{loan_id}/documents")
