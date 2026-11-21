@@ -27,6 +27,7 @@ from hausbuch.schemas.tax import (
 )
 
 from .rounding import cents
+from .tax_year import tax_year as year_number
 from .tax_year import tax_year_of
 
 ZERO = Decimal("0")
@@ -48,20 +49,29 @@ def nonzero(allocations: Iterable[AllocationFact]) -> list[AllocationFact]:
 def with_years(
     allocations: Iterable[AllocationFact], rule_set: RuleSet
 ) -> Iterator[tuple[AllocationFact, TaxYearResult]]:
-    """Each non-zero allocation with the tax year §5.1 gives it."""
+    """Each non-zero allocation with the tax year §5.1 gives it, rule and notes included."""
     for a in nonzero(allocations):
         yield a, tax_year_of(a, rule_set)
+
+
+def with_year_numbers(
+    allocations: Iterable[AllocationFact], rule_set: RuleSet
+) -> Iterator[tuple[AllocationFact, int]]:
+    """with_years for a rule that reads the year only: the same year, without building a
+    TaxYearResult per allocation (a draft asks this for every allocation once per rule)."""
+    for a in nonzero(allocations):
+        yield a, year_number(a, rule_set)
 
 
 def of_year(
     allocations: Iterable[AllocationFact], tax_year: int, rule_set: RuleSet
 ) -> list[AllocationFact]:
     """The non-zero allocations §5.1 counts in `tax_year`."""
-    return [a for a, r in with_years(allocations, rule_set) if r.year == tax_year]
+    return [a for a, year in with_year_numbers(allocations, rule_set) if year == tax_year]
 
 
 def year_of(allocation: AllocationFact, rule_set: RuleSet) -> int:
-    return tax_year_of(allocation, rule_set).year
+    return year_number(allocation, rule_set)
 
 
 def sources_of(allocation: AllocationFact) -> list[SourceRef]:

@@ -50,7 +50,7 @@ from ._common import (
     paid_bills,
     shared,
     warning,
-    with_years,
+    with_year_numbers,
 )
 from .afa import basis
 from .rounding import cents, money_str, one_decimal
@@ -75,8 +75,8 @@ def limit_status(facts: LimitFacts, tax_year: int, rule_set: RuleSet) -> LimitSt
     late: list = []  # (allocation, year) for the performance date check
     costs = sorted(
         (
-            (a, r.year)
-            for a, r in with_years(facts.allocations, rule_set)
+            (a, year)
+            for a, year in with_year_numbers(facts.allocations, rule_set)
             if a.category in CATEGORIES
         ),
         key=lambda x: (x[0].booking_date, str(x[0].allocation_id)),

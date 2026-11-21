@@ -10,9 +10,17 @@
 4. due_on is resolved by the service (loan schedule, tenancy.rent_due_day, the period's first
    day); the rule never guesses one. A candidate without it keeps the year paid, noted.
 5. A value date in another year than the booking date is noted; the year does not change.
+
+The answer depends on seven plain values only (booking date, value date, recurring, the service
+period's ends, due date, short_period_days), so it is memoised on them (_resolve): one draft
+asks for the same payment's year once per rule and per year it sums, and a projection runs a
+draft per projected year (a payback request ran this ~193,000 times, 21 Nov 2026). The cache
+holds immutable tuples only; tax_year_of builds a new result, with its own notes list, for each
+caller.
 """
 
 from datetime import date, timedelta
+from functools import lru_cache
 
 from hausbuch.schemas.tax import PaymentFacts, RuleSet, TaxYearNote, TaxYearResult
 
@@ -26,29 +34,67 @@ def short_period(year_end: int, days: int) -> tuple[date, date]:
     )
 
 
+def _economic_year(recurring: bool, start: date | None, end: date | None) -> int | None:
+    if not recurring or start is None or end is None or start.year != end.year:
+        return None
+    return start.year
+
+
 def economic_year(payment: PaymentFacts) -> int | None:
     """E: the one calendar year a recurring payment's service period lies in, else None."""
     period = payment.service_period
-    if not payment.recurring or period is None or period.start.year != period.end.year:
+    if period is None:
         return None
-    return period.start.year
+    return _economic_year(payment.recurring, period.start, period.end)
 
 
-def tax_year_of(payment: PaymentFacts, rule_set: RuleSet) -> TaxYearResult:
-    booked = payment.booking_date
+@lru_cache(maxsize=1 << 16)
+def _resolve(
+    booked: date,
+    value_date: date | None,
+    recurring: bool,
+    period_start: date | None,
+    period_end: date | None,
+    due_on: date | None,
+    short_period_days: int,
+) -> tuple[int, str, tuple[TaxYearNote, ...]]:
+    """Steps 1-5 on the values they read: (year, rule, notes)."""
     paid_year = booked.year
     notes: list[TaxYearNote] = []
-    if payment.value_date is not None and payment.value_date.year != paid_year:
+    if value_date is not None and value_date.year != paid_year:
         notes.append(TaxYearNote.YEAR_END_STRADDLE)
 
-    e = economic_year(payment)
+    e = _economic_year(recurring, period_start, period_end)
     if e is not None and abs(e - paid_year) == 1:
         # The year end between the year paid and E.
         year_end = min(e, paid_year)
-        start, end = short_period(year_end, rule_set.short_period_days)
+        start, end = short_period(year_end, short_period_days)
         if start <= booked <= end:
-            if payment.due_on is None:
+            if due_on is None:
                 notes.append(TaxYearNote.DUE_DATE_MISSING)
-            elif start <= payment.due_on <= end:
-                return TaxYearResult(year=e, rule="short_period_shift", notes=notes)
-    return TaxYearResult(year=paid_year, rule="paid", notes=notes)
+            elif start <= due_on <= end:
+                return e, "short_period_shift", tuple(notes)
+    return paid_year, "paid", tuple(notes)
+
+
+def _values(payment: PaymentFacts, rule_set: RuleSet) -> tuple:
+    period = payment.service_period
+    return (
+        payment.booking_date,
+        payment.value_date,
+        payment.recurring,
+        None if period is None else period.start,
+        None if period is None else period.end,
+        payment.due_on,
+        rule_set.short_period_days,
+    )
+
+
+def tax_year(payment: PaymentFacts, rule_set: RuleSet) -> int:
+    """tax_year_of(payment, rule_set).year, without building the result."""
+    return _resolve(*_values(payment, rule_set))[0]
+
+
+def tax_year_of(payment: PaymentFacts, rule_set: RuleSet) -> TaxYearResult:
+    year, rule, notes = _resolve(*_values(payment, rule_set))
+    return TaxYearResult(year=year, rule=rule, notes=list(notes))
