@@ -19,6 +19,8 @@ import type {
   MovementImportBody,
   MovementKind,
 } from "@/api/schemas";
+import { translate, useT } from "@/i18n";
+import { exchange as messages } from "@/i18n/exchange";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
 import { statementMediaType } from "./accounts";
@@ -109,7 +111,7 @@ function isExportFile(file: File): boolean {
 export function ExchangeExportUpload({
   accountId,
   provider,
-  label = "Export der Börse hochladen",
+  label,
   onImported,
 }: {
   accountId: string;
@@ -117,6 +119,7 @@ export function ExchangeExportUpload({
   label?: string;
   onImported: () => void;
 }) {
+  const t = useT(messages);
   const inputId = useId();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -168,7 +171,7 @@ export function ExchangeExportUpload({
           void upload(event.dataTransfer.files);
         }}
       >
-        <label htmlFor={inputId}>{busy ? "Liest ein …" : label}</label>
+        <label htmlFor={inputId}>{busy ? t.readingIn : (label ?? t.uploadExport)}</label>
         <input
           ref={input}
           id={inputId}
@@ -179,25 +182,16 @@ export function ExchangeExportUpload({
           onChange={(event: ChangeEvent<HTMLInputElement>) => void upload(event.target.files)}
         />
         {provider === "Binance" ? (
-          <p className="muted hint">
-            Binance: zuerst den Transaktionsverlauf („Transaction History“), danach den Auszahlungsverlauf („Withdrawal
-            History“), beide als CSV oder als die ZIP-Datei, in der Binance sie schickt. Den Spot-Handelsverlauf braucht Hausbuch
-            nicht. Hausbuch liest die Dateien selbst, ohne KI; die Nutzer-ID und die Zieladressen der Auszahlungen speichert es
-            nicht. Jedes andere Dokument kommt unter Dokumente, und die KI liest es. Datei hierher ziehen oder auswählen.
-          </p>
+          <p className="muted hint">{t.binanceHint}</p>
         ) : (
-          <p className="muted hint">
-            BISON: der Export der Transaktionen als CSV aus der App (Einstellungen, Steuern und Exporte). Hausbuch liest ihn
-            selbst, ohne KI. Jedes andere Dokument kommt unter Dokumente, und die KI liest es. Datei hierher ziehen oder
-            auswählen.
-          </p>
+          <p className="muted hint">{t.bisonHint}</p>
         )}
       </div>
       {results.map((result, index) => (
         <UploadResult key={index} result={result} />
       ))}
       {stored.map((result, index) => (
-        <StoredAsDocument key={index} result={result} what="kein Export der Börse, als Dokument übernommen." />
+        <StoredAsDocument key={index} result={result} what={t.notAnExport} />
       ))}
       <ErrorNotice error={error} />
     </div>
@@ -205,6 +199,7 @@ export function ExchangeExportUpload({
 }
 
 function UploadResult({ result }: { result: Uploaded }) {
+  const t = useT(messages);
   const { upload, existed, fileName } = result;
   const imp = upload.movement_import;
   if (!imp) {
@@ -213,10 +208,9 @@ function UploadResult({ result }: { result: Uploaded }) {
     return (
       <div className={`notice ${upload.withdrawals_open > 0 ? "notice-warn" : "notice-ok"}`} role="status">
         <p>
-          Auszahlungsverlauf {fileName}: {done === 1 ? "1 Auszahlung ergänzt" : `${done} Auszahlungen ergänzt`} (Netzwerk und
-          Transaktions-Hash).
+          {t.historyDone(fileName, done)}
           {upload.withdrawals_open > 0
-            ? ` ${upload.withdrawals_open === 1 ? "1 Auszahlung passt" : `${upload.withdrawals_open} Auszahlungen passen`} zu keinem Eintrag: ${ruleCodeText(upload.withdrawals_reason ?? HISTORY_NO_MATCH)}`
+            ? t.historyOpen(upload.withdrawals_open, ruleCodeText(upload.withdrawals_reason ?? HISTORY_NO_MATCH))
             : null}
         </p>
       </div>
@@ -225,17 +219,13 @@ function UploadResult({ result }: { result: Uploaded }) {
   if (existed) {
     return (
       <div className="notice notice-info" role="status">
-        <p>Bereits eingelesen: {fileName}. Diese Datei wurde schon einmal hochgeladen; es wurde nichts hinzugefügt.</p>
+        <p>{t.alreadyRead(fileName)}</p>
       </div>
     );
   }
-  const added = imp.rows_new === 1 ? "1 neue Bewegung" : `${imp.rows_new} neue Bewegungen`;
   return (
     <div className="notice notice-ok" role="status">
-      <p>
-        Eingelesen: {fileName} · {added}
-        {imp.rows_skipped > 0 ? `, ${imp.rows_skipped} schon vorhanden` : ""}. Als Nächstes unten „Bestand laut Börse eingeben“.
-      </p>
+      <p>{t.readIn(fileName, imp.rows_new, imp.rows_skipped)}</p>
     </div>
   );
 }
@@ -252,6 +242,7 @@ async function loadExchange(accountId: string): Promise<{ overview: ExchangeOver
 
 /** The exchange account's page below its facts. */
 export function ExchangeSection({ accountId }: { accountId: string }) {
+  const t = useT(messages);
   const load = useCallback(() => loadExchange(accountId), [accountId]);
   const state = useLoad(load);
   return (
@@ -260,11 +251,11 @@ export function ExchangeSection({ accountId }: { accountId: string }) {
         <div className="stack">
           <ExchangeTodos overview={overview} accountId={accountId} onChanged={state.reload} />
           <ExchangeExportUpload accountId={accountId} provider={overview.provider} onImported={state.reload} />
-          <h2>Bestand</h2>
+          <h2>{t.holdings}</h2>
           <PositionsTable overview={overview} />
-          <h2>Eingelesene Exporte</h2>
+          <h2>{t.imports}</h2>
           <ExchangeImportsTable imports={overview.imports ?? []} movements={movements} onChanged={state.reload} />
-          <h2>Bewegungen</h2>
+          <h2>{t.movements}</h2>
           <MovementsTable movements={movements} onChanged={state.reload} />
           <LearnedAddresses overview={overview} onChanged={state.reload} />
         </div>
@@ -275,6 +266,7 @@ export function ExchangeSection({ accountId }: { accountId: string }) {
 
 /** Every gap of the account as a to-do with its button (principle 7). */
 function ExchangeTodos({ overview, accountId, onChanged }: { overview: ExchangeOverview; accountId: string; onChanged: () => void }) {
+  const t = useT(messages);
   const historyMissing = (overview.todos ?? []).includes(HISTORY_MISSING);
   const historyNoMatch = (overview.todos ?? []).includes(HISTORY_NO_MATCH);
   const zoneUnknown = (overview.todos ?? []).includes(TIME_ZONE_UNKNOWN);
@@ -285,69 +277,54 @@ function ExchangeTodos({ overview, accountId, onChanged }: { overview: ExchangeO
       {zoneUnknown ? (
         <li className="todo-item">
           <p className="todo-title">
-            <strong>Transaktionsverlauf erneut hochladen</strong>
+            <strong>{t.reuploadTransactions}</strong>
           </p>
           <p className="todo-text">
-            {ruleCodeText(TIME_ZONE_UNKNOWN)} Bitte den Transaktionsverlauf noch einmal so hochladen, wie Binance ihn liefert (die
-            ZIP-Datei mit unverändertem Namen): Hausbuch liest die Zeitzone aus dem Dateinamen und verschiebt die schon eingelesenen
-            Zeiten, Verknüpfungen und Antworten bleiben erhalten.
+            {ruleCodeText(TIME_ZONE_UNKNOWN)}
+            {t.zoneUnknown}
           </p>
-          <ExchangeExportUpload accountId={accountId} provider={overview.provider} label="Transaktionsverlauf hochladen" onImported={onChanged} />
+          <ExchangeExportUpload accountId={accountId} provider={overview.provider} label={t.uploadTransactions} onImported={onChanged} />
         </li>
       ) : null}
       {historyMissing ? (
         <li className="todo-item">
           <p className="todo-title">
-            <strong>Auszahlungsverlauf hochladen</strong>
+            <strong>{t.uploadWithdrawals}</strong>
           </p>
           <p className="todo-text">
-            {overview.withdrawals_open === 1
-              ? "1 Auszahlung von Coins hat noch kein Netzwerk und keinen Transaktions-Hash."
-              : `${overview.withdrawals_open} Auszahlungen von Coins haben noch kein Netzwerk und keinen Transaktions-Hash.`}{" "}
-            Binance nennt beides nur im Auszahlungsverlauf („Withdrawal History“). Ohne ihn lässt sich später nicht zeigen, dass die
-            Coins auf eine eigene Wallet gingen und wann sie gekauft wurden.
+            {t.withdrawalsOpen(overview.withdrawals_open)} {t.historyWhy}
           </p>
-          <ExchangeExportUpload accountId={accountId} provider={overview.provider} label="Auszahlungsverlauf hochladen" onImported={onChanged} />
+          <ExchangeExportUpload accountId={accountId} provider={overview.provider} label={t.uploadWithdrawals} onImported={onChanged} />
         </li>
       ) : null}
       {historyNoMatch ? (
         <li className="todo-item">
           <p className="todo-title">
-            <strong>Auszahlung nicht im Auszahlungsverlauf gefunden</strong>
+            <strong>{t.withdrawalNotFound}</strong>
           </p>
           <p className="todo-text">
-            {overview.withdrawals_open === 1
-              ? "1 Auszahlung von Coins hat noch kein Netzwerk und keinen Transaktions-Hash."
-              : `${overview.withdrawals_open} Auszahlungen von Coins haben noch kein Netzwerk und keinen Transaktions-Hash.`}{" "}
-            {ruleCodeText(HISTORY_NO_MATCH)} Fehlt die Auszahlung im Verlauf (anderer Zeitraum, noch nicht abgeschlossen), bitte
-            einen Verlauf hochladen, der sie enthält.
+            {t.withdrawalsOpen(overview.withdrawals_open)} {ruleCodeText(HISTORY_NO_MATCH)}
+            {t.noMatchHint}
           </p>
-          <ExchangeExportUpload accountId={accountId} provider={overview.provider} label="Anderen Auszahlungsverlauf hochladen" onImported={onChanged} />
+          <ExchangeExportUpload accountId={accountId} provider={overview.provider} label={t.uploadOtherWithdrawals} onImported={onChanged} />
         </li>
       ) : null}
       {waiting.map((imp) => (
         <li key={imp.id} className="todo-item">
           <p className="todo-title">
-            <strong>Bestand laut Börse eingeben</strong> · Export bis {day(imp.last_at)}
+            <strong>{t.enterHoldings}</strong>
+            {t.exportUntil(day(imp.last_at))}
           </p>
-          <p className="todo-text">
-            Damit Hausbuch prüfen kann, dass der Export vollständig ist: je Coin den Bestand, den die Börse zum{" "}
-            {day(imp.last_at)} zeigt.
-          </p>
+          <p className="todo-text">{t.holdingsWhy(day(imp.last_at))}</p>
           <HoldingsDialog statementImport={imp} onDone={onChanged} buttonClass="" />
         </li>
       ))}
       {overview.movements_to_answer > 0 ? (
         <li className="todo-item">
           <p className="todo-title">
-            <strong>Bewegungen beantworten</strong>
+            <strong>{t.answerMovements}</strong>
           </p>
-          <p className="todo-text">
-            {overview.movements_to_answer === 1
-              ? "1 Bewegung wartet auf eine Antwort"
-              : `${overview.movements_to_answer} Bewegungen warten auf eine Antwort`}
-            : unten unter „Bewegungen“, oder für alle Auszahlungen eines Exports auf einmal unter „Eingelesene Exporte“.
-          </p>
+          <p className="todo-text">{t.toAnswer(overview.movements_to_answer)}</p>
         </li>
       ) : null}
     </ol>
@@ -355,9 +332,10 @@ function ExchangeTodos({ overview, accountId, onChanged }: { overview: ExchangeO
 }
 
 function reconciledPill(reconciled: boolean | null | undefined) {
-  if (reconciled === true) return <span className="badge">stimmt</span>;
-  if (reconciled === false) return <span className="badge badge-danger">weicht ab</span>;
-  return <span className="badge badge-warn">noch nicht eingegeben</span>;
+  const t = translate(messages);
+  if (reconciled === true) return <span className="badge">{t.agrees}</span>;
+  if (reconciled === false) return <span className="badge badge-danger">{t.differs}</span>;
+  return <span className="badge badge-warn">{t.notEntered}</span>;
 }
 
 /** D178 (6) as amended: a EUR balance that agrees only within the rounding of the EUR legs
@@ -366,20 +344,21 @@ function roundingText(reconciled: boolean | null | undefined, difference: string
   if (reconciled !== true || difference == null || /^-?0*\.?0*$/.test(difference)) return null;
   // Display only: the check itself is the backend's Decimal rule.
   const cents = Math.abs(Number(difference)) * 100;
-  return `innerhalb der Rundung (${cents < 1 ? "unter 1 Cent" : `${Math.round(cents)} Cent`})`;
+  return translate(messages).withinRounding(cents);
 }
 
 function PositionsTable({ overview }: { overview: ExchangeOverview }) {
-  if ((overview.positions ?? []).length === 0) return <p className="muted">Noch kein Export eingelesen.</p>;
+  const t = useT(messages);
+  if ((overview.positions ?? []).length === 0) return <p className="muted">{t.noExport}</p>;
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Coin</th>
-            <th className="num">Laut Export</th>
-            <th className="num">Laut Börse</th>
-            <th>Abgleich</th>
+            <th>{t.coin}</th>
+            <th className="num">{t.perExport}</th>
+            <th className="num">{t.perExchange}</th>
+            <th>{t.reconciliation}</th>
           </tr>
         </thead>
         <tbody>
@@ -392,12 +371,12 @@ function PositionsTable({ overview }: { overview: ExchangeOverview }) {
               <td className="num">
                 {formatUnits(position.units)}
                 {position.units.startsWith("-") ? (
-                  <p className="cell-detail">Weniger als null: ein Teil der Käufe fehlt im Export.</p>
+                  <p className="cell-detail">{t.belowZero}</p>
                 ) : null}
               </td>
               <td className="num">
                 {formatUnits(position.typed_units)}
-                {position.typed_as_of ? <p className="cell-detail">am {formatDate(position.typed_as_of)}</p> : null}
+                {position.typed_as_of ? <p className="cell-detail">{t.onDay(formatDate(position.typed_as_of))}</p> : null}
               </td>
               <td>
                 {reconciledPill(position.reconciled)}
@@ -430,15 +409,16 @@ function ExchangeImportsTable({
   movements: ExchangeMovementRow[];
   onChanged: () => void;
 }) {
-  if (imports.length === 0) return <p className="muted">Noch kein Export eingelesen.</p>;
+  const t = useT(messages);
+  if (imports.length === 0) return <p className="muted">{t.noExport}</p>;
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Zeitraum</th>
-            <th>Bewegungen</th>
-            <th>Status</th>
+            <th>{t.period}</th>
+            <th>{t.movements}</th>
+            <th>{t.status}</th>
             <th />
           </tr>
         </thead>
@@ -451,15 +431,15 @@ function ExchangeImportsTable({
               <tr key={imp.id}>
                 <td>
                   {importPeriod(imp)}
-                  <p className="cell-detail">eingelesen {formatDateTime(imp.created_at)}</p>
+                  <p className="cell-detail">{t.importedOn(formatDateTime(imp.created_at))}</p>
                 </td>
                 <td>
-                  {imp.rows_new === 1 ? "1 neue" : `${imp.rows_new} neue`}
-                  {imp.rows_skipped > 0 ? `, ${imp.rows_skipped} schon vorhanden` : ""}
+                  {t.newRows(imp.rows_new)}
+                  {imp.rows_skipped > 0 ? t.alreadyThere(imp.rows_skipped) : ""}
                 </td>
                 <td>
                   <span className={imp.status === "reconciled" ? "badge" : imp.status === "imported" ? "badge badge-warn" : "badge badge-danger"}>
-                    {imp.status === "imported" ? "Bestand fehlt" : IMPORT_STATUS[imp.status]}
+                    {imp.status === "imported" ? t.holdingsMissing : IMPORT_STATUS[imp.status]}
                   </span>
                   {rounded.map((balance) => (
                     <p key={balance.asset_id} className="cell-detail">
@@ -468,21 +448,19 @@ function ExchangeImportsTable({
                   ))}
                   {wrong.map((balance) => (
                     <p key={balance.asset_id} className="cell-detail">
-                      {balance.symbol}: laut Börse {formatUnits(balance.typed)}, laut Export {formatUnits(balance.held)}
+                      {balance.symbol}
+                      {t.typedVsHeld(formatUnits(balance.typed), formatUnits(balance.held))}
                     </p>
                   ))}
                   {wrong.length > 0 ? (
-                    <p className="cell-detail">
-                      Fehlt ein Teil des Exports, oder wurde ein Bestand falsch abgelesen? Einen vollständigen Export hochladen oder
-                      den Bestand neu eingeben; Hausbuch gleicht nie selbst aus.
-                    </p>
+                    <p className="cell-detail">{t.wrongHint}</p>
                   ) : null}
                 </td>
                 <td className="actions">
                   <HoldingsDialog
                     statementImport={imp}
                     onDone={onChanged}
-                    label={imp.status === "imported" ? "Bestand laut Börse eingeben" : "Bestand neu eingeben"}
+                    label={imp.status === "imported" ? t.enterHoldings : t.enterAgain}
                   />
                   {imp.id === latestImportId(imports)
                     ? wrong
@@ -493,7 +471,7 @@ function ExchangeImportsTable({
                             statementImport={imp}
                             balance={balance}
                             onDone={onChanged}
-                            label={wrong.length > 1 ? `${balance.symbol}: Differenz als Korrektur buchen` : undefined}
+                            label={wrong.length > 1 ? t.symbolCorrection(balance.symbol) : undefined}
                           />
                         ))
                     : null}
@@ -512,7 +490,7 @@ function ExchangeImportsTable({
 export function HoldingsDialog({
   statementImport,
   onDone,
-  label = "Bestand laut Börse eingeben",
+  label,
   buttonClass = "secondary",
 }: {
   statementImport: ExchangeImport;
@@ -520,8 +498,9 @@ export function HoldingsDialog({
   label?: string;
   buttonClass?: string;
 }) {
+  const t = useT(messages);
   return (
-    <ActionDialog label={label} title="Bestand laut Börse" buttonClass={buttonClass}>
+    <ActionDialog label={label ?? t.enterHoldings} title={t.holdingsTitle} buttonClass={buttonClass}>
       {(close) => (
         <HoldingsForm
           statementImport={statementImport}
@@ -542,6 +521,7 @@ const HOLDINGS_KEYS: readonly string[] = [];
 /** One field per coin the export holds or touched; POST /movement-imports/{id}/holdings. A
  * coin the export leaves at zero is pre-filled with 0; one typed before shows its value. */
 function HoldingsForm({ statementImport: imp, onDone }: { statementImport: ExchangeImport; onDone: () => void }) {
+  const t = useT(messages);
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       (imp.balances ?? []).map((balance) => [
@@ -561,7 +541,7 @@ function HoldingsForm({ statementImport: imp, onDone }: { statementImport: Excha
     for (const balance of imp.balances ?? []) {
       const raw = (values[balance.asset_id] ?? "").trim();
       if (raw === "") {
-        collected.messages[balance.asset_id] = [`Bitte den Bestand an ${balance.symbol} eingeben (0, wenn keiner).`];
+        collected.messages[balance.asset_id] = [t.enterHolding(balance.symbol)];
         continue;
       }
       const units = collected.take(balance.asset_id, toDecimalString(raw, 10));
@@ -587,17 +567,14 @@ function HoldingsForm({ statementImport: imp, onDone }: { statementImport: Excha
 
   return (
     <form className="stack" onSubmit={submit} noValidate>
-      <p className="muted">
-        Je Coin der Bestand, den die Börse nach der letzten Bewegung dieses Exports zeigt ({day(imp.last_at)}), wie in der App
-        oder auf der Website der Börse. Hausbuch vergleicht ihn mit dem, was die Bewegungen des Exports ergeben.
-      </p>
+      <p className="muted">{t.holdingsIntro(day(imp.last_at))}</p>
       {(imp.balances ?? []).map((balance) => (
         <Field
           key={balance.asset_id}
           id={`holding-${imp.id}-${balance.asset_id}`}
-          label={`${balance.symbol} laut Börse`}
-          hint={`Laut Export: ${formatUnits(balance.held)}`}
-          description="Die Stückzahl, nicht der Wert in Euro. Komma oder Punkt als Dezimalzeichen, z. B. 0,00009965."
+          label={t.symbolPerExchange(balance.symbol)}
+          hint={t.heldPerExport(formatUnits(balance.held))}
+          description={t.unitsHint}
           errors={form.of(balance.asset_id)}
         >
           <input
@@ -610,7 +587,7 @@ function HoldingsForm({ statementImport: imp, onDone }: { statementImport: Excha
         </Field>
       ))}
       <div className="row">
-        <Submit busy={busy}>Abgleichen</Submit>
+        <Submit busy={busy}>{t.reconcile}</Submit>
       </div>
       <FormBanner errors={form.errors} />
     </form>
@@ -636,7 +613,7 @@ export function CorrectionDialog({
   statementImport,
   balance,
   onDone,
-  label = "Differenz als Korrektur buchen",
+  label,
   buttonClass = "secondary",
 }: {
   statementImport: ExchangeImport;
@@ -645,8 +622,9 @@ export function CorrectionDialog({
   label?: string;
   buttonClass?: string;
 }) {
+  const t = useT(messages);
   return (
-    <ActionDialog label={label} title={`${balance.symbol}: Differenz als Korrektur buchen`} buttonClass={buttonClass}>
+    <ActionDialog label={label ?? t.bookCorrection} title={t.symbolCorrection(balance.symbol)} buttonClass={buttonClass}>
       {(close) => (
         <CorrectionForm
           statementImport={statementImport}
@@ -675,6 +653,7 @@ function CorrectionForm({
   balance: ImportBalance;
   onDone: () => void;
 }) {
+  const t = useT(messages);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const form = useFormErrors(CORRECTION_KEYS);
@@ -683,7 +662,7 @@ function CorrectionForm({
     event.preventDefault();
     event.stopPropagation();
     const text = reason.trim();
-    if (text.length < 3) return form.invalid({ reason: ["Bitte in ein paar Worten den Grund eintragen (mindestens 3 Zeichen)."] });
+    if (text.length < 3) return form.invalid({ reason: [t.reasonTooShort] });
     setBusy(true);
     form.clear();
     try {
@@ -705,29 +684,21 @@ function CorrectionForm({
   return (
     <form className="stack" onSubmit={submit} noValidate>
       <p>
-        <strong>{balance.symbol}</strong>: laut Börse {formatUnits(balance.typed)}, laut Export {formatUnits(balance.held)},
-        Differenz {difference} {balance.symbol}.
+        <strong>{balance.symbol}</strong>
+        {t.correctionFigures(formatUnits(balance.typed), formatUnits(balance.held), difference, balance.symbol)}
       </p>
-      <p className="muted">
-        Das passt, wenn im Export der Börse eine Bewegung fehlt, die die Börse selbst in keinem Export aufführt (zum Beispiel
-        eine kleine Gutschrift), und der Bestand richtig abgelesen ist. Fehlt dagegen ein Teil des Exports oder wurde der Bestand
-        falsch abgelesen, bitte den vollständigen Export hochladen oder den Bestand neu eingeben.
-      </p>
-      <p className="muted">
-        Hausbuch bucht die Differenz einmal als Korrektur von {difference} {balance.symbol} zum {day(imp.last_at)}, mit dem
-        Grund, den Sie hier eintragen. Sie steht danach unter „Bewegungen“ als „Korrektur (von Hand)“. Rückgängig machen lässt
-        sie sich nur durch eine Gegenkorrektur: den Bestand neu eingeben und die neue Differenz buchen.
-      </p>
+      <p className="muted">{t.correctionWhen}</p>
+      <p className="muted">{t.correctionHow(difference, balance.symbol, day(imp.last_at))}</p>
       <Field
         id={`correction-${imp.id}-${balance.asset_id}`}
-        label="Grund"
-        hint="z. B. Gutschrift fehlt im Export"
+        label={t.reason}
+        hint={t.reasonHint}
         errors={form.of("reason")}
       >
         <textarea rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} autoComplete="off" />
       </Field>
       <div className="row">
-        <Submit busy={busy}>Korrektur buchen</Submit>
+        <Submit busy={busy}>{t.bookCorrectionButton}</Submit>
       </div>
       <FormBanner errors={form.errors} />
     </form>
@@ -745,6 +716,7 @@ export function ExchangeUnreconciledActions({
   importId: string | null | undefined;
   onDone: () => void;
 }) {
+  const t = useT(messages);
   const load = useCallback(
     () => ok(api.GET("/api/accounts/{account_id}/exchange", { params: { path: { account_id: accountId } } })),
     [accountId],
@@ -758,7 +730,7 @@ export function ExchangeUnreconciledActions({
   return (
     <>
       {imp && only ? <CorrectionDialog statementImport={imp} balance={only} onDone={onDone} buttonClass="" /> : null}
-      <Link href={`/accounts/${accountId}`}>Export oder Bestand prüfen</Link>
+      <Link href={`/accounts/${accountId}`}>{t.checkExport}</Link>
     </>
   );
 }
@@ -766,6 +738,7 @@ export function ExchangeUnreconciledActions({
 /** „Alle Auszahlungen gingen an eigene Wallets“ (D178 (4)): every proposed withdrawal of one
  * import confirmed as a transfer to an own wallet. */
 export function ConfirmWithdrawals({ importId, count, onDone }: { importId: string; count?: number; onDone: () => void }) {
+  const t = useT(messages);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -786,12 +759,12 @@ export function ConfirmWithdrawals({ importId, count, onDone }: { importId: stri
     <>
       <button type="button" onClick={() => void confirm()} disabled={busy}>
         {busy
-          ? "Speichert …"
+          ? t.saving
           : count != null && count > 1
-            ? `Alle ${count} Auszahlungen gingen an eigene Wallets`
+            ? t.allWithdrawalsN(count)
             : count === 1
-              ? "Die Auszahlung ging an eine eigene Wallet"
-              : "Alle Auszahlungen gingen an eigene Wallets"}
+              ? t.oneWithdrawal
+              : t.allWithdrawals}
       </button>
       <ErrorNotice error={error} />
     </>
@@ -804,6 +777,7 @@ export function ConfirmWithdrawals({ importId, count, onDone }: { importId: stri
  * come from. A deposit answered „Übertrag von eigenem Konto“ waits on a transfer card in Zu
  * prüfen with its fitting send, whose pick carries the box „Adresse … merken“. */
 export function MovementAnswers({ movement, onDone }: { movement: ExchangeMovementRow; onDone: () => void }) {
+  const t = useT(messages);
   const [busy, setBusy] = useState<MovementKind | null>(null);
   const [error, setError] = useState<unknown>(null);
   if (movement.status !== "proposed") return null;
@@ -844,7 +818,7 @@ export function MovementAnswers({ movement, onDone }: { movement: ExchangeMoveme
             onClick={() => void answer(kind)}
             disabled={busy !== null}
           >
-            {busy === kind ? "Speichert …" : MOVEMENT_KIND[kind]}
+            {busy === kind ? t.saving : MOVEMENT_KIND[kind]}
           </button>
         ))}
       </div>
@@ -858,16 +832,13 @@ export function MovementAnswers({ movement, onDone }: { movement: ExchangeMoveme
  * Zu prüfen again, and what the app had learned is forgotten, so it does not link them again.
  * A correct link by hand (with its box) teaches it anew. */
 function ReleaseLearnedLink({ linkId, deposit, onDone }: { linkId: string; deposit: boolean; onDone: () => void }) {
+  const t = useT(messages);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const learned = deposit ? "die gemerkte Einzahlungsadresse" : "die gemerkte Wallet für Abhebungen";
+  const learned = deposit ? t.learnedDeposit : t.learnedWithdrawal;
 
   async function release() {
-    if (
-      !window.confirm(
-        `Diese automatische Verknüpfung lösen? Beide Seiten warten dann wieder in „Zu prüfen“, und ${learned} wird vergessen, damit die App sie nicht wieder verknüpft.`,
-      )
-    ) {
+    if (!window.confirm(t.releaseQuestion(learned))) {
       return;
     }
     setBusy(true);
@@ -883,9 +854,9 @@ function ReleaseLearnedLink({ linkId, deposit, onDone }: { linkId: string; depos
 
   return (
     <div className="stack">
-      <p className="cell-detail">Automatisch verknüpft (gemerkte Adresse)</p>
+      <p className="cell-detail">{t.linkedAutomatically}</p>
       <button type="button" className="secondary" onClick={() => void release()} disabled={busy}>
-        {busy ? "Löst …" : "Verknüpfung lösen"}
+        {busy ? t.releasing : t.release}
       </button>
       <ErrorNotice error={error} />
     </div>
@@ -893,17 +864,18 @@ function ReleaseLearnedLink({ linkId, deposit, onDone }: { linkId: string; depos
 }
 
 function MovementsTable({ movements, onChanged }: { movements: ExchangeMovementRow[]; onChanged: () => void }) {
-  if (movements.length === 0) return <p className="muted">Noch keine Bewegungen.</p>;
+  const t = useT(messages);
+  if (movements.length === 0) return <p className="muted">{t.noMovements}</p>;
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Datum</th>
-            <th>Art</th>
-            <th className="num">Menge</th>
-            <th className="num">Euro</th>
-            <th>Status</th>
+            <th>{t.date}</th>
+            <th>{t.kind}</th>
+            <th className="num">{t.quantity}</th>
+            <th className="num">{t.euro}</th>
+            <th>{t.status}</th>
           </tr>
         </thead>
         <tbody>
@@ -912,21 +884,19 @@ function MovementsTable({ movements, onChanged }: { movements: ExchangeMovementR
               <td>{formatDateTime(movement.occurred_at)}</td>
               <td>
                 {MOVEMENT_KIND[movement.kind]}
-                {movement.network ? <p className="cell-detail">Netzwerk {movement.network}</p> : null}
-                {movement.note ? <p className="cell-detail">Grund: {movement.note}</p> : null}
+                {movement.network ? <p className="cell-detail">{t.network(movement.network)}</p> : null}
+                {movement.note ? <p className="cell-detail">{t.noteReason(movement.note)}</p> : null}
               </td>
               <td className="num">
                 {formatUnits(movement.quantity)} {movement.symbol}
                 {movement.fee_quantity && !/^0*\.?0*$/.test(movement.fee_quantity) ? (
-                  <p className="cell-detail">
-                    Gebühr {formatUnits(movement.fee_quantity)} {movement.symbol}
-                  </p>
+                  <p className="cell-detail">{t.fee(formatUnits(movement.fee_quantity), movement.symbol)}</p>
                 ) : null}
               </td>
               <td className="num">{movement.eur_amount != null ? formatMoney(movement.eur_amount) : "–"}</td>
               <td>
                 {movement.status === "confirmed" ? (
-                  <span className="badge">bestätigt</span>
+                  <span className="badge">{t.confirmed}</span>
                 ) : (
                   <MovementAnswers movement={movement} onDone={onChanged} />
                 )}
@@ -949,22 +919,21 @@ type LearnedRow = NonNullable<ExchangeOverview["learned"]>[number];
  * wallet and its masked address. Forgetting stops the automatic links; the links already made
  * stay. Nothing shows while nothing is learned. */
 function LearnedAddresses({ overview, onChanged }: { overview: ExchangeOverview; onChanged: () => void }) {
+  const t = useT(messages);
   const rows = overview.learned ?? [];
   if (rows.length === 0) return null;
   return (
     <>
-      <h2>Gelernte Adressen</h2>
-      <p className="muted">
-        Überträge an diese Adressen und von hier an diese Wallets verknüpft die App selbst, wenn genau eine Bewegung passt.
-      </p>
+      <h2>{t.learnedAddresses}</h2>
+      <p className="muted">{t.learnedHint}</p>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Art</th>
-              <th>Netzwerk</th>
-              <th>Adresse</th>
-              <th>Seit</th>
+              <th>{t.kind}</th>
+              <th>{t.networkHeading}</th>
+              <th>{t.address}</th>
+              <th>{t.since}</th>
               <th />
             </tr>
           </thead>
@@ -980,6 +949,7 @@ function LearnedAddresses({ overview, onChanged }: { overview: ExchangeOverview;
 }
 
 function LearnedLine({ accountId, row, onChanged }: { accountId: string; row: LearnedRow; onChanged: () => void }) {
+  const t = useT(messages);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -1001,13 +971,13 @@ function LearnedLine({ accountId, row, onChanged }: { accountId: string; row: Le
 
   return (
     <tr>
-      <td>{row.kind === "deposit_address" ? "Einzahlungsadresse" : `Abhebungen an ${row.wallet_label ?? "eigene Wallet"}`}</td>
+      <td>{row.kind === "deposit_address" ? t.depositAddress : t.withdrawalsTo(row.wallet_label)}</td>
       <td>{CHAIN[row.chain as keyof typeof CHAIN] ?? row.chain}</td>
       <td>{row.address_masked}</td>
       <td>{formatDate(row.created_at)}</td>
       <td>
         <button type="button" className="secondary" onClick={() => void forget()} disabled={busy}>
-          {busy ? "Vergisst …" : "Vergessen"}
+          {busy ? t.forgetting : t.forget}
         </button>
         <ErrorNotice error={error} />
       </td>
