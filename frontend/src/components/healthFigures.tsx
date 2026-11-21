@@ -17,9 +17,12 @@ import { type FormEvent, type ReactNode, Suspense, useId, useState } from "react
 import { api, ok } from "@/api/client";
 import type { components } from "@/api/types";
 import { ApiError, ruleCodes } from "@/api/errors";
+import { type Translation, useT } from "@/i18n";
+import { common } from "@/i18n/common";
+import { healthFigures } from "@/i18n/healthFigures";
+import { netWorthText } from "@/i18n/netWorth";
 import { ErrorNotice } from "@/lib/ErrorNotice";
 
-import { formatDate, formatMonth } from "./format";
 import {
   type BandLimits,
   type BandProposal,
@@ -29,24 +32,18 @@ import {
   currentDefault,
   FIGURE_LABEL,
   FIGURES,
-  formatEuro,
   formatOneDecimal,
-  formatRatio,
-  formatSignedEuro,
   type Health,
   type HealthTodo,
   HIGHER_IS_BETTER,
   type HouseholdScenario,
   type Light,
   leversOf,
-  limitText,
   loadMemberNames,
   loadScenarioHistory,
-  longDate,
   type MarkedFigure,
   monthEnd,
   monthEndOf,
-  monthRange,
   type NetWorthPoint,
   REFERENCE_POINTS,
   saveDefaultScenario,
@@ -55,6 +52,8 @@ import {
 } from "./healthShared";
 import { Field } from "./form";
 import { percentInput } from "./input";
+import { snapshotOutcomeText } from "./netWorth";
+import { type PlanFormat, usePlanFormat } from "./planFormat";
 import { Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -63,6 +62,20 @@ import "./health.css";
 type Account = components["schemas"]["Account"];
 type SnapshotResult = components["schemas"]["SnapshotResult"];
 type EstimateSource = components["schemas"]["EstimateSource"];
+type HealthText = Translation<typeof healthFigures.de>;
+
+/** One decimal as phase 9 shows it: German exactly as formatOneDecimal („3,0“), English with a
+ * trailing „.0“ dropped. */
+function oneDecimal(p: PlanFormat, value: string | null | undefined): string {
+  return p.locale === "de" ? formatOneDecimal(value) : p.short(value);
+}
+
+/** A limit as shown: a ratio as a percent, the reserve's red as a percent of the target,
+ * Schulden zu Jahreseinkommen as a multiple (German exactly as healthShared's limitText). */
+function limitShown(p: PlanFormat, t: HealthText, figure: MarkedFigure, value: string | null | undefined): string {
+  if (value == null) return "–";
+  return figure === "debt_to_income" ? t.times(oneDecimal(p, value)) : p.ratio(value);
+}
 
 interface HealthData {
   health: Health;
@@ -119,6 +132,7 @@ function HealthFigures({ data, onChanged }: { data: HealthData; onChanged: () =>
   const showCard = !confirmed || editing;
   // The bands' own to-do is the card itself on this page.
   const otherTodos = todos.filter((todo) => todo.code !== "bands_unconfirmed");
+  const t = useT(healthFigures);
   return (
     <>
       <ReserveCard data={data} onChanged={onChanged} />
@@ -136,10 +150,10 @@ function HealthFigures({ data, onChanged }: { data: HealthData; onChanged: () =>
         />
       ) : (
         <div className="notice notice-info row health-confirmed" role="note">
-          <p>Eure Ampel-Grenzen sind übernommen. Jede Farbe misst eine Kennzahl an eurer eigenen Grenze, nicht an einer Regel von außen.</p>
+          <p>{t.bandsConfirmed}</p>
           <span className="spacer" />
           <button type="button" className="link" onClick={() => setEditing(true)}>
-            Grenzen ändern
+            {t.changeLimits}
           </button>
         </div>
       )}
@@ -190,18 +204,13 @@ export function HealthTodoList({ todos, onChanged }: { todos: HealthTodo[]; onCh
   );
 }
 
-const SNAPSHOT_TEXT: Record<SnapshotResult["outcome"], (day: string) => string> = {
-  written: (day) => `Monatsabschluss zum ${formatDate(day)} festgehalten.`,
-  recaptured: (day) => `Monatsabschluss zum ${formatDate(day)} neu festgehalten: die Zahlen hatten sich seitdem geändert.`,
-  unchanged: (day) => `Der Monatsabschluss zum ${formatDate(day)} ist schon mit genau diesen Zahlen festgehalten.`,
-  empty: () => "Nichts festzuhalten: noch kein Konto, keine Anlage und keine Immobilie mit einem Wert.",
-};
-
 /** „Monatsabschluss festhalten“ for a past month-end (POST /net-worth/snapshots {as_of}, D241). */
 export function MonthEndButton({ day, label, onDone }: { day: string; label: string; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<SnapshotResult | null>(null);
+  const tn = useT(netWorthText);
+  const p = usePlanFormat();
   async function capture() {
     setBusy(true);
     setError(null);
@@ -219,7 +228,7 @@ export function MonthEndButton({ day, label, onDone }: { day: string; label: str
       <button type="button" className="secondary" disabled={busy} onClick={() => void capture()}>
         {label}
       </button>
-      {result ? <span role="status">{SNAPSHOT_TEXT[result.outcome](result.as_of)}</span> : null}
+      {result ? <span role="status">{snapshotOutcomeText(tn, result.outcome, p.date(result.as_of))}</span> : null}
       {error != null ? <ErrorNotice error={error} /> : null}
     </span>
   );
@@ -227,14 +236,15 @@ export function MonthEndButton({ day, label, onDone }: { day: string; label: str
 
 /** The card a month-end to-do of Planung opens (`/?month_end=YYYY-MM-DD`). */
 function MonthEndCard({ day, onDone }: { day: string; onDone: () => void }) {
+  const t = useT(healthFigures);
+  const tn = useT(netWorthText);
+  const p = usePlanFormat();
   return (
     <section className="card stack notice-info" aria-labelledby="month-end-title">
-      <h2 id="month-end-title">Monatsabschluss zum {longDate(day)}</h2>
+      <h2 id="month-end-title">{t.monthEndTitle(p.longDate(day))}</h2>
+      <p>{t.monthEndMissing}</p>
       <p>
-        Für diesen Tag ist noch kein Monatsabschluss gespeichert. Hausbuch hält ihn am nächsten Morgen selbst fest; mit dem Knopf sofort.
-      </p>
-      <p>
-        <MonthEndButton day={day} label="Monatsabschluss festhalten" onDone={onDone} />
+        <MonthEndButton day={day} label={tn.captureMonthEnd} onDone={onDone} />
       </p>
     </section>
   );
@@ -249,18 +259,26 @@ function MarkPill({ light }: { light: Light | undefined }) {
 
 /** „eigene Grenze: rot unter 0,0 %, keine Grenze für Grün“ beside a marked figure. */
 function LimitLine({ figure, light, target }: { figure: MarkedFigure; light: Light | undefined; target?: string }) {
+  const t = useT(healthFigures);
+  const p = usePlanFormat();
   if (!light?.colour) return null;
   const higher = HIGHER_IS_BETTER[figure];
   if (figure === "reserve") {
-    return (
-      <p className="muted">
-        eigene Grenze: grün ab eurem Ziel{target ? ` von ${formatEuro(target)}` : ""}, rot unter {limitText(figure, light.red)} des Ziels
-      </p>
-    );
+    return <p className="muted">{t.reserveLimit(target ? p.euro(target) : null, limitShown(p, t, figure, light.red))}</p>;
   }
-  const red = light.red != null ? `rot ${higher ? "unter" : "über"} ${limitText(figure, light.red)}` : "keine Grenze für Rot";
-  const green = light.green != null ? `grün ${higher ? "ab" : "bis"} ${limitText(figure, light.green)}` : "keine Grenze für Grün";
-  return <p className="muted">eigene Grenze: {higher ? `${red}, ${green}` : `${green}, ${red}`}</p>;
+  const red =
+    light.red != null
+      ? higher
+        ? t.redBelow(limitShown(p, t, figure, light.red))
+        : t.redAbove(limitShown(p, t, figure, light.red))
+      : t.noRed;
+  const green =
+    light.green != null
+      ? higher
+        ? t.greenFrom(limitShown(p, t, figure, light.green))
+        : t.greenUpTo(limitShown(p, t, figure, light.green))
+      : t.noGreen;
+  return <p className="muted">{t.ownLimitLine(higher ? `${red}, ${green}` : `${green}, ${red}`)}</p>;
 }
 
 function Texts({ light }: { light: Light | undefined }) {
@@ -277,61 +295,61 @@ function Texts({ light }: { light: Light | undefined }) {
 
 // --- Liquiditätsreserve -------------------------------------------------------------------
 
-const RESERVE_ORIGIN: Record<components["schemas"]["ReserveOrigin"], string> = {
-  default: "zählt zur Reserve",
-  added: "von euch hinzugefügt",
-  removed: "von euch herausgenommen",
-};
+function reserveOrigin(t: HealthText, origin: components["schemas"]["ReserveOrigin"]): string {
+  switch (origin) {
+    case "default":
+      return t.originDefault;
+    case "added":
+      return t.originAdded;
+    case "removed":
+      return t.originRemoved;
+  }
+}
 
 function ReserveCard({ data, onChanged }: { data: HealthData; onChanged: () => void }) {
   const reserve = data.health.reserve;
   const light = data.health.marks?.reserve;
+  const t = useT(healthFigures);
+  const p = usePlanFormat();
   return (
     <section className="card stack" aria-labelledby="reserve-title">
-      <h2 id="reserve-title">Liquiditätsreserve</h2>
+      <h2 id="reserve-title">{FIGURE_LABEL.reserve}</h2>
       {reserve ? (
         <>
           <p className="cashflow-value">
-            {formatEuro(reserve.amount)} <MarkPill light={light} />
+            {p.euro(reserve.amount)} <MarkPill light={light} />
           </p>
           <p className="muted">
-            {reserve.months != null
-              ? `reicht für ${formatOneDecimal(reserve.months)} Monate eures Bedarfs von ${formatEuro(reserve.need)} im Monat`
-              : "Ohne Bedarf im Monat lässt sich die Reserve nicht in Monaten angeben."}
+            {reserve.months != null ? t.reserveMonths(oneDecimal(p, reserve.months), p.euro(reserve.need)) : t.reserveNoNeed}
           </p>
           <p className="muted">
-            eigenes Ziel: {formatEuro(reserve.target)} = {formatOneDecimal(reserve.target_months).replace(/,0$/, "")} Monate ·{" "}
-            <Link href="/planning?tab=haushalt">ändern</Link>
+            {t.ownTarget(p.euro(reserve.target), p.short(reserve.target_months))}{" "}
+            <Link href="/planning?tab=haushalt">{t.change}</Link>
           </p>
           <LimitLine figure="reserve" light={light} target={reserve.target} />
           <Texts light={light} />
           <details className="health-sources">
-            <summary>Woraus die Reserve besteht</summary>
+            <summary>{t.reserveSources}</summary>
             <ul className="household-rows">
               {(reserve.accounts ?? []).map((row) => (
                 <li key={row.account_id}>
                   <span>
-                    <Link href={`/accounts/${row.account_id}`}>{data.accounts.get(row.account_id)?.label ?? "Konto"}</Link>{" "}
-                    <span className="muted">
-                      {RESERVE_ORIGIN[row.origin]} · Stand {formatDate(row.as_of)}
-                    </span>
+                    <Link href={`/accounts/${row.account_id}`}>{data.accounts.get(row.account_id)?.label ?? t.account}</Link>{" "}
+                    <span className="muted">{t.originAsOf(reserveOrigin(t, row.origin), p.date(row.as_of))}</span>
                   </span>
-                  <span>{formatEuro(row.balance)}</span>
+                  <span>{p.euro(row.balance)}</span>
                 </li>
               ))}
             </ul>
             <p className="muted">
-              Der Bedarf ist der Schnitt der regelmäßigen Ausgaben plus das, was die Wohnung im Monat nicht selbst trägt, aus den
-              abgeschlossenen Monaten {monthRange(data.health.window.months ?? [])}.{" "}
-              <Link href="/planning?tab=haushalt">Konten der Reserve ändern</Link>
+              {t.needExplained(p.monthRange(data.health.window.months ?? []))}{" "}
+              <Link href="/planning?tab=haushalt">{t.changeReserveAccounts}</Link>
             </p>
           </details>
           <HealthTodoList todos={reserve.todos ?? []} onChanged={onChanged} />
         </>
       ) : (
-        <p className="muted">
-          Die Reserve erscheint, sobald drei Monate in Folge abgeschlossen sind; was dafür fehlt, steht unter „Kennzahlen“.
-        </p>
+        <p className="muted">{t.reserveLater}</p>
       )}
     </section>
   );
@@ -372,15 +390,21 @@ function draftsFrom(bands: BandLimits[], proposals: BandProposal[]): Record<Mark
   return out;
 }
 
-const FIGURE_INTRO: Record<MarkedFigure, string> = {
-  reserve: "",
-  savings_rate:
-    "Rot, wenn ihr mehr ausgegeben als eingenommen habt. Eine Grenze für Grün schlägt Hausbuch nicht vor; ihr könnt eine eintragen.",
-  ltv: "Wie viel die Kredite der Wohnung von ihrem Wert ausmachen.",
-  debt_service_ratio: "Welcher Teil eures Einkommens für Zins und Tilgung an die Bank geht.",
-  debt_ratio: "Hausbuch schlägt keine Grenze vor; ohne eure Zahl bleibt diese Kennzahl ohne Farbe.",
-  debt_to_income: "Hausbuch schlägt keine Grenze vor; ohne eure Zahl bleibt diese Kennzahl ohne Farbe.",
-};
+function figureIntro(t: HealthText, figure: MarkedFigure): string {
+  switch (figure) {
+    case "reserve":
+      return "";
+    case "savings_rate":
+      return t.introSavingsRate;
+    case "ltv":
+      return t.introLtv;
+    case "debt_service_ratio":
+      return t.introDebtService;
+    case "debt_ratio":
+    case "debt_to_income":
+      return t.introNoProposal;
+  }
+}
 
 /** A refusal of the default scenario the limits are saved in (`household_scenario.*`, PR #434
  * review D): the fix is on Planung › Haushalt, where the scenario's other levers are. */
@@ -411,6 +435,9 @@ function BandsCard({
   const initial = draftsFrom(current?.levers?.bands ?? [], proposals);
   const target = health.reserve?.target ?? null;
   const targetMonths = current?.levers?.reserve_target_months ?? health.reserve?.target_months ?? "6";
+  const t = useT(healthFigures);
+  const c = useT(common);
+  const p = usePlanFormat();
 
   function set(figure: MarkedFigure, side: keyof LimitDraft, value: string) {
     setDrafts((previous) => ({ ...previous, [figure]: { ...previous[figure], [side]: value } }));
@@ -446,20 +473,20 @@ function BandsCard({
 
   function originText(figure: MarkedFigure): string {
     const draft = drafts[figure];
-    if (draft.green.trim() === "" && draft.red.trim() === "") return "noch keine Grenze";
+    if (draft.green.trim() === "" && draft.red.trim() === "") return t.noLimitYet;
     const proposal = proposals.find((p) => p.figure === figure);
     const same = draft.green === initial[figure].green && draft.red === initial[figure].red;
     if (!confirmed && proposal && same) {
       const source = proposal.red?.origin === "source" || proposal.green?.origin === "source";
-      return source ? "Grenze aus einer Quelle, Vorschlag von Hausbuch" : "eigene Grenze, Vorschlag von Hausbuch";
+      return source ? t.sourceSuggested : t.ownSuggested;
     }
-    return "eigene Grenze";
+    return t.ownLimit;
   }
 
   function field(figure: MarkedFigure, side: keyof LimitDraft, label: string, unit: string, hint?: string) {
     const message = messages[`${figure}.${side}`];
     return (
-      <Field id={`${ids}-${figure}-${side}`} label={`${label} (${unit})`} hint={hint} errors={message ? [message] : []}>
+      <Field id={`${ids}-${figure}-${side}`} label={t.fieldLabel(label, unit)} hint={hint} errors={message ? [message] : []}>
         <input
           type="text"
           inputMode="decimal"
@@ -473,39 +500,37 @@ function BandsCard({
 
   const reserveRed = parseLimit("reserve", drafts.reserve.red);
   const reserveRedEuro =
-    target && reserveRed.ok && reserveRed.value !== null ? formatEuro(multiply(target, reserveRed.value)) : null;
+    target && reserveRed.ok && reserveRed.value !== null ? p.euro(multiply(target, reserveRed.value)) : null;
 
   return (
     <section className="card stack" id="ampel-grenzen" aria-labelledby={`${ids}-title`}>
-      <h2 id={`${ids}-title`}>{confirmed ? "Ampel-Grenzen ändern" : "Ampel-Grenzen festlegen"}</h2>
-      <p>
-        Grün, Gelb und Rot zeigt die App erst, wenn ihr eure eigenen Grenzen übernommen habt. Bis dahin hat keine Kennzahl eine Farbe.
-        Hausbuch schlägt die Werte unten vor; jeder lässt sich ändern oder leeren.
-      </p>
-      <form className="stack" onSubmit={(event) => void submit(event)} aria-label="Ampel-Grenzen">
+      <h2 id={`${ids}-title`}>{confirmed ? t.bandsChange : t.bandsSet}</h2>
+      <p>{t.bandsIntro}</p>
+      <form className="stack" onSubmit={(event) => void submit(event)} aria-label={t.bandsForm}>
         {FIGURES.map((figure) => (
           <fieldset key={figure} className="health-limit">
             <legend>{FIGURE_LABEL[figure]}</legend>
             {figure === "reserve" ? (
               <p className="muted">
-                Grün ab eurem eigenen Reserveziel von {formatOneDecimal(targetMonths).replace(/,0$/, "")} Monaten
-                {target ? ` (${formatEuro(target)})` : ""}, das ihr unter <Link href="/planning?tab=haushalt">Planung</Link> einstellt.
+                {t.reserveGreenBefore(p.short(targetMonths), target ? p.euro(target) : null)}
+                <Link href="/planning?tab=haushalt">{t.planning}</Link>
+                {t.reserveGreenAfter}
               </p>
             ) : (
-              <p className="muted">{FIGURE_INTRO[figure]}</p>
+              <p className="muted">{figureIntro(t, figure)}</p>
             )}
             <div className="health-limit-fields">
               {figure === "reserve" ? (
-                field("reserve", "red", "Rot unter", "% des Ziels", reserveRedEuro ? `= ${reserveRedEuro}` : undefined)
+                field("reserve", "red", t.redBelowLabel, t.unitOfTarget, reserveRedEuro ? `= ${reserveRedEuro}` : undefined)
               ) : HIGHER_IS_BETTER[figure] ? (
                 <>
-                  {field(figure, "red", "Rot unter", "%")}
-                  {field(figure, "green", "Grün ab", "%", drafts[figure].green.trim() === "" ? "leer: ohne Grün" : undefined)}
+                  {field(figure, "red", t.redBelowLabel, t.unitPercent)}
+                  {field(figure, "green", t.greenFromLabel, t.unitPercent, drafts[figure].green.trim() === "" ? t.emptyNoGreen : undefined)}
                 </>
               ) : (
                 <>
-                  {field(figure, "green", "Grün bis", figure === "debt_to_income" ? "fach" : "%")}
-                  {field(figure, "red", "Rot über", figure === "debt_to_income" ? "fach" : "%")}
+                  {field(figure, "green", t.greenUpToLabel, figure === "debt_to_income" ? t.unitTimes : t.unitPercent)}
+                  {field(figure, "red", t.redAboveLabel, figure === "debt_to_income" ? t.unitTimes : t.unitPercent)}
                 </>
               )}
             </div>
@@ -513,7 +538,7 @@ function BandsCard({
               <span className="badge badge-muted">{originText(figure)}</span>
             </p>
             <div className="health-reference">
-              <p className="health-reference-title">Bezugspunkt</p>
+              <p className="health-reference-title">{t.reference}</p>
               {REFERENCE_POINTS[figure].map((text) => (
                 <p key={text} className="muted">
                   {text}
@@ -525,21 +550,21 @@ function BandsCard({
         {error != null ? <ErrorNotice error={error} /> : null}
         {scenarioRefused(error) ? (
           <p className="muted" role="note">
-            Die Grenzen werden im Standard-Szenario gespeichert, und dessen Annahmen lassen sich so gerade nicht speichern. Bitte das
-            Szenario unter <Link href="/planning?tab=haushalt">Planung › Haushalt</Link> prüfen und dort speichern; danach lassen sich
-            die Grenzen hier übernehmen.
+            {t.scenarioRefusedBefore}
+            <Link href="/planning?tab=haushalt">{t.planningHousehold}</Link>
+            {t.scenarioRefusedAfter}
           </p>
         ) : null}
         <div className="row">
           <button type="submit" disabled={busy}>
-            Übernehmen
+            {c.apply}
           </button>
           {onCancel ? (
             <button type="button" className="secondary" disabled={busy} onClick={onCancel}>
-              Abbrechen
+              {c.cancel}
             </button>
           ) : null}
-          <span className="muted">Gespeichert in eurem Szenario; ändern könnt ihr sie jederzeit mit „Grenzen ändern“.</span>
+          <span className="muted">{t.savedIn}</span>
         </div>
       </form>
     </section>
@@ -567,12 +592,20 @@ function multiply(a: string, b: string): string {
 
 // --- Kennzahlen -------------------------------------------------------------------------
 
-const SPLIT_LABEL: Record<string, string> = {
-  property: "Immobilien",
-  depot: "Fonds und Wertpapiere",
-  bank: "Bankguthaben",
-  crypto: "Krypto",
-};
+function splitLabel(t: HealthText, key: string): string {
+  switch (key) {
+    case "property":
+      return t.splitProperty;
+    case "depot":
+      return t.splitDepot;
+    case "bank":
+      return t.splitBank;
+    case "crypto":
+      return t.splitCrypto;
+    default:
+      return key;
+  }
+}
 
 function FiguresCard({
   data,
@@ -590,9 +623,11 @@ function FiguresCard({
   onEditBands: () => void;
 }) {
   const { health } = data;
+  const t = useT(healthFigures);
+  const p = usePlanFormat();
   const marks = health.marks ?? {};
   const months = health.window.months ?? [];
-  const range = monthRange(months);
+  const range = p.monthRange(months);
   const newest = months[months.length - 1];
   const by = current && confirmed ? bandsConfirmedBy(data.scenarios, current) : null;
   const rate = health.savings_rate;
@@ -603,191 +638,184 @@ function FiguresCard({
   );
   const gap = (figure: components["schemas"]["DebtFigure"]) => debt?.gaps?.find((g) => g.figure === figure)?.reason ?? null;
   const split = Object.entries(health.split ?? {}).sort(([, a], [, b]) => Number(b) - Number(a));
-  const annualised = debt && debt.months < 12 ? `; hochgerechnet aus ${debt.months} Monaten` : "";
+  const annualised = debt && debt.months < 12 ? t.annualised(debt.months) : "";
 
   return (
     <section className="card stack" aria-labelledby="figures-title">
       <div className="planning-card-head">
-        <h2 id="figures-title">Kennzahlen</h2>
+        <h2 id="figures-title">{t.figuresTitle}</h2>
         <span className="spacer" />
         {confirmed ? (
           <button type="button" className="link" onClick={onEditBands}>
-            Grenzen ändern
+            {t.changeLimits}
           </button>
         ) : (
           <a href="#ampel-grenzen" className="link">
-            Grenzen festlegen
+            {t.setLimits}
           </a>
         )}
       </div>
       <p className="muted">
         {range ? `${range} · ` : ""}
-        {newest ? `Bestände am ${longDate(monthEnd(newest))} · ` : ""}
+        {newest ? t.holdingsOn(p.longDate(monthEnd(newest))) : ""}
         {confirmed
-          ? `Farben nach euren eigenen Grenzen${
-              by ? `, übernommen${by.created_by ? ` von ${data.names.get(by.created_by) ?? "einem Mitglied"}` : ""} am ${longDate(by.created_at)}` : ""
+          ? `${t.coloursOwn}${
+              by ? t.appliedBy(by.created_by ? (data.names.get(by.created_by) ?? t.aMember) : null, p.longDate(by.created_at)) : ""
             }`
-          : "ohne Farben, bis ihr eure Grenzen übernehmt"}
+          : t.noColours}
       </p>
       <HealthTodoList todos={todos} onChanged={onChanged} />
       {rate ? (
-        <Figure title="Sparquote" value={formatRatio(rate.rate)} light={marks.savings_rate}>
+        <Figure title={FIGURE_LABEL.savings_rate} value={p.ratio(rate.rate)} light={marks.savings_rate}>
           <ul className="household-rows">
             <li>
-              <span>ohne Einmalausgaben</span>
-              <span>{formatRatio(rate.rate_regular)}</span>
+              <span>{t.withoutOneOffs}</span>
+              <span>{p.ratio(rate.rate_regular)}</span>
             </li>
             <li>
-              <span>davon Tilgung</span>
-              <span>{formatEuro(rate.principal)}</span>
+              <span>{t.ofWhichPrincipal}</span>
+              <span>{p.euro(rate.principal)}</span>
             </li>
             <li>
-              <span>ohne Tilgung</span>
-              <span>{formatRatio(rate.rate_without_principal)}</span>
+              <span>{t.withoutPrincipal}</span>
+              <span>{p.ratio(rate.rate_without_principal)}</span>
             </li>
           </ul>
-          <p className="muted">
-            Wie viel von eurem Einkommen übrig blieb: Einkommen minus Ausgaben, geteilt durch das Einkommen. {range}. Die Tilgung des
-            Darlehens zählt als gespart, weil sie eure Schulden senkt.
-          </p>
+          <p className="muted">{t.savingsExplained(range)}</p>
           <LimitLine figure="savings_rate" light={marks.savings_rate} />
           <Texts light={marks.savings_rate} />
           <details className="health-sources">
-            <summary>Monate ansehen</summary>
+            <summary>{t.viewMonths}</summary>
             <ul className="household-rows">
               {(rate.months ?? []).map((row) => (
                 <li key={row.month}>
-                  <Link href={`/household?monat=${row.month}`}>{formatMonth(row.month)}</Link>
-                  <span>{formatRatio(row.rate)}</span>
+                  <Link href={`/household?monat=${row.month}`}>{p.month(row.month)}</Link>
+                  <span>{p.ratio(row.rate)}</span>
                 </li>
               ))}
             </ul>
-            <p className="muted">
-              Gespart {formatEuro(rate.saved)} von {formatEuro(rate.income)} Einkommen; Einmalausgaben {formatEuro(rate.one_off_spending)}.
-            </p>
+            <p className="muted">{t.savedOf(p.euro(rate.saved), p.euro(rate.income), p.euro(rate.one_off_spending))}</p>
           </details>
         </Figure>
       ) : null}
       {debt ? (
         <>
           <Figure
-            title="Schuldendienstquote"
-            value={debt.debt_service_ratio != null ? formatRatio(debt.debt_service_ratio) : "–"}
+            title={FIGURE_LABEL.debt_service_ratio}
+            value={debt.debt_service_ratio != null ? p.ratio(debt.debt_service_ratio) : "–"}
             light={marks.debt_service_ratio}
           >
-            <p className="muted">
-              Zins und Tilgung geteilt durch euer Einkommen vor diesen Zahlungen{annualised} ({formatEuro(debt.debt_service_year)} von{" "}
-              {formatEuro(debt.income_year)} im Jahr).
-            </p>
+            <p className="muted">{t.debtServiceExplained(annualised, p.euro(debt.debt_service_year), p.euro(debt.income_year))}</p>
             {gap("debt_service_ratio") ? <p className="muted">{gap("debt_service_ratio")}</p> : null}
             <LimitLine figure="debt_service_ratio" light={marks.debt_service_ratio} />
             <Texts light={marks.debt_service_ratio} />
             <details className="health-sources">
-              <summary>Woraus die Zahl besteht</summary>
+              <summary>{t.madeOf}</summary>
               <ul className="household-rows">
                 <li>
-                  <span>Zinsen in {range}</span>
-                  <span>{formatEuro(debt.interest)}</span>
+                  <span>{t.interestIn(range)}</span>
+                  <span>{p.euro(debt.interest)}</span>
                 </li>
                 <li>
-                  <span>Tilgung in {range}</span>
-                  <span>{formatEuro(debt.principal)}</span>
+                  <span>{t.principalIn(range)}</span>
+                  <span>{p.euro(debt.principal)}</span>
                 </li>
               </ul>
               <p className="muted">
-                Aus den Buchungen des Mietkontos; <Link href="/planning">Planung › Immobilie</Link> zeigt die Raten je Jahr.
+                {t.fromRentalBefore}
+                <Link href="/planning">{t.planningProperty}</Link>
+                {t.fromRentalAfter}
               </p>
             </details>
           </Figure>
-          <Figure title="Beleihungsauslauf" value={ltvRow?.ltv != null ? formatRatio(ltvRow.ltv) : "–"} light={marks.ltv}>
+          <Figure title={FIGURE_LABEL.ltv} value={ltvRow?.ltv != null ? p.ratio(ltvRow.ltv) : "–"} light={marks.ltv}>
             <p className="muted">
-              {ltvRow?.estimate_source === "advance"
-                ? "Die ausgezahlten Kredite der Wohnung geteilt durch den bisher bezahlten Kaufpreis (vor der Übergabe)"
-                : "Die Kredite der Wohnung geteilt durch ihren geschätzten Wert"}
-              {ltvRow ? ` (${formatEuro(ltvRow.loan_balance)} von ${formatEuro(ltvRow.estimate)})` : ""}.
+              {ltvRow?.estimate_source === "advance" ? t.ltvAdvance : t.ltvEstimate}
+              {ltvRow ? t.ofAmount(p.euro(ltvRow.loan_balance), p.euro(ltvRow.estimate)) : ""}.
             </p>
             {gap("ltv") ? <p className="muted">{gap("ltv")}</p> : null}
             <LimitLine figure="ltv" light={marks.ltv} />
             <Texts light={marks.ltv} />
             <details className="health-sources">
-              <summary>Woraus die Zahl besteht</summary>
+              <summary>{t.madeOf}</summary>
               <ul className="household-rows">
                 {(debt.properties ?? []).map((row) => (
                   <li key={row.property_id}>
                     <span>
-                      <Link href={`/properties/${row.property_id}`}>Immobilie</Link>{" "}
+                      <Link href={`/properties/${row.property_id}`}>{t.property}</Link>{" "}
                       <span className="muted">
-                        {ESTIMATE_SOURCE_TEXT[row.estimate_source]}{" "}
-                        {formatEuro(row.estimate)}, Darlehen {formatEuro(row.loan_balance)}
+                        {t.estimateRow(estimateSource(t, row.estimate_source), p.euro(row.estimate), p.euro(row.loan_balance))}
                       </span>
                     </span>
-                    <span>{formatRatio(row.ltv)}</span>
+                    <span>{p.ratio(row.ltv)}</span>
                   </li>
                 ))}
               </ul>
             </details>
           </Figure>
           <Figure
-            title="Verschuldungsgrad"
-            value={debt.debt_ratio != null ? formatRatio(debt.debt_ratio) : "–"}
+            title={FIGURE_LABEL.debt_ratio}
+            value={debt.debt_ratio != null ? p.ratio(debt.debt_ratio) : "–"}
             light={marks.debt_ratio}
           >
-            <p className="muted">
-              Alle eure Schulden geteilt durch alles, was ihr besitzt ({formatEuro(debt.liabilities)} von {formatEuro(debt.gross_assets)}).
-            </p>
+            <p className="muted">{t.debtRatioExplained(p.euro(debt.liabilities), p.euro(debt.gross_assets))}</p>
             {gap("debt_ratio") ? <p className="muted">{gap("debt_ratio")}</p> : null}
             <LimitLine figure="debt_ratio" light={marks.debt_ratio} />
             <Texts light={marks.debt_ratio} />
             <details className="health-sources">
-              <summary>Woraus die Zahl besteht</summary>
+              <summary>{t.madeOf}</summary>
               <ul className="household-rows">
                 <li>
-                  <span>Alle Schulden am Monatsende</span>
-                  <span>{formatEuro(debt.liabilities)}</span>
+                  <span>{t.allDebts}</span>
+                  <span>{p.euro(debt.liabilities)}</span>
                 </li>
                 <li>
-                  <span>Alles, was ihr besitzt</span>
-                  <span>{formatEuro(debt.gross_assets)}</span>
+                  <span>{t.allOwned}</span>
+                  <span>{p.euro(debt.gross_assets)}</span>
                 </li>
               </ul>
               <p className="muted">
-                Die Beträge kommen aus dem Monatsabschluss; jede Position steht unter <Link href="/assets">Anlagen</Link> und{" "}
-                <Link href="/accounts">Konten</Link>.
+                {t.fromMonthEndBefore}
+                <Link href="/assets">{t.investments}</Link>
+                {t.and}{" "}
+                <Link href="/accounts">{t.accounts}</Link>.
               </p>
             </details>
           </Figure>
           <Figure
-            title="Schulden zu Jahreseinkommen"
-            value={debt.debt_to_income != null ? formatOneDecimal(debt.debt_to_income) : "–"}
+            title={FIGURE_LABEL.debt_to_income}
+            value={debt.debt_to_income != null ? oneDecimal(p, debt.debt_to_income) : "–"}
             light={marks.debt_to_income}
           >
-            <p className="muted">Alle eure Schulden geteilt durch euer Einkommen eines Jahres{annualised}.</p>
+            <p className="muted">{t.debtToIncomeExplained(annualised)}</p>
             {gap("debt_to_income") ? <p className="muted">{gap("debt_to_income")}</p> : null}
             <LimitLine figure="debt_to_income" light={marks.debt_to_income} />
             <Texts light={marks.debt_to_income} />
             <details className="health-sources">
-              <summary>Woraus die Zahl besteht</summary>
+              <summary>{t.madeOf}</summary>
               <ul className="household-rows">
                 <li>
-                  <span>Alle Schulden am Monatsende</span>
-                  <span>{formatEuro(debt.liabilities)}</span>
+                  <span>{t.allDebts}</span>
+                  <span>{p.euro(debt.liabilities)}</span>
                 </li>
                 <li>
-                  <span>Einkommen eines Jahres{annualised ? `, hochgerechnet aus ${debt.months} Monaten` : ""}</span>
-                  <span>{formatEuro(debt.income_year)}</span>
+                  <span>{t.yearIncome(annualised ? debt.months : null)}</span>
+                  <span>{p.euro(debt.income_year)}</span>
                 </li>
               </ul>
               <p className="muted">
-                Die Monate stehen unter „Sparquote › Monate ansehen“; die Schulden unter <Link href="/loans">Darlehen</Link> und{" "}
-                <Link href="/accounts">Konten</Link>.
+                {t.monthsUnderBefore}
+                <Link href="/loans">{t.loans}</Link>
+                {t.and}{" "}
+                <Link href="/accounts">{t.accounts}</Link>.
               </p>
             </details>
           </Figure>
           {!confirmed ? null : (["debt_ratio", "debt_to_income"] as const).some((f) => !current?.levers?.bands?.some((b) => b.figure === f)) ? (
             <p className="muted">
-              Verschuldungsgrad und Schulden zu Jahreseinkommen bleiben ohne Farbe, bis ihr eine Grenze eintragt.{" "}
+              {t.noColourYet}{" "}
               <button type="button" className="link" onClick={onEditBands}>
-                Grenze eintragen
+                {t.enterLimit}
               </button>
             </p>
           ) : null}
@@ -795,19 +823,18 @@ function FiguresCard({
       ) : null}
       {split.length > 0 ? (
         <div className="stack health-split">
-          <h3>Aufteilung des Vermögens</h3>
+          <h3>{t.splitTitle}</h3>
           <p className="muted">
-            Welcher Teil von allem, was ihr besitzt{debt ? ` (${formatEuro(debt.gross_assets)})` : ""}, in welcher Anlageklasse steckt.
-            {newest ? ` Am ${longDate(monthEnd(newest))}.` : ""} Eine Aufteilung ist keine Bewertung und bekommt nie eine Farbe.
+            {t.splitExplained(debt ? p.euro(debt.gross_assets) : null, newest ? p.longDate(monthEnd(newest)) : null)}
           </p>
           <ul className="health-split-rows">
             {split.map(([key, share]) => (
               <li key={key}>
-                <span>{SPLIT_LABEL[key] ?? key}</span>
+                <span>{splitLabel(t, key)}</span>
                 <span className="household-share" aria-hidden="true">
                   <span style={{ width: `${Math.max(0, Math.min(100, Number(share) * 100))}%` }} />
                 </span>
-                <span>{formatRatio(share)}</span>
+                <span>{p.ratio(share)}</span>
               </li>
             ))}
           </ul>
@@ -842,26 +869,30 @@ function Figure({
 /** Where the loan-to-value's property value comes from (phase 9 D239 amended): the scenario's
  * estimate, the purchase price, or before the handover the price paid so far, „Anzahlung,
  * gebucht“ (phase 6 D265), a booked figure and no estimate. */
-const ESTIMATE_SOURCE_TEXT: Record<EstimateSource, string> = {
-  scenario: "Wert aus ihrem Szenario",
-  purchase_price: "Wert nach dem Kaufpreis",
-  advance: "Anzahlung, gebucht",
-};
+function estimateSource(t: HealthText, source: EstimateSource): string {
+  switch (source) {
+    case "scenario":
+      return t.sourceScenario;
+    case "purchase_price":
+      return t.sourcePurchasePrice;
+    case "advance":
+      return t.sourceAdvance;
+  }
+}
 
 // --- Vermögen im Verlauf ------------------------------------------------------------------
 
 function SeriesCard({ series, onChanged }: { series: NetWorthPoint[]; onChanged: () => void }) {
+  const t = useT(healthFigures);
+  const p = usePlanFormat();
   if (series.length === 0) return null;
   const totals = series.map((point) => (point.total != null ? Number(point.total) : 0));
   const largest = Math.max(1, ...totals.map(Math.abs));
   const todos = series.map((point) => point.todo).filter((todo): todo is HealthTodo => todo != null);
   return (
     <section className="card stack" aria-labelledby="series-title">
-      <h2 id="series-title">Vermögen im Verlauf</h2>
-      <p className="muted">
-        Aus den gespeicherten Monatsabschlüssen. „Gespart“ ist Einkommen minus Ausgaben des Monats; der Rest der Veränderung kommt aus
-        Kursen, dem geschätzten Wert der Wohnung und Sonstigem.
-      </p>
+      <h2 id="series-title">{t.seriesTitle}</h2>
+      <p className="muted">{t.seriesIntro}</p>
       <ul className="planning-bars" aria-hidden="true">
         {series.map((point, index) => (
           <li key={point.month_end}>
@@ -869,7 +900,7 @@ function SeriesCard({ series, onChanged }: { series: NetWorthPoint[]; onChanged:
               className={index === series.length - 1 ? "planning-bar planning-bar-sale" : "planning-bar"}
               style={{ height: `${(Math.abs(totals[index] ?? 0) / largest) * 100}%` }}
             />
-            <span className="planning-bar-year">{longDate(point.month_end).replace(/ \d{4}$/, "")}</span>
+            <span className="planning-bar-year">{p.longDate(point.month_end).replace(/ \d{4}$/, "")}</span>
           </li>
         ))}
       </ul>
@@ -877,18 +908,18 @@ function SeriesCard({ series, onChanged }: { series: NetWorthPoint[]; onChanged:
         <table>
           <thead>
             <tr>
-              <th scope="col">Monat</th>
+              <th scope="col">{t.month}</th>
               <th scope="col" className="num">
-                Vermögen am Monatsende
+                {t.netWorthAtMonthEnd}
               </th>
               <th scope="col" className="num">
-                Veränderung
+                {t.changeColumn}
               </th>
               <th scope="col" className="num">
-                davon gespart
+                {t.ofWhichSaved}
               </th>
               <th scope="col" className="num">
-                Wertänderungen und Sonstiges
+                {t.otherChanges}
               </th>
             </tr>
           </thead>
@@ -896,12 +927,12 @@ function SeriesCard({ series, onChanged }: { series: NetWorthPoint[]; onChanged:
             {series.map((point) => (
               <tr key={point.month_end}>
                 <th scope="row">
-                  <Link href={`/household?monat=${point.month_end.slice(0, 7)}`}>{formatMonth(point.month_end.slice(0, 7))}</Link>
+                  <Link href={`/household?monat=${point.month_end.slice(0, 7)}`}>{p.month(point.month_end.slice(0, 7))}</Link>
                 </th>
-                <td className="num">{point.total != null ? formatEuro(point.total) : "–"}</td>
-                <td className="num">{point.change != null ? formatSignedEuro(point.change) : "–"}</td>
-                <td className="num">{point.saved != null ? formatEuro(point.saved) : "–"}</td>
-                <td className="num">{point.other != null ? formatSignedEuro(point.other) : "–"}</td>
+                <td className="num">{point.total != null ? p.euro(point.total) : "–"}</td>
+                <td className="num">{point.change != null ? p.signedEuro(point.change) : "–"}</td>
+                <td className="num">{point.saved != null ? p.euro(point.saved) : "–"}</td>
+                <td className="num">{point.other != null ? p.signedEuro(point.other) : "–"}</td>
               </tr>
             ))}
           </tbody>
