@@ -583,3 +583,73 @@ def printed_ibans(text: str) -> set[str]:
         except RuleError:
             continue
     return found
+
+
+# --- D292: a trade read from its cash statement line ------------------------------------------
+
+# A trade's cash line is booked on the Valuta, a few bank days after the trade date a
+# confirmation or a report names (services.depot.CASH_LINK_DAYS is the same span).
+STATEMENT_TRADE_DAYS = 10
+_STATEMENT_KINDS = {
+    C.SECURITY_PURCHASE: MovementKind.ACQUISITION,
+    C.SECURITY_SALE: MovementKind.DISPOSAL,
+}
+
+
+class StatementTrade(Schema):
+    """What a `security_purchase` or `security_sale` line of a depot's cash statement books
+    (D292 (1)): the fund's ISIN and the units as printed („ST 4,8000“ for a purchase,
+    „ST -15,2500“ for a sale), and the withheld tax a sale's line prints (raw.tax_withheld)."""
+
+    kind: MovementKind
+    isin: str
+    units: Quantity
+    tax_withheld: Decimal | None = None
+
+
+def statement_trade_kind(category: C) -> MovementKind | None:
+    """The movement kind a trade category of a depot cash line books, None for any other."""
+    return _STATEMENT_KINDS.get(category)
+
+
+def _decimal(value: object) -> Decimal | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        found = Decimal(str(value))
+    except ArithmeticError:
+        return None
+    return found if found.is_finite() else None
+
+
+def statement_trade(
+    category: C, amount: Decimal, raw: Mapping[str, object]
+) -> StatementTrade | None:
+    """D292 (1): the trade a depot cash line prints, None when it is not readable: no trade
+    category, no ISIN of the printed form, no units or units of 0, or units whose sign
+    contradicts the line's (a purchase has positive units and a negative amount, a sale the
+    opposite; trade_signs_agree's rule). Never guessed, rounded or repaired: such a line is
+    named on the card „Kauf ohne Stückzahl“. A withheld tax that is not a non-negative amount
+    is left out (the line's amount is the net cash either way)."""
+    kind = statement_trade_kind(category)
+    isin, units = raw.get("isin"), _decimal(raw.get("units"))
+    if kind is None or not isinstance(isin, str) or not _ISIN.fullmatch(isin):
+        return None
+    if units is None or units == 0:
+        return None
+    buy = kind is MovementKind.ACQUISITION
+    if (buy and not (units > 0 and amount < 0)) or (not buy and not (units < 0 and amount > 0)):
+        return None
+    tax = _decimal(raw.get("tax_withheld"))
+    return StatementTrade(
+        kind=kind,
+        isin=isin,
+        units=units,
+        tax_withheld=tax if tax is not None and tax >= 0 else None,
+    )
+
+
+def statement_window(trade_on: date, line_on: date) -> bool:
+    """D292 (2): whether a cash line booked on `line_on` (its value date) can be the cash of a
+    trade made on `trade_on`: on the trade's day or up to STATEMENT_TRADE_DAYS after it."""
+    return 0 <= (line_on - trade_on).days <= STATEMENT_TRADE_DAYS
