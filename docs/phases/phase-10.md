@@ -443,8 +443,8 @@ recorded, no read); once a version has moved and stayed unchanged for `HAUSBUCH_
 each member's recorded paths, most recent first: a path whose answer is kept and unexpired is skipped (so a run after a
 write that changed nothing a member reads costs lookups only, and an expired inbox answer is recomputed), otherwise it
 waits until no request runs, reads the version and the days again and stops the run if they moved, and asks the path
-through `internal_get` with no await between the last check and the request; a path that no longer answers 200 is
-forgotten, a failure is logged by its route template only. `HAUSBUCH_KEPT_REFRESH=false` switches it off; with the
+through `internal_get` with no await between the last check and the request; a path that answers 404 (its record
+deleted) is forgotten, any other failure is logged by its route template and status and the path kept. `HAUSBUCH_KEPT_REFRESH=false` switches it off; with the
 store off it does nothing. Not done: a trigger on an inbox answer's expiry alone or on the day's change without a
 write (the 09:00 warm step covers the morning); the 09:00 warm step and the 15:00 check do not wait for a running
 refresh request, though the refresh waits for theirs. Tests: `tests/api/test_kept_refresh.py` (a write and 31 s

@@ -17,7 +17,8 @@ Pacing (the API is one 0.25 vCPU process):
   expired inbox answer (§7.5 (b)) is not kept, so it is recomputed by the same path;
 - if the version (or the day) moves during a run, the run stops and the next quiet period
   starts a new one;
-- a recorded path that no longer answers 200 (its record was deleted) is forgotten.
+- a recorded path that answers 404 (its record was deleted) is forgotten; another failure
+  is logged and the path kept.
 
 No model call, no new table, no new container. With no store, or the store switched off, the
 task does nothing. Every failure is logged (the route's template, never its path, which holds
@@ -190,7 +191,14 @@ class KeptRefresher:
                     continue
                 if response.status != 200:
                     run.failed += 1
-                    kept.forget(auth, path, query)
+                    if response.status == 404:  # its record was deleted; a 5xx may pass
+                        kept.forget(auth, path, query)
+                    fields = {
+                        "event": "kept_answer_refresh_failed",
+                        "route": seen.template,
+                        "status": response.status,
+                    }
+                    logger.warning("a kept answer was not refreshed", extra={"fields": fields})
                     continue
                 if response.kept == "stored":
                     run.stored += 1
