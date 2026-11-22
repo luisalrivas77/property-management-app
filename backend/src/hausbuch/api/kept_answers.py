@@ -65,7 +65,13 @@ tests/api/test_kept_answers.py also requests every kept route and fails if one r
 session or passkey tables.
 
 The warm step (jobs/kept_answers.py) asks the page's routes once per enrolled member after the
-morning jobs, through `internal_get`, which runs the whole ASGI app as a request would. The
+morning jobs, through `internal_get`, which runs the whole ASGI app as a request would.
+
+§7.5 (c): the store also records, per member, the paths (with their query) that member's own
+requests found kept or stored (never an internal request's, never an answer the store did not
+keep), at most MAX_RECORDED_PATHS per member and for RECORDED_FOR, and counts the requests in
+flight. api/kept_refresh.py asks those paths again once a write has been followed by a quiet
+period, pausing while a request runs. The
 checks (`check`, `compare_all`) recompute a kept answer with the store bypassed and compare
 the bytes; a difference empties the store and is logged as an error.
 """
@@ -74,9 +80,9 @@ import logging
 import re
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 from urllib.parse import parse_qsl, urlencode
@@ -99,10 +105,16 @@ logger = logging.getLogger("hausbuch.api.kept_answers")
 AUTH_SCOPE_KEY = "hausbuch.auth"
 BYPASS_SCOPE_KEY = "hausbuch.kept_bypass"
 ROUTE_SCOPE_KEY = "hausbuch.kept_route"
+# Set by internal_get: the warm step, the checks and the refresh, never a person's request.
+INTERNAL_SCOPE_KEY = "hausbuch.kept_internal"
 # Set by a route (`keep_until`) in the request state: when its answer may change (§7.5 (b)).
 EXPIRES_STATE_KEY = "kept_expires_at"
 
 MAX_BYTES = 32 * 1024 * 1024
+# §7.5 (c): what a member's own requests found kept, asked again after a change.
+MAX_RECORDED_PATHS = 200  # per member, the least recently asked dropped first
+MAX_RECORDED_MEMBERS = 50
+RECORDED_FOR = timedelta(days=3)
 
 # The GET routes whose answers are kept: what Übersicht and Zu prüfen load (perf_probe.PageRun,
 # components/inbox.tsx loadInbox), less the routes the audit excluded, and since §7.5 (a) every
@@ -296,6 +308,22 @@ class Entry:
 
 
 @dataclass
+class Recorded:
+    """One path a member's own request found kept or stored (§7.5 (c))."""
+
+    template: str
+    locale: str
+    seen_at: datetime
+
+
+@dataclass
+class RecordedMember:
+    auth: AuthContext
+    # (path, canonical query) → Recorded, the least recently asked first.
+    paths: OrderedDict[tuple[str, tuple[tuple[str, str], ...]], Recorded]
+
+
+@dataclass
 class Counters:
     hits: int = 0
     misses: int = 0
@@ -347,6 +375,9 @@ class KeptAnswers:
         self._bytes = 0
         self._lock = threading.Lock()
         self._locales: dict[UUID, str] = {}
+        self._recorded: OrderedDict[tuple[UUID, UUID], RecordedMember] = OrderedDict()
+        self.in_flight = 0  # a person's requests running now (§7.5 (c))
+        self.internal_in_flight = 0  # internal_get requests running now
         self.app: ASGIApp | None = None
         self.engine: Engine | None = None
 
@@ -393,6 +424,12 @@ class KeptAnswers:
                 self._entries.move_to_end(key)
             return entry
 
+    def is_kept(self, key: Key) -> bool:
+        """Whether an unexpired answer is kept under `key`; touches nothing."""
+        with self._lock:
+            entry = self._entries.get(key)
+            return entry is not None and not entry.expired(self.clock())
+
     def put(self, key: Key, entry: Entry) -> bool:
         size = entry.size
         if size > self.max_bytes // 4:
@@ -431,6 +468,74 @@ class KeptAnswers:
         with self._lock:
             return list(self._entries.items())
 
+    # --- What each member asked (§7.5 (c)) ---------------------------------------------
+
+    def record(self, key: Key, template: str, auth: AuthContext) -> None:
+        """A member's own request found `key` kept or stored it."""
+        member = (key.workspace_id, key.user_id)
+        with self._lock:
+            recorded = self._recorded.pop(member, None) or RecordedMember(auth, OrderedDict())
+            recorded.auth = auth
+            self._recorded[member] = recorded
+            path = (key.path, key.query)
+            recorded.paths.pop(path, None)
+            recorded.paths[path] = Recorded(template, key.locale, self.clock())
+            while len(recorded.paths) > MAX_RECORDED_PATHS:
+                recorded.paths.popitem(last=False)
+            while len(self._recorded) > MAX_RECORDED_MEMBERS:
+                self._recorded.popitem(last=False)
+
+    def _prune(self) -> None:
+        cutoff = self.clock() - RECORDED_FOR
+        for member, recorded in list(self._recorded.items()):
+            for path, seen in list(recorded.paths.items()):
+                if seen.seen_at < cutoff:
+                    del recorded.paths[path]
+            if not recorded.paths:
+                del self._recorded[member]
+
+    def recorded_workspaces(self) -> set[UUID]:
+        with self._lock:
+            self._prune()
+            return {workspace_id for workspace_id, _ in self._recorded}
+
+    def recorded(
+        self, workspace_id: UUID
+    ) -> list[tuple[AuthContext, list[tuple[str, tuple[tuple[str, str], ...], Recorded]]]]:
+        """Each member of `workspace_id` with their recorded paths, the most recently asked
+        first (the page a member is likeliest to open next)."""
+        with self._lock:
+            self._prune()
+            return [
+                (
+                    recorded.auth,
+                    [
+                        (path, query, seen)
+                        for (path, query), seen in reversed(recorded.paths.items())
+                    ],
+                )
+                for (ws, _), recorded in reversed(self._recorded.items())
+                if ws == workspace_id
+            ]
+
+    def forget(self, auth: AuthContext, path: str, query: tuple[tuple[str, str], ...]) -> None:
+        """A recorded path that no longer answers 200 (its record was deleted)."""
+        with self._lock:
+            recorded = self._recorded.get((auth.workspace_id, auth.user_id))
+            if recorded is not None:
+                recorded.paths.pop((path, query), None)
+
+    # --- Requests in flight (§7.5 (c)) -------------------------------------------------
+
+    def _count(self, attribute: str, step: int) -> None:
+        with self._lock:
+            setattr(self, attribute, getattr(self, attribute) + step)
+
+    @property
+    def busy(self) -> bool:
+        """A person's request or an internal one is running."""
+        return self.in_flight > 0 or self.internal_in_flight > 0
+
     def remember_locale(self, user_id: UUID, locale: str) -> None:
         self._locales[user_id] = locale
 
@@ -444,7 +549,7 @@ class KeptAnswers:
         self,
         auth: AuthContext,
         path: str,
-        query: dict[str, Any] | None = None,
+        query: dict[str, Any] | Sequence[tuple[str, str]] | None = None,
         *,
         locale: str | None = None,
         bypass: bool = False,
@@ -470,6 +575,7 @@ class KeptAnswers:
             "server": None,
             AUTH_SCOPE_KEY: auth,
             BYPASS_SCOPE_KEY: bypass,
+            INTERNAL_SCOPE_KEY: True,
         }
         sent = False
 
@@ -492,7 +598,11 @@ class KeptAnswers:
             elif message["type"] == "http.response.body":
                 body.extend(message.get("body", b""))
 
-        await self.app(scope, receive, send)
+        self._count("internal_in_flight", 1)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            self._count("internal_in_flight", -1)
         state = scope.get("state", {})
         return Response(
             status, headers, bytes(body), state.get("kept_answer"), state.get("kept_inner")
@@ -574,6 +684,18 @@ class KeptAnswersMiddleware:
         self.kept = kept
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Every request of a person, whatever its method or route, is counted while it runs,
+        so the refresh (§7.5 (c)) waits for it."""
+        if scope["type"] != "http" or scope.get(INTERNAL_SCOPE_KEY):
+            await self._handle(scope, receive, send)
+            return
+        self.kept._count("in_flight", 1)
+        try:
+            await self._handle(scope, receive, send)
+        finally:
+            self.kept._count("in_flight", -1)
+
+    async def _handle(self, scope: Scope, receive: Receive, send: Send) -> None:
         kept = self.kept
         if scope["type"] != "http" or scope["method"] != "GET" or not kept.enabled:
             await self.app(scope, receive, send)
@@ -593,6 +715,7 @@ class KeptAnswersMiddleware:
             scope[AUTH_SCOPE_KEY] = auth
         state["auth"] = auth
         bypass = bool(scope.get(BYPASS_SCOPE_KEY))
+        internal = bool(scope.get(INTERNAL_SCOPE_KEY))
         before = await run_in_threadpool(kept.stamp, auth.workspace_id)
         if before is None:  # no version row yet: nothing can be kept safely
             state["kept_answer"] = "miss"
@@ -605,6 +728,8 @@ class KeptAnswersMiddleware:
             if entry is not None:
                 kept.counters.hits += 1
                 state["kept_answer"] = "hit"
+                if not internal:
+                    kept.record(key, template, auth)
                 await send(
                     {
                         "type": "http.response.start",
@@ -650,6 +775,8 @@ class KeptAnswersMiddleware:
         stored = kept.put(key, entry)
         if stored:
             kept.counters.stored += 1
+            if not internal:
+                kept.record(key, template, auth)
         state["kept_answer"] = "stored" if stored else "miss"
 
 

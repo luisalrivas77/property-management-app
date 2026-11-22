@@ -50,6 +50,9 @@ DEFAULT_SESSION_MAX_AGE_S = 12 * 3600  # absolute lifetime (§6.4, Q2)
 DEFAULT_SESSION_IDLE_S = 2 * 3600  # idle lifetime, slid forward on use
 DEFAULT_WORKER_CONCURRENCY = 2
 DEFAULT_SHUTDOWN_GRACE_S = 20  # below uvicorn's --timeout-graceful-shutdown 25 (§3.7, Q15)
+# Phase 10 §7.5 (c): a workspace's kept answers are computed again once its data version has
+# stayed unchanged this long after a write (api/kept_refresh.py).
+DEFAULT_KEPT_REFRESH_QUIET_S = 30
 
 # Phase 2 AI layer (phase-2.md §4.5, D17). Model ids are settings so a tier can change without
 # a release; inference_geo is `us` (Luis, 6 Nov 2026: one named processing location).
@@ -139,6 +142,9 @@ class Settings:
     run_worker: bool = True  # the in-process job worker (§3.7)
     worker_concurrency: int = DEFAULT_WORKER_CONCURRENCY
     shutdown_grace_s: int = DEFAULT_SHUTDOWN_GRACE_S
+    # Phase 10 §7.5 (c): recompute the recorded kept answers after a change (api/kept_refresh.py).
+    kept_refresh: bool = True
+    kept_refresh_quiet_s: int = DEFAULT_KEPT_REFRESH_QUIET_S
     # AI layer (phase 2). Off by default: production turns it on; the key is this variable or
     # typed in the app (D260, services.app_secrets), resolved per job.
     ai_enabled: bool = False
@@ -218,6 +224,7 @@ class Settings:
             ("HAUSBUCH_SESSION_IDLE_S", self.session_idle_s),
             ("HAUSBUCH_WORKER_CONCURRENCY", self.worker_concurrency),
             ("HAUSBUCH_SHUTDOWN_GRACE_S", self.shutdown_grace_s),
+            ("HAUSBUCH_KEPT_REFRESH_QUIET_S", self.kept_refresh_quiet_s),
             ("HAUSBUCH_AI_MAX_PAGES", self.ai_max_pages),
             ("HAUSBUCH_AI_TIMEOUT_S", self.ai_timeout_s),
             ("HAUSBUCH_SYNC_APPROVAL_TIMEOUT_S", self.sync_approval_timeout_s),
@@ -391,6 +398,10 @@ def load_settings(environ: Mapping[str, str] = os.environ) -> Settings:
         run_worker=_bool(environ, "HAUSBUCH_RUN_WORKER", True),
         worker_concurrency=_int(environ, "HAUSBUCH_WORKER_CONCURRENCY", DEFAULT_WORKER_CONCURRENCY),
         shutdown_grace_s=_int(environ, "HAUSBUCH_SHUTDOWN_GRACE_S", DEFAULT_SHUTDOWN_GRACE_S),
+        kept_refresh=_bool(environ, "HAUSBUCH_KEPT_REFRESH", True),
+        kept_refresh_quiet_s=_int(
+            environ, "HAUSBUCH_KEPT_REFRESH_QUIET_S", DEFAULT_KEPT_REFRESH_QUIET_S
+        ),
         ai_enabled=_bool(environ, "HAUSBUCH_AI_ENABLED", False),
         anthropic_api_key=_optional(environ, "HAUSBUCH_ANTHROPIC_API_KEY"),
         ai_model_classify=_optional(environ, "HAUSBUCH_AI_MODEL_CLASSIFY")
