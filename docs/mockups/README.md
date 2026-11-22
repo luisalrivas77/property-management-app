@@ -180,6 +180,7 @@ into 20–24 the same day (this section said „not approved“ until then):
   the page showing one kind at a time („to keep the page leaner and scroll less“, D279); the panel as drawn.
 - **Anlagen** (20): every value at the newest daily price with its source and day, the same valuation as the net
   worth; the ETF tab's report value only as a check in the position's panel („up to date values at all time“, D280).
+  Redrawn for phase 10 §7.6 on 22 Nov 2026 as `20d-assets-tabs-phone.png` / `.html` (chosen the same day, not built): four tabs Übersicht, ETF, Krypto and Immobilie (Planung's property section moved in), ETF cards like Krypto's, one card per portfolio with its gain since the start and its yearly return, the funds and coins in the panel, „Heute steuerfrei“ opening the tax-free coins as a list. A one-page version without tabs was drawn first and dropped the same day.
 - **Steuern** (22): one tab „Eure Angaben“ for everything typed or uploaded that the forms read (pay, church tax,
   Werbungskosten, wage-replacement benefits, Kinder und Haushalt, the Jahresfragen card); Anlage N shows the form
   only, like Anlage V. It replaces „Einkommen & Haushalt“, where pay was asked a second time (D281).
