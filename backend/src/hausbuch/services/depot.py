@@ -1872,7 +1872,8 @@ def resolve_statement_trade(
     (append-only), with movement.superseded and movement.confirmed events. The pair is
     found again here under the depot's lock (_counterparts over the depot's lines, as the
     card found it), never sent by the page. ConflictError (409) when the line has no
-    disagreement to decide (booked meanwhile, or the two agree now)."""
+    disagreement to decide (booked meanwhile, or the two agree now). Then the depot's
+    report prices that now agree are stored (store_report_prices)."""
     account_id = ctx.conn.execute(
         select(transaction_table.c.account_id).where(transaction_table.c.id == transaction_id)
     ).scalar_one_or_none()
@@ -1931,6 +1932,9 @@ def resolve_statement_trade(
         found.movement_id,
         MovementSuperseded(superseded_by=movement_id, document_id=document_id),
     )
+    # The held units may now agree with a report for the first time (4.7 → 4.8), so its
+    # prices are stored as after any booking (book_statement_trades, book_report_trades).
+    store_report_prices(ctx, line.account_id)
     return StatementTradeResolved(movement_id=movement_id)
 
 

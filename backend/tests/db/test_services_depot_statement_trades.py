@@ -395,6 +395,7 @@ def test_keeping_the_statement_supersedes_the_confirmations_trade(
     tmp_path,
     job,
     enqueued,  # noqa: F811
+    monkeypatch,
 ):
     ws, _ = fresh_workspaces
     account, _ = _confirmation_then_statement(
@@ -402,7 +403,16 @@ def test_keeping_the_statement_supersedes_the_confirmations_trade(
     )
     [old] = _cash_fund(read, ws)
     line = _cash(read, ws, account.id)["5500000002"]
+    stored = []
+    real = depot.store_report_prices
+    monkeypatch.setattr(
+        depot,
+        "store_report_prices",
+        lambda ctx, account_id: stored.append(account_id) or real(ctx, account_id),
+    )
     done = run(ws, depot.resolve_statement_trade, line, depot.StatementTradeKeep.STATEMENT)
+    assert stored == [account.id]  # the report prices that now agree are stored
+    monkeypatch.undo()
 
     [new] = _cash_fund(read, ws)
     assert new.id == done.movement_id
