@@ -92,3 +92,44 @@ def test_a_proposed_movement_never_counts_but_its_reference_is_present():
     assert [(c.reconciled, c.difference_units, c.missing_references) for c in checks] == [
         (False, Decimal("1"), ("R3",))
     ]
+
+
+# --- D292: a trade read from its cash statement line (depot_statement_trades.yaml) ----------
+
+STATEMENT = phase6.load("depot_statement_trades")
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize("case", STATEMENT.lines, ids=lambda c: c.id)
+def test_statement_trade(case):
+    found = depot.statement_trade(case.category, case.amount, case.raw)
+    if case.expect is None:
+        assert found is None
+    else:
+        assert found is not None
+        assert (found.kind, found.isin, found.units, found.tax_withheld) == (
+            case.expect.kind,
+            case.expect.isin,
+            case.expect.units,
+            case.expect.tax_withheld,
+        )
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize("case", STATEMENT.windows, ids=lambda c: c.id)
+def test_statement_window(case):
+    assert depot.statement_window(case.trade_on, case.line_on) is case.expect
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize("case", STATEMENT.report_trades, ids=lambda c: c.id)
+def test_statement_booked(case):
+    trade = depot.ProposedTrade(
+        isin=case.trade.isin,
+        trade_date=case.trade.trade_date,
+        units=case.trade.units,
+        amount=Decimal("0"),
+        reference="0000000000",
+    )
+    booked = [(b.isin, b.units, b.value_date) for b in case.booked]
+    assert (depot.statement_booked(trade, booked) is not None) is case.expect

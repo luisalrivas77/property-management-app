@@ -878,6 +878,54 @@ class DepotLinesFixture(_Fixture):
     cases: list[DepotLineCase] = Field(min_length=1)
 
 
+# --- depot_statement_trades.yaml: rules.depot.statement_trade, statement_window,
+# statement_booked (D292 (1), (2)) -----------------------------------------------------------
+
+
+class StatementTradeExpect(Schema):
+    kind: MovementKind
+    isin: str
+    units: Quantity
+    tax_withheld: Decimal | None = None
+
+
+class StatementLineCase(_Case):
+    category: AllocationCategory
+    amount: Money
+    raw: dict[str, str]
+    expect: StatementTradeExpect | None
+
+
+class StatementWindowCase(_Case):
+    trade_on: date
+    line_on: date
+    expect: bool
+
+
+class StatementReportTrade(Schema):
+    isin: str
+    trade_date: date
+    units: Quantity
+
+
+class StatementBookedRow(Schema):
+    isin: str
+    units: Quantity
+    value_date: date
+
+
+class StatementReportCase(_Case):
+    trade: StatementReportTrade
+    booked: list[StatementBookedRow]
+    expect: bool
+
+
+class DepotStatementTradesFixture(_Fixture):
+    lines: list[StatementLineCase] = Field(min_length=5)
+    windows: list[StatementWindowCase] = Field(min_length=3)
+    report_trades: list[StatementReportCase] = Field(min_length=3)
+
+
 # --- holdings_reconcile.yaml: rules.depot.reconcile_holdings (§7) ---------------------------
 
 
@@ -2747,6 +2795,7 @@ MODELS: dict[str, type[Schema]] = {
     "transfers": TransfersFixture,
     "private_cost_link": PrivateCostLinkFixture,
     "depot_lines": DepotLinesFixture,
+    "depot_statement_trades": DepotStatementTradesFixture,
     "holdings_reconcile": HoldingsFixture,
     "quirion_documents": QuirionFixture,
     "bison_csv": ExchangeFixture,

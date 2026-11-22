@@ -169,6 +169,8 @@ const SECTION_OF: Record<InboxItemKind, SectionKey> = {
   property_cost_document: "property_costs",
   // Phase 6 step 4: a depot report that disagrees with the booked trades.
   holdings_mismatch: "other",
+  // Phase 6 D292: a trade line of a depot's cash statement without ISIN or units.
+  depot_trade_without_units: "other",
   // Phase 6 step 5b: a fund's daily price missing seven runs (D174 (4)), an asset no source
   // prices (D167).
   price_source_failed: "automatic",
@@ -225,6 +227,7 @@ const PILL_CLASS: Record<InboxItemKind, string> = {
   property_cost_year: "badge badge-info",
   property_cost_document: "badge badge-warn",
   holdings_mismatch: "badge badge-warn",
+  depot_trade_without_units: "badge badge-warn",
   price_source_failed: "badge badge-danger",
   price_no_source: "badge badge-warn",
   price_report_differs: "badge badge-warn",
@@ -938,7 +941,7 @@ function EntryTitle({ item, data }: { item: InboxItem; data: InboxData }) {
       </strong>
     );
   }
-  if (item.kind === "holdings_mismatch") {
+  if (item.kind === "holdings_mismatch" || item.kind === "depot_trade_without_units") {
     const account = item.account_id ? data.accounts.get(item.account_id) : undefined;
     return (
       <strong>
@@ -1282,6 +1285,15 @@ function EntryAction({ item, data, onChanged }: { item: InboxItem; data: InboxDa
           ) : null}
           <Link href="/documents">{t.uploadSettlement}</Link>
           {item.document_id ? <Link href={`/documents/${item.document_id}`}>{t.openReport}</Link> : null}
+          {item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.toDepot}</Link> : null}
+        </>
+      );
+    case "depot_trade_without_units":
+      // D292: no „Abrechnung hochladen“; the app keeps no flag of which provider issues trade
+      // confirmations. The next quarterly report's „Umsätze aus dem Bericht buchen“ books it.
+      return (
+        <>
+          {item.document_id ? <Link href={`/documents/${item.document_id}`}>{t.openDocument}</Link> : null}
           {item.account_id ? <Link href={`/accounts/${item.account_id}`}>{t.toDepot}</Link> : null}
         </>
       );

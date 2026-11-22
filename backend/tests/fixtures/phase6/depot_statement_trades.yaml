@@ -1,0 +1,117 @@
+# Rule fixture: a depot trade read from its cash statement line, without a model
+# (hausbuch.rules.depot.statement_trade, statement_window, statement_booked;
+# docs/phases/phase-6.md D292 (1), (2)).
+#
+# A depot's monthly cash statement prints, under each „Wertpapier Kauf“ and „Wertpapier
+# Verkauf“ headline, the fund's ISIN and the units („IE00BEISPL02, ST 4,8000“; a sale's units
+# negative), and a sale's withheld tax („KEST: EUR -4,74“). services.bank.depot_pdf stores them
+# on the line as raw.isin, raw.units (a decimal string) and raw.tax_withheld (positive). For a
+# provider that issues no trade confirmation (a savings-plan purchase, a rebalancing trade) the
+# line is the only record of the trade, so the line itself becomes the trade's movement.
+#
+# lines: statement_trade(category, amount, raw) -> {kind, isin, units, tax_withheld} or null.
+# Null means unreadable: the line is never guessed and gets the card „Kauf ohne Stückzahl“.
+# The amount is the line's signed cash (D166: a purchase negative, a sale positive); units
+# whose sign contradicts it are unreadable too.
+#
+# windows: statement_window(trade_on, line_on): the cash line is booked on its value date,
+# on the trade day or up to 10 days after it (rules.depot.STATEMENT_TRADE_DAYS).
+#
+# report_trades: statement_booked(trade, booked): a quarterly report's trade (ISIN, trade day,
+# signed units) is booked already when a current statement movement has the same ISIN and
+# units and a value date inside the window; the report never books it a second time.
+#
+# Every ISIN, reference and amount below is invented.
+
+lines:
+  - id: purchase
+    category: security_purchase
+    amount: "-500.00"
+    raw: {isin: IE00BEISPL02, units: "4.8000"}
+    expect: {kind: acquisition, isin: IE00BEISPL02, units: "4.8000"}
+  - id: sale_with_tax
+    category: security_sale
+    amount: "1234.50"
+    raw: {isin: IE00BEISPL01, units: "-15.2500", tax_withheld: "4.74"}
+    expect: {kind: disposal, isin: IE00BEISPL01, units: "-15.2500", tax_withheld: "4.74"}
+  - id: sale_without_tax
+    category: security_sale
+    amount: "80.10"
+    raw: {isin: IE00BEISPL01, units: "-1.0000"}
+    expect: {kind: disposal, isin: IE00BEISPL01, units: "-1.0000"}
+  - id: no_units
+    description: the detail line with ISIN and units was not on the page
+    category: security_purchase
+    amount: "-150.00"
+    raw: {}
+    expect: null
+  - id: isin_without_units
+    category: security_purchase
+    amount: "-150.00"
+    raw: {isin: IE00BEISPL02}
+    expect: null
+  - id: units_of_zero
+    category: security_purchase
+    amount: "-150.00"
+    raw: {isin: IE00BEISPL02, units: "0"}
+    expect: null
+  - id: isin_of_another_form
+    category: security_purchase
+    amount: "-150.00"
+    raw: {isin: BEISPIEL, units: "1.5000"}
+    expect: null
+  - id: purchase_with_negative_units
+    description: the units' sign contradicts a purchase
+    category: security_purchase
+    amount: "-150.00"
+    raw: {isin: IE00BEISPL02, units: "-1.5000"}
+    expect: null
+  - id: sale_debited
+    description: a sale whose amount is a debit
+    category: security_sale
+    amount: "-150.00"
+    raw: {isin: IE00BEISPL01, units: "-1.5000"}
+    expect: null
+  - id: negative_tax_dropped
+    category: security_sale
+    amount: "300.00"
+    raw: {isin: IE00BEISPL01, units: "-3.0000", tax_withheld: "-1.00"}
+    expect: {kind: disposal, isin: IE00BEISPL01, units: "-3.0000"}
+  - id: fee_is_no_trade
+    category: depot_fee
+    amount: "-12.30"
+    raw: {}
+    expect: null
+
+windows:
+  - {id: same_day, trade_on: "2026-03-13", line_on: "2026-03-13", expect: true}
+  - {id: two_bank_days_later, trade_on: "2026-03-13", line_on: "2026-03-17", expect: true}
+  - {id: ten_days_later, trade_on: "2026-03-13", line_on: "2026-03-23", expect: true}
+  - {id: eleven_days_later, trade_on: "2026-03-13", line_on: "2026-03-24", expect: false}
+  - {id: line_before_the_trade, trade_on: "2026-03-13", line_on: "2026-03-12", expect: false}
+
+report_trades:
+  - id: same_trade
+    trade: {isin: IE00BEISPL02, trade_date: "2026-03-13", units: "4.8000"}
+    booked: [{isin: IE00BEISPL02, units: "4.8000", value_date: "2026-03-17"}]
+    expect: true
+  - id: other_units
+    trade: {isin: IE00BEISPL02, trade_date: "2026-03-13", units: "4.8000"}
+    booked: [{isin: IE00BEISPL02, units: "4.7000", value_date: "2026-03-17"}]
+    expect: false
+  - id: other_fund
+    trade: {isin: IE00BEISPL02, trade_date: "2026-03-13", units: "4.8000"}
+    booked: [{isin: IE00BEISPL01, units: "4.8000", value_date: "2026-03-17"}]
+    expect: false
+  - id: other_side
+    trade: {isin: IE00BEISPL01, trade_date: "2026-03-12", units: "-15.2500"}
+    booked: [{isin: IE00BEISPL01, units: "15.2500", value_date: "2026-03-16"}]
+    expect: false
+  - id: outside_the_window
+    trade: {isin: IE00BEISPL02, trade_date: "2026-03-13", units: "4.8000"}
+    booked: [{isin: IE00BEISPL02, units: "4.8000", value_date: "2026-04-17"}]
+    expect: false
+  - id: nothing_booked
+    trade: {isin: IE00BEISPL02, trade_date: "2026-03-13", units: "4.8000"}
+    booked: []
+    expect: false

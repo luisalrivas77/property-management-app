@@ -308,15 +308,19 @@ class ExistingDepotAccount(Schema):
 class BookedDepotTrade(Schema):
     """D165 amended, 15 Nov 2026: a current purchase or sale on a depot account that carries
     a reference, as a depot reading's pre-fill reads it: a report's trade with that reference
-    is not proposed again, and a trade confirmation of a trade a report booked says so."""
+    is not proposed again, and a trade confirmation of a trade a report booked says so.
+    D292 (2): a trade read from its cash statement line is listed too, with or without a
+    reference, and its day (`occurred_on`, the line's value date), so a report's trade and a
+    confirmation find it by fund, kind, units and day."""
 
     account_id: UUID
     isin: str
-    external_ref: str
+    external_ref: str | None = None
     kind: MovementKind
     quantity: Quantity
     eur_amount: Money | None = None
     source: MovementSource
+    occurred_on: date | None = None
 
 
 class PrintedDepot(StrEnum):

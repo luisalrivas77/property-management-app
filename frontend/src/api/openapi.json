@@ -23677,6 +23677,7 @@
           "property_cost_year",
           "property_cost_document",
           "holdings_mismatch",
+          "depot_trade_without_units",
           "price_source_failed",
           "price_no_source",
           "price_report_differs",
@@ -26313,7 +26314,8 @@
           "report",
           "user",
           "securities_transfer",
-          "chain"
+          "chain",
+          "depot_statement"
         ],
         "title": "MovementSource",
         "description": "asset_movement.source: where the row was read from."

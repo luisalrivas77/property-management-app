@@ -12,7 +12,7 @@ tests/fixtures/phase6/depot_lines.yaml and holdings_reconcile.yaml). Built in ph
 """
 
 import re
-from collections.abc import Collection, Hashable, Mapping, Sequence
+from collections.abc import Collection, Hashable, Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 
@@ -653,3 +653,17 @@ def statement_window(trade_on: date, line_on: date) -> bool:
     """D292 (2): whether a cash line booked on `line_on` (its value date) can be the cash of a
     trade made on `trade_on`: on the trade's day or up to STATEMENT_TRADE_DAYS after it."""
     return 0 <= (line_on - trade_on).days <= STATEMENT_TRADE_DAYS
+
+
+def statement_booked(
+    trade: ProposedTrade, booked: Iterable[tuple[str, Decimal, date]]
+) -> tuple[str, Decimal, date] | None:
+    """D292 (2): the trade read from a cash statement line that a report's trade is, or None:
+    the same ISIN, the same signed units (so the same side) and the line's value date on the
+    trade day or up to STATEMENT_TRADE_DAYS after it. `booked` holds (ISIN, units, value date)
+    of the current statement movements; the caller matches each at most once."""
+    for found in booked:
+        isin, units, day = found
+        if isin == trade.isin and units == trade.units and statement_window(trade.trade_date, day):
+            return found
+    return None

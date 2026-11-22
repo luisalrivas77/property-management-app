@@ -9139,7 +9139,7 @@ export interface components {
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "price_source_failed" | "price_no_source" | "price_report_differs" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment" | "wallet_groups" | "wallet_change" | "wallet_question" | "wallet_sync" | "wallet_unreconciled" | "wallet_coins_left" | "app_secret_unreadable";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "depot_trade_without_units" | "price_source_failed" | "price_no_source" | "price_report_differs" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment" | "wallet_groups" | "wallet_change" | "wallet_question" | "wallet_sync" | "wallet_unreconciled" | "wallet_coins_left" | "app_secret_unreadable";
         /**
          * InboxLines
          * @description GET /inbox/lines (phase 10 §7.3 (5)): the bank lines and statement imports Zu prüfen's
@@ -10252,7 +10252,7 @@ export interface components {
          * @description asset_movement.source: where the row was read from.
          * @enum {string}
          */
-        MovementSource: "csv" | "trade_confirmation" | "distribution_note" | "report" | "user" | "securities_transfer" | "chain";
+        MovementSource: "csv" | "trade_confirmation" | "distribution_note" | "report" | "user" | "securities_transfer" | "chain" | "depot_statement";
         /**
          * MovementStatus
          * @description asset_movement.status: only proposed -> confirmed moves (the trigger of 0025); a

@@ -10,7 +10,8 @@ Nov 2026).
 Also `hausbuch relink-chain` (phase 7 D184, step 5), `hausbuch survey-solana` (phase 7,
 17 Nov 2026), `hausbuch repair-solana-lamports` (phase 7 D186 (2) amended 18 Nov 2026),
 `hausbuch health-check` (phase 9 D259 amended 17 Nov 2026), `hausbuch recapture-months`
-(phase 6 D265 (5), 20 Nov 2026) and `hausbuch perf-overview` (21 Nov 2026), described below.
+(phase 6 D265 (5), 20 Nov 2026), `hausbuch perf-overview` (21 Nov 2026) and
+`hausbuch book-statement-trades` (phase 6 D292, 22 Nov 2026), described below.
 
 bootstrap and invite run as the schema owner (HAUSBUCH_ADMIN_DATABASE_URL), never through the
 API's engine and never as a superuser: they run from the operator's computer with `uv`, the
@@ -76,6 +77,15 @@ position of every depot that agrees with the confirmed movements now and has no 
 stores the report's price (value ÷ units), as a trade confirmation applied after the report
 does since that change. It reads and writes only the database. --dry-run rolls back and prints
 what it would store.
+
+`book-statement-trades` runs services.depot.book_all_statement_trades once for a workspace,
+with the same owner URL (phase 6 D292 (1), 22 Nov 2026): every confirmed `security_purchase` or
+`security_sale` line of a depot's cash statement with a printed ISIN and units and no movement
+linked becomes the trade's confirmed movement (source `depot_statement`), unless a confirmation
+or a report booked that trade already; a line without them is only counted (its card „Kauf ohne
+Stückzahl“ is computed when Zu prüfen is read). No model call. It is a dry run by default, its
+transaction rolled back and the counts printed; --apply writes. Running it again books nothing
+new.
 
 `group-exchange-trades` runs services.exchange.imports.group_stored_trades once for a workspace,
 with the same owner URL (phase 6 D178 amended (3), migration 0043): every exchange trade
@@ -1009,6 +1019,48 @@ def store_report_prices(args: argparse.Namespace, environ: Mapping[str, str]) ->
     return EXIT_OK
 
 
+# --- book-statement-trades ------------------------------------------------------------
+
+
+def book_statement_trades(args: argparse.Namespace, environ: Mapping[str, str]) -> int:
+    """services.depot.book_all_statement_trades once for a workspace (phase 6 D292 (1)): every
+    readable confirmed trade line of a depot's cash statement booked as its movement. A dry run
+    unless `--apply`."""
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.schemas.enums import ActorType
+    from hausbuch.services.context import Actor, new_command
+    from hausbuch.services.depot import book_all_statement_trades
+
+    engine = owner_engine(environ)
+    try:
+        try:
+            with workspace_transaction(engine, args.workspace) as conn:
+                actor = Actor(ActorType.SYSTEM, "cli:book-statement-trades")
+                done = book_all_statement_trades(new_command(conn, args.workspace, actor))
+                if not args.apply:
+                    raise _DryRun
+        except _DryRun:
+            pass
+    except SQLAlchemyError as exc:
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
+            "that the database accepts this computer's address"
+        ) from None
+    finally:
+        engine.dispose()
+    verb = "booked" if args.apply else "would book"
+    print(
+        f"{verb} {done.booked} trade(s) from depot cash statement lines; "
+        f"{done.covered} already booked by a confirmation or a report; "
+        f"{done.unreadable} line(s) without a readable ISIN or units (card „Kauf ohne Stückzahl“); "
+        f"{done.prices_stored} report price(s) stored"
+    )
+    if not args.apply:
+        print("dry run: nothing written; run again with --apply to book")
+    return EXIT_OK
+
+
 # --- group-exchange-trades ------------------------------------------------------------
 
 
@@ -1489,6 +1541,17 @@ def _parser() -> argparse.ArgumentParser:
     report_prices.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
     report_prices.add_argument("--dry-run", action="store_true", help="count only, change nothing")
     report_prices.set_defaults(command=store_report_prices, command_name="store-report-prices")
+
+    statement_trades = commands.add_parser(
+        "book-statement-trades",
+        help="book each confirmed purchase or sale line of a depot's cash statement that prints "
+        "its ISIN and units as the trade's movement (phase 6 D292); a dry run unless --apply",
+    )
+    statement_trades.add_argument("--workspace", type=UUID, required=True, help="the workspace id")
+    statement_trades.add_argument("--apply", action="store_true", help="write the bookings")
+    statement_trades.set_defaults(
+        command=book_statement_trades, command_name="book-statement-trades"
+    )
 
     trades = commands.add_parser(
         "group-exchange-trades",

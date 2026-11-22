@@ -891,9 +891,22 @@ class _Builder:
         as_of = _iso_date(self.ev("report_date").value)
         if as_of is None or not proposal.trades:
             return [], []
-        booked = {t.external_ref for t in self.ctx.booked_depot_trades}
+        booked = {t.external_ref for t in self.ctx.booked_depot_trades if t.external_ref}
+        # D292 (2): a trade its cash statement line booked is booked, whatever its reference.
+        statement = [
+            (t.isin, t.quantity, t.occurred_on)
+            for t in self.ctx.booked_depot_trades
+            if t.source is MovementSource.DEPOT_STATEMENT and t.occurred_on is not None
+        ]
         listed = depot_rules.bookable_trades(proposal.trades, as_of)
-        trades = [t for t in listed if t.reference.strip() not in booked]
+        trades = []
+        for t in listed:
+            if t.reference.strip() in booked:
+                continue
+            if (found := depot_rules.statement_booked(t, statement)) is not None:
+                statement.remove(found)
+                continue
+            trades.append(t)
         names = {h.isin: h.name for h in proposal.holdings if h.name}
         movements = [depot_rules.report_trade_movement(t, names.get(t.isin)) for t in trades]
         notes = []
@@ -927,7 +940,7 @@ class _Builder:
             and t.kind is movement.kind
         ]
         if not matching:
-            return []
+            return self._booked_from_statement(movement, account)
         here = next((t for t in matching if str(t.account_id) == account), None)
         booked = here or matching[0]
         if here is not None:
@@ -950,6 +963,49 @@ class _Builder:
                 )
             )
         return notes
+
+    def _booked_from_statement(
+        self, movement: depot_rules.ProposedMovement, account: object
+    ) -> list[str]:
+        """D292 (2): a trade confirmation of a trade its cash statement line booked already
+        (the same fund and side, the same reference or the line's value date on the trade day
+        or up to rules.depot.STATEMENT_TRADE_DAYS after it), on the depot pre-selected here,
+        else on any depot. When units and amount agree, „Übernehmen“ replaces the statement's
+        booking by the confirmation's (services.depot.record_movement); when they differ, it
+        changes nothing and the note names both readings."""
+        candidates = [
+            t
+            for t in self.ctx.booked_depot_trades
+            if t.source is MovementSource.DEPOT_STATEMENT
+            and t.isin == movement.isin
+            and t.kind is movement.kind
+            and (
+                (movement.external_ref is not None and t.external_ref == movement.external_ref)
+                or (
+                    t.occurred_on is not None
+                    and depot_rules.statement_window(movement.occurred_on, t.occurred_on)
+                )
+            )
+        ]
+        here = [t for t in candidates if str(t.account_id) == account] or candidates
+        if not here:
+            return []
+        agreeing = [
+            t
+            for t in here
+            if t.quantity == movement.quantity and t.eur_amount == movement.eur_amount
+        ]
+        if agreeing:
+            return [_BOOKED_FROM_STATEMENT_NOTE]
+        booked = here[0]
+        return [
+            _BOOKED_FROM_STATEMENT_DIFFERS.format(
+                units=_german_number(movement.quantity),
+                amount=_money_text(movement.eur_amount),
+                statement_units=_german_number(booked.quantity),
+                statement_amount=_money_text(booked.eur_amount),
+            )
+        ]
 
     def _depot_value(self, value: object, inputs: tuple[str, ...]) -> ExtractedValue:
         """The reading's own value, with its quote, when its first field states it as is; else
@@ -2867,6 +2923,16 @@ _REPORT_TRADES_NOTE = (
 _REPORT_TRADES_BOOKED_NOTE = (
     "{count} weitere Umsätze des Berichts sind schon gebucht und werden nicht noch einmal "
     "vorgeschlagen."
+)
+# D292 (2): a trade its cash statement line booked already.
+_BOOKED_FROM_STATEMENT_NOTE = (
+    "Bereits aus dem Kontoauszug des Depots gebucht. „Übernehmen“ ersetzt diese Buchung durch "
+    "die Abrechnung (mit Gebühren und Steuern); doppelt gebucht wird nichts."
+)
+_BOOKED_FROM_STATEMENT_DIFFERS = (
+    "Die Abrechnung nennt {units} Anteile und {amount}, aus dem Kontoauszug des Depots gebucht "
+    "sind {statement_units} Anteile und {statement_amount}. „Übernehmen“ ändert nichts, solange "
+    "beide nicht übereinstimmen; bitte beide Dokumente vergleichen."
 )
 _BOOKED_FROM_REPORT_NOTE = (
     "Bereits aus dem Quartalsbericht gebucht. „Übernehmen“ bucht nichts ein zweites Mal; "

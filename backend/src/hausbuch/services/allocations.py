@@ -301,6 +301,12 @@ def _confirmed(
         # Nebenkosten row as a rental line booked acquisition_cost does.
         if a.category in _PAYS_COST_ROW and a.document_id is not None:
             _set_paid_on(ctx, a.document_id, a.property_id, tx.booking_date)
+    if any(a.category in _DEPOT_TRADES for a in rows):
+        # Phase 6 D292 (1): a depot's confirmed trade line becomes the trade's movement (only
+        # on a depot account, with a readable ISIN and units; services.depot decides).
+        from . import depot  # it imports the asset services
+
+        depot.book_statement_trades(ctx, transaction_ids=[tx.id])
 
 
 def _part(a: Allocation) -> AllocatedPart:
@@ -319,6 +325,7 @@ def _part(a: Allocation) -> AllocatedPart:
 
 
 _PAYS_COST_ROW = (AllocationCategory.ACQUISITION_COST, AllocationCategory.HH_PROPERTY_COST)
+_DEPOT_TRADES = (AllocationCategory.SECURITY_PURCHASE, AllocationCategory.SECURITY_SALE)
 
 
 def _set_paid_on(

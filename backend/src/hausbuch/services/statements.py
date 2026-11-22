@@ -282,9 +282,14 @@ def import_statement(
         # D162 amended 15 Nov 2026: a depot's cash lines carry no IBAN, so the bank debits
         # naming the depot book and link them (follow-accounts and „Auf Konto importieren“
         # import through here too). Only a reconciled import's lines are legs.
+        from .depot import book_statement_trades  # it imports the asset services
         from .transfers import relink  # transfers imports the statement services
 
         relink(ctx, account_id)
+        # D292 (1): its trade lines already confirmed (a statement imported again after its
+        # lines were booked) become their movements; a new line's turn comes when its match
+        # confirms it (services.allocations).
+        book_statement_trades(ctx, account_ids=[account_id])
     return checked.model_copy(
         update={
             "stated_closing": statement.stated_balance,
