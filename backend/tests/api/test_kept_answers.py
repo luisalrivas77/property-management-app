@@ -15,9 +15,14 @@ from api_support import (
     TOKEN_A,
     auth_for,
     client_for,
+    create,
+    loan_body,
     new_property,
+    new_tenancy,
+    new_tenant,
     new_unit,
     ok,
+    upload,
 )
 from sqlalchemy import text
 
@@ -31,9 +36,11 @@ from hausbuch.api.kept_answers import (
     kept_route,
     warm_member,
 )
+from hausbuch.auth.events import append_user_event
 from hausbuch.db.session import workspace_transaction
 from hausbuch.jobs.document_read import JobDeps
 from hausbuch.jobs.kept_answers import enrolled_members, run_check, run_warm
+from hausbuch.schemas.events import EventType, UserPasskeyEnrolled, UserPasskeyRef, UserSignedIn
 
 pytestmark = pytest.mark.db
 
@@ -189,6 +196,14 @@ def test_the_query_order_does_not_matter_but_its_values_do(client_a, kept):
     assert kept.counters.hits == 1
 
 
+def test_a_repeated_parameter_keeps_the_order_of_its_values():
+    # FastAPI takes the last value of a repeated parameter, so `a=1&a=2` and `a=2&a=1` are
+    # two answers; only the order of different names is free.
+    assert canonical_query(b"a=1&a=2") != canonical_query(b"a=2&a=1")
+    assert canonical_query(b"a=1&b=2") == canonical_query(b"b=2&a=1")
+    assert canonical_query(b"b=1&a=x&b=2") == canonical_query(b"a=x&b=1&b=2")
+
+
 def test_signed_out_and_revoked_sessions_never_get_a_kept_answer(api_app, kept, sessions):
     client = client_for(api_app, TOKEN_A)
     ok(client.get("/api/properties"))
@@ -340,3 +355,214 @@ def test_the_request_line_names_the_route_and_whether_it_was_kept(client_a, kept
         assert line["route"] == "/api/properties/{property_id}/units"
         assert line["status"] == 200
         assert prop["id"] not in str(line)
+
+
+def _get_routes(app) -> dict[str, object]:
+    """Every GET route of the app by its full template (FastAPI nests each router)."""
+
+    def walk(routes, prefix=""):
+        for route in routes:
+            inner = getattr(route, "original_router", None)
+            if inner is not None:
+                yield from walk(inner.routes, prefix + route.include_context.prefix + inner.prefix)
+            elif "GET" in (getattr(route, "methods", None) or ()):
+                yield prefix + route.path, route
+
+    return dict(walk(app.routes))
+
+
+def test_every_kept_template_is_a_get_route_and_shadows_no_other(api_app):
+    """A listed template that matches no route keeps nothing; one whose `{id}` segment also
+    matches another route's literal path would keep that route unaudited."""
+    import re
+
+    routes = _get_routes(api_app)
+    assert set(KEPT_ROUTES) <= set(routes)
+    for template in routes:
+        path = re.sub(r"\{[^}]+\}", str(uuid.UUID(int=7)), template)
+        assert kept_route(path) == (template if template in KEPT_ROUTES else None), template
+
+
+# The query each kept route needs (its required parameters, as the screens send them).
+_QUERY: dict[str, dict[str, str]] = {
+    "/api/properties/{property_id}/anlage-v": {"tax_year": "2026"},
+    "/api/properties/{property_id}/anlage-v/sources": {"tax_year": "2026"},
+    "/api/owners/{owner_id}/anlage-n": {"tax_year": "2026"},
+    "/api/tax/return-estimate": {"tax_year": "2026"},
+    "/api/tax/questionnaire": {"tax_year": "2026"},
+    "/api/tax-rate": {"tax_year": "2026", "result": "1000.00"},
+    "/api/health/months": {"from": "2026-10", "to": "2026-10"},
+    "/api/household/cashflow": {"month": "2026-10"},
+    "/api/accounts/auto-rate": {"month": "2026-10"},
+    "/api/accounts/{account_id}/month": {"month": "2026-10"},
+    "/api/transfers": {"month": "2026-10"},
+    "/api/household-plan/comparison": {"month": "2026-10"},
+    "/api/tenancies/{tenancy_id}/rent": {"at": "2026-11-01"},
+}
+# Kept routes this test cannot reach: their ids need a statement import, a document read by
+# the model or a typed return input, which these fixtures do not make.
+_NOT_REQUESTED = {
+    "/api/imports/{import_id}",
+    "/api/transactions/{transaction_id}/allocations",
+    "/api/proposals/{proposal_id}",
+    "/api/return-inputs/{return_input_id}/evidence",
+}
+# Tables a kept answer must never read: the data version does not cover them (module
+# docstring), so an answer that read them would outlive a sign-in or a revoked passkey.
+_UNVERSIONED_TABLES = ("auth_session", "auth_passkey")
+
+
+def _exempt_types() -> tuple[str, ...]:
+    """Migration 0051's own list, so this test and the migration cannot drift apart."""
+    import importlib.util
+    from pathlib import Path
+
+    versions = Path(__file__).parents[2] / "migrations" / "versions"
+    spec = importlib.util.spec_from_file_location(
+        "m0051", versions / "0051_sign_in_keeps_data_version.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.EXEMPT_TYPES
+
+
+def _sign_in_events(passkey_id: uuid.UUID):
+    """One event of each type migration 0051 exempts from the data version (EXEMPT_TYPES)."""
+    return (
+        (EventType.USER_SIGNED_IN, UserSignedIn(passkey_id=passkey_id)),
+        (EventType.USER_PASSKEY_ENROLLED, UserPasskeyEnrolled(passkey_id=passkey_id, label="A")),
+        (EventType.USER_PASSKEY_RENAMED, UserPasskeyRef(passkey_id=passkey_id)),
+        (EventType.USER_PASSKEY_REMOVED, UserPasskeyRef(passkey_id=passkey_id)),
+    )
+
+
+def _account(client, **fields) -> str:
+    body = {"bank": "Beispiel", "opening_balance": "0.00", "opening_balance_on": "2026-01-01"}
+    return create(client, "/api/accounts", body | fields)["id"]
+
+
+def test_no_kept_route_reads_the_session_or_passkey_tables(
+    client_a, kept, app_engine, auth_a, dbname
+):
+    """Every KEPT_ROUTES entry is requested as the warm step requests it (`internal_get`), and
+    no SQL statement it sends names a table outside the data version. Between its two
+    computations the test writes what the version does not cover (one of each sign-in and
+    passkey event migration 0051 exempts, a session and a passkey row), and the second answer
+    must be the same bytes: a route that read any of it, by any name, would serve it stale."""
+    from db.db_support import _admin
+    from sqlalchemy import event
+
+    ws, user = auth_a.workspace_id, auth_a.user_id
+    with _admin(dbname) as conn:  # the member exists, so created_by (FK to app_user) is real
+        conn.execute(
+            "INSERT INTO app_user (id, workspace_id, email, display_name)"
+            " VALUES (%s, %s, %s, 'Test')",
+            (user, ws, f"{user}@example.test"),
+        )
+        # The member's passkey and session, which the unversioned writes below move.
+        passkey = conn.execute(
+            "INSERT INTO auth_passkey (workspace_id, user_id, credential_id, public_key, "
+            "backup_eligible, backed_up, label) VALUES (%s, %s, %s, %s, false, false, 'k') "
+            "RETURNING id",
+            (ws, user, uuid.uuid4().bytes, b"k"),
+        ).fetchone()[0]
+        session = conn.execute(
+            "INSERT INTO auth_session (workspace_id, user_id, passkey_id, token_hash, "
+            "expires_at, idle_expires_at) VALUES (%s, %s, %s, %s, now() + interval '1 hour', "
+            "now() + interval '1 hour') RETURNING id",
+            (ws, user, passkey, uuid.uuid4().bytes + uuid.uuid4().bytes),
+        ).fetchone()[0]
+
+    exempt = {type.value for type, _ in _sign_in_events(passkey)}
+    assert exempt == set(_exempt_types())
+
+    def unversioned_writes(n: int) -> None:
+        """What a sign-in and the passkey screens write and the data version does not cover
+        (migration 0051's exempt events and the two auth tables): each exempt event of the
+        member, a session slide and a passkey sign count. A kept answer that read any of it
+        would differ on its second computation."""
+        with workspace_transaction(app_engine, ws) as conn:
+            for type, payload in _sign_in_events(passkey):
+                append_user_event(
+                    conn, type, payload, workspace_id=ws, user_id=user, now=datetime.now(UTC)
+                )
+            conn.execute(
+                text("UPDATE auth_session SET last_seen_at = now() WHERE id = :id"),
+                {"id": session},
+            )
+            conn.execute(
+                text("UPDATE auth_passkey SET sign_count = :n WHERE id = :id"),
+                {"id": passkey, "n": n},
+            )
+
+    # A flat bought in 2026, a year the tax and projection rules know.
+    prop = new_property(client_a, notarized_on="2026-01-15", purchase_date="2026-03-01")
+    unit = new_unit(client_a, prop["id"])
+    tenant = new_tenant(client_a)
+    tenancy = new_tenancy(client_a, unit["id"], tenant["id"], start_date="2026-03-01")
+    loan = loan_body(
+        prop["id"],
+        disbursed_on="2026-02-27",
+        first_payment_on="2026-03-30",
+        fixed_until="2036-02-28",
+    )
+    ids = {
+        "property_id": prop["id"],
+        "unit_id": unit["id"],
+        "tenant_id": tenant["id"],
+        "tenancy_id": tenancy["id"],
+        "loan_id": create(client_a, "/api/loans", loan)["id"],
+        "owner_id": create(client_a, "/api/owners", {"full_name": "Owner A"})["id"],
+        "document_id": ok(upload(client_a), 201)["id"],
+    }
+    whole = {"owner_id": ids["owner_id"], "share": {"numerator": 1, "denominator": 1}}
+    ownership = f"/api/properties/{ids['property_id']}/ownership"
+    ok(client_a.put(ownership, json={"shares": [whole]}))
+    pay = {"kind": "expected_gross_pay", "tax_year": 2026, "value": {"amount": "50000.00"}}
+    create(client_a, "/api/income-inputs", pay | {"owner_id": ids["owner_id"]})
+    bank = _account(client_a, label="Giro", iban="DE50100000000000000001")
+    exchange = _account(client_a, label="Börse", kind="exchange", provider="BISON")
+    wallet = _account(client_a, label="Wallet", kind="wallet", provider="Testwallet")
+    ok(client_a.post("/api/net-worth/snapshots"))
+    ids["run_id"] = ok(client_a.get("/api/net-worth/snapshots"))[0]["net_worth_run_id"]
+    account_for = {
+        "/api/accounts/{account_id}/exchange": exchange,
+        "/api/accounts/{account_id}/movements": exchange,
+    }
+
+    statements: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    requested = set()
+    event.listen(app_engine, "before_cursor_execute", record)
+    try:
+        for template in KEPT_ROUTES:
+            if template in _NOT_REQUESTED:
+                continue
+            wallet_route = template.startswith("/api/wallets/")
+            account = account_for.get(template, wallet if wallet_route else bank)
+            path = template.format(**ids, account_id=account)
+            statements.clear()
+            response = asyncio.run(
+                kept.internal_get(auth_a, path, _QUERY.get(template), bypass=True)
+            )
+            for statement in statements:
+                for table in _UNVERSIONED_TABLES:
+                    assert table not in statement, (template, table)
+                lowered = statement.lower()
+                assert "procrastinate_" not in lowered, template  # the job queue: unversioned
+                for clock in ("now()", "current_timestamp", "clock_timestamp", "localtime"):
+                    assert clock not in lowered, (template, clock)
+            assert response.status == 200, (template, response.body[:300])
+            assert statements, template
+            # Between the two computations only what the data version does not cover moves.
+            unversioned_writes(len(requested) + 1)
+            again = asyncio.run(kept.internal_get(auth_a, path, _QUERY.get(template), bypass=True))
+            assert again.body == response.body, template  # the 15:00 check would empty the store
+            requested.add(template)
+    finally:
+        event.remove(app_engine, "before_cursor_execute", record)
+    assert requested | _NOT_REQUESTED == set(KEPT_ROUTES)
+    assert not requested & _NOT_REQUESTED
