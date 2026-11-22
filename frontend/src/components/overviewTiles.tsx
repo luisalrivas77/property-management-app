@@ -135,7 +135,7 @@ function bankAccounts(lines: NetWorthLine[]): number {
 }
 
 function cardLines(lines: NetWorthLine[]): NetWorthLine[] {
-  return lines.filter((l) => l.account_kind === "credit_card");
+  return lines.filter((l) => l.account_kind === "credit_card" && !l.in_transit);
 }
 
 function positions(lines: NetWorthLine[], cls: NetWorthLine["net_worth_class"]): number {
