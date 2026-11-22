@@ -30,6 +30,17 @@
 # balance holds the debit and the receiver's history ends before the payment's day, and drops
 # once a statement of the receiver reaches that day or the debit is linked to its credit.
 #
+# transit_to_card: rules.net_worth.transit_counted(amounts, card_balance) (D292 amended
+# (a), 23 Nov 2026): the amounts in transit to one receiving account, in payment order,
+# and what each counts. A credit card (card_balance its balance line, negative for a
+# debt) takes them only until its balance plus them reaches 0, never more; any other
+# receiver (card_balance null) takes them in full.
+#
+# twins: rules.depot.statement_twin(line_reference, line_on, other_reference, trade_on)
+# (D292 amended (b)): whether a trade a confirmation or a report booked is a cash line's
+# trade. The same reference when both have one (the day does not matter); when either
+# has none, the line's value date on the trade day or up to 10 days after it.
+#
 # Every ISIN, reference and amount below is invented.
 
 lines:
@@ -173,4 +184,70 @@ transit:
     opened_on: "2025-12-31"
     through: "2026-11-20"
     receiver_history: "2025-12-01"
+    expect: false
+
+transit_to_card:
+  - id: card_one_statement_behind
+    description: >-
+      the September statement closes at -300; 300 paid on 1 Oct and 250 on 30 Oct; the second
+      payment paid charges of a statement not yet in the app
+    card_balance: "-300.00"
+    amounts: ["300.00", "250.00"]
+    expect: ["300.00", "0.00"]
+  - id: card_debt_paid_in_part
+    card_balance: "-300.00"
+    amounts: ["200.00", "250.00"]
+    expect: ["200.00", "100.00"]
+  - id: card_payment_within_the_debt
+    card_balance: "-500.00"
+    amounts: ["300.00"]
+    expect: ["300.00"]
+  - id: card_already_in_credit
+    card_balance: "20.00"
+    amounts: ["100.00"]
+    expect: ["0.00"]
+  - id: depot_takes_every_transfer
+    description: a depot or a bank account is no debt; it receives every transfer in full
+    card_balance: null
+    amounts: ["300.00", "250.00"]
+    expect: ["300.00", "250.00"]
+
+twins:
+  - id: same_reference_far_apart
+    description: the references decide; the day does not matter
+    line_reference: "5500000002"
+    line_on: "2026-03-30"
+    other_reference: "5500000002"
+    trade_on: "2026-03-01"
+    expect: true
+  - id: other_reference_in_the_window
+    description: a second purchase of the same fund, its own reference
+    line_reference: "5500000002"
+    line_on: "2026-03-17"
+    other_reference: "7700000099"
+    trade_on: "2026-03-13"
+    expect: false
+  - id: line_without_reference_in_the_window
+    line_reference: null
+    line_on: "2026-03-17"
+    other_reference: "7700000099"
+    trade_on: "2026-03-13"
+    expect: true
+  - id: neither_reference_in_the_window
+    line_reference: null
+    line_on: "2026-03-17"
+    other_reference: null
+    trade_on: "2026-03-13"
+    expect: true
+  - id: neither_reference_outside_the_window
+    line_reference: null
+    line_on: "2026-03-30"
+    other_reference: null
+    trade_on: "2026-03-13"
+    expect: false
+  - id: line_before_the_trade
+    line_reference: "5500000002"
+    line_on: "2026-03-12"
+    other_reference: null
+    trade_on: "2026-03-13"
     expect: false

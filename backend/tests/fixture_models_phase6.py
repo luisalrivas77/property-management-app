@@ -929,11 +929,33 @@ class StatementTransitCase(_Case):
     expect: bool
 
 
+class StatementTransitCardCase(_Case):
+    card_balance: Money | None
+    amounts: list[Money] = Field(min_length=1)
+    expect: list[Money]
+
+    @model_validator(mode="after")
+    def _one_per_amount(self) -> Self:
+        if len(self.expect) != len(self.amounts):
+            raise ValueError(f"{self.id}: one expected figure per amount")
+        return self
+
+
+class StatementTwinCase(_Case):
+    line_reference: str | None
+    line_on: date
+    other_reference: str | None
+    trade_on: date
+    expect: bool
+
+
 class DepotStatementTradesFixture(_Fixture):
     lines: list[StatementLineCase] = Field(min_length=5)
     windows: list[StatementWindowCase] = Field(min_length=3)
     report_trades: list[StatementReportCase] = Field(min_length=3)
     transit: list[StatementTransitCase] = Field(min_length=3)
+    transit_to_card: list[StatementTransitCardCase] = Field(min_length=3)
+    twins: list[StatementTwinCase] = Field(min_length=4)
 
 
 # --- holdings_reconcile.yaml: rules.depot.reconcile_holdings (§7) ---------------------------
