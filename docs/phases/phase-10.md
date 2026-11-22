@@ -22,7 +22,7 @@ dark choice, and English), so every screen is drawn and the build covers the who
 | 4d | Übersicht's speed (§7.2), no new behaviour | merged and deployed 21 Nov 2026 (PRs #514, #516, #517, #518, #519, #520, #522; images de96c9e2356e, 0523409427b7, 397837875ca6, 2ae563e4e0ba, 80656fa4c054; no migration) |
 | 4e | Fewer repeated reads (§7.3) and reusing answers while nothing changed (§7.4), no new behaviour | merged and deployed 21 Nov 2026: §7.3 PR #528 (images 5f9aa0594917, no migration), §7.4 PR #529 (images 902f60277dc8, migration 0050 applied); review round pending, Mon 23 Nov 2026, on the deployed code (Luis: „Ship both, review Monday“) |
 | 4f | Further speed steps (§7.5): every section kept, the inbox kept until its next time window, answers computed after a change instead of at the next load | scoped 21 Nov 2026, not built; waits for Luis's go after the §7.4 review |
-| 4g | Less on each screen (§7.6): Übersicht trimmed first (Luis, 22 Nov 2026), then the other sections one at a time | Übersicht, the „Was noch fehlt“ lists and Zu prüfen (with „Foto“ opening the camera at once) scoped 22 Nov 2026, not built; the other sections not yet scoped; waits for Luis's go |
+| 4g | Less on each screen (§7.6): Übersicht trimmed first (Luis, 22 Nov 2026), then the other sections one at a time | Übersicht, the „Was noch fehlt“ lists, Zu prüfen (with „Foto“ opening the camera at once), Konten's tabs and total and the „Steuer-Checkliste“ name scoped 22 Nov 2026, not built; the other sections not yet scoped; waits for Luis's go |
 | 5 | Closing (§7.1) | not started |
 
 ## 1. Scope
@@ -417,6 +417,14 @@ Luis, 22 Nov 2026: „the Übersicht has cards that I think are not relevant. Al
 3. **„Foto“ opens the camera at once** (Luis: „The take photo button should directly open the camera. Not that you to another section.“): the button is the label of a hidden file input with `capture="environment"`, as on the capture page. The photos then open the page strip of `components/capture.tsx` (turn, reorder, „Seite hinzufügen“, „Als ein Dokument hochladen“) in the detail panel on Zu prüfen, so a several-page document still becomes one PDF and nobody leaves the page. On a computer the same button opens the file picker (browsers ignore `capture` there). `/capture` stays for the home-screen shortcut; a browser opens the camera only on a tap, never by itself on page load, so that page keeps its button.
 4. **The other cards** (transfers, wallets, exchanges, payment proofs, imports): a title and the action; their explanations (`muted` paragraphs in `components/inbox.tsx`) behind „Warum?“. „Alle N bestätigen“'s introduction behind ⓘ; its categories and counts stay.
 5. **Done when** ten waiting bank lines fit a phone screen without the reasoning, and „Foto“ opens the camera in one tap on the phone.
+
+**Immobilien** (22 Nov 2026): stays as it is (Luis: „I think it looks good as of now“), except that the property page's section „Unterlagen“ is renamed **„Steuer-Checkliste“** (English „Tax checklist“; Luis: „It's not clear that these are the documents for the tax return and that it's a checklist“); the route key `unterlagen` and old `?tab=` links keep working.
+
+**Konten** (22 Nov 2026, from Luis's phone screenshot; the rest of the page stays):
+
+1. **The kind tabs** wrapped into uneven rows (2, 3, 1) at phone width, their labels of different lengths. Shorter labels (Bank, Karten, Depots, Börsen, Wallets, Darlehen; English Bank, Cards, Depots, Exchanges, Wallets, Loans) in an even grid of three equal columns on the phone, one row on the computer.
+2. **The total** under the tabs: the amount on its own line, large, and under it one grey line „<N> Konten · heute“, instead of the count on the left and „… heute in eurem Nettovermögen“ on the right. Each tab shows its own total only: the Börsen and Wallets tabs each showed the whole crypto total (`by_class.crypto`); a total per tab comes from the net worth's lines of that tab's accounts, summed by the server, never in the browser (principle 1), so this needs the overview read to state a total per kind. With several credit cards the Karten tab gets its total the same way.
+3. **To check, not layout:** the screenshot of 22 Nov 2026 showed both synced bank accounts' balance „am 12. Nov 2026“ although the daily fetch runs every morning; either nothing was booked since (a run with no new line stores no import, phase 5 D117) or the balance date is stale. To be checked against the bank sync rows before the build.
 
 ## 8. Edits to other docs (made in the spec PR)
 
