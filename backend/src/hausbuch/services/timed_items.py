@@ -7,7 +7,7 @@ datetime and of Postgres' timestamptz): that later moment is when the answer may
 """
 
 from collections.abc import Iterable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import NamedTuple
 
 from hausbuch.schemas.api import InboxItem
@@ -23,8 +23,10 @@ class TimedItems(NamedTuple):
 
 
 def leaves_window(recorded_at: datetime, window: timedelta) -> datetime:
-    """The first moment a row listed while `recorded_at >= now - window` is no longer listed."""
-    return recorded_at + window + RESOLUTION
+    """The first moment a row listed while `recorded_at >= now - window` is no longer listed.
+    In UTC: added to a Berlin-zoned time, a window of days would be wall-clock arithmetic,
+    an hour off across a clock change."""
+    return recorded_at.astimezone(UTC) + window + RESOLUTION
 
 
 def earliest(moments: Iterable[datetime | None]) -> datetime | None:

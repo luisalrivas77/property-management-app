@@ -742,7 +742,9 @@ def price_inbox_section(conn: Connection, now: datetime) -> TimedItems:
     window (phase 10 §7.5 (b)): every fund's streak and notes are read from those runs, so
     the answer may change then. The other clock read, the first day of a failure streak,
     is a UTC day. `last_run or now` never takes `now`: both cards that use it need a run in
-    the window (a note, a failed day)."""
+    the window (a note, a failed day). The window is counted in UTC: a Berlin-zoned `now`
+    less 30 days is wall-clock arithmetic in Python, an hour off across a clock change."""
+    now = now.astimezone(UTC)
     items: list[InboxItem] = []
     held = _held(conn)
     if not held:

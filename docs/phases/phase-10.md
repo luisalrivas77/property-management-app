@@ -379,8 +379,15 @@ every kept route is requested through `internal_get` (85 of 89; four need an imp
 input the fixtures do not make, listed by name) with a 200 answer, and no SQL statement it sends names `auth_session`
 or `auth_passkey` (checked to fail on a deliberate `auth_passkey` read), no job-queue table and no SQL clock function, and a
 second computation gives the same bytes; the fixtures hold one of each record, so per-row code runs over little data; a sign-in event does not bump, any other event
-does, and an exempt event does not hide a later write of its transaction. Not done: the live gate, since
-`perf-overview --check-kept` still requests only Übersicht's and Zu prüfen's routes.
+does, and an exempt event does not hide a later write of its transaction. Not done: the live gate (this said
+`perf-overview --check-kept` requested only Übersicht's and Zu prüfen's routes until the review fix A3 below).
+
+Review fixes (one round, 22 Nov 2026, on this branch): A1, the key's query is sorted by parameter name only, stably,
+so `?a=1&a=2` and `?a=2&a=1` (FastAPI takes the last value) are two keys; A2, the guard test writes between its two
+computations of each route one of each event 0051 exempts, a session slide and a passkey counter, and requires the
+same bytes (checked to fail on a deliberate read of the sign-in events); A3, `perf-overview --check-kept` also
+requests every kept route the page does not fire, with the workspace's first id of each kind and its screen's query,
+prints `skipped: <route> (no <thing>)` and any answer other than 200, and compares them with the rest.
 
 **(b) The inbox kept until its next time window.** GET `/inbox` and `/inbox/lines` are computed on every page (the
 menu's count) and three times per Zu prüfen load. They read the clock in three sections: email-in (`inbound_mail_items`,
@@ -418,6 +425,13 @@ passes over the inbox too (its fixture holds no wallet address; the wallet test 
 lines that pinned the inbox as unkept changed with the decision: `test_the_routes_match_their_templates` now expects
 `/api/inbox` kept, `test_a_route_not_listed_is_never_kept` asks `/events`, and the probe test asserts `/api/inbox`
 is a hit on the second pass. Not done: `--check-kept` on the live data and the review the scope asks for.
+
+Review fix (one round, 22 Nov 2026, on this branch): B1, the windows are counted in UTC. `now` and each row's
+`recorded_at` (the database hands timestamps back in Berlin time) are converted to UTC before a window is added or
+subtracted, since Python adds days to a Berlin-zoned time on the wall clock and so ended a window an hour early or
+late across a clock change. Tests per window (the received card, the statement card, the failed mail, the price card)
+with `now` in Berlin time across 28 Mar 2027: listed one microsecond before the named end, gone at it (each failed
+before the fix).
 
 **(c) Computed after a change, not at the next load** (Luis: „as soon as a change is made can't this trigger the
 computation instead of doing the computation when the page is loading?“). A task in the API process watches the
