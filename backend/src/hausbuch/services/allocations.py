@@ -125,11 +125,18 @@ def record_set(
     RuleViolationError allocation.excluded_transaction for a line merged away as a
     duplicate, allocation.scope_mismatch when a unit, tenancy or loan is not of the
     allocation's property, allocation.category_not_for_account for a category the line's
-    account does not take (phase 6 D159), whoever answers: a person, a rule or the model."""
+    account does not take (phase 6 D159), depot.line_books_trade for a depot's cash line
+    that booked a trade, re-booked to anything but its trade category (phase 6 D292 amended
+    (c)), whoever answers: a person, a rule or the model."""
     tx = _lock_transaction(ctx, allocation_set.transaction_id)
     check_sum(tx.amount, allocation_set.allocations)
     check_categories(ctx.conn, tx.account_id, allocation_set.allocations)
     _check_scope(ctx.conn, allocation_set.allocations)
+    from . import depot  # it imports the asset services
+
+    depot.refuse_unbooking_trade_line(
+        ctx.conn, tx.id, [d.category for d in allocation_set.allocations]
+    )
     previous = current_allocations(ctx.conn, tx.id)
     if previous:
         ctx.conn.execute(

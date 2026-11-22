@@ -88,6 +88,8 @@ DEPOT_HOLDING_EXISTS = "depot.holding_exists"  # a report of that date is applie
 # D292 (2): a trade confirmation whose units or amount differ from the trade its cash statement
 # line booked already; nothing is replaced and the suggestion names the difference.
 DEPOT_STATEMENT_TRADE_DIFFERS = "depot.statement_trade_differs"
+# D292 amended (c): the cash line carries a trade booked from it.
+LINE_BOOKS_TRADE = "depot.line_books_trade"
 
 # The cash line of a trade or a distribution is booked on the Valuta, a few bank days after
 # the trade or the payment date the document names.
@@ -1465,6 +1467,45 @@ def holdings_inbox_items(conn: Connection) -> list[InboxItem]:
 # --- D292: trades booked from the depot's cash statement --------------------------------------
 
 _TRADE_CATEGORIES = (AllocationCategory.SECURITY_PURCHASE, AllocationCategory.SECURITY_SALE)
+_TRADE_CATEGORY = {
+    MovementKind.ACQUISITION.value: AllocationCategory.SECURITY_PURCHASE,
+    MovementKind.DISPOSAL.value: AllocationCategory.SECURITY_SALE,
+}
+
+
+def line_trade_category(conn: Connection, transaction_id: UUID) -> AllocationCategory | None:
+    """The trade category a cash line must keep while a current movement booked from it
+    (source depot_statement) carries its units (D292 amended (c), 23 Nov 2026); None when no
+    such movement exists."""
+    m = movement_table.c
+    kind = conn.execute(
+        select(m.kind).where(
+            m.transaction_id == transaction_id,
+            m.source == MovementSource.DEPOT_STATEMENT.value,
+            m.superseded_by.is_(None),
+        )
+    ).scalar_one_or_none()
+    return None if kind is None else _TRADE_CATEGORY[kind]
+
+
+def refuse_unbooking_trade_line(
+    conn: Connection,
+    transaction_id: UUID,
+    categories: Sequence[AllocationCategory] | None = None,
+) -> None:
+    """Refuse to re-book a cash line that booked a trade (D292 amended (c)) to anything but
+    its trade category, or (categories None) to merge it away as a duplicate: its units
+    would stay counted under a line booked as something else. RuleViolationError
+    depot.line_books_trade, nothing written."""
+    category = line_trade_category(conn, transaction_id)
+    if category is None:
+        return
+    if categories is not None and all(c is category for c in categories):
+        return
+    raise RuleViolationError(
+        [LINE_BOOKS_TRADE],
+        "the line booked a trade on its depot; it keeps its trade category",
+    )
 
 
 @dataclass(frozen=True)

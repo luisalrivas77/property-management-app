@@ -1075,6 +1075,10 @@ def resolve_duplicate(
             )
         if later.excluded_as_duplicate_of is not None:
             raise ConflictError(f"transaction {later.id} is already excluded as a duplicate")
+        from . import depot  # it imports the asset services
+
+        # Phase 6 D292 amended (c): a line that booked a trade is never merged away.
+        depot.refuse_unbooking_trade_line(ctx.conn, exclusion.excluded_id)
         ctx.conn.execute(
             update(transaction_table)
             .where(transaction_table.c.id == exclusion.excluded_id)

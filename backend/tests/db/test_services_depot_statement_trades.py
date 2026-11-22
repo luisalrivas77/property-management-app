@@ -42,14 +42,17 @@ from test_services_card_import import _deps
 from hausbuch import cli
 from hausbuch.db.tables import asset as asset_table
 from hausbuch.db.tables import asset_movement as movement_table
+from hausbuch.db.tables import possible_duplicate as duplicate_table
 from hausbuch.jobs.matching import run_match_transaction
 from hausbuch.rules.errors import RuleError
+from hausbuch.schemas.allocation import AllocationCategory as C
+from hausbuch.schemas.allocation import AllocationDraft, AllocationMethod, AllocationSet
 from hausbuch.schemas.api import InboxItemKind
-from hausbuch.schemas.enums import DocumentSubtype
+from hausbuch.schemas.enums import DocumentSubtype, DuplicateStatus
 from hausbuch.schemas.events import EventType
-from hausbuch.services import depot, proposals
-from hausbuch.services.errors import ConflictError
-from hausbuch.services.statements import import_statement, list_transactions
+from hausbuch.services import allocations, depot, proposals
+from hausbuch.services.errors import ConflictError, RuleViolationError
+from hausbuch.services.statements import import_statement, list_transactions, resolve_duplicate
 
 pytestmark = pytest.mark.db
 
@@ -522,6 +525,72 @@ def test_a_report_booked_first_under_its_own_reference_covers_the_line(
     assert (held.source, held.quantity) == ("report", Decimal("4.8000"))
     assert _cards(read, ws, InboxItemKind.DEPOT_STATEMENT_TRADE_DIFFERS) == []
     assert run(ws, depot.book_statement_trades).covered == 1
+
+
+def test_a_line_that_booked_a_trade_keeps_its_category(
+    run, read, fresh_workspaces, blob_store, app_engine, tmp_path
+):
+    """D292 amended (c), the reviewer's case of PR #551: re-booking the purchase line as a fee
+    would leave its 4.8 units counted under a line that no longer says it bought them."""
+    ws, _ = fresh_workspaces
+    account, _ = _statement_booked(run, read, ws, blob_store, app_engine, tmp_path)
+    line = _cash(read, ws, account.id)["5500000002"]
+
+    def rebook(ctx, category):
+        return allocations.record_set(
+            ctx,
+            AllocationSet(
+                transaction_id=line,
+                allocations=[AllocationDraft(amount=Decimal("-500.00"), category=category)],
+                method=AllocationMethod.USER,
+                confidence=Decimal("1.000"),
+            ),
+            confirm=True,
+            auto=False,
+        )
+
+    for category in (C.DEPOT_FEE, C.SECURITY_SALE):
+        with pytest.raises(RuleViolationError) as refused:
+            run(ws, rebook, category, now=NOW)
+        assert refused.value.codes == (depot.LINE_BOOKS_TRADE,)
+    [bought] = [r for r in _current(read, ws) if r.transaction_id == line]
+    assert (bought.source, bought.quantity) == ("depot_statement", Decimal("4.8000"))
+    # Its own category again (a person adds the trade confirmation as its Beleg) is no change
+    # of what the line says, so it is allowed.
+    [written] = run(ws, rebook, C.SECURITY_PURCHASE, now=NOW)
+    assert written.category is C.SECURITY_PURCHASE
+
+
+def test_a_line_that_booked_a_trade_is_never_merged_away(
+    run, read, fresh_workspaces, blob_store, app_engine, tmp_path
+):
+    """D292 amended (c): merging the trade line away as a duplicate is refused, since its units
+    would stay counted with no line left in the balance."""
+    ws, _ = fresh_workspaces
+    account, _ = _statement_booked(run, read, ws, blob_store, app_engine, tmp_path)
+    cash = _cash(read, ws, account.id)
+
+    def pair(ctx):
+        return ctx.conn.execute(
+            insert(duplicate_table)
+            .values(
+                workspace_id=ctx.workspace_id,
+                transaction_id=cash["5500000001"],
+                other_transaction_id=cash["5500000002"],
+                status="open",
+                created_at=ctx.now,
+            )
+            .returning(duplicate_table.c.id)
+        ).scalar_one()
+
+    pair_id = run(ws, pair, now=NOW)
+    with pytest.raises(RuleViolationError) as refused:
+        run(ws, resolve_duplicate, pair_id, DuplicateStatus.MERGED, now=NOW)
+    assert refused.value.codes == (depot.LINE_BOOKS_TRADE,)
+    lines = {t.id: t for t in read(ws, list_transactions, account.id)}
+    assert lines[cash["5500000002"]].excluded_as_duplicate_of is None
+    # Keeping both stays possible.
+    run(ws, resolve_duplicate, pair_id, DuplicateStatus.KEPT_BOTH, now=NOW)
 
 
 def _cli(ws, dbname, *extra):
