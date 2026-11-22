@@ -8,8 +8,9 @@ startup:   if settings.run_worker and app.state.worker: the readable bank logins
 shutdown:  1. app.state.draining = True   new API requests get 503 shutting_down, Retry-After 2;
                                           /healthz still answers, so the platform does not
                                           kill the instance early
-           1b. the refresh task cancelled and awaited for up to 5 s (a route running in a
-                                          thread finishes first)
+           1b. the refresh task cancelled and awaited for up to 5 s (cancelling ends it at
+                                          once; a route it ran in a thread finishes on its
+                                          own and its answer is dropped)
            2. await worker.stop(grace)   stop fetching jobs, let the running one finish for up
                                           to settings.shutdown_grace_s; bounded here as well,
                                           so a stuck worker cannot hold the shutdown

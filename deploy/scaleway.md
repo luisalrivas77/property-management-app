@@ -563,7 +563,13 @@ The API's optional settings keep their defaults unless you have a reason to chan
 - `HAUSBUCH_MAX_UPLOAD_BYTES` (25 MiB);
 - `HAUSBUCH_SESSION_MAX_AGE_S` (12 h) and `HAUSBUCH_SESSION_IDLE_S` (2 h);
 - `HAUSBUCH_WORKER_CONCURRENCY` (2);
-- `HAUSBUCH_SHUTDOWN_GRACE_S` (20, which must stay below the kill timeout, Q15).
+- `HAUSBUCH_SHUTDOWN_GRACE_S` (20, which must stay below the kill timeout, Q15);
+- `HAUSBUCH_KEPT_REFRESH` (`true`): after a change, the API computes again in the background
+  the answers each member's pages read, so the next visit finds them ready (phase 10 §7.5 (c));
+  `false` switches that off, and pages then recompute at the next visit;
+- `HAUSBUCH_KEPT_REFRESH_QUIET_S` (30): how many seconds a household's data must stay
+  unchanged after a change before that background computation starts, so a series of saves
+  is computed once, after the last.
 
 `PORT` is set by Scaleway; `SCW_*` names are reserved.
 

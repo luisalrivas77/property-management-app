@@ -79,6 +79,7 @@ the bytes; a difference empties the store and is logged as an error.
 import logging
 import re
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
@@ -381,6 +382,9 @@ class KeptAnswers:
         self._recorded: OrderedDict[tuple[UUID, UUID], RecordedMember] = OrderedDict()
         self.in_flight = 0  # a person's requests running now (§7.5 (c))
         self.internal_in_flight = 0  # internal_get requests running now
+        # time.monotonic() when a person's request last ended, so the refresh waits for a
+        # continuous idle time, not only for no request running (§7.5 (c) review fix C2).
+        self.person_ended_at: float | None = None
         self.app: ASGIApp | None = None
         self.engine: Engine | None = None
 
@@ -533,6 +537,11 @@ class KeptAnswers:
     def _count(self, attribute: str, step: int) -> None:
         with self._lock:
             setattr(self, attribute, getattr(self, attribute) + step)
+
+    def _person_ended(self) -> None:
+        with self._lock:
+            self.in_flight -= 1
+            self.person_ended_at = time.monotonic()
 
     @property
     def busy(self) -> bool:
@@ -696,7 +705,7 @@ class KeptAnswersMiddleware:
         try:
             await self._handle(scope, receive, send)
         finally:
-            self.kept._count("in_flight", -1)
+            self.kept._person_ended()
 
     async def _handle(self, scope: Scope, receive: Receive, send: Send) -> None:
         kept = self.kept
@@ -726,7 +735,8 @@ class KeptAnswersMiddleware:
             return
         key = kept.key(scope, auth, before)
         if not bypass:
-            kept.remember_locale(auth.user_id, key.locale)
+            if not internal:  # the refresh asks in a recorded path's language (C1)
+                kept.remember_locale(auth.user_id, key.locale)
             entry = kept.get(key)
             if entry is not None:
                 kept.counters.hits += 1

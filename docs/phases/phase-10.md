@@ -452,11 +452,12 @@ store refused, or a request of the warm step, the checks or the refresh itself),
 per member and 50 members, the least recently asked dropped first, and for 3 days. It also counts the requests in
 flight: every request of a person, whatever its method or route, and apart from them the internal ones.
 `api/kept_refresh.py` is a task the lifespan starts (whether or not the worker runs) and cancels at shutdown before the
-worker stops, waiting at most 5 s. Every 5 s it reads the data version of each workspace with recorded paths (none
+worker stops, waiting at most 5 s for it to end (cancelling ends it at once; a route it was running in a thread
+finishes on its own and its answer is dropped). Every 5 s it reads the data version of each workspace with recorded paths (none
 recorded, no read); once a version has moved and stayed unchanged for `HAUSBUCH_KEPT_REFRESH_QUIET_S` (30 s), it walks
 each member's recorded paths, most recent first: a path whose answer is kept and unexpired is skipped (so a run after a
 write that changed nothing a member reads costs lookups only, and an expired inbox answer is recomputed), otherwise it
-waits until no request runs, reads the version and the days again and stops the run if they moved, and asks the path
+waits until no request runs and no person's request has ended for 1 s, reads the version and the days again and stops the run if they moved, and asks the path
 through `internal_get` with no await between the last check and the request; a path that answers 404 (its record
 deleted) is forgotten, any other failure is logged by its route template and status and the path kept. `HAUSBUCH_KEPT_REFRESH=false` switches it off; with the
 store off it does nothing. Not done: a trigger on an inbox answer's expiry alone or on the day's change without a
@@ -467,6 +468,12 @@ kept requests nothing; only a person's hits and stored answers are recorded; a w
 first route and the next quiet time completes it; a person's request still running holds the run until it ends;
 the counts; the bounds; the store off) and one in `tests/api/test_lifespan.py` (the task runs with the app and is
 gone before the engine is disposed). Not done: the live measurement of the first load after a change.
+
+Review fixes (one round, 22 Nov 2026, on this branch): C1, only a person's request sets the member's language, so a
+refresh in a recorded path's older language no longer switches the warm step and the checks to it; C2, the refresh
+waits for a continuous idle time (no request running and 1 s since a person's last one ended, a constant), so a page's
+next request sent just after the previous one ended finds no internal computation started; C3, the shutdown wording
+above (it said a route running in a thread finishes first); and the two settings listed in `deploy/scaleway.md`.
 
 ### 7.1 Done when
 

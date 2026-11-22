@@ -10,8 +10,10 @@ are ready before the first visit as well.
 
 Pacing (the API is one 0.25 vCPU process):
 - a person's request comes first: before each route the task waits until no request (a
-  person's, or the warm step's or the check's internal one) is running, and starts its own only
-  then, with no await in between; one internal computation at a time;
+  person's, or the warm step's or the check's internal one) is running and no person's request
+  has ended for `IDLE_S` (1 s), so a page's next request, sent just after the last one ended,
+  does not find an internal computation started; it starts its own only then, with no await in
+  between; one internal computation at a time;
 - a path whose answer is already kept and unexpired is skipped, so a run after a write that
   changed nothing a member reads, or the first sighting of a workspace, costs only lookups; an
   expired inbox answer (§7.5 (b)) is not kept, so it is recomputed by the same path;
@@ -27,6 +29,7 @@ ids) and never ends the task.
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -39,7 +42,10 @@ logger = logging.getLogger("hausbuch.api.kept_refresh")
 
 POLL_S = 5.0  # how often the versions are read while anything is recorded
 PAUSE_S = 0.05  # how often a waiting run looks again whether a request still runs
-STOP_TIMEOUT_S = 5.0  # a route running in a thread finishes before the task can end
+IDLE_S = 1.0  # how long no person's request must have run before an internal one starts
+# How long stop() waits for the cancelled task. Cancelling ends the task at once; a route it
+# was running in a worker thread runs on by itself and its answer is dropped.
+STOP_TIMEOUT_S = 5.0
 
 
 @dataclass
@@ -70,11 +76,13 @@ class KeptRefresher:
         quiet_s: float,
         poll_s: float = POLL_S,
         pause_s: float = PAUSE_S,
+        idle_s: float = IDLE_S,
     ) -> None:
         self.kept = kept
         self.quiet = timedelta(seconds=quiet_s)
         self.poll_s = poll_s
         self.pause_s = pause_s
+        self.idle_s = idle_s
         self.watch: dict[UUID, Watch] = {}
         self._task: asyncio.Task | None = None
 
@@ -140,8 +148,16 @@ class KeptRefresher:
             # moved: the next pass sees the new version and its quiet period starts then
         return runs
 
+    def _idle(self) -> bool:
+        """No request is running and no person's request has ended for `idle_s`."""
+        kept = self.kept
+        if kept.busy:
+            return False
+        ended = kept.person_ended_at
+        return ended is None or time.monotonic() - ended >= self.idle_s
+
     async def _wait_idle(self) -> None:
-        while self.kept.busy:
+        while not self._idle():
             await asyncio.sleep(self.pause_s)
 
     async def refresh(self, workspace_id: UUID, version: int) -> RefreshRun:
@@ -174,7 +190,7 @@ class KeptRefresher:
                         run.result = "moved"
                         self._log(run)
                         return run
-                    if not kept.busy:
+                    if self._idle():
                         break
                 run.requested += 1
                 run.templates.append(seen.template)

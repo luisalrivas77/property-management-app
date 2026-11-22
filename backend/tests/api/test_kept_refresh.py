@@ -55,7 +55,7 @@ def kept(api_app, clock):
 
 @pytest.fixture
 def refresher(kept) -> KeptRefresher:
-    return KeptRefresher(kept, quiet_s=30, pause_s=0.01)
+    return KeptRefresher(kept, quiet_s=30, pause_s=0.01, idle_s=0.01)
 
 
 def _write(app_engine, ws) -> None:
@@ -165,29 +165,64 @@ def test_a_persons_request_is_answered_first(client_a, kept, refresher, clock, a
 
     kept.internal_get = recording
 
+    # Review fix C2: the run waits for a continuous idle time, so a page's next request sent
+    # just after the previous one ended still comes first.
+    refresher.idle_s = 0.5
+
     async def scenario():
-        release = asyncio.Event()
+        def person(name: str, release: asyncio.Event):
+            async def app(scope, receive, send):  # a person's request, still running
+                order.append(f"{name} starts")
+                await release.wait()
+                order.append(f"{name} ends")
 
-        async def person(scope, receive, send):  # a person's save, still running
-            order.append("person starts")
-            await release.wait()
-            order.append("person ends")
+            scope = {"type": "http", "method": "POST", "path": "/api/owners", "headers": []}
+            return asyncio.create_task(KeptAnswersMiddleware(app, kept)(scope, None, None))
 
-        scope = {"type": "http", "method": "POST", "path": "/api/owners", "headers": []}
-        request = asyncio.create_task(KeptAnswersMiddleware(person, kept)(scope, None, None))
+        first_done, second_done = asyncio.Event(), asyncio.Event()
+        first = person("first", first_done)
         await asyncio.sleep(0)
         assert kept.in_flight == 1
         run = asyncio.create_task(refresher.refresh(ws, version))
         await asyncio.sleep(0.2)
-        assert order == ["person starts"]  # the run waits
-        release.set()
-        await request
+        assert order == ["first starts"]  # the run waits
+        first_done.set()
+        await first
+        await asyncio.sleep(0.1)  # the page's next request, shortly after
+        second = person("second", second_done)
+        await asyncio.sleep(0.2)
+        assert order == ["first starts", "first ends", "second starts"]
+        second_done.set()
+        await second
         return await run
 
     run = asyncio.run(scenario())
-    assert order == ["person starts", "person ends", "refresh request"]
+    assert order == [
+        "first starts",
+        "first ends",
+        "second starts",
+        "second ends",
+        "refresh request",
+    ]
     assert (run.result, run.stored) == ("done", 1)
     assert kept.in_flight == 0
+
+
+@pytest.mark.db
+def test_a_refresh_keeps_the_language_a_person_last_asked_for(
+    client_a, kept, refresher, clock, app_engine, auth_a
+):
+    """Review fix C1: the refresh asks an older path in its own language, and that internal
+    request does not change the language the warm step and the checks use."""
+    ws = auth_a.workspace_id
+    ok(client_a.get("/api/properties", headers={"Accept-Language": "de"}))
+    ok(client_a.get("/api/owners", headers={"Accept-Language": "en"}))
+    assert kept.locale_of(auth_a.user_id) == "en"
+    _changed_and_quiet(refresher, clock, app_engine, ws)
+    ok(client_a.get("/api/owners", headers={"Accept-Language": "en"}))  # kept again by a person
+    (run,) = asyncio.run(refresher.tick())
+    assert (run.result, run.requested, run.skipped) == ("done", 1, 1)  # the `de` path only
+    assert kept.locale_of(auth_a.user_id) == "en"
 
 
 @pytest.mark.db
