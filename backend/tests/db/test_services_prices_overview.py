@@ -4,6 +4,7 @@ prices only; the fetch itself is tests/db/test_services_prices_fetch.py."""
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 from db.db_support import TEST_IBAN_KEY
@@ -655,3 +656,39 @@ def test_the_price_cards_change_only_when_the_oldest_run_leaves_the_window(
     # The whole inbox expires with its earliest section.
     timed = read(ws, review.inbox_timed, today=NOW.date(), now=NOW + timedelta(days=6, hours=1))
     assert timed.changes_at == changes_at
+
+
+def test_the_streak_window_is_counted_in_utc_across_a_clock_change(
+    run, read, app_engine, fresh_workspaces, funds
+):
+    """Phase 10 §7.5 (b), review fix B1: with `now` in Berlin time across 28 Mar 2027 (UTC+1
+    to UTC+2), the window still ends at the UTC moment the section names, not an hour early
+    (a Berlin-zoned `now - 31 days` is wall-clock arithmetic in Python)."""
+    berlin = ZoneInfo("Europe/Berlin")
+    ws, _ = fresh_workspaces
+    _setup(run, ws)
+    start = datetime(2027, 3, 10, 7, 0, tzinfo=UTC)  # Berlin UTC+1; the window ends at UTC+2
+    down = Fake(down=("navhist-emea-en-inv-gy",))
+    for day in range(7):
+        run_workspace(
+            app_engine, ws, ACTOR, Sources(fetch=down, coingecko=None), start + timedelta(days=day)
+        )
+    changes_at = start + timedelta(days=31, microseconds=1)
+    first = read(ws, overview.price_inbox_section, start + timedelta(days=6, hours=1))
+    assert first.changes_at == changes_at
+    # Each `now` below in Berlin time; the cards' texts count days, so the one compared with
+    # `before` is read on the same UTC day.
+    kept = read(
+        ws, overview.price_inbox_section, (changes_at - timedelta(hours=2)).astimezone(berlin)
+    )
+    assert [i.kind for i in kept.items] == [InboxItemKind.PRICE_SOURCE_FAILED]
+    assert kept.changes_at == changes_at
+    before = read(
+        ws,
+        overview.price_inbox_section,
+        (changes_at - timedelta(microseconds=1)).astimezone(berlin),
+    )
+    assert before.items == kept.items
+    assert before.changes_at == changes_at
+    after = read(ws, overview.price_inbox_section, changes_at.astimezone(berlin))
+    assert [i.kind for i in after.items] == []

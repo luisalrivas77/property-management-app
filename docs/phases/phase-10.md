@@ -426,6 +426,13 @@ lines that pinned the inbox as unkept changed with the decision: `test_the_route
 `/api/inbox` kept, `test_a_route_not_listed_is_never_kept` asks `/events`, and the probe test asserts `/api/inbox`
 is a hit on the second pass. Not done: `--check-kept` on the live data and the review the scope asks for.
 
+Review fix (one round, 22 Nov 2026, on this branch): B1, the windows are counted in UTC. `now` and each row's
+`recorded_at` (the database hands timestamps back in Berlin time) are converted to UTC before a window is added or
+subtracted, since Python adds days to a Berlin-zoned time on the wall clock and so ended a window an hour early or
+late across a clock change. Tests per window (the received card, the statement card, the failed mail, the price card)
+with `now` in Berlin time across 28 Mar 2027: listed one microsecond before the named end, gone at it (each failed
+before the fix).
+
 **(c) Computed after a change, not at the next load** (Luis: „as soon as a change is made can't this trigger the
 computation instead of doing the computation when the page is loading?“). A task in the API process watches the
 data versions; once a workspace's version has moved and no write followed for about 30 s, it asks again, as each

@@ -32,7 +32,7 @@ Message-ID, the time, the decision, the code and the counts (§5.5).
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import Connection, and_, func, or_, select
@@ -455,7 +455,11 @@ def inbound_mail_section(conn: Connection, now: datetime) -> TimedItems:
     - email_received for a statement no account took (inferred, no code is stored), shown
       until an import of that document exists, for at most 30 days;
     - email_failed for a mail whose third attempt failed in the last 30 days;
-    - email_inbox_failed while the latest poll outcome is a failure (note_poll_outcome)."""
+    - email_inbox_failed while the latest poll outcome is a failure (note_poll_outcome).
+
+    The windows are counted in UTC: a Berlin-zoned `now` less 30 days is wall-clock
+    arithmetic in Python, an hour off across a clock change."""
+    now = now.astimezone(UTC)
     imported_docs = select(import_table.c.document_id)
     statement_doc = and_(
         link_table.c.import_id.is_(None),
