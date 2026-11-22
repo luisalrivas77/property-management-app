@@ -230,6 +230,12 @@ NET_WORTH_NOTES = i18n.Patterns(
             "Paid out so far; until the handover on {d}, then the remaining balance by the"
             " repayment schedule",
         ),
+        (
+            "Am {d:date} von „{sender}“ überwiesen; zählt hier, bis ein Kontoauszug dieses"
+            " Kontos den Tag abdeckt",
+            "Sent from “{sender}” on {d}; counts here until a statement of this account covers"
+            " that day",
+        ),
     ],
 )
 NET_WORTH_LABELS = i18n.Patterns(
@@ -237,6 +243,7 @@ NET_WORTH_LABELS = i18n.Patterns(
     [
         ("Anzahlung Kaufpreis – {label}", "Purchase price paid in advance – {label}"),
         ("Wertpapier", "Security"),
+        ("Unterwegs zu „{label}“", "In transit to “{label}”"),  # phase 6 D292 (3)
     ],
 )
 
@@ -245,7 +252,7 @@ def _net_worth_line(line: NetWorthLine) -> NetWorthLine:
     update: dict[str, Any] = {}
     if line.note is not None:
         update["note"] = NET_WORTH_NOTES.translate(line.note)
-    if line.kind.value in ("property", "position"):
+    if line.kind.value in ("property", "position") or line.in_transit:
         update["label"] = NET_WORTH_LABELS.translate(line.label)
     return line.model_copy(update=update)
 

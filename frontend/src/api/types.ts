@@ -10374,6 +10374,11 @@ export interface components {
             estimate: boolean;
             /** Note */
             note?: string | null;
+            /**
+             * In Transit
+             * @default false
+             */
+            in_transit: boolean;
             /** Not Valued Reason */
             not_valued_reason?: string | null;
         };

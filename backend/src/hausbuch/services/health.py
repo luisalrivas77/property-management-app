@@ -135,6 +135,7 @@ from .net_worth import (
     last_month_end,
     latest_run,
     list_runs,
+    merge_transit,
     month_end_figure,
     month_end_figures,
     net_worth,
@@ -554,7 +555,7 @@ def _reserve_balances(conn: Connection, figure: NetWorth) -> list[ReserveBalance
     purpose and its owner shares on the figure's day."""
     lines = [
         line
-        for line in figure.lines
+        for line in merge_transit(figure.lines)  # phase 6 D292 (3): one balance per account
         if line.kind is NetWorthLineKind.ACCOUNT
         and line.account_id is not None
         and line.account_kind is not None
@@ -1243,7 +1244,10 @@ def _input_checks(month: str, stored: NetWorth, now: NetWorth) -> list[HealthChe
     def key(line: NetWorthLine) -> tuple:
         return (line.account_id, line.asset_id)
 
-    current = {key(line): line for line in now.lines if line.account_id is not None}
+    # Phase 6 D292 (3): a stored run holds money in transit inside the receiving account's
+    # balance row, so the reading is compared with it folded in the same way.
+    now_lines = merge_transit(now.lines)
+    current = {key(line): line for line in now_lines if line.account_id is not None}
     out = []
     for line in stored.lines:
         if line.account_id is None:
@@ -1265,7 +1269,7 @@ def _input_checks(month: str, stored: NetWorth, now: NetWorth) -> list[HealthChe
             )
         )
     held = {key(line) for line in stored.lines if line.account_id is not None}
-    for line in now.lines:
+    for line in now_lines:
         if line.account_id is None or line.value_eur is not None or key(line) in held:
             continue
         where = (

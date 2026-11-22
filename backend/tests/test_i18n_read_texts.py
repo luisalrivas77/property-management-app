@@ -182,6 +182,7 @@ NOTES = [
     net_worth.payout_note(date(2026, 7, 1)),
     f"{net_worth.advance_note(date(2026, 7, 1))}; zum Monatsende gespeichert",
     f"{net_worth.payout_note(date(2026, 7, 1))}; zum Monatsende gespeichert",
+    net_worth.transit_note(date(2026, 11, 3), "Girokonto"),
 ]
 
 
@@ -215,6 +216,11 @@ def test_net_worth_labels():
         assert todo_texts.english(position).label == "Security"
     with i18n.use(i18n.DE):
         assert todo_texts.english(advance).label == "Anzahlung Kaufpreis – Wohnung"
+    # Phase 6 D292 (3): money in transit is an account line whose label is the app's own.
+    transit = _line(NetWorthLineKind.ACCOUNT, net_worth.transit_label("Depot"), None)
+    transit = transit.model_copy(update={"in_transit": True})
+    with i18n.use(i18n.EN):
+        assert todo_texts.english(transit).label == "In transit to “Depot”"
 
 
 # --- The Budget ----------------------------------------------------------------------------

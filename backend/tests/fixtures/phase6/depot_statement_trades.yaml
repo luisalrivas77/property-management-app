@@ -21,6 +21,15 @@
 # signed units) is booked already when a current statement movement has the same ISIN and
 # units and a value date inside the window; the report never books it a second time.
 #
+# transit: rules.net_worth.in_transit(paid_on, opened_on, through, receiver_history, linked)
+# (D292 (3)): money sent from an own account to an own depot (or any own account) whose
+# statements reach only up to before the payment counts as „unterwegs zu <Konto>“ on that
+# account. paid_on is the debit's day; opened_on and through the sending account's anchor day
+# and the last day its balance counts on the net worth's day; receiver_history the day the
+# receiving account's imported history reaches (null: none). It counts while the sender's
+# balance holds the debit and the receiver's history ends before the payment's day, and drops
+# once a statement of the receiver reaches that day or the debit is linked to its credit.
+#
 # Every ISIN, reference and amount below is invented.
 
 lines:
@@ -114,4 +123,54 @@ report_trades:
   - id: nothing_booked
     trade: {isin: IE00BEISPL02, trade_date: "2026-03-13", units: "4.8000"}
     booked: []
+    expect: false
+
+transit:
+  - id: sent_after_the_depot_statement
+    description: a monthly payment of 3 Nov, the depot's cash statement imported up to 30 Oct
+    paid_on: "2026-11-03"
+    opened_on: "2025-12-31"
+    through: "2026-11-20"
+    receiver_history: "2026-10-30"
+    expect: true
+  - id: statement_covers_the_day
+    description: the November statement is imported; the depot's own figures count the money
+    paid_on: "2026-11-03"
+    opened_on: "2025-12-31"
+    through: "2026-11-20"
+    receiver_history: "2026-11-28"
+    expect: false
+  - id: history_ends_on_the_payment_day
+    paid_on: "2026-11-03"
+    opened_on: "2025-12-31"
+    through: "2026-11-20"
+    receiver_history: "2026-11-03"
+    expect: false
+  - id: linked_to_its_credit
+    description: the depot's credit is booked (two days before the debit, D162) and linked
+    paid_on: "2026-11-03"
+    opened_on: "2025-12-31"
+    through: "2026-11-20"
+    receiver_history: "2026-11-01"
+    linked: true
+    expect: false
+  - id: receiver_without_history
+    paid_on: "2026-11-03"
+    opened_on: "2025-12-31"
+    through: "2026-11-20"
+    receiver_history: null
+    expect: false
+  - id: sender_balance_not_yet_holding_it
+    description: the sending account is reconciled only up to before the debit
+    paid_on: "2026-11-03"
+    opened_on: "2025-12-31"
+    through: "2026-11-02"
+    receiver_history: "2026-10-30"
+    expect: false
+  - id: debit_on_the_anchor_day
+    description: the sending account's anchor balance already holds the debit
+    paid_on: "2025-12-31"
+    opened_on: "2025-12-31"
+    through: "2026-11-20"
+    receiver_history: "2025-12-01"
     expect: false

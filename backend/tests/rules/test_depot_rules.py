@@ -8,7 +8,7 @@ from decimal import Decimal
 import fixture_models_phase6 as phase6
 import pytest
 
-from hausbuch.rules import depot
+from hausbuch.rules import depot, net_worth
 from hausbuch.rules import errors as E
 from hausbuch.schemas.household import MovementStatus
 
@@ -133,3 +133,12 @@ def test_statement_booked(case):
     )
     booked = [(b.isin, b.units, b.value_date) for b in case.booked]
     assert (depot.statement_booked(trade, booked) is not None) is case.expect
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize("case", STATEMENT.transit, ids=lambda c: c.id)
+def test_in_transit(case):
+    found = net_worth.in_transit(
+        case.paid_on, case.opened_on, case.through, case.receiver_history, linked=case.linked
+    )
+    assert found is case.expect

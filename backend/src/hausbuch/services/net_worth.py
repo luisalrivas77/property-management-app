@@ -138,6 +138,7 @@ from .loans import list_loans
 from .prices.overview import assets_overview_with
 from .reminders import idle_cards
 from .scenarios import estimate_on_day
+from .transfers import _current_links, _own_account_sets
 from .transfers import _last_days as history_ends  # D162 amended (9)'s history end
 
 C = NetWorthClass
@@ -241,6 +242,151 @@ class _Item:
     shares_ref: UUID  # the account or property whose shares split it
 
 
+@dataclass(frozen=True)
+class _Transit:
+    """A booked transfer from an own account to another (phase 6 D292 (3)): the debit, the
+    euros it sent and the one own account its counterparty IBAN names."""
+
+    transaction_id: UUID
+    account_id: UUID  # the sending account
+    paid_on: date
+    amount: Decimal  # positive: the transfer rows of the debit, a deposit fee left out
+    receiver: UUID
+    linked: bool  # a leg of a current transfer link
+
+
+_TRANSFER_OUT = frozenset(
+    {AllocationCategory.INTERNAL_TRANSFER_OUT.value, AllocationCategory.OWNER_TRANSFER_OUT.value}
+)
+
+
+def _transfers_out(conn: Connection) -> list[_Transit]:
+    """Phase 6 D292 (3): every booked transfer from an own account that may be in transit:
+    a debit of a reconciled import, not excluded as a duplicate, whose live rows are all
+    confirmed and all a transfer out (a deposit split's bank fee beside it allowed, D162
+    amended), naming by its counterparty IBAN exactly one own account other than its own
+    (an account's IBAN, or a card's payment IBAN two cards may share, then no receiver is
+    sure and it is left out). Read once per call, whatever its days."""
+    t, a, imp = transaction_table.c, allocation_table.c, import_table.c
+    out_rows = select(a.transaction_id).where(
+        a.status == AllocationStatus.CONFIRMED.value,
+        a.amount != 0,
+        a.category.in_(sorted(_TRANSFER_OUT)),
+    )
+    rows = conn.execute(
+        select(
+            t.id,
+            t.account_id,
+            t.booking_date,
+            t.counterparty_iban_hmac,
+            a.category,
+            a.amount,
+            a.status,
+        )
+        .join(import_table, imp.id == t.import_id)
+        .join(allocation_table, a.transaction_id == t.id)
+        .where(
+            t.id.in_(out_rows),
+            t.amount < 0,
+            t.excluded_as_duplicate_of.is_(None),
+            t.counterparty_iban_hmac.is_not(None),
+            imp.status == ImportStatus.RECONCILED.value,
+            a.status.in_([AllocationStatus.CONFIRMED.value, AllocationStatus.PROPOSED.value]),
+            a.amount != 0,
+        )
+        .order_by(t.booking_date, t.id)
+    ).all()
+    if not rows:
+        return []
+    by_line: dict[UUID, list] = defaultdict(list)
+    for r in rows:
+        by_line[r.id].append(r)
+    owners = _own_account_sets(conn)
+    linked = {
+        leg
+        for link in _current_links(conn)
+        for leg in (link.out_transaction_id, link.in_transaction_id)
+        if leg is not None
+    }
+    found = []
+    for tx_id, parts in by_line.items():
+        if any(p.status != AllocationStatus.CONFIRMED.value for p in parts):
+            continue
+        if any(
+            p.category not in _TRANSFER_OUT and p.category != AllocationCategory.BANK_FEES.value
+            for p in parts
+        ):
+            continue
+        amount = -sum((p.amount for p in parts if p.category in _TRANSFER_OUT), ZERO)
+        first = parts[0]
+        receivers = owners.get(bytes(first.counterparty_iban_hmac).hex(), set()) - {
+            first.account_id
+        }
+        if amount <= 0 or len(receivers) != 1:
+            continue
+        found.append(
+            _Transit(
+                transaction_id=tx_id,
+                account_id=first.account_id,
+                paid_on=first.booking_date,
+                amount=amount,
+                receiver=next(iter(receivers)),
+                linked=tx_id in linked,
+            )
+        )
+    return found
+
+
+def transit_label(receiver: str) -> str:
+    return f"Unterwegs zu „{receiver}“"
+
+
+def transit_note(paid_on: date, sender: str) -> str:
+    return (
+        f"Am {_german(paid_on)} von „{sender}“ überwiesen; zählt hier, bis ein Kontoauszug "
+        "dieses Kontos den Tag abdeckt"
+    )
+
+
+def merge_transit(lines: Sequence[NetWorthLine]) -> list[NetWorthLine]:
+    """Phase 6 D292 (3): the lines with each „unterwegs zu <Konto>“ line folded into its
+    receiving account's balance line, so an account has one balance (the month-end's stored
+    row per account, the key figures' reserve and health-check's comparison read it so). The
+    net worth's total is the same either way; only the live figure shows the line apart."""
+    moving: dict[UUID, Decimal] = {}
+    for line in lines:
+        if line.in_transit and line.value_eur is not None and line.account_id is not None:
+            moving[line.account_id] = moving.get(line.account_id, ZERO) + line.value_eur
+    if not moving:
+        return list(lines)
+    out: list[NetWorthLine] = []
+    for line in lines:
+        if line.in_transit:
+            continue
+        if (
+            line.kind is L.ACCOUNT
+            and line.asset_id is None
+            and line.account_id in moving
+            and line.value_eur is not None
+        ):
+            extra = moving.pop(line.account_id)
+            line = line.model_copy(update={"value_eur": line.value_eur + extra})
+        out.append(line)
+    for line in lines:  # a receiver without a balance line (_balances never makes one)
+        if line.in_transit and line.account_id in moving:
+            out.append(
+                line.model_copy(
+                    update={
+                        "in_transit": False,
+                        "label": line.account_label or line.label,
+                        "note": None,
+                        "value_eur": moving.pop(line.account_id),
+                    }
+                )
+            )
+    return out
+
+
 class _Reads:
     """What a net worth reads that does not depend on its day, read once per call and shared
     by the days one call computes (overview: the last month-end and today). Nothing is kept
@@ -251,6 +397,12 @@ class _Reads:
         self._conn = conn
         self._idle: set[UUID] | None = None
         self._history: Any = None
+        self._transit: list[_Transit] | None = None
+
+    def transit(self) -> list[_Transit]:
+        if self._transit is None:
+            self._transit = _transfers_out(self._conn)
+        return self._transit
 
     def idle(self) -> set[UUID]:
         if self._idle is None:
@@ -311,6 +463,7 @@ def _balances(conn: Connection, on: date, reads: _Reads) -> tuple[list[_Item], l
     )
     items: list[_Item] = []
     todos: list[NetWorthTodo] = []
+    counted: dict[UUID, tuple[Any, date]] = {}  # each account with a balance line, its `through`
     for a in accounts:
         kind = AccountKind(a.kind)
         facts = imported.get(a.id)
@@ -321,6 +474,7 @@ def _balances(conn: Connection, on: date, reads: _Reads) -> tuple[list[_Item], l
             through = on
         else:
             through = max(reached or a.opening_balance_on, a.opening_balance_on)
+        counted[a.id] = (a, through)
         own = lines.get(a.id, [])
         balance = rules.bank_balance(a.opening_balance, a.opening_balance_on, own, through)
         waiting = sum(1 for day, _ in own if through < day <= on and day > a.opening_balance_on)
@@ -362,7 +516,54 @@ def _balances(conn: Connection, on: date, reads: _Reads) -> tuple[list[_Item], l
             and (on - max(through, history.get(a.id, through))).days > valuation.STALE_AFTER_DAYS
         ):
             todos.append(_outdated(a.id, a.label, kind, through, on, a.id in connected))
+    items += _in_transit(on, counted, history, reads)
     return items, todos
+
+
+def _in_transit(
+    on: date, counted: dict[UUID, tuple[Any, date]], history: Any, reads: _Reads
+) -> list[_Item]:
+    """Phase 6 D292 (3), 22 Nov 2026 (Luis: „The Quirion values in the app didn't match the
+    values in Quirion“): a booked transfer (_transfers_out) whose debit the sending account's
+    balance holds on `on` while the receiving account's history ends before the payment's day
+    (rules.net_worth.in_transit) counts at its amount as „unterwegs zu <Konto>“ on the
+    receiving account, one line per transfer after every balance line. It drops once a
+    statement of the receiver reaches the day (its own figures then count the money), or once
+    the debit is linked to its counterpart. A line of the net worth only: no movement, no lot,
+    no tax figure reads it. Both accounts must have a balance line on `on`; a depot without
+    cash statements has no history, so nothing is in transit to it."""
+    out = []
+    for move in reads.transit():
+        sender, receiver = counted.get(move.account_id), counted.get(move.receiver)
+        if sender is None or receiver is None:
+            continue
+        (sent_from, through), (account, _) = sender, receiver
+        if not rules.in_transit(
+            move.paid_on,
+            sent_from.opening_balance_on,
+            through,
+            history.get(move.receiver),
+            linked=move.linked,
+        ):
+            continue
+        kind = AccountKind(account.kind)
+        out.append(
+            _Item(
+                NetWorthLine(
+                    kind=L.ACCOUNT,
+                    net_worth_class=rules.class_of(kind),
+                    label=transit_label(account.label),
+                    account_id=account.id,
+                    account_kind=kind,
+                    account_label=account.label,
+                    value_eur=move.amount,
+                    note=transit_note(move.paid_on, sent_from.label),
+                    in_transit=True,
+                ),
+                account.id,
+            )
+        )
+    return out
 
 
 def _outdated(
@@ -1221,7 +1422,8 @@ def capture_month_end(ctx: CommandContext, as_of: date) -> SnapshotResult:
     _lock(ctx)
     existing = _latest_run(ctx.conn, as_of)
     figure = net_worth(ctx.conn, as_of)
-    rows = [_line_key(line) for line in figure.lines if line.value_eur is not None]
+    # D292 (3): money in transit is stored inside its receiving account's balance row.
+    rows = [_line_key(line) for line in merge_transit(figure.lines) if line.value_eur is not None]
     if not rows:
         return SnapshotResult(
             outcome=SnapshotOutcome.EMPTY, as_of=as_of, unvalued_positions=figure.unvalued_positions
@@ -1302,10 +1504,13 @@ __all__ = [
     "latest_month_end",
     "latest_run",
     "list_runs",
+    "merge_transit",
     "month_end_figure",
     "month_end_figures",
     "net_worth",
     "overview",
     "shares_on",
     "stored_run",
+    "transit_label",
+    "transit_note",
 ]

@@ -920,10 +920,20 @@ class StatementReportCase(_Case):
     expect: bool
 
 
+class StatementTransitCase(_Case):
+    paid_on: date
+    opened_on: date
+    through: date
+    receiver_history: date | None
+    linked: bool = False
+    expect: bool
+
+
 class DepotStatementTradesFixture(_Fixture):
     lines: list[StatementLineCase] = Field(min_length=5)
     windows: list[StatementWindowCase] = Field(min_length=3)
     report_trades: list[StatementReportCase] = Field(min_length=3)
+    transit: list[StatementTransitCase] = Field(min_length=3)
 
 
 # --- holdings_reconcile.yaml: rules.depot.reconcile_holdings (§7) ---------------------------

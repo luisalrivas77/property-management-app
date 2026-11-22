@@ -26641,6 +26641,11 @@
             ],
             "title": "Note"
           },
+          "in_transit": {
+            "type": "boolean",
+            "title": "In Transit",
+            "default": false
+          },
           "not_valued_reason": {
             "anyOf": [
               {

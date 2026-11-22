@@ -52,6 +52,11 @@ class NetWorthLine(Schema):
     stale: bool = False
     estimate: bool = False
     note: str | None = None  # where an estimate comes from, in the screen's words
+    # Phase 6 D292 (3): money sent to the account (`account_id`, the receiver) whose statements
+    # do not reach the payment's day yet, „unterwegs zu <Konto>“, a line of its own beside the
+    # account's balance (`as_of` None, the day in `note`). A stored month-end folds it into
+    # the account's balance row (services.net_worth.merge_transit).
+    in_transit: bool = False
     not_valued_reason: str | None = None
 
 
