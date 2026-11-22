@@ -204,6 +204,30 @@ def test_a_stuck_worker_cannot_hold_the_shutdown(own_engine, tmp_path, sessions,
     )
 
 
+def test_the_kept_answers_refresh_starts_and_stops_with_the_app(own_engine, tmp_path, sessions):
+    """Phase 10 §7.5 (c): the refresh task runs while the app runs, without the worker too,
+    and is gone before the engine is disposed; switched off, it never starts."""
+    log: list = []
+
+    async def scenario(**settings):
+        app = _app(own_engine, tmp_path, sessions, None, log, **settings)
+        refresher = app.state.kept_refresher
+        refresher.poll_s = 0.01  # the loop really ticks while the app runs
+        lifespan = Lifespan(app)
+        await lifespan.startup()
+        running = refresher.running
+        status, _, _ = await call(app, "GET", "/api/owners", token=TOKEN_A)
+        assert status == 200
+        await asyncio.sleep(0.05)
+        lifespan.begin_shutdown()
+        await lifespan.shutdown_complete()
+        return running, refresher.running
+
+    assert asyncio.run(scenario()) == (True, False)
+    assert log == [("dispose", True)]
+    assert asyncio.run(scenario(kept_refresh=False)) == (False, False)
+
+
 # --- /healthz ---------------------------------------------------------------------------
 
 

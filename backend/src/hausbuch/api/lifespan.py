@@ -2,11 +2,16 @@
 
 startup:   if settings.run_worker and app.state.worker: the readable bank logins left from
            before migration 0039 are encrypted (phase 6 D196, never raises), then
-           await worker.start()
+           await worker.start();
+           if settings.kept_refresh and the kept answers' store is on, whether or not the
+           worker runs: the refresh task of phase 10 §7.5 (c) (api/kept_refresh.py)
 shutdown:  1. app.state.draining = True   new API requests get 503 shutting_down, Retry-After 2;
                                           /healthz still answers, so the platform does not
                                           kill the instance early
-           2. await worker.stop(grace)    stop fetching jobs, let the running one finish for up
+           1b. the refresh task cancelled and awaited for up to 5 s (cancelling ends it at
+                                          once; a route it ran in a thread finishes on its
+                                          own and its answer is dropped)
+           2. await worker.stop(grace)   stop fetching jobs, let the running one finish for up
                                           to settings.shutdown_grace_s; bounded here as well,
                                           so a stuck worker cannot hold the shutdown
            3. engine.dispose()            last: requests and jobs share the engine
@@ -41,6 +46,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = state.settings
     state.draining = False
     worker = state.worker if settings.run_worker else None
+    kept = getattr(state, "kept_answers", None)
+    refresher = getattr(state, "kept_refresher", None)
+    if not (settings.kept_refresh and kept is not None and kept.enabled):
+        refresher = None
     if worker is not None:
         # D196: before the worker takes a sync and before the instance serves (uvicorn binds
         # its port only after this start-up returns, so nothing is answering yet); in a
@@ -48,10 +57,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await asyncio.to_thread(encrypt_all_logins, state.engine, settings)
         await worker.start()
         logger.info("worker started", extra={"fields": {"event": "worker_started"}})
+    if refresher is not None:
+        refresher.start()
     try:
         yield
     finally:
         state.draining = True
+        if refresher is not None:
+            await refresher.stop()
         if worker is not None:
             await _stop_worker(worker, settings.shutdown_grace_s)
         state.engine.dispose()
