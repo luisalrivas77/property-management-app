@@ -23,7 +23,11 @@ What the store keeps, and when:
 - the exact bytes and headers the route sent; a hit sends them again unchanged;
 - at most `max_bytes` (32 MB), the least recently used dropped first; an answer bigger than a
   quarter of that is not kept. Storing an answer drops the answers of its workspace kept
-  under an older version, which can never be served again.
+  under an older version, which can never be served again;
+- until its expiry, when the route named one (`keep_until`, §7.5 (b)): a route whose answer
+  reads the clock finer than the day names the first moment that answer may change with no
+  write in between, and a kept answer is served only before it (by the store's clock). Only
+  GET /inbox and /inbox/lines name one; every other kept answer has none.
 
 The session is still resolved on every request, a hit included (the resolver's lookup and its
 idle slide): a revoked or expired session gets its 401 from the route as before, never a kept
@@ -31,17 +35,23 @@ answer. The middleware resolves it once and hands it to the route's `current_aut
 the ASGI scope (AUTH_SCOPE_KEY), so a miss does not resolve it twice. Only server code can put
 a key into the scope; a client cannot.
 
-Not kept, on purpose (the clock and input audit, phase 10 §7.4): `/api/inbox` (its cards read
-the time of day: a 24-hour and a 30-day window, and `created_at` ages), `/api/auth/me` and
+Not kept, on purpose (the clock and input audit, phase 10 §7.4): `/api/auth/me` and
 `/api/auth/members` (they read the session and the passkeys, which the data version does not
 cover: `auth_session`, `auth_passkey`), and every route not listed. Adding a route to
 KEPT_ROUTES needs the same audit: every input it reads must be in the key or covered by the
-data version.
+data version, or, for a clock read finer than the day, its expiry.
+
+§7.5 (b) keeps `/api/inbox` and `/api/inbox/lines` until their expiry: the email-in cards
+(a 24-hour card, a 30-day list) and the price cards (a 31-day streak window) name the moment
+their oldest row leaves its window (services/timed_items.py), the wallet cards are dated by
+stored times only, every other section reads at most the Berlin date, and the settings they
+read are the process's (fixed while the store lives) or typed values in `app_secret`, which
+the data version covers.
 
 §7.5 (a) applied that audit to every other GET route and kept those that read only the
-workspace's rows, the day and the code. Left out, besides the above: `/api/inbox/lines` (the
-inbox's time windows, §7.5 (b)); `/api/events` and the property History routes (they show the
-sign-in and passkey events, which since migration 0051 move no version); every route that reads
+workspace's rows, the day and the code. Left out, besides the above: `/api/events` and the
+property History routes (they show the sign-in and passkey events, which since migration 0051
+move no version); every route that reads
 the clock finer than the day (`/api/inbound-mail`, signed URLs: `/api/exports/holdings`,
 `/api/tax-exports/{id}`, which also reads the job queue), settings or typed secrets
 (`/api/app-secrets`, `/api/bank-credential-slots`, `/api/inbound-mail/address`,
@@ -89,6 +99,8 @@ logger = logging.getLogger("hausbuch.api.kept_answers")
 AUTH_SCOPE_KEY = "hausbuch.auth"
 BYPASS_SCOPE_KEY = "hausbuch.kept_bypass"
 ROUTE_SCOPE_KEY = "hausbuch.kept_route"
+# Set by a route (`keep_until`) in the request state: when its answer may change (§7.5 (b)).
+EXPIRES_STATE_KEY = "kept_expires_at"
 
 MAX_BYTES = 32 * 1024 * 1024
 
@@ -99,6 +111,8 @@ MAX_BYTES = 32 * 1024 * 1024
 # is named by its own template.
 KEPT_ROUTES: tuple[str, ...] = (
     # Übersicht and Zu prüfen (§7.4)
+    "/api/inbox",  # until its expiry (§7.5 (b))
+    "/api/inbox/lines",  # until its expiry (§7.5 (b))
     "/api/properties",
     "/api/properties/equity",
     "/api/properties/payback",
@@ -204,6 +218,13 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
 )
 
 
+def keep_until(request: Request, moment: datetime | None) -> None:
+    """A kept route whose answer reads the clock finer than the day names the first moment
+    its answer may change with no write in between (§7.5 (b)); None: time never changes it."""
+    if moment is not None:
+        setattr(request.state, EXPIRES_STATE_KEY, moment)
+
+
 def kept_route(path: str) -> str | None:
     """The KEPT_ROUTES template `path` matches, or None."""
     for template, pattern in _PATTERNS:
@@ -262,6 +283,12 @@ class Entry:
     status: int
     headers: tuple[tuple[bytes, bytes], ...]
     body: bytes
+    # The first moment the answer may change with no write in between (keep_until, §7.5 (b));
+    # None for an answer that reads the clock at most to the day, which the key holds.
+    expires_at: datetime | None = None
+
+    def expired(self, now: datetime) -> bool:
+        return self.expires_at is not None and now >= self.expires_at
 
     @property
     def size(self) -> int:
@@ -292,7 +319,7 @@ class Response:
 class CheckOutcome:
     template: str
     path: str
-    result: str  # same, different, moved (version or day changed), failed
+    result: str  # same, different, moved (version, day or expiry passed), failed
 
 
 def canonical_query(query_string: bytes) -> tuple[tuple[str, str], ...]:
@@ -359,8 +386,12 @@ class KeptAnswers:
     # --- The store --------------------------------------------------------------------
 
     def get(self, key: Key) -> Entry | None:
+        """The kept answer under `key`; an expired one is dropped and never returned."""
         with self._lock:
             entry = self._entries.get(key)
+            if entry is not None and entry.expired(self.clock()):
+                self._bytes -= self._entries.pop(key).size
+                return None
             if entry is not None:
                 self._entries.move_to_end(key)
             return entry
@@ -472,15 +503,16 @@ class KeptAnswers:
 
     async def recompute(self, key: Key, entry: Entry) -> CheckOutcome:
         """Compute `key`'s answer again with the store bypassed and compare it with the kept
-        bytes; only when the version and both days are the key's before and after."""
+        bytes; only when the version and both days are the key's before and after, and the
+        answer has not expired by then."""
         query = dict(key.query)
         outcome = CheckOutcome(entry.template, key.path, "moved")
         before = await run_in_threadpool(self.stamp, key.workspace_id)
-        if before != key.stamp:
+        if before != key.stamp or entry.expired(self.clock()):
             return outcome
         fresh = await self.internal_get(entry.auth, key.path, query, locale=key.locale, bypass=True)
         after = await run_in_threadpool(self.stamp, key.workspace_id)
-        if after != key.stamp:
+        if after != key.stamp or entry.expired(self.clock()):
             return outcome
         if fresh.inner is None:
             outcome.result = "failed"
@@ -506,6 +538,8 @@ class KeptAnswers:
         current: list[tuple[Key, Entry]] = []
         stamps: dict[UUID, Stamp | None] = {}
         for key, entry in self.items():
+            if entry.expired(self.clock()):
+                continue
             if key.workspace_id not in stamps:
                 stamps[key.workspace_id] = await run_in_threadpool(self.stamp, key.workspace_id)
             if stamps[key.workspace_id] == key.stamp:
@@ -610,11 +644,13 @@ class KeptAnswersMiddleware:
             state["kept_answer"] = "miss"
             return
         after = await run_in_threadpool(kept.stamp, auth.workspace_id)
-        if after != before:
+        expires_at = state.get(EXPIRES_STATE_KEY)
+        if after != before or (expires_at is not None and kept.clock() >= expires_at):
             kept.counters.discarded += 1
             state["kept_answer"] = "discarded"
             return
-        stored = kept.put(key, Entry(template, auth, status, headers, bytes(body)))
+        entry = Entry(template, auth, status, headers, bytes(body), expires_at)
+        stored = kept.put(key, entry)
         if stored:
             kept.counters.stored += 1
         state["kept_answer"] = "stored" if stored else "miss"
@@ -683,6 +719,8 @@ async def warm_member(kept: KeptAnswers, auth: AuthContext, today: date) -> Warm
     await get("/api/health/net-worth-series")
     await get("/api/household-scenarios", {"include_history": "true"})
     accounts = await get("/api/accounts") or []
+    await get("/api/inbox")  # every page's menu count; Zu prüfen's list (§7.5 (b))
+    await get("/api/inbox/lines")
     await get("/api/possible-duplicates")
     await get("/api/documents")
     for prop in properties:

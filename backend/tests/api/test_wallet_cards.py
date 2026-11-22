@@ -438,6 +438,31 @@ def test_a_refused_run_and_a_missing_key_are_cards(client_a, fresh_workspaces, d
     assert [s["state"] for s in state["statuses"]] == ["key_missing", "key_missing", "refused"]
 
 
+def test_a_card_without_a_run_is_dated_by_its_address_not_the_clock(
+    fresh_workspaces, dbname, app_engine
+):
+    """Phase 10 §7.5 (b): a missing key before any run dated its card `now`, so GET /inbox
+    changed every second; the card now carries the time its address was added."""
+    from datetime import UTC, datetime
+
+    from hausbuch.db.session import workspace_transaction
+    from hausbuch.services.wallet_cards import wallet_inbox_items
+
+    ws = fresh_workspaces[0]
+    with _admin(dbname) as conn:
+        account = _wallet(conn, ws)
+        address = _address(conn, ws, account)  # Ethereum without a key, never synced
+        added = conn.execute(
+            "SELECT created_at FROM wallet_address WHERE id = %s", (address,)
+        ).fetchone()[0]
+    with workspace_transaction(app_engine, ws) as conn:
+        first = wallet_inbox_items(conn, SETTINGS, datetime(2026, 11, 22, 10, tzinfo=UTC))
+        second = wallet_inbox_items(conn, SETTINGS, datetime(2026, 11, 23, 18, tzinfo=UTC))
+    assert [i.error_code for i in first] == ["key_missing"]
+    assert first == second
+    assert first[0].created_at == added
+
+
 def test_an_answer_during_a_syncs_write_leaves_no_leg_under_a_superseded_group(
     client_a,
     fresh_workspaces,

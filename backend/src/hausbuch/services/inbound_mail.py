@@ -32,7 +32,7 @@ Message-ID, the time, the decision, the code and the counts (§5.5).
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import Connection, and_, func, or_, select
@@ -68,6 +68,7 @@ from .events import append_event
 from .iban import protect_iban
 from .proposals import proposal_for_upload
 from .statements import import_statement
+from .timed_items import TimedItems, earliest, leaves_window
 
 RECEIVED_CARD_FOR = timedelta(hours=24)  # §5.4: email_received lists the last 24 h
 LISTED_FOR = timedelta(days=30)  # GET /inbound-mail, and how long a final failure is shown
@@ -439,14 +440,26 @@ def list_inbound_mail(conn: Connection, now: datetime) -> list[InboundMail]:
 
 
 def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
+    """The Zu prüfen cards of §5.4 (inbound_mail_section's items)."""
+    return inbound_mail_section(conn, now).items
+
+
+def inbound_mail_section(conn: Connection, now: datetime) -> TimedItems:
     """The Zu prüfen cards of §5.4, computed on read; the texts name no sender or subject.
+    With the first moment a card leaves its window (phase 10 §7.5 (b)): a statement card and
+    a failure card 30 days after their row, a received card 24 hours after its row; a link
+    older than 24 hours that shows no card never shows one later.
 
     - email_received, one per attachment linked in the last 24 h, with its document (and
       import);
     - email_received for a statement no account took (inferred, no code is stored), shown
       until an import of that document exists, for at most 30 days;
     - email_failed for a mail whose third attempt failed in the last 30 days;
-    - email_inbox_failed while the latest poll outcome is a failure (note_poll_outcome)."""
+    - email_inbox_failed while the latest poll outcome is a failure (note_poll_outcome).
+
+    The windows are counted in UTC: a Berlin-zoned `now` less 30 days is wall-clock
+    arithmetic in Python, an hour off across a clock change."""
+    now = now.astimezone(UTC)
     imported_docs = select(import_table.c.document_id)
     statement_doc = and_(
         link_table.c.import_id.is_(None),
@@ -464,8 +477,10 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
         .where(link_table.c.recorded_at >= now - LISTED_FOR)
     ).all()
     items: list[InboxItem] = []
+    changes: list[datetime] = []
     for link in links:
         if link.is_statement and not link.imported_since:
+            changes.append(leaves_window(link.recorded_at, LISTED_FOR))
             items.append(
                 InboxItem(
                     kind=InboxItemKind.EMAIL_RECEIVED,
@@ -476,6 +491,7 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 )
             )
         elif link.recorded_at >= now - RECEIVED_CARD_FOR:
+            changes.append(leaves_window(link.recorded_at, RECEIVED_CARD_FOR))
             imported = link.import_id is not None
             items.append(
                 InboxItem(
@@ -494,6 +510,7 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
         )
     ).scalars()
     for recorded_at in failed:
+        changes.append(leaves_window(recorded_at, LISTED_FOR))
         items.append(
             InboxItem(
                 kind=InboxItemKind.EMAIL_FAILED,
@@ -514,4 +531,4 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 question=question,
             )
         )
-    return items
+    return TimedItems(items, earliest(changes))

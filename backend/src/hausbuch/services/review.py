@@ -101,6 +101,7 @@ from .statements import (
     transaction_select,
     transactions_by_id,
 )
+from .timed_items import TimedItems, earliest
 
 TRANSACTION_MISMATCH = "allocation.transaction_mismatch"
 IMPORT_NOT_RECONCILED = "allocation.import_not_reconciled"
@@ -766,7 +767,20 @@ def inbox(
     now: datetime | None = None,
     settings: Settings | None = None,
 ) -> list[InboxItem]:
-    """Every item of §8.3, newest first. Texts quote no bank line, name or IBAN. Also the
+    """Every item of §8.3, newest first (inbox_timed's items)."""
+    return inbox_timed(conn, today=today, now=now, settings=settings).items
+
+
+def inbox_timed(
+    conn: Connection,
+    today: date | None = None,
+    now: datetime | None = None,
+    settings: Settings | None = None,
+) -> TimedItems:
+    """Every item of §8.3, newest first, with the first moment the list may change with no
+    write in between (phase 10 §7.5 (b)): the earliest of its clock sections' (email-in,
+    prices); every other section reads at most `today`'s date, which the kept answer's key
+    holds. Texts quote no bank line, name or IBAN. Also the
     phase 6 D161 cards of private lines paying property costs, and a depot whose latest
     report disagrees with its booked movements (phase 6 step 4). With `today`, also last year's
     open Jahresfragen (phase 4b D110, `questionnaire_open`), the reminders visible today
@@ -784,7 +798,7 @@ def inbox(
     from .property_costs import property_cost_items  # it imports the matching services
     from .returns import return_inbox_items  # it imports the transfer services
 
-    sections: list[tuple[str, Callable[[], list[InboxItem]]]] = [
+    sections: list[tuple[str, Callable[[], list[InboxItem] | TimedItems]]] = [
         ("proposals", lambda: _proposal_items(conn)),
         ("imports", lambda: import_inbox_items(conn)),
         ("allocations", lambda: _allocation_items(conn)),
@@ -804,13 +818,13 @@ def inbox(
         ]
     if now is not None:
         from .bank_sync import bank_sync_items  # it imports the statement services
-        from .inbound_mail import inbound_mail_items  # it imports the statement services
-        from .prices.overview import price_inbox_items  # phase 6 step 5b
+        from .inbound_mail import inbound_mail_section  # it imports the statement services
+        from .prices.overview import price_inbox_section  # phase 6 step 5b
 
         sections += [
-            ("inbound_mail", lambda: inbound_mail_items(conn, now)),
+            ("inbound_mail", lambda: inbound_mail_section(conn, now)),
             ("bank_sync", lambda: bank_sync_items(conn)),
-            ("prices", lambda: price_inbox_items(conn, now)),
+            ("prices", lambda: price_inbox_section(conn, now)),
         ]
     if now is not None and settings is not None:
         from .wallet_cards import wallet_inbox_items  # phase 7 wallet screens
@@ -821,12 +835,16 @@ def inbox(
 
         sections.append(("app_secrets", lambda: unreadable_inbox_items(conn, settings)))
     items: list[InboxItem] = []
+    changes: list[datetime | None] = []
     section_ms: dict[str, float] = {}
     section_items: dict[str, int] = {}
     started = time.perf_counter()
     for name, build in sections:
         began = time.perf_counter()
         found = build()
+        if isinstance(found, TimedItems):
+            changes.append(found.changes_at)
+            found = found.items
         section_ms[name] = round((time.perf_counter() - began) * 1000, 1)
         section_items[name] = len(found)
         items += found
@@ -854,7 +872,7 @@ def inbox(
             }
         },
     )
-    return result
+    return TimedItems(result, earliest(changes))
 
 
 def inbox_lines(
@@ -863,12 +881,22 @@ def inbox_lines(
     now: datetime | None = None,
     settings: Settings | None = None,
 ) -> InboxLines:
+    """GET /inbox/lines (inbox_lines_timed's lines)."""
+    return inbox_lines_timed(conn, today=today, now=now, settings=settings)[0]
+
+
+def inbox_lines_timed(
+    conn: Connection,
+    today: date | None = None,
+    now: datetime | None = None,
+    settings: Settings | None = None,
+) -> tuple[InboxLines, datetime | None]:
     """Phase 10 §7.3 (5), GET /inbox/lines: the lines and statement imports Zu prüfen's cards
     look up, from the same items GET /inbox lists (called with its arguments) and every
     possible duplicate GET /possible-duplicates lists: each item's line and import, both lines
     of each duplicate, and those lines' imports. An item's import that is no statement import
     (an exchange's) is left out, as the accounts' imports never held it."""
-    items = inbox(conn, today=today, now=now, settings=settings)
+    items, changes_at = inbox_timed(conn, today=today, now=now, settings=settings)
     pairs = list_possible_duplicates(conn)
     pair_ids = {i for p in pairs for i in (p.transaction_id, p.other_transaction_id)}
     lines = transactions_by_id(
@@ -877,7 +905,8 @@ def inbox_lines(
     import_ids = {item.import_id for item in items if item.import_id} | {
         line.import_id for line in lines if line.id in pair_ids
     }
-    return InboxLines(transactions=lines, imports=imports_by_id(conn, import_ids))
+    lines_answer = InboxLines(transactions=lines, imports=imports_by_id(conn, import_ids))
+    return lines_answer, changes_at
 
 
 _TRANSFER_KINDS = (InboxItemKind.TRANSFER_LINK, InboxItemKind.TRANSFER_UNMATCHED)

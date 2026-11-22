@@ -648,7 +648,10 @@ def wallet_inbox_items(conn: Connection, settings: Settings, now: datetime) -> l
     for its proposed groups without a question, one card per change card and per other group
     a person must look at (a transaction Hausbuch cannot store is shown on the page only), and
     one card per address state that needs a person, the addresses of one state on one card.
-    No full address or transaction hash (D179)."""
+    No full address or transaction hash (D179). `now` is not read: a state card is dated by
+    its addresses' latest finished run, an address without one (a key missing before any run)
+    by the time it was added, a stored time, so the answer's bytes do not change with the
+    clock (phase 10 §7.5 (b))."""
     from .wallet_groups import proposed_counts, wallet_group_cards  # it imports this module
 
     items: list[InboxItem] = []
@@ -688,6 +691,10 @@ def wallet_inbox_items(conn: Connection, settings: Settings, now: datetime) -> l
                 group_id=card.id,
             )
         )
+    a = address_table.c
+    added = dict(
+        conn.execute(select(a.id, a.created_at).where(a.account_id.in_(list(labels)))).all()
+    )
     for account_id, label in labels.items():
         state = wallet_state(conn, account_id, settings)
         by_state: dict[WalletAddressState, list[WalletAddressStatus]] = {}
@@ -702,7 +709,7 @@ def wallet_inbox_items(conn: Connection, settings: Settings, now: datetime) -> l
             items.append(
                 InboxItem(
                     kind=_SYNC_CARDS[address_state],
-                    created_at=max(s.finished_at or now for s in statuses),
+                    created_at=max(s.finished_at or added[s.address_id] for s in statuses),
                     reasoning=TEXTS(
                         "labelled.addresses", label=label, masked=masked, text=first.text
                     ),

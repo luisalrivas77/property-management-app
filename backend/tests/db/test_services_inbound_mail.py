@@ -15,6 +15,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from email.message import EmailMessage
+from zoneinfo import ZoneInfo
 
 import pytest
 from db.db_support import TEST_IBAN_KEY, _admin
@@ -470,6 +471,112 @@ def test_a_failing_part_is_retried_three_times_then_carded(inbox, app_engine, mo
     with workspace_transaction(app_engine, ws) as conn:
         items = service.inbound_mail_items(conn, NOW + timedelta(hours=1))
     assert [i.kind for i in items] == [InboxItemKind.EMAIL_FAILED]
+
+    # Phase 10 §7.5 (b): the card is kept until its row (the third attempt) is 30 days old.
+    changes_at = NOW + timedelta(minutes=20, days=30, microseconds=1)
+    kept, before, after = _at_the_window(app_engine, ws, NOW + timedelta(hours=1), changes_at)
+    assert [i.kind for i in kept.items] == [InboxItemKind.EMAIL_FAILED]
+    assert before.items == kept.items
+    assert after.items == []
+    assert after.changes_at is None
+
+
+# --- Phase 10 §7.5 (b): each card's window -------------------------------------------------
+
+
+def _at_the_window(app_engine, ws, kept_at, changes_at, zone=UTC):
+    """The section at `kept_at`, one microsecond before `changes_at` and at it, each `now`
+    given in `zone`; the first names `changes_at` as the moment its answer next changes."""
+    kept_at = kept_at.astimezone(zone)
+    with workspace_transaction(app_engine, ws) as conn:
+        kept = service.inbound_mail_section(conn, kept_at)
+        before = service.inbound_mail_section(
+            conn, (changes_at - timedelta(microseconds=1)).astimezone(zone)
+        )
+        after = service.inbound_mail_section(conn, changes_at.astimezone(zone))
+        timed = review.inbox_timed(conn, today=kept_at.date(), now=kept_at)
+    assert kept.changes_at == changes_at
+    assert before.changes_at == changes_at
+    assert timed.changes_at == changes_at  # the whole inbox expires with this section
+    return kept, before, after
+
+
+def test_a_received_card_is_kept_until_its_24_hours_end(inbox, app_engine):
+    poll, server, ws, _ = inbox
+    server.add(LABEL, _mail(("rechnung.pdf", _pdf("invoice"), "application/pdf")))
+    poll()
+    changes_at = NOW + timedelta(hours=24, microseconds=1)
+    kept, before, after = _at_the_window(app_engine, ws, NOW + timedelta(hours=1), changes_at)
+    assert [i.kind for i in kept.items] == [InboxItemKind.EMAIL_RECEIVED]
+    assert before.items == kept.items
+    assert after.items == []
+    assert after.changes_at is None  # an older link never shows a card again
+
+
+def test_a_statement_card_is_kept_until_its_30_days_end(inbox, app_engine):
+    poll, server, ws, _ = inbox
+    server.add(LABEL, _mail(("umsaetze.zip", ZIP, "application/zip")))
+    poll()
+    changes_at = NOW + timedelta(days=30, microseconds=1)
+    _at_the_window(app_engine, ws, NOW + timedelta(hours=1), changes_at)  # not its 24 hours
+    kept, before, after = _at_the_window(app_engine, ws, NOW + timedelta(days=3), changes_at)
+    assert [i.kind for i in kept.items] == [InboxItemKind.EMAIL_RECEIVED]
+    assert before.items == kept.items
+    assert after.items == []
+
+
+# Review fix B1: 28 Mar 2027 moves Berlin from UTC+1 to UTC+2. With `now` in Berlin time a
+# window of hours or days must still end at the UTC moment the section names, not an hour
+# early (a Berlin-zoned `now - window` is wall-clock arithmetic in Python).
+BERLIN = ZoneInfo("Europe/Berlin")
+
+
+def test_a_received_card_ends_on_time_across_the_clock_change(inbox, app_engine):
+    poll, server, ws, _ = inbox
+    at = datetime(2027, 3, 27, 12, 0, tzinfo=UTC)
+    server.add(LABEL, _mail(("rechnung.pdf", _pdf("invoice"), "application/pdf")))
+    poll(at=at)
+    changes_at = at + timedelta(hours=24, microseconds=1)
+    kept, before, after = _at_the_window(
+        app_engine, ws, at + timedelta(hours=1), changes_at, zone=BERLIN
+    )
+    assert [i.kind for i in kept.items] == [InboxItemKind.EMAIL_RECEIVED]
+    assert before.items == kept.items
+    assert after.items == []
+
+
+def test_a_statement_card_ends_on_time_across_the_clock_change(inbox, app_engine):
+    poll, server, ws, _ = inbox
+    at = datetime(2027, 3, 10, 12, 0, tzinfo=UTC)
+    server.add(LABEL, _mail(("umsaetze.zip", ZIP, "application/zip")))
+    poll(at=at)
+    changes_at = at + timedelta(days=30, microseconds=1)
+    kept, before, after = _at_the_window(
+        app_engine, ws, at + timedelta(days=3), changes_at, zone=BERLIN
+    )
+    assert [i.kind for i in kept.items] == [InboxItemKind.EMAIL_RECEIVED]
+    assert before.items == kept.items
+    assert after.items == []
+
+
+def test_a_failure_card_ends_on_time_across_the_clock_change(inbox, app_engine, monkeypatch):
+    poll, server, ws, _ = inbox
+    at = datetime(2027, 3, 10, 12, 0, tzinfo=UTC)
+    server.add(LABEL, _mail(("a.pdf", _pdf("fails"), "application/pdf")))
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("storage down")
+
+    monkeypatch.setattr(service, "store_attachment", broken)
+    for n in range(3):
+        poll(at=at + timedelta(minutes=10 * n))
+    changes_at = at + timedelta(minutes=20, days=30, microseconds=1)
+    kept, before, after = _at_the_window(
+        app_engine, ws, at + timedelta(hours=1), changes_at, zone=BERLIN
+    )
+    assert [i.kind for i in kept.items] == [InboxItemKind.EMAIL_FAILED]
+    assert before.items == kept.items
+    assert after.items == []
 
 
 def test_a_failed_attempt_then_a_good_one_links_each_document_once(inbox, app_engine, monkeypatch):

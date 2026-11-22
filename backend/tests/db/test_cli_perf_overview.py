@@ -291,7 +291,8 @@ def test_check_kept_serves_the_later_pass_from_the_store_and_finds_no_difference
     second = passes[1].timings
     hits = [t.label for t in second if t.hit]
     assert "/api/properties" in hits and "/api/accounts" in hits
-    assert not any(t.hit for t in second if t.label in ("/api/inbox", "/api/auth/me"))
+    assert "/api/inbox" in hits  # kept until its expiry since §7.5 (b); unkept until then
+    assert not any(t.hit for t in second if t.label == "/api/auth/me")
     out = "\n".join(lines)
     kept = sum(t.hit for t in second + passes[1].extra)  # the other kept routes too (§7.5 (a))
     assert f"kept answers: {kept} of {kept} keepable requests" in out
