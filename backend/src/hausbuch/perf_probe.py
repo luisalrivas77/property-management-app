@@ -44,7 +44,12 @@ otherwise, so the timings stay those of a computed answer): the first pass compu
 a later pass marks each request served from the store as `hit`; then every kept answer is
 computed again with the store bypassed and compared byte for byte. Any difference fails the
 command. An answer whose data version or day moved meanwhile (a write by the live app) is
-counted as moved, not compared.
+counted as moved, not compared. Each pass then also requests every kept route the page does
+not fire (the other sections' reads, phase 10 §7.5 (a)), with the first id of each kind in
+the workspace's own data and the query its screen sends, so they are compared too; a route
+whose kind of id the workspace has none of prints `skipped: <route> (no <thing>)`, and one
+that does not answer 200 is printed as a finding. These requests are kept apart from the
+page's timing table and totals.
 """
 
 import asyncio
@@ -276,6 +281,151 @@ def build_app(engine: Engine, member: Member, blob_root: Path, *, kept: bool = F
     )
 
 
+# --- The kept routes outside the page (--check-kept) -----------------------------------
+
+# Each id a kept route's path names: what it is (for a "skipped: no <thing>" line) and its
+# label prefix (ids are printed as p1, a1 …, never as themselves).
+_ID_KINDS: dict[str, tuple[str, str]] = {
+    "property_id": ("property", "p"),
+    "unit_id": ("unit", "u"),
+    "tenant_id": ("tenant", "t"),
+    "tenancy_id": ("tenancy", "y"),
+    "loan_id": ("loan", "l"),
+    "owner_id": ("owner", "o"),
+    "account": ("bank account", "a"),
+    "exchange": ("exchange account", "a"),
+    "wallet": ("wallet", "a"),
+    "document_id": ("document", "d"),
+    "import_id": ("statement import", "i"),
+    "transaction_id": ("bank line", "x"),
+    "run_id": ("stored month-end", "r"),
+    "proposal_id": ("suggestion", "q"),
+    "return_input_id": ("return input", "e"),
+}
+_PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
+
+
+def _id_kind(template: str, name: str) -> str:
+    """The kind of id a placeholder needs: an account placeholder names the kind of account
+    its route answers for (a wallet route a wallet, the exchange page an exchange)."""
+    if name != "account_id":
+        return name
+    if template.startswith("/api/wallets/"):
+        return "wallet"
+    if template.endswith(("/exchange", "/movements")):
+        return "exchange"
+    return "account"
+
+
+def section_ids(engine: Engine, workspace_id: UUID) -> dict[str, UUID | None]:
+    """The first id of each kind in the workspace's own data (read only), None when it has
+    none: what the kept routes outside the page are requested with."""
+    from hausbuch.db import tables
+
+    def first(table: Any, order: Any, *where: Any) -> Any:
+        return conn.execute(
+            select(table.c.id).where(*where).order_by(order, table.c.id).limit(1)
+        ).scalar_one_or_none()
+
+    t = tables.metadata.tables
+    account = t["account"]
+    with workspace_transaction(engine, workspace_id) as conn:
+        bank = first(
+            account,
+            account.c.created_at,
+            account.c.kind.in_(("bank_current", "bank_savings")),
+        )
+        snapshot = t["valuation_snapshot"]
+        run = conn.execute(
+            select(snapshot.c.net_worth_run_id)
+            .where(snapshot.c.net_worth_run_id.is_not(None))
+            .order_by(snapshot.c.created_at, snapshot.c.net_worth_run_id)
+            .limit(1)
+        ).scalar_one_or_none()
+        return {
+            "property_id": first(t["property"], t["property"].c.created_at),
+            "unit_id": first(t["unit"], t["unit"].c.created_at),
+            "tenant_id": first(t["tenant"], t["tenant"].c.created_at),
+            "tenancy_id": first(t["tenancy"], t["tenancy"].c.created_at),
+            "loan_id": first(t["loan"], t["loan"].c.created_at),
+            "owner_id": first(t["owner"], t["owner"].c.created_at),
+            "account": bank,
+            "exchange": first(account, account.c.created_at, account.c.kind == "exchange"),
+            "wallet": first(account, account.c.created_at, account.c.kind == "wallet"),
+            "document_id": first(t["document"], t["document"].c.created_at),
+            "import_id": first(t["statement_import"], t["statement_import"].c.created_at),
+            "transaction_id": first(t["transaction"], t["transaction"].c.booking_date),
+            "run_id": run,
+            "proposal_id": first(t["proposal"], t["proposal"].c.created_at),
+            "return_input_id": first(t["return_input"], t["return_input"].c.recorded_at),
+        }
+
+
+def section_query(template: str, today: date) -> dict[str, Any] | None:
+    """The query a kept route outside the page needs, as its screen sends it (the frontend's
+    api.GET calls as of 22 Nov 2026); None for a route the screens call without one."""
+    month = last_full_month(today)
+    year = today.year
+    by_month = (
+        "/api/accounts/auto-rate",
+        "/api/accounts/{account_id}/month",
+        "/api/transfers",
+        "/api/household-plan/comparison",
+    )
+    by_year = (
+        "/api/properties/{property_id}/anlage-v/sources",
+        "/api/properties/{property_id}/anlage-v/exports",
+        "/api/owners/{owner_id}/anlage-n/exports",
+        "/api/tax/questionnaire",
+        "/api/income-inputs",
+        "/api/return-inputs",
+    )
+    if template in by_month:
+        return {"month": month}
+    if template in by_year:
+        return {"tax_year": year}
+    if template == "/api/tax-rate":  # components/income.tsx, a result the household typed
+        return {"tax_year": year, "result": "1000.00"}
+    if template == "/api/tenancies/{tenancy_id}/rent":  # the rent in force today
+        return {"at": today.isoformat()}
+    return None
+
+
+@dataclass(frozen=True)
+class SectionRequest:
+    path: str | None  # None: skipped, no id of its kind in the workspace
+    label: str
+    query: dict[str, Any] | None
+    missing: str | None = None
+
+
+def section_requests(
+    templates: Sequence[str],
+    ids: dict[str, UUID | None],
+    today: date,
+    labels: Callable[[str, str], str],
+) -> list[SectionRequest]:
+    """One request per kept route the page does not fire, with the workspace's own ids, or a
+    skip naming the kind of id it has none of."""
+    out = []
+    for template in templates:
+        path, label, missing = template, template, None
+        for name in _PLACEHOLDER.findall(template):
+            kind = _id_kind(template, name)
+            value = ids.get(kind)
+            thing, prefix = _ID_KINDS[kind]
+            if value is None:
+                missing = thing
+                break
+            path = path.replace(f"{{{name}}}", str(value), 1)
+            label = label.replace(f"{{{name}}}", f"{{{labels(prefix, str(value))}}}", 1)
+        if missing is not None:
+            out.append(SectionRequest(None, template, None, missing))
+        else:
+            out.append(SectionRequest(path, label, section_query(template, today)))
+    return out
+
+
 # --- The page's requests --------------------------------------------------------------
 
 
@@ -298,6 +448,10 @@ class Timing:
 class Pass:
     timings: list[Timing] = field(default_factory=list)
     profiles: list[tuple[str, pstats.Stats]] = field(default_factory=list)
+    # --check-kept only: the kept routes the page does not fire, after it, and those skipped
+    # (the template and the kind of id the workspace has none of); not in the page's timing.
+    extra: list[Timing] = field(default_factory=list)
+    skipped: list[tuple[str, str]] = field(default_factory=list)
 
 
 class _Labels:
@@ -343,9 +497,11 @@ class PageRun:
         profile: Sequence[str] = (),
         digest: bool = False,
         kept: Any = None,
+        ids: dict[str, UUID | None] | None = None,
     ) -> None:
         self.client = client
         self.kept = kept
+        self.ids = ids
         self.digest = digest
         self.counter = counter
         self.today = today
@@ -449,7 +605,26 @@ class PageRun:
             o = self.labels("o", owner["id"])
             path = f"/api/owners/{owner['id']}/anlage-n"
             await self.get(path, f"/api/owners/{{{o}}}/anlage-n", {"tax_year": year})
+        if self.kept is not None and self.ids is not None:
+            await self.sections()
         return self.result
+
+    async def sections(self) -> None:
+        """--check-kept: every kept route the page does not fire (the other sections' reads,
+        phase 10 §7.5 (a)), so compare_all compares them too; kept apart from the page's
+        timing in `extra`."""
+        from hausbuch.api.kept_answers import KEPT_ROUTES, kept_route
+
+        fired = {kept_route(t.label.split("?")[0]) for t in self.result.timings}
+        templates = [t for t in KEPT_ROUTES if t not in fired]
+        page = len(self.result.timings)
+        for request in section_requests(templates, self.ids, self.today, self.labels):
+            if request.path is None:
+                self.result.skipped.append((request.label, request.missing or ""))
+            else:
+                await self.get(request.path, request.label, request.query)
+        self.result.extra = self.result.timings[page:]
+        del self.result.timings[page:]
 
 
 # --- Measuring ------------------------------------------------------------------------
@@ -526,6 +701,7 @@ async def _passes(
     repeat: int,
     profile: Sequence[str] = (),
     digest: bool = False,
+    ids: dict[str, UUID | None] | None = None,
 ) -> list[Pass]:
     """`repeat` passes; the last one (a warm one when repeat >= 2) profiles the requests
     whose route contains one of `profile`, and digests every body when `digest`."""
@@ -540,7 +716,7 @@ async def _passes(
             today = datetime.now(LOCAL_TIME_ZONE).date()
             last = number == repeat
             run = PageRun(
-                client, counter, today, labels, profile if last else (), digest and last, kept
+                client, counter, today, labels, profile if last else (), digest and last, kept, ids
             )
             passes.append(await run.run())
     return passes
@@ -575,8 +751,9 @@ def run_probe(
     member = pick_member(engine, workspace_id)
     with tempfile.TemporaryDirectory(prefix="hausbuch-probe-") as blobs, _quiet_logging():
         app = build_app(engine, member, Path(blobs) / "blobs", kept=check_kept)
+        ids = section_ids(engine, workspace_id) if check_kept else None
         counter.reset()
-        passes = asyncio.run(_passes(app, counter, repeat, profile, digest))
+        passes = asyncio.run(_passes(app, counter, repeat, profile, digest, ids))
         outcomes = asyncio.run(app.state.kept_answers.compare_all()) if check_kept else None
     report(passes, rtt=rtt, empty_tx=empty_tx, connect_ms=connect_ms, member=member, out=out)
     if outcomes is not None:
@@ -591,11 +768,23 @@ def _kept_report(
     comparison of every kept answer with a recomputation; ProbeError on any difference."""
     from hausbuch.api.kept_answers import kept_route
 
-    later = [t for one in passes[1:] for t in one.timings]
+    later = [t for one in passes[1:] for t in one.timings + one.extra]
     keepable = [t for t in later if t.status == 200 and kept_route(t.label.split("?")[0])]
     counts = {r: sum(1 for o in outcomes if o.result == r) for r in ("same", "different", "moved")}
     failed = sum(1 for o in outcomes if o.result == "failed")
     out("")
+    if passes:
+        last = passes[-1]
+        out(
+            f"kept routes the page does not fire: {len(last.extra)} requested, "
+            f"{len(last.skipped)} skipped"
+        )
+        for timing in last.extra:
+            if timing.status != 200:  # a finding: the route answers no kept answer here
+                error = f" ({timing.error})" if timing.error else ""
+                out(f"  not 200: {timing.label}  {timing.status}{error}")
+        for template, missing in last.skipped:
+            out(f"  skipped: {template} (no {missing})")
     out(
         f"kept answers: {sum(t.hit for t in later)} of {len(keepable)} keepable requests of the "
         "later passes served from the store"
