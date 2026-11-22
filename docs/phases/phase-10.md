@@ -22,7 +22,7 @@ dark choice, and English), so every screen is drawn and the build covers the who
 | 4d | Übersicht's speed (§7.2), no new behaviour | merged and deployed 21 Nov 2026 (PRs #514, #516, #517, #518, #519, #520, #522; images de96c9e2356e, 0523409427b7, 397837875ca6, 2ae563e4e0ba, 80656fa4c054; no migration) |
 | 4e | Fewer repeated reads (§7.3) and reusing answers while nothing changed (§7.4), no new behaviour | merged and deployed 21 Nov 2026: §7.3 PR #528 (images 5f9aa0594917, no migration), §7.4 PR #529 (images 902f60277dc8, migration 0050 applied); review round pending, Mon 23 Nov 2026, on the deployed code (Luis: „Ship both, review Monday“) |
 | 4f | Further speed steps (§7.5): every section kept, the inbox kept until its next time window, answers computed after a change instead of at the next load | scoped 21 Nov 2026, not built; waits for Luis's go after the §7.4 review |
-| 4g | Less on each screen (§7.6): Übersicht trimmed first (Luis, 22 Nov 2026), then the other sections one at a time | Übersicht scoped 22 Nov 2026, not built; the other sections not yet scoped; waits for Luis's go |
+| 4g | Less on each screen (§7.6): Übersicht trimmed first (Luis, 22 Nov 2026), then the other sections one at a time | Übersicht, the „Was noch fehlt“ lists and Zu prüfen (with „Foto“ opening the camera at once) scoped 22 Nov 2026, not built; the other sections not yet scoped; waits for Luis's go |
 | 5 | Closing (§7.1) | not started |
 
 ## 1. Scope
@@ -407,6 +407,16 @@ Luis, 22 Nov 2026: „the Übersicht has cards that I think are not relevant. Al
 3. **To-dos and the next dates stay.**
 4. **Removed from Übersicht:** the key-figures block under the to-dos (`HealthSection`: the month-end, the reserve, Kennzahlen, „Ampel-Grenzen festlegen“, the split of the assets, Vermögen im Verlauf), which repeats the tiles and lives on Planung; the card per property (address, units, tenants, loans), which repeats Immobilien; and the buttons „Mieter“ and „Neue Immobilie“ in the page head, which belong on Immobilien. Each must still be reachable where it moves to (checked in the build: Planung has every part of `HealthSection`, Immobilien has the tenants link and „Neue Immobilie“), and the empty state for a household with no property keeps its hint.
 5. **Done when** Übersicht fits a computer screen without a scroll past the tiles and to-dos, no tile changes another's height, and every removed item is one tap away where it moved.
+
+**The „Was noch fehlt“ lists** (Luis, 22 Nov 2026: „reduce the text of the still missing cards“), wherever `TodoList` is used (Übersicht, the Anlage V tab, a property's document checklist): each to-do shows its title, its context and its action only; the guide's text (`components/todos.tsx`, WARNING_GUIDE, REQUIREMENT_GUIDE, REMINDER_GUIDE) moves behind „Warum?“, closed by default. Übersicht shows the first five to-dos and „Alle N anzeigen“. A note with nothing to do (`todo: false`) is never in these lists (already the rule there; kept on the tax page's warnings). No guide text is deleted, so `test_todo_guides.py` still holds.
+
+**Zu prüfen** (agreed 22 Nov 2026):
+
+1. **A bank line in two rows**: the date, the payee and the amount; then the suggestion („Vorschlag: <Kategorie>“, the item's proposed category) and the model's question cut to one line when there is one. The model's reasoning is no longer shown on the list (Luis: „No need for the AI reasoning. Just the suggestion.“); the detail panel keeps it. The purpose text and the private account's name move into the detail panel.
+2. **The page head** holds „Hochladen“ and „Foto“; the upload box and the sentence about statements under Konten leave the page (any upload box takes any document, so the sentence is no longer needed); the upload notices stay, one line each.
+3. **„Foto“ opens the camera at once** (Luis: „The take photo button should directly open the camera. Not that you to another section.“): the button is the label of a hidden file input with `capture="environment"`, as on the capture page. The photos then open the page strip of `components/capture.tsx` (turn, reorder, „Seite hinzufügen“, „Als ein Dokument hochladen“) in the detail panel on Zu prüfen, so a several-page document still becomes one PDF and nobody leaves the page. On a computer the same button opens the file picker (browsers ignore `capture` there). `/capture` stays for the home-screen shortcut; a browser opens the camera only on a tap, never by itself on page load, so that page keeps its button.
+4. **The other cards** (transfers, wallets, exchanges, payment proofs, imports): a title and the action; their explanations (`muted` paragraphs in `components/inbox.tsx`) behind „Warum?“. „Alle N bestätigen“'s introduction behind ⓘ; its categories and counts stay.
+5. **Done when** ten waiting bank lines fit a phone screen without the reasoning, and „Foto“ opens the camera in one tap on the phone.
 
 ## 8. Edits to other docs (made in the spec PR)
 
