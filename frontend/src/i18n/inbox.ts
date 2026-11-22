@@ -128,6 +128,10 @@ const de = {
   choosePriceSource: "Kursquelle wählen",
   openSecrets: "Zugangsschlüssel öffnen",
 
+  // „Kontoauszug und Abrechnung weichen ab“ (D292 amended (b))
+  useStatement: "Kontoauszug übernehmen",
+  keepDocument: "Abrechnung behalten",
+
   // „Umsätze aus dem Bericht buchen“
   bookingTrades: "Bucht …",
   bookFromReport: (n: number) => `Umsätze aus dem Bericht buchen (${n})`,
@@ -302,6 +306,9 @@ const en: Messages = {
   enterPrice: "Enter price",
   choosePriceSource: "Choose price source",
   openSecrets: "Open access keys",
+
+  useStatement: "Use the statement",
+  keepDocument: "Keep the document",
 
   bookingTrades: "Booking …",
   bookFromReport: (n) => `Book transactions from the report (${n})`,

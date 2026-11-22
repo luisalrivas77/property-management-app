@@ -157,6 +157,20 @@ def account_report_trades(account_id: UUID, cmd: Cmd) -> depot.ReportTradesBooke
     return cmd.run(_book_report_trades, account_id)
 
 
+@router.post("/depot/statement-trades/{transaction_id}/resolve")
+def depot_statement_trade_resolve(
+    transaction_id: UUID, body: depot.StatementTradeResolve, cmd: Cmd
+) -> depot.StatementTradeResolved:
+    """The card „Kontoauszug und Abrechnung weichen ab“ (phase 6 D292 amended (b), 23 Nov
+    2026): `keep: statement` („Kontoauszug übernehmen“) supersedes the confirmation's or
+    report's movement with the cash statement line's units and amount; `keep: document`
+    („Abrechnung behalten“) supersedes it with an identical movement linked to the line.
+    Either way the line is linked and the card goes; both rows stay, with their events. The
+    pair is found again under the depot's lock, never sent by the page. 404 for no such line,
+    409 when the line has no differing trade to decide."""
+    return cmd.run(depot.resolve_statement_trade, transaction_id, body.keep)
+
+
 def _import(
     ctx: CommandContext, store: BlobStore, account_id: UUID, data: bytes, **kwargs: Any
 ) -> tuple[StatementImport, bool]:

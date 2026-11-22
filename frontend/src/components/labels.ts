@@ -1478,6 +1478,8 @@ const INBOX_ITEM_KIND_DE: Record<InboxItemKind, string> = {
   holdings_mismatch: "Bestand weicht ab",
   // phase 6 D292
   depot_trade_without_units: "Kauf ohne Stückzahl",
+  // phase 6 D292 amended (b)
+  depot_statement_trade_differs: "Kontoauszug und Abrechnung weichen ab",
   // phase 6 step 5b (D167, D174)
   price_source_failed: "Kursquelle gestört",
   price_no_source: "Kursquelle fehlt",
@@ -1526,6 +1528,7 @@ const INBOX_ITEM_KIND_EN: Record<InboxItemKind, string> = {
   property_cost_document: "Check receipt",
   holdings_mismatch: "Holding differs",
   depot_trade_without_units: "Purchase without units",
+  depot_statement_trade_differs: "Statement and confirmation differ",
   price_source_failed: "Price source disrupted",
   price_no_source: "Price source missing",
   price_report_differs: "Price differs from the depot report",

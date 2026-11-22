@@ -1825,6 +1825,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/depot/statement-trades/{transaction_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Depot Statement Trade Resolve
+         * @description The card „Kontoauszug und Abrechnung weichen ab“ (phase 6 D292 amended (b), 23 Nov
+         *     2026): `keep: statement` („Kontoauszug übernehmen“) supersedes the confirmation's or
+         *     report's movement with the cash statement line's units and amount; `keep: document`
+         *     („Abrechnung behalten“) supersedes it with an identical movement linked to the line.
+         *     Either way the line is linked and the card goes; both rows stay, with their events. The
+         *     pair is found again under the depot's lock, never sent by the page. 404 for no such line,
+         *     409 when the line has no differing trade to decide.
+         */
+        post: operations["depot_statement_trade_resolve_api_depot_statement_trades__transaction_id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/accounts/{account_id}/imports": {
         parameters: {
             query?: never;
@@ -9139,7 +9165,7 @@ export interface components {
          * @description GET /inbox (§8.3): one list, newest first.
          * @enum {string}
          */
-        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "depot_trade_without_units" | "price_source_failed" | "price_no_source" | "price_report_differs" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment" | "wallet_groups" | "wallet_change" | "wallet_question" | "wallet_sync" | "wallet_unreconciled" | "wallet_coins_left" | "app_secret_unreadable";
+        InboxItemKind: "proposal" | "read_failed" | "blocked_tenant_data" | "import_unreconciled" | "import_pending_balance" | "possible_duplicate" | "allocation_proposed" | "unmatched" | "questionnaire_open" | "bank_approval_needed" | "bank_sync_failed" | "bank_balance_drift" | "bank_statements_refused" | "email_received" | "email_failed" | "email_inbox_failed" | "reminder" | "transfer_link" | "transfer_unmatched" | "property_cost_row" | "property_cost_bill" | "property_cost_year" | "property_cost_document" | "holdings_mismatch" | "depot_trade_without_units" | "depot_statement_trade_differs" | "price_source_failed" | "price_no_source" | "price_report_differs" | "exchange_pending_balance" | "exchange_unreconciled" | "exchange_withdrawals" | "exchange_movement" | "returned_payment" | "wallet_groups" | "wallet_change" | "wallet_question" | "wallet_sync" | "wallet_unreconciled" | "wallet_coins_left" | "app_secret_unreadable";
         /**
          * InboxLines
          * @description GET /inbox/lines (phase 10 §7.3 (5)): the bank lines and statement imports Zu prüfen's
@@ -13865,6 +13891,24 @@ export interface components {
             document_id: string;
             /** Code */
             code: string;
+        };
+        /**
+         * StatementTradeKeep
+         * @description Which reading „Kontoauszug und Abrechnung weichen ab“ keeps (D292 amended (b)).
+         * @enum {string}
+         */
+        StatementTradeKeep: "statement" | "document";
+        /** StatementTradeResolve */
+        StatementTradeResolve: {
+            keep: components["schemas"]["StatementTradeKeep"];
+        };
+        /** StatementTradeResolved */
+        StatementTradeResolved: {
+            /**
+             * Movement Id
+             * Format: uuid
+             */
+            movement_id: string;
         };
         /**
          * StatementsRefusal
@@ -19720,6 +19764,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReportTradesBooked"];
+                };
+            };
+            /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    depot_statement_trade_resolve_api_depot_statement_trades__transaction_id__resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transaction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatementTradeResolve"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementTradeResolved"];
                 };
             };
             /** @description Error (ErrorResponse; docs/phases/phase-1-step-3.md §3.5) */

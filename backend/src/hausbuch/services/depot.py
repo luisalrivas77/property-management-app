@@ -15,11 +15,12 @@ from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
 from pydantic import Field, ValidationError
-from sqlalchemy import Connection, func, insert, or_, select, update
+from sqlalchemy import Connection, and_, func, insert, or_, select, update
 
 from hausbuch import i18n
 from hausbuch.db.tables import account as account_table
@@ -40,6 +41,7 @@ from hausbuch.schemas.common import Money, NonNegativeMoney, Schema
 from hausbuch.schemas.enums import (
     AccountKind,
     AllocationStatus,
+    EntityType,
     ExtractionKind,
     ImportStatus,
     ProposalStatus,
@@ -74,7 +76,7 @@ from hausbuch.storage import BlobStore
 
 from .context import CommandContext
 from .documents import document_media_type, read_original
-from .errors import RuleViolationError
+from .errors import ConflictError, NotFoundError, RuleViolationError
 from .events import append_event
 from .iban import protect_iban, protect_ref
 
@@ -1323,6 +1325,28 @@ TEXTS = i18n.Texts(
             " document under Documents and apply it; the check then runs again by itself. Once"
             " the report agrees, it also provides the funds' prices.",
         ),
+        "differs.reasoning": (
+            "Der Kontoauszug des Depots nennt einen {side} vom {day}: {units} Anteile über"
+            " {amount}. {document} nennt für denselben Umsatz {other_units} Anteile{other_amount}."
+            " Bis geklärt ist, welche Angabe stimmt, zählt der Bestand nur die gebuchte.",
+            "The depot's cash statement lists a {side} of {day}: {units} units for {amount}."
+            " {document} lists {other_units} units{other_amount} for the same trade. Until it"
+            " is clear which is right, the holdings count only the booked one.",
+        ),
+        "differs.document": (
+            "Die gebuchte Wertpapierabrechnung",
+            "The booked trade confirmation",
+        ),
+        "differs.report": ("Der gebuchte Quartalsbericht", "The booked quarterly report"),
+        "differs.amount": (" über {amount}", " for {amount}"),
+        "differs.question": (
+            "Welche Angabe stimmt? „Kontoauszug übernehmen“ bucht Anteile und Betrag des"
+            " Kontoauszugs, „Abrechnung behalten“ die des Dokuments; der Umsatz wird danach mit"
+            " dem Kauf verknüpft, und diese Karte verschwindet.",
+            "Which is right? “Use the statement” books the statement's units and amount, “Keep"
+            " the document” the document's; the cash line is then linked to the trade and this"
+            " card goes away.",
+        ),
         "statement.purchase": ("Kauf", "purchase"),
         "statement.sale": ("Verkauf", "sale"),
         "statement.reasoning": (
@@ -1550,37 +1574,115 @@ def _statement_lines(
     return found
 
 
-def _covering(
+@dataclass(frozen=True)
+class _Counterpart:
+    """A current trade movement booked from a confirmation or a report that is a cash
+    statement line's trade (D292 (2) and amended (b)), and whether the two agree."""
+
+    movement_id: UUID
+    agrees: bool
+    asset_id: UUID
+    quantity: Decimal
+    eur_amount: Decimal | None
+    source: MovementSource
+    document_id: UUID | None
+
+
+def _counterpart(
     conn: Connection, line: _StatementLine, asset_id: UUID | None, used: set[UUID]
-) -> UUID | None:
-    """D292 (2), the other way round: a current trade movement of the line's depot that no cash
-    line is linked to and that is this line's trade (a confirmation or a report booked before
-    the statement, its cash line not found then): the same kind, the trade day up to
-    rules.depot.STATEMENT_TRADE_DAYS before the line's value date, and the same units, or for a
-    line whose units cannot be read the same amount. Each such movement covers one line
-    (`used`)."""
+) -> _Counterpart | None:
+    """D292 (2), the other way round, and amended (b), 23 Nov 2026: the current trade movement
+    of the line's depot that no cash line is linked to and that is this line's trade (a
+    confirmation or a report booked before the statement, its cash line not found then): the
+    same kind (and fund, for a line whose ISIN is read) and rules.depot.statement_twin, the
+    same reference when both carry one, else the trade day up to STATEMENT_TRADE_DAYS before
+    the line's value date (a report's movement by the day alone, since a report prints its
+    own references, as rules.statement_booked reads it the other way round). It agrees when
+    the units are the line's and its amount, when it has one, too; a line whose units cannot
+    be read is covered only by one of its amount and never disagrees (it has its own card).
+    An agreeing movement is preferred, then the one of the same reference, then by day. Each
+    movement is one line's (`used`). The booking, the inbox's cards and
+    resolve_statement_trade all read this one predicate."""
     m = movement_table.c
+    near = and_(
+        m.occurred_at >= _at(line.day - timedelta(days=rules.STATEMENT_TRADE_DAYS)),
+        m.occurred_at < _at(line.day + timedelta(days=1)),
+    )
     conditions = [
         m.account_id == line.account_id,
         m.superseded_by.is_(None),
         m.transaction_id.is_(None),
         m.kind == line.kind.value,
-        m.occurred_at >= _at(line.day - timedelta(days=rules.STATEMENT_TRADE_DAYS)),
-        m.occurred_at < _at(line.day + timedelta(days=1)),
+        or_(near, m.external_ref == line.reference) if line.reference else near,
     ]
     if line.trade is not None:
         if asset_id is None:
             return None
-        conditions += [m.asset_id == asset_id, m.quantity == line.trade.units]
-    else:
-        conditions.append(m.eur_amount == line.amount)
-    for movement_id in conn.execute(
-        select(m.id).where(*conditions).order_by(m.occurred_at, m.id)
-    ).scalars():
-        if movement_id not in used:
-            used.add(movement_id)
-            return movement_id
-    return None
+        conditions.append(m.asset_id == asset_id)
+    rows = conn.execute(
+        select(
+            m.id,
+            m.asset_id,
+            m.quantity,
+            m.eur_amount,
+            m.external_ref,
+            m.occurred_at,
+            m.source,
+            m.document_id,
+        )
+        .where(*conditions)
+        .order_by(m.occurred_at, m.id)
+    ).all()
+
+    def agrees(r: Any) -> bool:
+        if line.trade is None:
+            return r.eur_amount == line.amount
+        return r.quantity == line.trade.units and r.eur_amount in (None, line.amount)
+
+    def twin(r: Any) -> bool:
+        if r.source == MovementSource.REPORT.value:
+            # A report prints its own references, not the statement's (rules.statement_booked
+            # ties the two by fund, units and day only), so a report's trade is the line's by
+            # its day alone, whatever its reference.
+            return rules.statement_window(r.occurred_at.date(), line.day)
+        return rules.statement_twin(line.reference, line.day, r.external_ref, r.occurred_at.date())
+
+    twins = [r for r in rows if r.id not in used and twin(r)]
+    twins.sort(key=lambda r: (not agrees(r), r.external_ref != line.reference))
+    if not twins or (line.trade is None and not agrees(twins[0])):
+        return None
+    found = twins[0]
+    used.add(found.id)
+    return _Counterpart(
+        movement_id=found.id,
+        agrees=agrees(found),
+        asset_id=found.asset_id,
+        quantity=found.quantity,
+        eur_amount=found.eur_amount,
+        source=MovementSource(found.source),
+        document_id=found.document_id,
+    )
+
+
+def _counterparts(
+    conn: Connection, lines: Sequence[_StatementLine]
+) -> list[tuple[_StatementLine, UUID | None, _Counterpart | None]]:
+    """Each line with its fund (the asset of its ISIN, None when unknown or unreadable) and
+    its _counterpart, in the lines' order, one `used` set over them all: what the booking,
+    the cards and the resolution decide on."""
+    a = asset_table.c
+    used: set[UUID] = set()
+    out = []
+    for line in lines:
+        known = (
+            None
+            if line.trade is None
+            else conn.execute(
+                select(a.id).where(a.isin == line.trade.isin).order_by(a.id)
+            ).scalar_one_or_none()
+        )
+        out.append((line, known, _counterpart(conn, line, known, used)))
+    return out
 
 
 def _fund_name_of(line: _StatementLine) -> str | None:
@@ -1595,12 +1697,15 @@ def _fund_name_of(line: _StatementLine) -> str | None:
 class StatementTradesBooked(Schema):
     """`hausbuch book-statement-trades` and the import hook (D292 (1)): trade lines booked as
     movements, lines whose trade a confirmation or a report had booked already (`covered`),
-    lines whose ISIN or units cannot be read (named on the card „Kauf ohne Stückzahl“), and
-    report prices stored after the bookings (D167 amended (c))."""
+    lines whose ISIN or units cannot be read (named on the card „Kauf ohne Stückzahl“), lines
+    left because a confirmation or report booked their trade with other units or another
+    amount (`differs`, the card „Kontoauszug und Abrechnung weichen ab“, D292 amended (b)),
+    and report prices stored after the bookings (D167 amended (c))."""
 
     booked: int = 0
     covered: int = 0
     unreadable: int = 0
+    differs: int = 0
     prices_stored: int = 0
 
 
@@ -1620,8 +1725,11 @@ def book_statement_trades(
     withheld tax (raw.tax_withheld) is kept as the confirmation would keep it.
 
     A line whose trade a confirmation or a report booked already without its cash line is
-    left (_covering); a line whose ISIN or units cannot be read is never guessed and is
-    counted (the card „Kauf ohne Stückzahl“, statement_trade_inbox_items). Each depot's row is
+    left (_counterpart agrees); one whose trade they booked with other units or another
+    amount is not booked either and waits on the card „Kontoauszug und Abrechnung weichen
+    ab“ (D292 amended (b)), so the fund is never counted twice; a line whose ISIN or units
+    cannot be read is never guessed and is counted (the card „Kauf ohne Stückzahl“,
+    statement_trade_inbox_items). Each depot's row is
     locked (lock_depots) before its lines are read, so the match job, the import hook and the
     CLI never book one line twice; the partial unique index of migration 0052 is the
     backstop. One transaction, the caller's. Running it again books nothing new."""
@@ -1632,59 +1740,157 @@ def book_statement_trades(
     lock_depots(ctx.conn, accounts)
     lines = _statement_lines(ctx.conn, account_ids=accounts, transaction_ids=transaction_ids)
     booked: list[UUID] = []
-    covered = unreadable = 0
-    used: set[UUID] = set()
-    a, m = asset_table.c, movement_table.c
-    for line in lines:
-        trade = line.trade
-        if trade is None:
+    covered = unreadable = differs = 0
+    for line, known, found in _counterparts(ctx.conn, lines):
+        if line.trade is None:
             unreadable += 1
             continue
-        known = ctx.conn.execute(
-            select(a.id).where(a.isin == trade.isin).order_by(a.id)
-        ).scalar_one_or_none()
-        if _covering(ctx.conn, line, known, used) is not None:
-            covered += 1
+        if found is not None:
+            if found.agrees:
+                covered += 1
+            else:
+                differs += 1
             continue
-        asset_id = known or asset_for_isin(ctx, trade.isin, _fund_name_of(line))
-        tax = trade.tax_withheld if trade.kind is MovementKind.DISPOSAL else None
+        asset_id = known or asset_for_isin(ctx, line.trade.isin, _fund_name_of(line))
+        booked.append(_book_statement_line(ctx, line, asset_id))
+    prices = store_report_prices_after(ctx, booked)
+    return StatementTradesBooked(
+        booked=len(booked),
+        covered=covered,
+        unreadable=unreadable,
+        differs=differs,
+        prices_stored=prices,
+    )
+
+
+def _book_statement_line(ctx: CommandContext, line: _StatementLine, asset_id: UUID) -> UUID:
+    """The movement a readable statement line books (source depot_statement, the line and
+    its statement's document), with its movement.confirmed event."""
+    trade = line.trade
+    assert trade is not None
+    tax = trade.tax_withheld if trade.kind is MovementKind.DISPOSAL else None
+    movement_id = ctx.conn.execute(
+        insert(movement_table)
+        .values(
+            workspace_id=ctx.workspace_id,
+            account_id=line.account_id,
+            asset_id=asset_id,
+            kind=trade.kind.value,
+            quantity=trade.units,
+            eur_amount=line.amount,
+            tax_withheld_eur=tax or None,
+            occurred_at=_at(line.day),
+            external_ref=(line.reference or None) and line.reference[:200],
+            source=MovementSource.DEPOT_STATEMENT.value,
+            document_id=line.document_id,
+            transaction_id=line.id,
+            status=MovementStatus.CONFIRMED.value,
+            created_at=ctx.now,
+        )
+        .returning(movement_table.c.id)
+    ).scalar_one()
+    append_event(
+        ctx,
+        EventType.MOVEMENT_CONFIRMED,
+        movement_id,
+        MovementRecorded(
+            account_id=line.account_id,
+            asset_id=asset_id,
+            kind=trade.kind,
+            source=MovementSource.DEPOT_STATEMENT,
+            document_id=line.document_id,
+        ),
+    )
+    return movement_id
+
+
+class StatementTradeKeep(StrEnum):
+    """Which reading „Kontoauszug und Abrechnung weichen ab“ keeps (D292 amended (b))."""
+
+    STATEMENT = "statement"  # „Kontoauszug übernehmen“
+    DOCUMENT = "document"  # „Abrechnung behalten“
+
+
+class StatementTradeResolve(Schema):
+    keep: StatementTradeKeep
+
+
+class StatementTradeResolved(Schema):
+    movement_id: UUID  # the movement now carrying the trade, linked to the line
+
+
+def resolve_statement_trade(
+    ctx: CommandContext, transaction_id: UUID, keep: StatementTradeKeep
+) -> StatementTradeResolved:
+    """D292 amended (b), 23 Nov 2026: the one decision on the card „Kontoauszug und
+    Abrechnung weichen ab“. A booked movement has no correction of its own, so the person
+    says which reading is right. `statement`: the confirmation's or report's movement is
+    superseded by the statement line's (its units and amount, source depot_statement, the
+    statement as its document); `document`: it is superseded by an identical movement
+    linked to the line. Either way the line is linked and the card goes; both rows stay
+    (append-only), with movement.superseded and movement.confirmed events. The pair is
+    found again here under the depot's lock (_counterparts over the depot's lines, as the
+    card found it), never sent by the page. ConflictError (409) when the line has no
+    disagreement to decide (booked meanwhile, or the two agree now)."""
+    account_id = ctx.conn.execute(
+        select(transaction_table.c.account_id).where(transaction_table.c.id == transaction_id)
+    ).scalar_one_or_none()
+    if account_id is None:
+        raise NotFoundError(EntityType.TRANSACTION, transaction_id)
+    lock_depots(ctx.conn, [account_id])
+    pair = next(
+        (
+            (line, found)
+            for line, _, found in _counterparts(
+                ctx.conn, _statement_lines(ctx.conn, account_ids=[account_id])
+            )
+            if line.id == transaction_id
+        ),
+        None,
+    )
+    if pair is None or pair[1] is None or pair[1].agrees or pair[0].trade is None:
+        raise ConflictError(f"transaction {transaction_id} has no differing trade to decide")
+    line, found = pair
+    assert found is not None
+    m = movement_table.c
+    if keep is StatementTradeKeep.STATEMENT:
+        movement_id = _book_statement_line(ctx, line, found.asset_id)
+        document_id: UUID | None = line.document_id
+    else:
+        old = ctx.conn.execute(select(movement_table).where(m.id == found.movement_id)).one()
+        copied = {
+            k: v
+            for k, v in old._mapping.items()
+            if k not in ("id", "superseded_by", "created_at", "transaction_id", "movement_hash")
+        }
         movement_id = ctx.conn.execute(
             insert(movement_table)
-            .values(
-                workspace_id=ctx.workspace_id,
-                account_id=line.account_id,
-                asset_id=asset_id,
-                kind=trade.kind.value,
-                quantity=trade.units,
-                eur_amount=line.amount,
-                tax_withheld_eur=tax or None,
-                occurred_at=_at(line.day),
-                external_ref=(line.reference or None) and line.reference[:200],
-                source=MovementSource.DEPOT_STATEMENT.value,
-                document_id=line.document_id,
-                transaction_id=line.id,
-                status=MovementStatus.CONFIRMED.value,
-                created_at=ctx.now,
-            )
+            .values(**copied, transaction_id=line.id, created_at=ctx.now)
             .returning(m.id)
         ).scalar_one()
+        document_id = found.document_id
         append_event(
             ctx,
             EventType.MOVEMENT_CONFIRMED,
             movement_id,
             MovementRecorded(
                 account_id=line.account_id,
-                asset_id=asset_id,
-                kind=trade.kind,
-                source=MovementSource.DEPOT_STATEMENT,
-                document_id=line.document_id,
+                asset_id=found.asset_id,
+                kind=line.kind,
+                source=found.source,
+                document_id=found.document_id,
             ),
         )
-        booked.append(movement_id)
-    prices = store_report_prices_after(ctx, booked)
-    return StatementTradesBooked(
-        booked=len(booked), covered=covered, unreadable=unreadable, prices_stored=prices
+    ctx.conn.execute(
+        update(movement_table).where(m.id == found.movement_id).values(superseded_by=movement_id)
     )
+    append_event(
+        ctx,
+        EventType.MOVEMENT_SUPERSEDED,
+        found.movement_id,
+        MovementSuperseded(superseded_by=movement_id, document_id=document_id),
+    )
+    return StatementTradeResolved(movement_id=movement_id)
 
 
 def book_all_statement_trades(ctx: CommandContext) -> StatementTradesBooked:
@@ -1697,15 +1903,23 @@ def statement_trade_inbox_items(conn: Connection) -> list[InboxItem]:
     """D292 (1), principle 7: one card „Kauf ohne Stückzahl“ per confirmed trade line of a
     depot's cash statement whose ISIN or units cannot be read and whose trade no movement
     carries (none linked to the line, none of the same kind and amount booked from a
-    confirmation or a report in the days before it, _covering). Computed on read, so the
+    confirmation or a report in the days before it, _counterpart). Computed on read, so the
     report's „Umsätze aus dem Bericht buchen“ or a confirmation clears it without a person
     closing it. It names the day and the amount, never a reference or an account number.
     No „Abrechnung hochladen“: the app keeps no flag of which provider issues trade
-    confirmations (quirion issues none for a savings plan or a rebalancing)."""
+    confirmations (quirion issues none for a savings plan or a rebalancing).
+
+    D292 amended (b), 23 Nov 2026: one card „Kontoauszug und Abrechnung weichen ab“ per
+    readable line whose trade a confirmation or a report booked with other units or another
+    amount (_counterpart), naming both readings, with „Kontoauszug übernehmen“ and
+    „Abrechnung behalten“ (resolve_statement_trade)."""
     items = []
-    used: set[UUID] = set()
-    for line in _statement_lines(conn):
-        if line.trade is not None or _covering(conn, line, None, used) is not None:
+    for line, _, found in _counterparts(conn, _statement_lines(conn)):
+        if line.trade is not None:
+            if found is not None and not found.agrees:
+                items.append(_differs_item(line, found))
+            continue
+        if found is not None:
             continue
         items.append(
             InboxItem(
@@ -1728,6 +1942,35 @@ def statement_trade_inbox_items(conn: Connection) -> list[InboxItem]:
             )
         )
     return items
+
+
+def _differs_item(line: _StatementLine, found: _Counterpart) -> InboxItem:
+    trade = line.trade
+    assert trade is not None
+    other = abs(found.eur_amount) if found.eur_amount is not None else None
+    return InboxItem(
+        kind=InboxItemKind.DEPOT_STATEMENT_TRADE_DIFFERS,
+        created_at=line.created_at,
+        reasoning=TEXTS(
+            "differs.reasoning",
+            side=TEXTS(
+                "statement.purchase" if line.kind is MovementKind.ACQUISITION else "statement.sale"
+            ),
+            day=i18n.day(line.day),
+            units=_units(abs(trade.units)),
+            amount=i18n.money(abs(line.amount)),
+            document=TEXTS(
+                "differs.report" if found.source is MovementSource.REPORT else "differs.document"
+            ),
+            other_units=_units(abs(found.quantity)),
+            other_amount="" if other is None else TEXTS("differs.amount", amount=i18n.money(other)),
+        ),
+        question=TEXTS("differs.question"),
+        transaction_id=line.id,
+        account_id=line.account_id,
+        document_id=found.document_id,
+        movement_id=found.movement_id,
+    )
 
 
 # The Postbox list's length on the ETF tab, newest first.
@@ -1891,6 +2134,7 @@ __all__ = [
     "StatementTradesBooked",
     "book_all_statement_trades",
     "book_statement_trades",
+    "resolve_statement_trade",
     "statement_trade_inbox_items",
     "DepotHoldingValues",
     "DepotMovementValues",

@@ -31,8 +31,10 @@ from db.test_services_depot_securities import (
     _rows,
     _trade,
 )
+from db.test_services_net_worth import _document
 from db.test_services_proposals import enqueued as enqueued  # noqa: F401 (a fixture)
 from db.test_services_proposals import job as job  # noqa: F401 (a fixture)
+from sqlalchemy import insert
 from test_card_pdf import draw
 from test_depot_pdf import ROWS, page
 from test_services_card_import import _deps
@@ -46,6 +48,7 @@ from hausbuch.schemas.api import InboxItemKind
 from hausbuch.schemas.enums import DocumentSubtype
 from hausbuch.schemas.events import EventType
 from hausbuch.services import depot, proposals
+from hausbuch.services.errors import ConflictError
 from hausbuch.services.statements import import_statement, list_transactions
 
 pytestmark = pytest.mark.db
@@ -318,6 +321,207 @@ def test_a_report_never_books_a_trade_a_statement_line_booked(
     assert run(ws, depot.book_report_trades, account.id).booked == 1
     cash_fund = [r for r in _current(read, ws) if _isin(read, ws, r.asset_id) == ISIN_CASH]
     assert sorted(r.quantity for r in cash_fund) == [Decimal("2.4000"), Decimal("4.8000")]
+
+
+def _cash_fund(read, ws):
+    return [r for r in _current(read, ws) if _isin(read, ws, r.asset_id) == ISIN_CASH]
+
+
+def _confirmation_then_statement(run, read, ws, blob_store, app_engine, tmp_path, job, enqueued):
+    """D292 amended (b): a trade confirmation of the 17 Mar purchase read as 4.7 units (the
+    statement line prints 4.8) is applied first; the statement is imported and matched after."""
+    account = _depot(run, ws)
+    confirmation = _read(
+        run,
+        job,
+        ws,
+        blob_store,
+        enqueued,
+        DocumentSubtype.TRADE_CONFIRMATION,
+        _trade(units="4.7000"),
+    )
+    _apply(run, ws, confirmation)
+    _import(run, ws, blob_store, account.id)
+    _match(read, ws, app_engine, tmp_path, account.id)
+    return account, confirmation
+
+
+def test_a_confirmation_first_that_differs_keeps_its_line_on_a_card(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    app_engine,
+    tmp_path,
+    job,
+    enqueued,  # noqa: F811
+):
+    """The reviewer's case of PR #551: the line is not booked beside the confirmation (the fund
+    would count 9.5 units), and Zu prüfen names both readings."""
+    ws, _ = fresh_workspaces
+    account, confirmation = _confirmation_then_statement(
+        run, read, ws, blob_store, app_engine, tmp_path, job, enqueued
+    )
+    [held] = _cash_fund(read, ws)
+    assert (held.source, held.quantity, held.transaction_id) == (
+        "trade_confirmation",
+        Decimal("4.7000"),
+        None,
+    )
+    (card,) = _cards(read, ws, InboxItemKind.DEPOT_STATEMENT_TRADE_DIFFERS)
+    line = _cash(read, ws, account.id)["5500000002"]
+    assert (card.transaction_id, card.account_id, card.movement_id) == (line, account.id, held.id)
+    assert card.document_id == confirmation.document_id
+    assert "4,8 Anteile über 500,00 €" in card.reasoning
+    assert "4,7 Anteile über 500,00 €" in card.reasoning
+    assert "Kontoauszug übernehmen" in card.question and "Abrechnung behalten" in card.question
+    again = run(ws, depot.book_statement_trades)
+    assert (again.booked, again.differs) == (0, 1)
+    assert len(_cash_fund(read, ws)) == 1
+
+
+def test_keeping_the_statement_supersedes_the_confirmations_trade(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    app_engine,
+    tmp_path,
+    job,
+    enqueued,  # noqa: F811
+):
+    ws, _ = fresh_workspaces
+    account, _ = _confirmation_then_statement(
+        run, read, ws, blob_store, app_engine, tmp_path, job, enqueued
+    )
+    [old] = _cash_fund(read, ws)
+    line = _cash(read, ws, account.id)["5500000002"]
+    done = run(ws, depot.resolve_statement_trade, line, depot.StatementTradeKeep.STATEMENT)
+
+    [new] = _cash_fund(read, ws)
+    assert new.id == done.movement_id
+    assert (new.source, new.quantity, new.eur_amount, new.transaction_id) == (
+        "depot_statement",
+        Decimal("4.8000"),
+        Decimal("-500.00"),
+        line,
+    )
+    assert next(r for r in _rows(read, ws, movement_table) if r.id == old.id).superseded_by == (
+        new.id
+    )
+    (superseded,) = _events(read, ws, EventType.MOVEMENT_SUPERSEDED)
+    assert superseded[1]["superseded_by"] == str(new.id)
+    assert _cards(read, ws, InboxItemKind.DEPOT_STATEMENT_TRADE_DIFFERS) == []
+    assert run(ws, depot.book_statement_trades).booked == 0
+    with pytest.raises(ConflictError):
+        run(ws, depot.resolve_statement_trade, line, depot.StatementTradeKeep.DOCUMENT)
+
+
+def test_keeping_the_confirmation_links_its_trade_to_the_line(
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    app_engine,
+    tmp_path,
+    job,
+    enqueued,  # noqa: F811
+):
+    ws, _ = fresh_workspaces
+    account, confirmation = _confirmation_then_statement(
+        run, read, ws, blob_store, app_engine, tmp_path, job, enqueued
+    )
+    [old] = _cash_fund(read, ws)
+    line = _cash(read, ws, account.id)["5500000002"]
+    done = run(ws, depot.resolve_statement_trade, line, depot.StatementTradeKeep.DOCUMENT)
+
+    [new] = _cash_fund(read, ws)
+    assert new.id == done.movement_id != old.id
+    assert (new.source, new.quantity, new.eur_amount, new.document_id, new.transaction_id) == (
+        "trade_confirmation",
+        Decimal("4.7000"),
+        old.eur_amount,
+        confirmation.document_id,
+        line,
+    )
+    assert (new.occurred_at, new.external_ref) == (old.occurred_at, old.external_ref)
+    assert _cards(read, ws, InboxItemKind.DEPOT_STATEMENT_TRADE_DIFFERS) == []
+    assert run(ws, depot.book_statement_trades).booked == 0
+    assert len(_cash_fund(read, ws)) == 1
+
+
+@pytest.mark.parametrize("units", ["4.8000", "1.0000"])
+def test_another_trade_of_the_fund_with_its_own_reference_does_not_hold_the_line(
+    units,
+    run,
+    read,
+    fresh_workspaces,
+    blob_store,
+    app_engine,
+    tmp_path,
+    job,
+    enqueued,  # noqa: F811
+):
+    """A second purchase of the same fund four days earlier under its own reference: the
+    statement line is booked beside it, whether its units equal the line's or not."""
+    ws, _ = fresh_workspaces
+    account = _depot(run, ws)
+    other = _read(
+        run,
+        job,
+        ws,
+        blob_store,
+        enqueued,
+        DocumentSubtype.TRADE_CONFIRMATION,
+        _trade(units=units, net="104.00", reference="7700000099"),
+    )
+    _apply(run, ws, other)
+    _import(run, ws, blob_store, account.id)
+    _match(read, ws, app_engine, tmp_path, account.id)
+
+    rows = _cash_fund(read, ws)
+    assert sorted((r.source, r.quantity) for r in rows) == sorted(
+        [("depot_statement", Decimal("4.8000")), ("trade_confirmation", Decimal(units))]
+    )
+    assert _cards(read, ws, InboxItemKind.DEPOT_STATEMENT_TRADE_DIFFERS) == []
+
+
+def test_a_report_booked_first_under_its_own_reference_covers_the_line(
+    run, read, fresh_workspaces, blob_store, app_engine, tmp_path
+):
+    """A report prints its own references (rules.statement_booked ties it to a line by fund,
+    units and day only): its trade booked first under another reference still covers the
+    statement line, so the fund is not counted twice."""
+    ws, _ = fresh_workspaces
+    account = _depot(run, ws)
+
+    def booked_by_report(ctx):
+        asset_id = depot.asset_for_isin(ctx, ISIN_CASH, "Beispiel Euro Geldmarkt UCITS ETF")
+        ctx.conn.execute(
+            insert(movement_table).values(
+                workspace_id=ctx.workspace_id,
+                account_id=account.id,
+                asset_id=asset_id,
+                kind="acquisition",
+                quantity=Decimal("4.8000"),
+                eur_amount=Decimal("-500.00"),
+                occurred_at=datetime(2026, 3, 13, 12, tzinfo=UTC),
+                external_ref="7700000002",
+                source="report",
+                document_id=_document(ctx),
+                status="confirmed",
+                created_at=ctx.now,
+            )
+        )
+
+    run(ws, booked_by_report, now=NOW)
+    _import(run, ws, blob_store, account.id)
+    _match(read, ws, app_engine, tmp_path, account.id)
+
+    [held] = _cash_fund(read, ws)
+    assert (held.source, held.quantity) == ("report", Decimal("4.8000"))
+    assert _cards(read, ws, InboxItemKind.DEPOT_STATEMENT_TRADE_DIFFERS) == []
+    assert run(ws, depot.book_statement_trades).covered == 1
 
 
 def _cli(ws, dbname, *extra):
