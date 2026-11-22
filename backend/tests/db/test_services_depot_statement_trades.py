@@ -9,6 +9,7 @@ run unless --apply. Invented statements, ISINs, references and amounts only
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import psycopg
 import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.test_cli_evals_report import _owner_url
@@ -34,7 +35,9 @@ from db.test_services_depot_securities import (
 from db.test_services_net_worth import _document
 from db.test_services_proposals import enqueued as enqueued  # noqa: F401 (a fixture)
 from db.test_services_proposals import job as job  # noqa: F401 (a fixture)
+from psycopg.errors import CheckViolation
 from sqlalchemy import insert
+from sqlalchemy.exc import IntegrityError, OperationalError
 from test_card_pdf import draw
 from test_depot_pdf import ROWS, page
 from test_services_card_import import _deps
@@ -629,3 +632,29 @@ def test_the_command_is_a_dry_run_unless_apply(
     assert _cli(ws, dbname, "--apply") == cli.EXIT_OK  # idempotent
     assert capsys.readouterr().out.startswith("booked 0 trade(s)")
     assert len(_rows(read, ws, movement_table)) == 2
+
+
+def test_a_database_that_refuses_the_change_is_named_as_such(
+    fresh_workspaces, dbname, capsys, monkeypatch
+):
+    """Review of PR #551: a dry run on a database without migration 0052 failed its check and
+    printed „could not reach the database“. A refusal by a reached database says so, by the
+    exception's class only (no URL, no values); a connection failure keeps its own message."""
+    ws, _ = fresh_workspaces
+
+    def refused(ctx):
+        raise IntegrityError("INSERT", {}, CheckViolation("new row violates check"))
+
+    monkeypatch.setattr(depot, "book_all_statement_trades", refused)
+    assert _cli(ws, dbname) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "the database refused the change (CheckViolation); nothing was written" in err
+    assert "could not reach" not in err
+    assert "postgresql" not in err
+
+    def unreachable(ctx):
+        raise OperationalError("SELECT 1", {}, psycopg.OperationalError("gone"))
+
+    monkeypatch.setattr(depot, "book_all_statement_trades", unreachable)
+    assert _cli(ws, dbname) == cli.EXIT_ERROR
+    assert "could not reach the database (OperationalError)" in capsys.readouterr().err

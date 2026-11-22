@@ -187,7 +187,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from sqlalchemy import Engine, create_engine, pool
-from sqlalchemy.exc import DBAPIError, OperationalError, SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError, SQLAlchemyError
 
 from hausbuch.db.session import UnsafeDatabaseRoleError, create_app_engine
 from hausbuch.settings import SettingsError, load_admin_database_url
@@ -1041,11 +1041,19 @@ def book_statement_trades(args: argparse.Namespace, environ: Mapping[str, str]) 
                     raise _DryRun
         except _DryRun:
             pass
-    except SQLAlchemyError as exc:
+    except (OperationalError, InterfaceError) as exc:
         detail = type(getattr(exc, "orig", None) or exc).__name__
         raise CliError(
             f"could not reach the database ({detail}); check HAUSBUCH_ADMIN_DATABASE_URL and "
             "that the database accepts this computer's address"
+        ) from None
+    except SQLAlchemyError as exc:
+        # Reached, but refused: a constraint, a missing column or index (a database not yet
+        # migrated to 0052, review of PR #551). Named by its class only, never a URL or value.
+        detail = type(getattr(exc, "orig", None) or exc).__name__
+        raise CliError(
+            f"the database refused the change ({detail}); nothing was written. Is the "
+            "database migrated to the newest version (alembic upgrade head)?"
         ) from None
     finally:
         engine.dispose()
@@ -1054,6 +1062,8 @@ def book_statement_trades(args: argparse.Namespace, environ: Mapping[str, str]) 
         f"{verb} {done.booked} trade(s) from depot cash statement lines; "
         f"{done.covered} already booked by a confirmation or a report; "
         f"{done.unreadable} line(s) without a readable ISIN or units (card „Kauf ohne Stückzahl“); "
+        f"{done.differs} line(s) whose confirmation or report differs (card „Kontoauszug und "
+        "Abrechnung weichen ab“); "
         f"{done.prices_stored} report price(s) stored"
     )
     if not args.apply:
