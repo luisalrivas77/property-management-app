@@ -7,19 +7,30 @@ another's; every table with workspace_id carries the three mark triggers (a tabl
 later without them fails here); a bump row-level security refuses raises instead of being
 skipped; the excluded session table never bumps; the version can only grow; the pending
 table is empty after every commit; and a written table stays free for TRUNCATE and ALTER
-TABLE in the same transaction (the deferred event sits on the pending table only).
+TABLE in the same transaction (the deferred event sits on the pending table only). Since
+migration 0051 (phase 10 §7.5 (a)): a sign-in's own event and the passkey events move no
+version, every other event still does.
 """
 
 import os
 import uuid
+from datetime import UTC, datetime
 
 import psycopg
 import pytest
-from db.db_support import ADMIN_URL, APP, _admin, insert_property, insert_unit
+from db.db_support import ADMIN_URL, APP, _admin, insert_event, insert_property, insert_unit
 from psycopg import sql
 from sqlalchemy import text
 
+from hausbuch.auth.events import append_user_event
 from hausbuch.db.session import workspace_transaction
+from hausbuch.schemas.events import (
+    Empty,
+    EventType,
+    UserPasskeyEnrolled,
+    UserPasskeyRef,
+    UserSignedIn,
+)
 
 pytestmark = pytest.mark.db
 
@@ -187,6 +198,62 @@ def test_the_session_slide_does_not_bump(dbname, fresh_workspaces, app_conn):
     assert _version(dbname, ws) == start
 
 
+def _user_event(conn, ws: uuid.UUID, type: EventType, payload) -> None:
+    """One user.* event as the sign-in and passkey paths write it (auth/events.py)."""
+    append_user_event(
+        conn, type, payload, workspace_id=ws, user_id=uuid.uuid4(), now=datetime.now(UTC)
+    )
+
+
+_PASSKEY = uuid.UUID(int=1)
+_SIGN_IN_EVENTS = (
+    (EventType.USER_SIGNED_IN, UserSignedIn(passkey_id=_PASSKEY)),
+    (EventType.USER_PASSKEY_ENROLLED, UserPasskeyEnrolled(passkey_id=_PASSKEY, label="A")),
+    (EventType.USER_PASSKEY_RENAMED, UserPasskeyRef(passkey_id=_PASSKEY)),
+    (EventType.USER_PASSKEY_REMOVED, UserPasskeyRef(passkey_id=_PASSKEY)),
+)
+
+
+@pytest.mark.parametrize(
+    ("type", "payload"), _SIGN_IN_EVENTS, ids=[t.value for t, _ in _SIGN_IN_EVENTS]
+)
+def test_a_sign_in_event_does_not_bump(dbname, fresh_workspaces, app_engine, type, payload):
+    """Phase 10 §7.5 (a), migration 0051: a sign-in's own event and the passkey events move
+    no version (no kept answer shows them), so the first load after a sign-in is kept."""
+    ws, _ = fresh_workspaces
+    start = _version(dbname, ws)
+    with workspace_transaction(app_engine, ws) as conn:
+        _user_event(conn, ws, type, payload)
+    assert _version(dbname, ws) == start
+
+
+def test_any_other_event_still_bumps(dbname, fresh_workspaces, app_engine):
+    ws, _ = fresh_workspaces
+    start = _version(dbname, ws)
+    with workspace_transaction(app_engine, ws) as conn:
+        _user_event(conn, ws, EventType.USER_SIGNED_OUT, Empty())
+    assert _version(dbname, ws) == start + 1
+    with _admin(dbname) as conn:
+        insert_event(conn, ws)
+    assert _version(dbname, ws) == start + 2
+
+
+def test_a_sign_in_event_does_not_hide_a_later_write_of_its_transaction(
+    dbname, fresh_workspaces, app_engine
+):
+    """The exempt event records nothing as queued, so the write after it in the same
+    transaction still bumps, once."""
+    ws, _ = fresh_workspaces
+    start = _version(dbname, ws)
+    with workspace_transaction(app_engine, ws) as conn:
+        _user_event(conn, ws, EventType.USER_SIGNED_IN, UserSignedIn(passkey_id=_PASSKEY))
+        conn.execute(
+            text("INSERT INTO owner (workspace_id, full_name) VALUES (:ws, 'A')"), {"ws": ws}
+        )
+        _user_event(conn, ws, EventType.USER_SIGNED_IN, UserSignedIn(passkey_id=_PASSKEY))
+    assert _version(dbname, ws) == start + 1
+
+
 def test_the_version_only_grows(dbname, fresh_workspaces, app_conn):
     ws, _ = fresh_workspaces
     conn = app_conn(ws)
@@ -224,15 +291,17 @@ def test_every_table_with_workspace_id_carries_the_mark_triggers(dbname):
             )
         }
         marks: dict[str, list[tuple[bool, int, str]]] = {}
-        for relname, deferrable, tgtype, definition in conn.execute(
-            "SELECT c.relname, t.tgdeferrable, t.tgtype, pg_get_triggerdef(t.oid) "
+        for relname, deferrable, tgtype, definition, enabled in conn.execute(
+            "SELECT c.relname, t.tgdeferrable, t.tgtype, pg_get_triggerdef(t.oid), "
+            "t.tgenabled "
             "FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
             "WHERE t.tgname LIKE %s AND t.tgfoid = 'mark_workspace_data_version'::regproc",
             (MARK + "\\_%",),
         ):
+            assert enabled == "O", relname  # fires (a disabled mark would bump nothing)
             marks.setdefault(relname, []).append((deferrable, tgtype, definition))
         deferred = conn.execute(
-            "SELECT c.relname, t.tgdeferrable, t.tginitdeferred, t.tgtype "
+            "SELECT c.relname, t.tgdeferrable, t.tginitdeferred, t.tgtype, t.tgenabled "
             "FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
             "WHERE t.tgfoid = 'bump_workspace_data_version'::regproc"
         ).fetchall()
@@ -256,8 +325,9 @@ def test_every_table_with_workspace_id_carries_the_mark_triggers(dbname):
         # INSERT (4) + DELETE (8) + UPDATE (16); a workspace is never deleted.
         assert events == (4 | 16 if table == "workspace" else 4 | 8 | 16), table
     assert len(deferred) == 1
-    relname, deferrable, initdeferred, tgtype = deferred[0]
+    relname, deferrable, initdeferred, tgtype, enabled = deferred[0]
     assert relname == PENDING
+    assert enabled == "O"
     assert deferrable and initdeferred
     assert tgtype & 1 and tgtype & (4 | 8 | 16) == 4  # row-level, AFTER INSERT
 
