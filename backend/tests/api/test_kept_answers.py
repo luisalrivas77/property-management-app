@@ -36,9 +36,11 @@ from hausbuch.api.kept_answers import (
     kept_route,
     warm_member,
 )
+from hausbuch.auth.events import append_user_event
 from hausbuch.db.session import workspace_transaction
 from hausbuch.jobs.document_read import JobDeps
 from hausbuch.jobs.kept_answers import enrolled_members, run_check, run_warm
+from hausbuch.schemas.events import EventType, UserPasskeyEnrolled, UserPasskeyRef, UserSignedIn
 
 pytestmark = pytest.mark.db
 
@@ -192,6 +194,14 @@ def test_the_query_order_does_not_matter_but_its_values_do(client_a, kept):
     assert kept.counters.hits == 1
     ok(client_a.get("/api/health/months?from=2026-09&to=2026-10"))
     assert kept.counters.hits == 1
+
+
+def test_a_repeated_parameter_keeps_the_order_of_its_values():
+    # FastAPI takes the last value of a repeated parameter, so `a=1&a=2` and `a=2&a=1` are
+    # two answers; only the order of different names is free.
+    assert canonical_query(b"a=1&a=2") != canonical_query(b"a=2&a=1")
+    assert canonical_query(b"a=1&b=2") == canonical_query(b"b=2&a=1")
+    assert canonical_query(b"b=1&a=x&b=2") == canonical_query(b"a=x&b=1&b=2")
 
 
 def test_signed_out_and_revoked_sessions_never_get_a_kept_answer(api_app, kept, sessions):
@@ -402,6 +412,30 @@ _NOT_REQUESTED = {
 _UNVERSIONED_TABLES = ("auth_session", "auth_passkey")
 
 
+def _exempt_types() -> tuple[str, ...]:
+    """Migration 0051's own list, so this test and the migration cannot drift apart."""
+    import importlib.util
+    from pathlib import Path
+
+    versions = Path(__file__).parents[2] / "migrations" / "versions"
+    spec = importlib.util.spec_from_file_location(
+        "m0051", versions / "0051_sign_in_keeps_data_version.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.EXEMPT_TYPES
+
+
+def _sign_in_events(passkey_id: uuid.UUID):
+    """One event of each type migration 0051 exempts from the data version (EXEMPT_TYPES)."""
+    return (
+        (EventType.USER_SIGNED_IN, UserSignedIn(passkey_id=passkey_id)),
+        (EventType.USER_PASSKEY_ENROLLED, UserPasskeyEnrolled(passkey_id=passkey_id, label="A")),
+        (EventType.USER_PASSKEY_RENAMED, UserPasskeyRef(passkey_id=passkey_id)),
+        (EventType.USER_PASSKEY_REMOVED, UserPasskeyRef(passkey_id=passkey_id)),
+    )
+
+
 def _account(client, **fields) -> str:
     body = {"bank": "Beispiel", "opening_balance": "0.00", "opening_balance_on": "2026-01-01"}
     return create(client, "/api/accounts", body | fields)["id"]
@@ -411,16 +445,55 @@ def test_no_kept_route_reads_the_session_or_passkey_tables(
     client_a, kept, app_engine, auth_a, dbname
 ):
     """Every KEPT_ROUTES entry is requested as the warm step requests it (`internal_get`), and
-    no SQL statement it sends names a table outside the data version."""
+    no SQL statement it sends names a table outside the data version. Between its two
+    computations the test writes what the version does not cover (one of each sign-in and
+    passkey event migration 0051 exempts, a session and a passkey row), and the second answer
+    must be the same bytes: a route that read any of it, by any name, would serve it stale."""
     from db.db_support import _admin
     from sqlalchemy import event
 
+    ws, user = auth_a.workspace_id, auth_a.user_id
     with _admin(dbname) as conn:  # the member exists, so created_by (FK to app_user) is real
         conn.execute(
             "INSERT INTO app_user (id, workspace_id, email, display_name)"
             " VALUES (%s, %s, %s, 'Test')",
-            (auth_a.user_id, auth_a.workspace_id, f"{auth_a.user_id}@example.test"),
+            (user, ws, f"{user}@example.test"),
         )
+        # The member's passkey and session, which the unversioned writes below move.
+        passkey = conn.execute(
+            "INSERT INTO auth_passkey (workspace_id, user_id, credential_id, public_key, "
+            "backup_eligible, backed_up, label) VALUES (%s, %s, %s, %s, false, false, 'k') "
+            "RETURNING id",
+            (ws, user, uuid.uuid4().bytes, b"k"),
+        ).fetchone()[0]
+        session = conn.execute(
+            "INSERT INTO auth_session (workspace_id, user_id, passkey_id, token_hash, "
+            "expires_at, idle_expires_at) VALUES (%s, %s, %s, %s, now() + interval '1 hour', "
+            "now() + interval '1 hour') RETURNING id",
+            (ws, user, passkey, uuid.uuid4().bytes + uuid.uuid4().bytes),
+        ).fetchone()[0]
+
+    exempt = {type.value for type, _ in _sign_in_events(passkey)}
+    assert exempt == set(_exempt_types())
+
+    def unversioned_writes(n: int) -> None:
+        """What a sign-in and the passkey screens write and the data version does not cover
+        (migration 0051's exempt events and the two auth tables): each exempt event of the
+        member, a session slide and a passkey sign count. A kept answer that read any of it
+        would differ on its second computation."""
+        with workspace_transaction(app_engine, ws) as conn:
+            for type, payload in _sign_in_events(passkey):
+                append_user_event(
+                    conn, type, payload, workspace_id=ws, user_id=user, now=datetime.now(UTC)
+                )
+            conn.execute(
+                text("UPDATE auth_session SET last_seen_at = now() WHERE id = :id"),
+                {"id": session},
+            )
+            conn.execute(
+                text("UPDATE auth_passkey SET sign_count = :n WHERE id = :id"),
+                {"id": passkey, "n": n},
+            )
 
     # A flat bought in 2026, a year the tax and projection rules know.
     prop = new_property(client_a, notarized_on="2026-01-15", purchase_date="2026-03-01")
@@ -484,6 +557,8 @@ def test_no_kept_route_reads_the_session_or_passkey_tables(
                     assert clock not in lowered, (template, clock)
             assert response.status == 200, (template, response.body[:300])
             assert statements, template
+            # Between the two computations only what the data version does not cover moves.
+            unversioned_writes(len(requested) + 1)
             again = asyncio.run(kept.internal_get(auth_a, path, _QUERY.get(template), bypass=True))
             assert again.body == response.body, template  # the 15:00 check would empty the store
             requested.add(template)

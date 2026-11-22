@@ -296,7 +296,10 @@ class CheckOutcome:
 
 
 def canonical_query(query_string: bytes) -> tuple[tuple[str, str], ...]:
-    return tuple(sorted(parse_qsl(query_string.decode("latin-1"), keep_blank_values=True)))
+    # By name only, and stable: FastAPI takes the last of a repeated parameter, so the
+    # order of one name's values is part of the answer while the order of names is not.
+    pairs = parse_qsl(query_string.decode("latin-1"), keep_blank_values=True)
+    return tuple(sorted(pairs, key=lambda pair: pair[0]))
 
 
 class KeptAnswers:

@@ -293,9 +293,72 @@ def test_check_kept_serves_the_later_pass_from_the_store_and_finds_no_difference
     assert "/api/properties" in hits and "/api/accounts" in hits
     assert not any(t.hit for t in second if t.label in ("/api/inbox", "/api/auth/me"))
     out = "\n".join(lines)
-    assert f"kept answers: {len(hits)} of {len(hits)} keepable requests" in out
+    kept = sum(t.hit for t in second + passes[1].extra)  # the other kept routes too (§7.5 (a))
+    assert f"kept answers: {kept} of {kept} keepable requests" in out
     assert ", different: 0, failed: 0, moved meanwhile (not compared): 0" in out
     assert TENANT_NAME not in out
+
+
+def test_check_kept_also_compares_every_other_kept_route(world, dbname):
+    """Phase 10 §7.5 (a): with --check-kept each pass also requests every kept route the page
+    does not fire, with the workspace's own ids; a route whose kind of id the workspace lacks
+    is named as skipped. Together they cover KEPT_ROUTES, and none of it reaches the page's
+    timing table or prints an id."""
+    from hausbuch.api.kept_answers import KEPT_ROUTES, kept_route
+
+    engine = perf_probe.read_only_engine(_owner_url(dbname))
+    lines: list[str] = []
+    try:
+        passes = perf_probe.run_probe(engine, world.ws, repeat=2, check_kept=True, out=lines.append)
+    finally:
+        engine.dispose()
+    first, second = passes
+    assert [t.label for t in first.extra] == [t.label for t in second.extra]
+    assert first.skipped == second.skipped
+    page = {kept_route(t.label.split("?")[0]) for t in second.timings} - {None}
+    extra = {kept_route(t.label.split("?")[0]) for t in second.extra}
+    skipped = {template for template, _ in second.skipped}
+    assert page | extra | skipped == set(KEPT_ROUTES)
+    assert not (page & extra) and not (page & skipped) and not (extra & skipped)
+    # The world has no exchange, wallet, bank line, stored month-end, suggestion or return
+    # input.
+    assert {missing for _, missing in second.skipped} == {
+        "bank line",
+        "exchange account",
+        "wallet",
+        "stored month-end",
+        "suggestion",
+        "return input",
+    }
+    assert "/api/loans/{l1}/schedule" in [t.label for t in second.extra]
+    assert any(t.label.startswith("/api/transfers?month=") for t in second.extra)
+    # The world's property has no owners' shares, so its ownership is unknown (404) and its
+    # performance cannot be computed (422): printed as findings, never dropped.
+    findings = {(t.label, t.status) for t in second.extra if t.status != 200}
+    assert findings == {
+        ("/api/properties/{p1}/ownership", 404),
+        ("/api/properties/{p1}/performance/actuals", 422),
+        ("/api/properties/{p1}/performance/projection", 422),
+    }
+    for timing in second.extra:
+        assert timing.hit == (timing.status == 200), timing.label
+    out = "\n".join(lines)
+    assert f"kept routes the page does not fire: {len(second.extra)} requested, " in out
+    assert "skipped: /api/wallets/{account_id}/lots (no wallet)" in out
+    assert "  not 200: /api/properties/{p1}/ownership  404" in out
+    assert out.count("  not 200: ") == len(findings)
+    assert ", different: 0, failed: 0, moved meanwhile (not compared): 0" in out
+    assert str(world.property_id) not in out and str(world.account_id) not in out
+    assert TENANT_NAME not in out
+
+
+def test_the_probe_requests_no_other_kept_route_without_check_kept(world, dbname):
+    engine = perf_probe.read_only_engine(_owner_url(dbname))
+    try:
+        passes = perf_probe.run_probe(engine, world.ws, repeat=2, out=lambda _: None)
+    finally:
+        engine.dispose()
+    assert not any(one.extra or one.skipped for one in passes)
 
 
 def test_check_kept_fails_on_a_kept_answer_that_differs(world, dbname, monkeypatch):
