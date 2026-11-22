@@ -22,6 +22,7 @@ dark choice, and English), so every screen is drawn and the build covers the who
 | 4d | Übersicht's speed (§7.2), no new behaviour | merged and deployed 21 Nov 2026 (PRs #514, #516, #517, #518, #519, #520, #522; images de96c9e2356e, 0523409427b7, 397837875ca6, 2ae563e4e0ba, 80656fa4c054; no migration) |
 | 4e | Fewer repeated reads (§7.3) and reusing answers while nothing changed (§7.4), no new behaviour | merged and deployed 21 Nov 2026: §7.3 PR #528 (images 5f9aa0594917, no migration), §7.4 PR #529 (images 902f60277dc8, migration 0050 applied); review round pending, Mon 23 Nov 2026, on the deployed code (Luis: „Ship both, review Monday“) |
 | 4f | Further speed steps (§7.5): every section kept, the inbox kept until its next time window, answers computed after a change instead of at the next load | scoped 21 Nov 2026, not built; waits for Luis's go after the §7.4 review |
+| 4g | Less on each screen (§7.6): Übersicht trimmed first (Luis, 22 Nov 2026), then the other sections one at a time | Übersicht scoped 22 Nov 2026, not built; the other sections not yet scoped; waits for Luis's go |
 | 5 | Closing (§7.1) | not started |
 
 ## 1. Scope
@@ -392,6 +393,20 @@ Luis uses the new menu and every screen on his phone and computer, in German and
 scroll past the menu; on the live data the Budget's Sparen ÷ E equals the Sparquote `hausbuch health-check`
 recomputes for the same window, to four places; Luis finds the split into needs and wants plausible; and
 nothing is coloured before he saves a target.
+
+### 7.6 Less on each screen (scoped 22 Nov 2026 for Übersicht, not built)
+
+Luis, 22 Nov 2026: „the Übersicht has cards that I think are not relevant. Also to reduce text in the app. Some sections have too much text. For example the Immobilien card from the Übersicht has too much text and it expands vertically too much which also changes the other cards.“ Agreed the same day („Those were exactly what I had in mind“). Frontend only: no endpoint, figure or rule changes, and nothing shown today is lost, it moves behind a tap.
+
+**Two rules for the whole app.** (1) A tile or card shows a name, one number and at most one short line; anything more goes into its detail panel (D267). (2) An explanation stays available but is shown on a tap only: in the detail panel or behind a small ⓘ button beside a heading, never as a paragraph on the page. Every other section is trimmed by these rules one at a time, each agreed with Luis before it is scoped.
+
+**Übersicht.**
+
+1. **The tiles stay**, each under rule (1). The tile grid sizes a row by its tallest tile (CSS grid's default `align-items: stretch` on `.tiles-grid`), so one long tile stretched Depot, Krypto and Bank; with rule (1) every tile is short, and a tile's text is cut to its lines rather than growing it.
+2. **The Immobilie tile** keeps the money back so far and one line (the own money put in and the percent back). The year it is back (or „Planung prüfen“), the profit at a sale today with its note, value minus loans and „N Immobilien nicht mitgezählt“ move into its detail panel, which already shows them (D286).
+3. **To-dos and the next dates stay.**
+4. **Removed from Übersicht:** the key-figures block under the to-dos (`HealthSection`: the month-end, the reserve, Kennzahlen, „Ampel-Grenzen festlegen“, the split of the assets, Vermögen im Verlauf), which repeats the tiles and lives on Planung; the card per property (address, units, tenants, loans), which repeats Immobilien; and the buttons „Mieter“ and „Neue Immobilie“ in the page head, which belong on Immobilien. Each must still be reachable where it moves to (checked in the build: Planung has every part of `HealthSection`, Immobilien has the tenants link and „Neue Immobilie“), and the empty state for a household with no property keeps its hint.
+5. **Done when** Übersicht fits a computer screen without a scroll past the tiles and to-dos, no tile changes another's height, and every removed item is one tap away where it moved.
 
 ## 8. Edits to other docs (made in the spec PR)
 
