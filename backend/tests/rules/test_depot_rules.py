@@ -142,3 +142,18 @@ def test_in_transit(case):
         case.paid_on, case.opened_on, case.through, case.receiver_history, linked=case.linked
     )
     assert found is case.expect
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize("case", STATEMENT.transit_to_card, ids=lambda c: c.id)
+def test_transit_counted(case):
+    assert net_worth.transit_counted(case.amounts, case.card_balance) == case.expect
+
+
+@pytest.mark.rule
+@pytest.mark.parametrize("case", STATEMENT.twins, ids=lambda c: c.id)
+def test_statement_twin(case):
+    found = depot.statement_twin(
+        case.line_reference, case.line_on, case.other_reference, case.trade_on
+    )
+    assert found is case.expect

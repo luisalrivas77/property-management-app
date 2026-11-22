@@ -14,8 +14,9 @@ from decimal import Decimal
 import pytest
 from db.db_support import TEST_IBAN_KEY
 from db.test_services_net_worth import NOW, ON, _account, _import, _snapshot_rows
-from sqlalchemy import insert
+from sqlalchemy import insert, update
 
+from hausbuch.db.tables import account as account_table
 from hausbuch.db.tables import transaction as transaction_table
 from hausbuch.schemas.allocation import (
     AllocationCategory,
@@ -25,7 +26,7 @@ from hausbuch.schemas.allocation import (
 )
 from hausbuch.schemas.enums import AccountKind
 from hausbuch.schemas.net_worth import NetWorthLineKind, SnapshotOutcome
-from hausbuch.services import allocations, net_worth, transfers
+from hausbuch.services import allocations, health, net_worth, transfers
 from hausbuch.services.iban import protect_iban
 
 pytestmark = pytest.mark.db
@@ -198,3 +199,103 @@ def test_a_transfer_to_an_account_without_history_is_not_in_transit(run, read, f
     _book(run, ws, debit, "-500.00", C.INTERNAL_TRANSFER_OUT)
     seen = read(ws, net_worth.net_worth, ON)
     assert _moving(seen) == [] and seen.total == Decimal("500.00")
+
+
+CARD_PAY_IBAN = "DE73100000000000000072"
+
+
+def _card_world(run, ws):
+    """D292 amended (a): a current account of 1,000 € that paid the card 300 € on 1 Oct and
+    250 € on 30 Oct (both booked as transfers); the card's statements reach only its September
+    statement, closing at -300 € on 25 Sep (the reviewer's case of PR #551)."""
+    current = _account(
+        run, ws, "Girokonto", AccountKind.BANK_CURRENT, iban=CURRENT_IBAN, opening="1000.00"
+    )
+    card = _account(run, ws, "Karte", AccountKind.CREDIT_CARD)
+
+    def stored(ctx):
+        paid_to = protect_iban(CARD_PAY_IBAN, TEST_IBAN_KEY)
+        ctx.conn.execute(
+            update(account_table)
+            .where(account_table.c.id == card)
+            .values(payment_iban_masked=paid_to.masked, payment_iban_hmac=paid_to.hmac)
+        )
+        bank = _import(ctx, current, date(2026, 7, 1), ON)
+        first = _line(ctx, current, bank, date(2026, 10, 1), "-300.00", iban=CARD_PAY_IBAN)
+        second = _line(ctx, current, bank, date(2026, 10, 30), "-250.00", iban=CARD_PAY_IBAN)
+        september = _import(ctx, card, date(2026, 8, 26), date(2026, 9, 25), closing="-300.00")
+        _line(ctx, card, september, date(2026, 9, 20), "-300.00")
+        return first, second
+
+    first, second = run(ws, stored, now=NOW)
+    _book(run, ws, first, "-300.00", C.INTERNAL_TRANSFER_OUT)
+    _book(run, ws, second, "-250.00", C.INTERNAL_TRANSFER_OUT)
+    return current, card
+
+
+def test_money_in_transit_to_a_card_offsets_only_its_known_debt(run, read, fresh_workspaces):
+    """The 300 € of 1 Oct pays the September statement's debt; the 250 € of 30 Oct paid charges
+    on a statement not yet in the app, so it is not counted: the card is 0, never an asset,
+    and the net worth 450 € (the reviewer's repro had the card at +250 €). The month-end row,
+    the reserve and health-check read the same capped figure."""
+    ws, _ = fresh_workspaces
+    current, card = _card_world(run, ws)
+
+    seen = read(ws, net_worth.net_worth, ON)
+    [moving] = _moving(seen)
+    assert (moving.account_id, moving.value_eur) == (card, Decimal("300.00"))
+    assert "01.10.2026" in moving.note
+    merged = {line.account_id: line.value_eur for line in net_worth.merge_transit(seen.lines)}
+    assert merged == {current: Decimal("450.00"), card: Decimal("0.00")}
+    assert seen.total == Decimal("450.00")
+
+    reserve = read(ws, lambda conn: health._reserve_balances(conn, seen))
+    assert {r.account_id: r.balance for r in reserve} == merged
+
+    first = run(ws, net_worth.capture_month_end, ON, now=NOW)
+    assert first.outcome is SnapshotOutcome.WRITTEN
+    rows = {r.account_id: r.value_eur for r in _snapshot_rows(read, ws)}
+    assert rows == merged
+    assert read(ws, net_worth.latest_month_end).total == Decimal("450.00")
+    stored = read(ws, net_worth.latest_month_end)
+    checks = health._input_checks("2026-10", stored, seen)
+    # Each account's stored row equals the reading folded the same way (the card's missing
+    # October statement is the reading's own gap to-do, not an account line).
+    assert {c.account_id: c.agrees for c in checks if c.account_id is not None} == {
+        current: True,
+        card: True,
+    }
+
+
+def test_a_card_payment_counted_in_part_says_so(run, read, fresh_workspaces):
+    """A card debt of 300 € and payments of 200 € and 250 €: the first counts in full, the
+    second only the 100 € the debt leaves room for, its note naming the cap."""
+    ws, _ = fresh_workspaces
+    current = _account(
+        run, ws, "Girokonto", AccountKind.BANK_CURRENT, iban=CURRENT_IBAN, opening="1000.00"
+    )
+    card = _account(run, ws, "Karte", AccountKind.CREDIT_CARD)
+
+    def stored(ctx):
+        paid_to = protect_iban(CARD_PAY_IBAN, TEST_IBAN_KEY)
+        ctx.conn.execute(
+            update(account_table)
+            .where(account_table.c.id == card)
+            .values(payment_iban_masked=paid_to.masked, payment_iban_hmac=paid_to.hmac)
+        )
+        bank = _import(ctx, current, date(2026, 7, 1), ON)
+        first = _line(ctx, current, bank, date(2026, 10, 1), "-200.00", iban=CARD_PAY_IBAN)
+        second = _line(ctx, current, bank, date(2026, 10, 30), "-250.00", iban=CARD_PAY_IBAN)
+        september = _import(ctx, card, date(2026, 8, 26), date(2026, 9, 25), closing="-300.00")
+        _line(ctx, card, september, date(2026, 9, 20), "-300.00")
+        return first, second
+
+    first, second = run(ws, stored, now=NOW)
+    _book(run, ws, first, "-200.00", C.INTERNAL_TRANSFER_OUT)
+    _book(run, ws, second, "-250.00", C.INTERNAL_TRANSFER_OUT)
+    seen = read(ws, net_worth.net_worth, ON)
+    full, part = _moving(seen)
+    assert (full.value_eur, part.value_eur) == (Decimal("200.00"), Decimal("100.00"))
+    assert "soweit es die bekannte Schuld der Karte tilgt" in part.note
+    assert "Schuld" not in full.note
+    assert seen.total == Decimal("550.00")  # 550 on the current account, the card at 0

@@ -341,7 +341,12 @@ def transit_label(receiver: str) -> str:
     return f"Unterwegs zu „{receiver}“"
 
 
-def transit_note(paid_on: date, sender: str) -> str:
+def transit_note(paid_on: date, sender: str, *, partly: bool = False) -> str:
+    if partly:  # D292 amended (a): a card takes only what its known debt leaves room for
+        return (
+            f"Am {_german(paid_on)} von „{sender}“ überwiesen; zählt hier nur, soweit es die "
+            "bekannte Schuld der Karte tilgt, bis ein Kontoauszug dieses Kontos den Tag abdeckt"
+        )
     return (
         f"Am {_german(paid_on)} von „{sender}“ überwiesen; zählt hier, bis ein Kontoauszug "
         "dieses Kontos den Tag abdeckt"
@@ -463,7 +468,8 @@ def _balances(conn: Connection, on: date, reads: _Reads) -> tuple[list[_Item], l
     )
     items: list[_Item] = []
     todos: list[NetWorthTodo] = []
-    counted: dict[UUID, tuple[Any, date]] = {}  # each account with a balance line, its `through`
+    # each account with a balance line: the row, its `through` and its balance on `on`
+    counted: dict[UUID, tuple[Any, date, Decimal]] = {}
     for a in accounts:
         kind = AccountKind(a.kind)
         facts = imported.get(a.id)
@@ -474,9 +480,9 @@ def _balances(conn: Connection, on: date, reads: _Reads) -> tuple[list[_Item], l
             through = on
         else:
             through = max(reached or a.opening_balance_on, a.opening_balance_on)
-        counted[a.id] = (a, through)
         own = lines.get(a.id, [])
         balance = rules.bank_balance(a.opening_balance, a.opening_balance_on, own, through)
+        counted[a.id] = (a, through, balance)
         waiting = sum(1 for day, _ in own if through < day <= on and day > a.opening_balance_on)
         items.append(
             _Item(
@@ -521,7 +527,7 @@ def _balances(conn: Connection, on: date, reads: _Reads) -> tuple[list[_Item], l
 
 
 def _in_transit(
-    on: date, counted: dict[UUID, tuple[Any, date]], history: Any, reads: _Reads
+    on: date, counted: dict[UUID, tuple[Any, date, Decimal]], history: Any, reads: _Reads
 ) -> list[_Item]:
     """Phase 6 D292 (3), 22 Nov 2026 (Luis: „The Quirion values in the app didn't match the
     values in Quirion“): a booked transfer (_transfers_out) whose debit the sending account's
@@ -531,38 +537,55 @@ def _in_transit(
     statement of the receiver reaches the day (its own figures then count the money), or once
     the debit is linked to its counterpart. A line of the net worth only: no movement, no lot,
     no tax figure reads it. Both accounts must have a balance line on `on`; a depot without
-    cash statements has no history, so nothing is in transit to it."""
-    out = []
+    cash statements has no history, so nothing is in transit to it.
+
+    D292 amended (a), 23 Nov 2026: a credit card takes its transfers only up to the debt its
+    balance line shows (rules.net_worth.transit_counted, in payment order), so money in transit
+    never lifts a card above 0; a transfer counted in part says so in its note, one that counts
+    nothing has no line."""
+    moving: dict[UUID, list[_Transit]] = defaultdict(list)
     for move in reads.transit():
         sender, receiver = counted.get(move.account_id), counted.get(move.receiver)
         if sender is None or receiver is None:
             continue
-        (sent_from, through), (account, _) = sender, receiver
-        if not rules.in_transit(
+        sent_from, through, _ = sender
+        if rules.in_transit(
             move.paid_on,
             sent_from.opening_balance_on,
             through,
             history.get(move.receiver),
             linked=move.linked,
         ):
-            continue
+            moving[move.receiver].append(move)
+    out = []
+    for receiver_id, moves in moving.items():
+        account, _, balance = counted[receiver_id]
         kind = AccountKind(account.kind)
-        out.append(
-            _Item(
-                NetWorthLine(
-                    kind=L.ACCOUNT,
-                    net_worth_class=rules.class_of(kind),
-                    label=transit_label(account.label),
-                    account_id=account.id,
-                    account_kind=kind,
-                    account_label=account.label,
-                    value_eur=move.amount,
-                    note=transit_note(move.paid_on, sent_from.label),
-                    in_transit=True,
-                ),
-                account.id,
-            )
+        moves.sort(key=lambda m: (m.paid_on, str(m.transaction_id)))
+        counts = rules.transit_counted(
+            [m.amount for m in moves], balance if kind is AccountKind.CREDIT_CARD else None
         )
+        for move, value in zip(moves, counts, strict=True):
+            if value <= 0:
+                continue
+            sent_from = counted[move.account_id][0]
+            partly = value < move.amount
+            out.append(
+                _Item(
+                    NetWorthLine(
+                        kind=L.ACCOUNT,
+                        net_worth_class=rules.class_of(kind),
+                        label=transit_label(account.label),
+                        account_id=account.id,
+                        account_kind=kind,
+                        account_label=account.label,
+                        value_eur=value,
+                        note=transit_note(move.paid_on, sent_from.label, partly=partly),
+                        in_transit=True,
+                    ),
+                    account.id,
+                )
+            )
     return out
 
 

@@ -655,6 +655,19 @@ def statement_window(trade_on: date, line_on: date) -> bool:
     return 0 <= (line_on - trade_on).days <= STATEMENT_TRADE_DAYS
 
 
+def statement_twin(
+    line_reference: str | None, line_on: date, other_reference: str | None, trade_on: date
+) -> bool:
+    """D292 amended (b), 23 Nov 2026: whether a trade a confirmation or a report booked (its
+    reference `other_reference`, its trade day `trade_on`) is the trade of a cash statement
+    line (`line_reference`, value date `line_on`), so the two must agree. When both carry a
+    reference, the references decide, whatever the days; when either has none, the line's
+    value date must be on the trade day or up to STATEMENT_TRADE_DAYS after it."""
+    if line_reference and other_reference:
+        return line_reference == other_reference
+    return statement_window(trade_on, line_on)
+
+
 def statement_booked(
     trade: ProposedTrade, booked: Iterable[tuple[str, Decimal, date]]
 ) -> tuple[str, Decimal, date] | None:

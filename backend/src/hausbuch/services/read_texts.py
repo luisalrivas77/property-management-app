@@ -236,6 +236,12 @@ NET_WORTH_NOTES = i18n.Patterns(
             "Sent from “{sender}” on {d}; counts here until a statement of this account covers"
             " that day",
         ),
+        (
+            "Am {d:date} von „{sender}“ überwiesen; zählt hier nur, soweit es die bekannte"
+            " Schuld der Karte tilgt, bis ein Kontoauszug dieses Kontos den Tag abdeckt",
+            "Sent from “{sender}” on {d}; counts here only as far as it pays off the card's"
+            " known debt, until a statement of this account covers that day",
+        ),
     ],
 )
 NET_WORTH_LABELS = i18n.Patterns(

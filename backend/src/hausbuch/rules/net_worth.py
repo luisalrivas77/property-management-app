@@ -26,6 +26,8 @@ the Anlagen overview's valuations and hands them here. Built in phase 6 step 6.
   2026, design §10) up to the last one before `today`, not only the last one.
 - `in_transit(paid_on, opened_on, through, receiver_history, linked=)`: phase 6 D292 (3),
   whether a booked transfer to an own account counts as „unterwegs zu <Konto>“ on a day.
+- `transit_counted(amounts, card_balance)`: D292 amended (a), what each transfer in transit
+  to one account counts; a credit card takes them only up to its known debt.
 """
 
 from collections.abc import Hashable, Iterable, Mapping, Sequence
@@ -177,12 +179,32 @@ def in_transit(
     return receiver_history < paid_on
 
 
+def transit_counted(amounts: Sequence[Decimal], card_balance: Decimal | None) -> list[Decimal]:
+    """Phase 6 D292 amended (a), 23 Nov 2026: what each transfer in transit to one receiving
+    account counts, `amounts` (positive) in payment order. Any receiver but a credit card
+    (`card_balance` None) takes each in full. A credit card takes them only until its balance
+    line (`card_balance`, negative for a debt) plus them reaches 0: a card more than one
+    statement behind would otherwise count every later payment, and money that paid charges
+    on a statement not yet in the app would turn the card into an asset. The payment that
+    crosses 0 counts in part, the later ones 0; a card already at or above 0 takes nothing."""
+    if card_balance is None:
+        return list(amounts)
+    room = max(-card_balance, Decimal("0"))
+    out = []
+    for amount in amounts:
+        take = min(amount, room)
+        out.append(take)
+        room -= take
+    return out
+
+
 __all__ = [
     "Part",
     "Totals",
     "bank_balance",
     "class_of",
     "in_transit",
+    "transit_counted",
     "loan_balance",
     "split",
     "totals",
