@@ -471,6 +471,54 @@ def test_a_failing_part_is_retried_three_times_then_carded(inbox, app_engine, mo
         items = service.inbound_mail_items(conn, NOW + timedelta(hours=1))
     assert [i.kind for i in items] == [InboxItemKind.EMAIL_FAILED]
 
+    # Phase 10 §7.5 (b): the card is kept until its row (the third attempt) is 30 days old.
+    changes_at = NOW + timedelta(minutes=20, days=30, microseconds=1)
+    kept, before, after = _at_the_window(app_engine, ws, NOW + timedelta(hours=1), changes_at)
+    assert [i.kind for i in kept.items] == [InboxItemKind.EMAIL_FAILED]
+    assert before.items == kept.items
+    assert after.items == []
+    assert after.changes_at is None
+
+
+# --- Phase 10 §7.5 (b): each card's window -------------------------------------------------
+
+
+def _at_the_window(app_engine, ws, kept_at, changes_at):
+    """The section at `kept_at`, one microsecond before `changes_at` and at it; the first
+    names `changes_at` as the moment its answer next changes."""
+    with workspace_transaction(app_engine, ws) as conn:
+        kept = service.inbound_mail_section(conn, kept_at)
+        before = service.inbound_mail_section(conn, changes_at - timedelta(microseconds=1))
+        after = service.inbound_mail_section(conn, changes_at)
+        timed = review.inbox_timed(conn, today=kept_at.date(), now=kept_at)
+    assert kept.changes_at == changes_at
+    assert before.changes_at == changes_at
+    assert timed.changes_at == changes_at  # the whole inbox expires with this section
+    return kept, before, after
+
+
+def test_a_received_card_is_kept_until_its_24_hours_end(inbox, app_engine):
+    poll, server, ws, _ = inbox
+    server.add(LABEL, _mail(("rechnung.pdf", _pdf("invoice"), "application/pdf")))
+    poll()
+    changes_at = NOW + timedelta(hours=24, microseconds=1)
+    kept, before, after = _at_the_window(app_engine, ws, NOW + timedelta(hours=1), changes_at)
+    assert [i.kind for i in kept.items] == [InboxItemKind.EMAIL_RECEIVED]
+    assert before.items == kept.items
+    assert after.items == []
+    assert after.changes_at is None  # an older link never shows a card again
+
+
+def test_a_statement_card_is_kept_until_its_30_days_end(inbox, app_engine):
+    poll, server, ws, _ = inbox
+    server.add(LABEL, _mail(("umsaetze.zip", ZIP, "application/zip")))
+    poll()
+    changes_at = NOW + timedelta(days=30, microseconds=1)
+    kept, before, after = _at_the_window(app_engine, ws, NOW + timedelta(days=3), changes_at)
+    assert [i.kind for i in kept.items] == [InboxItemKind.EMAIL_RECEIVED]
+    assert before.items == kept.items
+    assert after.items == []
+
 
 def test_a_failed_attempt_then_a_good_one_links_each_document_once(inbox, app_engine, monkeypatch):
     poll, server, ws, _ = inbox

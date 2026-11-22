@@ -68,6 +68,7 @@ from .events import append_event
 from .iban import protect_iban
 from .proposals import proposal_for_upload
 from .statements import import_statement
+from .timed_items import TimedItems, earliest, leaves_window
 
 RECEIVED_CARD_FOR = timedelta(hours=24)  # §5.4: email_received lists the last 24 h
 LISTED_FOR = timedelta(days=30)  # GET /inbound-mail, and how long a final failure is shown
@@ -439,7 +440,15 @@ def list_inbound_mail(conn: Connection, now: datetime) -> list[InboundMail]:
 
 
 def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
+    """The Zu prüfen cards of §5.4 (inbound_mail_section's items)."""
+    return inbound_mail_section(conn, now).items
+
+
+def inbound_mail_section(conn: Connection, now: datetime) -> TimedItems:
     """The Zu prüfen cards of §5.4, computed on read; the texts name no sender or subject.
+    With the first moment a card leaves its window (phase 10 §7.5 (b)): a statement card and
+    a failure card 30 days after their row, a received card 24 hours after its row; a link
+    older than 24 hours that shows no card never shows one later.
 
     - email_received, one per attachment linked in the last 24 h, with its document (and
       import);
@@ -464,8 +473,10 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
         .where(link_table.c.recorded_at >= now - LISTED_FOR)
     ).all()
     items: list[InboxItem] = []
+    changes: list[datetime] = []
     for link in links:
         if link.is_statement and not link.imported_since:
+            changes.append(leaves_window(link.recorded_at, LISTED_FOR))
             items.append(
                 InboxItem(
                     kind=InboxItemKind.EMAIL_RECEIVED,
@@ -476,6 +487,7 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 )
             )
         elif link.recorded_at >= now - RECEIVED_CARD_FOR:
+            changes.append(leaves_window(link.recorded_at, RECEIVED_CARD_FOR))
             imported = link.import_id is not None
             items.append(
                 InboxItem(
@@ -494,6 +506,7 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
         )
     ).scalars()
     for recorded_at in failed:
+        changes.append(leaves_window(recorded_at, LISTED_FOR))
         items.append(
             InboxItem(
                 kind=InboxItemKind.EMAIL_FAILED,
@@ -514,4 +527,4 @@ def inbound_mail_items(conn: Connection, now: datetime) -> list[InboxItem]:
                 question=question,
             )
         )
-    return items
+    return TimedItems(items, earliest(changes))

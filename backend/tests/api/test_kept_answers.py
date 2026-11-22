@@ -8,7 +8,7 @@ answer, a signed-out request and a revoked session are never served from the sto
 
 import asyncio
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from api_support import (
@@ -63,7 +63,8 @@ def test_the_routes_match_their_templates():
     pid = str(uuid.uuid4())
     assert kept_route(f"/api/properties/{pid}/units") == "/api/properties/{property_id}/units"
     assert kept_route(f"/api/properties/{pid}") is None
-    assert kept_route("/api/inbox") is None
+    assert kept_route("/api/inbox") == "/api/inbox"  # until its expiry (§7.5 (b))
+    assert kept_route("/api/inbound-mail") is None
     assert kept_route("/api/auth/me") is None
     assert kept_route("/api/auth/members") is None
     assert kept_route("/api/properties/equity") == "/api/properties/equity"
@@ -204,10 +205,80 @@ def test_signed_out_and_revoked_sessions_never_get_a_kept_answer(api_app, kept, 
 
 
 def test_a_route_not_listed_is_never_kept(client_a, kept):
-    ok(client_a.get("/api/inbox"))
-    ok(client_a.get("/api/inbox"))
+    ok(client_a.get("/api/events"))  # until §7.5 (b) this test asked /api/inbox
+    ok(client_a.get("/api/events"))
     assert kept.counters.stored == 0
     assert len(kept) == 0
+
+
+def _expiring_inbox(monkeypatch, changes_at: datetime) -> list[int]:
+    """GET /inbox and /inbox/lines answer an empty list that may change at `changes_at`;
+    the list counts the computations."""
+    from hausbuch.schemas.api import InboxLines
+    from hausbuch.services import review
+    from hausbuch.services.timed_items import TimedItems
+
+    computed: list[int] = []
+
+    def timed(conn, **kwargs):
+        computed.append(1)
+        return TimedItems([], changes_at)
+
+    def lines(conn, **kwargs):
+        computed.append(1)
+        return InboxLines(transactions=[], imports=[]), changes_at
+
+    monkeypatch.setattr(review, "inbox_timed", timed)
+    monkeypatch.setattr(review, "inbox_lines_timed", lines)
+    return computed
+
+
+@pytest.mark.parametrize("path", ["/api/inbox", "/api/inbox/lines"])
+def test_the_inbox_is_kept_until_its_expiry(client_a, kept, monkeypatch, path):
+    changes_at = datetime(2026, 11, 21, 12, 0, tzinfo=UTC)
+    computed = _expiring_inbox(monkeypatch, changes_at)
+    first = ok(client_a.get(path))
+    kept.clock = lambda: changes_at - timedelta(microseconds=1)
+    assert ok(client_a.get(path)) == first
+    assert (len(computed), kept.counters.hits) == (1, 1)
+    ((_, entry),) = kept.items()
+    assert entry.expires_at == changes_at
+    kept.clock = lambda: changes_at  # expired: computed again, the old answer dropped
+    assert ok(client_a.get(path)) == first
+    assert (len(computed), kept.counters.hits) == (2, 1)
+    assert kept.counters.discarded == 1  # its new answer expired at once: not kept
+    assert len(kept) == 0
+
+
+def test_an_expired_answer_is_never_compared_by_the_checks(client_a, kept, monkeypatch):
+    changes_at = datetime(2026, 11, 21, 12, 0, tzinfo=UTC)
+    _expiring_inbox(monkeypatch, changes_at)
+    ok(client_a.get("/api/inbox"))
+    ((_, entry),) = kept.items()
+    entry.body = b"[ ]"  # it would differ from a recomputation
+    kept.clock = lambda: changes_at
+    assert asyncio.run(kept.check(0)) is None
+    assert [o.result for o in asyncio.run(kept.compare_all())] == ["moved"]
+    assert kept.counters.mismatches == 0
+
+
+def test_a_route_without_an_expiry_keeps_none(client_a, kept):
+    ok(client_a.get("/api/properties"))
+    ((_, entry),) = kept.items()
+    assert entry.expires_at is None
+
+
+def test_the_store_drops_an_expired_answer():
+    now = datetime(2026, 11, 21, 10, 0, tzinfo=UTC)
+    store = KeptAnswers(clock=lambda: now)
+    ws = uuid.uuid4()
+    entry = _entry(10)
+    entry.expires_at = now + timedelta(seconds=1)
+    store.put(_key(0, ws), entry)
+    assert store.get(_key(0, ws)) is entry
+    store.clock = lambda: now + timedelta(seconds=1)
+    assert store.get(_key(0, ws)) is None
+    assert (len(store), store.size_bytes) == (0, 0)
 
 
 def _key(n: int, ws: uuid.UUID, version: int = 1) -> Key:

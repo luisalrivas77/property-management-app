@@ -25,6 +25,8 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+from fastapi import Request
+
 from hausbuch.schemas.api import (
     AiRetryResult,
     ConfirmAllocationsBody,
@@ -41,26 +43,39 @@ from hausbuch.services.documents import LOCAL_TIME_ZONE
 from hausbuch.settings import Settings
 
 from ..deps import Cmd, SettingsDep, domain_router, found
+from ..kept_answers import keep_until
 
 router = domain_router()
 
 
+def _now() -> datetime:
+    """The inbox's clock (tests move it)."""
+    return datetime.now(LOCAL_TIME_ZONE)
+
+
 @router.get("/inbox")
-def inbox_list(cmd: Cmd, settings: SettingsDep) -> list[InboxItem]:
+def inbox_list(cmd: Cmd, settings: SettingsDep, request: Request) -> list[InboxItem]:
     """Plus, from 1 January, last year's open Jahresfragen (phase 4b D110), and the email-in
     cards (phase 5 §5.4), and the wallet cards (phase 7; `settings` sees a missing key)."""
-    now = datetime.now(LOCAL_TIME_ZONE)
-    return cmd.read(review.inbox, today=now.date(), now=now, settings=settings)
+    # Kept until the first moment a card leaves its time window (phase 10 §7.5 (b)).
+    now = _now()
+    timed = cmd.read(review.inbox_timed, today=now.date(), now=now, settings=settings)
+    keep_until(request, timed.changes_at)
+    return timed.items
 
 
 @router.get("/inbox/lines")
-def inbox_lines_get(cmd: Cmd, settings: SettingsDep) -> InboxLines:
+def inbox_lines_get(cmd: Cmd, settings: SettingsDep, request: Request) -> InboxLines:
     """Phase 10 §7.3 (5): the bank lines and statement imports the cards of GET /inbox look up
     (each item's line and import, both lines of every possible duplicate and their imports),
     serialised as /accounts/{id}/transactions and /imports serialise them, so Zu prüfen need
     not load every account's lines."""
-    now = datetime.now(LOCAL_TIME_ZONE)
-    return cmd.read(review.inbox_lines, today=now.date(), now=now, settings=settings)
+    now = _now()  # kept like GET /inbox (§7.5 (b))
+    lines, changes_at = cmd.read(
+        review.inbox_lines_timed, today=now.date(), now=now, settings=settings
+    )
+    keep_until(request, changes_at)
+    return lines
 
 
 @router.post("/inbox/ai-retry")

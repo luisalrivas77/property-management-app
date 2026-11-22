@@ -625,3 +625,33 @@ def test_the_etf_tab_marks_a_report_only_fund_and_keeps_a_sold_one_silent(
     # The report-only fund is outside the depot's value: only the kept fund counts.
     assert by_id[main].value_eur == Decimal("100.00")
     assert by_id[second].value_eur == Decimal("100.00")  # 4 x 25.00
+
+
+def test_the_price_cards_change_only_when_the_oldest_run_leaves_the_window(
+    run, read, app_engine, fresh_workspaces, funds
+):
+    """Phase 10 §7.5 (b): the section names when its oldest run leaves the 31-day streak
+    window; the cards are the same just before (on the same UTC day, which the kept answer's
+    key holds) and differ just after, when the streak falls to six days."""
+    ws, _ = fresh_workspaces
+    _setup(run, ws)
+    down = Fake(down=("navhist-emea-en-inv-gy",))
+    for day in range(7):
+        run_workspace(
+            app_engine, ws, ACTOR, Sources(fetch=down, coingecko=None), NOW + timedelta(days=day)
+        )
+    first = read(ws, overview.price_inbox_section, NOW + timedelta(days=6, hours=1))
+    changes_at = NOW + timedelta(days=31, microseconds=1)
+    assert first.changes_at == changes_at
+    kept = read(ws, overview.price_inbox_section, changes_at - timedelta(hours=2))
+    assert [i.kind for i in kept.items] == [InboxItemKind.PRICE_SOURCE_FAILED]
+    assert kept.changes_at == changes_at
+    before = read(ws, overview.price_inbox_section, changes_at - timedelta(microseconds=1))
+    assert before.items == kept.items
+    after = read(ws, overview.price_inbox_section, changes_at)
+    assert after.items != kept.items
+    assert [i.kind for i in after.items] == []
+    assert after.changes_at == NOW + timedelta(days=32, microseconds=1)  # the next run's turn
+    # The whole inbox expires with its earliest section.
+    timed = read(ws, review.inbox_timed, today=NOW.date(), now=NOW + timedelta(days=6, hours=1))
+    assert timed.changes_at == changes_at

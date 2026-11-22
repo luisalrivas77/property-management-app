@@ -91,6 +91,7 @@ from hausbuch.services.context import CommandContext
 from hausbuch.services.depot import MovementReads, etf_overview, latest_report_agreement
 from hausbuch.services.events import append_event, diff_changes
 from hausbuch.services.lookup import require_row
+from hausbuch.services.timed_items import TimedItems, leaves_window
 from hausbuch.services.wallet_groups import waiting
 
 from . import lang_schwarz
@@ -733,12 +734,22 @@ def _report_differs(
 
 
 def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
+    return price_inbox_section(conn, now).items
+
+
+def price_inbox_section(conn: Connection, now: datetime) -> TimedItems:
+    """The price cards, with the first moment the oldest price run read leaves the streak
+    window (phase 10 §7.5 (b)): every fund's streak and notes are read from those runs, so
+    the answer may change then. The other clock read, the first day of a failure streak,
+    is a UTC day. `last_run or now` never takes `now`: both cards that use it need a run in
+    the window (a note, a failed day)."""
     items: list[InboxItem] = []
     held = _held(conn)
     if not held:
-        return items
-    since = now - timedelta(days=STREAK_WINDOW_DAYS)
-    fetched = fetched_runs(conn, since)  # the newest first; every fund's streak reads them
+        return TimedItems(items, None)
+    window = timedelta(days=STREAK_WINDOW_DAYS)
+    fetched = fetched_runs(conn, now - window)  # the newest first; every fund's streak reads them
+    changes_at = leaves_window(fetched[-1].recorded_at, window) if fetched else None
     # The newest run of all is in the window when the window holds any.
     last_run = fetched[0].recorded_at if fetched else _last_run_at(conn)
     # D167 amended (c): a fund a depot's latest report lists while that report disagrees
@@ -851,7 +862,7 @@ def price_inbox_items(conn: Connection, now: datetime) -> list[InboxItem]:
             )
         )
     items += _report_differs(conn, held, stored)
-    return items
+    return TimedItems(items, changes_at)
 
 
 __all__ = [
@@ -860,6 +871,7 @@ __all__ = [
     "etf_today",
     "list_assets",
     "price_inbox_items",
+    "price_inbox_section",
     "record_price",
     "update_asset",
 ]
