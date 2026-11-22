@@ -514,6 +514,7 @@ def test_a_statement_card_is_kept_until_its_30_days_end(inbox, app_engine):
     server.add(LABEL, _mail(("umsaetze.zip", ZIP, "application/zip")))
     poll()
     changes_at = NOW + timedelta(days=30, microseconds=1)
+    _at_the_window(app_engine, ws, NOW + timedelta(hours=1), changes_at)  # not its 24 hours
     kept, before, after = _at_the_window(app_engine, ws, NOW + timedelta(days=3), changes_at)
     assert [i.kind for i in kept.items] == [InboxItemKind.EMAIL_RECEIVED]
     assert before.items == kept.items
