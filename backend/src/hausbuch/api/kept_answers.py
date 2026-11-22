@@ -38,6 +38,21 @@ cover: `auth_session`, `auth_passkey`), and every route not listed. Adding a rou
 KEPT_ROUTES needs the same audit: every input it reads must be in the key or covered by the
 data version.
 
+§7.5 (a) applied that audit to every other GET route and kept those that read only the
+workspace's rows, the day and the code. Left out, besides the above: `/api/inbox/lines` (the
+inbox's time windows, §7.5 (b)); `/api/events` and the property History routes (they show the
+sign-in and passkey events, which since migration 0051 move no version); every route that reads
+the clock finer than the day (`/api/inbound-mail`, signed URLs: `/api/exports/holdings`,
+`/api/tax-exports/{id}`, which also reads the job queue), settings or typed secrets
+(`/api/app-secrets`, `/api/bank-credential-slots`, `/api/inbound-mail/address`,
+`/api/workspace/settings`, `/api/accounts/{id}/bank-connection`, `/api/wallets/{id}/state`) or
+the blob store (`/api/documents/{id}`, `/api/groups/{id}/change`); every download (`/file`,
+`/original`, `/flat-rate-letter`); a route with a side effect (`.../plain`, which writes an
+event); and the sync progress routes (`/api/syncs/{id}`, `.../syncs`). `/api/properties/{id}`
+passed the audit but is not listed (tests/api/test_kept_answers.py pins it as unkept).
+tests/api/test_kept_answers.py also requests every kept route and fails if one reads the
+session or passkey tables.
+
 The warm step (jobs/kept_answers.py) asks the page's routes once per enrolled member after the
 morning jobs, through `internal_get`, which runs the whole ASGI app as a request would. The
 checks (`check`, `compare_all`) recompute a kept answer with the store bypassed and compare
@@ -77,8 +92,12 @@ ROUTE_SCOPE_KEY = "hausbuch.kept_route"
 MAX_BYTES = 32 * 1024 * 1024
 
 # The GET routes whose answers are kept: what Übersicht and Zu prüfen load (perf_probe.PageRun,
-# components/inbox.tsx loadInbox), less the routes the audit excluded (module docstring).
+# components/inbox.tsx loadInbox), less the routes the audit excluded, and since §7.5 (a) every
+# other section's reads that the same audit passed (module docstring). A literal path comes
+# before a template its segment would also match (`auto-rate` before `{account_id}`), so it
+# is named by its own template.
 KEPT_ROUTES: tuple[str, ...] = (
+    # Übersicht and Zu prüfen (§7.4)
     "/api/properties",
     "/api/properties/equity",
     "/api/properties/payback",
@@ -105,6 +124,71 @@ KEPT_ROUTES: tuple[str, ...] = (
     "/api/accounts/{account_id}/movements",
     "/api/possible-duplicates",
     "/api/documents",
+    # Every other section (§7.5 (a))
+    "/api/accounts/auto-rate",
+    "/api/accounts/{account_id}",
+    "/api/accounts/{account_id}/ownership",
+    "/api/accounts/{account_id}/month",
+    "/api/accounts/{account_id}/bank-statements",
+    "/api/accounts/{account_id}/exchange",
+    "/api/imports/{import_id}",
+    "/api/transactions/{transaction_id}/allocations",
+    "/api/transfers",
+    "/api/transfers/open",
+    "/api/net-worth",
+    "/api/net-worth/snapshots",
+    "/api/net-worth/snapshots/{run_id}",
+    "/api/assets",
+    "/api/assets/overview",
+    "/api/assets/etf",
+    "/api/holdings/crypto",
+    "/api/wallets/holdings",
+    "/api/wallets/{account_id}",
+    "/api/wallets/{account_id}/lots",
+    "/api/wallets/{account_id}/groups",
+    "/api/wallets/{account_id}/answered",
+    "/api/wallets/{account_id}/hidden-tokens",
+    "/api/household-plan",
+    "/api/household-plan/comparison",
+    "/api/household-plan/explanation",
+    "/api/household-budget",
+    "/api/owners/{owner_id}",
+    "/api/owners/{owner_id}/anlage-n/exports",
+    "/api/income-inputs",
+    "/api/tax-rate",
+    "/api/return-inputs",
+    "/api/return-inputs/{return_input_id}/evidence",
+    "/api/tax/anlage-n/years",
+    "/api/tax/questionnaire",
+    "/api/properties/{property_id}/ownership",
+    "/api/properties/{property_id}/acquisition-costs",
+    "/api/properties/{property_id}/price-splits",
+    "/api/properties/{property_id}/purchase-summary",
+    "/api/properties/{property_id}/documents",
+    "/api/properties/{property_id}/tax-inputs",
+    "/api/properties/{property_id}/anlage-v/sources",
+    "/api/properties/{property_id}/anlage-v/exports",
+    "/api/properties/{property_id}/performance/actuals",
+    "/api/properties/{property_id}/performance/projection",
+    "/api/properties/{property_id}/scenarios",
+    "/api/units/{unit_id}",
+    "/api/units/{unit_id}/documents",
+    "/api/tenants/{tenant_id}",
+    "/api/tenants/{tenant_id}/documents",
+    "/api/tenants/{tenant_id}/tenancies",
+    "/api/tenancies/{tenancy_id}",
+    "/api/tenancies/{tenancy_id}/deposits",
+    "/api/tenancies/{tenancy_id}/rent-schedule",
+    "/api/tenancies/{tenancy_id}/rent",
+    "/api/tenancies/{tenancy_id}/documents",
+    "/api/loans/{loan_id}",
+    "/api/loans/{loan_id}/schedule",
+    "/api/loans/{loan_id}/summary",
+    "/api/loans/{loan_id}/documents",
+    "/api/documents/{document_id}/links",
+    "/api/documents/{document_id}/retention",
+    "/api/documents/{document_id}/proposals",
+    "/api/proposals/{proposal_id}",
 )
 
 _PARAM = re.compile(r"\{[a-z_]+\}")
