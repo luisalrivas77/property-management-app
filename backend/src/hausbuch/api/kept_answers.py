@@ -49,7 +49,8 @@ the clock finer than the day (`/api/inbound-mail`, signed URLs: `/api/exports/ho
 the blob store (`/api/documents/{id}`, `/api/groups/{id}/change`); every download (`/file`,
 `/original`, `/flat-rate-letter`); a route with a side effect (`.../plain`, which writes an
 event); and the sync progress routes (`/api/syncs/{id}`, `.../syncs`). `/api/properties/{id}`
-passed the audit but is not listed (tests/api/test_kept_answers.py pins it as unkept).
+and `/api/tenants/{id}` passed the audit but are not listed (tests/api/test_kept_answers.py
+and tests/api/test_no_echo.py pin them as unkept).
 tests/api/test_kept_answers.py also requests every kept route and fails if one reads the
 session or passkey tables.
 
@@ -173,7 +174,6 @@ KEPT_ROUTES: tuple[str, ...] = (
     "/api/properties/{property_id}/scenarios",
     "/api/units/{unit_id}",
     "/api/units/{unit_id}/documents",
-    "/api/tenants/{tenant_id}",
     "/api/tenants/{tenant_id}/documents",
     "/api/tenants/{tenant_id}/tenancies",
     "/api/tenancies/{tenancy_id}",

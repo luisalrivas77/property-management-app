@@ -478,8 +478,14 @@ def test_no_kept_route_reads_the_session_or_passkey_tables(
             for statement in statements:
                 for table in _UNVERSIONED_TABLES:
                     assert table not in statement, (template, table)
+                lowered = statement.lower()
+                assert "procrastinate_" not in lowered, template  # the job queue: unversioned
+                for clock in ("now()", "current_timestamp", "clock_timestamp", "localtime"):
+                    assert clock not in lowered, (template, clock)
             assert response.status == 200, (template, response.body[:300])
             assert statements, template
+            again = asyncio.run(kept.internal_get(auth_a, path, _QUERY.get(template), bypass=True))
+            assert again.body == response.body, template  # the 15:00 check would empty the store
             requested.add(template)
     finally:
         event.remove(app_engine, "before_cursor_execute", record)

@@ -363,20 +363,22 @@ after a sign-in is no longer a full recomputation. Gate: `perf-overview --check-
 the live data, all equal; the 15:00 check covers them by itself.
 
 **(a) as built (22 Nov 2026, branch `perf-kept-all-sections`, not merged or deployed).** `KEPT_ROUTES` grows from 26
-to 90: the 64 GET routes the audit passed (every one a READ ONLY `cmd.read` over the workspace's rows with at most the
+to 89: the 63 GET routes the audit passed (every one a READ ONLY `cmd.read` over the workspace's rows with at most the
 Berlin or UTC date). Left out with the reason found: `/inbox/lines` (§7.5 (b)); `/events` and the History reads (they
 show the sign-in events); `/inbound-mail` (a window on the time of day); `/exports/holdings` and `/tax-exports/{id}`
 (signed URLs on the time of day, the latter also reads the job queue); `/inbound-mail/address`, `/workspace/settings`,
 `/accounts/{id}/bank-connection`, `/wallets/{id}/state` (settings or typed secrets); `/documents/{id}` and
 `/groups/{id}/change` (the blob store); every download; `.../plain` (writes an event); the sync progress routes;
-`/properties/{id}`, which passed but stays out because `tests/api/test_kept_answers.py` pins it as unkept. Migration
+`/properties/{id}` and `/tenants/{id}`, which passed but stay out because `tests/api/test_kept_answers.py` and
+`tests/api/test_no_echo.py` pin them as unkept. Migration
 0051 changes only the `event` table's INSERT mark: `user.signed_in`, `user.passkey_enrolled`, `.passkey_renamed` and
 `.passkey_removed` no longer move the version (`user.signed_out` and `user.sessions_revoked` still do; the spec named
 only the first four). A sign-in also writes its session and the passkey's counter, both outside the version, so the
 first load after a sign-in now serves kept answers. New tests: every template is a GET route and shadows no other route;
-every kept route is requested through `internal_get` (84 of 90; four need an import, a model reading or a typed return
+every kept route is requested through `internal_get` (85 of 89; four need an import, a model reading or a typed return
 input the fixtures do not make, listed by name) with a 200 answer, and no SQL statement it sends names `auth_session`
-or `auth_passkey` (checked to fail on a deliberate `auth_passkey` read); a sign-in event does not bump, any other event
+or `auth_passkey` (checked to fail on a deliberate `auth_passkey` read), no job-queue table and no SQL clock function, and a
+second computation gives the same bytes; the fixtures hold one of each record, so per-row code runs over little data; a sign-in event does not bump, any other event
 does, and an exempt event does not hide a later write of its transaction. Not done: the live gate, since
 `perf-overview --check-kept` still requests only Übersicht's and Zu prüfen's routes.
 
