@@ -332,8 +332,9 @@ def test_check_kept_also_compares_every_other_kept_route(world, dbname):
     }
     assert "/api/loans/{l1}/schedule" in [t.label for t in second.extra]
     assert any(t.label.startswith("/api/transfers?month=") for t in second.extra)
-    # The world's property has no owners' shares, so its ownership is unknown (404) and its
-    # performance cannot be computed (422): printed as findings, never dropped.
+    # The world's data, not the requests: its property has no owners' shares (404), and it was
+    # bought in 2024, before the first tax rule set, so its performance answers 422
+    # projection.no_rule_set. Printed as findings, never dropped.
     findings = {(t.label, t.status) for t in second.extra if t.status != 200}
     assert findings == {
         ("/api/properties/{p1}/ownership", 404),
