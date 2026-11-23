@@ -16,7 +16,10 @@
 // input. „Hochladen“ stores each file as a document that the AI reads; „Foto“ opens the phone's
 // camera at once (a computer's file picker), and the photos open the page strip of
 // components/capture.tsx in the detail panel. The strip lives in this page, so closing the panel
-// keeps the photos; „Fotos (n)“ opens it again. /capture keeps its own page.
+// keeps the photos; „Fotos (n)“ opens it again. /capture keeps its own page. The open panel is
+// the URL hash `#d-fotos-seiten` like every other panel (D267, §7.6 (f)), so the phone's back
+// button closes it; the photos live in the page only, so a reload opens it with an empty strip and
+// its „Seite hinzufügen“.
 import "./inbox.css";
 
 import Link from "next/link";
@@ -57,18 +60,22 @@ function Fallback() {
   return <p className="muted">{c.loading}</p>;
 }
 
+/** The photos' panel has one id: the strip of this page view (`#d-fotos-seiten`). */
+const PHOTOS = "seiten";
+
 function Inbox() {
   const t = useT(messages);
   const router = useRouter();
   const search = useSearchParams();
   const detail = useDetail("umsatz");
+  const photos = useDetail("fotos");
   const linked = search.get("umsatz");
   const selected = detail.id ?? linked;
   const inbox = useLoad(loadInbox);
   const [saved, setSaved] = useState<TransactionAllocations | null>(null);
   const [uploads, setUploads] = useState<UploadNote[]>([]);
   const strip = usePageStrip();
-  const [photosOpen, setPhotosOpen] = useState(false);
+  const photosOpen = photos.id === PHOTOS;
   const [photoError, setPhotoError] = useState<unknown>(null);
 
   // The sidebar's count follows what this page lists, after every load and reload.
@@ -79,8 +86,7 @@ function Inbox() {
 
   function select(transactionId: string) {
     setSaved(null);
-    setPhotosOpen(false);
-    detail.open(transactionId);
+    detail.open(transactionId); // replaces the photos' hash, so their panel closes
   }
 
   function noteUpload(note: UploadNote) {
@@ -91,7 +97,7 @@ function Inbox() {
   function addPhotos(files: File[]) {
     if (files.length === 0) return;
     setPhotoError(null);
-    setPhotosOpen(true);
+    photos.open(PHOTOS);
     void strip.addPages(files);
   }
 
@@ -101,7 +107,7 @@ function Inbox() {
     setPhotoError(null);
     try {
       const { document, existed, proposalId } = await strip.upload();
-      setPhotosOpen(false);
+      photos.close();
       noteUpload({ document, existed, proposalId, aiUnavailable: false });
     } catch (caught) {
       setPhotoError(caught);
@@ -182,7 +188,7 @@ function Inbox() {
     : undefined;
 
   const panel = photosOpen ? (
-    <DetailPanel key="photos" title={t.photos} backLabel={t.title} onClose={() => setPhotosOpen(false)}>
+    <DetailPanel key="photos" title={t.photos} backLabel={t.title} onClose={photos.close}>
       <div className="inbox-photos">
         <PhotoInput
           className={["inbox-head-button", "secondary", strip.busy || strip.full ? "busy" : ""].filter(Boolean).join(" ")}
@@ -215,7 +221,7 @@ function Inbox() {
         <h1>{t.heading}</h1>
         <div className="inbox-head-actions">
           {strip.pages.length > 0 && !photosOpen ? (
-            <button type="button" className="secondary" onClick={() => setPhotosOpen(true)}>
+            <button type="button" className="secondary" onClick={() => photos.open(PHOTOS)}>
               {t.photosWaiting(strip.pages.length)}
             </button>
           ) : null}
